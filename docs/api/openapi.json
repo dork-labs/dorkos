@@ -1885,6 +1885,14 @@
               "string",
               "null"
             ]
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "off",
+              "byo",
+              "managed"
+            ]
           }
         },
         "required": [

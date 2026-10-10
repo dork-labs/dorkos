@@ -107,6 +107,49 @@ describe('applyGuardedConfigWrite', () => {
     });
   });
 
+  describe('managed remote access (`cloud.remote`, DOR-2086)', () => {
+    it('refuses the block from every door, nested or dotted, and writes nothing', () => {
+      // Only `services/core/remote/remote-state.ts` writes it. A hand-written
+      // `mode: 'managed'` here would be a selection with no consent behind it.
+      const patches: Record<string, unknown>[] = [
+        { cloud: { remote: { mode: 'managed' } } },
+        { cloud: { remote: { credentialRef: 'file:remote-tunnel-x' } } },
+        { 'cloud.remote.mode': 'managed' },
+        { 'cloud.remote': { mode: 'managed' } },
+      ];
+      for (const authority of [LOCAL_OPERATOR_AUTHORITY, OPERATOR_TOOL_AUTHORITY]) {
+        for (const patch of patches) {
+          const result = applyGuardedConfigWrite({
+            patch,
+            authority,
+            source: 'dorkos config set',
+            writer: { kind: 'unattributed' },
+          });
+          if (result.ok || result.kind !== 'refused') throw new Error('expected a refusal');
+          expect(result.refusal).toMatchObject({
+            status: 400,
+            code: 'USE_REMOTE_ACCESS_API',
+            paths: ['cloud.remote'],
+          });
+        }
+      }
+      expect(configManager.get('cloud').remote.mode).toBe('off');
+      expect(configManager.get('cloud').remote.credentialRef).toBeNull();
+    });
+
+    it('still lets the operator write a sibling `cloud` leaf', () => {
+      const result = applyGuardedConfigWrite({
+        patch: { cloud: { instanceName: 'desk' } },
+        authority: LOCAL_OPERATOR_AUTHORITY,
+        source: 'dorkos config set',
+        writer: { kind: 'unattributed' },
+      });
+      expect(result.ok).toBe(true);
+      expect(configManager.get('cloud').instanceName).toBe('desk');
+      expect(configManager.get('cloud').remote.mode).toBe('off');
+    });
+  });
+
   describe('as `dorkos config set`, under the operator authority', () => {
     it('writes an operator-only setting and leaves a line naming the leaf and the door', async () => {
       // The write the CLI could always make, now with the record it never left.

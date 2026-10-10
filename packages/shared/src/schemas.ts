@@ -21,6 +21,7 @@ import {
   StatusBarPrefsSchema,
   ComposerPrefsSchema,
   NotificationPrefsSchema,
+  RemoteAccessModeSchema,
 } from './config-schema.js';
 // The effort ladder itself lives in the dependency-free constants module so this
 // file and `config-schema.ts` (which this file already imports) can both build
@@ -4247,10 +4248,130 @@ export const TunnelStatusSchema = z
     authEnabled: z.boolean(),
     tokenConfigured: z.boolean(),
     domain: z.string().nullable(),
+    /**
+     * Which kind of forwarding is running: `byo` (the person's own ngrok
+     * account), `managed` (DorkOS Cloud's credential), or `off`. Optional so a
+     * reader of an older server still parses; absent reads as `byo` when a
+     * tunnel is running, because that was the only kind there was.
+     */
+    mode: RemoteAccessModeSchema.optional(),
   })
   .openapi('TunnelStatus');
 
 export type TunnelStatus = z.infer<typeof TunnelStatusSchema>;
+
+// === Remote Access Report ===
+
+/**
+ * Where remote access stands, from the listener's side (DOR-2086). One value,
+ * and every surface that shows remote access reads it, so they cannot disagree.
+ *
+ * - `off` — nothing is forwarding, and nothing is meant to be.
+ * - `opening` — a start is in progress; not reachable yet.
+ * - `open` — forwarding is up and the address works.
+ * - `draining` — closing: no new requests are taken, and requests already
+ *   accepted are finishing before the listener closes.
+ * - `blocked` — something must be fixed before it can open (for example the
+ *   stored credential is missing, or login is required first). `reason` says
+ *   what.
+ * - `reconnecting` — the listener dropped and is coming back on its own.
+ * - `asleep` — managed mode is selected, this computer is enrolled, and Cloud
+ *   reports the tunnel closed. It describes the TUNNEL, never the computer: it
+ *   does not mean the computer is asleep, and nothing here can wake one.
+ */
+export const RemoteAccessStateSchema = z
+  .enum(['off', 'opening', 'open', 'draining', 'blocked', 'reconnecting', 'asleep'])
+  .openapi('RemoteAccessState');
+
+/** Where remote access stands. See {@link RemoteAccessStateSchema}. */
+export type RemoteAccessState = z.infer<typeof RemoteAccessStateSchema>;
+
+/**
+ * Whether managed remote access can be offered on this computer at all.
+ *
+ * - `hidden` — not offered: the feature is off here, the computer is not
+ *   linked, or Cloud does not offer it. No choice is shown.
+ * - `available` — offered: a person may choose it.
+ * - `unavailable` — offered in principle but not right now (for example Cloud
+ *   could not be reached); shown as unavailable rather than hidden.
+ *
+ * Never gates the person's own ngrok setup, which works in every case.
+ */
+export const RemoteAccessAvailabilitySchema = z
+  .enum(['hidden', 'available', 'unavailable'])
+  .openapi('RemoteAccessAvailability');
+
+/** Whether managed remote access can be offered. See {@link RemoteAccessAvailabilitySchema}. */
+export type RemoteAccessAvailability = z.infer<typeof RemoteAccessAvailabilitySchema>;
+
+/**
+ * Where this computer's managed enrolment stands.
+ *
+ * - `none` — no person has approved managed access for this computer.
+ * - `pending` — a person started setup here and Cloud is waiting for them to
+ *   approve it at `approveUrl` with `userCode`, before `expiresAt`.
+ * - `enrolled` — a person approved it. Enrolment is consent, not reachability:
+ *   whether the address works is `state`.
+ */
+export const RemoteAccessEnrolmentSchema = z
+  .discriminatedUnion('status', [
+    z.object({ status: z.literal('none') }),
+    z.object({
+      status: z.literal('pending'),
+      /** The short code the person confirms on the approval page. Not a secret. */
+      userCode: z.string().min(1),
+      /** The https page where the person approves. */
+      approveUrl: z.string().url(),
+      /** When the request stops being approvable (ISO 8601). */
+      expiresAt: z.string().datetime({ offset: true }),
+    }),
+    z.object({ status: z.literal('enrolled') }),
+  ])
+  .openapi('RemoteAccessEnrolment');
+
+/** Where the managed enrolment stands. See {@link RemoteAccessEnrolmentSchema}. */
+export type RemoteAccessEnrolment = z.infer<typeof RemoteAccessEnrolmentSchema>;
+
+/**
+ * The one server report every remote access surface reads — Settings, the
+ * Control Center row, the beacon and the command palette (DOR-2086).
+ *
+ * Carries no secret: no tunnel credential, edge proof, lease token or Cloud
+ * key ever rides it.
+ */
+export const RemoteAccessReportSchema = z
+  .object({
+    /** The mode the person selected. */
+    mode: RemoteAccessModeSchema,
+    /** Where it stands. See {@link RemoteAccessStateSchema}. */
+    state: RemoteAccessStateSchema,
+    /** The address, present only while it is usable (`open`). Never shown otherwise. */
+    url: z.string().url().optional(),
+    /**
+     * Why it is `blocked`, or what is happening, in words a person can read.
+     * Safe to show: never a secret, a token or a supplier detail.
+     */
+    reason: z.string().optional(),
+    /**
+     * Whether Cloud keeps this computer's address open on its own. Only ever
+     * what Cloud reports; never derived from a plan on this side.
+     */
+    alwaysAvailable: z.boolean(),
+    /**
+     * True when Cloud's status could not be read just now, so the managed
+     * parts of this report are the last thing Cloud said, not a fresh answer.
+     * The local listener's state is always current.
+     */
+    cloudStale: z.boolean(),
+    /** Whether managed access can be offered. See {@link RemoteAccessAvailabilitySchema}. */
+    availability: RemoteAccessAvailabilitySchema,
+    /** Where the managed enrolment stands. See {@link RemoteAccessEnrolmentSchema}. */
+    enrolment: RemoteAccessEnrolmentSchema,
+  })
+  .openapi('RemoteAccessReport');
+
+/** The remote access report. See {@link RemoteAccessReportSchema}. */
+export type RemoteAccessReport = z.infer<typeof RemoteAccessReportSchema>;
 
 // === Health Response ===
 

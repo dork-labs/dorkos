@@ -1186,6 +1186,48 @@ describe('PATCH /api/config', () => {
       expect(response.body.config.providersConfigured).toEqual(['anthropic']);
       expect(response.body.config.runtimes.codex.credentialRefConfigured).toBe(true);
     });
+
+    it('carries nothing of the managed remote record but its mode and two booleans (DOR-2086)', async () => {
+      const { updateRemoteState } = await import('../../services/core/remote/remote-state.js');
+      updateRemoteState('test', {
+        mode: 'managed',
+        enrolmentId: 'enr_PLANTED',
+        consentVersion: 'consent_PLANTED',
+        instanceId: 'inst_PLANTED',
+        credentialId: 'cred_PLANTED',
+        fingerprint: 'fp_PLANTED',
+        credentialRef: 'file:remote-tunnel-cred_PLANTED',
+        edgeProofRef: 'file:remote-edge-cred_PLANTED',
+        edgeProofHeader: 'x-planted-edge',
+        hosts: ['planted.example.com'],
+      });
+
+      const patched = await request(server)
+        .patch('/api/config')
+        .send({ ui: { theme: 'dark' } })
+        .expect(200);
+      const fetched = await request(server).get('/api/config').expect(200);
+
+      for (const body of [patched.body, fetched.body]) {
+        const serialized = JSON.stringify(body);
+        expect(serialized).not.toMatch(/PLANTED|planted/);
+      }
+      expect(patched.body.config.cloud.remote).toEqual({
+        mode: 'managed',
+        credentialRefConfigured: true,
+        edgeProofRefConfigured: true,
+      });
+    });
+
+    it('refuses a patch that names cloud.remote, and changes nothing', async () => {
+      const response = await request(server)
+        .patch('/api/config')
+        .send({ cloud: { remote: { mode: 'managed' } } });
+      expect(response.status).toBe(400);
+      expect(response.body.code).toBe('USE_REMOTE_ACCESS_API');
+      const { configManager } = await import('../../services/core/config-manager.js');
+      expect(configManager.get('cloud').remote.mode).toBe('off');
+    });
   });
 });
 

@@ -75,6 +75,7 @@ import {
   seedCloudCreditsChoices,
   seedCodexTransport,
   raiseEngagedWindowDefaults,
+  seedCloudRemoteAccess,
 } from '../config-manager.js';
 import { applyConfigPatch } from '../operator/config-patch.js';
 import { checkMigrationSafety, extractMigrationBodies } from './migration-safety.js';
@@ -4071,7 +4072,7 @@ describe('CONFIG_MIGRATIONS append-only pins (DOR-1222 regression guard)', () =>
     // pass this having scanned nothing. The count is the knowable bound; the
     // table is append-only, so raising it is the deliberate act of adding a
     // migration, which is exactly when this check should be re-read.
-    expect(Object.keys(bodies)).toHaveLength(47);
+    expect(Object.keys(bodies)).toHaveLength(48);
 
     const reaching = Object.keys(bodies).filter((key) =>
       reachedDeclarations(bodies[key]!, pool).includes('describeLoadError')
@@ -6583,5 +6584,134 @@ describe('raiseEngagedWindowDefaults migration (DOR-2823)', () => {
       'rooms.engagedWindowPosts': 15,
     });
     expect(store.writes).toHaveLength(2);
+  });
+});
+
+describe('seedCloudRemoteAccess migration (DOR-2086)', () => {
+  /** A BYO setup a person made by hand, with a token that must stay where it is. */
+  const BYO_TOKEN = '2abcBYOtokenNeverCopied_xyz0123456789';
+  const tunnel = {
+    enabled: true,
+    domain: 'mine.ngrok.app',
+    authtoken: BYO_TOKEN,
+    auth: 'me:secret-password',
+  };
+  const linkedCloud = {
+    instanceToken: 'dk_inst_linked',
+    instanceName: 'laptop',
+    linkedAccountLabel: null,
+    previousLinkProof: null,
+    credits: { defaults: {}, offer: 'none', agents: [], linkedTo: null },
+  };
+
+  /**
+   * Run the real upgrade to `'0.106.0'` over a file last written at `from`, and
+   * return the raw file text and its parse.
+   */
+  function upgrade(
+    stored: Record<string, unknown>,
+    from = '0.105.0'
+  ): { raw: string; onDisk: Record<string, unknown> } {
+    const dir = path.join(os.tmpdir(), 'test-dork-cloud-remote-' + Date.now() + Math.random());
+    const cfgPath = path.join(dir, 'config.json');
+    fs.mkdirSync(dir, { recursive: true });
+    try {
+      fs.writeFileSync(
+        cfgPath,
+        JSON.stringify({ version: 1, ...stored, __internal__: { migrations: { version: from } } }),
+        'utf-8'
+      );
+      new Conf({
+        configName: 'config',
+        cwd: dir,
+        schema: CONF_JSON_SCHEMA as unknown as Schema<Record<string, unknown>>,
+        defaults: USER_CONFIG_DEFAULTS,
+        clearInvalidConfig: false,
+        projectVersion: '0.106.0',
+        migrations: CONFIG_MIGRATIONS,
+      });
+      const raw = fs.readFileSync(cfgPath, 'utf-8');
+      return { raw, onDisk: JSON.parse(raw) as Record<string, unknown> };
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  }
+
+  it('seeds `byo` into a stored cloud block when the own tunnel is on', () => {
+    // READ THE FILE: `cloud` is a section every stored config has, so conf's
+    // shallow default merge never adds this leaf. Suppress the body and this
+    // goes red.
+    const { onDisk } = upgrade({ tunnel, cloud: linkedCloud });
+    const cloud = onDisk.cloud as Record<string, unknown>;
+    expect(cloud.remote).toEqual({
+      mode: 'byo',
+      enrolmentId: null,
+      consentVersion: null,
+      instanceId: null,
+      credentialRef: null,
+      credentialId: null,
+      fingerprint: null,
+      hosts: [],
+      edgeProofRef: null,
+      edgeProofHeader: null,
+    });
+    // The link survives untouched: an upgrade is never an unlink.
+    expect(cloud.instanceToken).toBe('dk_inst_linked');
+    expect(cloud.credits).toEqual(linkedCloud.credits);
+  });
+
+  it('seeds `off` when the tunnel is off or was never set up', () => {
+    const off = upgrade({ tunnel: { ...tunnel, enabled: false }, cloud: linkedCloud });
+    expect((off.onDisk.cloud as { remote: { mode: string } }).remote.mode).toBe('off');
+    const none = upgrade({ cloud: linkedCloud });
+    expect((none.onDisk.cloud as { remote: { mode: string } }).remote.mode).toBe('off');
+  });
+
+  it('writes the same record the schema defaults to, apart from the seeded mode', () => {
+    // The body spells its literal out so it stays frozen; this pins that the
+    // two agree today, so a fresh install and an upgraded one cannot differ.
+    const store = createMockStore({ cloud: { instanceToken: null } });
+    seedCloudRemoteAccess(store);
+    expect((store.data.cloud as { remote: unknown }).remote).toEqual(defaultRemoteAccessSettings());
+  });
+
+  it('leaves `tunnel` byte-for-byte unchanged and never copies the BYO token', () => {
+    const { raw, onDisk } = upgrade({ tunnel, cloud: linkedCloud });
+    expect(JSON.stringify(onDisk.tunnel)).toBe(JSON.stringify(tunnel));
+    // The token appears exactly once in the whole file: where the person put it.
+    expect(raw.split(BYO_TOKEN).length - 1).toBe(1);
+    const remote = (onDisk.cloud as { remote: Record<string, unknown> }).remote;
+    expect(JSON.stringify(remote)).not.toContain(BYO_TOKEN);
+    expect(remote.mode).toBe('byo');
+  });
+
+  it('keeps a managed record a newer build already wrote', () => {
+    const remote = {
+      mode: 'managed',
+      enrolmentId: 'enr_1',
+      consentVersion: '2026-10',
+      instanceId: 'inst_1',
+      credentialRef: 'file:remote-tunnel-cred_1',
+      credentialId: 'cred_1',
+      fingerprint: 'fp',
+      hosts: ['a.example.com'],
+      edgeProofRef: 'file:remote-edge-cred_1',
+      edgeProofHeader: 'x-dorkos-edge',
+    };
+    const { onDisk } = upgrade({ tunnel, cloud: { ...linkedCloud, remote } });
+    expect((onDisk.cloud as { remote: unknown }).remote).toEqual(remote);
+  });
+
+  it('is idempotent and skips a config with no cloud block', () => {
+    const store = createMockStore({ cloud: { instanceToken: null } });
+    seedCloudRemoteAccess(store);
+    const first = JSON.stringify(store.data.cloud);
+    seedCloudRemoteAccess(store);
+    expect(JSON.stringify(store.data.cloud)).toBe(first);
+
+    const empty = createMockStore({ tunnel });
+    seedCloudRemoteAccess(empty);
+    expect(empty.data.cloud).toBeUndefined();
+    expect(empty.data.tunnel).toBe(tunnel);
   });
 });

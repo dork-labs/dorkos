@@ -984,6 +984,62 @@ export function seedCloudCreditsChoices(store: {
 }
 
 /**
+ * Migration body: seed `cloud.remote` for configs persisted before managed
+ * remote access existed (DOR-2086).
+ *
+ * **Seeds the mode the person already has, and nothing else.** A computer whose
+ * own ngrok tunnel is switched on (`tunnel.enabled === true`) is seeded `byo`,
+ * so it reads back as the remote access it already uses; every other computer
+ * is seeded `off`. No enrolment, no link binding, no credential reference, no
+ * hosts: only a person's approval on this computer creates an enrolment, so an
+ * upgrade can never stand for one. `tunnel` is READ for that one flag and never
+ * written: the person's own ngrok token stays exactly where it is and is never
+ * copied into managed storage.
+ *
+ * The literal is written out here rather than taken from
+ * `defaultRemoteAccessSettings()`, so this frozen body cannot move when the
+ * schema's defaults do; a test pins that the two agree today.
+ *
+ * Additive and idempotent: writes only when `cloud` is an object whose
+ * `remote` member is not, and never touches the link fields or `credits`
+ * beside it. A config with no `cloud` key is skipped (the schema default
+ * supplies the whole section on read, and conf persists a missing top-level
+ * section on its own).
+ *
+ * @internal Exported for testing only.
+ * @param store - The `conf` store instance (provides `get`/`set`).
+ */
+export function seedCloudRemoteAccess(store: {
+  get: (key: string) => unknown;
+  set: (key: string, value: unknown) => void;
+}): void {
+  const cloud = store.get('cloud');
+  if (!cloud || typeof cloud !== 'object' || Array.isArray(cloud)) return;
+  const remote = (cloud as { remote?: unknown }).remote;
+  if (remote && typeof remote === 'object' && !Array.isArray(remote)) return;
+  const tunnel = store.get('tunnel');
+  const byoEnabled =
+    tunnel !== null &&
+    typeof tunnel === 'object' &&
+    (tunnel as { enabled?: unknown }).enabled === true;
+  store.set('cloud', {
+    ...(cloud as Record<string, unknown>),
+    remote: {
+      mode: byoEnabled ? 'byo' : 'off',
+      enrolmentId: null,
+      consentVersion: null,
+      instanceId: null,
+      credentialRef: null,
+      credentialId: null,
+      fingerprint: null,
+      hosts: [],
+      edgeProofRef: null,
+      edgeProofHeader: null,
+    },
+  });
+}
+
+/**
  * Migration body: backfill the `workspace` section (WorkspaceManager, DOR-84)
  * for configs persisted before it existed. Additive + idempotent — only writes
  * when the key is absent; the schema default also yields this object on read, so
@@ -4976,6 +5032,21 @@ export const CONFIG_MIGRATIONS = {
   // Disjoint from every other key here: it adds three nested leaves under
   // `profile`, beside the fields it preserves.
   '0.105.0': seedWorkingHoursDefaults,
+  // v0.103.0 is the newest tag and 0.105.0 has merged (working hours above),
+  // so this opens 0.106.0. Frozen from merge, for the reason `'0.60.0'` above
+  // states; anything further opens `'0.107.0'`.
+  //
+  // Disjoint from every other key here: it adds one nested leaf under `cloud`,
+  // beside the link fields and `credits` (which `'0.96.0'` writes), all of
+  // which it preserves. It never reads or writes `tunnel`.
+  '0.106.0': (store: {
+    get: (key: string) => unknown;
+    set: (key: string, value: unknown) => void;
+  }) => {
+    // `cloud.remote` — managed remote access, off until a person chooses it
+    // (DOR-2086). See `seedCloudRemoteAccess`.
+    seedCloudRemoteAccess(store);
+  },
 } as const;
 
 /**

@@ -843,6 +843,22 @@ export const CONFIG_WRITE_POLICY = {
   'cloud.credits.agents': 'operator-only',
   'cloud.credits.linkedTo': 'operator-only',
 
+  // Managed remote access (DOR-2086): whether this computer is reachable from
+  // the internet through DorkOS Cloud, the consent a person gave for it, and
+  // the credential it forwards with. Public exposure and credential material,
+  // so a person's alone — and the general config door refuses the whole block
+  // anyway (`USE_REMOTE_ACCESS_API`), because only `remote-state.ts` writes it.
+  'cloud.remote.mode': 'operator-only',
+  'cloud.remote.enrolmentId': 'operator-only',
+  'cloud.remote.consentVersion': 'operator-only',
+  'cloud.remote.instanceId': 'operator-only',
+  'cloud.remote.credentialRef': 'operator-only',
+  'cloud.remote.credentialId': 'operator-only',
+  'cloud.remote.fingerprint': 'operator-only',
+  'cloud.remote.hosts': 'operator-only',
+  'cloud.remote.edgeProofRef': 'operator-only',
+  'cloud.remote.edgeProofHeader': 'operator-only',
+
   // A configured raw-MCP server becomes a tool endpoint sessions can attach —
   // an agent writing one grants itself a capability, which is exactly the line
   // this module holds (same reasoning as `mesh.scanRoots` and the approved
@@ -958,6 +974,12 @@ export const OPERATOR_ONLY_STAKES: readonly OperatorOnlyStakeGroup[] = [
       'tunnel.domain',
       'tunnel.authtoken',
       'tunnel.auth',
+      'cloud.remote.mode',
+      'cloud.remote.enrolmentId',
+      'cloud.remote.consentVersion',
+      'cloud.remote.instanceId',
+      'cloud.remote.hosts',
+      'cloud.remote.edgeProofHeader',
       'mcp.enabled',
       'browser.enabled',
       'spaces.enabled',
@@ -1008,6 +1030,10 @@ export const OPERATOR_ONLY_STAKES: readonly OperatorOnlyStakeGroup[] = [
       'cloud.credits.offer',
       'cloud.credits.agents',
       'cloud.credits.linkedTo',
+      'cloud.remote.credentialRef',
+      'cloud.remote.credentialId',
+      'cloud.remote.fingerprint',
+      'cloud.remote.edgeProofRef',
       'runtimes.codex.credentialRef',
       'runtimes.environment.inherit.claudeCode',
       'runtimes.environment.inherit.codex',

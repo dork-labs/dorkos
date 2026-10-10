@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { defaultRemoteAccessSettings } from '@dorkos/shared/config-schema';
 import { initConfigManager, configManager } from '../../config-manager.js';
 import { CloudLinkManager, initCloudLinkManager, getCloudLinkManager } from '../cloud-link.js';
 import {
@@ -584,6 +585,8 @@ describe('CloudLinkManager', () => {
         linkedAccountLabel: null,
         previousLinkProof: OLD_PROOF,
         credits: { defaults: {}, offer: 'none', agents: [], linkedTo: null },
+        // Managed remote access is withdrawn with the link (DOR-2086).
+        remote: defaultRemoteAccessSettings(),
       });
       expect(JSON.stringify(configManager.getAll())).not.toContain('dork_inst_old');
     });

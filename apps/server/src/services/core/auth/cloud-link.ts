@@ -65,6 +65,7 @@ import type {
   ManagedConnectorToolkitVersionResponse,
 } from '@dorkos/shared/connector-managed-discovery-schemas';
 import { logConfigWrite } from '../operator/config-write.js';
+import { withdrawnRemoteState } from '../remote/remote-state.js';
 import { logger, logError } from '../../../lib/logger.js';
 import { env } from '../../../env.js';
 import { resolveDorkHome } from '../../../lib/dork-home.js';
@@ -226,6 +227,15 @@ function defaultConfigPort(): CloudConfigPort {
         // credits is refused while unlinked, never moved, and a relink finds
         // them as they were (ADR 261001-000811).
         credits: current.credits,
+        // Unlinking withdraws managed remote access locally, in this same
+        // write (DOR-2086): a managed mode goes off, and the enrolment and the
+        // link it was bound to are cleared, so neither a different account's
+        // link nor a relink of this one can act on a consent given under this
+        // link. A BYO choice stays: the person's own ngrok needs no link. The
+        // credential id and its references are kept for the best-effort Cloud
+        // revoke and stored-secret cleanup that follow; with no enrolment
+        // nothing can open with them. See `withdrawnRemoteState`.
+        remote: withdrawnRemoteState(current.remote),
       });
       logConfigWrite('unlinking this instance', 'cloud', current, configManager.get('cloud'));
     },
