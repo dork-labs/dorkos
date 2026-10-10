@@ -4,9 +4,10 @@
  *
  * ## Which actions are guarded, and why
  *
- * Starting setup (`POST /enrolment`) and choosing a mode (`POST /mode`) widen
- * who can reach this computer, or choose how. They are a person's, at this
- * computer, so each runs four bars in this order:
+ * Starting setup (`POST /enrolment`), choosing a mode (`POST /mode`) and
+ * withdrawing (`POST /withdraw`) decide who can reach this computer, and how,
+ * and withdrawing ends a person's consent. They are a person's, at this
+ * computer, so each runs these bars in this order:
  *
  * 1. the cookie bar under login (`requireOperatorCookieUnderLogin`): a
  *    per-user API key is not a person;
@@ -18,9 +19,14 @@
  *    `AUTH_REQUIRED_FOR_EXPOSURE` the person's own tunnel uses, so the client
  *    routes the person into creating an owner account.
  *
- * Closing (`POST /close`) and withdrawing (`POST /withdraw`) run no bar, like
- * `POST /api/tunnel/stop`: they only ever narrow exposure, and gating them once
- * stranded an open tunnel (DOR-574).
+ * Withdrawing runs the first three bars and never the fourth: like every
+ * narrowing, it must work with login, the exposure prerequisites or Cloud
+ * down. The unlink step withdraws through the coordinator directly, never
+ * through this route.
+ *
+ * Closing (`POST /close`) runs no bar, like `POST /api/tunnel/stop`: it only
+ * narrows exposure, changes no consent, and gating it once stranded an open
+ * tunnel (DOR-574).
  *
  * Every action answers with the full report, and every change reaches the
  * other surfaces through the `tunnel_status` event they already listen to.
@@ -56,7 +62,7 @@ import {
 } from '../services/core/remote/managed-remote-coordinator.js';
 import { tunnelManager } from '../services/core/tunnel-manager.js';
 
-/** Refusal code for a setup action from anywhere but this computer. */
+/** Refusal code for a remote access action from anywhere but this computer. */
 export const REMOTE_SETUP_NEEDS_THIS_COMPUTER = 'REMOTE_SETUP_NEEDS_THIS_COMPUTER';
 
 const ModeRequestSchema = z.object({ mode: z.enum(['off', 'byo', 'managed']) });
@@ -75,7 +81,7 @@ export interface RemoteAccessRouteDeps {
 
 /** Stop the person's own tunnel and save `tunnel.enabled: false`, exactly as its own stop route. */
 async function stopOwnTunnel(): Promise<void> {
-  if (tunnelManager.getMode() === 'byo') await tunnelManager.stop();
+  if (tunnelManager.getMode() === 'byo') await tunnelManager.stopOwnTunnel();
   const tunnelConfig = configManager.get('tunnel');
   if (!tunnelConfig?.enabled) return;
   configManager.set('tunnel', { ...tunnelConfig, enabled: false });
@@ -93,13 +99,13 @@ function refusePersonBars(req: Request, res: Response): boolean {
     return true;
   }
   if (!trustedCaller(readCallerAuthority(req, res))) {
-    logger.warn('[RemoteAccess] Refused a setup action from an agent');
+    logger.warn('[RemoteAccess] Refused a remote access action from an agent');
     res.status(403).json({ error: OPERATOR_ONLY_CONFIG_ERROR, code: OPERATOR_ONLY_CONFIG_CODE });
     return true;
   }
   if (!isLocalCaller(req)) {
     res.status(403).json({
-      error: 'Remote access can only be set up on the computer DorkOS runs on.',
+      error: 'Remote access can only be changed on the computer DorkOS runs on.',
       code: REMOTE_SETUP_NEEDS_THIS_COMPUTER,
     });
     return true;
@@ -166,11 +172,13 @@ export function createRemoteAccessRouter(deps: RemoteAccessRouteDeps = defaultDe
   });
 
   /**
-   * POST /api/remote-access/withdraw — withdraw managed access here, and ask
-   * Cloud to forget it. Unguarded: it only narrows. Answers once the local
+   * POST /api/remote-access/withdraw — a person withdraws managed access here,
+   * and Cloud is asked to forget it. The person bars, never the login bar:
+   * withdrawal works with login or Cloud down. Answers once the local
    * withdrawal is done; Cloud's answer arrives as a `tunnel_status` event.
    */
-  router.post('/withdraw', async (_req, res) => {
+  router.post('/withdraw', async (req, res) => {
+    if (refusePersonBars(req, res)) return;
     void deps.coordinator.withdraw();
     await answer(res);
   });

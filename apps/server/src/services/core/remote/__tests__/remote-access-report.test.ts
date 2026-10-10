@@ -147,6 +147,45 @@ describe('buildRemoteAccessReport', () => {
     expect(unknown.url).toBeUndefined();
   });
 
+  it('reads nothing from a stale Cloud answer: no asleep, no address, no alwaysAvailable', () => {
+    const stale = report({
+      remote: enrolled,
+      availability: {
+        availability: 'unavailable',
+        instanceId: 'inst_0001',
+        cloudStatus: { ...closed, alwaysAvailable: true },
+        cloudStale: true,
+      },
+    });
+    expect(stale).toMatchObject({
+      mode: 'managed',
+      state: 'off',
+      alwaysAvailable: false,
+      cloudStale: true,
+      enrolment: { status: 'enrolled' },
+    });
+    expect(stale.url).toBeUndefined();
+  });
+
+  it('treats an enrolment made under another link as no enrolment at all', () => {
+    const elsewhere = report({
+      remote: enrolled,
+      availability: {
+        availability: 'available',
+        instanceId: 'inst_0002',
+        cloudStatus: { ...closed, alwaysAvailable: true },
+        cloudStale: false,
+      },
+    });
+    expect(elsewhere).toMatchObject({
+      mode: 'off',
+      state: 'off',
+      alwaysAvailable: false,
+      enrolment: { status: 'none' },
+    });
+    expect(elsewhere.url).toBeUndefined();
+  });
+
   it('names the disagreement when Cloud says open and nothing here is serving', () => {
     expect(
       report({

@@ -25,6 +25,11 @@
  *
  * ## Every answer is checked against the link it was asked under
  *
+ * An enrolment is only ever this link's when its recorded instance id is the
+ * one the current link resolves (`isEnrolledUnder`). A record made under
+ * another link is narrowed with `withdrawnRemoteState` as soon as the current
+ * link's instance is known, and is never used meanwhile.
+ *
  * Each setup captures the Cloud link (credential, origin and link generation,
  * through `captureCloudV1Context`) and a local epoch. Before it keeps any
  * answer it checks both are still current, so an unlink, a relink (even A →
@@ -41,7 +46,9 @@
  * the link captured before anything changed, so an unlink can call it first and
  * clear its key afterwards. What Cloud answers never undoes the local
  * withdrawal; when it cannot be reached the report says Cloud may still have a
- * record.
+ * record, and the calls are retried in memory with capped backoff and full
+ * jitter while the same link stays current (`managed-cloud-cleanup.ts`). A
+ * newer setup or withdrawal stops the retry, and so does the end of the link.
  *
  * Nothing here logs a secret: lines name ids and outcomes, never values.
  *
@@ -50,14 +57,10 @@
 import { randomUUID } from 'node:crypto';
 import {
   RemoteCredentialConfirmResponseSchema,
-  RemoteCredentialRevokeResponseSchema,
-  RemoteCredentialSchema,
   RemoteEnrolmentRequestSchema,
   RemoteEnrolmentRequestStatusSchema,
-  RemoteEnrolmentWithdrawnSchema,
   V1_ROUTES,
   v1Path,
-  type RemoteCredential,
   type RemoteEnrolment,
   type RemoteEnrolmentRequest,
 } from '@dork-labs/cloud-api';
@@ -70,54 +73,52 @@ import { tunnelManager } from '../tunnel-manager.js';
 import {
   captureCloudV1Context,
   isAbsent,
-  problemOf,
   resolveCloudIdentity,
   type CloudIdentity,
   type CloudV1Context,
 } from '../cloud/v1-client.js';
 import { managedAvailability, type ManagedAvailability } from './managed-availability.js';
+import { MANAGED_DRAIN_DEADLINE_MS } from './managed-ingress.js';
 import { remoteCredentials, type RemoteCredentials } from './remote-credentials.js';
-import { buildRemoteAccessReport, type SetupView } from './remote-access-report.js';
-import { abortableSleep, errorName, unreadable } from './managed-remote-support.js';
+import { buildRemoteAccessReport, setupViewOf } from './remote-access-report.js';
 import {
+  abortableSleep,
+  errorName,
+  issueRemoteCredential,
+  unreadable,
+} from './managed-remote-support.js';
+import {
+  CLOUD_MAY_REMAIN_NOTE,
+  MANAGED_REMOTE_ALREADY_SET_UP,
+  MANAGED_REMOTE_NOT_SET_UP,
+  SUPERSEDED,
+  UNAVAILABLE,
+  refusal,
+  requestRefusal,
+  type CoordinatorRefusal,
+  type CoordinatorResult,
+} from './managed-remote-refusals.js';
+import { retryCloudCleanup, sendCloudCleanup, type OwedCleanup } from './managed-cloud-cleanup.js';
+import {
+  isEnrolledUnder,
+  isForeignEnrolment,
   isRemoteEnrolmentActive,
   readRemoteState,
   updateRemoteState,
+  clearedRemoteState,
+  withdrawnRemoteState,
   type RemoteState,
 } from './remote-state.js';
 
-/** How many fresh idempotency keys one setup tries when Cloud answers `conflict`. */
-const MAX_ISSUE_ATTEMPTS = 3;
+export * from './managed-remote-refusals.js';
+
 /** The longest wait between two status reads after failures, before jitter. */
 const MAX_POLL_BACKOFF_MS = 60_000;
 /** The widest jitter added on top of the delay Cloud asked for. */
 const POLL_JITTER_MS = 1_000;
-/** How long a person's close lets admitted requests finish before cutting them. */
-export const LOCAL_DRAIN_DEADLINE_MS = 30_000;
-
-/** A refusal the routes answer with. Never carries a secret or a supplier detail. */
-export interface CoordinatorRefusal {
-  ok: false;
-  status: number;
-  code: string;
-  error: string;
-}
-
-/** What a setup or mode action returns. */
-export type CoordinatorResult = { ok: true } | CoordinatorRefusal;
 
 /** What Cloud knows after a withdrawal. */
 export type CloudCleanup = 'done' | 'may_remain';
-
-/** Refusal codes the routes and the client match on. */
-export const MANAGED_REMOTE_UNAVAILABLE = 'MANAGED_REMOTE_UNAVAILABLE';
-export const MANAGED_REMOTE_ALREADY_SET_UP = 'MANAGED_REMOTE_ALREADY_SET_UP';
-export const MANAGED_REMOTE_NOT_SET_UP = 'MANAGED_REMOTE_NOT_SET_UP';
-export const MANAGED_REMOTE_SETUP_FAILED = 'MANAGED_REMOTE_SETUP_FAILED';
-
-/** The note shown once a withdrawal could not reach Cloud. */
-export const CLOUD_MAY_REMAIN_NOTE =
-  'Turned off here. DorkOS Cloud may still have a record of this computer.';
 
 /** What the coordinator touches, injectable for tests. */
 export interface ManagedRemoteCoordinatorDeps {
@@ -129,7 +130,7 @@ export interface ManagedRemoteCoordinatorDeps {
   remoteCredentials: Pick<RemoteCredentials, 'put' | 'delete'>;
   tunnel: Pick<
     typeof tunnelManager,
-    'status' | 'getMode' | 'getManagedPhase' | 'closeManaged' | 'stop' | 'emit'
+    'status' | 'getMode' | 'getManagedPhase' | 'closeManaged' | 'stopOwnTunnel' | 'emit'
   >;
   /** Whether the person's own tunnel is set to open (`tunnel.enabled`). */
   ownTunnelEnabled: () => boolean;
@@ -148,16 +149,6 @@ interface Setup {
   controller: AbortController;
 }
 
-function refusal(status: number, code: string, error: string): CoordinatorRefusal {
-  return { ok: false, status, code, error };
-}
-
-const UNAVAILABLE = refusal(
-  409,
-  MANAGED_REMOTE_UNAVAILABLE,
-  'DorkOS remote access is not available on this computer right now.'
-);
-
 /** A person's managed remote access on this computer. See the module doc. */
 export class ManagedRemoteCoordinator {
   /** Bumped by every new setup and every withdrawal; older work keeps nothing. */
@@ -168,6 +159,8 @@ export class ManagedRemoteCoordinator {
   /** Set when Cloud said it already holds an enrolment this computer does not. */
   private cloudHoldsEnrolment = false;
   private work: Promise<void> | undefined;
+  /** The Cloud cleanup retry in flight, aborted by any newer setup or withdrawal. */
+  private cleanup: { controller: AbortController; work: Promise<void> } | undefined;
 
   /**
    * Build the coordinator.
@@ -181,9 +174,15 @@ export class ManagedRemoteCoordinator {
     return this.work ?? Promise.resolve();
   }
 
+  /** The Cloud cleanup retry in flight, for tests that wait on it. Resolves, never rejects. */
+  get cleanupSettled(): Promise<void> {
+    return this.cleanup?.work ?? Promise.resolve();
+  }
+
   /** The report every remote access surface reads. Never throws. */
   async report(): Promise<RemoteAccessReport> {
     const availability = await this.deps.availability.read();
+    this.forgetForeignEnrolment(availability.instanceId);
     return buildRemoteAccessReport({
       tunnel: this.deps.tunnel.status,
       liveMode: this.deps.tunnel.getMode(),
@@ -191,7 +190,7 @@ export class ManagedRemoteCoordinator {
       remote: this.deps.readRemoteState(),
       ownTunnelEnabled: this.deps.ownTunnelEnabled(),
       availability,
-      setup: this.setupView(),
+      setup: setupViewOf(this.setup?.request ?? null, this.outcome),
       note: this.note,
     });
   }
@@ -218,11 +217,12 @@ export class ManagedRemoteCoordinator {
     } catch {
       instanceId = null;
     }
-    if (!this.isLive(epoch, context)) return this.superseded();
+    if (!this.isLive(epoch, context)) return SUPERSEDED;
     if (instanceId === null) return UNAVAILABLE;
 
+    this.forgetForeignEnrolment(instanceId);
     const state = this.deps.readRemoteState();
-    if (isRemoteEnrolmentActive(state) && state.instanceId === instanceId) {
+    if (isEnrolledUnder(state, instanceId)) {
       if (state.credentialId !== null) {
         return refusal(
           409,
@@ -242,10 +242,10 @@ export class ManagedRemoteCoordinator {
         RemoteEnrolmentRequestSchema
       );
     } catch (error) {
-      if (!this.isLive(epoch, context)) return this.superseded();
+      if (!this.isLive(epoch, context)) return SUPERSEDED;
       return this.requestRefused(error);
     }
-    if (!this.isLive(epoch, context)) return this.superseded();
+    if (!this.isLive(epoch, context)) return SUPERSEDED;
 
     const setup: Setup = { epoch, context, instanceId, request, controller: new AbortController() };
     this.setup = setup;
@@ -263,14 +263,17 @@ export class ManagedRemoteCoordinator {
    * @param mode - The person's choice.
    */
   async selectMode(mode: RemoteAccessMode): Promise<CoordinatorResult> {
-    const state = this.deps.readRemoteState();
     if (mode === 'managed') {
       if (!this.deps.availability.enabled) return UNAVAILABLE;
-      if (!isRemoteEnrolmentActive(state) || state.credentialId === null) {
+      const { availability, instanceId } = await this.deps.availability.read();
+      if (availability !== 'available') return UNAVAILABLE;
+      this.forgetForeignEnrolment(instanceId);
+      const state = this.deps.readRemoteState();
+      if (!isEnrolledUnder(state, instanceId) || state.credentialId === null) {
         return refusal(409, MANAGED_REMOTE_NOT_SET_UP, 'Set up remote access first.');
       }
       this.deps.updateRemoteState('choosing managed remote access', { mode });
-      if (this.deps.tunnel.getMode() === 'byo') await this.deps.tunnel.stop();
+      if (this.deps.tunnel.getMode() === 'byo') await this.deps.tunnel.stopOwnTunnel();
     } else {
       this.deps.updateRemoteState('choosing remote access', { mode });
       await this.deps.tunnel.closeManaged({ immediate: true });
@@ -282,21 +285,17 @@ export class ManagedRemoteCoordinator {
 
   /**
    * Close managed access now. New requests are refused at once; requests
-   * already admitted get {@link LOCAL_DRAIN_DEADLINE_MS} to finish. Changes no
-   * choice and no consent: Cloud may open it again on a person's request.
+   * already admitted get {@link MANAGED_DRAIN_DEADLINE_MS} to finish, after
+   * which the ingress cuts the rest. Changes no choice and no consent: Cloud
+   * may open it again on a person's request.
    */
   close(): void {
     if (this.deps.tunnel.getManagedPhase() === null) return;
-    const gentle = this.deps.tunnel.closeManaged({ immediate: false });
-    const deadline = setTimeout(() => {
-      void this.deps.tunnel.closeManaged({ immediate: true }).catch(() => undefined);
-    }, LOCAL_DRAIN_DEADLINE_MS);
-    deadline.unref?.();
-    void gentle
+    void this.deps.tunnel
+      .closeManaged({ immediate: false, drainDeadlineMs: MANAGED_DRAIN_DEADLINE_MS })
       .catch((error: unknown) => {
         logger.warn('[RemoteAccess] Managed close failed', { error: errorName(error) });
-      })
-      .finally(() => clearTimeout(deadline));
+      });
   }
 
   /**
@@ -311,22 +310,11 @@ export class ManagedRemoteCoordinator {
     const context = this.deps.captureContext();
     const before = this.deps.readRemoteState();
     const hadSetup = this.setup !== null;
-    this.beginEpoch();
+    const epoch = this.beginEpoch();
     this.outcome = null;
     this.note = undefined;
     try {
-      this.deps.updateRemoteState('withdrawing managed remote access', {
-        mode: before.mode === 'managed' ? 'off' : before.mode,
-        enrolmentId: null,
-        consentVersion: null,
-        instanceId: null,
-        credentialRef: null,
-        credentialId: null,
-        fingerprint: null,
-        hosts: [],
-        edgeProofRef: null,
-        edgeProofHeader: null,
-      });
+      this.deps.updateRemoteState('withdrawing managed remote access', clearedRemoteState(before));
     } catch (error) {
       logger.warn('[RemoteAccess] Could not clear the saved record', { error: errorName(error) });
     }
@@ -338,18 +326,18 @@ export class ManagedRemoteCoordinator {
       before.credentialId !== null ||
       hadSetup ||
       this.cloudHoldsEnrolment;
+    // Ids only: a retry re-reads the key, and only under this same link.
+    const owed: OwedCleanup | null = cloudHasSomething
+      ? {
+          instanceId: before.instanceId,
+          credentialId: before.credentialId,
+          revoke: true,
+          forget: true,
+        }
+      : null;
     // Sent now, while the captured link's key is still the stored one.
-    const cloudCalls =
-      cloudHasSomething && context !== null
-        ? Promise.allSettled([
-            context.client.post(
-              V1_ROUTES.remoteCredentialsRevoke,
-              RemoteCredentialRevokeResponseSchema
-            ),
-            context.client.delete(V1_ROUTES.remoteEnrolment, RemoteEnrolmentWithdrawnSchema),
-          ])
-        : undefined;
-    this.notify();
+    const cloudCalls = owed && context !== null ? sendCloudCleanup(context, owed) : undefined;
+    this.refresh();
 
     return (async (): Promise<CloudCleanup> => {
       await closing;
@@ -358,19 +346,15 @@ export class ManagedRemoteCoordinator {
           logger.warn('[RemoteAccess] Could not forget the stored credential');
         });
       }
-      let cleanup: CloudCleanup = 'done';
-      if (cloudHasSomething) {
-        const results = cloudCalls ? await cloudCalls : undefined;
-        const [revoked, deleted] = results ?? [];
-        const deleteDone =
-          deleted?.status === 'fulfilled' ||
-          (deleted?.status === 'rejected' && isAbsent(deleted.reason));
-        cleanup = revoked?.status === 'fulfilled' && deleteDone ? 'done' : 'may_remain';
-      }
+      const remaining = cloudCalls ? await cloudCalls.catch(() => owed) : owed;
+      const cleanup: CloudCleanup = remaining === null ? 'done' : 'may_remain';
       if (cleanup === 'done') this.cloudHoldsEnrolment = false;
       this.note = cleanup === 'may_remain' ? CLOUD_MAY_REMAIN_NOTE : undefined;
-      this.deps.availability.invalidate();
-      this.notify();
+      // With no link there is no key to ask with: the note stays, and that is all.
+      if (remaining !== null && context !== null && epoch === this.epoch) {
+        this.retryCleanup(remaining, context);
+      }
+      this.refresh();
       logger.info('[RemoteAccess] Managed remote access withdrawn', { cloud: cleanup });
       return cleanup;
     })();
@@ -388,6 +372,7 @@ export class ManagedRemoteCoordinator {
       isRemoteEnrolmentActive(state) ||
       state.credentialId !== null ||
       state.mode === 'managed' ||
+      this.cloudHoldsEnrolment ||
       this.deps.tunnel.getManagedPhase() !== null;
     if (!anything) return Promise.resolve('done');
     return this.withdraw();
@@ -399,45 +384,69 @@ export class ManagedRemoteCoordinator {
     this.epoch += 1;
     this.setup?.controller.abort();
     this.setup = null;
+    // A newer setup or withdrawal owns what Cloud is told from here on.
+    this.cleanup?.controller.abort();
+    this.cleanup = undefined;
     return this.epoch;
+  }
+
+  /** Ask Cloud again later, while `context`'s link stays current. See the module doc. */
+  private retryCleanup(owed: OwedCleanup, context: CloudV1Context): void {
+    const controller = new AbortController();
+    const work = retryCloudCleanup({
+      owed,
+      linkIsCurrent: () => context.isCurrent(),
+      captureContext: this.deps.captureContext,
+      sleep: this.deps.sleep,
+      random: this.deps.random,
+      signal: controller.signal,
+    })
+      .then((outcome) => {
+        if (this.cleanup?.controller === controller) this.cleanup = undefined;
+        if (outcome !== 'done') return;
+        this.cloudHoldsEnrolment = false;
+        if (this.note === CLOUD_MAY_REMAIN_NOTE) this.note = undefined;
+        this.refresh();
+        logger.info('[RemoteAccess] Cloud cleanup finished on a retry');
+      })
+      .catch(() => undefined);
+    this.cleanup = { controller, work };
+  }
+
+  /**
+   * Narrow a record whose enrolment was made under another link than the one
+   * whose instance is `instanceId`: nothing under this link may use it. Keeps
+   * what a later cleanup needs, as an unlink does. Never throws.
+   */
+  private forgetForeignEnrolment(instanceId: string | null): void {
+    const state = this.deps.readRemoteState();
+    if (!isForeignEnrolment(state, instanceId)) return;
+    try {
+      this.deps.updateRemoteState(
+        'forgetting remote access set up under another link',
+        withdrawnRemoteState(state)
+      );
+    } catch (error) {
+      logger.warn('[RemoteAccess] Could not narrow the saved record', { error: errorName(error) });
+    }
+    if (this.deps.tunnel.getManagedPhase() !== null) {
+      void this.deps.tunnel.closeManaged({ immediate: true }).catch(() => undefined);
+    }
+    logger.info('[RemoteAccess] Ignored an enrolment from another link');
   }
 
   private isLive(epoch: number, context: CloudV1Context): boolean {
     return epoch === this.epoch && context.isCurrent();
   }
 
-  private superseded(): CoordinatorRefusal {
-    return refusal(409, MANAGED_REMOTE_UNAVAILABLE, 'Setup was cancelled before Cloud answered.');
-  }
-
   private requestRefused(error: unknown): CoordinatorRefusal {
-    if (isAbsent(error)) {
+    const { refusal: refused, absent, cloudHolds } = requestRefusal(error);
+    if (absent) {
       this.deps.availability.markAbsent();
       this.notify();
-      return UNAVAILABLE;
     }
-    const code = problemOf(error)?.code;
-    if (code === 'conflict') {
-      this.cloudHoldsEnrolment = true;
-      return refusal(
-        409,
-        MANAGED_REMOTE_ALREADY_SET_UP,
-        'DorkOS Cloud already has this computer set up. Turn remote access off, then try again.'
-      );
-    }
-    if (code === 'entitlement_required') {
-      return refusal(
-        409,
-        MANAGED_REMOTE_UNAVAILABLE,
-        'This account cannot use DorkOS remote access.'
-      );
-    }
-    logger.warn('[RemoteAccess] Enrolment request refused', { code: code ?? errorName(error) });
-    return refusal(
-      502,
-      MANAGED_REMOTE_SETUP_FAILED,
-      'DorkOS Cloud could not start setup. Try again.'
-    );
+    if (cloudHolds) this.cloudHoldsEnrolment = true;
+    return refused;
   }
 
   private track(work: Promise<void>): void {
@@ -481,7 +490,7 @@ export class ManagedRemoteCoordinator {
         case 'expired':
           return this.settle(setup, answer.status);
         case 'approved':
-          return this.approved(setup, answer.enrolment);
+          return this.approved(setup, answer.requestId, answer.enrolment);
       }
     }
   }
@@ -502,9 +511,23 @@ export class ManagedRemoteCoordinator {
     this.notify();
   }
 
-  private async approved(setup: Setup, enrolment: RemoteEnrolment): Promise<void> {
+  private async approved(
+    setup: Setup,
+    requestId: string,
+    enrolment: RemoteEnrolment
+  ): Promise<void> {
     this.setup = null;
     this.outcome = null;
+    if (
+      requestId !== setup.request.requestId ||
+      enrolment.consentVersion !== setup.request.consentVersion
+    ) {
+      // Not the request, or not the consent, the person was shown. Cloud may
+      // hold an enrolment from it, so a withdrawal asks it to forget one.
+      this.cloudHoldsEnrolment = true;
+      logger.warn('[RemoteAccess] Approval did not match the request shown');
+      return this.failed('DorkOS Cloud answered for a different setup. Start it again.');
+    }
     this.cloudHoldsEnrolment = false;
     try {
       // The person chose managed access when they started setup here, so it
@@ -529,8 +552,14 @@ export class ManagedRemoteCoordinator {
     instanceId: string,
     epoch: number
   ): Promise<void> {
-    const credential = await this.issue(context, instanceId, epoch);
-    if (credential === null || !this.isLive(epoch, context)) return;
+    const credential = await issueRemoteCredential(context, instanceId, {
+      stillLive: () => this.isLive(epoch, context),
+      newIdempotencyKey: this.deps.newIdempotencyKey,
+    });
+    if (credential === 'stale' || !this.isLive(epoch, context)) return;
+    if (credential === null) {
+      return this.failed('DorkOS Cloud could not issue a credential for this computer. Try again.');
+    }
     const edgeProof = credential.edgeProof;
     if (!edgeProof) {
       // Cloud withdraws an issued credential nobody confirms.
@@ -582,7 +611,7 @@ export class ManagedRemoteCoordinator {
       await this.deps.remoteCredentials.delete(previous.credentialId).catch(() => undefined);
     }
     // Managed is chosen now, so the person's own tunnel does not stay open beside it.
-    if (this.deps.tunnel.getMode() === 'byo') await this.deps.tunnel.stop();
+    if (this.deps.tunnel.getMode() === 'byo') await this.deps.tunnel.stopOwnTunnel();
     this.note = undefined;
     this.deps.availability.invalidate();
     this.notify();
@@ -592,55 +621,24 @@ export class ManagedRemoteCoordinator {
     });
   }
 
-  /** Ask for a credential, with a fresh key per attempt. `null` when it could not be had. */
-  private async issue(
-    context: CloudV1Context,
-    instanceId: string,
-    epoch: number
-  ): Promise<RemoteCredential | null> {
-    for (let attempt = 0; attempt < MAX_ISSUE_ATTEMPTS; attempt += 1) {
-      // Chosen before the call and never reused: a key Cloud has seen is
-      // refused with `conflict`, never answered twice, so after any lost or
-      // refused answer the only recovery is a new key.
-      const idempotencyKey = this.deps.newIdempotencyKey();
-      try {
-        return await context.client.post(V1_ROUTES.remoteCredentialsIssue, RemoteCredentialSchema, {
-          body: { instanceId, idempotencyKey },
-        });
-      } catch (error) {
-        if (!this.isLive(epoch, context)) return null;
-        if (problemOf(error)?.code === 'conflict') continue;
-        logger.warn('[RemoteAccess] Credential issue refused', {
-          code: problemOf(error)?.code ?? errorName(error),
-        });
-        break;
-      }
-    }
-    this.failed('DorkOS Cloud could not issue a credential for this computer. Try again.');
-    return null;
-  }
-
   private failed(note: string): void {
     this.note = note;
     this.notify();
   }
 
-  private setupView(): SetupView {
-    const setup = this.setup;
-    if (setup) {
-      return {
-        status: 'pending',
-        userCode: setup.request.userCode,
-        approveUrl: setup.request.approveUrl,
-        expiresAt: setup.request.expiresAt,
-      };
-    }
-    return this.outcome ? { status: this.outcome } : null;
-  }
-
   /** Every surface refetches the report on a tunnel status event. */
   private notify(): void {
     this.deps.tunnel.emit('status_change', this.deps.tunnel.status);
+  }
+
+  /** Drop cached availability and tell every surface. A throwing listener is logged, never thrown. */
+  private refresh(): void {
+    try {
+      this.deps.availability.invalidate();
+      this.notify();
+    } catch (error) {
+      logger.warn('[RemoteAccess] A status listener failed', { error: errorName(error) });
+    }
   }
 }
 

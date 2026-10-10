@@ -7,8 +7,8 @@
  * no enrolment behind it is a selection nobody consented to, and a credential
  * reference with no credential id cannot be revoked by name — so exactly one
  * module writes them, and it validates the whole record on every write. The
- * one other write is the unlink in `auth/cloud-link.ts`, which only ever
- * narrows the record, using {@link withdrawnRemoteState} from here.
+ * other writes are the unlink and a relink in `auth/cloud-link.ts`, which only
+ * ever narrow the record, using {@link withdrawnRemoteState} from here.
  *
  * ## Who reaches the writer
  *
@@ -74,6 +74,32 @@ export function isRemoteEnrolmentActive(state: RemoteState = readRemoteState()):
 }
 
 /**
+ * Whether the record's enrolment belongs to the link whose instance id is
+ * `instanceId`: active, and bound to that same instance. An enrolment recorded
+ * under another link (or when the current link's instance is not known) is not
+ * one this link may act on, and reads as not enrolled.
+ *
+ * @param state - The record to read.
+ * @param instanceId - The instance id the current link resolved, or `null`.
+ */
+export function isEnrolledUnder(state: RemoteState, instanceId: string | null): boolean {
+  return isRemoteEnrolmentActive(state) && instanceId !== null && state.instanceId === instanceId;
+}
+
+/**
+ * Whether the record holds an enrolment from a different link than the one
+ * whose instance id is `instanceId`: one to narrow with
+ * {@link withdrawnRemoteState}, since nothing under this link may use it.
+ * `false` when the current instance is not known: no guess either way.
+ *
+ * @param state - The record to read.
+ * @param instanceId - The instance id the current link resolved, or `null`.
+ */
+export function isForeignEnrolment(state: RemoteState, instanceId: string | null): boolean {
+  return isRemoteEnrolmentActive(state) && instanceId !== null && state.instanceId !== instanceId;
+}
+
+/**
  * The record as it stands once this computer's link ends: managed access off,
  * and the enrolment and its link binding gone, so no later link can act on a
  * consent given under this one.
@@ -97,6 +123,50 @@ export function withdrawnRemoteState(state: RemoteState | undefined): RemoteStat
     enrolmentId: null,
     consentVersion: null,
     instanceId: null,
+  };
+}
+
+/**
+ * The `cloud` section a newly saved key starts from. A key that replaces a
+ * different one held right now (a relink while linked, to this account or
+ * another) is a new link, so the record is narrowed with
+ * {@link withdrawnRemoteState} exactly as an unlink narrows it: no consent
+ * given under the old link survives into the new one, whichever account and
+ * instance id it turns out to have. A first link, or the same key saved again,
+ * changes nothing.
+ *
+ * Pure. `auth/cloud-link.ts` writes the result in the same `cloud` write that
+ * saves the key, so the two can never disagree.
+ *
+ * @param cloud - The `cloud` section before the key is saved.
+ * @param instanceToken - The key about to be saved.
+ */
+export function withRemoteForNewKey<
+  T extends { instanceToken?: string | null; remote?: RemoteState },
+>(cloud: T, instanceToken: string): T {
+  const held = cloud.instanceToken;
+  if (!held || held === instanceToken) return cloud;
+  return { ...cloud, remote: withdrawnRemoteState(cloud.remote) };
+}
+
+/**
+ * The record as it stands once a person withdraws here: everything
+ * {@link withdrawnRemoteState} clears, and the credential, its references,
+ * fingerprint, hosts and edge header too, since withdrawal forgets the stored
+ * credential itself. A BYO choice stays.
+ *
+ * @param state - The record before the withdrawal.
+ * @returns The cleared copy.
+ */
+export function clearedRemoteState(state: RemoteState): RemoteState {
+  return {
+    ...withdrawnRemoteState(state),
+    credentialRef: null,
+    credentialId: null,
+    fingerprint: null,
+    hosts: [],
+    edgeProofRef: null,
+    edgeProofHeader: null,
   };
 }
 
