@@ -1,0 +1,77 @@
+---
+title: DorkOS 0.103.0
+description: Channels answer you without an @mention, agents hand work to each other in chats you can read, and chat links show their titles.
+date: 2026-10-10
+author: DorkOS Team
+category: release
+tags: [release, rooms, chats, sidebar]
+---
+
+DorkOS 0.103.0 makes channels answer you: a message without an @mention goes to the agent you are talking to. Agents now hand work to each other in chats you can open and read, chat links show the chat's title, and Today keeps the chats you actually used.
+
+## Highlights
+
+### Channels keep the conversation going
+
+In a channel, you no longer have to @mention an agent every time. Your next message goes to the agent you are already talking to, for up to an hour or 15 messages.
+
+### Agents talk in chats you can read
+
+When one agent hands work to another, it starts a chat you can open. Every message shows who sent it, and the chat reports back when the work is done.
+
+### Chat links you can read
+
+An agent now links a chat by its title, like "Rooms: always answer people", instead of a string of letters. One click opens it where you are.
+
+### Today keeps your chats
+
+Today and an agent's chat list now follow the chats you opened or typed in, on every device. Busy agent chats no longer push yours out of view.
+
+## All Changes
+
+### Added
+
+- Agents now message each other in chats you can open, so you can read every handoff between them (DOR-2790)
+- See who sent each message: a message from another agent shows that agent and the chat it came from, never you (DOR-2790)
+- Spin-off chats report back by themselves when they finish, fail, need you, or pause at a usage limit (DOR-2790)
+- A new guide, Spin-off chats, explains when an agent hands work to a chat of its own and how to follow along (DOR-2790)
+- The record now holds the tools an agent uses, in DorkOS, Claude Code, Codex or OpenCode: the command it ran, the file it changed or the page it fetched, and whether it worked. Each line points to the chat it happened in, where the full detail stays. In Codex and OpenCode, a helper agent's own tools are not listed yet, only that it started (DOR-2738)
+- Tool cards in DorkOS runtime chats now show what each tool was asked to do, as they already did for Claude Code, Codex and OpenCode (DOR-2738)
+- A new docs page, "Work That Runs After a Reply", lists what Claude Code, Codex and OpenCode can leave running after they reply, and what happens to it when DorkOS restarts or a setting changes (DOR-2717)
+
+### Changed
+
+- In a channel, a message you send without an @mention now goes to the agent you are talking to there: the one that answered you last, or the one you last @mentioned. Its own answers restart the clock, so a long answer no longer uses up the time before you reply (DOR-2823)
+- That now lasts 60 minutes or 15 messages, up from 10 minutes or 5. If you set other numbers yourself, yours are kept. Agents talking to each other keep the old, shorter limit (DOR-2823)
+- In #team, your default agent no longer answers alongside the agent you are already talking to (DOR-2823)
+- When an agent links to a chat, the link shows the chat's title, and one click opens it right where you are. Cmd-click or Ctrl-click opens it in a new tab. Links to other websites still ask before they open, and so does any link that would send a message for you (DOR-2824)
+- Agents now name chats by their title and link them, instead of showing a string of letters and numbers like `48f74bb4` (DOR-2824)
+- A chat an agent starts gets a short, plain title in the sidebar, like "Rooms: always answer people", instead of the first line of the agent's instructions (DOR-2824)
+- Today keeps the chats you actually used. A chat you opened or typed in since 4am stays in Today, even when a dozen agent chats have been busier since. A chat a room, a schedule or another agent started becomes yours the moment you open it or type in it (DOR-2789)
+- Clicking an agent opens the chat you were last in with it, not whichever chat the agent was busiest in. A chat another chat started is never picked unless you have used it (DOR-2789)
+- This works the same on every device. The app remembers which chats you opened or typed in, so your desktop, your phone and a second browser all agree. Opening a chat from a link, a notification or a reload counts too (DOR-2789)
+- An agent's chat list and Switch session are now the same list, and they show what needs you first: chats waiting on an approval or a question, chats whose account ran out of usage, and chats that stopped with an error, then chats that are running, then the rest by when you last used them. Each row says when you last used it, like "You · 2h" (DOR-2789)
+- Chats that another chat started fold under the chat that started them, behind a "2 spin-offs" toggle. One that needs you is lifted to the top, saying where it started. Chats a schedule or a room started fold into one Automated group at the bottom (DOR-2789)
+- Both lists have a New chat button at the top, and you can sort them by For you, Recent activity or when they started (DOR-2789)
+- DorkOS now calls a conversation with an agent a "chat" in its menus, buttons, settings, errors, docs, website and command line. It used to say "session" in some places and "conversation" in others for the same thing. "New session" is now "New chat", the Sessions page is now Chats, and Session details is now Chat details. A chat an agent starts is a spin-off chat. Channels and DMs keep their names (DOR-2789)
+- Choosing Full autonomy no longer opens an extra confirmation. You pick it like any other level, in a chat, in Settings, on an agent's page or from the command line, and it takes effect straight away (DOR-2739)
+
+### Removed
+
+- Agents no longer message each other through Relay's messaging tools. They use chats instead, so nothing between them happens out of sight (DOR-2790)
+- The `dorkos config acknowledge-autonomy` command, and the saved "don't show this again" date it wrote. Neither is needed any more (DOR-2739)
+
+### Fixed
+
+- When you start a thread by @mentioning an agent, your next messages in that thread now reach that agent without another @mention. Before, the thread's first message did not count, so a follow-up got no answer (DOR-2823)
+- Chat tabs say which agent and which chat they hold again, like "Scout · Fix the login bug", with the agent's emoji. Since the last release they all read "Session" with a plain icon. The Back and Forward history menu names chats the same way (DOR-2820)
+- When OpenCode stops in the middle of a reply, the chat now says the reply ended early and asks you to send your message again, instead of showing a raw error (DOR-2717)
+- Claude Code agents are now told that a reminder saved to disk is not reliable in DorkOS, and to use Tasks for anything on a schedule (DOR-2717)
+
+### Security
+
+- An agent's sign-in to an MCP server is now kept for the sign-in service that issued it. If that server starts sending DorkOS to a different sign-in service, DorkOS no longer hands it the old login
+
+### Note for people upgrading
+
+- This release is 0.103.0, not 0.102.0. Two settings updates were made for 0.102.0 and 0.103.0, and a release has to reach their number for them to run on your computer. One removes the old Full-autonomy confirmation date. The other raises how long a channel keeps you talking to the same agent, unless you set your own numbers.
