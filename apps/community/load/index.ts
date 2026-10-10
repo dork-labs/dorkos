@@ -1,25 +1,30 @@
 #!/usr/bin/env node
 import { randomUUID } from 'node:crypto';
+import { availableParallelism } from 'node:os';
 import { monitorEventLoopDelay } from 'node:perf_hooks';
 import { parseLoadArgs, UsageError } from './args.js';
 import { seedLoadFixture } from './fixture.js';
-import { LatencyHistogram } from './histogram.js';
 import { fetchMetrics, type MetricsSnapshot } from './metrics.js';
 import { finishReport, type PeakFigures } from './report.js';
-import { openReaderStream, type ReaderOutcome } from './sse.js';
-import { runWriters, scheduledPostCount } from './writer.js';
+import { startReaders, type ReaderResults } from './readers.js';
+import { loadClock } from './sse.js';
+import { runWriters, scheduledPostCount, type WriterStats } from './writer.js';
 
-/** Readers open this many streams at a time, so a run of thousands does not try every socket
- *  in the same event-loop tick. */
-const READER_BATCH_SIZE = 250;
-/** How long a batch waits for its opens to settle before the next one starts. */
-const READER_BATCH_SETTLE_MS = 100;
-/** How long after the last batch opens before writers start posting. */
+/** How long after every stream opened before writers start posting. */
 const READER_WARMUP_MS = 2_000;
 /** How often `/metrics` is read while posts are going out, to catch the peak. */
 const METRICS_SAMPLE_MS = 5_000;
+/** Streams one reader thread is given by default. */
+const READERS_PER_THREAD = 1_000;
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/** `auto`: one thread per 1,000 readers, leaving a core for the writers. */
+function readerThreadCount(requested: number | 'auto', readers: number): number {
+  if (requested !== 'auto') return requested;
+  const cores = Math.max(1, availableParallelism() - 1);
+  return Math.max(1, Math.min(cores, Math.ceil(readers / READERS_PER_THREAD)));
+}
 
 async function main(): Promise<void> {
   // `pnpm load -- --url …` forwards the `--` itself; parseArgs would read every flag after it as
@@ -46,37 +51,20 @@ async function main(): Promise<void> {
   const metricsBefore: MetricsSnapshot = await fetchMetrics(args.url, fixture.metricsKey);
   const durationMs = args.durationSeconds * 1_000;
   const postCapacity = scheduledPostCount(args.ratePerSecond, durationMs);
-
-  const deliveries = new LatencyHistogram();
-  const abortController = new AbortController();
-  const readerResults: Promise<ReaderOutcome>[] = [];
+  const threads = readerThreadCount(args.readerThreads, fixture.readers.length);
 
   console.log(
-    `Opening ${fixture.readers.length} reader streams in batches of ${READER_BATCH_SIZE}...`
+    `Opening ${fixture.readers.length} reader streams on ${threads ? `${threads} thread(s)` : 'the main thread'}...`
   );
-  for (let i = 0; i < fixture.readers.length; i += READER_BATCH_SIZE) {
-    for (const reader of fixture.readers.slice(i, i + READER_BATCH_SIZE)) {
-      readerResults.push(
-        openReaderStream({
-          baseUrl: args.url,
-          communityId: fixture.communityId,
-          channelId: fixture.channelId,
-          token: reader.token,
-          runId,
-          postCapacity,
-          signal: abortController.signal,
-          deliveries,
-        })
-      );
-    }
-    await sleep(READER_BATCH_SETTLE_MS);
-  }
-  if (fixture.readers.length) {
-    console.log(
-      `Reader streams requested. Warming up ${READER_WARMUP_MS}ms before writers start...`
-    );
-    await sleep(READER_WARMUP_MS);
-  }
+  const readers = startReaders({
+    baseUrl: args.url,
+    communityId: fixture.communityId,
+    channelId: fixture.channelId,
+    tokens: fixture.readers.map((reader) => reader.token),
+    runId,
+    postCapacity,
+    threads,
+  });
 
   const peak: PeakFigures = { openStreams: 0, poolWaiting: 0, samples: 0, sampleErrors: 0 };
   const takeSample = async () => {
@@ -89,17 +77,39 @@ async function main(): Promise<void> {
       peak.sampleErrors += 1;
     }
   };
-  await takeSample();
-  // Only the posting window matters for whether the generator kept up.
-  loopDelay.reset();
-  const sampler = setInterval(() => void takeSample(), METRICS_SAMPLE_MS);
 
-  console.log(
-    `Posting ${postCapacity} times at ${args.ratePerSecond}/s across ${fixture.writers.length} writers for ${args.durationSeconds}s...`
-  );
-  let writerStats;
-  let metricsAfter: MetricsSnapshot;
+  let sampler: NodeJS.Timeout | undefined;
+  let postingStartedAt!: number;
+  let writerStats!: WriterStats;
+  let metricsAfter!: MetricsSnapshot;
+  let readerResults!: ReaderResults;
   try {
+    // Every stream must be open before the first post, or the run never holds the number of
+    // streams it claims while posting, and late streams fake lost messages.
+    let openTimer: NodeJS.Timeout | undefined;
+    const openWait = await Promise.race([
+      readers.settled,
+      new Promise<null>((resolve) => {
+        openTimer = setTimeout(() => resolve(null), args.openTimeoutSeconds * 1_000);
+      }),
+    ]).finally(() => clearTimeout(openTimer));
+    if (openWait) console.log(`Streams open: ${openWait.opened} (${openWait.failed} failed).`);
+    else
+      console.warn(
+        `Not every stream opened within ${args.openTimeoutSeconds}s; posting anyway. ` +
+          'Streams that open later count as failures.'
+      );
+    await sleep(READER_WARMUP_MS);
+    await takeSample();
+
+    console.log(
+      `Posting ${postCapacity} times at ${args.ratePerSecond}/s across ${fixture.writers.length} writers for ${args.durationSeconds}s...`
+    );
+    // Only the posting window matters for whether the generator kept up.
+    loopDelay.reset();
+    readers.startPosting();
+    sampler = setInterval(() => void takeSample(), METRICS_SAMPLE_MS);
+    postingStartedAt = loadClock();
     writerStats = await runWriters({
       baseUrl: args.url,
       communityId: fixture.communityId,
@@ -116,9 +126,8 @@ async function main(): Promise<void> {
   } finally {
     clearInterval(sampler);
     // Every path out of here closes every stream, or a failed run would hold them open forever.
-    abortController.abort();
+    readerResults = await readers.stop();
   }
-  const readerOutcomes = await Promise.all(readerResults);
   loopDelay.disable();
 
   const report = finishReport({
@@ -132,16 +141,19 @@ async function main(): Promise<void> {
       ratePerSecond: args.ratePerSecond,
       durationSeconds: args.durationSeconds,
     },
-    readerOutcomes,
+    readerThreads: threads,
+    postingStartedAt,
+    readerOutcomes: readerResults.outcomes,
     writerStats,
-    deliveries,
+    deliveries: readerResults.deliveries,
     metricsBefore,
     metricsAfter,
     peak,
-    generatorLoopDelayP99Ms: loopDelay.percentile(99) / 1e6,
+    generatorLoopDelayP99Ms: Math.max(loopDelay.percentile(99) / 1e6, readerResults.loopDelayP99Ms),
     out: args.out,
   });
-  if (!report.metD12Target) process.exitCode = 2;
+  // 0 met, 2 not met, 3 inconclusive (the load machine could not keep up); 1 is a setup error.
+  process.exitCode = { met: 0, 'not met': 2, inconclusive: 3 }[report.verdict];
 }
 
 main().catch((error: unknown) => {

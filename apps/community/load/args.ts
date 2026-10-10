@@ -2,7 +2,7 @@ import { parseArgs } from 'node:util';
 
 /** Hostnames the script treats as "local": refused to run anywhere else without the flag. */
 // `URL#hostname` keeps the brackets on an IPv6 literal, so `::1` arrives as `[::1]`.
-const LOCAL_HOSTNAMES = new Set(['localhost', '127.0.0.1', '[::1]', '0.0.0.0']);
+const LOCAL_HOSTNAMES = new Set(['localhost', '127.0.0.1', '[::1]']);
 
 /** Parsed and validated command-line options for one load run. */
 export interface LoadArgs {
@@ -15,6 +15,10 @@ export interface LoadArgs {
   channelName: string;
   out: string;
   graceMs: number;
+  /** Reader worker threads, `0` to read on the main thread, or `auto`: one per 1,000 readers. */
+  readerThreads: number | 'auto';
+  /** How long to wait for every stream to open before posting starts anyway. */
+  openTimeoutSeconds: number;
   /** Things worth saying before the run starts, none of which stops it. */
   warnings: string[];
 }
@@ -61,6 +65,8 @@ export function parseLoadArgs(argv: readonly string[]): LoadArgs {
       'channel-name': { type: 'string', default: 'load-test' },
       out: { type: 'string', default: 'load-results.json' },
       'grace-ms': { type: 'string', default: '3000' },
+      'reader-threads': { type: 'string', default: 'auto' },
+      'open-timeout': { type: 'string', default: '300' },
       'i-understand-this-is-production': { type: 'boolean', default: false },
       help: { type: 'boolean', default: false },
     },
@@ -83,6 +89,10 @@ export function parseLoadArgs(argv: readonly string[]): LoadArgs {
         '  --out <path>              Where to write the JSON results (default ./load-results.json).',
         '  --grace-ms <ms>           How long to wait after the last post before closing streams',
         '                            and reading /metrics again (default 3000).',
+        '  --reader-threads <n>      Threads reading streams; 0 reads on the main thread',
+        '                            (default auto: one per 1,000 readers, up to the cores).',
+        '  --open-timeout <seconds>  How long to wait for every stream to open before posting',
+        '                            starts anyway; late streams count as failures (default 300).',
         '  --i-understand-this-is-production',
         '                            Required to target a non-local --url.',
       ].join('\n'),
@@ -142,6 +152,11 @@ export function parseLoadArgs(argv: readonly string[]): LoadArgs {
     channelName: values['channel-name'],
     out: values.out,
     graceMs: positiveInt('grace-ms', values['grace-ms']),
+    readerThreads:
+      values['reader-threads'] === 'auto'
+        ? 'auto'
+        : positiveInt('reader-threads', values['reader-threads']),
+    openTimeoutSeconds: positiveInt('open-timeout', values['open-timeout']),
     warnings,
   };
 }

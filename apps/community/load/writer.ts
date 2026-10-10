@@ -1,7 +1,6 @@
-import { performance } from 'node:perf_hooks';
 import type { LoadPrincipal } from './fixture.js';
 import { LatencyHistogram } from './histogram.js';
-import type { TimedPost } from './sse.js';
+import { loadClock, type TimedPost } from './sse.js';
 
 /** A post that has not answered in this long counts as a network error, so a run always ends. */
 const POST_TIMEOUT_MS = 30_000;
@@ -57,12 +56,12 @@ export async function runWriters(input: {
 
   const entriesUrl = `${input.baseUrl}/api/v1/communities/${input.communityId}/channels/${input.channelId}/entries`;
   const intervalMs = 1_000 / input.ratePerSecond;
-  const start = performance.now();
+  const start = loadClock();
   const inFlight: Promise<void>[] = [];
 
   const post = async (writer: LoadPrincipal, n: number, scheduledAt: number): Promise<void> => {
     stats.attempted += 1;
-    const sentAt = performance.now();
+    const sentAt = loadClock();
     stats.sendLag.record(sentAt - scheduledAt);
     const marker: TimedPost = { r: input.runId, n, t: scheduledAt };
     try {
@@ -77,7 +76,7 @@ export async function runWriters(input: {
       });
       await response.body?.cancel().catch(() => undefined);
       // Measured from the schedule too, for the same reason delivery is.
-      stats.postAck.record(performance.now() - scheduledAt);
+      stats.postAck.record(loadClock() - scheduledAt);
       if (response.ok) stats.succeeded += 1;
       else
         stats.failedByStatus.set(
@@ -91,7 +90,7 @@ export async function runWriters(input: {
 
   for (let n = 0; n < total; n += 1) {
     const scheduledAt = start + n * intervalMs;
-    const waitMs = scheduledAt - performance.now();
+    const waitMs = scheduledAt - loadClock();
     if (waitMs > 0) await new Promise((resolve) => setTimeout(resolve, waitMs));
     inFlight.push(post(input.writers[n % input.writers.length], n, scheduledAt));
   }

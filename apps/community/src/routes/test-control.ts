@@ -130,6 +130,10 @@ export function registerCommunityTestControlRoutes(
          VALUES($1,$2,$3,'Load test owner',$4,'owner',true)`,
         [ownerMemberId, communityId, ownerUserId, `lt-owner-${runId}`]
       );
+      await client.query(
+        'INSERT INTO community_handles(community_id,handle,member_id) VALUES($1,$2,$3)',
+        [communityId, `lt-owner-${runId}`, ownerMemberId]
+      );
       const channel = await client.query<{ id: string }>(
         `INSERT INTO channels(community_id,name,visibility) VALUES($1,$2,'public') RETURNING id`,
         [communityId, channelName]
@@ -158,6 +162,11 @@ export function registerCommunityTestControlRoutes(
            SELECT id,$1,owner_member_id,'Load test agent',handle,true
            FROM unnest($2::uuid[],$3::uuid[],$4::text[]) AS t(id,owner_member_id,handle)`,
           [communityId, principals.agentIds, principals.memberIds, principals.agentHandles]
+        );
+        await client.query(
+          `INSERT INTO community_handles(community_id,handle,member_id)
+           SELECT $1,handle,member_id FROM unnest($2::text[],$3::uuid[]) AS t(handle,member_id)`,
+          [communityId, principals.memberHandles, principals.memberIds]
         );
         await client.query(
           `INSERT INTO community_handles(community_id,handle,agent_id)

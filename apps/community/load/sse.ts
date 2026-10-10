@@ -9,6 +9,8 @@ export interface ReaderOutcome {
   status?: number;
   /** Milliseconds from asking for the stream to reading its `snapshot` frame. */
   openMs?: number;
+  /** When the `snapshot` frame was read, on the {@link loadClock}. */
+  openedAt?: number;
   /**
    * The stream closed, or errored, before the run told it to stop: a drop. A healthy run sees
    * this on no reader, because every open stream should still be open when the script ends it.
@@ -23,8 +25,21 @@ export interface ReaderOutcome {
 }
 
 /**
+ * The clock every timestamp in a run is read from, in milliseconds since the epoch.
+ *
+ * `performance.now()` is monotonic, so the system clock stepping mid-run cannot bend a sample.
+ * Adding `performance.timeOrigin` puts the reader threads and the writer thread, each with its
+ * own `performance.now()`, on one shared scale: they run on the same machine, and each thread's
+ * origin is read from the same system clock as it starts, so there is no skew between machines
+ * to correct for.
+ */
+export function loadClock(): number {
+  return performance.timeOrigin + performance.now();
+}
+
+/**
  * The marker each post carries in its text: the run it belongs to, its number, and the
- * scheduled send time on this process's monotonic clock (`performance.now()`).
+ * scheduled send time on the {@link loadClock}.
  */
 export interface TimedPost {
   r: string;
@@ -62,14 +77,16 @@ export interface SseFrame {
  * Comment frames (the `: keepalive` heartbeat) and frames that do not parse are skipped.
  */
 export function takeFrames(buffer: string): { frames: SseFrame[]; rest: string } {
+  // A large frame arrives in many chunks; do not re-split it until it is whole.
+  if (!buffer.includes('\n\n')) return { frames: [], rest: buffer };
   const frames: SseFrame[] = [];
-  const normalized = buffer.replaceAll('\r\n', '\n');
-  const blocks = normalized.split('\n\n');
+  const blocks = buffer.split('\n\n');
   const rest = blocks.pop() ?? '';
   for (const block of blocks) {
     let type = 'message';
     const data: string[] = [];
-    for (const line of block.split('\n')) {
+    for (const rawLine of block.split('\n')) {
+      const line = rawLine.endsWith('\r') ? rawLine.slice(0, -1) : rawLine;
       if (line.startsWith(':')) continue;
       if (line.startsWith('event:')) type = line.slice('event:'.length).trimStart();
       else if (line.startsWith('data:')) data.push(line.slice('data:'.length).trimStart());
@@ -98,12 +115,12 @@ function textsOf(frame: SseFrame): string[] {
 
 /**
  * Open one reader's live stream and read it until the run aborts `signal` or the stream ends on
- * its own (a drop). Every live `entry` frame carrying one of this run's posts records
- * `performance.now() - t` as one delivery sample, where `t` is the time the post was SCHEDULED
- * to be sent, not the time it went out: a load generator that falls behind its own schedule
- * shows up as latency instead of hiding it (coordinated omission). Writers and readers share this
- * one process and its monotonic clock, so there is no clock skew between them to correct for.
- * Posts already in the opening snapshot count as received but carry no latency sample.
+ * its own (a drop). `onSettled` fires once, when the stream has opened (its snapshot is read) or
+ * failed to. Every live `entry` frame carrying one of this run's posts records `now - t` as one
+ * delivery sample, where `t` is when the post was SCHEDULED to be sent, not when it went out: a
+ * load generator that falls behind its own schedule shows up as latency instead of hiding it
+ * (coordinated omission). Posts already in the opening snapshot count as received but carry no
+ * latency sample; the run waits for every stream to open before posting, so normally none do.
  */
 export async function openReaderStream(input: {
   baseUrl: string;
@@ -115,9 +132,27 @@ export async function openReaderStream(input: {
   postCapacity: number;
   signal: AbortSignal;
   deliveries: LatencyHistogram;
+  onSettled: (opened: boolean) => void;
 }): Promise<ReaderOutcome> {
+  let settled = false;
+  const settle = (opened: boolean) => {
+    if (settled) return;
+    settled = true;
+    input.onSettled(opened);
+  };
+  try {
+    return await readStream(input, settle);
+  } finally {
+    settle(false);
+  }
+}
+
+async function readStream(
+  input: Omit<Parameters<typeof openReaderStream>[0], 'onSettled'>,
+  settle: (opened: boolean) => void
+): Promise<ReaderOutcome> {
   const streamUrl = `${input.baseUrl}/api/v1/communities/${input.communityId}/channels/${input.channelId}/events`;
-  const askedAt = performance.now();
+  const askedAt = loadClock();
   // One byte per scheduled post rather than a Set: at 20,000 readers a Set per reader would cost
   // gigabytes, and the load generator must not be what runs out of memory.
   const seen = new Uint8Array(input.postCapacity);
@@ -140,16 +175,29 @@ export async function openReaderStream(input: {
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
   let buffer = '';
-  let openMs: number | undefined;
+  let openedAt: number | undefined;
   let closeReason: string | undefined;
-  const outcome = (endedEarly: boolean, error?: string): ReaderOutcome => ({
-    opened: openMs !== undefined,
-    openMs,
-    endedEarly,
-    closeReason,
-    error,
-    received,
-  });
+  const outcome = (endedEarly: boolean, error?: string): ReaderOutcome =>
+    openedAt === undefined
+      ? // Never opened: an open failure, not also a drop.
+        {
+          opened: false,
+          endedEarly: false,
+          error:
+            error ??
+            closeReason ??
+            (input.signal.aborted ? 'not open when the run ended' : 'ended before its snapshot'),
+          received,
+        }
+      : {
+          opened: true,
+          openMs: openedAt - askedAt,
+          openedAt,
+          endedEarly,
+          closeReason,
+          error,
+          received,
+        };
   try {
     for (;;) {
       const { value, done } = await reader.read();
@@ -157,9 +205,12 @@ export async function openReaderStream(input: {
       buffer += decoder.decode(value, { stream: true });
       const { frames, rest } = takeFrames(buffer);
       buffer = rest;
-      const now = performance.now();
+      const now = loadClock();
       for (const frame of frames) {
-        if (frame.type === 'snapshot' && openMs === undefined) openMs = now - askedAt;
+        if (frame.type === 'snapshot' && openedAt === undefined) {
+          openedAt = now;
+          settle(true);
+        }
         if (frame.type === 'closed')
           closeReason = String((frame.data as { reason?: unknown }).reason ?? 'unknown');
         for (const text of textsOf(frame)) {

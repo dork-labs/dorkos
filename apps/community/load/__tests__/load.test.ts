@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { parseLoadArgs, UsageError } from '../args.js';
 import { LatencyHistogram } from '../histogram.js';
 import { parseMetrics } from '../metrics.js';
-import { summarizeReaders } from '../report.js';
+import { summarizeReaders, verdictFor } from '../report.js';
 import { parseTimedPost, takeFrames } from '../sse.js';
 import { scheduledPostCount } from '../writer.js';
 
@@ -75,17 +75,77 @@ describe('summarizeReaders', () => {
         { opened: true, openMs: 7, endedEarly: false, received: 8 },
         { opened: true, openMs: 6, endedEarly: true, closeReason: 'revoked', received: 2 },
         { opened: false, status: 503, endedEarly: false, received: 0 },
+        // Opened after posting began: reported as late, and its misses are not losses.
+        { opened: true, openMs: 900, openedAt: 2_000, endedEarly: false, received: 1 },
       ],
-      10
+      10,
+      1_000
     );
     expect(summary).toMatchObject({
-      opened: 3,
+      opened: 4,
       openFailed: 1,
       openFailedBy: { 'HTTP 503': 1 },
+      openedLate: 1,
       endedEarly: 1,
       closeReasons: { revoked: 1 },
       missedDeliveries: 2,
     });
+  });
+});
+
+describe('verdictFor', () => {
+  const clean = {
+    delivery: new LatencyHistogram().summary(),
+    writerStats: { attempted: 10, succeeded: 10 },
+    readers: { openFailed: 0, openedLate: 0, endedEarly: 0, missedDeliveries: 0 },
+    generatorSaturated: false,
+  };
+  const delivered = (ms: number) => {
+    const histogram = new LatencyHistogram();
+    for (let i = 0; i < 100; i += 1) histogram.record(ms);
+    return histogram.summary();
+  };
+
+  it('meets D12 only with p95 under a second and nothing lost', () => {
+    expect(verdictFor({ ...clean, delivery: delivered(200) })).toBe('met');
+    expect(verdictFor({ ...clean, delivery: delivered(1_500) })).toBe('not met');
+    expect(verdictFor(clean)).toBe('not met');
+    expect(
+      verdictFor({
+        ...clean,
+        delivery: delivered(200),
+        readers: { ...clean.readers, missedDeliveries: 1 },
+      })
+    ).toBe('not met');
+    expect(
+      verdictFor({
+        ...clean,
+        delivery: delivered(200),
+        writerStats: { attempted: 10, succeeded: 9 },
+      })
+    ).toBe('not met');
+  });
+
+  it('calls a miss inconclusive when the load machine was saturated, never a pass', () => {
+    expect(verdictFor({ ...clean, delivery: delivered(1_500), generatorSaturated: true })).toBe(
+      'inconclusive'
+    );
+    expect(verdictFor({ ...clean, delivery: delivered(200), generatorSaturated: true })).toBe(
+      'met'
+    );
+  });
+});
+
+describe('LatencyHistogram.merge', () => {
+  it('adds another histogram, as a reader thread hands it over', () => {
+    const a = new LatencyHistogram();
+    const b = new LatencyHistogram();
+    a.record(10);
+    b.record(500);
+    b.record(20);
+    a.merge(structuredClone(b.toData()));
+    a.merge(new LatencyHistogram().toData());
+    expect(a.summary()).toMatchObject({ count: 3, minMs: 10, maxMs: 500 });
   });
 });
 

@@ -9,6 +9,15 @@ function upperBound(i: number): number {
   return i >= BUCKETS - 1 ? Infinity : GROWTH ** i;
 }
 
+/** A histogram's samples as plain data, for posting between threads. */
+export interface HistogramData {
+  counts: number[];
+  total: number;
+  sumMs: number;
+  minMs: number;
+  maxMs: number;
+}
+
 /**
  * A log-bucketed latency histogram.
  *
@@ -58,6 +67,30 @@ export class LatencyHistogram {
       seen += inBucket;
     }
     return this.maxMs;
+  }
+
+  /** Everything this histogram holds, as plain data a worker thread can post to the main one. */
+  toData(): HistogramData {
+    return {
+      counts: [...this.counts],
+      total: this.total,
+      sumMs: this.sumMs,
+      minMs: this.minMs,
+      maxMs: this.maxMs,
+    };
+  }
+
+  /** Add another histogram's samples (from {@link toData}) to this one. */
+  merge(data: HistogramData): void {
+    if (data.counts.length !== BUCKETS) throw new Error('Histogram bucket layouts differ.');
+    for (let i = 0; i < BUCKETS; i += 1) this.counts[i] += data.counts[i];
+    this.total += data.total;
+    this.sumMs += data.sumMs;
+    // An empty histogram's min and max are only placeholders.
+    if (data.total > 0) {
+      this.minMs = Math.min(this.minMs, data.minMs);
+      this.maxMs = Math.max(this.maxMs, data.maxMs);
+    }
   }
 
   /** A plain summary ready to print or serialize. */

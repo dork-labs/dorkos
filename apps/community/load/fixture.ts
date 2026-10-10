@@ -39,6 +39,8 @@ export async function seedLoadFixture(
       readerCount: input.readerCount,
       writerCount: input.writerCount,
     }),
+    // Seeding tens of thousands of members is one transaction; give it time, but not forever.
+    signal: AbortSignal.timeout(10 * 60_000),
   });
   if (response.status === 404) {
     throw new Error(
