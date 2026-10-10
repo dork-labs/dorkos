@@ -6467,9 +6467,17 @@ describe('raiseEngagedWindowDefaults migration (DOR-2823)', () => {
     });
   });
 
+  it('fills a window a stored rooms block never had', () => {
+    const onDisk = upgrade({ replyWaitMinutes: 10 });
+    expect(onDisk.rooms.engagedWindowMinutes).toBe(60);
+    expect(onDisk.rooms.engagedWindowPosts).toBe(15);
+    expect(onDisk.rooms.replyWaitMinutes).toBe(10);
+  });
+
   it('is idempotent', () => {
     // The mock store is flat, so the dotted keys the body reads are the keys.
     const store = createMockStore({
+      rooms: {},
       'rooms.engagedWindowMinutes': 10,
       'rooms.engagedWindowPosts': 5,
     });

@@ -3939,10 +3939,11 @@ export function seedDoeRuntime(store: {
  * Raise the engaged window from the old shipped defaults to the new ones
  * (DOR-2823): 10 minutes to 60, and 5 messages to 15.
  *
- * Only a value still AT the old default moves. A person who chose a number,
- * including the operator's own stopgap of 60 and 15, keeps it. A stored `10`
- * cannot say whether somebody chose it, and the old default is the far likelier
- * reading: the setting has no UI.
+ * Only a value still AT the old default, or missing, moves. A person who chose
+ * a number, including the operator's own stopgap of 60 and 15, keeps it. A
+ * stored `10` cannot say whether somebody chose it, and the old default is the
+ * far likelier reading: the setting has no UI. Missing is filled because a
+ * stored `rooms` block never inherits a new leaf from conf's shallow defaults.
  *
  * @param store - The conf store.
  */
@@ -3950,8 +3951,11 @@ export function raiseEngagedWindowDefaults(store: {
   get: (key: string) => unknown;
   set: (key: string, value: unknown) => void;
 }): void {
-  if (store.get('rooms.engagedWindowMinutes') === 10) store.set('rooms.engagedWindowMinutes', 60);
-  if (store.get('rooms.engagedWindowPosts') === 5) store.set('rooms.engagedWindowPosts', 15);
+  if (store.get('rooms') === undefined) return;
+  const minutes = store.get('rooms.engagedWindowMinutes');
+  if (minutes === 10 || minutes === undefined) store.set('rooms.engagedWindowMinutes', 60);
+  const posts = store.get('rooms.engagedWindowPosts');
+  if (posts === 5 || posts === undefined) store.set('rooms.engagedWindowPosts', 15);
 }
 
 export const CONFIG_MIGRATIONS = {

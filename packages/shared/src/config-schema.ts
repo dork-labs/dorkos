@@ -2688,8 +2688,9 @@ export const UserConfigSchema = z.object({
       engagedWindowMinutes: z.number().int().min(0).max(1440).default(60),
       /**
        * How many messages from other people can go by before an agent stops
-       * treating itself as part of the conversation. Talking to it again starts
-       * the count over.
+       * treating itself as part of the conversation. Counted, like the minutes,
+       * from whichever came last in that place: the agent's own message, or
+       * your @mention of it (DOR-2823). Raised from 5 to 15 by DOR-2823.
        *
        * The second half of the same window, and it ends on whichever runs out
        * first — a quiet ten minutes and a busy ten messages are both reasons to

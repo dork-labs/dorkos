@@ -3,6 +3,7 @@ covers:
   - 'feat(rooms): a person in a channel is answered by the agent they are talking to (DOR-2823)'
   - 'fix(rooms): the default agent steps back for your conversation with another agent (DOR-2823)'
   - 'fix(rooms): the default agent steps back only for a partner that will answer (DOR-2823)'
+  - 'fix(config): key the engaged-window migration 0.103.0 after main took 0.102.0 (DOR-2823)'
 ---
 
 ### Changed
