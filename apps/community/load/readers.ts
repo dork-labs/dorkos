@@ -1,4 +1,6 @@
 import { EventEmitter } from 'node:events';
+import { createRequire } from 'node:module';
+import { pathToFileURL } from 'node:url';
 import { Worker } from 'node:worker_threads';
 import { LatencyHistogram } from './histogram.js';
 import {
@@ -41,11 +43,25 @@ interface Share {
   terminate(): Promise<unknown>;
 }
 
+/**
+ * The URL of tsx's ESM API, read from its package exports. Not `import.meta.resolve`, which
+ * vitest's module runner does not support, and not `require.resolve`, which finds the CommonJS
+ * build, whose own imports do not resolve from a URL.
+ */
+function tsxEsmApiUrl(): string {
+  const require = createRequire(import.meta.url);
+  const manifestPath = require.resolve('tsx/package.json');
+  const manifest = require(manifestPath) as {
+    exports: Record<string, { import: { default: string } }>;
+  };
+  return new URL(manifest.exports['./esm/api'].import.default, pathToFileURL(manifestPath)).href;
+}
+
 function workerShare(input: ReaderShareInput): Share {
   // The script runs as TypeScript under tsx, whose loader a worker thread does not inherit, so
   // the thread loads its entry through tsx's own API: `./x.js` imports then find `x.ts`.
   const entry = new URL('./reader-worker.ts', import.meta.url).href;
-  const tsxApi = import.meta.resolve('tsx/esm/api');
+  const tsxApi = tsxEsmApiUrl();
   const worker = new Worker(
     `import(${JSON.stringify(tsxApi)}).then(({ tsImport }) => tsImport(${JSON.stringify(entry)}, ${JSON.stringify(entry)}));`,
     { eval: true, workerData: input }
