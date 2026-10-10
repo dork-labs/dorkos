@@ -9,7 +9,7 @@ import {
   type ConfirmedCommunityAuthority,
 } from '@/layers/shared/lib';
 import { useCommunityAuthority, useTransport } from '@/layers/shared/model';
-import { useSpacesEnabled } from '@/layers/entities/config';
+import { useSpacesAccess } from '@/layers/entities/config';
 
 /** Owner-qualified cache keys keep same-browser account switches disjoint. */
 export const communityNavigationKeys = {
@@ -24,11 +24,15 @@ export const communityNavigationKeys = {
  * asked of the server and no owner is confirmed, so the connection list, the
  * watchers and every remote room stay idle. A cached answer is withheld too,
  * so turning spaces off mid-session hides them at once rather than on reload.
+ *
+ * The one exception is the official space (spec `official-community-space`
+ * D5): while the server names one, these reads stay on with the experiment
+ * off, and the server answers them for that space alone.
  */
 export function useCommunityNavigation(enabled = true) {
   const transport = useTransport();
   const authority = useCommunityAuthority();
-  const spaces = useSpacesEnabled();
+  const spaces = useSpacesAccess().anySpace;
   const epoch = authority.epoch;
   const query = useQuery({
     queryKey: communityNavigationKeys.authority(epoch),

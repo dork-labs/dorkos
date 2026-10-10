@@ -102,6 +102,12 @@ export const CommunityConnectionDescriptorSchema = z
      */
     hostOperator: z.boolean().optional(),
     /**
+     * `true` when this connection is the official DorkOS space (spec `official-community-space`
+     * D4), worked out by this install on every read against the link configured now. It is the
+     * one space that shows, and can be used, with the spaces experiment off. Absent means no.
+     */
+    official: z.boolean().optional(),
+    /**
      * When the Community first answered that this community does not exist, present only once
      * it has kept saying so for {@link COMMUNITY_SEEMS_GONE_AFTER_MS} (DOR-2334). It "seems to
      * be gone": the app offers to remove the local copy, and never removes it on its own — a

@@ -13,7 +13,9 @@ export {
   useExperimentEnabledState,
   useSpacesEnabled,
   useSpacesState,
+  useSpacesAccess,
   type ExperimentEnabledState,
+  type SpacesAccessState,
 } from './model/use-experiment-enabled';
 export { useConfigSync } from './model/use-config-sync';
 export { useLocalCaller } from './model/use-local-caller';

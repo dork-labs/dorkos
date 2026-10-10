@@ -2,7 +2,6 @@ import { appRoutes } from '@/layers/shared/lib';
 import { Navigate, useNavigate, useSearch } from '@tanstack/react-router';
 import { MessagesSquare } from 'lucide-react';
 import { useIsMobile } from '@/layers/shared/model';
-import { useSpacesState } from '@/layers/entities/config';
 import { PageHeading } from '@/layers/shared/ui';
 import { useTeamRoomRedirect } from '../model/use-team-room-redirect';
 import { RoomHistorySkeleton } from './RoomFlow';
@@ -11,7 +10,11 @@ import { RemoteCommunitySurface } from './RemoteCommunitySurface';
 import { CommunityPageHeading } from './CommunityPageHeading';
 import { CommunityGonePanel, communityGoneState } from './CommunityGonePanel';
 import { CommunityOwnerNoticeBanner } from './CommunityOwnerNoticeBanner';
-import { useCommunityConnections } from '@/layers/entities/community';
+import {
+  OfficialSpaceUnreachableNotice,
+  useCommunityConnections,
+  useSpaceVisible,
+} from '@/layers/entities/community';
 
 /**
  * The `/channels` page — one room's history, addressed by search param.
@@ -36,16 +39,17 @@ import { useCommunityConnections } from '@/layers/entities/community';
  * switcher has put it there. A local room's heading is its name in the channel
  * bar (`ChannelsBar`), so none is added here for one.
  *
- * **A space's address leads nowhere while spaces are off** (DOR-2740). A
+ * **A space's address leads nowhere while spaces are off** (DOR-2740), except
+ * the official DorkOS space's (spec `official-community-space` D5). Any other
  * `?community=` link, a saved tab or the browser's history lands on the
- * channels list instead, once the config has said so; nothing about the space
- * is asked for or drawn first.
+ * channels list instead, once the config and the connection list have said
+ * so; nothing about the space is asked for or drawn first.
  */
 export function ChannelsPage() {
   const { id, community } = useSearch({ from: '/_shell/channels' });
-  const spaces = useSpacesState();
-  if (community && !spaces.enabled)
-    return spaces.isLoading ? null : <Navigate {...appRoutes.channels()} search={{}} replace />;
+  const space = useSpaceVisible(community);
+  if (community && !space.visible)
+    return space.isLoading ? null : <Navigate {...appRoutes.channels()} search={{}} replace />;
   return (
     <>
       {community ? (
@@ -160,6 +164,7 @@ function CommunityGoneGuard({
   return (
     <div className="flex h-full min-h-0 flex-col">
       {connection && <CommunityOwnerNoticeBanner connection={connection} />}
+      {connection && <OfficialSpaceUnreachableNotice connection={connection} />}
       <div className="min-h-0 flex-1">{children}</div>
     </div>
   );

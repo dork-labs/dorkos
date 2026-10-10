@@ -12,7 +12,10 @@ import {
 } from '@dorkos/shared/community-deliveries';
 import { resolveDorkHome } from '../../../lib/dork-home.js';
 import { RemoteConnectionStore } from './connection-store.js';
+import { OfficialSpace } from '../official-space.js';
+import { officialSpaceUrl, spacesEnabled } from '../spaces-config.js';
 import { RemoteWakePolicy } from './wake/wake-policy.js';
+import { DEFAULT_WAKE_AGENTS_FROM, OFFICIAL_WAKE_AGENTS_FROM } from './wake/wake-setting.js';
 import { RemoteCommunityPairingService, type RemoteInstallationAgent } from './pairing-service.js';
 import { RemoteCommunityAdapter } from './remote-community-adapter.js';
 import { CommunityAgentEnrollmentStore } from './agent-enrollment-store.js';
@@ -24,6 +27,7 @@ import type {
 } from './community-outbox-worker.js';
 
 let store: RemoteConnectionStore | undefined;
+let officialSpace: OfficialSpace | undefined;
 let wakePolicy: RemoteWakePolicy | undefined;
 let pairing: RemoteCommunityPairingService | undefined;
 let db: Db | undefined;
@@ -86,7 +90,22 @@ export interface RemoteCommunityLifecycle {
 
 /** The encrypted credential and owner-scoped metadata store for remote communities. */
 export function getRemoteConnectionStore(): RemoteConnectionStore {
-  return (store ??= new RemoteConnectionStore(resolveDorkHome()));
+  return (store ??= new RemoteConnectionStore(resolveDorkHome(), undefined, (place) =>
+    getOfficialSpace().isOfficialConnection(place)
+  ));
+}
+
+/**
+ * Which space is official, and whether a space may be reached right now (spec
+ * `official-community-space` D4, D5). Follows every committed connection change; load it with
+ * `load()` before anything remote starts, since until then no space is official.
+ */
+export function getOfficialSpace(): OfficialSpace {
+  if (officialSpace) return officialSpace;
+  const created = new OfficialSpace(resolveDorkHome(), officialSpaceUrl, spacesEnabled);
+  officialSpace = created;
+  getRemoteConnectionStore().onChange((changes) => created.follow(changes));
+  return created;
 }
 
 /**
@@ -96,7 +115,9 @@ export function getRemoteConnectionStore(): RemoteConnectionStore {
  */
 export function getRemoteWakePolicy(): RemoteWakePolicy {
   if (wakePolicy) return wakePolicy;
-  wakePolicy = new RemoteWakePolicy(getRemoteConnectionStore());
+  wakePolicy = new RemoteWakePolicy(getRemoteConnectionStore(), undefined, (ref) =>
+    getOfficialSpace().isOfficialRef(ref) ? OFFICIAL_WAKE_AGENTS_FROM : DEFAULT_WAKE_AGENTS_FROM
+  );
   void wakePolicy.reload();
   return wakePolicy;
 }
@@ -113,7 +134,8 @@ export function getRemotePairingService(): RemoteCommunityPairingService {
     // database yet means no outbox yet, so nothing can be waiting.
     (communityRef, ownerKey) =>
       db ? new CommunityOutboxStore(db).undeliveredCount(communityRef, ownerKey) : 0,
-    readRemoteInstallationAgents
+    readRemoteInstallationAgents,
+    (url, origin, communityId) => getOfficialSpace().noteDiscovery(url, origin, communityId)
   ));
 }
 

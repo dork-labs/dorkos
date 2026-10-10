@@ -54,8 +54,9 @@ vi.mock('../ui/RoomFlow', () => ({
 
 // Local rooms are this file's subject, and they work with spaces off (DOR-2740),
 // which is how spaces ship.
-vi.mock('@/layers/entities/config', () => ({
-  useSpacesState: () => ({ enabled: false, isLoading: false }),
+vi.mock('@/layers/entities/community', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/layers/entities/community')>()),
+  useSpaceVisible: () => ({ visible: false, isLoading: false }),
 }));
 
 import { ChannelsPage } from '../ui/ChannelsPage';

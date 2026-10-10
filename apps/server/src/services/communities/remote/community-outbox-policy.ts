@@ -13,6 +13,7 @@ import type {
 import type { CommunityAgentEnrollmentStore } from './agent-enrollment-store.js';
 import { CommunityOutboxStore, type CommunityOutboxItem } from './community-outbox-store.js';
 import { RemoteMirrorStore } from './mirror-store.js';
+import type { CommunityRef } from '@dorkos/shared/community-adapter';
 
 /** Maximum unsent delivery records that one connected community may hold. */
 export const COMMUNITY_OUTBOX_PER_COMMUNITY_LIMIT = 100;
@@ -35,7 +36,12 @@ export class CommunityOutboxPolicy implements RoomMirrorWritePolicy {
     private readonly enrollments: CommunityAgentEnrollmentStore,
     private readonly authors: AuthorRegistry,
     private readonly outbox: CommunityOutboxStore,
-    private readonly now: () => number = () => Date.now()
+    private readonly now: () => number = () => Date.now(),
+    /**
+     * `spaceReachable(ref)` (spec `official-community-space` D5): while spaces are off only the
+     * official space takes an agent's post. Every space does when not given.
+     */
+    private readonly reachable: (communityRef: CommunityRef) => boolean = () => true
   ) {}
 
   /** Prepare one atomic delivery row, or refuse a local agent that cannot deliver remotely. */
@@ -49,7 +55,10 @@ export class CommunityOutboxPolicy implements RoomMirrorWritePolicy {
     const author = this.authors.getById(authorId);
     const localAgentId = author?.kind === 'agent' ? author.mintedForManifestId : null;
     if (!localAgentId) return null;
-    if (!this.mirrors.isActivelyAuthorized(room.id, address.ownerAuthorId)) {
+    if (
+      !this.reachable(address.communityRef) ||
+      !this.mirrors.isActivelyAuthorized(room.id, address.ownerAuthorId)
+    ) {
       throw unavailableDelivery();
     }
     if (this.mirrors.canRead(room.id, authorId) !== true) {

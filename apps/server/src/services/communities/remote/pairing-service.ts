@@ -66,6 +66,9 @@ export interface RemoteInstallationAgent {
  * each installation holds its own agent there and removing one never removes
  * the other's.
  */
+/** A callback about one owner's connection to one community. */
+type OwnerConnectionCallback<T> = (communityRef: CommunityRef, ownerKey: string) => T;
+
 export type RemoteInstallationAgentsReader = (
   communityRef: CommunityRef,
   ownerKey: string
@@ -269,20 +272,18 @@ export class RemoteCommunityPairingService {
    *   arrived, read just before a deleted or taken-down community's copy is purged (DOR-2575).
    * @param installationAgents - The agents this installation added to one community, which
    *   disconnecting removes there first (DOR-2603).
+   * @param noteDiscovery - Told what discovery found for the link a pairing starts from, before
+   *   the pending connection is written, so the official space can be recognised by a short-name
+   *   or origin-only link (spec `official-community-space` D4).
    */
   constructor(
     private readonly store: RemoteConnectionStore,
-    private readonly onReconnectRequired?: (
-      communityRef: CommunityRef,
-      ownerKey: string
-    ) => Promise<void>,
-    private readonly onAccessAuthorityChanged?: (
-      communityRef: CommunityRef,
-      ownerKey: string
-    ) => void,
+    private readonly onReconnectRequired?: OwnerConnectionCallback<Promise<void>>,
+    private readonly onAccessAuthorityChanged?: OwnerConnectionCallback<void>,
     timing: Partial<RemoteAccessTiming> = {},
-    private readonly countUndelivered?: (communityRef: CommunityRef, ownerKey: string) => number,
-    private readonly installationAgents?: RemoteInstallationAgentsReader
+    private readonly countUndelivered?: OwnerConnectionCallback<number>,
+    private readonly installationAgents?: RemoteInstallationAgentsReader,
+    private readonly noteDiscovery?: (url: string, origin: string, id: string) => Promise<void>
   ) {
     this.timing = {
       budgetMs: COMMUNITY_ACCESS_BUDGET_MS,
@@ -679,6 +680,7 @@ export class RemoteCommunityPairingService {
     const expiry = Date.parse(start.expiresAt);
     if (expiry <= Date.now() || expiry > Date.now() + 10 * 60_000 + 5_000)
       throw new PinnedOriginError('REMOTE_RESPONSE');
+    await this.noteDiscovery?.(url, target.origin.origin, community.id);
     const ref = CommunityRefSchema.parse(`remote_${randomUUID().replaceAll('-', '')}`);
     const connection = await this.store.addPending(
       {

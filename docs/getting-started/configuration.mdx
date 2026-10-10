@@ -1324,7 +1324,15 @@ The choice applies to all users of this installation without sharing their profi
       type: 'boolean',
       default: 'false',
     },
+    'spaces.official.url': {
+      description:
+        'The link of one official space that shows even with Spaces off. Empty means none.',
+      type: 'string',
+      default: "''",
+    },
   }}
 />
 
 Settings → Advanced → Experiments lists **Spaces**, off by default. While it is off, nothing about spaces shows in the app, and the app refuses requests that reach a space. Your space connections stay saved, so turning it back on finds them where you left them. Your own channels and #team are not spaces and work the same either way. Agents can read this setting but cannot change it.
+
+`spaces.official.url` names one official space by its link. That one space shows in the switcher and can be joined even while Spaces is off. Every other space stays hidden, and so do starting and hosting spaces. It is empty by default, which means there is no official space and nothing changes. The `DORKOS_OFFICIAL_SPACE_URL` environment variable overrides it. Agents can read this setting but cannot change it.

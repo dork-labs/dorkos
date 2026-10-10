@@ -58,7 +58,8 @@ export {
   SPACES_EXPERIMENT,
   isExperimentEnabled,
   readExperimentEnabled,
-  readSpacesEnabled,
+  officialSpaceLink,
+  readAnySpaceReachable,
 } from './server-config/experiments';
 export {
   useAccountUsage,

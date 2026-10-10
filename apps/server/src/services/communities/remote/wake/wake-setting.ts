@@ -14,8 +14,17 @@ import type { RemoteConnectionStore } from '../connection-store.js';
  */
 export type WakeAgentsFrom = 'me' | 'members';
 
-/** What a connection's wake setting is when nobody chose one: today's behaviour. */
+/**
+ * What a connection's wake setting is when nobody chose one: today's behaviour. The official
+ * space's connection is the exception, narrowed to {@link OFFICIAL_WAKE_AGENTS_FROM}.
+ */
 export const DEFAULT_WAKE_AGENTS_FROM: WakeAgentsFrom = 'members';
+
+/**
+ * The official space's default (spec `official-community-space` D9): only the owner's own
+ * mention wakes their agents there, since anyone using DorkOS can post in it.
+ */
+export const OFFICIAL_WAKE_AGENTS_FROM: WakeAgentsFrom = 'me';
 
 /** One connection's wake setting beside the owner's own member id in that space. */
 export interface ConnectionWakeSetting {
@@ -25,13 +34,15 @@ export interface ConnectionWakeSetting {
   ownerKey: string;
   /** The owner's own member id in the space, or `null` before pairing completes. */
   connectedHumanMemberId: string | null;
-  /** Who may wake this owner's agents there. */
+  /** Who may wake this owner's agents there: the owner's choice, or the default. */
   wakeAgentsFrom: WakeAgentsFrom;
+  /** What the owner chose, or `null` when they never did and the default applies. */
+  chosen: WakeAgentsFrom | null;
 }
 
 /**
- * Who in this space may wake the owner's agents; {@link DEFAULT_WAKE_AGENTS_FROM} when nobody
- * chose. Throws `RemoteConnectionNotFoundError` for another owner's connection.
+ * Who in this space may wake the owner's agents; when nobody chose, {@link
+ * DEFAULT_WAKE_AGENTS_FROM}, or {@link OFFICIAL_WAKE_AGENTS_FROM} for the official space. Throws `RemoteConnectionNotFoundError` for another owner's connection.
  *
  * @param store - The connection store that keeps the setting.
  * @param ref - The local connection ref.
