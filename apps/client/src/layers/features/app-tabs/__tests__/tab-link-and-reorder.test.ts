@@ -2,10 +2,23 @@
  * @vitest-environment jsdom
  */
 import { describe, it, expect, afterEach } from 'vitest';
-import type { ClientRect, CollisionDetection, DroppableContainer } from '@dnd-kit/core';
+import type {
+  ClientRect,
+  CollisionDetection,
+  DroppableContainer,
+  KeyboardCoordinateGetter,
+} from '@dnd-kit/core';
 import { enterDesktopShell, leaveDesktopShell } from '@/test-helpers/desktop-shell';
 import { tabLinkUrl } from '../lib/tab-link';
-import { buildTabAnnouncements, sameSideCollision } from '../lib/tab-reorder';
+import {
+  TAB_DRAG_INSTRUCTIONS,
+  buildTabAnnouncements,
+  clampToSide,
+  reorderIndices,
+  sameSideCollision,
+  sameSideKeyboardCoordinates,
+  sideBounds,
+} from '../lib/tab-reorder';
 
 afterEach(leaveDesktopShell);
 
@@ -94,5 +107,103 @@ describe('buildTabAnnouncements', () => {
     expect(say.onDragCancel({ active, over: null } as never)).toBe(
       'Move cancelled. Activity put back.'
     );
+  });
+});
+
+describe('sameSideKeyboardCoordinates', () => {
+  const pinned = new Set(['p1', 'p2']);
+  const getter: KeyboardCoordinateGetter = sameSideKeyboardCoordinates((id) => pinned.has(id));
+  const rects = new Map([
+    ['p1', rect(0)],
+    ['p2', rect(100)],
+    ['a', rect(200)],
+    ['b', rect(300)],
+  ]);
+  /** A container map shaped like dnd-kit's: a Map with `getEnabled` and `toArray`. */
+  function containers() {
+    const map = new Map<string, DroppableContainer>();
+    for (const id of rects.keys()) {
+      const node = document.createElement('div');
+      map.set(id, { id, disabled: false, node: { current: node }, data: { current: {} } } as never);
+    }
+    return Object.assign(map, {
+      getEnabled: () => [...map.values()],
+      toArray: () => [...map.values()],
+    });
+  }
+  const step = (activeId: string, key: string) =>
+    getter(new KeyboardEvent('keydown', { code: key }), {
+      active: activeId,
+      currentCoordinates: { x: rects.get(activeId)!.left, y: 0 },
+      context: {
+        active: { id: activeId },
+        collisionRect: rects.get(activeId),
+        droppableRects: rects,
+        droppableContainers: containers(),
+        over: null,
+        scrollableAncestors: [],
+      } as never,
+    });
+
+  it('will not step the first unpinned tab left into the pinned ones', () => {
+    // The repro: [p1*][p2*][a][b], lift a, press ArrowLeft.
+    expect(step('a', 'ArrowLeft')).toBeUndefined();
+  });
+
+  it('still steps within its own side', () => {
+    expect(step('a', 'ArrowRight')).toMatchObject({ x: 300 });
+    expect(step('p2', 'ArrowLeft')).toMatchObject({ x: 0 });
+  });
+
+  it('will not step the last pinned tab right into the unpinned ones', () => {
+    expect(step('p2', 'ArrowRight')).toBeUndefined();
+  });
+});
+
+describe('clampToSide', () => {
+  const bounds = sideBounds([rect(200), rect(300)]);
+  const clamp = clampToSide(() => bounds);
+  const move = (x: number, from = rect(300)) =>
+    clamp({ transform: { x, y: 0, scaleX: 1, scaleY: 1 }, activeNodeRect: from } as never).x;
+
+  it('measures the span of one side', () => {
+    expect(bounds).toEqual({ left: 200, right: 400 });
+    expect(sideBounds([])).toBeNull();
+  });
+
+  it('holds the dragged tab inside its side', () => {
+    expect(move(-250)).toBe(-100); // would cross into the pinned tabs
+    expect(move(80)).toBe(0); // past the last tab
+    expect(move(-40)).toBe(-40); // a move inside the side is untouched
+  });
+
+  it('leaves the transform alone with no span measured', () => {
+    const free = clampToSide(() => null);
+    expect(
+      free({ transform: { x: -999, y: 0, scaleX: 1, scaleY: 1 }, activeNodeRect: rect(0) } as never)
+        .x
+    ).toBe(-999);
+  });
+});
+
+describe('reorderIndices', () => {
+  const ids = ['p', 'a', 'b', 'c'];
+
+  it('maps a finished drag to the from and to positions', () => {
+    expect(reorderIndices(ids, 'a', 'b')).toEqual([1, 2]);
+    expect(reorderIndices(ids, 'c', 'a')).toEqual([3, 1]);
+  });
+
+  it('is null for a drop on nothing, on itself, or on a tab that is gone', () => {
+    expect(reorderIndices(ids, 'a', null)).toBeNull();
+    expect(reorderIndices(ids, 'a', undefined)).toBeNull();
+    expect(reorderIndices(ids, 'a', 'a')).toBeNull();
+    expect(reorderIndices(ids, 'a', 'gone')).toBeNull();
+  });
+});
+
+describe('TAB_DRAG_INSTRUCTIONS', () => {
+  it('stays inside the 15-word cap for app copy', () => {
+    expect(TAB_DRAG_INSTRUCTIONS.draggable.split(/\s+/).length).toBeLessThanOrEqual(15);
   });
 });

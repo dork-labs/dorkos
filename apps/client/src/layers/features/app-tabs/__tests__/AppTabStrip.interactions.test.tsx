@@ -2,11 +2,19 @@
  * @vitest-environment jsdom
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, fireEvent, cleanup, within } from '@testing-library/react';
+import { useState } from 'react';
+import { render, screen, fireEvent, cleanup, within, waitFor, act } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { createMockTransport } from '@dorkos/test-utils';
-import { TransportProvider, type AppTab } from '@/layers/shared/model';
+import {
+  TransportProvider,
+  closeOtherTabsIn,
+  closeTabIn,
+  duplicateTabIn,
+  type AppTab,
+  type AppTabsLayout,
+} from '@/layers/shared/model';
 import { AppTabStrip } from '../ui/AppTabStrip';
 import type { AppTabMenuActions } from '../ui/AppTabContextMenu';
 
@@ -152,7 +160,7 @@ describe('drag to reorder', () => {
     const describedBy = activity.getAttribute('aria-describedby');
     expect(describedBy).toBeTruthy();
     expect(document.getElementById(describedBy!)?.textContent).toMatch(
-      /To move this tab, press Space/
+      /Press Space to move this tab/
     );
     // Still announced as a tab, not as dnd-kit's "sortable".
     expect(activity).not.toHaveAttribute('aria-roledescription');
@@ -186,5 +194,112 @@ describe('drag to reorder', () => {
       { wrapper: Wrapper }
     );
     expect(screen.getByRole('tab', { name: 'Activity' })).not.toHaveAttribute('aria-describedby');
+  });
+});
+
+/** The strip over real state, arranged by the store's own transitions. */
+function LiveStrip({ initial, activeId }: { initial: AppTab[]; activeId: string }) {
+  const [layout, setLayout] = useState<AppTabsLayout>({ tabs: initial, activeTabId: activeId });
+  return (
+    <AppTabStrip
+      tabs={layout.tabs}
+      activeId={layout.activeTabId}
+      onActivate={(id) => setLayout((current) => ({ ...current, activeTabId: id }))}
+      onClose={(id) => setLayout((current) => closeTabIn(current, id))}
+      onCreate={vi.fn()}
+      menu={{
+        ...menu,
+        duplicate: (id) => setLayout((current) => duplicateTabIn(current, id)),
+        closeOthers: (id) => setLayout((current) => closeOtherTabsIn(current, id)),
+        close: (id) => setLayout((current) => closeTabIn(current, id)),
+      }}
+    />
+  );
+}
+
+describe('focus after a menu action', () => {
+  it.each(['Close', 'Duplicate', 'Close others'])(
+    '"%s" from the keyboard leaves focus on the tab now on screen',
+    async (label) => {
+      render(<LiveStrip initial={[HOME, ACTIVITY, SCHEDULES]} activeId="activity" />, {
+        wrapper: Wrapper,
+      });
+      const activity = screen.getByRole('tab', { name: 'Activity' });
+      activity.focus();
+      fireEvent.keyDown(activity, { key: 'F10', shiftKey: true });
+      fireEvent.click(screen.getByRole('menuitem', { name: label }));
+      await waitFor(() => {
+        const selected = screen
+          .getAllByRole('tab')
+          .find((tab) => tab.getAttribute('aria-selected') === 'true');
+        expect(document.activeElement).toBe(selected);
+      });
+      expect(document.activeElement).not.toBe(document.body);
+    }
+  );
+});
+
+describe('a finished keyboard drag', () => {
+  // jsdom lays nothing out, so give each tab a 100px slot in strip order.
+  let restore: () => void;
+  beforeEach(() => {
+    const original = Element.prototype.getBoundingClientRect;
+    Element.prototype.getBoundingClientRect = function (this: Element) {
+      const holder = this.closest('[data-app-tab-id]');
+      const all = Array.from(document.querySelectorAll('[data-app-tab-id]'));
+      const index = holder ? all.indexOf(holder) : -1;
+      const left = index === -1 ? 0 : index * 100;
+      const width = index === -1 ? 1000 : 100;
+      return {
+        left,
+        right: left + width,
+        top: 0,
+        bottom: 30,
+        width,
+        height: 30,
+        x: left,
+        y: 0,
+        toJSON() {},
+      } as DOMRect;
+    };
+    restore = () => {
+      Element.prototype.getBoundingClientRect = original;
+    };
+  });
+  afterEach(() => restore());
+
+  it('reorders: Space, ArrowRight, Space moves the tab one place right', async () => {
+    renderStrip([HOME, ACTIVITY, SCHEDULES], { activeId: 'activity' });
+    const activity = screen.getByRole('tab', { name: 'Activity' });
+    activity.focus();
+    await act(async () => {
+      fireEvent.keyDown(activity, { key: ' ', code: 'Space' });
+    });
+    await act(async () => {
+      fireEvent.keyDown(activity, { key: 'ArrowRight', code: 'ArrowRight' });
+    });
+    await act(async () => {
+      fireEvent.keyDown(activity, { key: ' ', code: 'Space' });
+    });
+    await waitFor(() => expect(onReorder).toHaveBeenCalledWith(1, 2));
+  });
+
+  it('will not move the first unpinned tab into the pinned ones', async () => {
+    renderStrip([HOME, ACTIVITY, SCHEDULES], { activeId: 'activity' });
+    const activity = screen.getByRole('tab', { name: 'Activity' });
+    activity.focus();
+    await act(async () => {
+      fireEvent.keyDown(activity, { key: ' ', code: 'Space' });
+    });
+    await act(async () => {
+      fireEvent.keyDown(activity, { key: 'ArrowLeft', code: 'ArrowLeft' });
+    });
+    // Not even drawn among them: the lifted tab has not moved left.
+    const holder = activity.closest<HTMLElement>('[data-app-tab-id]')!;
+    expect(holder.style.transform).not.toMatch(/translate3d\(-/);
+    await act(async () => {
+      fireEvent.keyDown(activity, { key: ' ', code: 'Space' });
+    });
+    expect(onReorder).not.toHaveBeenCalled();
   });
 });

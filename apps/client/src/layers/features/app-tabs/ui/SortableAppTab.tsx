@@ -34,6 +34,8 @@ interface SortableAppTabProps {
   menu?: AppTabMenuActions;
   /** Whether "Close others" would close anything from this tab. */
   hasOthersToClose: boolean;
+  /** Called as the menu closes, in place of its own focus restore. */
+  onMenuClosed?: () => void;
 }
 
 /**
@@ -62,6 +64,7 @@ export function SortableAppTab({
   dragActive,
   menu,
   hasOthersToClose,
+  onMenuClosed,
 }: SortableAppTabProps) {
   const pinned = tab.pinned ?? false;
   const {
@@ -163,6 +166,7 @@ export function SortableAppTab({
       hasOthersToClose={hasOthersToClose}
       canClose={canClose}
       actions={menu}
+      onClosed={onMenuClosed}
     >
       {node}
     </AppTabContextMenu>

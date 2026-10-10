@@ -33,6 +33,11 @@ interface AppTabContextMenuProps {
   canClose: boolean;
   /** What the items do. */
   actions: AppTabMenuActions;
+  /**
+   * Called as the menu closes, in place of its own focus restore — the strip
+   * puts focus on whichever tab is on screen after the action.
+   */
+  onClosed?: () => void;
   /** The tab. Must be a single element that takes a ref (the trigger is `asChild`). */
   children: ReactNode;
 }
@@ -57,12 +62,23 @@ export function AppTabContextMenu({
   hasOthersToClose,
   canClose,
   actions,
+  onClosed,
   children,
 }: AppTabContextMenuProps) {
   return (
     <ContextMenu>
       <ContextMenuTrigger asChild>{children}</ContextMenuTrigger>
-      <ContextMenuContent className="w-44">
+      <ContextMenuContent
+        className="w-44"
+        onCloseAutoFocus={
+          onClosed
+            ? (event) => {
+                event.preventDefault();
+                onClosed();
+              }
+            : undefined
+        }
+      >
         <ContextMenuItem onSelect={() => actions.togglePin(tabId)}>
           {pinned ? <PinOff className="mr-2 size-4" /> : <Pin className="mr-2 size-4" />}
           {pinned ? 'Unpin' : 'Pin'}
