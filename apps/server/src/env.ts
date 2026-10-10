@@ -300,6 +300,23 @@ export const serverEnvSchema = z.object({
     .string()
     .optional()
     .transform((v) => v === 'true'),
+  // Test mode only — also registers the DorkOS runtime (Doe) beside
+  // TestModeRuntime, so a chat on DorkOS credits runs end to end against the
+  // test-mode Cloud and its fake inference stream (DOR-2783). Off by default so
+  // existing e2e suites see the same runtime set. Ignored unless
+  // DORKOS_TEST_RUNTIME is also true.
+  DORKOS_TEST_RUNTIME_DOE: z
+    .string()
+    .optional()
+    .transform((v) => v === 'true'),
+  // Test mode only — the fake DorkOS Cloud approves a device code by itself
+  // after two polls, for flows that never open its approval page (the capture
+  // pipeline). Off by default, so a test can prove that opening the page is
+  // what approves the code. Ignored unless DORKOS_TEST_RUNTIME is also true.
+  DORKOS_TEST_CLOUD_AUTO_APPROVE: z
+    .string()
+    .optional()
+    .transform((v) => v === 'true'),
   // Q3 contention harness (DOR-500) — read ONLY by the `q3-*` test-mode
   // scenarios (services/runtimes/test-mode/q3-contention-scenarios.ts), which
   // are unreachable unless DORKOS_TEST_RUNTIME is true and a `q3-*` name is
