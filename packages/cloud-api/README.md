@@ -494,6 +494,11 @@ Each of those, and the balance and the entitlements, carries the optional
 rates (`cacheReadMicro`, `cacheWriteMicro`) beside input and output, in the entry's existing
 `unit`.
 
+The balance also carries an optional `paymentMethodOnFile`: whether the account has a saved
+payment method that later charges can use. A first run reads it to tell "signed in, no card yet"
+from "ready". Absent means the service did not say, and a client must never read absence as "no
+card".
+
 Nothing else carries an amount. In particular, no inference route does: not a rate, not a
 multiplier, not a unit cost. And no route anywhere carries a supplier's terms.
 
