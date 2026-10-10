@@ -154,9 +154,12 @@ export class CommandJournal {
 
   /**
    * The settled commands whose acknowledgement Cloud has not accepted yet,
-   * oldest first, for the link with this instance id only.
+   * oldest first, for commands that arrived for this instance id. It filters
+   * by instance id alone, not by link: a later link to the same instance (after
+   * a restart or a re-link) is offered what an earlier one left owed, and a
+   * link to a different instance is offered none of it.
    *
-   * @param instanceId - The current link's instance id.
+   * @param instanceId - The instance id the current link resolves to.
    * @param limit - At most this many (the ack route takes a hundred).
    */
   pendingAcks(instanceId: string, limit = 100): PendingAck[] {

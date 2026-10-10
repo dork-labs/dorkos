@@ -15,6 +15,7 @@ import {
   KEEPALIVE_WATCHDOG_MS,
   LEASE_MARGIN_MS,
   MAX_RETRY_MS,
+  MIN_BACKOFF_MS,
   type CommandStreamDeps,
 } from '../command-stream.js';
 
@@ -157,6 +158,22 @@ describe('CommandStream', () => {
     h.connections[0]!.end();
     await until(() => h.connections.length === 2);
     expect(h.sleeps).toEqual([MAX_RETRY_MS]);
+    h.stream.stop();
+  });
+
+  it('jitters the clean reconnect around the server retry, floored and capped', async () => {
+    // Each connection draws once for its lease renewal, then once for the wait.
+    const draws = [0.5, 0, 0.5, 0.9, 0.5, 0.99];
+    const h = harness({ random: () => draws.shift() ?? 0.5 });
+    void h.stream.start();
+    for (let n = 1; n <= 3; n += 1) {
+      await until(() => h.connections.length === n);
+      if (n === 3) h.connections[2]!.push('retry: 50000\n\n');
+      h.connections[n - 1]!.end();
+    }
+    await until(() => h.connections.length === 4);
+    // 0 of 10s is floored; 0.9 of 10s is 9s; 0.99 of 100s is capped.
+    expect(h.sleeps).toEqual([MIN_BACKOFF_MS, 9000, MAX_RETRY_MS]);
     h.stream.stop();
   });
 

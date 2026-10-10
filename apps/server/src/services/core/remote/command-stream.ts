@@ -14,7 +14,10 @@
  * - **Reconnects on its own terms.** A clean end, or the proactive reconnect
  *   before the {@link COMMAND_LEASE_MS} lease runs out, waits the server's
  *   `retry:` (or a keepalive's `reconnectAfterMs`), bounded to
- *   [{@link MIN_RETRY_MS}, {@link MAX_RETRY_MS}]. A failure backs off
+ *   [{@link MIN_RETRY_MS}, {@link MAX_RETRY_MS}], with full jitter around it
+ *   (a draw in twice that wait, floored at {@link MIN_BACKOFF_MS} and capped at
+ *   {@link MAX_RETRY_MS}), so a fleet a deploy dropped does not reconnect in
+ *   lockstep. A failure backs off
  *   exponentially, capped at {@link MAX_BACKOFF_MS}, with full jitter.
  * - **Watches for silence.** Cloud sends a keepalive every
  *   {@link KEEPALIVE_INTERVAL_MS}; two intervals without a byte means the
@@ -178,7 +181,12 @@ export class CommandStream {
 
   /** The wait before the next connection. See the module doc. */
   private delay(): number {
-    if (this.failures === 0) return this.retryMs;
+    if (this.failures === 0) {
+      // Full jitter around the server's wait (mean `retryMs`), so computers a
+      // Cloud deploy disconnected together do not all come back together.
+      const jittered = Math.floor(this.random() * 2 * this.retryMs);
+      return Math.min(MAX_RETRY_MS, Math.max(MIN_BACKOFF_MS, jittered));
+    }
     const ceiling = Math.min(MAX_BACKOFF_MS, this.retryMs * 2 ** (this.failures - 1));
     return Math.max(MIN_BACKOFF_MS, Math.floor(this.random() * ceiling));
   }
