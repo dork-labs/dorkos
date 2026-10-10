@@ -1,6 +1,7 @@
 ---
 covers:
   - 'feat(heartbeats): reports-to and your hours (DOR-2788)'
+  - 'fix(heartbeats): review fixes for reports-to and your hours (DOR-2788)'
 ---
 
 ### Added
