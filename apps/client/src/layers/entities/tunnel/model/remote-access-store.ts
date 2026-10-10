@@ -157,6 +157,8 @@ export interface RemoteAccessState {
   report: RemoteAccessReport | null;
   /** When the server produced {@link report} (`dataUpdatedAt`): the same change gate as {@link lastReport}. */
   reportFetchedAt: number;
+  /** Whether any remote access report has been reduced yet, so `reportFetchedAt` means something. */
+  reportApplied: boolean;
 }
 
 /** Every way the reduced state moves. */
@@ -203,6 +205,30 @@ export interface RemoteAccessActions {
    * @param fetchedAt - When the server answered.
    */
   applyRemoteReport: (report: RemoteAccessReport | null, fetchedAt: number) => void;
+  /**
+   * Reduce the report a managed start or stop answered with (DOR-2086).
+   *
+   * Unlike {@link applyRemoteReport}, this ALWAYS moves the state: the write's
+   * answer is the newest fact there is, and the local `starting` or `stopping`
+   * it settles has no server counterpart to wait for. A report that repeats
+   * the last one (a start pressed while DorkOS Cloud has not answered, so the
+   * report still says `off`) would otherwise leave the switch spinning forever.
+   *
+   * Also disarms {@link RemoteAccessState.userInitiated} unless a stop just
+   * closed a tunnel the tunnel block still reports: that transition is coming
+   * and is the person's own. Any other managed write moves no tunnel, so a
+   * flag left armed would swallow the next real drop of their own tunnel.
+   *
+   * @param report - What the write answered, or `undefined` when the transport
+   *   resolved none; the last report then stands in for it.
+   * @param fetchedAt - When the server answered.
+   * @param intent - Which write this settles.
+   */
+  settleManagedWrite: (
+    report: RemoteAccessReport | null | undefined,
+    fetchedAt: number,
+    intent: 'start' | 'stop'
+  ) => void;
   /** Record whether the one-time ngrok setup is done. */
   noteTokenConfigured: (configured: boolean) => void;
   /** A start the person asked for is in flight. */
@@ -258,11 +284,41 @@ const INITIAL: RemoteAccessState = {
   userInitiated: false,
   report: null,
   reportFetchedAt: 0,
+  reportApplied: false,
 };
 
 /** Whether two reports say the same thing, field for field. */
 function sameReport(a: RemoteAccessReport | null, b: RemoteAccessReport | null): boolean {
   return JSON.stringify(a) === JSON.stringify(b);
+}
+
+/**
+ * What reducing a remote access report does to the store, the reconfirm rule
+ * aside: a managed report owns the state and the address; a report that is not
+ * managed leaves them alone, unless managed access was in charge until now, in
+ * which case the last tunnel block takes over again.
+ */
+function reduceRemoteReport(
+  current: RemoteAccessState,
+  report: RemoteAccessReport | null,
+  fetchedAt: number
+): Partial<RemoteAccessState> {
+  const noted = { report, reportFetchedAt: fetchedAt, reportApplied: true };
+  if (isManagedReport(report)) {
+    return {
+      ...noted,
+      state: stateFromReport(report.state),
+      url: urlFromReport(report),
+      error: null,
+    };
+  }
+  if (!isManagedReport(current.report)) return noted;
+  const last = current.lastReport;
+  return {
+    ...noted,
+    state: last ? impliedState(last.status, last.url) : 'off',
+    url: last?.status === 'on' || last?.status === 'reconnecting' ? last.url : null,
+  };
 }
 
 /**
@@ -341,48 +397,42 @@ export const useRemoteAccessStore = create<RemoteAccessState & RemoteAccessActio
       },
 
       applyRemoteReport: (incoming, fetchedAt) => {
+        // One-way: an answer no newer than the last one reduced is a replay or
+        // a refetch that started before a write landed. Either way it is older
+        // news than what the store holds.
+        if (get().reportApplied && fetchedAt <= get().reportFetchedAt) return;
         const report = usableReport(incoming);
         const previous = get().report;
-        const sameFacts = sameReport(previous, report);
-        if (sameFacts && fetchedAt <= get().reportFetchedAt) return;
 
-        if (isManagedReport(report)) {
-          // Re-confirmed facts leave the person's own in-flight action, or its
-          // failure, standing, exactly like the tunnel block's case 3.
-          if (sameFacts && LOCAL_ONLY_STATES.has(get().state)) {
-            set({ reportFetchedAt: fetchedAt }, false, 'remoteAccess/reportReconfirmed');
-            return;
-          }
-          set(
-            {
-              report,
-              reportFetchedAt: fetchedAt,
-              state: stateFromReport(report.state),
-              url: urlFromReport(report),
-              error: null,
-            },
-            false,
-            { type: 'remoteAccess/applyRemoteReport', state: report.state }
-          );
+        // Re-confirmed facts leave the person's own in-flight action, or its
+        // failure, standing, exactly like the tunnel block's case 3.
+        if (
+          isManagedReport(report) &&
+          sameReport(previous, report) &&
+          LOCAL_ONLY_STATES.has(get().state)
+        ) {
+          set({ reportFetchedAt: fetchedAt }, false, 'remoteAccess/reportReconfirmed');
           return;
         }
+        set(reduceRemoteReport(get(), report, fetchedAt), false, 'remoteAccess/applyRemoteReport');
+      },
 
-        // Managed access is not in charge (hidden, or another mode selected).
-        // If it just stopped being in charge, hand the state back to the last
-        // tunnel block rather than leaving a managed state behind.
-        const handBack = isManagedReport(previous);
-        const last = get().lastReport;
+      settleManagedWrite: (incoming, fetchedAt, intent) => {
+        const current = get();
+        const report = incoming === undefined ? current.report : usableReport(incoming);
+        const at = Math.max(fetchedAt, current.reportFetchedAt);
+        const tunnelStillOn = current.lastReport !== null && current.lastReport.status !== 'off';
+        const reduced = reduceRemoteReport(current, report, at);
         set(
-          handBack
-            ? {
-                report,
-                reportFetchedAt: fetchedAt,
-                state: last ? impliedState(last.status, last.url) : 'off',
-                url: last?.status === 'on' || last?.status === 'reconnecting' ? last.url : null,
-              }
-            : { report, reportFetchedAt: fetchedAt },
+          {
+            ...reduced,
+            // A stop that left managed access is off, whatever the tunnel block
+            // last said: it has not caught up with the stop yet.
+            ...(intent === 'stop' && !isManagedReport(report) ? { state: 'off', url: null } : {}),
+            userInitiated: intent === 'stop' && tunnelStillOn,
+          },
           false,
-          'remoteAccess/applyRemoteReport'
+          { type: 'remoteAccess/settleManagedWrite', intent }
         );
       },
 

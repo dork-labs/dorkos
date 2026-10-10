@@ -18,22 +18,7 @@ import { requestOwnerSetup } from '@/layers/shared/lib';
 import { configKeys } from '@/layers/entities/config';
 import { broadcastTunnelChange } from './use-tunnel-sync';
 import { useRemoteAccessStore } from './remote-access-store';
-import { isManagedReport, remoteAccessKeys } from './remote-access-report';
-
-/**
- * Which mode a switch turned ON should use.
- *
- * Managed when it is already selected, or when nothing is selected and this
- * computer is approved for it: approval was the person's explicit choice. In
- * every other case, the person's own ngrok tunnel, exactly as before. Never
- * BYO merely because managed access has no ngrok token.
- */
-function startTarget(report: RemoteAccessReport | null): 'byo' | 'managed' {
-  if (!report) return 'byo';
-  if (report.mode === 'managed') return 'managed';
-  if (report.mode === 'off' && report.enrolment.status === 'enrolled') return 'managed';
-  return 'byo';
-}
+import { isManagedReport, remoteAccessKeys, startTarget } from './remote-access-report';
 
 /** Whether a refusal is the exposure guard's: remote access needs a login first. */
 function isExposureRefusal(err: unknown): boolean {
@@ -98,14 +83,17 @@ export function useRemoteAccessActions(): RemoteAccessActionHandlers {
    * Take a report a write answered with, and tell every other reader.
    *
    * A transport that resolves no report (the Dev Playground's) is not news:
-   * the refetch below asks again.
+   * the refetch below asks again. A managed start or stop passes its `intent`,
+   * and is then reduced into the state whatever it says (see
+   * `settleManagedWrite`): nothing else would end its `starting` or `stopping`.
    */
   const settleReport = useCallback(
-    (report: RemoteAccessReport | null | undefined) => {
-      if (report && typeof report === 'object') {
-        useRemoteAccessStore.getState().applyRemoteReport(report, Date.now());
-        queryClient.setQueryData(remoteAccessKeys.report(), report);
-      }
+    (report: RemoteAccessReport | null | undefined, intent?: 'start' | 'stop') => {
+      const answered = report && typeof report === 'object' ? report : undefined;
+      const store = useRemoteAccessStore.getState();
+      if (intent) store.settleManagedWrite(answered, Date.now(), intent);
+      else if (answered) store.applyRemoteReport(answered, Date.now());
+      if (answered) queryClient.setQueryData(remoteAccessKeys.report(), answered);
       queryClient.invalidateQueries({ queryKey: remoteAccessKeys.all });
       queryClient.invalidateQueries({ queryKey: configKeys.all });
       broadcastTunnelChange();
@@ -127,7 +115,7 @@ export function useRemoteAccessActions(): RemoteAccessActionHandlers {
       if (managed) {
         // Selecting managed access opens nothing here: DorkOS opens the tunnel
         // when the address is used. The report says where it stands.
-        settleReport(await transport.setRemoteAccessMode('managed'));
+        settleReport(await transport.setRemoteAccessMode('managed'), 'start');
         return;
       }
       const result = await transport.startTunnel();
@@ -181,7 +169,7 @@ export function useRemoteAccessActions(): RemoteAccessActionHandlers {
       if (managed) {
         // Off means off: the address stops reaching this computer, not just
         // the tunnel closing until the next visit.
-        settleReport(await transport.setRemoteAccessMode('off'));
+        settleReport(await transport.setRemoteAccessMode('off'), 'stop');
         return;
       }
       await transport.stopTunnel();

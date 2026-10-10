@@ -244,3 +244,99 @@ describe('the managed-only writes', () => {
     expect(result.current.snapshot.url).toBeNull();
   });
 });
+
+describe('a managed start or stop always settles', () => {
+  const unanswered = createRemoteAccessReport({
+    availability: 'unavailable',
+    cloudStale: true,
+    state: 'off',
+    url: undefined,
+  });
+
+  it('ends a start whose answer repeats the last report, instead of spinning forever', async () => {
+    const transport = createMockTransport({
+      setRemoteAccessMode: vi.fn().mockResolvedValue(unanswered),
+    });
+    const { result } = mount(transport);
+    apply(unanswered);
+    expect(result.current.snapshot.state).toBe('off');
+
+    await act(() => result.current.actions.toggle(true));
+
+    expect(transport.setRemoteAccessMode).toHaveBeenCalledWith('managed');
+    expect(result.current.snapshot.state).toBe('off');
+    expect(result.current.snapshot.isTransitioning).toBe(false);
+  });
+
+  it('disarms the announcement guard, so the next real drop is still said', async () => {
+    const transport = createMockTransport({
+      setRemoteAccessMode: vi.fn().mockResolvedValue(unanswered),
+    });
+    const { result } = mount(transport);
+    apply(unanswered);
+
+    await act(() => result.current.actions.toggle(true));
+
+    expect(useRemoteAccessStore.getState().userInitiated).toBe(false);
+  });
+
+  it('keeps the guard for a stop that closes a tunnel still reported on', async () => {
+    const off = createRemoteAccessReport({ mode: 'off', state: 'off', url: undefined });
+    const transport = createMockTransport({
+      setRemoteAccessMode: vi.fn().mockResolvedValue(off),
+    });
+    const { result } = mount(transport);
+    act(() =>
+      useRemoteAccessStore
+        .getState()
+        .applyServerReport('on', 'https://calm-otter.example.com', fetchedAt++)
+    );
+    apply(createRemoteAccessReport({ state: 'open' }));
+
+    await act(() => result.current.actions.toggle(false));
+
+    expect(result.current.snapshot.state).toBe('off');
+    expect(result.current.snapshot.url).toBeNull();
+    expect(useRemoteAccessStore.getState().userInitiated).toBe(true);
+  });
+
+  it('ignores a report older than the one a write just applied', async () => {
+    const transport = createMockTransport({
+      setRemoteAccessMode: vi.fn().mockResolvedValue(createRemoteAccessReport({ state: 'asleep' })),
+    });
+    const { result } = mount(transport);
+    apply(unanswered);
+    await act(() => result.current.actions.toggle(true));
+    expect(result.current.snapshot.state).toBe('asleep');
+
+    // A refetch that left before the write landed answers late, with old facts.
+    act(() => useRemoteAccessStore.getState().applyRemoteReport(unanswered, fetchedAt++));
+
+    expect(result.current.snapshot.state).toBe('asleep');
+  });
+});
+
+describe('whether a switch has something to turn on', () => {
+  it('follows the mode a start would use, not any setup at all', () => {
+    const { result } = mount(createMockTransport());
+    // Approved for DorkOS, but the person picked their own ngrok and has no token.
+    apply(createRemoteAccessReport({ mode: 'byo', state: 'off', url: undefined }));
+    expect(result.current.snapshot.isSetUp).toBe(false);
+
+    act(() => useRemoteAccessStore.getState().noteTokenConfigured(true));
+    expect(result.current.snapshot.isSetUp).toBe(true);
+  });
+
+  it('needs approval, not an ngrok token, while DorkOS is selected', () => {
+    const { result } = mount(createMockTransport());
+    act(() => useRemoteAccessStore.getState().noteTokenConfigured(true));
+    apply(
+      createRemoteAccessReport({
+        state: 'blocked',
+        url: undefined,
+        enrolment: { status: 'expired' },
+      })
+    );
+    expect(result.current.snapshot.isSetUp).toBe(false);
+  });
+});

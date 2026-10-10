@@ -286,3 +286,71 @@ describe('every managed state', () => {
     expect(screen.queryByRole('radiogroup', { name: CHOICE })).not.toBeInTheDocument();
   });
 });
+
+describe('when the server’s answer moves under the person', () => {
+  const expiresAt = new Date(Date.now() + 9.5 * 60_000).toISOString();
+  const pending = createRemoteAccessReport({
+    mode: 'off',
+    state: 'off',
+    url: undefined,
+    enrolment: {
+      status: 'pending',
+      userCode: 'WXYZ-1234',
+      approveUrl: 'https://cloud.example.com/approve',
+      expiresAt,
+    },
+  });
+
+  it.each([
+    ['denied', 'Setup was declined'],
+    ['expired', 'Setup timed out'],
+  ] as const)(
+    'a waiting setup that ends %s says so, with nothing pressed',
+    async (status, title) => {
+      const report = vi.fn().mockResolvedValue(pending);
+      renderTab(pending, { getRemoteAccessReport: report });
+      expect(await screen.findByTestId('managed-setup-pending')).toBeInTheDocument();
+
+      report.mockResolvedValue({ ...pending, enrolment: { status } });
+      // The pending poll runs every few seconds; the test asks sooner.
+      await waitFor(() => expect(screen.getByText(title)).toBeInTheDocument(), { timeout: 5000 });
+      expect(screen.getByRole('button', { name: 'Start again' })).toBeInTheDocument();
+      expect(screen.getByRole('radio', { name: 'DorkOS' })).toBeChecked();
+    }
+  );
+
+  it('lands focus on the status heading once setup is approved', async () => {
+    const report = vi.fn().mockResolvedValue(pending);
+    renderTab(pending, { getRemoteAccessReport: report });
+    const cancel = await screen.findByRole('button', { name: 'Cancel setup' });
+    cancel.focus();
+
+    report.mockResolvedValue(createRemoteAccessReport({ state: 'asleep' }));
+    const heading = await screen.findByRole(
+      'heading',
+      { name: 'Remote access is closed for now' },
+      { timeout: 5000 }
+    );
+    await waitFor(() => expect(heading).toHaveFocus());
+  });
+});
+
+describe('turning DorkOS off while DorkOS Cloud can’t be reached', () => {
+  it.each(['off', 'asleep'] as const)(
+    '%s offers a plain Turn off, not only removal',
+    async (state) => {
+      const transport = renderTab(
+        createRemoteAccessReport({ availability: 'unavailable', cloudStale: true, state })
+      );
+      fireEvent.click(await screen.findByRole('button', { name: 'Turn off' }));
+      await waitFor(() => expect(transport.setRemoteAccessMode).toHaveBeenCalledWith('off'));
+      expect(transport.withdrawRemoteAccess).not.toHaveBeenCalled();
+    }
+  );
+
+  it('offers no second off while the choice is there to do it', async () => {
+    renderTab(createRemoteAccessReport({ state: 'asleep' }));
+    await screen.findByTestId('managed-status');
+    expect(screen.queryByRole('button', { name: 'Turn off' })).not.toBeInTheDocument();
+  });
+});

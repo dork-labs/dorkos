@@ -81,7 +81,7 @@ export function TunnelPanel({ machine, actions, className }: TunnelPanelProps) {
  *
  * "DorkOS" is offered only while the report says `available`. A computer
  * already on DorkOS whose last DorkOS Cloud read failed shows its status alone,
- * with no choice to make until Cloud answers.
+ * with a "Turn off" of its own in place of the choice until Cloud answers.
  */
 function ModeChoicePanel({
   machine,
@@ -100,6 +100,7 @@ function ModeChoicePanel({
         managed={managed}
         activeSessionId={activeSessionId}
         latencyMs={machine.latencyMs}
+        offerOff={!choice.offerManaged}
       />
     ) : (
       <ManagedSetup enrolment={managed.enrolment} />

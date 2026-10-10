@@ -26,7 +26,7 @@ import { LAUNCH_STARTED_AT } from '@/layers/shared/lib';
 import { tunnelHost } from '../lib/tunnel-host';
 import { readTunnelReport, type TunnelReport } from './tunnel-report';
 import { useRemoteAccessStore, type TunnelState } from './remote-access-store';
-import { isManagedReport, useRemoteAccessReport } from './remote-access-report';
+import { isManagedReport, startTarget, useRemoteAccessReport } from './remote-access-report';
 
 /**
  * Managed remote access, as the report describes it (DOR-2086). Present only
@@ -69,9 +69,9 @@ export interface RemoteAccessSnapshot {
    */
   mode: 'byo' | 'managed';
   /**
-   * Whether a switch has something to turn on: the ngrok token is saved, or
-   * this computer is approved for managed access. When false, a switch opens
-   * setup instead.
+   * Whether a switch has something to turn on, for the mode a start would use:
+   * the ngrok token is saved for the person's own tunnel, or this computer is
+   * approved for managed access. When false, a switch opens setup instead.
    */
   isSetUp: boolean;
   /**
@@ -139,6 +139,10 @@ export function useRemoteAccessSnapshot(): RemoteAccessSnapshot {
 
   const isTransitioning = state === 'starting' || state === 'stopping';
   const enrolled = report?.enrolment.status === 'enrolled';
+  // The same rule a start uses to pick its mode, so a switch never offers to
+  // start the person's own tunnel on an approval it would not use, or the
+  // reverse.
+  const isSetUp = startTarget(report) === 'managed' ? enrolled : tokenConfigured;
   // On, but not at its best or not open right now: the person did not turn
   // any of these off. `asleep` and `draining` only managed access reaches.
   const on =
@@ -153,7 +157,7 @@ export function useRemoteAccessSnapshot(): RemoteAccessSnapshot {
     hasServerReport,
     isTransitioning,
     mode: isManagedReport(report) ? 'managed' : 'byo',
-    isSetUp: tokenConfigured || enrolled,
+    isSetUp,
     managed: report
       ? {
           selected: report.mode,
