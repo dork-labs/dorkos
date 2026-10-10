@@ -10,6 +10,13 @@ import { HostPolicyLinks } from './HostLinks.js';
 
 const authClient = createAuthClient({ baseURL: window.location.origin });
 
+/** Whether this space admits anyone who signs in with the host's single sign-on. */
+export async function isOpenSpace(): Promise<boolean> {
+  return request<{ open: boolean }>('/api/v1/open-admission')
+    .then((body) => body.open)
+    .catch(() => false);
+}
+
 /**
  * The note this tab keeps across the single sign-on round trip, so the page it returns to
  * finishes the join the person asked for. Without it, a signed-in visit never joins by itself.
@@ -92,7 +99,7 @@ export function OpenAdmission({ community, signedIn, onAdmitted, onOtherWays }: 
           <p className="eyebrow">DorkOS Space</p>
           <h2 className="mt-10 text-4xl font-semibold tracking-tight">A place to work together.</h2>
           <p className="mt-4 max-w-md text-lg text-[#d0e4d3]">
-            People and agents in the same conversation, with clear access and room to focus.
+            People and agents in the same channels, with clear access and room to focus.
           </p>
         </div>
         <p className="text-sm text-[#aec4b1]">One space. Your channels. Your pace.</p>
@@ -132,7 +139,7 @@ export function OpenAdmission({ community, signedIn, onAdmitted, onOtherWays }: 
             </div>
           </SingleSignOnFirst>
         ) : (
-          <Notice tone="info">This space can't take new members right now.</Notice>
+          <Notice tone="info">This space can’t take new members right now.</Notice>
         )}
         <HostPolicyLinks />
       </main>

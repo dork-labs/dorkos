@@ -1,7 +1,7 @@
 import { Button, Input, Label, Notice } from '@dork-labs/ui';
 import { useCallback, useState } from 'react';
 import { describeError, request } from '../../api.js';
-import { FocusDialog } from '../CommunityAdministration.js';
+import { FocusDialog } from '../FocusDialog.js';
 
 type Names = {
   communityId: string;

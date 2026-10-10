@@ -14,7 +14,7 @@ import { createBlobStore } from './storage/index.js';
 import { sweepExpiredAttachments } from './routes/community/attachments.js';
 import { sweepExpiredExports } from './exports/sweep.js';
 import { startExportWorker } from './exports/worker.js';
-import { sweepExpiredAdmissions } from './routes/community/invites.js';
+import { sweepExpiredAdmissions } from './admission/sweep.js';
 import { sweepPendingBlobDeletions } from './storage/pending-deletions.js';
 import { sweepCommunityDeletions, sweepCommunityDeletionTombstones } from './deletion-worker.js';
 import { ERASURE_POLL_MS, pruneErasureRequests, sweepErasures } from './erasure/worker.js';

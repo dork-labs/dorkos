@@ -1,6 +1,6 @@
 import { Button, Input, Label, Notice, Separator } from '@dork-labs/ui';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Ban, Copy, KeyRound, Plus, Trash2, Unplug, UserPlus } from 'lucide-react';
+import { Copy, KeyRound, Plus, Trash2, Unplug, UserPlus } from 'lucide-react';
 import { describeError, download, request } from '../api.js';
 import { describeInstallAccess, describeReauthenticationError } from '../account-controls.js';
 import { SignOutButton } from './SignOut.js';
@@ -11,7 +11,7 @@ import { CommunityAdministration } from './CommunityAdministration.js';
 import { RemovedByHost } from '../takedowns/TakedownNotices.js';
 import { EraseMembershipPanel } from './Erasure.js';
 import { ExportPanel } from './ExportPanel.js';
-import { BanDialog, LiftBanDialog } from './BanDialogs.js';
+import { SpaceMembers } from './members/SpaceMembers.js';
 import type { Agent, Channel, Member } from '../types.js';
 import type { CommunitySettingsSection, CommunityWireBan } from '@dorkos/shared/community-wire';
 
@@ -106,9 +106,6 @@ export function Manage({
   const [directory, setDirectory] = useState<Member[]>([]);
   const [directoryCursor, setDirectoryCursor] = useState<string | null>(null);
   const [bans, setBans] = useState<CommunityWireBan[]>([]);
-  // The member a ban is being confirmed for, and the ban being lifted, while their dialog shows.
-  const [banning, setBanning] = useState<Member | null>(null);
-  const [lifting, setLifting] = useState<CommunityWireBan | null>(null);
   const [roster, setRoster] = useState<Member[]>([]);
   const [selectedMember, setSelectedMember] = useState('');
   const [agents, setAgents] = useState<Agent[]>([]);
@@ -624,132 +621,15 @@ export function Manage({
               )}
             </section>
             {moderator && (
-              <section className="panel">
-                <h3>Space members</h3>
-                {directory.map((member) => (
-                  <div
-                    className="row justify-between border-b border-[var(--line)] py-2"
-                    key={member.memberId}
-                  >
-                    <div>
-                      <strong>{member.displayName}</strong>
-                      <div className="small muted">
-                        @{member.handle} · {member.role}
-                      </div>
-                    </div>
-                    <div className="row">
-                      {me.role === 'owner' && member.memberId !== me.memberId && (
-                        <Button
-                          variant="ghost"
-                          aria-label={`${member.role === 'admin' ? 'Remove admin from' : 'Make'} ${member.displayName}${member.role === 'admin' ? '' : ' admin'}`}
-                          disabled={busy}
-                          onClick={() =>
-                            void perform(
-                              () =>
-                                request(`/api/v1/members/${member.memberId}/role`, 'PATCH', {
-                                  role: member.role === 'admin' ? 'member' : 'admin',
-                                }),
-                              member.role === 'admin' ? 'Admin removed.' : 'Admin granted.'
-                            )
-                          }
-                        >
-                          {member.role === 'admin' ? 'Make member' : 'Make admin'}
-                        </Button>
-                      )}
-                      {member.memberId !== me.memberId && member.role === 'member' && (
-                        <Button
-                          variant="ghost"
-                          disabled={busy}
-                          aria-label={`Remove ${member.displayName} from space`}
-                          onClick={() => {
-                            if (window.confirm(`Remove ${member.displayName} from this space?`))
-                              void perform(
-                                () => request(`/api/v1/members/${member.memberId}`, 'DELETE'),
-                                'Member removed.'
-                              );
-                          }}
-                        >
-                          <Trash2 size={16} />
-                        </Button>
-                      )}
-                      {member.memberId !== me.memberId &&
-                        (member.role === 'member' ||
-                          (member.role === 'admin' && me.role === 'owner')) && (
-                          <Button
-                            variant="ghost"
-                            disabled={busy}
-                            aria-label={`Ban ${member.displayName} from space`}
-                            onClick={() => setBanning(member)}
-                          >
-                            <Ban size={16} />
-                          </Button>
-                        )}
-                    </div>
-                  </div>
-                ))}
-                {directoryCursor && (
-                  <Button variant="outline" className="mt-3" onClick={() => void moreMembers()}>
-                    Show more members
-                  </Button>
-                )}
-              </section>
-            )}
-            {banning && (
-              <BanDialog
-                name={banning.displayName}
+              <SpaceMembers
+                me={me}
+                directory={directory}
+                hasMore={directoryCursor !== null}
+                bans={bans}
                 busy={busy}
-                onClose={() => setBanning(null)}
-                onBan={(reason) => {
-                  const target = banning;
-                  setBanning(null);
-                  void perform(
-                    () =>
-                      request(`/api/v1/members/${target.memberId}/ban`, 'POST', {
-                        ...(reason ? { reason } : {}),
-                      }),
-                    'Member banned.'
-                  );
-                }}
+                perform={perform}
+                onMore={() => void moreMembers()}
               />
-            )}
-            {lifting && (
-              <LiftBanDialog
-                name={lifting.displayName}
-                busy={busy}
-                onClose={() => setLifting(null)}
-                onLift={() => {
-                  const target = lifting;
-                  setLifting(null);
-                  void perform(() => request(`/api/v1/bans/${target.id}`, 'DELETE'), 'Ban lifted.');
-                }}
-              />
-            )}
-            {moderator && bans.length > 0 && (
-              <section className="panel">
-                <h3>Banned</h3>
-                {bans.map((ban) => (
-                  <div
-                    className="row justify-between border-b border-[var(--line)] py-2"
-                    key={ban.id}
-                  >
-                    <div>
-                      <strong>{ban.displayName}</strong>
-                      <div className="small muted">
-                        {ban.handle ? `@${ban.handle}` : 'No account'}
-                        {ban.reason ? ` · ${ban.reason}` : ''}
-                      </div>
-                    </div>
-                    <Button
-                      variant="ghost"
-                      disabled={busy}
-                      aria-label={`Lift the ban on ${ban.displayName}`}
-                      onClick={() => setLifting(ban)}
-                    >
-                      Lift ban
-                    </Button>
-                  </div>
-                ))}
-              </section>
             )}
           </div>
         )}

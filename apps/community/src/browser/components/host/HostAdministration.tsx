@@ -3,7 +3,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { describeError, request } from '../../api.js';
 import { useSignInOptions } from '../../sign-in-options.js';
 import { ownerClaimLink } from '../../owner-claim.js';
-import { FocusDialog } from '../CommunityAdministration.js';
+import { FocusDialog } from '../FocusDialog.js';
 import { HostApiKeys } from './HostApiKeys.js';
 import { HostCommunityLimits } from './HostCommunityLimits.js';
 import { HostHoldControls } from './HostHoldControls.js';

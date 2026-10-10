@@ -1,4 +1,3 @@
-import { randomBytes } from 'node:crypto';
 import { appendFile } from 'node:fs/promises';
 import type { Pool, PoolClient } from 'pg';
 import {
@@ -11,10 +10,10 @@ import { transaction } from '../data.js';
 import { ERASED_ENTRY_TEXT } from '../content/tombstones.js';
 import { channelWatermarks } from '../content/watermark.js';
 import { deleteReadyExports, restartExportJobs } from '../exports/store.js';
-import { MENTION_ADDRESS, MENTION_TRAILING_STRIP, maskedText } from '../content/mentions.js';
 import { remove } from '../routes/community/members.js';
 import { erasureHeldByLegalHold } from './guards.js';
 import { appendJournalRow, type ErasureJournalRecord } from './journal.js';
+import { randomHuskHandle, rewriteHandleTokens } from './husk-handles.js';
 
 /** Hours between a request and the erasure it schedules. A constant, not configuration. */
 export const ERASURE_WINDOW_HOURS = 72;
@@ -22,14 +21,10 @@ export const ERASURE_WINDOW_HOURS = 72;
 export const ERASED_MEMBER_NAME = 'Erased member';
 /** The author name of an erased person's agents' messages. */
 export const ERASED_AGENT_NAME = 'Erased agent';
-/** What an erased person's handle becomes in other people's messages. It can never resolve. */
-export const ERASED_MENTION = '@[erased]';
 
 const DEFAULT_BATCH_SIZE = 500;
 const SEAL_ROUNDS = 3;
 const ACCOUNT_ROUNDS = 5;
-const BASE32 = 'abcdefghijklmnopqrstuvwxyz234567';
-const ADDRESS_BOUNDARY = /[A-Za-z0-9_.-]/;
 
 /** A named, content-free reason an erasure could not finish yet; the worker retries it. */
 export class ErasureError extends Error {
@@ -110,36 +105,6 @@ interface Target {
 
 /** Per-channel highest sequence number when the mention step started. */
 type Watermark = Map<string, number>;
-
-/** An unguessable replacement handle, so the husk cannot be used to find the person again. */
-export function randomHuskHandle(): string {
-  // 256 is a multiple of 32, so taking each byte modulo 32 is unbiased.
-  return `erased-${[...randomBytes(12)].map((byte) => BASE32[byte % 32]).join('')}`;
-}
-
-/**
- * Replace every `@handle` the mention resolver would read as one of `handles` with
- * {@link ERASED_MENTION}. It masks code and quotes exactly as the resolver does, applies the
- * resolver's trailing strip (and keeps the stripped characters), and only rewrites an `@` at
- * the start of the text or after a character that cannot be part of an address, so an
- * email-shaped `bob@handle` is left alone.
- */
-export function rewriteHandleTokens(text: string, handles: readonly string[]): string {
-  const targets = new Set(handles.map((handle) => handle.toLowerCase()));
-  if (!targets.size) return text;
-  let rewritten = '';
-  let copied = 0;
-  for (const match of maskedText(text).matchAll(MENTION_ADDRESS)) {
-    const at = match.index;
-    if (at > 0 && ADDRESS_BOUNDARY.test(text[at - 1])) continue;
-    const raw = match[1];
-    const stripped = raw.replace(MENTION_TRAILING_STRIP, '');
-    if (!targets.has(stripped.toLowerCase())) continue;
-    rewritten += text.slice(copied, at) + ERASED_MENTION + raw.slice(stripped.length);
-    copied = at + 1 + raw.length;
-  }
-  return copied ? rewritten + text.slice(copied) : text;
-}
 
 /**
  * Lock the community for share (a lifecycle change waits; posts do not), then the member for

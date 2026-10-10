@@ -1,6 +1,6 @@
 import { Button, Label, Textarea } from '@dork-labs/ui';
 import { useId, useState } from 'react';
-import { FocusDialog } from './CommunityAdministration.js';
+import { FocusDialog } from '../FocusDialog.js';
 
 /** The longest reason a ban keeps, as the server accepts it. */
 export const BAN_REASON_MAX = 500;
@@ -24,7 +24,7 @@ export function BanDialog({
   const [reason, setReason] = useState('');
   return (
     <FocusDialog title={`Ban ${name}?`} onClose={onClose}>
-      <p>They leave the space and can't rejoin with this account or its email.</p>
+      <p>They leave the space and can’t rejoin with this account or its email.</p>
       <div className="field">
         <Label htmlFor={`${id}-reason`}>Reason (optional)</Label>
         <Textarea

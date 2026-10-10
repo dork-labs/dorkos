@@ -1,5 +1,5 @@
 import nodemailer from 'nodemailer';
-import type { CommunityMailConfig } from '../config.js';
+import type { CommunityMailConfig } from './config.js';
 
 /** One plain-text message to one address. */
 export interface OutgoingMail {
