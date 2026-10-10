@@ -40,3 +40,23 @@ export const CLOUD_REMOTE_WRITE_POLICY = Object.fromEntries(
     'operator-only' as const,
   ])
 ) as Record<CloudRemotePath, 'operator-only'>;
+
+/**
+ * What a computer that never chose managed access holds under `cloud.remote`,
+ * written out rather than read from the schema so the safe-defaults drift guard
+ * in `safe-defaults/default-verdicts.ts` still catches a default that moves.
+ * Every leaf is the protective option: not reachable through DorkOS, with no
+ * consent, link, credential or hostname.
+ */
+export const CLOUD_REMOTE_SAFE_DEFAULTS = {
+  'cloud.remote.mode': 'off',
+  'cloud.remote.enrolmentId': null,
+  'cloud.remote.consentVersion': null,
+  'cloud.remote.instanceId': null,
+  'cloud.remote.credentialRef': null,
+  'cloud.remote.credentialId': null,
+  'cloud.remote.fingerprint': null,
+  'cloud.remote.hosts': [],
+  'cloud.remote.edgeProofRef': null,
+  'cloud.remote.edgeProofHeader': null,
+} as const satisfies Record<CloudRemotePath, unknown>;

@@ -48,6 +48,7 @@
  *
  * @module services/core/safe-defaults/default-verdicts
  */
+import { CLOUD_REMOTE_SAFE_DEFAULTS } from '../remote/remote-config-policy.js';
 
 /**
  * What a config default does on the safety axis. See the module docs for the
@@ -493,6 +494,8 @@ export const SAFE_DEFAULTS: Readonly<Record<string, unknown>> = {
   // No agent allowed onto credits, and no account the choices belong to yet.
   'cloud.credits.agents': [],
   'cloud.credits.linkedTo': null,
+  // Managed remote access starts off, with no consent, link or credential (DOR-2086).
+  ...CLOUD_REMOTE_SAFE_DEFAULTS,
   // Waking the computer for scheduled runs starts off: it powers the machine up
   // while nobody is there and needs a one-time admin grant (spec `keep-awake`).
   'keepAwake.wakeForScheduledTasks': false,
