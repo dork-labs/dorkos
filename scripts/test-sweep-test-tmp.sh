@@ -316,7 +316,44 @@ for shell in zsh sh; do
 done
 check "...and removed nothing" "$(kept srv-err-shells)"
 
-# 13. Nothing outside the root was ever touched by any fixture above.
+# 13. UUID-suffixed homes (the managed-browser runs' public-native-<uuid>):
+#     an old free one goes, its size is logged under its prefix, and a young,
+#     an open, or a badly shaped one is kept. Each keep has its control.
+reset_root
+u1=public-native-042dc340-1201-4dd9-bd75-29581047384f
+u2=public-native-e36711ba-2732-4e8e-b853-8d2b0865c553
+u3=public-native-22e76301-a528-48c2-af78-0e16cfce188d
+u4=public-native-236bbf7d-f21c-4c01-ad6d-0cc9ff7afeef
+make_dir "$u1" 48
+mkdir -p "$root/$u1/browser/runtime/playwright-1.63.0"
+echo chrome >"$root/$u1/browser/runtime/playwright-1.63.0/binary"
+age "$root/$u1" 48
+make_dir "$u2" 2
+make_dir "$u3" 48
+echo "$root/$u3/sub/file" >>"$work/open"
+make_dir "$u4" 48
+for n in public-native-9A1DC340-1201-4dd9-bd75-29581047384f public-native-042dc340-1201-4dd9-bd75-29581047384 \
+  public-native-042dc3401201-4dd9-bd75-29581047384f public-native-abcdef public-native \
+  srv-err-042dc340-1201-4dd9-bd75-29581047384f xpublic-native-042dc340-1201-4dd9-bd75-29581047384f; do
+  make_dir "$n" 48
+done
+out="$(run_sweep)"
+check "an old public-native-<uuid> home is removed, browser download and all" "$(gone "$u1")"
+check "...and another (positive control for the keeps below)" "$(gone "$u4")"
+check "the log names the prefix, not the UUID" "$(is grep -q 'removed 2 public-native-\*' <<<"$out")"
+check "a two-hour-old public-native-<uuid> home is kept" "$(kept "$u2")"
+check "a public-native-<uuid> home with an open file is kept" "$(kept "$u3")"
+for n in public-native-9A1DC340-1201-4dd9-bd75-29581047384f public-native-042dc340-1201-4dd9-bd75-29581047384 \
+  public-native-042dc3401201-4dd9-bd75-29581047384f public-native-abcdef public-native \
+  srv-err-042dc340-1201-4dd9-bd75-29581047384f xpublic-native-042dc340-1201-4dd9-bd75-29581047384f; do
+  check "$n is not an allowlisted UUID shape, kept" "$(kept "$n")"
+done
+: >"$work/open"
+age "$root/$u2" 48
+run_sweep >/dev/null
+check "...the young and open ones go once old and free (positive control)" "$(is test ! -e "$root/$u2" -a ! -e "$root/$u3")"
+
+# 14. Nothing outside the root was ever touched by any fixture above.
 check "the outside folder survived every run" "$(is grep -qx precious "$outside/keep-me/file")"
 
 echo "sweep-test-tmp: $pass passed, $fail failed"

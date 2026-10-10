@@ -14,8 +14,11 @@
 #
 #   shape     a top-level entry of $TMPDIR (never deeper) whose name is one of
 #             the ALLOWLIST prefixes below, then `-`, then exactly six letters
-#             or digits: the shape Node's `mkdtemp(prefix + '-')` makes. Any
-#             other name is never looked at, however old. Symlinks are skipped.
+#             or digits: the shape Node's `mkdtemp(prefix + '-')` makes. Or one
+#             of the UUID_ALLOWLIST prefixes, then `-`, then one lowercase
+#             UUID: the shape `join(tmpdir(), prefix + '-' + randomUUID())`
+#             makes. Any other name is never looked at, however old. Symlinks
+#             are skipped.
 #   age       nothing inside it, at any depth down to $MAX_DEPTH, and not the
 #             entry itself, was modified within the age floor (default 24 h).
 #             A folder some part of which we cannot read is kept.
@@ -142,6 +145,16 @@ ALLOWLIST=(
   'smoke-e2e-[a-z0-9-]{1,40}'
 )
 
+# Prefixes whose folders end in a UUID instead of mkdtemp's six characters.
+# Same promise as above: every folder of that shape is a run's leftover.
+UUID_ALLOWLIST=(
+  # The managed-browser acceptance runs (PR #2686) mint a whole DorkOS data
+  # folder per run, browser download included (about 400 MB), as
+  # $TMPDIR/public-native-<uuid>, and keep it. 42 of them piled up by
+  # 2026-10-10. The browser fixtures refuse any other name, so the shape holds.
+  'public-native'
+)
+
 DRY_RUN=0
 MIN_AGE_HOURS="${DORKOS_TMP_SWEEP_MIN_AGE_HOURS:-24}"
 PREFIX_FILE=""
@@ -194,10 +207,12 @@ resolve_root() {
 }
 
 # One ERE alternation of every allowed prefix: the built-in list plus the
-# literal ones from --prefix-file (dots escaped).
+# literal ones from --prefix-file (dots escaped), each with mkdtemp's suffix,
+# then the UUID-suffixed list.
 build_pattern() {
-  local alt="" p line
+  local alt="" ualt="" p line
   for p in "${ALLOWLIST[@]}"; do alt="${alt:+$alt|}$p"; done
+  for p in "${UUID_ALLOWLIST[@]}"; do ualt="${ualt:+$ualt|}$p"; done
   if [[ -n "$PREFIX_FILE" ]]; then
     while IFS= read -r line || [[ -n "$line" ]]; do
       line="${line%%#*}"
@@ -210,7 +225,7 @@ build_pattern() {
       alt="$alt|${line//./\\.}"
     done <"$PREFIX_FILE"
   fi
-  echo "^($alt)-[A-Za-z0-9]{6}$"
+  echo "^(($alt)-[A-Za-z0-9]{6}|($ualt)-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$"
 }
 
 # Top-level names under $1 (one per line) that are on the list $2 names, read
@@ -375,12 +390,16 @@ main() {
   # 6. The log: one line per prefix, then the totals.
   local verb=removed
   if ((DRY_RUN)); then verb="would remove"; fi
-  # du prints `<kb><tab><path>`; every removed name ends in `-XXXXXX`, so the
-  # prefix is the name minus its last seven characters.
+  # du prints `<kb><tab><path>`; every removed name ends in `-XXXXXX` or in
+  # `-<uuid>`, so the prefix is the name minus its last seven characters, or
+  # minus its last 37 when it ends in a UUID.
   local by_prefix freed_kb
   by_prefix="$(awk -F '\t' -v r="$root/" '
     FNR == NR { if (index($2, r) == 1) kb[substr($2, length(r) + 1)] = $1; next }
-    { p = substr($0, 1, length($0) - 7); c[p]++; s[p] += kb[$0]; t += kb[$0] }
+    {
+      if (match($0, /-[0-9a-f]+-[0-9a-f]+-[0-9a-f]+-[0-9a-f]+-[0-9a-f]+$/) && RLENGTH == 37) p = substr($0, 1, RSTART - 1)
+      else p = substr($0, 1, length($0) - 7)
+      c[p]++; s[p] += kb[$0]; t += kb[$0] }
     END { for (p in c) printf "%d\t%d\t%s\n", c[p], s[p], p; printf "TOTAL\t%d\n", t }
   ' "$work/sizes" "$work/removed")"
   freed_kb="$(awk -F '\t' '$1 == "TOTAL" { print $2 }' <<<"$by_prefix")"
