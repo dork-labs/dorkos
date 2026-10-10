@@ -65,6 +65,11 @@ export class FakeCliProcess {
    * as an ended stdin drops it in silence.
    */
   interruptNeverSettles = false;
+  /**
+   * When true, `setPermissionMode()` never settles — a live mode change the
+   * process does not acknowledge, which leaves it on its old mode.
+   */
+  permissionModeNeverSettles = false;
   /** The four settable-live pins, in the order they were applied. */
   readonly liveSets: string[] = [];
   /** Every message id this process has READ off its input stream, in order. */
@@ -327,6 +332,7 @@ export class FakeCliProcess {
 
   setPermissionMode(mode: string): Promise<void> {
     this.liveSets.push(`setPermissionMode:${mode}`);
+    if (this.permissionModeNeverSettles) return new Promise<void>(() => {});
     return Promise.resolve();
   }
 
