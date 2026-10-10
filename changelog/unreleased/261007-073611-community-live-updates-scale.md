@@ -11,6 +11,8 @@ covers:
   - 'chore(changelog): fold the delta fixes into the live-updates fragment (DOR-2764)'
   - 'fix(community): an app's own live hub stops when its pool ends (DOR-2764)'
   - 'chore(changelog): fold the pool-teardown fix into the live-updates fragment (DOR-2764)'
+  - 'refactor(community): split files the live-streams change grew past the line ratchet (DOR-2767)'
+  - 'chore(changelog): fold the file-split refactor into the live-updates fragment (DOR-2767)'
 ---
 
 ### Changed
