@@ -26,7 +26,6 @@ import { initConfigManager } from '../../config-manager.js';
 import { EncryptedFileCredentialStore, type CredentialStore } from '../../credential-provider.js';
 import { resolveCloudIdentity } from '../../cloud/v1-client.js';
 import { ManagedAvailability } from '../managed-availability.js';
-import { MANAGED_DRAIN_DEADLINE_MS } from '../managed-ingress.js';
 import {
   CLOUD_MAY_REMAIN_NOTE,
   MANAGED_REMOTE_ALREADY_SET_UP,
@@ -69,8 +68,10 @@ function fakeTunnel() {
       return this.mode;
     },
     getManagedPhase: vi.fn(() => null as null | 'opening' | 'open' | 'draining'),
+    getManagedDrain: vi.fn(() => null),
     closeManaged: vi.fn(
-      async (_options: { immediate: boolean; drainDeadlineMs?: number }) => undefined
+      async (_options: { immediate: boolean; drainDeadlineMs?: number; reason?: string }) =>
+        undefined
     ),
     stopOwnTunnel: vi.fn(async () => undefined),
     emit: vi.fn(() => true),
@@ -506,7 +507,7 @@ describe('mode', () => {
     await setUp(h);
     expect(await h.coordinator.selectMode('byo')).toEqual({ ok: true });
     expect(readRemoteState().mode).toBe('byo');
-    expect(h.tunnel.closeManaged).toHaveBeenCalledWith({ immediate: true });
+    expect(h.tunnel.closeManaged).toHaveBeenCalledWith({ immediate: true, reason: 'mode_change' });
   });
 
   it('choosing managed needs Cloud to be reachable now, not just the switch on', async () => {
@@ -534,15 +535,13 @@ describe('mode', () => {
 });
 
 describe('close', () => {
-  it('drains under the ingress deadline rather than a timer of its own', () => {
+  it('drains under the local default deadline, named as local, rather than a timer of its own', () => {
     const h = harness();
     h.tunnel.getManagedPhase.mockReturnValue('open');
     h.coordinator.close();
     expect(h.tunnel.closeManaged).toHaveBeenCalledTimes(1);
-    expect(h.tunnel.closeManaged).toHaveBeenCalledWith({
-      immediate: false,
-      drainDeadlineMs: MANAGED_DRAIN_DEADLINE_MS,
-    });
+    // No deadline given: the ingress applies MANAGED_DRAIN_DEADLINE_MS and the report says local.
+    expect(h.tunnel.closeManaged).toHaveBeenCalledWith({ immediate: false, reason: 'closed_here' });
   });
 
   it('does nothing when managed access is not open', () => {
@@ -573,7 +572,7 @@ describe('withdrawal', () => {
       credentialRef: null,
       hosts: [],
     });
-    expect(h.tunnel.closeManaged).toHaveBeenCalledWith({ immediate: true });
+    expect(h.tunnel.closeManaged).toHaveBeenCalledWith({ immediate: true, reason: 'withdrawn' });
     expect(h.cloud.callsTo('POST', REVOKE)).toHaveLength(1);
     expect(h.cloud.callsTo('DELETE', ENROLMENT)).toHaveLength(1);
 

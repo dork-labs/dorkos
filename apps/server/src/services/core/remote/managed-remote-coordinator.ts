@@ -78,7 +78,6 @@ import {
   type CloudV1Context,
 } from '../cloud/v1-client.js';
 import { managedAvailability, type ManagedAvailability } from './managed-availability.js';
-import { MANAGED_DRAIN_DEADLINE_MS } from './managed-ingress.js';
 import { managedRemoteCommands, type ManagedCommandService } from './managed-command-service.js';
 import { remoteCredentials, type RemoteCredentials } from './remote-credentials.js';
 import { buildRemoteAccessReport, setupViewOf } from './remote-access-report.js';
@@ -133,7 +132,13 @@ export interface ManagedRemoteCoordinatorDeps {
   commands: Pick<ManagedCommandService, 'start' | 'stop'>;
   tunnel: Pick<
     typeof tunnelManager,
-    'status' | 'getMode' | 'getManagedPhase' | 'closeManaged' | 'stopOwnTunnel' | 'emit'
+    | 'status'
+    | 'getMode'
+    | 'getManagedPhase'
+    | 'getManagedDrain'
+    | 'closeManaged'
+    | 'stopOwnTunnel'
+    | 'emit'
   >;
   /** Whether the person's own tunnel is set to open (`tunnel.enabled`). */
   ownTunnelEnabled: () => boolean;
@@ -190,6 +195,7 @@ export class ManagedRemoteCoordinator {
       tunnel: this.deps.tunnel.status,
       liveMode: this.deps.tunnel.getMode(),
       managedPhase: this.deps.tunnel.getManagedPhase(),
+      drain: this.deps.tunnel.getManagedDrain(),
       remote: this.deps.readRemoteState(),
       ownTunnelEnabled: this.deps.ownTunnelEnabled(),
       availability,
@@ -277,9 +283,11 @@ export class ManagedRemoteCoordinator {
       }
       this.deps.updateRemoteState('choosing managed remote access', { mode });
       if (this.deps.tunnel.getMode() === 'byo') await this.deps.tunnel.stopOwnTunnel();
+      // A person chose it here: Cloud's commands may arrive again. Opens nothing.
+      void this.deps.commands.start();
     } else {
       this.deps.updateRemoteState('choosing remote access', { mode });
-      await this.deps.tunnel.closeManaged({ immediate: true });
+      await this.deps.tunnel.closeManaged({ immediate: true, reason: 'mode_change' });
     }
     this.note = undefined;
     this.notify();
@@ -288,17 +296,14 @@ export class ManagedRemoteCoordinator {
 
   /**
    * Close managed access now. New requests are refused at once; requests
-   * already admitted get {@link MANAGED_DRAIN_DEADLINE_MS} to finish, after
-   * which the ingress cuts the rest. Changes no choice and no consent: Cloud
-   * may open it again on a person's request.
+   * already admitted get the local default (`MANAGED_DRAIN_DEADLINE_MS`)
+   * to finish, after which the ingress cuts the rest, and the report says the
+   * deadline is local. Changes no choice and no consent: Cloud may open it
+   * again on a person's request.
    */
   close(): void {
     if (this.deps.tunnel.getManagedPhase() === null) return;
-    void this.deps.tunnel
-      .closeManaged({ immediate: false, drainDeadlineMs: MANAGED_DRAIN_DEADLINE_MS })
-      .catch((error: unknown) => {
-        logger.warn('[RemoteAccess] Managed close failed', { error: errorName(error) });
-      });
+    void this.closeManaged(false, 'closed_here');
   }
 
   /**
@@ -322,9 +327,7 @@ export class ManagedRemoteCoordinator {
     } catch (error) {
       logger.warn('[RemoteAccess] Could not clear the saved record', { error: errorName(error) });
     }
-    const closing = this.deps.tunnel.closeManaged({ immediate: true }).catch((error: unknown) => {
-      logger.warn('[RemoteAccess] Managed close failed', { error: errorName(error) });
-    });
+    const closing = this.closeManaged(true, 'withdrawn');
     const cloudHasSomething =
       before.enrolmentId !== null ||
       before.credentialId !== null ||
@@ -434,10 +437,15 @@ export class ManagedRemoteCoordinator {
     } catch (error) {
       logger.warn('[RemoteAccess] Could not narrow the saved record', { error: errorName(error) });
     }
-    if (this.deps.tunnel.getManagedPhase() !== null) {
-      void this.deps.tunnel.closeManaged({ immediate: true }).catch(() => undefined);
-    }
+    if (this.deps.tunnel.getManagedPhase() !== null) void this.closeManaged(true, 'link_changed');
     logger.info('[RemoteAccess] Ignored an enrolment from another link');
+  }
+
+  /** Close managed access for `reason`, now or gently; a failure is logged, never thrown. */
+  private closeManaged(immediate: boolean, reason: string): Promise<void> {
+    return this.deps.tunnel.closeManaged({ immediate, reason }).catch((error: unknown) => {
+      logger.warn('[RemoteAccess] Managed close failed', { error: errorName(error) });
+    });
   }
 
   private isLive(epoch: number, context: CloudV1Context): boolean {

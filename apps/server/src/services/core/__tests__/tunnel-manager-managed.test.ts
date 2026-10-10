@@ -601,3 +601,66 @@ describe('review fixes (DOR-2086 S1)', () => {
     expect(ingress.close).toHaveBeenCalledWith({ immediate: false, drainDeadlineMs: 5_000 });
   });
 });
+
+describe('drain deadline and the end of a session (DOR-2086 S5)', () => {
+  it('reports when a gentle close cuts the rest, and that Cloud set it', async () => {
+    await open(['a.example']);
+    let release!: () => void;
+    vi.mocked(ingress.close).mockImplementationOnce(async () => {
+      await new Promise<void>((resolve) => (release = resolve));
+      return { deadlineHit: false, usedLocalDeadline: false };
+    });
+    const before = Date.now();
+    const closing = manager.closeManaged({ immediate: false, drainDeadlineMs: 20_000 });
+    const drain = manager.getManagedDrain();
+    expect(manager.getManagedPhase()).toBe('draining');
+    expect(drain?.deadline).toBe('cloud');
+    expect(Date.parse(drain!.until)).toBeGreaterThanOrEqual(before + 20_000);
+    expect(Date.parse(drain!.until)).toBeLessThanOrEqual(Date.now() + 20_000);
+    release();
+    await closing;
+    expect(manager.getManagedDrain()).toBeNull();
+  });
+
+  it('says the local default applies when the close named no deadline', async () => {
+    await open(['a.example']);
+    let release!: () => void;
+    vi.mocked(ingress.close).mockImplementationOnce(async () => {
+      await new Promise<void>((resolve) => (release = resolve));
+      return { deadlineHit: false, usedLocalDeadline: true };
+    });
+    const closing = manager.closeManaged({ immediate: false });
+    expect(manager.getManagedDrain()?.deadline).toBe('local');
+    release();
+    await closing;
+  });
+
+  it('has no deadline to report for an immediate close or a bare drain', async () => {
+    await open(['a.example']);
+    manager.beginDrain();
+    expect(manager.getManagedDrain()).toBeNull();
+    await manager.closeManaged({ immediate: true });
+    expect(manager.getManagedDrain()).toBeNull();
+  });
+
+  it('announces the end of a session once, with the first reason given', async () => {
+    const ended = vi.fn();
+    manager.on('managed_closed', ended);
+    await open(['a.example'], { generation: 7 });
+    let release!: () => void;
+    vi.mocked(ingress.close).mockImplementationOnce(async () => {
+      await new Promise<void>((resolve) => (release = resolve));
+      return { deadlineHit: false, usedLocalDeadline: true };
+    });
+    const idle = manager.closeManaged({ immediate: false, reason: 'idle' });
+    // A withdrawal hurries the idle close along; the session still ended for being idle.
+    const withdraw = manager.closeManaged({ immediate: true, reason: 'withdrawn' });
+    release();
+    await Promise.all([idle, withdraw]);
+    expect(ended).toHaveBeenCalledTimes(1);
+    expect(ended.mock.calls[0]![0]).toMatchObject({ generation: 7, reason: 'idle' });
+    // Nothing open: nothing to announce.
+    await manager.closeManaged({ immediate: true, reason: 'withdrawn' });
+    expect(ended).toHaveBeenCalledTimes(1);
+  });
+});

@@ -49,6 +49,7 @@ import type { MainRequestAdmission } from '../services/core/lifecycle/main-reque
 import type { AuditActorContext } from '../services/audit/audit-context.js';
 import { runWithAuditActor } from '../services/audit/audit-context.js';
 import { decideSessionGate, AUTH_REQUIRED_BODY } from '../services/core/auth/session-gate.js';
+import { noteGateAdmitted } from '../services/core/remote/ingress-mark.js';
 import { resolveAgentIdentityFromHeaders } from '../middleware/agent-identity.js';
 import { auditActorForRequest } from '../middleware/audit-actor.js';
 import { auditFallbackFor } from '../middleware/audit-request-fallback.js';
@@ -185,6 +186,7 @@ export function createApiApp(options: ApiChainOptions): Hono<ApiEnv> {
     const decision = await decideSessionGate(c.req.method, c.req.path, honoRequestFacts(c));
     if (!decision.allowed) return c.json(AUTH_REQUIRED_BODY, 401);
     if (decision.user) c.set('user', decision.user);
+    noteGateAdmitted(c.env.incoming, c.env.outgoing);
     await next();
   });
   app.use(async (c, next) => {

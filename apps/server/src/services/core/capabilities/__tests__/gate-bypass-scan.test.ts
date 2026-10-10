@@ -581,6 +581,51 @@ const PROTECTED_EFFECTS: ProtectedEffect[] = [
     },
   },
   {
+    // DOR-2086 S5. Reconnecting Cloud's command stream at boot: once it runs,
+    // Cloud's `open` commands can publish this computer (each still behind its
+    // own `CloudAuthority` and `canExpose()`). Boot is the one automatic door,
+    // and the boot rule decides whether it may.
+    what: "reconnects DorkOS Cloud's command stream at boot, through which Cloud may later open managed access",
+    call: 'managedRemoteCommands.boot(',
+    allowed: {
+      'index.ts':
+        "the server's own start, with the boot rule's answer (`currentRemoteBootPlan`: an explicit TUNNEL_ENABLED holds it down, a saved managed choice under an active enrolment lets it reconnect); the stream still checks the flag, availability, the enrolment under the current link, a stored credential and `canExpose()` before connecting, and opens nothing itself",
+    },
+  },
+  {
+    // A second command service would be a second stream and dispatcher the
+    // shutdown and withdrawal paths never stop.
+    what: "builds another holder of DorkOS Cloud's command stream",
+    call: 'new ManagedCommandService(',
+    allowed: {
+      'services/core/remote/managed-command-service.ts':
+        'the module singleton, `managedRemoteCommands`',
+    },
+  },
+  {
+    // DOR-2086 S5. Opening the person's own tunnel with nobody asking, at boot.
+    what: "opens the person's own ngrok tunnel at boot, publishing this computer",
+    call: 'autostartOwnTunnel(',
+    allowed: {
+      'services/core/remote/remote-boot.ts':
+        'the definition itself: it opens only when the boot rule says so and `canExpose()` allows it',
+      'index.ts':
+        "the server's own start, with the boot rule's answer (`currentRemoteBootPlan`), never from a request",
+    },
+  },
+  {
+    // DOR-2086 S5. Who hears every managed request the session gate admitted.
+    // It reads nothing secret (the ingress already stripped the edge proof), but
+    // it drives the idle close, so a second listener is not allowed in silently.
+    what: 'hears every managed request the session gate admitted, which drives the activity count and the idle close',
+    call: 'setManagedAdmissionListener(',
+    allowed: {
+      'services/core/remote/ingress-mark.ts': 'the definition itself',
+      'services/core/remote/managed-command-service.ts':
+        'the one activity window, `managedActivity`, which only counts and closes managed access gently when idle; closing only narrows',
+    },
+  },
+  {
     // DOR-2086. Starting managed setup: it asks Cloud for an enrolment request
     // and, once a person approves it there, stores a credential and selects
     // managed mode. A person's, at this computer, so its one caller is pinned.

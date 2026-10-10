@@ -56,7 +56,7 @@ import {
   checkBindAllowed,
 } from './services/core/auth/exposure-guard.js';
 import { tunnelManager } from './services/core/tunnel-manager.js';
-import { resolveTunnelSettings } from './services/core/config/tunnel-settings.js';
+import { scheduleJittered, type JitteredSchedule } from './lib/jittered-schedule.js';
 import { initCloudLinkManager, getCloudLinkManager } from './services/core/auth/cloud-link.js';
 import {
   revokeHeldCreditsToken,
@@ -287,6 +287,7 @@ import {
 } from './services/core/permissions/index.js';
 import { managedRemoteCoordinator } from './services/core/remote/managed-remote-coordinator.js';
 import { managedRemoteCommands } from './services/core/remote/managed-command-service.js';
+import { autostartOwnTunnel, currentRemoteBootPlan } from './services/core/remote/remote-boot.js';
 import { titleForMcpTool } from './services/core/mcp-tool-tiers.js';
 import { createTeamRouter } from './routes/team.js';
 import { createProfileRouter } from './routes/profile.js';
@@ -877,8 +878,9 @@ let commitmentWiring: CommitmentWiring | undefined;
 let healthCheckInterval: ReturnType<typeof setInterval> | undefined;
 let dailySnapshotInterval: ReturnType<typeof setInterval> | undefined;
 let sessionAttachmentSweepInterval: ReturnType<typeof setInterval> | undefined;
-let managedAuthorityRecoveryInterval: ReturnType<typeof setInterval> | undefined;
-let managedUsageMirrorRecoveryInterval: ReturnType<typeof setInterval> | undefined;
+// Jittered beats (`lib/jittered-schedule.ts`), so linked computers do not call Cloud in step.
+let managedAuthorityRecoveryInterval: JitteredSchedule | undefined;
+let managedUsageMirrorRecoveryInterval: JitteredSchedule | undefined;
 // Stops the approval expiry sweep (DOR-1932). A function rather than a timer
 // handle because the sweep owns its own interval and hands back a closer.
 let stopApprovalExpirySweep: (() => void) | undefined;
@@ -6086,8 +6088,8 @@ async function start() {
       // hands requests to the same front door and upgrades to the router above.
       // Nothing listens until managed access opens.
       tunnelManager.attachManagedIngress(managedIngressFor(frontDoorListener(frontDoor), server));
-      // Reconnect Cloud's command stream when already set up (DOR-2086); opens nothing.
-      managedRemoteCommands.boot(db);
+      // Reconnect Cloud's command stream when the boot rule allows it (DOR-2086); opens nothing.
+      managedRemoteCommands.boot(db, currentRemoteBootPlan(env));
 
       // Fire-and-forget: record startup in the activity feed so the dashboard
       // shows when the server was last (re)started.
@@ -6299,7 +6301,7 @@ async function start() {
     connectorAuthenticationFlows.expireAbandoned();
   };
   recoverManagedAuthority();
-  managedAuthorityRecoveryInterval = setInterval(recoverManagedAuthority, 30_000);
+  managedAuthorityRecoveryInterval = scheduleJittered(recoverManagedAuthority, 30_000);
   const recoverManagedUsageMirrors = () => {
     if (!getCloudLinkManager().getSummary().linked) return;
     void managedUsageMirrors.recover(50, new AbortController().signal).catch((error: unknown) => {
@@ -6307,44 +6309,20 @@ async function start() {
     });
   };
   recoverManagedUsageMirrors();
-  managedUsageMirrorRecoveryInterval = setInterval(recoverManagedUsageMirrors, 60_000);
+  managedUsageMirrorRecoveryInterval = scheduleJittered(recoverManagedUsageMirrors, 60_000);
 
-  // Start ngrok tunnel if enabled — by the environment this process was given,
-  // or by the stored `tunnel.enabled` preference the /api/tunnel/start route
-  // writes when someone turns Remote Access on in the app (DOR-1738). The
-  // exposure guard (task 1.3) also gates the boot-time autostart: skip (and log)
-  // rather than expose without a login.
-  const bootTunnel = resolveTunnelSettings({
+  // Start the person's own tunnel if this process or the saved config says so,
+  // behind the exposure guard — unless a saved DorkOS remote access choice
+  // outranks the saved flag (DOR-1738, DOR-2086: the boot rule in `remote-boot.ts`).
+  await autostartOwnTunnel({
     env,
     stored: configManager.get('tunnel'),
     fallbackPort: getLocalCockpitPort(),
+    apiPort: PORT,
+    plan: currentRemoteBootPlan(env),
+    canExpose,
+    tunnel: tunnelManager,
   });
-  if (bootTunnel.enabled) {
-    if (!canExpose()) {
-      logger.warn(
-        '[Tunnel] Autostart skipped — exposing DorkOS requires a login. Enable login and ' +
-          'create an owner account first (AUTH_REQUIRED_FOR_EXPOSURE).'
-      );
-    } else {
-      try {
-        const url = await tunnelManager.start(bootTunnel.config);
-
-        const isDevPort = bootTunnel.config.port !== PORT;
-
-        logger.info('[Tunnel] ngrok tunnel active', {
-          url,
-          port: bootTunnel.config.port,
-          auth: bootTunnel.config.basicAuth ? 'basic auth enabled' : 'none (open)',
-          ...(isDevPort && { mode: `dev (Vite on :${bootTunnel.config.port})` }),
-        });
-      } catch (err) {
-        logger.warn(
-          '[Tunnel] Failed to start ngrok tunnel — server continues without tunnel.',
-          logError(err)
-        );
-      }
-    }
-  }
 
   // Wire tunnel status changes to unified SSE stream
   tunnelManager.on('status_change', (status) => {
@@ -6449,12 +6427,8 @@ async function shutdownServices() {
   if (sessionAttachmentSweepInterval) {
     clearInterval(sessionAttachmentSweepInterval);
   }
-  if (managedAuthorityRecoveryInterval) {
-    clearInterval(managedAuthorityRecoveryInterval);
-  }
-  if (managedUsageMirrorRecoveryInterval) {
-    clearInterval(managedUsageMirrorRecoveryInterval);
-  }
+  managedAuthorityRecoveryInterval?.stop();
+  managedUsageMirrorRecoveryInterval?.stop();
   if (stopApprovalExpirySweep) {
     stopApprovalExpirySweep();
     stopApprovalExpirySweep = undefined;
@@ -6523,6 +6497,7 @@ async function shutdownServices() {
   // the query so the CLI child actually dies. No-op when none was ever warmed,
   // which is every server until the persistent path is opted into.
   await shutdownSessionPumps();
+  // Stream cancelled, managed access drained within its deadline, what is owed kept (DOR-2086).
   await managedRemoteCommands.shutdown();
   await tunnelManager.stop();
   // After every runtime and the scheduler: nothing is left to hold awake.

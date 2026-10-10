@@ -38,6 +38,7 @@ import { logger } from '../../../lib/logger.js';
 // the auth barrel (which re-exports this module) is a safe function-level cycle.
 import { getAuth } from './index.js';
 import type { RequestFacts } from '../../../http/request-facts.js';
+import { noteGateAdmitted } from '../remote/ingress-mark.js';
 
 /** The identity resolved from a request's credentials, attached to `res.locals.user`. */
 export interface RequestUser {
@@ -310,5 +311,7 @@ export async function sessionGate(req: Request, res: Response, next: NextFunctio
     return;
   }
   if (decision.user) res.locals.user = decision.user;
+  // Managed remote access counts a request only once this gate let it through.
+  noteGateAdmitted(req, res);
   next();
 }

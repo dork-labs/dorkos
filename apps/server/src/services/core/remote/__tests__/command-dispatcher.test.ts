@@ -2,7 +2,7 @@
  * The command dispatcher (DOR-2086): journal before acting, mint once, act
  * with a re-checked authority, and never act twice on one command id.
  */
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import openFixture from '@dork-labs/cloud-api/fixtures/v1/remote/command-open.json' with { type: 'json' };
 import address from '@dork-labs/cloud-api/fixtures/v1/remote/address.json' with { type: 'json' };
 import withEdgeProof from '@dork-labs/cloud-api/fixtures/v1/remote/credential-with-edge-proof.json' with { type: 'json' };
@@ -192,6 +192,34 @@ describe('open', () => {
   });
 });
 
+describe('the activity window', () => {
+  it('starts with the wake and the windows of an applied open, and never for a refused one', async () => {
+    const onOpened = vi.fn();
+    const dispatcher = new CommandDispatcher({
+      journal: w.journal,
+      tunnelManager: w.tunnel,
+      remoteCredentials: w.credentials,
+      readRemoteState,
+      updateRemoteState,
+      onSettled: () => undefined,
+      onOpened,
+    });
+    const timed = { ...open, idleWindowSeconds: 900, drainDeadlineSeconds: 20 } as LeasedCommand;
+    expect(await dispatcher.dispatch(timed, w.link)).toBe('applied');
+    expect(onOpened).toHaveBeenCalledWith({
+      instanceId: w.link.instanceId,
+      wakeId: openFixture.wakeId,
+      idleWindowSeconds: 900,
+      drainDeadlineSeconds: 20,
+    });
+    w.tunnel.failWith = { ok: false, reason: 'exposure_not_allowed', message: 'no' };
+    expect(await dispatcher.dispatch({ ...timed, id: 'cmd_open_2' } as LeasedCommand, w.link)).toBe(
+      'refused:exposure-not-allowed'
+    );
+    expect(onOpened).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe('close', () => {
   it('drains to the deadline the open carried', async () => {
     const quick = { ...open, drainDeadlineSeconds: 5 } as LeasedCommand;
@@ -200,6 +228,7 @@ describe('close', () => {
     expect(w.tunnel.closeManaged).toHaveBeenCalledWith({
       immediate: false,
       drainDeadlineMs: 5_000,
+      reason: 'closed_by_cloud',
     });
   });
 
@@ -210,6 +239,7 @@ describe('close', () => {
     expect(w.tunnel.closeManaged).toHaveBeenCalledWith({
       immediate: false,
       drainDeadlineMs: undefined,
+      reason: 'closed_by_cloud',
     });
   });
 
@@ -220,6 +250,7 @@ describe('close', () => {
     expect(w.tunnel.closeManaged).toHaveBeenCalledWith({
       immediate: false,
       drainDeadlineMs: MAX_DRAIN_DEADLINE_MS,
+      reason: 'closed_by_cloud',
     });
   });
 
@@ -317,7 +348,7 @@ describe('revoke', () => {
   it('forgets the credential in use and closes at once; a later open cannot recover it', async () => {
     w.tunnel.phase = 'open';
     expect(await w.dispatcher.dispatch(revoke(CURRENT.credentialId), w.link)).toBe('applied');
-    expect(w.tunnel.closeManaged).toHaveBeenCalledWith({ immediate: true });
+    expect(w.tunnel.closeManaged).toHaveBeenCalledWith({ immediate: true, reason: 'revoked' });
     expect(readRemoteState()).toMatchObject({
       credentialId: null,
       credentialRef: null,
