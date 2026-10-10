@@ -81,7 +81,11 @@ function fakeTunnel() {
 interface Harness {
   cloud: FakeCloud;
   coordinator: ManagedRemoteCoordinator;
-  commands: { start: ReturnType<typeof vi.fn>; stop: ReturnType<typeof vi.fn> };
+  commands: {
+    start: ReturnType<typeof vi.fn>;
+    stop: ReturnType<typeof vi.fn>;
+    activityReportsStuck: boolean;
+  };
   tunnel: ReturnType<typeof fakeTunnel>;
   store: CredentialStore;
   sleeps: number[];
@@ -105,7 +109,7 @@ function harness(
   const waiting: Array<() => void> = [];
   const cloud = new FakeCloud();
   const tunnel = fakeTunnel();
-  const commands = { start: vi.fn(async () => true), stop: vi.fn() };
+  const commands = { start: vi.fn(async () => true), stop: vi.fn(), activityReportsStuck: false };
   const store = options.store ?? new EncryptedFileCredentialStore(tmpDir);
   const sleeps: number[] = [];
   const now = { value: Date.parse('2026-09-15T12:00:00.000Z') };

@@ -63,7 +63,7 @@ import { CommandJournal } from './command-journal.js';
 import { CommandStream, type CommandStreamDeps } from './command-stream.js';
 import { ManagedActivity, type OpenedWindow } from './managed-activity.js';
 import { managedAvailability, type ManagedAvailability } from './managed-availability.js';
-import { setManagedAdmissionListener } from './ingress-mark.js';
+import { setManagedAdmissionListener, setManagedUpgradeListener } from './ingress-mark.js';
 import { MANAGED_DRAIN_DEADLINE_MS } from './managed-ingress.js';
 import { errorName } from './managed-remote-support.js';
 import { remoteCredentials } from './remote-credentials.js';
@@ -143,6 +143,11 @@ export class ManagedCommandService {
   /** Whether a command stream is running. */
   get running(): boolean {
     return this.session !== null;
+  }
+
+  /** Whether the running stream's activity reports have kept failing to reach Cloud. */
+  get activityReportsStuck(): boolean {
+    return this.session?.sender.stuck ?? false;
   }
 
   /** The dispatcher, once attached; for tests that wait on it. */
@@ -292,7 +297,8 @@ export class ManagedCommandService {
     if (dispatcher) {
       dispatcher.halt();
       const idle = await within(dispatcher.idle, left());
-      if (!idle) logger.warn('[RemoteAccess] A command was still running at shutdown', { budgetMs });
+      if (!idle)
+        logger.warn('[RemoteAccess] A command was still running at shutdown', { budgetMs });
     }
     const tunnel = this.deps.tunnel;
     if (tunnel && tunnel.getManagedPhase() !== null) {
@@ -325,7 +331,9 @@ export class ManagedCommandService {
     if (this.watching) return;
     const onChange = () => void this.reconcile();
     this.watching = {
-      beat: scheduleJittered(onChange, RECONCILE_INTERVAL_MS, { random: this.deps.random }),
+      beat: scheduleJittered(() => this.reconcile(), RECONCILE_INTERVAL_MS, {
+        random: this.deps.random,
+      }),
       unsubscribe: this.deps.watchChanges?.(onChange) ?? (() => undefined),
     };
   }
@@ -404,10 +412,13 @@ async function within(work: Promise<unknown>, ms: number): Promise<boolean> {
     timer.unref?.();
   });
   try {
-    return await Promise.race([work.then(
-      () => true as const,
-      () => true as const
-    ), late]);
+    return await Promise.race([
+      work.then(
+        () => true as const,
+        () => true as const
+      ),
+      late,
+    ]);
   } finally {
     clearTimeout(timer);
   }
@@ -488,7 +499,7 @@ export const managedRemoteCommands: ManagedCommandService = new ManagedCommandSe
 
 /**
  * The process's activity window and idle close (`managed-activity.ts`). Every
- * managed request the session gate admits is counted here, and each batch it
+ * admitted managed request and accepted managed WebSocket is counted here, and each batch it
  * reports is stored and sent through {@link managedRemoteCommands}.
  */
 export const managedActivity: ManagedActivity = new ManagedActivity({
@@ -496,3 +507,4 @@ export const managedActivity: ManagedActivity = new ManagedActivity({
   report: (batch) => managedRemoteCommands.reportActivity(batch),
 });
 setManagedAdmissionListener((req, res) => managedActivity.admitted(req, res));
+setManagedUpgradeListener((req, socket) => managedActivity.upgraded(req, socket));

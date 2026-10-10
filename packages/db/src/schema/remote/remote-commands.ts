@@ -96,6 +96,11 @@ export const remoteEventOutbox = sqliteTable(
     batch: text('batch').notNull(),
     /** How many times it was sent. */
     attempts: integer('attempts').notNull().default(0),
+    /**
+     * How many of those sends Cloud refused outright. Kept apart from
+     * `attempts`, so outages and timeouts never count toward giving up on it.
+     */
+    refusals: integer('refusals').notNull().default(0),
     /** When it was written (ISO 8601). */
     createdAt: text('created_at').notNull(),
     /** When it was last sent (ISO 8601), or NULL when never. */

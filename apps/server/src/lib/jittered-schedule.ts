@@ -7,9 +7,14 @@
  * floor and a ceiling placed symmetrically around the period, so the average
  * wait stays the period the caller named and only the phase spreads out.
  *
- * - **Floor**, a tenth of the period: never a tight loop, however the draws fall.
- * - **Cap**, the period doubled less the floor: never much longer than twice
- *   the old fixed beat.
+ * - **Floor**, half the period: never a tight loop, however the draws fall.
+ * - **Cap**, the period doubled less the floor (one and a half periods): never
+ *   much longer than the old fixed beat.
+ *
+ * **Never overlapping itself.** A task that returns a promise is still running
+ * until it settles; a beat that comes due meanwhile is skipped, and the next
+ * wait is drawn as usual. A run that never settles holds off no more than
+ * {@link MAX_SKIPPED_BEATS} beats, so one hung call cannot stop the schedule.
  *
  * Timers are `unref()`ed, so a schedule never keeps the process alive.
  *
@@ -24,7 +29,10 @@ export interface ScheduleTimers {
 }
 
 /** The share of the period that is the shortest possible wait. */
-export const JITTER_FLOOR_FRACTION = 0.1;
+export const JITTER_FLOOR_FRACTION = 0.5;
+
+/** How many beats in a row a run still in flight may hold off before the next runs anyway. */
+export const MAX_SKIPPED_BEATS = 3;
 
 /** A running schedule. */
 export interface JitteredSchedule {
@@ -65,16 +73,17 @@ export function jitteredDelay(periodMs: number, random: () => number = Math.rand
 
 /**
  * Run `task` again and again, each time after a fresh {@link jitteredDelay}.
- * The first run is one wait away, as with `setInterval`. A task that throws is
- * logged, not retried early, and does not stop the schedule.
+ * The first run is one wait away, as with `setInterval`. A task that throws
+ * (or rejects) is logged, not retried early, and does not stop the schedule.
  *
- * @param task - The work. Not awaited: a slow run never delays the next wait.
+ * @param task - The work. A returned promise is not awaited before the next
+ *   wait, but a beat that comes due while it is still pending is skipped.
  * @param periodMs - The average time between runs.
  * @param options - Seams for tests.
  * @returns The handle that stops it.
  */
 export function scheduleJittered(
-  task: () => void,
+  task: () => void | Promise<unknown>,
   periodMs: number,
   options: JitteredScheduleOptions = {}
 ): JitteredSchedule {
@@ -82,6 +91,15 @@ export function scheduleJittered(
   const timers = options.timers ?? DEFAULT_TIMERS;
   let stopped = false;
   let handle: unknown = null;
+  let running = false;
+  let skipped = 0;
+  let current: Promise<unknown> | null = null;
+
+  const failed = (error: unknown) => {
+    logger.warn('[Schedule] A scheduled run failed; the next one is still due', {
+      error: error instanceof Error ? error.name : typeof error,
+    });
+  };
 
   const arm = () => {
     if (stopped) return;
@@ -89,12 +107,25 @@ export function scheduleJittered(
       () => {
         handle = null;
         if (stopped) return;
-        try {
-          task();
-        } catch (error) {
-          logger.warn('[Schedule] A scheduled run failed; the next one is still due', {
-            error: error instanceof Error ? error.name : typeof error,
-          });
+        // The previous run is still going: skip this beat rather than overlap it.
+        if (running && skipped < MAX_SKIPPED_BEATS) {
+          skipped += 1;
+        } else {
+          if (running) logger.warn('[Schedule] A scheduled run is still going; starting the next');
+          skipped = 0;
+          try {
+            const result = task();
+            if (result && typeof result.then === 'function') {
+              running = true;
+              const run = result;
+              void run.then(undefined, failed).finally(() => {
+                if (current === run) running = false;
+              });
+              current = run;
+            }
+          } catch (error) {
+            failed(error);
+          }
         }
         arm();
       },

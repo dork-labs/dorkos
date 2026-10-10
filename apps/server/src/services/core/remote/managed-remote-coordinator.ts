@@ -129,7 +129,7 @@ export interface ManagedRemoteCoordinatorDeps {
   updateRemoteState: (subsystem: string, patch: Partial<RemoteState>) => RemoteState;
   remoteCredentials: Pick<RemoteCredentials, 'put' | 'delete'>;
   /** The command stream: started once setup finishes, stopped on withdrawal. */
-  commands: Pick<ManagedCommandService, 'start' | 'stop'>;
+  commands: Pick<ManagedCommandService, 'start' | 'stop' | 'activityReportsStuck'>;
   tunnel: Pick<
     typeof tunnelManager,
     | 'status'
@@ -196,6 +196,7 @@ export class ManagedRemoteCoordinator {
       liveMode: this.deps.tunnel.getMode(),
       managedPhase: this.deps.tunnel.getManagedPhase(),
       drain: this.deps.tunnel.getManagedDrain(),
+      activityReportsStuck: this.deps.commands.activityReportsStuck,
       remote: this.deps.readRemoteState(),
       ownTunnelEnabled: this.deps.ownTunnelEnabled(),
       availability,

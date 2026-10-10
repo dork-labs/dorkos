@@ -29,6 +29,7 @@ import {
 } from '../../../lib/trusted-origins.js';
 import { isHostAllowed, parseTrustedHosts } from '../../../middleware/host-guard.js';
 import { bypassesManagedIngress } from '../../../middleware/managed-host-guard.js';
+import { noteUpgradeAdmitted } from '../remote/ingress-mark.js';
 import { configManager } from '../config-manager.js';
 import { env } from '../../../env.js';
 import { authorizeStreamUpgrade, type StreamUpgradeLocals } from './stream-upgrade-auth.js';
@@ -321,6 +322,8 @@ export function attachUpgradeRouter(
       wss.handleUpgrade(req, socket, head, (ws) => {
         if (decision.ok) {
           decision.open(ws);
+          // Managed remote access counts it only now, past every check above.
+          noteUpgradeAdmitted(req, ws);
           return;
         }
         ws.close(STREAM_CLOSE_CODE_BASE + decision.status, decision.message);

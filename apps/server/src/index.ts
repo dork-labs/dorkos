@@ -57,6 +57,7 @@ import {
 } from './services/core/auth/exposure-guard.js';
 import { tunnelManager } from './services/core/tunnel-manager.js';
 import { scheduleJittered, type JitteredSchedule } from './lib/jittered-schedule.js';
+import { createSignalShutdown } from './lib/shutdown-signal.js';
 import { initCloudLinkManager, getCloudLinkManager } from './services/core/auth/cloud-link.js';
 import {
   revokeHeldCreditsToken,
@@ -6267,48 +6268,50 @@ async function start() {
     connectorEventInbox.sweepRetention(now);
     connectorEventInbox.sweepMetadata(now);
     connectorEventSessionSource.sweepPreparations(now);
-    void connectorEventGrants.recoverPending(AbortSignal.timeout(25_000)).catch(() => {
-      logger.warn('[Connectors] Notification setup deferred');
-    });
-    void connectorEventService.recoverCleanup(AbortSignal.timeout(25_000)).catch(() => {
-      logger.warn('[Connectors] Notification cleanup deferred');
-    });
-    const pendingDelivery = recoverConnectorEventDelivery();
-    void connectorEventPull
-      .recover(AbortSignal.timeout(25_000))
-      .then(async () => {
-        // The pull can commit new inbox rows while a prior delivery pass is in
-        // flight. Wait for that pass, then start another so newly pulled rows do
-        // not wait for the next maintenance tick.
-        await pendingDelivery;
-        await recoverConnectorEventDelivery();
-      })
-      .catch(() => {
-        logger.warn('[Connectors] Notification handoff deferred');
-      });
-    void managedConnectorAuthority
-      .recoverPending(new AbortController().signal)
-      .catch((error: unknown) => {
-        logger.warn('[Connectors] Managed authority recovery failed', logError(error));
-      });
-    // Removing an own-key account's access at the service is DorkOS's job
-    // after a disconnect; a sign-in again nobody finished gives its account back.
-    void connectorLifecycle
-      .finishOwedCleanups(AbortSignal.timeout(25_000))
-      .catch((error: unknown) => {
-        logger.warn('[Connectors] Account cleanup at the service deferred', logError(error));
-      });
     connectorAuthenticationFlows.expireAbandoned();
+    const pendingDelivery = recoverConnectorEventDelivery();
+    // Settles when every part has, so the jittered beat never overlaps a run.
+    return Promise.allSettled([
+      pendingDelivery,
+      connectorEventGrants.recoverPending(AbortSignal.timeout(25_000)).catch(() => {
+        logger.warn('[Connectors] Notification setup deferred');
+      }),
+      connectorEventService.recoverCleanup(AbortSignal.timeout(25_000)).catch(() => {
+        logger.warn('[Connectors] Notification cleanup deferred');
+      }),
+      connectorEventPull
+        .recover(AbortSignal.timeout(25_000))
+        .then(async () => {
+          // The pull can commit new inbox rows while a prior delivery pass is in
+          // flight. Wait for that pass, then start another so newly pulled rows do
+          // not wait for the next maintenance tick.
+          await pendingDelivery;
+          await recoverConnectorEventDelivery();
+        })
+        .catch(() => {
+          logger.warn('[Connectors] Notification handoff deferred');
+        }),
+      managedConnectorAuthority
+        .recoverPending(new AbortController().signal)
+        .catch((error: unknown) => {
+          logger.warn('[Connectors] Managed authority recovery failed', logError(error));
+        }),
+      // Removing an own-key account's access at the service is DorkOS's job
+      // after a disconnect; a sign-in again nobody finished gives its account back.
+      connectorLifecycle.finishOwedCleanups(AbortSignal.timeout(25_000)).catch((error: unknown) => {
+        logger.warn('[Connectors] Account cleanup at the service deferred', logError(error));
+      }),
+    ]);
   };
-  recoverManagedAuthority();
+  void recoverManagedAuthority();
   managedAuthorityRecoveryInterval = scheduleJittered(recoverManagedAuthority, 30_000);
-  const recoverManagedUsageMirrors = () => {
+  const recoverManagedUsageMirrors = async () => {
     if (!getCloudLinkManager().getSummary().linked) return;
-    void managedUsageMirrors.recover(50, new AbortController().signal).catch((error: unknown) => {
+    await managedUsageMirrors.recover(50, new AbortController().signal).catch((error: unknown) => {
       logger.warn('[Connectors] Managed receipt recovery failed', logError(error));
     });
   };
-  recoverManagedUsageMirrors();
+  void recoverManagedUsageMirrors();
   managedUsageMirrorRecoveryInterval = scheduleJittered(recoverManagedUsageMirrors, 60_000);
 
   // Start the person's own tunnel if this process or the saved config says so,
@@ -6513,15 +6516,8 @@ async function shutdownServices() {
   releaseInstanceLock = undefined;
 }
 
-// Graceful shutdown — guarded against concurrent signals (SIGINT + SIGTERM)
-let shuttingDown = false;
-async function shutdown() {
-  if (shuttingDown) return;
-  shuttingDown = true;
-  logger.info('[DorkOS] shutting down');
-  await shutdownServices();
-  process.exit(0);
-}
+// Graceful shutdown on the first signal; a second one exits at once.
+const shutdown = createSignalShutdown(shutdownServices);
 
 process.on('SIGINT', shutdown);
 process.on('SIGTERM', shutdown);

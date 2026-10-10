@@ -35,6 +35,7 @@ import { authorizeStreamUpgrade } from '../stream-upgrade-auth.js';
 import { resolveTrustedOrigins } from '../../../../lib/trusted-origins.js';
 import { env } from '../../../../env.js';
 import { configManager } from '../../config-manager.js';
+import { markManagedIngress, setManagedUpgradeListener } from '../../remote/ingress-mark.js';
 
 const gate = vi.mocked(authorizeStreamUpgrade);
 const loginEnabled = (enabled: boolean): void => {
@@ -369,6 +370,40 @@ describe('attachUpgradeRouter', () => {
       await attempt('/api/accept');
 
       expect(gate).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('managed remote access counts an upgrade only once it is accepted', () => {
+    afterEach(() => setManagedUpgradeListener(null));
+
+    it('hears an accepted managed upgrade and its client input, never a refused one', async () => {
+      const heard: string[] = [];
+      const messages: string[] = [];
+      setManagedUpgradeListener((req, socket) => {
+        heard.push(req.url ?? '');
+        socket.on('message', () => messages.push(req.url ?? ''));
+      });
+      gate.mockImplementation(async (headers) =>
+        headers['x-test-signed-out']
+          ? { ok: false, status: 401, message: 'Unauthorized' }
+          : { ok: true, locals: {} }
+      );
+      await listen([acceptingRoute, closeFrameRefusalRoute, gatedRoute]);
+      // Stand in for the managed ingress, which marks before handing upgrades on.
+      server.prependListener('upgrade', (req) => markManagedIngress(req));
+
+      expect((await attempt('/api/accept')).opened).toBe(true);
+      expect((await attempt('/api/refuse-close')).closeCode).toBe(STREAM_CLOSE_CODE_BASE + 401);
+      expect((await attempt('/api/gated', { 'x-test-signed-out': '1' })).closeCode).toBe(
+        STREAM_CLOSE_CODE_BASE + 401
+      );
+      expect(heard).toEqual(['/api/accept']);
+
+      const ws = new WebSocket(`ws://127.0.0.1:${port}/api/gated`);
+      await new Promise((resolve) => ws.once('open', resolve));
+      ws.send('keystroke');
+      await vi.waitFor(() => expect(messages).toEqual(['/api/gated']));
+      ws.close();
     });
   });
 

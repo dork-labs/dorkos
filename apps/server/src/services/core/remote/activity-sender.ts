@@ -12,7 +12,8 @@
  *   stored, so for a stored one it can only mean Cloud already holds it.
  * - **Refused is retried, then let go.** A refusal keeps its key and is tried
  *   again on the backoff below; a batch refused {@link EVENTS_MAX_REFUSALS}
- *   times is dropped with a warning rather than blocking every later one. An
+ *   times (counted apart from other failures, and kept across restarts) is
+ *   dropped with a warning rather than blocking every later one. An
  *   outage, a timeout, an expired key or a rate limit is retried without limit
  *   (the outbox's own bounds still apply).
  * - **Never in the way.** Nothing local waits on it: withdrawal, closing and
@@ -49,7 +50,7 @@ const TRANSIENT_STATUSES = new Set([401, 403, 408, 425, 429]);
 
 /** What the sender touches, injectable for tests. */
 export interface ActivitySenderDeps {
-  outbox: Pick<ActivityOutbox, 'pending' | 'noteAttempt' | 'retire'>;
+  outbox: Pick<ActivityOutbox, 'pending' | 'noteAttempt' | 'noteRefusal' | 'retire'>;
   random?: () => number;
   timers?: {
     setTimeout: (fn: () => void, ms: number) => unknown;
@@ -152,13 +153,15 @@ export class ActivitySender {
       const status = problem?.status;
       const refused =
         status !== undefined && status >= 400 && status < 500 && !TRANSIENT_STATUSES.has(status);
-      if (refused && item.attempts + 1 >= EVENTS_MAX_REFUSALS) {
+      // Only refusals count toward giving up: an outage never drops a batch.
+      if (refused && item.refusals + 1 >= EVENTS_MAX_REFUSALS) {
         this.deps.outbox.retire(item.id);
         logger.warn('[RemoteAccess] Cloud kept refusing an activity report; dropped it', {
           code: problem?.code,
         });
         return 'done';
       }
+      if (refused) this.deps.outbox.noteRefusal(item.id);
       logger.warn('[RemoteAccess] Activity report not delivered; will retry', {
         error: problem?.code ?? errorName(error),
       });

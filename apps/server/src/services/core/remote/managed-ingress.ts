@@ -41,7 +41,8 @@ import {
   stripEdgeProofHeaders,
   type EdgeProofState,
 } from './edge-proof.js';
-import { markManagedIngress } from './ingress-mark.js';
+import { isSessionGatedPath } from '../auth/gated-paths.js';
+import { markManagedIngress, noteGateAdmitted } from './ingress-mark.js';
 
 /** What the ingress hands admitted traffic to. */
 export interface ManagedIngressOptions {
@@ -254,6 +255,9 @@ export function createManagedIngress(options: ManagedIngressOptions): ManagedIng
       return;
     }
     markManagedIngress(req);
+    // A page or asset never reaches the session gate, so it counts once the
+    // edge checks above admitted it; the gate counts the API and MCP ones.
+    if (!isSessionGatedPath(req.url ?? '/')) noteGateAdmitted(req, res);
     inFlight += 1;
     res.once('close', settle);
     if (expectsContinue) res.writeContinue();

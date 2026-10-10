@@ -643,7 +643,25 @@ describe('drain deadline and the end of a session (DOR-2086 S5)', () => {
     expect(manager.getManagedDrain()).toBeNull();
   });
 
-  it('announces the end of a session once, with the first reason given', async () => {
+  it('says the deadline is local when a local cap names it (shutdown)', async () => {
+    await open(['a.example']);
+    let release!: () => void;
+    vi.mocked(ingress.close).mockImplementationOnce(async () => {
+      await new Promise<void>((resolve) => (release = resolve));
+      return { deadlineHit: false, usedLocalDeadline: false };
+    });
+    const closing = manager.closeManaged({
+      immediate: false,
+      drainDeadlineMs: 2_000,
+      deadlineFrom: 'local',
+      reason: 'shutdown',
+    });
+    expect(manager.getManagedDrain()?.deadline).toBe('local');
+    release();
+    await closing;
+  });
+
+  it('announces the end of a session once, with the reason that actually ended it', async () => {
     const ended = vi.fn();
     manager.on('managed_closed', ended);
     await open(['a.example'], { generation: 7 });
@@ -653,14 +671,23 @@ describe('drain deadline and the end of a session (DOR-2086 S5)', () => {
       return { deadlineHit: false, usedLocalDeadline: true };
     });
     const idle = manager.closeManaged({ immediate: false, reason: 'idle' });
-    // A withdrawal hurries the idle close along; the session still ended for being idle.
+    // A withdrawal cuts the idle close short: the withdrawal is what ended it.
     const withdraw = manager.closeManaged({ immediate: true, reason: 'withdrawn' });
+    // A later forced close does not take that away.
+    const stop = manager.closeManaged({ immediate: true, reason: 'stopped' });
     release();
-    await Promise.all([idle, withdraw]);
+    await Promise.all([idle, withdraw, stop]);
     expect(ended).toHaveBeenCalledTimes(1);
-    expect(ended.mock.calls[0]![0]).toMatchObject({ generation: 7, reason: 'idle' });
+    expect(ended.mock.calls[0]![0]).toMatchObject({ generation: 7, reason: 'withdrawn' });
+    // Two gentle closes: the first one's reason stands.
+    await open(['a.example'], { generation: 8 });
+    await Promise.all([
+      manager.closeManaged({ immediate: false, reason: 'idle' }),
+      manager.closeManaged({ immediate: false, reason: 'closed_by_cloud' }),
+    ]);
+    expect(ended.mock.calls[1]![0]).toMatchObject({ generation: 8, reason: 'idle' });
     // Nothing open: nothing to announce.
     await manager.closeManaged({ immediate: true, reason: 'withdrawn' });
-    expect(ended).toHaveBeenCalledTimes(1);
+    expect(ended).toHaveBeenCalledTimes(2);
   });
 });
