@@ -3,6 +3,7 @@ import { EmptyState } from '@/layers/shared/ui';
 import { CATEGORY_CONFIG } from '@/layers/entities/activity';
 import type { ActivityCategory } from '@/layers/entities/activity';
 import { useActivityFilters } from '../model/use-activity-filters';
+import type { ActivityView } from '../model/use-activity-view';
 
 export interface ActivityEmptyStateProps {
   /**
@@ -10,6 +11,8 @@ export interface ActivityEmptyStateProps {
    * When false no events exist at all.
    */
   isFiltered?: boolean;
+  /** Which list is empty. `all` is the audit log, which has no category filters. */
+  view?: ActivityView;
   className?: string;
 }
 
@@ -19,9 +22,26 @@ export interface ActivityEmptyStateProps {
  * Two variants, one shell — the shared `EmptyState`:
  * - No events ever — "No activity yet".
  * - Filtered, no results — category-specific message + "Clear filters" action.
+ *
+ * The "All actions" view has its own line, since it lists people's actions too.
  */
-export function ActivityEmptyState({ isFiltered = false, className }: ActivityEmptyStateProps) {
+export function ActivityEmptyState({
+  isFiltered = false,
+  view = 'activity',
+  className,
+}: ActivityEmptyStateProps) {
   const { filters, clearAll } = useActivityFilters();
+
+  if (view === 'all') {
+    return (
+      <EmptyState
+        className={className}
+        icon={Activity}
+        headline="No actions yet"
+        description="Every action a person or agent takes shows up here."
+      />
+    );
+  }
 
   if (!isFiltered) {
     return (

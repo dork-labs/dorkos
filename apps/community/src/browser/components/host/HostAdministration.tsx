@@ -1,8 +1,9 @@
 import { Button, Input, Label, Notice, Textarea } from '@dork-labs/ui';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { describeError, request } from '../../api.js';
+import { useSignInOptions } from '../../sign-in-options.js';
 import { ownerClaimLink } from '../../owner-claim.js';
-import { FocusDialog } from '../CommunityAdministration.js';
+import { FocusDialog } from '../FocusDialog.js';
 import { HostApiKeys } from './HostApiKeys.js';
 import { HostCommunityLimits } from './HostCommunityLimits.js';
 import { HostHoldControls } from './HostHoldControls.js';
@@ -109,7 +110,11 @@ export function HostAdministration() {
   const [communities, setCommunities] = useState<Community[] | null>(null);
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
-  const [admissionPolicy, setAdmissionPolicy] = useState<'invite_only' | 'closed'>('invite_only');
+  const [admissionPolicy, setAdmissionPolicy] = useState<'invite_only' | 'closed' | 'open'>(
+    'invite_only'
+  );
+  // Open admission runs through this host's single sign-on; without one it is not offered.
+  const singleSignOn = useSignInOptions().oidc;
   const [claim, setClaim] = useState<Claim | null>(null);
   const [revokeGrantId, setRevokeGrantId] = useState<Record<string, string>>({});
   const [error, setError] = useState('');
@@ -260,10 +265,15 @@ export function HostAdministration() {
                 id="host-community-admission"
                 value={admissionPolicy}
                 onChange={(event) =>
-                  setAdmissionPolicy(event.target.value as 'invite_only' | 'closed')
+                  setAdmissionPolicy(event.target.value as 'invite_only' | 'closed' | 'open')
                 }
               >
                 <option value="invite_only">Invite only</option>
+                {singleSignOn && (
+                  <option value="open">
+                    Open to anyone who signs in with {singleSignOn.label}
+                  </option>
+                )}
                 <option value="closed">Closed</option>
               </select>
             </div>

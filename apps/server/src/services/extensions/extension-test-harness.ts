@@ -105,6 +105,9 @@ export class MockExtensionAPI {
   /** No-op: tab markers draw nothing headless. */
   setTabMarker(): void {}
 
+  /** No-op: page badges draw nothing headless. */
+  setPageBadge(): void {}
+
   /** No-op: UI command execution. */
   executeCommand(): void {}
 

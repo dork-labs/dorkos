@@ -24,6 +24,7 @@ export const V2_COLLECTIONS = {
   auditEvents: 'audit-events',
   entries: 'entries',
   attachments: 'attachments',
+  bans: 'bans',
 } as const;
 /** One collection of a version 2 export. */
 export type V2Collection = keyof typeof V2_COLLECTIONS;
@@ -179,7 +180,7 @@ export async function openExportV2(
     // The manifest lists every data file once, each under its own collection's folder.
     const listed = new Set<string>();
     for (const [key, folder] of Object.entries(V2_COLLECTIONS) as [V2Collection, string][]) {
-      for (const name of manifest.files[key]) {
+      for (const name of manifest.files[key] ?? []) {
         if (!name.startsWith(`${folder}/`) || !NDJSON_NAME.test(name) || listed.has(name))
           throw new ImportFailure('IMPORT_ARCHIVE_INVALID');
         if (!ndjson.has(name)) throw new ImportFailure('IMPORT_ARCHIVE_INVALID');
@@ -220,7 +221,7 @@ export async function* collectionLines(
   maxLineBytes: number,
   from: { file: number; line: number } = { file: 0, line: 0 }
 ): AsyncGenerator<{ file: number; line: number; bytes: Buffer }> {
-  const names = opened.manifest.files[key];
+  const names = opened.manifest.files[key] ?? [];
   for (let file = from.file; file < names.length; file++) {
     const entry = opened.ndjson.get(names[file]);
     if (!entry) throw new ImportFailure('IMPORT_ARCHIVE_INVALID');

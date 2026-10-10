@@ -40,7 +40,7 @@
  * - Remove the try/catch around `answeredBy` → all six "answers the prompt
  *   anyway when the name lookup throws" rows 500.
  */
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { FakeAgentRuntime } from '@dorkos/test-utils';
 
 let fakeRuntime: FakeAgentRuntime;
@@ -127,6 +127,10 @@ import {
   type RawSessionEvent,
 } from '../../services/session/index.js';
 import type { RequestUser } from '../../services/core/auth/session-gate.js';
+import {
+  initSessionVisibility,
+  resetSessionVisibility,
+} from '../../services/audit/session-visibility.js';
 
 const SESSION_ID = '00000000-0000-4000-8000-000000000001';
 const OTHER_SESSION_ID = '00000000-0000-4000-8000-000000000002';
@@ -196,6 +200,15 @@ beforeEach(() => {
   vi.clearAllMocks();
   disposeProjector(SESSION_ID);
   disposeProjector(OTHER_SESSION_ID);
+});
+
+// The agent callers below act on agent work, so the session read guard
+// (`routes/session-read-guard.ts`) lets them through to the rule under test.
+beforeEach(() => {
+  initSessionVisibility((ids) => new Map(ids.map((id) => [id, 'space'] as const)));
+});
+afterEach(() => {
+  resetSessionVisibility();
 });
 
 describe('GET /api/sessions/pending-interactions', () => {

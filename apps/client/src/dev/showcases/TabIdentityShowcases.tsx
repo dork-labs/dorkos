@@ -3,6 +3,9 @@ import { Workflow } from 'lucide-react';
 import {
   AppTabItemView,
   TabIdentityCard,
+  activityBadge,
+  connectionsBadge,
+  schedulesBadge,
   channelsTabIdentity,
   chatTabIdentity,
   extensionTabIdentity,
@@ -147,9 +150,33 @@ const EVERY_STATUS: { key: string; identity: TabIdentity }[] = [
     identity: roomTabIdentity({ kind: 'dm', title: 'Maya Chen', unreadCount: 2, face: mayaFace }),
   },
   { key: 'channels', identity: channelsTabIdentity(3) },
+];
+
+/** Pages that report their own status: Schedules, Activity, Connections, an add-on. */
+const PAGE_BADGES: { key: string; identity: TabIdentity }[] = [
   {
-    key: 'schedule',
-    identity: routeTabIdentity('/tasks', { status: 'failed', count: 1, sentence: '1 run failed' }),
+    key: 'tasks-waiting',
+    identity: routeTabIdentity('/tasks', schedulesBadge({ waiting: 2, failed: 1, running: [] })),
+  },
+  {
+    key: 'tasks-failed',
+    identity: routeTabIdentity('/tasks', schedulesBadge({ waiting: 0, failed: 1, running: [] })),
+  },
+  {
+    key: 'tasks-running',
+    identity: routeTabIdentity(
+      '/tasks',
+      schedulesBadge({ waiting: 0, failed: 0, running: ['Morning digest'] })
+    ),
+  },
+  { key: 'activity', identity: routeTabIdentity('/activity', activityBadge(7)) },
+  { key: 'connections', identity: routeTabIdentity('/connections', connectionsBadge(1)) },
+  {
+    key: 'extension',
+    identity: extensionTabIdentity(
+      { title: 'Flow', icon: Workflow },
+      { status: 'needs-you', count: 2, sentence: '2 ideas wait for you' }
+    ),
   },
 ];
 
@@ -238,6 +265,23 @@ export function TabIdentityShowcases() {
       <ShowcaseLabel>Every status and count, hottest first</ShowcaseLabel>
       <ShowcaseDemo responsive>
         <Strip tabs={EVERY_STATUS} label="Every status" />
+      </ShowcaseDemo>
+
+      <ShowcaseLabel>Pages that report their own status</ShowcaseLabel>
+      <ShowcaseDemo responsive>
+        <div className="flex flex-col gap-3">
+          <Strip tabs={PAGE_BADGES} label="Page badges" />
+          <div className="flex flex-wrap gap-3">
+            {PAGE_BADGES.map(({ key, identity }) => (
+              <div
+                key={key}
+                className="bg-popover text-popover-foreground w-64 rounded-md border p-3 shadow-md"
+              >
+                <TabIdentityCard identity={identity} />
+              </div>
+            ))}
+          </div>
+        </div>
       </ShowcaseDemo>
 
       <ShowcaseLabel>Both themes</ShowcaseLabel>

@@ -20,6 +20,7 @@ import type { DispatchOutcome } from '../observability/dispatch-buffers.js';
 import type { BusyContext } from './notices/notice-copy.js';
 import type { CascadeStamp, RoomTurnUnanswered } from './notices/notice-log.js';
 import type { EngagementWindow } from './engagement.js';
+import type { TriggerReason } from './addressing.js';
 
 /**
  * One turn in flight: which cascade it belongs to, how deep it sits, what it is
@@ -324,6 +325,17 @@ export interface TriggerTarget {
    * the same answer.
    */
   engaged: EngagementWindow | null;
+  /**
+   * Why a person is owed this agent's answer though the message did not name
+   * it (DOR-2823): their exchange with it, or its lead of the channel. Carried
+   * from the message the turn answers, so the context never offers silence.
+   */
+  answerOwed?: 'conversation' | 'lead';
+  /**
+   * Why the message this turn answers picked this agent, so a launch refused as
+   * busy can be put back exactly as it was picked (DOR-2823).
+   */
+  reason?: TriggerReason;
   /** This target's own dispatch id — one per `(entry, target)` pair, never per entry. */
   dispatchId: string;
   /** The `(room, agent)` session, bound at claim time so a race resolves to one. */

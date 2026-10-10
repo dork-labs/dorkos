@@ -17,7 +17,8 @@ import { HARNESS_MANIFEST_PATH } from '@dorkos/harness';
 import type { PermissionAreaId } from '@dorkos/shared/permissions';
 import { randomUUID } from 'node:crypto';
 import { createApp, finalizeApp } from './app.js';
-import { createFrontDoor, createFrontDoorServer } from './http/front-door.js';
+import { createFrontDoorServer } from './http/front-door.js';
+import { composeFrontDoor } from './http/hono-api.js';
 import { createSessionLocationsRouter } from './routes/session-locations.js';
 import { ManagedConnectorCloudError } from './services/core/auth/cloud-link-client.js';
 import { DoeRuntime } from './services/runtimes/doe/index.js';
@@ -316,7 +317,7 @@ import {
   legacySweepDirs,
   rebuildLegacyRecords,
   removeRecordTempLeftovers,
-  type LegacySweepSummary,
+  logLegacySweep,
 } from './services/marketplace/lib/integrity/legacy-record-sweep.js';
 import { withIntegrity } from './services/marketplace/lib/integrity/verify-install.js';
 import { scanInstallationsAcrossScopes } from './services/marketplace/installed-scanner.js';
@@ -414,7 +415,11 @@ import {
 import { currentRecordOwner } from './services/marketplace/lib/records/record-owner.js';
 import { createActivityRouter } from './routes/activity.js';
 import { createAuditRouter } from './routes/audit.js';
-import { wireAuditTrail } from './services/audit/index.js';
+import {
+  auditCapabilityDeps,
+  wireAuditTrail,
+  wireSessionVisibility,
+} from './services/audit/index.js';
 import { createExtensionRoutesMiddleware } from './middleware/extension-routes.js';
 import { createExternalMcpServer } from './services/core/mcp-server.js';
 import { composeDorkOsCapabilityRegistry } from './services/core/self-description/dorkos-registry.js';
@@ -837,19 +842,6 @@ let projectInstallRecovery: Promise<unknown> = Promise.resolve();
 /** Aborted on shutdown, so the legacy record sweep stops between installs. */
 const legacyRecordSweep = new AbortController();
 let sweptProjects: string[] = [];
-
-/**
- * Log what the legacy record sweep did, when it did anything.
- *
- * @param summary - The sweep's outcome lists.
- */
-function logLegacySweep(summary: LegacySweepSummary): void {
-  const { rebuilt, mismatch, noSource, fetchFailed } = summary;
-  if (rebuilt.length + mismatch.length + noSource.length + fetchFailed.length === 0) return;
-  logger.info(
-    `[Marketplace] Records for packages an older DorkOS installed: ${rebuilt.length} rebuilt, ${mismatch.length} changed since install, ${noSource.length} installed from a local folder, ${fetchFailed.length} to retry`
-  );
-}
 
 let taskFileWatcher: TaskFileWatcher | undefined;
 let taskReconciler: TaskReconciler | undefined;
@@ -1277,7 +1269,7 @@ async function start() {
   );
 
   // Initialize the Better Auth identity core over the consolidated DB. Mounted
-  // by createApp() at /api/auth/* regardless of `config.auth.enabled` (the gate
+  // by createHonoApi() at /api/auth/* regardless of `config.auth.enabled` (the gate
   // is a later task) so the enable-login flow can create the owner account
   // before the flag flips. See services/core/auth/.
   // dorkHome is threaded through so the session-signing secret resolves from
@@ -1320,7 +1312,7 @@ async function start() {
   // until an account exists. The startup check walks the recent end of the
   // chain and only warns: a broken chain is evidence to keep, not a reason to
   // refuse to start.
-  const { log: auditLog } = wireAuditTrail({
+  const { log: auditLog, accounts: auditAccounts } = wireAuditTrail({
     db,
     activity: activityService,
     installId: connectorInstallationId,
@@ -1786,13 +1778,13 @@ async function start() {
     }
     runtimeRegistry.setDefault('test-mode');
     logger.info('[TestMode] TestModeRuntime registered — no real Claude API calls will be made');
-    // Cloud-link transport: fake the network dependency to dorkos.ai only, so
-    // the capture pipeline can photograph a real pending→linked flip offline.
-    // Dynamic import keeps fake-cloud-link.ts out of the production module
-    // graph — same pattern as TestModeRuntime above.
-    const { createFakeCloudLinkFetch } =
-      await import('./services/runtimes/test-mode/fake-cloud-link.js');
-    initCloudLinkManager({ fetchImpl: createFakeCloudLinkFetch() });
+    // The test-mode Cloud: the device link, every /v1 call, a local approval
+    // page and a fake inference stream, all in-process, plus the DorkOS runtime
+    // under DORKOS_TEST_RUNTIME_DOE (DOR-2783). Dynamic import keeps all of it
+    // out of the production module graph — same pattern as TestModeRuntime above.
+    const { composeTestModeCloud } =
+      await import('./services/runtimes/test-mode/compose-test-cloud.js');
+    doeRuntime = composeTestModeCloud(runtimeRegistry);
   } else {
     // Where images a turn produces live is chosen HERE and nowhere else: the
     // adapters and the serving route depend on the `SessionAttachmentStore`
@@ -4703,6 +4695,10 @@ async function start() {
   app.locals.resolveTouches = (sessionIds: string[]) =>
     getSessionTouchStore()?.resolve(sessionIds) ?? new Map();
   sessionListBroadcaster.setOriginResolvers(sessionOriginResolvers(app.locals));
+  // Who may read each session's transcript (spec `audit-trail` §3.4): an
+  // agent sees agent work, never a person's own chat.
+  const { resolveTaskOrigins, resolveStartedBy } = app.locals;
+  wireSessionVisibility({ db, accounts: auditAccounts, resolveTaskOrigins, resolveStartedBy });
   // Live session upserts carry the flow items a chat works on, exactly as
   // `GET /api/sessions` does, so the first upsert after a list read no longer
   // wipes them from the client's cache (spec `flow-multiproject` §6.8, D10).
@@ -5158,7 +5154,7 @@ async function start() {
 
   // Activity feed — always available, not behind a feature flag.
   app.use('/api/activity', createActivityRouter(activityService));
-  app.use('/api/audit', createAuditRouter(auditLog));
+  app.use('/api/audit', createAuditRouter({ log: auditLog, accounts: auditAccounts }));
   app.locals.activityService = activityService;
   mountedRouters.push('activity');
 
@@ -5805,7 +5801,7 @@ async function start() {
       // Built here, once: its once-an-hour budget must outlive the per-session
       // tool servers that reach it.
       // `audit.verify`: anyone may check the audit log's chain (spec `audit-trail`).
-      auditDeps: { log: auditLog },
+      auditDeps: auditCapabilityDeps(auditLog, auditAccounts, runtimeRegistry),
       // Chats messaging chats (spec `spin-off-chats`).
       chatMessageDeps: chatMessaging,
       // What agents promised (spec `heartbeats` §12): an agent records its
@@ -6093,13 +6089,11 @@ async function start() {
 
   const server = startMainListener({
     admission: mainRequestAdmission,
-    // Hono is the front door; every route still answers from the Express app
-    // behind it (`http/front-door.ts`, ADR 261009-192542).
+    // Hono is the front door: moved route groups answer from the Hono `/api`
+    // app (`http/hono-api.ts`), everything else from the Express app behind it
+    // (`http/front-door.ts`, ADR 261009-192542).
     listen: () =>
-      createFrontDoorServer(createFrontDoor(app, { census: env.DORKOS_TEST_RUNTIME })).listen(
-        PORT,
-        host
-      ),
+      createFrontDoorServer(composeFrontDoor(app, mainRequestAdmission)).listen(PORT, host),
     onListening: (server) => {
       logger.info(`[DorkOS] server running on http://${host}:${PORT}`);
 

@@ -75,7 +75,7 @@
  *
  * @module server/services/search/query
  */
-import { sql, type Db, type SQL } from '@dorkos/db';
+import { sql, SQL_IN_CHUNK, type Db, type SQL } from '@dorkos/db';
 import { searchTokens } from '@dorkos/shared/search-schemas';
 
 /**
@@ -283,13 +283,27 @@ function scopePredicate(scope: SourceScope): SQL | null {
   if (byFloor.size === 0) return null;
 
   const groups = [...byFloor].map(
-    ([floor, keys]) =>
-      sql`(m.origin_key IN (${sql.join(
-        keys.map((key) => sql`${key}`),
-        sql`, `
-      )}) AND m.ordinal > ${floor})`
+    ([floor, keys]) => sql`(m.origin_key IN ${keyList(keys)} AND m.ordinal > ${floor})`
   );
   return sql`(m.source_id = ${scope.sourceId} AND (${sql.join(groups, sql` OR `)}))`;
+}
+
+/**
+ * The `(...)` list of one floor group's container keys.
+ *
+ * Listed one bound variable per key while that stays well under SQLite's limit
+ * on bound variables; past it, the keys go in as ONE JSON array read through
+ * `json_each`, so an agent whose readable sessions number in the thousands
+ * still gets an answer rather than "too many SQL variables".
+ */
+function keyList(keys: readonly string[]): SQL {
+  if (keys.length <= SQL_IN_CHUNK) {
+    return sql`(${sql.join(
+      keys.map((key) => sql`${key}`),
+      sql`, `
+    )})`;
+  }
+  return sql`(SELECT value FROM json_each(${JSON.stringify(keys)}))`;
 }
 
 /**

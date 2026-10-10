@@ -60,6 +60,12 @@ export interface NewRoom {
    */
   bridged?: boolean;
   createdAt: string;
+  /**
+   * The channel's lead (DOR-2823): the agent member that answers a person's
+   * message nobody else is answering. Omitted, and stored as `null`, for a
+   * direct message and for a channel opened with no agent in it.
+   */
+  leadAuthorId?: string | null;
 }
 
 /** What {@link RoomStore.appendEntry} needs, minus the `seq` it allocates. */

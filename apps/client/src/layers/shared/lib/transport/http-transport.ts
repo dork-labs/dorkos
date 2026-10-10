@@ -41,6 +41,7 @@ import { createTeamMethods } from './team-methods';
 import { createProfileMethods } from './profile-methods';
 import { createSearchMethods } from './search-methods';
 import { createAccountMethods } from './account-methods';
+import { createAuditMethods } from './audit-methods';
 
 // ---------------------------------------------------------------------------
 // Declaration merging
@@ -84,7 +85,8 @@ export interface HttpTransport
     ReturnType<typeof createTeamMethods>,
     ReturnType<typeof createProfileMethods>,
     ReturnType<typeof createSearchMethods>,
-    ReturnType<typeof createAccountMethods> {}
+    ReturnType<typeof createAccountMethods>,
+    ReturnType<typeof createAuditMethods> {}
 
 // ---------------------------------------------------------------------------
 // Class
@@ -131,7 +133,8 @@ export class HttpTransport implements Transport {
       createTeamMethods(baseUrl),
       createProfileMethods(baseUrl),
       createSearchMethods(baseUrl),
-      createAccountMethods(baseUrl)
+      createAccountMethods(baseUrl),
+      createAuditMethods(baseUrl)
     );
   }
 }

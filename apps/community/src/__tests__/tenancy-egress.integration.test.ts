@@ -23,7 +23,7 @@ import { recoverPassword } from '../recover-password.js';
 import { sweepExpiredAttachments } from '../routes/community/attachments.js';
 import { sweepExpiredExports } from '../exports/sweep.js';
 import { drainExports } from './export-test-helpers.js';
-import { sweepExpiredAdmissions } from '../routes/community/invites.js';
+import { sweepExpiredAdmissions } from '../admission/sweep.js';
 import { sweepPendingBlobDeletions } from '../storage/pending-deletions.js';
 import { sweepCommunityDeletions, sweepCommunityDeletionTombstones } from '../deletion-worker.js';
 import { responseCookies } from './bootstrap-test-helper.js';

@@ -184,3 +184,34 @@ describe('explainRung', () => {
     expect(explainRung('engaged', 'dm', WINDOW).sentence).toContain('keeps answering');
   });
 });
+
+describe('explainRung for a channel lead (DOR-2823)', () => {
+  it('never says a silent lead never speaks', () => {
+    const { sentence, note } = explainRung('silent', 'channel', WINDOW, true);
+
+    expect(sentence).toBe('Answers only what nobody else does, because it leads this channel.');
+    expect(note).toBe('Pick another lead to keep it quiet here.');
+  });
+
+  it('never says an @only lead answers only @mentions', () => {
+    const { sentence, note } = explainRung('mention', 'channel', WINDOW, true);
+
+    expect(sentence).toBe('Answers @mentions, and anything nobody else answers.');
+    expect(note).toBe('It leads this channel, so unanswered messages come to it.');
+  });
+
+  it('leaves the loud rungs, and every rung of a non-lead, as they were', () => {
+    for (const rung of ['engaged', 'everything'] as const) {
+      expect(explainRung(rung, 'channel', WINDOW, true)).toEqual(
+        explainRung(rung, 'channel', WINDOW)
+      );
+    }
+    expect(explainRung('silent', 'channel', WINDOW, false).sentence).toBe('Never speaks here');
+  });
+
+  it('has no lead variant in a direct message', () => {
+    expect(explainRung('mention', 'dm', WINDOW, true)).toEqual(
+      explainRung('mention', 'dm', WINDOW)
+    );
+  });
+});

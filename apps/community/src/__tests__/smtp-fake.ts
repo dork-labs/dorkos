@@ -1,6 +1,6 @@
 import { SMTPServer } from 'smtp-server';
 import type { AddressInfo } from 'node:net';
-import type { CommunityMailConfig } from '../config.js';
+import type { CommunityMailConfig } from '../mail/config.js';
 
 /** What the fake does with the next message: take it, refuse it, defer it, or go silent. */
 export type SmtpBehaviour =

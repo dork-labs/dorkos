@@ -1,10 +1,12 @@
 import { describe, it, expect, afterEach, beforeAll, afterAll } from 'vitest';
-import express, { type RequestHandler } from 'express';
+import { Hono, type MiddlewareHandler } from 'hono';
 import { createServer } from 'node:http';
+import { honoListener } from '@dorkos/test-utils/listening-server';
 import { once } from 'node:events';
 import request from '@dorkos/test-utils/supertest';
 import { buildAuthRateLimiter } from '../auth-rate-limit.js';
 import { env } from '../../env.js';
+import type { RequestFactsEnv } from '../../http/request-facts.js';
 
 /**
  * The limiter is configured with `max: 10` per window. Kept in sync with the
@@ -17,7 +19,7 @@ const MAX_ATTEMPTS = 10;
  * Each test still gets a FRESH limiter (its own in-memory store, so budgets
  * never bleed between tests) without a new listener.
  */
-let currentLimiter: RequestHandler = (_req, _res, next) => next();
+let currentLimiter: MiddlewareHandler<RequestFactsEnv> = (_c, next) => next();
 
 /**
  * ONE listener for the whole file — zero port churn (DOR-465).
@@ -39,20 +41,18 @@ let currentLimiter: RequestHandler = (_req, _res, next) => next();
  * Binding once and never rebinding removes the mechanism instead of narrowing
  * it: no port is ever freed mid-file, so no pooled socket can be misrouted.
  */
-const app = express();
-// Match production: read the client IP from the first proxy hop.
-app.set('trust proxy', 1);
-app.use((req, res, next) => currentLimiter(req, res, next));
+const app = new Hono<RequestFactsEnv>();
+app.use((c, next) => currentLimiter(c, next));
 // Stand-ins for the Better Auth handler and a normal API route.
-app.post('/api/auth/sign-in/email', (_req, res) => res.status(200).json({ ok: true }));
-app.post('/api/auth/sign-up/email', (_req, res) => res.status(200).json({ ok: true }));
-app.get('/api/auth/get-session', (_req, res) => res.status(200).json({ session: null }));
+app.post('/api/auth/sign-in/email', (c) => c.json({ ok: true }, 200));
+app.post('/api/auth/sign-up/email', (c) => c.json({ ok: true }, 200));
+app.get('/api/auth/get-session', (c) => c.json({ session: null }, 200));
 // A future OAuth-initiation endpoint (invites/OAuth spec) — a redirect
 // handshake, not a password guess. Must never be throttled.
-app.post('/api/auth/sign-in/social', (_req, res) => res.status(200).json({ url: 'https://x' }));
-app.post('/api/sessions', (_req, res) => res.status(200).json({ ok: true }));
+app.post('/api/auth/sign-in/social', (c) => c.json({ url: 'https://x' }, 200));
+app.post('/api/sessions', (c) => c.json({ ok: true }, 200));
 
-const server = createServer(app);
+const server = createServer(honoListener(app));
 
 beforeAll(async () => {
   server.listen(0);
@@ -66,7 +66,8 @@ afterAll(async () => {
 
 /**
  * Install a FRESH limiter for the current test and return the shared server.
- * Mirrors the real `app.ts` wiring: app-wide limiter, then handlers.
+ * Mirrors the real wiring (`http/better-auth.ts`): chain-wide limiter, then
+ * handlers.
  *
  * @param maxAttempts - Optional override for the per-window budget (defaults to
  *   the limiter's own default of 10), used to exercise the env-override path.
@@ -207,9 +208,10 @@ describe('buildAuthRateLimiter', () => {
    * point. What looked like a passing test for per-client buckets was a passing
    * test for the bypass.
    *
-   * `trust proxy, 1` is still set on the app above, deliberately, so these prove
-   * the limiter no longer inherits it rather than proving the app was
-   * reconfigured around it.
+   * The limiter now runs on the Hono chain, whose request facts still compute
+   * Express's `trust proxy, 1` address (`forwardedAddress` in
+   * `http/request-facts.ts`), so these still prove the limiter does not key on
+   * it rather than proving nothing computes it.
    */
   describe('bucket keys (DOR-1711)', () => {
     const mutableEnv = env as { DORKOS_TRUST_PROXY: boolean };

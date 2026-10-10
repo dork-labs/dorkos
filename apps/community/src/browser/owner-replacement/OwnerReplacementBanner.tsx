@@ -3,7 +3,7 @@ import { useCallback, useEffect, useId, useRef, useState } from 'react';
 import type { z } from 'zod';
 import type { CommunityWireOwnerReplacementNoticeResponseSchema } from '@dorkos/shared/community-wire';
 import { describeError, request } from '../api.js';
-import { FocusDialog } from '../components/CommunityAdministration.js';
+import { FocusDialog } from '../components/FocusDialog.js';
 import {
   adminBannerSentence,
   completionSentence,

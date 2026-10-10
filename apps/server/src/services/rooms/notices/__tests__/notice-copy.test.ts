@@ -68,7 +68,11 @@ const NOTICES: Record<NoticeBuilder, () => RoomEntryBody[]> = {
     (['interrupted', 'unstarted', 'idle'] as const).map((outcome) =>
       copy.buildAgentHaltedNotice('Kai', 'Ana', 'author-ana', outcome)
     ),
-  buildTurnFailedNotice: () => [copy.buildTurnFailedNotice('Ana', 'author-ana')],
+  buildTurnFailedNotice: () => [
+    copy.buildTurnFailedNotice('Ana', 'author-ana'),
+    copy.buildTurnFailedNotice('Ana', 'author-ana', '2026-10-09T16:10:00.000Z'),
+    copy.buildTurnFailedNotice('Ana', 'author-ana', null),
+  ],
   buildAgentGoneNotice: () => [copy.buildAgentGoneNotice('Ana', 'author-ana')],
   buildRuntimeGoneNotice: () => [
     copy.buildRuntimeGoneNotice('Ana', 'author-ana', 'codex'),

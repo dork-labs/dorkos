@@ -8,6 +8,8 @@ import { creditsCapabilitiesFor } from '../services/core/cloud/credits-protocols
  * @module routes/session-model-gate
  */
 import type { AgentRuntime } from '@dorkos/shared/agent-runtime';
+import type { PermissionModeId } from '@dorkos/shared/types';
+import { runtimeRegistry } from '../services/core/runtime-registry.js';
 import type { ModelOption } from '@dorkos/shared/types';
 import { logger } from '../lib/logger.js';
 import { judgeCreditsModel } from '../services/core/cloud/credits-models.js';
@@ -30,13 +32,13 @@ export interface ModelGateOptions {
  * operator-readable message when the runtime cannot run it (or `null` when the
  * model is fine).
  *
- * The same argument as `rejectUndeclaredPermissionMode` (in `sessions.ts`): the wire carries
+ * The same argument as {@link rejectUndeclaredPermissionMode}: the wire carries
  * any string, and only the session's runtime can say whether the model id it was
  * handed is real. Persisting one it cannot run buys nothing — the turn fails
  * later with "That model isn't available", by which point the person has already
  * typed their message (DOR-1660).
  *
- * Which runtime that is, is `modelGateAuthority` (in `sessions.ts`)'s question, and it is a
+ * Which runtime that is, is {@link modelGateAuthority}'s question, and it is a
  * real one: an unbound session HAS no runtime, only an inference.
  *
  * ## It degrades, on purpose
@@ -151,4 +153,72 @@ function catalogUnfitToConvict(offered: ModelOption[]): string | null {
     return 'the catalog is a shortened, unconfirmed menu';
   }
   return null;
+}
+
+/**
+ * Check a requested permission mode against what the runtime declares it can
+ * run, returning an operator-readable message when it cannot (or `null` when
+ * the mode is fine).
+ *
+ * @param runtime - The runtime that owns the session being updated.
+ * @param permissionMode - The mode the request asks to store.
+ */
+export function rejectUndeclaredPermissionMode(
+  runtime: AgentRuntime,
+  permissionMode: PermissionModeId
+): string | null {
+  const declared = runtime.getCapabilities().permissionModes;
+  if (!declared.supported || declared.values.length === 0) {
+    return `The ${runtime.type} runtime has no permission modes to choose from.`;
+  }
+  const ids = declared.values.map((descriptor) => descriptor.id);
+  if (ids.includes(permissionMode)) return null;
+  return `The ${runtime.type} runtime cannot run permission mode '${permissionMode}'. It supports: ${ids.join(', ')}.`;
+}
+
+/**
+ * The runtime whose catalog may REFUSE this model write, or `null` when nothing
+ * has the standing to refuse it.
+ *
+ * ## Why a gate has to ask this at all
+ *
+ * `resolveSessionRuntime` answers for every session id, bound or not — an
+ * unbound one gets the legacy inference, `claude-code`, so that reads keep
+ * working before the first turn. {@link rejectUnknownModel} was written on top
+ * of that answer as if it were ownership, and it is not: a person who starts a
+ * session, switches the chip to OpenCode and picks an OpenCode model was told
+ * "the claude-code runtime cannot run" it, for a session claude-code did not own
+ * and never would. The gate fired against a runtime nobody chose.
+ *
+ * So it asks in the order of who actually knows:
+ *
+ * - **Bound** → the owner. Ownership is a fact in `session_metadata`, the gate
+ *   has full authority, and this is the case DOR-1660 was about.
+ * - **Unbound, and the request names a registered runtime** → that one. Nothing
+ *   here binds anything — the hint only says which catalog to judge against, and
+ *   it is the catalog the person was picking from. Ownership is still the first
+ *   turn's to write (ADR-0255).
+ * - **Unbound, and nobody said** → `null`. The gate declines rather than guesses.
+ *
+ * That last rung is the same rule {@link rejectUnknownModel} already applies to
+ * an empty catalog, one level up: evidence nobody has is not evidence against.
+ * The cost of declining is a turn that fails honestly later; the cost of
+ * guessing is a person locked out of a model that works.
+ *
+ * An unregistered hint is treated as no hint. A caller cannot conjure authority
+ * out of a runtime this server does not have, and 400-ing on it would refuse a
+ * settings write over a field that only ever narrows a check.
+ *
+ * @param owner - The runtime instance the session resolved to.
+ * @param bound - Whether `owner` is the session's recorded owner or the inference.
+ * @param hint - `body.runtime`: the runtime the caller believes will own this session.
+ */
+export function modelGateAuthority(
+  owner: AgentRuntime,
+  bound: boolean,
+  hint: string | undefined
+): AgentRuntime | null {
+  if (bound) return owner;
+  if (hint === undefined || !runtimeRegistry.has(hint)) return null;
+  return runtimeRegistry.get(hint);
 }

@@ -25,7 +25,8 @@ import type { AttachmentRowStore } from '../attachments/attachment-row-store.js'
 import type { RoomAgentLookup } from '../room-errors.js';
 import type { RoomStore } from '../room-store.js';
 import type { RoomBroadcaster } from '../room-stream.js';
-import type { RoomDispatchSummary, RoomTurnRunner } from '../room-trigger.js';
+import type { RoomTurnRunner } from '../room-trigger.js';
+import type { RoomDispatchSummary } from './room-trigger-deps.js';
 import type { RoomTurnBudget } from '../limits/turn-budget.js';
 
 /**
@@ -137,6 +138,11 @@ export interface RoomServiceDeps {
   /** The rows behind this room's attachments. The BYTES live behind a separate seam. */
   attachments: AttachmentRowStore;
   authors: AuthorRegistry;
+  /**
+   * The usage limit a chat's account hit during its last turn (DOR-2823), so a
+   * failed room turn can say when the agent can answer again. Absent in tests.
+   */
+  usageLimitFor?(sessionId: string): { resetsAt: string | null } | null;
   broadcaster: RoomBroadcaster;
   agents: RoomAgentLookup;
   /** How a triggered agent actually takes its turn. */

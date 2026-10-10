@@ -11,7 +11,11 @@
  *
  * @module server/services/rooms/messages/room-reactions
  */
-import type { RoomEntryReaction, RoomReactionEvent } from '@dorkos/shared/room-schemas';
+import {
+  ROOM_RECEIPT_EMOJI,
+  type RoomEntryReaction,
+  type RoomReactionEvent,
+} from '@dorkos/shared/room-schemas';
 import { logger } from '../../../lib/logger.js';
 import type { ReactionBudget } from '../reactions/reaction-budget.js';
 import type { ReactionStore } from '../reactions/reaction-store.js';
@@ -126,6 +130,14 @@ export class RoomReactions {
       throw new RoomError(
         'TURN_WAS_STOPPED',
         'This conversation was stopped, so nothing more from this turn lands here. Wait for the next message before reacting.'
+      );
+    }
+    // The 👀 receipt is the room's to put on and take off (DOR-2823): an agent
+    // toggling it would wipe the room's, or leave one the room cannot clear.
+    if (emoji === ROOM_RECEIPT_EMOJI && this.authors.getById(viewerAuthorId)?.kind === 'agent') {
+      throw new RoomError(
+        'RECEIPT_EMOJI_RESERVED',
+        'DorkOS shows 👀 for you while you work on a message. Use ✅ when you finish.'
       );
     }
     // Asked LAST of the refusals, and after the entry check, because it is the

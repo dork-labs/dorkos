@@ -4,6 +4,7 @@ import { CommunityGoneShowcases } from '../showcases/CommunityGoneShowcases';
 import { CommunityOwnerNoticeShowcases } from '../showcases/CommunityOwnerNoticeShowcases';
 import { FileExplorerShowcases } from '../showcases/FileExplorerShowcases';
 import { RoomDeliveryShowcases } from '../showcases/RoomDeliveryShowcases';
+import { RoomLeadShowcases } from '../showcases/RoomLeadShowcases';
 import { RoomsShowcases } from '../showcases/RoomsShowcases';
 import { RoomThreadShowcases } from '../showcases/RoomThreadShowcases';
 
@@ -16,6 +17,7 @@ export function RoomsPage() {
       sections={ROOMS_SECTIONS}
     >
       <RoomsShowcases />
+      <RoomLeadShowcases />
       <FileExplorerShowcases />
       <RoomThreadShowcases />
       <RoomDeliveryShowcases />

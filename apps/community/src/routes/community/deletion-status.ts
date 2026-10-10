@@ -1,6 +1,4 @@
-/** How an owner's deletion request reads back: its status projection and the SQL behind it. */
-
-/** The wire form of a community's deletion status, from a row the deletion queries read. */
+/** Project one community's deletion row onto the owner's deletion status. */
 export function deletionProjection(row: {
   community_id: string;
   lifecycle: string;

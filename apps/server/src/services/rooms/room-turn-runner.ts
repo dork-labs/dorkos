@@ -1075,13 +1075,12 @@ export function createSessionRoomTurnRunner(options: RoomTurnRunnerOptions = {})
         await forgetLaunchRow();
         // Either way the agent is busy with something that is not this room:
         // the operator typing into the very agent the room just addressed, or
-        // that agent's own background work. Skipping the turn is right:
-        // queueing a second one behind it would answer a room message with
-        // whatever context it leaves behind. Skipping it SILENTLY was not — the
-        // room reports it and the dispatcher writes the notice, because a
-        // dropped trigger nobody mentions looks exactly like a broken agent
-        // (DOR-621). Slice 3b's room slot, which would wait instead, has not
-        // shipped.
+        // that agent's own background work. Not running NOW is right: a second
+        // turn queued inside the session would answer a room message with
+        // whatever context it leaves behind. The dispatcher puts the message
+        // back in line and tries again on a backoff (DOR-2823), and says so
+        // once, because a dropped trigger nobody mentions looks exactly like a
+        // broken agent (DOR-621).
         collecting.cancel();
         logger.info('[rooms] skipped a trigger: the session is busy', {
           sessionId,

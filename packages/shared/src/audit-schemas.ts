@@ -203,3 +203,147 @@ export const AuditVerifyResultSchema = z
 
 /** The result of a chain check. */
 export type AuditVerifyResult = z.infer<typeof AuditVerifyResultSchema>;
+
+/** The most audit events one query returns. */
+export const AUDIT_QUERY_MAX_LIMIT = 200;
+
+/**
+ * Filters for reading the audit log, newest first. Page backwards with
+ * `beforeSeq` (the lowest `seq` of the previous page).
+ */
+export const AuditQuerySchema = z
+  .object({
+    /** Only events this account did. */
+    actorId: z.string().min(1).optional(),
+    /** Only events done to this thing (an agent id, a package name, …). */
+    targetId: z.string().min(1).optional(),
+    /** Only actions starting with this, e.g. `config.` or `runtime.tool_used`. */
+    action: z.string().min(1).max(128).optional(),
+    /** Only this kind of operation. */
+    operation: AuditOperationSchema.optional(),
+    /** Only events in this session. */
+    sessionId: z.string().min(1).optional(),
+    /** Only events at or after this time (ISO 8601). */
+    since: z.string().datetime({ offset: true }).optional(),
+    /** Only events before this time (ISO 8601). */
+    until: z.string().datetime({ offset: true }).optional(),
+    /** Only events with a lower `seq` than this: the next page. */
+    beforeSeq: z.coerce.number().int().positive().optional(),
+    /** How many, newest first. */
+    limit: z.coerce.number().int().positive().max(AUDIT_QUERY_MAX_LIMIT).default(50),
+  })
+  .openapi('AuditQuery');
+
+/** Filters for reading the audit log. */
+export type AuditQuery = z.infer<typeof AuditQuerySchema>;
+
+/** One page of audit events, newest first. */
+export const AuditQueryResultSchema = z
+  .object({
+    events: z.array(AuditEventSchema),
+    /** Pass as `beforeSeq` for the next page; absent on the last one. */
+    nextBeforeSeq: z.number().int().positive().optional(),
+  })
+  .openapi('AuditQueryResult');
+
+/** One page of audit events. */
+export type AuditQueryResult = z.infer<typeof AuditQueryResultSchema>;
+
+/**
+ * One audit event, with what its links point at resolved: the Activity row it
+ * was copied from, the approval a spent token came from, and the session it
+ * happened in (with whether the reader may open that session's transcript).
+ * The trace id stays on `event.links`.
+ */
+export const AuditGetResultSchema = z
+  .object({
+    event: AuditEventSchema,
+    /** The Activity row `links.activityId` names, when it still exists. */
+    activity: z
+      .object({
+        id: z.string(),
+        eventType: z.string(),
+        summary: z.string(),
+        occurredAt: z.string(),
+      })
+      .optional(),
+    /** The approval `links.approvalId` names, when it still exists. */
+    approval: z
+      .object({
+        id: z.string(),
+        capabilityTitle: z.string(),
+        summary: z.string(),
+        state: z.enum(['pending', 'granted', 'denied']),
+        decidedAt: z.string().optional(),
+      })
+      .optional(),
+    /** The session the event happened in, and whether the reader may read it. */
+    session: z.object({ id: z.string(), readable: z.boolean() }).optional(),
+  })
+  .openapi('AuditGetResult');
+
+/** One audit event with its links resolved. */
+export type AuditGetResult = z.infer<typeof AuditGetResultSchema>;
+
+/** Everything one account did or had done to it: the per-account timeline. */
+export const AuditTimelineQuerySchema = AuditQuerySchema.omit({ actorId: true, targetId: true })
+  .extend({
+    /** The account: an agent's id, a person's account id, or `install:…`. */
+    accountId: z.string().min(1),
+  })
+  .openapi('AuditTimelineQuery');
+
+/** Input to a per-account timeline. */
+export type AuditTimelineQuery = z.infer<typeof AuditTimelineQuerySchema>;
+
+/** A page of one session's transcript. */
+export const TranscriptReadQuerySchema = z
+  .object({
+    /** The session to read. */
+    sessionId: z.string().min(1),
+    /** Skip this many messages from the start. */
+    offset: z.coerce.number().int().nonnegative().default(0),
+    /** How many messages to return. */
+    limit: z.coerce.number().int().positive().max(200).default(50),
+  })
+  .openapi('TranscriptReadQuery');
+
+/** Input to a transcript read. */
+export type TranscriptReadQuery = z.infer<typeof TranscriptReadQuerySchema>;
+
+/** One message of a transcript, as `transcript_read` returns it. */
+export const TranscriptMessageSchema = z
+  .object({
+    id: z.string(),
+    role: z.enum(['user', 'assistant']),
+    /** The text, cut at 8,000 characters. */
+    content: z.string(),
+    timestamp: z.string().optional(),
+    /** The tools used in the message, with inputs and results cut the same way. */
+    toolCalls: z
+      .array(
+        z.object({
+          toolName: z.string(),
+          status: z.string(),
+          input: z.string().optional(),
+          result: z.string().optional(),
+        })
+      )
+      .optional(),
+  })
+  .openapi('TranscriptMessage');
+
+/** One message of a transcript. */
+export type TranscriptMessage = z.infer<typeof TranscriptMessageSchema>;
+
+/** A page of one session's transcript. */
+export const TranscriptPageSchema = z
+  .object({
+    messages: z.array(TranscriptMessageSchema),
+    /** How many messages the transcript holds in all. */
+    total: z.number().int().nonnegative(),
+  })
+  .openapi('TranscriptPage');
+
+/** A page of one session's transcript. */
+export type TranscriptPage = z.infer<typeof TranscriptPageSchema>;

@@ -1,4 +1,3 @@
-/** The handles an erasure leaves behind: a random husk handle, and mentions rewritten away. */
 import { randomBytes } from 'node:crypto';
 import { MENTION_ADDRESS, MENTION_TRAILING_STRIP, maskedText } from '../content/mentions.js';
 

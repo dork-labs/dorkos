@@ -17,7 +17,7 @@
  *
  * @module server/services/rooms/service/room-core
  */
-import type { RoomPresencePayload } from '@dorkos/shared/room-schemas';
+import { ROOM_RECEIPT_EMOJI, type RoomPresencePayload } from '@dorkos/shared/room-schemas';
 import type { RoomContextCanvas } from '@dorkos/shared/additional-context';
 import type { ReadCursorService } from '../../core/read-cursor-service.js';
 import { eventFanOut } from '../../core/event-fan-out.js';
@@ -36,7 +36,8 @@ import type { RoomAgentLookup } from '../room-errors.js';
 import { RoomRoster } from '../room-roster.js';
 import type { RoomStore } from '../room-store.js';
 import type { RoomBroadcaster } from '../room-stream.js';
-import { RoomTriggerDispatcher, type RoomTriggerWriter } from '../room-trigger.js';
+import { RoomTriggerDispatcher } from '../room-trigger.js';
+import type { RoomTriggerWriter } from './room-trigger-deps.js';
 import type {
   RoomEntryIndexer,
   RoomMessageFinder,
@@ -203,6 +204,21 @@ export function createRoomCore(deps: RoomServiceDeps, writeBack: RoomWriteBack):
     // Who the owner is and what they like to be called, so an agent reads the
     // operator by name rather than by the registry's 'You' (DOR-2458).
     isOwnerAuthor: deps.isOwnerAuthor,
+    // The 👀 receipt (DOR-2823): written straight to the reaction store, so it
+    // is the room's courtesy and never the agent's answer or its reaction budget.
+    markReceipt: (roomId, entryId, authorId, on) => {
+      deps.reactions.set(
+        { roomId, entryId, authorId, emoji: ROOM_RECEIPT_EMOJI },
+        new Date().toISOString(),
+        on
+      );
+      deps.broadcaster.publish(roomId, {
+        type: 'reaction',
+        entryId,
+        reactions: deps.reactions.listForEntry(roomId, entryId),
+      });
+    },
+    ...(deps.usageLimitFor ? { usageLimitFor: deps.usageLimitFor } : {}),
     ...(deps.operatorName ? { operatorName: deps.operatorName } : {}),
     // Read per turn, never captured: a room becomes bridged partway through
     // its life, and the standing line in the fence has to follow that rather

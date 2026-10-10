@@ -24,7 +24,6 @@ import {
   countedBlobBytes,
 } from '../../host/limits.js';
 import {
-  BlobStoreError,
   completeManagedBlobCommit,
   discardManagedBlob,
   managedBlobWriteSignal,
@@ -38,6 +37,7 @@ import { resolveCommunityContext } from '../../tenant-context.js';
 import { revokeTenantAccess } from '../../host/communities.js';
 import { endOwnerReplacement } from '../../owner-replacement/end.js';
 import { notifyLive } from '../../live/notices.js';
+import { mapIconBlobError, requestBytes } from './community-icon.js';
 import {
   DELETABLE,
   deletionOrigin,
@@ -49,7 +49,7 @@ interface SettingsRow {
   id: string;
   name: string;
   description: string | null;
-  admission_policy: 'invite_only' | 'closed';
+  admission_policy: 'invite_only' | 'closed' | 'open';
   icon_blob_key: string | null;
   icon_content_type: string | null;
   settings_version: number;
@@ -120,31 +120,6 @@ function assertReadableLifecycle(row: SettingsRow): void {
   }
 }
 
-async function* requestBytes(body: ReadableStream<Uint8Array>): AsyncGenerator<Uint8Array> {
-  const reader = body.getReader();
-  try {
-    while (true) {
-      const item = await reader.read();
-      if (item.done) return;
-      yield item.value;
-    }
-  } finally {
-    reader.releaseLock();
-  }
-}
-
-function mapIconBlobError(error: unknown): never {
-  if (error instanceof BlobStoreError) {
-    if (error.code === 'BLOB_TOO_LARGE')
-      throw new ApiError(413, 'ATTACHMENT_TOO_LARGE', 'The icon is larger than 2 MiB.');
-    if (error.code === 'BLOB_TYPE_REJECTED' || error.code === 'BLOB_EMPTY')
-      throw new ApiError(415, 'UNSUPPORTED_ATTACHMENT_TYPE', 'Use a PNG, JPEG, GIF, or WebP icon.');
-    if (error.code === 'BLOB_NOT_FOUND')
-      throw new ApiError(404, 'NOT_FOUND', 'Space icon not found.');
-  }
-  throw error;
-}
-
 /** Register settings and owner lifecycle operations for one tenant-qualified Community. */
 export function registerAdministrationRoutes(
   app: Hono,
@@ -153,7 +128,15 @@ export function registerAdministrationRoutes(
     auth,
     blobStore,
     confirmPassword,
-  }: { pool: Pool; auth: CommunityAuth; blobStore: BlobStore; confirmPassword: ConfirmPassword }
+    singleSignOn,
+  }: {
+    pool: Pool;
+    auth: CommunityAuth;
+    blobStore: BlobStore;
+    confirmPassword: ConfirmPassword;
+    /** Whether this host has single sign-on, which an `open` space admits people through. */
+    singleSignOn: boolean;
+  }
 ): void {
   app.get('/settings', async (c) => {
     const actor = await requireMember(c, auth, pool);
@@ -192,6 +175,15 @@ export function registerAdministrationRoutes(
         (body.name !== undefined || body.admissionPolicy !== undefined)
       ) {
         throw new ApiError(403, 'FORBIDDEN', 'Only the owner can change identity or access.');
+      }
+      // An open space admits people only through the host's single sign-on; without one it
+      // could admit no one, so say so instead of saving a setting that does nothing.
+      if (body.admissionPolicy === 'open' && !singleSignOn) {
+        throw new ApiError(
+          409,
+          'STATE_CONFLICT',
+          'This server has no single sign-on, so the space can’t be open.'
+        );
       }
       const changed = Object.keys(body);
       const updated = await client.query<SettingsRow>(

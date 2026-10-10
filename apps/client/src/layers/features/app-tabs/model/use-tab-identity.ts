@@ -10,7 +10,7 @@
 import { useCallback, useMemo } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import { resolveIdentityFace, SETTINGS_TAB_DIRECTORY } from '@/layers/shared/lib';
-import { useExtensionPageAtPath } from '@/layers/shared/model';
+import { useExtensionPageAtPath, usePageBadge } from '@/layers/shared/model';
 import { nonAutomatedSessionIds, useSessionListStore } from '@/layers/entities/session';
 import { hasUnread, roomDisplayTitle, useRoom, useRooms } from '@/layers/entities/room';
 import {
@@ -197,6 +197,9 @@ export function useTabIdentity(href: string): TabIdentity {
   );
 
   const extensionAt = useExtensionPageAtPath(target.pathname);
+  // An extension page's own badge (`api.setPageBadge`), read only while the
+  // page is registered: a badge never outlives the page it was set on.
+  const pageBadge = usePageBadge(extensionAt?.match?.page.id ?? null);
   const needsYouCount = useTabSignalsStore((state) => state.needsYouCount);
   const badge = useTabSignalsStore((state) => state.routeBadges[target.pathname]);
 
@@ -232,7 +235,7 @@ export function useTabIdentity(href: string): TabIdentity {
       });
     case 'route':
       return extensionAt !== null
-        ? extensionTabIdentity(extensionAt.match?.page, badge)
+        ? extensionTabIdentity(extensionAt.match?.page, pageBadge)
         : routeTabIdentity(target.pathname, badge);
   }
 }

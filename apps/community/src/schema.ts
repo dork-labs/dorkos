@@ -71,7 +71,7 @@ export const communities = pgTable(
     check('communities_settings_version', sql`${table.settingsVersion} > 0`),
     check(
       'communities_admission_policy',
-      sql`${table.admissionPolicy} IN ('invite_only','closed')`
+      sql`${table.admissionPolicy} IN ('invite_only','closed','open')`
     ),
     check(
       'communities_name_length',
@@ -765,6 +765,8 @@ export const channels = pgTable(
     lastSeq: bigint('last_seq', { mode: 'number' }).notNull().default(0),
     epoch: integer('epoch').notNull().default(1),
     createdAt: time('created_at'),
+    /** Every newly admitted person joins this channel, when it is public and not archived (0033). */
+    autoJoin: boolean('auto_join').notNull().default(false),
   },
   (table) => [uniqueIndex('channels_community_id_unique').on(table.communityId, table.id)]
 );
@@ -1996,159 +1998,6 @@ export const communityImportPartUploads = pgTable(
     index('community_import_part_uploads_import_idx').on(table.importId, table.partNumber),
   ]
 );
-
-/**
- * One host takedown: ids, reasons, and states only (0020). No foreign key to communities, so the
- * record outlives a deleted community.
- */
-export const communityTakedowns = pgTable(
-  'community_takedowns',
-  {
-    id: uuid('id').primaryKey().defaultRandom(),
-    communityId: uuid('community_id').notNull(),
-    targetKind: text('target_kind').notNull(),
-    entryId: uuid('entry_id'),
-    attachmentId: uuid('attachment_id'),
-    channelId: uuid('channel_id'),
-    /** The member the content counts as: its author, or its author agent's owner. */
-    subjectMemberId: uuid('subject_member_id'),
-    category: text('category').notNull(),
-    reference: text('reference'),
-    notify: boolean('notify').notNull(),
-    actorKind: text('actor_kind').notNull(),
-    actorUserId: text('actor_user_id').references(() => users.id),
-    actorApiKeyId: uuid('actor_api_key_id').references(() => hostApiKeys.id),
-    idempotencyKey: text('idempotency_key').notNull(),
-    payloadHash: text('payload_hash').notNull(),
-    state: text('state').notNull().default('active'),
-    evidenceState: text('evidence_state').notNull(),
-    evidenceLocation: text('evidence_location'),
-    evidenceRecordSha256: text('evidence_record_sha256'),
-    evidenceAttempts: integer('evidence_attempts').notNull().default(0),
-    evidenceFailures: integer('evidence_failures').notNull().default(0),
-    evidenceAlertedAt: timestamp('evidence_alerted_at', { withTimezone: true }),
-    priorState: jsonb('prior_state'),
-    nextAttemptAt: timestamp('next_attempt_at', { withTimezone: true }),
-    leaseUntil: timestamp('lease_until', { withTimezone: true }),
-    lastErrorClass: text('last_error_class'),
-    createdAt: time('created_at'),
-    reversedAt: timestamp('reversed_at', { withTimezone: true }),
-    releasedByKind: text('released_by_kind'),
-    releasedByUserId: text('released_by_user_id').references(() => users.id),
-    releasedAt: timestamp('released_at', { withTimezone: true }),
-    /** A community takedown's evidence export, while it has one (0025). */
-    evidenceExportId: uuid('evidence_export_id'),
-    /** A community takedown: when its reversal window ends and the deletion is due (0025). */
-    deleteAfter: timestamp('delete_after', { withTimezone: true }),
-  },
-  (table) => [
-    uniqueIndex('community_takedowns_idempotency').on(
-      table.actorKind,
-      sql`COALESCE(${table.actorUserId}, ${table.actorApiKeyId}::text)`,
-      table.idempotencyKey
-    ),
-    index('community_takedowns_created_idx').on(table.createdAt.desc(), table.id.desc()),
-    index('community_takedowns_community_idx').on(
-      table.communityId,
-      table.createdAt.desc(),
-      table.id.desc()
-    ),
-    index('community_takedowns_due_idx')
-      .on(table.nextAttemptAt)
-      .where(sql`${table.evidenceState} IN ('pending','retrying')`),
-    index('community_takedowns_unsettled_idx')
-      .on(table.communityId)
-      .where(sql`${table.evidenceState} IN ('pending','retrying','failed','held_on_primary')`),
-    index('community_takedowns_actor_community_idx')
-      .on(
-        table.actorKind,
-        sql`COALESCE(${table.actorUserId}, ${table.actorApiKeyId}::text)`,
-        table.createdAt
-      )
-      .where(sql`${table.targetKind} = 'community'`),
-    check(
-      'community_takedowns_target_kind_check',
-      sql`${table.targetKind} IN ('entry','attachment','icon','community')`
-    ),
-    check(
-      'community_takedowns_category_check',
-      sql`${table.category} IN ('child_safety','illegal_content','legal_order','terms_violation')`
-    ),
-    check(
-      'community_takedowns_reference_check',
-      sql`${table.reference} ~ '^[A-Za-z0-9._:-]{1,64}$'`
-    ),
-    check('community_takedowns_actor_kind_check', sql`${table.actorKind} IN ('person','api_key')`),
-    check(
-      'community_takedowns_idempotency_key_check',
-      sql`char_length(${table.idempotencyKey}) BETWEEN 1 AND 200`
-    ),
-    check('community_takedowns_payload_hash_check', sql`${table.payloadHash} ~ '^[a-f0-9]{64}$'`),
-    check('community_takedowns_state_check', sql`${table.state} IN ('active','reversed')`),
-    check(
-      'community_takedowns_evidence_state_check',
-      sql`${table.evidenceState} IN ('pending','retrying','stored','failed','not_configured','nothing_to_preserve','held_on_primary')`
-    ),
-    check(
-      'community_takedowns_evidence_record_sha256_check',
-      sql`${table.evidenceRecordSha256} ~ '^[a-f0-9]{64}$'`
-    ),
-    check('community_takedowns_evidence_attempts_check', sql`${table.evidenceAttempts} >= 0`),
-    check('community_takedowns_evidence_failures_check', sql`${table.evidenceFailures} >= 0`),
-    check(
-      'community_takedowns_last_error_class_check',
-      sql`${table.lastErrorClass} ~ '^[A-Z][A-Z0-9_]{0,63}$'`
-    ),
-    check(
-      'community_takedowns_target',
-      sql`(${table.targetKind} = 'entry' AND ${table.entryId} IS NOT NULL AND ${table.attachmentId} IS NULL) OR (${table.targetKind} = 'attachment' AND ${table.attachmentId} IS NOT NULL) OR (${table.targetKind} IN ('icon','community') AND ${table.entryId} IS NULL AND ${table.attachmentId} IS NULL)`
-    ),
-    check(
-      'community_takedowns_actor',
-      sql`(${table.actorKind} = 'person') = (${table.actorUserId} IS NOT NULL) AND (${table.actorKind} = 'api_key') = (${table.actorApiKeyId} IS NOT NULL)`
-    ),
-    check(
-      'community_takedowns_reversal',
-      sql`(${table.state} = 'reversed') = (${table.reversedAt} IS NOT NULL)`
-    ),
-    check(
-      'community_takedowns_evidence_stored',
-      sql`(${table.evidenceState} = 'stored') = (${table.evidenceRecordSha256} IS NOT NULL) AND (${table.evidenceState} = 'stored') = (${table.evidenceLocation} IS NOT NULL)`
-    ),
-    check(
-      'community_takedowns_released_by_kind_check',
-      sql`${table.releasedByKind} IN ('person','offline')`
-    ),
-    check(
-      'community_takedowns_release',
-      sql`(${table.releasedAt} IS NULL) = (${table.releasedByKind} IS NULL) AND (${table.releasedByKind} = 'person') = (${table.releasedByUserId} IS NOT NULL)`
-    ),
-    check(
-      'community_takedowns_evidence_due',
-      sql`${table.evidenceState} NOT IN ('pending','retrying') OR ${table.nextAttemptAt} IS NOT NULL`
-    ),
-    check(
-      'community_takedowns_evidence_export',
-      sql`${table.evidenceExportId} IS NULL OR ${table.targetKind} = 'community'`
-    ),
-    check(
-      'community_takedowns_delete_after',
-      sql`(${table.targetKind} = 'community') = (${table.deleteAfter} IS NOT NULL)`
-    ),
-  ]
-);
-
-/**
- * A takedown's evidence record and held blobs, as they were at the takedown, until the copy
- * lands in the evidence store or a host operator releases them (0020).
- */
-export const takedownEvidenceStaging = pgTable('takedown_evidence_staging', {
-  takedownId: uuid('takedown_id')
-    .primaryKey()
-    .references(() => communityTakedowns.id, { onDelete: 'cascade' }),
-  record: jsonb('record').notNull(),
-  blobKeys: text('blob_keys').array().notNull(),
-});
 
 /**
  * A removed file whose bytes are queued but not yet swept, so a later host takedown of its

@@ -88,6 +88,10 @@ import {
   dispatchMessage,
   resetMessageDispatcher,
 } from '../../services/session/message-dispatcher.js';
+import {
+  initSessionVisibility,
+  resetSessionVisibility,
+} from '../../services/audit/session-visibility.js';
 
 const app = createApp({ admission: new MainRequestAdmission() });
 finalizeApp(app);
@@ -195,6 +199,15 @@ afterEach(() => {
   setMessageQueueStore(undefined);
   disposeProjector(SESSION_ID);
   disposeProjector(OTHER_SESSION_ID);
+});
+
+// The agent callers below act on agent work, so the session read guard
+// (`routes/session-read-guard.ts`) lets them through to the rule under test.
+beforeEach(() => {
+  initSessionVisibility((ids) => new Map(ids.map((id) => [id, 'space'] as const)));
+});
+afterEach(() => {
+  resetSessionVisibility();
 });
 
 describe('GET /api/sessions/:id/queue', () => {

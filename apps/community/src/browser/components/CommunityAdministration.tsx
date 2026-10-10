@@ -1,17 +1,21 @@
 import { Button, Input, Label, Notice, Textarea } from '@dork-labs/ui';
-import { useCallback, useEffect, useId, useRef, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { ImagePlus, Trash2 } from 'lucide-react';
 import { COMMUNITY_TAKEDOWN_CATEGORY_SENTENCES } from '@dorkos/shared/community-wire';
 import { describeError, RequestError, request, tenantApiPath } from '../api.js';
 import { ExportPanel } from './ExportPanel.js';
 import { describeReauthenticationError } from '../account-controls.js';
 import type { Member } from '../types.js';
+import { useSignInOptions } from '../sign-in-options.js';
+import { FocusDialog } from './FocusDialog.js';
+
+type AdmissionPolicy = 'invite_only' | 'closed' | 'open';
 
 type Settings = {
   communityId: string;
   name: string;
   description: string | null;
-  admissionPolicy: 'invite_only' | 'closed';
+  admissionPolicy: AdmissionPolicy;
   hasIcon: boolean;
   settingsVersion: number;
   lifecycle: 'pending_owner' | 'active' | 'archived' | 'suspended' | 'held' | 'deletion_pending';
@@ -87,75 +91,6 @@ async function mutationError(response: Response, fallback: string) {
   return cause;
 }
 
-/** Keep keyboard focus inside one destructive confirmation and restore it on close. */
-export function FocusDialog({
-  title,
-  children,
-  onClose,
-  error,
-}: {
-  title: string;
-  error?: string;
-  children: React.ReactNode;
-  onClose: () => void;
-}) {
-  const titleId = useId();
-  const panel = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    const previouslyFocused = document.activeElement as HTMLElement | null;
-    const root = panel.current;
-    root?.querySelector<HTMLElement>('input, button, select, textarea')?.focus();
-    function onKeyDown(event: KeyboardEvent) {
-      if (event.key === 'Escape') {
-        event.preventDefault();
-        onClose();
-        return;
-      }
-      if (event.key !== 'Tab' || !root) return;
-      const controls = Array.from(
-        root.querySelectorAll<HTMLElement>('button, input, select, textarea')
-      ).filter((control) => !control.hasAttribute('disabled'));
-      if (controls.length === 0) return;
-      const first = controls[0]!;
-      const last = controls.at(-1)!;
-      if (event.shiftKey && document.activeElement === first) {
-        event.preventDefault();
-        last.focus();
-      } else if (!event.shiftKey && document.activeElement === last) {
-        event.preventDefault();
-        first.focus();
-      }
-    }
-    document.addEventListener('keydown', onKeyDown);
-    return () => {
-      document.removeEventListener('keydown', onKeyDown);
-      previouslyFocused?.focus();
-    };
-  }, [onClose]);
-  return (
-    <div
-      className="admin-dialog-backdrop"
-      onMouseDown={(event) => event.target === event.currentTarget && onClose()}
-    >
-      <div
-        ref={panel}
-        className="admin-dialog panel"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby={titleId}
-      >
-        <h3 id={titleId}>{title}</h3>
-        {error && (
-          <Notice role="alert" tone="error">
-            {error}
-          </Notice>
-        )}
-        {children}
-      </div>
-    </div>
-  );
-}
-
 function formatDeadline(value: string | null) {
   return value ? new Date(value).toLocaleString() : 'the scheduled deadline';
 }
@@ -184,7 +119,9 @@ export function CommunityAdministration({
   const [etag, setEtag] = useState<string | null>(null);
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
-  const [admissionPolicy, setAdmissionPolicy] = useState<'invite_only' | 'closed'>('invite_only');
+  const [admissionPolicy, setAdmissionPolicy] = useState<AdmissionPolicy>('invite_only');
+  // Open admission runs through the host's single sign-on; without one it is not offered.
+  const singleSignOn = useSignInOptions().oidc;
   const [dialog, setDialog] = useState<DialogKind | null>(null);
   const [password, setPassword] = useState('');
   const [confirmName, setConfirmName] = useState('');
@@ -628,17 +565,25 @@ export function CommunityAdministration({
               Closing access revokes every open invitation and pending admission. No one new can
               join until you reopen it.
             </p>
+            {admissionPolicy === 'open' && (
+              <p className="small muted">
+                Anyone who signs in with {singleSignOn?.label ?? 'single sign-on'} can join.
+              </p>
+            )}
             <Label className="field" htmlFor="community-admission">
               Admission policy
               <select
                 id="community-admission"
                 value={admissionPolicy}
                 disabled={!editable || busy}
-                onChange={(event) =>
-                  setAdmissionPolicy(event.target.value as 'invite_only' | 'closed')
-                }
+                onChange={(event) => setAdmissionPolicy(event.target.value as AdmissionPolicy)}
               >
                 <option value="invite_only">Invite only</option>
+                {(singleSignOn || admissionPolicy === 'open') && (
+                  <option value="open">
+                    Open to anyone who signs in with {singleSignOn?.label ?? 'single sign-on'}
+                  </option>
+                )}
                 <option value="closed">Closed</option>
               </select>
             </Label>

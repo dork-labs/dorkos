@@ -13430,12 +13430,12 @@
             ],
             "description": "The stable name a room DorkOS itself depends on is found by — `'team'` for the #team channel every install gets at boot — and `null` for every room a person or an agent opened (team-room-home spec D3.1). It is also the tell that this is a SYSTEM room: only the owner may rename or archive one, so a client draws those controls off this field rather than guessing. It never changes, which is what makes it findable after a rename. The server always sends it, `null` included; it is optional only so that the thirty client fixtures that assemble a room by hand need not each carry a field none of them reads. Absent and `null` mean the same thing — an ordinary room."
           },
-          "fallbackSeatAuthorId": {
+          "leadAuthorId": {
             "type": [
               "string",
               "null"
             ],
-            "description": "The one member that answers a message somebody typed in this room without addressing anybody — #team's default agent (team-room-home spec D3.4) — and `null` in every room a person opened. Held on the room rather than read off a member's `always` mode, because a person may set any agent to \"Everything\" themselves and that choice must not be mistaken for this one. Optional for the same reason `wellKnown` is: client fixtures that assemble a room by hand do not carry a field they never read, and absent means the same as `null`."
+            "description": "The channel's LEAD: the agent member that answers a person's message nobody else is answering — not @mentioned to anyone, and not part of a conversation with another agent (DOR-2823). It answers whatever its response mode, and steps back when the message @mentions another agent. #team's default agent is its lead. `null` when the room has none. Optional for the same reason `wellKnown` is: client fixtures that assemble a room by hand do not carry a field they never read, and absent means the same as `null`."
           },
           "turnLimitsEnabled": {
             "type": [
@@ -13846,6 +13846,11 @@
             },
             "default": [],
             "description": "Agent directories to seed the roster with, minting an author row for any agent that has never been in a room. The DorkOS app knows agents by path and not by author id, so without this a DM takes two calls and a failed second one leaves a room with nobody in it. A DM may name any number of agents: one gives a one-to-one conversation, several give a group."
+          },
+          "leadAgentPath": {
+            "type": "string",
+            "minLength": 1,
+            "description": "A channel's lead, as one of `agentPaths` (DOR-2823). Omitted, a channel's lead is the first agent in `agentPaths`. Refused with INVALID_LEAD on a direct message, or when it is not in `agentPaths`."
           }
         },
         "required": [
@@ -13900,6 +13905,14 @@
           },
           "archived": {
             "type": "boolean"
+          },
+          "leadAuthorId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "minLength": 1,
+            "description": "Set or clear a channel's lead (DOR-2823): an agent member's author id, or `null` for none. Refused with INVALID_LEAD on a direct message, or for an id that is not an agent member of this room."
           },
           "deliverNotices": {
             "type": "boolean",
@@ -17054,6 +17067,393 @@
           "checked",
           "lastSeq",
           "lastHash"
+        ]
+      },
+      "AuditQueryResult": {
+        "type": "object",
+        "properties": {
+          "events": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AuditEvent"
+            }
+          },
+          "nextBeforeSeq": {
+            "type": "integer",
+            "exclusiveMinimum": 0
+          }
+        },
+        "required": [
+          "events"
+        ]
+      },
+      "AuditEvent": {
+        "type": "object",
+        "properties": {
+          "seq": {
+            "type": "integer",
+            "exclusiveMinimum": 0
+          },
+          "id": {
+            "type": "string"
+          },
+          "at": {
+            "type": "string"
+          },
+          "spaceId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "actor": {
+            "$ref": "#/components/schemas/AuditActor"
+          },
+          "onBehalfOf": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "accountId": {
+                  "type": "string"
+                },
+                "via": {
+                  "type": "string",
+                  "enum": [
+                    "schedule",
+                    "delegation",
+                    "room-turn",
+                    "extension",
+                    "bridge"
+                  ]
+                }
+              },
+              "required": [
+                "accountId",
+                "via"
+              ]
+            }
+          },
+          "credential": {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string"
+              },
+              "idHash": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind",
+              "idHash"
+            ]
+          },
+          "source": {
+            "$ref": "#/components/schemas/AuditSource"
+          },
+          "action": {
+            "type": "string"
+          },
+          "operation": {
+            "$ref": "#/components/schemas/AuditOperation"
+          },
+          "target": {
+            "$ref": "#/components/schemas/AuditTarget"
+          },
+          "outcome": {
+            "$ref": "#/components/schemas/AuditOutcome"
+          },
+          "error": {
+            "type": "string"
+          },
+          "change": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AuditChange"
+            }
+          },
+          "reason": {
+            "type": "string"
+          },
+          "links": {
+            "$ref": "#/components/schemas/AuditLinks"
+          },
+          "summary": {
+            "type": "string"
+          },
+          "visibility": {
+            "$ref": "#/components/schemas/AuditVisibility"
+          },
+          "participants": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "prevHash": {
+            "type": "string"
+          },
+          "hash": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "seq",
+          "id",
+          "at",
+          "spaceId",
+          "actor",
+          "source",
+          "action",
+          "operation",
+          "target",
+          "outcome",
+          "summary",
+          "visibility",
+          "prevHash",
+          "hash"
+        ]
+      },
+      "AuditActor": {
+        "type": "object",
+        "properties": {
+          "accountId": {
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/AuditActorKind"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "accountId",
+          "kind",
+          "name"
+        ]
+      },
+      "AuditActorKind": {
+        "type": "string",
+        "enum": [
+          "person",
+          "agent",
+          "system",
+          "external"
+        ]
+      },
+      "AuditSource": {
+        "type": "object",
+        "properties": {
+          "surface": {
+            "$ref": "#/components/schemas/AuditSurface"
+          },
+          "runtime": {
+            "type": "string"
+          },
+          "sessionId": {
+            "type": "string"
+          },
+          "turnId": {
+            "type": "string"
+          },
+          "taskRunId": {
+            "type": "string"
+          },
+          "toolCallId": {
+            "type": "string"
+          },
+          "ip": {
+            "type": "string"
+          },
+          "userAgent": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "surface"
+        ]
+      },
+      "AuditSurface": {
+        "type": "string",
+        "enum": [
+          "app",
+          "http",
+          "mcp",
+          "cli",
+          "relay",
+          "task",
+          "bridge",
+          "runtime-tool",
+          "system"
+        ]
+      },
+      "AuditOperation": {
+        "type": "string",
+        "enum": [
+          "create",
+          "modify",
+          "remove",
+          "access",
+          "execute",
+          "auth"
+        ]
+      },
+      "AuditTarget": {
+        "type": [
+          "object",
+          "null"
+        ],
+        "properties": {
+          "type": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "containerId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "id"
+        ]
+      },
+      "AuditOutcome": {
+        "type": "string",
+        "enum": [
+          "ok",
+          "failed",
+          "refused"
+        ]
+      },
+      "AuditChange": {
+        "type": "object",
+        "properties": {
+          "field": {
+            "type": "string"
+          },
+          "before": {},
+          "after": {},
+          "redacted": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "field"
+        ]
+      },
+      "AuditLinks": {
+        "type": "object",
+        "properties": {
+          "activityId": {
+            "type": "string"
+          },
+          "approvalId": {
+            "type": "string"
+          },
+          "traceId": {
+            "type": "string"
+          },
+          "causedBy": {
+            "type": "string"
+          },
+          "connectorAttemptId": {
+            "type": "string"
+          }
+        }
+      },
+      "AuditVisibility": {
+        "type": "string",
+        "enum": [
+          "space",
+          "participants",
+          "admins"
+        ]
+      },
+      "AuditGetResult": {
+        "type": "object",
+        "properties": {
+          "event": {
+            "$ref": "#/components/schemas/AuditEvent"
+          },
+          "activity": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "eventType": {
+                "type": "string"
+              },
+              "summary": {
+                "type": "string"
+              },
+              "occurredAt": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "eventType",
+              "summary",
+              "occurredAt"
+            ]
+          },
+          "approval": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "capabilityTitle": {
+                "type": "string"
+              },
+              "summary": {
+                "type": "string"
+              },
+              "state": {
+                "type": "string",
+                "enum": [
+                  "pending",
+                  "granted",
+                  "denied"
+                ]
+              },
+              "decidedAt": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "capabilityTitle",
+              "summary",
+              "state"
+            ]
+          },
+          "session": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "readable": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "id",
+              "readable"
+            ]
+          }
+        },
+        "required": [
+          "event"
         ]
       },
       "ListExtensionDecisionsResponse": {
@@ -77330,7 +77730,7 @@
           "Audit"
         ],
         "summary": "Check the audit log",
-        "description": "Check that the DorkOS audit log has not been edited: walk its hash chain and recompute every link. Returns ok, how many rows were checked, the last row and its hash, and — if the chain is broken — the first row that does not check out and why. Optional fromSeq and limit check a stretch instead of the whole log.",
+        "description": "Check that the DorkOS audit log has not been edited: walk its hash chain and recompute every link. Returns ok, how many rows were checked, the last row and its hash, and — if the chain is broken — the first row that does not check out and why. One call checks at most 100,000 rows; when more remain, call again with fromSeq set to nextFromSeq and prevHash set to lastHash.",
         "parameters": [
           {
             "schema": {
@@ -77368,6 +77768,243 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/AuditVerifyResult"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/audit": {
+      "get": {
+        "tags": [
+          "Audit"
+        ],
+        "summary": "Read the audit log",
+        "description": "Read the DorkOS audit log: every action anyone took, person or agent, newest first. Filter by actorId (who did it), targetId (what it was done to), action (a prefix such as \"config.\" or \"runtime.tool_used\"), operation, sessionId, and a since/until time window. Page backwards by passing nextBeforeSeq as beforeSeq. You see every action and every agent's work; a person's private chat and sign-in details are not shown to agents.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": false,
+            "name": "actorId",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": false,
+            "name": "targetId",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "required": false,
+            "name": "action",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "$ref": "#/components/schemas/AuditOperation"
+            },
+            "required": false,
+            "name": "operation",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": false,
+            "name": "sessionId",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "required": false,
+            "name": "since",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "required": false,
+            "name": "until",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "exclusiveMinimum": 0
+            },
+            "required": false,
+            "name": "beforeSeq",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 200,
+              "default": 50
+            },
+            "required": false,
+            "name": "limit",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Read the audit log result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuditQueryResult"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/audit/{id}": {
+      "get": {
+        "tags": [
+          "Audit"
+        ],
+        "summary": "Read one audit event",
+        "description": "Read one event from the DorkOS audit log by its id, with its links (the Activity row, the approval, the chat) so you can follow it to the transcript.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "description": "The event id (a ULID)."
+            },
+            "required": true,
+            "description": "The event id (a ULID).",
+            "name": "id",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Read one audit event result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuditGetResult"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/audit/accounts/{accountId}/timeline": {
+      "get": {
+        "tags": [
+          "Audit"
+        ],
+        "summary": "Read one account’s history",
+        "description": "Everything one account did, had done to it, or had done on its behalf, newest first: the per-account timeline of the audit log. accountId is an agent id, a person’s account id, or the install id the owner had before making an account (the two are read as one). The same filters and paging as reading the whole log.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "required": false,
+            "name": "action",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "$ref": "#/components/schemas/AuditOperation"
+            },
+            "required": false,
+            "name": "operation",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": false,
+            "name": "sessionId",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "required": false,
+            "name": "since",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "required": false,
+            "name": "until",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "exclusiveMinimum": 0
+            },
+            "required": false,
+            "name": "beforeSeq",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 200,
+              "default": 50
+            },
+            "required": false,
+            "name": "limit",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": true,
+            "name": "accountId",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Read one account’s history result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuditQueryResult"
                 }
               }
             }

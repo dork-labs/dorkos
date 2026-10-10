@@ -21,11 +21,37 @@ import {
   createCloudApiClient,
   CloudApiProblemError,
   type CloudApiClient,
+  type FetchLike,
 } from '@dork-labs/cloud-api/client';
 import type { Problem } from '@dork-labs/cloud-api';
 import { configManager } from '../config-manager.js';
 import { resolveCloudBaseUrl } from '../auth/cloud-link-client.js';
 import { getCloudLinkGeneration } from '../auth/cloud-link.js';
+import { env } from '../../../env.js';
+
+let v1Fetch: FetchLike | undefined;
+
+/**
+ * Replace the `fetch` every `/v1` client is built with, or pass `undefined` to
+ * go back to the global one. Only the test-mode composition root calls this,
+ * to answer `/v1` from an in-process fake; production never sets it.
+ *
+ * @param fetch - The replacement, or `undefined` for the global `fetch`.
+ * @throws If a replacement is set outside `DORKOS_TEST_RUNTIME`: a real
+ *   server always talks to the real service.
+ * @internal
+ */
+export function setCloudV1Fetch(fetch: FetchLike | undefined): void {
+  if (fetch !== undefined && !env.DORKOS_TEST_RUNTIME) {
+    throw new Error('setCloudV1Fetch is test-mode only (DORKOS_TEST_RUNTIME)');
+  }
+  v1Fetch = fetch;
+}
+
+/** Build one contract client, with the replacement `fetch` only when one is set. */
+function buildClient(baseUrl: string, token: string): CloudApiClient {
+  return createCloudApiClient({ baseUrl, token, ...(v1Fetch && { fetch: v1Fetch }) });
+}
 
 let observedToken: string | null = null;
 let tokenEpoch = 0;
@@ -73,7 +99,7 @@ export function isCloudLinked(): boolean {
 export function createCloudV1Client(): CloudApiClient | null {
   const token = readCloudInstanceToken();
   if (token === null) return null;
-  return createCloudApiClient({ baseUrl: resolveCloudBaseUrl(), token });
+  return buildClient(resolveCloudBaseUrl(), token);
 }
 
 /**
@@ -96,7 +122,7 @@ export function captureCloudV1Context(): CloudV1Context | null {
   const manager = configManager;
   const generation = getCloudLinkGeneration();
   return {
-    client: createCloudApiClient({ baseUrl, token }),
+    client: buildClient(baseUrl, token),
     isCurrent: () =>
       epoch === tokenEpoch &&
       manager === configManager &&

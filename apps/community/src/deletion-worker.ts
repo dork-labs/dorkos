@@ -377,6 +377,7 @@ export async function sweepCommunityDeletions(
       'connection_grants',
       'connection_pairings',
       'invites',
+      'bans',
       'audit_events',
       'notice_outbox',
       'agents',

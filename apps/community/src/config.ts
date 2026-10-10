@@ -3,11 +3,11 @@ import {
   COMMUNITY_RESERVED_SHORT_NAMES,
   COMMUNITY_SHORT_NAME_PATTERN,
 } from '@dorkos/shared/community-admin-wire';
-import { realpathSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
+import { isAbsolute, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseMail } from './mail/config.js';
+import { checkS3Endpoint, directoriesOverlap } from './storage/config-checks.js';
 import {
   COMMUNITY_MINIMUM_AGE_CEILING,
   COMMUNITY_MINIMUM_AGE_FLOOR,
@@ -151,57 +151,6 @@ function parseOidc(value: {
 /** The directory the server serves its web app from (`main.ts`), from `src/` or `dist-server/`. */
 const SERVED_WEB_APP_DIRECTORY = fileURLToPath(new URL('../dist/', import.meta.url));
 
-/**
- * A path with every symbolic link resolved, for as much of it as exists, so `/tmp/x` and
- * `/private/tmp/x` compare equal on a host where one links to the other.
- */
-function realPath(path: string): string {
-  const absolute = resolve(path);
-  let existing = absolute;
-  const rest: string[] = [];
-  for (;;) {
-    try {
-      return join(realpathSync.native(existing), ...rest.reverse());
-    } catch {
-      const parent = dirname(existing);
-      if (parent === existing) return absolute;
-      rest.push(basename(existing));
-      existing = parent;
-    }
-  }
-}
-
-/** Whether `child` is `parent` or sits anywhere inside it. */
-function within(child: string, parent: string): boolean {
-  const path = relative(parent, child);
-  return path === '' || (path !== '..' && !path.startsWith(`..${sep}`) && !isAbsolute(path));
-}
-
-/** Whether two directories are the same, or one contains the other. */
-function directoriesOverlap(a: string, b: string): boolean {
-  for (const left of new Set([resolve(a), realPath(a)])) {
-    for (const right of new Set([resolve(b), realPath(b)])) {
-      if (within(left, right) || within(right, left)) return true;
-    }
-  }
-  return false;
-}
-
-/** Refuse an S3 endpoint that is not HTTPS (or HTTP on localhost) or that carries credentials. */
-function checkS3Endpoint(name: string, value: string | undefined): void {
-  if (!value) return;
-  const endpoint = new URL(value);
-  if (
-    endpoint.protocol !== 'https:' &&
-    !(endpoint.protocol === 'http:' && ['localhost', '127.0.0.1'].includes(endpoint.hostname))
-  ) {
-    throw new Error(`${name} must use HTTPS, or HTTP on localhost`);
-  }
-  if (endpoint.username || endpoint.password) {
-    throw new Error(`${name} must not contain credentials`);
-  }
-}
-
 const schema = z.object({
   COMMUNITY_DATABASE_URL: z.url().startsWith('postgres'),
   // The one connection that waits for live notices. It must reach Postgres directly: a
@@ -318,6 +267,16 @@ const schema = z.object({
     100
   ),
   COMMUNITY_PAIRING_ATTEMPTS_PER_MINUTE: integer('COMMUNITY_PAIRING_ATTEMPTS_PER_MINUTE', 5, 100),
+  // `0` refuses every open join on this host at once, whatever each space's policy says.
+  COMMUNITY_OPEN_ADMISSION: z.enum(['0', '1']).default('1'),
+  // Open joins (and their preflights) one caller address may make a minute.
+  COMMUNITY_OPEN_JOINS_PER_MINUTE: integer('COMMUNITY_OPEN_JOINS_PER_MINUTE', 5, 100),
+  // Open joins the whole host takes a minute, so a flood of new accounts cannot swamp it.
+  COMMUNITY_OPEN_JOINS_PER_HOST_PER_MINUTE: integer(
+    'COMMUNITY_OPEN_JOINS_PER_HOST_PER_MINUTE',
+    120,
+    10_000
+  ),
   COMMUNITY_HOST_KEY_ATTEMPTS_PER_MINUTE: integer(
     'COMMUNITY_HOST_KEY_ATTEMPTS_PER_MINUTE',
     20,
@@ -637,6 +596,11 @@ export function parseConfig(env: Record<string, unknown>) {
      * password, Google, GitHub or single sign-on; `null` when the host set none.
      */
     minimumAge: value.COMMUNITY_MINIMUM_AGE ?? null,
+    /**
+     * Whether a space set to `open` admits people who sign in through the host's single sign-on.
+     * `COMMUNITY_OPEN_ADMISSION=0` turns every open join off at once; invitations still work.
+     */
+    openAdmission: value.COMMUNITY_OPEN_ADMISSION === '1',
     /** The header a trusted proxy puts the caller's address in; per-caller limits read it. */
     trustedProxyHeader: value.COMMUNITY_TRUSTED_PROXY_HEADER?.toLowerCase(),
     /** Every short name no community may take: the built-in paths and this host's additions. */
@@ -680,6 +644,10 @@ export function parseConfig(env: Record<string, unknown>) {
       bootstrapAttemptsPerMinute: value.COMMUNITY_BOOTSTRAP_ATTEMPTS_PER_MINUTE,
       invitePreviewAttemptsPerMinute: value.COMMUNITY_INVITE_PREVIEW_ATTEMPTS_PER_MINUTE,
       pairingAttemptsPerMinute: value.COMMUNITY_PAIRING_ATTEMPTS_PER_MINUTE,
+      /** Open joins one caller address may make a minute. */
+      openJoinsPerMinute: value.COMMUNITY_OPEN_JOINS_PER_MINUTE,
+      /** Open joins the whole host takes a minute. */
+      openJoinsPerHostPerMinute: value.COMMUNITY_OPEN_JOINS_PER_HOST_PER_MINUTE,
       hostKeyAttemptsPerMinute: value.COMMUNITY_HOST_KEY_ATTEMPTS_PER_MINUTE,
       reauthAttemptsPerMinute: value.COMMUNITY_REAUTH_ATTEMPTS_PER_MINUTE,
       /** Requests for a mailed link one caller address (an IPv6 /64) may make a minute. */

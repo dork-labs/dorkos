@@ -1,5 +1,5 @@
 import { cn } from '@/layers/shared/lib';
-import type { TimeGroupLabel } from '../model/time-grouping';
+import type { TimeGroupLabel } from '@/layers/entities/activity';
 
 export interface ActivityGroupHeaderProps {
   /** One of the canonical time group labels. */

@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { CommunityWireHandleSchema } from '@dorkos/shared/community-wire';
 import { tombstonePayloadHash } from '../content-removal.js';
 import { ERASED_ENTRY_TEXT } from '../content/tombstones.js';
-import { ERASED_MENTION, randomHuskHandle, rewriteHandleTokens } from '../erasure/erasure.js';
+import { ERASED_MENTION, randomHuskHandle, rewriteHandleTokens } from '../erasure/husk-handles.js';
 import { parseErasureJournal } from '../erasure/reapply.js';
 import { resolveCommunityMentions } from '../content/mentions.js';
 import { reauthenticationDecision, REAUTH_WINDOW_MS } from '../routes/account/erasures.js';

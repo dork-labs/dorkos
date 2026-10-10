@@ -643,11 +643,16 @@ describe('the rooms capability domain', () => {
     it('tells the model to react instead of a filler word for an ack-only message (DOR-1234)', () => {
       const react = roomsDomain.capabilities.find((c) => c.id === 'rooms.react');
       expect(react?.description).toContain('"no reply needed", "just ack this"');
-      expect(react?.description).toContain('✅ seen, 👍 agreed, 👀 looking');
+      expect(react?.description).toContain('(✅ seen, 👍 agreed)');
+      // The 👀 receipt is the room's own, never the agent's (DOR-2823).
+      expect(react?.description).toContain('you cannot use 👀 yourself');
+      expect(react?.description).not.toContain('👀 looking');
     });
 
     it('puts an emoji on a message and takes it back', async () => {
       const entry = service.post(channel.id, { authorId: human, text: 'shipping' });
+      // Let the picked agent's turn end, so the room's 👀 receipt is off (DOR-2823).
+      await service.triggersIdle();
 
       await expect(
         call('rooms.react', { roomId: channel.id, entryId: entry.id, emoji: '👍' })
@@ -1586,7 +1591,7 @@ describe('the rooms MANAGEMENT verbs', () => {
         (update?.input as unknown as { shape: Record<string, unknown> }).shape
       );
 
-      expect(shape.sort()).toEqual(['roomId', 'title', 'topic']);
+      expect(shape.sort()).toEqual(['lead', 'roomId', 'title', 'topic']);
     });
 
     it('refuses a rename onto a taken name without naming the room that holds it', async () => {

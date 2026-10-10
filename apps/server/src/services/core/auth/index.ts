@@ -17,8 +17,8 @@
  * ## Lifecycle
  *
  * {@link initAuth} is called once at startup (`index.ts`) with the server's
- * Drizzle db; `app.ts` mounts {@link getAuth} at `/api/auth/*` before
- * `express.json()`. The handler is always mounted regardless of
+ * Drizzle db; `http/better-auth.ts` mounts {@link getAuth} at `/api/auth/*` on
+ * the Hono `/api` chain, before any body parsing. The handler is always mounted regardless of
  * `config.auth.enabled` so the enable-login flow can create the owner account
  * before the flag flips. The `auth.enabled` gate (task 1.2) does not live here.
  *
@@ -220,8 +220,9 @@ function buildAuthOptions(db: Db, dorkHome: string, port: number): AuthOptions {
     trustedOrigins: () => resolveAuthTrustedOrigins(),
     advanced: {
       cookiePrefix,
-      // Secure in production; `trust proxy` in app.ts keeps this correct behind
-      // the ngrok hop. `sameSite: 'lax'` is required by the P2 device flow and
+      // Secure in production, whatever scheme a request names. Behind the
+      // tunnel or a proxy, `http/better-auth.ts` hands Better Auth the scheme
+      // `X-Forwarded-Proto` names, for its origin checks. `sameSite: 'lax'` is required by the P2 device flow and
       // OAuth callbacks.
       useSecureCookies: isProduction,
       defaultCookieAttributes: {
@@ -278,7 +279,7 @@ let activeDb: Db | undefined;
 
 /**
  * Create the Better Auth singleton over the server's Drizzle db and store it for
- * `app.ts` and downstream auth consumers. Called once at startup. The db handle
+ * `http/hono-api.ts` and downstream auth consumers. Called once at startup. The db handle
  * is retained so {@link hasAnyUser} can answer the exposure guard (task 1.3)
  * without a second db instance.
  *
@@ -419,9 +420,10 @@ export function getAuth(): Auth | undefined {
   return activeAuth;
 }
 
-// Re-exported for downstream auth consumers (e.g. the session-gate in task
-// 1.2): `toNodeHandler` mounts the handler; `fromNodeHeaders` converts an
-// Express request's headers to a Web `Headers` for `auth.api.getSession`.
+// Re-exported for downstream auth consumers: `toNodeHandler` mounts the handler
+// on a bare Node or Express app (tests that stand Better Auth up on their own);
+// `fromNodeHeaders` converts Node request headers to a Web `Headers` for
+// `auth.api.getSession`.
 export { toNodeHandler, fromNodeHeaders };
 
 // The session gate + its shared credential verifier. `verifyRequestAuth` is the

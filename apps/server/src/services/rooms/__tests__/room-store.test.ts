@@ -16,7 +16,8 @@ import path from 'node:path';
 import { createDb, eq, rooms, runMigrations, type Db } from '@dorkos/db';
 import { createTestDb } from '@dorkos/test-utils/db';
 import { BridgeStore } from '../../relay/chat-bridge/bridge-store.js';
-import { isDmMemberSetTaken, RoomStore, type NewRoomEntry } from '../room-store.js';
+import { RoomStore, type NewRoomEntry } from '../room-store.js';
+import { isDmMemberSetTaken } from '../manage/room-dm-key.js';
 import { EVENT_LOG_MAX_EVENTS } from '../../session/replay/event-log.js';
 
 const require = createRequire(import.meta.url);

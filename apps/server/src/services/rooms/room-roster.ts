@@ -40,7 +40,8 @@ import {
 } from './author-registry.js';
 import type { ReadCursorService } from '../core/read-cursor-service.js';
 import { RoomError, type RoomAgentLookup } from './room-errors.js';
-import { isDmMemberSetTaken, type RoomStore } from './room-store.js';
+import { isDmMemberSetTaken } from './manage/room-dm-key.js';
+import type { RoomStore } from './room-store.js';
 
 /**
  * The agents on a roster, by the names a title would call them.

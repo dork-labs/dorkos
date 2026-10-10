@@ -429,6 +429,15 @@ export type RoomErrorCode =
   | 'ATTACHMENT_TOO_LARGE'
   | 'NOT_A_BRIDGED_ROOM'
   /**
+   * A channel's lead was set to somebody who cannot lead it, or on a room that
+   * has none to set (DOR-2823): the id is not an agent member of the room, or
+   * the room is a direct message, where everything a person says is already
+   * addressed to whoever is in it.
+   */
+  | 'INVALID_LEAD'
+  /** An agent tried to put the room's own 👀 receipt on a message (DOR-2823). */
+  | 'RECEIPT_EMOJI_RESERVED'
+  /**
    * `RoomService.rebridge` was asked to re-bridge a `(adapterId, chatId)` that
    * has no surviving bridge row (chats-as-channels spec §3.5). Re-bridging is
    * the lifecycle path that reuses or adopts a row a previous bridge left

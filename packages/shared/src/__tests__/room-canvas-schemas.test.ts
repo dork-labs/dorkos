@@ -38,7 +38,7 @@ const room = {
   topic: null,
   archived: false,
   wellKnown: null,
-  fallbackSeatAuthorId: null,
+  leadAuthorId: null,
   bridge: null,
   createdAt: '2026-09-11T09:00:00.000Z',
   lastActivityAt: '2026-09-11T10:00:00.000Z',

@@ -59,7 +59,7 @@ import {
 import { homeOf, resolveAgentHome, turnAgentOf } from '../core/agent-identity/agent-home.js';
 import { MCP_TOOL_TIERS } from '../core/mcp-tool-tiers.js';
 import { auditTrail, recordAudit } from './audit-trail.js';
-import { redactAuditText } from './audit-log.js';
+import { redactAuditText } from './audit-redaction.js';
 
 /** The most of a tool's input kept while it streams in, to read its target. */
 const MAX_INPUT = 8_000;

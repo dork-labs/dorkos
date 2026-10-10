@@ -11,8 +11,9 @@ import { CommunityAdministration } from './CommunityAdministration.js';
 import { RemovedByHost } from '../takedowns/TakedownNotices.js';
 import { EraseMembershipPanel } from './Erasure.js';
 import { ExportPanel } from './ExportPanel.js';
+import { SpaceMembers } from './members/SpaceMembers.js';
 import type { Agent, Channel, Member } from '../types.js';
-import type { CommunitySettingsSection } from '@dorkos/shared/community-wire';
+import type { CommunitySettingsSection, CommunityWireBan } from '@dorkos/shared/community-wire';
 
 type Invite = {
   id: string;
@@ -104,6 +105,7 @@ export function Manage({
   const [admissionClosed, setAdmissionClosed] = useState(false);
   const [directory, setDirectory] = useState<Member[]>([]);
   const [directoryCursor, setDirectoryCursor] = useState<string | null>(null);
+  const [bans, setBans] = useState<CommunityWireBan[]>([]);
   const [roster, setRoster] = useState<Member[]>([]);
   const [selectedMember, setSelectedMember] = useState('');
   const [agents, setAgents] = useState<Agent[]>([]);
@@ -141,6 +143,9 @@ export function Manage({
               setDirectoryCursor(body.nextCursor);
             })
           );
+          requests.push(
+            request<{ bans: CommunityWireBan[] }>('/api/v1/bans').then((body) => setBans(body.bans))
+          );
         }
         if (selectedChannel?.joined && !readOnly)
           requests.push(
@@ -162,7 +167,7 @@ export function Manage({
   // a closed community with a plain reason.
   const readAdmission = useCallback(
     () =>
-      request<{ admissionPolicy: 'invite_only' | 'closed' }>('/api/v1/settings')
+      request<{ admissionPolicy: 'invite_only' | 'closed' | 'open' }>('/api/v1/settings')
         .then((body) => {
           const closed = body.admissionPolicy === 'closed';
           setAdmissionClosed(closed);
@@ -616,63 +621,15 @@ export function Manage({
               )}
             </section>
             {moderator && (
-              <section className="panel">
-                <h3>Space members</h3>
-                {directory.map((member) => (
-                  <div
-                    className="row justify-between border-b border-[var(--line)] py-2"
-                    key={member.memberId}
-                  >
-                    <div>
-                      <strong>{member.displayName}</strong>
-                      <div className="small muted">
-                        @{member.handle} · {member.role}
-                      </div>
-                    </div>
-                    <div className="row">
-                      {me.role === 'owner' && member.memberId !== me.memberId && (
-                        <Button
-                          variant="ghost"
-                          aria-label={`${member.role === 'admin' ? 'Remove admin from' : 'Make'} ${member.displayName}${member.role === 'admin' ? '' : ' admin'}`}
-                          disabled={busy}
-                          onClick={() =>
-                            void perform(
-                              () =>
-                                request(`/api/v1/members/${member.memberId}/role`, 'PATCH', {
-                                  role: member.role === 'admin' ? 'member' : 'admin',
-                                }),
-                              member.role === 'admin' ? 'Admin removed.' : 'Admin granted.'
-                            )
-                          }
-                        >
-                          {member.role === 'admin' ? 'Make member' : 'Make admin'}
-                        </Button>
-                      )}
-                      {member.memberId !== me.memberId && member.role === 'member' && (
-                        <Button
-                          variant="ghost"
-                          disabled={busy}
-                          aria-label={`Remove ${member.displayName} from space`}
-                          onClick={() => {
-                            if (window.confirm(`Remove ${member.displayName} from this space?`))
-                              void perform(
-                                () => request(`/api/v1/members/${member.memberId}`, 'DELETE'),
-                                'Member removed.'
-                              );
-                          }}
-                        >
-                          <Trash2 size={16} />
-                        </Button>
-                      )}
-                    </div>
-                  </div>
-                ))}
-                {directoryCursor && (
-                  <Button variant="outline" className="mt-3" onClick={() => void moreMembers()}>
-                    Show more members
-                  </Button>
-                )}
-              </section>
+              <SpaceMembers
+                me={me}
+                directory={directory}
+                hasMore={directoryCursor !== null}
+                bans={bans}
+                busy={busy}
+                perform={perform}
+                onMore={() => void moreMembers()}
+              />
             )}
           </div>
         )}

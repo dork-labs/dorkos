@@ -89,6 +89,13 @@ export const RoomEntryKindSchema = z.enum(['post', 'notice']).openapi('RoomEntry
 export type RoomEntryKind = z.infer<typeof RoomEntryKindSchema>;
 
 /**
+ * The receipt the room puts on a person's message for each agent picked to
+ * answer it, and takes off when that agent's turn ends (DOR-2823). The room's
+ * alone: an agent cannot put it on or take it off itself.
+ */
+export const ROOM_RECEIPT_EMOJI = '👀';
+
+/**
  * Why the room is speaking in its own voice. Kept to the cases that actually
  * write a `notice`; a new member-facing event earns a new code here rather than
  * a free-text convention.
@@ -566,12 +573,12 @@ export const RoomSchema = z
       .describe(
         "The stable name a room DorkOS itself depends on is found by — `'team'` for the #team channel every install gets at boot — and `null` for every room a person or an agent opened (team-room-home spec D3.1). It is also the tell that this is a SYSTEM room: only the owner may rename or archive one, so a client draws those controls off this field rather than guessing. It never changes, which is what makes it findable after a rename. The server always sends it, `null` included; it is optional only so that the thirty client fixtures that assemble a room by hand need not each carry a field none of them reads. Absent and `null` mean the same thing — an ordinary room."
       ),
-    fallbackSeatAuthorId: z
+    leadAuthorId: z
       .string()
       .nullable()
       .optional()
       .describe(
-        'The one member that answers a message somebody typed in this room without addressing anybody — #team\'s default agent (team-room-home spec D3.4) — and `null` in every room a person opened. Held on the room rather than read off a member\'s `always` mode, because a person may set any agent to "Everything" themselves and that choice must not be mistaken for this one. Optional for the same reason `wellKnown` is: client fixtures that assemble a room by hand do not carry a field they never read, and absent means the same as `null`.'
+        "The channel's LEAD: the agent member that answers a person's message nobody else is answering — not @mentioned to anyone, and not part of a conversation with another agent (DOR-2823). It answers whatever its response mode, and steps back when the message @mentions another agent. #team's default agent is its lead. `null` when the room has none. Optional for the same reason `wellKnown` is: client fixtures that assemble a room by hand do not carry a field they never read, and absent means the same as `null`."
       ),
     ...roomLimitOverrideFields,
     createdAt: z.string(),
@@ -1623,6 +1630,13 @@ export const CreateRoomRequestSchema = z
       .describe(
         'Agent directories to seed the roster with, minting an author row for any agent that has never been in a room. The DorkOS app knows agents by path and not by author id, so without this a DM takes two calls and a failed second one leaves a room with nobody in it. A DM may name any number of agents: one gives a one-to-one conversation, several give a group.'
       ),
+    leadAgentPath: z
+      .string()
+      .min(1)
+      .optional()
+      .describe(
+        "A channel's lead, as one of `agentPaths` (DOR-2823). Omitted, a channel's lead is the first agent in `agentPaths`. Refused with INVALID_LEAD on a direct message, or when it is not in `agentPaths`."
+      ),
   })
   .refine((v) => v.title !== undefined || v.slug !== undefined, {
     message: 'A room needs a title or a slug',
@@ -1643,6 +1657,14 @@ export const UpdateRoomRequestSchema = z
     title: z.string().min(1).max(200).optional(),
     topic: z.string().max(500).nullable().optional(),
     archived: z.boolean().optional(),
+    leadAuthorId: z
+      .string()
+      .min(1)
+      .nullable()
+      .optional()
+      .describe(
+        "Set or clear a channel's lead (DOR-2823): an agent member's author id, or `null` for none. Refused with INVALID_LEAD on a direct message, or for an id that is not an agent member of this room."
+      ),
     deliverNotices: z
       .boolean()
       .optional()

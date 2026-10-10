@@ -1,7 +1,7 @@
 import { Button, Input, Label } from '@dork-labs/ui';
 import { useState } from 'react';
 import { request } from '../../api.js';
-import { FocusDialog } from '../CommunityAdministration.js';
+import { FocusDialog } from '../FocusDialog.js';
 
 /** The fields of a host community record these controls act on. */
 export type HoldableCommunity = {

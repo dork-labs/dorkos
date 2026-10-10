@@ -196,8 +196,6 @@ export interface CoreSlice {
   setIsTextStreaming: (v: boolean) => void;
   isWaitingForUser: boolean;
   setIsWaitingForUser: (v: boolean) => void;
-  tasksBadgeCount: number;
-  setTasksBadgeCount: (v: number) => void;
 
   /**
    * Put typography back to its shipped defaults — font size and font family,

@@ -24,8 +24,8 @@
  * (room-participation spec §10.3, as amended by DOR-672), and so does
  * {@link searchForCaller}, which is what `GET /api/search` answers with. There is
  * exactly one search path over these rows, and neither caller is trusted with an
- * access rule: both are handed a scope somebody else resolved. Session rows are
- * owner-only and reachable by no agent (spec §7).
+ * access rule: both are handed a scope somebody else resolved. An agent reaches
+ * agent work sessions only, never a person's own chat (spec `audit-trail` §3.4).
  *
  * {@link answerSearch} applies the shared search decision after the route has
  * resolved the caller. `GET /api/search` exposes the result over HTTP.
@@ -40,7 +40,7 @@ export {
 } from './indexer.js';
 export { searchMessages } from './query.js';
 export { answerSearch } from './answer-search.js';
-export { searchForCaller, type SearchScope } from './search-service.js';
+export { searchForCaller, type SearchScope, type SessionReadFilter } from './search-service.js';
 export {
   SEARCH_SOURCES,
   claudeCodeSource,

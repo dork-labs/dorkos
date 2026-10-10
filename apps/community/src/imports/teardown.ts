@@ -45,6 +45,7 @@ const IMPORTED_TABLES = [
   'community_handles',
   'agents',
   'audit_events',
+  'bans',
   'channels',
   'members',
 ] as const;

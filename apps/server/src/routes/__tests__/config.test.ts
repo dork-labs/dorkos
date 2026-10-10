@@ -1376,6 +1376,7 @@ describe('GET /api/config', () => {
     it('reports the shipped numbers when nobody has changed them', async () => {
       const res = await request(server).get('/api/config').expect(200);
 
+      // The engaged window ships at an hour and 15 messages (DOR-2823).
       expect(res.body.rooms).toEqual({
         engagedWindowMinutes: 60,
         engagedWindowPosts: 15,

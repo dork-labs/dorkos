@@ -27,7 +27,8 @@ export { parseTabHref, projectName, type TabTarget } from './lib/tab-target';
 // title alike (DOR-2820). The builders are exported for the Dev Playground,
 // which lays out every route and status with the real component.
 export { useTabIdentity } from './model/use-tab-identity';
-export { useTabSignalsStore, useTabSignalsSync } from './model/tab-signals';
+export { useTabSignalsStore } from './model/tab-signals';
+export { useTabSignalsSync } from './model/use-tab-signals-sync';
 export {
   chatTabIdentity,
   roomTabIdentity,
@@ -39,6 +40,9 @@ export {
   marketplaceTabIdentity,
   extensionTabIdentity,
   routeTabIdentity,
+  schedulesBadge,
+  activityBadge,
+  connectionsBadge,
   windowTitle,
   type RouteBadge,
   type TabIdentity,

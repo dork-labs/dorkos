@@ -26,6 +26,8 @@ import { createLiveHub, stopLiveWithPool } from './live/app-hub.js';
 import { registerMonitoringRoutes } from './live/monitoring.js';
 import { registerInviteRoutes } from './routes/community/invites.js';
 import { registerMemberRoutes } from './routes/community/members.js';
+import { registerBanRoutes } from './routes/community/bans.js';
+import { registerOpenAdmissionRoutes } from './routes/community/open-admission.js';
 import { registerPairingRoutes } from './routes/community/pairings.js';
 import { registerRedactionRoutes } from './routes/community/redactions.js';
 import { registerRemovalRoutes } from './routes/community/removals.js';
@@ -531,6 +533,21 @@ export function createCommunityApp({
     },
   });
   registerMemberRoutes(communityApi, { pool, auth, confirmPassword, now });
+  registerBanRoutes(communityApi, { pool, auth, config });
+  registerOpenAdmissionRoutes(communityApi, {
+    pool,
+    auth,
+    config,
+    // A preflight needs no account, so it spends only its caller's budget: anyone could
+    // otherwise drain the host's. A join is signed in and spends both, so neither one address
+    // nor many can flood the host with joins.
+    limitPreflight: (c) =>
+      limitAttempts(`open-preflight:${peer(c)}`, config.limits.openJoinsPerMinute),
+    limitJoin: (c) => {
+      limitAttempts(`open-join:${peer(c)}`, config.limits.openJoinsPerMinute);
+      limitAttempts('open-join-host', config.limits.openJoinsPerHostPerMinute);
+    },
+  });
   registerPairingRoutes(communityApi, {
     pool,
     auth,
@@ -549,7 +566,13 @@ export function createCommunityApp({
   registerRemovalRoutes(communityApi, { pool, auth, config });
   registerRedactionRoutes(communityApi, { pool, auth, config });
   registerExportRoutes(communityApi, { pool, auth, blobStore, confirmPassword });
-  registerAdministrationRoutes(communityApi, { pool, auth, blobStore, confirmPassword });
+  registerAdministrationRoutes(communityApi, {
+    pool,
+    auth,
+    blobStore,
+    confirmPassword,
+    singleSignOn: config.oidc !== null,
+  });
   registerOwnerErasureRoutes(communityApi, { pool, auth });
   registerHistoryOriginRoute(communityApi, { pool, auth });
   registerTakedownNoticeRoutes(communityApi, { pool, auth });

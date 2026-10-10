@@ -11,7 +11,8 @@ import type { PlaygroundSection } from '../playground-registry';
  *
  * Sources: RoomsShowcases — Room Panel, RoomMemberRow, RoomAvatar,
  * BridgeVisibilityBadge, ResponseModeControl, LoudnessMeter, RoomLoudnessLine,
- * AgentRosterPicker, RemoveMemberConfirm. FileExplorerShowcases — Room Files.
+ * AgentRosterPicker, RemoveMemberConfirm. RoomLeadShowcases — Channel Lead.
+ * FileExplorerShowcases — Room Files.
  * RoomThreadShowcases — ThreadReplyRow, RoomThreadPanel, Thread arrival
  * animations. RoomDeliveryShowcases — Room moments, Room notices, PendingRow,
  * Message.Attachments. CommunityGoneShowcases — CommunityGonePanel.
@@ -121,6 +122,13 @@ export const ROOMS_SECTIONS: PlaygroundSection[] = [
     page: 'rooms',
     category: 'Rooms',
     keywords: ['remove', 'confirm', 'undo', 'toast', 'member', 'destructive'],
+  },
+  {
+    id: 'channel-lead',
+    title: 'Channel Lead',
+    page: 'rooms',
+    category: 'Rooms',
+    keywords: ['lead', 'channel', 'answer', 'default agent', 'team', 'roster', 'badge', 'bar'],
   },
   {
     id: 'room-files',

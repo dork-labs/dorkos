@@ -1,5 +1,5 @@
 import { MainRequestAdmission } from '../../services/core/lifecycle/main-request-admission.js';
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { FakeAgentRuntime, collectDurableEvents } from '@dorkos/test-utils';
 import type { DurableEventsResult } from '@dorkos/test-utils';
 import { StaleResumeCursorError } from '@dorkos/shared/session-stream';
@@ -71,6 +71,10 @@ vi.mock('@dorkos/shared/manifest', () => ({
 
 import http from 'node:http';
 import { createApp, finalizeApp } from '../../app.js';
+import {
+  initSessionVisibility,
+  resetSessionVisibility,
+} from '../../services/audit/session-visibility.js';
 import { STREAM_EPOCH } from '../../lib/stream-cursor.js';
 import { validateBoundary, validateBoundaryOrDorkHome } from '../../lib/boundary.js';
 
@@ -435,6 +439,9 @@ describe('who may read an Ask on a session’s own stream', () => {
   }
 
   beforeEach(() => {
+    // Agent work, so an agent may open its stream at all (spec `audit-trail`
+    // §3.4); a person's own chat is refused outright before any of this.
+    initSessionVisibility((ids) => new Map(ids.map((id) => [id, 'space'] as const)));
     fakeRuntime.getSessionSnapshot.mockResolvedValue(parkedSnapshot());
     fakeRuntime.subscribeSession = finiteSubscribe([
       {
@@ -450,6 +457,8 @@ describe('who may read an Ask on a session’s own stream', () => {
       { seq: 2, type: 'text_delta', text: 'carrying on' },
     ] as unknown as SessionEvent[]);
   });
+
+  afterEach(() => resetSessionVisibility());
 
   it('gives a person the parked Ask in the snapshot and the live prompt after it', async () => {
     const { frames } = await collectEvents();

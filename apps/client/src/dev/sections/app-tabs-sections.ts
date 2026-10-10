@@ -51,6 +51,9 @@ export const APP_TABS_SECTIONS: PlaygroundSection[] = [
       'needs you',
       'unread',
       'smart names',
+      'badge',
+      'schedules',
+      'extension page',
     ],
   },
 ];

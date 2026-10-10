@@ -20,6 +20,7 @@ import {
   type Db,
 } from '@dorkos/db';
 import { createApp, finalizeApp } from '../../app.js';
+import { composedListener } from '../../http/__tests__/composed-listener.js';
 import {
   createRoomSubsystem,
   setRoomService,
@@ -131,9 +132,10 @@ beforeAll(async () => {
   runMigrations(db);
   initAuth(db, dir);
   configManager.set('auth', { enabled: false });
-  app = createApp({ admission: new MainRequestAdmission() });
+  const admission = new MainRequestAdmission();
+  app = createApp({ admission });
   finalizeApp(app);
-  fixture.mount(app);
+  fixture.mount(composedListener(app, admission));
   const signup = await request(server)
     .post('/api/auth/sign-up/email')
     .set('Origin', origin)

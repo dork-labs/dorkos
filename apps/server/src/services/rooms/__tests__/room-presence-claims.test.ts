@@ -381,12 +381,23 @@ describe('a claim lives until its turn is done', () => {
   }
 
   /**
+   * The room's stream without its `reaction` events, for the ordering checks.
+   *
+   * The room takes its 👀 receipt off the asked message as the turn ends
+   * (DOR-2823), and that `reaction` event lands between the answer and the
+   * release. No test here reacts, so every `reaction` event is a receipt.
+   */
+  function orderedStream(): RoomEvent[] {
+    return roomStream().filter((event) => event.type !== 'reaction');
+  }
+
+  /**
    * Where one agent's release sits in the room's stream.
    *
    * @param authorId - Whose indicator released.
    */
   function releaseIndex(authorId: string): number {
-    return roomStream().findIndex(
+    return orderedStream().findIndex(
       (event) => event.type === 'signal' && event.authorId === authorId && event.state === 'done'
     );
   }
@@ -397,7 +408,7 @@ describe('a claim lives until its turn is done', () => {
    * @param matches - Which entry is being looked for.
    */
   function entryIndex(matches: (entry: RoomEntry) => boolean): number {
-    return roomStream().findIndex((event) => event.type === 'entry' && matches(event.entry));
+    return orderedStream().findIndex((event) => event.type === 'entry' && matches(event.entry));
   }
 
   describe('while the room has stopped waiting', () => {

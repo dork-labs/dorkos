@@ -209,4 +209,20 @@ describe('a hit opens the DorkOS session it came from', () => {
 
     expect(resolved.size).toBe(0);
   });
+
+  it('resolves more containers than one statement can bind', () => {
+    // Past SQLite's 32,766-variable limit, one `IN (...)` over every Codex
+    // thread refuses to run; the lookup goes in chunks instead.
+    db.insert(codexThreads)
+      .values({ sessionId: 'dorkos-codex-last', threadId: 'thread-39999', createdAt: AT })
+      .run();
+    const containers = Array.from({ length: 40_000 }, (_, i) => ({
+      sourceId: 'codex',
+      originKey: `thread-${i}`,
+    }));
+
+    const resolved = resolveSessionIds(db, containers);
+
+    expect(resolved.get(`codex\u0000thread-39999`)).toBe('dorkos-codex-last');
+  });
 });
