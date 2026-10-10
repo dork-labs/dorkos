@@ -242,8 +242,10 @@ describe('main HTTP admission through the real app', () => {
     // 70 -> 72: `/api/commitments` and `/api/agents/:id/commitments` (spec
     // `heartbeats` §12).
     expect(mounts).toContain('/api/commitments');
-    expect(mounts).toHaveLength(72);
-    for (const mount of [...mounts, '/', '/x/fixture', '/unknown']) {
+    // 72 -> 71: the `/assets` trap is no longer an Express mount; it lives in
+    // `http/client-files.ts`, and is asked for by hand below.
+    expect(mounts).toHaveLength(71);
+    for (const mount of [...mounts, '/', '/x/fixture', '/assets/fixture.js', '/unknown']) {
       expectTerminal(
         await request(target.server).get(mount).set('Origin', 'https://untrusted.example')
       );
