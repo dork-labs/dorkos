@@ -7598,6 +7598,26 @@
       "extractedFrom": null,
       "specSlug": "heartbeats",
       "amends": ["261001-000811"]
+    },
+    {
+      "id": "261010-143210",
+      "slug": "the-first-run-is-account-first-and-lands-in-team",
+      "title": "The first run is account-first, skippable, and lands in #team with a server-posted DorkBot welcome",
+      "status": "accepted",
+      "created": "2026-10-10",
+      "extractedFrom": null,
+      "specSlug": "one-minute-onboarding",
+      "amends": ["260722-111314"]
+    },
+    {
+      "id": "261010-143211",
+      "slug": "dorkos-picks-the-model-per-chat",
+      "title": "DorkOS picks the model per chat from the credits catalog; the model item is hidden by default",
+      "status": "accepted",
+      "created": "2026-10-10",
+      "extractedFrom": null,
+      "specSlug": "one-minute-onboarding",
+      "amends": ["261008-052830"]
     }
   ]
 }
