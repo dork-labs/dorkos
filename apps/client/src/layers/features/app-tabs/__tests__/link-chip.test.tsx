@@ -10,7 +10,7 @@
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import type { ReactNode } from 'react';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { createMockSession, createMockTransport } from '@dorkos/test-utils';
@@ -188,6 +188,78 @@ describe('a chat link in markdown', () => {
 
     expect(navigated).toEqual([{ href: '/session?session=chat-1', replace: undefined }]);
     expect(screen.queryByRole('dialog')).toBeNull();
+  });
+
+  it('opens a chip wearing a status in place too, through its tooltip', async () => {
+    useSessionListStore.setState({
+      statuses: { 'chat-1': { lifecycle: 'streaming', limit: null } as SessionStatus },
+    });
+    renderMarkdown('See [the fix](/session?session=chat-1)');
+
+    fireEvent.click(await screen.findByRole('link', { name: /Working/ }));
+
+    expect(navigated).toEqual([{ href: '/session?session=chat-1', replace: undefined }]);
+    expect(screen.queryByRole('dialog')).toBeNull();
+  });
+
+  it('opens a new tab on cmd-click, with no confirm', async () => {
+    const openSpy = vi.spyOn(window, 'open').mockImplementation(() => null);
+    renderMarkdown('See [the fix](/session?session=chat-1)');
+
+    fireEvent.click(await screen.findByRole('link', { name: /^Fix the login bug/ }), {
+      metaKey: true,
+    });
+
+    expect(navigated).toEqual([]);
+    expect(openSpy).toHaveBeenCalledWith(
+      `${window.location.origin}/session?session=chat-1`,
+      '_blank'
+    );
+    expect(screen.queryByRole('dialog')).toBeNull();
+    openSpy.mockRestore();
+  });
+
+  it('keeps the same link, and its focus, when the chat starts working', async () => {
+    renderMarkdown('See [the fix](/session?session=chat-1)');
+    const link = await screen.findByRole('link', { name: /^Fix the login bug, Scout$/ });
+    link.focus();
+
+    act(() => {
+      useSessionListStore.setState({
+        statuses: { 'chat-1': { lifecycle: 'streaming', limit: null } as SessionStatus },
+      });
+    });
+
+    expect(await screen.findByRole('link', { name: /Working/ })).toBe(link);
+    expect(document.activeElement).toBe(link);
+  });
+
+  it.each([
+    ['not yours to see', 403],
+    ['an id that names nothing', 400],
+  ])('says "Chat not found" for a chat that is %s', async (_why, status) => {
+    vi.mocked(transport.getSession).mockRejectedValue(
+      Object.assign(new Error('refused'), { status })
+    );
+    renderMarkdown('See [the old chat](/session?session=chat-1)');
+
+    expect(await screen.findByRole('link', { name: 'Chat not found' })).toBeInTheDocument();
+  });
+
+  it('asks the server once for a chip, however many readers it has', async () => {
+    renderMarkdown('See [the fix](/session?session=chat-1) and [again](/session?session=chat-1)');
+
+    await screen.findAllByRole('link', { name: /^Fix the login bug/ });
+    expect(transport.getSession).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not call a chat still being drafted here "not found"', async () => {
+    setSessionRouteContext('draft-1', { cwd: '/Users/kai/api', draft: true });
+    renderMarkdown('See [the new chat](/session?session=draft-1)');
+
+    const link = await screen.findByRole('link', { name: /^Scout/ });
+    expect(link).toHaveAttribute('data-chip', 'ready');
+    expect(transport.getSession).not.toHaveBeenCalled();
   });
 
   it('leaves a launch link plain, and it still asks first', () => {

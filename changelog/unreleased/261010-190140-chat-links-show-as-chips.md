@@ -1,6 +1,7 @@
 ---
 covers:
   - 'feat(chat): a link to a chat, channel or DM shows as a chip (DOR-2824)'
+  - 'fix(chat): a chip keeps focus as its status changes, and names a bad id not found (DOR-2824)'
 ---
 
 ### Added

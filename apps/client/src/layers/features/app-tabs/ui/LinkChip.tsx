@@ -64,12 +64,13 @@ export function LinkChipView({ kind, identity, state, label, anchor }: LinkChipV
       ),
     }
   );
-  if (!face.sentence) return link;
+  // Always the same tree, sentence or not: swapping the wrapper in and out as
+  // a chat goes idle or busy would remount the anchor and drop keyboard focus.
   return (
     <TooltipProvider delayDuration={TOOLTIP_DELAY_MS}>
-      <Tooltip>
+      <Tooltip open={face.sentence ? undefined : false}>
         <TooltipTrigger asChild>{link}</TooltipTrigger>
-        <TooltipContent side="top">{face.sentence}</TooltipContent>
+        {face.sentence && <TooltipContent side="top">{face.sentence}</TooltipContent>}
       </Tooltip>
     </TooltipProvider>
   );

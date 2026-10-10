@@ -8,17 +8,21 @@
  * @module features/app-tabs/model/use-link-chip
  */
 import { useMemo } from 'react';
-import { useSessionRow } from '@/layers/entities/session';
+import { useSessionRouteContext, useSessionRow } from '@/layers/entities/session';
 import { useRoom } from '@/layers/entities/room';
 import { linkChipKind, type LinkChipKind, type LinkChipState } from '../lib/link-chip';
 import type { TabIdentity } from '../lib/tab-identity';
 import { parseTabHref } from '../lib/tab-target';
 import { useTabIdentity } from './use-tab-identity';
 
-/** A read the server refused because the page is not there for you. */
+/**
+ * A read the server refused because the page is not there for you: gone (404),
+ * not yours to see (403), or an id that could never name one (400, a made-up
+ * chat id).
+ */
 function isGone(error: unknown): boolean {
   const status = (error as { status?: unknown } | null)?.status;
-  return status === 404 || status === 403;
+  return status === 404 || status === 403 || status === 400;
 }
 
 /** Fold a read's outcome into a chip state. */
@@ -36,12 +40,16 @@ function useLinkChipState(
   sessionId: string | null,
   roomId: string | null
 ): LinkChipState {
+  // A chat still a draft in this window has no row yet: asking would earn a
+  // 404 and call a live chat "not found". The tab's own read skips it too.
+  const draft = useSessionRouteContext(kind === 'chat' ? sessionId : null)?.draft ?? false;
   const chat = useSessionRow(kind === 'chat' ? sessionId : null, {
+    enabled: !draft,
     nameOnly: true,
     select: () => true,
   });
   const room = useRoom(kind === 'room' ? roomId : null);
-  if (kind === 'chat') return chipState(chat);
+  if (kind === 'chat') return draft ? 'ready' : chipState(chat);
   if (kind === 'room') return chipState(room);
   return 'resolving';
 }
