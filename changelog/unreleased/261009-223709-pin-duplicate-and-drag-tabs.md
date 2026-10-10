@@ -3,6 +3,8 @@ covers:
   - 'feat(tabs): pin, duplicate, close others and reorder in the tab store (DOR-2820)'
   - 'feat(tabs): tab menu, drag to reorder, and compact pinned tabs (DOR-2820)'
   - 'feat(playground): tab strip interactions showcase (DOR-2820)'
+  - "refactor(tabs): share the tab store's arranging rules with the playground strip (DOR-2820)"
+  - 'fix(tabs): keep a dragged tab on its side of the pinned line, and refocus the tab on screen after a menu action (DOR-2820)'
 ---
 
 ### Added
