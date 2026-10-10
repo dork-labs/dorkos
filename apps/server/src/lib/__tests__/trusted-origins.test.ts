@@ -9,8 +9,8 @@ import { env } from '../../env.js';
 import { tunnelManager } from '../../services/core/tunnel-manager.js';
 import {
   getLocalCockpitOrigin,
-  getTunnelHost,
-  getTunnelOrigin,
+  getTunnelHosts,
+  getTunnelOrigins,
   getStaticLocalOrigins,
   isLocalRequest,
   isLoopbackHost,
@@ -513,38 +513,61 @@ describe('resolveAuthTrustedOrigins', () => {
  * and it is read on the hot path of CORS, the host guard and Better Auth. An
  * unguarded parse there throws out of the CORS callback and 500s the whole API.
  */
-describe('getTunnelOrigin / getTunnelHost', () => {
+describe('getTunnelOrigins / getTunnelHosts', () => {
   /** Point the mocked tunnel manager at a URL, or at nothing. */
   function setTunnelUrl(url: string | null): void {
     (tunnelManager as unknown as { status: { url: string | null } }).status = { url };
   }
+  /** Point the mocked tunnel manager at a managed host set. */
+  function setManagedHosts(hosts: string[] | undefined): void {
+    (tunnelManager as unknown as { managedHosts?: string[] }).managedHosts = hosts;
+  }
 
-  afterEach(() => setTunnelUrl(null));
+  afterEach(() => {
+    setTunnelUrl(null);
+    setManagedHosts(undefined);
+  });
 
   it('resolves the origin and host of a live tunnel', () => {
     setTunnelUrl('https://abc123.ngrok.app/some/path');
-    expect(getTunnelOrigin()).toBe('https://abc123.ngrok.app');
-    expect(getTunnelHost()).toBe('abc123.ngrok.app');
+    expect(getTunnelOrigins()).toEqual(['https://abc123.ngrok.app']);
+    expect(getTunnelHosts()).toEqual(['abc123.ngrok.app']);
   });
 
-  it('answers null, rather than throwing, for a URL that does not parse', () => {
+  it('answers nothing, rather than throwing, for a URL that does not parse', () => {
     setTunnelUrl('not a url at all');
-    expect(() => getTunnelOrigin()).not.toThrow();
-    expect(getTunnelOrigin()).toBeNull();
-    expect(getTunnelHost()).toBeNull();
+    expect(() => getTunnelOrigins()).not.toThrow();
+    expect(getTunnelOrigins()).toEqual([]);
+    expect(getTunnelHosts()).toEqual([]);
   });
 
-  it('answers null for a scheme with no origin of its own', () => {
+  it('answers nothing for a scheme with no origin of its own', () => {
     // `new URL('tcp://1.2.3.4:1234').origin` is the STRING "null", and the
     // literal `null` must never reach an allowlist as an origin.
     setTunnelUrl('tcp://1.2.3.4:1234');
-    expect(getTunnelOrigin()).toBeNull();
-    expect(getTunnelHost()).toBeNull();
+    expect(getTunnelOrigins()).toEqual([]);
+    expect(getTunnelHosts()).toEqual([]);
   });
 
-  it('answers null when no tunnel is running', () => {
+  it('answers nothing when no tunnel is running', () => {
     setTunnelUrl(null);
-    expect(getTunnelOrigin()).toBeNull();
-    expect(getTunnelHost()).toBeNull();
+    expect(getTunnelOrigins()).toEqual([]);
+    expect(getTunnelHosts()).toEqual([]);
+  });
+
+  it('trusts every managed hostname as an https origin, once each', () => {
+    setTunnelUrl('https://a.example.dev');
+    setManagedHosts(['a.example.dev', 'custom.example.com']);
+    expect(getTunnelHosts()).toEqual(['a.example.dev', 'custom.example.com']);
+    expect(getTunnelOrigins()).toEqual(['https://a.example.dev', 'https://custom.example.com']);
+    expect(resolveTrustedOrigins()).toEqual(
+      expect.arrayContaining(['https://a.example.dev', 'https://custom.example.com'])
+    );
+  });
+
+  it('stops trusting a managed hostname once it is no longer served', () => {
+    setManagedHosts(['b.example.dev']);
+    expect(resolveTrustedOrigins()).not.toContain('https://a.example.dev');
+    expect(resolveTrustedOrigins()).toContain('https://b.example.dev');
   });
 });

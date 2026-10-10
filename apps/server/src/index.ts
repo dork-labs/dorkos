@@ -17,7 +17,7 @@ import { HARNESS_MANIFEST_PATH } from '@dorkos/harness';
 import type { PermissionAreaId } from '@dorkos/shared/permissions';
 import { randomUUID } from 'node:crypto';
 import { createApp, finalizeApp } from './app.js';
-import { createFrontDoorServer } from './http/front-door.js';
+import { createFrontDoorServer, frontDoorListener } from './http/front-door.js';
 import { composeFrontDoor } from './http/hono-api.js';
 import { createSessionLocationsRouter } from './routes/session-locations.js';
 import { ManagedConnectorCloudError } from './services/core/auth/cloud-link-client.js';
@@ -231,6 +231,7 @@ import {
 } from './services/runtimes/claude-code/mcp-server-config.js';
 import { AgentMcpServerService } from './services/mesh/agent-mcp-server-service.js';
 import { AgentMcpOAuthService } from './services/mesh/agent-mcp-oauth-service.js';
+import { warmMcpOAuthTokens } from './services/mesh/warm-mcp-oauth-tokens.js';
 import { resumeAfterMcpSignin } from './services/mesh/mcp-signin-resume.js';
 import { createMcpRevocationWatch } from './services/mesh/mcp-revocation.js';
 import { createMcpOAuthRouter } from './routes/mcp-oauth.js';
@@ -566,6 +567,7 @@ import { spacesEnabled } from './middleware/spaces-enabled.js';
 import { SearchIndexer, selectSearchSources } from './services/search/index.js';
 import { TerminalManager, terminalUpgradeRoute } from './services/terminal/index.js';
 import { attachUpgradeRouter } from './services/core/streams/upgrade-router.js';
+import { managedIngressFor } from './services/core/remote/managed-ingress.js';
 import { durableStreamRoutes } from './routes/stream-sockets.js';
 import { createTerminalRouter } from './routes/terminal.js';
 import { registerDorkosCommunityTelemetry } from './services/marketplace/telemetry/telemetry-reporter.js';
@@ -886,39 +888,6 @@ let terminalManager: TerminalManager | undefined;
 // shutdownServices() rather than shutdown(), because the admin restart path runs
 // the former and then spawns a successor that must find the directory free.
 let releaseInstanceLock: (() => void) | undefined;
-
-/**
- * Re-prime the managed-MCP OAuth token cache from disk on boot (DOR-942): for
- * every registered agent's enabled http/sse servers, hand the OAuth engine the
- * `(agentId, serverName, serverUrl)` targets so it can load any stored token and
- * schedule its background refresh. A server with no stored token is skipped by
- * the engine (stays needs-auth). Best-effort per agent — an unreadable manifest
- * for one agent never blocks warming the rest.
- *
- * @param oauth - The managed-MCP OAuth engine to warm.
- * @param service - The managed-server service that lists each agent's servers.
- * @param mesh - The mesh core whose registry enumerates the agents.
- */
-async function warmMcpOAuthTokens(
-  oauth: AgentMcpOAuthService,
-  service: AgentMcpServerService,
-  mesh: MeshCore
-): Promise<void> {
-  const targets: { agentId: string; serverName: string; serverUrl: string }[] = [];
-  for (const agent of mesh.agentRegistry.list()) {
-    try {
-      const servers = await service.list(agent.id);
-      for (const s of servers) {
-        if (s.enabled && s.connection.transport !== 'stdio') {
-          targets.push({ agentId: agent.id, serverName: s.name, serverUrl: s.connection.url });
-        }
-      }
-    } catch {
-      // Unreadable/absent manifest for one agent: skip it, warm the others.
-    }
-  }
-  await oauth.warm(targets);
-}
 
 async function start() {
   /**
@@ -6085,13 +6054,14 @@ async function start() {
     logger.warn(`[Auth] ${bindCheck.warning}`);
   }
 
+  const frontDoor = composeFrontDoor(app, mainRequestAdmission);
   const server = startMainListener({
     admission: mainRequestAdmission,
     // Hono is the front door: moved route groups answer from the Hono `/api`
     // app (`http/hono-api.ts`), everything else from the Express app behind it
-    // (`http/front-door.ts`, ADR 261009-192542).
-    listen: () =>
-      createFrontDoorServer(composeFrontDoor(app, mainRequestAdmission)).listen(PORT, host),
+    // (`http/front-door.ts`, ADR 261009-192542). Managed remote access serves
+    // the same door, so its requests meet the same routes and gates.
+    listen: () => createFrontDoorServer(frontDoor).listen(PORT, host),
     onListening: (server) => {
       logger.info(`[DorkOS] server running on http://${host}:${PORT}`);
 
@@ -6106,6 +6076,12 @@ async function start() {
         mainRequestAdmission
       );
       logger.info('[DorkOS] WebSocket upgrade router attached');
+
+      // The managed remote-access ingress: a loopback listener of its own that
+      // managed forwarding targets. It runs the edge-proof and host checks, then
+      // hands requests to the same front door and upgrades to the router above.
+      // Nothing listens until managed access opens.
+      tunnelManager.attachManagedIngress(managedIngressFor(frontDoorListener(frontDoor), server));
 
       // Fire-and-forget: record startup in the activity feed so the dashboard
       // shows when the server was last (re)started.

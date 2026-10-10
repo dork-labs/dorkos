@@ -14,6 +14,8 @@ vi.mock('../../services/core/tunnel-manager.js', () => ({
   tunnelManager: {
     start: vi.fn(),
     stop: vi.fn(),
+    stopOwnTunnel: vi.fn(),
+    closeManaged: vi.fn(),
     on: vi.fn(),
     off: vi.fn(),
     isRunning: false,
@@ -525,7 +527,7 @@ describe('Tunnel Route', () => {
       it('leaves /stop open to every caller (DOR-574)', async () => {
         // Stopping only ever narrows exposure, so it clears no bars — including
         // for a caller that names itself an agent.
-        vi.mocked(tunnelManager.stop).mockResolvedValue(undefined);
+        vi.mocked(tunnelManager.stopOwnTunnel).mockResolvedValue(undefined);
         setConfig({ enabled: true, domain: null, authtoken: null, auth: null });
 
         const res = await request(server)
@@ -533,7 +535,7 @@ describe('Tunnel Route', () => {
           .set('x-dorkos-agent', 'agent-token-abc');
 
         expect(res.status).toBe(200);
-        expect(tunnelManager.stop).toHaveBeenCalled();
+        expect(tunnelManager.stopOwnTunnel).toHaveBeenCalled();
       });
     });
   });
@@ -586,8 +588,20 @@ describe('Tunnel Route', () => {
   });
 
   describe('POST /api/tunnel/stop', () => {
+    it('stops only the own tunnel, never managed access (DOR-2086)', async () => {
+      vi.mocked(tunnelManager.stopOwnTunnel).mockResolvedValue(undefined);
+      setConfig({ enabled: true, domain: null, authtoken: null, auth: null });
+
+      const res = await request(server).post('/api/tunnel/stop');
+
+      expect(res.status).toBe(200);
+      expect(tunnelManager.stopOwnTunnel).toHaveBeenCalled();
+      expect(tunnelManager.stop).not.toHaveBeenCalled();
+      expect(tunnelManager.closeManaged).not.toHaveBeenCalled();
+    });
+
     it('returns 200 with { ok: true } when stop succeeds', async () => {
-      vi.mocked(tunnelManager.stop).mockResolvedValue(undefined);
+      vi.mocked(tunnelManager.stopOwnTunnel).mockResolvedValue(undefined);
       setConfig({
         enabled: true,
         domain: null,
@@ -599,11 +613,11 @@ describe('Tunnel Route', () => {
 
       expect(res.status).toBe(200);
       expect(res.body).toEqual({ ok: true });
-      expect(tunnelManager.stop).toHaveBeenCalled();
+      expect(tunnelManager.stopOwnTunnel).toHaveBeenCalled();
     });
 
     it('persists tunnel.enabled: false in config after successful stop', async () => {
-      vi.mocked(tunnelManager.stop).mockResolvedValue(undefined);
+      vi.mocked(tunnelManager.stopOwnTunnel).mockResolvedValue(undefined);
       setConfig({
         enabled: true,
         domain: 'my.domain.io',
@@ -619,8 +633,8 @@ describe('Tunnel Route', () => {
       );
     });
 
-    it('returns 500 when tunnelManager.stop() throws', async () => {
-      vi.mocked(tunnelManager.stop).mockRejectedValue(new Error('Disconnect failed'));
+    it('returns 500 when tunnelManager.stopOwnTunnel() throws', async () => {
+      vi.mocked(tunnelManager.stopOwnTunnel).mockRejectedValue(new Error('Disconnect failed'));
       setConfig(undefined);
 
       const res = await request(server).post('/api/tunnel/stop');
@@ -630,7 +644,7 @@ describe('Tunnel Route', () => {
     });
 
     it('writes the failure to the log (DOR-1738)', async () => {
-      vi.mocked(tunnelManager.stop).mockRejectedValue(new Error('Disconnect failed'));
+      vi.mocked(tunnelManager.stopOwnTunnel).mockRejectedValue(new Error('Disconnect failed'));
       setConfig(undefined);
 
       await request(server).post('/api/tunnel/stop');
@@ -646,7 +660,7 @@ describe('Tunnel Route', () => {
       // mirroring /start. That gate stranded a running tunnel: start it while
       // exposable, disable login afterward, and /stop would 409 forever — the
       // one action that only ever narrows exposure must always succeed.
-      vi.mocked(tunnelManager.stop).mockResolvedValue(undefined);
+      vi.mocked(tunnelManager.stopOwnTunnel).mockResolvedValue(undefined);
       setConfig({ enabled: true, domain: null, authtoken: null, auth: null });
       mockCanExpose.mockReturnValue(false);
 
@@ -654,7 +668,7 @@ describe('Tunnel Route', () => {
 
       expect(res.status).toBe(200);
       expect(res.body).toEqual({ ok: true });
-      expect(tunnelManager.stop).toHaveBeenCalled();
+      expect(tunnelManager.stopOwnTunnel).toHaveBeenCalled();
       expect(configManager.set).toHaveBeenCalledWith(
         'tunnel',
         expect.objectContaining({ enabled: false })

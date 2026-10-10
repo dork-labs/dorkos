@@ -39,6 +39,7 @@ import eventsRouter from './routes/events.js';
 import { generateOpenAPISpec } from './services/core/openapi-registry.js';
 import { errorHandler } from './middleware/error-handler.js';
 import { hostGuard } from './middleware/host-guard.js';
+import { managedHostGuard } from './middleware/managed-host-guard.js';
 import {
   createConnectorSignedIngress,
   type ConnectorSignedIngress,
@@ -88,6 +89,10 @@ export function createApp(options: {
 }) {
   const app = express();
   app.use(terminalAdmission(options.admission));
+  // A managed remote-access hostname is served only through the managed
+  // ingress, which checks the edge proof; on this listener it is refused before
+  // any logger or route sees it.
+  app.use(managedHostGuard);
 
   // Trust one forwarded hop. Today that feeds one thing: `req.ip`, which the
   // rate limiters read (as `forwardedAddress`) only when `DORKOS_TRUST_PROXY`

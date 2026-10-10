@@ -42,7 +42,7 @@
 import type { Request, Response, NextFunction } from 'express';
 import { env } from '../env.js';
 import { logger } from '../lib/logger.js';
-import { getTunnelHost, isLoopbackHost, parseHostname } from '../lib/trusted-origins.js';
+import { getTunnelHosts, isLoopbackHost, parseHostname } from '../lib/trusted-origins.js';
 import { configManager } from '../services/core/config-manager.js';
 
 /**
@@ -74,8 +74,11 @@ export interface HostPolicy {
   hostname: string | null;
   /** Operator-configured extra host names, from {@link parseTrustedHosts}. */
   trustedHosts: readonly string[];
-  /** Host name of the live tunnel, or `null` when no tunnel is connected. */
-  tunnelHost: string | null;
+  /**
+   * Host names of every live tunnel address — the person's own tunnel, or each
+   * hostname managed remote access serves. Empty when no tunnel is open.
+   */
+  tunnelHosts: readonly string[];
 }
 
 /**
@@ -88,7 +91,7 @@ export function isHostAllowed(policy: HostPolicy): boolean {
   if (!hostname) return false;
   if (isLoopbackHost(hostname)) return true;
   if (policy.trustedHosts.includes(hostname)) return true;
-  return policy.tunnelHost !== null && hostname === policy.tunnelHost;
+  return policy.tunnelHosts.includes(hostname);
 }
 
 /**
@@ -144,7 +147,7 @@ export function refuseUntrustedHost(
   const allowed = isHostAllowed({
     hostname,
     trustedHosts: parseTrustedHosts(env.DORKOS_TRUSTED_HOSTS),
-    tunnelHost: getTunnelHost(),
+    tunnelHosts: getTunnelHosts(),
   });
   if (allowed) return null;
 
