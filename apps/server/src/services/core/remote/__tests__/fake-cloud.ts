@@ -20,6 +20,8 @@ export interface FakeCall {
   query: URLSearchParams;
   body: unknown;
   authorization: string | undefined;
+  /** Every header sent, lower-case names. */
+  headers: Record<string, string>;
 }
 
 /** A problem envelope in the published shape. */
@@ -82,6 +84,7 @@ export class FakeCloud {
       query: url.searchParams,
       body: typeof init?.body === 'string' ? JSON.parse(init.body) : undefined,
       authorization: headers.authorization,
+      headers: { ...headers },
     });
     const queue = this.answers.get(`${method} ${url.pathname}`);
     const answer = queue ? (queue.length > 1 ? queue.shift()! : queue[0]!) : { status: 404 };

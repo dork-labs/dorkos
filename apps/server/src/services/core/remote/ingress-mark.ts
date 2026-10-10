@@ -14,7 +14,7 @@
  *
  * @module services/core/remote/ingress-mark
  */
-import type { IncomingMessage } from 'node:http';
+import type { IncomingMessage, ServerResponse } from 'node:http';
 
 const managedRequests = new WeakSet<IncomingMessage>();
 
@@ -34,4 +34,35 @@ export function markManagedIngress(req: IncomingMessage): void {
  */
 export function isManagedIngress(req: IncomingMessage): boolean {
   return managedRequests.has(req);
+}
+
+/** Hears each managed request the session gate let through. See {@link noteGateAdmitted}. */
+export type ManagedAdmissionListener = (req: IncomingMessage, res: ServerResponse) => void;
+
+let admissionListener: ManagedAdmissionListener | null = null;
+const admittedRequests = new WeakSet<IncomingMessage>();
+
+/**
+ * Set who hears managed requests the session gate admitted: the activity
+ * count (`managed-activity.ts`). One listener; `null` removes it.
+ *
+ * @param listener - The listener, or `null`.
+ */
+export function setManagedAdmissionListener(listener: ManagedAdmissionListener | null): void {
+  admissionListener = listener;
+}
+
+/**
+ * Called by the session gate (Express and Hono alike) once it has let a request
+ * through. A managed request is passed on to the activity count, once; any
+ * other request is ignored. So a request counts only after the edge proof (the
+ * ingress never marks a refused one) AND the local login gate admitted it.
+ *
+ * @param req - The admitted request.
+ * @param res - Its response, whose `close` ends the request.
+ */
+export function noteGateAdmitted(req: IncomingMessage, res: ServerResponse): void {
+  if (admissionListener === null || !isManagedIngress(req) || admittedRequests.has(req)) return;
+  admittedRequests.add(req);
+  admissionListener(req, res);
 }

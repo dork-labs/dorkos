@@ -114,6 +114,21 @@ describe('buildRemoteAccessReport', () => {
     });
   });
 
+  it('names the drain deadline and who set it while draining, and only then', () => {
+    const tunnel = { ...idleTunnel, isRunning: true, connected: true };
+    const base = { liveMode: 'managed' as const, tunnel, remote: enrolled };
+    const local = { until: '2026-10-10T12:00:30.000Z', deadline: 'local' as const };
+    expect(report({ ...base, managedPhase: 'draining', drain: local })).toMatchObject({
+      state: 'draining',
+      drain: local,
+    });
+    const cloud = { until: '2026-10-10T12:02:00.000Z', deadline: 'cloud' as const };
+    expect(report({ ...base, managedPhase: 'draining', drain: cloud }).drain).toEqual(cloud);
+    // Draining with no deadline named yet: nothing to show.
+    expect(report({ ...base, managedPhase: 'draining', drain: null })).not.toHaveProperty('drain');
+    expect(report({ ...base, managedPhase: 'open', drain: local })).not.toHaveProperty('drain');
+  });
+
   it('is asleep, with the address, when Cloud reports the managed tunnel closed', () => {
     const asleep = report({
       remote: enrolled,

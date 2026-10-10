@@ -101,6 +101,31 @@ describe('RemoteAccessReportSchema', () => {
     expect(RemoteAccessReportSchema.safeParse({ ...base, mode: 'both' }).success).toBe(false);
   });
 
+  it('carries a drain deadline and who set it, and refuses a deadline nobody can read', () => {
+    const draining = { ...base, state: 'draining' } as const;
+    for (const deadline of ['cloud', 'local']) {
+      expect(
+        RemoteAccessReportSchema.safeParse({
+          ...draining,
+          drain: { until: '2026-10-10T12:00:30.000Z', deadline },
+        }).success
+      ).toBe(true);
+    }
+    expect(RemoteAccessReportSchema.safeParse(draining).success).toBe(true);
+    expect(
+      RemoteAccessReportSchema.safeParse({
+        ...draining,
+        drain: { until: 'in thirty seconds', deadline: 'local' },
+      }).success
+    ).toBe(false);
+    expect(
+      RemoteAccessReportSchema.safeParse({
+        ...draining,
+        drain: { until: '2026-10-10T12:00:30.000Z', deadline: 'guessed' },
+      }).success
+    ).toBe(false);
+  });
+
   it('requires the Cloud-reported flags rather than defaulting them', () => {
     const { alwaysAvailable: _a, ...noFlag } = base;
     expect(RemoteAccessReportSchema.safeParse(noFlag).success).toBe(false);

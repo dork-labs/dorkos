@@ -99,6 +99,7 @@ describe('heartbeat-reporter', () => {
 
     it('registerHeartbeat does not fire or schedule anything when consent is false', async () => {
       const setIntervalSpy = vi.spyOn(globalThis, 'setInterval');
+      const setTimeoutSpy = vi.spyOn(globalThis, 'setTimeout');
 
       registerHeartbeat(makeOptions({ consent: false }));
       // Let any (incorrectly) scheduled microtask settle.
@@ -107,7 +108,9 @@ describe('heartbeat-reporter', () => {
       expect(fetchSpy).not.toHaveBeenCalled();
       expect(mockReadFile).not.toHaveBeenCalled();
       expect(setIntervalSpy).not.toHaveBeenCalled();
+      expect(setTimeoutSpy).not.toHaveBeenCalled();
       setIntervalSpy.mockRestore();
+      setTimeoutSpy.mockRestore();
     });
   });
 

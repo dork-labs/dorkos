@@ -35,6 +35,8 @@ import type { RemoteAccessMode } from '@dorkos/shared/config-schema';
 import type { ManagedIngress } from './remote/managed-ingress.js';
 import {
   ManagedForwarding,
+  type ManagedCloseOptions,
+  type ManagedDrain,
   type ManagedHostsResult,
   type ManagedPhase,
   type ManagedStartInput,
@@ -91,6 +93,7 @@ export class TunnelManager extends EventEmitter {
     ownTunnelOpen: () => this.listener !== null || this.byoUnclosed !== null,
     closeOwnTunnel: () => this.closeByo(),
     emitStatus: () => this.emit('status_change', this.status),
+    managedClosed: (event) => this.emit('managed_closed', event),
   });
   /** Bumped by every own-account close, so an open a stop overtook can tell. */
   private byoEpoch = 0;
@@ -131,6 +134,11 @@ export class TunnelManager extends EventEmitter {
   /** The generation of the open managed session, or `null`. */
   getManagedGeneration(): number | null {
     return this.managedForwarding.generation;
+  }
+
+  /** The gentle close under way, or `null` when none has named a deadline. */
+  getManagedDrain(): ManagedDrain | null {
+    return this.managedForwarding.drain;
   }
 
   /**
@@ -274,7 +282,7 @@ export class TunnelManager extends EventEmitter {
     try {
       // Unconditionally: a managed open still waiting in the queue must be
       // cancelled too, not only one that has already started.
-      await this.closeManaged({ immediate: true });
+      await this.closeManaged({ immediate: true, reason: 'stopped' });
     } finally {
       // Even when managed access would not close: the own tunnel still closes,
       // and an own-account open waiting in the queue is still cancelled.
@@ -403,15 +411,15 @@ export class TunnelManager extends EventEmitter {
    * behind a pending open: the open notices and closes what it made.
    *
    * The local state is reset even when ngrok fails to close; the error still
-   * propagates so the caller can report the actual outcome.
+   * propagates so the caller can report the actual outcome. When the session
+   * ends, `managed_closed` is emitted with its generation and the reason the
+   * first closer named (`ManagedClosedEvent`).
    *
-   * @param options - Whether to cut admitted requests rather than let them finish.
-   * @param options.immediate - `true` for withdrawal and shutdown.
-   * @param options.drainDeadlineMs - For a gentle close, how long admitted
-   *   requests may run before the rest are cut; omitted, a bounded local
-   *   default applies.
+   * @param options - Whether to cut admitted requests rather than let them
+   *   finish; for a gentle close, how long they may run (omitted, a bounded
+   *   local default applies, and the report says so); and why.
    */
-  closeManaged(options: { immediate: boolean; drainDeadlineMs?: number }): Promise<void> {
+  closeManaged(options: ManagedCloseOptions): Promise<void> {
     return this.managedForwarding.close(options);
   }
 }

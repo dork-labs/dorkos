@@ -30,12 +30,20 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { getOrCreateInstanceId } from '../../lib/instance-id.js';
 import { logger } from '../../lib/logger.js';
+import { scheduleJittered } from '../../lib/jittered-schedule.js';
 
 /** Where the daily heartbeat is delivered. */
 export const HEARTBEAT_ENDPOINT = 'https://dorkos.ai/api/telemetry/heartbeat';
 
 /** Minimum gap between heartbeats: one day in milliseconds. */
 export const HEARTBEAT_INTERVAL_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * How often, on average, a running server checks whether a heartbeat is due.
+ * Jittered (`lib/jittered-schedule.ts`), so servers started together do not
+ * report together; the on-disk marker still holds the send to once a day.
+ */
+export const HEARTBEAT_CHECK_INTERVAL_MS = 60 * 60 * 1000;
 
 /** File (under dorkHome) recording when the last heartbeat was sent (epoch ms as text). */
 export const LAST_SENT_FILENAME = 'heartbeat-last-sent';
@@ -243,8 +251,8 @@ export async function maybeSendHeartbeat(options: HeartbeatOptions): Promise<boo
  * switches, and the Tier 1 notice-before-first-send gate at the call site. When
  * consent is on, it sends immediately if one is due (the once-a-day cadence is
  * enforced by the on-disk marker, so a restart storm cannot spam the endpoint)
- * and then re-checks daily. The interval is `unref()`ed so it never keeps the
- * process alive.
+ * and then re-checks about hourly ({@link HEARTBEAT_CHECK_INTERVAL_MS},
+ * jittered). The timer is `unref()`ed so it never keeps the process alive.
  *
  * @param options - Consent, identity, and count-collection inputs.
  */
@@ -255,10 +263,9 @@ export function registerHeartbeat(options: HeartbeatOptions): void {
     // Swallowed — never let telemetry crash startup.
   });
 
-  const timer = setInterval(() => {
+  scheduleJittered(() => {
     void maybeSendHeartbeat(options).catch(() => {});
-  }, HEARTBEAT_INTERVAL_MS);
-  timer.unref();
+  }, HEARTBEAT_CHECK_INTERVAL_MS);
 
   logger.info('[Telemetry] Daily heartbeat registered');
 }

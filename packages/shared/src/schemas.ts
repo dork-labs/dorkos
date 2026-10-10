@@ -4378,6 +4378,19 @@ export const RemoteAccessReportSchema = z
     availability: RemoteAccessAvailabilitySchema,
     /** Where the managed enrolment stands. See {@link RemoteAccessEnrolmentSchema}. */
     enrolment: RemoteAccessEnrolmentSchema,
+    /**
+     * While `draining`: requests already running may finish until `until`,
+     * then whatever is left is cut. `deadline` says who set it: `cloud` when
+     * DorkOS Cloud named the deadline, `local` when it named none and this
+     * computer's bounded default applies. Absent in every other state, and
+     * while draining with no deadline named yet.
+     */
+    drain: z
+      .object({
+        until: z.string().datetime({ offset: true }),
+        deadline: z.enum(['cloud', 'local']),
+      })
+      .optional(),
   })
   .openapi('RemoteAccessReport');
 
