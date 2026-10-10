@@ -223,7 +223,10 @@ export class ManagedAvailability {
     try {
       identity = await this.resolveIdentity(context);
     } catch (error) {
-      return isAbsent(error) ? hidden(true) : unavailable(null);
+      // Cloud could not be asked who this is: the instance it last named under
+      // this same link is still the best answer, so an enrolment made under
+      // it keeps reading as enrolled through a blip.
+      return isAbsent(error) ? hidden(true) : unavailable(previous?.instanceId ?? null);
     }
     const instanceId = identity.instanceId;
     if (instanceId === null) return unavailable(null);

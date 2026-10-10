@@ -65,7 +65,7 @@ import type {
   ManagedConnectorToolkitVersionResponse,
 } from '@dorkos/shared/connector-managed-discovery-schemas';
 import { logConfigWrite } from '../operator/config-write.js';
-import { withdrawnRemoteState } from '../remote/remote-state.js';
+import { withRemoteForNewKey, withdrawnRemoteState } from '../remote/remote-state.js';
 import { logger, logError } from '../../../lib/logger.js';
 import {
   buildInstanceDescriptor,
@@ -196,9 +196,11 @@ function defaultConfigPort(): CloudConfigPort {
       // `cloud.instanceToken` is registered in SENSITIVE_CONFIG_KEYS; the write
       // path mirrors how `tunnel.authtoken` is stored (whole-section set). The
       // token value is never logged — `logConfigWrite` names paths only. The
-      // new link has consumed any kept relink proof, so it goes too.
+      // new link has consumed any kept relink proof, so it goes too. A key that
+      // replaces another withdraws managed remote access locally, as an unlink
+      // would (DOR-2086): a consent given under the old link is not this one's.
       configManager.set('cloud', {
-        ...current,
+        ...withRemoteForNewKey(current, instanceToken),
         instanceToken,
         instanceName,
         previousLinkProof: null,

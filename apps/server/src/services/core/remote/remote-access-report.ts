@@ -14,11 +14,15 @@
  *   saved preference and never Cloud.
  * - **`asleep` is narrow.** Managed mode selected, an enrolment in place, no
  *   local listener, and Cloud reporting the tunnel `closed`. It describes the
- *   tunnel, never the computer. When Cloud could not be asked, the report says
- *   `off` with `cloudStale` rather than guessing.
+ *   tunnel, never the computer. When Cloud could not be asked, or its last
+ *   answer is stale, the report gives the last-known local listener truth
+ *   with `cloudStale` rather than repeating an old Cloud answer as current.
  * - **The address is shown only where it works**: while `open`, and while
  *   `asleep`, where it is the address the computer answers at once reopened.
- * - **`alwaysAvailable` is only ever Cloud's word**, and only in managed mode.
+ * - **`alwaysAvailable` is only ever Cloud's word**, only in managed mode, and
+ *   only while that word is fresh.
+ * - **An enrolment counts only under the link it was made under.** A record
+ *   whose instance id is not the current link's reads as not enrolled.
  *
  * Nothing secret reaches it: it reads references and hostnames, never values.
  *
@@ -35,7 +39,7 @@ import type {
 
 import type { AvailabilitySnapshot } from './managed-availability.js';
 import type { ManagedPhase } from './managed-forwarding.js';
-import { isRemoteEnrolmentActive, type RemoteState } from './remote-state.js';
+import { isEnrolledUnder, type RemoteState } from './remote-state.js';
 
 /** Where a setup started on this computer stands, as the coordinator holds it. */
 export type SetupView =
@@ -43,6 +47,24 @@ export type SetupView =
   | { status: 'denied' }
   | { status: 'expired' }
   | null;
+
+/**
+ * Where a setup stands, from the request a person is answering (or `null`)
+ * and how the last one ended.
+ *
+ * @param request - The request shown while a setup waits, or `null`.
+ * @param outcome - How the last setup ended without enrolment, or `null`.
+ */
+export function setupViewOf(
+  request: { userCode: string; approveUrl: string; expiresAt: string } | null,
+  outcome: 'denied' | 'expired' | null
+): SetupView {
+  if (request) {
+    const { userCode, approveUrl, expiresAt } = request;
+    return { status: 'pending', userCode, approveUrl, expiresAt };
+  }
+  return outcome ? { status: outcome } : null;
+}
 
 /** Everything the report is computed from. */
 export interface RemoteAccessFacts {
@@ -82,7 +104,8 @@ export const NOT_SERVING_REASON =
  */
 export function buildRemoteAccessReport(facts: RemoteAccessFacts): RemoteAccessReport {
   const mode = selectedMode(facts);
-  const cloud = facts.availability.cloudStatus;
+  // A stale Cloud answer is history, not a state: nothing is read from it.
+  const cloud = facts.availability.cloudStale ? null : facts.availability.cloudStatus;
   const { state, reason } = stateOf(facts, mode, cloud);
   const url = urlFor(state, facts, cloud);
 
@@ -105,7 +128,9 @@ export function buildRemoteAccessReport(facts: RemoteAccessFacts): RemoteAccessR
  */
 function selectedMode(facts: RemoteAccessFacts): RemoteAccessMode {
   if (facts.liveMode !== 'off') return facts.liveMode;
-  if (facts.remote.mode !== 'off') return facts.remote.mode;
+  if (facts.remote.mode === 'byo') return 'byo';
+  // A managed selection counts only under the link its enrolment was made under.
+  if (facts.remote.mode === 'managed' && enrolledHere(facts)) return 'managed';
   return facts.ownTunnelEnabled ? 'byo' : 'off';
 }
 
@@ -122,7 +147,7 @@ function stateOf(
     if (facts.managedPhase === 'draining') return { state: 'draining' };
     return { state: facts.tunnel.connected ? 'open' : 'reconnecting' };
   }
-  if (mode !== 'managed' || !isRemoteEnrolmentActive(facts.remote)) return { state: 'off' };
+  if (mode !== 'managed' || !enrolledHere(facts)) return { state: 'off' };
   if (facts.remote.credentialId === null) {
     return { state: 'blocked', reason: SETUP_UNFINISHED_REASON };
   }
@@ -138,8 +163,8 @@ function stateOf(
       // Cloud and this computer disagree. Name it rather than pick a side.
       return { state: 'reconnecting', reason: NOT_SERVING_REASON };
     default:
-      // Cloud was not asked, or did not answer: nothing is forwarding here,
-      // and that much is certain.
+      // Cloud was not asked, did not answer, or its answer is stale: nothing
+      // is forwarding here, and that much is certain.
       return { state: 'off' };
   }
 }
@@ -171,5 +196,10 @@ function usableUrl(value: string | null | undefined): string | undefined {
 
 function enrolmentOf(facts: RemoteAccessFacts): RemoteAccessEnrolment {
   if (facts.setup) return facts.setup;
-  return isRemoteEnrolmentActive(facts.remote) ? { status: 'enrolled' } : { status: 'none' };
+  return enrolledHere(facts) ? { status: 'enrolled' } : { status: 'none' };
+}
+
+/** Whether the saved enrolment belongs to the link the availability check read under. */
+function enrolledHere(facts: RemoteAccessFacts): boolean {
+  return isEnrolledUnder(facts.remote, facts.availability.instanceId);
 }

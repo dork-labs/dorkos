@@ -158,7 +158,7 @@ const PROTECTED_EFFECTS: ProtectedEffect[] = [
       'services/core/agent-creator.ts':
         'records the agent it just created as the default (logConfigWrite: "the agent creator")',
       'services/core/auth/cloud-link.ts':
-        'stores the token this instance was linked with, behind the link flow (logConfigWrite: "the account link" / "unlinking this instance")',
+        'stores the token this instance was linked with, behind the link flow; an unlink, and a new key replacing a held one, also narrow `cloud.remote` with `withdrawnRemoteState` (logConfigWrite: "the account link" / "unlinking this instance")',
       'services/core/auth/seed-legacy-mcp-key.ts':
         'a boot migration that CLEARS a legacy key — narrowing only, and no request reaches it (logConfigWrite: "the MCP key migration")',
       'services/core/remote/remote-state.ts':
@@ -559,7 +559,7 @@ const PROTECTED_EFFECTS: ProtectedEffect[] = [
     call: 'remoteCredentials.delete(',
     allowed: {
       'services/core/remote/managed-remote-coordinator.ts':
-        'local withdrawal and unlink, and a setup that went stale or was not confirmed forgetting what it stored: forgetting narrows only, so like `POST /api/tunnel/stop` withdrawal is reachable without the setup bars',
+        'local withdrawal (`POST /api/remote-access/withdraw`, behind the cookie, trusted-caller and local-caller bars but never the login bar) and the unlink step the server runs itself, and a setup that went stale or was not confirmed forgetting what it stored: forgetting narrows only',
     },
     planned: {
       'services/core/remote/command-dispatcher.ts':
@@ -596,7 +596,7 @@ const PROTECTED_EFFECTS: ProtectedEffect[] = [
     allowed: {
       'services/core/remote/remote-state.ts': 'the definition itself',
       'services/core/remote/managed-remote-coordinator.ts':
-        'a person selecting a mode (`selectMode(`) or finishing enrolment (`startEnrolment(`) on this computer, both pinned below to the setup route and its cookie, trusted-caller and local-caller bars, with a real login for anything managed; and withdrawal (`POST /api/remote-access/withdraw` and the unlink step), unguarded because it only narrows: mode off, enrolment and references cleared',
+        'a person selecting a mode (`selectMode(`) or finishing enrolment (`startEnrolment(`) on this computer, both pinned below to the setup route and its cookie, trusted-caller and local-caller bars, with a real login for anything managed; withdrawal (`POST /api/remote-access/withdraw`, behind the cookie, trusted-caller and local-caller bars but never the login bar, so it works with login or Cloud down; and the unlink step the server runs itself): mode off, enrolment and references cleared; and narrowing an enrolment recorded under another link (`withdrawnRemoteState`), which only narrows',
     },
     planned: {
       'services/core/remote/command-dispatcher.ts':
@@ -664,7 +664,7 @@ const PROTECTED_EFFECTS: ProtectedEffect[] = [
       'routes/tunnel.ts':
         'a person turning Remote Access on in their own cockpit, which publishes this machine and writes `tunnel.enabled` (DOR-1738). Gated: both bars from `PATCH /api/config` for an operator-only setting, in the same order — the cookie bar under login, then this one — because `tunnel.*` IS operator-only in config-write-policy and this route writes the flag straight through `configManager`, around the door that enforces that. `POST /api/tunnel/stop` deliberately runs neither bar and reaches no effect on this list: stopping only ever narrows exposure, and gating it stranded a running tunnel once already (DOR-574)',
       'routes/remote-access.ts':
-        'a person starting DorkOS remote access setup or choosing a remote access mode on this computer (DOR-2086). Gated: the cookie bar under login, then this one, then `isLocalCaller` (a phone over a tunnel or managed access is not at this computer), then `canExpose` for anything managed. `POST /close` and `/withdraw` run no bar on purpose: they only narrow',
+        'a person starting DorkOS remote access setup or choosing a remote access mode on this computer (DOR-2086). Gated: the cookie bar under login, then this one, then `isLocalCaller` (a phone over a tunnel or managed access is not at this computer), then `canExpose` for anything managed. `POST /withdraw` runs the cookie, trusted-caller and local-caller bars but never `canExpose`, so it works with login or Cloud down; `POST /close` runs no bar on purpose: it only narrows',
       'services/core/capabilities/trusted-caller.ts': 'the definition itself',
     },
   },

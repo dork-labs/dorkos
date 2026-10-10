@@ -1,6 +1,6 @@
 /**
- * `/api/remote-access` (DOR-2086): who may start managed setup and choose a
- * mode, and that closing and withdrawing stay open to everyone.
+ * `/api/remote-access` (DOR-2086): who may start managed setup, choose a mode
+ * and withdraw, and that closing stays open to everyone.
  *
  * The router is mounted alone behind a fixture standing in for `sessionGate`,
  * the way `tunnel.test.ts` tests the same bars, so a refusal here is the
@@ -193,12 +193,10 @@ describe('POST /api/remote-access/mode', () => {
   });
 });
 
-describe.each([
-  ['/api/remote-access/close', 'close'],
-  ['/api/remote-access/withdraw', 'withdraw'],
-] as const)('POST %s, open to every caller because it only narrows', (path, method) => {
+describe('POST /api/remote-access/close, open to every caller because it only narrows', () => {
   it('works for an agent, a remote caller and an API key under login', async () => {
     loginOn(true);
+    const path = '/api/remote-access/close';
     const agent = await request(app()).post(path).set('x-dorkos-agent', 'agent-token');
     const remote = await request(app()).post(path).set('Host', 'box.ngrok.app');
     const key = await request(
@@ -208,6 +206,46 @@ describe.each([
       expect(res.status).toBe(200);
       expect(res.body).toEqual(REPORT);
     }
-    expect(current.coordinator[method]).toHaveBeenCalledTimes(3);
+    expect(current.coordinator.close).toHaveBeenCalledTimes(3);
+  });
+});
+
+describe('POST /api/remote-access/withdraw, a person at this computer', () => {
+  const path = '/api/remote-access/withdraw';
+
+  it('lets the person through even with no real login, since it only narrows', async () => {
+    current.canExpose.mockReturnValue(false);
+    const res = await request(app()).post(path);
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual(REPORT);
+    expect(current.coordinator.withdraw).toHaveBeenCalledTimes(1);
+  });
+
+  it('refuses an agent, another device and a request over managed access', async () => {
+    const agent = await request(app()).post(path).set('x-dorkos-agent', 'agent-token');
+    expect(agent.status).toBe(403);
+    expect(agent.body.code).toBe('operator_only_config');
+    const remote = await request(app()).post(path).set('Host', 'box.ngrok.app');
+    expect(remote.status).toBe(403);
+    expect(remote.body.code).toBe(REMOTE_SETUP_NEEDS_THIS_COMPUTER);
+    const managed = await request(app({ managed: true })).post(path);
+    expect(managed.status).toBe(403);
+    expect(managed.body.code).toBe(REMOTE_SETUP_NEEDS_THIS_COMPUTER);
+    expect(current.coordinator.withdraw).not.toHaveBeenCalled();
+  });
+
+  it('refuses an API key under login, and lets a signed-in person through', async () => {
+    loginOn(true);
+    const key = await request(
+      app({ user: { userId: 'u1', credential: 'api-key' } as RequestUser })
+    ).post(path);
+    expect(key.status).toBe(403);
+    expect(key.body.code).toBe('operator_cookie_required');
+    expect(current.coordinator.withdraw).not.toHaveBeenCalled();
+    const cookie = await request(
+      app({ user: { userId: 'u1', credential: 'cookie' } as RequestUser })
+    ).post(path);
+    expect(cookie.status).toBe(200);
+    expect(current.coordinator.withdraw).toHaveBeenCalledTimes(1);
   });
 });
