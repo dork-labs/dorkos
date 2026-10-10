@@ -14,7 +14,10 @@ export interface LoadArgs {
   communityName: string;
   channelName: string;
   out: string;
-  graceMs: number;
+  /** After the last post, stop waiting once no delivery has arrived for this long. */
+  quietMs: number;
+  /** After the last post, never wait longer than this for deliveries still on their way. */
+  drainTimeoutSeconds: number;
   /** Reader worker threads, `0` to read on the main thread, or `auto`: one per 1,000 readers. */
   readerThreads: number | 'auto';
   /** How long to wait for every stream to open before posting starts anyway. */
@@ -64,7 +67,8 @@ export function parseLoadArgs(argv: readonly string[]): LoadArgs {
       'community-name': { type: 'string', default: 'Load test community' },
       'channel-name': { type: 'string', default: 'load-test' },
       out: { type: 'string', default: 'load-results.json' },
-      'grace-ms': { type: 'string', default: '3000' },
+      'quiet-ms': { type: 'string', default: '5000' },
+      'drain-timeout': { type: 'string', default: '120' },
       'reader-threads': { type: 'string', default: 'auto' },
       'open-timeout': { type: 'string', default: '300' },
       'i-understand-this-is-production': { type: 'boolean', default: false },
@@ -87,8 +91,10 @@ export function parseLoadArgs(argv: readonly string[]): LoadArgs {
         '  --community-name <name>   Throwaway community name (default "Load test community").',
         '  --channel-name <name>     Throwaway channel name (default "load-test").',
         '  --out <path>              Where to write the JSON results (default ./load-results.json).',
-        '  --grace-ms <ms>           How long to wait after the last post before closing streams',
-        '                            and reading /metrics again (default 3000).',
+        '  --quiet-ms <ms>           After the last post, stop waiting for deliveries once none',
+        '                            has arrived for this long (default 5000).',
+        '  --drain-timeout <seconds> After the last post, wait at most this long for every',
+        '                            stream to get every post (default 120).',
         '  --reader-threads <n>      Threads reading streams; 0 reads on the main thread',
         '                            (default auto: one per 1,000 readers, up to the cores).',
         '  --open-timeout <seconds>  How long to wait for every stream to open before posting',
@@ -151,7 +157,8 @@ export function parseLoadArgs(argv: readonly string[]): LoadArgs {
     communityName: values['community-name'],
     channelName: values['channel-name'],
     out: values.out,
-    graceMs: positiveInt('grace-ms', values['grace-ms']),
+    quietMs: positiveInt('quiet-ms', values['quiet-ms']),
+    drainTimeoutSeconds: positiveInt('drain-timeout', values['drain-timeout']),
     readerThreads:
       values['reader-threads'] === 'auto'
         ? 'auto'

@@ -54,14 +54,19 @@ export interface LoadReport {
     sendLagMs: HistogramSummary;
   };
   delivery: HistogramSummary;
+  /** How long the run waited after the last post for deliveries still on their way. */
+  drainMs: number;
   peak: PeakFigures;
-  /** Counter movement between the scrape before streams opened and the one after posting. */
-  refusedDuringRun: { host: number; community: number; member: number };
-  listenerReconnectsDuringRun: number;
+  /**
+   * Counter movement between the scrape before streams opened and the one after posting, or
+   * `null` when the second scrape could not be read.
+   */
+  refusedDuringRun: { host: number; community: number; member: number } | null;
+  listenerReconnectsDuringRun: number | null;
   generatorLoopDelayP99Ms: number;
   /** The generator's own event loop lagged enough to distort its numbers. */
   generatorSaturated: boolean;
-  metrics: { before: MetricsSnapshot; after: MetricsSnapshot };
+  metrics: { before: MetricsSnapshot; after: MetricsSnapshot | null };
   /**
    * `met`: delivery p95 under a second and no errors of any kind. `not met`: the server missed.
    * `inconclusive`: it missed while the load machine itself was saturated, so the miss may be the
@@ -152,8 +157,10 @@ export function finishReport(input: {
   writerStats: WriterStats;
   deliveries: LatencyHistogram;
   metricsBefore: MetricsSnapshot;
-  metricsAfter: MetricsSnapshot;
+  /** `null` when the server was too busy to answer `/metrics` once posting ended. */
+  metricsAfter: MetricsSnapshot | null;
   peak: PeakFigures;
+  drainMs: number;
   generatorLoopDelayP99Ms: number;
   out: string;
 }): LoadReport {
@@ -167,7 +174,7 @@ export function finishReport(input: {
   const failedByStatus = Object.fromEntries(
     [...writerStats.failedByStatus.entries()].map(([status, n]) => [String(status), n])
   );
-  const refusedDuringRun = {
+  const refusedDuringRun = after && {
     host: delta(after.refusedHost, before.refusedHost),
     community: delta(after.refusedCommunity, before.refusedCommunity),
     member: delta(after.refusedMember, before.refusedMember),
@@ -189,9 +196,11 @@ export function finishReport(input: {
       sendLagMs: writerStats.sendLag.summary(),
     },
     delivery,
+    drainMs: input.drainMs,
     peak: input.peak,
     refusedDuringRun,
-    listenerReconnectsDuringRun: delta(after.listenerReconnects, before.listenerReconnects),
+    listenerReconnectsDuringRun:
+      after && delta(after.listenerReconnects, before.listenerReconnects),
     generatorLoopDelayP99Ms: input.generatorLoopDelayP99Ms,
     generatorSaturated,
     metrics: { before, after },
@@ -226,10 +235,12 @@ function printReport(report: LoadReport): void {
   line('Peak open streams (server)', String(report.peak.openStreams));
   line('Stream drops', String(readers.endedEarly));
   if (readers.endedEarly) line('  by reason', JSON.stringify(readers.closeReasons));
+  const refused = report.refusedDuringRun;
   line(
     'Stream refusals during run',
-    `host ${report.refusedDuringRun.host}, community ${report.refusedDuringRun.community}, ` +
-      `member ${report.refusedDuringRun.member}`
+    refused
+      ? `host ${refused.host}, community ${refused.community}, member ${refused.member}`
+      : 'unknown (/metrics did not answer after posting)'
   );
   line(
     'Posts',
@@ -240,9 +251,10 @@ function printReport(report: LoadReport): void {
     line('  failed by status', JSON.stringify(writers.failedByStatus));
   line('Post answered (from schedule)', pcts(writers.postAckMs));
   line('Delivery (from schedule)', `${pcts(delivery)}  (${delivery.count} deliveries)`);
+  line('Waited after posting for', `${(report.drainMs / 1_000).toFixed(1)}s`);
   line('Missed deliveries', String(readers.missedDeliveries));
   line('Peak pool waiting (server)', String(report.peak.poolWaiting));
-  line('Listener reconnects', String(report.listenerReconnectsDuringRun));
+  line('Listener reconnects', String(report.listenerReconnectsDuringRun ?? 'unknown'));
   line(
     'Generator loop delay p99',
     `${fmt(report.generatorLoopDelayP99Ms)}${report.generatorSaturated ? '  (SATURATED: figures include generator lag)' : ''}`

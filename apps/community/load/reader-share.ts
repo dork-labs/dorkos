@@ -2,6 +2,9 @@ import { monitorEventLoopDelay } from 'node:perf_hooks';
 import { LatencyHistogram, type HistogramData } from './histogram.js';
 import { openReaderStream, type ReaderOutcome } from './sse.js';
 
+/** How often a share reports how many deliveries it has seen. */
+const PROGRESS_MS = 1_000;
+
 /** What one share of the run's readers is started with. */
 export interface ReaderShareInput {
   baseUrl: string;
@@ -20,6 +23,8 @@ export type ToReaderShare = { type: 'posting' } | { type: 'stop' };
 /** A reader share to the main thread. */
 export type FromReaderShare =
   | { type: 'opened'; opened: number; failed: number }
+  /** How many (stream, post) deliveries this share has seen so far; sent about once a second. */
+  | { type: 'progress'; received: number }
   | {
       type: 'done';
       outcomes: ReaderOutcome[];
@@ -51,6 +56,14 @@ export function startReaderShare(
   };
   if (pending === 0) queueMicrotask(() => send({ type: 'opened', opened: 0, failed: 0 }));
 
+  let received = 0;
+  let reported = 0;
+  const progress = setInterval(() => {
+    if (received === reported) return;
+    reported = received;
+    send({ type: 'progress', received });
+  }, PROGRESS_MS);
+
   const results: Promise<ReaderOutcome>[] = [];
   void (async () => {
     for (let i = 0; i < input.tokens.length; i += input.batchSize) {
@@ -67,6 +80,9 @@ export function startReaderShare(
             signal: abortController.signal,
             deliveries,
             onSettled: settled,
+            onReceived: () => {
+              received += 1;
+            },
           })
         );
       }
@@ -84,6 +100,7 @@ export function startReaderShare(
     // Read before closing every stream, so the teardown is not mistaken for saturation.
     const loopDelayP99Ms = loopDelay.percentile(99) / 1e6;
     loopDelay.disable();
+    clearInterval(progress);
     abortController.abort();
     void Promise.all(results).then((outcomes) => {
       // Stopped before this share asked for every stream: the rest never opened.

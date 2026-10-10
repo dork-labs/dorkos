@@ -86,7 +86,8 @@ async function main(): Promise<void> {
   let sampler: NodeJS.Timeout | undefined;
   let postingStartedAt!: number;
   let writerStats!: WriterStats;
-  let metricsAfter!: MetricsSnapshot;
+  let metricsAfter!: MetricsSnapshot | null;
+  let drainMs!: number;
   let readerResults!: ReaderResults;
   let mainLoopDelayP99Ms!: number;
   try {
@@ -125,10 +126,29 @@ async function main(): Promise<void> {
       durationMs,
       runId,
     });
-    console.log(`Posting done. Waiting ${args.graceMs}ms for in-flight deliveries to land...`);
-    await sleep(args.graceMs);
+    // A server that falls behind is still delivering when the last post is answered. Wait for it,
+    // so a late message is measured as late rather than reported as lost.
+    console.log('Posting done. Waiting for deliveries still on their way...');
+    const drainStart = loadClock();
+    const expected = (openWait?.opened ?? fixture.readers.length) * writerStats.succeeded;
+    let lastReceived = -1;
+    let lastChange = drainStart;
+    for (;;) {
+      const now = loadClock();
+      const received = readers.received();
+      if (received !== lastReceived) {
+        lastReceived = received;
+        lastChange = now;
+      }
+      if (received >= expected) break;
+      if (now - lastChange >= args.quietMs) break;
+      if (now - drainStart >= args.drainTimeoutSeconds * 1_000) break;
+      await sleep(250);
+    }
+    drainMs = loadClock() - drainStart;
     await takeSample();
-    metricsAfter = await fetchMetrics(args.url, fixture.metricsKey);
+    // The server may still be busy; a missing final scrape costs only the counter deltas.
+    metricsAfter = await fetchMetrics(args.url, fixture.metricsKey, 60_000).catch(() => null);
   } finally {
     clearInterval(sampler);
     // Read before closing the streams, so the teardown is not mistaken for saturation.
@@ -157,6 +177,7 @@ async function main(): Promise<void> {
     metricsBefore,
     metricsAfter,
     peak,
+    drainMs,
     generatorLoopDelayP99Ms: Math.max(mainLoopDelayP99Ms, readerResults.loopDelayP99Ms),
     out: args.out,
   });

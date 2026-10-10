@@ -40,10 +40,14 @@ export function parseMetrics(raw: string): MetricsSnapshot {
 }
 
 /** Scrape `/metrics` with the host API key the fixture minted. */
-export async function fetchMetrics(url: string, metricsKey: string): Promise<MetricsSnapshot> {
+export async function fetchMetrics(
+  url: string,
+  metricsKey: string,
+  timeoutMs = 10_000
+): Promise<MetricsSnapshot> {
   const response = await fetch(`${url}/metrics`, {
     headers: { authorization: `Bearer ${metricsKey}` },
-    signal: AbortSignal.timeout(10_000),
+    signal: AbortSignal.timeout(timeoutMs),
   });
   if (!response.ok) throw new Error(`GET /metrics returned ${response.status}`);
   return parseMetrics(await response.text());

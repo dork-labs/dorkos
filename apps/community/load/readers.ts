@@ -28,6 +28,8 @@ export interface ReaderPool {
   settled: Promise<{ opened: number; failed: number }>;
   /** Tell every share posting has begun. */
   startPosting(): void;
+  /** Deliveries seen so far across every share, as of each one's latest report. */
+  received(): number;
   /** Close every stream and collect the results. */
   stop(): Promise<ReaderResults>;
 }
@@ -128,7 +130,15 @@ export function startReaders(input: {
   // A share that crashed rejects both; `settled` and `stop` each report it to their caller.
   for (const promise of [...opened, ...done]) promise.catch(() => undefined);
 
+  const receivedByShare = shares.map(() => 0);
+  shares.forEach((share, i) =>
+    share.events.on('message', (message: FromReaderShare) => {
+      if (message.type === 'progress') receivedByShare[i] = message.received;
+    })
+  );
+
   return {
+    received: () => receivedByShare.reduce((sum, n) => sum + n, 0),
     settled: Promise.all(opened).then((messages) =>
       messages.reduce(
         (sum, m) => ({ opened: sum.opened + m.opened, failed: sum.failed + m.failed }),

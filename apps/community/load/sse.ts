@@ -131,6 +131,8 @@ export async function openReaderStream(input: {
   signal: AbortSignal;
   deliveries: LatencyHistogram;
   onSettled: (opened: boolean) => void;
+  /** Called once for each distinct post of this run that reaches this stream. */
+  onReceived?: () => void;
 }): Promise<ReaderOutcome> {
   let settled = false;
   const settle = (opened: boolean) => {
@@ -217,6 +219,7 @@ async function readStream(
           if (seen[post.n]) continue;
           seen[post.n] = 1;
           received += 1;
+          input.onReceived?.();
           if (frame.type === 'entry') input.deliveries.record(now - post.t);
         }
       }
