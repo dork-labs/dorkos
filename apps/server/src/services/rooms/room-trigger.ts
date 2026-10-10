@@ -1017,8 +1017,9 @@ export class RoomTriggerDispatcher {
       //
       // The seat is weighed even though its `always` mode ignores the flag: it
       // READS the window to decide whether to stand down for a post that
-      // addressed somebody else, so it costs one bounded query (six rows at the
-      // shipped defaults) for that one member, in that one room.
+      // addressed somebody else. For an agent's post that is one bounded query
+      // for that one member; a person's post in a channel reads the
+      // conversation above instead, once for the whole roster.
       const weighable = member.responseMode === 'engaged' || member.authorId === seatAuthorId;
       const candidate = record.kind === 'agent' && weighable && member.authorId !== entry.authorId;
       const open = !candidate

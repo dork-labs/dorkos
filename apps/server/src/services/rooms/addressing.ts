@@ -332,7 +332,13 @@ export function standDownFallbackSeat(opts: {
   // A third shape, the same idea (DOR-2823): a person's post that belongs to
   // their conversation with ANOTHER agent is that agent's to answer. Without
   // this, the person talking to Nova got Nova and the default agent both.
-  if ((opts.conversationPartners?.length ?? 0) > 0) {
+  // Only when that partner is actually answering: a partner set to answer
+  // @mentions only would leave the post with nobody at all.
+  const partners = opts.conversationPartners ?? [];
+  const partnerAnswers = labelled.some(
+    (selection) => selection.authorId !== seatAuthorId && partners.includes(selection.authorId)
+  );
+  if (partnerAnswers) {
     return labelled.filter((selection) => selection.authorId !== seatAuthorId);
   }
 

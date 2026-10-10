@@ -171,7 +171,7 @@ function count(value: number, unit: string): string {
 function explainEngaged(window: EngagedWindow | null): RungExplanation {
   // Its own answers restart the window (DOR-2823), so "goes quiet" only comes
   // once the person stops talking to it or names somebody else.
-  const quietAgain = 'Each answer restarts that. Name someone else to move on.';
+  const quietAgain = 'Each answer restarts that. Name another agent to move on.';
   if (window === null) {
     // The numbers are settings, so inventing them would state something false
     // about somebody's own install. The shape of the rule is still true.

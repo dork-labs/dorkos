@@ -396,6 +396,19 @@ describe('changing the default agent', () => {
     expect(turnsFor(w, w.dorkbot)).toBe(dorkbotBefore);
   });
 
+  it('keeps answering when the agent you are talking to only answers @mentions', async () => {
+    // The default agent steps back only for a partner that will actually
+    // answer; otherwise the post would reach nobody (DOR-2823).
+    const w = boot();
+    w.service.updateMembership(w.roomId, w.human, w.nova, 'mention-only');
+    await say(w, '@nova can you take the deploy?');
+    const dorkbotBefore = turnsFor(w, w.dorkbot);
+
+    await say(w, 'thanks, when will it be out?');
+    expect(turnsFor(w, w.nova)).toBe(1);
+    expect(turnsFor(w, w.dorkbot)).toBe(dorkbotBefore + 1);
+  });
+
   it('is the setting, not the room key, that decides — #team is otherwise ordinary', async () => {
     const w = boot({ defaultAgent: 'ace' });
 
