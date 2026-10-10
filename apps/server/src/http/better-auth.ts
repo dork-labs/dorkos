@@ -51,6 +51,7 @@ export function mountBetterAuth(app: Hono<ApiEnv>, options: BetterAuthOptions): 
  *   this is the origin it checks a sign-in's `Origin` against. Behind a
  *   TLS-terminating proxy or the tunnel, an https page signs in only because
  *   the proxy says https; Hono's own `c.req.url` would say http.
+ * - **The headers as Node parsed them**, not as Hono re-read the raw lines.
  * - **A body only when the adapter would read one**: a request with no
  *   `Content-Type`, an empty `Content-Length`, or (HTTP/1) neither a length
  *   nor chunked encoding has none.
@@ -68,7 +69,9 @@ export function requestForBetterAuth(c: Context<ApiEnv>): Request {
   const raw = c.req.raw;
   const init: StreamingRequestInit = {
     method: raw.method,
-    headers: raw.headers,
+    // Node's own reading of the headers, as the adapter passed them: a
+    // repeated header it keeps once stays once, and cookies join with `; `.
+    headers: headers as Record<string, string>,
     body: carriesBody(incoming) ? raw.body : undefined,
     duplex: 'half',
     signal: raw.signal,

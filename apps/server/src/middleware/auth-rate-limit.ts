@@ -70,10 +70,11 @@ const RATE_LIMITED_BODY = {
 /**
  * Build the app-level rate limiter for Better Auth's sign-in / sign-up endpoints.
  *
- * Defense-in-depth for local password brute-force (DOR-281). Mounted on the Hono
- * `/api` chain ahead of the Better Auth handler (`http/better-auth.ts`); it counts only credential-guessing
- * POSTs ({@link isCredentialAttempt}) and skips everything else, so session-check
- * GETs and non-auth routes are untouched.
+ * Defense-in-depth for local password brute-force (DOR-281). Mounted on the
+ * Hono `/api` chain ahead of the Better Auth handler (`http/better-auth.ts`);
+ * it counts only credential-guessing POSTs ({@link isCredentialAttempt}) and
+ * skips everything else, so session-check GETs and non-auth routes are
+ * untouched.
  *
  * This layers over — it does not replace — Better Auth's own built-in throttle.
  * Better Auth applies a special rule (window 10s, max 3) to `/sign-in`,
@@ -86,7 +87,8 @@ const RATE_LIMITED_BODY = {
  * Keys through `rateLimitKey`, like every other limiter here: the TCP peer
  * address, which no header can move, unless `DORKOS_TRUST_PROXY` says a proxy is
  * in front. This limiter is why that changed (DOR-1711). It inherited `req.ip`
- * from the Express chain's `trust proxy, 1`, so `X-Forwarded-For` decided the bucket — and
+ * from the Express chain's `trust proxy, 1`, so `X-Forwarded-For` decided the
+ * bucket — and
  * a password guesser sending a different value each attempt got a fresh budget
  * every time, which is to say no brake at all on the one surface where a brake
  * is the whole point.

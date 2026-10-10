@@ -16,9 +16,11 @@
  *
  * - **A request Hono cannot read still reaches Express.** The Node adapter
  *   builds a URL from `Host` and answers a bare 400 when it cannot: no `Host`
- *   (HTTP/1.0), a `Host` in capitals, a port out of range, `OPTIONS *`. Express
- *   decides those today, through `hostGuard` with its logged 403 or by serving
- *   them, so {@link createFrontDoorServer} gives them to Express untouched.
+ *   (HTTP/1.0), a port out of range, `OPTIONS *`. Express decides those today,
+ *   through `hostGuard` with its logged 403 or by serving them, so
+ *   {@link createFrontDoorServer} gives them to Express untouched. A `Host` in
+ *   capitals it would also refuse is lower-cased first, so a moved route
+ *   answers it as Express did.
  * - **`overrideGlobalObjects: false`.** By default the adapter swaps the
  *   process-wide `Request` and `Response` for its own lightweight classes.
  *   Better Auth, the MCP SDK and every `fetch` caller in the server build those
@@ -109,8 +111,13 @@ export function createFrontDoor(
  * Claim every route of the `/api` app on the front door, each handing its
  * request to that app whole, so it runs the Hono chain and nothing else.
  *
- * Chain middleware is registered on `*` and serves no request by itself, so it
- * is skipped: a path no moved route matches still reaches Express.
+ * Chain-wide middleware is registered on `*` and serves no request by itself,
+ * so it is skipped: a path no moved route matches still reaches Express.
+ * ANYTHING registered on a path claims it, middleware included, because Hono
+ * records `use(path)` and `all(path)` alike. That is the rule a move follows:
+ * a group moves whole, so its middleware's path is its routes' path. A stray
+ * claim on a path Express still serves fails the route census
+ * (`route-census.test.ts`) and its shadowing check.
  */
 function claimApiRoutes(door: Hono<FrontDoorEnv>, api: Hono<ApiEnv>): void {
   const claimed = new Set<string>();
@@ -146,7 +153,13 @@ export function frontDoorListener(door: FrontDoor): RequestListener {
       return new Response(null, { status: 500 });
     },
   });
-  return (incoming, outgoing) => raw.run([incoming, outgoing], () => viaHono(incoming, outgoing));
+  return (incoming, outgoing) => {
+    // Host names ignore case, but the adapter refuses a `Host` in capitals, and
+    // such a request could then reach only Express, never a moved route.
+    const host = incoming.headers.host;
+    if (host) incoming.headers.host = host.toLowerCase();
+    return raw.run([incoming, outgoing], () => viaHono(incoming, outgoing));
+  };
 }
 
 /**

@@ -88,10 +88,11 @@ export function createApp(options: {
   const app = express();
   app.use(terminalAdmission(options.admission));
 
-  // Trust one forwarded hop, for `req.protocol` and `req.secure` and nothing
-  // else. A reverse proxy or the tunnel terminates TLS upstream and names the
-  // real scheme in `X-Forwarded-Proto`. (Better Auth reads that header itself,
-  // on the Hono chain: `http/better-auth.ts`.)
+  // Trust one forwarded hop. Today that feeds one thing: `req.ip`, which the
+  // rate limiters read (as `forwardedAddress`) only when `DORKOS_TRUST_PROXY`
+  // says a proxy is in front. A reverse proxy or the tunnel names the real
+  // scheme in `X-Forwarded-Proto` too, which Better Auth reads itself
+  // (`http/better-auth.ts`).
   //
   // NOTHING SECURITY-RELEVANT MAY READ WHAT THIS DERIVES (DOR-1711). On a direct
   // connection the "first proxy" is the caller, so `req.ip`, `req.ips` and

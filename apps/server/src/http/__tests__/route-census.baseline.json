@@ -1,7 +1,5 @@
 {
-  "hono": [
-    "ALL /api/auth/*"
-  ],
+  "hono": ["ALL /api/auth/*"],
   "express": [
     "ALL /api/test/mcp-oauth/mcp",
     "DELETE /api/communities/:ref/agents/:localAgentId",
