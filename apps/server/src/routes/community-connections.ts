@@ -451,8 +451,9 @@ export function createCommunityConnectionsRouter(
   });
   // Who in this space may wake the owner's agents (spec `official-community-space` D9).
   // Owner-only, like every route here: `resolveCommunityOwner` refuses an agent's identity, a
-  // remote caller and anyone but this install's owner, so nothing a stranger can say and no
-  // agent's tool can widen who wakes an agent.
+  // remote caller and anyone but this install's owner, and no DorkOS tool or config key
+  // reaches it. (With login off, an agent's own shell on this machine is the local-trust
+  // residual, and a stranger's turn asks before it runs one.)
   router.get('/:ref/wake-agents-from', async (req, res) => {
     const owner = resolveCommunityOwner(req, res);
     if (!owner) return;

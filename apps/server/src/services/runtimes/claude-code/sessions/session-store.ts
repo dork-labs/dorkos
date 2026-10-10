@@ -35,6 +35,7 @@ import { SESSIONS } from '../../../../config/constants.js';
 import { logger } from '../../../../lib/logger.js';
 import { resolveActiveClaudeRoot } from '../claude-config-dir.js';
 import { withClaudeConfigDir } from '../claude-config-env-lock.js';
+import { gatePermissionMode } from '../turn-permission.js';
 import type { TranscriptReader } from './transcript-reader.js';
 import type { SessionLockManager } from '../../../session/session-lock.js';
 import {
@@ -660,16 +661,14 @@ export class SessionStore {
         // and made the best-effort catch below unreachable, since a dropped
         // write never rejects either. The clock is what makes the best-effort
         // contract true rather than merely written down.
+        // Only the SDK needs the narrow name (DOR-885): a mode id is whatever its
+        // runtime declared, and the session above keeps the id as asked, but a
+        // query can only be moved to a mode the SDK knows. Held to the ceilings
+        // the running turn and its background work carry (`warm-ceiling.ts`): a
+        // person loosening this chat mid-turn never loosens a stranger's turn.
+        const liveMode = narrowToClaudeCodeMode(gatePermissionMode(session), 'default');
         const ack = await awaitControlAck(
-          () =>
-            // Only the SDK needs the narrow name (DOR-885): a mode id is
-            // whatever its runtime declared, and the session above keeps the id
-            // as asked, but a query can only be moved to a mode the SDK knows.
-            query.setPermissionMode(
-              narrowToClaudeCodeMode(opts.permissionMode, 'default') as Parameters<
-                typeof query.setPermissionMode
-              >[0]
-            ),
+          () => query.setPermissionMode(liveMode as Parameters<typeof query.setPermissionMode>[0]),
           PERMISSION_MODE_ACK_TIMEOUT_MS
         );
         if (ack !== 'acked') {

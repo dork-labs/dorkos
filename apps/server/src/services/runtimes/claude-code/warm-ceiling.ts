@@ -59,7 +59,14 @@ export function decideCeilingedReuse(
   wanted: LaunchFingerprint,
   options?: LiveChangeOptions
 ): ProcessReuse {
-  const reuse = decideProcessReuse(live, wanted, options);
+  // A ceilinged turn never trusts the recorded mode: a person's live change
+  // (`updateSession`) moves the process without moving its fingerprint, so the
+  // mode is set again, and checked by `ceilingMissed`, on every such turn.
+  const compared =
+    live !== undefined && session.turnPermissionCeiling !== undefined
+      ? { ...live, live: { ...live.live, permissionMode: undefined } }
+      : live;
+  const reuse = decideProcessReuse(compared, wanted, options);
   const carried = session.backgroundPermissionCeiling;
   const wantedMode = wanted.live.permissionMode;
   if (reuse.action !== 'adjust' || carried === undefined || live === undefined) return reuse;

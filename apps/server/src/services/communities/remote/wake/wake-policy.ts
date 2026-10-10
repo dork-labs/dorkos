@@ -116,6 +116,9 @@ export class RemoteWakePolicy implements RemoteWakeGate {
     // old `members` while the owner was told it changed.
     const current = this.entries?.get(key(ref, ownerKey));
     if (current) {
+      // And newer than every read already in flight, so none that started before
+      // this write can land afterwards and put the old answer back.
+      this.applied = ++this.started;
       this.entries = new Map(this.entries).set(key(ref, ownerKey), { ...current, from: value });
     }
     await this.reload();

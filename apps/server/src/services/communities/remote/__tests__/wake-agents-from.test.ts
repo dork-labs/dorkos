@@ -5,7 +5,7 @@
  *
  * @vitest-environment node
  */
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -191,5 +191,52 @@ describe('the gate when a read fails', () => {
 
     expect(policy.wakes(REF, OWNER, 'remote-stranger')).toBe(false);
     expect(policy.wakes(REF, OWNER, OWNER_MEMBER)).toBe(true);
+  });
+});
+
+describe('the gate when the setting file is damaged', () => {
+  const wakeFile = () => join(directory, 'communities', 'remote', 'wake-agents-from.json');
+
+  it('keeps its last answer rather than reading a damaged file as "members"', async () => {
+    await store.setWakeAgentsFrom(REF, OWNER, 'me');
+    const policy = new RemoteWakePolicy(store, []);
+    await policy.reload();
+    await writeFile(wakeFile(), '{ not json');
+
+    await policy.reload();
+
+    expect(policy.wakes(REF, OWNER, 'remote-stranger')).toBe(false);
+  });
+
+  it('refuses to write over a damaged file, so no other space loses its "me"', async () => {
+    await store.setWakeAgentsFrom(REF, OWNER, 'me');
+    await writeFile(wakeFile(), '{ not json');
+
+    await expect(store.setWakeAgentsFrom(REF, OWNER, 'members')).rejects.toThrow();
+    expect(await readFile(wakeFile(), 'utf8')).toBe('{ not json');
+  });
+});
+
+describe('the gate when a change races a reload', () => {
+  it('never lets a read that started before the change put the old answer back', async () => {
+    const real = store.wakeSettings.bind(store);
+    const policy = new RemoteWakePolicy(store, []);
+    await policy.reload();
+    let finishOlder!: () => void;
+    vi.spyOn(store, 'wakeSettings')
+      .mockImplementationOnce(async () => {
+        const settings = await real();
+        await new Promise<void>((resolve) => (finishOlder = resolve));
+        return settings;
+      })
+      .mockRejectedValueOnce(new Error('disk busy'));
+
+    const older = policy.reload();
+    await vi.waitFor(() => expect(finishOlder).toBeDefined());
+    await policy.set(REF, OWNER, 'me');
+    finishOlder();
+    await older;
+
+    expect(policy.wakes(REF, OWNER, 'remote-stranger')).toBe(false);
   });
 });

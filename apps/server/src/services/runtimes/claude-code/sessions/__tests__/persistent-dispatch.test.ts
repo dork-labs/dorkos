@@ -1149,6 +1149,61 @@ describe("a stranger's turn on a warm process (official-community-space D10)", (
     expect(settled).toBe('pending');
   });
 
+  it("never lets the owner loosen a stranger's running turn from the picker", async () => {
+    const sessionId = nextSession();
+    await turn(sessionId);
+    const process = cli.processes[0]!;
+    process.goSilent();
+    const running = strangerTurn(sessionId);
+    await vi.waitFor(() => expect(process.received).toHaveLength(2));
+
+    await runtime.updateSession(sessionId, { permissionMode: 'bypassPermissions' });
+
+    expect(process.liveSets).not.toContain('setPermissionMode:bypassPermissions');
+    process.answer(process.inbox.at(-1)!.uuid);
+    await running;
+  });
+
+  it('sets the ceiling again on a stranger’s turn after the owner moved the process live', async () => {
+    // The owner's live change moves the process without moving its record, so a
+    // stranger's turn must not trust the record.
+    const sessionId = nextSession();
+    await turn(sessionId);
+    const process = cli.processes[0]!;
+    process.goSilent();
+    const owners = turn(sessionId, 'the owner, working');
+    await vi.waitFor(() => expect(process.received).toHaveLength(2));
+    await runtime.updateSession(sessionId, { permissionMode: 'bypassPermissions' });
+    process.answer(process.inbox.at(-1)!.uuid);
+    await owners;
+    expect(process.liveSets.at(-1)).toBe('setPermissionMode:bypassPermissions');
+
+    const stranger = strangerTurn(sessionId);
+    await vi.waitFor(() => expect(process.received).toHaveLength(3));
+    process.answer(process.inbox.at(-1)!.uuid);
+    await stranger;
+
+    expect(cli.launches).toBe(1);
+    expect(process.liveSets.at(-1)).toBe('setPermissionMode:default');
+  });
+
+  it('treats a mode change nobody answered as unknown, so a later turn sets its mode again', async () => {
+    // The unanswered move up may still land after its bound. A later turn that
+    // wants the OLD mode must set it, not ride a record that says it is there.
+    const sessionId = nextSession();
+    await turn(sessionId);
+    const process = cli.processes[0]!;
+    await runtime.updateSession(sessionId, { permissionMode: 'bypassPermissions' });
+    process.permissionModeNeverSettles = true;
+    await turn(sessionId, 'the owner, unanswered');
+    process.permissionModeNeverSettles = false;
+    await runtime.updateSession(sessionId, { permissionMode: 'default' });
+
+    await turn(sessionId, 'the owner, back at default');
+
+    expect(process.liveSets.at(-1)).toBe('setPermissionMode:default');
+  }, 15_000);
+
   it('moves back up live when the stranger left nothing running', async () => {
     const sessionId = nextSession();
     await runtime.updateSession(sessionId, { permissionMode: 'bypassPermissions' });

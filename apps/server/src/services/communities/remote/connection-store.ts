@@ -280,8 +280,11 @@ export class RemoteConnectionStore {
       return SIDE_RECORDS[name].schema.parse(
         JSON.parse(await readFile(this.sideFile(name), 'utf8'))
       ) as SideEntries<Name>;
-    } catch {
-      // Missing or unreadable: nothing recorded, so nothing is shown.
+    } catch (error) {
+      // Missing or unreadable: nothing recorded, so nothing is shown. Except who may wake
+      // agents, where "nothing recorded" means `members`: only a missing file reads as that,
+      // so a failed read keeps the gate's last answer and a write never lands on a blank.
+      if (name === 'wake' && (error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
       return {} as SideEntries<Name>;
     }
   }
@@ -310,8 +313,8 @@ export class RemoteConnectionStore {
 
   /**
    * Record who in this space may wake the owner's agents. Owner-only by construction: the one
-   * route that calls it refuses every caller but this install's owner, and no agent tool or
-   * config path reaches this file.
+   * route that calls it refuses every caller but this install's owner, and no DorkOS tool or
+   * config key reaches this file.
    */
   async setWakeAgentsFrom(ref: CommunityRef, ownerKey: string, to: WakeAgentsFrom): Promise<void> {
     await this.exclusive(async () => {
