@@ -1459,3 +1459,100 @@ it.each(['pending-read', 'between-reads', 'replaced-selection'] as const)(
     if (failed) throw first;
   }
 );
+
+it('records tool audit events from the genuine already opened native stream without a second runtime entry', async () => {
+  const { initAuditTrail, resetAuditTrail } = await import('../../../audit/audit-trail.js');
+  const { AuditLog } = await import('../../../audit/audit-log.js');
+  const { AccountIds } = await import('../../../audit/account-ids.js');
+  const { resetRecordedToolCalls } = await import('../../../audit/record-tool-use.js');
+  const { auditEvents } = await import('@dorkos/db');
+  const dir = await nativeFs.realpath(
+    await nativeFs.mkdtemp(join(tmpdir(), 'native-stream-audit-'))
+  );
+  const prior = serverEnv.DORKOS_TEST_RUNTIME;
+  const sessionId = randomUUID(),
+    agentId = randomUUID(),
+    clientId = 'native-stream-audit';
+  const holder = { on: () => {} };
+  let h: Awaited<ReturnType<typeof nativeRoomAuthorityFixture>> | undefined;
+  let runtime: TestModeRuntime | undefined;
+  let raw: AsyncGenerator<import('@dorkos/shared/types').StreamEvent> | undefined;
+  let observed: typeof raw;
+  let failed = false,
+    first: unknown;
+  const cleanup = async (work: () => unknown | Promise<unknown>) => {
+    try {
+      await work();
+    } catch (cause) {
+      if (!failed) {
+        failed = true;
+        first = cause;
+      }
+    }
+  };
+  try {
+    serverEnv.DORKOS_TEST_RUNTIME = true;
+    h = await nativeRoomAuthorityFixture(dir, 'claude-code', sessionId, agentId);
+    resetRecordedToolCalls();
+    initAuditTrail({
+      log: new AuditLog(h.db),
+      accounts: new AccountIds({
+        db: h.db,
+        installId: 'native-stream-audit',
+        readOwnerAccount: () => null,
+      }),
+    });
+    runtime = new TestModeRuntime('claude-code', h.principals);
+    const registry = new RuntimeRegistry();
+    registry.setDb(h.db);
+    registry.register(runtime);
+    const selected = registry.get('claude-code');
+    expect(runtime.acquireLock(sessionId, clientId, holder)).toBe(true);
+    scenarioStore.setForSession(sessionId, 'tool-call');
+    raw = sendTestModeOriginalLockedMessage(
+      selected,
+      sessionId,
+      'actual tool scenario',
+      { cwd: dir },
+      holder,
+      sessionId
+    );
+    if (!raw) throw new Error('Genuine native tool stream unavailable.');
+    expect(readTestModeOriginalNativeStream({ ...selected }, raw)).toBeUndefined();
+    expect(() => observeOriginalRegisteredRuntimeStream({ ...selected }, sessionId, raw!)).toThrow(
+      'Current original registered native stream'
+    );
+    observed = observeOriginalRegisteredRuntimeStream(selected, sessionId, raw);
+    const firstEvent = await observed.next();
+    expect(firstEvent.done).toBe(false);
+    expect((await resolveTestModeOriginalNativeStreamPrincipal(selected, observed)).status).toBe(
+      'resolved'
+    );
+    for await (const _event of observed) {
+      /* drain the same original stream */
+    }
+    expect(readTestModeOriginalScenarioEvidence(runtime, raw)?.scenarioStarts).toBe(1);
+    expect(
+      h.db
+        .select()
+        .from(auditEvents)
+        .all()
+        .filter((row) => row.action === 'runtime.tool_used')
+        .map((row) => [row.action, row.targetId])
+    ).toEqual([['runtime.tool_used', 'echo hi']]);
+  } catch (cause) {
+    failed = true;
+    first = cause;
+  } finally {
+    await cleanup(() => observed?.return(undefined));
+    await cleanup(() => raw?.return(undefined));
+    await cleanup(() => runtime?.releaseLock(sessionId, clientId));
+    await cleanup(() => scenarioStore.clearSession(sessionId));
+    await cleanup(() => resetAuditTrail());
+    await cleanup(() => resetRecordedToolCalls());
+    await cleanup(() => h?.cleanup());
+    await cleanup(() => nativeFs.rm(dir, { recursive: true, force: true }));
+    serverEnv.DORKOS_TEST_RUNTIME = prior;
+  }
+  if (failed) throw first;
+});

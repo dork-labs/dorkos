@@ -180,6 +180,25 @@ export const COMPONENTS_SECTIONS: PlaygroundSection[] = [
     category: 'Navigation',
     keywords: ['tab', 'tabs', 'strip', 'window', 'titlebar', 'close', 'new tab', 'session'],
   },
+  // TabStripInteractionsShowcases
+  {
+    id: 'tab-strip-interactions',
+    title: 'Tab strip interactions',
+    page: 'components',
+    category: 'Navigation',
+    keywords: [
+      'tab',
+      'tabs',
+      'pin',
+      'pinned',
+      'duplicate',
+      'copy link',
+      'close others',
+      'drag',
+      'reorder',
+      'context menu',
+    ],
+  },
   // SidebarShowcases
   {
     id: 'sidebarrow',

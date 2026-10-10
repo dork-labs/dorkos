@@ -98,6 +98,24 @@ function disposeNext(statement: ts.Statement) {
   ]);
 }
 
+/** `createFrontDoorServer(createFrontDoor(app, ...)).listen(...)`: the main listen. */
+function isMainListen(node: ts.Node): boolean {
+  if (!ts.isCallExpression(node) || !ts.isPropertyAccessExpression(node.expression)) return false;
+  if (node.expression.name.text !== 'listen') return false;
+  const server = node.expression.expression;
+  if (!ts.isCallExpression(server) || !ts.isIdentifier(server.expression)) return false;
+  if (server.expression.text !== 'createFrontDoorServer') return false;
+  const door = server.arguments[0];
+  if (!door || !ts.isCallExpression(door) || !ts.isIdentifier(door.expression)) return false;
+  const legacy = door.arguments[0];
+  return (
+    door.expression.text === 'createFrontDoor' &&
+    legacy !== undefined &&
+    ts.isIdentifier(legacy) &&
+    legacy.text === 'app'
+  );
+}
+
 describe('main admission root adoption', () => {
   it('owns exactly one passive admission instance and injects it into HTTP, listener and upgrades', () => {
     const constructors = walk(source)
@@ -117,12 +135,9 @@ describe('main admission root adoption', () => {
     const factory = property(opts, 'listen');
     if (!ts.isArrowFunction(factory) || !ts.isCallExpression(factory.body))
       throw new Error('Main listen must be acquired by the guarded factory');
-    expect(
-      ts.isPropertyAccessExpression(factory.body.expression) &&
-        ts.isIdentifier(factory.body.expression.expression) &&
-        factory.body.expression.expression.text === 'app' &&
-        factory.body.expression.name.text === 'listen'
-    ).toBe(true);
+    // The listen is the Hono front door's, with the Express `app` behind it
+    // (`http/front-door.ts`, DOR-2792): createFrontDoorServer(createFrontDoor(app)).listen(...).
+    expect(isMainListen(factory.body)).toBe(true);
     const callback = property(opts, 'onListening');
     if (!ts.isArrowFunction(callback) || !ts.isBlock(callback.body))
       throw new Error('Expected guarded listening callback');
@@ -142,10 +157,11 @@ describe('main admission root adoption', () => {
       .filter(ts.isCallExpression)
       .filter(
         (node) =>
-          ts.isPropertyAccessExpression(node.expression) &&
-          ts.isIdentifier(node.expression.expression) &&
-          node.expression.expression.text === 'app' &&
-          node.expression.name.text === 'listen'
+          isMainListen(node) ||
+          (ts.isPropertyAccessExpression(node.expression) &&
+            ts.isIdentifier(node.expression.expression) &&
+            node.expression.expression.text === 'app' &&
+            node.expression.name.text === 'listen')
       );
     expect(listeners).toEqual([factory.body]);
   });

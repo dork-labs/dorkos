@@ -76,6 +76,7 @@ import { getSessionStartedByStore } from '../session/origin/session-started-by-s
 import { getSessionTouchStore } from '../session/origin/session-touch-store.js';
 import { moveDurableSessionIdentity } from '../session/turn-identity/durable-rekey.js';
 import { traceRuntime, watchRuntimeSignin } from '../observability/index.js';
+import { recordToolUse, observeOriginalRuntimeToolStream } from '../audit/record-tool-use.js';
 import { recordTurnLevels, recordRuntimeTurnLevel } from './turn-power/turn-levels.js';
 import {
   holdAwakeDuringTurns,
@@ -100,7 +101,11 @@ const originalRegisteredRuntimes = new WeakMap<
       token: symbol
     ): boolean;
     release(sessionId: string, clientId: string, token: symbol): void;
-    observe(sessionId: string, stream: AsyncGenerator<StreamEvent>): AsyncGenerator<StreamEvent>;
+    observe(
+      sessionId: string,
+      stream: AsyncGenerator<StreamEvent>,
+      opts: import('@dorkos/shared/agent-runtime').MessageOpts
+    ): AsyncGenerator<StreamEvent>;
   }
 >();
 const originalRuntimeMapGet = Map.prototype.get;
@@ -263,7 +268,7 @@ export function observeOriginalRegisteredRuntimeStream(
       throw cause;
     }
   }
-  const observed = own.observe(sessionId, stream);
+  const observed = own.observe(sessionId, stream, opened.options);
   const returned: AsyncGenerator<StreamEvent> = {
     next: async (value) => {
       try {
@@ -591,7 +596,8 @@ export class RuntimeRegistry {
     const leveled = recordTurnLevels(runtime, construction.storedModeOf);
     const traced = traceRuntime(leveled);
     const signed = watchRuntimeSignin(traced);
-    const wrapped = holdAwakeDuringTurns(signed);
+    const audited = recordToolUse(signed);
+    const wrapped = holdAwakeDuringTurns(audited);
     onOriginalSigninRuntimeRelease(signed, () => {
       for (const hint of construction.releaseHints) {
         try {
@@ -615,14 +621,19 @@ export class RuntimeRegistry {
       recorded: new WeakMap(),
       acquire: runtime.acquireLock.bind(runtime),
       release: wrapped.releaseLock.bind(wrapped),
-      observe: (sessionId, stream) =>
+      observe: (sessionId, stream, opts) =>
         observeOriginalAwakeRoomRuntimeStream(
           wrapped,
           sessionId,
-          observeOriginalSigninRuntimeStream(
-            signed,
+          observeOriginalRuntimeToolStream(
+            audited,
             sessionId,
-            traced === leveled ? stream : observeRuntimeTurn(type, sessionId, stream)
+            opts,
+            observeOriginalSigninRuntimeStream(
+              signed,
+              sessionId,
+              traced === leveled ? stream : observeRuntimeTurn(type, sessionId, stream)
+            )
           )
         ),
     });

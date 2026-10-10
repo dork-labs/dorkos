@@ -520,6 +520,15 @@ async function* recordDuring(
   }
 }
 
+const originalToolAuditObservers = new WeakMap<
+  object,
+  (
+    sessionId: string,
+    opts: MessageOpts,
+    source: AsyncGenerator<StreamEvent>
+  ) => AsyncGenerator<StreamEvent>
+>();
+
 /**
  * Wrap a runtime so every tool call in its turns is recorded in the audit log.
  *
@@ -527,7 +536,7 @@ async function* recordDuring(
  * @returns A proxy over the runtime that watches its tool events.
  */
 export function recordToolUse(runtime: AgentRuntime): AgentRuntime {
-  return new Proxy(runtime, {
+  const wrapped = new Proxy(runtime, {
     get(target, prop) {
       if (prop === 'sendMessage') {
         return (
@@ -543,4 +552,24 @@ export function recordToolUse(runtime: AgentRuntime): AgentRuntime {
       return typeof value === 'function' ? value.bind(target) : value;
     },
   });
+  originalToolAuditObservers.set(wrapped, (sessionId, opts, source) =>
+    recordDuring(runtime, sessionId, opts, source)
+  );
+  return wrapped;
+}
+
+/**
+ * Apply the same audit watcher to an already opened original native stream.
+ * The registry supplies construction-captured turn options after its ownership
+ * checks. This does not call sendMessage or mint runtime/principal authority.
+ */
+export function observeOriginalRuntimeToolStream(
+  wrapped: object,
+  sessionId: string,
+  opts: MessageOpts,
+  source: AsyncGenerator<StreamEvent>
+): AsyncGenerator<StreamEvent> {
+  const observe = originalToolAuditObservers.get(wrapped);
+  if (!observe) throw new Error('Original tool audit wrapper required.');
+  return observe(sessionId, opts, source);
 }
