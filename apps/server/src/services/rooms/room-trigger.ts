@@ -126,7 +126,7 @@
  */
 import { outsideAuditScope } from '../audit/audit-context.js';
 import { randomUUID } from 'node:crypto';
-import { ROOM_LIVE_BEAT_MS } from '@dorkos/shared/room-schemas';
+import { ROOM_LIVE_BEAT_MS, ROOM_RECEIPT_EMOJI } from '@dorkos/shared/room-schemas';
 import type {
   AuthorKind,
   AuthorRef,
@@ -388,11 +388,8 @@ function withGone(refused: readonly SkippedTrigger[], gone: ReadonlySet<string>)
   ];
 }
 
-/**
- * The receipt the room puts on a person's message for each agent picked to
- * answer it, and takes off when that agent's turn ends (DOR-2823).
- */
-export const RECEIPT_EMOJI = '👀';
+/** The room's 👀 receipt (DOR-2823), re-exported for the dispatcher's readers. */
+export const RECEIPT_EMOJI = ROOM_RECEIPT_EMOJI;
 
 /**
  * How long the room waits before trying a busy agent again, attempt by attempt
@@ -720,16 +717,20 @@ export class RoomTriggerDispatcher {
    */
   private republishing: NodeJS.Timeout | null = null;
   /**
-   * The 👀 receipts standing for each `(room, agent)`: entry id to its `seq`.
-   * In memory, like the claims they describe; a restart mid-turn can leave one
-   * standing, which the next turn by that agent in that room clears.
-   */
-  /**
    * Busy launches waiting to be tried again (DOR-2823): attempts made so far,
    * keyed by {@link retryKey}. In memory: a restart drops them, and the
    * agent's next turn in that room still reads the message.
    */
   private readonly busyRetries = new Map<string, number>();
+  /** The timer of each busy launch still waiting, so Stop can cancel it. */
+  private readonly busyRetryTimers = new Map<string, NodeJS.Timeout>();
+  /**
+   * The 👀 receipts standing for each `(room, agent)`: entry id to its `seq`.
+   * In memory, like the claims they describe. A restart mid-turn could leave
+   * one standing, so the room clears agents' recent 👀 at boot
+   * (`ReactionStore.clearRecentAgentReactions`), which it can do because agents
+   * may no longer put 👀 on anything themselves.
+   */
   private readonly receipts = new Map<
     string,
     { roomId: string; authorId: string; entries: Map<string, number> }
@@ -1085,7 +1086,7 @@ export class RoomTriggerDispatcher {
         // **Never silent** (DOR-2823): one quiet line when the message reached
         // nobody because there is nobody to reach, never when it named somebody
         // (that is addressed) and never in a chat bridged outside.
-        if (this.deps.bridgedFraming(room.id) === null) {
+        if (this.deps.bridgedFraming(room.id) === null && entry.mentions.length === 0) {
           if (reason === 'no_agents') this.notices.reportNobody(room, entry, 'no_agents');
           else if (
             (reason === 'no_conversation' || reason === 'partner_not_answering') &&
@@ -2635,10 +2636,15 @@ export class RoomTriggerDispatcher {
     if (reply.unanswered === 'busy' && this.retryWhenFree(room, entry, target)) {
       return reply.unanswered;
     }
+    if (!reply.unanswered) this.busyRetries.delete(retryKey(room.id, target.authorId, entry.id));
     if (reply.unanswered) {
       const limit =
         reply.unanswered === 'failed'
-          ? (this.deps.usageLimitFor?.(target.sessionId) ?? null)
+          ? (this.deps.usageLimitFor?.(
+              // The binding as it stands now: a first turn may have renamed
+              // the session, and the limit is filed under the new name.
+              this.deps.store.getRoomSession(room.id, target.authorId) ?? target.sessionId
+            ) ?? null)
           : null;
       this.notices.reportSilence(
         room,
@@ -4022,8 +4028,28 @@ export class RoomTriggerDispatcher {
       attempt: attempts + 1,
       inMs: delay,
     });
-    const timer = setTimeout(() => this.retryNow(room.id, entry.id, target), delay);
+    // Outside the audit scope of the post that started this, like every other
+    // timer here, and guarded: a throw from a bare timer is an uncaught one.
+    const timer = setTimeout(
+      outsideAuditScope(() => {
+        this.busyRetryTimers.delete(key);
+        try {
+          this.retryNow(room.id, entry.id, target);
+        } catch (err) {
+          this.busyRetries.delete(key);
+          this.clearReceipt(room.id, target.authorId, entry.id);
+          logger.warn('[rooms] could not try a busy agent again', {
+            roomId: room.id,
+            authorId: target.authorId,
+            entryId: entry.id,
+            error: err instanceof Error ? err.message : String(err),
+          });
+        }
+      }),
+      delay
+    );
     timer.unref?.();
+    this.busyRetryTimers.set(key, timer);
     return true;
   }
 
@@ -4038,9 +4064,12 @@ export class RoomTriggerDispatcher {
     const room = this.deps.store.getRoom(roomId);
     const entry = this.deps.store.getEntryById(roomId, entryId);
     const record = this.deps.authors.getById(target.authorId);
-    const member = this.deps.store.listMembers(roomId).some((m) => m.authorId === target.authorId);
-    if (!room || room.archived || !entry || !record || !member) {
+    const member = this.deps.store.listMembers(roomId).find((m) => m.authorId === target.authorId);
+    // Nothing to answer any more: the room or the agent is gone, or a turn the
+    // agent took since has already read this message.
+    if (!room || room.archived || !entry || !record || !member || member.lastReadSeq >= entry.seq) {
       this.busyRetries.delete(retryKey(roomId, target.authorId, entryId));
+      this.clearReceipt(roomId, target.authorId, entryId);
       return;
     }
     this.collectOne(
@@ -4059,6 +4088,49 @@ export class RoomTriggerDispatcher {
     );
     if (this.deps.authors.getById(entry.authorId)?.kind === 'human') {
       this.markReceipt(roomId, entry, target.authorId);
+    }
+  }
+
+  /**
+   * Take one message's 👀 receipt off for one agent.
+   *
+   * @param roomId - The room.
+   * @param authorId - The agent.
+   * @param entryId - The message.
+   */
+  private clearReceipt(roomId: string, authorId: string, entryId: string): void {
+    const key = agentKey(roomId, authorId);
+    const standing = this.receipts.get(key);
+    if (!standing?.entries.has(entryId)) return;
+    standing.entries.delete(entryId);
+    if (standing.entries.size === 0) this.receipts.delete(key);
+    try {
+      this.deps.markReceipt?.(roomId, entryId, authorId, false);
+    } catch (err) {
+      logger.warn('[rooms] could not take the receipt off a message', {
+        roomId,
+        entryId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+
+  /**
+   * Cancel every busy launch still waiting in a room, or for one agent in it,
+   * and take their receipts off. Stop means stop, including later.
+   *
+   * @param roomId - The room.
+   * @param authorId - One agent, or every agent when omitted.
+   */
+  private cancelBusyRetries(roomId: string, authorId?: string): void {
+    const prefix = authorId === undefined ? `${roomId}\u0000` : `${roomId}\u0000${authorId}\u0000`;
+    for (const [key, timer] of this.busyRetryTimers) {
+      if (!key.startsWith(prefix)) continue;
+      clearTimeout(timer);
+      this.busyRetryTimers.delete(key);
+      this.busyRetries.delete(key);
+      const [, agent, entryId] = key.split('\u0000');
+      if (agent && entryId) this.clearReceipt(roomId, agent, entryId);
     }
   }
 
@@ -4098,6 +4170,11 @@ export class RoomTriggerDispatcher {
     if (!standing || !this.deps.markReceipt) return;
     for (const [entryId, seq] of standing.entries) {
       if (seq > upToSeq) continue;
+      // Still waiting on a busy agent: the receipt stays while the room keeps
+      // its promise to answer.
+      if (this.busyRetryTimers.has(retryKey(standing.roomId, standing.authorId, entryId))) {
+        continue;
+      }
       standing.entries.delete(entryId);
       try {
         this.deps.markReceipt(standing.roomId, entryId, standing.authorId, false);
@@ -4467,6 +4544,7 @@ export class RoomTriggerDispatcher {
    *   says the room was already idle.
    */
   async halt(room: Room): Promise<number> {
+    this.cancelBusyRetries(room.id);
     const claims = [...this.claimed.values()].filter((claim) => claim.roomId === room.id);
     // **Marked before anything else, and before the first `await`.** A turn
     // whose stream closes while this method is still delivering interrupts must
@@ -4621,6 +4699,7 @@ export class RoomTriggerDispatcher {
    *   one turn and is counted once.
    */
   async haltAgent(room: Room, authorId: string, byAuthorId: string): Promise<number> {
+    this.cancelBusyRetries(room.id, authorId);
     const key = agentKey(room.id, authorId);
     const claim = this.claimed.get(key);
     // Read BEFORE the mark, or it would always be true. A press that is still

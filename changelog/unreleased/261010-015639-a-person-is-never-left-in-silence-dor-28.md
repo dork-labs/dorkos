@@ -1,6 +1,7 @@
 ---
 covers:
   - 'feat(rooms): a person is never left in silence (DOR-2823)'
+  - "fix(rooms): Stop cancels a busy retry, and the receipt is the room's alone (DOR-2823)"
 ---
 
 ### Added

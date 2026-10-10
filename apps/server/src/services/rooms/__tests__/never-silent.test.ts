@@ -39,6 +39,7 @@ afterEach(() => {
 });
 
 interface Wired {
+  setHandle(authorId: string, handle: string): void;
   service: RoomService;
   human: string;
   room: RoomWithRoster;
@@ -68,6 +69,7 @@ function open(
     harness.human
   );
   return {
+    setHandle: (authorId, handle) => harness.authors.setHandle(authorId, handle),
     service: harness.service,
     human: harness.human,
     room,
@@ -106,6 +108,18 @@ describe('the 👀 receipt', () => {
     expect(receiptsOn(w, asked)).toEqual([]);
   });
 
+  it('is the room’s alone: an agent cannot put 👀 on a message itself', () => {
+    const w = open(scriptedRunner(() => null));
+    const asked = w.service.post(w.room.id, { authorId: w.human, text: 'hello' });
+    let code: string | undefined;
+    try {
+      w.service.toggleReaction(w.room.id, asked.id, w.ana, RECEIPT_EMOJI, true);
+    } catch (err) {
+      code = (err as { code?: string }).code;
+    }
+    expect(code).toBe('RECEIPT_EMOJI_RESERVED');
+  });
+
   it('is never put on an agent’s message', async () => {
     const w = open(scriptedRunner(() => null));
     const said = w.service.post(w.room.id, { authorId: w.bo, text: '@ana deploy is out' });
@@ -136,6 +150,46 @@ describe('a busy agent is tried again', () => {
     expect(notices(w)).toHaveLength(1);
   });
 
+  it('keeps the receipt on while it waits for the agent', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const runner = outcomeRunner(() => ({ text: null, unanswered: 'busy' }));
+    const w = open(runner, { agentPaths: ['/agents/ana'] });
+    const asked = w.service.post(w.room.id, { authorId: w.human, text: '@ana what is next?' });
+    await w.service.triggersIdle();
+    expect(receiptsOn(w, asked)).toEqual([w.ana]);
+  });
+
+  it('is cancelled by Stop, receipt and all', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const runner = outcomeRunner(() => ({ text: null, unanswered: 'busy' }));
+    const w = open(runner, { agentPaths: ['/agents/ana'] });
+    const asked = w.service.post(w.room.id, { authorId: w.human, text: '@ana what is next?' });
+    await w.service.triggersIdle();
+    await w.service.haltRoom(w.room.id, w.human);
+    expect(receiptsOn(w, asked)).toEqual([]);
+    await vi.advanceTimersByTimeAsync(BUSY_RETRY_DELAYS_MS[0]! + 1_000);
+    await w.service.triggersIdle();
+    expect(runner.turns).toHaveLength(1);
+  });
+
+  it('drops a retry once a later turn has read the message', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    let calls = 0;
+    const runner = speakingRunner(() => {
+      calls += 1;
+      return calls === 1 ? { text: null, unanswered: 'busy' } : { text: 'both answered' };
+    });
+    const w = open(runner, { agentPaths: ['/agents/ana'] });
+    w.service.post(w.room.id, { authorId: w.human, text: '@ana what is next?' });
+    await w.service.triggersIdle();
+    w.service.post(w.room.id, { authorId: w.human, text: '@ana and after that?' });
+    await w.service.triggersIdle();
+    expect(calls).toBe(2);
+    await vi.advanceTimersByTimeAsync(BUSY_RETRY_DELAYS_MS[0]! + 1_000);
+    await w.service.triggersIdle();
+    expect(calls).toBe(2);
+  });
+
   it('stops after its last try, and says so honestly', async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     const runner = outcomeRunner(() => ({ text: null, unanswered: 'busy' }));
@@ -147,7 +201,7 @@ describe('a busy agent is tried again', () => {
       await w.service.triggersIdle();
     }
     expect(runner.turns).toHaveLength(BUSY_RETRY_DELAYS_MS.length + 1);
-    expect(notices(w).at(-1)).toContain('stayed busy for two hours');
+    expect(notices(w).at(-1)).toContain('stayed busy for about two hours');
   });
 });
 
@@ -174,6 +228,16 @@ describe('when nobody can answer', () => {
     expect(notices(w)).toEqual([
       'No agent is in this channel to answer. Add one to get answers here.',
     ]);
+  });
+
+  it('says nothing about a message that named only a person', async () => {
+    const w = open(scriptedRunner(() => null));
+    w.service.updateRoom(w.room.id, w.human, { leadAuthorId: null });
+    w.setHandle(w.human, 'dorian');
+    const posted = w.service.post(w.room.id, { authorId: w.human, text: '@dorian note to self' });
+    expect(posted.mentions).toEqual([w.human]);
+    await w.service.triggersIdle();
+    expect(notices(w)).toEqual([]);
   });
 
   it('says nothing when the message was for somebody', async () => {

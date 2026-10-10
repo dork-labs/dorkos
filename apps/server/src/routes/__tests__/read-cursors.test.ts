@@ -176,14 +176,19 @@ describe('PUT /api/read-cursors/:kind/:id', () => {
   describe('a room cursor goes through the room domain', () => {
     it('carries the unread count the room list has to patch with', async () => {
       await request(testServer).post(`/api/rooms/${sentinelRoomId}/entries`).send({ text: 'one' });
-      await request(testServer).post(`/api/rooms/${sentinelRoomId}/entries`).send({ text: 'two' });
+      const two = await request(testServer)
+        .post(`/api/rooms/${sentinelRoomId}/entries`)
+        .send({ text: 'two' });
+      // Read up to just before 'two'. Not seq 1: the room's "no agent here"
+      // line lands between the two posts (DOR-2823).
+      const readThrough = (two.body.seq as number) - 1;
 
       const stream = openSseStream(testServerPort(), '/api/events', { until: stopsOnRoomActivity });
       await stream.ready;
 
       await request(testServer)
         .put(`/api/read-cursors/room/${sentinelRoomId}`)
-        .send({ lastReadSeq: 1 })
+        .send({ lastReadSeq: readThrough })
         .expect(200);
       await sentinel();
 
@@ -197,7 +202,7 @@ describe('PUT /api/read-cursors/:kind/:id', () => {
           userId: callerId(),
           threadKind: 'room',
           threadId: sentinelRoomId,
-          lastReadSeq: 1,
+          lastReadSeq: readThrough,
           unreadCount: 1,
         },
       ]);

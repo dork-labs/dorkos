@@ -270,7 +270,10 @@ describe('RoomService', () => {
         published.push(event);
       });
       service.post(roomId, { authorId: human, text: 'hi' });
-      expect(published).toHaveLength(1);
+      // The other publish is the room's 👀 receipt for Ana (DOR-2823).
+      expect(published.filter((event) => (event as { type: string }).type !== 'reaction')).toEqual([
+        expect.objectContaining({ type: 'entry' }),
+      ]);
       publish.mockRestore();
     });
   });
@@ -425,14 +428,16 @@ describe('RoomService', () => {
         { kind: 'channel', title: 'Backend', members: [], agentPaths: [] },
         human
       ).id;
+      // Seqs: one (1), the room's "no agent here" line (2, DOR-2823), two (3),
+      // three (4).
       for (const text of ['one', 'two', 'three']) {
         service.post(roomId, { authorId: human, text });
       }
     });
 
     it('counts everything past the member cursor as unread', () => {
-      expect(service.listRooms(human).find((r) => r.id === roomId)?.unreadCount).toBe(3);
-      service.setReadCursor(roomId, human, 2);
+      expect(service.listRooms(human).find((r) => r.id === roomId)?.unreadCount).toBe(4);
+      service.setReadCursor(roomId, human, 3);
       expect(service.listRooms(human).find((r) => r.id === roomId)?.unreadCount).toBe(1);
     });
 
@@ -504,7 +509,7 @@ describe('RoomService', () => {
         { kind: 'channel', title: 'Other', members: [], agentPaths: [] },
         human
       ).id;
-      service.setReadCursor(roomId, human, 3);
+      service.setReadCursor(roomId, human, 4);
       expect(service.listRooms(human).find((r) => r.id === other)?.unreadCount).toBe(0);
       expect(service.listRooms(human).find((r) => r.id === roomId)?.unreadCount).toBe(0);
     });
@@ -515,7 +520,7 @@ describe('RoomService', () => {
 
     it('announces a cursor that moved, carrying the count the sidebar should now draw', () => {
       const broadcast = vi.spyOn(eventFanOut, 'broadcast');
-      service.setReadCursor(roomId, human, 2);
+      service.setReadCursor(roomId, human, 3);
 
       // The count rides along because a second device cannot work it out: a room
       // summary carries no seq to measure the new cursor against, so a reader
@@ -529,7 +534,7 @@ describe('RoomService', () => {
         userId: human,
         threadKind: 'room',
         threadId: roomId,
-        lastReadSeq: 2,
+        lastReadSeq: 3,
         unreadCount: 1,
       });
       broadcast.mockRestore();
@@ -734,11 +739,13 @@ describe('RoomService — the repeat rule holds across a thread boundary', () =>
       text: 'the deploy is stuck',
     });
     await harness.service.triggersIdle();
+    // Only the "no agent here" line (DOR-2823), not a budget notice.
     expect(
       harness.service
         .listEntries(room.id, harness.human, { limit: 50 })
         .filter((e) => e.kind === 'notice')
-    ).toEqual([]);
+        .map((e) => e.body.notice)
+    ).toEqual(['nobody_answering']);
 
     const anaId = harness.service.addMember(room.id, harness.human, {
       agentPath: '/agents/ana',
@@ -749,7 +756,7 @@ describe('RoomService — the repeat rule holds across a thread boundary', () =>
 
     const notices = harness.service
       .listEntries(room.id, harness.human, { limit: 50 })
-      .filter((entry) => entry.kind === 'notice');
+      .filter((entry) => entry.kind === 'notice' && entry.body.notice !== 'nobody_answering');
     expect(notices).toHaveLength(1);
     expect(notices[0].body.notice).toBe('budget_reached');
     // The whole point: it is IN the thread, not beside it.
@@ -957,7 +964,8 @@ describe('RoomService — atomicity, slug reclaim and visibility', () => {
       human
     );
     service.post(room.id, { authorId: human, text: 'one' });
-    expect(service.listRooms(human).find((r) => r.id === room.id)?.unreadCount).toBe(1);
+    // The post and the room's "no agent here" line under it (DOR-2823).
+    expect(service.listRooms(human).find((r) => r.id === room.id)?.unreadCount).toBe(2);
   });
 
   it('says whether the viewer has written in a room, and only flips when they do', () => {

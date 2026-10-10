@@ -11,7 +11,11 @@
  *
  * @module server/services/rooms/messages/room-reactions
  */
-import type { RoomEntryReaction, RoomReactionEvent } from '@dorkos/shared/room-schemas';
+import {
+  ROOM_RECEIPT_EMOJI,
+  type RoomEntryReaction,
+  type RoomReactionEvent,
+} from '@dorkos/shared/room-schemas';
 import { logger } from '../../../lib/logger.js';
 import type { ReactionBudget } from '../reactions/reaction-budget.js';
 import type { ReactionStore } from '../reactions/reaction-store.js';
@@ -140,6 +144,14 @@ export class RoomReactions {
     // goes is settled before the write, from the row state: `on: false` removes,
     // a flip removes what is standing, and `on: true` on a reaction already there
     // is a no-op a retrying client must not be charged for.
+    // The 👀 receipt is the room's to put on and take off (DOR-2823): an agent
+    // toggling it would wipe the room's, or leave one the room cannot clear.
+    if (emoji === ROOM_RECEIPT_EMOJI && this.authors.getById(viewerAuthorId)?.kind === 'agent') {
+      throw new RoomError(
+        'RECEIPT_EMOJI_RESERVED',
+        'DorkOS shows 👀 for you while you work on a message. Use ✅ when you finish.'
+      );
+    }
     if (this.authors.getById(viewerAuthorId)?.kind !== 'human') {
       const standing = this.reactions.has({ roomId, entryId, authorId: viewerAuthorId, emoji });
       const lands = on === false ? false : !standing;

@@ -171,6 +171,10 @@ export type RoomEntryKind = z.infer<typeof RoomEntryKindSchema>;
  *   archived room takes no new entries; it names who did it and says the person
  *   can bring the room back.
  *
+ * - `nobody_answering` — a person's message in a channel reached no agent
+ *   because there was nobody to reach: no agent in the channel, or no lead and
+ *   no exchange with one (DOR-2823). Damped an hour per room and reason.
+ *
  * **This four-code addition is the one non-additive change in the whole
  * chats-as-channels feature (spec §11.2, A11.1).** Widening an enum is not
  * additive for a client that already parses this schema: a build pinned to the
@@ -181,6 +185,13 @@ export type RoomEntryKind = z.infer<typeof RoomEntryKindSchema>;
  * OpenAPI diff review and in the feature's changelog fragment rather than
  * passed over as "just four more enum values."
  */
+/**
+ * The receipt the room puts on a person's message for each agent picked to
+ * answer it, and takes off when that agent's turn ends (DOR-2823). The room's
+ * alone: an agent cannot put it on or take it off itself.
+ */
+export const ROOM_RECEIPT_EMOJI = '👀';
+
 export const RoomNoticeCodeSchema = z
   .enum([
     'cascade_stopped',

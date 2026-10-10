@@ -63,6 +63,8 @@ import type { RoomTurnRunner } from './room-trigger.js';
 import { RoomTurnBudget, type TurnBudgetLimits } from './limits/turn-budget.js';
 import { createSessionRoomTurnRunner } from './room-turn-runner.js';
 import { getSessionLimitStore } from '../session/fleet/session-limit-store.js';
+import { logger } from '../../lib/logger.js';
+import { ROOM_RECEIPT_EMOJI } from '@dorkos/shared/room-schemas';
 import { lastPersonSignalAt, WelcomeBackGreeter } from './welcome-back/greeter.js';
 import { createSessionWorkSource } from './welcome-back/work-source.js';
 
@@ -469,6 +471,15 @@ export function createRoomSubsystem(opts: {
   const store = new RoomStore(opts.db);
   const limitsFor = createRoomLimitsResolver(store);
   const reactions = new ReactionStore(opts.db);
+  // Receipts a restart left behind (DOR-2823): nothing they described is still
+  // running. A day back is enough, since no room turn outlives the late-reply
+  // ceiling.
+  const staleReceipts = reactions.clearRecentAgentReactions(ROOM_RECEIPT_EMOJI, 24 * 60 * 60_000);
+  if (staleReceipts.length > 0) {
+    logger.info('[rooms] cleared receipts a restart left standing', {
+      count: staleReceipts.length,
+    });
+  }
   const canvasDocuments = new CanvasDocumentStore(opts.db);
   const attachments = new AttachmentRowStore(opts.db);
   const agentLookup = opts.agents ?? createAgentLookup(opts.db);
@@ -579,7 +590,10 @@ export function createRoomSubsystem(opts: {
     usageLimitFor: (sessionId) => {
       const stored = getSessionLimitStore()?.get(sessionId);
       if (!stored || stored.state === 'reset-ready' || stored.state === 'moved') return null;
-      return { resetsAt: stored.limit.resetsAt ?? null };
+      const resetsAt = stored.limit.resetsAt ?? null;
+      // A reset already past is a stale row, not a reason this turn failed.
+      if (resetsAt !== null && Date.parse(resetsAt) <= Date.now()) return null;
+      return { resetsAt };
     },
     bridges,
     agents: agentLookup,

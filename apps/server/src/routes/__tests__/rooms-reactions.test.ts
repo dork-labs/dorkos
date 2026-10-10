@@ -54,8 +54,9 @@ vi.mock('../../services/core/config-manager.js', () => ({
 }));
 
 import { createApp, finalizeApp } from '../../app.js';
+import { scriptedRunner } from '../../services/rooms/__tests__/room-test-harness.js';
 import { STREAM_EPOCH } from '../../lib/stream-cursor.js';
-import { createRoomSubsystem, setRoomService } from '../../services/rooms/index.js';
+import { createRoomSubsystem, getRoomService, setRoomService } from '../../services/rooms/index.js';
 import {
   initAgentIdentityService,
   resetAgentIdentityService,
@@ -151,7 +152,9 @@ describe('POST /api/rooms/:id/entries/:entryId/reactions', () => {
     resetAgentIdentityService();
     db = createTestDb();
     registerAgent(db, 'ana', ANA_PATH);
-    const subsystem = createRoomSubsystem({ db });
+    // Ana's turns end at once with nothing to say. No runtime is registered
+    // here, so the real runner would fail them and write a notice.
+    const subsystem = createRoomSubsystem({ db, turns: scriptedRunner(() => null) });
     setRoomService(subsystem.service);
     anaAuthorId = subsystem.authors.resolveAgent(ANA_PATH, 'Ana').id;
     const created = await request(testServer)
@@ -163,6 +166,9 @@ describe('POST /api/rooms/:id/entries/:entryId/reactions', () => {
       .send({ text: 'Deployed to staging.' });
     entryId = posted.body.entryId;
     entrySeq = posted.body.seq;
+    // Ana's turn puts a 👀 receipt on the post until it ends (DOR-2823); these
+    // tests are about the reactions people and agents leave themselves.
+    await subsystem.service.triggersIdle();
   });
 
   afterEach(() => {
@@ -424,6 +430,8 @@ describe('POST /api/rooms/:id/entries/:entryId/reactions', () => {
       const later = await request(testServer)
         .post(`/api/rooms/${roomId}/entries`)
         .send({ text: 'and the rollback plan?' });
+      // Ana's 👀 receipt on it lasts only as long as her turn (DOR-2823).
+      await getRoomService().triggersIdle();
       await react('👍');
 
       const { frames, reactionsByEntry } = await resumeAndCollect(
@@ -454,6 +462,8 @@ describe('POST /api/rooms/:id/entries/:entryId/reactions', () => {
       const later = await request(testServer)
         .post(`/api/rooms/${roomId}/entries`)
         .send({ text: 'and the rollback plan?' });
+      // Ana's 👀 receipt on it lasts only as long as her turn (DOR-2823).
+      await getRoomService().triggersIdle();
       await react('👍');
       // …the reader disconnects here, holding that pill…
       await react('👍');

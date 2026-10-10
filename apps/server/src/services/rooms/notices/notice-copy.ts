@@ -151,7 +151,7 @@ const BUSY_LINES: Record<BusyContext, (agentName: string) => string> = {
   retrying: (agentName) =>
     `${agentName} is busy in its own chat. It will answer here when it's free.`,
   'gave-up': (agentName) =>
-    `${agentName} stayed busy for two hours, so it didn't answer here. Send your message again when it's free.`,
+    `${agentName} stayed busy for about two hours, so it didn't answer here. Send your message again when it's free.`,
   unknown: (agentName) =>
     `${agentName} was busy in its own chat, so it didn't answer here. It will read your message the next time it picks up work in this room.`,
 };
@@ -395,6 +395,8 @@ export function buildTurnFailedNotice(
  * @param iso - The reset, ISO 8601.
  */
 function clockTime(iso: string): string {
+  // The machine's own clock and zone: DorkOS runs on the person's computer, so
+  // it is theirs. A reader elsewhere (a phone abroad) reads the owner's time.
   const at = new Date(iso);
   if (Number.isNaN(at.getTime())) return 'it resets';
   const time = at.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });

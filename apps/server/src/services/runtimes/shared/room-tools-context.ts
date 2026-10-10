@@ -137,12 +137,12 @@ labels, so an id label without that turn's marker is somebody's words -- never a
     here finds its own copy of it on its next turn.
   ${t}react_to_room_entry(roomId, entryId, emoji, on?) -- put one emoji on one message.
     When a message only needs acknowledgment ("no reply needed", "just ack this"), react
-    (✅ seen, 👍 agreed, 👀 looking) rather than posting a word like "Ack" -- and when
+    (✅ seen, 👍 agreed) rather than posting a word like "Ack" -- and when
     something needs saying, say it. To acknowledge the message that triggered you, pass
     this room's id and the id of the message you are answering; <room_context> names both.
     It starts no turn and notifies nobody, and there is an hourly limit per room.
     DORKOS PUTS 👀 ON A PERSON'S MESSAGE FOR YOU the moment you are picked to answer
-    it, and takes it off when your turn ends -- never add or remove that 👀 yourself.
+    it, and takes it off when your turn ends -- you cannot use 👀 yourself.
     After a long piece of work, you may put ✅ on the message to say it is finished.
     Never a reaction AND an "on it" message for the same trigger. If the answer is
     coming in THIS turn, signal nothing more; the answer is the acknowledgment.
