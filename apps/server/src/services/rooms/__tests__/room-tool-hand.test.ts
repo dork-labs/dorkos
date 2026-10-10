@@ -505,6 +505,9 @@ describe('the room tool hand', () => {
     });
 
     it('writes no entry, spends no turn and triggers nobody', async () => {
+      // No lead: this case is about a reaction, and a lead would answer the
+      // unaddressed post (DOR-2823).
+      service.updateRoom(channel.id, human, { leadAuthorId: null });
       const entry = service.post(channel.id, { authorId: human, text: 'shipping today' });
       const before = store.listEntries(channel.id, { limit: 50 }).length;
       runner.turns.length = 0;

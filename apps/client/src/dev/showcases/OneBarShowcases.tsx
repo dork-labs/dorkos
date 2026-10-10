@@ -175,7 +175,7 @@ const WORDY_ROOM: RoomWithRoster = {
  * real way. The store is keyed by ROOM ID, so a busy demo must use a room id no
  * quiet demo shares — see {@link BUSY_ROOM}.
  */
-function ChannelBarFrame({
+export function ChannelBarFrame({
   room,
   working = 0,
   width,

@@ -209,12 +209,32 @@ function explainEngaged(window: EngagedWindow | null): RungExplanation {
  * @param window - The engaged-window ceilings, or `null` while they are still
  *   being read. Never substitute the shipped defaults: they are settings, and a
  *   guess here is the UI stating a false number.
+ * @param isLead - True when this agent leads the channel, as `roomLead`
+ *   resolves it. A lead answers what nobody else does whatever its rung
+ *   (DOR-2823), so the two quiet rungs would otherwise state something false.
  */
 export function explainRung(
   rung: ResponseRung,
   roomKind: RoomKind,
-  window: EngagedWindow | null
+  window: EngagedWindow | null,
+  isLead = false
 ): RungExplanation {
+  // Only the two quiet rungs change: `Engaged` and `Everything` already promise
+  // an answer, and a direct message has no lead to be.
+  if (isLead && roomKind === 'channel') {
+    if (rung === 'silent') {
+      return {
+        sentence: 'Answers only what nobody else does, because it leads this channel.',
+        note: 'Pick another lead to keep it quiet here.',
+      };
+    }
+    if (rung === 'mention') {
+      return {
+        sentence: 'Answers @mentions, and anything nobody else answers.',
+        note: 'It leads this channel, so unanswered messages come to it.',
+      };
+    }
+  }
   switch (rung) {
     case 'silent':
       return {

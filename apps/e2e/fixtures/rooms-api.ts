@@ -339,6 +339,21 @@ export class RoomsApi {
         throw new Error(`Could not silence ${member.author.displayName}: ${await res.text()}`);
       }
     }
+    // A channel made with agents is led by the first of them, and a lead answers
+    // a person's unaddressed post whatever its mode (DOR-2823) — so silence
+    // alone no longer stops a real turn. No lead, no turn.
+    if (room.kind === 'channel' && agents.length > 0) {
+      const res = await this.request.patch(`/api/rooms/${room.id}`, {
+        data: { leadAuthorId: null },
+      });
+      if (!res.ok()) {
+        throw new Error(`Could not clear the lead of ${room.id}: ${await res.text()}`);
+      }
+      const { leadAuthorId } = (await res.json()) as { leadAuthorId?: string | null };
+      if (leadAuthorId) {
+        throw new Error(`${room.id} still has a lead, so a turn here would reach a real runtime.`);
+      }
+    }
   }
 
   /**

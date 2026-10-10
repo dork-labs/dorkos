@@ -260,7 +260,7 @@ test.describe('Home is the #team room @smoke', () => {
   }) => {
     const team = await teamRoomApi.teamRoom();
     expect(
-      team.fallbackSeatAuthorId,
+      team.leadAuthorId,
       'no agent holds the fallback seat, so nothing can answer an unaddressed post'
     ).toBeTruthy();
     // **"Nobody else piles on" is a claim about a room with ONE seat set to
@@ -290,7 +290,7 @@ test.describe('Home is the #team room @smoke', () => {
     await expect(page).toHaveURL(/\/(\?|$)/);
     const root = await postedHere(teamRoomApi, said, before);
     await teamRoomApi.waitForEntry(
-      (entry) => entry.authorId === team.fallbackSeatAuthorId && entry.cascadeRoot === root,
+      (entry) => entry.authorId === team.leadAuthorId && entry.cascadeRoot === root,
       `an answer from the fallback seat to "${said}"`
     );
     // **Then wait for the room to go quiet before counting.** Snapshotting on
@@ -410,9 +410,7 @@ test.describe('Home is the #team room @smoke', () => {
     // Scoped to this post's cascade — a neighbour's reply, still arriving from
     // the test before this one, is not an answer to this message.
     expect(
-      after.filter(
-        (entry) => entry.cascadeRoot === root && entry.authorId === team.fallbackSeatAuthorId
-      ),
+      after.filter((entry) => entry.cascadeRoot === root && entry.authorId === team.leadAuthorId),
       'the default agent answered a post that named somebody else'
     ).toHaveLength(0);
   });

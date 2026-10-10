@@ -1,4 +1,5 @@
 import { roomDisplayTitle, useRoom, useTeamRoom } from '@/layers/entities/room';
+import { RoomLeadChip } from './RoomLeadChip';
 import { RoomMembersChip } from './RoomMembersChip';
 import { RoomRunState } from './RoomRunState';
 
@@ -33,12 +34,15 @@ export function HomeRoomChips() {
   const roster = useRoom(roomId);
 
   const room = roomId === null ? null : team.room;
-  const count = roster.data?.members.length;
-  if (room === null || count === undefined) return null;
+  const detail = roster.data;
+  const count = detail?.members.length;
+  if (room === null || detail === undefined || count === undefined) return null;
 
   return (
     <>
       <RoomRunState roomId={room.id} roomName={roomDisplayTitle(room)} />
+      {/* #team's lead is the default agent (DOR-2823), named the way a channel names its own. */}
+      <RoomLeadChip room={detail} />
       <RoomMembersChip room={room} count={count} />
     </>
   );

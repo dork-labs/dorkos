@@ -76,7 +76,7 @@ function install(
 
 /** Who the room records as holding the fallback seat. */
 function seatOf(harness: RoomHarness): string | null {
-  return teamRoom(harness).fallbackSeatAuthorId ?? null;
+  return teamRoom(harness).leadAuthorId ?? null;
 }
 
 /** One agent's response mode in #team, read back through the service. */

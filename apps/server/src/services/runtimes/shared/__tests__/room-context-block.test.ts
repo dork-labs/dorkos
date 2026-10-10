@@ -2248,6 +2248,27 @@ describe('the closing directive a turn reads last (DOR-1643)', () => {
     expect(block).toContain('Vanishing is not one of your options here.');
   });
 
+  it.each([
+    ['lead', 'you lead this channel, and nobody else is answering it'],
+    ['conversation', 'they are talking with you here'],
+  ] as const)(
+    'tells a %s turn the message is its to answer, and never offers silence (DOR-2823)',
+    (answerOwed, why) => {
+      const base = unaddressedChannel();
+      const block = formatRoomContext(
+        { ...base, addressing: { ...base.addressing, answerOwed } },
+        { nonce: NONCE, toolPrefix: 'mcp__dorkos__' }
+      );
+      expect(block).toContain(`This message is for you: ${why}.`);
+      // The member's own mode says it answers @mentions only; that sentence
+      // would contradict the turn it is in.
+      expect(block).not.toContain('when somebody mentions you');
+      expect(block).not.toContain('You have nothing to add: post nothing');
+      expect(block).toContain('this message is yours to answer');
+      expect(block).toContain('Vanishing is not one of your options here.');
+    }
+  );
+
   it('spells the call in the decline branch too, not only in the answer branch', () => {
     // The feature's own lesson, applied rather than restated: leaving the agent
     // to assemble the call is the exact step the probes show it does not take,

@@ -337,6 +337,12 @@ export interface RoomContextInput {
    */
   engaged: EngagementWindow | null;
   /**
+   * Why the dispatcher picked this agent, when a person is owed its answer
+   * without having named it: their exchange with it (`'conversation'`) or its
+   * lead of the channel (`'lead'`), DOR-2823. Absent for every other reason.
+   */
+  answerOwed?: 'conversation' | 'lead';
+  /**
    * The ids, among the entries this turn is about to be shown, of messages that
    * landed while this agent was already mid-turn here (room-participation spec
    * §10.4).
@@ -799,6 +805,7 @@ export function buildRoomContext(
       engagedUntil: input.engaged?.until.toISOString() ?? null,
       engagedPostsLeft: input.engaged?.postsLeft ?? null,
       addressedNow: input.entry.mentions.includes(input.agentAuthorId),
+      ...(input.answerOwed ? { answerOwed: input.answerOwed } : {}),
     },
     budget: {
       automaticRepliesLeftInThisRoomThisHour: input.budget.room,

@@ -16,7 +16,8 @@ import type { RoomRoster } from '../room-roster.js';
 import type { NewRoom } from '../room-rows.js';
 import { slugify, uniqueChannelSlug } from '../service/room-slugs.js';
 import type { OpenedRoom } from '../service/room-service-deps.js';
-import { isDmMemberSetTaken, type RoomStore } from '../room-store.js';
+import { isDmMemberSetTaken } from './room-dm-key.js';
+import type { RoomStore } from '../room-store.js';
 import type { RoomUpdates } from './room-updates.js';
 import type { RoomVisibility } from '../service/room-visibility.js';
 
@@ -131,10 +132,33 @@ export class RoomLifecycle {
       const author = this.roster.resolve({ authorId });
       resolved.set(author.id, author);
     }
+    const agentByPath = new Map<string, AuthorRecord>();
     for (const agentPath of request.agentPaths) {
       const author = this.roster.resolve({ agentPath });
       resolved.set(author.id, author);
+      agentByPath.set(agentPath, author);
     }
+    // A channel's lead (DOR-2823): the one the creator named, or the first
+    // agent added. A direct message has none.
+    if (request.leadAgentPath !== undefined) {
+      if (request.kind !== 'channel') {
+        throw new RoomError('INVALID_LEAD', 'A direct message has no lead.');
+      }
+      if (!agentByPath.has(request.leadAgentPath)) {
+        throw new RoomError('INVALID_LEAD', 'Only an agent in this channel can lead it.');
+      }
+    }
+    // Then the first agent among the members named by id (how an agent opens a
+    // channel with `create_room`), then the creator when it is an agent.
+    const lead =
+      request.kind === 'channel'
+        ? (agentByPath.get(request.leadAgentPath ?? request.agentPaths[0] ?? '') ??
+          [...resolved.values()].find(
+            (author) => author.kind === 'agent' && author.id !== creator.id
+          ) ??
+          (creator.kind === 'agent' ? creator : null))
+        : null;
+    if (lead) draft.leadAuthorId = lead.id;
     // Opening a room is not a way around the operator-only roster rule. An agent
     // may make itself a room, and may bring a colleague into one — but only into
     // a room the person is on the roster of (the three-way rule,
@@ -248,10 +272,10 @@ export class RoomLifecycle {
    * @param authorId - The member taking the seat, or `null` to empty it.
    * @returns The updated room.
    */
-  setFallbackSeat(roomId: string, operatorAuthorId: string, authorId: string | null): Room {
+  setLead(roomId: string, operatorAuthorId: string, authorId: string | null): Room {
     this.visibility.requireVisibleRoom(roomId, operatorAuthorId);
     this.authority.requireOperator(operatorAuthorId, 'which agent answers what nobody addressed');
-    const room = this.store.setFallbackSeat(roomId, authorId);
+    const room = this.store.setLead(roomId, authorId);
     if (!room) throw new RoomError('ROOM_NOT_FOUND', 'No such room');
     return room;
   }

@@ -10,9 +10,11 @@
  *   across members, so it is asserted on the row rather than on a return value.
  * - **Both halves land, or neither does.** The entry and the column are written
  *   in one transaction, so a failure at the column leaves no entry behind.
- * - **It wakes nobody.** The root addresses no one and is never dispatched, so a
- *   plain reply in the thread starts no turn either — which is what keeps ADR
- *   `260911-200302` true of discussions as well as of canvas writes.
+ * - **It wakes nobody.** The root addresses no one and is never dispatched, which
+ *   is what keeps ADR `260911-200302` true of discussions as well as of canvas
+ *   writes. A person's plain reply in the thread is a person's message like any
+ *   other: since DOR-2823 it reaches the channel's lead when nobody else is
+ *   answering, and nobody in a channel with no lead.
  * - **A turn in the thread is told about that document and no other**, still as
  *   labels: titles, types, authors and timestamps, never contents.
  *
@@ -144,9 +146,14 @@ describe('a canvas document’s discussion', () => {
   });
 
   it('wakes nobody — not on the root, and not on a plain reply in it', async () => {
+    // The root is never dispatched, so not even the channel's lead takes it.
     const thread = harness.service.canvas.discuss(roomId, owner, documentId);
+    await harness.service.triggersIdle();
     expect(harness.runner.turns).toEqual([]);
 
+    // No lead: this case is about the discussion thread itself, and a lead
+    // would answer the unaddressed post (DOR-2823).
+    harness.service.updateRoom(roomId, owner, { leadAuthorId: null });
     harness.service.post(roomId, {
       authorId: owner,
       text: 'this column looks wrong to me',

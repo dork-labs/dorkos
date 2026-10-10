@@ -449,6 +449,16 @@ weighed against the old ten-minute, five-message window regardless of that
 setting: agent-to-agent traffic is the one case this document asks to stay
 quiet, so it does not get to borrow the longer patience a person is owed.
 
+**A channel's lead is how E1 holds even when nobody was addressed (DOR-2823).**
+One agent member of a channel can be set as its lead, and it answers a
+person's message that names no agent and belongs to no exchange already under
+way. That is what keeps a channel from doing either wrong thing: every agent
+in it answering at once, or none of them answering at all. The lead steps
+aside the moment a message is somebody else's to answer — named, or already
+mid-exchange with them — so the rest of this document's rules about not
+piling on still apply; it only ever fills the gap they would otherwise leave
+open.
+
 **Three live disputes, recorded so we do not relitigate them from scratch:**
 
 - _One message or several._ Professional etiquette says consolidate; one CHI

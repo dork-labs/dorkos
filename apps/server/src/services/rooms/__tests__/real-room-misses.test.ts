@@ -17,6 +17,7 @@ import { describe, it, expect } from 'vitest';
 import { authors } from '@dorkos/db';
 import { createTestDb } from '@dorkos/test-utils/db';
 import { conversationFor, engagementFor, type EngagedWindow } from '../engagement.js';
+import { pickLead } from '../addressing.js';
 import { RoomStore } from '../room-store.js';
 import { ROOM_A, ROOM_B, type FixtureEntry } from './real-room-misses.fixture.js';
 
@@ -201,5 +202,27 @@ describe('following the conversation answers ten of the twelve (DOR-2823)', () =
     ['room B', ROOM_B, 275],
   ])('%s seq %i is part of no conversation', (_room, log, seq) => {
     expect(conversationAt(log, seq)).toBeNull();
+  });
+});
+
+describe('the channel lead answers the last two (DOR-2823)', () => {
+  // Posted days after anybody spoke, so no conversation holds them. The lead
+  // the migration gives room B is the agent the person was always talking to.
+  it.each([
+    ['room B', ROOM_B, 272],
+    ['room B', ROOM_B, 275],
+  ])('%s seq %i goes to the lead', (_room, log, seq) => {
+    const target = log.find((row) => row.seq === seq)!;
+    expect(
+      pickLead({
+        entry: { authorId: IDS.HUMAN, mentions: target.mentions ?? [] },
+        leadAuthorId: IDS.AGENT,
+        members: [
+          { authorId: IDS.HUMAN, kind: 'human', responseMode: 'always', isEngaged: false },
+          { authorId: IDS.AGENT, kind: 'agent', responseMode: 'engaged', isEngaged: false },
+          { authorId: IDS.OTHER_AGENT, kind: 'agent', responseMode: 'engaged', isEngaged: false },
+        ],
+      })
+    ).toEqual({ authorId: IDS.AGENT, reason: 'lead' });
   });
 });
