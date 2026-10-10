@@ -52,21 +52,46 @@
  */
 import { outsideAuditScope } from '../../audit/audit-context.js';
 import { logger } from '../../../lib/logger.js';
-import type { RoomRepoStore } from './room-repo-store.js';
-import type { RoomWorktreeManager } from './room-worktree-manager.js';
+import fs from 'node:fs/promises';
+import type { Db } from '@dorkos/db';
+import type { RoomService } from '../room-service.js';
+import { requireRoomServiceFileWriteOwner } from '../room-service.js';
+import type { RoomStore } from '../room-store.js';
+import type { DocChannelStore } from '../../canvas/doc-channel/store.js';
+import type { InstallationFileWrites } from '../../canvas/doc-channel/writes/installation-file-writes.js';
+import { requireInstallationFileWritesOwner } from '../../canvas/doc-channel/writes/installation-file-writes.js';
+import {
+  readInstallationRoomFileWriteOwner,
+  readInstallationRoomMaintenanceMutationContext,
+  withRecognizedInstallationRoomNamespace,
+  requireInstallationRoomWrites,
+  requireInstallationRoomMutationTarget,
+  readInstallationRoomMutationRoots,
+  type InstallationRoomWrites,
+  type InstallationRoomMutationContext,
+} from '../../canvas/doc-channel/writes/installation-room-writes.js';
+import {
+  requireOriginalHttpRoomReconcilerOwner,
+  requireOriginalHttpRoomReconcilerAdmission,
+} from '../../canvas/doc-channel/http-composition.js';
+import {
+  SAFE_ROOM_ID,
+  requireRoomRepoStoreDatabase,
+  readOriginalRoomRepoInventory,
+  originalRoomRepoRoomExists,
+  executeOriginalRoomRepoStoreRead,
+  executeOriginalRoomRepoStoreUpsert,
+  executeOriginalRoomRepoCacheRemove,
+  type RoomRepoStore,
+} from './room-repo-store.js';
+import type { RoomRepoMutex } from './room-repo-mutex.js';
+import {
+  executeOriginalRoomWorktreeReap,
+  type RoomWorktreeManager,
+} from './room-worktree-manager.js';
 
 /** Default reconcile cadence (ms) — matches the mesh and workspace reconcilers. */
 const DEFAULT_INTERVAL_MS = 300_000;
-
-/**
- * How old a leftover `.{uuid}.tmp` sidecar draft must be before the sweep tidies
- * it away.
- *
- * An hour, which is far longer than any write takes and short enough that a
- * person opening the directory does not find a pile. A younger draft may belong
- * to a write happening right now.
- */
-const STALE_DRAFT_MAX_AGE_MS = 60 * 60 * 1000;
 
 /** The outcome of one reconcile pass. */
 export interface RoomRepoReconcileResult {
@@ -120,9 +145,114 @@ export interface RoomWorktreeReapTotals {
   stranded: number;
 }
 
+type ReconcilerLifetime = Readonly<{ start: () => void; stop: () => Promise<void> }>;
+const lifetimes = new WeakMap<RoomRepoReconciler, ReconcilerLifetime>();
+type ReconcilerOwner = Readonly<{
+  owner: InstallationFileWrites;
+  writer: InstallationRoomWrites;
+  db: Db;
+  channels: DocChannelStore;
+  repos: RoomRepoStore;
+  mutex: RoomRepoMutex;
+  rooms: RoomService;
+  roomStore: RoomStore;
+}>;
+const originals = new WeakMap<RoomRepoReconciler, ReconcilerOwner>();
+const maintenanceSources = new WeakMap<
+  object,
+  {
+    reconciler: RoomRepoReconciler;
+    binding: ReconcilerOwner;
+    roomId: string;
+    active: boolean;
+    phase: 'cache' | 'reap';
+  }
+>();
+const maintenanceContexts = new WeakMap<object, object>();
+/** Require the Room reconciler's exact original owner dependencies. */
+export function requireRoomRepoReconcilerOwner(
+  value: RoomRepoReconciler,
+  owner: InstallationFileWrites,
+  db: Db,
+  rooms: RoomService,
+  repos: RoomRepoStore
+): undefined {
+  const binding = originals.get(value);
+  if (
+    !binding ||
+    binding.owner !== owner ||
+    binding.db !== db ||
+    binding.rooms !== rooms ||
+    binding.repos !== repos
+  )
+    throw new Error('Room reconciler lacks its exact original construction.');
+  requireInstallationFileWritesOwner(owner, db, binding.channels);
+  requireInstallationRoomWrites(binding.writer, owner, db, binding.channels, repos);
+  requireRoomServiceFileWriteOwner(rooms, db, binding.roomStore);
+  requireRoomRepoStoreDatabase(repos, db);
+  if (originals.get(value) !== binding || db.$client.inTransaction)
+    throw new Error('Room reconciler native lifetime changed.');
+  return undefined;
+}
+/** Lookup of only an internally admitted operation, never a supplied readiness token. */
+export function readOriginalRoomRepoMaintenanceSource(
+  operation: object,
+  reconciler: RoomRepoReconciler,
+  writer: InstallationRoomWrites,
+  roomId: string
+): undefined {
+  const actual = maintenanceSources.get(operation);
+  if (
+    !actual ||
+    !actual.active ||
+    actual.reconciler !== reconciler ||
+    actual.binding.writer !== writer ||
+    actual.roomId !== roomId
+  )
+    throw new Error('Room maintenance operation is foreign or retired.');
+  const b = actual.binding;
+  requireRoomRepoReconcilerOwner(reconciler, b.owner, b.db, b.rooms, b.repos);
+  requireOriginalHttpRoomReconcilerOwner(b.owner, reconciler, b.db, b.rooms);
+  if (!actual.active || maintenanceSources.get(operation) !== actual)
+    throw new Error('Room maintenance operation retired.');
+  return undefined;
+}
+/** Read DATA for the original Room repository maintenance operation. */
+export function readOriginalRoomRepoMaintenanceOperation(
+  context: InstallationRoomMutationContext,
+  store: RoomRepoStore,
+  db: Db
+): Readonly<{ roomId: string; phase: 'cache' | 'reap' }> | undefined {
+  const operation = maintenanceContexts.get(context),
+    actual = operation && maintenanceSources.get(operation);
+  if (!operation || !actual || actual.binding.repos !== store || actual.binding.db !== db)
+    return undefined;
+  readOriginalRoomRepoMaintenanceSource(
+    operation,
+    actual.reconciler,
+    actual.binding.writer,
+    actual.roomId
+  );
+  return Object.freeze({ roomId: actual.roomId, phase: actual.phase });
+}
+
+/** Captured constructor operations; public replacements cannot bypass drain. */
+export function startRecognizedRoomRepoReconciler(value: RoomRepoReconciler): void {
+  const lifetime = lifetimes.get(value);
+  if (!lifetime) throw new Error('Room reconciler is not recognized');
+  lifetime.start();
+}
+
+/** Stop the recognized Room repository reconciler. */
+export function stopRecognizedRoomRepoReconciler(value: RoomRepoReconciler): Promise<void> {
+  const lifetime = lifetimes.get(value);
+  if (!lifetime) throw new Error('Room reconciler is not recognized');
+  return lifetime.stop();
+}
+
 /** Periodically rebuilds the room-repo cache from the on-disk sidecars. */
 export class RoomRepoReconciler {
-  private timer: ReturnType<typeof setInterval> | null = null;
+  #timer: ReturnType<typeof setInterval> | null = null;
 
   /**
    * Whether a pass is running right now.
@@ -134,10 +264,10 @@ export class RoomRepoReconciler {
    * rows is exactly the timing the removal half was just hardened against. The
    * guard makes the question moot instead of arguable.
    */
-  private inFlight = false;
+  #inFlight = false;
 
   /** Whether the current run of skipped ticks has already been logged. */
-  private skippedTickLogged = false;
+  #skippedTickLogged = false;
 
   /**
    * Bind the sweep to one install's store.
@@ -150,27 +280,71 @@ export class RoomRepoReconciler {
    *   never have two passes walking the same directories.
    */
   constructor(
-    private readonly store: RoomRepoStore,
-    private readonly intervalMs: number = DEFAULT_INTERVAL_MS,
-    private readonly worktrees: RoomWorktreeManager | null = null
-  ) {}
+    store: RoomRepoStore,
+    intervalMs: number = DEFAULT_INTERVAL_MS,
+    worktrees: RoomWorktreeManager | null = null,
+    owning?: ReconcilerOwner
+  ) {
+    this.#store = store;
+    this.#intervalMs = intervalMs;
+    this.#worktrees = worktrees;
+    if (owning) {
+      if (
+        owning.repos !== store ||
+        readInstallationRoomFileWriteOwner(owning.writer, store, owning.mutex) !== owning.owner
+      )
+        throw new Error('Room reconciler belongs to another installation.');
+      originals.set(this, Object.freeze({ ...owning }));
+      requireRoomRepoReconcilerOwner(this, owning.owner, owning.db, owning.rooms, store);
+    }
+    lifetimes.set(this, Object.freeze({ start: () => this.#start(), stop: () => this.#stop() }));
+  }
+
+  readonly #store: RoomRepoStore;
+  readonly #intervalMs: number;
+  readonly #worktrees: RoomWorktreeManager | null;
+  #closed = false;
+  #stopping: Promise<void> | undefined;
+  readonly #active = new Set<Promise<RoomRepoReconcileResult>>();
 
   /** Start the periodic timer (unref'd so it never blocks process exit). */
   start(): void {
-    if (this.timer) return;
-    this.timer = setInterval(
-      outsideAuditScope(() => this.runTick()),
-      this.intervalMs
-    );
-    this.timer.unref();
+    this.#start();
   }
 
-  /** Stop the periodic timer. */
-  stop(): void {
-    if (this.timer) {
-      clearInterval(this.timer);
-      this.timer = null;
+  #start(): void {
+    if (this.#closed) throw new Error('Room reconciler is stopped');
+    const binding = originals.get(this);
+    if (binding)
+      requireOriginalHttpRoomReconcilerAdmission(binding.owner, this, binding.db, binding.rooms);
+    if (this.#timer) return;
+    this.#timer = setInterval(
+      outsideAuditScope(() => this.#runTick()),
+      this.#intervalMs
+    );
+    this.#timer.unref();
+  }
+
+  /** Close admission and drain every actual admitted pass before DB disposal. */
+  stop(): Promise<void> {
+    return this.#stop();
+  }
+
+  #stop(): Promise<void> {
+    if (this.#stopping) return this.#stopping;
+    this.#closed = true;
+    if (this.#timer) {
+      clearInterval(this.#timer);
+      this.#timer = null;
     }
+    const pending = [...this.#active];
+    this.#stopping = (async () => {
+      const outcomes = await Promise.allSettled(pending);
+      for (const outcome of outcomes) {
+        if (outcome.status === 'rejected') throw outcome.reason;
+      }
+    })();
+    return this.#stopping;
   }
 
   /**
@@ -179,20 +353,21 @@ export class RoomRepoReconciler {
    * The guard is set before the pass starts and cleared in a `finally`, so a
    * pass that throws still releases it for the next tick.
    */
-  private runTick(): void {
-    if (this.inFlight) {
-      if (!this.skippedTickLogged) {
-        this.skippedTickLogged = true;
+  #runTick(): void {
+    if (this.#closed) return;
+    if (this.#inFlight) {
+      if (!this.#skippedTickLogged) {
+        this.#skippedTickLogged = true;
         logger.debug('[rooms] repo reconcile tick skipped: the previous pass is still running');
       }
       return;
     }
-    this.inFlight = true;
-    this.skippedTickLogged = false;
-    this.reconcile()
+    this.#inFlight = true;
+    this.#skippedTickLogged = false;
+    this.#admit()
       .catch((err) => logger.error('[rooms] repo reconciliation failed:', err))
       .finally(() => {
-        this.inFlight = false;
+        this.#inFlight = false;
       });
   }
 
@@ -201,7 +376,33 @@ export class RoomRepoReconciler {
    *
    * @returns What the pass changed, orphans included.
    */
-  async reconcile(): Promise<RoomRepoReconcileResult> {
+  reconcile(): Promise<RoomRepoReconcileResult> {
+    return this.#admit();
+  }
+
+  #admit(): Promise<RoomRepoReconcileResult> {
+    if (this.#closed) return Promise.reject(new Error('Room reconciler is stopped'));
+    const binding = originals.get(this);
+    if (!binding)
+      return Promise.reject(
+        new Error('Room reconciliation requires its original installation assembly')
+      );
+    try {
+      requireOriginalHttpRoomReconcilerAdmission(binding.owner, this, binding.db, binding.rooms);
+    } catch (error) {
+      return Promise.reject(error);
+    }
+    // Register before any observable store/FS call can reenter stop().
+    const pending = Promise.resolve().then(() => this.#reconcile());
+    this.#active.add(pending);
+    void pending.then(
+      () => this.#active.delete(pending),
+      () => this.#active.delete(pending)
+    );
+    return pending;
+  }
+
+  async #reconcile(): Promise<RoomRepoReconcileResult> {
     const result: RoomRepoReconcileResult = {
       synced: 0,
       removed: 0,
@@ -209,99 +410,94 @@ export class RoomRepoReconciler {
       draftsRemoved: 0,
       worktrees: { reaped: 0, reapedTreeKeptBranch: 0, spared: 0, stranded: 0 },
     };
-    const seen = new Set<string>();
-
-    for (const roomId of await this.store.listHomeDirs()) {
-      result.draftsRemoved += await this.store.sweepStaleDrafts(roomId, STALE_DRAFT_MAX_AGE_MS);
-      const sidecar = await this.store.readSidecar(roomId);
-      if (!sidecar) continue;
-      seen.add(roomId);
-      if (!this.store.roomExists(roomId)) {
-        result.orphaned += 1;
-        logger.warn('[rooms] room repo has no room', {
+    const binding = originals.get(this)!;
+    const inventory = readOriginalRoomRepoInventory(this.#store, binding.db);
+    let before: Awaited<ReturnType<typeof fs.lstat>>;
+    try {
+      before = await fs.lstat(inventory.root);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException)?.code === 'ENOENT' && inventory.rows.length === 0)
+        return result;
+      throw error; // Missing inventory roots with cached rows are not deletion authority.
+    }
+    if (!before.isDirectory() || before.isSymbolicLink())
+      throw new Error('Room cache root is not its original directory.');
+    const entries = await fs.readdir(inventory.root, { withFileTypes: true });
+    const after = await fs.lstat(inventory.root);
+    if (before.dev !== after.dev || before.ino !== after.ino)
+      throw new Error('Room cache root was replaced during inventory.');
+    const roomIds = new Set(inventory.rows.map((row) => row.roomId));
+    for (const entry of entries) {
+      if (entry.isDirectory() && SAFE_ROOM_ID.test(entry.name)) roomIds.add(entry.name);
+    }
+    for (const roomId of roomIds) {
+      if (this.#closed) break; // No new room scope after stop; already admitted scopes drain below.
+      await withRecognizedInstallationRoomNamespace(binding.writer, roomId, async (handle) => {
+        const operation = Object.freeze({});
+        const record = {
+          reconciler: this,
+          binding,
           roomId,
-          home: this.store.homeDir(roomId),
-          note: 'left on disk; nothing here deletes a room’s files',
-        });
-        continue;
-      }
-      this.store.upsertRow(sidecar);
-      result.synced += 1;
-    }
-
-    // The other direction: a row whose sidecar is gone. The file is the truth,
-    // so its absence retires the row — this is the tail of an interrupted
-    // `remove()`, which drops the row first and the sidecar second.
-    for (const row of this.store.listRows()) {
-      if (seen.has(row.roomId)) continue;
-      // The listing above is a hint from a moment that has passed. Ask the disk
-      // again about THIS room before deleting anything: a binding created while
-      // the walk was running is on disk and not in `seen`, and retiring its row
-      // would make `hasRepo` lie until the next pass. See the module doc.
-      const late = await this.store.readSidecar(row.roomId);
-      if (late) {
-        // It is here after all, so finish the job the walk missed rather than
-        // merely sparing it — the row this pass would have deleted may also be
-        // out of date. The room's existence is re-checked for the same reason
-        // the first loop checks it: the insert is against a foreign key.
-        if (this.store.roomExists(row.roomId)) {
-          this.store.upsertRow(late);
-          result.synced += 1;
-        } else {
-          result.orphaned += 1;
-        }
-        continue;
-      }
-      this.store.removeRow(row.roomId);
-      result.removed += 1;
-    }
-
-    await this.reapWorktrees(seen, result);
-    return result;
-  }
-
-  /**
-   * Tidy away the idle working copies of every room whose binding this pass
-   * confirmed.
-   *
-   * **Only rooms in `seen`.** That set is the rooms whose sidecar was read off
-   * disk a moment ago, so a room whose binding is missing — an orphan, a
-   * half-applied delete, a restored backup — is stepped over rather than swept.
-   * Same line the module doc draws for orphaned homes: this sweep does not
-   * decide that files nobody currently claims are disposable.
-   *
-   * Per-room failures are logged and skipped, so one unreadable room home never
-   * stops the rest — and the reap runs after the cache halves, so a failure
-   * here cannot cost the pass its real work.
-   *
-   * @param seen - Rooms whose sidecar this pass read.
-   * @param result - The pass result to accumulate into.
-   */
-  private async reapWorktrees(
-    seen: ReadonlySet<string>,
-    result: RoomRepoReconcileResult
-  ): Promise<void> {
-    if (!this.worktrees) return;
-    for (const roomId of seen) {
-      try {
-        const swept = await this.worktrees.reapRoom(roomId);
-        result.worktrees.reaped += swept.reaped.length;
-        result.worktrees.reapedTreeKeptBranch += swept.reapedTreeKeptBranch.length;
-        result.worktrees.spared += swept.spared.length;
-        result.worktrees.stranded += swept.stranded.length;
-        if (swept.reaped.length + swept.reapedTreeKeptBranch.length > 0) {
-          logger.info('[rooms] tidied away idle room worktrees', {
+          active: true,
+          phase: 'cache' as 'cache' | 'reap',
+        };
+        maintenanceSources.set(operation, record);
+        try {
+          const context = readInstallationRoomMaintenanceMutationContext(
+            binding.writer,
             roomId,
-            reaped: swept.reaped,
-            // Named apart in the log for the same reason it is named apart in
-            // the result: these still have a branch, and somebody may want it.
-            keptBranch: swept.reapedTreeKeptBranch,
-            stranded: swept.stranded,
-          });
+            handle,
+            this,
+            operation
+          );
+          maintenanceContexts.set(context, operation);
+          const sidecar = await executeOriginalRoomRepoStoreRead(
+            this.#store,
+            binding.db,
+            context,
+            roomId
+          );
+          const roots = readInstallationRoomMutationRoots(context);
+          requireInstallationRoomMutationTarget(context, roots.homePath);
+          if (sidecar) {
+            if (!originalRoomRepoRoomExists(this.#store, binding.db, roomId)) {
+              result.orphaned += 1;
+              logger.warn('[rooms] room repo has no room', {
+                roomId,
+                home: roots.homePath,
+                note: 'left on disk',
+              });
+              requireInstallationRoomMutationTarget(context, roots.homePath);
+              return;
+            }
+            executeOriginalRoomRepoStoreUpsert(this.#store, binding.db, context, sidecar);
+            result.synced += 1;
+          } else if (inventory.rows.some((row) => row.roomId === roomId)) {
+            // Absence comes from the fresh retained-source read under this same room lease.
+            executeOriginalRoomRepoCacheRemove(this.#store, binding.db, context, roomId);
+            result.removed += 1;
+          }
+          if (
+            sidecar &&
+            this.#worktrees &&
+            originalRoomRepoRoomExists(this.#store, binding.db, roomId)
+          ) {
+            record.phase = 'reap';
+            const swept = await executeOriginalRoomWorktreeReap(this.#worktrees, roomId, context);
+            result.worktrees.reaped += swept.reaped.length;
+            result.worktrees.reapedTreeKeptBranch += swept.reapedTreeKeptBranch.length;
+            result.worktrees.spared += swept.spared.length;
+            result.worktrees.stranded += swept.stranded.length;
+            requireInstallationRoomMutationTarget(context, roots.homePath);
+          }
+          requireInstallationRoomMutationTarget(context, roots.homePath);
+        } finally {
+          record.active = false;
+          maintenanceSources.delete(operation);
         }
-      } catch (err) {
-        logger.warn('[rooms] could not sweep a room’s worktrees', { roomId, err });
-      }
+      });
     }
+    // Unproven stale drafts are preserved; names and age are not acquisition receipts.
+    return result;
   }
 }

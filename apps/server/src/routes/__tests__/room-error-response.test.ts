@@ -26,7 +26,7 @@ import {
   ROOM_REPO_CONFIG_UNSAFE_MEMBER_MESSAGE,
   RoomError,
   RoomRepoConfigUnsafeError,
-} from '../../services/rooms/room-errors.js';
+} from '../../services/rooms/data/room-errors.js';
 
 const CONFIG = '/home/operator/.dork/rooms/r1/repo/.git/config';
 

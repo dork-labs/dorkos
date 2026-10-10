@@ -79,18 +79,23 @@ function closeFirst(statement: ts.Statement) {
 }
 function disposeNext(statement: ts.Statement) {
   if (!ts.isExpressionStatement(statement) || !ts.isAwaitExpression(statement.expression))
-    throw new Error('Workspace disposal must be the next direct await');
-  const expr = statement.expression.expression;
-  expect(
-    ts.isCallExpression(expr) &&
-      !expr.questionDotToken &&
-      ts.isPropertyAccessExpression(expr.expression) &&
-      !expr.expression.questionDotToken &&
-      ts.isIdentifier(expr.expression.expression) &&
-      expr.expression.expression.text === 'workspaceReconcilerLifecycle' &&
-      expr.expression.name.text === 'dispose' &&
-      expr.arguments.length === 0
-  ).toBe(true);
+    throw new Error('Owned lifetime drain must be the next direct await');
+  const expr = call(statement.expression.expression, 'drainOwnedFileLifetimes');
+  expect(expr.arguments).toHaveLength(0);
+  const drain = rootFunction('drainOwnedFileLifetimes');
+  const entries = rootVariable('drains', drain.body!.statements).initializer;
+  if (!entries || !ts.isArrayLiteralExpression(entries))
+    throw new Error('Expected original drains');
+  expect(entries.elements.map((entry) => entry.getText(source))).toEqual([
+    'stopCurrentRoomDueMaintenance',
+    'stopRoomRepoReconciliation',
+    '() => workspaceReconcilerLifecycle.dispose()',
+    'stopDocDelivery',
+    '() => docNotificationCleanup?.()',
+    'stopOriginalDocumentRelay',
+    'stopCheckboxWrites',
+    'stopFileWrites',
+  ]);
 }
 
 /** `createFrontDoorServer(createFrontDoor(app, ...)).listen(...)`: the main listen. */
@@ -223,21 +228,32 @@ describe('main admission root adoption', () => {
       throw stopAfterPrefix;
     });
     const docNotificationCleanup = vi.fn();
-    const compiled = ts.transpileModule(`(${rootFunction('shutdownServices').getText(source)})`, {
-      compilerOptions: { target: ts.ScriptTarget.ES2022 },
-    }).outputText;
+    const compiled = ts.transpileModule(
+      `let ownedFileLifetimeDrain; ${rootFunction('drainOwnedFileLifetimes').getText(source)}
+       (${rootFunction('shutdownServices').getText(source)})`,
+      {
+        compilerOptions: { target: ts.ScriptTarget.ES2022 },
+      }
+    ).outputText;
     const cleanup = runInNewContext(compiled, {
       mainRequestAdmission: admission,
       workspaceReconcilerLifecycle: owner,
       stopDocDelivery,
+      stopCurrentRoomDueMaintenance: undefined,
+      stopRoomRepoReconciliation: undefined,
+      stopOriginalDocumentRelay: undefined,
+      stopCheckboxWrites: undefined,
+      stopFileWrites: undefined,
       logger: { info: laterCleanup },
       docNotificationCleanup,
     }) as () => Promise<void>;
+    let completion: Promise<void> | undefined;
     try {
-      const completion = cleanup();
+      completion = cleanup();
+      void completion.catch(() => undefined);
       expect(admission.isClosed).toBe(true);
-      expect(stopDocDelivery).not.toHaveBeenCalled();
-      expect(docNotificationCleanup).not.toHaveBeenCalled();
+      expect(stopDocDelivery).toHaveBeenCalledTimes(1);
+      expect(docNotificationCleanup).toHaveBeenCalledTimes(1);
       expect(() => reconciler.start()).toThrow(/disposed/i);
       pendingListener.emit('listening');
       expect(close).toHaveBeenCalledTimes(1);
@@ -246,14 +262,17 @@ describe('main admission root adoption', () => {
       await pass;
       await vi.waitFor(() => expect(stopDocDelivery).toHaveBeenCalledTimes(1));
       expect(laterCleanup).not.toHaveBeenCalled();
-      expect(docNotificationCleanup).not.toHaveBeenCalled();
+      expect(docNotificationCleanup).toHaveBeenCalledTimes(1);
       releaseDocDelivery();
       await expect(completion).rejects.toBe(stopAfterPrefix);
       expect(stopDocDelivery).toHaveBeenCalledTimes(1);
       expect(docNotificationCleanup).toHaveBeenCalledTimes(1);
       expect(removeRow).not.toHaveBeenCalled();
     } finally {
+      release(false);
       releaseDocDelivery();
+      await pass;
+      await completion?.catch(() => undefined);
       vi.restoreAllMocks();
     }
   });

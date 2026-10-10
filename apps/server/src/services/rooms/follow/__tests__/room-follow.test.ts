@@ -26,7 +26,7 @@
  */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import type { RoomEvent } from '@dorkos/shared/room-schemas';
-import { RoomError } from '../../room-errors.js';
+import { RoomError } from '../../data/room-errors.js';
 import { FOLLOW_CLAIM_TTL_MS, FOLLOW_REFRESH_MS } from '../room-follow-service.js';
 import {
   agentLookupFor,

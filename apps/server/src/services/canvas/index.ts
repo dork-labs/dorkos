@@ -82,6 +82,13 @@ export function setCanvasService(service: CanvasService): void {
   active = service;
 }
 
+/** Retire only the exact singleton owned by the closing bootstrap. */
+export function clearCanvasService(expected: CanvasService): boolean {
+  if (active !== expected) return false;
+  active = null;
+  return true;
+}
+
 /**
  * The active canvas service, or `undefined` when this process has none.
  *

@@ -1,4 +1,5 @@
 import { describe, it, expect, afterEach } from 'vitest';
+import { createHash } from 'node:crypto';
 import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -99,6 +100,170 @@ function migrationsFolderThrough(idx: number): string {
 }
 
 describe('Database Migrations', () => {
+  it('upgrades the published private-session and audit database through all Doc migrations exactly once', () => {
+    const db = createDb(':memory:');
+    try {
+      // Published private-session main is immutable; all unmerged Doc leaves follow it.
+      migrate(db, { migrationsFolder: migrationsFolderThrough(147) });
+      db.$client
+        .prepare(
+          'INSERT INTO session_metadata (session_id, runtime, agent_path, created_at) VALUES (?, ?, ?, ?)'
+        )
+        .run('published-session', 'codex', '/agents/published', '2026-10-05T23:09:15Z');
+      // Fixed original-format stored DATA, including NULL columns: the audit hash
+      // covers every SQL column except hash, in canonical sorted-key JSON order.
+      const auditRow = {
+        seq: 1,
+        id: 'published-audit',
+        at: '2026-10-06T23:10:15Z',
+        space_id: null,
+        actor_id: 'system',
+        actor_kind: 'system',
+        actor_name: 'System',
+        on_behalf_of: null,
+        credential: null,
+        source: '{"surface":"system"}',
+        session_id: null,
+        action: 'upgrade.fixture',
+        operation: 'execute',
+        target_type: null,
+        target_id: null,
+        target_name: null,
+        container_id: null,
+        outcome: 'ok',
+        error: null,
+        change: null,
+        reason: null,
+        links: null,
+        summary: 'Published audit',
+        visibility: 'admins',
+        participants: null,
+        prev_hash: '0'.repeat(64),
+      };
+      const auditHash = createHash('sha256')
+        .update(
+          auditRow.prev_hash +
+            JSON.stringify(
+              Object.fromEntries(
+                Object.entries(auditRow).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+              )
+            ),
+          'utf8'
+        )
+        .digest('hex');
+      expect(auditHash).toMatch(/^[0-9a-f]{64}$/);
+      db.$client
+        .prepare(
+          `INSERT INTO audit_events (${Object.keys(auditRow).join(',')}, hash)
+         VALUES (${Object.keys(auditRow)
+           .map(() => '?')
+           .join(',')}, ?)`
+        )
+        .run(...Object.values(auditRow), auditHash);
+      const publishedAudit = db.$client.prepare('SELECT * FROM audit_events ORDER BY seq').all();
+      expect(publishedAudit).toEqual([{ ...auditRow, hash: auditHash }]);
+      db.$client
+        .prepare(
+          'INSERT INTO session_locations (id, owner_id, cwd, created_at) VALUES (?, ?, ?, ?)'
+        )
+        .run('published-location', 'published-owner', '/agents/published', '2026-10-07T23:07:01Z');
+      db.$client
+        .prepare(
+          'INSERT INTO session_native_bindings (session_id, runtime, cwd, account, created_at) VALUES (?, ?, ?, ?, ?)'
+        )
+        .run(
+          'published-session',
+          'codex',
+          '/agents/published',
+          'published-account',
+          '2026-10-07T23:07:01Z'
+        );
+      const publishedLocations = db.$client
+        .prepare('SELECT * FROM session_locations ORDER BY id')
+        .all();
+      const publishedBindings = db.$client
+        .prepare('SELECT * FROM session_native_bindings ORDER BY session_id')
+        .all();
+      const publishedRow = db.$client
+        .prepare("SELECT * FROM session_metadata WHERE session_id = 'published-session'")
+        .get();
+      const publishedHistory = db.$client
+        .prepare('SELECT * FROM __drizzle_migrations ORDER BY id')
+        .all();
+      expect(publishedHistory).toHaveLength(148);
+      const tables = () =>
+        db.$client
+          .prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name")
+          .all()
+          .map((row) => (row as { name: string }).name);
+      expect(tables()).toContain('audit_events');
+      expect(tables()).not.toContain('canvas_doc_channel_tokens');
+      expect(tables()).not.toContain('canvas_doc_room_pending_sources');
+
+      runMigrations(db);
+      expect(tables()).toEqual(
+        expect.arrayContaining([
+          'canvas_doc_channel_tokens',
+          'room_doc_admissions',
+          'room_doc_admission_inputs',
+          'room_doc_exhausted_lineages',
+          'canvas_doc_room_pending_sources',
+        ])
+      );
+      expect(
+        db.$client
+          .prepare("PRAGMA table_info('pulse_runs')")
+          .all()
+          .map((row) => (row as { name: string }).name)
+      ).toEqual(expect.arrayContaining(['scheduled_for', 'missed_ticks']));
+      expect(
+        db.$client
+          .prepare("SELECT * FROM session_metadata WHERE session_id = 'published-session'")
+          .get()
+      ).toEqual(publishedRow);
+      const history = db.$client.prepare('SELECT * FROM __drizzle_migrations ORDER BY id').all();
+      const journal = JSON.parse(
+        readFileSync(path.join(DRIZZLE_DIR, 'meta/_journal.json'), 'utf-8')
+      ) as { entries: { idx: number; tag: string }[] };
+      expect(history).toHaveLength(journal.entries.length);
+      expect(history.slice(0, 148)).toEqual(publishedHistory);
+      expect(db.$client.prepare('SELECT * FROM session_locations ORDER BY id').all()).toEqual(
+        publishedLocations
+      );
+      expect(
+        db.$client.prepare('SELECT * FROM session_native_bindings ORDER BY session_id').all()
+      ).toEqual(publishedBindings);
+      expect(journal.entries.slice(148).map((entry) => entry.idx)).toEqual([
+        148, 149, 150, 151, 152,
+      ]);
+      expect(db.$client.prepare('SELECT * FROM audit_events ORDER BY seq').all()).toEqual(
+        publishedAudit
+      );
+      // Fresh/main-only upgrades apply immutable Chat149/report_back150 and Main agent151 and genuine Doc152 once.
+      for (const entry of journal.entries.slice(149, 153)) {
+        const hash = createHash('sha256')
+          .update(readFileSync(path.join(DRIZZLE_DIR, `${entry.tag}.sql`)))
+          .digest('hex');
+        expect(history.filter((row) => (row as { hash: string }).hash === hash)).toHaveLength(1);
+      }
+      const schema = db.$client
+        .prepare('SELECT type, name, tbl_name, sql FROM sqlite_master ORDER BY type, name')
+        .all();
+      runMigrations(db);
+      expect(db.$client.prepare('SELECT * FROM __drizzle_migrations ORDER BY id').all()).toEqual(
+        history
+      );
+      expect(
+        db.$client
+          .prepare('SELECT type, name, tbl_name, sql FROM sqlite_master ORDER BY type, name')
+          .all()
+      ).toEqual(schema);
+      expect(db.$client.prepare('PRAGMA foreign_key_check').all()).toEqual([]);
+    } finally {
+      db.$client.close();
+    }
+  });
+
   it('applies all migrations to a fresh database without errors', () => {
     expect(() => {
       const db = createDb(':memory:');
@@ -146,7 +311,7 @@ describe('Database Migrations', () => {
       // consent; the token lives here only as a hash (agent-trust spec §3.3,
       // migration 0031).
       'approvals',
-      // The append-only, hash-chained audit log (spec audit-trail §3.1).
+      // Immutable published audit main retains its append-only chain table.
       'audit_events',
       // Opaque author identities keyed on (kind, natural_key) — an agent's
       // agentPath, never its manifest ULID (ADR 260726-170126, migration 0034).
@@ -158,11 +323,13 @@ describe('Database Migrations', () => {
       // evidence (spec `doc-channel`, migration 0137). These survive physical
       // document removal so closure and accepted delivery history stay intact.
       'canvas_doc_batches',
+      'canvas_doc_channel_tokens',
       'canvas_doc_channels',
       'canvas_doc_deliveries',
       'canvas_doc_events',
       'canvas_doc_grants',
       'canvas_doc_identity_intents',
+      'canvas_doc_room_pending_sources',
       'canvas_doc_write_intents',
       // The documents a room's members have put on its shared canvas — server
       // owned, so every viewer sees one table (spec `room-canvas`, migration
@@ -288,6 +455,9 @@ describe('Database Migrations', () => {
       // The room primitive: a membership-scoped durable stream, its roster, its
       // never-trimmed log, and the per-(room, agent) session bindings
       // (ADR 260726-170125, migration 0034).
+      'room_doc_admission_inputs',
+      'room_doc_admissions',
+      'room_doc_exhausted_lineages',
       'room_entries',
       'room_entry_reactions',
       'room_members',
@@ -343,8 +513,7 @@ describe('Database Migrations', () => {
       // Who started a chat that no person typed into, and the counter for an
       // extension's start limits (spec flow-multiproject §7.7, migration 0135).
       'session_started_by',
-      // When the person last opened or wrote in each chat, so Today and the
-      // agent click agree on every device (spec your-activity-first D1).
+      // Immutable shipped Main148 session-touch state.
       'session_touches',
       // The durable claim feed for inbound chats with no binding — metadata
       // only, never a message body (connection-scoping spec §Part 3,

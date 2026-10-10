@@ -1,5 +1,8 @@
 /** Real dispatcher busy-wait warning evidence with unchanged durable dispatch identity. */
 import { it, expect, vi } from 'vitest';
+
+// Preserve the native Date brand while sampling the deliberately configured fake clock.
+const NativeDate = Date;
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -33,7 +36,7 @@ it('warns accepted input held behind a busy actual dispatcher without claiming o
     undefined,
     'boot-1',
     'claude-code',
-    () => new Date()
+    () => new NativeDate(Date.now())
   );
   const runtime = new FakeAgentRuntime('claude-code');
   runtime.getInternalSessionId.mockReturnValue(undefined);
@@ -71,7 +74,7 @@ it('warns accepted input held behind a busy actual dispatcher without claiming o
       store: f.store,
       grants: f.grants,
       admission: f.admission,
-      now: () => new Date(),
+      now: () => new NativeDate(Date.now()),
       capacity: () => ({ available: true }),
       budget: () => ({ available: true }),
       markWaitingWarning: (id, g, at, tx) => f.store.markWaitingWarning(id, g, at, tx),

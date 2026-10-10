@@ -206,7 +206,13 @@ function advanceWake(
     )
       return undefined;
     const batch = options.store.getBatch(current.sourceId, tx);
-    if (!batch || batch.scope !== `session:${current.sessionId}`) return undefined;
+    if (
+      !batch ||
+      batch.generation !== current.sourceGeneration ||
+      batch.admissionReceiptId !== current.id ||
+      batch.status !== 'accepted'
+    )
+      return undefined;
     const now = options.now().toISOString();
     const changed = tx
       .update(batches)

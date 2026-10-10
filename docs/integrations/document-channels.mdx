@@ -1,0 +1,252 @@
+---
+title: Document Channels
+description: Keep file saves, document notifications, and app replies separate
+---
+
+# Document Channels
+
+A document channel carries updates between an embedded app and its owning chat or room.
+Your app still owns its files. A notification does not save a file for you.
+
+This guide describes the document channel contract. It includes editor selection, save notifications, retained replay, bound widgets, and standalone streaming. Check your installed release before enabling it in an existing app.
+
+Cross-agent protected Relay delivery currently supports Claude Code. Chat-owned MCP Apps support the Doc extension; Room-owned MCP Apps are unsupported because the required original source binding is unavailable.
+
+## Keep each result separate
+
+A save and an agent reply are different results.
+Show people which result you have received.
+
+| Result                | What it confirms                                              |
+| --------------------- | ------------------------------------------------------------- |
+| File saved            | Your writer saved the change and kept a durable save receipt. |
+| Notification recorded | DorkOS retained the input under its stable ID.                |
+| Dispatch started      | DorkOS began dispatch; backend admission is not yet proven.   |
+| Runtime completed     | The correlated runtime attempt finished successfully.         |
+| App acknowledged      | The app received a correlated `app.ack` for that input.       |
+
+An uncertain started attempt stays `in_doubt` for review. Do not automatically repeat it.
+A completed turn does not confirm an app acknowledgement.
+A reply does not replace the file as the source of truth.
+Partial acknowledgements apply only to their listed input IDs.
+
+## Save first, notify second
+
+Create one operation ID when a person starts a save.
+Your writer must reuse that ID when the same request is retried.
+Store a hash of the request so a changed request cannot reuse its ID.
+Two separate comments need separate IDs, even when their text matches.
+
+Before reporting success, your writer must save three things durably:
+
+1. The file change.
+2. A distinct writer receipt that names the operation and saved file version.
+3. The pending document notification with the same operation ID.
+
+If a save response is lost, inspect that original receipt.
+When the original receipt is stored, the same save returns it without changing the file again.
+Keep a draft until the writer confirms the save.
+
+A browser page can lose an unsent notification when it closes.
+The frame library's pre-acceptance queue lives in memory.
+Your durable writer handoff must recover that gap.
+Browser draft storage is useful, but it is not a durable server receipt.
+
+## Editor saves and selected text
+
+The native editor captures the current file version before saving a document.
+It also captures one operation ID and the document generation, which identifies the current source.
+A changed save returns a recorded notification receipt.
+An unchanged save creates no notification; an identical retry may return the original duplicate receipt.
+
+A lost response leaves the original save unconfirmed.
+Use **Retry original save** to send the same content, file version, and operation ID.
+A newer draft stays visible and remains unsaved until you explicitly save it.
+DorkOS does not automatically replace an unconfirmed save with that newer draft.
+
+The file can change before notification storage fails.
+In that case, the original retry can report a file conflict instead of a saved notification.
+Do not treat that conflict as permission to create a replacement notification.
+
+The selection command checks the selected ranges against the current saved file.
+Selected text remains untrusted context, not an instruction from the host.
+A recorded selection receipt confirms storage only.
+An approved `selection.ask` route is still needed to deliver it to an agent.
+
+## Reference: the hosted frame interface
+
+This section is for app authors writing JavaScript.
+The real host supplies `window.dorkos.channel` to an eligible document frame.
+Do not create a replacement interface or copy another frame's connection.
+A document without the interface must keep its notification pending.
+
+The current source exposes `status`, `emit`, `on`, and read-only `state`.
+The host controls connection setup and the document identity.
+Scripts in the same page remain untrusted. A connection does not certify who wrote a capture.
+Public emits cannot impersonate host events, state changes, checkbox writes, or application acknowledgements.
+In particular, `doc.saved`, `selection.ask`, `md.task.toggled`, `event.status`, and `app.ack` are reserved.
+Saving through your writer does not authorize a page to emit `doc.saved`.
+The editor sends selection requests through a separate authenticated host path.
+Never implement selection by calling `emit('selection.ask', ...)`.
+
+```javascript
+// Call only after your writer has durably saved this original operation.
+export async function notifySavedComment(operation) {
+  const channel = window.dorkos?.channel;
+  if (!channel || channel.status !== 'ready') {
+    throw new Error('Keep the saved notification pending.');
+  }
+  const receipt = await channel.emit(
+    'task.comment',
+    { text: operation.text, writerRequestHash: operation.requestHash },
+    { id: operation.operationId }
+  );
+  if (receipt.receipt.id !== operation.operationId) {
+    throw new Error('The notification receipt has another operation ID.');
+  }
+  return receipt;
+}
+```
+
+`emit` resolves a channel acceptance receipt. It does not resolve agent completion or app acknowledgement.
+A refused request and an unconfirmed request need different recovery.
+For an unconfirmed request, inspect the original retained receipt before considering another send.
+Never automatically repeat admitted or uncertain work.
+
+Use `on('app.ack', callback)` for acknowledgements and `on('app.reply', callback)` for replies.
+Use `on('state', callback)` for updated state and `channel.state` for the current state.
+Each `on` call returns an unsubscribe function. Call it when the page retires.
+State is received data. It cannot choose permissions or a destination.
+
+Render replies by stable event ID.
+An acknowledgement's `eventIds` names the inputs it covers.
+A reply's `inReplyTo` names its correlated inputs.
+Deduplicate retained replay and live messages before showing a toast or unseen badge.
+Update existing DOM nodes so a reply does not reset a focused draft or replace the iframe.
+
+## Choose and approve a route
+
+A declaration describes the input types and intended destination.
+It does not grant permission by itself.
+Use the host's authenticated controls to review and approve the exact route.
+An absent route or a silent app grants nothing.
+
+Keep file saving separate from route approval.
+The frame cannot choose a routing identity, write files through `emit`, or impersonate a downstream acknowledgement.
+Current document ownership, route permission, and retained document identity must still be valid when work starts.
+
+Routes to another approved agent use Relay. The current protected cross-agent path supports Claude Code.
+When Relay is unavailable, the accepted interaction waits for delivery or expires under its existing policy.
+Routes to the document’s own agent and routes that only record an interaction stay available.
+A Room route uses the existing Room scheduler and produces one Room handoff.
+
+## Undo and recovery
+
+Keep the existing five-minute Undo window in your writer.
+Undo must check the current saved version before changing the file.
+An outside editor can change that version after an earlier check.
+A check alone does not remove that race.
+
+A toggle followed by Undo can avoid a turn only under a verified pre-dispatch cancellation protocol.
+It needs both original receipts, the restored physical baseline, and the owning native cancellation check.
+Both receipts and their IDs must remain retained.
+Already-started work falls outside this zero-turn promise.
+
+The host offers explicit replay only for an expired batch that was never admitted.
+Review the retained inputs and current grant before choosing replay.
+The server refuses acknowledged, admitted, consumed, or uncertain work.
+Replay keeps the original input IDs and creates one new batch generation.
+A pending replay result does not confirm runtime start or app acknowledgement.
+
+On reconnect, follow the retained sequence cursor and handle a retention reset explicitly.
+Do not treat a missing old receipt as permission to resend.
+Restore drafts, selection, caret, scroll, and closed-thread unseen state independently from event replay.
+
+## Native writes and bound widgets
+
+A native checkbox result is a physical writer receipt.
+It does not confirm that an agent started, finished, or acknowledged the toggle.
+Keep the original event ID and expected source version when retrying a lost response.
+A stale source or unconfirmed receipt requires inspection, not a new toggle ID.
+
+An authorized agent can use `canvas_patch_state` to patch document state.
+The request carries `documentId`, a stable `eventId`, `expectedStateRev`, and `operations`.
+Operations are `set` or `remove` with safe JSON Pointer paths; `add` is not supported.
+The result contains a storage `receipt` and `stateRev`. It does not prove that a viewer rendered the update.
+A bound widget reads this state into permitted display fields; state cannot choose a route or change an editable draft.
+Use the original scope stream to observe live state and reset snapshots. Hosted chat clients currently use WebSocket frames; standalone token streams use fetch-SSE.
+Treat revocation as disabling the affected action, while preserving the person's draft.
+Preserve the mounted widget and its editable draft through reset, reconnect, and revocation.
+
+## Other hosts
+
+The MCP (Model Context Protocol) app path uses DorkOS namespaced extensions.
+The preview app-extension methods are `dorkos/app.emit` and `dorkos/app.event`.
+Check your installed release before using these extension methods.
+These are not standard `ui` methods.
+They require the hosting document's current permission; `tools/call` remains refused.
+The current agent MCP tools are `canvas_send` and `canvas_patch_state`.
+`canvas_send` returns a retained event receipt; an authorized `app.ack` settles only its named inputs.
+Neither tool replaces the page app-extension methods.
+Native checkbox writes also need their own durable writer receipt.
+Neither host may equate file saving with runtime completion.
+
+A token must stay in the Authorization header with credentials omitted.
+Never place it in a URL, document state, content, logs, or browser storage.
+Only authenticated host controls may issue or revoke it.
+The current operator source exposes `POST /api/canvas/docs/:id/tokens` and `POST /api/canvas/docs/:id/tokens/:tokenId/revoke`; a document bearer cannot authorize either operation.
+Issuance returns the secret once. Management metadata and subsequent reads do not return it.
+Issuing a token must not create a route grant.
+A changed source, manifest, or grant can invalidate the token.
+A moved document may need a newly issued token.
+Active streams recheck expiry, revocation, and current access before each frame.
+Use a fetch-based stream with the Authorization header, not an EventSource URL token.
+Token `doc.event` frames are filtered by the token's exact types, directions, and permissions.
+Their `reset` frame carries document ID, retention floor, and high watermark; it is not a full state, routing, or viewer snapshot.
+Do not use a standalone token reset as a bound widget state snapshot.
+Do not enable a standalone app until its current document-only authority and stream invalidation path is available.
+
+## Migrating an existing app
+
+Keep writer, build, and confined `note.open` operations explicit.
+Keep any JSONL acknowledgement file as an audit mirror only.
+For migrated operations, disable the old notifier and AckWatcher resend ownership.
+Two dispatch owners can send the same saved operation twice.
+
+Test lost save responses, unknown notification responses, restart, partial acknowledgement, and retained replay before switching ownership.
+Use a temporary vault first. No personal database upgrade was tested.
+This guide does not claim that any production LifeOS vault has been migrated.
+Document channels also do not supply a generic cap for every outward action an agent might take.
+The independent runtime, webhook, and permission changes keep their own acceptance requirements.
+
+## MCP App extension preview
+
+The candidate MCP host negotiates `ui/initialize` with
+`extensions: { "dorkos/app": { version: 1 } }`. An eligible original chat-owned
+MCP document returns its document ID, native generation, and a host-generated
+`bridgeGeneration`. Echo all three in `dorkos/app.emit` alongside `v: 1` and a
+strict public `PageEvent`. Inline Apps and documents without an original MCP
+source render without this extension. Room-owned MCP Apps currently refuse the Doc extension.
+Their required original source binding is unavailable.
+
+An emit receipt confirms storage, not runtime FIRST, completion, or app handling.
+`dorkos/app.event` is host-only and carries safe event, state, or receipt projections.
+It never supplies routing authority. `tools/call` remains refused. Reserved host,
+editor, acknowledgement, and state events cannot be emitted by an App.
+
+The initialization result advertises `limits`: at most 100 pending/unconfirmed
+operations, 1,048,576 UTF-8 bytes of their canonical event envelopes, and 1,024
+retained event identities per loaded bridge. Confirmed operations release their
+payload and original handle, retaining only ID, SHA-256 envelope fingerprint, and
+native sequence correlation. Unknown originals are never evicted. A retry while that exact original request is
+still in flight promptly refuses; it cannot create another waiting native request.
+Once an unknown request settles, retry inspects that same original. Confirmed retries
+inspect through a newly captured current original read operation; they never submit
+again. If native receipt history has expired, the retry remains unavailable.
+
+When retained identity capacity is exhausted, new emits refuse; retained retries
+can still inspect. Do not turn this refusal or a reload into a replacement operation
+for old work. A resource reload retires its Doc extension; a genuinely new host
+resource/permission negotiates a new bridge generation. Earlier queued messages
+cannot reuse the previous permission. Preserve unresolved work in your own durable
+writer rather than assuming this in-memory bridge survives navigation.

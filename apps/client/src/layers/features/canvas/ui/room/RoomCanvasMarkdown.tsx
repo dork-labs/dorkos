@@ -16,7 +16,7 @@
  *
  * @module features/canvas/ui/room/RoomCanvasMarkdown
  */
-import { lazy, Suspense, useState } from 'react';
+import { lazy, Suspense, useRef, useState } from 'react';
 import { Check, Pencil } from 'lucide-react';
 import type { CanvasDocument } from '@dorkos/shared/room-schemas';
 import type { UiCanvasContent } from '@dorkos/shared/types';
@@ -56,6 +56,7 @@ export interface RoomCanvasMarkdownProps {
 export function RoomCanvasMarkdown({ roomId, document, content, onSave }: RoomCanvasMarkdownProps) {
   const [draft, setDraft] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const editRevision = useRef(0);
   /** What the room said when it turned the last save down, or null. */
   const [refusal, setRefusal] = useState<string | null>(null);
   const editing = draft !== null;
@@ -83,10 +84,12 @@ export function RoomCanvasMarkdown({ roomId, document, content, onSave }: RoomCa
     }
     setSaving(true);
     setRefusal(null);
+    const revision = editRevision.current;
     const landed = await onSave(document.id, { ...content, content: draft });
     setSaving(false);
-    if (landed) setDraft(null);
-    else setRefusal('Couldn’t save. Your words are still here. Try again.');
+    // A successful older save must leave a newer draft and its edit lock in place.
+    if (landed && editRevision.current === revision) setDraft(null);
+    else if (!landed) setRefusal('Couldn’t save. Your words are still here. Try again.');
   };
 
   return (
@@ -130,7 +133,10 @@ export function RoomCanvasMarkdown({ roomId, document, content, onSave }: RoomCa
             key={editing ? 'editing' : `rev-${document.rev}`}
             value={draft ?? content.content}
             editable={editing}
-            onChange={setDraft}
+            onChange={(next) => {
+              editRevision.current += 1;
+              setDraft(next);
+            }}
           />
         </Suspense>
       </div>

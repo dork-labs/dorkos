@@ -494,13 +494,20 @@ describe('the claude-code prompt names tools the way the runtime exposes them', 
     // 121 -> 124 for `chat_send`, `chat_read` and `chat_stop` (spec
     // `spin-off-chats` §1); 124 -> 118 (§7): the six relay send, inbox and
     // endpoint tools retire. `<chat_tools>` names the three chat tools prefixed.
-    expect(advertised.size).toBe(118);
+    expect(advertised.size).toBe(123);
+    // Five owned Doc management/task tools remain advertised: 123 total.
     for (const name of [
+      'audit_verify',
       'configure_doc_channel',
       'approve_doc_route',
       'revoke_doc_route',
       'canvas_send',
       'canvas_patch_state',
+      'replay_doc_batch',
+      'inspect_doc_channel',
+      'issue_doc_token',
+      'revoke_doc_token',
+      'canvas_set_checkbox',
     ])
       expect(advertised.has(name)).toBe(true);
     expect(advertised.has('react_to_room_entry')).toBe(true);

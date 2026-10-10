@@ -117,7 +117,7 @@ import type { Room, RoomEntry, RoomEvent } from '@dorkos/shared/room-schemas';
 import { ROOMS } from '../../../config/constants.js';
 import { logger } from '../../../lib/logger.js';
 import { eventFanOut } from '../../core/event-fan-out.js';
-import { RoomError } from '../../rooms/room-errors.js';
+import { RoomError } from '../../rooms/data/room-errors.js';
 import { PushStream } from '../push-stream.js';
 import type { RoomService } from '../../rooms/room-service.js';
 import type { RoomStore } from '../../rooms/room-store.js';

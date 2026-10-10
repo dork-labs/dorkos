@@ -13,6 +13,7 @@
 import {
   DEFAULT_AMBIENT_MAX_ENTRIES,
   authors,
+  agents,
   canonicalDmMemberKey,
   communityRoomMirrors,
   rooms,
@@ -48,8 +49,15 @@ import type {
   RoomMember,
   RoomMomentKind,
 } from '@dorkos/shared/room-schemas';
+import type {
+  GrantedDocTargetBindingReader,
+  GrantedDocTargetBinding,
+} from './service/room-service-deps.js';
 import { logger } from '../../lib/logger.js';
-import { RoomSessionLedger } from './session-bindings/room-session-ledger.js';
+import {
+  RoomSessionLedger,
+  readOriginalLedgerTargetInsideEmission,
+} from './session-bindings/room-session-ledger.js';
 import { DepartedSeatStore } from './manage/departed-seat-store.js';
 import {
   parseEntryBody,
@@ -59,7 +67,263 @@ import {
   type NewRoom,
   type NewRoomEntry,
   type ThreadAggregateRow,
-} from './room-rows.js';
+} from './data/room-rows.js';
+
+import type { OriginalRoomEmissionStage } from '../canvas/doc-channel/current/current-operation-types.js';
+import type { OriginalDownstreamRoomEmitter } from '../canvas/doc-channel/downstream/native-room-emitter.js';
+import { requireOriginalRoomEmissionFrameTransaction } from '../canvas/doc-channel/operations/room-responder-operation.js';
+
+/** Constructor-captured room/member/author facts; these facts never grant file permission. */
+export interface RoomFileWritePolicyState {
+  readonly room: Readonly<{ archived: boolean }> | null;
+  readonly member: Readonly<{ authorId: string }> | null;
+  readonly authorKind: string | null;
+}
+const filePolicyStores = new WeakMap<
+  RoomStore,
+  {
+    db: Db;
+    native: Db['$client'];
+    read(roomId: string, authorId: string): Readonly<RoomFileWritePolicyState>;
+    agents(roomId: string): readonly Readonly<{
+      authorId: string;
+      agentPath: string;
+      displayName: string;
+      manifestId: string | null;
+    }>[];
+    dispatch(
+      original: OriginalRoomFileRequestData
+    ): Readonly<OriginalRoomFileDispatchFacts> | undefined;
+    sessionOwner(sessionId: string, runtime: string, agentPath: string): boolean;
+  }
+>();
+/** Require the Room file-write store's original database binding. */
+export function requireRoomStoreFileWriteDatabase(store: RoomStore, exactDb: Db): undefined {
+  const binding = filePolicyStores.get(store);
+  if (
+    !binding ||
+    binding.db !== exactDb ||
+    exactDb.$client !== binding.native ||
+    !binding.native.open ||
+    binding.native.inTransaction
+  )
+    throw new Error('Unknown, closed, replaced or transactional owning room file database.');
+  return undefined;
+}
+/** Fixed constructor-native ownership DATA; a persistence return value cannot attest a row. */
+export function readRoomStoreOriginalSessionOwner(
+  store: RoomStore,
+  sessionId: string,
+  runtime: string,
+  agentPath: string
+): boolean {
+  if (typeof sessionId !== 'string' || typeof runtime !== 'string' || typeof agentPath !== 'string')
+    return false;
+  const binding = filePolicyStores.get(store);
+  if (!binding) throw new Error('Unknown original Room session owner Store.');
+  requireRoomStoreFileWriteDatabase(store, binding.db);
+  if (filePolicyStores.get(store) !== binding)
+    throw new Error('Original Room session owner Store changed.');
+  // Captured native statement is last: no supplied policy/currentness callback
+  // or public Store method runs after this ownership observation.
+  return binding.sessionOwner(sessionId, runtime, agentPath);
+}
+/** Read file-write policy DATA from the original Room store. */
+export function readRoomStoreFileWritePolicyState(
+  store: RoomStore,
+  exactDb: Db,
+  roomId: string,
+  authorId: string
+): Readonly<RoomFileWritePolicyState> {
+  requireRoomStoreFileWriteDatabase(store, exactDb);
+  const state = filePolicyStores.get(store)!.read(roomId, authorId);
+  requireRoomStoreFileWriteDatabase(store, exactDb);
+  return state;
+}
+
+/** Actual constructor-captured roster DATA; membership/native principal permission checks remain owning policy. */
+export function readRoomStoreRepoAgentRoster(
+  store: RoomStore,
+  exactDb: Db,
+  roomId: string
+): readonly Readonly<{
+  authorId: string;
+  agentPath: string;
+  displayName: string;
+  manifestId: string | null;
+}>[] {
+  requireRoomStoreFileWriteDatabase(store, exactDb);
+  const rows = filePolicyStores.get(store)!.agents(roomId);
+  requireRoomStoreFileWriteDatabase(store, exactDb);
+  return rows;
+}
+
+const docTargetStores = new WeakMap<
+  RoomStore,
+  {
+    db: Db;
+    read: GrantedDocTargetBindingReader;
+    inside: (
+      stage: OriginalRoomEmissionStage,
+      tx: DbTransaction,
+      emitter: OriginalDownstreamRoomEmitter,
+      roomId: string,
+      agentId: string,
+      sessionId: string,
+      runtime: string
+    ) => Readonly<GrantedDocTargetBinding> | null;
+  }
+>();
+/** Internal fixed read from real constructor custody; returns facts, never permission. */
+export function readRoomStoreGrantedDocTargetBinding(
+  store: RoomStore,
+  exactOwnDb: Db,
+  roomId: string,
+  approvedAgentId: string,
+  approvedCanonicalSessionId: string,
+  approvedRuntime: string
+): Readonly<GrantedDocTargetBinding> | null {
+  const captured = docTargetStores.get(store);
+  if (!captured || captured.db !== exactOwnDb) return null;
+  return captured.read(roomId, approvedAgentId, approvedCanonicalSessionId, approvedRuntime);
+}
+
+export interface OriginalRoomDispatchFacts {
+  readonly entry: RoomEntry;
+  readonly root: RoomEntry;
+  readonly systemAuthorId: string;
+  readonly targetAuthorId: string;
+  readonly targetAgentId: string;
+  readonly targetAgentPath: string;
+  readonly targetRuntime: string;
+  readonly targetSessionId: string | null;
+  readonly expectedReadSeq: number;
+}
+export interface OriginalRoomFileDispatchFacts {
+  readonly targetAuthorId: string;
+  readonly targetAgentId: string;
+  readonly targetAgentPath: string;
+  readonly targetRuntime: string;
+  readonly targetSessionId: string | null;
+  readonly expectedReadSeq: number;
+}
+interface OriginalRoomFileRequestData {
+  roomId: string;
+  entryId: string;
+  entrySeq: number;
+  authorId: string;
+  agentPath: string;
+  aside: boolean;
+}
+/** Native constructor DATA for the original Core's already-recognized request lifetime. */
+export function readRoomStoreOriginalNativeDispatchFacts(
+  store: RoomStore,
+  original: OriginalRoomFileRequestData
+): Readonly<OriginalRoomFileDispatchFacts> | undefined {
+  const binding = filePolicyStores.get(store);
+  if (!binding) return undefined;
+  requireRoomStoreFileWriteDatabase(store, binding.db);
+  const facts = binding.dispatch(original);
+  requireRoomStoreFileWriteDatabase(store, binding.db);
+  return facts;
+}
+/** Fixed data projection from the genuine Store constructor Db; never a permission check. */
+export function readRoomStoreOriginalDispatchFacts(
+  store: RoomStore,
+  ownDb: Db,
+  original: {
+    roomId: string;
+    entryId: string;
+    entrySeq: number;
+    authorId: string;
+    agentPath: string;
+  }
+): Readonly<OriginalRoomDispatchFacts> | undefined {
+  const captured = docTargetStores.get(store);
+  if (!captured || captured.db !== ownDb) return undefined;
+  const db = captured.db;
+  const entry = db
+    .select()
+    .from(roomEntries)
+    .where(
+      and(
+        eq(roomEntries.roomId, original.roomId),
+        eq(roomEntries.id, original.entryId),
+        eq(roomEntries.seq, original.entrySeq)
+      )
+    )
+    .get();
+  if (!entry) return undefined;
+  const roots = db
+    .select()
+    .from(roomEntries)
+    .where(and(eq(roomEntries.id, entry.cascadeRoot), eq(roomEntries.cascadeRoot, roomEntries.id)))
+    .limit(2)
+    .all();
+  const system = db
+    .select({ id: authors.id })
+    .from(authors)
+    .where(
+      and(eq(authors.kind, 'system'), eq(authors.naturalKey, 'system'), isNull(authors.retiredAt))
+    )
+    .limit(2)
+    .all();
+  const agent = db
+    .select()
+    .from(agents)
+    .where(and(eq(agents.projectPath, original.agentPath), eq(agents.status, 'active')))
+    .get();
+  const author = db
+    .select()
+    .from(authors)
+    .where(
+      and(
+        eq(authors.id, original.authorId),
+        eq(authors.kind, 'agent'),
+        eq(authors.naturalKey, original.agentPath),
+        isNull(authors.retiredAt)
+      )
+    )
+    .get();
+  const member = db
+    .select()
+    .from(roomMembers)
+    .where(
+      and(eq(roomMembers.roomId, original.roomId), eq(roomMembers.authorId, original.authorId))
+    )
+    .get();
+  const room = db.select().from(rooms).where(eq(rooms.id, original.roomId)).get();
+  if (
+    roots.length !== 1 ||
+    system.length !== 1 ||
+    !agent ||
+    !author ||
+    !member ||
+    !room ||
+    room.archived ||
+    member.responseMode === 'silent' ||
+    author.mintedForManifestId !== agent.id
+  )
+    return undefined;
+  const session = db
+    .select()
+    .from(roomSessions)
+    .where(
+      and(eq(roomSessions.roomId, original.roomId), eq(roomSessions.authorId, original.authorId))
+    )
+    .get();
+  return Object.freeze({
+    entry: toEntry(entry),
+    root: toEntry(roots[0]!),
+    systemAuthorId: system[0]!.id,
+    targetAuthorId: author.id,
+    targetAgentId: agent.id,
+    targetAgentPath: agent.projectPath,
+    targetRuntime: agent.runtime,
+    targetSessionId: session?.sessionId ?? null,
+    expectedReadSeq: member.lastReadSeq,
+  });
+}
 
 /**
  * The bounds of one read of a channel's top level, shared by the read that
@@ -255,9 +519,160 @@ export class RoomStore {
    */
   readonly departedSeats: DepartedSeatStore;
 
+  private readonly docTargetBindingReader: GrantedDocTargetBindingReader;
+
+  readonly #repoAgents: (roomId: string) => readonly Readonly<{
+    authorId: string;
+    agentPath: string;
+    displayName: string;
+    manifestId: string | null;
+  }>[];
+  readonly #fileRead: (roomId: string, authorId: string) => Readonly<RoomFileWritePolicyState>;
+  readonly #fileDispatch: (
+    original: OriginalRoomFileRequestData
+  ) => Readonly<OriginalRoomFileDispatchFacts> | undefined;
+  #readFileWritePolicyState(roomId: string, authorId: string): Readonly<RoomFileWritePolicyState> {
+    return this.#fileRead(roomId, authorId);
+  }
+
   constructor(private readonly db: Db) {
+    // Capture actual same-native prepared reads before exposure, not replaceable Db.select/store methods.
+    const native = db.$client;
+    const prepare = native.prepare.bind(native);
+    const sessionOwnerStatement = prepare(
+      'SELECT 1 AS owned FROM session_metadata WHERE session_id = ? AND runtime = ? AND agent_path = ? LIMIT 1'
+    );
+    const sessionOwnerRead = sessionOwnerStatement.get.bind(sessionOwnerStatement);
+    const roomStatement = prepare('SELECT archived FROM rooms WHERE id = ?');
+    const memberStatement = prepare(
+      'SELECT author_id AS authorId FROM room_members WHERE room_id = ? AND author_id = ?'
+    );
+    const authorStatement = prepare('SELECT kind FROM authors WHERE id = ?');
+    const rosterStatement = prepare(
+      "SELECT a.id AS authorId, a.natural_key AS agentPath, a.display_name AS displayName, a.minted_for_manifest_id AS manifestId FROM room_members AS m JOIN authors AS a ON a.id = m.author_id WHERE m.room_id = ? AND a.kind = 'agent' AND a.retired_at IS NULL"
+    );
+    const rosterRead = rosterStatement.all.bind(rosterStatement);
+    const dispatchStatement = prepare(
+      "SELECT a.id AS targetAuthorId, g.id AS targetAgentId, g.project_path AS targetAgentPath, g.runtime AS targetRuntime, s.session_id AS targetSessionId, m.last_read_seq AS expectedReadSeq FROM room_entries AS e JOIN rooms AS r ON r.id = e.room_id JOIN room_members AS m ON m.room_id = r.id JOIN authors AS a ON a.id = m.author_id JOIN agents AS g ON g.project_path = a.natural_key AND g.id = a.minted_for_manifest_id LEFT JOIN room_sessions AS s ON s.room_id = r.id AND s.author_id = a.id WHERE e.room_id = ? AND e.id = ? AND e.seq = ? AND a.id = ? AND g.project_path = ? AND r.archived = 0 AND a.kind = 'agent' AND a.retired_at IS NULL AND g.status = 'active' AND (m.response_mode != 'silent' OR ? = 1) LIMIT 2"
+    );
+    const dispatchRead = dispatchStatement.all.bind(dispatchStatement);
+    this.#fileDispatch = (original) => {
+      if (typeof original.aside !== 'boolean')
+        throw new Error('Room file dispatch requires its actual original claim flavor.');
+      const rows = dispatchRead(
+        original.roomId,
+        original.entryId,
+        original.entrySeq,
+        original.authorId,
+        original.agentPath,
+        original.aside ? 1 : 0
+      ) as Record<string, unknown>[];
+      if (rows.length === 0) return undefined;
+      if (rows.length !== 1) throw new Error('Ambiguous native Room file dispatch.');
+      const row = rows[0]!;
+      if (
+        row.targetAuthorId !== original.authorId ||
+        row.targetAgentPath !== original.agentPath ||
+        typeof row.targetAgentId !== 'string' ||
+        typeof row.targetRuntime !== 'string' ||
+        (row.targetSessionId !== null && typeof row.targetSessionId !== 'string') ||
+        typeof row.expectedReadSeq !== 'number' ||
+        !Number.isSafeInteger(row.expectedReadSeq) ||
+        row.expectedReadSeq < 0
+      )
+        throw new Error('Corrupt native Room file dispatch facts.');
+      return Object.freeze({
+        targetAuthorId: original.authorId,
+        targetAgentId: row.targetAgentId,
+        targetAgentPath: original.agentPath,
+        targetRuntime: row.targetRuntime,
+        targetSessionId: row.targetSessionId,
+        expectedReadSeq: row.expectedReadSeq,
+      });
+    };
+    this.#repoAgents = (roomId) =>
+      Object.freeze(
+        (rosterRead(roomId) as Record<string, unknown>[]).map((row) => {
+          if (
+            typeof row.authorId !== 'string' ||
+            typeof row.agentPath !== 'string' ||
+            typeof row.displayName !== 'string' ||
+            (row.manifestId !== null && typeof row.manifestId !== 'string')
+          )
+            throw new Error('Corrupt native room repo agent roster.');
+          return Object.freeze({
+            authorId: row.authorId,
+            agentPath: row.agentPath,
+            displayName: row.displayName,
+            manifestId: row.manifestId,
+          });
+        })
+      );
+    const roomRead = roomStatement.get.bind(roomStatement);
+    const memberRead = memberStatement.get.bind(memberStatement);
+    const authorRead = authorStatement.get.bind(authorStatement);
+    this.#fileRead = (roomId, authorId) => {
+      const room = roomRead(roomId) as { archived?: unknown } | undefined;
+      const member = memberRead(roomId, authorId) as { authorId?: unknown } | undefined;
+      const author = authorRead(authorId) as { kind?: unknown } | undefined;
+      if (
+        (room && room.archived !== 0 && room.archived !== 1) ||
+        (member && member.authorId !== authorId) ||
+        (author && typeof author.kind !== 'string')
+      )
+        throw new Error('Corrupt native room file policy facts.');
+      return Object.freeze({
+        room: room ? Object.freeze({ archived: room.archived === 1 }) : null,
+        member: member ? Object.freeze({ authorId }) : null,
+        authorKind: (author?.kind as string | undefined) ?? null,
+      });
+    };
+    filePolicyStores.set(
+      this,
+      Object.freeze({
+        db,
+        native,
+        read: (roomId: string, authorId: string) =>
+          this.#readFileWritePolicyState(roomId, authorId),
+        agents: (roomId: string) => this.#repoAgents(roomId),
+        dispatch: (original: OriginalRoomFileRequestData) => this.#fileDispatch(original),
+        sessionOwner: (sessionId: string, runtime: string, agentPath: string) =>
+          !!sessionOwnerRead(sessionId, runtime, agentPath),
+      })
+    );
     this.sessionLedger = new RoomSessionLedger(db);
+    this.docTargetBindingReader = this.sessionLedger.readGrantedDocTargetBinding.bind(
+      this.sessionLedger
+    );
     this.departedSeats = new DepartedSeatStore(db);
+    const ledger = this.sessionLedger;
+    docTargetStores.set(
+      this,
+      Object.freeze({
+        db,
+        read: this.docTargetBindingReader,
+        inside: (
+          stage: OriginalRoomEmissionStage,
+          tx: DbTransaction,
+          emitter: OriginalDownstreamRoomEmitter,
+          roomId: string,
+          agentId: string,
+          sessionId: string,
+          runtime: string
+        ) =>
+          readOriginalLedgerTargetInsideEmission(
+            ledger,
+            db,
+            stage,
+            tx,
+            emitter,
+            roomId,
+            agentId,
+            sessionId,
+            runtime
+          ),
+      })
+    );
   }
 
   // === Rooms ===
@@ -2170,6 +2585,21 @@ export class RoomStore {
    * @param roomId - The room.
    * @param authorId - The agent member.
    */
+  /** Fixed captured actual ledger reader; data facts, never permission. */
+  readGrantedDocTargetBinding(
+    roomId: string,
+    approvedAgentId: string,
+    approvedCanonicalSessionId: string,
+    approvedRuntime: string
+  ): Readonly<GrantedDocTargetBinding> | null {
+    return this.docTargetBindingReader(
+      roomId,
+      approvedAgentId,
+      approvedCanonicalSessionId,
+      approvedRuntime
+    );
+  }
+
   getRoomSession(roomId: string, authorId: string): string | null {
     const row = this.db
       .select()
@@ -2339,4 +2769,22 @@ export class RoomStore {
   }
 }
 
-export type { NewRoom, NewRoomEntry } from './room-rows.js';
+export type { NewRoom, NewRoomEntry } from './data/room-rows.js';
+
+/** SAME original generated native frame target facts; neither a scope nor responder issuer. */
+export function readRoomStoreGrantedDocTargetBindingInsideOriginalEmission(
+  store: RoomStore,
+  db: Db,
+  stage: OriginalRoomEmissionStage,
+  tx: DbTransaction,
+  emitter: OriginalDownstreamRoomEmitter,
+  roomId: string,
+  agentId: string,
+  canonicalSessionId: string,
+  runtime: string
+): Readonly<GrantedDocTargetBinding> | null {
+  const own = docTargetStores.get(store);
+  if (!own || own.db !== db) throw new Error('ORIGINAL_ROOM_TARGET_STORE_REQUIRED');
+  requireOriginalRoomEmissionFrameTransaction(stage, db, tx, emitter);
+  return own.inside(stage, tx, emitter, roomId, agentId, canonicalSessionId, runtime);
+}

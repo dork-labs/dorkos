@@ -2,6 +2,151 @@ import type { SseResponse } from '@dorkos/shared/agent-runtime';
 import { SESSIONS } from '../../config/constants.js';
 import { logger } from '../../lib/logger.js';
 
+/** Private acquisition identity. It is data custody, never a principal or permission. */
+export interface NativeSessionAcquisition {
+  readonly kind: 'native-session-acquisition';
+}
+export interface NativeSessionActivity {
+  readonly kind: 'native-session-activity';
+}
+type NativeLockRecord = {
+  manager: SessionLockManager;
+  locks: Map<string, SessionLock>;
+  key: string;
+  lock: SessionLock;
+  holder: SseResponse;
+  retired: boolean;
+};
+const originalLockConstructors = new WeakMap<
+  object,
+  {
+    capture(key: string, holder: SseResponse): NativeSessionAcquisition | undefined;
+  }
+>();
+const originalAcquisitions = new WeakMap<NativeSessionAcquisition, NativeLockRecord>();
+const originalActivity = new WeakMap<
+  NativeSessionActivity,
+  {
+    acquisition: NativeSessionAcquisition;
+    time: number;
+    lastSeen: number;
+  }
+>();
+const originalMapGet = Map.prototype.get;
+function currentAcquisition(record: NativeLockRecord): boolean {
+  const slot = Object.getOwnPropertyDescriptor(record.manager, 'locks');
+  return (
+    !record.retired &&
+    !!slot &&
+    'value' in slot &&
+    slot.value === record.locks &&
+    originalMapGet.call(record.locks, record.key) === record.lock
+  );
+}
+/** Fixed native-entry capture requires the actual acquired holder, not a copied token/client. */
+export function captureNativeSessionAcquisition(
+  manager: SessionLockManager,
+  key: string,
+  holder: SseResponse
+): NativeSessionAcquisition | undefined {
+  return originalLockConstructors.get(manager)?.capture(key, holder);
+}
+/** Fixed same-holder lookup: a retired raw key may be ignored only beside this actual acquisition. */
+export function isOriginalNativeSessionAcquisitionAlias(
+  manager: SessionLockManager,
+  acquisition: NativeSessionAcquisition,
+  holder: SseResponse,
+  canonicalId: string,
+  retiredId: string
+): boolean {
+  const own = originalAcquisitions.get(acquisition);
+  return (
+    !!own &&
+    own.manager === manager &&
+    own.holder === holder &&
+    own.key === canonicalId &&
+    retiredId !== canonicalId &&
+    currentAcquisition(own) &&
+    originalMapGet.call(own.locks, retiredId) === undefined
+  );
+}
+/** Run real clock/activity policy before final currentness; callbacks can invalidate acquisition. */
+export function captureNativeSessionActivity(
+  acquisition: NativeSessionAcquisition,
+  time: number
+): NativeSessionActivity | undefined {
+  const record = originalAcquisitions.get(acquisition);
+  if (!record || !Number.isFinite(time) || !currentAcquisition(record)) return undefined;
+  const lastSeen = Math.max(record.lock.acquiredAt, record.lock.activity?.lastActivityAt() ?? 0);
+  if (!Number.isFinite(lastSeen) || !currentAcquisition(record)) return undefined;
+  const captured: NativeSessionActivity = Object.freeze({ kind: 'native-session-activity' });
+  originalActivity.set(captured, { acquisition, time, lastSeen });
+  return captured;
+}
+/** Callback-free final exact-entry read. No structural activity DTO can bless an acquisition. */
+export function readNativeSessionAcquisition(
+  acquisition: NativeSessionAcquisition,
+  captured: NativeSessionActivity,
+  time: number,
+  canonicalSessionId: string
+): boolean {
+  const record = originalAcquisitions.get(acquisition),
+    activity = originalActivity.get(captured);
+  return (
+    !!record &&
+    !!activity &&
+    activity.acquisition === acquisition &&
+    activity.time === time &&
+    currentAcquisition(record) &&
+    record.key === canonicalSessionId &&
+    time - activity.lastSeen <= record.lock.ttl
+  );
+}
+
+/** Lookup-only positive original retirement, not absence/currentness DATA or a caller checker. */
+export function requireOriginalNativeSessionAcquisitionRetired(
+  manager: SessionLockManager,
+  acquisition: NativeSessionAcquisition,
+  holder: SseResponse
+): void {
+  const own = originalAcquisitions.get(acquisition),
+    slot = Object.getOwnPropertyDescriptor(manager, 'locks');
+  if (
+    !own ||
+    own.manager !== manager ||
+    own.holder !== holder ||
+    !own.retired ||
+    !slot ||
+    !('value' in slot) ||
+    slot.value !== own.locks ||
+    originalMapGet.call(own.locks, own.key) === own.lock
+  )
+    throw new Error('Original native session acquisition retirement unconfirmed');
+}
+
+/** Readonly original-acquisition comparison for a same-holder canonical move. It does not register or mutate witnesses. */
+export function isNativeSessionAcquisitionMove(
+  previous: NativeSessionAcquisition,
+  next: NativeSessionAcquisition,
+  holder: SseResponse
+): boolean {
+  const before = originalAcquisitions.get(previous),
+    after = originalAcquisitions.get(next);
+  return (
+    !!before &&
+    !!after &&
+    previous !== next &&
+    before.manager === after.manager &&
+    before.holder === holder &&
+    after.holder === holder &&
+    before.lock.token === after.lock.token &&
+    before.lock.clientId === after.lock.clientId &&
+    before.key !== after.key &&
+    currentAcquisition(before) &&
+    currentAcquisition(after)
+  );
+}
+
 /**
  * The holder prefix reserved for a turn the agent started on its own (spec
  * `warm-process-lifecycle` D6).
@@ -65,6 +210,8 @@ interface SessionLock {
    * the successor's lock.
    */
   token: symbol;
+  native?: NativeSessionAcquisition;
+  holder: SseResponse;
 }
 
 /**
@@ -79,6 +226,26 @@ interface SessionLock {
 export class SessionLockManager {
   private locks = new Map<string, SessionLock>();
   private readonly LOCK_TTL_MS = SESSIONS.LOCK_TTL_MS;
+
+  constructor() {
+    const locks = this.locks;
+    originalLockConstructors.set(this, {
+      capture: (key, holder) => {
+        const lock = originalMapGet.call(locks, key) as SessionLock | undefined;
+        if (!lock || lock.holder !== holder) return undefined;
+        const acquisition = lock.native;
+        const record = acquisition && originalAcquisitions.get(acquisition);
+        return record && currentAcquisition(record) ? acquisition : undefined;
+      },
+    });
+  }
+
+  private retire(key: string): void {
+    const lock = originalMapGet.call(this.locks, key) as SessionLock | undefined;
+    const record = lock?.native && originalAcquisitions.get(lock.native);
+    if (record) record.retired = true;
+    this.locks.delete(key);
+  }
 
   /**
    * Whether a lock has gone unclaimed for longer than its TTL. The clock starts
@@ -156,22 +323,35 @@ export class SessionLockManager {
     const existing = this.locks.get(sessionId);
     if (existing) {
       if (!this.isExpired(existing)) return false;
-      this.locks.delete(sessionId);
+      this.retire(sessionId);
     }
     const lock: SessionLock = {
       clientId,
       acquiredAt: Date.now(),
       ttl: this.LOCK_TTL_MS,
       token: token ?? Symbol('session-lock'),
+      holder: res,
       ...(hasLockActivity(res) ? { activity: res } : {}),
     };
     this.locks.set(sessionId, lock);
+    const acquisition: NativeSessionAcquisition = Object.freeze({
+      kind: 'native-session-acquisition',
+    });
+    lock.native = acquisition;
+    originalAcquisitions.set(acquisition, {
+      manager: this,
+      locks: this.locks,
+      key: sessionId,
+      lock,
+      holder: res,
+      retired: false,
+    });
     // Attach close handler immediately — instance-identity matched, so a later
     // re-acquire that replaces this lock makes this handler a no-op.
     res.on('close', () => {
       const current = this.locks.get(sessionId);
       if (current === lock) {
-        this.locks.delete(sessionId);
+        this.retire(sessionId);
       }
     });
     return true;
@@ -190,7 +370,7 @@ export class SessionLockManager {
     const lock = this.locks.get(sessionId);
     if (!lock || lock.clientId !== clientId) return;
     if (token !== undefined && lock.token !== token) return;
-    this.locks.delete(sessionId);
+    this.retire(sessionId);
   }
 
   /**
@@ -201,7 +381,7 @@ export class SessionLockManager {
     const lock = this.locks.get(sessionId);
     if (!lock) return false;
     if (this.isExpired(lock)) {
-      this.locks.delete(sessionId);
+      this.retire(sessionId);
       return false;
     }
     if (clientId && lock.clientId === clientId) return false;
@@ -216,7 +396,7 @@ export class SessionLockManager {
     const lock = this.locks.get(sessionId);
     if (!lock) return null;
     if (this.isExpired(lock)) {
-      this.locks.delete(sessionId);
+      this.retire(sessionId);
       return null;
     }
     return { clientId: lock.clientId, acquiredAt: lock.acquiredAt };
@@ -227,12 +407,12 @@ export class SessionLockManager {
     const now = Date.now();
     for (const [id, lock] of this.locks) {
       if (this.isExpired(lock, now)) {
-        this.locks.delete(id);
+        this.retire(id);
       }
     }
     if (sessionIds) {
       for (const id of sessionIds) {
-        this.locks.delete(id);
+        this.retire(id);
       }
     }
   }

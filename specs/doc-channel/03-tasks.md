@@ -57,7 +57,7 @@ Implement in an isolated checkout. Preserve runtime SDK confinement and client F
 
 ### Task 2.1: [doc-channel] [P2] Authorize declarations and exact route grants
 
-- Status: in_progress
+- Status: completed
 - Size: large
 - Priority: high
 - Dependencies: 1.2
@@ -204,7 +204,7 @@ Implement in an isolated checkout. Preserve runtime SDK confinement and client F
 
 ### Task 2.8: [doc-channel] [P2] Persist downstream state and correlated acknowledgements
 
-- Status: in_progress
+- Status: completed
 - Size: large
 - Priority: high
 - Dependencies: 2.1, 2.2, 2.4
@@ -227,7 +227,7 @@ Implement in an isolated checkout. Preserve runtime SDK confinement and client F
 
 ### Task 3.1: [doc-channel] [P3] Deliver channel replay over shared scope streams
 
-- Status: in_progress
+- Status: completed
 - Size: large
 - Priority: high
 - Dependencies: 2.3, 2.8
@@ -247,7 +247,7 @@ Implement in an isolated checkout. Preserve runtime SDK confinement and client F
 
 ### Task 3.2: [doc-channel] [P3] Connect instrumented frames with a mount-bound SDK
 
-- Status: pending
+- Status: completed
 - Size: large
 - Priority: high
 - Dependencies: 2.3, 3.1
@@ -269,7 +269,7 @@ Implement in an isolated checkout. Preserve runtime SDK confinement and client F
 
 ### Task 3.3: [doc-channel] [P3] Emit native widget actions with durable status
 
-- Status: in_progress
+- Status: completed
 - Size: large
 - Priority: high
 - Dependencies: 2.3, 2.8, 3.1
@@ -312,7 +312,7 @@ Implement in an isolated checkout. Preserve runtime SDK confinement and client F
 
 ### Task 4.1: [doc-channel] [P4] Advertise document events to MCP apps
 
-- Status: in_progress
+- Status: completed
 - Size: large
 - Priority: medium
 - Dependencies: 3.1, 3.2
@@ -370,7 +370,7 @@ Implement in an isolated checkout. Preserve runtime SDK confinement and client F
 
 ### Task 4.4: [doc-channel] [P4] Track mounted views and quiet host presence
 
-- Status: in_progress
+- Status: completed
 - Size: medium
 - Priority: medium
 - Dependencies: 2.3, 3.1, 3.2
@@ -410,7 +410,7 @@ Implement in an isolated checkout. Preserve runtime SDK confinement and client F
 
 ### Task 5.1: [doc-channel] [P5] Restrict standalone bearer ingestion and SSE
 
-- Status: pending
+- Status: completed
 - Size: large
 - Priority: medium
 - Dependencies: 2.1, 2.3, 3.1

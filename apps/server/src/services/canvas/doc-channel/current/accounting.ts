@@ -1,8 +1,9 @@
+import { readDocEventRow } from '../writes/reservations/reservation-policy-census.js';
 /** SQL accounting counts original inputs once even when multiple routes reference them. */
 import { sql, type DbTransaction } from '@dorkos/db';
 import type { CanvasChannelJsonValue } from '@dorkos/shared/canvas-channel-schemas';
 import { envelopeIdentity } from '../envelope.js';
-import { scanCheckboxReservationPolicies } from '../writes/reservation-policy-census.js';
+import { scanCheckboxReservationPolicies } from '../writes/reservations/reservation-policy-census.js';
 import { DocIngestRefusal } from '../ingest-types.js';
 
 /** Platform caps may be lowered by tests or installation policy, never raised. */
@@ -27,6 +28,10 @@ export const protectedEventSql = sql`EXISTS (SELECT 1 FROM canvas_doc_deliveries
   (b.status IN ('pending','waiting','accepted','dispatching','turn_started','in_doubt') AND
   EXISTS (SELECT 1 FROM json_each(b.input_event_ids) WHERE value=e.event_id))))`;
 
+/** Retained native Room links protect immutable evidence, separately from backlog usage. */
+export const retainedRoomEventSql = sql`EXISTS (SELECT 1 FROM room_doc_admission_inputs ri
+  WHERE ri.document_id=e.document_id AND ri.event_id=e.event_id)`;
+
 /** Query live protected keys without revisiting every retained event header. */
 export function protectedCapacityQuery(documentId?: string) {
   const deliveryScope = documentId === undefined ? sql`` : sql`AND document_id=${documentId}`;
@@ -48,7 +53,11 @@ export function protectedCapacityQuery(documentId?: string) {
       AND EXISTS (SELECT 1 FROM canvas_doc_deliveries d
         INDEXED BY sqlite_autoindex_canvas_doc_deliveries_1
         WHERE d.document_id=b.document_id AND d.event_id=ids.value AND d.batch_id=b.batch_id)
-  ) SELECT ${count} coalesce(sum(e.envelope_bytes),0) AS bytes
+  ) SELECT ${count} coalesce(sum(e.envelope_bytes),0) +
+    (SELECT coalesce(sum(length(CAST(s.source_json AS BLOB))),0)
+      FROM canvas_doc_room_pending_sources s JOIN canvas_doc_batches b
+      ON b.document_id=s.document_id AND b.batch_id=s.batch_id AND b.generation=s.generation
+      WHERE b.status IN ('pending','waiting') ${batchScope}) AS bytes
     FROM protected p CROSS JOIN canvas_doc_events e
     WHERE e.document_id=p.document_id AND e.event_id=p.event_id`;
 }
@@ -82,7 +91,7 @@ export function checkIngestCapacity(
 
 /** Backfill foundation rows in bounded pages before installation accounting can undercount them. */
 export function backfillEnvelopeAccounting(
-  store: import('../store.js').DocChannelStore,
+  _store: import('../store.js').DocChannelStore,
   tx: DbTransaction
 ): void {
   for (;;) {
@@ -93,7 +102,9 @@ export function backfillEnvelopeAccounting(
       event_id AS eventId FROM canvas_doc_events WHERE envelope_bytes=0 AND payload_pruned_at IS NULL LIMIT 200`);
     if (!rows.length) return;
     for (const row of rows) {
-      const event = store.getEvent(row.documentId, row.eventId, tx)!;
+      const event = readDocEventRow(tx, row.documentId, row.eventId);
+      if (!event || event.envelopeBytes !== 0 || event.payloadPrunedAt !== null)
+        throw new Error('Foundation accounting original row changed.');
       const identity = envelopeIdentity({
         v: 1,
         id: event.eventId,
@@ -102,8 +113,14 @@ export function backfillEnvelopeAccounting(
         ...(event.coalesceKey === null ? {} : { coalesceKey: event.coalesceKey }),
         ...(event.clientTs === null ? {} : { ts: event.clientTs }),
       });
-      tx.run(sql`UPDATE canvas_doc_events SET envelope_bytes=${identity.bytes}
+      const before = tx.get<{ total: number }>(sql`SELECT total_changes() AS total`)!.total;
+      if (!Number.isSafeInteger(before) || before < 0)
+        throw new Error('Foundation accounting native change count is unavailable.');
+      const updated = tx.run(sql`UPDATE canvas_doc_events SET envelope_bytes=${identity.bytes}
         WHERE document_id=${row.documentId} AND event_id=${row.eventId} AND envelope_bytes=0`);
+      const after = tx.get<{ total: number }>(sql`SELECT total_changes() AS total`)!.total;
+      if (updated.changes !== 1 || !Number.isSafeInteger(after) || after - before !== 1)
+        throw new Error('Foundation accounting writes changed outside their original row.');
     }
   }
 }

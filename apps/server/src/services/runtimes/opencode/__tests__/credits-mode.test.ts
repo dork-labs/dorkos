@@ -15,10 +15,19 @@ vi.mock('../../../core/cloud/credits-defaults.js', async (importOriginal) => ({
   creditsIsDefaultFor: (runtime: string) => runtime === 'opencode' && choice.credits,
 }));
 const link = vi.hoisted(() => ({ linked: true }));
-vi.mock('../../../core/cloud/v1-client.js', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('../../../core/cloud/v1-client.js')>()),
+// This suite holds the token/catalog through their original test seams and never
+// reads Cloud. Loading the original client here would close its auth/runtime
+// cycle before this mock can publish the null context.
+vi.mock('../../../core/cloud/v1-client.js', () => ({
   isCloudLinked: () => link.linked,
+  readCloudInstanceToken: () => null,
   captureCloudV1Context: () => null,
+  resolveCloudIdentity: () => {
+    throw new Error('Unexpected Cloud identity read in held credits planning.');
+  },
+  problemOf: () => {
+    throw new Error('Unexpected Cloud response in held credits planning.');
+  },
 }));
 
 import { __setCreditsStateForTests } from '../../../core/cloud/credits-inference.js';

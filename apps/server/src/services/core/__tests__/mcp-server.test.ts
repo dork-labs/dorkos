@@ -134,7 +134,7 @@ describe('createExternalMcpServer', () => {
     expect(typeof server.connect).toBe('function');
   });
 
-  it('registers all 61 tools', () => {
+  it('registers all 56 tools', () => {
     // Purpose: regression guard against accidental tool omissions or additions.
     // This count changes intentionally when new MCP tools are added: 40 legacy
     // hand-registered + 10 operator capabilities + `list_capabilities` from the
@@ -173,14 +173,15 @@ describe('createExternalMcpServer', () => {
     //
     // 61 → 55: the six relay send, inbox and endpoint tools retired; the chat
     // tools that replace them are in-session only (spec `spin-off-chats` §7).
+    // 55 → 56 for canvas_set_checkbox, the native permitted task write.
     //
     // These deps carry no `marketplaceDeps`, so the 10 marketplace capabilities are
     // absent here (`marketplace_link` made it 10, DOR-2696).
     // `docs/integrations/mcp-server.mdx` states the total for a fully
-    // wired server (these 55 + 10 marketplace), and that number is pinned by no
+    // wired server (these 56 + 10 marketplace), and that number is pinned by no
     // test, so update both together when this one moves.
     createExternalMcpServer(createMinimalDeps());
-    expect(registeredTools).toHaveLength(55);
+    expect(registeredTools).toHaveLength(56);
   });
 
   it('registers all expected tool names', () => {
@@ -193,9 +194,10 @@ describe('createExternalMcpServer', () => {
     expect(toolNames).toContain('get_session_count');
     expect(toolNames).toContain('get_agent');
 
-    // Document operations (2)
+    // Document operations (3)
     expect(toolNames).toContain('canvas_send');
     expect(toolNames).toContain('canvas_patch_state');
+    expect(toolNames).toContain('canvas_set_checkbox');
 
     // Session tools (1)
     expect(toolNames).toContain('session_start');
@@ -316,7 +318,8 @@ describe('createExternalMcpServer', () => {
     const bindingTools = toolNames.filter((n) => n.startsWith('binding_'));
     const meshTools = toolNames.filter((n) => n.startsWith('mesh_'));
 
-    expect(coreTools).toHaveLength(32); // 2 document + 4 core + 2 account (accounts_usage, accounts_probe) + 1 session (session_start) + 1 agent (create_agent) + 6 extension + 11 operator (activity_list, config_get, check_update, agents_recent_activity, feedback_draft, update_agent, update_agent_boundaries, update_agent_execution, config_patch, sidebar_add_to_group, sidebar_remove_from_group) + list_capabilities + memory_write + request_permission + list_my_permissions + change_permission
+    expect(coreTools).toHaveLength(33); // 3 document + 4 core + 2 account (accounts_usage, accounts_probe) + 1 session (session_start) + 1 agent (create_agent) + 6 extension + 11 operator (activity_list, config_get, check_update, agents_recent_activity, feedback_draft, update_agent, update_agent_boundaries, update_agent_execution, config_patch, sidebar_add_to_group, sidebar_remove_from_group) + list_capabilities + memory_write + request_permission + list_my_permissions + change_permission
+    expect(coreTools).toContain('canvas_set_checkbox');
     expect(taskTools).toHaveLength(5);
     expect(relayTools).toHaveLength(7); // 1 relay + 4 adapter + 2 trace
     expect(bindingTools).toHaveLength(3);

@@ -110,6 +110,10 @@ test.beforeAll(async () => {
     fetch('/api/isolation-control', {credentials:'include'}).then(r => r.text()).then(t => document.documentElement.setAttribute('data-result', t)).catch(() => document.documentElement.setAttribute('data-result','blocked'));
   ]]></script></svg>`
   );
+  await writeFile(
+    path.join(root, 'blocked.html'),
+    `<html><head><meta http-equiv="Content-Security-Policy" content="script-src 'none'"></head><body><h1>CSP blocked document</h1><script>window.originalBlockedScriptRan = true;</script></body></html>`
+  );
   const app = createApp({ admission: new MainRequestAdmission() });
   app.get('/isolation-host', (_req, res) =>
     res.send('<body data-operator="private"><h1>App control</h1></body>')
@@ -226,6 +230,39 @@ test('app and desktop iframe origins render assets and run the actual injected s
         page.evaluate(() => JSON.stringify((window as unknown as { reports: unknown[] }).reports))
       )
       .toContain('isolation-shim-control');
+    const actual = page.frames().find((candidate) => candidate.url() === servedUrl);
+    if (!actual) throw new Error('Original served frame unavailable');
+    // No managed Doc owner was installed by this legacy host. The real shim must remain offline.
+    await expect
+      .poll(() =>
+        actual.evaluate(
+          () =>
+            (window as unknown as { dorkos?: { channel?: { status: string } } }).dorkos?.channel
+              ?.status
+        )
+      )
+      .toBe('offline');
+    expect(
+      await actual.evaluate(async () => {
+        const sdk = (
+          window as unknown as {
+            dorkos: {
+              channel: {
+                emit(type: string, payload: unknown): Promise<unknown>;
+              };
+            };
+          }
+        ).dorkos.channel;
+        try {
+          await sdk.emit('task.comment', { text: 'Unowned frame input' });
+          return 'accepted';
+        } catch (cause) {
+          return cause && typeof cause === 'object' && 'outcome' in cause
+            ? cause.outcome
+            : 'unknown';
+        }
+      })
+    ).toBe('cancelled');
   }
 });
 
@@ -319,4 +356,36 @@ test('an already-open legacy host receives telemetry, action and capture from th
       { timeout: 15000 }
     )
     .toEqual({ action: true, outline: true, capture: true, legacy: true });
+});
+
+test('real served CSP refusal preserves source and never activates the document SDK', async ({
+  page,
+}) => {
+  await page.goto(`${origin}/isolation-host`);
+  const source = servedUrl.replace('index.html', 'blocked.html');
+  const response = await page.request.get(source);
+  expect(response.status()).toBe(200);
+  expect(await response.text()).toBe(await readFile(path.join(root, 'blocked.html'), 'utf8'));
+  await page.evaluate((url) => {
+    const frame = document.createElement('iframe');
+    frame.title = 'CSP blocked document';
+    frame.sandbox.add('allow-scripts', 'allow-forms');
+    frame.src = url;
+    document.body.append(frame);
+  }, source);
+  await expect(
+    page
+      .frameLocator('iframe[title="CSP blocked document"]')
+      .getByRole('heading', { name: 'CSP blocked document', exact: true })
+  ).toBeVisible();
+  const actual = page.frames().find((candidate) => candidate.url() === source);
+  if (!actual) throw new Error('Original CSP-refused frame unavailable');
+  expect(
+    await actual.evaluate(() => ({
+      installed: Object.hasOwn(window, 'dorkos'),
+      scriptRan: Object.hasOwn(window, 'originalBlockedScriptRan'),
+      opaque: window.origin === 'null',
+    }))
+  ).toEqual({ installed: false, scriptRan: false, opaque: true });
+  await page.goto('about:blank');
 });

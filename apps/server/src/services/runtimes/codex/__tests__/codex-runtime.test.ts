@@ -4,7 +4,13 @@ import type { Db } from '@dorkos/db';
 import type { DependencyCheck, SessionSettingsPort } from '@dorkos/shared/agent-runtime';
 import type { StreamEvent } from '@dorkos/shared/types';
 import type { ThreadEvent } from '@openai/codex-sdk';
-import { CodexRuntime, MAX_CONSECUTIVE_WAKES, WAKE_BUDGET_SPENT_COPY } from '../codex-runtime.js';
+import {
+  CodexRuntime,
+  MAX_CONSECUTIVE_WAKES,
+  WAKE_BUDGET_SPENT_COPY,
+  sendCodexOriginalLockedMessage,
+} from '../codex-runtime.js';
+import { CodexSessionRegistry } from '../session-registry.js';
 import { resolveCodexTransport, type CodexTransport } from '../transport/index.js';
 import type { BackgroundCompletion, BackgroundWake } from '../app-server/background-work.js';
 import { buildCodexOptions } from '../codex-options.js';
@@ -1652,6 +1658,113 @@ describe('CodexRuntime', () => {
   });
 
   describe('session locking', () => {
+    it('a native discovery paused across original lock retirement cannot adopt or bind the session', async () => {
+      const { runtime, threadMap, db } = makeRuntime();
+      const sessionId = crypto.randomUUID();
+      const holder = { on: vi.fn() };
+      let entered!: () => void;
+      const lookupEntered = new Promise<void>((resolve) => {
+        entered = resolve;
+      });
+      let release!: () => void;
+      const lookupReleased = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      // Pause only the suite's existing native-reader DATA seam, assigned to
+      // the reader instance field by its existing module fixture. The runtime,
+      // original lock manager and captured native runner remain genuine.
+      nativeMocks.findSession.mockImplementationOnce(async (id: string) => {
+        expect(id).toBe(sessionId);
+        entered();
+        await lookupReleased;
+        return {
+          id: sessionId,
+          runtime: 'codex',
+          cwd: DEFAULT_ROOT,
+          title: 'Original native session',
+          createdAt: '2026-10-08T00:00:00Z',
+          updatedAt: '2026-10-08T00:00:00Z',
+          permissionMode: 'default',
+        };
+      });
+      const adopt = vi.spyOn(CodexSessionRegistry.prototype, 'adoptNative');
+      let stream: AsyncGenerator<StreamEvent> | undefined;
+      let pending: Promise<IteratorResult<StreamEvent>> | undefined;
+      let failed = false;
+      let firstCause: unknown;
+      const remember = (cause: unknown) => {
+        if (!failed) {
+          failed = true;
+          firstCause = cause;
+        }
+      };
+      try {
+        expect(runtime.acquireLock(sessionId, 'original-client', holder)).toBe(true);
+        stream = sendCodexOriginalLockedMessage(
+          runtime,
+          sessionId,
+          'Original request',
+          { cwd: DEFAULT_ROOT },
+          holder,
+          sessionId
+        );
+        expect(stream).toBeDefined();
+        pending = stream!.next();
+        void pending.catch(() => {});
+        await lookupEntered;
+        expect(adopt).not.toHaveBeenCalled();
+        expect(threadMap.get(sessionId)).toBeUndefined();
+        runtime.releaseLock(sessionId, 'original-client');
+        expect(runtime.isLocked(sessionId)).toBe(false);
+        release();
+        await expect(pending).resolves.toEqual({ done: true, value: undefined });
+        expect(adopt).not.toHaveBeenCalled();
+        expect(threadMap.get(sessionId)).toBeUndefined();
+        expect(sdkMocks.startThread).not.toHaveBeenCalled();
+        expect(sdkMocks.resumeThread).not.toHaveBeenCalled();
+      } catch (cause) {
+        remember(cause);
+      } finally {
+        release();
+        if (pending) {
+          try {
+            await pending;
+          } catch (cause) {
+            remember(cause);
+          }
+        }
+        if (stream) {
+          try {
+            await stream.return(undefined);
+          } catch (cause) {
+            remember(cause);
+          }
+        }
+        try {
+          runtime.releaseLock(sessionId, 'original-client');
+        } catch (cause) {
+          remember(cause);
+        }
+        try {
+          await runtime.shutdown();
+        } catch (cause) {
+          remember(cause);
+        }
+        try {
+          nativeMocks.findSession.mockReset().mockResolvedValue(null);
+          adopt.mockRestore();
+        } catch (cause) {
+          remember(cause);
+        }
+        try {
+          db.$client.close();
+        } catch (cause) {
+          remember(cause);
+        }
+      }
+      if (failed) throw firstCause;
+    });
+
     it('grants the lock to one client and refuses a second until released', () => {
       const { runtime } = makeRuntime();
       const sessionId = crypto.randomUUID();
@@ -2159,6 +2272,110 @@ describe('CodexRuntime — the transport seam (ADR 261005-113107)', () => {
         await turns.at(-1);
       }
       expect(requests).toHaveLength(1 + MAX_CONSECUTIVE_WAKES);
+    });
+
+    it('a paused older wake cannot borrow a successor reserved acquisition', async () => {
+      const db = createTestDb();
+      const { transport, requests, wake } = backgroundTransport();
+      let runtime: CodexRuntime | undefined;
+      let paused: AsyncIterator<StreamEvent> | undefined;
+      let successor: AsyncIterator<StreamEvent> | undefined;
+      const oldToken = Symbol('older-wake');
+      const newToken = Symbol('successor-wake');
+      let failed = false;
+      let first: unknown;
+      const remember = (cause: unknown) => {
+        if (!failed) {
+          failed = true;
+          first = cause;
+        }
+      };
+      try {
+        runtime = new CodexRuntime({
+          threadMap: new CodexThreadMap(db),
+          resolveBinary: async () => '/opt/codex',
+          transport,
+        });
+        await drain(runtime.sendMessage('s1', 'start the work', { cwd: '/project' }));
+        const context = requests[0]!.wakeContext;
+        const streams: AsyncIterable<StreamEvent>[] = [];
+        runtime.onRuntimeTurn!((_id, events) => streams.push(events));
+        expect(runtime.acquireRuntimeLock!('s1', { on: () => {} }, oldToken)).toBe(true);
+        expect(
+          wake({
+            sessionId: 's1',
+            completions: [finished(context)],
+            startTurn: true,
+            notices: ['The earlier work finished.'],
+          })
+        ).toBe(true);
+        paused = streams[0]![Symbol.asyncIterator]();
+        // The first owner has captured its acquisition, but has not started a model turn.
+        expect((await paused.next()).value).toEqual({
+          type: 'system_status',
+          data: { message: 'The earlier work finished.' },
+        });
+        runtime.releaseLock('s1', 'runtime:s1', oldToken);
+        expect(runtime.isLocked('s1')).toBe(false);
+        expect(runtime.acquireRuntimeLock!('s1', { on: () => {} }, newToken)).toBe(true);
+        const oldRemainder: StreamEvent[] = [];
+        for (let next = await paused.next(); !next.done; next = await paused.next())
+          oldRemainder.push(next.value);
+        expect(requests).toHaveLength(1);
+        expect(oldRemainder.map((event) => event.type)).toEqual(['background_task_done', 'done']);
+        // Completing the old owner must not discard the independently acquired successor.
+        expect(
+          wake({
+            sessionId: 's1',
+            completions: [finished(context, { taskId: 'cmd-2' })],
+            startTurn: true,
+            notices: [],
+          })
+        ).toBe(true);
+        successor = streams[1]![Symbol.asyncIterator]();
+        const events: StreamEvent[] = [];
+        for (let next = await successor.next(); !next.done; next = await successor.next())
+          events.push(next.value);
+        expect(events.filter((event) => event.type === 'done')).toHaveLength(1);
+        expect(requests).toHaveLength(2);
+        expect(requests[1]!.prompt).toContain('<background_update>');
+        expect(requests[1]!.wakeContext).toEqual(context);
+        expect((await runtime.getSession('/project', 's1'))?.lastMessagePreview).toBe(
+          'start the work'
+        );
+      } catch (cause) {
+        remember(cause);
+      } finally {
+        let cleanupFailed = false;
+        // Cancel both actual iterators and the owned transport before joining their cleanup.
+        const results = await Promise.allSettled([
+          Promise.resolve().then(() => paused?.return?.()),
+          Promise.resolve().then(() => successor?.return?.()),
+          Promise.resolve().then(() => runtime?.shutdown()),
+        ]);
+        for (const result of results)
+          if (result.status === 'rejected') {
+            cleanupFailed = true;
+            remember(result.reason);
+          }
+        for (const token of [oldToken, newToken]) {
+          try {
+            runtime?.releaseLock('s1', 'runtime:s1', token);
+          } catch (cause) {
+            cleanupFailed = true;
+            remember(cause);
+          }
+        }
+        if (!cleanupFailed) {
+          try {
+            db.$client.close();
+          } catch (cause) {
+            remember(cause);
+          }
+        }
+      }
+      if (failed) throw first;
+      expect(db.$client.open).toBe(false);
     });
 
     it('shows a room turn’s finished work but starts no model turn (its tools are the room’s)', async () => {

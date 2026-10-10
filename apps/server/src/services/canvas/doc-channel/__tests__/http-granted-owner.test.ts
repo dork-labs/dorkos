@@ -1,3 +1,9 @@
+import fs from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { initBoundary } from '../../../../lib/boundary.js';
+import { stopInstallationFileWrites } from '../writes/installation-file-writes.js';
+import { currentRoomDueServicePort } from '../service.js';
 const account = vi.hoisted(() => ({ owner: undefined as { id: string } | undefined }));
 vi.mock('../../../core/auth/index.js', async (original) => ({
   ...(await original<Record<string, unknown>>()),
@@ -22,6 +28,8 @@ import { createDocChannelHttpComposition } from '../http-composition.js';
 import { privateDocTurnBudget } from '../delivery/final-budget.js';
 
 let db: Db;
+let fixtureRoot: string;
+let fixtureConstructed = false;
 let rooms: RoomSubsystem;
 let approvals: ApprovalService;
 let http: ReturnType<typeof createDocChannelHttpComposition>;
@@ -35,8 +43,11 @@ const actor = () => ({
       : { kind: 'local_install', installationId: 'test-install' },
   }),
 });
-beforeEach(() => {
+beforeEach(async () => {
+  fixtureConstructed = false;
   account.owner = undefined;
+  fixtureRoot = await fs.realpath(await fs.mkdtemp(join(tmpdir(), 'original-http-doc-owner-')));
+  await initBoundary(fixtureRoot);
   db = createDb(':memory:');
   runMigrations(db);
   rooms = createRoomSubsystem({ db });
@@ -50,6 +61,7 @@ beforeEach(() => {
     approvals,
     installationId: 'test-install',
   });
+  fixtureConstructed = true;
   const now = new Date().toISOString();
   for (const id of ['a', 'b']) {
     db.insert(agents)
@@ -86,8 +98,17 @@ beforeEach(() => {
     'a'
   );
 });
-afterEach(() => {
+afterEach(async () => {
+  // A failed original constructor may retain custody; never remove an unconfirmed setup root.
+  if (!fixtureConstructed) return;
+  const drains = await Promise.allSettled([
+    Promise.resolve().then(() => stopInstallationFileWrites(http.fileWrites, db, http.channels)),
+    Promise.resolve().then(() => currentRoomDueServicePort(http.service).stopPump()),
+  ]);
+  const failure = drains.find((outcome) => outcome.status === 'rejected');
+  if (failure?.status === 'rejected') throw failure.reason;
   db.$client.close();
+  await fs.rm(fixtureRoot, { recursive: true, force: true });
 });
 const input = () => ({
   documentId,

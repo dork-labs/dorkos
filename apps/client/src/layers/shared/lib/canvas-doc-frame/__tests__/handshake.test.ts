@@ -2,14 +2,14 @@ import { MessageChannel } from 'node:worker_threads';
 import { describe, it, expect, vi } from 'vitest';
 import { DocFrameHandshake } from '../doc-handshake';
 import { fixture, clock, flush, envelope, receipt } from './fixtures';
-function setup(origin = 'null') {
+function setup(origin = 'null', noncePrefix = 'nonce') {
   const f = fixture({}, origin),
     c = clock(),
     channels: MessageChannel[] = [],
     offline = vi.fn();
   let nonce = 0;
   const h = new DocFrameHandshake(f.bound, {
-    nonce: () => `nonce${++nonce}`,
+    nonce: () => `${noncePrefix}${++nonce}`,
     channel: () => {
       const ch = new MessageChannel();
       channels.push(ch);
@@ -282,4 +282,98 @@ describe('provisional initial handshake deadline', () => {
       h.close();
     }
   );
+});
+
+it('two captured controllers isolate original windows, ports and matching durable responses', async () => {
+  const first = setup(),
+    second = setup('null', 'second-nonce');
+  const firstMessages: unknown[] = [],
+    secondMessages: unknown[] = [];
+  let failed = false,
+    originalCause: unknown;
+  const remember = (cause: unknown) => {
+    if (!failed) {
+      failed = true;
+      originalCause = cause;
+    }
+  };
+  try {
+    expect(first.controller).not.toBe(second.controller);
+    expect(first.frame).not.toBe(second.frame);
+    expect(first.h.receive(second.event)).toBe(false);
+    expect(second.h.receive(first.event)).toBe(false);
+    expect(first.channels).toHaveLength(0);
+    expect(second.channels).toHaveLength(0);
+    expect(first.h.receive(first.event)).toBe(true);
+    expect(second.h.receive(second.event)).toBe(true);
+    expect(first.channels).toHaveLength(1);
+    expect(second.channels).toHaveLength(1);
+    first.channels[0].port2.on('message', (value) => firstMessages.push(value));
+    second.channels[0].port2.on('message', (value) => secondMessages.push(value));
+    vi.mocked(second.ports.submit).mockResolvedValue({ kind: 'accepted', receipt: receipt(2) });
+    // An original request from the other captured load cannot use this controller's port.
+    second.channels[0].port2.postMessage({
+      ...first.challenge,
+      kind: 'emit',
+      requestId: envelope().id,
+      event: envelope(),
+    });
+    await new Promise((resolve) => setImmediate(resolve));
+    await flush();
+    expect(second.ports.submit).not.toHaveBeenCalled();
+    expect(secondMessages).toEqual([]);
+    first.channels[0].port2.postMessage({
+      ...first.challenge,
+      kind: 'emit',
+      requestId: envelope().id,
+      event: envelope(),
+    });
+    second.channels[0].port2.postMessage({
+      ...second.challenge,
+      kind: 'emit',
+      requestId: envelope(2).id,
+      event: envelope(2),
+    });
+    await vi.waitFor(() => {
+      expect(first.ports.submit).toHaveBeenCalledOnce();
+      expect(second.ports.submit).toHaveBeenCalledOnce();
+      expect(firstMessages).toEqual([
+        {
+          ...first.challenge,
+          kind: 'receipt',
+          requestId: envelope().id,
+          receipt: receipt(),
+        },
+      ]);
+      expect(secondMessages).toEqual([
+        {
+          ...second.challenge,
+          kind: 'receipt',
+          requestId: envelope(2).id,
+          receipt: receipt(2),
+        },
+      ]);
+    });
+    first.controller.retire();
+    expect(first.bound.current()).toBe(false);
+    expect(second.bound.current()).toBe(true);
+    expect(first.timers.size).toBe(0);
+  } catch (cause) {
+    remember(cause);
+  }
+  for (const host of [first, second]) {
+    try {
+      host.h.close();
+    } catch (cause) {
+      remember(cause);
+    }
+    for (const channel of host.channels) {
+      try {
+        channel.port2.close();
+      } catch (cause) {
+        remember(cause);
+      }
+    }
+  }
+  if (failed) throw originalCause;
 });

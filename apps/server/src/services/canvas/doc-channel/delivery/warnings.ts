@@ -46,7 +46,6 @@ const waiting = and(
   eq(receipts.state, 'accepted'),
   isNull(receipts.dispatchClaimedAt),
   isNull(receipts.turnStartedAt),
-  sql`${batches.scope} = 'session:' || ${receipts.sessionId}`,
   sql`exists (select 1 from canvas_doc_deliveries d where d.document_id = ${batches.documentId} and d.batch_id = ${batches.batchId}
     and d.route_id = ${batches.routeId}
     and d.status in ('waiting','routed') and d.event_id in (select value from json_each(${batches.inputEventIds})))`

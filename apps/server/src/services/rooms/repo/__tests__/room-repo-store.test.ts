@@ -31,6 +31,21 @@ import {
   InvalidRoomIdError,
 } from '../room-repo-store.js';
 import { RoomRepoReconciler } from '../room-repo-reconciler.js';
+import { openServerDatabase } from '@dorkos/db/internal-server';
+import { runMigrations } from '@dorkos/db';
+import { initBoundary } from '../../../../lib/boundary.js';
+import { initConfigManager, configManager } from '../../../core/config-manager.js';
+import { initAuth } from '../../../core/auth/index.js';
+import { createRoomSubsystem, setRoomService, clearRoomService } from '../../index.js';
+import { RoomRepoMutex } from '../room-repo-mutex.js';
+import { DocChannelStore } from '../../../canvas/doc-channel/store.js';
+import { createDocChannelHttpComposition } from '../../../canvas/doc-channel/http-composition.js';
+import { ApprovalService } from '../../../core/approvals/approval-service.js';
+import {
+  InstallationFileWrites,
+  readInstallationFileRoomWrites,
+  stopInstallationFileWrites,
+} from '../../../canvas/doc-channel/writes/installation-file-writes.js';
 
 const ROOM_ID = '01ROOMAAAAAAAAAAAAAAAAAAAA';
 
@@ -223,18 +238,139 @@ describe('RoomRepoReconciler', () => {
   let store: RoomRepoStore;
   let reconciler: RoomRepoReconciler;
 
-  beforeEach(async () => {
-    db = createTestDb();
-    dorkHome = await mkdtemp(path.join(tmpdir(), 'dorkos-room-repo-'));
-    store = new RoomRepoStore(db, dorkHome);
-    reconciler = new RoomRepoReconciler(store);
-    seedRoom(db);
+  let nativeRooms: ReturnType<typeof createRoomSubsystem> | undefined;
+  let http: ReturnType<typeof createDocChannelHttpComposition> | undefined;
+  let owner: InstallationFileWrites | undefined;
+  let channels: DocChannelStore | undefined;
+  let closed = true;
+  let ownedReconciler: RoomRepoReconciler | undefined;
+
+  async function retire() {
+    let failed = false;
+    let first: unknown;
+    const remember = (cause: unknown) => {
+      if (!failed) {
+        failed = true;
+        first = cause;
+      }
+    };
+    // Cancel both original producers before joining either; DB/files remain if custody fails.
+    const drains = [
+      () => ownedReconciler?.stop(),
+      () => http?.stopCheckboxWrites(),
+      () =>
+        http
+          ? http.stopFileWrites()
+          : owner && channels
+            ? stopInstallationFileWrites(owner, db, channels)
+            : undefined,
+    ].map((stop) => {
+      try {
+        return Promise.resolve(stop());
+      } catch (cause) {
+        return Promise.reject(cause);
+      }
+    });
+    for (const outcome of await Promise.allSettled(drains))
+      if (outcome.status === 'rejected') remember(outcome.reason);
+    try {
+      nativeRooms?.service.canvas.dispose();
+    } catch (cause) {
+      remember(cause);
+    }
+    try {
+      if (nativeRooms) clearRoomService(nativeRooms.service);
+    } catch (cause) {
+      remember(cause);
+    }
+    if (!failed && !closed) {
+      try {
+        db.$client.close();
+        if (db.$client.open) throw new Error('Room fixture database did not close.');
+        closed = true;
+      } catch (cause) {
+        remember(cause);
+      }
+    }
+    if (!failed && closed && dorkHome) {
+      try {
+        await rm(dorkHome, { recursive: true, force: true });
+      } catch (cause) {
+        remember(cause);
+      }
+    }
+    if (failed) throw first;
+  }
+
+  beforeEach(async ({ task }) => {
+    nativeRooms = undefined;
+    http = undefined;
+    owner = undefined;
+    channels = undefined;
+    ownedReconciler = undefined;
+    closed = true;
+    dorkHome = await fsp.realpath(await mkdtemp(path.join(tmpdir(), 'dorkos-room-repo-')));
+    try {
+      const opened = openServerDatabase(path.join(dorkHome, 'db.sqlite'));
+      db = opened.db;
+      closed = false;
+      runMigrations(db);
+      await initBoundary(dorkHome);
+      initConfigManager(dorkHome);
+      configManager.set('auth', { ...configManager.get('auth'), enabled: false });
+      initAuth(db, dorkHome);
+      nativeRooms = createRoomSubsystem({ db });
+      setRoomService(nativeRooms.service);
+      store = new RoomRepoStore(db, dorkHome);
+      seedRoom(db);
+      const mutex = new RoomRepoMutex();
+      channels = new DocChannelStore(db);
+      owner = new InstallationFileWrites({
+        db,
+        store: channels,
+        roomRepos: store,
+        roomMutex: mutex,
+      });
+      const binding = {
+        owner,
+        writer: readInstallationFileRoomWrites(owner, db, channels, store),
+        db,
+        channels,
+        repos: store,
+        mutex,
+        rooms: nativeRooms.service,
+        roomStore: nativeRooms.store,
+      };
+      const interval =
+        task.name === 'skips a tick while the previous pass is still running' ? 5 : 300_000;
+      reconciler = new RoomRepoReconciler(store, interval, null, binding);
+      ownedReconciler = reconciler;
+      http = createDocChannelHttpComposition({
+        db,
+        documents: nativeRooms.canvasDocuments,
+        rooms: nativeRooms.service,
+        roomStore: nativeRooms.store,
+        roomRepos: store,
+        approvals: new ApprovalService(db),
+        installationId: 'room-store-reconciler-fixture',
+        roomConstruction: opened.serverNativeRoomConstruction,
+        roomRepoReconciler: reconciler,
+        owningFileWrites: { channels, fileWrites: owner },
+      });
+      await mkdir(path.join(dorkHome, 'rooms'), { recursive: true });
+    } catch (cause) {
+      try {
+        await retire();
+      } catch {
+        /* Original setup cause remains primary; UNKNOWN retains files. */
+      }
+      throw cause;
+    }
   });
 
   afterEach(async () => {
-    reconciler.stop();
     vi.restoreAllMocks();
-    await rm(dorkHome, { recursive: true, force: true });
+    await retire();
   });
 
   it('rebuilds a row the cache lost, from the sidecar on disk', async () => {
@@ -341,19 +477,25 @@ describe('RoomRepoReconciler', () => {
     // Parked exactly there: the snapshot is taken, the binding lands, the
     // snapshot is returned. The pass must ask the disk again before retiring
     // anything.
-    const realList = store.listHomeDirs.bind(store);
-    vi.spyOn(store, 'listHomeDirs').mockImplementation(async () => {
-      const snapshot = await realList();
-      await store.write(sidecarFor());
+    const realList = fsp.readdir.bind(fsp);
+    const inventoryRoot = path.join(dorkHome, 'rooms');
+    let entered = false;
+    vi.spyOn(fsp, 'readdir').mockImplementation(async (...args) => {
+      const snapshot = await realList(...args);
+      if (String(args[0]) === inventoryRoot && !entered) {
+        entered = true;
+        await store.write(sidecarFor());
+      }
       return snapshot;
     });
 
     const result = await reconciler.reconcile();
 
     expect(result.removed).toBe(0);
-    // Not merely spared: the row is brought up to date, since the walk that
-    // would have synced it never saw this room.
-    expect(result.synced).toBe(1);
+    // The genuine write already inserted its row after the inventory snapshot;
+    // this pass neither replays that write nor retires the new binding.
+    expect(entered).toBe(true);
+    expect(result.synced).toBe(0);
     expect(store.getRow(ROOM_ID)).toMatchObject({ roomId: ROOM_ID, mode: 'owned' });
     expect(existsSync(store.sidecarPath(ROOM_ID))).toBe(true);
   });
@@ -366,9 +508,19 @@ describe('RoomRepoReconciler', () => {
     // the install.
     await store.write(sidecarFor());
     const denied = Object.assign(new Error('permission denied'), { code: 'EACCES' });
-    vi.spyOn(fsp, 'readFile').mockRejectedValue(denied);
+    const open = fsp.open.bind(fsp);
+    let acquired = false;
+    vi.spyOn(fsp, 'open').mockImplementation(async (...args) => {
+      const handle = await open(...args);
+      if (String(args[0]) === store.sidecarPath(ROOM_ID)) {
+        acquired = true;
+        vi.spyOn(handle, 'read').mockRejectedValue(denied);
+      }
+      return handle;
+    });
 
     await expect(reconciler.reconcile()).rejects.toThrow('permission denied');
+    expect(acquired).toBe(true);
     expect(store.getRow(ROOM_ID)).not.toBeNull();
   });
 
@@ -387,21 +539,39 @@ describe('RoomRepoReconciler', () => {
       release = resolve;
     });
     let passes = 0;
-    vi.spyOn(store, 'listHomeDirs').mockImplementation(async () => {
-      passes += 1;
-      await parked;
-      return [];
+    const realList = fsp.readdir.bind(fsp);
+    vi.spyOn(fsp, 'readdir').mockImplementation(async (...args) => {
+      if (String(args[0]) === path.join(dorkHome, 'rooms')) {
+        passes += 1;
+        await parked;
+      }
+      return realList(...args);
     });
 
-    reconciler = new RoomRepoReconciler(store, 5);
     reconciler.start();
-    await new Promise((resolve) => setTimeout(resolve, 80));
-
-    expect(passes).toBe(1);
-    release();
+    let failed = false;
+    let first: unknown;
+    try {
+      await new Promise((resolve) => setTimeout(resolve, 80));
+      expect(passes).toBe(1);
+    } catch (cause) {
+      failed = true;
+      first = cause;
+    } finally {
+      release();
+    }
+    try {
+      await reconciler.stop();
+    } catch (cause) {
+      if (!failed) {
+        failed = true;
+        first = cause;
+      }
+    }
+    if (failed) throw first;
   });
 
-  it('tidies away sidecar drafts an interrupted write left behind', async () => {
+  it('preserves unowned sidecar drafts despite their names and age', async () => {
     await store.write(sidecarFor());
     const home = store.homeDir(ROOM_ID);
     const stale = path.join(home, '.11111111-2222-3333-4444-555555555555.tmp');
@@ -414,8 +584,9 @@ describe('RoomRepoReconciler', () => {
 
     const result = await reconciler.reconcile();
 
-    expect(result.draftsRemoved).toBe(1);
-    expect(existsSync(stale)).toBe(false);
+    // Neither a stale name nor age proves this owner acquired the historical draft.
+    expect(result.draftsRemoved).toBe(0);
+    expect(existsSync(stale)).toBe(true);
     // A draft that is seconds old may belong to a write happening right now.
     expect(existsSync(fresh)).toBe(true);
     // And the sidecar itself is never a draft.

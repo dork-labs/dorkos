@@ -1,3 +1,12 @@
+const originalPumpStates = new WeakMap<
+  object,
+  () => import('./session-pump-contract.js').PumpState
+>();
+/** Genuine constructor-held capacity data; neither permission nor a mutable public state read. */
+export function readOriginalSessionPumpState(pump: object | undefined) {
+  return pump ? originalPumpStates.get(pump)?.() : undefined;
+}
+import { requireOriginalClaudeRoomPumpEffect } from './persistent-dispatch.js';
 /**
  * The long-lived owner of one claude-code session's SDK process (spec
  * `persistent-session-runtime` §4, task 3.2).
@@ -101,9 +110,9 @@ function isInit(
  */
 export class SessionPump {
   private readonly opts: SessionPumpOptions;
-  private currentState: PumpState = 'cold';
+  #currentState: PumpState = 'cold';
   private query: PumpQuery | undefined;
-  private held: HeldUserPrompt | undefined;
+  #held: HeldUserPrompt | undefined;
   private consumed: Promise<void> | undefined;
   private launchInFlight: Promise<void> | undefined;
   private initReady: Deferred | undefined;
@@ -146,14 +155,17 @@ export class SessionPump {
    *
    * @param opts - The session, its launcher, and the seams the rest of P3 uses
    */
+  readonly #fixedLaunch: SessionPumpOptions['launch'];
   constructor(opts: SessionPumpOptions) {
+    this.#fixedLaunch = opts.launch;
+    originalPumpStates.set(this, () => this.#currentState);
     this.opts = opts;
     this.quiet = new ProcessQuiet({
       sessionId: opts.sessionId,
       // A getter, not the tracker itself: every launch replaces it, and a
       // captured reference would answer for the process that went away.
       liveness: () => this.liveness,
-      isTurnOpen: () => this.currentState === 'running',
+      isTurnOpen: () => this.#currentState === 'running',
       hasRuntimeTurnOpen: () => opts.hasRuntimeTurnOpen?.() === true,
       hasPendingInteraction: () => opts.hasPendingInteraction?.() === true,
       hasPendingTimer: () => opts.hasPendingTimer?.() === true,
@@ -180,12 +192,12 @@ export class SessionPump {
 
   /** Where the machine is right now, including the two internal states. */
   get state(): PumpState {
-    return this.currentState;
+    return this.#currentState;
   }
 
   /** What `getSessionWarmth` reports for this session. */
   get warmth(): SessionWarmth {
-    return WARMTH_OF[this.currentState];
+    return WARMTH_OF[this.#currentState];
   }
 
   /**
@@ -199,7 +211,7 @@ export class SessionPump {
 
   /** True while a subprocess exists or is being booted — what the ceiling counts. */
   get holdsProcess(): boolean {
-    return HOLDS_PROCESS.includes(this.currentState);
+    return HOLDS_PROCESS.includes(this.#currentState);
   }
 
   /**
@@ -211,7 +223,7 @@ export class SessionPump {
    * that used to end the process. Never cache it across a relaunch — a crash
    * replaces the query, and the old one answers nothing.
    */
-  get controlQuery(): PumpControlQuery | undefined {
+  get controlQuery(): (PumpControlQuery & Pick<PumpQuery, 'close'>) | undefined {
     return this.query;
   }
 
@@ -252,7 +264,7 @@ export class SessionPump {
    */
   async warm(): Promise<void> {
     this.assertUsable();
-    if (this.currentState === 'warm' || this.currentState === 'running') return;
+    if (this.#currentState === 'warm' || this.#currentState === 'running') return;
     await this.launch();
   }
 
@@ -305,7 +317,7 @@ export class SessionPump {
         `session ${this.sessionId} was dispatched an empty batch; there is no turn to open`
       );
     }
-    if (this.currentState === 'running') {
+    if (this.#currentState === 'running') {
       throw new IllegalPumpTransitionError('running', 'running');
     }
     if (this.opts.hasPendingInteraction?.()) {
@@ -317,7 +329,7 @@ export class SessionPump {
     // Fresh for the turn about to open: a tombstone left by a previous close
     // must not settle this one.
     this.turnClosedWhileOpening = false;
-    if (this.currentState === 'cold' || this.currentState === 'crashed') {
+    if (this.#currentState === 'cold' || this.#currentState === 'crashed') {
       // The first message rides the launch rather than being pushed after it:
       // it is in the stream from construction, so there is no window in which
       // the process is up and the message is merely "accepted".
@@ -329,8 +341,8 @@ export class SessionPump {
     // A launch somebody else started (an explicit `warm()`) has to finish
     // before this can push into its stream.
     if (this.launchInFlight) await this.launchInFlight;
-    if (this.currentState !== 'warm') {
-      throw new IllegalPumpTransitionError(this.currentState, 'running');
+    if (this.#currentState !== 'warm') {
+      throw new IllegalPumpTransitionError(this.#currentState, 'running');
     }
     this.pushOrFail(first);
     this.pushRest(rest);
@@ -370,7 +382,14 @@ export class SessionPump {
 
   /** Push one message into the held stream, or report the process gone. */
   private pushOrFail(message: PumpDispatch): void {
-    if (this.held?.push(message.content, message.messageId) === true) return;
+    const held = this.#held,
+      push = held?.push;
+    const content = message.content,
+      messageId = message.messageId;
+    if (held && push) {
+      requireOriginalClaudeRoomPumpEffect(this, message);
+      if (push.call(held, content, messageId) === true) return;
+    }
     // `false` is the one answer the seam gives that is definite: the stream
     // is finished and nothing was sent. Report the process gone so the caller
     // leaves the message queued for the relaunch.
@@ -410,12 +429,12 @@ export class SessionPump {
    */
   steer(content: string, messageId: string): 'delivered' | 'no-open-turn' | 'stream-closed' {
     this.assertUsable();
-    if (this.currentState !== 'running') return 'no-open-turn';
+    if (this.#currentState !== 'running') return 'no-open-turn';
     // `held` is set for the life of a launched process and cleared the instant
     // it goes away (`noteProcessGone`, `drain`), so its absence — or a `false`
     // from `push`, the one definite answer the seam gives — is the stream being
     // gone out from under a turn that has not yet been told.
-    if (this.held?.push(content, messageId) === true) return 'delivered';
+    if (this.#held?.push(content, messageId) === true) return 'delivered';
     return 'stream-closed';
   }
 
@@ -451,8 +470,8 @@ export class SessionPump {
     // WARM or RUNNING both hold a live stream; COLD, CRASHED and WARMING-before-
     // ready hold none. The held stream's own `false` covers the amnesiac race
     // where the process went away after this check.
-    if (this.currentState !== 'warm' && this.currentState !== 'running') return 'no-process';
-    if (this.held?.stage(content, messageId) === true) return 'delivered';
+    if (this.#currentState !== 'warm' && this.#currentState !== 'running') return 'no-process';
+    if (this.#held?.stage(content, messageId) === true) return 'delivered';
     return 'stream-closed';
   }
 
@@ -467,7 +486,7 @@ export class SessionPump {
    * makes it.
    */
   endTurn(): void {
-    if (this.currentState === 'running') {
+    if (this.#currentState === 'running') {
       this.setState('warm');
       return;
     }
@@ -570,16 +589,16 @@ export class SessionPump {
    *   unless its busy spell has run past the background-work ceiling)
    */
   async reap(): Promise<boolean> {
-    if (this.currentState === 'cold' || this.currentState === 'reaped') return false;
-    if (this.currentState === 'crashed') {
+    if (this.#currentState === 'cold' || this.#currentState === 'reaped') return false;
+    if (this.#currentState === 'crashed') {
       // Nothing left to close; retiring the record is the whole of it.
       this.setState('reaped');
       return true;
     }
-    if (this.currentState !== 'warm') {
+    if (this.#currentState !== 'warm') {
       logger.debug('[SessionPump] declined to reap a session that is not warm', {
         sessionId: this.sessionId,
-        state: this.currentState,
+        state: this.#currentState,
       });
       return false;
     }
@@ -637,7 +656,7 @@ export class SessionPump {
    * @returns True when the process was closed, false when the pump declined
    */
   async reapReclaimable(): Promise<boolean> {
-    if (this.currentState !== 'warm' || !this.quiet.isHoldingOnlyReclaimable()) return false;
+    if (this.#currentState !== 'warm' || !this.quiet.isHoldingOnlyReclaimable()) return false;
     this.setState('reaped');
     await this.drain();
     return true;
@@ -662,7 +681,7 @@ export class SessionPump {
     }
     this.disposed = true;
     this.endedBy = reason;
-    if (this.currentState !== 'cold') this.setState('cold');
+    if (this.#currentState !== 'cold') this.setState('cold');
     this.initReady?.reject(
       new PumpRefusedError('process-gone', `session ${this.sessionId} was torn down`)
     );
@@ -674,7 +693,7 @@ export class SessionPump {
     if (this.disposed) {
       throw new PumpRefusedError('process-gone', `session ${this.sessionId}'s pump is torn down`);
     }
-    if (this.currentState === 'reaped') throw new IllegalPumpTransitionError('reaped', 'warming');
+    if (this.#currentState === 'reaped') throw new IllegalPumpTransitionError('reaped', 'warming');
   }
 
   /**
@@ -683,10 +702,10 @@ export class SessionPump {
    * seams downstream.
    */
   private setState(to: PumpState): void {
-    const from = this.currentState;
+    const from = this.#currentState;
     if (from === to) return;
     if (!LEGAL_TRANSITIONS[from].includes(to)) throw new IllegalPumpTransitionError(from, to);
-    this.currentState = to;
+    this.#currentState = to;
     try {
       this.opts.onStateChange?.({ from, to });
     } catch (err) {
@@ -715,8 +734,8 @@ export class SessionPump {
     // A teardown can land while the slot is being claimed, and a launch that
     // carried on from here would boot a process nothing is left to close.
     this.assertUsable();
-    if (this.currentState === 'crashed') this.setState('resuming');
-    const resuming = this.currentState === 'resuming';
+    if (this.#currentState === 'crashed') this.setState('resuming');
+    const resuming = this.#currentState === 'resuming';
     this.setState('warming');
     this.cachedCapabilities = [];
     // A fresh process has no background work, and the level signal is not
@@ -729,7 +748,7 @@ export class SessionPump {
       firstMessage === undefined
         ? createIdlePrompt()
         : createHeldUserPrompt(firstMessage.content, firstMessage.messageId);
-    this.held = held;
+    this.#held = held;
     const ready = deferred();
     this.initReady = ready;
     this.initTimer = setTimeout(() => {
@@ -742,10 +761,16 @@ export class SessionPump {
     this.initTimer.unref?.();
     let live: PumpQuery;
     try {
-      live = await this.opts.launch({ sessionId: this.sessionId, prompt: held.prompt, resuming });
+      live = await this.#fixedLaunch({
+        sessionId: this.sessionId,
+        prompt: held.prompt,
+        resuming,
+        pump: this,
+        firstMessage,
+      });
     } catch (err) {
       held.close();
-      this.held = undefined;
+      this.#held = undefined;
       this.noteProcessGone(err);
       throw err;
     }
@@ -810,7 +835,7 @@ export class SessionPump {
     this.clearInitTimer();
     // A re-initialize on a live process refreshes the capabilities and nothing
     // else: there is no turn to open and no state to leave.
-    if (this.currentState === 'warming') this.setState('warm');
+    if (this.#currentState === 'warming') this.setState('warm');
     this.initReady?.resolve();
   }
 
@@ -821,10 +846,10 @@ export class SessionPump {
   private noteProcessGone(error: unknown): void {
     this.clearInitTimer();
     this.query = undefined;
-    this.held = undefined;
-    if (this.currentState === 'reaped' || this.currentState === 'cold') return;
-    if (this.currentState === 'crashed') return;
-    const stateAtCrash = this.currentState;
+    this.#held = undefined;
+    if (this.#currentState === 'reaped' || this.#currentState === 'cold') return;
+    if (this.#currentState === 'crashed') return;
+    const stateAtCrash = this.#currentState;
     this.setState('crashed');
     this.initReady?.reject(
       error ??
@@ -861,10 +886,10 @@ export class SessionPump {
    * CLI child running, because closing stdin alone does not terminate it.
    */
   private async drain(): Promise<void> {
-    const held = this.held;
+    const held = this.#held;
     const live = this.query;
     const consumed = this.consumed;
-    this.held = undefined;
+    this.#held = undefined;
     this.query = undefined;
     this.clearInitTimer();
     // The process this debt belonged to is going away, so nothing is left to

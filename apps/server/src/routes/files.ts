@@ -1,3 +1,4 @@
+import { DocIngestRefusal } from '../services/canvas/doc-channel/ingest-types.js';
 import { Router } from 'express';
 import { z } from 'zod';
 import crypto from 'crypto';
@@ -28,6 +29,10 @@ import {
 } from '../lib/file-route-guards.js';
 import { FILE_LIMITS } from '../config/constants.js';
 import { logger } from '../lib/logger.js';
+type DocChannelHttp = ReturnType<
+  typeof import('../services/canvas/doc-channel/http-composition.js').createDocChannelHttpComposition
+>;
+import { saveRecognizedNormalFileService } from '../services/canvas/doc-channel/writes/normal-file-save.js';
 
 const router = Router();
 
@@ -173,6 +178,32 @@ router.put('/content', async (req, res) => {
     return res.status(400).json({ error: 'Invalid body', details: z.flattenError(parsed.error) });
   }
   const { cwd, path: relPath, content, expectedHash, expectedContent } = parsed.data;
+  const installed = req.app.locals.docChannelHttp as DocChannelHttp | undefined;
+  if (installed) {
+    try {
+      // Only the original constructed facade enters the canonical owner/fence.
+      // A replaced public method or refused installed owner never falls back to raw I/O.
+      const outcome = await saveRecognizedNormalFileService(
+        installed.normalFileSave,
+        req,
+        res,
+        parsed.data
+      );
+      return res.status('code' in outcome ? 409 : 200).json(outcome);
+    } catch (cause) {
+      if (cause instanceof DocIngestRefusal && cause.code === 'DOC_EVENT_ID_CONFLICT')
+        return res.status(409).json({
+          error: 'Document save operation conflicts with its recorded event',
+          code: cause.code,
+        });
+      if (sendPathError(res, cause)) return;
+      const code = (cause as NodeJS.ErrnoException | undefined)?.code;
+      if (code === 'ENOENT')
+        return res.status(404).json({ error: 'File not found', code: 'NOT_FOUND' });
+      if (code === 'EACCES') return res.status(403).json({ error: 'Permission denied', code });
+      return res.status(500).json({ error: 'File save unavailable' });
+    }
+  }
 
   let resolved: string;
   try {

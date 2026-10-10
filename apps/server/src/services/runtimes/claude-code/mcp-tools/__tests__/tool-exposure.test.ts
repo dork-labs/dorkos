@@ -471,14 +471,21 @@ describe('in-session tool exposure', () => {
     // `spin-off-chats` §1), all three DEFERRED on a plain session.
     // 124 -> 118 (spec `spin-off-chats` §7): the six relay send, inbox and
     // endpoint tools retire. Both counts move by the same amounts.
-    expect(tools).toHaveLength(118);
-    expect(deferred).toHaveLength(107);
+    expect(tools).toHaveLength(123);
+    expect(deferred).toHaveLength(112);
+    // Five owned Doc management/task tools remain deferred: 123 total, 112 deferred.
     for (const name of [
+      'audit_verify',
       'configure_doc_channel',
       'approve_doc_route',
       'revoke_doc_route',
       'canvas_send',
       'canvas_patch_state',
+      'replay_doc_batch',
+      'inspect_doc_channel',
+      'issue_doc_token',
+      'revoke_doc_token',
+      'canvas_set_checkbox',
     ]) {
       expect(deferred.map((tool) => tool.name)).toContain(name);
     }

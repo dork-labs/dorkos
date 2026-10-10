@@ -19,7 +19,7 @@
 import type { AuthorRegistry } from '../author-registry.js';
 import type { ActiveClaimView, HeldView } from '../room-claims.js';
 import type { RoomCore } from '../service/room-core.js';
-import { RoomError } from '../room-errors.js';
+import { RoomError } from '../data/room-errors.js';
 import type { RoomStore } from '../room-store.js';
 import type { RoomTriggerDispatcher } from '../room-trigger.js';
 import type { RoomVisibility } from '../service/room-visibility.js';

@@ -77,6 +77,7 @@ Maps source code patterns to the guides that document them. Patterns use `grep -
 | `sidebar-model.md` | The sidebar's pure model: zone/section/row shape, the named rules and how they compose, reading a `reason`, adding a rule or a fixture, and the standing no-verbs-in-the-model rule | `features/dashboard-sidebar/model/\|entities/interactions/` |
 | `room-repos.md` | A room's own git repo: on-disk layout and file-first sidecar, the one-writer rule, turn cwd resolution, the merge contract and its refusals, human saves and dirty-main repair, `ROOM.md` delivery, the worktree reap, and the trust boundary | `apps/server/src/services/rooms/repo/\|packages/shared/src/room-repo\|packages/shared/src/room-files\|apps/client/src/layers/features/file-explorer/\|operating-skills/src/skills/working-in-room-repos` |
 | `ci.md` | The CI pipeline for agents: required checks (ruleset only), the two gates, sharding, the merge queue, merge-tail, the admin-merge guard, and CI Steward (ledger, census, deadlock invariant, fence) | `.github/workflows/\|lefthook.yml\|turbo.json\|^ci/\|packages/ci-steward/\|scripts/should-arm-automerge\|scripts/assert-\|.claude/hooks/merge-guard\|.claude/rules/ci-pipeline\|creating-pull-requests/` |
+| `document-channels.md` | App inputs, grants, bearer scope, receipt/state streams, widget bindings, owned cleanup and source-specific validation limits | `services/canvas/doc-channel/\|routes/canvas-doc-token-events\|canvas-channel-schemas` |
 
 ## Pattern Syntax
 
@@ -88,6 +89,8 @@ Example: If `apps/client/src/layers/shared/ui/button.tsx` changes, it matches:
 - `styling-theming.md` via `apps/client/src/layers/shared/ui/`
 
 ## Maintenance Tracking
+
+Document Channel guides reviewed on 2026-10-06. Route/grant, downstream/state/acknowledgement, scope-stream, widget and standalone criteria retain accepted evidence for their exact earlier source revisions. Focused editor/MCP App/presence/checkbox, 117 stream, 101 writer, 107 pending-recovery and canonical frame subjects passed separately. The whole Room Runner suite and three stream-timer ownership controls passed with server types on revision `c85c890a`; later source changes are not covered by that result. Full-phase consumer/conformance acceptance and ordinary publication verification remain pending. Room MCP source hosting remains unavailable; personal database and production-vault migration are excluded.
 
 Routing guide added on 2026-10-06 for file-based routes, opaque identity and explicit draft lifecycle.
 
@@ -230,6 +233,7 @@ The **GitHub repo description** (the one-line tagline on github.com/dork-labs/do
 | `docs/guides/flow/driving-it-manually.mdx`      | Running `/flow` by hand, one stage at a time                                                                                                | `contributing/flow-engine.md\|apps/e2e/tests/flow/`                                                                                                                                                                                                         |
 | `docs/guides/flow/turning-on-autonomy.mdx`      | The three ways to let `/flow` reach a review gate on its own                                                                                | `contributing/flow-engine.md\|apps/e2e/tests/flow/`                                                                                                                                                                                                         |
 | `docs/guides/flow/the-dials.mdx`                | Every `/flow` config knob, its default, and when to turn it                                                                                 | `contributing/flow-engine.md\|apps/e2e/tests/flow/`                                                                                                                                                                                                         |
+| `docs/integrations/document-channels.mdx`       | Document app retries, receipts, grants and standalone token access                                                                          | `services/canvas/doc-channel/\|canvas-channel-schemas\|doc-channel`                                                                                                                                                                                         |
 
 **The five `/flow` pages have no in-repo engine to watch.** `/flow` lives entirely in the external marketplace plugin (`dork-labs/marketplace`, `plugins/flow/`; ADR-0297), so no source pattern here can detect the drift that matters — a stage skill or adapter verb changing in that repo. The patterns above cover the two in-repo surfaces that _can_ drift (`contributing/flow-engine.md` and the proof-pipeline e2e), and no more. Re-read these five against the installed plugin when it is upgraded; the hook will not remind you.
 

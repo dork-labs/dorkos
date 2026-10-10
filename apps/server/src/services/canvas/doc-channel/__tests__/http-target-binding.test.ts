@@ -1,3 +1,9 @@
+import fs from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { initBoundary } from '../../../../lib/boundary.js';
+import { stopInstallationFileWrites } from '../writes/installation-file-writes.js';
+import { currentRoomDueServicePort } from '../service.js';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { agents, sessionMetadata, createDb, runMigrations, type Db } from '@dorkos/db';
 import { createRoomSubsystem, type RoomSubsystem } from '../../../rooms/index.js';
@@ -15,10 +21,14 @@ import { createServerPrincipal } from '../../../connectors/principal/server-prin
 import { createDocChannelHttpComposition } from '../http-composition.js';
 
 let db: Db;
+let fixtureRoot: string;
+let fixtureConstructed = false;
 let rooms: RoomSubsystem;
 let approvals: ApprovalService;
 let http: ReturnType<typeof createDocChannelHttpComposition>;
 let documentId: string;
+let runtimePrincipalCurrent: (proof: ReturnType<typeof createServerPrincipal>) => boolean;
+let revalidateRuntime: (proof: ReturnType<typeof createServerPrincipal>) => Promise<boolean>;
 const actor = () => ({
   surface: 'http' as const,
   principal: createServerPrincipal({
@@ -26,7 +36,12 @@ const actor = () => ({
     owner: { kind: 'local_install', installationId: 'test-install' },
   }),
 });
-beforeEach(() => {
+beforeEach(async () => {
+  fixtureConstructed = false;
+  runtimePrincipalCurrent = () => false;
+  revalidateRuntime = async () => false;
+  fixtureRoot = await fs.realpath(await fs.mkdtemp(join(tmpdir(), 'original-http-doc-owner-')));
+  await initBoundary(fixtureRoot);
   db = createDb(':memory:');
   runMigrations(db);
   rooms = createRoomSubsystem({ db });
@@ -39,7 +54,10 @@ beforeEach(() => {
     roomRepos: new RoomRepoStore(db, '/unused'),
     approvals,
     installationId: 'test-install',
+    runtimePrincipalCurrent: (proof) => runtimePrincipalCurrent(proof),
+    revalidateRuntime: (proof) => revalidateRuntime(proof),
   });
+  fixtureConstructed = true;
   const now = new Date().toISOString();
   for (const id of ['a', 'b']) {
     db.insert(agents)
@@ -76,8 +94,17 @@ beforeEach(() => {
     'a'
   );
 });
-afterEach(() => {
+afterEach(async () => {
+  // A failed original constructor may retain custody; never remove an unconfirmed setup root.
+  if (!fixtureConstructed) return;
+  const drains = await Promise.allSettled([
+    Promise.resolve().then(() => stopInstallationFileWrites(http.fileWrites, db, http.channels)),
+    Promise.resolve().then(() => currentRoomDueServicePort(http.service).stopPump()),
+  ]);
+  const failure = drains.find((outcome) => outcome.status === 'rejected');
+  if (failure?.status === 'rejected') throw failure.reason;
   db.$client.close();
+  await fs.rm(fixtureRoot, { recursive: true, force: true });
   resetSessionKeys();
 });
 const input = () => ({
@@ -135,21 +162,14 @@ describe('production explicit agent target binding', () => {
     );
     const resolved = await principals.resolve({ bearer: opened.bearer, expectedRuntime: 'codex' });
     if (resolved.status !== 'resolved') throw new Error('Expected authenticated turn');
-    const composition = createDocChannelHttpComposition({
-      db,
-      documents: rooms.canvasDocuments,
-      rooms: rooms.service,
-      roomStore: rooms.store,
-      roomRepos: new RoomRepoStore(db, '/unused'),
-      approvals,
-      installationId: 'test-install',
-      runtimePrincipalCurrent: (proof) => principals.isPrincipalCurrent(proof),
-      revalidateRuntime: async (proof) => {
-        await Promise.resolve();
-        await principals.revoke(opened.bindingId, 'turn_cancelled');
-        return principals.revalidatePrincipal(proof);
-      },
-    });
+    // Exercise the first original constructor's configured callbacks, not a second installation.
+    runtimePrincipalCurrent = (proof) => principals.isPrincipalCurrent(proof);
+    revalidateRuntime = async (proof) => {
+      await Promise.resolve();
+      await principals.revoke(opened.bindingId, 'turn_cancelled');
+      return principals.revalidatePrincipal(proof);
+    };
+    const composition = http;
     const envelope = { v: 1, id: randomUUID(), type: 'task.changed', payload: {} };
     await expect(
       composition.service.ingestEvent(documentId, envelope, {

@@ -73,7 +73,8 @@ export interface PrivateSessionMessageSourceAdapter<
     tx: DbTransaction,
     receipt: SessionMessageAcceptanceReceipt,
     toSessionId: string,
-    now: string
+    now: string,
+    previousSourceScope?: string
   ): string | undefined;
   /** Trusted reduction-only recovery hook; called only after ownership rollback. */
   onRebindFailed?(error: unknown): undefined;

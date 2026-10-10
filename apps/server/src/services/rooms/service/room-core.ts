@@ -1,3 +1,9 @@
+import { readOriginalHttpRoomSessionPlacement } from '../../canvas/doc-channel/http-composition.js';
+import {
+  createRoomDocBudgetCompanion,
+  type RoomDocBudgetCompanion,
+  type RoomTurnBudget,
+} from '../limits/turn-budget.js';
 /**
  * The state every room collaborator reads, built once and shared by all of
  * them.
@@ -32,18 +38,322 @@ import type { ReactionBudget } from '../reactions/reaction-budget.js';
 import type { ReactionStore } from '../reactions/reaction-store.js';
 import { roomScope, type CanvasDocumentStore, type CanvasService } from '../../canvas/index.js';
 import type { AttachmentRowStore } from '../attachments/attachment-row-store.js';
-import type { RoomAgentLookup } from '../room-errors.js';
+import type { RoomAgentLookup } from '../data/room-errors.js';
 import { RoomRoster } from '../room-roster.js';
-import type { RoomStore } from '../room-store.js';
+import {
+  readRoomStoreGrantedDocTargetBinding,
+  requireRoomStoreFileWriteDatabase,
+  readRoomStoreRepoAgentRoster,
+  readRoomStoreFileWritePolicyState,
+  readRoomStoreOriginalDispatchFacts,
+  readRoomStoreOriginalNativeDispatchFacts,
+  readRoomStoreOriginalSessionOwner,
+  type OriginalRoomDispatchFacts,
+  type OriginalRoomFileDispatchFacts,
+  type RoomStore,
+} from '../room-store.js';
+import type { Db } from '@dorkos/db';
+import {
+  readOriginalSessionRoomRunner,
+  type OriginalSessionRoomRunner,
+} from '../room-turn-runner.js';
+import type { RoomTurnRequest, RoomTurnRunner } from '../room-turn-port.js';
 import type { RoomBroadcaster } from '../room-stream.js';
-import { RoomTriggerDispatcher, type RoomTriggerWriter } from '../room-trigger.js';
+import {
+  RoomTriggerDispatcher,
+  readOriginalRoomTriggerRequest,
+  readOriginalRoomTriggerPlacement,
+  readOriginalRoomTriggerBusyAgents,
+  type OriginalRoomTriggerRequestData,
+  type RoomTriggerWriter,
+} from '../room-trigger.js';
 import type {
   RoomEntryIndexer,
   RoomMessageFinder,
   RoomMirrorAccess,
   RoomMirrorWritePolicy,
   RoomServiceDeps,
+  GrantedDocTargetBinding,
 } from './room-service-deps.js';
+
+declare const originalDispatchBrand: unique symbol;
+export interface OriginalRoomDispatchCustody {
+  readonly [originalDispatchBrand]: true;
+}
+const dispatchCores = new WeakMap<
+  RoomTriggerDispatcher,
+  {
+    core: RoomCore;
+    store: RoomStore;
+    budget: RoomTurnBudget;
+    runner: RoomTurnRunner;
+    limitsFor: RoomLimitsResolver;
+  }
+>();
+const dispatchCustodies = new WeakMap<
+  OriginalRoomDispatchCustody,
+  {
+    request: RoomTurnRequest;
+    data: Readonly<OriginalRoomTriggerRequestData>;
+    originalRunner: OriginalSessionRoomRunner;
+  }
+>();
+const requestCustodies = new WeakMap<RoomTurnRequest, OriginalRoomDispatchCustody>();
+/** Lazy fixed origin recognition, called only after original factory/core construction. */
+export function readOriginalRoomDispatchRequest(
+  request: RoomTurnRequest,
+  runner: RoomTurnRunner
+): OriginalRoomDispatchCustody | undefined {
+  const originalRunner = readOriginalSessionRoomRunner(runner),
+    data = readOriginalRoomTriggerRequest(request, runner);
+  if (!originalRunner || !data) return undefined;
+  const origin = dispatchCores.get(data.trigger),
+    budget = docBudgetStores.get(data.store);
+  if (
+    !origin ||
+    !budget ||
+    budget.core !== origin.core ||
+    budget.budget !== data.budget ||
+    origin.store !== data.store ||
+    origin.budget !== data.budget ||
+    origin.runner !== runner
+  )
+    return undefined;
+  let custody = requestCustodies.get(request);
+  if (!custody) {
+    custody = Object.freeze({}) as OriginalRoomDispatchCustody;
+    dispatchCustodies.set(custody, { request, data, originalRunner });
+    requestCustodies.set(request, custody);
+  }
+  return custody;
+}
+/** Genuine original request plus current constructor-native Room facts; no ready boolean is issued. */
+export function readOriginalRoomRequestCurrent(
+  request: RoomTurnRequest,
+  runner: RoomTurnRunner
+): Readonly<OriginalRoomFileDispatchFacts> | undefined {
+  const custody = readOriginalRoomDispatchRequest(request, runner);
+  if (!custody) return undefined;
+  const state = dispatchCustodies.get(custody)!;
+  const facts = readRoomStoreOriginalNativeDispatchFacts(state.data.store, state.data);
+  if (!facts || readOriginalRoomDispatchRequest(request, runner) !== custody) return undefined;
+  return facts;
+}
+/** Same private request/native Store and actual session row, separate from Doc cascade eligibility. */
+export function readOriginalRoomSessionOwner(
+  request: RoomTurnRequest,
+  runner: RoomTurnRunner,
+  sessionId: string
+): boolean {
+  const custody = readOriginalRoomDispatchRequest(request, runner);
+  if (!custody) return false;
+  const state = dispatchCustodies.get(custody)!;
+  const facts = readOriginalRoomRequestCurrent(request, runner);
+  if (!facts || readOriginalRoomDispatchRequest(request, runner) !== custody) return false;
+  const fresh = readOriginalRoomRequestCurrent(request, runner);
+  if (!fresh || readOriginalRoomDispatchRequest(request, runner) !== custody) return false;
+  // The fixed native ownership SQL is the tail, after all request-lifetime
+  // lookups. No configured reader runs after it to make its answer stale.
+  return readRoomStoreOriginalSessionOwner(
+    state.data.store,
+    sessionId,
+    fresh.targetRuntime,
+    fresh.targetAgentPath
+  );
+}
+/** Exact owning Core/Store plus genuine currently awaited Runner launch, never request DATA alone. */
+export function readRoomCoreOriginalFileRequest(
+  core: RoomCore,
+  ownDb: Db,
+  store: RoomStore,
+  request: RoomTurnRequest,
+  runner: RoomTurnRunner
+) {
+  requireRoomCoreFileWriteStore(core, ownDb, store);
+  const custody = readOriginalRoomDispatchRequest(request, runner);
+  if (!custody) return undefined;
+  const state = dispatchCustodies.get(custody)!;
+  const origin = dispatchCores.get(state.data.trigger);
+  if (!origin || origin.core !== core || origin.store !== store) return undefined;
+  const facts = readOriginalRoomRequestCurrent(request, runner);
+  if (!facts || readOriginalRoomDispatchRequest(request, runner) !== custody) return undefined;
+  requireRoomCoreFileWriteStore(core, ownDb, store);
+  return Object.freeze({ ...facts, roomId: state.data.roomId, dispatchId: state.data.dispatchId });
+}
+/** Actual dispatcher placement origin before the request exists; no DTO/native ancestry reconstruction. */
+export function readOriginalRoomPlacementFacts(
+  token: object,
+  ownDb: Db,
+  exactStore: RoomStore
+): Readonly<{ roomId: string; targetAgentPath: string; displayName: string }> | undefined {
+  const resumed = readOriginalHttpRoomSessionPlacement(token, ownDb, exactStore);
+  if (resumed) return resumed;
+  const data = readOriginalRoomTriggerPlacement(token);
+  if (!data) return undefined;
+  const origin = dispatchCores.get(data.trigger),
+    budget = docBudgetStores.get(data.store);
+  if (
+    !origin ||
+    !budget ||
+    origin.store !== exactStore ||
+    data.store !== exactStore ||
+    origin.runner !== data.runner ||
+    !readOriginalSessionRoomRunner(data.runner) ||
+    origin.budget !== data.budget ||
+    budget.core !== origin.core ||
+    budget.budget !== data.budget
+  )
+    return undefined;
+  requireRoomStoreFileWriteDatabase(exactStore, ownDb);
+  const facts = readRoomStoreOriginalNativeDispatchFacts(exactStore, data);
+  if (!facts || !readOriginalRoomTriggerPlacement(token)) return undefined;
+  requireRoomStoreFileWriteDatabase(exactStore, ownDb);
+  return Object.freeze({
+    ...facts,
+    roomId: data.roomId,
+    dispatchId: data.dispatchId,
+    displayName: data.displayName,
+  });
+}
+/** Current PRODUCER Room facts, never destination Doc target/cap/dispatch-attempt authority. */
+export function readOriginalRoomDispatchFacts(
+  custody: OriginalRoomDispatchCustody,
+  ownDb: Db
+):
+  | Readonly<
+      OriginalRoomDispatchFacts & {
+        dispatchId: string;
+        initialSessionId: string | null;
+        producerRoomMaxAgentDepth: number;
+      }
+    >
+  | undefined {
+  const state = dispatchCustodies.get(custody);
+  if (
+    !state ||
+    readOriginalRoomDispatchRequest(state.request, state.data.runner) !== custody ||
+    readOriginalSessionRoomRunner(state.data.runner) !== state.originalRunner
+  )
+    return undefined;
+  const origin = dispatchCores.get(state.data.trigger);
+  if (!origin) return undefined;
+  const facts = readRoomStoreOriginalDispatchFacts(origin.store, ownDb, state.data);
+  if (!facts) return undefined;
+  createRoomDocBudgetCompanion(origin.budget, ownDb);
+  const limits = origin.limitsFor(state.data.roomId);
+  if (readOriginalRoomDispatchRequest(state.request, state.data.runner) !== custody)
+    return undefined;
+  return Object.freeze({
+    ...facts,
+    dispatchId: state.data.dispatchId,
+    initialSessionId: state.data.initialSessionId,
+    producerRoomMaxAgentDepth: limits.maxAgentDepth,
+  });
+}
+
+const docTargetCores = new WeakMap<RoomCore, RoomStore>();
+const originalCoreTriggers = new WeakMap<RoomCore, RoomTriggerDispatcher>();
+/** Busy DATA follows the captured original trigger's private held-claim lifetime. */
+export function readRoomCoreOriginalBusyAgents(
+  core: RoomCore,
+  db: Db,
+  store: RoomStore
+): readonly string[] {
+  requireRoomCoreFileWriteStore(core, db, store);
+  const trigger = originalCoreTriggers.get(core);
+  if (!trigger || dispatchCores.get(trigger)?.core !== core)
+    throw new Error('Unknown original room busy core.');
+  const result = readOriginalRoomTriggerBusyAgents(trigger, store);
+  requireRoomCoreFileWriteStore(core, db, store);
+  return result;
+}
+/** Fixed constructor core/store recognition; no caller-provided core-shaped permission. */
+export function requireRoomCoreFileWriteStore(
+  core: RoomCore,
+  exactDb: Db,
+  exactStore?: RoomStore
+): undefined {
+  const store = docTargetCores.get(core);
+  if (!store || (exactStore !== undefined && store !== exactStore))
+    throw new Error('Unknown original room file core/store.');
+  requireRoomStoreFileWriteDatabase(store, exactDb);
+  return undefined;
+}
+/** Same actual native Store constructor DATA, never a caller or source-eligibility issuer. */
+export function readRoomCoreRepoAgentRoster(core: RoomCore, exactDb: Db, roomId: string) {
+  requireRoomCoreFileWriteStore(core, exactDb);
+  return readRoomStoreRepoAgentRoster(docTargetCores.get(core)!, exactDb, roomId);
+}
+/** Read file-write policy DATA through the original Room core. */
+export function readRoomCoreFileWritePolicyState(
+  core: RoomCore,
+  exactDb: Db,
+  roomId: string,
+  authorId: string
+) {
+  requireRoomCoreFileWriteStore(core, exactDb);
+  return readRoomStoreFileWritePolicyState(docTargetCores.get(core)!, exactDb, roomId, authorId);
+}
+
+const docBudgetStores = new WeakMap<RoomStore, { core: RoomCore; budget: RoomTurnBudget } | null>();
+/** Fixed original Store/target/native Db gate; no public core or budget getter. */
+export function createRoomStoreDocBudgetCompanion(
+  store: RoomStore,
+  exactOwnDb: Db,
+  roomId: string,
+  agentId: string,
+  canonicalSessionId: string,
+  runtime: string
+): RoomDocBudgetCompanion {
+  const original = docBudgetStores.get(store);
+  if (
+    !original ||
+    !readRoomCoreGrantedDocTargetBinding(
+      original.core,
+      exactOwnDb,
+      roomId,
+      agentId,
+      canonicalSessionId,
+      runtime
+    )
+  )
+    throw new Error('Unavailable genuine Room budget target');
+  const companion = createRoomDocBudgetCompanion(original.budget, exactOwnDb);
+  if (
+    docBudgetStores.get(store) !== original ||
+    !readRoomCoreGrantedDocTargetBinding(
+      original.core,
+      exactOwnDb,
+      roomId,
+      agentId,
+      canonicalSessionId,
+      runtime
+    )
+  )
+    throw new Error('Room destination target changed');
+  return companion;
+}
+/** Fixed internal target read; only createRoomCore can supply core membership. */
+export function readRoomCoreGrantedDocTargetBinding(
+  core: RoomCore,
+  exactOwnDb: Db,
+  roomId: string,
+  approvedAgentId: string,
+  approvedCanonicalSessionId: string,
+  approvedRuntime: string
+): Readonly<GrantedDocTargetBinding> | null {
+  const store = docTargetCores.get(core);
+  return store
+    ? readRoomStoreGrantedDocTargetBinding(
+        store,
+        exactOwnDb,
+        roomId,
+        approvedAgentId,
+        approvedCanonicalSessionId,
+        approvedRuntime
+      )
+    : null;
+}
 
 /** Everything a room collaborator may read, resolved once at construction. */
 export interface RoomCore {
@@ -189,14 +499,16 @@ export interface RoomWriteBack extends RoomTriggerWriter {
  * @returns The state every collaborator is handed.
  */
 export function createRoomCore(deps: RoomServiceDeps, writeBack: RoomWriteBack): RoomCore {
+  const store = deps.store;
   const roster = new RoomRoster({
-    store: deps.store,
+    store,
     authors: deps.authors,
     agents: deps.agents,
     readCursors: deps.readCursors,
   });
   const triggers = new RoomTriggerDispatcher({
-    store: deps.store,
+    ...(deps.observeOriginalLaunch ? { observeOriginalLaunch: deps.observeOriginalLaunch } : {}),
+    store,
     reactions: deps.reactions,
     authors: deps.authors,
     agents: deps.agents,
@@ -249,8 +561,8 @@ export function createRoomCore(deps: RoomServiceDeps, writeBack: RoomWriteBack):
     publishWorkingCount: (roomId, working) =>
       eventFanOut.broadcast('room_presence', { roomId, working }),
   });
-  return {
-    store: deps.store,
+  const core: RoomCore = {
+    store,
     ...(deps.mirrorAccess ? { mirrorAccess: deps.mirrorAccess } : {}),
     ...(deps.mirrorWrites ? { mirrorWrites: deps.mirrorWrites } : {}),
     reactions: deps.reactions,
@@ -279,4 +591,16 @@ export function createRoomCore(deps: RoomServiceDeps, writeBack: RoomWriteBack):
     agents: deps.agents,
     isRoomMuted: deps.isRoomMuted,
   };
+  dispatchCores.set(triggers, {
+    core,
+    store,
+    budget: deps.budget,
+    runner: deps.turns,
+    limitsFor: deps.limitsFor,
+  });
+  docTargetCores.set(core, store);
+  originalCoreTriggers.set(core, triggers);
+  // Ambiguous repeated construction cannot replace a retained original budget owner.
+  docBudgetStores.set(store, docBudgetStores.has(store) ? null : { core, budget: deps.budget });
+  return core;
 }

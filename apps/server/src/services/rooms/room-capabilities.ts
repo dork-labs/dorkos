@@ -207,17 +207,17 @@ import { readOwnerAccount } from '../core/auth/index.js';
 import { configManager } from '../core/config-manager.js';
 import { isOwnerRecord, type AuthorRecord } from './author-registry.js';
 import { resolveOperatorAuthor } from './operator-author.js';
-import { RoomError, roomRefusalFor } from './room-errors.js';
+import { RoomError, roomRefusalFor } from './data/room-errors.js';
 import {
   FIND_ROOMS_MAX,
-  HISTORY_PAGE_MAX,
   MEMBER_ROOMS_PAGE_MAX,
   normalizeMemberHandle,
   normalizeRoomNameNeedle,
   type RoomDetail,
-  type RoomService,
-} from './room-service.js';
-import type { RoomMergeService } from './repo/room-merge-service.js';
+} from './manage/room-member-directory.js';
+import { HISTORY_PAGE_MAX } from './data/room-history-limits.js';
+import type { RoomService } from './room-service.js';
+import { executeRoomNativeMerge, type RoomMergeService } from './repo/room-merge-service.js';
 
 /**
  * Extend the shared dependency bag with the rooms domain's one service handle.
@@ -996,18 +996,13 @@ export const roomsDomain: CapabilityDomain = {
         },
       },
       invoke: async (deps, input, context) => {
-        const rooms = requireRoomDeps(deps);
+        requireRoomDeps(deps);
         const merges = requireMergeDeps(deps);
-        // Inside `answeringAsync` with the merge itself, because resolving WHO
-        // is calling can refuse too — and every refusal in this contract is one
-        // an agent is meant to read and act on.
-        let caller: AuthorRecord | undefined;
+        // Only the original gated registry invocation can reach the native
+        // mutation lane. Legacy identity/user attribution is not an issuer.
         const result = await answeringAsync(
-          () => {
-            caller = callerAuthor(rooms, context);
-            return merges.merge(input.roomId, caller.id, { summary: input.summary });
-          },
-          () => isOwnerCaller(caller)
+          () => executeRoomNativeMerge(merges, context, input),
+          () => false
         );
         return { merged: true, ...result };
       },

@@ -293,3 +293,45 @@ describe('useCanvasFileSave', () => {
     expect(result.current.getConfirmedBase()).toEqual({ hash: null, content: 'orig\n' });
   });
 });
+
+it('advances ordinary autosave only from a separately confirmed native marker and refuses an outstanding save', async () => {
+  writeFile.mockResolvedValue({ ok: true, hash: 'after-full-save', effect: 'changed' });
+  const { result } = renderHook(() => useCanvasFileSave(ARGS));
+  await act(async () => {
+    expect(
+      result.current.adoptConfirmedCheckbox('foreign', { content: 'native', hash: 'native-hash' })
+    ).toBe(false);
+    expect(
+      result.current.adoptConfirmedCheckbox('orig\n', { content: 'native', hash: 'native-hash' })
+    ).toBe(true);
+  });
+  await act(async () => {
+    await result.current.save('ordinary draft');
+  });
+  expect(writeFile).toHaveBeenCalledWith('/work', 'doc.md', 'ordinary draft', {
+    expectedHash: 'native-hash',
+  });
+  let release!: (value: unknown) => void;
+  writeFile.mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        release = resolve;
+      })
+  );
+  let held!: ReturnType<typeof result.current.save>;
+  await act(async () => {
+    held = result.current.save('held draft');
+    await Promise.resolve();
+  });
+  expect(result.current.canWriteCheckbox('ordinary draft')).toBe(false);
+  expect(
+    result.current.adoptConfirmedCheckbox('ordinary draft', {
+      content: 'another native',
+      hash: 'another-hash',
+    })
+  ).toBe(false);
+  await act(async () => {
+    release({ ok: true, hash: 'held-hash', effect: 'changed' });
+    await held;
+  });
+});

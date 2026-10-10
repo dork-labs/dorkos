@@ -40,7 +40,7 @@ import {
 import { AdapterError, type AdapterManager } from '../services/relay/adapter-manager.js';
 import { broadcastBindingsChanged } from '../services/relay/relay-sse-events.js';
 import { BindingConflictError, type BindingUpdate } from '../services/relay/binding-store.js';
-import { RoomError } from '../services/rooms/room-errors.js';
+import { RoomError } from '../services/rooms/data/room-errors.js';
 import { ADAPTER_EVENTS_KEPT, type TraceStore } from '../services/relay/trace-store.js';
 import type { ActivityService } from '../services/activity/activity-service.js';
 import { readActivityActor } from '../services/activity/activity-actor.js';

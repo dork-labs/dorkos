@@ -309,9 +309,9 @@ describe('independent exact document route grants', () => {
     configure(otherRoute);
     currentTarget.agentId = 'other';
     const ticket = approved();
-    const insertion = vi.spyOn(store, 'insertGrant').mockImplementationOnce(() => {
-      throw new Error('disk full');
-    });
+    // Fail the genuine SQLite insertion, not an overridable public store wrapper.
+    db.$client.exec(`CREATE TEMP TRIGGER fail_original_grant_insert
+      BEFORE INSERT ON canvas_doc_grants BEGIN SELECT RAISE(ABORT, 'disk full'); END`);
     const broadcast = vi.mocked(eventFanOut.broadcast);
     broadcast.mockClear();
     expect(() => grant(request(), ticket.token)).toThrow('disk full');
@@ -320,7 +320,7 @@ describe('independent exact document route grants', () => {
       db.select().from(approvals).where(eq(approvals.id, ticket.approvalId)).get()?.consumedAt
     ).toBeNull();
     expect(db.select().from(canvasDocGrants).all()).toHaveLength(0);
-    insertion.mockRestore();
+    db.$client.exec('DROP TRIGGER fail_original_grant_insert');
     expect(grant(request(), ticket.token).approvalId).toBe(ticket.approvalId);
     const consumed = () =>
       broadcast.mock.calls.filter(

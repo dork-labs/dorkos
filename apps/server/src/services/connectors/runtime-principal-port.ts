@@ -1,5 +1,15 @@
+import type { ConnectorThreadKeyResolver } from './principal/thread-keys.js';
+import { createHash } from 'node:crypto';
+import { types as nodeTypes } from 'node:util';
+import type { NativeSessionAcquisition, NativeSessionActivity } from '../session/session-lock.js';
+import type { OriginalRoomDispatchCustody } from '../rooms/service/room-core.js';
 /** Runtime-facing port for short-lived, turn-bound connector principals. */
-import type { ServerPrincipalProof, ConnectorRuntime } from './principal/server-principal.js';
+import {
+  type ServerPrincipalProof,
+  type ServerPrincipalClaims,
+  type ConnectorRuntime,
+  type ConnectorOwnerAuthority,
+} from './principal/server-principal.js';
 
 export type { ConnectorRuntime } from './principal/server-principal.js';
 
@@ -29,6 +39,8 @@ export interface ConnectorTurnRenewalPermit {
 export interface ConnectorTurnOwnership {
   /** Whether the same adapter-owned turn object still occupies its active slot. */
   readonly isCurrent: () => boolean;
+  /** Actual runtime-only operation identity; legacy callers cannot confer F2 authority. */
+  readonly nativeOperation?: object;
 }
 
 /** Opaque bearer and durable binding reference for one active runtime turn. */
@@ -113,6 +125,312 @@ export interface ConnectorRuntimePrincipalPort {
 export interface ConnectorRuntimeBindingBootPort {
   /** Initialize this process generation before the internal listener is reachable. */
   initializeBoot(): Promise<{ readonly bootEpoch: string }>;
+}
+
+/** Project the original owner columns used by runtime binding checks. */
+export function runtimeOwnerColumns(owner: ConnectorOwnerAuthority): {
+  ownerKind: 'user' | 'local_install';
+  ownerId: string;
+} {
+  return owner.kind === 'user'
+    ? { ownerKind: owner.kind, ownerId: owner.userId }
+    : { ownerKind: owner.kind, ownerId: owner.installationId };
+}
+
+/** Read runtime binding owner DATA from its native row. */
+export function runtimeRowOwner(row: {
+  ownerKind: 'user' | 'local_install';
+  ownerId: string;
+}): ConnectorOwnerAuthority {
+  return row.ownerKind === 'user'
+    ? { kind: 'user', userId: row.ownerId }
+    : { kind: 'local_install', installationId: row.ownerId };
+}
+
+import { connectorRuntimeBindings, type Db, type DbTransaction } from '@dorkos/db';
+/** Pure checked binding-row projection only. Native/boot/principal issuance and ownership stay in the genuine service. */
+export function readCurrentRuntimeBindingRow(
+  row: typeof connectorRuntimeBindings.$inferSelect | undefined,
+  claims: Extract<ServerPrincipalProof['claims'], { kind: 'runtime' }>,
+  time: number,
+  bootEpoch: string | undefined
+): typeof connectorRuntimeBindings.$inferSelect | undefined {
+  if (!row) return undefined;
+  return row.revokedAt === null &&
+    row.bootEpoch === bootEpoch &&
+    row.runtime === claims.runtime &&
+    row.canonicalSessionId === claims.canonicalSessionId &&
+    row.agentId === claims.agentId &&
+    row.agentPath === claims.agentPath &&
+    row.canonicalCwd === claims.canonicalCwd &&
+    row.ownerKind === claims.owner.kind &&
+    row.ownerId ===
+      (claims.owner.kind === 'user' ? claims.owner.userId : claims.owner.installationId) &&
+    Number.isFinite(Date.parse(row.expiresAt)) &&
+    Date.parse(row.expiresAt) > time
+    ? row
+    : undefined;
+}
+
+/** Live server authority resolved from canonical runtime context. */
+export interface ConnectorRuntimeAuthority {
+  /** Owner whose grants may be used during the turn. */
+  readonly owner: ConnectorOwnerAuthority;
+  /** Stable agent identity bound to the canonical path. */
+  readonly agentId: string;
+}
+
+/** Canonical identity resolver kept outside runtime-controlled inputs. */
+export interface ConnectorRuntimeAuthorityResolver {
+  /** Resolve and authorize a new turn from canonical server/runtime state. */
+  authorizeTurn(input: OpenConnectorTurnInput): Promise<ConnectorRuntimeAuthority>;
+  /** Recheck the exact stored claims before every connector projection call. */
+  revalidateTurn(claims: Extract<ServerPrincipalClaims, { kind: 'runtime' }>): Promise<boolean>;
+}
+
+/** Typed setup refusal mapped by the runtime boundary without exposing private claims. */
+export class ConnectorRuntimeAuthorityError extends Error {
+  /** Stable internal refusal code. */
+  readonly code: 'boot_not_initialized' | 'authority_refused';
+
+  /**
+   * Construct a safe runtime authority error.
+   *
+   * @param code - Stable setup refusal category.
+   * @param message - Secret-free diagnostic.
+   */
+  constructor(code: ConnectorRuntimeAuthorityError['code'], message: string) {
+    super(message);
+    this.name = 'ConnectorRuntimeAuthorityError';
+    this.code = code;
+  }
+}
+
+/** Construction options for the durable runtime principal service. */
+export interface ConnectorRuntimePrincipalServiceOptions {
+  /** Canonical DorkOS database. */
+  readonly db: Db;
+  /** Resolver that owns canonical runtime/session/agent identity checks. */
+  readonly authority: ConnectorRuntimeAuthorityResolver;
+  /** Maximum binding lifetime in milliseconds. */
+  readonly bindingTtlMs?: number;
+  /** Injectable clock for deterministic expiry tests. */
+  readonly now?: () => Date;
+  /** Injectable process-generation source for deterministic boot tests. */
+  readonly makeBootEpoch?: () => string;
+  /** Injectable bearer source for deterministic hashing tests. */
+  readonly makeBearer?: () => string;
+  /** Resolve a loaded thread key to its currently attached turn binding. */
+  readonly threadKeys?: ConnectorThreadKeyResolver;
+}
+
+/** Data captured in the configured-time phase; the owner service retains the private activity map. */
+export interface NativePrincipalActivityData {
+  time: number;
+  acquisition: NativeSessionAcquisition;
+  activity: NativeSessionActivity;
+  original: NativePrincipalOwnerData;
+}
+
+export interface NativePrincipalCore {
+  readonly retireOriginal: (operation: object, reason: RevokeConnectorTurnReason) => Promise<void>;
+  readonly resolveOriginal: (operation: object) => Promise<ResolveConnectorTurnResult>;
+  readonly recognizesPreparedOperation: (operation: object) => boolean;
+  readonly open: (input: OpenConnectorTurnInput, token: object) => Promise<OpenConnectorTurnResult>;
+  readonly db: Db;
+  readonly captureTime: (principal: ServerPrincipalProof | object) => number;
+  readonly current: (
+    principal: ServerPrincipalProof | object,
+    tx: DbTransaction | Db,
+    time: number
+  ) =>
+    | Readonly<{
+        binding: typeof connectorRuntimeBindings.$inferSelect;
+        roomCustody?: OriginalRoomDispatchCustody;
+      }>
+    | undefined;
+}
+
+export interface NativePrincipalOwnerData {
+  claims: Extract<ServerPrincipalClaims, { kind: 'runtime' }>;
+  token: object;
+  runtime: OpenConnectorTurnInput['runtime'];
+  signal: AbortSignal;
+  agentPath: string;
+  canonicalCwd?: string;
+}
+
+export interface FixedNativePrincipalOpenData {
+  db: Db;
+  authorize: (input: OpenConnectorTurnInput) => Promise<ConnectorRuntimeAuthority>;
+  now: () => Date;
+  bearer: () => string;
+  ttl: number;
+}
+
+/** Project runtime binding claims from the original row DATA. */
+export function projectRuntimeBindingClaims(
+  row: typeof connectorRuntimeBindings.$inferSelect
+): Extract<ServerPrincipalClaims, { kind: 'runtime' }> {
+  return {
+    kind: 'runtime',
+    owner: runtimeRowOwner(row),
+    bindingId: row.id,
+    runtime: row.runtime,
+    canonicalSessionId: row.canonicalSessionId,
+    agentId: row.agentId,
+    agentPath: row.agentPath,
+    ...(row.canonicalCwd && { canonicalCwd: row.canonicalCwd }),
+  };
+}
+
+/** Compare the retained runtime binding DATA fields. */
+export function sameRuntimeBindingData(
+  left: typeof connectorRuntimeBindings.$inferSelect,
+  right: typeof connectorRuntimeBindings.$inferSelect
+): boolean {
+  return (
+    left.tokenHash === right.tokenHash &&
+    left.bootEpoch === right.bootEpoch &&
+    left.ownerKind === right.ownerKind &&
+    left.ownerId === right.ownerId &&
+    left.runtime === right.runtime &&
+    left.canonicalSessionId === right.canonicalSessionId &&
+    left.agentId === right.agentId &&
+    left.agentPath === right.agentPath &&
+    left.canonicalCwd === right.canonicalCwd
+  );
+}
+
+/** Compare current runtime binding DATA with the retained claims. */
+export function runtimeBindingMatchesClaims(
+  row: typeof connectorRuntimeBindings.$inferSelect,
+  claims: Extract<ServerPrincipalClaims, { kind: 'runtime' }>
+): boolean {
+  return (
+    row.runtime === claims.runtime &&
+    row.canonicalSessionId === claims.canonicalSessionId &&
+    row.agentId === claims.agentId &&
+    row.agentPath === claims.agentPath &&
+    (row.canonicalCwd ?? undefined) === claims.canonicalCwd &&
+    row.ownerKind === claims.owner.kind &&
+    row.ownerId === runtimeOwnerColumns(claims.owner).ownerId
+  );
+}
+
+/** Pure legacy resolver data projection, including its conditional cwd own-property. */
+export function projectResolvedRuntimeBindingClaims(
+  row: typeof connectorRuntimeBindings.$inferSelect
+) {
+  return {
+    kind: 'runtime',
+    owner: runtimeRowOwner(row),
+    bindingId: row.id,
+    runtime: row.runtime,
+    canonicalSessionId: row.canonicalSessionId,
+    agentId: row.agentId,
+    agentPath: row.agentPath,
+    ...(row.canonicalCwd && { canonicalCwd: row.canonicalCwd }),
+  } as const;
+}
+/** Pure bearer projection; no registration, database or principal issuance. */
+export function runtimeBearerHash(token: string): string {
+  return createHash('sha256').update(token).digest('hex');
+}
+/** Literal immutable-row data projection before the original owning insert. */
+export function projectRuntimeBindingInsert(
+  input: OpenConnectorTurnInput,
+  resolved: ConnectorRuntimeAuthority,
+  bindingId: string,
+  bearer: string,
+  bootEpoch: string,
+  createdAt: Date,
+  expiresAt: Date
+) {
+  return {
+    id: bindingId,
+    tokenHash: runtimeBearerHash(bearer),
+    bootEpoch,
+    ...runtimeOwnerColumns(resolved.owner),
+    runtime: input.runtime,
+    canonicalSessionId: input.canonicalSessionId,
+    agentId: resolved.agentId,
+    agentPath: input.agentPath,
+    canonicalCwd: input.canonicalCwd,
+    createdAt: createdAt.toISOString(),
+    expiresAt: expiresAt.toISOString(),
+  };
+}
+/** Own-data extraction only; the owning service separately recognizes actual native membership. */
+export function projectNativeOperationOwnData(
+  ownership: ConnectorTurnOwnership
+): object | undefined {
+  const nativeDescriptor = nodeTypes.isProxy(ownership)
+    ? undefined
+    : Object.getOwnPropertyDescriptor(ownership, 'nativeOperation');
+  return nativeDescriptor &&
+    'value' in nativeDescriptor &&
+    typeof nativeDescriptor.value === 'object' &&
+    nativeDescriptor.value !== null
+    ? nativeDescriptor.value
+    : undefined;
+}
+/** Immutable data shape only; callers cannot install it into the original private owner map. */
+export function projectOriginalNativeOwnerData(
+  input: OpenConnectorTurnInput,
+  resolved: ConnectorRuntimeAuthority,
+  bindingId: string,
+  nativeToken: object
+): NativePrincipalOwnerData {
+  return {
+    claims: Object.freeze({
+      kind: 'runtime',
+      bindingId,
+      owner: Object.freeze({ ...resolved.owner }),
+      runtime: input.runtime,
+      canonicalSessionId: input.canonicalSessionId,
+      agentId: resolved.agentId,
+      agentPath: input.agentPath,
+      canonicalCwd: input.canonicalCwd,
+    }),
+    token: nativeToken,
+    runtime: input.runtime,
+    signal: input.signal,
+    agentPath: input.agentPath,
+    canonicalCwd: input.canonicalCwd,
+  };
+}
+
+/** Literal data equality only; no native identity, currentness, principal or opening is issued. */
+export function sameNativeEntryContext(
+  native:
+    | Pick<
+        OpenConnectorTurnInput,
+        'runtime' | 'canonicalSessionId' | 'agentPath' | 'canonicalCwd' | 'signal'
+      >
+    | undefined,
+  original: Pick<OpenConnectorTurnInput, 'runtime' | 'agentPath' | 'canonicalCwd' | 'signal'>,
+  canonicalSessionId: string
+): boolean {
+  return (
+    !!native &&
+    native.canonicalSessionId === canonicalSessionId &&
+    native.runtime === original.runtime &&
+    native.signal === original.signal &&
+    native.agentPath === original.agentPath &&
+    native.canonicalCwd === original.canonicalCwd
+  );
+}
+
+/** Literal boot-data validation/error projection, not proof of current constructor ownership. */
+export function requireRuntimeBindingBootData(bootEpoch: string | undefined): string {
+  if (!bootEpoch) {
+    throw new ConnectorRuntimeAuthorityError(
+      'boot_not_initialized',
+      'DorkOS is still starting, so connected apps aren’t ready yet. Try again in a moment.'
+    );
+  }
+  return bootEpoch;
 }
 
 /**

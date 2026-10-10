@@ -483,6 +483,18 @@ export function withSpacesExperiment<T extends Transport>(transport: T, enabled 
 /** Create a mock Transport with all methods stubbed via `vi.fn()`. */
 export function createMockTransport(overrides: Partial<Transport> = {}): Transport {
   return {
+    getBrowserProfiles: vi.fn().mockResolvedValue([]),
+    getBrowserProfile: vi
+      .fn()
+      .mockRejectedValue(new Error('Browser fixture profile is unavailable.')),
+    getBrowserInstances: vi.fn().mockResolvedValue([]),
+    getBrowserInstance: vi
+      .fn()
+      .mockRejectedValue(new Error('Browser fixture instance is unavailable.')),
+    closeBrowserInstance: vi
+      .fn()
+      .mockRejectedValue(new Error('Browser fixture close result is unavailable.')),
+
     // Aggregated-list envelope (ADR-0310): { sessions, warnings? }, not a bare array.
     listSessions: vi.fn().mockResolvedValue({ sessions: [] }),
     listRecentSessions: vi
@@ -774,6 +786,42 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
     // how a pending id becomes the server's — so a fixed answer would replace
     // every document a test opened with the same unrelated one, and the test
     // would be measuring the fixture.
+    configureCanvasDocChannel: vi
+      .fn()
+      .mockRejectedValue(new Error('Document controls are not configured.')),
+    approveCanvasDocRoute: vi
+      .fn()
+      .mockRejectedValue(new Error('Document controls are not configured.')),
+    revokeCanvasDocRoute: vi
+      .fn()
+      .mockRejectedValue(new Error('Document controls are not configured.')),
+    getCanvasDocManagement: vi
+      .fn()
+      .mockRejectedValue(new Error('Document controls are not configured.')),
+    issueCanvasDocToken: vi
+      .fn()
+      .mockRejectedValue(new Error('Document token issuance is not configured.')),
+    revokeCanvasDocToken: vi
+      .fn()
+      .mockRejectedValue(new Error('Document token revocation is not configured.')),
+    toggleCanvasCheckbox: vi
+      .fn()
+      .mockImplementation((request: { eventId: string; expectedFileVersion: string }) =>
+        Promise.resolve({
+          status: 'no_op',
+          eventId: request.eventId,
+          fileVersion: request.expectedFileVersion,
+        })
+      ),
+    updateCanvasDocPresence: vi
+      .fn()
+      .mockRejectedValue(new Error('Original document presence is not configured.')),
+    askCanvasDocSelection: vi
+      .fn()
+      .mockRejectedValue(new Error('Original editor selection is not configured.')),
+    replayCanvasDocBatch: vi
+      .fn()
+      .mockRejectedValue(new Error('Document replay is not configured.')),
     ingestCanvasEvent: vi.fn().mockImplementation((_documentId: string, event: { id: string }) =>
       Promise.resolve({
         receipt: { id: event.id, status: 'recorded', docSeq: 1 },

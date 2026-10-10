@@ -5,8 +5,10 @@ import path from 'node:path';
 import { createHash } from 'node:crypto';
 import { docDocumentGeneration, DocDocumentIncarnationError } from '../identity/incarnation.js';
 import { types as utilTypes } from 'node:util';
+const originalDatePrototype = Date.prototype;
+const originalDateGetTime = Date.prototype.getTime;
 import type { Db, DbTransaction } from '@dorkos/db';
-import { documentTransaction, type SynchronousResult } from '../store-transaction.js';
+import { documentTransaction, type SynchronousResult } from '../storage/store-transaction.js';
 import {
   CANVAS_APP_MANIFEST_BYTES,
   CanvasAppManifestError,
@@ -102,7 +104,7 @@ export function checkboxAuthoritySync<T>(value: T): T {
       prototype !== Object.prototype &&
       prototype !== null &&
       !(Array.isArray(current.value) && prototype === Array.prototype) &&
-      !(utilTypes.isDate(current.value) && prototype === Date.prototype)
+      !(utilTypes.isDate(current.value) && prototype === originalDatePrototype)
     )
       throw new Error('Checkbox authority ports require plain data.');
     if (descriptors.then) {
@@ -117,7 +119,7 @@ export function checkboxAuthoritySync<T>(value: T): T {
 }
 /** Capture the configured clock before final rows; never invoke an overridden date method later. */
 export function checkboxAuthorityClock(clock: () => Date): number {
-  const value = Date.prototype.getTime.call(checkboxAuthoritySync(clock()));
+  const value = originalDateGetTime.call(checkboxAuthoritySync(clock()));
   if (!Number.isFinite(value)) throw new Error('Checkbox authority requires a valid clock.');
   return value;
 }
@@ -195,7 +197,14 @@ async function rootIdentity(candidate: string) {
   }
   return { canonicalPath, device: `${info.dev}`, inode: `${info.ino}`, ancestors };
 }
-async function manifestHash(root: string): Promise<string | null> {
+const originalManifestCloseFailures = new WeakMap<() => undefined, Readonly<{ cause: unknown }>>();
+/** Actual acquired observation close failure DATA; no permission or positive closure proof. */
+export function readOriginalCheckboxManifestCloseFailure(
+  boundary: () => undefined
+): Readonly<{ cause: unknown }> | undefined {
+  return originalManifestCloseFailures.get(boundary);
+}
+async function manifestHash(root: string, boundary: () => undefined): Promise<string | null> {
   const requested = path.join(root, '.dork', 'app.json');
   let canonical: string;
   try {
@@ -210,6 +219,21 @@ async function manifestHash(root: string): Promise<string | null> {
     canonical,
     constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK
   );
+  let failed = false,
+    first: unknown;
+  const drainOriginalManifest = async () => {
+    try {
+      await file.close();
+    } catch (cause) {
+      if (!originalManifestCloseFailures.has(boundary))
+        originalManifestCloseFailures.set(boundary, Object.freeze({ cause }));
+      if (!failed) {
+        failed = true;
+        first = cause;
+      }
+    }
+    if (failed) throw first;
+  };
   try {
     const info = await file.stat({ bigint: true });
     if (!info.isFile() || info.size > BigInt(CANVAS_APP_MANIFEST_BYTES))
@@ -245,15 +269,19 @@ async function manifestHash(root: string): Promise<string | null> {
         throw new CheckboxAuthorityRefusal('MANIFEST_INVALID', { cause });
       throw cause;
     }
+  } catch (cause) {
+    failed = true;
+    first = cause;
+    throw cause;
   } finally {
-    await file.close();
+    await drainOriginalManifest();
   }
 }
 /** Independent readonly peers settle before the original bracket advances. */
-async function fileAndManifest(canonicalPath: string, root: string) {
+async function fileAndManifest(canonicalPath: string, root: string, boundary: () => undefined) {
   const [file, manifest] = await Promise.allSettled([
     fs.stat(canonicalPath, { bigint: true }),
-    manifestHash(root),
+    manifestHash(root, boundary),
   ]);
   return { file, manifest };
 }
@@ -286,7 +314,7 @@ export async function observeCheckboxSource(
     );
     if (!isContained(canonicalPath, root.canonicalPath))
       throw new CheckboxAuthorityRefusal('SOURCE_PATH_CHANGED');
-    const head = await fileAndManifest(canonicalPath, root.canonicalPath);
+    const head = await fileAndManifest(canonicalPath, root.canonicalPath, assertOutside);
     if (head.file.status === 'rejected') throw head.file.reason;
     const info = head.file.value;
     if (!info.isFile()) throw new CheckboxAuthorityRefusal('WRITE_SOURCE_UNAVAILABLE');
@@ -296,7 +324,7 @@ export async function observeCheckboxSource(
     const tailPath = await fs.realpath(
       path.resolve(tailRoot.canonicalPath, descriptor.sourcePath!)
     );
-    const tail = await fileAndManifest(tailPath, tailRoot.canonicalPath);
+    const tail = await fileAndManifest(tailPath, tailRoot.canonicalPath, assertOutside);
     if (tail.file.status === 'rejected') throw tail.file.reason;
     if (tail.manifest.status === 'rejected') throw tail.manifest.reason;
     const tailFile = tail.file.value,

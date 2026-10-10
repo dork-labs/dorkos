@@ -22,7 +22,7 @@ import { deriveCascade } from '../cascade-guard.js';
 import type { RoomLimitsResolver } from '../limits/room-limits.js';
 import { resolveAddressing } from '../mentions.js';
 import type { RoomCore } from '../service/room-core.js';
-import { RoomError } from '../room-errors.js';
+import { RoomError } from '../data/room-errors.js';
 import type { RoomMessageNotifier } from './room-message-notifier.js';
 import type { RoomPublisher } from '../service/room-publisher.js';
 import type { RoomRoster } from '../room-roster.js';

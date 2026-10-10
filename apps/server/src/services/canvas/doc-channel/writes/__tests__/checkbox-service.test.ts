@@ -15,7 +15,7 @@ import { fork } from 'node:child_process';
 import { once } from 'node:events';
 import { fileURLToPath } from 'node:url';
 import Database from 'better-sqlite3';
-import { afterEach, beforeEach, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { canvasDocChannels, canvasDocWriteIntents, type DbTransaction } from '@dorkos/db';
 import { fixture as makeFixture, AuthorityRefused } from './checkbox-fixture.js';
 import { DocCheckboxWriteService } from '../checkbox-service.js';
@@ -51,6 +51,9 @@ function crashTestOwnership() {
   let task: Promise<void> | undefined;
   let cancelCheckpoint: (() => void) | undefined;
   let ready: Promise<void> | undefined;
+  const startupPhases: { phase: string; elapsedMs: number; observedElapsedMs: number }[] = [];
+  let capturedAt = 0;
+  let reportStartup = false;
   const assertActive = () => {
     if (!active) throw new Error('Crash test ended.');
   };
@@ -64,6 +67,8 @@ function crashTestOwnership() {
     capture(value: ReturnType<typeof fork>, preload = false) {
       assertActive();
       child = value;
+      reportStartup = preload;
+      capturedAt = performance.now();
       // Attach lifecycle custody before the first checkpoint wait or any kill.
       exited = new Promise<void>((resolve) => {
         value.once('exit', () => resolve());
@@ -111,6 +116,39 @@ function crashTestOwnership() {
       }>((resolve, reject) => {
         const onMessage = (data: unknown) => {
           if (!active) return;
+          if (
+            !startupReceived &&
+            data &&
+            typeof data === 'object' &&
+            'kind' in data &&
+            data.kind === 'startup-phase'
+          ) {
+            const phase = 'phase' in data ? data.phase : undefined;
+            const elapsedMs = 'elapsedMs' in data ? data.elapsedMs : undefined;
+            const expected = ['worker-entry', 'fixture-import-start', 'fixture-import-ready'];
+            if (
+              Object.keys(data).length !== 3 ||
+              startupPhases.length >= 3 ||
+              typeof phase !== 'string' ||
+              phase !== expected[startupPhases.length] ||
+              typeof elapsedMs !== 'number' ||
+              !Number.isFinite(elapsedMs) ||
+              elapsedMs < 0 ||
+              (startupPhases.length > 0 &&
+                elapsedMs < startupPhases[startupPhases.length - 1].elapsedMs)
+            ) {
+              const cause = new Error('Original worker startup phase DATA changed.');
+              rejectReady(cause);
+              reject(cause);
+              return;
+            }
+            startupPhases.push({
+              phase,
+              elapsedMs,
+              observedElapsedMs: performance.now() - capturedAt,
+            });
+            return;
+          }
           if (!startupReceived) {
             if (
               !data ||
@@ -172,6 +210,19 @@ function crashTestOwnership() {
             await closed;
             await Promise.allSettled(pipes);
             if (task) await Promise.allSettled([task]);
+            if (reportStartup) {
+              reportStartup = false;
+              try {
+                process.stderr.write(
+                  'ORIGINAL_CHECKBOX_CRASH_IMPORT_PHASES ' + JSON.stringify(startupPhases) + '\n'
+                );
+              } catch (cause) {
+                if (!pipeFailed) {
+                  pipeFailed = true;
+                  firstPipeCause = cause;
+                }
+              }
+            }
             if (pipeFailed) throw firstPipeCause;
           })(),
           new Promise<never>((_, reject) => {
@@ -290,9 +341,25 @@ afterEach(async () => {
   );
   if (cleanupFailed) throw firstCleanupCause;
 });
-async function fixture(options: CheckboxServiceOptions = {}) {
+async function fixture(
+  options: CheckboxServiceOptions = {},
+  recoveryPhase?: (phase: 'cleanup-start' | 'cleanup-settled') => void
+) {
   const h = await makeFixture(options);
-  cleanups.push(h.cleanup);
+  const cleanup = h.cleanup;
+  cleanups.push(
+    recoveryPhase
+      ? async () => {
+          recoveryPhase('cleanup-start');
+          try {
+            await cleanup();
+          } finally {
+            // Settled is not a positive native closure witness; the original failure propagates.
+            recoveryPhase('cleanup-settled');
+          }
+        }
+      : cleanup
+  );
   return h;
 }
 it('writes exactly one raw marker, preserves mode/BOM/CRLF and atomically completes original event/outbox/receipt', async () => {
@@ -827,47 +894,128 @@ it('raw fence reuse still decodes replaced evidence codecs and refuses malformed
   expect(h.counts()).toEqual({ events: { n: 0 }, batches: { n: 0 } });
 });
 
-it('bounded recovery progresses through 101 original intents with a stable keyset and no effects', async () => {
-  const h = await fixture();
-  const before = await readFile(h.path);
-  h.failCompletion(true);
-  await expect(h.service.toggle(await h.request(), h.actor)).rejects.toThrow();
-  await writeFile(h.path, before);
-  const base = h.store.getWriteIntent(h.row().intentId)!;
-  h.db.$client.prepare("UPDATE canvas_doc_write_intents SET status='prepared'").run();
-  for (let i = 0; i < 100; i++) {
-    const intentId = randomUUID(),
-      eventId = randomUUID();
-    const input = { ...(base.input as CheckboxRequest), eventId };
-    const evidence = {
-      ...h.service.validate(base),
-      tempPath: join(h.dir, `.dork-checkbox-${intentId}.tmp`),
+describe('bounded original-intent recovery census', () => {
+  let h: Awaited<ReturnType<typeof fixture>>;
+  let before: Buffer;
+  let phase: (value: string) => void;
+  let assertActive: () => void;
+  let runBody: (work: () => Promise<void>) => Promise<void>;
+
+  beforeEach(async () => {
+    let active = true;
+    let bodyPending: Promise<void> | undefined;
+    let current: Awaited<ReturnType<typeof fixture>> | undefined;
+    let draining: Promise<void> | undefined;
+    assertActive = () => {
+      if (!active) throw new Error('Recovery census test ended.');
     };
-    const seeded = {
-      ...base,
-      intentId,
-      eventId,
-      input,
-      envelopeHash: rawByteHash(Buffer.from(JSON.stringify(input))),
-      evidence,
-      status: 'prepared' as const,
+    runBody = (work) => {
+      assertActive();
+      bodyPending = work();
+      void bodyPending.catch(() => {});
+      return bodyPending;
     };
-    h.service.validate(seeded);
-    // Synthetic census setup; ordinary admission and its UUID guards are tested separately.
-    h.store.transaction((tx) => tx.insert(canvasDocWriteIntents).values(seeded).run());
-    h.service.validate(h.store.getWriteIntent(intentId)!);
-  }
-  const one = await recoverCheckboxPage(h.service);
-  expect(one).toMatchObject({ selected: 100, verified: 0, retryableFailures: 0, hasMore: true });
-  const two = await recoverCheckboxPage(h.service, one.cursor);
-  expect(two).toMatchObject({ selected: 1, verified: 0, retryableFailures: 0, hasMore: false });
-  expect(one.cursor).not.toEqual(two.cursor);
-  expect(await readFile(h.path)).toEqual(before);
-  expect(h.counts()).toEqual({ events: { n: 0 }, batches: { n: 0 } });
-  await expect(
-    recoverCheckboxPage(h.service, { updatedAt: 'invalid', intentId: 'x' })
-  ).rejects.toThrow('cursor');
-  await expect(recoverCheckboxPage(h.service, undefined, 101)).rejects.toThrow('limit');
+    // The existing file owner drains these before any fixture DB/directory cleanup.
+    crashTests.push({
+      drain() {
+        active = false;
+        draining ??= (async () => {
+          await Promise.allSettled([setupPending]);
+          // Stop the genuine service before joining a timed-out operation.
+          // This closes admission and joins its original tracked recovery calls.
+          if (current) await current.service.stop();
+          if (bodyPending) await Promise.allSettled([bodyPending]);
+        })();
+        return draining;
+      },
+    });
+    const setupPending = (async () => {
+      const started = process.hrtime.bigint();
+      phase = (value: string) =>
+        console.error(
+          'ORIGINAL_101_RECOVERY_PHASE',
+          JSON.stringify({
+            phase: value,
+            elapsedMs: Number(process.hrtime.bigint() - started) / 1_000_000,
+          })
+        );
+      phase('fixture-start');
+      h = await fixture({}, phase);
+      current = h;
+      assertActive();
+      phase('fixture-ready');
+      before = await readFile(h.path);
+      assertActive();
+      h.failCompletion(true);
+      const request = await h.request();
+      assertActive();
+      await expect(h.service.toggle(request, h.actor)).rejects.toThrow();
+      assertActive();
+      await writeFile(h.path, before);
+      assertActive();
+      const base = h.store.getWriteIntent(h.row().intentId)!;
+      h.db.$client.prepare("UPDATE canvas_doc_write_intents SET status='prepared'").run();
+      phase('seed-start');
+      for (let i = 0; i < 100; i++) {
+        const intentId = randomUUID(),
+          eventId = randomUUID();
+        const input = { ...(base.input as CheckboxRequest), eventId };
+        const evidence = {
+          ...h.service.validate(base),
+          tempPath: join(h.dir, `.dork-checkbox-${intentId}.tmp`),
+        };
+        const seeded = {
+          ...base,
+          intentId,
+          eventId,
+          input,
+          envelopeHash: rawByteHash(Buffer.from(JSON.stringify(input))),
+          evidence,
+          status: 'prepared' as const,
+        };
+        h.service.validate(seeded);
+        // Synthetic census setup; ordinary admission and its UUID guards are tested separately.
+        h.store.transaction((tx) => tx.insert(canvasDocWriteIntents).values(seeded).run());
+        h.service.validate(h.store.getWriteIntent(intentId)!);
+      }
+      phase('seed-ready');
+      assertActive();
+    })();
+    void setupPending.catch(() => {});
+    await setupPending;
+  });
+
+  it('bounded recovery progresses through 101 original intents with a stable keyset and no effects', async () => {
+    const currentFixture = h;
+    await runBody(async () => {
+      const h = currentFixture;
+      phase('body-start');
+      const one = await recoverCheckboxPage(h.service);
+      phase('page-one-returned');
+      assertActive();
+      expect(one).toMatchObject({
+        selected: 100,
+        verified: 0,
+        retryableFailures: 0,
+        hasMore: true,
+      });
+      const two = await recoverCheckboxPage(h.service, one.cursor);
+      phase('page-two-returned');
+      assertActive();
+      expect(two).toMatchObject({ selected: 1, verified: 0, retryableFailures: 0, hasMore: false });
+      expect(one.cursor).not.toEqual(two.cursor);
+      const recoveredBytes = await readFile(h.path);
+      assertActive();
+      expect(recoveredBytes).toEqual(before);
+      expect(h.counts()).toEqual({ events: { n: 0 }, batches: { n: 0 } });
+      await expect(
+        recoverCheckboxPage(h.service, { updatedAt: 'invalid', intentId: 'x' })
+      ).rejects.toThrow('cursor');
+      assertActive();
+      await expect(recoverCheckboxPage(h.service, undefined, 101)).rejects.toThrow('limit');
+      phase('assertions-complete');
+    });
+  });
 });
 
 it('does not remove an unowned exclusive-create collider during failure or recovery', async () => {

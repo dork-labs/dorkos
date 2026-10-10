@@ -161,3 +161,27 @@ export function hostGuard(req: Request, res: Response, next: NextFunction): void
 
   res.status(403).json({ error: refusalMessage(hostname), code: HOST_NOT_ALLOWED_CODE });
 }
+
+/** Bearer leaf has no cookie/session fallback, so login cannot waive its raw Host check. */
+export function standaloneDocTokenHostGuard(req: Request, res: Response, next: NextFunction): void {
+  if (env.DORKOS_ALLOW_INSECURE_BIND) {
+    next();
+    return;
+  }
+  const hostname = parseHostname(req.headers.host);
+  if (
+    isHostAllowed({
+      hostname,
+      trustedHosts: parseTrustedHosts(env.DORKOS_TRUSTED_HOSTS),
+      tunnelHost: getTunnelHost(),
+    })
+  ) {
+    next();
+    return;
+  }
+  // Do not log originalUrl: forbidden query credentials may have arrived on this rejected request.
+  res.status(403).json({
+    error: 'This instance does not answer to this Host header.',
+    code: HOST_NOT_ALLOWED_CODE,
+  });
+}

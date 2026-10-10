@@ -71,10 +71,17 @@ async function loadWithMocks(
   // coincidence.
   const liveProjector = { cwd: options.livePeekCwd ?? '/the/live/checkout' };
   const getOrCreateProjector = vi.fn((_id: string, _cwd?: string) => liveProjector);
-  vi.doMock('../../../session/index.js', () => ({
+  vi.doMock('../../../session/message-dispatcher.js', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('../../../session/message-dispatcher.js')>()),
     dispatchMessage,
+  }));
+  vi.doMock('../../../session/session-state-projector.js', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('../../../session/session-state-projector.js')>()),
     getOrCreateProjector,
     peekProjector: () => (options.livePeekCwd === undefined ? undefined : liveProjector),
+  }));
+  vi.doMock('../../../session/projector-persistence.js', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('../../../session/projector-persistence.js')>()),
     persistenceModeFor: () => 'record',
   }));
 
@@ -98,7 +105,9 @@ async function loadWithMocks(
 
 afterEach(() => {
   vi.doUnmock('../../runtime-registry.js');
-  vi.doUnmock('../../../session/index.js');
+  vi.doUnmock('../../../session/message-dispatcher.js');
+  vi.doUnmock('../../../session/session-state-projector.js');
+  vi.doUnmock('../../../session/projector-persistence.js');
   vi.doUnmock('../../../../lib/logger.js');
   vi.resetModules();
   vi.restoreAllMocks();

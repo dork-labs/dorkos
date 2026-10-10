@@ -8,6 +8,10 @@
     ".": {
       "types": "./src/index.ts",
       "default": "./src/index.ts"
+    },
+    "./internal-server": {
+      "types": "./src/server-database.ts",
+      "default": "./src/server-database.ts"
     }
   },
   "scripts": {

@@ -1,9 +1,10 @@
 /** Offline engines enter the actual Doe facade and production durable stream harness. */
 import { randomUUID } from 'node:crypto';
 import { expect, vi, onTestFinished } from 'vitest';
-import { mkdirSync } from 'node:fs';
 import path from 'node:path';
-import { controlUi } from '../../../session/browser-seat/ui-control.js';
+import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
+import { startConnectorRuntimeMcpListener } from '../../connector-mcp/listener.js';
 import { runtimeConformance, type HandedGrants } from '@dorkos/test-utils';
 import type { StreamEvent, Session } from '@dorkos/shared/types';
 import { CreditsUnavailableError } from '../../../core/cloud/credits-protocols.js';
@@ -60,18 +61,74 @@ runtimeConformance(() => makeRuntime(), {
     return { outcome: 'unconfirmed', reason: 'ack-timeout', runtime: 'doe' };
   },
   roomCanvasTurn: () => {
-    const agentPath = path.join(projectDir, 'ana');
-    const otherAgentPath = path.join(projectDir, 'ben');
-    mkdirSync(agentPath, { recursive: true });
-    mkdirSync(otherAgentPath, { recursive: true });
-    return driveRoomCanvasTurn(makeRuntime(), {
-      agentPath,
-      otherAgentPath,
-      produce: async (sessionId) => {
-        await controlUi(
-          { action: 'open_canvas', content: { type: 'json', data: {}, title: 'The plan' } },
-          { sessionId }
-        );
+    let runtime: DoeRuntime | undefined;
+    let listener: Awaited<ReturnType<typeof startConnectorRuntimeMcpListener>> | undefined;
+    let starting: ReturnType<typeof startConnectorRuntimeMcpListener> | undefined;
+    const turnHeaders = new Map<string, Record<string, string>>();
+    let releasingProvider = false;
+    // The original authenticated listener provides no model tools in this case;
+    // canvas production occurs only at the offline engine's actual turn boundary.
+    const provider = () => {
+      const server = new McpServer(
+        { name: 'room-canvas-conformance', version: '1.0.0' },
+        { capabilities: { tools: {} } }
+      );
+      server.server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools: [] }));
+      return server;
+    };
+    return driveRoomCanvasTurn({
+      runtime: 'doe',
+      createRuntime: ({ home, targets, mesh, tools, principals, providerTurn }) => {
+        runtime = new DoeRuntime({
+          directory: path.join(home, 'doe-runtime'),
+          defaultCwd: targets[0]!.agentPath,
+          inference: () => inference,
+          resolveModel: async () => model,
+          assembleHost: async (options) => {
+            if (releasingProvider) throw new Error('Original DOE Room provider is closing');
+            options.signal.throwIfAborted();
+            if (!options.connectorInjection)
+              throw new Error('Original DOE Room connector admission unavailable');
+            listener = await (starting ??= startConnectorRuntimeMcpListener({
+              principals,
+              serverFactory: provider,
+              agentServerFactory: provider,
+            }));
+            const injection = {
+              ...options.connectorInjection,
+              url: listener.url,
+              agentToolsUrl: listener.agentUrl,
+            };
+            const host = await assembleDoeHost({ ...options, connectorInjection: injection });
+            turnHeaders.set(options.cwd, injection.headers);
+            return host;
+          },
+          engineFactory: () =>
+            engine(async (request) => {
+              const cwd = request.context.workingDirectory;
+              const headers = turnHeaders.get(cwd);
+              if (!headers) throw new Error('Original DOE Room engine has no connector headers');
+              const sessionId = await providerTurn(cwd, headers);
+              if (sessionId !== request.context.sessionId)
+                throw new Error('Original DOE Room engine entered another session');
+              return success(request);
+            }),
+        });
+        runtime.setMeshCore(mesh);
+        runtime.setConnectorRuntimeTools(tools);
+        return runtime;
+      },
+      releaseProvider: async () => {
+        releasingProvider = true;
+        const closed = await Promise.allSettled([
+          runtime?.shutdown(),
+          (async () => {
+            const owned = starting ? await starting : listener;
+            await owned?.close();
+          })(),
+        ]);
+        turnHeaders.clear();
+        for (const result of closed) if (result.status === 'rejected') throw result.reason;
       },
     });
   },

@@ -32,7 +32,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import type { RoomEntry, RoomEvent, RoomWithRoster } from '@dorkos/shared/room-schemas';
 import type { UiCommand } from '@dorkos/shared/schemas';
 import type { AuthorRegistry } from '../../rooms/author-registry.js';
-import { RoomError } from '../../rooms/room-errors.js';
+import { RoomError } from '../../rooms/data/room-errors.js';
 import type { RoomService } from '../../rooms/room-service.js';
 import type { RoomCanvasService } from '../../rooms/canvas/room-canvas-service.js';
 import type { CanvasDocumentStore } from '../canvas-document-store.js';

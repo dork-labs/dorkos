@@ -41,7 +41,7 @@ import {
   writeCanvasDiffReview,
   type CanvasDiffReviewDeps,
 } from '../canvas-diff-review.js';
-import { RoomError } from '../../room-errors.js';
+import { RoomError } from '../../data/room-errors.js';
 
 const ROOM = 'room-1';
 const DOCUMENT = 'doc-1';

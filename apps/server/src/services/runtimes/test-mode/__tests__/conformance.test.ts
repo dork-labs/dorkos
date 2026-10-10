@@ -126,12 +126,10 @@ runtimeConformance(() => new TestModeRuntime(), {
   // credential.
   roomCanvasTurn: () => {
     scenarioStore.setDefault('rooms-open-canvas');
-    return driveRoomCanvasTurn(new TestModeRuntime(), {
-      agentPath: '/agents/ana',
-      otherAgentPath: '/agents/ben',
-      // Nothing to do: the scenario itself is how this adapter emits the
-      // command, which is the whole reason it is the cheap wiring.
-      produce: () => undefined,
+    return driveRoomCanvasTurn({
+      runtime: 'claude-code',
+      testMode: true,
+      createRuntime: ({ principals }) => new TestModeRuntime('claude-code', principals),
     });
   },
   // DOR-189: a completed turn must survive a restart via the durable store.

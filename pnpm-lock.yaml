@@ -44,6 +44,14 @@ overrides:
   '@babel/core': ^7.29.6
   jose: ^6.2.10
 
+patchedDependencies:
+  '@fumadocs/api-docs@0.2.9':
+    hash: 9f77a9bbf29b9f1eacea46e4f9982d8127bba5f7a18eb9e127459888ec1a49d3
+    path: patches/@fumadocs__api-docs@0.2.9.patch
+  '@milkdown/ctx@7.22.1':
+    hash: 9b1628cc3835168060b368ddf585e8db748514aa8fb4b06c40a9558c31b2e8d5
+    path: patches/@milkdown__ctx@7.22.1.patch
+
 importers:
 
   .:
@@ -233,8 +241,8 @@ importers:
         specifier: ^6.2.6
         version: 6.2.6(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
       blintz:
-        specifier: ^0.6.0
-        version: 0.6.0(prosemirror-model@1.25.11)(prosemirror-state@1.4.4)(prosemirror-view@1.42.3)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(typescript@5.9.3)
+        specifier: ^0.7.2
+        version: 0.7.2(prosemirror-model@1.25.11)(prosemirror-state@1.4.4)(prosemirror-view@1.42.3)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(typescript@5.9.3)
       canvas-confetti:
         specifier: ^1.9.4
         version: 1.9.4
@@ -732,9 +740,15 @@ importers:
 
   apps/e2e:
     devDependencies:
+      '@dorkos/db':
+        specifier: workspace:*
+        version: link:../../packages/db
       '@dorkos/eslint-config':
         specifier: workspace:*
         version: link:../../packages/eslint-config
+      '@dorkos/shared':
+        specifier: workspace:*
+        version: link:../../packages/shared
       '@dorkos/test-utils':
         specifier: workspace:*
         version: link:../../packages/test-utils
@@ -777,6 +791,9 @@ importers:
       vitest:
         specifier: ^4.1.11
         version: 4.1.11(@opentelemetry/api@1.9.1)(@types/node@24.13.5)(@vitest/coverage-v8@4.1.11)(jsdom@29.1.1(@noble/hashes@2.4.0))(vite@7.3.6(@types/node@24.13.5)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.23.15)(yaml@2.9.1))
+      zod:
+        specifier: ^4.6.2
+        version: 4.6.5
 
   apps/server:
     dependencies:
@@ -6913,8 +6930,8 @@ packages:
   bl@4.1.0:
     resolution: {integrity: sha512-1W07cM9gS6DcLperZfFSj+bWLtaPGSOHWhPiGzXmvVJbRLdG82sH/Kn8EtW1VqWVA54AKf2h5k5BbnIbwF3h6w==}
 
-  blintz@0.6.0:
-    resolution: {integrity: sha512-yp/oQkjg8ULxRJWNpmELrml8nu1Usa3tGHc+1EnkMH1qx+yHtB7fGvtC/NTOER+11HdrAx8wxZ9/o4X75YVl4w==}
+  blintz@0.7.2:
+    resolution: {integrity: sha512-7Ee4KWlyawlAjnifn3oAw3XibEJ3CTelm8o+TabM3I2QipSePjTjk22feTERx6sB9ALfiFSVq9x+AGCfAXDcCw==}
     peerDependencies:
       react: '>=18'
       react-dom: '>=18'
@@ -13320,7 +13337,7 @@ snapshots:
     optionalDependencies:
       '@types/react': 19.3.0
 
-  '@fumadocs/api-docs@0.2.9(ba654b3d264390c3ef5a274b75f2d5a9)':
+  '@fumadocs/api-docs@0.2.9(patch_hash=9f77a9bbf29b9f1eacea46e4f9982d8127bba5f7a18eb9e127459888ec1a49d3)(ba654b3d264390c3ef5a274b75f2d5a9)':
     dependencies:
       '@base-ui/react': 1.8.0(@date-fns/tz@1.4.1)(@types/react@19.3.0)(date-fns@4.4.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
       '@fuma-translate/react': 1.0.2(@types/react@19.3.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
@@ -14071,7 +14088,7 @@ snapshots:
       '@codemirror/view': 6.43.13
       '@floating-ui/dom': 1.8.0
       '@milkdown/core': 7.22.1
-      '@milkdown/ctx': 7.22.1
+      '@milkdown/ctx': 7.22.1(patch_hash=9b1628cc3835168060b368ddf585e8db748514aa8fb4b06c40a9558c31b2e8d5)
       '@milkdown/exception': 7.22.1
       '@milkdown/plugin-diff': 7.22.1
       '@milkdown/plugin-tooltip': 7.22.1
@@ -14093,7 +14110,7 @@ snapshots:
 
   '@milkdown/core@7.22.1':
     dependencies:
-      '@milkdown/ctx': 7.22.1
+      '@milkdown/ctx': 7.22.1(patch_hash=9b1628cc3835168060b368ddf585e8db748514aa8fb4b06c40a9558c31b2e8d5)
       '@milkdown/exception': 7.22.1
       '@milkdown/prose': 7.22.1
       '@milkdown/transformer': 7.22.1
@@ -14129,7 +14146,7 @@ snapshots:
       - supports-color
       - typescript
 
-  '@milkdown/ctx@7.22.1':
+  '@milkdown/ctx@7.22.1(patch_hash=9b1628cc3835168060b368ddf585e8db748514aa8fb4b06c40a9558c31b2e8d5)':
     dependencies:
       '@milkdown/exception': 7.22.1
 
@@ -14139,7 +14156,7 @@ snapshots:
     dependencies:
       '@milkdown/components': 7.22.1(@codemirror/language@6.12.4)(@codemirror/state@6.7.6)(@codemirror/view@6.43.13)(typescript@5.9.3)
       '@milkdown/core': 7.22.1
-      '@milkdown/ctx': 7.22.1
+      '@milkdown/ctx': 7.22.1(patch_hash=9b1628cc3835168060b368ddf585e8db748514aa8fb4b06c40a9558c31b2e8d5)
       '@milkdown/exception': 7.22.1
       '@milkdown/plugin-block': 7.22.1
       '@milkdown/plugin-clipboard': 7.22.1
@@ -14169,7 +14186,7 @@ snapshots:
     dependencies:
       '@floating-ui/dom': 1.8.0
       '@milkdown/core': 7.22.1
-      '@milkdown/ctx': 7.22.1
+      '@milkdown/ctx': 7.22.1(patch_hash=9b1628cc3835168060b368ddf585e8db748514aa8fb4b06c40a9558c31b2e8d5)
       '@milkdown/prose': 7.22.1
       '@milkdown/utils': 7.22.1
       '@types/lodash-es': 4.17.12
@@ -14180,7 +14197,7 @@ snapshots:
   '@milkdown/plugin-clipboard@7.22.1':
     dependencies:
       '@milkdown/core': 7.22.1
-      '@milkdown/ctx': 7.22.1
+      '@milkdown/ctx': 7.22.1(patch_hash=9b1628cc3835168060b368ddf585e8db748514aa8fb4b06c40a9558c31b2e8d5)
       '@milkdown/prose': 7.22.1
       '@milkdown/utils': 7.22.1
     transitivePeerDependencies:
@@ -14188,7 +14205,7 @@ snapshots:
 
   '@milkdown/plugin-cursor@7.22.1':
     dependencies:
-      '@milkdown/ctx': 7.22.1
+      '@milkdown/ctx': 7.22.1(patch_hash=9b1628cc3835168060b368ddf585e8db748514aa8fb4b06c40a9558c31b2e8d5)
       '@milkdown/prose': 7.22.1
       '@milkdown/utils': 7.22.1
       prosemirror-drop-indicator: 0.1.4
@@ -14198,7 +14215,7 @@ snapshots:
   '@milkdown/plugin-diff@7.22.1':
     dependencies:
       '@milkdown/core': 7.22.1
-      '@milkdown/ctx': 7.22.1
+      '@milkdown/ctx': 7.22.1(patch_hash=9b1628cc3835168060b368ddf585e8db748514aa8fb4b06c40a9558c31b2e8d5)
       '@milkdown/prose': 7.22.1
       '@milkdown/transformer': 7.22.1
       '@milkdown/utils': 7.22.1
@@ -14208,7 +14225,7 @@ snapshots:
   '@milkdown/plugin-history@7.22.1':
     dependencies:
       '@milkdown/core': 7.22.1
-      '@milkdown/ctx': 7.22.1
+      '@milkdown/ctx': 7.22.1(patch_hash=9b1628cc3835168060b368ddf585e8db748514aa8fb4b06c40a9558c31b2e8d5)
       '@milkdown/prose': 7.22.1
       '@milkdown/utils': 7.22.1
     transitivePeerDependencies:
@@ -14216,7 +14233,7 @@ snapshots:
 
   '@milkdown/plugin-indent@7.22.1':
     dependencies:
-      '@milkdown/ctx': 7.22.1
+      '@milkdown/ctx': 7.22.1(patch_hash=9b1628cc3835168060b368ddf585e8db748514aa8fb4b06c40a9558c31b2e8d5)
       '@milkdown/prose': 7.22.1
       '@milkdown/utils': 7.22.1
     transitivePeerDependencies:
@@ -14225,7 +14242,7 @@ snapshots:
   '@milkdown/plugin-listener@7.22.1':
     dependencies:
       '@milkdown/core': 7.22.1
-      '@milkdown/ctx': 7.22.1
+      '@milkdown/ctx': 7.22.1(patch_hash=9b1628cc3835168060b368ddf585e8db748514aa8fb4b06c40a9558c31b2e8d5)
       '@milkdown/prose': 7.22.1
       '@types/lodash-es': 4.17.12
       lodash-es: 4.18.1
@@ -14235,7 +14252,7 @@ snapshots:
   '@milkdown/plugin-slash@7.22.1':
     dependencies:
       '@floating-ui/dom': 1.8.0
-      '@milkdown/ctx': 7.22.1
+      '@milkdown/ctx': 7.22.1(patch_hash=9b1628cc3835168060b368ddf585e8db748514aa8fb4b06c40a9558c31b2e8d5)
       '@milkdown/prose': 7.22.1
       '@milkdown/utils': 7.22.1
       '@types/lodash-es': 4.17.12
@@ -14246,7 +14263,7 @@ snapshots:
   '@milkdown/plugin-streaming@7.22.1':
     dependencies:
       '@milkdown/core': 7.22.1
-      '@milkdown/ctx': 7.22.1
+      '@milkdown/ctx': 7.22.1(patch_hash=9b1628cc3835168060b368ddf585e8db748514aa8fb4b06c40a9558c31b2e8d5)
       '@milkdown/plugin-diff': 7.22.1
       '@milkdown/prose': 7.22.1
       '@milkdown/utils': 7.22.1
@@ -14256,7 +14273,7 @@ snapshots:
   '@milkdown/plugin-tooltip@7.22.1':
     dependencies:
       '@floating-ui/dom': 1.8.0
-      '@milkdown/ctx': 7.22.1
+      '@milkdown/ctx': 7.22.1(patch_hash=9b1628cc3835168060b368ddf585e8db748514aa8fb4b06c40a9558c31b2e8d5)
       '@milkdown/prose': 7.22.1
       '@milkdown/utils': 7.22.1
       '@types/lodash-es': 4.17.12
@@ -14266,7 +14283,7 @@ snapshots:
 
   '@milkdown/plugin-trailing@7.22.1':
     dependencies:
-      '@milkdown/ctx': 7.22.1
+      '@milkdown/ctx': 7.22.1(patch_hash=9b1628cc3835168060b368ddf585e8db748514aa8fb4b06c40a9558c31b2e8d5)
       '@milkdown/prose': 7.22.1
       '@milkdown/utils': 7.22.1
     transitivePeerDependencies:
@@ -14275,7 +14292,7 @@ snapshots:
   '@milkdown/plugin-upload@7.22.1':
     dependencies:
       '@milkdown/core': 7.22.1
-      '@milkdown/ctx': 7.22.1
+      '@milkdown/ctx': 7.22.1(patch_hash=9b1628cc3835168060b368ddf585e8db748514aa8fb4b06c40a9558c31b2e8d5)
       '@milkdown/exception': 7.22.1
       '@milkdown/prose': 7.22.1
       '@milkdown/utils': 7.22.1
@@ -14285,7 +14302,7 @@ snapshots:
   '@milkdown/preset-commonmark@7.22.1':
     dependencies:
       '@milkdown/core': 7.22.1
-      '@milkdown/ctx': 7.22.1
+      '@milkdown/ctx': 7.22.1(patch_hash=9b1628cc3835168060b368ddf585e8db748514aa8fb4b06c40a9558c31b2e8d5)
       '@milkdown/exception': 7.22.1
       '@milkdown/prose': 7.22.1
       '@milkdown/transformer': 7.22.1
@@ -14299,7 +14316,7 @@ snapshots:
   '@milkdown/preset-gfm@7.22.1':
     dependencies:
       '@milkdown/core': 7.22.1
-      '@milkdown/ctx': 7.22.1
+      '@milkdown/ctx': 7.22.1(patch_hash=9b1628cc3835168060b368ddf585e8db748514aa8fb4b06c40a9558c31b2e8d5)
       '@milkdown/exception': 7.22.1
       '@milkdown/preset-commonmark': 7.22.1
       '@milkdown/prose': 7.22.1
@@ -14355,7 +14372,7 @@ snapshots:
   '@milkdown/utils@7.22.1':
     dependencies:
       '@milkdown/core': 7.22.1
-      '@milkdown/ctx': 7.22.1
+      '@milkdown/ctx': 7.22.1(patch_hash=9b1628cc3835168060b368ddf585e8db748514aa8fb4b06c40a9558c31b2e8d5)
       '@milkdown/exception': 7.22.1
       '@milkdown/prose': 7.22.1
       '@milkdown/transformer': 7.22.1
@@ -17352,7 +17369,7 @@ snapshots:
       inherits: 2.0.4
       readable-stream: 3.6.2
 
-  blintz@0.6.0(prosemirror-model@1.25.11)(prosemirror-state@1.4.4)(prosemirror-view@1.42.3)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(typescript@5.9.3):
+  blintz@0.7.2(prosemirror-model@1.25.11)(prosemirror-state@1.4.4)(prosemirror-view@1.42.3)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(typescript@5.9.3):
     dependencies:
       '@codemirror/commands': 6.11.0
       '@codemirror/language': 6.12.4
@@ -19060,7 +19077,7 @@ snapshots:
   fumadocs-openapi@11.4.3(ba654b3d264390c3ef5a274b75f2d5a9):
     dependencies:
       '@fuma-translate/react': 1.0.2(@types/react@19.3.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
-      '@fumadocs/api-docs': 0.2.9(ba654b3d264390c3ef5a274b75f2d5a9)
+      '@fumadocs/api-docs': 0.2.9(patch_hash=9f77a9bbf29b9f1eacea46e4f9982d8127bba5f7a18eb9e127459888ec1a49d3)(ba654b3d264390c3ef5a274b75f2d5a9)
       '@fumari/json-schema-ts': 1.0.2(json-schema-typed@8.0.2)
       '@fumari/stf': 1.1.1(@types/react@19.3.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
       '@scalar/json-magic': 0.13.5

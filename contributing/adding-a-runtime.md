@@ -733,3 +733,13 @@ Doe is confined to `services/runtimes/doe/`; Pi remains confined to the standalo
 Multi-format credits runtimes declare `credits.supportedProtocols`. The optional `getCreditsProtocol(sessionId?)` selects the configured or frozen conversation format; `creditsCapabilitiesFor` derives a transient view without mutating stable capabilities. Session model menus and refusals must pass the session id. The optional `sessionRunsOnCredits` answers the frozen payer, rather than applying a later global setting to an existing conversation.
 
 Host assembly owns turn-scoped MCP clients and a connector principal. Runtime shutdown must drain those turns before their tool, account, room and Mesh dependencies close. Terminal metadata failures must still end the event queue and release active ownership. An unacknowledged stop answers `unconfirmed`; it must not close a store still owned by running work.
+
+## Document Channel Conformance
+
+Document work uses the existing protected session-message admission or a distinct original Room/Relay operation owner. A batch receipt, page payload, or projected `turn_start` cannot mint runtime authority. The native owner must bind the same runtime, principal core, lock acquisition, and physical attempt before effects.
+
+Keep recorded acceptance, dispatch start, backend admission, completion, and application acknowledgement separate. Emit `turn_done` only from correlated successful settlement. A partial `app.ack` handles only its named inputs; ordinary runtime completion does not acknowledge them.
+
+Restart may resume accepted-unclaimed work after current source/grant checks. Claimed or started work with an unknown outcome stays `in_doubt`; absent transcript history does not permit a retry. Canonical movement preserves the original receipt and batch generation, and refuses an unsafe destination.
+
+Stop must attempt independent cleanup peers and retain the first raw failure. Iterator completion or `Query.return()` alone does not prove child-process, pipe, lock, or holder closure. Release runtime capacity only after the original owner confirms physical closure. Native controls and sanitized Doc Channel conformance are qualified for their tested sources and scopes; new runtimes still need their own original admission and closure evidence. See [Document Channels](document-channels.md) for source locations and HTTP contracts.

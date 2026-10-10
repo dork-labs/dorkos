@@ -1,3 +1,5 @@
+import { requireOriginalClaudeRoomPumpEffect } from './persistent-dispatch.js';
+import { captureClaudeOriginalQueryCurrent } from '../claude-code-runtime.js';
 /**
  * How a pump's process is booted, and how the next dispatch decides whether it
  * may ride the one already running (spec `persistent-session-runtime` §4.5,
@@ -30,7 +32,8 @@
  *
  * @module services/runtimes/claude-code/sessions/pump-launch
  */
-import { query, type Options, type Query } from '@anthropic-ai/claude-agent-sdk';
+import type { Options, Query } from '@anthropic-ai/claude-agent-sdk';
+import { readOriginalSessionPumpState } from './session-pump.js';
 import type { StreamEvent } from '@dorkos/shared/types';
 import { logger } from '../../../../lib/logger.js';
 import type { AgentSession } from '../agent-types.js';
@@ -86,20 +89,30 @@ export function createPumpLauncher(
   currentPlan: () => PumpLaunchPlan,
   onLaunched: (live: Query, fingerprint: LaunchFingerprint) => void
 ): PumpLauncher {
-  return ({ sessionId, prompt }): PumpQuery => {
+  return async ({ sessionId, prompt, pump, firstMessage }): Promise<PumpQuery> => {
+    // A dispatched first turn owns a native entry before its process exists.
+    // Pure warm/stage launches have no turn to retire and must stay independent.
+    const requireQueryCurrent =
+      firstMessage !== undefined ? captureClaudeOriginalQueryCurrent(session) : undefined;
+    const { query } = await import('@anthropic-ai/claude-agent-sdk');
+    requireQueryCurrent?.();
+    if (pump && readOriginalSessionPumpState(pump) !== 'warming')
+      throw new Error('Original persistent pump retired or changed during SDK acquisition.');
     const plan = currentPlan();
     // The one option this path adds to the resolved plan, and the reason it is
     // added HERE rather than in the shared resolver: only a persistent process
     // can be orphaned by a server that dies without running its shutdown, so
     // only a persistent process is written into the ledger the next boot sweeps
     // (DOR-1310). The resume-per-message path keeps the SDK's own spawn.
-    const live = query({
+    const queryInput = {
       prompt,
       options: {
         ...plan.sdkOptions,
         spawnClaudeCodeProcess: createTrackedSpawn(sharedWarmProcessLedger()),
       },
-    });
+    };
+    if (pump) requireOriginalClaudeRoomPumpEffect(pump, firstMessage);
+    const live = query(queryInput);
     // Deliberately NOT `session.activeQuery = live` here. That field means "a
     // turn is in flight" to every consumer in this runtime — `interruptQuery`
     // escalates to `close()` when `interrupt()` rejects, which on a warm idle

@@ -357,6 +357,8 @@ export class CanvasDocumentStore {
       .where(and(eq(canvasDocuments.scope, scope), eq(canvasDocuments.id, documentId)))
       .get();
     if (!row) return false;
+    if (tx.get(sql`SELECT 1 FROM room_doc_admissions WHERE document_id=${documentId} LIMIT 1`))
+      throw new Error('Document has retained native Room admission evidence.');
     this.lifecycle.close(tx, row);
     return (
       tx

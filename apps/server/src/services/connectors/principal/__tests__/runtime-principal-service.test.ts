@@ -12,6 +12,9 @@ import {
 import type { OpenConnectorTurnInput } from '../../runtime-principal-port.js';
 import {
   ConnectorRuntimeAuthorityError,
+  readCurrentNativePrincipal,
+  captureNativePrincipalTime,
+  requireNativePrincipalDatabase,
   ConnectorRuntimePrincipalService,
   type ConnectorRuntimeAuthorityResolver,
 } from '../runtime-principal-service.js';
@@ -60,6 +63,39 @@ describe('ConnectorRuntimePrincipalService', () => {
   function openTurn(service: ConnectorRuntimePrincipalService, value = input) {
     return service.openTurn(value, { isCurrent: () => ownerCurrent });
   }
+
+  it('does not upgrade a genuine legacy binding to native document authority', async () => {
+    const service = makeService('boot-a', 'secret-bearer');
+    await service.initializeBoot();
+    await openTurn(service);
+    const resolved = await service.resolve({
+      bearer: 'secret-bearer',
+      expectedRuntime: 'opencode',
+      expectedCanonicalCwd: '/project',
+    });
+    expect(resolved.status).toBe('resolved');
+    if (resolved.status !== 'resolved') throw new Error('Genuine legacy binding did not resolve');
+    requireNativePrincipalDatabase(service, db);
+    db.transaction((tx) => {
+      expect(
+        readCurrentNativePrincipal(
+          service,
+          db,
+          resolved.principal,
+          tx,
+          captureNativePrincipalTime(service, db, resolved.principal)
+        )
+      ).toBeUndefined();
+    });
+    const foreign = createDb(':memory:');
+    try {
+      expect(() => requireNativePrincipalDatabase(service, foreign)).toThrow(
+        'exact owning database'
+      );
+    } finally {
+      foreign.$client.close();
+    }
+  });
 
   it('requires the boot barrier and never stores the raw bearer', async () => {
     const service = makeService('boot-a', 'secret-bearer');

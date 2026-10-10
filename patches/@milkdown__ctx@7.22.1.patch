@@ -1,0 +1,92 @@
+diff --git a/lib/index.js b/lib/index.js
+--- a/lib/index.js
++++ b/lib/index.js
+@@ -252,10 +252,12 @@
+ 	#listener;
+ 	#eventUniqId;
+ 	#status;
++	#timeout;
+ 	constructor(clock, type) {
+ 		this.#promise = null;
+ 		this.#listener = null;
+ 		this.#status = "pending";
++		this.#timeout = null;
+ 		this.start = () => {
+ 			this.#promise ??= new Promise((resolve, reject) => {
+ 				this.#listener = (e) => {
+@@ -268,7 +270,8 @@
+ 					}
+ 				};
+ 				this.#waitTimeout(() => {
+-					if (this.#status === "pending") this.#status = "rejected";
++					if (this.#status !== "pending") return;
++					this.#status = "rejected";
+ 					this.#removeListener();
+ 					reject(/* @__PURE__ */ new Error(`Timing ${this.type.name} timeout.`));
+ 				});
+@@ -282,10 +285,18 @@
+ 			dispatchEvent(event);
+ 		};
+ 		this.#removeListener = () => {
+-			if (this.#listener) removeEventListener(this.type.name, this.#listener);
++			if (this.#timeout !== null) {
++				clearTimeout(this.#timeout);
++				this.#timeout = null;
++			}
++			if (this.#listener) {
++				removeEventListener(this.type.name, this.#listener);
++				this.#listener = null;
++			}
+ 		};
+ 		this.#waitTimeout = (ifTimeout) => {
+-			setTimeout(() => {
++			this.#timeout = setTimeout(() => {
++				this.#timeout = null;
+ 				ifTimeout();
+ 			}, this.type.timeout);
+ 		};
+diff --git a/src/timer/timer.ts b/src/timer/timer.ts
+--- a/src/timer/timer.ts
++++ b/src/timer/timer.ts
+@@ -15,6 +15,8 @@
+   readonly #eventUniqId: symbol
+   /// @internal
+   #status: TimerStatus = 'pending'
++  /// @internal
++  #timeout: ReturnType<typeof setTimeout> | null = null
+ 
+   /// @internal
+   constructor(clock: TimerMap, type: TimerType) {
+@@ -46,7 +48,8 @@
+       }
+ 
+       this.#waitTimeout(() => {
+-        if (this.#status === 'pending') this.#status = 'rejected'
++        if (this.#status !== 'pending') return
++        this.#status = 'rejected'
+ 
+         this.#removeListener()
+         reject(new Error(`Timing ${this.type.name} timeout.`))
+@@ -69,12 +72,20 @@
+ 
+   /// @internal
+   #removeListener = () => {
+-    if (this.#listener) removeEventListener(this.type.name, this.#listener)
++    if (this.#timeout !== null) {
++      clearTimeout(this.#timeout)
++      this.#timeout = null
++    }
++    if (this.#listener) {
++      removeEventListener(this.type.name, this.#listener)
++      this.#listener = null
++    }
+   }
+ 
+   /// @internal
+   #waitTimeout = (ifTimeout: () => void) => {
+-    setTimeout(() => {
++    this.#timeout = setTimeout(() => {
++      this.#timeout = null
+       ifTimeout()
+     }, this.type.timeout)
+   }

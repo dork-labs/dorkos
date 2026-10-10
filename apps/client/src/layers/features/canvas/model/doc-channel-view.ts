@@ -23,6 +23,8 @@ export interface NativeFrameAdmission {
     controller: FrameLifetimeController,
     observation: FrameObservation
   ): BoundDocPort | null;
+  /** Nonissuing custody check for a previously completed original load during quarantine. */
+  retainsLoadedFrame(controller: FrameLifetimeController, observation: FrameObservation): boolean;
   subscribeInvalidation(callback: () => void): () => void;
 }
 
@@ -35,7 +37,17 @@ export interface DocChannelBinding {
   inspect: WidgetChannelPort['inspect'];
   captureOriginal: NonNullable<WidgetChannelPort['captureOriginal']>;
 }
+/** Closed original MCP recording port; a displayed origin cannot manufacture this owner. */
+export interface DocMcpBinding {
+  readonly owner: object;
+  readonly documentId: string;
+  readonly generation: string;
+  readonly origin: import('@dorkos/shared/canvas-channel-schemas').CanvasChannelMcpOrigin;
+  current(purpose: 'read' | 'submit'): boolean;
+  captureOriginal: NonNullable<WidgetChannelPort['captureOriginal']>;
+}
 export interface DocChannelView {
+  mcpBinding?: DocMcpBinding;
   documentId: string;
   transport: Transport;
   snapshot?: DocChannelSnapshot;
@@ -43,6 +55,8 @@ export interface DocChannelView {
   available: boolean;
   binding?: DocChannelBinding;
   frameAdmission?: NativeFrameAdmission;
+  /** Display-only initial owned HTTP disposition; it never authorizes submission. */
+  replayObserved?: boolean;
 }
 
 /** Start or replace a displayed lifetime without an action fallback. */

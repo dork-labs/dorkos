@@ -726,7 +726,7 @@ describe('MCP Tool Handlers', () => {
       expect(server.version).toBe('1.0.0');
     });
 
-    it('registers 51 tools including the five document-channel verbs', () => {
+    it('registers 56 tools including the ten document-channel verbs', () => {
       // Purpose: regression guard against accidental tool omissions or additions.
       // This count changes intentionally when new MCP tools are added. 32 legacy
       // (4 core + 5 tasks + 8 relay + 1 agent + 2 ui + 3 devtools + 6 browser
@@ -772,13 +772,19 @@ describe('MCP Tool Handlers', () => {
       // 57 -> 51: the six relay send, inbox and endpoint tools retired for the
       // chat tools, which these deps do not compose (spec `spin-off-chats` §7).
       const server = createDorkOsToolServer(makeMockDeps()) as unknown as MockServer;
-      expect(server.tools).toHaveLength(51);
+      // Four Doc operator management tools and the native task writer remain.
+      expect(server.tools).toHaveLength(56);
       for (const name of [
         'configure_doc_channel',
         'approve_doc_route',
         'revoke_doc_route',
         'canvas_send',
         'canvas_patch_state',
+        'replay_doc_batch',
+        'inspect_doc_channel',
+        'issue_doc_token',
+        'revoke_doc_token',
+        'canvas_set_checkbox',
       ]) {
         expect(server.tools.map((tool) => tool.name)).toContain(name);
       }

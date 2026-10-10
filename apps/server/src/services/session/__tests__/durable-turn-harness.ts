@@ -46,11 +46,6 @@ import {
 } from '../index.js';
 import { resetMessageDispatcher } from '../message-dispatcher.js';
 import { resetStagedContextStore } from '../staged-context-store.js';
-import { agents } from '@dorkos/db';
-import { runtimeRegistry } from '../../core/runtime-registry.js';
-import { createRoomSubsystem, setRoomService } from '../../rooms/index.js';
-import { createSessionRoomTurnRunner } from '../../rooms/room-turn-runner.js';
-import type { RoomTurnRequest, RoomTurnRunner } from '../../rooms/room-trigger.js';
 
 /**
  * Run one complete turn of `runtime` through a persistence-enabled projector
@@ -431,12 +426,6 @@ export interface QueueDurabilityReport {
   ranAfterInteractionResolved: boolean;
 }
 
-/** Let queued microtasks and the pump's `queueMicrotask` deferral drain. */
-async function settleQueue(): Promise<void> {
-  for (let i = 0; i < 8; i += 1) await Promise.resolve();
-  await new Promise((resolve) => setTimeout(resolve, 10));
-}
-
 /** A promise plus the function that resolves it. */
 function gate(): { wait: Promise<void>; open: () => void } {
   let open!: () => void;
@@ -493,8 +482,13 @@ export async function driveQueueDurability(
   try {
     // Rule 1: a message queued behind a turn that FAILS still runs.
     const failHold = gate();
+    const failureEntered = gate();
+    const failureSettled = gate();
+    const behindFailureSettled = gate();
+    let failureOutcome: 'ok' | 'failed' | undefined;
     runtime.withScenarios([
       async function* (): AsyncGenerator<StreamEvent> {
+        failureEntered.open();
         yield { type: 'text_delta', data: { text: 'working' } } as StreamEvent;
         await failHold.wait;
         throw new Error('the runtime fell over');
@@ -510,7 +504,14 @@ export async function driveQueueDurability(
       cwd,
       projector: getOrCreateProjector(failSession, cwd),
       runtime,
+      onSettled: (outcome) => {
+        failureOutcome = outcome;
+        failureSettled.open();
+      },
     });
+    // Acceptance precedes the detached runtime launch. Observe its actual entry
+    // before queuing the second message behind this held turn.
+    await failureEntered.wait;
     await dispatchMessage({
       sessionId: failSession,
       clientId: 'c3',
@@ -518,20 +519,29 @@ export async function driveQueueDurability(
       cwd,
       projector: getOrCreateProjector(failSession, cwd),
       runtime,
+      onSettled: () => behindFailureSettled.open(),
     });
-    await settleQueue();
     const beforeFailure = runtime.sendMessage.mock.calls.length; // 1: only the first ran
     failHold.open();
-    await settleQueue();
-    const ranBehindFailedTurn = beforeFailure === 1 && runtime.sendMessage.mock.calls.length === 2;
+    await failureSettled.wait;
+    await behindFailureSettled.wait;
+    const ranBehindFailedTurn =
+      failureOutcome === 'failed' &&
+      beforeFailure === 1 &&
+      runtime.sendMessage.mock.calls.length === 2;
 
     // Rule 2: a message queued behind an OPEN interaction waits, then runs on
     // resolution. A fresh runtime so the call count starts clean.
     const runtime2 = new FakeAgentRuntime();
     runtime2.getInternalSessionId.mockReturnValue(undefined);
     const approvalHold = gate();
+    const approvalEntered = gate();
+    const approvalSettled = gate();
+    const behindApprovalSettled = gate();
+    let enteredWhileInteractionPending = false;
     runtime2.withScenarios([
       async function* (): AsyncGenerator<StreamEvent> {
+        approvalEntered.open();
         yield {
           type: 'approval_required',
           data: {
@@ -546,6 +556,7 @@ export async function driveQueueDurability(
         yield { type: 'done', data: {} } as StreamEvent;
       },
       async function* (): AsyncGenerator<StreamEvent> {
+        enteredWhileInteractionPending = projector.hasPendingInteractions();
         yield { type: 'done', data: {} } as StreamEvent;
       },
     ]);
@@ -557,7 +568,9 @@ export async function driveQueueDurability(
       cwd,
       projector,
       runtime: runtime2,
+      onSettled: () => approvalSettled.open(),
     });
+    await approvalEntered.wait;
     await dispatchMessage({
       sessionId: interactionSession,
       clientId: 'c3',
@@ -565,22 +578,28 @@ export async function driveQueueDurability(
       cwd,
       projector,
       runtime: runtime2,
+      onSettled: () => behindApprovalSettled.open(),
     });
-    await settleQueue();
     // The turn ENDS with the approval unanswered (a stall/interrupt): the queue
     // must not move into an ask nobody replied to.
     approvalHold.open();
-    await settleQueue();
+    // Settlement follows projection and write-lock release. The unanswered
+    // interaction, rather than an unfinished turn, must now hold the queue.
+    await approvalSettled.wait;
     const heldWhileInteractionPending =
       projector.hasPendingInteractions() &&
       runtime2.sendMessage.mock.calls.length === 1 &&
       listQueuedMessages(interactionSession).length === 1;
     // Answered — now, and only now, the queue moves.
     projector.resolveInteraction('c3-call', 'approved');
-    await settleQueue();
+    await behindApprovalSettled.wait;
     const ranAfterInteractionResolved = runtime2.sendMessage.mock.calls.length === 2;
 
-    return { ranBehindFailedTurn, heldWhileInteractionPending, ranAfterInteractionResolved };
+    return {
+      ranBehindFailedTurn,
+      heldWhileInteractionPending: heldWhileInteractionPending && !enteredWhileInteractionPending,
+      ranAfterInteractionResolved,
+    };
   } finally {
     resetMessageDispatcher();
     resetStagedContextStore();
@@ -608,169 +627,4 @@ export interface RoomCanvasTurnOutcome {
   canvasEntries: number;
 }
 
-/**
- * Drive ONE room turn on `runtime` and report what it did to the room's canvas —
- * the harness behind the room-canvas conformance case (spec `room-canvas` §5.5).
- *
- * Everything here is the code that ships: a real rooms subsystem over a real
- * SQLite database, the REAL room turn runner, and this runtime registered in the
- * real registry so the runner resolves it the way production does. The only
- * runtime-specific part is `produce` — how THIS adapter comes to emit a canvas
- * command inside a turn — and it has to be the caller's, because the answer
- * differs per adapter by construction: test-mode scripts one, and claude-code's
- * `control_ui` handler is bound to the live session.
- *
- * The second member is what makes "appears in the next turn's context" a real
- * question rather than a re-read of the table. It is seated `silent`, so the
- * canvas change cannot trigger it — and the dispatch count is taken BEFORE it is
- * deliberately asked a question, which is what turns "no turn was triggered"
- * into something that can fail.
- *
- * @param runtime - The runtime under test.
- * @param opts.agentPath - The agent that takes the turn.
- * @param opts.otherAgentPath - A second member, whose next context is read.
- * @param opts.produce - Called with the turn's session id and the `roomTurn`
- *   marker the runner really minted for it; how this adapter comes to emit a
- *   canvas command inside the turn. The marker is handed over rather than
- *   rebuilt because the turn id keys the per-turn ledger — a command applied
- *   under a different one would write a row and no line.
- * @returns What the room holds afterwards.
- */
-export async function driveRoomCanvasTurn(
-  runtime: AgentRuntime,
-  opts: {
-    agentPath: string;
-    otherAgentPath: string;
-    produce: (
-      sessionId: string,
-      roomTurn: NonNullable<MessageOpts['roomTurn']>
-    ) => void | Promise<void>;
-  }
-): Promise<RoomCanvasTurnOutcome> {
-  const db = createTestDb();
-  setSessionEventStore(new SessionEventStore(db));
-  setMessageQueueStore(new MessageQueueStore(db));
-  resetMessageDispatcher();
-  resetStagedContextStore();
-
-  const now = new Date().toISOString();
-  for (const [name, projectPath] of [
-    ['ana', opts.agentPath],
-    ['ben', opts.otherAgentPath],
-  ] as const) {
-    db.insert(agents)
-      .values({
-        id: `ULID_${name.toUpperCase()}`,
-        name,
-        displayName: name[0].toUpperCase() + name.slice(1),
-        runtime: runtime.type,
-        projectPath,
-        behaviorJson: '{"responseMode":"always"}',
-        registeredAt: now,
-        updatedAt: now,
-      })
-      .run();
-  }
-
-  /**
-   * The `roomTurn` marker the runner minted, captured off the runtime's own
-   * `sendMessage`.
-   *
-   * Read from the ADAPTER's side rather than rebuilt, because the turn id is
-   * what keys the per-turn ledger: a canvas command applied under an invented
-   * one would leave a row with no line naming it, which is exactly the split
-   * this whole design exists to prevent.
-   */
-  let marker: NonNullable<MessageOpts['roomTurn']> | undefined;
-  const watchedRuntime: AgentRuntime = Object.assign(Object.create(runtime) as AgentRuntime, {
-    sendMessage: (sessionId: string, content: string, sendOpts?: MessageOpts) => {
-      if (sendOpts?.roomTurn !== undefined) marker = sendOpts.roomTurn;
-      return runtime.sendMessage(sessionId, content, sendOpts);
-    },
-  });
-
-  runtimeRegistry.setDb(db);
-  runtimeRegistry.register(watchedRuntime);
-  runtimeRegistry.setDefault(runtime.type);
-
-  /** Every turn the room asked for, with the context it was described with. */
-  const dispatched: RoomTurnRequest[] = [];
-  const real = createSessionRoomTurnRunner();
-  const watched: RoomTurnRunner = {
-    run: (request) => {
-      dispatched.push(request);
-      const running = real.run({
-        ...request,
-        onSessionBound: (id) => {
-          request.onSessionBound(id);
-          // The adapter's own way of emitting a canvas command, fired once the
-          // turn's session really exists and deliberately NOT awaited: the
-          // command has to land inside the turn that is still running.
-          if (request.authorId === firstTurnAuthorId && marker !== undefined) {
-            void opts.produce(id, marker);
-          }
-        },
-      });
-      return running;
-    },
-    interrupt: (input) => real.interrupt(input),
-  };
-
-  const subsystem = createRoomSubsystem({ db, turns: watched });
-  setRoomService(subsystem.service);
-  const human = subsystem.authors.localHuman().id;
-  const room = subsystem.service.createRoom(
-    {
-      kind: 'channel',
-      title: 'Conformance',
-      members: [],
-      agentPaths: [opts.agentPath, opts.otherAgentPath],
-    },
-    human
-  );
-  const ana = subsystem.authors.resolveAgent(opts.agentPath, 'Ana').id;
-  const ben = subsystem.authors.resolveAgent(opts.otherAgentPath, 'Ben').id;
-  const firstTurnAuthorId = ana;
-  // Ben answers nothing on his own, so the ONE dispatch below is Ana's and the
-  // count is a claim about the canvas rather than about a busy room.
-  subsystem.service.updateMembership(room.id, human, ben, 'silent');
-  subsystem.service.updateMembership(room.id, human, ana, 'always');
-
-  try {
-    subsystem.service.post(room.id, { authorId: human, text: 'put the plan up' });
-    await subsystem.service.triggersIdle();
-
-    // Taken BEFORE anybody is asked a second question: this is the number that
-    // says a canvas change woke nobody.
-    const turnsDispatchedByTheCanvasChange = dispatched.length;
-    const canvas = subsystem.service.canvas.list(room.id);
-    const canvasEntries = subsystem.service
-      .listEntries(room.id, human, { limit: 200 })
-      .filter((entry) => entry.body.canvas !== undefined).length;
-
-    // Now ask the SECOND member something, so the room describes ITS next turn
-    // the way the dispatcher really describes one, and read the canvas section
-    // off what it was handed.
-    subsystem.service.updateMembership(room.id, human, ben, 'always');
-    subsystem.service.updateMembership(room.id, human, ana, 'silent');
-    subsystem.service.post(room.id, { authorId: human, text: 'what do you make of it?' });
-    await subsystem.service.triggersIdle();
-    const bensTurn = dispatched.find((request) => request.authorId === ben);
-
-    return {
-      documents: canvas.map((document) => ({
-        id: document.id,
-        title: document.title,
-        authorId: document.authorId,
-      })),
-      nextTurnContextTitles: (bensTurn?.roomContext.canvas?.documents ?? []).map(
-        (document) => document.title
-      ),
-      turnsDispatchedByTheCanvasChange,
-      canvasEntries,
-    };
-  } finally {
-    setSessionEventStore(undefined);
-    setMessageQueueStore(undefined);
-  }
-}
+export { driveRoomCanvasTurn } from './original-room-canvas-harness.js';

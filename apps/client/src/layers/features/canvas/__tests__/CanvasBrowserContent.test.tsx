@@ -4,6 +4,17 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, cleanup, waitFor, act } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
+
+// These navigation/view controls exercise the ordinary browser surface. Native Doc
+// owner/replay/load custody is exercised separately by the real frame hook controls.
+vi.mock('../model/use-doc-frame-channel', () => ({
+  useDocFrameChannel: () => ({
+    noteFrameLoaded: () => true,
+    noteFrameRetired: () => {},
+    navigationSource: null,
+  }),
+}));
+
 import { WORKBENCH_SANDBOX_EXTERNAL, WORKBENCH_SANDBOX_ISOLATED } from '../lib/browser-url';
 
 /** Mirror of the store's BrowserHistoryState (the real type comes from the mocked module). */

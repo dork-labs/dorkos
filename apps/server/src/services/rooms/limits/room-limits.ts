@@ -40,6 +40,9 @@
  * @module server/services/rooms/limits/room-limits
  */
 import { USER_CONFIG_DEFAULTS } from '@dorkos/shared/config-schema';
+import { createRoomSpendPersistence, type Db } from '@dorkos/db';
+import { configManager } from '../../core/config-manager.js';
+import type { RoomDocStorage, RoomDocClaimData } from '@dorkos/db/internal-server';
 
 /**
  * A room's stored overrides — the first rung.
@@ -67,6 +70,7 @@ export interface RoomLimitConfig {
   maxAgentDepth?: number;
   maxTurnsPerAgentPerCascade?: number;
   maxAutomaticTurnsPerRoomPerHour?: number;
+  maxAutomaticTurnsTotalPerHour?: number;
 }
 
 /** What one room's automatic replies are actually bounded by, right now. */
@@ -148,3 +152,157 @@ export function resolveRoomLimits(
  * resolved to before this existed.
  */
 export type RoomLimitsResolver = (roomId: string) => ResolvedRoomLimits;
+/** Resolve the install-wide cap without consulting any per-room override. */
+export function resolveGlobalRoomAutomaticTurnCap(
+  config: RoomLimitConfig | null | undefined
+): number | null {
+  const defaults = USER_CONFIG_DEFAULTS.rooms;
+  const enabled = config?.turnLimitsEnabled ?? defaults.turnLimitsEnabled;
+  if (!enabled) return null;
+  return config?.maxAutomaticTurnsTotalPerHour ?? defaults.maxAutomaticTurnsTotalPerHour;
+}
+
+/**
+ * Outcome of asking for one automatic turn.
+ *
+ * Deliberately does NOT carry a headroom number. The obvious candidate — "turns
+ * still available" — is zero at exactly the moment anything would want to read
+ * it, because that is what a refusal means, so it would be a field that is
+ * either uninteresting or constant. What a reader of the notice actually needs
+ * is WHICH cap refused, since the two send them to different settings.
+ */
+export interface BudgetDecision {
+  allowed: boolean;
+  /** Set only when `allowed` is false: which cap said no. */
+  scope?: 'room' | 'global';
+  /**
+   * Whether this turn was actually charged to a window.
+   *
+   * False when nothing was counting it — both caps off — in which case
+   * `allowed` is true and no window moved. The one caller that needs the
+   * difference is the notice log's re-arm: "the window rolled, so the next
+   * exhaustion is news" is only true of a window that exists.
+   */
+  counted: boolean;
+  /** Exceptional durable prepared-source refusal; memory is never refunded. */
+  prepared?: true;
+}
+
+/**
+ * The two live caps, read per call so a change in Settings — or on the room —
+ * takes effect at once.
+ *
+ * **`null` is unlimited, and it is a distinct state rather than a big number**
+ * (the plan's decision 4, `plans/room-turn-limits-overhaul.md`). A cap that is
+ * off is not a cap of `Infinity`: nothing is reserved against it, nothing is
+ * recorded for it, and {@link RoomTurnBudget.remaining} reports `null` so an
+ * agent reading `room_context.budget` is told "no limit" instead of a number
+ * nobody is counting down.
+ *
+ * The two are independent, because a room may be unlimited on an install that
+ * is not (`resolveRoomLimits`, which owns that asymmetry). A room whose own cap
+ * is `null` is still gated by `global()`.
+ */
+export interface TurnBudgetLimits {
+  /**
+   * Automatic turns this room may run per window, or `null` when this room's
+   * own limits are off.
+   *
+   * Takes the room id because the ceiling is per room now: `rooms.max_auto_turns_per_hour`
+   * overrides `rooms.maxAutomaticTurnsPerRoomPerHour` for one room (DOR-1429).
+   */
+  perRoom: (roomId: string) => number | null;
+  /**
+   * Automatic turns the whole install may run per window, across every room, or
+   * `null` when the install-wide toggle is off.
+   *
+   * Takes no room id, and cannot: this is the install's wallet, and no room has
+   * a say in it.
+   */
+  global: () => number | null;
+}
+
+/** Internal server module surface; no HTTP/MCP caller receives this companion. */
+export interface RoomDocBudgetCompanion {
+  begin(sourceHash: string, roomId: string): object;
+  readGlobal(owner: object): void;
+  readRoom(owner: object): void;
+  readClock(owner: object): void;
+  readDestinationPolicy(owner: object): Readonly<ResolvedRoomLimits>;
+  prepare(
+    owner: object,
+    data: RoomDocClaimData
+  ): ReturnType<RoomDocStorage['prepareAcceptedBarrier']>;
+  commit(
+    owner: object,
+    data: RoomDocClaimData
+  ): ReturnType<RoomDocStorage['commitPreparedRoomDoc']>;
+  release(owner: object): ReturnType<RoomDocStorage['releaseKnownPreparedBarrier']>;
+}
+
+/**
+ * The install-wide `rooms` settings, or `null` when they cannot be read.
+ *
+ * `null` rather than a throw, because `RoomService.post` resolves limits on
+ * EVERY write: a config manager that is not up yet — or a config file that
+ * cannot be read — must never be able to stop a room accepting messages.
+ * {@link resolveRoomLimits} lands a `null` on the schema's own defaults, so the
+ * failure mode is "the limits used their defaults", never "the limits were
+ * absent", which is the only direction it is safe to fail in.
+ */
+export function readRoomsConfig() {
+  try {
+    return configManager.get('rooms');
+  } catch {
+    return null;
+  }
+}
+
+const originalBudgetPolicies = new WeakMap<
+  TurnBudgetLimits,
+  {
+    db: Db;
+    readRoom(roomId: string): Readonly<ResolvedRoomLimits>;
+    readGlobal(): number | null;
+  }
+>();
+/**
+ * The two hourly ceilings, as the budget reads them — and the one place the
+ * room/install asymmetry is spelled out in code.
+ *
+ * `perRoom` goes through the ladder, so a room may raise, lower or switch off
+ * its own hourly ceiling. `global` does NOT and cannot: it reads the
+ * install-wide toggle and the install-wide number, because
+ * `rooms.maxAutomaticTurnsTotalPerHour` is the ceiling on what every room
+ * together may cost and no room has a say in it. An unlimited ROOM is therefore
+ * still charged against the install's hour — see `room-limits.ts`.
+ *
+ * `null` from either is "this cap is off", which the budget treats as a state
+ * rather than a large number.
+ *
+ * @param limitsFor - The bound ladder.
+ */
+/** Fixed actual native/config construction; supplied ordinary resolvers never issue Doc policy. */
+export function createTurnBudgetLimits(limitsFor: RoomLimitsResolver, db: Db): TurnBudgetLimits {
+  const persistence = createRoomSpendPersistence(db);
+  const readNative = persistence?.readRoomLimitData.bind(persistence);
+  const readGlobal = () => resolveGlobalRoomAutomaticTurnCap(readRoomsConfig());
+  const readRoom = (roomId: string) =>
+    Object.freeze(resolveRoomLimits(readNative!(roomId), readRoomsConfig()));
+  const limits: TurnBudgetLimits = {
+    perRoom: (roomId) => {
+      const resolved = readNative ? readRoom(roomId) : limitsFor(roomId);
+      return resolved.turnLimitsEnabled ? resolved.maxAutoTurnsPerHour : null;
+    },
+    global: readGlobal,
+  };
+  if (readNative) originalBudgetPolicies.set(limits, { db, readRoom, readGlobal });
+  return limits;
+}
+/** Recognizes only fixed factory membership and exact ownDb; no caller checker or registration. */
+export function readOriginalRoomTurnBudgetPolicy(limits: TurnBudgetLimits, db: Db) {
+  const original = originalBudgetPolicies.get(limits);
+  return original?.db === db
+    ? Object.freeze({ readRoom: original.readRoom, readGlobal: original.readGlobal })
+    : undefined;
+}

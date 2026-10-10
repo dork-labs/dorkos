@@ -30,7 +30,7 @@ import { rawByteHash } from '../writes/checkbox-bytes.js';
 import {
   scanCheckboxReservations,
   CheckboxReservationCensusError,
-} from '../writes/intent-reservations.js';
+} from '../writes/reservations/intent-reservations.js';
 import { validateCheckboxEvidence } from '../writes/checkbox-evidence.js';
 import type { DocWriteIntentRow } from '../store.js';
 import { fixture as checkboxFixture } from '../writes/__tests__/checkbox-fixture.js';

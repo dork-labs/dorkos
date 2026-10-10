@@ -160,3 +160,36 @@ it.each(['normal-end', 'newer-run'] as const)(
     expect(run.current()).toBe(false);
   }
 );
+
+it('refuses nonempty replay without every frame belonging to the original response birth', async () => {
+  for (const incarnation of [undefined, { ...birth, generation: 'b'.repeat(64) }]) {
+    const h = owned();
+    vi.mocked(h.transport.getCanvasChannel).mockResolvedValue({
+      ...response(),
+      highWatermark: 1,
+      events: [
+        {
+          type: 'canvas_event',
+          documentId: 'doc',
+          scope: 'session:original',
+          docSeq: 1,
+          ...(incarnation ? { incarnation } : {}),
+          event: {
+            id: '44444444-4444-4444-8444-444444444444',
+            type: 'task.changed',
+            payload: {},
+            direction: 'upstream',
+            receivedAt: '2026-10-02T00:00:02Z',
+          },
+        },
+      ],
+    });
+    const run = h.owner.beginRun(),
+      ticket = await run.readPage();
+    expect(ticket).not.toBeNull();
+    expect(() => run.consumePage(ticket!)).toThrow('Document replay identity changed.');
+    expect(h.view.binding).toBeUndefined();
+    expect(h.view.snapshot).toBeUndefined();
+    run.end();
+  }
+});

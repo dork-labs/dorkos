@@ -38,24 +38,29 @@ vi.mock('../../lib/boundary.js', () => ({
 
 let fakeRuntime: FakeAgentRuntime & { checkLaunchAccount?: unknown };
 
-vi.mock('../../services/core/runtime-registry.js', () => ({
-  runtimeRegistry: {
-    getNativeSessionCwd: vi.fn(() => null),
-    getDefault: vi.fn(() => fakeRuntime),
-    get: vi.fn(() => fakeRuntime),
-    listRuntimes: vi.fn(() => [fakeRuntime]),
-    getAllCapabilities: vi.fn(() => ({})),
-    getDefaultType: vi.fn(() => 'claude-code'),
-    resolveForSession: vi.fn(async () => fakeRuntime),
-    resolveForSessionWithOwnership: vi.fn(async () => ({ runtime: fakeRuntime, bound: true })),
-    resolveSessionRuntime: vi.fn(async () => ({ type: 'claude-code', bound: false })),
-    getSessionRuntimeType: vi.fn(async () => 'claude-code'),
-    persistSessionRuntime: vi.fn(async () => true),
-    has: vi.fn(() => true),
-    getSessionSettings: vi.fn(async () => null),
-    saveSessionSettings: vi.fn(async () => {}),
-    getSessionSettingsMany: vi.fn(() => new Map()),
-  },
+vi.mock('../../services/core/runtime-registry.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../services/core/runtime-registry.js')>()),
+  runtimeRegistry: Object.assign(
+    (await importOriginal<typeof import('../../services/core/runtime-registry.js')>())
+      .runtimeRegistry,
+    {
+      getNativeSessionCwd: vi.fn(() => null),
+      getDefault: vi.fn(() => fakeRuntime),
+      get: vi.fn(() => fakeRuntime),
+      listRuntimes: vi.fn(() => [fakeRuntime]),
+      getAllCapabilities: vi.fn(() => ({})),
+      getDefaultType: vi.fn(() => 'claude-code'),
+      resolveForSession: vi.fn(async () => fakeRuntime),
+      resolveForSessionWithOwnership: vi.fn(async () => ({ runtime: fakeRuntime, bound: true })),
+      resolveSessionRuntime: vi.fn(async () => ({ type: 'claude-code', bound: false })),
+      getSessionRuntimeType: vi.fn(async () => 'claude-code'),
+      persistSessionRuntime: vi.fn(async () => true),
+      has: vi.fn(() => true),
+      getSessionSettings: vi.fn(async () => null),
+      saveSessionSettings: vi.fn(async () => {}),
+      getSessionSettingsMany: vi.fn(() => new Map()),
+    }
+  ),
   RuntimeNotRegisteredError: class RuntimeNotRegisteredError extends Error {},
 }));
 

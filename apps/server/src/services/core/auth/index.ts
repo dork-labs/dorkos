@@ -1,3 +1,15 @@
+import { requireServerNativeDatabaseQueryCustody } from '@dorkos/db/internal-server';
+import type { DbTransaction } from '@dorkos/db';
+import type { OriginalDocTokenIssuanceStage } from '../../canvas/doc-channel/current/current-operation-types.js';
+import {
+  readFreshOriginalNativeDocTokenHeaderFromOrigin,
+  type OriginalNativeDocTokenHeader,
+} from '../../canvas/doc-channel/tokens/token-store.js';
+import {
+  requireOriginalDocTokenIssuanceAuthenticationEntry,
+  readOriginalDocTokenIssuanceAuthenticationMessage,
+} from '../../canvas/doc-channel/current/current-operation-engine.js';
+import { encodeOriginalDocTokenHeaderAuthentication } from '../../canvas/doc-channel/tokens/token-authentication-message.js';
 /**
  * Better Auth — the local identity core for the DorkOS server (accounts-and-auth P1).
  *
@@ -35,19 +47,19 @@
  *
  * @module services/core/auth
  */
-import { createHash } from 'node:crypto';
+import { createHash, createHmac, timingSafeEqual } from 'node:crypto';
+import { realpathSync, statSync } from 'node:fs';
 import {
   authAuditAfterHook,
   recordAccountCreated,
   recordSignedIn,
   recordSessionEnded,
 } from './auth-audit.js';
-import { realpathSync } from 'node:fs';
 import { betterAuth, type BetterAuthOptions } from 'better-auth';
 import { drizzleAdapter } from 'better-auth/adapters/drizzle';
 import { APIError } from 'better-auth/api';
 import { toNodeHandler, fromNodeHeaders } from 'better-auth/node';
-import { apiKey } from '@better-auth/api-key';
+import { apiKey, defaultKeyHasher } from '@better-auth/api-key';
 import { user, session, account, verification, apikey, eq, type Db } from '@dorkos/db';
 import { env } from '../../../env.js';
 import { logger } from '../../../lib/logger.js';
@@ -273,8 +285,223 @@ function buildAuthOptions(db: Db, dorkHome: string, port: number): AuthOptions {
   };
 }
 
+const tokenAuthApply = Reflect.apply;
+const tokenAuthHmacCreate = createHmac;
+const tokenAuthEqual = timingSafeEqual;
+const tokenAuthHmacProbe = tokenAuthHmacCreate('sha256', 'dorkos-original-token-method-capture');
+const tokenAuthHmacUpdate = tokenAuthHmacProbe.update;
+const tokenAuthHmacDigest = tokenAuthHmacProbe.digest;
+const tokenAuthScalarJson = JSON.stringify;
+const tokenAuthParseJson = JSON.parse;
+const tokenAuthDescriptor = Object.getOwnPropertyDescriptor;
+const tokenAuthOwnKeys = Object.keys;
+const tokenAuthBufferFrom = Buffer.from;
+const tokenAuthUtf8Bytes = Buffer.byteLength;
+const originalTokenAuthCapturesStarted = new WeakSet<Db>();
+const originalTokenAuthCustody = new WeakMap<
+  Db,
+  {
+    home: string;
+    databasePath: string;
+    key: string;
+    ready: boolean;
+    auth: Auth | undefined;
+  }
+>();
+const originalTokenAuthentications = new WeakSet<OriginalDocTokenIssuanceStage>();
+function requireOriginalTokenAuth(db: Db) {
+  requireServerNativeDatabaseQueryCustody(db);
+  const own = originalTokenAuthCustody.get(db);
+  if (!own || !own.ready || own.auth !== activeAuth || activeDb !== db || !db.$client.open)
+    throw new Error('Original token installation authentication unavailable.');
+  return own;
+}
+function originalTokenAuthenticationDigest(db: Db, message: string): string {
+  const own = requireOriginalTokenAuth(db);
+  // Distinct domain; source facts/restrictions and original canonical auth/Db homes are authenticated.
+  const hmac = tokenAuthHmacCreate('sha256', own.key);
+  tokenAuthApply(tokenAuthHmacUpdate, hmac, ['dorkos.original-doc-token.issuer.v1\0']);
+  tokenAuthApply(tokenAuthHmacUpdate, hmac, [
+    tokenAuthApply(tokenAuthScalarJson, JSON, [own.home]),
+  ]);
+  tokenAuthApply(tokenAuthHmacUpdate, hmac, [
+    tokenAuthApply(tokenAuthScalarJson, JSON, [own.databasePath]),
+  ]);
+  tokenAuthApply(tokenAuthHmacUpdate, hmac, [message]);
+  return tokenAuthApply(tokenAuthHmacDigest, hmac, ['hex']) as string;
+}
+/** No supplied key/message/row can obtain a signature: original active stage is mandatory. */
+export function authenticateOriginalDocTokenIssuance(
+  stage: OriginalDocTokenIssuanceStage,
+  db: Db,
+  tx: DbTransaction
+): string {
+  requireOriginalTokenAuth(db);
+  requireOriginalDocTokenIssuanceAuthenticationEntry(stage, db, tx);
+  if (originalTokenAuthentications.has(stage))
+    throw new Error('Original token already authenticated.');
+  originalTokenAuthentications.add(stage);
+  const message = readOriginalDocTokenIssuanceAuthenticationMessage(stage, db, tx);
+  const authentication = originalTokenAuthenticationDigest(db, message);
+  // Message is a fixed encoded scalar vector; issuer payload is its fixed sixteenth own string.
+  const fields = tokenAuthApply(tokenAuthParseJson, JSON, [message]) as unknown[];
+  const slot = tokenAuthDescriptor(fields, '15');
+  if (!slot || typeof slot.value !== 'string')
+    throw new Error('Original token issuer unavailable.');
+  const envelope =
+    '{"payloadJson":' +
+    tokenAuthApply(tokenAuthScalarJson, JSON, [slot.value]) +
+    ',"authentication":' +
+    tokenAuthApply(tokenAuthScalarJson, JSON, [authentication]) +
+    '}';
+  if (tokenAuthApply(tokenAuthUtf8Bytes, Buffer, [envelope]) > 262144)
+    throw new Error('Original token issuer too large.');
+  return envelope;
+}
+/** Verifies durable issuance provenance only. Current source/grants/expiry still require original native gates. */
+export function verifyOriginalDocTokenNativeCapsule(
+  db: Db,
+  retainedHeader: OriginalNativeDocTokenHeader
+): string {
+  requireOriginalTokenAuth(db);
+  const header = readFreshOriginalNativeDocTokenHeaderFromOrigin(retainedHeader, db);
+  if (!header) throw new Error('Original token provenance unavailable.');
+  if (header.revokedAt !== null || !header.nativeExpiryCurrent)
+    throw new Error('Original token is not current.');
+  const envelope: unknown = tokenAuthApply(tokenAuthParseJson, JSON, [header.issuerJson]);
+  if (!envelope || typeof envelope !== 'object' || tokenAuthOwnKeys(envelope).length !== 2)
+    throw new Error('Original token provenance unavailable.');
+  const read = (key: string) => {
+    const descriptor = tokenAuthDescriptor(envelope, key);
+    const value = descriptor && tokenAuthDescriptor(descriptor, 'value');
+    if (!value || typeof value.value !== 'string')
+      throw new Error('Original token provenance unavailable.');
+    return value.value as string;
+  };
+  const payloadJson = read('payloadJson'),
+    authentication = read('authentication');
+  if (authentication.length !== 64) throw new Error('Original token provenance unavailable.');
+  for (let index = 0; index < authentication.length; index++) {
+    const ch = authentication[index]!;
+    if (!((ch >= '0' && ch <= '9') || (ch >= 'a' && ch <= 'f')))
+      throw new Error('Original token provenance unavailable.');
+  }
+  const expected = originalTokenAuthenticationDigest(
+    db,
+    encodeOriginalDocTokenHeaderAuthentication(header, payloadJson)
+  );
+  const a = tokenAuthApply(tokenAuthBufferFrom, Buffer, [authentication, 'hex']);
+  const b = tokenAuthApply(tokenAuthBufferFrom, Buffer, [expected, 'hex']);
+  if (!tokenAuthEqual(a, b)) throw new Error('Original token provenance unavailable.');
+  requireOriginalTokenAuth(db);
+  return payloadJson;
+}
+
 let activeAuth: Auth | undefined;
 let activeDb: Db | undefined;
+
+interface OriginalRequestAuthStore {
+  db: Db;
+  database: Auth['options']['database'];
+  plugins: Auth['options']['plugins'];
+  plugin: ReturnType<typeof apiKey>;
+  pluginSchema: string;
+  verifyApiKey: Auth['api']['verifyApiKey'];
+  getSession: Auth['api']['getSession'];
+}
+const originalRequestAuthStores = new WeakMap<object, OriginalRequestAuthStore>();
+const originalAuthProofApply = Reflect.apply;
+const originalAuthProofGet = WeakMap.prototype.get;
+const originalAuthProofSet = WeakMap.prototype.set;
+const originalAuthProofFreeze = Object.freeze;
+const originalAuthProofStringify = JSON.stringify;
+const originalAuthProofHash = defaultKeyHasher;
+const originalAuthProofNow = Date.now;
+const originalAuthProofTime = Date.prototype.getTime;
+const originalAuthProofFinite = Number.isFinite;
+/**
+ * Capture the initialized installation's refusal-only fresh credential reader.
+ * The fixed apiKey factory uses private normalized default hash/storage/config
+ * values; its public schema is checked against the original constructor value.
+ * @param auth - The exact initialized Better Auth instance.
+ * @returns A currentness reader, or undefined for an unsupported/replaced owner.
+ */
+export function captureOriginalRequestAuthReader(auth: Auth):
+  | {
+      current(): boolean;
+      apiKeyCurrent(token: string, id: string, userId: string): Promise<boolean>;
+    }
+  | undefined {
+  const own: OriginalRequestAuthStore | undefined = originalAuthProofApply(
+    originalAuthProofGet,
+    originalRequestAuthStores,
+    [auth]
+  );
+  if (!own) return undefined;
+  const current = (): boolean => {
+    try {
+      return (
+        activeAuth === auth &&
+        activeDb === own.db &&
+        own.db.$client.open &&
+        auth.options.database === own.database &&
+        auth.options.plugins === own.plugins &&
+        own.plugins?.length === 1 &&
+        own.plugins[0] === own.plugin &&
+        originalAuthProofStringify(own.plugin.schema) === own.pluginSchema &&
+        auth.api.verifyApiKey === own.verifyApiKey &&
+        auth.api.getSession === own.getSession
+      );
+    } catch {
+      return false;
+    }
+  };
+  if (!current()) return undefined;
+  return originalAuthProofFreeze({
+    current,
+    apiKeyCurrent: async (token: string, id: string, userId: string): Promise<boolean> => {
+      try {
+        if (!current() || !id || !userId) return false;
+        const hashed = await originalAuthProofHash(token);
+        if (!current()) return false;
+        const row = own.db
+          .select({
+            id: apikey.id,
+            configId: apikey.configId,
+            referenceId: apikey.referenceId,
+            key: apikey.key,
+            enabled: apikey.enabled,
+            expiresAt: apikey.expiresAt,
+          })
+          .from(apikey)
+          .where(eq(apikey.id, id))
+          .get();
+        if (
+          !current() ||
+          !row ||
+          row.id !== id ||
+          row.configId !== 'default' ||
+          row.referenceId !== userId ||
+          row.key !== hashed ||
+          row.enabled === false
+        )
+          return false;
+        if (row.expiresAt) {
+          const expiresAt = originalAuthProofApply(originalAuthProofTime, row.expiresAt, []);
+          if (!originalAuthProofFinite(expiresAt) || originalAuthProofNow() > expiresAt)
+            return false;
+        }
+        const owner = own.db.select({ id: user.id }).from(user).where(eq(user.id, userId)).get();
+        if (!current() || owner?.id !== userId) return false;
+        // Quota was charged by original admission. Exhaustion prevents a NEW
+        // request; explicit row revocation/identity/expiry still refuses this one.
+        return current();
+      } catch {
+        return false;
+      }
+    },
+  });
+}
 
 /**
  * Create the Better Auth singleton over the server's Drizzle db and store it for
@@ -288,7 +515,63 @@ let activeDb: Db | undefined;
  */
 export function initAuth(db: Db, dorkHome: string): Auth {
   activeDb = db;
-  activeAuth = createAuth(db, dorkHome);
+  // Preserve ordinary Db auth behavior; a non-native/retired Db never receives a signer.
+  let nativeOrigin = false;
+  try {
+    requireServerNativeDatabaseQueryCustody(db);
+    nativeOrigin = true;
+  } catch {
+    /* No token custody. */
+  }
+  const firstCapture = nativeOrigin && !originalTokenAuthCapturesStarted.has(db);
+  if (firstCapture) originalTokenAuthCapturesStarted.add(db);
+  const options = buildAuthOptions(db, dorkHome, env.DORKOS_PORT);
+  let databasePath: string | undefined, home: string | undefined;
+  if (firstCapture) {
+    requireServerNativeDatabaseQueryCustody(db);
+    const name = db.$client.name;
+    // Memory/temporary native Db auth stays valid, but cannot own a restart signer.
+    if (name && name !== ':memory:') {
+      try {
+        const candidate = realpathSync(name),
+          candidateHome = realpathSync(dorkHome);
+        if (statSync(candidate).isFile() && statSync(candidateHome).isDirectory()) {
+          databasePath = candidate;
+          home = candidateHome;
+        }
+      } catch {
+        /* No stable physical-file signer; ordinary auth construction continues. */
+      }
+    }
+  }
+  const capture =
+    firstCapture && databasePath && home && typeof options.secret === 'string'
+      ? {
+          home,
+          databasePath,
+          key: options.secret,
+          ready: false,
+          auth: undefined as Auth | undefined,
+        }
+      : undefined;
+  if (capture) originalTokenAuthCustody.set(db, capture);
+  activeAuth = betterAuth(options);
+  originalAuthProofApply(originalAuthProofSet, originalRequestAuthStores, [
+    activeAuth,
+    {
+      db,
+      database: activeAuth.options.database,
+      plugins: activeAuth.options.plugins,
+      plugin: options.plugins[0],
+      pluginSchema: originalAuthProofStringify(options.plugins[0].schema),
+      verifyApiKey: activeAuth.api.verifyApiKey,
+      getSession: activeAuth.api.getSession,
+    },
+  ]);
+  if (capture) {
+    capture.auth = activeAuth;
+    capture.ready = true;
+  }
   return activeAuth;
 }
 
@@ -430,6 +713,7 @@ export { toNodeHandler, fromNodeHeaders };
 export {
   sessionGate,
   verifyRequestAuth,
+  recheckAdmittedRequestAuth,
   type RequestUser,
   type VerifyRequestAuthOptions,
 } from './session-gate.js';

@@ -22,7 +22,7 @@ for (const [name, width, height] of [
       await page.getByRole('option', { name: 'Normal', exact: true }).click();
       await input.press('Enter');
       await expect(fixture.getByTestId('widget-action-status')).toContainText(
-        'Saved; waiting for LifeOS.'
+        'Saved; waiting for the destination.'
       );
       const id = await fixture.getByTestId('widget-action-status').getAttribute('data-event-id');
       const proof = JSON.parse(
@@ -42,10 +42,24 @@ for (const [name, width, height] of [
       );
       await expect(input).toHaveValue('My draft task');
       await fixture.getByRole('button', { name: 'Toggle approval', exact: true }).click();
+      const unapproved = fixture.getByRole('button', {
+        name: 'Ask LifeOS to review',
+        exact: true,
+      });
       await expect(
         fixture.getByRole('button', { name: 'Ask LifeOS to review', exact: true })
       ).toBeDisabled();
+      await expect(unapproved).toHaveAttribute('aria-disabled', 'true');
       await expect(fixture).toContainText('needs an approved document route');
+      const beforeRefusal = JSON.parse(
+        (await fixture.getByTestId('widget-channel-fixture-proof').textContent())!
+      );
+      await unapproved.focus();
+      await expect(unapproved).toBeFocused();
+      await unapproved.press('Enter');
+      expect(
+        JSON.parse((await fixture.getByTestId('widget-channel-fixture-proof').textContent())!)
+      ).toEqual(beforeRefusal);
       await fixture.screenshot({ path: `/tmp/doc-channel-widgets-${name}-${theme}.png` });
       const approvalReason = fixture.getByText('needs an approved document route', {
         exact: false,

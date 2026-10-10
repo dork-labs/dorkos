@@ -36,7 +36,7 @@ import { configManager } from '../config-manager.js';
 import { logger } from '../../../lib/logger.js';
 // `getAuth` is a hoisted accessor called at request time, so this back-import to
 // the auth barrel (which re-exports this module) is a safe function-level cycle.
-import { getAuth } from './index.js';
+import { getAuth, captureOriginalRequestAuthReader, type Auth } from './index.js';
 import type { RequestFacts } from '../../../http/request-facts.js';
 
 /** The identity resolved from a request's credentials, attached to `res.locals.user`. */
@@ -58,6 +58,107 @@ export interface RequestUser {
   credential: 'cookie' | 'api-key';
   /** Stable Better Auth API-key record id, present only for an API-key credential. */
   credentialId?: string;
+}
+
+interface OriginalRequestAdmission {
+  req: Pick<Request, 'headers'>;
+  auth: Auth;
+  reader: NonNullable<ReturnType<typeof captureOriginalRequestAuthReader>>;
+  headers: Readonly<Request['headers']>;
+  userId: string;
+  credential: RequestUser['credential'];
+  credentialId?: string;
+  getSession: Auth['api']['getSession'];
+  sessionId?: string;
+}
+const originalRequestAdmissions = new WeakMap<object, OriginalRequestAdmission>();
+const originalAdmissionApply = Reflect.apply;
+const originalAdmissionGet = WeakMap.prototype.get;
+const originalAdmissionSet = WeakMap.prototype.set;
+const originalAdmissionFreeze = Object.freeze;
+const originalAdmissionCreate = Object.create;
+const originalAdmissionDefine = Object.defineProperty;
+const originalAdmissionKeys = Object.keys;
+const originalAdmissionArray = Array.isArray;
+function admittedHeaders(req: Pick<Request, 'headers'>): Readonly<Request['headers']> {
+  const result: Request['headers'] = originalAdmissionCreate(null);
+  const keys = originalAdmissionKeys(req.headers);
+  for (let index = 0; index < keys.length; index++) {
+    const key = keys[index],
+      value = req.headers[key];
+    let saved = value;
+    if (originalAdmissionArray(value)) {
+      const copy: string[] = [];
+      for (let part = 0; part < value.length; part++) copy[part] = value[part];
+      originalAdmissionFreeze(copy);
+      saved = copy;
+    }
+    originalAdmissionDefine(result, key, { value: saved, enumerable: true });
+  }
+  return originalAdmissionFreeze(result);
+}
+function sameAdmittedHeaders(
+  req: Pick<Request, 'headers'>,
+  headers: Readonly<Request['headers']>
+): boolean {
+  const keys = originalAdmissionKeys(headers);
+  if (originalAdmissionKeys(req.headers).length !== keys.length) return false;
+  for (let index = 0; index < keys.length; index++) {
+    const key = keys[index],
+      left = req.headers[key],
+      right = headers[key];
+    if (originalAdmissionArray(right)) {
+      if (!originalAdmissionArray(left) || left.length !== right.length) return false;
+      for (let part = 0; part < right.length; part++) if (left[part] !== right[part]) return false;
+    } else if (left !== right) return false;
+  }
+  return true;
+}
+/**
+ * Recheck only the exact original admitted request without another quota charge.
+ * @param req - The original request object which paid admission.
+ * @param principal - The exact original verifier result, never a copied DTO.
+ * @returns Whether the same credential and initialized authority remain current.
+ */
+export async function recheckAdmittedRequestAuth(
+  req: Pick<Request, 'headers'>,
+  principal: RequestUser | undefined
+): Promise<boolean> {
+  try {
+    const own: OriginalRequestAdmission | undefined =
+      principal &&
+      originalAdmissionApply(originalAdmissionGet, originalRequestAdmissions, [principal]);
+    if (!own) return false;
+    const current = (): boolean =>
+      own.req === req &&
+      own.auth === getAuth() &&
+      own.reader.current() &&
+      principal!.userId === own.userId &&
+      principal!.credential === own.credential &&
+      principal!.credentialId === own.credentialId &&
+      sameAdmittedHeaders(req, own.headers);
+    if (!current()) return false;
+    if (own.credential === 'cookie') {
+      const session = await originalAdmissionApply(own.getSession, own.auth.api, [
+        {
+          headers: fromNodeHeaders(own.headers),
+          query: { disableCookieCache: true, disableRefresh: true },
+        },
+      ]);
+      return (
+        current() &&
+        session?.user?.id === own.userId &&
+        Boolean(own.sessionId) &&
+        session?.session?.id === own.sessionId
+      );
+    }
+    const token = extractBearerToken(own.headers.authorization);
+    if (!token || !own.credentialId) return false;
+    const valid = await own.reader.apiKeyCurrent(token, own.credentialId, own.userId);
+    return valid && current();
+  } catch {
+    return false;
+  }
 }
 
 /** Paths the gate protects: the API surface and the external MCP endpoint. */
@@ -191,17 +292,46 @@ export async function verifyRequestAuth(
   // Auth was never initialized (e.g. a unit test app built without initAuth):
   // nothing can be verified, so treat every request as unauthenticated.
   if (!auth) return null;
+  const reader = captureOriginalRequestAuthReader(auth);
+  let originalHeaders: Readonly<Request['headers']>;
+  try {
+    originalHeaders = admittedHeaders(req);
+  } catch {
+    return null;
+  }
+  const originalGetSession = auth.api.getSession;
+  const originalVerifyApiKey = auth.api.verifyApiKey;
+  const retainAdmission = (principal: RequestUser, sessionId?: string): RequestUser => {
+    if (reader?.current() && sameAdmittedHeaders(req, originalHeaders))
+      originalAdmissionApply(originalAdmissionSet, originalRequestAdmissions, [
+        principal,
+        {
+          req,
+          auth,
+          reader,
+          headers: originalHeaders,
+          userId: principal.userId,
+          credential: principal.credential,
+          credentialId: principal.credentialId,
+          getSession: originalGetSession,
+          sessionId,
+        },
+      ]);
+    return principal;
+  };
 
   // 1. Session cookie — verified against the cookie cache / DB.
   try {
-    const result = await auth.api.getSession({
-      headers: fromNodeHeaders(req.headers),
-      ...(options.sessionFreshness === 'server-store'
-        ? { query: { disableCookieCache: true, disableRefresh: true } }
-        : {}),
-    });
+    const result = await originalAdmissionApply(originalGetSession, auth.api, [
+      {
+        headers: fromNodeHeaders(req.headers),
+        ...(options.sessionFreshness === 'server-store'
+          ? { query: { disableCookieCache: true, disableRefresh: true } }
+          : {}),
+      },
+    ]);
     if (result?.user?.id) {
-      return { userId: result.user.id, credential: 'cookie' };
+      return retainAdmission({ userId: result.user.id, credential: 'cookie' }, result.session.id);
     }
   } catch (error) {
     logger.debug('[Auth] Session cookie verification failed', {
@@ -215,15 +345,18 @@ export async function verifyRequestAuth(
   const token = options.bearerIsNotAnApiKey ? null : extractBearerToken(req.headers.authorization);
   if (token) {
     try {
-      const result = await auth.api.verifyApiKey({ body: { key: token } });
+      const result = await originalAdmissionApply(originalVerifyApiKey, auth.api, [
+        { body: { key: token } },
+      ]);
       // The apiKey plugin stores the owning user id in `referenceId`. Require it
       // to be non-empty: a valid key must resolve to an owner, never `''`.
       if (result.valid && result.key?.referenceId) {
-        return {
+        const principal: RequestUser = {
           userId: result.key.referenceId,
           credential: 'api-key',
           credentialId: result.key.id,
         };
+        return result.key.configId === 'default' ? retainAdmission(principal) : principal;
       }
     } catch (error) {
       logger.debug('[Auth] API key verification failed', {

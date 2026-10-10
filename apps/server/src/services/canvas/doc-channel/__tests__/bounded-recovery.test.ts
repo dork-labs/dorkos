@@ -4,7 +4,7 @@ import { randomUUID } from 'node:crypto';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   canvasDocChannels,
   canvasDocBatches,
@@ -19,10 +19,40 @@ import { DocChannelIngest } from '../ingest.js';
 import { consumeAcceptedDocWakes, DOC_RESUME_RETRY_CODE } from '../delivery/resume.js';
 const dbs: Db[] = [];
 const dirs: string[] = [];
-afterEach(() => {
-  vi.restoreAllMocks();
-  for (const db of dbs.splice(0)) if (db.$client.open) db.$client.close();
-  for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true });
+type OwnedRecoveryCase = {
+  active: boolean;
+  prepared?: ReturnType<typeof fixture> & { rows: ReturnType<typeof addAcceptedReceiptPage> };
+  setupPending?: Promise<void>;
+  bodyPending?: Promise<void>;
+};
+const ownedRecoveryCases: OwnedRecoveryCase[] = [];
+function assertRecoveryCaseActive(owner: OwnedRecoveryCase) {
+  if (!owner.active) throw new Error('Selected recovery case is draining');
+}
+afterEach(async () => {
+  const owners = ownedRecoveryCases.splice(0);
+  for (const owner of owners) owner.active = false;
+  const settlements = await Promise.allSettled(
+    owners.map(async (owner) => {
+      const pending = await Promise.allSettled([owner.setupPending, owner.bodyPending]);
+      const failure = pending.find((result) => result.status === 'rejected');
+      if (failure?.status === 'rejected') throw failure.reason;
+    })
+  );
+  const failure = settlements.find((result) => result.status === 'rejected');
+  let firstError = failure?.status === 'rejected' ? failure.reason : undefined;
+  let failed = failure?.status === 'rejected';
+  try {
+    vi.restoreAllMocks();
+    for (const db of dbs.splice(0)) if (db.$client.open) db.$client.close();
+    for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true });
+  } catch (error) {
+    if (!failed) {
+      firstError = error;
+      failed = true;
+    }
+  }
+  if (failed) throw firstError;
 });
 function fixture() {
   const dir = mkdtempSync(join(tmpdir(), 'doc-recovery-page-'));
@@ -85,57 +115,84 @@ function add(f: BatchFixture, index: number, acceptedAt = NOW) {
     .run();
   return { ...receipt, acceptedAt };
 }
-it('bounds 105 same-session receipts by immutable keyset and wraps to newly inserted earlier keys after restart', async () => {
-  const { f, file, options } = fixture();
-  const rows = addAcceptedReceiptPage(f, 105);
-  expect(rows).toHaveLength(105);
-  expect(new Set(rows.map((row) => row.id)).size).toBe(105);
-  expect(new Set(rows.map((row) => row.sourceId)).size).toBe(105);
-  expect(
-    new Set(
-      f.db
-        .select()
-        .from(canvasDocBatches)
-        .all()
-        .map((row) => row.grantId)
-    ).size
-  ).toBe(105);
-  const prepare = vi.spyOn(f.admission.acceptance, 'prepare');
-  const first = await consumeAcceptedDocWakes(options);
-  expect(first.selected).toBe(100);
-  expect(first.hasMore).toBe(true);
-  expect(first.notifications.size).toBe(1);
-  expect(first.notifications.get('session-1')).toHaveLength(100);
-  expect(prepare).toHaveBeenCalledTimes(100);
-  const second = await consumeAcceptedDocWakes(options, first.cursor);
-  expect(second.selected).toBe(5);
-  expect(prepare).toHaveBeenCalledTimes(105);
-  expect(second.hasMore).toBe(false);
-  expect(
-    new Set(
-      [...first.notifications.values()].flat().concat([...second.notifications.values()].flat())
-    ).size
-  ).toBe(105);
-  expect(second.nextEligibleAt).toBe(new Date(Date.parse(NOW) + 60000).toISOString());
-  const earlier = add(f, 999, new Date(Date.parse(NOW) - 1000).toISOString());
-  f.db.$client.close();
-  const db = createDb(file);
-  dbs.push(db);
-  const reboot = batchFixture(
-    file,
-    null,
-    { db, documentId: f.documentId, grantId: f.grantId },
-    'boot-2'
-  );
-  const wrap = await consumeAcceptedDocWakes({
-    ...options,
-    db,
-    store: reboot.store,
-    admission: reboot.admission,
+describe('105 same-session recovery page', () => {
+  let selectedOwner: OwnedRecoveryCase | undefined;
+  beforeEach(async () => {
+    const owner: OwnedRecoveryCase = { active: true };
+    selectedOwner = owner;
+    ownedRecoveryCases.push(owner);
+    owner.setupPending = (async () => {
+      assertRecoveryCaseActive(owner);
+      const prepared = fixture();
+      const rows = addAcceptedReceiptPage(prepared.f, 105);
+      assertRecoveryCaseActive(owner);
+      owner.prepared = { ...prepared, rows };
+    })();
+    await owner.setupPending;
   });
-  expect(wrap.selected).toBe(1);
-  expect([...wrap.notifications.values()].flat()).toEqual([earlier.id]);
-  expect(db.select().from(sessionMessageAcceptanceReceipts).all()).toHaveLength(rows.length + 1);
+  it('bounds 105 same-session receipts by immutable keyset and wraps to newly inserted earlier keys after restart', async () => {
+    const owner = selectedOwner;
+    if (!owner?.prepared) throw new Error('Selected recovery setup did not complete');
+    assertRecoveryCaseActive(owner);
+    const prepared = owner.prepared;
+    owner.bodyPending = (async () => {
+      const { f, file, options, rows } = prepared;
+      expect(rows).toHaveLength(105);
+      expect(new Set(rows.map((row) => row.id)).size).toBe(105);
+      expect(new Set(rows.map((row) => row.sourceId)).size).toBe(105);
+      expect(
+        new Set(
+          f.db
+            .select()
+            .from(canvasDocBatches)
+            .all()
+            .map((row) => row.grantId)
+        ).size
+      ).toBe(105);
+      const prepare = vi.spyOn(f.admission.acceptance, 'prepare');
+      const first = await consumeAcceptedDocWakes(options);
+      assertRecoveryCaseActive(owner);
+      expect(first.selected).toBe(100);
+      expect(first.hasMore).toBe(true);
+      expect(first.notifications.size).toBe(1);
+      expect(first.notifications.get('session-1')).toHaveLength(100);
+      expect(prepare).toHaveBeenCalledTimes(100);
+      const second = await consumeAcceptedDocWakes(options, first.cursor);
+      assertRecoveryCaseActive(owner);
+      expect(second.selected).toBe(5);
+      expect(prepare).toHaveBeenCalledTimes(105);
+      expect(second.hasMore).toBe(false);
+      expect(
+        new Set(
+          [...first.notifications.values()].flat().concat([...second.notifications.values()].flat())
+        ).size
+      ).toBe(105);
+      expect(second.nextEligibleAt).toBe(new Date(Date.parse(NOW) + 60000).toISOString());
+      const earlier = add(f, 999, new Date(Date.parse(NOW) - 1000).toISOString());
+      f.db.$client.close();
+      const db = createDb(file);
+      dbs.push(db);
+      const reboot = batchFixture(
+        file,
+        null,
+        { db, documentId: f.documentId, grantId: f.grantId },
+        'boot-2'
+      );
+      const wrap = await consumeAcceptedDocWakes({
+        ...options,
+        db,
+        store: reboot.store,
+        admission: reboot.admission,
+      });
+      assertRecoveryCaseActive(owner);
+      expect(wrap.selected).toBe(1);
+      expect([...wrap.notifications.values()].flat()).toEqual([earlier.id]);
+      expect(db.select().from(sessionMessageAcceptanceReceipts).all()).toHaveLength(
+        rows.length + 1
+      );
+    })();
+    await owner.bodyPending;
+  });
 });
 it('continues past first and middle transient refusals while preserving prior success notifications and identity', async () => {
   const { f, options } = fixture();

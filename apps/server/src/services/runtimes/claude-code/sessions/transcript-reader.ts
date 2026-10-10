@@ -3,7 +3,6 @@ import fs from 'fs/promises';
 import { createReadStream } from 'node:fs';
 import { createInterface } from 'node:readline';
 import path from 'path';
-import { getSessionInfo } from '@anthropic-ai/claude-agent-sdk';
 import type {
   Session,
   PermissionMode,
@@ -954,6 +953,8 @@ export class TranscriptReader {
     if (!cwd) return {};
     if (path.resolve(account) !== path.resolve(resolveActiveClaudeRoot())) return {};
     try {
+      const { getSessionInfo } = await import('@anthropic-ai/claude-agent-sdk');
+      if (path.resolve(account) !== path.resolve(resolveActiveClaudeRoot())) return {};
       const info = await getSessionInfo(sessionId, { dir: cwd });
       return { customTitle: info?.customTitle?.trim() || undefined };
     } catch {

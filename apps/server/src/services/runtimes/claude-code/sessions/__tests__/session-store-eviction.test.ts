@@ -13,7 +13,7 @@
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import type { Query } from '@anthropic-ai/claude-agent-sdk';
-import { SessionStore, isWaitingOnPerson } from '../session-store.js';
+import { SessionStore, isWaitingOnPerson, isCurrentClaudeNativeSession } from '../session-store.js';
 import { SessionLockManager } from '../../../../session/session-lock.js';
 import { SESSIONS } from '../../../../../config/constants.js';
 import type { PendingInteraction } from '../../messaging/interaction-wait.js';
@@ -206,5 +206,46 @@ describe('checkSessionHealth exempts a session whose turn is still running', () 
     const store = storeRunningTurn(SESSIONS.BACKGROUND_WORK_PARK_CEILING_MS + 60_000);
 
     expect(store.checkSessionHealth(new SessionLockManager(), () => false)).toEqual([SESSION_ID]);
+  });
+});
+
+describe('native session eviction tombstones', () => {
+  it('retires the original object before cleanup and refuses reinsertion', () => {
+    vi.useFakeTimers();
+    try {
+      const store = new SessionStore();
+      store.ensureSession(SESSION_ID, { permissionMode: 'default' });
+      const original = store.findSession(SESSION_ID)!;
+      expect(isCurrentClaudeNativeSession(store, original)).toBe(true);
+      const map = Object.getOwnPropertyDescriptor(store, 'sessions')!.value as Map<
+        string,
+        typeof original
+      >;
+      const locks = new SessionLockManager();
+      vi.spyOn(locks, 'cleanup').mockImplementation(() => {
+        expect(isCurrentClaudeNativeSession(store, original)).toBe(false);
+        map.set(SESSION_ID, original);
+      });
+      vi.setSystemTime(Date.now() + THIRTY_ONE_MINUTES);
+      expect(store.checkSessionHealth(locks)).toEqual([SESSION_ID]);
+      expect(store.findSession(SESSION_ID)).toBe(original);
+      expect(isCurrentClaudeNativeSession(store, original)).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('keeps a legitimate same-object canonical key change current', () => {
+    const store = new SessionStore();
+    store.ensureSession(SESSION_ID, { permissionMode: 'default' });
+    const original = store.findSession(SESSION_ID)!;
+    const map = Object.getOwnPropertyDescriptor(store, 'sessions')!.value as Map<
+      string,
+      typeof original
+    >;
+    map.delete(SESSION_ID);
+    map.set('canonical-key', original);
+    expect(isCurrentClaudeNativeSession(store, original)).toBe(true);
+    expect(isCurrentClaudeNativeSession(new SessionStore(), original)).toBe(false);
   });
 });

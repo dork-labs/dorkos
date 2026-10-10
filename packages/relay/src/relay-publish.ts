@@ -12,7 +12,11 @@ import { ReceiptObservation } from './lib/receipt-observation.js';
 import { monotonicFactory } from 'ulidx';
 import { validateSubject, matchesPattern } from './subject-matcher.js';
 import { mayReachServerDestination } from './lib/reserved-subjects.js';
-import { reachesServerDestination, SERVER_DESTINATION_REFUSAL } from '@dorkos/shared/relay-schemas';
+import {
+  reachesServerDestination,
+  SERVER_DESTINATION_REFUSAL,
+  isDocumentSubject,
+} from '@dorkos/shared/relay-schemas';
 import { requiresInitiateConsent, BRIDGE_PRINCIPAL_PREFIX } from './lib/consent-scope.js';
 import { createDefaultBudget, enforceBudget } from './budget-enforcer.js';
 import { checkRateLimit } from './rate-limiter.js';
@@ -43,6 +47,8 @@ import type {
 } from './types.js';
 import type { BudgetRejectionCode } from '@dorkos/shared/relay-schemas';
 import { chatSpanFields } from './lib/chat-span-fields.js';
+
+import type { OriginalDocumentRelayWake } from './document-delivery.js';
 
 // === Types ===
 
@@ -176,6 +182,50 @@ export class RelayPublishPipeline {
    * {@link evaluateInitiateConsent}.
    */
   private initiateConsentGate?: InitiateConsentGate;
+
+  /** A fresh pipeline and its original captured document publisher are constructed together.
+   * There is no attach/lookup publisher for an existing reflected pipeline instance. */
+  static createOriginalDocumentPipeline(
+    deps: PublishDeps,
+    opts: PublishResolvedOptions,
+    rateLimitConfig: RateLimitConfig,
+    adapterContextBuilder?: (subject: string) => AdapterContext | undefined
+  ) {
+    const pipeline = new RelayPublishPipeline(deps, opts, rateLimitConfig, adapterContextBuilder);
+    const publishDocumentWake = (wake: OriginalDocumentRelayWake): Promise<PublishResult> => {
+      if (!wake || Object.getPrototypeOf(wake) !== Object.prototype)
+        throw new Error('DOCUMENT_RELAY_WAKE_DATA_REQUIRED');
+      const keys = [
+        'documentId',
+        'batchId',
+        'generation',
+        'openerAgentId',
+        'targetAgentId',
+      ] as const;
+      if (Object.keys(wake).length !== keys.length)
+        throw new Error('DOCUMENT_RELAY_WAKE_FIELDS_INVALID');
+      const data: Record<string, string> = {};
+      for (const key of keys) {
+        const field = Object.getOwnPropertyDescriptor(wake, key);
+        if (
+          !field ||
+          !('value' in field) ||
+          typeof field.value !== 'string' ||
+          !field.value ||
+          Buffer.byteLength(field.value) > 4096
+        )
+          throw new Error('DOCUMENT_RELAY_WAKE_FIELD_INVALID');
+        data[key] = field.value;
+      }
+      return pipeline.#publish(
+        'relay.doc.batch',
+        Object.freeze(data),
+        { from: 'relay.doc.publisher' },
+        true
+      );
+    };
+    return Object.freeze({ pipeline, publishDocumentWake });
+  }
 
   constructor(
     deps: PublishDeps,
@@ -331,6 +381,8 @@ export class RelayPublishPipeline {
     text: string,
     options: PrivateNotificationOptions
   ): Promise<PrivateNotificationResult> {
+    if (isDocumentSubject(subject) || isDocumentSubject(options.from))
+      throw new Error('DOCUMENT_RELAY_CONSTRUCTION_REQUIRED');
     const messageId = generateUlid();
     const createdAt = new Date().toISOString();
     const envelope: RelayEnvelope = {
@@ -448,6 +500,20 @@ export class RelayPublishPipeline {
     payload: unknown,
     options: PublishOptions
   ): Promise<PublishResult> {
+    return this.#publish(subject, payload, options, false);
+  }
+
+  async #publish(
+    subject: string,
+    payload: unknown,
+    options: PublishOptions,
+    originalDocumentWake: boolean
+  ): Promise<PublishResult> {
+    // Document provenance cannot be asserted with PublishOptions.from, including a system sender.
+    // The original protected document transport is constructed separately; this public path
+    // must never create its source, invoke its sink, or consume its native capacity.
+    if (!originalDocumentWake && (isDocumentSubject(subject) || isDocumentSubject(options.from)))
+      throw new Error('DOCUMENT_RELAY_CONSTRUCTION_REQUIRED');
     const observation = new ReceiptObservation(
       subject,
       options.receiptContext,
@@ -466,12 +532,20 @@ export class RelayPublishPipeline {
     // by the bus, so a path that forgets to ask cannot hand anybody the
     // scheduler's or an approval bridge's address. Only a sender on the
     // server allowlist gets through — see `SERVER_DESTINATION_SENDERS`.
-    if (reachesServerDestination(subject) && !mayReachServerDestination(options.from)) {
+    if (
+      !originalDocumentWake &&
+      reachesServerDestination(subject) &&
+      !mayReachServerDestination(options.from)
+    ) {
       throw new Error(`Refused sender "${options.from}": ${SERVER_DESTINATION_REFUSAL}`);
     }
 
     // 2. Access control check
-    const accessResult = this.deps.accessControl.checkAccess(options.from, subject);
+    // The original server source rereads explicit opener->target ACL before this
+    // bounded wake. Ordinary publishers retain their existing bus ACL check.
+    const accessResult: ReturnType<AccessControl['checkAccess']> = originalDocumentWake
+      ? { allowed: true }
+      : this.deps.accessControl.checkAccess(options.from, subject);
     if (!accessResult.allowed) {
       throw new Error(
         `Access denied: ${options.from} -> ${subject}` +
@@ -493,7 +567,7 @@ export class RelayPublishPipeline {
     try {
       observation.captureLocator(messageId);
       return observation.withReceipt(
-        await this.publishAccepted(subject, payload, options, messageId, observation)
+        await this.#publishAccepted(subject, payload, options, messageId, observation)
       );
     } catch (error) {
       observation.settle(messageId, { state: 'outcome_unknown' });
@@ -501,7 +575,7 @@ export class RelayPublishPipeline {
     }
   }
 
-  private async publishAccepted(
+  async #publishAccepted(
     subject: string,
     payload: unknown,
     options: PublishOptions,
@@ -1085,3 +1159,7 @@ export class RelayPublishPipeline {
     }
   }
 }
+
+/** Fixed original constructor function binding; later reflected static replacement is not adopted. */
+export const createOriginalDocumentPublishPipeline =
+  RelayPublishPipeline.createOriginalDocumentPipeline;

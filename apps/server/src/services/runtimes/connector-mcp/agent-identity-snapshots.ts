@@ -1,3 +1,4 @@
+import { openOriginalNativeTurn } from '../../connectors/principal/runtime-principal-service.js';
 /** Turn-bound agent identity snapshots layered over the runtime principal port. */
 import type { AgentIdentity } from '../../core/agent-identity/index.js';
 import type {
@@ -12,6 +13,28 @@ import type {
   RevokeConnectorTurnReason,
 } from '../../connectors/runtime-principal-port.js';
 import type { ServerPrincipalProof } from '../../connectors/principal/server-principal.js';
+
+const originalSnapshotPorts = new WeakMap<
+  object,
+  {
+    principal: ConnectorRuntimePrincipalPort;
+    open(input: OpenConnectorTurnInput, token: object): Promise<OpenConnectorTurnResult>;
+  }
+>();
+/** Lookup-only recognition of the original wrapper's constructor-captured backing port. */
+export function readOriginalSnapshotPrincipalPort(wrapper: object): object | undefined {
+  return originalSnapshotPorts.get(wrapper)?.principal;
+}
+/** Genuine wrapper preserves its actual snapshot phase before fixed native opening. */
+export function openOriginalSnapshotNativeTurn(
+  wrapper: object,
+  input: OpenConnectorTurnInput,
+  token: object
+): Promise<OpenConnectorTurnResult> {
+  const own = originalSnapshotPorts.get(wrapper);
+  if (!own) throw new Error('Original principal wrapper is unavailable.');
+  return own.open(input, token);
+}
 
 /** Dependencies for {@link AgentIdentitySnapshotPrincipalPort}. */
 export interface AgentIdentitySnapshotPrincipalPortOptions {
@@ -46,10 +69,22 @@ interface SnapshotRecord {
 export class AgentIdentitySnapshotPrincipalPort implements ConnectorRuntimePrincipalPort {
   private readonly snapshots = new Map<string, SnapshotRecord>();
   private readonly now: () => Date;
+  readonly #fixedPrincipals: ConnectorRuntimePrincipalPort;
+  readonly #snapshotIdentity: AgentIdentitySnapshotPrincipalPortOptions['snapshotIdentity'];
+  readonly #identityWasRevoked: AgentIdentitySnapshotPrincipalPortOptions['identityWasRevoked'];
 
   /** Build the turn-bound identity layer. */
   constructor(private readonly options: AgentIdentitySnapshotPrincipalPortOptions) {
     this.now = options.now ?? (() => new Date());
+    this.#fixedPrincipals = options.principals;
+    const snapshot = options.snapshotIdentity,
+      revoked = options.identityWasRevoked;
+    this.#snapshotIdentity = (path) => Reflect.apply(snapshot, options, [path]);
+    this.#identityWasRevoked = (path) => Reflect.apply(revoked, options, [path]);
+    originalSnapshotPorts.set(this, {
+      principal: this.#fixedPrincipals,
+      open: (input, token) => this.#open(input, undefined, token),
+    });
   }
 
   /** Capture identity before delegating creation of the authenticated turn bearer. */
@@ -57,10 +92,19 @@ export class AgentIdentitySnapshotPrincipalPort implements ConnectorRuntimePrinc
     input: OpenConnectorTurnInput,
     ownership: ConnectorTurnOwnership
   ): Promise<OpenConnectorTurnResult> {
+    return this.#open(input, ownership);
+  }
+  async #open(
+    input: OpenConnectorTurnInput,
+    ownership?: ConnectorTurnOwnership,
+    nativeToken?: object
+  ): Promise<OpenConnectorTurnResult> {
     this.pruneExpired();
-    const identity = await this.options.snapshotIdentity(input.agentPath);
+    const identity = await this.#snapshotIdentity(input.agentPath);
     input.signal.throwIfAborted();
-    const opened = await this.options.principals.openTurn(input, ownership);
+    const opened = nativeToken
+      ? await openOriginalNativeTurn(this.#fixedPrincipals, input, nativeToken)
+      : await this.#fixedPrincipals.openTurn(input, ownership!);
     if (identity && !identity.inactive && identity.agentPath === input.agentPath) {
       this.snapshots.set(opened.bindingId, {
         identity: Object.freeze({ ...identity }),
@@ -77,7 +121,7 @@ export class AgentIdentitySnapshotPrincipalPort implements ConnectorRuntimePrinc
   /** Renew the backing lease without replacing the identity frozen before launch. */
   async renew(input: RenewConnectorTurnInput): Promise<RenewConnectorTurnResult> {
     const record = this.snapshots.get(input.bindingId);
-    const result = await this.options.principals.renew(input);
+    const result = await this.#fixedPrincipals.renew(input);
     if (result.status !== 'renewed' || !record || this.snapshots.get(input.bindingId) !== record) {
       return result;
     }
@@ -92,13 +136,13 @@ export class AgentIdentitySnapshotPrincipalPort implements ConnectorRuntimePrinc
 
   /** Delegate bearer resolution unchanged to the authenticated principal port. */
   resolve(input: ResolveConnectorTurnInput): Promise<ResolveConnectorTurnResult> {
-    return this.options.principals.resolve(input);
+    return this.#fixedPrincipals.resolve(input);
   }
 
   /** Delete capability identity before the backing revocation can wait or fail. */
   async revoke(bindingId: string, reason: RevokeConnectorTurnReason): Promise<void> {
     this.snapshots.delete(bindingId);
-    await this.options.principals.revoke(bindingId, reason);
+    await this.#fixedPrincipals.revoke(bindingId, reason);
   }
 
   /**
@@ -124,7 +168,7 @@ export class AgentIdentitySnapshotPrincipalPort implements ConnectorRuntimePrinc
     }
 
     try {
-      if (await this.options.identityWasRevoked(record.agentPath)) return undefined;
+      if (await this.#identityWasRevoked(record.agentPath)) return undefined;
     } catch {
       return undefined;
     }

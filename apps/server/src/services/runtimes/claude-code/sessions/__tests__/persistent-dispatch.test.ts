@@ -7,7 +7,9 @@
  * the thing under test IS the wiring. A test that drove the pump directly would
  * pass with `sendMessage` still hard-wired to `executeSdkQuery`.
  */
-import fs from 'node:fs';
+import nodeFs from 'node:fs';
+import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
+import { once } from 'node:events';
 import os from 'node:os';
 import nodePath from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -55,6 +57,7 @@ vi.mock('../../messaging/context-builder.js', () => ({
 vi.mock('@dorkos/shared/manifest', () => ({ readManifest: vi.fn().mockResolvedValue(null) }));
 // A credits swap's save (DOR-2636), attached to every launch while `swap.on`,
 // so a test can see which paths take it: only one that delivered the notice.
+const roomLaunchCut = vi.hoisted(() => ({ afterLaunch: undefined as (() => void) | undefined }));
 const swap = vi.hoisted(() => ({
   on: false,
   commit: vi.fn(async () => {}),
@@ -84,6 +87,7 @@ vi.mock('../../messaging/launch-resolver.js', async (importOriginal) => {
     ...actual,
     resolveLaunch: async (...args: Parameters<typeof actual.resolveLaunch>) => {
       const resolved = await actual.resolveLaunch(...args);
+      roomLaunchCut.afterLaunch?.();
       return swap.on ? { ...resolved, substitution: { commit: swap.commit } } : resolved;
     },
   };
@@ -173,7 +177,35 @@ import { validateBoundaryOrDorkHome } from '../../../../../lib/boundary.js';
 import { SESSIONS } from '../../../../../config/constants.js';
 import { feedProjector } from '../../../../session/session-event-normalizer.js';
 import { SessionStateProjector } from '../../../../session/session-state-projector.js';
-import { ClaudeCodeRuntime } from '../../claude-code-runtime.js';
+import {
+  ClaudeCodeRuntime,
+  sendClaudeOriginalLockedMessage,
+  startClaudeCommittedRoomResponder,
+  readClaudePreparedRoomResponder,
+  readClaudeNativeOperation,
+  retireClaudePreparedRoomResponder,
+} from '../../claude-code-runtime.js';
+import { resolveOriginalClaudeConnectorPrincipal } from '../../connector-turn-context.js';
+import { ConnectorTurnLeaseSupervisor } from '../../../connectors/connector-turn-lease-supervisor.js';
+import type { AgentSession } from '../../agent-types.js';
+import type { PreparedRoomResponder } from '../../../../canvas/doc-channel/current/current-operation-types.js';
+import { nativeRoomAuthorityFixture } from '../../../../canvas/doc-channel/writes/__tests__/authority-fixtures.js';
+import {
+  submitCurrentDocEvent,
+  prepareServiceOriginalRoomResponder,
+  commitServiceOriginalRoomResponder,
+} from '../../../../canvas/doc-channel/service.js';
+import { wakeAuthorizedRoomDue } from '../../../../canvas/doc-channel/authorization.js';
+import { docDocumentGeneration } from '../../../../canvas/doc-channel/identity/incarnation.js';
+import {
+  getOrCreateProjector,
+  disposeProjector,
+} from '../../../../session/session-state-projector.js';
+import { agents, canvasDocuments, connectorRuntimeBindings, eq, sql } from '@dorkos/db';
+import { randomUUID } from 'node:crypto';
+import fs from 'node:fs/promises';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
 import { STOP_ACK_TIMEOUT_MS } from '../bounded-control.js';
 import { FakeCli, resultMessage, type FakeCliProcess } from './fake-persistent-cli.js';
 import { recordToolSurface } from '../../mcp-tools/tool-surface.js';
@@ -233,13 +265,14 @@ async function turn(sessionId: string, content = 'hello'): Promise<StreamEvent[]
 
 beforeEach(() => {
   optIn.persistentSession = false;
+  roomLaunchCut.afterLaunch = undefined;
   cli = new FakeCli();
   mockedQuery.mockReset();
   mockedQuery.mockImplementation(cli.query as unknown as typeof query);
   vi.mocked(validateBoundaryOrDorkHome).mockResolvedValue(CWD);
   // A data directory of its own per case: the runtime writes its background
   // work record there (DOR-2065), and no case may write into a shared one.
-  dorkHome = fs.mkdtempSync(nodePath.join(os.tmpdir(), 'persistent-dispatch-'));
+  dorkHome = nodeFs.mkdtempSync(nodePath.join(os.tmpdir(), 'persistent-dispatch-'));
   runtime = new ClaudeCodeRuntime(dorkHome, CWD);
 });
 
@@ -247,7 +280,7 @@ afterEach(() => {
   // Every process this case booted, closed — a leaked one would keep reading a
   // prompt stream for the rest of the file.
   for (const process of cli.processes) process.endStream();
-  fs.rmSync(dorkHome, { recursive: true, force: true });
+  nodeFs.rmSync(dorkHome, { recursive: true, force: true });
 });
 
 describe('the opt-in decides which path a message takes', () => {
@@ -3349,5 +3382,708 @@ describe('a restart that would end background work is held (DOR-2065)', () => {
   it('answers proceed on the first send of a session with no process', async () => {
     const { answers } = await heldTurn(nextSession(), 'first');
     expect(answers).toEqual(['proceed']);
+  });
+});
+
+/** Real FILE/approval/native custody with the suite's explicit host mocks and FakeCli SDK process. */
+describe('a warm process whose dorkos tool list changed (DOR-2685)', () => {
+  /** What the next build of the `dorkos` server lists. */
+  let listed: string[];
+
+  beforeEach(() => {
+    optIn.persistentSession = true;
+    listed = ['ping', 'relay_send'];
+    // A fresh instance per launch, as the real factory builds, recording the
+    // tool surface the real factory would record for it — the connector tools
+    // included on the same rule (`createDorkOsToolServer`'s `connectorTools`).
+    runtime.setMcpServerFactory((session, _sessionId, launch) => {
+      const instance = {};
+      const connectorTools = launch?.connectorTools ?? session.connectorTurn !== undefined;
+      recordToolSurface(
+        instance,
+        [...listed, ...(connectorTools ? ['connectors.execute_read'] : [])].map((name) => ({
+          name,
+          inputSchema: {},
+        }))
+      );
+      return { dorkos: { type: 'sdk', name: 'dorkos', instance } as never };
+    });
+  });
+
+  it('lists the same tools for a staged warm-up and the turn after it', async () => {
+    // Purpose: a note staged into a cold session boots the process the next
+    // turn rides. The turn holds a connector context the stage never had, so
+    // if the connector tools followed that context, the turn would relaunch
+    // the process the note was staged into.
+    registerTestHomes([CWD]);
+    try {
+      runtime.setMeshCore({
+        getByPath: () => ({ id: 'agent-1', name: 'agent' }),
+        listWithPaths: () => [],
+        updateLastSeen: () => undefined,
+      } as never);
+      runtime.setConnectorRuntimeTools({
+        principals: {
+          openTurn: vi.fn(),
+          renew: vi.fn(),
+          resolve: vi.fn(),
+          revoke: vi.fn().mockResolvedValue(undefined),
+        },
+        listenerUrl: 'http://127.0.0.1:1/mcp',
+        isConnectorCapabilityId: () => false,
+        accessSnapshot: vi.fn().mockResolvedValue({ accountCount: 0, revision: 'r' }),
+      } as never);
+      const sessionId = nextSession();
+      const receipt = await runtime.deliverIntoTurn(sessionId, 'a note first', {
+        mode: 'stage',
+        messageId: 'stage-1',
+      });
+      expect(receipt).toEqual({ delivered: true });
+      expect(cli.launches).toBe(1);
+
+      await turn(sessionId, 'then the turn');
+      expect(cli.launches).toBe(1);
+      expect(cli.processes[0]!.ended).toBe(false);
+      expect(cli.processes[0]!.staged.map((m) => m.uuid)).toEqual(['stage-1']);
+    } finally {
+      clearTestHomes();
+    }
+  });
+
+  it('rides the warm process while the list stays the same', async () => {
+    // Purpose: the server is rebuilt for every dispatch, so an unchanged list
+    // must still compare equal, or every message would relaunch.
+    const sessionId = nextSession();
+    await turn(sessionId);
+    await turn(sessionId, 'second');
+    await turn(sessionId, 'third');
+    expect(cli.launches).toBe(1);
+  });
+
+  it('relaunches before the next turn when a tool joined, keeping the permission mode', async () => {
+    // Purpose: an extension started while the session was warm. The next
+    // message runs on a process that lists its tool, and the person's
+    // permission mode survives the relaunch.
+    const sessionId = nextSession();
+    await runtime.updateSession(sessionId, { permissionMode: 'acceptEdits' });
+    await turn(sessionId);
+    expect(cli.launches).toBe(1);
+
+    listed = [...listed, 'ext_mail_app__send'];
+    const events = await turn(sessionId, 'after the extension started');
+
+    expect(cli.launches).toBe(2);
+    expect(cli.processes[0]!.ended).toBe(true);
+    expect(cli.processes[1]!.options.permissionMode).toBe('acceptEdits');
+    // The message that triggered the relaunch is the one the new process ran.
+    expect(cli.processes[1]!.inbox.map((m) => m.content).join('\n')).toContain(
+      'after the extension started'
+    );
+    expect(events.some((e) => e.type === 'error')).toBe(false);
+  });
+
+  it('relaunches when a tool left the list', async () => {
+    // Purpose: a stopped extension, or a tool a permission now hides, must not
+    // stay listed in a warm process.
+    listed = [...listed, 'ext_mail_app__send'];
+    const sessionId = nextSession();
+    await turn(sessionId);
+
+    listed = ['ping', 'relay_send'];
+    await turn(sessionId, 'after the extension stopped');
+
+    expect(cli.launches).toBe(2);
+  });
+
+  it('holds the relaunch while a helper is still working, then relaunches once quiet', async () => {
+    // Purpose: a tool-list change comes from outside the session (an extension
+    // turned on, a permission changed). It must never tear down a process
+    // whose background helper is still working (the DOR-2705 class); it waits,
+    // and the next dispatch after the work ends relaunches.
+    const sessionId = nextSession();
+    await turn(sessionId);
+    const process = cli.processes[0]!;
+    process.reportTasks([{ task_id: 'helper-1', task_type: 'local_agent' }]);
+    await vi.waitFor(() => expect(runtime.isHelperWorking(sessionId)).toBe(true));
+
+    listed = [...listed, 'ext_mail_app__send'];
+    await turn(sessionId, 'while the helper works');
+    expect(cli.launches).toBe(1);
+    expect(process.ended).toBe(false);
+
+    // Still held on a second message: the stored fingerprint kept the old list.
+    await turn(sessionId, 'still working');
+    expect(cli.launches).toBe(1);
+
+    process.reportTasks([]);
+    await vi.waitFor(() => expect(runtime.isHelperWorking(sessionId)).toBe(false));
+    await turn(sessionId, 'after the helper finished');
+    expect(cli.launches).toBe(2);
+    expect(process.ended).toBe(true);
+  });
+
+  it('keeps holding past the four-hour ceiling, and warns once that the list is stale', async () => {
+    // Purpose: a dispatch never tears down working background (DOR-2705), so
+    // the hold has no ceiling. Past the reaper's ceiling it only says, once,
+    // that this session's tool list is stale until the work ends.
+    const { logger } = await import('../../../../../lib/logger.js');
+    const sessionId = nextSession();
+    await turn(sessionId);
+    const process = cli.processes[0]!;
+    process.reportTasks([{ task_id: 'helper-1', task_type: 'local_agent' }]);
+    await vi.waitFor(() => expect(runtime.isHelperWorking(sessionId)).toBe(true));
+    listed = [...listed, 'ext_mail_app__send'];
+
+    const awake = vi
+      .spyOn(performance, 'now')
+      .mockReturnValue(performance.now() + SESSIONS.BACKGROUND_WORK_PARK_CEILING_MS + 60_000);
+    vi.useFakeTimers({ toFake: ['Date'] });
+    try {
+      vi.setSystemTime(Date.now() + SESSIONS.BACKGROUND_WORK_PARK_CEILING_MS + 60_000);
+      vi.mocked(logger.warn).mockClear();
+      const staleWarnings = () =>
+        vi
+          .mocked(logger.warn)
+          .mock.calls.filter(([message]) => String(message).includes('tool list is stale'));
+
+      await turn(sessionId, 'long after the ceiling');
+      expect(cli.launches).toBe(1);
+      expect(process.ended).toBe(false);
+      expect(staleWarnings()).toHaveLength(1);
+      expect(staleWarnings()[0]![1]).toMatchObject({ session: sessionId });
+
+      await turn(sessionId, 'and again');
+      expect(cli.launches).toBe(1);
+      expect(staleWarnings()).toHaveLength(1);
+    } finally {
+      vi.useRealTimers();
+      awake.mockRestore();
+    }
+  });
+
+  it('still applies a live change while the relaunch is held', async () => {
+    // Purpose: holding the tool list must not hold anything else. A permission
+    // mode changed at the same time reaches the busy process live.
+    const sessionId = nextSession();
+    await turn(sessionId);
+    const process = cli.processes[0]!;
+    process.reportTasks([{ task_id: 'monitor-1', task_type: 'monitor' }]);
+    await vi.waitFor(() => expect(process.received.length).toBeGreaterThan(0));
+
+    listed = [...listed, 'ext_mail_app__send'];
+    await runtime.updateSession(sessionId, { permissionMode: 'acceptEdits' });
+    await turn(sessionId, 'with the monitor running');
+
+    expect(cli.launches).toBe(1);
+    expect(process.liveSets).toContain('setPermissionMode:acceptEdits');
+  });
+
+  it('never relaunches mid-turn: a change during a running turn waits for it to end', async () => {
+    // Purpose: the relaunch is decided at dispatch, so a turn already running
+    // finishes on the process it started on.
+    const sessionId = nextSession();
+    await turn(sessionId);
+    const process = cli.processes[0]!;
+    process.goSilent();
+
+    const running = turn(sessionId, 'a long turn');
+    await vi.waitFor(() => expect(process.received).toHaveLength(2));
+    listed = [...listed, 'ext_mail_app__send'];
+    // Give anything that might react to the change a chance to.
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(process.ended).toBe(false);
+    expect(cli.launches).toBe(1);
+
+    process.answer(process.received[1]!);
+    const events = await running;
+    expect(spokenText(events)).toContain('ok');
+    expect(process.ended).toBe(false);
+
+    await turn(sessionId, 'the next message');
+    expect(cli.launches).toBe(2);
+    expect(process.ended).toBe(true);
+  });
+});
+
+describe('genuine native COMMIT on the installed persistent process', () => {
+  beforeEach(async () => {
+    const original =
+      await vi.importActual<typeof import('@dorkos/shared/manifest')>('@dorkos/shared/manifest');
+    const mocked = await import('@dorkos/shared/manifest');
+    vi.mocked(mocked.readManifest).mockImplementation(original.readManifest);
+  });
+  it.each([
+    'warm same entry once',
+    'early mesh Error with secondary revoke',
+    'early mesh undefined with secondary revoke',
+    'cold same entry once',
+    'cold entered pending next direct return',
+    'warm final launch revocation',
+    'cold final launch revocation',
+    'dedicated crash cannot replay',
+    'foreign live constructor',
+    'unpulled first cleanup error',
+    'unpulled thrown undefined',
+    'supervisor stop Error',
+    'supervisor stop undefined',
+  ] as const)('%s', async (scenario) => {
+    const agentDir = await fs.mkdtemp(join(tmpdir(), 'claude-native-room-persistent-'));
+    let h: Awaited<ReturnType<typeof nativeRoomAuthorityFixture>> | undefined;
+    let producer: AsyncGenerator<StreamEvent> | undefined;
+    let producerDone: Promise<StreamEvent[]> | undefined;
+    let prepared: PreparedRoomResponder | undefined;
+    let originalSession: AgentSession | undefined;
+    let pendingChild: ChildProcessWithoutNullStreams | undefined;
+    let pendingChildClosed: Promise<unknown> | undefined;
+    let originalModelReadPending = false;
+    let pendingOwner: FakeCliProcess | undefined;
+    let revokeSpy: ReturnType<typeof vi.spyOn> | undefined;
+    let supervisorStop: ReturnType<typeof vi.fn> | undefined,
+      supervisorSignal: AbortSignal | undefined;
+    let failed = false,
+      first: unknown;
+    const sessionId = 'native-claude-persistent';
+    const agentId = '01JCLAUDEROOM00000000000000';
+    const holder = { on: vi.fn() };
+    try {
+      await fs.mkdir(join(agentDir, '.dork'));
+      await fs.writeFile(
+        join(agentDir, '.dork', 'agent.json'),
+        JSON.stringify({
+          id: agentId,
+          name: 'original-claude-room',
+          runtime: 'claude-code',
+          capabilities: [],
+          behavior: { responseMode: 'always' },
+          registeredAt: new Date().toISOString(),
+          registeredBy: 'test',
+        })
+      );
+      registerTestHomes([agentDir]);
+      h = await nativeRoomAuthorityFixture(agentDir, 'claude-code', sessionId, agentId);
+      const actual = h;
+      optIn.persistentSession = true;
+      vi.mocked(validateBoundaryOrDorkHome).mockResolvedValue(agentDir);
+      runtime = new ClaudeCodeRuntime(join(agentDir, 'home'), agentDir);
+      runtime.setMeshCore({
+        getByPath: (path) => {
+          const row = actual.db.select().from(agents).where(eq(agents.id, agentId)).get();
+          return row?.status === 'active' && row.projectPath === path
+            ? { id: row.id, name: row.name }
+            : undefined;
+        },
+        updateLastSeen: () => {},
+        listWithPaths: () => [],
+      });
+      runtime.setConnectorRuntimeTools({
+        principals: h.principals,
+        listenerUrl: 'http://127.0.0.1:4341/mcp',
+        agentToolsUrl: 'http://127.0.0.1:4341/agent-mcp',
+        isConnectorCapabilityId: (id) => id.startsWith('connectors.'),
+      });
+      // This actual factory receives the original native session. It supplies no principal or checker.
+      runtime.setMcpServerFactory((session) => {
+        originalSession = session;
+        return {};
+      });
+      runtime.ensureSession(sessionId, { cwd: agentDir, permissionMode: 'default' });
+      expect(runtime.acquireLock(sessionId, 'producer-holder', holder)).toBe(true);
+      cli.nextSdkSessionId = sessionId;
+      cli.deferNextInit = true;
+      producer = sendClaudeOriginalLockedMessage(
+        runtime,
+        sessionId,
+        'actual producer',
+        { cwd: agentDir },
+        holder,
+        sessionId
+      );
+      if (!producer) throw new Error('Actual Claude constructor refused its original lock.');
+      producerDone = (async () => {
+        const events: StreamEvent[] = [];
+        for await (const event of producer!) events.push(event);
+        return events;
+      })();
+      await vi.waitFor(() => expect(cli.latest).toBeDefined());
+      if (!originalSession?.connectorTurn)
+        throw new Error('Actual original session connector context missing.');
+      // Resolve only the real context installed by the original runtime, never an actor DTO.
+      const principal = await resolveOriginalClaudeConnectorPrincipal(
+        originalSession.connectorTurn
+      );
+      const physical = h.db
+        .select()
+        .from(canvasDocuments)
+        .where(eq(canvasDocuments.id, h.documentId))
+        .get()!;
+      const channel = h.http.channels.getChannel(h.documentId)!;
+      const event = {
+        v: 1 as const,
+        id: randomUUID(),
+        type: 'md.comment',
+        payload: { text: 'real producer input' },
+      };
+      const accepted = await submitCurrentDocEvent(
+        h.http.service,
+        h.documentId,
+        event,
+        { surface: 'capability', principal },
+        { expectedGeneration: docDocumentGeneration(physical, channel) }
+      );
+      expect(accepted.receipt.id).toBe(event.id);
+      // Preserve the configured coalescing deadline rather than forcing an early freeze.
+      await new Promise<void>((resolve) => setTimeout(resolve, 110));
+      wakeAuthorizedRoomDue(h.http.authorization);
+      const process = cli.latest!;
+      process.reportReady();
+      await producerDone;
+      expect(process.inbox).toHaveLength(1);
+      expect(runtime.getSessionWarmth(sessionId)).toBe('warm');
+      if (scenario.startsWith('cold')) await runtime.reapSession(sessionId);
+      const launchesBefore = cli.launches;
+      const bindingsBefore = h.db.select().from(connectorRuntimeBindings).all().length;
+      // A genuine second constructor cannot consume this engine's native preparation.
+      const peer = new ClaudeCodeRuntime(join(agentDir, 'peer-home'), agentDir);
+      if (scenario === 'foreign live constructor') {
+        await expect(
+          prepareServiceOriginalRoomResponder(h.http.service, peer, holder, sessionId)
+        ).resolves.toBeUndefined();
+      }
+      const cleanupCause = scenario.endsWith('undefined')
+        ? undefined
+        : new Error('actual cleanup failed');
+      if (scenario.startsWith('unpulled') || scenario.startsWith('early mesh')) {
+        const originalRevoke = h.principals.revoke.bind(h.principals);
+        revokeSpy = vi.spyOn(h.principals, 'revoke').mockImplementation(async (...args) => {
+          await originalRevoke(...args);
+          throw scenario.startsWith('early mesh')
+            ? new Error('secondary original revoke')
+            : cleanupCause;
+        });
+      }
+      if (scenario.startsWith('supervisor stop')) {
+        runtime.setConnectorRuntimeTools({
+          principals: h.principals,
+          listenerUrl: 'http://127.0.0.1:4341/mcp',
+          agentToolsUrl: 'http://127.0.0.1:4341/agent-mcp',
+          isConnectorCapabilityId: (id) => id.startsWith('connectors.'),
+          createLeaseSupervisor: (options) => {
+            const original = new ConnectorTurnLeaseSupervisor(options);
+            supervisorSignal = options.signal;
+            const stop = vi.fn<() => void>(() => {
+              original.stop();
+              throw cleanupCause;
+            });
+            supervisorStop = stop;
+            return {
+              get state() {
+                return original.state;
+              },
+              stop,
+              assertUsable: () => original.assertUsable(),
+            };
+          },
+        });
+      }
+      prepared = await prepareServiceOriginalRoomResponder(
+        h.http.service,
+        runtime,
+        holder,
+        sessionId
+      );
+      if (!prepared) throw new Error('Actual accepted source unexpectedly unavailable.');
+      const native = readClaudePreparedRoomResponder(runtime, prepared);
+      if (!native) throw new Error('Original native preparation missing.');
+      expect(h.db.select().from(connectorRuntimeBindings).all()).toHaveLength(bindingsBefore + 1);
+      const spendsBefore = h.db.get<{ n: number }>(
+        sql`SELECT count(*) AS n FROM room_turn_spend`
+      )!.n;
+      const committed = commitServiceOriginalRoomResponder(h.http.service, runtime, prepared);
+      expect(h.db.get<{ n: number }>(sql`SELECT count(*) AS n FROM room_turn_spend`)!.n).toBe(
+        spendsBefore + 1
+      );
+      if (scenario === 'cold entered pending next direct return') {
+        mockedQuery.mockImplementation(((args: Parameters<typeof cli.query>[0]) => {
+          const owned = cli.query(args);
+          pendingOwner = owned;
+          owned.goSilent();
+          const child = spawn(globalThis.process.execPath, ['-e', 'setInterval(()=>{},1000)'], {
+            stdio: 'pipe',
+          });
+          pendingChild = child;
+          const closed = (pendingChildClosed = once(child, 'close'));
+          const originalClose = owned.close.bind(owned);
+          owned.close = () => {
+            if (child.exitCode === null && child.signalCode === null) child.kill('SIGTERM');
+            originalClose();
+          };
+          const originalIterator = owned[Symbol.asyncIterator].bind(owned);
+          owned[Symbol.asyncIterator] = async function* () {
+            try {
+              const iterator = originalIterator();
+              for (;;) {
+                const next = iterator.next();
+                if (owned.inbox.length === 1) originalModelReadPending = true;
+                const result = await next;
+                originalModelReadPending = false;
+                if (result.done) return;
+                yield result.value;
+              }
+            } finally {
+              // This supplied SDK child is physically joined, never marked closed by the test.
+              await closed;
+            }
+          };
+          return owned;
+        }) as unknown as typeof query);
+      }
+      const raw = startClaudeCommittedRoomResponder(runtime, prepared, committed);
+      if (scenario === 'cold entered pending next direct return') {
+        const pending = (async () => {
+          for await (const event of raw) void event;
+        })().then(
+          () => ({ failed: false as const }),
+          (cause: unknown) => ({ failed: true as const, cause })
+        );
+        let pendingSettled = false;
+        void pending.then(() => {
+          pendingSettled = true;
+        });
+        let operationFailed = false,
+          operationCause: unknown;
+        try {
+          await vi.waitFor(() => expect(pendingChild).toBeDefined());
+          const child = pendingChild!;
+          await vi.waitFor(() => expect(originalModelReadPending).toBe(true));
+          expect(cli.latest!.inbox).toHaveLength(1);
+          expect(child.exitCode).toBeNull();
+          expect(child.signalCode).toBeNull();
+          expect(native.native.signal.aborted).toBe(false);
+          const returned = raw.return(undefined).then(
+            (result) => ({ failed: false as const, result }),
+            (cause: unknown) => ({ failed: true as const, cause })
+          );
+          expect(native.native.signal.aborted).toBe(true);
+          expect(cli.latest!.closed).toBeGreaterThan(0);
+          await vi.waitFor(() => expect(pendingSettled).toBe(true));
+          await pending;
+          expect(await returned).toEqual({
+            failed: false,
+            result: { done: true, value: undefined },
+          });
+          await pendingChildClosed;
+          expect(child.exitCode !== null || child.signalCode !== null).toBe(true);
+          expect(child.stdin.destroyed && child.stdout.destroyed && child.stderr.destroyed).toBe(
+            true
+          );
+          expect(cli.latest!.closed).toBeGreaterThan(0);
+          expect(cli.launches).toBe(launchesBefore + 1);
+          expect(cli.latest!.inbox).toHaveLength(1);
+          expect(readClaudeNativeOperation(native.nativeOperation)).toBeUndefined();
+          expect(readClaudePreparedRoomResponder(runtime, prepared)).toBeUndefined();
+          expect(() => startClaudeCommittedRoomResponder(runtime, prepared!, committed)).toThrow();
+          expect(
+            h.db
+              .select()
+              .from(connectorRuntimeBindings)
+              .all()
+              .every((row) => row.revokedAt !== null)
+          ).toBe(true);
+          expect(
+            h.db.get<{ status: string }>(sql`SELECT status FROM room_doc_admissions
+            WHERE document_id=${h.documentId}`)?.status
+          ).toBe('in_doubt');
+          expect(h.db.get<{ n: number }>(sql`SELECT count(*) AS n FROM room_turn_spend`)!.n).toBe(
+            spendsBefore + 1
+          );
+        } catch (cause) {
+          operationFailed = true;
+          operationCause = cause;
+        } finally {
+          const join = async (work: () => Promise<unknown>) => {
+            try {
+              await work();
+            } catch (cause) {
+              if (!operationFailed) {
+                operationFailed = true;
+                operationCause = cause;
+              }
+            }
+          };
+          // A failed cancellation assertion cannot park teardown behind its own bad read.
+          // Success must establish production closure before this fallback is eligible.
+          if (operationFailed)
+            await join(async () => {
+              pendingOwner?.close();
+            });
+          await join(() => retireClaudePreparedRoomResponder(runtime, prepared!));
+          await join(() => raw.return(undefined));
+          await join(() => pending);
+        }
+        if (operationFailed) throw operationCause;
+      } else if (scenario.startsWith('early mesh')) {
+        const primary = scenario.includes('undefined')
+          ? undefined
+          : new Error('actual early mesh setup');
+        runtime.setMeshCore({
+          getByPath: () => {
+            throw primary;
+          },
+          updateLastSeen: () => {},
+          listWithPaths: () => [],
+        });
+        await expect(
+          (async () => {
+            for await (const event of raw) void event;
+          })()
+        ).rejects.toBe(primary);
+        expect(revokeSpy).toHaveBeenCalledTimes(1);
+        expect(
+          h.db
+            .select()
+            .from(connectorRuntimeBindings)
+            .all()
+            .every((row) => row.revokedAt !== null)
+        ).toBe(true);
+        expect(readClaudeNativeOperation(native.nativeOperation)).toBeUndefined();
+        expect(
+          h.db.get<{ status: string }>(sql`SELECT status FROM room_doc_admissions
+          WHERE document_id=${h.documentId}`)?.status
+        ).toBe('in_doubt');
+        expect(cli.launches).toBe(launchesBefore);
+        revokeSpy.mockRestore();
+        revokeSpy = undefined;
+      } else if (scenario.startsWith('unpulled') || scenario.startsWith('supervisor stop')) {
+        const returned = await raw.return(undefined).then(
+          () => ({ failed: false as const }),
+          (cause: unknown) => ({ failed: true as const, cause })
+        );
+        expect(returned).toEqual({ failed: true, cause: cleanupCause });
+        if (scenario.startsWith('supervisor stop')) {
+          expect(supervisorStop).toHaveBeenCalledTimes(1);
+          expect(supervisorSignal?.aborted).toBe(true);
+        } else expect(revokeSpy).toHaveBeenCalledTimes(1);
+        expect(
+          h.db
+            .select()
+            .from(connectorRuntimeBindings)
+            .all()
+            .every((row) => row.revokedAt !== null)
+        ).toBe(true);
+        expect(readClaudeNativeOperation(native.nativeOperation)).toBeUndefined();
+        expect(readClaudePreparedRoomResponder(runtime, prepared)).toBeUndefined();
+        expect(
+          h.db.get<{ status: string }>(
+            sql`SELECT status FROM room_doc_admissions WHERE document_id=${h.documentId}`
+          )?.status
+        ).toBe('in_doubt');
+        expect(process.inbox).toHaveLength(1);
+        expect(cli.launches).toBe(launchesBefore);
+        revokeSpy?.mockRestore();
+      } else {
+        if (scenario.endsWith('final launch revocation')) {
+          roomLaunchCut.afterLaunch = () => {
+            h!.db.run(
+              sql`UPDATE canvas_doc_grants SET revoked_at=${new Date().toISOString()} WHERE grant_id=${h!.granted.grant.grantId}`
+            );
+          };
+        }
+        const projector = getOrCreateProjector(sessionId);
+        const projected = feedProjector(projector, raw, { originalRoomStream: raw });
+        if (scenario === 'dedicated crash cannot replay') {
+          process.goSilent();
+          await vi.waitFor(() => expect(process.inbox).toHaveLength(2));
+          process.crash(new Error('actual dedicated process failed'));
+        }
+        if (
+          scenario.endsWith('final launch revocation') ||
+          scenario === 'dedicated crash cannot replay'
+        ) {
+          if (scenario === 'dedicated crash cannot replay') {
+            // A real pump death is a typed error stream, as in the ordinary crash control.
+            await projected;
+            expect(projector.replayFrom(0).at(-1)).toMatchObject({
+              type: 'turn_end',
+              terminalReason: 'error',
+            });
+            expect(projector.getStatus().lifecycle).toBe('error');
+            expect(runtime.getSessionWarmth(sessionId)).toBe('crashed');
+          } else {
+            await expect(projected).rejects.toBeDefined();
+          }
+          if (scenario === 'dedicated crash cannot replay') {
+            // The original error stream emitted a known terminal and drained.
+            // Its native admission settles failed; uncertainty is for a refused drain.
+            expect(
+              h.db.get<{ status: string; outcome: string }>(
+                sql`SELECT status,outcome FROM room_doc_admissions WHERE document_id=${h.documentId}`
+              )
+            ).toEqual({ status: 'settled', outcome: 'failed' });
+          } else {
+            expect(
+              h.db.get<{ status: string }>(
+                sql`SELECT status FROM room_doc_admissions WHERE document_id=${h.documentId}`
+              )?.status
+            ).toBe('in_doubt');
+          }
+          expect(process.inbox).toHaveLength(scenario === 'dedicated crash cannot replay' ? 2 : 1);
+          expect(cli.launches).toBe(launchesBefore);
+        } else {
+          await projected;
+          expect(
+            h.db.get<{ status: string; outcome: string }>(
+              sql`SELECT status,outcome FROM room_doc_admissions WHERE document_id=${h.documentId}`
+            )
+          ).toEqual({ status: 'settled', outcome: 'turn_done' });
+          expect(cli.launches).toBe(launchesBefore + (scenario.startsWith('cold') ? 1 : 0));
+          expect(cli.latest!.inbox.at(-1)?.content).toContain('Document update');
+          expect(h.db.select().from(connectorRuntimeBindings).all()).toHaveLength(
+            bindingsBefore + 1
+          );
+        }
+        expect(() => startClaudeCommittedRoomResponder(runtime, prepared!, committed)).toThrow();
+        expect(h.db.get<{ n: number }>(sql`SELECT count(*) AS n FROM room_turn_spend`)!.n).toBe(
+          spendsBefore + 1
+        );
+      }
+    } catch (cause) {
+      failed = true;
+      first = cause;
+    } finally {
+      revokeSpy?.mockRestore();
+      const cleanup = async (work: () => Promise<unknown> | void) => {
+        try {
+          await work();
+        } catch (cause) {
+          if (!failed) {
+            failed = true;
+            first = cause;
+          }
+        }
+      };
+      roomLaunchCut.afterLaunch = undefined;
+      for (const process of cli.processes) {
+        process.reportReady();
+        process.endStream();
+      }
+      if (prepared && readClaudePreparedRoomResponder(runtime, prepared))
+        await cleanup(() => retireClaudePreparedRoomResponder(runtime, prepared!));
+      if (producer) {
+        const returned = producer.return(undefined);
+        await cleanup(() => returned);
+        if (producerDone) await cleanup(() => producerDone!);
+      }
+      await cleanup(() => runtime.reapSession(sessionId));
+      await cleanup(async () => {
+        if (pendingChild && pendingChild.exitCode === null && pendingChild.signalCode === null)
+          pendingChild.kill('SIGTERM');
+        if (pendingChildClosed) await pendingChildClosed;
+      });
+      await cleanup(() => disposeProjector(sessionId));
+      if (h) await cleanup(() => h!.cleanup());
+      await cleanup(() => fs.rm(agentDir, { recursive: true, force: true }));
+      await cleanup(() => clearTestHomes());
+    }
+    if (failed) throw first;
   });
 });

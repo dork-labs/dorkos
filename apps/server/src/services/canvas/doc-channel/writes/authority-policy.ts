@@ -11,7 +11,7 @@ import type { RoomRepoStore } from '../../../rooms/repo/room-repo-store.js';
 import type { DocChannelActor, DocChannelAuthorization } from '../authorization.js';
 import type { DocChannelGrants } from '../grants.js';
 import type { DocChannelStore, DocWriteIntentRow } from '../store.js';
-import { RoomError } from '../../../rooms/room-errors.js';
+import { RoomError } from '../../../rooms/data/room-errors.js';
 import { DocChannelArchivedError } from '../authorization.js';
 import { DocRouteGrantError } from '../grant-policy.js';
 import { declaredRoute } from '../grant-policy.js';
@@ -19,7 +19,7 @@ import {
   docInstallationOwner,
   sameDocOwnerAuthority,
   readDocSourceDescriptor,
-} from '../doc-source-policy.js';
+} from '../current/doc-source-policy.js';
 import {
   freezeCheckboxData,
   VerifiedCheckboxAuthoritySchema,

@@ -31,7 +31,7 @@
  *
  * @module server/services/rooms/repo/room-main-checkout
  */
-import { RoomError } from '../room-errors.js';
+import { RoomError } from '../data/room-errors.js';
 import {
   currentBranch,
   hasUncommittedChanges,

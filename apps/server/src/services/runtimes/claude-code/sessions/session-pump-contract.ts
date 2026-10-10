@@ -131,7 +131,7 @@ export const LEGAL_TRANSITIONS: Record<PumpState, readonly PumpState[]> = {
   warm: ['running', 'reaped', 'crashed', 'cold'],
   running: ['warm', 'crashed', 'cold'],
   reaped: ['cold'],
-  crashed: ['resuming', 'cold'],
+  crashed: ['resuming', 'reaped', 'cold'],
   resuming: ['warming', 'crashed', 'cold'],
 };
 
@@ -246,6 +246,9 @@ export interface PumpLaunchInput {
    * the launcher decides for itself whether the conversation has started.
    */
   resuming: boolean;
+  /** Original pump/message object identity only; never caller permission. */
+  pump?: object;
+  firstMessage?: PumpDispatch;
 }
 
 /**

@@ -3,8 +3,8 @@
  * row, a frame and one line in the room's log — and never two of any of them
  * (spec `room-canvas` §5.5, §6.2).
  *
- * **The REAL runner and the REAL projector.** Only the dispatcher is stubbed,
- * because a real one needs a model; everything the assertions are about — the
+ * **The real native Trigger, Runner, dispatcher and projector.** Only the
+ * existing TestMode ScenarioFn provider output is scripted; the
  * collector's tap, the per-turn ledger, `finishTurn` in the `finally` — is the
  * code that ships. The room service is real too, over a real SQLite database, so
  * "one row" is read out of the table rather than off a spy.
@@ -25,96 +25,292 @@
  *
  * @module server/services/rooms/canvas/tests/room-canvas-turn
  */
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { mockInterruptReceipt } from '@dorkos/test-utils';
-import { USER_CONFIG_DEFAULTS, type UserConfig } from '@dorkos/shared/config-schema';
-import type { RoomEntry, RoomEvent, RoomWithRoster } from '@dorkos/shared/room-schemas';
-import type { RoomTurnRequest } from '../../room-trigger.js';
+import type { RoomEvent, RoomWithRoster } from '@dorkos/shared/room-schemas';
+import type { StreamEvent } from '@dorkos/shared/types';
 
-/** The runtime capabilities the stub registry declares. Enough to take a turn. */
-const DECLARED_CAPABILITIES = {
-  logBackedHistory: false,
-  nativeContext: [],
-  settings: { configSection: 'claudeCode', supportsEffort: true, sections: [] },
-  permissionModes: {
-    supported: true,
-    default: 'default',
-    values: [{ id: 'default', label: 'Default', description: '', stop: 'ask' }],
-  },
-};
-
-vi.mock('../../../core/runtime-registry.js', () => ({
-  runtimeRegistry: {
-    getNativeSessionCwd: vi.fn(() => null),
-    persistSessionRuntime: () => Promise.resolve(true),
-    getSessionSettings: () => Promise.resolve(null),
-    resolveSessionRuntime: () => Promise.resolve({ type: 'claude-code', bound: false }),
-    get: () => ({
-      getCapabilities: () => DECLARED_CAPABILITIES,
-      acquireLock: () => true,
-      releaseLock: () => undefined,
-      sendMessage: () => undefined,
-      interruptQuery: () => Promise.resolve(mockInterruptReceipt('not-running')),
-      getInternalSessionId: () => undefined,
-    }),
-    has: () => true,
-    getDefaultType: () => 'claude-code',
-  },
-}));
-
-vi.mock('@dorkos/shared/manifest', () => ({ readManifest: async () => null }));
-
-let runtimesConfig: UserConfig['runtimes'] = USER_CONFIG_DEFAULTS.runtimes;
-vi.mock('../../../core/config-manager.js', () => ({
-  configManager: {
-    get: (key: string) => (key === 'runtimes' ? runtimesConfig : undefined),
-  },
-}));
-
-/** The projector the stub is handed, as this file drives it. */
+/** Scripted provider output only; original Trigger/native dispatcher are not replaced. */
 interface TestProjector {
   ingest: (event: Record<string, unknown>) => { seq: number };
 }
+type OriginalDispatch = Parameters<
+  (typeof import('../../../session/message-dispatcher.js'))['dispatchOriginalRoomMessage']
+>[2];
+type TriggerCall = Omit<OriginalDispatch, 'projector'> & { projector: TestProjector };
+let turnBehaviour: (opts: TriggerCall) => { accepted: boolean; canonicalId?: string };
+const triggered: OriginalDispatch[] = [];
+vi.mock('../../../session/message-dispatcher.js', async (importOriginal) => {
+  const original = await importOriginal<typeof import('../../../session/message-dispatcher.js')>();
+  const dispatch = original.dispatchOriginalRoomMessage;
+  // Vitest exports are configurable getter-only properties, not writable fields.
+  const descriptor = Object.getOwnPropertyDescriptor(original, 'dispatchOriginalRoomMessage');
+  if (!descriptor?.configurable || typeof dispatch !== 'function') {
+    throw new Error('Original dispatcher export cannot be observed');
+  }
+  // Preserve the same export object captured during importOriginal's module cycle.
+  Object.defineProperty(original, 'dispatchOriginalRoomMessage', {
+    configurable: descriptor.configurable,
+    enumerable: descriptor.enumerable,
+    value: (
+      request: Parameters<typeof dispatch>[0],
+      runner: Parameters<typeof dispatch>[1],
+      opts: OriginalDispatch
+    ) => {
+      triggered.push(opts);
+      return dispatch(request, runner, opts);
+    },
+  });
+  return original;
+});
 
-/** What the runner hands the dispatcher, as this file inspects it. */
-interface TriggerCall {
-  sessionId: string;
-  projector: TestProjector;
-  onTurnStart?: (seq: number) => void;
-  runtime: { getInternalSessionId: (sessionId: string) => string | undefined };
-  roomTurn?: { roomId: string; authorId: string; turnId: string };
+// Both Node execFile entry points retain the actual subprocess and acquired result.
+const measurement = vi.hoisted(() => ({ fail: false }));
+vi.mock('node:child_process', async (importOriginal) => {
+  const original = await importOriginal<typeof import('node:child_process')>();
+  const { promisify } = await import('node:util');
+  const originalPromisifiedExecFile = promisify(original.execFile);
+  const unavailable = (args: unknown[]) =>
+    measurement.fail && args[0] === 'git' && Array.isArray(args[1]) && args[1].includes('rev-list');
+  // Independent callable targets avoid Node's read-only custom-promisifier invariant.
+  const execFile = new Proxy(original.execFile.bind(undefined), {
+    get(_target, key) {
+      const value = Reflect.get(original.execFile, key, original.execFile);
+      if (key !== promisify.custom || typeof value !== 'function') return value;
+      // Production uses Node's custom promisifier, not the callback entry point.
+      return new Proxy(originalPromisifiedExecFile.bind(undefined), {
+        apply(_custom, customReceiver, args) {
+          const actual = Reflect.apply(originalPromisifiedExecFile, customReceiver, args);
+          if (!unavailable(args)) return actual;
+          const observed = actual.then(() => {
+            throw new Error('Original Git comparison unavailable');
+          });
+          // Preserve Node's same genuine child handle for any owning observer.
+          Object.defineProperty(observed, 'child', { value: actual.child });
+          return observed;
+        },
+      });
+    },
+    apply(_target, receiver, args) {
+      const callback = args.at(-1);
+      if (unavailable(args) && typeof callback === 'function') {
+        return Reflect.apply(original.execFile, receiver, [
+          ...args.slice(0, -1),
+          (cause: unknown, stdout: unknown, stderr: unknown) =>
+            callback(cause ?? new Error('Original Git comparison unavailable'), stdout, stderr),
+        ]);
+      }
+      return Reflect.apply(original.execFile, receiver, args);
+    },
+  });
+  return { ...original, execFile };
+});
+
+const { createOriginalNativeLaunchFixture } =
+  await import('../../repo/__tests__/room-original-native-launch-fixture.js');
+const { scenarioStore } = await import('../../../runtimes/test-mode/scenario-store.js');
+const { readTestModeOriginalActiveStream } =
+  await import('../../../runtimes/test-mode/test-mode-runtime.js');
+const { runtimeRegistry } = await import('../../../core/runtime-registry.js');
+const { isTurnInFlight } = await import('../../../session/message-dispatcher.js');
+const { peekProjector } = await import('../../../session/index.js');
+const { fixtureGit } = await import('../../repo/__tests__/fixture-git.js');
+const { uiTurnFacts } = await import('../../../session/browser-seat/ui-turn-facts.js');
+type OriginalFixture = Awaited<ReturnType<typeof createOriginalNativeLaunchFixture>>;
+let original: OriginalFixture | undefined;
+let target: Awaited<ReturnType<OriginalFixture['bootNativeAgent']>> | undefined;
+let currentEntry: string | undefined;
+let baselineSeq = 0;
+let ANA = '';
+let nativeCopyPath: string | undefined;
+
+async function closeNative(): Promise<void> {
+  let failed = false;
+  let first: unknown;
+  const remember = (cause: unknown) => {
+    if (!failed) {
+      failed = true;
+      first = cause;
+    }
+  };
+  try {
+    await original?.close();
+    original = undefined;
+    target = undefined;
+    currentEntry = undefined;
+    nativeCopyPath = undefined;
+  } catch (cause) {
+    remember(cause);
+  }
+  try {
+    vi.restoreAllMocks();
+  } catch (cause) {
+    remember(cause);
+  }
+  if (failed) throw first;
 }
 
-/** What the stubbed dispatch does with the projector it is handed. */
-let turnBehaviour: (opts: TriggerCall) => { accepted: boolean; canonicalId?: string };
-/** Every dispatch this file's runner made, in order. */
-const triggered: TriggerCall[] = [];
+async function openNative(seed = false): Promise<void> {
+  await closeNative();
+  measurement.fail = false;
+  triggered.length = 0;
+  baselineSeq = 0;
+  original = await createOriginalNativeLaunchFixture({ seed });
+  target = await original.bootNativeAgent();
+  ANA = target.agentPath;
+  const actualScenario = scenarioStore.getScenario.bind(scenarioStore);
+  vi.spyOn(scenarioStore, 'getScenario').mockImplementation((sessionId) => {
+    if (sessionId !== target?.sessionId) return actualScenario(sessionId);
+    return async function* (_content, context, opts) {
+      if (!original || !target || context.sessionId !== target.sessionId || !currentEntry) {
+        throw new Error('Original Canvas provider target is absent');
+      }
+      const runtime = runtimeRegistry.get('claude-code');
+      const prepared = original.readPreparedContext(target.sessionId);
+      const dispatch = triggered.at(-1);
+      if (
+        !readTestModeOriginalActiveStream(runtime, target.sessionId) ||
+        prepared?.room.id !== original.roomId ||
+        prepared.triggerEntryId !== currentEntry ||
+        dispatch?.sessionId !== target.sessionId ||
+        opts?.roomTurn?.turnId !== dispatch.roomTurn?.turnId ||
+        uiTurnFacts.read(target.sessionId).roomTurn?.roomId !== original.roomId
+      ) {
+        throw new Error('Original current native Canvas stream is unavailable');
+      }
+      // This buffer scripts provider output; it never ingests a projector event.
+      const output: Record<string, unknown>[] = [];
+      const scripted: TriggerCall = {
+        ...dispatch,
+        projector: {
+          ingest: (event) => {
+            output.push(event);
+            return { seq: output.length };
+          },
+        },
+        onTurnStart: () => undefined,
+      };
+      const result = turnBehaviour(scripted);
+      if (!result.accepted)
+        throw new Error('Canvas provider script did not accept its actual turn');
+      yield {
+        type: 'session_status',
+        data: { sessionId: target.sessionId, model: 'test-mode' },
+      } as StreamEvent;
+      for (const event of output) {
+        if (event.type === 'turn_start') continue; // The real dispatcher already opened this turn.
+        if (event.type === 'turn_end') {
+          yield { type: 'done', data: { sessionId: target.sessionId } } as StreamEvent;
+        } else if (event.type === 'text_delta') {
+          yield { type: 'text_delta', data: { text: event.text } } as StreamEvent;
+        } else if (event.type === 'ui_command') {
+          yield {
+            type: 'ui_command',
+            data: {
+              command: event.command,
+              ...(event.applied !== undefined ? { applied: event.applied } : {}),
+            },
+          } as StreamEvent;
+        } else throw new Error('Unexpected Canvas provider output');
+      }
+    };
+  });
+  turnBehaviour = (opts) => {
+    openTurn(opts);
+    opts.projector.ingest({ type: 'turn_end' });
+    return { accepted: true, canonicalId: opts.sessionId };
+  };
+  if (seed) {
+    // Native authenticated enable pins ROOM.md; retire only that setup document.
+    for (const document of original.subsystem.service.canvas.list(original.roomId))
+      original.subsystem.service.canvas.close(original.roomId, original.operator.id, document.id);
+    await runNative();
+    const prepared = original.readPreparedContext(target.sessionId);
+    if (!prepared?.files) throw new Error('Original native Room copy was not prepared');
+    nativeCopyPath = prepared.files.worktreePath;
+  }
+  baselineSeq =
+    original.subsystem.service
+      .listEntries(original.roomId, original.operator.id, { limit: 100 })
+      .at(-1)?.seq ?? 0;
+  triggered.length = 0;
+}
 
-vi.mock('../../../session/index.js', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('../../../session/index.js')>()),
-  dispatchMessage: (opts: never) => {
-    triggered.push(opts);
-    return Promise.resolve(turnBehaviour(opts));
-  },
-}));
+async function nativeCopy(): Promise<string> {
+  if (!nativeCopyPath) throw new Error('Original native copy is absent');
+  return nativeCopyPath;
+}
 
-const { createSessionRoomTurnRunner } = await import('../../room-turn-runner.js');
-const { SessionEventStore, setSessionEventStore } = await import('../../../session/index.js');
-const { createTestDb } = await import('@dorkos/test-utils/db');
-const { setRoomService } = await import('../../index.js');
-const { agentLookupFor, createRoomHarness, scriptedRunner } =
-  await import('../../__tests__/room-test-harness.js');
+/** Scenario input DATA never becomes an original Room request or folder grant. */
+function turnRequest(files?: {
+  worktreePath: string;
+  branch: string;
+  repoPath: string;
+  ahead: number | null;
+  behind: number | null;
+}) {
+  return files;
+}
+
+async function runNative(files?: ReturnType<typeof turnRequest>): Promise<unknown> {
+  if (!original || !target) throw new Error('Original native Canvas fixture is absent');
+  const sessionId = target.sessionId;
+  if (files) {
+    const copy = await nativeCopy();
+    if (fs.realpathSync(files.worktreePath) !== fs.realpathSync(copy))
+      throw new Error('Canvas scenario does not name the original native working copy');
+    // Actual commits, rather than a copied ahead count, establish the review state.
+    for (let n = 0; n < (files.ahead ?? 0); n++) {
+      fs.writeFileSync(path.join(copy, `native-ahead-${n}.txt`), String(n));
+      await fixtureGit(['add', '--all'], copy, original.repos.homeDir(original.roomId));
+      await fixtureGit(
+        [
+          '-c',
+          'user.name=Original Native Agent',
+          '-c',
+          'user.email=native@fixture.test',
+          'commit',
+          '--no-verify',
+          '-m',
+          `native review ${n}`,
+        ],
+        copy,
+        original.repos.homeDir(original.roomId)
+      );
+    }
+  }
+  const entry = original.subsystem.service.post(original.roomId, {
+    authorId: original.operator.id,
+    text: 'show me the plan',
+    mentions: [target.authorId],
+  });
+  currentEntry = entry.id;
+  await original.subsystem.service.triggersIdle();
+  // Native stream retirement precedes final sender/projector retirement.
+  // A successor uses the same real session only after both owners are idle.
+  await vi.waitFor(() => {
+    const selected = runtimeRegistry.get('claude-code');
+    expect(isTurnInFlight(sessionId, selected)).toBe(false);
+    expect(peekProjector(sessionId)?.getStatus().lifecycle).toBe('idle');
+  });
+  return entry;
+}
+
+/** Provider script delimiter only; the actual dispatcher owns turn_start and its cursor. */
+function openTurn(opts: TriggerCall): void {
+  const start = opts.projector.ingest({ type: 'turn_start' });
+  opts.onTurnStart?.(start.seq);
+}
+
 const { tooManyCanvasOpsMessage } = await import('../room-canvas-service.js');
 
-type Harness = ReturnType<typeof createRoomHarness>;
-
-const ANA = '/agents/ana';
-const agents = agentLookupFor({
-  [ANA]: { name: 'ana', displayName: 'Ana', responseMode: 'always' },
-});
+type Harness = {
+  service: OriginalFixture['subsystem']['service'];
+  authors: OriginalFixture['subsystem']['authors'];
+  human: string;
+};
 
 /** A json document — no dedupe key, so a double write shows up as a second row. */
 const jsonCommand = (label: string) => ({
@@ -127,98 +323,26 @@ describe('a room turn’s canvas commands', () => {
   let room: RoomWithRoster;
   let ana: string;
 
-  beforeEach(() => {
-    runtimesConfig = USER_CONFIG_DEFAULTS.runtimes;
-    triggered.length = 0;
-    setSessionEventStore(new SessionEventStore(createTestDb()));
-    harness = createRoomHarness({ agents, runner: scriptedRunner(() => null) });
-    setRoomService(harness.service);
-    room = harness.service.createRoom(
-      { kind: 'channel', title: 'Backend', members: [], agentPaths: [ANA] },
-      harness.human
-    );
-    ana = harness.authors.resolveAgent(ANA, 'Ana').id;
+  beforeEach(async () => {
+    await openNative();
+    if (!original || !target) throw new Error('Original native Canvas fixture is absent');
+    harness = {
+      service: original.subsystem.service,
+      authors: original.subsystem.authors,
+      human: original.operator.id,
+    };
+    const currentRoom = harness.service.getRoom(original.roomId, harness.human);
+    if (!currentRoom) throw new Error('Original authenticated Canvas Room is absent');
+    room = currentRoom;
+    ana = target.authorId;
   });
+  afterEach(closeNative);
 
-  /**
-   * A trigger for the real room this harness holds.
-   *
-   * @param files - What the dispatcher measured about this agent's working
-   *   copy for this turn, when it measured anything.
-   */
-  function turnRequest(files?: {
-    worktreePath: string;
-    branch: string;
-    repoPath: string;
-    ahead: number | null;
-    behind: number | null;
-  }): RoomTurnRequest {
-    const entry: RoomEntry = {
-      roomId: room.id,
-      seq: 1,
-      id: 'entry-1',
-      authorId: harness.human,
-      kind: 'post',
-      body: { text: 'show me the plan' },
-      mentions: [],
-      sessionId: null,
-      cascadeRoot: 'entry-1',
-      cascadeDepth: 0,
-      parentEntryId: null,
-      threadRootEntryId: null,
-      signature: null,
-      createdAt: room.createdAt,
-    };
-    return {
-      room,
-      authorId: ana,
-      externalAuthor: false,
-      agentPath: ANA,
-      cwd: ANA,
-      additionalDirectories: [],
-      worktree: files?.worktreePath ?? null,
-      sessionId: null,
-      entry,
-      prompt: entry.body.text,
-      roomContext: {
-        room: { id: room.id, kind: 'channel', name: '#backend', bridged: false },
-        thread: null,
-        members: [],
-        working: [],
-        pending: [],
-        pendingTruncated: false,
-        ownRecent: [],
-        acknowledgments: [],
-        triggerEntryId: entry.id,
-        triggerAttachments: [],
-        addressing: {
-          responseMode: 'always',
-          engagedUntil: null,
-          engagedPostsLeft: null,
-          addressedNow: true,
-        },
-        budget: {
-          automaticRepliesLeftInThisRoomThisHour: 9,
-          automaticRepliesLeftInTotalThisHour: 99,
-          repliesLeftInThisChain: 3,
-        },
-        ...(files ? { files } : {}),
-      },
-      attachmentProjection: [],
-      onWaiting: () => undefined,
-      onActivity: () => undefined,
-      onSessionBound: () => undefined,
-    };
-  }
-
-  /** Open the turn the runner is waiting for, as the real dispatcher does. */
-  function openTurn(opts: TriggerCall): void {
-    const start = opts.projector.ingest({ type: 'turn_start' });
-    opts.onTurnStart?.(start.seq);
-  }
-
-  /** The room's log, oldest first. */
-  const log = () => harness.service.listEntries(room.id, harness.human, { limit: 100 });
+  /** Case operations only, excluding genuine native installation/copy setup. */
+  const log = () =>
+    harness.service
+      .listEntries(room.id, harness.human, { limit: 100 })
+      .filter((entry) => entry.seq > baselineSeq);
 
   it('carries the room, the member and one turn id into the runtime', async () => {
     turnBehaviour = (opts) => {
@@ -226,7 +350,7 @@ describe('a room turn’s canvas commands', () => {
       opts.projector.ingest({ type: 'turn_end' });
       return { accepted: true, canonicalId: opts.sessionId };
     };
-    await createSessionRoomTurnRunner().run(turnRequest());
+    await runNative(turnRequest());
 
     // Routing metadata, and every field of it server-derived. Without this a
     // `control_ui` the turn takes has no way to know which room it is in.
@@ -241,7 +365,7 @@ describe('a room turn’s canvas commands', () => {
       opts.projector.ingest({ type: 'turn_end' });
       return { accepted: true, canonicalId: opts.sessionId };
     };
-    await createSessionRoomTurnRunner().run(turnRequest());
+    await runNative(turnRequest());
 
     const documents = harness.service.canvas.list(room.id);
     expect(documents).toHaveLength(1);
@@ -271,7 +395,7 @@ describe('a room turn’s canvas commands', () => {
       opts.projector.ingest({ type: 'turn_end' });
       return { accepted: true, canonicalId: opts.sessionId };
     };
-    await createSessionRoomTurnRunner().run(turnRequest());
+    await runNative(turnRequest());
 
     expect(harness.service.canvas.list(room.id)).toHaveLength(1);
   });
@@ -289,7 +413,7 @@ describe('a room turn’s canvas commands', () => {
       opts.projector.ingest({ type: 'turn_end' });
       return { accepted: true, canonicalId: opts.sessionId };
     };
-    await createSessionRoomTurnRunner().run(turnRequest());
+    await runNative(turnRequest());
 
     const entries = log();
     const canvasLines = entries.filter((entry) => entry.body.canvas !== undefined);
@@ -303,22 +427,18 @@ describe('a room turn’s canvas commands', () => {
   });
 
   describe('a room that has files of its own', () => {
-    beforeEach(() => {
-      // Rebuilt with a repo, because that is what makes a file document record
-      // WHICH tree it came from. The shared harness above is a room with no
-      // files of its own — the ordinary case, and the one every other case here
-      // is about.
-      harness = createRoomHarness({
-        agents,
-        runner: scriptedRunner(() => null),
-        roomRepoPath: () => '/rooms/backend/repo',
-      });
-      setRoomService(harness.service);
-      room = harness.service.createRoom(
-        { kind: 'channel', title: 'Backend', members: [], agentPaths: [ANA] },
-        harness.human
-      );
-      ana = harness.authors.resolveAgent(ANA, 'Ana').id;
+    beforeEach(async () => {
+      await openNative(true);
+      if (!original || !target) throw new Error('Original native Canvas fixture is absent');
+      harness = {
+        service: original.subsystem.service,
+        authors: original.subsystem.authors,
+        human: original.operator.id,
+      };
+      const currentRoom = harness.service.getRoom(original.roomId, harness.human);
+      if (!currentRoom) throw new Error('Original authenticated Canvas Room is absent');
+      room = currentRoom;
+      ana = target.authorId;
     });
 
     it('records how far ahead of the room the turn’s copy was', async () => {
@@ -331,7 +451,7 @@ describe('a room turn’s canvas commands', () => {
       // of the four runtimes.
       // The turn stands at home and names the file by its full path in its
       // copy (spec `agent-home-desk` §5.6): the source path decides the tree.
-      const copy = '/rooms/backend/worktrees/ana-1a2b3c4d';
+      const copy = await nativeCopy();
       turnBehaviour = (opts) => {
         openTurn(opts);
         opts.projector.ingest({
@@ -341,11 +461,11 @@ describe('a room turn’s canvas commands', () => {
         opts.projector.ingest({ type: 'turn_end' });
         return { accepted: true, canonicalId: opts.sessionId };
       };
-      await createSessionRoomTurnRunner().run(
+      await runNative(
         turnRequest({
           worktreePath: copy,
           branch: 'room/ana',
-          repoPath: '/rooms/backend/repo',
+          repoPath: original!.repos.repoPath(room.id),
           ahead: 3,
           behind: 0,
         })
@@ -362,30 +482,29 @@ describe('a room turn’s canvas commands', () => {
 
     it('labels the copy whichever spelling of it the turn and the file use', async () => {
       // The turn's grants name the copy by its REAL path (`/private/tmp/…` on
-      // macOS, a symlinked home anywhere) while the dispatcher may hold another
+      // macOS, a symlinked home anywhere) while the file command may hold another
       // spelling. One folder, one tree. Seeded: comparing the raw strings
       // reddens this (the document falls to "in Ana's project" and the review
       // surface never appears).
       const scratch = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'canvas-spell-')));
       try {
-        const realCopy = path.join(scratch, 'real', 'worktrees', 'ana-1a2b3c4d');
-        fs.mkdirSync(realCopy, { recursive: true });
-        fs.symlinkSync(path.join(scratch, 'real'), path.join(scratch, 'link'));
-        const linkedCopy = path.join(scratch, 'link', 'worktrees', 'ana-1a2b3c4d');
+        const realCopy = await nativeCopy();
+        fs.symlinkSync(realCopy, path.join(scratch, 'link'));
+        const linkedCopy = path.join(scratch, 'link');
         turnBehaviour = (opts) => {
           openTurn(opts);
           opts.projector.ingest({
             type: 'ui_command',
-            command: { action: 'open_diff', sourcePath: path.join(realCopy, 'app.txt') },
+            command: { action: 'open_diff', sourcePath: path.join(linkedCopy, 'app.txt') },
           });
           opts.projector.ingest({ type: 'turn_end' });
           return { accepted: true, canonicalId: opts.sessionId };
         };
-        await createSessionRoomTurnRunner().run(
+        await runNative(
           turnRequest({
             worktreePath: linkedCopy,
             branch: 'room/ana',
-            repoPath: '/rooms/backend/repo',
+            repoPath: original!.repos.repoPath(room.id),
             ahead: 1,
             behind: 0,
           })
@@ -404,7 +523,7 @@ describe('a room turn’s canvas commands', () => {
       // `..notes.md` is a file INSIDE the copy; only a first segment of exactly
       // `..` leaves it. Seeded: rejecting any relative path starting with `..`
       // stores it absolute, which the review refuses.
-      const copy = '/rooms/backend/worktrees/ana-1a2b3c4d';
+      const copy = await nativeCopy();
       turnBehaviour = (opts) => {
         openTurn(opts);
         opts.projector.ingest({
@@ -414,11 +533,11 @@ describe('a room turn’s canvas commands', () => {
         opts.projector.ingest({ type: 'turn_end' });
         return { accepted: true, canonicalId: opts.sessionId };
       };
-      await createSessionRoomTurnRunner().run(
+      await runNative(
         turnRequest({
           worktreePath: copy,
           branch: 'room/ana',
-          repoPath: '/rooms/backend/repo',
+          repoPath: original!.repos.repoPath(room.id),
           ahead: 1,
           behind: 0,
         })
@@ -430,6 +549,7 @@ describe('a room turn’s canvas commands', () => {
     });
 
     it('records “not measured” when the dispatcher measured nothing', async () => {
+      measurement.fail = true;
       turnBehaviour = (opts) => {
         openTurn(opts);
         opts.projector.ingest({
@@ -439,7 +559,7 @@ describe('a room turn’s canvas commands', () => {
         opts.projector.ingest({ type: 'turn_end' });
         return { accepted: true, canonicalId: opts.sessionId };
       };
-      await createSessionRoomTurnRunner().run(turnRequest());
+      await runNative(turnRequest());
 
       const [document] = harness.service.canvas.list(room.id);
       // `null`, never `0`: nobody asked, which is a different claim from "level
@@ -481,7 +601,7 @@ describe('a room turn’s canvas commands', () => {
         opts.projector.ingest({ type: 'turn_end' });
         return { accepted: true, canonicalId: opts.sessionId };
       };
-      await createSessionRoomTurnRunner().run(turnRequest());
+      await runNative(turnRequest());
 
       const released = await frames();
       expect(released).toMatchObject([{ authorId: ana }]);
@@ -512,7 +632,7 @@ describe('a room turn’s canvas commands', () => {
       };
       // And the failure stays inside: `collectReply`'s `closed` promise is
       // documented as never rejecting.
-      await expect(createSessionRoomTurnRunner().run(turnRequest())).resolves.toBeDefined();
+      await expect(runNative(turnRequest())).resolves.toBeDefined();
 
       const released = await frames();
       expect(released).toMatchObject([{ authorId: ana }]);
@@ -530,7 +650,7 @@ describe('a room turn’s canvas commands', () => {
       opts.projector.ingest({ type: 'turn_end' });
       return { accepted: true, canonicalId: opts.sessionId };
     };
-    await createSessionRoomTurnRunner().run(turnRequest());
+    await runNative(turnRequest());
     await harness.service.triggersIdle();
 
     expect(triggered).toHaveLength(1);
@@ -549,7 +669,7 @@ describe('a room turn’s canvas commands', () => {
       opts.projector.ingest({ type: 'turn_end' });
       return { accepted: true, canonicalId: opts.sessionId };
     };
-    await createSessionRoomTurnRunner().run(turnRequest());
+    await runNative(turnRequest());
 
     const [document] = harness.service.canvas.list(room.id);
     expect(document.treeKind).toBe('agent-cwd');
@@ -571,7 +691,7 @@ describe('a room turn’s canvas commands', () => {
       opts.projector.ingest({ type: 'turn_end' });
       return { accepted: true, canonicalId: opts.sessionId };
     };
-    await createSessionRoomTurnRunner().run(turnRequest());
+    await runNative(turnRequest());
     const turnId = triggered[0].roomTurn?.turnId ?? '';
     expect(turnId).not.toBe('');
 
@@ -636,7 +756,7 @@ describe('a room turn’s canvas commands', () => {
       opts.projector.ingest({ type: 'turn_end' });
       return { accepted: true, canonicalId: opts.sessionId };
     };
-    await createSessionRoomTurnRunner().run(turnRequest());
+    await runNative(turnRequest());
 
     expect(log().filter((entry) => entry.body.canvas !== undefined)).toEqual([]);
   });
@@ -650,7 +770,7 @@ describe('a room turn’s canvas commands', () => {
       opts.projector.ingest({ type: 'turn_end' });
       return { accepted: true, canonicalId: opts.sessionId };
     };
-    await createSessionRoomTurnRunner().run(turnRequest());
+    await runNative(turnRequest());
 
     // Three rows, and a line naming three. An operation nothing applied is
     // claimed nowhere — which is the honest guarantee on this path, where a
@@ -678,7 +798,7 @@ describe('a room turn’s canvas commands', () => {
       opts.projector.ingest({ type: 'turn_end' });
       return { accepted: true, canonicalId: opts.sessionId };
     };
-    await createSessionRoomTurnRunner().run(turnRequest());
+    await runNative(turnRequest());
     const turnId = triggered[0].roomTurn?.turnId ?? '';
     expect(turnId).not.toBe('');
 

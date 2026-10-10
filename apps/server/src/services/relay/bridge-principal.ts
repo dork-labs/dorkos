@@ -21,7 +21,7 @@
  *
  * @module server/services/relay/bridge-principal
  */
-import { BRIDGE_PRINCIPAL_PREFIX } from '@dorkos/relay';
+import { BRIDGE_PRINCIPAL_PREFIX } from '@dorkos/relay/consent-scope';
 
 /**
  * Every `relay.bridge.*` principal starts here.

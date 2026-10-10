@@ -34,10 +34,19 @@
  */
 import { constants as fsConstants, createReadStream, promises as fs } from 'node:fs';
 import path from 'node:path';
+import { finished } from 'node:stream/promises';
+import type { Readable } from 'node:stream';
+import { openRoomFileUploadSource } from './room-file-upload-storage.js';
+import {
+  readInstallationRoomMutationRoots,
+  checkInstallationRoomMutationTarget,
+  requireInstallationRoomMutationTarget,
+  type InstallationRoomMutationContext,
+} from '../../canvas/doc-channel/writes/installation-room-writes.js';
 import type { RoomRepoCaps } from '@dorkos/shared/room-repo';
 import type { RoomFileCommit } from '@dorkos/shared/room-files';
 import { logger } from '../../../lib/logger.js';
-import { RoomError } from '../room-errors.js';
+import { RoomError } from '../data/room-errors.js';
 import {
   commitStaged,
   GITLINK_MODE,
@@ -46,7 +55,8 @@ import {
   isIgnored,
   listTree,
   restoreFromHead,
-  runGitRaw,
+  readRoomFileBlobRaw,
+  readRoomFileCommitRaw,
   stagePaths,
   SYMLINK_MODE,
   UnreadablePathError,
@@ -112,7 +122,10 @@ const EXECUTABLE_MODE = '100755';
  * or a large folder being moved never sits in memory all at once.
  */
 export type RoomFileContent =
-  Buffer | { file: string; size: number } | { blob: string; size: number };
+  | Buffer
+  | { file: string; size: number }
+  | { blob: string; size: number }
+  | { upload: object; size: number };
 
 /** One path in a change set: its new contents, or `null` to remove it. */
 export interface RoomFileChange {
@@ -280,7 +293,8 @@ export async function assertNoLinkOnDisk(
     let stat;
     try {
       stat = await fs.lstat(at);
-    } catch {
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException)?.code !== 'ENOENT') throw error;
       // Not there yet: a file or folder being created. Nothing to follow.
       return;
     }
@@ -631,247 +645,297 @@ export async function commitChangeSet(
   ceiling: string,
   changes: readonly RoomFileChange[],
   subject: string,
-  identity: GitIdentity
+  identity: GitIdentity,
+  context: InstallationRoomMutationContext
 ): Promise<string | null> {
+  const roots = readInstallationRoomMutationRoots(context);
+  if (
+    !path.isAbsolute(repoDir) ||
+    !path.isAbsolute(ceiling) ||
+    path.resolve(repoDir) !== roots.repoPath ||
+    path.resolve(ceiling) !== roots.homePath
+  ) {
+    throw new Error('File change set must use the captured main checkout and home.');
+  }
+  await checkInstallationRoomMutationTarget(context, repoDir);
   const undo: ChangeSetUndo = { folders: [], files: [] };
+  let failed = false;
+  let firstCause: unknown;
+  let commit: string | null = null;
   try {
     const removals = changes.filter((change) => change.content === null);
     const writes = changes.filter((change) => change.content !== null);
     for (const change of removals) {
-      await fs.rm(path.join(repoDir, change.path), { force: true });
-      await pruneEmptyParents(repoDir, change.path);
+      const target = await checkFileMutation(context, repoDir, change.path, true);
+      requireInstallationRoomMutationTarget(context, target);
+      await fs.rm(target, { force: true });
+      await pruneEmptyParents(repoDir, change.path, context);
     }
     for (const change of writes) {
-      undo.folders.push(...(await makeParents(repoDir, change.path)));
-      // **A path the tree does not hold must not exist on disk either.** If it
-      // does, it is another name for something that is there — a different
-      // Unicode spelling or case of a real file — and writing would overwrite
-      // it, and undoing the write would delete it. `writeContent` creates such
-      // a path `O_EXCL`, so the refusal is the kernel's and atomic, and a file
-      // is recorded as ours to remove only once the create has succeeded.
-      await writeContent(repoDir, ceiling, change, () => undo.files.push(change.path));
+      await makeParents(repoDir, change.path, context, undo.folders);
+      await writeContent(repoDir, ceiling, change, () => undo.files.push(change.path), context);
     }
-
     await inBatches(
       removals.map((change) => change.path),
-      (batch) => unstagePaths(repoDir, batch, ceiling)
+      (batch) => unstagePaths(repoDir, batch, ceiling, context)
     );
     await inBatches(
       writes.map((change) => change.path),
-      (batch) => stagePaths(repoDir, batch, ceiling)
+      (batch) => stagePaths(repoDir, batch, ceiling, context)
     );
-    if (!(await hasStagedChanges(repoDir, ceiling))) return null;
-    return await commitStaged(repoDir, subject, identity, ceiling);
-  } catch (err) {
-    await rollbackChangeSet(repoDir, ceiling, changes, undo);
-    throw err;
+    if (await hasStagedChanges(repoDir, ceiling))
+      commit = await commitStaged(repoDir, subject, identity, ceiling, context);
+  } catch (error) {
+    // The boolean distinguishes a thrown undefined from no failure.
+    failed = true;
+    firstCause = error;
   }
+  if (failed) {
+    try {
+      await rollbackChangeSet(repoDir, ceiling, changes, undo, context);
+    } catch (cleanupCause) {
+      // Logging is also fallible; neither it nor rollback may replace the primary.
+      try {
+        logger.error(
+          '[rooms] a room file change could not be rolled back; its files are now dirty',
+          {
+            repoDir,
+            paths: changes.map((change) => change.path),
+            err: cleanupCause,
+          }
+        );
+      } catch {
+        /* Exact primary remains the reported cause. */
+      }
+    }
+    throw firstCause;
+  }
+  return commit;
 }
 
-/** What a change set made that did not exist before it — the only things its rollback removes. */
 interface ChangeSetUndo {
-  /** Folders it created, shallowest first. */
   folders: string[];
-  /** Files it created where nothing stood on disk. */
   files: string[];
 }
 
-/**
- * Put every path of a change set back the way `main` has it, after a set that
- * could not finish.
- *
- * Best-effort and never throws: the caller is already reporting the reason the
- * change failed, and replacing it with a cleanup error would hide it. A rollback
- * that fails is logged loudly, because what it leaves behind is exactly the
- * dirty-main state the operator will be asked about.
- *
- * **It removes only what this change set created** — files it wrote where
- * nothing stood, and folders it made — never a path merely because the tree did
- * not list it. A path the tree missed can still be somebody's file under another
- * spelling (found in review: an NFD upload over an NFC file, rolled back, deleted
- * the person's tracked file).
- *
- * Created files are removed BEFORE `main`'s paths are restored — on a filesystem
- * that folds case, a case-only rename's new name and its old one are one file,
- * and the other order would delete what was just restored.
- *
- * @param repoDir - The room's main checkout.
- * @param ceiling - The room home directory git's search may not climb past.
- * @param changes - The change set.
- * @param undo - What the set created.
- */
+/** Recheck the original no-link confinement after the asynchronous fixed fence check. */
+async function checkFileMutation(
+  context: InstallationRoomMutationContext,
+  repoDir: string,
+  filePath: string,
+  allowLinkTarget = false
+): Promise<string> {
+  assertWritablePath(filePath);
+  const target = path.resolve(repoDir, filePath);
+  const rel = path.relative(repoDir, target);
+  if (rel === '' || rel === '..' || rel.startsWith(`..${path.sep}`) || path.isAbsolute(rel)) {
+    throw new RoomError('ROOM_FILE_PATH_INVALID', 'That path is outside this room’s copy.');
+  }
+  await checkInstallationRoomMutationTarget(context, target);
+  await assertNoLinkOnDisk(repoDir, filePath, allowLinkTarget);
+  return target;
+}
+
+/** Attempt every owned rollback obligation, recording the first cleanup failure exactly. */
 async function rollbackChangeSet(
   repoDir: string,
   ceiling: string,
   changes: readonly RoomFileChange[],
-  undo: ChangeSetUndo
+  undo: ChangeSetUndo,
+  context: InstallationRoomMutationContext
 ): Promise<void> {
-  try {
-    for (const filePath of undo.files) {
-      await fs.rm(path.join(repoDir, filePath), { force: true });
+  let failed = false;
+  let firstCause: unknown;
+  const attempt = async (work: () => Promise<void>) => {
+    try {
+      await work();
+    } catch (error) {
+      if (!failed) {
+        failed = true;
+        firstCause = error;
+      }
     }
-    // The file first, then the index — see {@link unstagePaths} for why that
-    // order is what lets this run without a force flag.
-    await inBatches(undo.files, (batch) => unstagePaths(repoDir, batch, ceiling));
-    await inBatches(
-      changes.filter((change) => change.existed).map((change) => change.path),
-      (batch) => restoreFromHead(repoDir, batch, ceiling)
-    );
-    for (const dir of [...undo.folders].reverse()) {
-      await fs.rmdir(path.join(repoDir, dir)).catch(() => undefined);
-    }
-  } catch (err) {
-    logger.error('[rooms] a room file change could not be rolled back; its files are now dirty', {
-      repoDir,
-      paths: changes.map((change) => change.path),
-      err,
+  };
+  for (const filePath of undo.files)
+    await attempt(async () => {
+      const target = await checkFileMutation(context, repoDir, filePath, true);
+      requireInstallationRoomMutationTarget(context, target);
+      await fs.rm(target, { force: true });
     });
+  // Each batch retains this exact context. A failed batch does not skip other obligations.
+  for (let at = 0; at < undo.files.length; at += PATH_BATCH) {
+    await attempt(() =>
+      unstagePaths(repoDir, undo.files.slice(at, at + PATH_BATCH), ceiling, context)
+    );
   }
+  const restore = changes.filter((change) => change.existed).map((change) => change.path);
+  for (let at = 0; at < restore.length; at += PATH_BATCH) {
+    await attempt(() =>
+      restoreFromHead(repoDir, restore.slice(at, at + PATH_BATCH), ceiling, context)
+    );
+  }
+  for (const dir of [...undo.folders].reverse())
+    await attempt(async () => {
+      const target = await checkFileMutation(context, repoDir, dir);
+      requireInstallationRoomMutationTarget(context, target);
+      try {
+        await fs.rmdir(target);
+      } catch (error) {
+        const code = (error as NodeJS.ErrnoException)?.code;
+        if (code !== 'ENOENT' && code !== 'ENOTEMPTY' && code !== 'EEXIST') throw error;
+      }
+    });
+  if (failed) throw firstCause;
 }
 
-/**
- * Create every missing folder above a file, one at a time, and say which.
- *
- * One `mkdir` per level rather than `recursive: true`, so the list of what was
- * created is exact and a rollback removes those folders and nothing else. A
- * level that exists as something other than a folder — an ignored or untracked
- * file the tree does not know about — answers `ROOM_FILE_PATH_INVALID`.
- *
- * @param repoDir - The room's main checkout.
- * @param filePath - The file whose parents to make.
- * @returns The folders created, repo-relative, shallowest first.
- */
-async function makeParents(repoDir: string, filePath: string): Promise<string[]> {
-  const created: string[] = [];
-  const segments = filePath.split('/').slice(0, -1);
+/** Record each successful mkdir immediately, including when a later parent fails. */
+async function makeParents(
+  repoDir: string,
+  filePath: string,
+  context: InstallationRoomMutationContext,
+  created: string[]
+): Promise<void> {
   let rel = '';
-  for (const segment of segments) {
+  for (const segment of filePath.split('/').slice(0, -1)) {
     rel = rel === '' ? segment : `${rel}/${segment}`;
+    const target = await checkFileMutation(context, repoDir, rel);
+    requireInstallationRoomMutationTarget(context, target);
     try {
-      await fs.mkdir(path.join(repoDir, rel));
+      await fs.mkdir(target);
       created.push(rel);
-    } catch (err) {
-      if ((err as NodeJS.ErrnoException).code !== 'EEXIST') throw err;
-      const stat = await fs.lstat(path.join(repoDir, rel));
-      if (!stat.isDirectory()) {
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException)?.code !== 'EEXIST') throw error;
+      const stat = await fs.lstat(target);
+      if (!stat.isDirectory())
         throw new RoomError(
           'ROOM_FILE_PATH_INVALID',
           `\`${rel}\` is a file in this room’s copy, so it cannot hold other files.`
         );
-      }
     }
   }
-  return created;
 }
 
-/**
- * Remove folders a removal left empty, deepest first, stopping at the first one
- * that still holds something.
- *
- * git does not record folders, so an empty one is invisible to it — but it is
- * still on disk, and a person who deleted `old/` expects `old/` gone.
- *
- * @param repoDir - The room's main checkout.
- * @param filePath - The path that was removed.
- */
-async function pruneEmptyParents(repoDir: string, filePath: string): Promise<void> {
+async function pruneEmptyParents(
+  repoDir: string,
+  filePath: string,
+  context: InstallationRoomMutationContext
+): Promise<void> {
   const segments = filePath.split('/').slice(0, -1);
   while (segments.length > 0) {
+    const target = await checkFileMutation(context, repoDir, segments.join('/'));
+    requireInstallationRoomMutationTarget(context, target);
     try {
-      await fs.rmdir(path.join(repoDir, ...segments));
-    } catch {
-      return;
+      await fs.rmdir(target);
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException)?.code;
+      if (code === 'ENOENT' || code === 'ENOTEMPTY' || code === 'EEXIST') return;
+      throw error;
     }
     segments.pop();
   }
 }
 
-/**
- * Write one path's contents, refusing to follow a link at the final component.
- *
- * @param repoDir - The room's main checkout.
- * @param ceiling - The room home directory git's search may not climb past.
- * @param change - The write.
- * @param onCreated - Called once a new path has been created, so a rollback
- *   removes it — and only then.
- */
+/** Own the target FD and any staged-input stream until both have actually closed. */
 async function writeContent(
   repoDir: string,
   ceiling: string,
   change: RoomFileChange,
-  onCreated: () => void
+  onCreated: () => void,
+  context: InstallationRoomMutationContext
 ): Promise<void> {
-  // `O_NOFOLLOW` on the final component: the lstat walk cannot close the window
-  // between looking and writing, and the kernel can. A path `main` does not hold
-  // is created `O_EXCL`: anything already standing there — another spelling of
-  // a real file — is refused rather than truncated.
   const flags = change.existed
     ? fsConstants.O_WRONLY | fsConstants.O_CREAT | fsConstants.O_TRUNC | O_NOFOLLOW
     : fsConstants.O_WRONLY | fsConstants.O_CREAT | fsConstants.O_EXCL | O_NOFOLLOW;
+  const mode = change.executable ? 0o755 : 0o644;
+  const target = await checkFileMutation(context, repoDir, change.path);
   let handle;
+  requireInstallationRoomMutationTarget(context, target);
   try {
-    handle = await fs.open(
-      path.join(repoDir, change.path),
-      flags,
-      change.executable ? 0o755 : 0o644
-    );
-  } catch (err) {
-    if (!change.existed && (err as NodeJS.ErrnoException).code === 'EEXIST') {
+    handle = await fs.open(target, flags, mode);
+  } catch (error) {
+    if (!change.existed && (error as NodeJS.ErrnoException)?.code === 'EEXIST') {
       throw new RoomError(
         'ROOM_FILE_EXISTS',
         `This room already has a file at \`${change.path}\` under another spelling. Replace it, or choose another name.`
       );
     }
-    throw err;
+    throw error;
   }
-  if (!change.existed) onCreated();
+  let failed = false;
+  let firstCause: unknown;
+  let stream: Readable | undefined;
+  let streamSettled: Promise<{ failed: boolean; cause?: unknown }> | undefined;
   try {
+    if (!change.existed) onCreated();
     const content = change.content as RoomFileContent;
-    if (Buffer.isBuffer(content)) await handle.writeFile(content);
-    else if ('file' in content) await handle.writeFile(createReadStream(content.file));
-    // One blob in memory at a time, at the moment it is written.
-    else await handle.writeFile(await readBlobBytes(repoDir, content.blob, ceiling));
-    // `O_CREAT`'s mode only applies to a file that did not exist; a moved file
-    // replacing nothing is new, but say it explicitly so the bit is certain.
-    if (change.executable) await handle.chmod(0o755);
+    const bytes = Buffer.isBuffer(content)
+      ? content
+      : 'blob' in content
+        ? await readBlobBytes(repoDir, content.blob, ceiling)
+        : undefined;
+    // Opening the staged input is also owned until its actual close; it is not a mutation of the room.
+    if (!Buffer.isBuffer(content) && ('file' in content || 'upload' in content)) {
+      stream =
+        'upload' in content
+          ? await openRoomFileUploadSource(content.upload, context, content.size)
+          : createReadStream(content.file);
+      streamSettled = finished(stream).then(
+        () => ({ failed: false }),
+        (cause: unknown) => ({ failed: true, cause })
+      );
+    }
+    await checkFileMutation(context, repoDir, change.path);
+    requireInstallationRoomMutationTarget(context, target);
+    await handle.writeFile(stream ?? bytes!);
+    if (change.executable) {
+      await checkFileMutation(context, repoDir, change.path);
+      requireInstallationRoomMutationTarget(context, target);
+      await handle.chmod(0o755);
+    }
+  } catch (error) {
+    failed = true;
+    firstCause = error;
   } finally {
-    await handle.close();
+    if (stream && streamSettled) {
+      try {
+        stream.destroy();
+        const result = await streamSettled;
+        if (result.failed && !failed) {
+          failed = true;
+          firstCause = result.cause;
+        }
+      } catch (error) {
+        if (!failed) {
+          failed = true;
+          firstCause = error;
+        }
+      }
+    }
+    // A failed/retired fence must never leak a descriptor; closing is unconditional owned cleanup.
+    try {
+      await handle.close();
+    } catch (error) {
+      if (!failed) {
+        failed = true;
+        firstCause = error;
+      }
+    }
   }
+  if (failed) throw firstCause;
 }
 
-/**
- * One blob's bytes, exactly — for carrying a file to a new path.
- *
- * @param repoDir - The room's main checkout.
- * @param sha - The blob.
- * @param ceiling - The room home directory git's search may not climb past.
- */
+/** One finite blob read, preserving raw bytes and the original file-reader output bound. */
 export function readBlobBytes(repoDir: string, sha: string, ceiling: string): Promise<Buffer> {
-  return runGitRaw(['cat-file', 'blob', sha], repoDir, ceiling, {
-    // A blob here is at most the room's own file cap, which may be larger than
-    // the shared output default.
-    maxBuffer: 256 * 1024 * 1024,
-  });
+  return readRoomFileBlobRaw(repoDir, sha, ceiling);
 }
 
-/**
- * One commit, in the shape a room's file surfaces describe provenance.
- *
- * NUL-separated, because the one free-text field that could hold a separator —
- * the author name — cannot hold a NUL.
- *
- * @param repoDir - The room's main checkout.
- * @param sha - The commit.
- * @param ceiling - The room home directory git's search may not climb past.
- */
+/** One finite provenance read; no unowned arbitrary command escapes this module. */
 export async function describeCommit(
   repoDir: string,
   sha: string,
   ceiling: string
 ): Promise<RoomFileCommit> {
-  const out = (
-    await runGitRaw(['log', '-1', '--format=%H%x00%an%x00%aI%x00%s', sha], repoDir, ceiling)
-  ).toString('utf-8');
+  const out = (await readRoomFileCommitRaw(repoDir, sha, ceiling)).toString('utf-8');
   const [commit = sha, author = '', at = '', subject = ''] = out.replace(/\n$/, '').split('\0');
   return { sha: commit, author, at, subject };
 }

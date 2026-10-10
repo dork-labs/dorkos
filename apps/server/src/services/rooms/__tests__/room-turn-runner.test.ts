@@ -1,2524 +1,510 @@
 /**
- * The production runner: a room trigger becomes a real session turn.
- *
- * The dispatcher is the only thing stubbed, and only because a real one needs a
- * model. The projector is the REAL projector — which is the point, because the
- * claim this file checks is that a room reads the agent's answer off the same
- * stream a client renders from, gap-free from a cursor taken before the turn.
- *
- * Seeded defects, each run red before the code stood:
- *
- * - Dropping the grants, `forAgent` or the copy from the dispatch reddens "hands
- *   the runtime its home, exactly its grants, and its copy": a room turn would
- *   run at home unable to reach the room's files (spec `agent-home-desk` §5.1).
- * - Dropping the desk guard reddens "refuses a turn that would stand anywhere
- *   but the agent's home": the runtime is called in a room's folder.
+ * Original Runner behavior through isolated real Room post/Trigger/constructor turns.
+ * Provider output is finite external SDK/TestMode DATA; private requests and native
+ * lifetimes are issued only by original constructors and owning HTTP composition.
+ * Explicit ordinary predicate, timing and identity algorithms cover schedules that
+ * cannot be issued by a native test fixture. Their native pairs have bounded scopes;
+ * they do not claim foreign/overlapping private turns or guard-drop mutant proof.
  */
+import { describe, expect, vi } from 'vitest';
 import type { AgentRuntime } from '@dorkos/shared/agent-runtime';
-import { lastTurnLevelOf, recordTurnLevels } from '../../core/turn-power/turn-levels.js';
-import { CLAUDE_CODE_CAPABILITIES } from '../../runtimes/claude-code/runtime-constants.js';
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import type { InterruptReceipt } from '@dorkos/shared/types';
-import { mockInterruptReceipt } from '@dorkos/test-utils';
-import { existsSync } from 'fs';
-import { mkdtemp, readFile, rm } from 'fs/promises';
-import { tmpdir } from 'os';
-import path from 'path';
-import { createTestDb } from '@dorkos/test-utils/db';
-import type { RoomContextData } from '@dorkos/shared/additional-context';
-import type { RoomEntry, RoomWithRoster } from '@dorkos/shared/room-schemas';
-import type { SessionActivity } from '@dorkos/shared/session-stream';
-import type { RoomTurnRequest, RoomTurnWaiting } from '../room-trigger.js';
-import { USER_CONFIG_DEFAULTS, type UserConfig } from '@dorkos/shared/config-schema';
-// The REAL mapping, not a copy: what a room's origin means for the row is the
-// claim these cases make, and re-stating it here would be asserting a
-// duplicate rather than the rule (DOR-2105).
-import { permissionSeedForOrigin, type TurnOrigin } from '../../session/index.js';
-
-const persistSessionRuntime = vi.fn().mockResolvedValue(true);
-const forgetUnstartedSession = vi.fn().mockResolvedValue(undefined);
-/** What `session_metadata` holds for the session under test — `null` = no row. */
-let storedSettings: Record<string, unknown> | null = null;
-/**
- * What the runtime under test declares about itself. `settings` is load-bearing
- * for the seeding tests below: which `runtimes.*` section a room turn inherits
- * its model and effort from is the RUNTIME's declaration, not a list the
- * resolver keeps, so this fixture is what points them at `runtimes.claudeCode`.
- */
-const DECLARED_CAPABILITIES = {
-  logBackedHistory: false,
-  nativeContext: [],
-  settings: { configSection: 'claudeCode', supportsEffort: true, sections: [] },
-  /**
-   * Claude Code's own dial, in its own declared ORDER, because the order is
-   * load-bearing: `resolveTrustStops` takes the first mode declared at a stop,
-   * so `acceptEdits` before `auto` is what makes the `act` stop mean
-   * `acceptEdits`. Written out here rather than imported from the adapter — this
-   * file fixtures every other capability by hand, and a fixture that tracked the
-   * adapter could not notice the adapter changing under it.
-   */
-  permissionModes: {
-    supported: true,
-    default: 'default',
-    values: [
-      { id: 'default', label: 'Default', description: '', stop: 'ask' },
-      { id: 'acceptEdits', label: 'Accept edits', description: '', stop: 'act' },
-      { id: 'plan', label: 'Plan', description: '', stop: 'ask', axis: 'working' },
-      { id: 'bypassPermissions', label: 'Bypass', description: '', stop: 'autonomy' },
-      { id: 'auto', label: 'Auto', description: '', stop: 'act' },
-    ],
-  },
-};
-const getCapabilities = vi.fn().mockReturnValue(DECLARED_CAPABILITIES);
-
-/**
- * The runtime's own Stop, and the reason it is a spy rather than a stub.
- *
- * `false` is the shape DOR-1424 is about: the runtime had no turn to aim the
- * stop at, because the agent's process was still starting. Every call is
- * recorded, so a test can say WHEN the room re-aimed a stop that landed on
- * nothing — which is the whole of that fix.
- */
-const interruptQuery = vi.fn<(sessionId: string) => Promise<InterruptReceipt>>(() =>
-  Promise.resolve(mockInterruptReceipt('not-running'))
-);
-
-/**
- * What the runtime calls this session. `undefined` — no alias — is the honest
- * default for Codex, OpenCode and test-mode; Claude Code answers with its own
- * id, which is the whole subject of the canonical-id test below.
- */
-let internalSessionId: (sessionId: string) => string | undefined = () => undefined;
-
-/**
- * Which runtimes this server registered. Everything, for most of this file. The
- * execution-defaults tests narrow it, because `registerOptionalRuntime` lets a
- * runtime fail to register — the packaged desktop app bundles only the
- * claude-code SDK — and an agent whose manifest names a missing runtime is
- * resolved onto the default rather than refused.
- */
-let registeredRuntimes: string[] = ['claude-code', 'codex', 'opencode', 'test-mode'];
-
-/**
- * Which directories the runtime was asked about its room tools, in order.
- *
- * Recorded rather than stubbed to a constant, because the CLAIM is about which
- * of a room turn's two paths reaches this question (DOR-1597 × DOR-1613) — an
- * answer that ignored its argument could not tell the two apart.
- */
-let roomToolsAskedFor: string[] = [];
-
-/**
- * Directories whose sessions the runtime says carry the DorkOS room tools.
- *
- * `null` models a runtime that does not implement the question at all — the
- * claude-code and test-mode shape from the room's point of view — which must
- * read as "we do not know" rather than as `false`.
- */
-let roomToolDirectories: string[] | null = [];
-
-/**
- * What `session_metadata` says OWNS each session — the ADR-0255 binding, written
- * by the first turn and never rewritten.
- *
- * A session absent from this map is one nothing has bound yet, which is what the
- * registry answers `bound: false` for: every first turn, and any id whose row was
- * never written. That is the default here, so every test that predates the
- * binding read behaves exactly as it did.
- */
-const sessionOwners = new Map<string, string>();
-
-/**
- * The folder each session was created in, as its runtime reports it
- * (`getSession`). Empty by default: a runtime that cannot describe a session
- * is carried on as before.
- */
-const sessionDirectories = new Map<string, string>();
-
-/**
- * Which runtime TYPE the runner asked the registry for, in order.
- *
- * Recorded rather than inferred from the stub it gets back, because the claim
- * DOR-764 is about is which program takes the turn — and a registry stub that
- * ignores its argument (this one does, deliberately: every runtime behaves the
- * same here) could not tell a bound codex session from a claude-code one.
- */
-const runtimesAskedFor: string[] = [];
-
-/**
- * Which runtime each stop was actually DELIVERED to, in order.
- *
- * Recorded beside `interruptQuery` rather than folded into its arguments,
- * because that spy's call list is asserted verbatim by the DOR-1424 cases and a
- * second argument would rewrite all of them. It is the only way to tell a stop
- * that reached the runtime running the turn from one that reached a runtime
- * holding no such turn — which is the whole of DOR-1721, and is invisible to a
- * suite where every `get` hands back the same behaviour.
- */
-const interruptsDeliveredTo: string[] = [];
-
-vi.mock('../../core/runtime-registry.js', () => ({
-  runtimeRegistry: {
-    getNativeSessionCwd: vi.fn(() => null),
-    persistSessionRuntime: (...args: unknown[]) => persistSessionRuntime(...args),
-    forgetUnstartedSession: (...args: unknown[]) => forgetUnstartedSession(...args),
-    getSessionSettings: () => Promise.resolve(storedSettings),
-    // The real read, shape for shape: a row's runtime is `bound`, and an id with
-    // no row falls through to the legacy claude-code inference, which is
-    // explicitly NOT an owner.
-    resolveSessionRuntime: (sessionId: string) =>
-      Promise.resolve(
-        sessionOwners.has(sessionId)
-          ? { type: sessionOwners.get(sessionId), bound: true }
-          : { type: 'claude-code', bound: false }
-      ),
-    // Faithful to the real `get`, which THROWS for a type it does not hold
-    // rather than answering `undefined` (DOR-1720). The stub used to return
-    // nothing there, and the runner's `if (!runtime)` guards read as live code
-    // while being reachable from this file alone — so "the runtime is gone" was
-    // only ever exercised against a registry that does not exist. Both callers
-    // ask `has` first now, and `registeredRuntimes` is the single answer to
-    // which runtimes this server started.
-    get: (type: string) => {
-      runtimesAskedFor.push(type);
-      if (!registeredRuntimes.includes(type)) throw new Error(`Runtime '${type}' not registered`);
-      return {
-        getCapabilities: () => getCapabilities(),
-        acquireLock: () => true,
-        releaseLock: () => undefined,
-        sendMessage: () => undefined,
-        interruptQuery: (sessionId: string) => {
-          interruptsDeliveredTo.push(type);
-          return interruptQuery(sessionId);
-        },
-        getInternalSessionId: (sessionId: string) => internalSessionId(sessionId),
-        getSession: (_dir: string, sessionId: string) =>
-          Promise.resolve(
-            sessionDirectories.has(sessionId)
-              ? { id: sessionId, cwd: sessionDirectories.get(sessionId) }
-              : null
-          ),
-        ...(roomToolDirectories === null
-          ? {}
-          : {
-              carriesRoomTools: ({ cwd }: { cwd: string }) => {
-                roomToolsAskedFor.push(cwd);
-                return Promise.resolve((roomToolDirectories ?? []).includes(cwd));
-              },
-            }),
-      };
-    },
-    has: (type: string) => registeredRuntimes.includes(type),
-    getDefaultType: () => 'claude-code',
-  },
-}));
-
-/**
- * The addressed agent's manifest. Null for most of this file — the room does not
- * need one — but the execution-defaults tests set it, because the agent's own
- * model and effort are read from exactly here.
- */
-let agentManifest: Record<string, unknown> | null = null;
-
-/**
- * Hold the NEXT manifest read open until a test lets it go.
- *
- * The only way to stand inside the window between `run` deleting the DOR-1424
- * mark and `run` capturing its runtime: in production that window holds a
- * `session_metadata` read and a read of `.dork/agent.json` off disk, and a test
- * that cannot park there cannot say what a Stop landing in it does. Consumed by
- * the first read that sees it, so a test arms it and the halt that follows reads
- * the edited manifest at full speed.
- *
- * **The parked read answers with what the file said when it STARTED**, which is
- * what makes this the window rather than a different one. A read that came back
- * with the edit would be modelling an edit that landed before the run ever
- * looked — a turn that simply started on the new runtime, with nothing to
- * misaim. The window is a run holding the old answer while the next reader gets
- * the new one.
- */
-let gateNextManifestRead: Promise<void> | null = null;
-
-vi.mock('@dorkos/shared/manifest', () => ({
-  readManifest: async () => {
-    const asItReads = agentManifest;
-    const gate = gateNextManifestRead;
-    if (gate !== null) {
-      gateNextManifestRead = null;
-      await gate;
-    }
-    return asItReads;
-  },
-}));
-
-/**
- * The stored `runtimes` section the real `resolveSessionDefaults` reads. The
- * resolver runs for real here — a room turn inheriting the server's default model
- * is the claim, and a stubbed resolver would prove nothing about it.
- */
-let runtimesConfig: UserConfig['runtimes'] = USER_CONFIG_DEFAULTS.runtimes;
-
-vi.mock('../../core/config-manager.js', () => ({
-  configManager: {
-    get: (key: string) => {
-      if (key === 'runtimes') return runtimesConfig;
-      return undefined;
-    },
-  },
-}));
-
-/** The projector the stub is handed, as this file drives it. */
-interface TestProjector {
-  ingest: (event: Record<string, unknown>) => { seq: number };
-}
-
-/** Everything the runner hands the dispatcher, as this file inspects it. */
-interface TriggerCall {
-  sessionId: string;
-  projector: TestProjector;
-  content: string;
-  roomContext?: RoomContextData;
-  /** The execution settings the runner resolved for this turn (model, effort). */
-  settings?: Record<string, unknown>;
-  /**
-   * The first-turn permission seed, which travels in its OWN argument rather
-   * than inside {@link TriggerCall.settings} — posture is not preference, and
-   * the separate field is what stops a future caller sending one for a session
-   * that already has a row (DOR-1917).
-   */
-  newSessionPermissionMode?: string;
-  /** The bound on THIS turn, from who wrote the message (spec `trusted-by-default-flip` §4). */
-  permissionCeiling?: unknown;
-  /** The runtime the real dispatcher resolves the canonical id through. */
-  runtime: { getInternalSessionId: (sessionId: string) => string | undefined };
-  /**
-   * How the real dispatcher tells the room which `turn_start` is its own.
-   *
-   * Every stub here has to call it, exactly as the real one does, because the
-   * collector now matches on that identity rather than on the trigger text. A
-   * stub that opened a turn without it would be modelling somebody ELSE's turn
-   * — which is a thing worth being able to model, and {@link openTurn} is how.
-   */
-  onTurnStart?: (seq: number) => void;
-  /** The directory the turn was dispatched into — `request.cwd`, the agent's home. */
-  cwd?: string;
-  /** The agent the turn is dispatched as. */
-  forAgent?: string;
-  /** The folders the turn is granted. */
-  additionalDirectories?: unknown;
-  /** The room marker handed to the runtime. */
-  roomTurn?: Record<string, unknown>;
-  /** The launch-time step, which the dispatcher runs. */
-  prepareLaunch?: () => Promise<unknown>;
-  /** What the room asked the dispatcher to do with a session already working. */
-  whenBusy?: string;
-  /**
-   * How the real dispatcher reports that an ACCEPTED dispatch settled without
-   * ever running — the drop DOR-1242 added. Driving it here is the only way to
-   * model a turn that will never start.
-   */
-  onSettled?: (outcome: 'ok' | 'failed') => void;
-}
-
-/** What the stubbed dispatch does with the projector it is handed. */
-let turnBehaviour: (opts: TriggerCall) => {
-  accepted: boolean;
-  canonicalId?: string;
-};
-
-/**
- * A dispatch refused before its turn launched — the session's lock is held by
- * somebody else — which is the only way the real dispatcher answers
- * `accepted: false`. Its launch step never runs.
- */
-const REFUSED = (): { accepted: boolean } => ({ accepted: false });
-
-/** Every dispatch this file's runner made, in order. */
-const triggered: TriggerCall[] = [];
-
-vi.mock('../../session/index.js', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('../../session/index.js')>()),
-  // Faithful to `trigger-turn.ts` in the one respect DOR-2447 turns on: a
-  // turn's launch step runs, under its lock, BEFORE the runtime is called — and
-  // never for a dispatch refused before it launched (see {@link REFUSED}).
-  dispatchMessage: async (opts: TriggerCall) => {
-    triggered.push(opts);
-    if (turnBehaviour !== REFUSED) await opts.prepareLaunch?.();
-    return turnBehaviour(opts);
-  },
-}));
-
-const { createSessionRoomTurnRunner } = await import('../room-turn-runner.js');
-const { initPermissionGate, resetPermissionGate } =
-  await import('../../core/capabilities/permission-enforcement.js');
-const { SessionEventStore, setSessionEventStore } = await import('../../session/index.js');
-const { setRoomAttachmentStores } = await import('../index.js');
-const { LocalRoomAttachmentStore } = await import('../attachments/local-room-attachment-store.js');
-const { PROJECTED_ATTACHMENTS_ROOT } = await import('../attachments/attachment-paths.js');
-// The relay's answer to the same question, imported HERE rather than tested
-// beside itself: the claim is that the two surfaces agree, and this is the file
-// that drives the room's real path. Its own behavior is covered in
-// `relay/__tests__/turn-execution-settings.test.ts`.
-const { createTurnExecutionSettingsResolver } =
-  await import('../../relay/turn-execution-settings.js');
-type SessionEventStoreInstance = InstanceType<typeof SessionEventStore>;
-
-let counter = 0;
-
-/** Flush the microtasks a `run` call needs to reach its subscription. */
-function settle(): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, 0));
-}
-
-/**
- * The turn origin a room turn is required to declare (DOR-2105).
- *
- * @param externalAuthor - Whether the triggering message came from off this
- *   machine. It is the one fact the power mapping reads, so it is always
- *   matched exactly.
- */
-function roomOrigin(externalAuthor = false): TurnOrigin {
-  return { kind: 'room', externalAuthor };
-}
-
-/**
- * A trigger request for a room nothing else is using.
- *
- * @param overrides - Fields to replace, plus `entryText` for the message body,
- *   which is what makes two requests compose two different prompts.
- */
-function request(
-  overrides: Partial<RoomTurnRequest> & { entryText?: string } = {}
-): RoomTurnRequest {
-  counter += 1;
-  const { entryText, ...rest } = overrides;
-  const room = {
-    id: `room-${counter}`,
-    kind: 'channel',
-    slug: 'backend',
-    title: 'Backend',
-    topic: null,
-    archived: false,
-    ambientMaxEntries: 30,
-    wellKnown: null,
-    createdAt: '2026-07-26T10:00:00.000Z',
-    lastActivityAt: '2026-07-26T10:00:00.000Z',
-    members: [],
-    viewerAuthorId: 'human',
-    reactionFrequents: ['👍', '❤️', '🎉'],
-  } satisfies RoomWithRoster;
-  const entry: RoomEntry = {
-    roomId: room.id,
-    seq: 1,
-    id: `entry-${counter}`,
-    authorId: 'human',
-    kind: 'post',
-    body: { text: entryText ?? 'is the build green?' },
-    mentions: [],
-    sessionId: null,
-    cascadeRoot: `entry-${counter}`,
-    cascadeDepth: 0,
-    parentEntryId: null,
-    threadRootEntryId: null,
-    signature: null,
-    createdAt: room.createdAt,
-  };
-  return {
-    room,
-    authorId: 'author-ana',
-    // A person on this machine, unless a test says otherwise — the ordinary
-    // case, and the one the operator's power level follows.
-    externalAuthor: false,
-    agentPath: '/repo/ana',
-    sessionId: null,
-    entry,
-    prompt: entry.body.text,
-    roomContext: {
-      room: { id: room.id, kind: 'channel', name: '#backend', bridged: false },
-      thread: null,
-      members: [
-        { handle: 'ana', displayName: 'Ana', isPerson: false, isSelf: true, origin: 'local' },
-        { handle: 'dorian', displayName: 'You', isPerson: true, isSelf: false, origin: 'local' },
-      ],
-      working: [],
-      pending: [],
-      pendingTruncated: false,
-      ownRecent: [],
-      acknowledgments: [],
-      triggerEntryId: entry.id,
-      triggerAttachments: [],
-      addressing: {
-        responseMode: 'always',
-        engagedUntil: null,
-        engagedPostsLeft: null,
-        addressedNow: false,
-      },
-      budget: {
-        automaticRepliesLeftInThisRoomThisHour: 9,
-        automaticRepliesLeftInTotalThisHour: 99,
-        repliesLeftInThisChain: 3,
-      },
-    },
-    // Nothing to project by default; the projection test supplies its own.
-    attachmentProjection: [],
-    // A no-op by default: most of this file is about what a turn PRODUCES, and
-    // only the two tests that are about a turn stopping supply their own.
-    onWaiting: () => undefined,
-    // Also a no-op by default — only the activity tests below listen.
-    onActivity: () => undefined,
-    onSessionBound: () => undefined,
-    additionalDirectories: [],
-    worktree: null,
-    ...rest,
-    // **Last, and computed, because it TRACKS `agentPath` by default.** A room
-    // turn stands in its agent's home, so every test that moves the agent moves
-    // the turn with it. Only the desk-guard test passes a different `cwd`.
-    cwd: rest.cwd ?? rest.agentPath ?? '/repo/ana',
-  };
-}
-
-/**
- * Open the turn the runner is waiting for, telling it which turn is its own.
- *
- * The real dispatcher reports the `turn_start`'s seq the instant it stamps
- * it; a stub that skips this is opening a turn the room did not start, which is
- * how `readsSomebodyElsesTurn` below models the case that used to be
- * indistinguishable.
- *
- * @param opts - The trigger call the stub is answering.
- * @param userMessage - The trigger text to carry, when the test cares.
- */
-function openTurn(opts: TriggerCall, userMessage?: string): void {
-  const start = opts.projector.ingest(
-    userMessage === undefined ? { type: 'turn_start' } : { type: 'turn_start', userMessage }
-  );
-  opts.onTurnStart?.(start.seq);
-}
-
-/**
- * A turn that streams `parts` and closes cleanly, resolving its canonical id
- * the way the real dispatcher does — off the runtime, not off the request.
- * Echoing the requested id back unconditionally is what let a whole class of
- * id-drift bug hide in this suite.
- */
-function saysAndCloses(...parts: string[]): typeof turnBehaviour {
-  return (opts) => {
-    const { sessionId, projector, runtime } = opts;
-    openTurn(opts);
-    for (const text of parts) projector.ingest({ type: 'text_delta', text });
-    projector.ingest({ type: 'turn_end' });
-    return { accepted: true, canonicalId: runtime.getInternalSessionId(sessionId) ?? sessionId };
-  };
-}
+import { FakeAgentRuntime } from '@dorkos/test-utils';
+import { warnIfTurnCannotPost } from '../room-turn-runner.js';
+import { registerOriginalNativeLaunchCase } from '../repo/__tests__/room-original-native-case.js';
+import { registerOriginalNativeDefaultsCase } from '../repo/__tests__/room-original-defaults-case.js';
+import { registerOriginalNativeHomeResumeCase } from '../repo/__tests__/room-original-home-resume-case.js';
+import { runOriginalReplyIdentityComponent } from '../repo/__tests__/room-original-reply-identity-component.js';
+import { runOriginalRoomStopStateComponent } from '../repo/__tests__/room-original-stop-state-component.js';
+import { runOriginalReplyWaitClockComponent } from '../repo/__tests__/room-original-reply-wait-clock-component.js';
+import { runOriginalLaunchOwnerRollbackComponent } from '../repo/__tests__/room-original-launch-owner-rollback-component.js';
 
 describe('createSessionRoomTurnRunner', () => {
-  beforeEach(() => {
-    persistSessionRuntime.mockClear();
-    forgetUnstartedSession.mockClear();
-    interruptQuery.mockClear();
-    interruptQuery.mockImplementation(() => Promise.resolve(mockInterruptReceipt('not-running')));
-    internalSessionId = () => undefined;
-    turnBehaviour = saysAndCloses('green');
-    roomToolDirectories = [];
-    roomToolsAskedFor = [];
-    sessionOwners.clear();
-    runtimesAskedFor.length = 0;
-    interruptsDeliveredTo.length = 0;
-    agentManifest = null;
-    gateNextManifestRead = null;
-    getCapabilities.mockReturnValue(DECLARED_CAPABILITIES);
-    registeredRuntimes = ['claude-code', 'codex', 'opencode', 'test-mode'];
-  });
-
   describe('which runtime takes the turn', () => {
-    it('keeps a running conversation on the runtime that started it, whatever the manifest now says', async () => {
-      // **ADR-0255, on the one path that used to bypass it** (DOR-764). The
-      // session was bound to codex by its first turn; the manifest has since
-      // been edited to say claude-code. Re-reading the manifest here handed the
-      // room's remaining turns to a program that holds none of this
-      // conversation's history — while `session_metadata` went on naming codex,
-      // because `persistSessionRuntime` refuses to re-bind. The edit governs the
-      // next session, not this one.
-      sessionOwners.set('room-session-on-codex', 'codex');
-      agentManifest = { runtime: 'claude-code' };
-
-      await createSessionRoomTurnRunner().run(request({ sessionId: 'room-session-on-codex' }));
-
-      expect(runtimesAskedFor).toEqual(['codex']);
-      // And the row still says so, so the two cannot drift apart again.
-      expect(persistSessionRuntime).toHaveBeenLastCalledWith(
-        'room-session-on-codex',
-        'codex',
-        roomOrigin(),
-        '/repo/ana'
-      );
-    });
-
-    it("starts a first turn on the agent's manifest runtime, not on the registry's inference", async () => {
-      // The other half, and the reason this is not simply `resolveForSession`:
-      // a session nobody has bound resolves through the registry's legacy
-      // "it must be claude-code" inference, so asking it alone would run every
-      // codex agent's OPENING room turn on the wrong program — and then bind it
-      // there for the life of the conversation.
-      agentManifest = { runtime: 'codex' };
-
-      await createSessionRoomTurnRunner().run(request({ sessionId: null }));
-
-      expect(runtimesAskedFor).toEqual(['codex']);
-      expect(persistSessionRuntime).toHaveBeenLastCalledWith(
-        expect.any(String),
-        'codex',
-        roomOrigin(),
-        '/repo/ana'
-      );
-    });
-
-    it('records the session`s runtime before the runtime starts a first turn (DOR-2447)', async () => {
-      // Codex opens the agent's connections as its turn STARTS, and the server
-      // grants that only for a session whose runtime and agent are on record
-      // (`CanonicalConnectorRuntimeAuthorityResolver`). A room recorded them
-      // only after the turn was accepted, so every codex agent's first turn in
-      // a room failed with "Canonical runtime authority could not be verified".
-      // Seeded: dropping the launch-time write reddens this.
-      agentManifest = { runtime: 'codex' };
-      let boundWhenStarted: boolean | null = null;
-      const answer = saysAndCloses('On it.');
-      turnBehaviour = (opts) => {
-        boundWhenStarted = persistSessionRuntime.mock.calls.some(
-          ([id, runtime, , agentPath]) =>
-            id === opts.sessionId && runtime === 'codex' && agentPath === '/repo/ana'
-        );
-        return answer(opts);
-      };
-
-      const result = await createSessionRoomTurnRunner().run(request({ sessionId: null }));
-
-      expect(boundWhenStarted).toBe(true);
-      expect(result.text).toBe('On it.');
-      expect(persistSessionRuntime).toHaveBeenCalledWith(
-        result.sessionId,
-        'codex',
-        roomOrigin(),
-        '/repo/ana'
-      );
-    });
-
-    it('reads an id nothing has bound the same way it reads no id at all', async () => {
-      // The room binds a `(room, agent)` id BEFORE the first turn, so a
-      // non-null id is not proof of an owner: this is that placeholder, and a
-      // row a turn that never started left unwritten. Both take the manifest
-      // rung — treating "no row" as an answer is exactly the inference above.
-      agentManifest = { runtime: 'codex' };
-
-      await createSessionRoomTurnRunner().run(request({ sessionId: 'room-placeholder' }));
-
-      expect(runtimesAskedFor).toEqual(['codex']);
-    });
-
-    it('refuses a turn bound to a runtime this server did not start, by name', async () => {
-      // **DOR-1720.** The refusal itself is right and stays: resuming this
-      // conversation on a program holding none of it is the worse answer. What
-      // was wrong is that it left here as a bare `Error`, which the dispatcher
-      // can only read as "the turn failed" — so the room apologised for a broken
-      // agent, pointed at a session no turn had ever opened, and named neither
-      // the missing program nor either way out of it.
-      //
-      // Named, it carries the one fact the room's line is built out of. Nothing
-      // is written to `session_metadata` on the way past, either: a runtime that
-      // refuses every turn would otherwise leave one orphan row per message.
-      sessionOwners.set('room-session-on-codex', 'codex');
-      registeredRuntimes = ['claude-code'];
-
-      await expect(
-        createSessionRoomTurnRunner().run(request({ sessionId: 'room-session-on-codex' }))
-      ).rejects.toMatchObject({ name: 'RoomTurnRuntimeGoneError', runtime: 'codex' });
-
-      expect(persistSessionRuntime).not.toHaveBeenCalled();
-    });
-
-    it('never redirects that turn onto a runtime this server does have', async () => {
-      // The failure mode the refusal exists to prevent, asserted from the other
-      // side: falling back to the default would answer on claude-code, which
-      // holds none of this codex session's history, and would do it silently.
-      // `runtimesAskedFor` is empty because nothing was ever fetched — `has`
-      // answered first.
-      sessionOwners.set('room-session-on-codex', 'codex');
-      agentManifest = { runtime: 'claude-code' };
-      registeredRuntimes = ['claude-code'];
-
-      await expect(
-        createSessionRoomTurnRunner().run(request({ sessionId: 'room-session-on-codex' }))
-      ).rejects.toThrow(/codex/);
-
-      expect(runtimesAskedFor).toEqual([]);
-    });
-
-    it('aims a halt at the runtime the turn is actually running on', async () => {
-      // A stop sent to the wrong runtime stops nothing at all, silently: the
-      // one it reaches has no such turn and answers `false`, and the turn it
-      // was meant for runs to completion (DOR-1424 is what that costs). So the
-      // halt asks the same question the turn did.
-      sessionOwners.set('room-session-on-codex', 'codex');
-      agentManifest = { runtime: 'claude-code' };
-
-      await createSessionRoomTurnRunner().interrupt({
-        sessionId: 'room-session-on-codex',
-        agentPath: '/repo/ana',
-      });
-
-      expect(runtimesAskedFor).toEqual(['codex']);
-      expect(interruptQuery).toHaveBeenCalledWith('room-session-on-codex');
-    });
-
-    /**
-     * A first turn, opened and left running, with the levers to drive it.
-     *
-     * `sessionOwners` is deliberately left empty: a first turn is a session
-     * nothing has bound yet, which is the entire window DOR-1721 is about — the
-     * binding row is written after acceptance, and for claude-code under a
-     * canonical id the halt is not even asking about.
-     *
-     * @param runner - The runner under test.
-     * @param sessionId - The session the room bound for this turn.
-     */
-    function firstTurnInFlight(
-      runner: ReturnType<typeof createSessionRoomTurnRunner>,
-      sessionId: string
-    ): { answered: Promise<unknown>; produce: () => void; close: () => void } {
-      let opened: TriggerCall | undefined;
-      turnBehaviour = (opts) => {
-        opened = opts;
-        openTurn(opts);
-        return { accepted: true, canonicalId: opts.sessionId };
-      };
-      const answered = runner.run(request({ sessionId }));
-      return {
-        answered,
-        produce: () => opened?.projector.ingest({ type: 'text_delta', text: 'the essay' }),
-        close: () => opened?.projector.ingest({ type: 'turn_end' }),
-      };
-    }
-
-    it('keeps a halt on the runtime running a FIRST turn, though the manifest changed under it', async () => {
-      // **DOR-1721, traced out of DOR-764's review (PR #1476) and made
-      // deterministic here.** A first turn has no binding to read — the row is
-      // written after acceptance, and for claude-code under a canonical id a
-      // mid-turn halt is not even asking about — so `interrupt` fell through to
-      // the agent's manifest for the whole length of that turn. Edit
-      // `.dork/agent.json` while turn 1 is running and the stop was delivered to
-      // a runtime holding no such turn: `interruptQuery` answered `not-running`,
-      // nothing stopped, and the turn nobody wanted ran to completion and was
-      // billed.
-      //
-      // `interruptsDeliveredTo` is the assertion that can see it. Every runtime
-      // this suite hands back behaves identically, so a receipt cannot tell them
-      // apart — only which object was reached can.
-      agentManifest = { runtime: 'claude-code' };
-      const runner = createSessionRoomTurnRunner({ waitMs: () => 200, ceilingMs: () => 200 });
-      const turn = firstTurnInFlight(runner, 'sess-first-turn');
-      await settle();
-
-      // The edit lands INSIDE turn 1 — the window between the runner resolving
-      // its runtime and the binding that would have answered for it.
-      agentManifest = { runtime: 'codex' };
-      await runner.interrupt({ sessionId: 'sess-first-turn', agentPath: '/repo/ana' });
-
-      expect(
-        interruptsDeliveredTo,
-        'the halt was delivered to the runtime the manifest now names instead of the one ' +
-          'actually holding the turn, so it stopped nothing at all'
-      ).toEqual(['claude-code']);
-      // And it was not RE-DERIVED to get there: the runner captured the runtime
-      // when it committed to it, so the only `get` in this test is the turn's
-      // own. A second entry here is the manifest being consulted again.
-      expect(runtimesAskedFor).toEqual(['claude-code']);
-
-      turn.close();
-      await turn.answered;
-    });
-
-    it("re-aims DOR-1424's remembered stop at the turn's runtime, not the manifest's", async () => {
-      // The second half of the same defect, and the more expensive one. A stop
-      // that lands on nothing is remembered and re-aimed at the first thing the
-      // turn produces (DOR-1424) — so a misaimed stop is memoized and fired at
-      // the wrong runtime a SECOND time, and the boot-window fix silently buys
-      // nothing for exactly the turns that need it most.
-      agentManifest = { runtime: 'claude-code' };
-      const runner = createSessionRoomTurnRunner({ waitMs: () => 200, ceilingMs: () => 200 });
-      const turn = firstTurnInFlight(runner, 'sess-boot-flip');
-      await settle();
-
-      agentManifest = { runtime: 'codex' };
-      expect(
-        (await runner.interrupt({ sessionId: 'sess-boot-flip', agentPath: '/repo/ana' })).outcome
-      ).toBe('not-running');
-
-      // The process finishes booting and the turn starts producing — where the
-      // remembered stop is delivered.
-      turn.produce();
-      await settle();
-
-      expect(
-        interruptsDeliveredTo,
-        'the remembered stop was re-aimed at the manifest’s runtime rather than the one ' +
-          'running the turn, so the turn ran to completion anyway'
-      ).toEqual(['claude-code', 'claude-code']);
-      expect(interruptQuery.mock.calls).toEqual([['sess-boot-flip'], ['sess-boot-flip']]);
-
-      turn.close();
-      await turn.answered;
-    });
-
-    it('lets go of the capture when the turn ends, so the next halt asks again', async () => {
-      // The lifetime, stated from the side that would rot: the capture is the
-      // right answer only WHILE the turn is running. Held past the turn, a
-      // deliberate runtime change — remove and re-add the agent, which drops the
-      // binding — would be answered from a dead turn's memory forever.
-      agentManifest = { runtime: 'claude-code' };
-      const runner = createSessionRoomTurnRunner({ waitMs: () => 200, ceilingMs: () => 200 });
-      const turn = firstTurnInFlight(runner, 'sess-let-go');
-      await settle();
-      turn.close();
-      await turn.answered;
-
-      agentManifest = { runtime: 'codex' };
-      await runner.interrupt({ sessionId: 'sess-let-go', agentPath: '/repo/ana' });
-
-      expect(interruptsDeliveredTo).toEqual(['codex']);
-    });
-
-    it('re-aims a stop that arrived BEFORE the capture at the turn, not at what it reached', async () => {
-      // **The one window no capture can cover, and the reason the DOR-1424 mark
-      // is a set rather than a map.** `run` deletes the mark on its first line
-      // but only reaches its runtime after a `session_metadata` read and a read
-      // of `.dork/agent.json` off disk. A Stop in there has nothing captured to
-      // consult, so it falls to the ladder and — with the manifest edited — is
-      // delivered to a runtime holding no such turn. That first delivery cannot
-      // be helped and costs nothing, because nothing is running yet.
-      //
-      // What must not happen is the mark REMEMBERING that runtime and repeating
-      // the misaim at the one moment the turn can actually be stopped. The mark
-      // carries only that a stop is owed; the turn's own closure supplies where.
-      agentManifest = { runtime: 'claude-code' };
-      let release!: () => void;
-      gateNextManifestRead = new Promise<void>((resolve) => {
-        release = resolve;
-      });
-      const runner = createSessionRoomTurnRunner({ waitMs: () => 200, ceilingMs: () => 200 });
-      const turn = firstTurnInFlight(runner, 'sess-stop-before-capture');
-      await settle();
-      expect(runtimesAskedFor, 'the run must still be BEFORE its registry.get').toEqual([]);
-
-      agentManifest = { runtime: 'codex' };
-      expect(
-        (await runner.interrupt({ sessionId: 'sess-stop-before-capture', agentPath: '/repo/ana' }))
-          .outcome
-      ).toBe('not-running');
-
-      release();
-      await settle();
-      turn.produce();
-      await settle();
-
-      expect(
-        interruptsDeliveredTo,
-        'the remembered stop repeated the misaim of the stop that armed it, so the boot-window ' +
-          'fix bought nothing for exactly the turns it exists for'
-      ).toEqual(['codex', 'claude-code']);
-
-      turn.close();
-      await turn.answered;
-    });
-
-    it('covers the stretch BEFORE the dispatch is accepted, where a claim is already held', async () => {
-      // The capture is taken where the turn commits to a runtime, not where the
-      // dispatcher accepts it, and this is the difference between the two. The
-      // room holds a claim across the whole of `run`, so Stop is reachable from
-      // the first line — and between the commit and the dispatch sit the reply
-      // mode, the settings read, the attachment projection and the room's
-      // conventions, which is a git read. Capturing at acceptance would leave
-      // every one of those to the manifest.
-      agentManifest = { runtime: 'claude-code' };
-      let releaseConventions!: () => void;
-      const parked = new Promise<string | null>((resolve) => {
-        releaseConventions = () => resolve(null);
-      });
-      const runner = createSessionRoomTurnRunner({
-        waitMs: () => 200,
-        ceilingMs: () => 200,
-        roomConventions: () => parked,
-      });
-      const turn = firstTurnInFlight(runner, 'sess-pre-acceptance');
-      await settle();
-      expect(
-        triggered.some((call) => call.sessionId === 'sess-pre-acceptance'),
-        'the run must still be PARKED before acceptance'
-      ).toBe(false);
-
-      agentManifest = { runtime: 'codex' };
-      await runner.interrupt({ sessionId: 'sess-pre-acceptance', agentPath: '/repo/ana' });
-
-      expect(interruptsDeliveredTo).toEqual(['claude-code']);
-
-      releaseConventions();
-      await settle();
-      turn.close();
-      await turn.answered;
-    });
-
-    it('answers a halt that asks with the CANONICAL id the runtime renamed the turn to', async () => {
-      // Claude Code files a first turn under its own id, and the room switches
-      // to it the moment `rebindRoomSession` runs — so a halt pressed on a late
-      // answer asks about a name the placeholder key knows nothing about. One
-      // capture, both names.
-      agentManifest = { runtime: 'claude-code' };
-      const runner = createSessionRoomTurnRunner({ waitMs: () => 200, ceilingMs: () => 200 });
-      let opened: TriggerCall | undefined;
-      turnBehaviour = (opts) => {
-        opened = opts;
-        openTurn(opts);
-        return { accepted: true, canonicalId: 'canonical-sess' };
-      };
-      const answered = runner.run(request({ sessionId: 'placeholder-sess' }));
-      await settle();
-
-      agentManifest = { runtime: 'codex' };
-      await runner.interrupt({ sessionId: 'canonical-sess', agentPath: '/repo/ana' });
-
-      expect(interruptsDeliveredTo).toEqual(['claude-code']);
-
-      opened?.projector.ingest({ type: 'turn_end' });
-      await answered;
-    });
-
-    // Power flows downstream (spec `trusted-by-default-flip` §4): the level a
-    // first turn ran at was recorded under the placeholder; the posts it makes
-    // are vouched for under the canonical id, so the level must follow.
-    it('carries the turn’s recorded level to the id the runtime renamed it to', async () => {
-      const placeholder = `placeholder-level-${Date.now()}`;
-      const canonical = `canonical-level-${Date.now()}`;
-      const recorder = recordTurnLevels(
-        {
-          type: 'claude-code',
-          getCapabilities: () => CLAUDE_CODE_CAPABILITIES,
-          async *sendMessage() {},
-        } as unknown as AgentRuntime,
-        () => 'acceptEdits'
-      );
-      recorder.sendMessage(placeholder, 'hi');
-      const runner = createSessionRoomTurnRunner({ waitMs: () => 200, ceilingMs: () => 200 });
-      let opened: TriggerCall | undefined;
-      turnBehaviour = (opts) => {
-        opened = opts;
-        openTurn(opts);
-        return { accepted: true, canonicalId: canonical };
-      };
-      const answered = runner.run(request({ sessionId: placeholder }));
-      await settle();
-
-      expect(lastTurnLevelOf(canonical)).toEqual({ asks: 'when-risky', reach: 'edit' });
-
-      opened?.projector.ingest({ type: 'turn_end' });
-      await answered;
-    });
-
-    it("never lets turn 1's cleanup take away the capture turn 2 has already written", async () => {
-      // Two turns on one session overlap: turn 1 is accepted and then DROPPED
-      // without ever opening (DOR-1242's `onSettled('failed')`), which cancels
-      // its collector and fires its cleanup — after turn 2 has captured. An
-      // unguarded delete would strip the live turn's answer and send the next
-      // halt back to the manifest, which is the whole defect again, arrived at
-      // through housekeeping.
-      agentManifest = { runtime: 'claude-code' };
-      const runner = createSessionRoomTurnRunner({ waitMs: () => 500, ceilingMs: () => 500 });
-      let first: TriggerCall | undefined;
-      turnBehaviour = (opts) => {
-        first = opts;
-        return { accepted: true, canonicalId: opts.sessionId };
-      };
-      const answered1 = runner.run(request({ sessionId: 'sess-overlap' }));
-      await settle();
-
-      agentManifest = { runtime: 'codex' };
-      let second: TriggerCall | undefined;
-      turnBehaviour = (opts) => {
-        second = opts;
-        openTurn(opts);
-        return { accepted: true, canonicalId: opts.sessionId };
-      };
-      const answered2 = runner.run(request({ sessionId: 'sess-overlap' }));
-      await settle();
-
-      first?.onSettled?.('failed');
-      await settle();
-      await settle();
-
-      // The manifest moves a third time, so a lost capture is visible rather
-      // than merely possible: the ladder would answer `opencode` here.
-      agentManifest = { runtime: 'opencode' };
-      await runner.interrupt({ sessionId: 'sess-overlap', agentPath: '/repo/ana' });
-
-      expect(interruptsDeliveredTo.at(-1)).toBe('codex');
-
-      second?.projector.ingest({ type: 'turn_end' });
-      await answered1;
-      await answered2;
-    });
-
-    it('re-aims a stop a halt aimed at the CANONICAL id, which is every halt on a late answer', async () => {
-      // The mark and the capture have to answer to the same names. The room
-      // moves onto the canonical id the moment `onSessionBound` reports it, so
-      // every halt after that point — which is every halt on an answer that
-      // outran the room's patience — addresses the turn by a name a
-      // session-keyed mark was never written under. The stop was delivered,
-      // landed on a still-booting process, and then was never re-aimed: the turn
-      // ran to completion, silently, on the exact shape DOR-1424 exists for.
-      agentManifest = { runtime: 'claude-code' };
-      const runner = createSessionRoomTurnRunner({ waitMs: () => 200, ceilingMs: () => 200 });
-      let opened: TriggerCall | undefined;
-      turnBehaviour = (opts) => {
-        opened = opts;
-        openTurn(opts);
-        return { accepted: true, canonicalId: 'canonical-boot' };
-      };
-      const answered = runner.run(request({ sessionId: 'placeholder-boot' }));
-      await settle();
-
-      expect(
-        (await runner.interrupt({ sessionId: 'canonical-boot', agentPath: '/repo/ana' })).outcome
-      ).toBe('not-running');
-
-      opened?.projector.ingest({ type: 'text_delta', text: 'the essay' });
-      await settle();
-
-      expect(
-        interruptQuery.mock.calls,
-        'the stop was recorded under a name the re-aim does not read, so it never fired'
-      ).toEqual([['canonical-boot'], ['placeholder-boot']]);
-
-      opened?.projector.ingest({ type: 'turn_end' });
-      await answered;
-    });
-
-    it('never lets a stop marked on turn 1 be inherited by turn 2 under a shared name', async () => {
-      // **The trap in answering the canonical-id case with a wider LOOKUP.**
-      // Sweeping both of a turn's names out of a session-keyed mark set reads a
-      // mark turn 1 left behind under the canonical id — which turn 2 registers
-      // again, because the runtime renames a resumed session to the same thing —
-      // and the top-of-run delete cannot clear it, since the canonical id is not
-      // known until acceptance. A person who pressed Stop and immediately
-      // retyped would have the new turn killed by the old stop, which is the
-      // rule `never aims it at the NEXT turn` states for the placeholder.
-      //
-      // Marking the TURN is what makes it structural: the mark dies with the
-      // object, so there is nothing to inherit.
-      agentManifest = { runtime: 'claude-code' };
-      const runner = createSessionRoomTurnRunner({ waitMs: () => 200, ceilingMs: () => 200 });
-      /** Arm a turn that opens and waits, renamed to the shared canonical id. */
-      const open = (): { produce: () => void; close: () => void } => {
-        let opened: TriggerCall | undefined;
-        turnBehaviour = (opts) => {
-          opened = opts;
-          openTurn(opts);
-          return { accepted: true, canonicalId: 'canonical-shared' };
-        };
-        return {
-          produce: () => opened?.projector.ingest({ type: 'text_delta', text: 'the essay' }),
-          close: () => opened?.projector.ingest({ type: 'turn_end' }),
-        };
-      };
-
-      // Turn 1 is stopped in its boot window, under the canonical name, and then
-      // ends without ever producing — so the stop is never consumed.
-      const firstTurn = open();
-      const first = runner.run(request({ sessionId: 'shared-sess' }));
-      await settle();
-      await runner.interrupt({ sessionId: 'canonical-shared', agentPath: '/repo/ana' });
-      firstTurn.close();
-      await first;
-      expect(interruptQuery).toHaveBeenCalledTimes(1);
-
-      // Turn 2 is the room asking again. It produces, and must not be stopped.
-      const secondTurn = open();
-      const second = runner.run(request({ sessionId: 'shared-sess' }));
-      await settle();
-      secondTurn.produce();
-      await settle();
-
-      expect(
-        interruptQuery,
-        'turn 2 was killed by a stop nobody aimed at it, because the mark outlived turn 1'
-      ).toHaveBeenCalledTimes(1);
-      secondTurn.close();
-      await second;
-    });
-
-    it('clears a capture left by a turn that threw before its collector existed', async () => {
-      // The one residue the capture's lifetime admits to, and the line that
-      // bounds it. A `run` that throws between the capture and the collector has
-      // no cleanup to hang on, so its entry stands — and what takes it away is
-      // the delete on the first line of the next `run` for that session. Proved
-      // through a next turn that then REFUSES at the registration check, so the
-      // delete is the only thing that could have cleared it: nothing later in
-      // that run executes at all.
-      agentManifest = { runtime: 'claude-code' };
-      const runner = createSessionRoomTurnRunner({ waitMs: () => 200, ceilingMs: () => 200 });
-      getCapabilities.mockImplementationOnce(() => {
-        throw new Error('capabilities read failed');
-      });
-      await expect(runner.run(request({ sessionId: 'sess-leaked' }))).rejects.toThrow(
-        'capabilities read failed'
-      );
-      await settle();
-
-      sessionOwners.set('sess-leaked', 'opencode');
-      registeredRuntimes = ['claude-code', 'codex', 'test-mode'];
-      await expect(runner.run(request({ sessionId: 'sess-leaked' }))).rejects.toMatchObject({
-        name: 'RoomTurnRuntimeGoneError',
-      });
-      await settle();
-
-      registeredRuntimes = ['claude-code', 'codex', 'opencode', 'test-mode'];
-      sessionOwners.set('sess-leaked', 'codex');
-      await runner.interrupt({ sessionId: 'sess-leaked', agentPath: '/repo/ana' });
-
-      expect(
-        interruptsDeliveredTo,
-        'a capture from a turn that threw was still answering halts, so a stop was aimed at a ' +
-          'turn that ended instead of at this session’s actual owner'
-      ).toEqual(['codex']);
-    });
+    registerOriginalNativeLaunchCase(
+      'runner-bound-codex',
+      'keeps a running conversation on the runtime that started it, whatever the manifest now says'
+    );
+
+    registerOriginalNativeLaunchCase(
+      'runner-first-codex',
+      "starts a first turn on the agent's manifest runtime, not on the registry's inference"
+    );
+
+    registerOriginalNativeLaunchCase(
+      'runner-owner-before-provider',
+      'records the session`s runtime before the runtime starts a first turn (DOR-2447)'
+    );
+
+    registerOriginalNativeLaunchCase(
+      'runner-placeholder-codex',
+      'reads an id nothing has bound the same way it reads no id at all'
+    );
+
+    registerOriginalNativeLaunchCase(
+      'runner-missing-runtime',
+      'refuses a turn bound to a runtime this server did not start, by name'
+    );
+
+    registerOriginalNativeLaunchCase(
+      'runner-no-fallback',
+      'never redirects that turn onto a runtime this server does have'
+    );
+
+    registerOriginalNativeLaunchCase(
+      'runner-bound-halt',
+      'aims a halt at the runtime the turn is actually running on'
+    );
+
+    registerOriginalNativeLaunchCase(
+      'runner-first-captured-halt',
+      'keeps a halt on the runtime running a FIRST turn, though the manifest changed under it'
+    );
+
+    registerOriginalNativeLaunchCase(
+      'runner-remembered-halt',
+      "re-aims DOR-1424's remembered stop at the turn's runtime, not the manifest's"
+    );
+
+    registerOriginalNativeLaunchCase(
+      'runner-released-halt',
+      'lets go of the capture when the turn ends, so the next halt asks again'
+    );
+
+    registerOriginalNativeLaunchCase(
+      'runner-stop-state-pair',
+      're-aims a stop that arrived BEFORE the capture at the turn, not at what it reached',
+      () => runOriginalRoomStopStateComponent(0)
+    );
+
+    registerOriginalNativeLaunchCase(
+      'runner-preaccepted-halt',
+      'covers the stretch BEFORE the dispatch is accepted, where a claim is already held'
+    );
+
+    registerOriginalNativeLaunchCase(
+      'runner-canonical-halt',
+      'answers a halt that asks with the CANONICAL id the runtime renamed the turn to'
+    );
+
+    registerOriginalNativeLaunchCase(
+      'runner-stop-state-pair',
+      "never lets turn 1's cleanup take away the capture turn 2 has already written",
+      () => runOriginalRoomStopStateComponent(1)
+    );
+
+    registerOriginalNativeLaunchCase(
+      'runner-stop-state-pair',
+      're-aims a stop a halt aimed at the CANONICAL id, which is every halt on a late answer',
+      () => runOriginalRoomStopStateComponent(2)
+    );
+
+    registerOriginalNativeLaunchCase(
+      'runner-stop-state-pair',
+      'never lets a stop marked on turn 1 be inherited by turn 2 under a shared name',
+      () => runOriginalRoomStopStateComponent(3)
+    );
+
+    registerOriginalNativeLaunchCase(
+      'runner-stop-state-pair',
+      'clears a capture left by a turn that threw before its collector existed',
+      () => runOriginalRoomStopStateComponent(4)
+    );
   });
 
   describe('the posting posture it asks about, and which path it asks with', () => {
-    it('asks about where the turn RUNS — the agent`s home', async () => {
-      // Both runtimes that can be given the room tools gate their injection on
-      // the directory the session actually launches in, and a room turn
-      // launches in its agent's home (spec `agent-home-desk` §5.1). Recording
-      // the ARGUMENT rather than the answer is what makes this discriminating.
-      roomToolDirectories = ['/repo/ana'];
-
-      await createSessionRoomTurnRunner().run(request({ agentPath: '/repo/ana' }));
-
-      expect(roomToolsAskedFor).toEqual(['/repo/ana']);
-    });
-
-    it('runs the turn anyway when the session carries no posting tool', async () => {
-      // **The D2 reversal, stated as behaviour** (spec §A2). There is no second
-      // delivery to fall back to, so a wiring gap does not change what happens:
-      // the turn runs, and whether the room hears anything is the agent's own
-      // business. The earlier revision resolved a reply mode here and posted the
-      // turn's narration instead, which hid the gap behind an answer nobody
-      // chose to send.
-      roomToolDirectories = [];
-
-      const result = await createSessionRoomTurnRunner().run(request({ agentPath: '/repo/ana' }));
-
-      expect(result.text).toBe('green');
-      expect(result.unanswered).toBeUndefined();
-    });
-
-    it('runs the turn for a runtime that does not implement the question', async () => {
-      // "Not implemented" is no answer, not a `false` one — the claude-code
-      // shape from the room's point of view, and every scripted runner's.
-      roomToolDirectories = null;
-
-      const result = await createSessionRoomTurnRunner().run(request({ agentPath: '/repo/ana' }));
-
-      expect(roomToolsAskedFor).toEqual([]);
-      expect(result.text).toBe('green');
-    });
-  });
-
-  it('hands the runtime its home, exactly its grants, and its copy — and projects files at home', async () => {
-    // Spec `agent-home-desk` §5.1: the turn stands in the agent's home and is
-    // granted the room's folders; §5.4: attachments land under the turn's own
-    // folder, the home; §5.6: the copy rides the room marker so the canvas can
-    // label a file inside it.
-    const dorkHome = await mkdtemp(path.join(tmpdir(), 'dorkos-runner-home-'));
-    const agentPath = await mkdtemp(path.join(tmpdir(), 'dorkos-runner-agent-'));
-    const worktree = '/dork/rooms/r1/worktrees/ana-1a2b3c4d';
-    const grants = [
-      { path: worktree, access: 'write' as const },
-      { path: '/dork/rooms/r1/repo', access: 'read' as const },
-    ];
-    try {
-      const store = new LocalRoomAttachmentStore(dorkHome);
-      setRoomAttachmentStores({ attachments: store, rows: {} as never });
-
-      const turnRequest = request({
-        agentPath,
-        additionalDirectories: grants,
-        worktree,
-        attachmentProjection: [
-          {
-            entryId: 'entry-x',
-            attachmentId: 'att1',
-            extension: 'log',
-            name: 'crash.log',
-            relativePath: `${PROJECTED_ATTACHMENTS_ROOT}/entry-x/att1-crash.log`,
-          },
-        ],
-      });
-      await store.put(turnRequest.room.id, 'att1', 'log', Buffer.from('crash!'));
-
-      const runner = createSessionRoomTurnRunner();
-      let projectorCwd: string | undefined;
-      turnBehaviour = (opts) => {
-        projectorCwd = (opts.projector as unknown as { cwd?: string }).cwd;
-        openTurn(opts);
-        opts.projector.ingest({ type: 'text_delta', text: 'got it' });
-        opts.projector.ingest({ type: 'turn_end' });
-        return { accepted: true, canonicalId: opts.sessionId };
-      };
-
-      await runner.run(turnRequest);
-
-      const call = triggered[triggered.length - 1]!;
-      expect(call.cwd).toBe(agentPath);
-      expect(call.forAgent).toBe(agentPath);
-      expect(call.additionalDirectories).toEqual(grants);
-      expect(call.roomTurn).toMatchObject({ cwd: agentPath, worktree, agentPath });
-      expect(projectorCwd).toBe(agentPath);
-      // The bytes are under the home, at the path the plan named relative to it.
-      expect(
-        await readFile(
-          path.join(agentPath, PROJECTED_ATTACHMENTS_ROOT, 'entry-x', 'att1-crash.log')
-        )
-      ).toEqual(Buffer.from('crash!'));
-    } finally {
-      await rm(dorkHome, { recursive: true, force: true });
-      await rm(agentPath, { recursive: true, force: true });
-    }
-  });
-
-  it('grants nothing and names no copy for a room without files', async () => {
-    turnBehaviour = (opts) => {
-      openTurn(opts);
-      opts.projector.ingest({ type: 'turn_end' });
-      return { accepted: true, canonicalId: opts.sessionId };
-    };
-
-    await createSessionRoomTurnRunner().run(request({ agentPath: '/repo/ana' }));
-
-    const call = triggered[triggered.length - 1]!;
-    expect(call).not.toHaveProperty('additionalDirectories');
-    expect(call.roomTurn).not.toHaveProperty('worktree');
-  });
-
-  it('hands the dispatcher a launch step bound to the session the turn launches on', async () => {
-    const launchedOn: string[] = [];
-    turnBehaviour = (opts) => {
-      openTurn(opts);
-      opts.projector.ingest({ type: 'turn_end' });
-      return { accepted: true, canonicalId: opts.sessionId };
-    };
-
-    await createSessionRoomTurnRunner().run(
-      request({
-        agentPath: '/repo/ana',
-        sessionId: 'sess-bound',
-        prepareLaunch: (sessionId) => {
-          launchedOn.push(sessionId);
-          return Promise.resolve({});
-        },
-      })
+    registerOriginalNativeLaunchCase(
+      'runner-posting-home',
+      'asks about where the turn RUNS — the agent`s home'
     );
 
-    const call = triggered[triggered.length - 1]!;
-    // Not run by the runner: the DISPATCHER runs it, at launch — once, which the
-    // dispatch stub above does as `trigger-turn.ts` does.
-    expect(call.prepareLaunch).toBeTypeOf('function');
-    expect(launchedOn).toEqual(['sess-bound']);
-  });
-
-  it('records the session`s owner before the turn-start refresh runs (DOR-2447)', async () => {
-    // Ordered so a refresh that fails — which the dispatcher logs and launches
-    // past — can never leave a turn starting with no owner on record. Seeded:
-    // running the room's step first reddens this.
-    agentManifest = { runtime: 'codex' };
-    let ownerOnRecordAtRefresh: boolean | null = null;
-    turnBehaviour = (opts) => {
-      openTurn(opts);
-      opts.projector.ingest({ type: 'turn_end' });
-      return { accepted: true, canonicalId: opts.sessionId };
-    };
-
-    await createSessionRoomTurnRunner().run(
-      request({
-        agentPath: '/repo/ana',
-        sessionId: null,
-        prepareLaunch: (sessionId) => {
-          ownerOnRecordAtRefresh = persistSessionRuntime.mock.calls.some(
-            ([id, runtime]) => id === sessionId && runtime === 'codex'
-          );
-          return Promise.resolve({});
-        },
-      })
-    );
-
-    expect(ownerOnRecordAtRefresh).toBe(true);
-  });
-
-  it('puts the files section the launch step measured into the room context it launches with', async () => {
-    // The turn-start refresh runs at launch (spec `agent-home-desk` §6.1): its
-    // outcome and fresh counts must replace what placement measured, or the
-    // model is told about files that are no longer on disk (I8).
-    turnBehaviour = (opts) => {
-      openTurn(opts);
-      opts.projector.ingest({ type: 'turn_end' });
-      return { accepted: true, canonicalId: opts.sessionId };
-    };
-    const launched = {
-      worktreePath: '/dork/rooms/r1/worktrees/ana-1',
-      branch: 'room/ana-1',
-      repoPath: '/dork/rooms/r1/repo',
-      behind: 0,
-      ahead: 0,
-      refresh: { kind: 'refreshed' as const, from: 'a', to: 'b', paths: ['ROOM.md'] },
-    };
-
-    await createSessionRoomTurnRunner().run(
-      request({
-        agentPath: '/repo/ana',
-        sessionId: 'sess-bound',
-        prepareLaunch: () => Promise.resolve({ files: launched }),
-      })
-    );
-
-    const call = triggered[triggered.length - 1]!;
-    const merged = (await call.prepareLaunch!()) as { roomContext?: Record<string, unknown> };
-    expect(merged.roomContext?.files).toEqual(launched);
-    // Everything else in the context is what the turn was accepted with.
-    expect(merged.roomContext).toMatchObject({ room: expect.anything() });
-  });
-
-  it('launches with the accepted room context when the launch step has no files to report', async () => {
-    turnBehaviour = (opts) => {
-      openTurn(opts);
-      opts.projector.ingest({ type: 'turn_end' });
-      return { accepted: true, canonicalId: opts.sessionId };
-    };
-
-    await createSessionRoomTurnRunner().run(
-      request({ agentPath: '/repo/ana', prepareLaunch: () => Promise.resolve({}) })
-    );
-
-    const call = triggered[triggered.length - 1]!;
-    await expect(call.prepareLaunch!()).resolves.toEqual({});
-  });
-
-  describe('an OpenCode session that stood in the room’s copy (spec `agent-home-desk` §8.1)', () => {
-    // OpenCode routes every session call by the folder the session was created
-    // in and cannot move it, so a room session from before room turns moved
-    // home cannot be resumed at home: its next turn starts a fresh session,
-    // which the room then binds. Seeded: dropping the check reddens the first.
-    const COPY = '/dork/rooms/r1/worktrees/ana-1a2b3c4d';
-
-    afterEach(() => {
-      sessionOwners.clear();
-      sessionDirectories.clear();
-    });
-
-    function answering(): void {
-      turnBehaviour = (opts) => {
-        openTurn(opts);
-        opts.projector.ingest({ type: 'turn_end' });
-        return { accepted: true, canonicalId: opts.sessionId };
-      };
-    }
-
-    it('starts a fresh session at home, and hands the room the new id', async () => {
-      answering();
-      sessionOwners.set('oc-old', 'opencode');
-      sessionDirectories.set('oc-old', COPY);
-
-      const result = await createSessionRoomTurnRunner().run(
-        request({ agentPath: '/repo/ana', sessionId: 'oc-old', worktree: COPY })
-      );
-
-      const call = triggered[triggered.length - 1]!;
-      expect(call.sessionId).not.toBe('oc-old');
-      expect(result.sessionId).toBe(call.sessionId);
-      expect(call.cwd).toBe('/repo/ana');
-    });
-
-    it('carries on an OpenCode session that already stands at home', async () => {
-      answering();
-      sessionOwners.set('oc-home', 'opencode');
-      sessionDirectories.set('oc-home', '/repo/ana');
-
-      await createSessionRoomTurnRunner().run(
-        request({ agentPath: '/repo/ana', sessionId: 'oc-home', worktree: COPY })
-      );
-
-      expect(triggered[triggered.length - 1]!.sessionId).toBe('oc-home');
-    });
-
-    it('resumes a Claude Code session from the copy at home — it can move', async () => {
-      // Measured (§8.1): claude-code resumes a moved transcript at the home.
-      answering();
-      sessionOwners.set('cc-old', 'claude-code');
-      sessionDirectories.set('cc-old', COPY);
-
-      await createSessionRoomTurnRunner().run(
-        request({ agentPath: '/repo/ana', sessionId: 'cc-old', worktree: COPY })
-      );
-
-      expect(triggered[triggered.length - 1]!.sessionId).toBe('cc-old');
-    });
-  });
-
-  it('refuses a turn that would stand anywhere but the agent`s home (the desk guard)', async () => {
-    // Spec §3.4 step 5 (and steps 1-2 with a registry wired, pinned in
-    // `agent-home.test.ts`): a room turn's cwd is the home, and nothing else
-    // reaches the runtime. A refusal is a throw out of `run` before anything
-    // is dispatched — a turn that never started.
-    const before = triggered.length;
-    await expect(
-      createSessionRoomTurnRunner().run(
-        request({ agentPath: '/repo/ana', cwd: '/dork/rooms/r1/worktrees/ana-1a2b3c4d' })
-      )
-    ).rejects.toMatchObject({ code: 'DESK_NOT_OWN' });
-    expect(triggered).toHaveLength(before);
-  });
-
-  it('has the files on disk BEFORE the turn is triggered', async () => {
-    // Ordering, not just the end state: the context handed to the model names
-    // these paths, so a projection that landed after the dispatch would be a
-    // window in which the agent could read a path that was not yet there
-    // (ADR 260807-233816).
-    const dorkHome = await mkdtemp(path.join(tmpdir(), 'dorkos-runner-home-'));
-    const agentPath = await mkdtemp(path.join(tmpdir(), 'dorkos-runner-agent-'));
-    try {
-      const store = new LocalRoomAttachmentStore(dorkHome);
-      setRoomAttachmentStores({ attachments: store, rows: {} as never });
-
-      // Built first, so the file is staged under the room id this very request
-      // carries — the runner scopes its store reads by it.
-      const turnRequest = request({
-        agentPath,
-        attachmentProjection: [
-          {
-            entryId: 'entry-x',
-            attachmentId: 'att1',
-            extension: 'log',
-            name: 'crash.log',
-            relativePath: `${PROJECTED_ATTACHMENTS_ROOT}/entry-x/att1-crash.log`,
-          },
-        ],
-      });
-      await store.put(turnRequest.room.id, 'att1', 'log', Buffer.from('crash!'));
-
-      const projected = path.join(
-        agentPath,
-        PROJECTED_ATTACHMENTS_ROOT,
-        'entry-x',
-        'att1-crash.log'
-      );
-      let existedWhenTriggered: boolean | null = null;
-      turnBehaviour = (opts) => {
-        existedWhenTriggered = existsSync(projected);
-        openTurn(opts);
-        opts.projector.ingest({ type: 'text_delta', text: 'got it' });
-        opts.projector.ingest({ type: 'turn_end' });
-        return { accepted: true, canonicalId: opts.sessionId };
-      };
-
-      const result = await createSessionRoomTurnRunner().run(turnRequest);
-
-      expect(result.text).toBe('got it');
-      // The assertion that matters: the file was already there when the turn
-      // opened, not merely there by the time the turn finished.
-      expect(existedWhenTriggered).toBe(true);
-      expect(await readFile(projected)).toEqual(Buffer.from('crash!'));
-    } finally {
-      await rm(dorkHome, { recursive: true, force: true });
-      await rm(agentPath, { recursive: true, force: true });
-    }
-  });
-
-  it('returns what the agent said, read off the session stream', async () => {
-    turnBehaviour = saysAndCloses('Green', ' — ', 'nothing failed.');
-    const result = await createSessionRoomTurnRunner().run(request());
-    expect(result.text).toBe('Green — nothing failed.');
-  });
-
-  it('keeps two assistant messages apart instead of welding them together', async () => {
-    // The observed post: `…before answering.Congrats on…` — a note the agent
-    // wrote before reaching for a tool, glued with no space to the answer it
-    // wrote afterwards. Every `text_delta` in the turn went into one buffer, and
-    // a buffer cannot know that a tool call happened in the middle of it.
-    //
-    // Those are two assistant messages: a model emits its text and its
-    // `tool_use` together, and everything after the result is a new message. The
-    // durable stream carries no message boundary to read, so the tool events are
-    // the boundary — and they are exact for this shape, which is the one that
-    // produces run-on text.
-    //
-    // Nothing is dropped. Posting only the last block was considered and is not
-    // approved: a preamble is something the agent chose to say.
-    turnBehaviour = (opts) => {
-      const { sessionId, projector } = opts;
-      openTurn(opts);
-      projector.ingest({ type: 'text_delta', text: 'Let me read the release notes first.' });
-      projector.ingest({
-        type: 'tool_call',
-        toolCallId: 'call-1',
-        toolName: 'Read',
-        status: 'running',
-      });
-      projector.ingest({
-        type: 'tool_result',
-        toolCallId: 'call-1',
-        toolName: 'Read',
-        status: 'success',
-        result: 'v2.1 shipped',
-      });
-      projector.ingest({ type: 'text_delta', text: 'Congrats on shipping v2.1!' });
-      projector.ingest({ type: 'turn_end' });
-      return { accepted: true, canonicalId: sessionId };
-    };
-
-    const result = await createSessionRoomTurnRunner().run(request());
-    expect(result.text).toBe('Let me read the release notes first.\n\nCongrats on shipping v2.1!');
-  });
-
-  it('does not split one message on the token counts that stream through it', async () => {
-    // The counter-assertion, and the reason the boundary is the tool events
-    // rather than "anything that is not text". A `status_change` really does
-    // land at the end of every assistant message — the SDK's `message_delta`
-    // carries the output-token count — but it also lands mid-message, so
-    // breaking on it would cut single sentences at unpredictable points.
-    turnBehaviour = (opts) => {
-      const { sessionId, projector } = opts;
-      openTurn(opts);
-      projector.ingest({ type: 'text_delta', text: 'The build is ' });
-      projector.ingest({ type: 'status_change', status: { outputTokens: 12 } });
-      projector.ingest({ type: 'text_delta', text: 'green.' });
-      projector.ingest({ type: 'turn_end' });
-      return { accepted: true, canonicalId: sessionId };
-    };
-
-    const result = await createSessionRoomTurnRunner().run(request());
-    expect(result.text).toBe('The build is green.');
-  });
-
-  it('mints a session on the first answer and reuses the bound one after', async () => {
-    const runner = createSessionRoomTurnRunner();
-
-    const first = await runner.run(request());
-    expect(first.sessionId).toMatch(/^[0-9a-f-]{36}$/);
-
-    const second = await runner.run(request({ sessionId: 'session-already-bound' }));
-    expect(second.sessionId).toBe('session-already-bound');
-    // The runtime binding is written on every turn; the registry only binds a
-    // session that has no runtime yet, so the first write wins and a second one
-    // changes nothing.
-    expect(persistSessionRuntime).toHaveBeenLastCalledWith(
-      'session-already-bound',
-      'claude-code',
-      roomOrigin(),
-      '/repo/ana'
-    );
-  });
-
-  it('answers on, and records ownership under, the id the runtime assigned', async () => {
-    // Claude Code names the session itself on the first turn and files the
-    // transcript under THAT id. The room asked with a placeholder; everything
-    // durable must land on the runtime's id, and — the part that was broken —
-    // the id the runner hands back is the id the room binds, so `session_metadata`
-    // and `room_sessions` cannot disagree about which session this is.
-    const canonical = 'sdk-canonical-9f3c';
-    internalSessionId = () => canonical;
-
-    const result = await createSessionRoomTurnRunner().run(
-      request({ sessionId: 'room-placeholder' })
-    );
-
-    expect(result.sessionId).toBe(canonical);
-    expect(persistSessionRuntime).toHaveBeenCalledWith(
-      canonical,
-      'claude-code',
-      roomOrigin(),
-      '/repo/ana'
-    );
-    // The agreement itself, asserted rather than assumed: one id answers both
-    // questions, so a room session never falls through to the registry's legacy
-    // "it must be claude-code" inference for want of a row. (The launch-time
-    // write lands under the id the turn was LAUNCHED with, as a person's first
-    // message does, and the runtime's own rebind moves it — DOR-2447.)
-    expect(persistSessionRuntime.mock.lastCall?.[0]).toBe(result.sessionId);
-  });
-
-  it('still delivers the answer when recording who owns the session fails', async () => {
-    // NOTHING AFTER THE MODEL HAS SPOKEN MAY THROW OUT OF `run`, and this is the
-    // line that used to. `persistSessionRuntime` was awaited above the busy
-    // guard, so a `SQLITE_BUSY` on one bookkeeping row — a live hazard, which is
-    // why `bindRoomSession` in `room-trigger.ts` is already try-wrapped for it —
-    // escaped a turn that had opened, streamed and ended.
-    //
-    // Two things broke, and the second is the quiet one. The room reported an
-    // ANSWERED turn as failed and dropped what the agent said. And because the
-    // dispatcher reads a throw out of `run` as "the turn never started", it
-    // rewound the read cursor and replayed the entire ambient window to the next
-    // turn (room-participation spec §8.3) — a duplicate conversation caused by a
-    // row that has nothing to do with either.
-    persistSessionRuntime.mockRejectedValueOnce(
-      Object.assign(new Error('database is locked'), { code: 'SQLITE_BUSY' })
-    );
-    turnBehaviour = saysAndCloses('Green — nothing failed.');
-
-    const result = await createSessionRoomTurnRunner().run(request());
-
-    // It was really attempted, so the assertions below are about a write that
-    // failed rather than one that never ran — at launch (the one that failed)
-    // and again once the turn was accepted.
-    expect(persistSessionRuntime).toHaveBeenCalledTimes(2);
-    // (a) `run` resolves — the dispatcher's "a throw means nothing ran" holds.
-    // (b) and the answer is intact, which is what the room posts.
-    expect(result.text).toBe('Green — nothing failed.');
-    // (c) The read cursor therefore stays advanced. These two assertions ARE
-    // that claim: `rewindClaimCursor` has exactly two triggers — `run` throwing,
-    // and `unanswered === 'busy'` — and this result is neither. The dispatcher
-    // half is pinned in `ambient-pending.test.ts`.
-    expect(result.unanswered).toBeUndefined();
-  });
-
-  it('says nothing rather than queueing behind an operator who is mid-turn', async () => {
-    turnBehaviour = REFUSED;
-    const result = await createSessionRoomTurnRunner().run(request());
-    expect(result.text).toBeNull();
-    // Named, not merely empty: a `null` on its own is what an agent with
-    // nothing to say returns, and the room stayed silent about both (DOR-621).
-    expect(result.unanswered).toBe('busy');
-  });
-
-  it('asks to be refused only by a STRANGER, never by its own previous turn', async () => {
-    // The room already allows one turn per `(room, agent)` and holds a
-    // re-mention until that turn's claim releases (RP8), so the only turn it can
-    // ever race is somebody else's. Asking for a blanket refusal instead lost
-    // the beat between the previous turn ending and its slot being handed back,
-    // and the room apologised for a message it was about to answer (DOR-1230).
-    triggered.length = 0;
-    await createSessionRoomTurnRunner().run(request());
-    expect(triggered[0]?.whenBusy).toBe('refuse-foreign');
-  });
-
-  it('stops waiting the moment an accepted trigger is reported as never having run', async () => {
-    // DOR-1242. A `refuse-foreign` trigger that waited out its own tail and then
-    // lost the session to a stranger is DROPPED once its original wait is spent,
-    // and `onSettled('failed')` is the dispatcher saying so. Without reading it
-    // the room waits on a turn nothing will ever start: a late notice at `waitMs`
-    // and "something went wrong" at the ceiling, long after the message — which
-    // is worse than what it replaced, so the report has to be acted on.
-    //
-    // The BOUNDS are the assertion. They are set far above the drop, so a run
-    // that resolves quickly can only have resolved because it was told; one that
-    // waited them out is the regression.
-    turnBehaviour = (opts) => {
-      // Accepted, and no turn ever opens — nothing calls `onTurnStart`.
-      setTimeout(() => opts.onSettled?.('failed'), 0);
-      return { accepted: true, canonicalId: opts.sessionId };
-    };
-
-    const startedAt = Date.now();
-    const result = await createSessionRoomTurnRunner({
-      waitMs: () => 5_000,
-      ceilingMs: () => 10_000,
-    }).run(request());
-
-    expect(Date.now() - startedAt).toBeLessThan(1_000);
-    // The room's ordinary could-not-answer path, not a late answer that nothing
-    // will ever resolve.
-    expect(result.text).toBeNull();
-    expect(result.unanswered).toBe('failed');
-    expect(result.late).toBeUndefined();
-  });
-
-  it('keeps waiting on a turn that DID start and then failed, which has its own reporting', async () => {
-    // The other side of the guard above: `onSettled('failed')` also fires for a
-    // turn that really ran and then errored. That one has a `turn_start`, is
-    // being watched by the collector, and must keep its existing path — cutting
-    // it short here would drop an answer the agent had already produced.
-    turnBehaviour = (opts) => {
-      openTurn(opts);
-      opts.projector.ingest({ type: 'text_delta', text: 'Half an answer.' });
-      setTimeout(() => {
-        opts.projector.ingest({ type: 'turn_end' });
-        opts.onSettled?.('failed');
-      }, 0);
-      return { accepted: true, canonicalId: opts.sessionId };
-    };
-
-    const result = await createSessionRoomTurnRunner().run(request());
-    expect(result.text).toBe('Half an answer.');
-  });
-
-  it('reads a turn whose start arrives after the dispatch has already resolved', async () => {
-    // The shape a queued launch has: `dispatchMessage` answers at acceptance, and
-    // the `turn_start` follows macrotasks later when the session frees up. The
-    // collector anchors on the turn's identity rather than on the dispatch
-    // returning, so this is read exactly like a turn that opened at once.
-    //
-    // **It does not exercise `whenBusy`** — this file stubs the dispatcher, so
-    // which busy mode the room asks for is pinned by the case above and by
-    // `message-dispatcher.test.ts`. What is pinned here is only the timing.
-    turnBehaviour = (opts) => {
-      setTimeout(() => {
-        openTurn(opts);
-        opts.projector.ingest({ type: 'text_delta', text: 'Paris.' });
-        opts.projector.ingest({ type: 'turn_end' });
-      }, 0);
-      return { accepted: true, canonicalId: opts.sessionId };
-    };
-    const result = await createSessionRoomTurnRunner().run(request());
-    expect(result.text).toBe('Paris.');
-    expect(result.unanswered).toBeUndefined();
-  });
-
-  it('reports a turn that ended in an error, rather than an empty answer', async () => {
-    turnBehaviour = (opts) => {
-      const { sessionId, projector } = opts;
-      openTurn(opts);
-      projector.ingest({ type: 'turn_end', terminalReason: 'error' });
-      return { accepted: true, canonicalId: sessionId };
-    };
-    const result = await createSessionRoomTurnRunner().run(request());
-    expect(result.text).toBeNull();
-    expect(result.unanswered).toBe('failed');
-  });
-
-  it('does not mistake a quiet turn for a failed one', async () => {
-    turnBehaviour = saysAndCloses('   ');
-    const result = await createSessionRoomTurnRunner().run(request());
-    expect(result.text).toBeNull();
-    expect(result.unanswered).toBeUndefined();
-  });
-
-  it('hands back an answer that outran the wait instead of dropping it', async () => {
-    // The turn is still open when the runner returns, so `run` cannot resolve
-    // before the deadline and the assertion below cannot race it.
-    //
-    // Fake timers, deliberately (DOR-933): under real timers a 5ms
-    // `setTimeout` can fire a hair under 5ms of wall clock, and
-    // `Date.now()` — millisecond-quantized — rounds that down to 4,
-    // flaking the exact-value assertion below. Fake timers make `Date.now()`
-    // advance in lockstep with the timer queue, so `waitedMs` is exactly the
-    // configured wait.
-    vi.useFakeTimers();
-    try {
-      let finishTurn = (): void => undefined;
-      turnBehaviour = (opts) => {
-        const { sessionId, projector } = opts;
-        openTurn(opts);
-        finishTurn = () => {
-          projector.ingest({ type: 'text_delta', text: 'green' });
-          projector.ingest({ type: 'turn_end' });
+    registerOriginalNativeLaunchCase(
+      'runner-false-posting',
+      'runs the turn anyway when the session carries no posting tool',
+      async () => {
+        // Component posture only: this ordinary fake is never registered or
+        // used to issue an original Room request or native producer.
+        const component = Object.assign(new FakeAgentRuntime(), {
+          carriesRoomTools: vi.fn(async () => false),
+        });
+        const { logger } = await import('../../../lib/logger.js');
+        const warning = vi.spyOn(logger, 'warn');
+        let failed = false;
+        let first: unknown;
+        const remember = (cause: unknown) => {
+          if (!failed) {
+            failed = true;
+            first = cause;
+          }
         };
-        return { accepted: true, canonicalId: sessionId };
-      };
-
-      const running = createSessionRoomTurnRunner({ waitMs: () => 5 }).run(request());
-      await vi.advanceTimersByTimeAsync(1);
-      await vi.advanceTimersByTimeAsync(4);
-      const result = await running;
-      expect(result.text).toBeNull();
-      expect(result.unanswered).toBeUndefined();
-      expect(result.late).toBeDefined();
-
-      finishTurn();
-      const late = await result.late;
-      expect(late?.text).toBe('green');
-      expect(late?.unanswered).toBeUndefined();
-      expect(late?.waitedMs).toBe(5);
-    } finally {
-      vi.useRealTimers();
-    }
-  });
-
-  it('never posts the half of an answer it had when the wait ran out', async () => {
-    // The old timeout aborted the read, so whatever had streamed by then was
-    // returned as if it were the whole answer.
-    let finishTurn = (): void => undefined;
-    turnBehaviour = (opts) => {
-      const { sessionId, projector } = opts;
-      openTurn(opts);
-      projector.ingest({ type: 'text_delta', text: 'the build is ' });
-      finishTurn = () => {
-        projector.ingest({ type: 'text_delta', text: 'green' });
-        projector.ingest({ type: 'turn_end' });
-      };
-      return { accepted: true, canonicalId: sessionId };
-    };
-
-    const result = await createSessionRoomTurnRunner({ waitMs: () => 5 }).run(request());
-    expect(result.text).toBeNull();
-
-    finishTurn();
-    expect((await result.late)?.text).toBe('the build is green');
-  });
-
-  it('reads its own turn, never the tail of the one already running', async () => {
-    // The session write-lock lets the same room re-acquire, so a follow-up
-    // message starts a second turn while the first is still streaming. Its
-    // cursor sits INSIDE turn one, and anchoring on the cursor alone made it
-    // break at turn one's `turn_end` and post the tail it had caught —
-    // mid-sentence, and a duplicate of what turn one was already posting.
-    let stream: TestProjector | undefined;
-    const calls: TriggerCall[] = [];
-    turnBehaviour = (opts) => {
-      stream = opts.projector;
-      calls.push(opts);
-      return { accepted: true, canonicalId: opts.sessionId };
-    };
-    const runner = createSessionRoomTurnRunner();
-    const shared = 'session-two-messages';
-
-    const first = runner.run(request({ sessionId: shared }));
-    await settle();
-    openTurn(calls[0], calls[0].content);
-    stream?.ingest({ type: 'text_delta', text: 'the build is ' });
-
-    // The follow-up lands mid-turn. Its cursor is now inside turn one.
-    const second = runner.run(request({ sessionId: shared, entryText: 'and the tests?' }));
-    await settle();
-
-    stream?.ingest({ type: 'text_delta', text: 'green and here is why' });
-    stream?.ingest({ type: 'turn_end' });
-    expect((await first).text).toBe('the build is green and here is why');
-
-    openTurn(calls[1], calls[1].content);
-    stream?.ingest({ type: 'text_delta', text: 'the tests pass' });
-    stream?.ingest({ type: 'turn_end' });
-    expect((await second).text).toBe('the tests pass');
-  });
-
-  it('ignores a turn it did not start, even one carrying the same words', async () => {
-    // Two holes, one shape. The collector used to decide "is this turn mine?"
-    // by comparing the trigger text on the `turn_start` — so a turn triggered
-    // with the SAME message satisfied it, and a turn carrying NO message at all
-    // (a `/compact`-style command intent, whose `turn_start` has no
-    // `userMessage`) satisfied it by default. Either one made the next thing
-    // that session said the room's answer to a question it never asked.
-    //
-    // Identity replaces resemblance: the room learns its own turn's seq from
-    // the trigger that stamped it, and a `turn_start` that is not that seq is
-    // somebody else's whatever it says.
-    let stream: TestProjector | undefined;
-    let ownCall: TriggerCall | undefined;
-    turnBehaviour = (opts) => {
-      stream = opts.projector;
-      ownCall = opts;
-      return { accepted: true, canonicalId: opts.sessionId };
-    };
-
-    const answered = createSessionRoomTurnRunner({ waitMs: () => 50 }).run(
-      request({ entryText: 'is the build green?' })
+        try {
+          await warnIfTurnCannotPost({
+            runtime: component,
+            cwd: '/repo/ana',
+            agentPath: '/repo/ana',
+            sessionId: 'ordinary-false-posting-component',
+          });
+          expect(component.carriesRoomTools).toHaveBeenCalledExactlyOnceWith({
+            cwd: '/repo/ana',
+            agentPath: '/repo/ana',
+            sessionId: 'ordinary-false-posting-component',
+          });
+          expect(warning).toHaveBeenCalledWith(
+            '[rooms] this turn has no way to post, so it can only stay silent',
+            {
+              sessionId: 'ordinary-false-posting-component',
+              cwd: '/repo/ana',
+              reason: 'the runtime reports that this session does not carry the DorkOS room tools',
+            }
+          );
+        } catch (cause) {
+          remember(cause);
+        } finally {
+          try {
+            warning.mockRestore();
+          } catch (cause) {
+            remember(cause);
+          }
+        }
+        if (failed) throw first;
+        // Separate original native provider still must return exact green and
+        // undefined unanswered; this does not claim a native false posture.
+      }
     );
-    await settle();
 
-    // A foreign turn, opened on the same session with the identical prompt, and
-    // then one with no prompt at all. Neither is the room's.
-    stream?.ingest({ type: 'turn_start', userMessage: 'is the build green?' });
-    stream?.ingest({ type: 'text_delta', text: 'not the answer to the room' });
-    stream?.ingest({ type: 'turn_end' });
-    stream?.ingest({ type: 'turn_start' });
-    stream?.ingest({ type: 'text_delta', text: 'compacted the transcript' });
-    stream?.ingest({ type: 'turn_end' });
-
-    // The room's own turn, last, and the only one it reads.
-    openTurn(ownCall as TriggerCall, ownCall?.content);
-    stream?.ingest({ type: 'text_delta', text: 'green' });
-    stream?.ingest({ type: 'turn_end' });
-
-    expect((await answered).text).toBe('green');
+    registerOriginalNativeLaunchCase(
+      'runner-optional-posting',
+      'runs the turn for a runtime that does not implement the question',
+      async () => {
+        // Compatibility component: this supported ordinary fake is never
+        // registered as a runtime or used to issue an original Room request.
+        const optionalRuntime: AgentRuntime = new FakeAgentRuntime();
+        expect(optionalRuntime.carriesRoomTools).toBeUndefined();
+        const { logger } = await import('../../../lib/logger.js');
+        const warning = vi.spyOn(logger, 'warn');
+        let failed = false;
+        let first: unknown;
+        const remember = (cause: unknown) => {
+          if (!failed) {
+            failed = true;
+            first = cause;
+          }
+        };
+        try {
+          await warnIfTurnCannotPost({
+            runtime: optionalRuntime,
+            cwd: '/repo/ana',
+            agentPath: '/repo/ana',
+            sessionId: 'ordinary-optional-posting-component',
+          });
+          expect(warning).not.toHaveBeenCalled();
+        } catch (cause) {
+          remember(cause);
+        } finally {
+          try {
+            warning.mockRestore();
+          } catch (cause) {
+            remember(cause);
+          }
+        }
+        if (failed) throw first;
+        // The separate owned child keeps the original exact green assertion.
+      }
+    );
   });
+
+  registerOriginalNativeLaunchCase(
+    'runner-home-grants-attachments',
+    'hands the runtime its home, exactly its grants, and its copy — and projects files at home'
+  );
+
+  registerOriginalNativeLaunchCase(
+    'runner-no-files',
+    'grants nothing and names no copy for a room without files'
+  );
+
+  registerOriginalNativeLaunchCase(
+    'runner-bound-launch-context',
+    'hands the dispatcher a launch step bound to the session the turn launches on'
+  );
+
+  registerOriginalNativeLaunchCase(
+    'runner-owner-before-refresh',
+    'records the session`s owner before the turn-start refresh runs (DOR-2447)'
+  );
+
+  registerOriginalNativeLaunchCase(
+    'runner-measured-launch-context',
+    'puts the files section the launch step measured into the room context it launches with'
+  );
+
+  registerOriginalNativeLaunchCase(
+    'runner-accepted-no-files-context',
+    'launches with the accepted room context when the launch step has no files to report'
+  );
+
+  registerOriginalNativeHomeResumeCase(
+    'opencode-copy',
+    'starts a fresh session at home, and hands the room the new id'
+  );
+  registerOriginalNativeHomeResumeCase(
+    'opencode-home',
+    'carries on an OpenCode session that already stands at home'
+  );
+  registerOriginalNativeHomeResumeCase(
+    'claude-copy',
+    'resumes a Claude Code session from the copy at home — it can move'
+  );
+
+  registerOriginalNativeLaunchCase(
+    'runner-desk-guard',
+    'refuses a turn that would stand anywhere but the agent`s home (the desk guard)',
+    async () => {
+      // Ordinary exported predicate only. Genuine captured placement cannot
+      // issue a private Room request with this foreign cwd; no issuer is bypassed.
+      const { assertOwnDesk } = await import('../../core/agent-identity/index.js');
+      const componentDispatch = vi.fn();
+      let refused = false;
+      try {
+        assertOwnDesk('/repo/ana', '/dork/rooms/r1/worktrees/ana-1a2b3c4d', 'home');
+        componentDispatch();
+      } catch (cause) {
+        expect(cause).toMatchObject({ code: 'DESK_NOT_OWN' });
+        refused = true;
+      }
+      expect(refused).toBe(true);
+      expect(componentDispatch).not.toHaveBeenCalled();
+      // Separate acquired native turn below proves actual home/provider cwd,
+      // rather than claiming a forged foreign private request was admitted.
+    }
+  );
+
+  registerOriginalNativeLaunchCase(
+    'runner-projection-before-provider',
+    'has the files on disk BEFORE the turn is triggered'
+  );
+
+  registerOriginalNativeLaunchCase(
+    'runner-stream-text',
+    'returns what the agent said, read off the session stream'
+  );
+
+  registerOriginalNativeLaunchCase(
+    'runner-paragraphs',
+    'keeps two assistant messages apart instead of welding them together'
+  );
+
+  registerOriginalNativeLaunchCase(
+    'runner-token-counts',
+    'does not split one message on the token counts that stream through it'
+  );
+
+  registerOriginalNativeLaunchCase(
+    'runner-new-then-reused',
+    'mints a session on the first answer and reuses the bound one after'
+  );
+
+  registerOriginalNativeLaunchCase(
+    'runner-canonical-owner',
+    'answers on, and records ownership under, the id the runtime assigned'
+  );
+
+  registerOriginalNativeLaunchCase(
+    'runner-owner-write-failure',
+    'still delivers the answer when recording who owns the session fails'
+  );
+
+  registerOriginalNativeLaunchCase(
+    'runner-foreign-lock',
+    'says nothing rather than queueing behind an operator who is mid-turn'
+  );
+
+  registerOriginalNativeLaunchCase(
+    'runner-busy-disposition',
+    'asks to be refused only by a STRANGER, never by its own previous turn'
+  );
+
+  registerOriginalNativeLaunchCase(
+    'runner-unstarted-cancel-data',
+    'stops waiting the moment an accepted trigger is reported as never having run',
+    () => runOriginalReplyIdentityComponent('runner-unstarted-cancel-data')
+  );
+
+  registerOriginalNativeLaunchCase(
+    'runner-started-failed-data',
+    'keeps waiting on a turn that DID start and then failed, which has its own reporting',
+    () => runOriginalReplyIdentityComponent('runner-started-failed-data')
+  );
+
+  registerOriginalNativeLaunchCase(
+    'runner-delayed-start-data',
+    'reads a turn whose start arrives after the dispatch has already resolved',
+    () => runOriginalReplyIdentityComponent('runner-delayed-start-data')
+  );
+
+  registerOriginalNativeLaunchCase(
+    'runner-failed',
+    'reports a turn that ended in an error, rather than an empty answer'
+  );
+
+  registerOriginalNativeLaunchCase(
+    'runner-quiet',
+    'does not mistake a quiet turn for a failed one'
+  );
+
+  registerOriginalNativeLaunchCase(
+    'runner-late-answer',
+    'hands back an answer that outran the wait instead of dropping it',
+    runOriginalReplyWaitClockComponent
+  );
+
+  registerOriginalNativeLaunchCase(
+    'runner-half-answer',
+    'never posts the half of an answer it had when the wait ran out'
+  );
+
+  registerOriginalNativeLaunchCase(
+    'runner-own-tail-data',
+    'reads its own turn, never the tail of the one already running',
+    () => runOriginalReplyIdentityComponent('runner-own-tail-data')
+  );
+
+  registerOriginalNativeLaunchCase(
+    'runner-foreign-words-data',
+    'ignores a turn it did not start, even one carrying the same words',
+    () => runOriginalReplyIdentityComponent('runner-foreign-words-data')
+  );
 
   describe('the grace before it says so', () => {
-    /** A turn that opens and then waits for the test to feed it. */
-    function openAndHold(): { call: () => TriggerCall; waited: RoomTurnWaiting[] } {
-      const waited: RoomTurnWaiting[] = [];
-      let opened: TriggerCall | undefined;
-      turnBehaviour = (opts) => {
-        opened = opts;
-        openTurn(opts);
-        return { accepted: true, canonicalId: opts.sessionId };
-      };
-      return {
-        call: () => {
-          if (!opened) throw new Error('the turn never started');
-          return opened;
-        },
-        waited,
-      };
-    }
-
-    /** An `approval_required` for `id`, as the adapter pushes one. */
-    function approvalRequired(id: string): Record<string, unknown> {
-      return {
-        type: 'approval_required',
-        id,
-        startedAt: Date.now(),
-        toolCallId: id,
-        toolName: 'Bash',
-        input: '{}',
-      };
-    }
-
-    it('says nothing at all about an approval somebody answers straight away', async () => {
-      // **The over-participation guard.** Nearly every gated tool call is
-      // answered in seconds by whoever is already watching that agent, and a
-      // durable line above every one of them would put a permanent "Ana is
-      // waiting for you to approve something" in the room for a state that
-      // lasted three seconds — once per gated turn, in every room, forever.
-      vi.useFakeTimers();
-      try {
-        const turn = openAndHold();
-        const answered = createSessionRoomTurnRunner({
-          waitMs: () => 10 * 60_000,
-          waitingGraceMs: () => 60_000,
-        }).run(request({ onWaiting: (waiting) => turn.waited.push(waiting) }));
-        await vi.advanceTimersByTimeAsync(1);
-
-        turn.call().projector.ingest(approvalRequired('call-1'));
-        await vi.advanceTimersByTimeAsync(3_000);
-        turn.call().projector.ingest({
-          type: 'interaction_resolved',
-          id: 'call-1',
-          resolution: 'approved',
-        });
-        await vi.advanceTimersByTimeAsync(120_000);
-
-        expect(turn.waited).toEqual([]);
-
-        turn.call().projector.ingest({ type: 'text_delta', text: 'green' });
-        turn.call().projector.ingest({ type: 'turn_end' });
-        await vi.advanceTimersByTimeAsync(1);
-        expect((await answered).text).toBe('green');
-      } finally {
-        vi.useRealTimers();
-      }
-    });
-
-    it('says so once when the prompt is still standing a minute later', async () => {
-      vi.useFakeTimers();
-      try {
-        const turn = openAndHold();
-        const answered = createSessionRoomTurnRunner({
-          waitMs: () => 10 * 60_000,
-          waitingGraceMs: () => 60_000,
-        }).run(request({ onWaiting: (waiting) => turn.waited.push(waiting) }));
-        await vi.advanceTimersByTimeAsync(1);
-
-        turn.call().projector.ingest(approvalRequired('call-1'));
-        await vi.advanceTimersByTimeAsync(59_000);
-        // Still nothing: the grace has not run out.
-        expect(turn.waited).toEqual([]);
-
-        await vi.advanceTimersByTimeAsync(2_000);
-        expect(turn.waited).toEqual([{ kind: 'approval', toolName: 'Bash' }]);
-
-        turn.call().projector.ingest({ type: 'turn_end' });
-        await vi.advanceTimersByTimeAsync(1);
-        await answered;
-      } finally {
-        vi.useRealTimers();
-      }
-    });
-
-    it('reports the wait first and the failure after, when a stall kills the turn', async () => {
-      // Order matters to the reader: "it is waiting on you" and then "it fell
-      // over" is a story; the other way round is a contradiction.
-      vi.useFakeTimers();
-      try {
-        const turn = openAndHold();
-        const answered = createSessionRoomTurnRunner({
-          waitMs: () => 10 * 60_000,
-          waitingGraceMs: () => 60_000,
-        }).run(request({ onWaiting: (waiting) => turn.waited.push(waiting) }));
-        await vi.advanceTimersByTimeAsync(1);
-
-        turn.call().projector.ingest(approvalRequired('call-1'));
-        await vi.advanceTimersByTimeAsync(60_500);
-        expect(turn.waited).toHaveLength(1);
-
-        // The stall watchdog's terminal sequence, a second later.
-        await vi.advanceTimersByTimeAsync(1_000);
-        turn.call().projector.ingest({ type: 'turn_end', terminalReason: 'error' });
-        await vi.advanceTimersByTimeAsync(1);
-
-        const result = await answered;
-        expect(result.unanswered).toBe('failed');
-        // And nothing more is said afterwards: the turn is over, so the prompt
-        // it was stopped on can no longer be answered by anybody.
-        await vi.advanceTimersByTimeAsync(120_000);
-        expect(turn.waited).toHaveLength(1);
-      } finally {
-        vi.useRealTimers();
-      }
-    });
-
-    it('forgets a standing prompt when the turn ends without resolving it', async () => {
-      // A timer that outlived its turn would tell a room to go and answer a
-      // prompt that no longer exists.
-      vi.useFakeTimers();
-      try {
-        const turn = openAndHold();
-        const answered = createSessionRoomTurnRunner({
-          waitMs: () => 10 * 60_000,
-          waitingGraceMs: () => 60_000,
-        }).run(request({ onWaiting: (waiting) => turn.waited.push(waiting) }));
-        await vi.advanceTimersByTimeAsync(1);
-
-        turn.call().projector.ingest(approvalRequired('call-1'));
-        await vi.advanceTimersByTimeAsync(1_000);
-        turn.call().projector.ingest({ type: 'turn_end' });
-        await vi.advanceTimersByTimeAsync(1);
-        await answered;
-
-        await vi.advanceTimersByTimeAsync(120_000);
-        expect(turn.waited).toEqual([]);
-      } finally {
-        vi.useRealTimers();
-      }
-    });
-  });
-
-  it('reports what its OWN turn is doing, and nothing another turn does', async () => {
-    // The `started` guard, on the activity path (DOR-1351). A tool call before
-    // this turn's own `turn_start` belongs to whoever else is on this session,
-    // and reporting it would put a different agent's file name under this
-    // agent's name in the room's live lane.
-    const reported: Array<SessionActivity | null> = [];
-    let stream: TestProjector | undefined;
-    let ownCall: TriggerCall | undefined;
-    turnBehaviour = (opts) => {
-      stream = opts.projector;
-      ownCall = opts;
-      return { accepted: true, canonicalId: opts.sessionId };
-    };
-
-    const answered = createSessionRoomTurnRunner({ waitMs: () => 50 }).run(
-      request({ onActivity: (activity) => reported.push(activity) })
+    registerOriginalNativeLaunchCase(
+      'runner-approval-quick',
+      'says nothing at all about an approval somebody answers straight away'
     );
-    await settle();
 
-    // Somebody else's turn, opened and closed on this same session.
-    stream?.ingest({ type: 'turn_start' });
-    stream?.ingest({
-      type: 'tool_call',
-      toolCallId: 'call-elsewhere',
-      toolName: 'Read',
-      input: '{"file_path":"/repo/secrets.md"}',
-    });
-    stream?.ingest({ type: 'turn_end' });
-
-    openTurn(ownCall as TriggerCall);
-    stream?.ingest({
-      type: 'tool_call',
-      toolCallId: 'call-mine',
-      toolName: 'Read',
-      input: '{"file_path":"/repo/standup.md"}',
-    });
-    stream?.ingest({ type: 'text_delta', text: 'green' });
-    stream?.ingest({ type: 'turn_end' });
-
-    expect((await answered).text).toBe('green');
-    await settle();
-    // One reading, this turn's own, and one clear at its end. The neighbour's
-    // file never appears.
-    expect(reported).toEqual([{ toolName: 'Read', target: 'standup.md' }, null]);
-  });
-
-  it('says nothing about a prompt raised inside somebody else s turn', async () => {
-    // The counter-assertion, and the reason it is not enough to watch the
-    // session for approval cards: a prompt belonging to a turn the room did not
-    // start is not the room's news, and reporting it would put a line in a
-    // shared conversation about work nobody there asked for.
-    const waited: RoomTurnWaiting[] = [];
-    let stream: TestProjector | undefined;
-    let ownCall: TriggerCall | undefined;
-    turnBehaviour = (opts) => {
-      stream = opts.projector;
-      ownCall = opts;
-      return { accepted: true, canonicalId: opts.sessionId };
-    };
-
-    // No grace, so this test can only stay green because the prompt belongs to
-    // somebody else's turn — never because the room simply had not spoken yet.
-    const answered = createSessionRoomTurnRunner({
-      waitMs: () => 50,
-      waitingGraceMs: () => 0,
-    }).run(request({ onWaiting: (waiting) => waited.push(waiting) }));
-    await settle();
-
-    stream?.ingest({ type: 'turn_start' });
-    stream?.ingest({
-      type: 'approval_required',
-      id: 'call-elsewhere',
-      startedAt: Date.now(),
-      toolCallId: 'call-elsewhere',
-      toolName: 'Bash',
-      input: '{}',
-    });
-    stream?.ingest({ type: 'turn_end' });
-
-    openTurn(ownCall as TriggerCall);
-    stream?.ingest({ type: 'text_delta', text: 'green' });
-    stream?.ingest({ type: 'turn_end' });
-
-    expect((await answered).text).toBe('green');
-    // Long enough for a zero-grace timer to have fired several times over.
-    await settle();
-    expect(waited).toEqual([]);
-  });
-
-  it('keeps listening for at least as long as it waits, whatever the pair says', async () => {
-    // `rooms.replyWaitMinutes: 120` with `rooms.lateReplyCeilingMinutes: 1` is
-    // schema-valid — two independent fields, both in range. Unclamped, the room
-    // stops LISTENING an hour and fifty-nine minutes before it stops WAITING,
-    // so a healthy turn is reported as failed and its answer is thrown away:
-    // this PR's own defect, reintroduced through the settings screen.
-    //
-    // The pair here is that shape with the clock scaled down: a wait no timer
-    // in this test can reach, and a ceiling that has already expired many times
-    // over by the time the turn answers.
-    let finishTurn = (): void => undefined;
-    turnBehaviour = (opts) => {
-      const { sessionId, projector, content } = opts;
-      openTurn(opts, content);
-      finishTurn = () => {
-        projector.ingest({ type: 'text_delta', text: 'green' });
-        projector.ingest({ type: 'turn_end' });
-      };
-      return { accepted: true, canonicalId: sessionId };
-    };
-
-    const runner = createSessionRoomTurnRunner({ waitMs: () => 60_000, ceilingMs: () => 1 });
-    const answered = runner.run(request());
-    // Twenty times the unclamped ceiling: if it were in force, it has fired.
-    await new Promise((resolve) => setTimeout(resolve, 20));
-    finishTurn();
-
-    const result = await answered;
-    // The subject is the answer, not the absence of a crash.
-    expect(result.text).toBe('green');
-    expect(result.unanswered).toBeUndefined();
-    expect(result.late).toBeUndefined();
-  });
-
-  it('gives up on a turn that never closes, and says the turn failed', async () => {
-    turnBehaviour = (opts) => {
-      openTurn(opts);
-      return { accepted: true, canonicalId: opts.sessionId };
-    };
-
-    const result = await createSessionRoomTurnRunner({ waitMs: () => 5, ceilingMs: () => 30 }).run(
-      request()
+    registerOriginalNativeLaunchCase(
+      'runner-approval-standing',
+      'says so once when the prompt is still standing a minute later'
     );
-    expect(result.late).toBeDefined();
 
-    const late = await result.late;
-    expect(late?.text).toBeNull();
-    expect(late?.unanswered).toBe('failed');
+    registerOriginalNativeLaunchCase(
+      'runner-approval-failed',
+      'reports the wait first and the failure after, when a stall kills the turn'
+    );
+
+    registerOriginalNativeLaunchCase(
+      'runner-approval-ended',
+      'forgets a standing prompt when the turn ends without resolving it'
+    );
   });
 
-  it('writes no runtime binding for a turn that never started', async () => {
-    // A ghost `session_metadata` row per failed message: `bindRoomSession` is
-    // never reached, so the next trigger mints a fresh id and the dead row and
-    // its projector stay forever.
-    turnBehaviour = REFUSED;
-    await createSessionRoomTurnRunner().run(request());
-    expect(persistSessionRuntime).not.toHaveBeenCalled();
+  registerOriginalNativeLaunchCase(
+    'runner-own-activity-data',
+    'reports what its OWN turn is doing, and nothing another turn does',
+    () => runOriginalReplyIdentityComponent('runner-own-activity-data')
+  );
 
-    // A dispatch that fails AFTER its launch step recorded the owner: the row
-    // for that minted id is taken back, because nothing will ever bind it.
-    // Seeded: dropping the take-back reddens this.
-    turnBehaviour = () => {
-      throw new Error('runtime is down');
-    };
-    await expect(createSessionRoomTurnRunner().run(request())).rejects.toThrow('runtime is down');
-    const [minted] = persistSessionRuntime.mock.calls[0] as [string];
-    expect(forgetUnstartedSession).toHaveBeenCalledWith(minted);
+  registerOriginalNativeLaunchCase(
+    'runner-foreign-approval-data',
+    'says nothing about a prompt raised inside somebody else s turn',
+    () => runOriginalReplyIdentityComponent('runner-foreign-approval-data')
+  );
 
-    // A session the room already holds is never taken back: its row is the
-    // conversation's, whatever happened to this one dispatch.
-    forgetUnstartedSession.mockClear();
-    await expect(
-      createSessionRoomTurnRunner().run(request({ sessionId: 'room-held' }))
-    ).rejects.toThrow('runtime is down');
-    expect(forgetUnstartedSession).not.toHaveBeenCalled();
-  });
+  registerOriginalNativeLaunchCase(
+    'runner-clamped-ceiling',
+    'keeps listening for at least as long as it waits, whatever the pair says'
+  );
+
+  registerOriginalNativeLaunchCase(
+    'runner-unclosed-ceiling',
+    'gives up on a turn that never closes, and says the turn failed'
+  );
+
+  registerOriginalNativeLaunchCase(
+    'runner-no-binding',
+    'writes no runtime binding for a turn that never started',
+    runOriginalLaunchOwnerRollbackComponent
+  );
 
   describe('a stop pressed while the turn is still starting', () => {
-    /**
-     * Start a turn that opens and then produces nothing, the way a turn whose
-     * process is still spawning does, and hand back the levers to drive it.
-     *
-     * @param runner - The runner under test.
-     * @param sessionId - The session the room bound for this turn.
-     */
-    function bootingTurn(
-      runner: ReturnType<typeof createSessionRoomTurnRunner>,
-      sessionId: string
-    ): { answered: Promise<unknown>; produce: () => void; close: () => void } {
-      let opened: TriggerCall | undefined;
-      turnBehaviour = (opts) => {
-        opened = opts;
-        openTurn(opts);
-        return { accepted: true, canonicalId: opts.sessionId };
-      };
-      const answered = runner.run(request({ sessionId }));
-      return {
-        answered,
-        produce: () => opened?.projector.ingest({ type: 'text_delta', text: 'the essay' }),
-        close: () => opened?.projector.ingest({ type: 'turn_end' }),
-      };
-    }
+    registerOriginalNativeLaunchCase(
+      'runner-boot-stop',
+      'stops the turn the moment it exists, instead of letting it run'
+    );
 
-    it('stops the turn the moment it exists, instead of letting it run', async () => {
-      // **The bug** (DOR-1424, rooms run F2 2026-08-17). Stop was pressed 0.7 s
-      // into a turn whose `bin/claude` was still spawning: the runtime had no
-      // turn to aim the interrupt at, answered that it had stopped nothing, and
-      // the process then ran the prompt to completion — a whole model turn
-      // nobody wanted, billed to the person who pressed Stop. The room already
-      // refuses to POST that answer (DOR-1313); this is about not paying for it.
-      const runner = createSessionRoomTurnRunner({ waitMs: () => 200, ceilingMs: () => 200 });
-      const turn = bootingTurn(runner, 'sess-booting');
-      await settle();
+    registerOriginalNativeLaunchCase(
+      'runner-confirmed-stop',
+      'leaves a turn that stops promptly alone, because it was already stopped'
+    );
 
-      expect(
-        (await runner.interrupt({ sessionId: 'sess-booting', agentPath: '/repo/ana' })).outcome
-      ).toBe('not-running');
-      expect(interruptQuery).toHaveBeenCalledTimes(1);
+    registerOriginalNativeLaunchCase(
+      'runner-unconfirmed-stop',
+      'does NOT latch an `unconfirmed` stop — that turn is running, not booting'
+    );
 
-      // The process finishes booting and the turn starts producing — the first
-      // moment there is anything to stop.
-      turn.produce();
-      await settle();
+    registerOriginalNativeLaunchCase(
+      'runner-missing-halt',
+      'reports a stop it could not even find a runtime for'
+    );
 
-      expect(interruptQuery.mock.calls).toEqual([['sess-booting'], ['sess-booting']]);
-      turn.close();
-      await turn.answered;
-    });
-
-    it('leaves a turn that stops promptly alone, because it was already stopped', async () => {
-      // The counter-assertion: nothing is remembered when the stop landed. A
-      // room that re-aimed every interrupt would send a second one into every
-      // ordinary halt, and the second one would arrive after the claim moved on.
-      interruptQuery.mockImplementation(() => Promise.resolve(mockInterruptReceipt('acked')));
-      const runner = createSessionRoomTurnRunner({ waitMs: () => 200, ceilingMs: () => 200 });
-      const turn = bootingTurn(runner, 'sess-prompt');
-      await settle();
-
-      expect(
-        (await runner.interrupt({ sessionId: 'sess-prompt', agentPath: '/repo/ana' })).outcome
-      ).toBe('acked');
-      turn.produce();
-      await settle();
-
-      expect(interruptQuery).toHaveBeenCalledTimes(1);
-      turn.close();
-      await turn.answered;
-    });
-
-    it('does NOT latch an `unconfirmed` stop — that turn is running, not booting', async () => {
-      // **The narrowing this case exists to pin** (spec
-      // `runtime-interrupt-receipts`). The boolean this replaced armed the latch
-      // on `!stopped`, which folded together two opposite facts: `not-running`
-      // ("the turn had not started yet" — the boot window this latch is FOR) and
-      // `unconfirmed` ("a turn IS running and the runtime declined"). Widening
-      // back to the old set re-aims a second stop at a turn that is well past
-      // its boot window, which is the retry loop the "re-aimed ONCE" rule
-      // forbids — reached from the other direction, so nothing else here catches
-      // it. `failed` is the same argument.
-      for (const outcome of ['unconfirmed', 'failed'] as const) {
-        interruptQuery.mockClear();
-        interruptQuery.mockImplementation(() => Promise.resolve(mockInterruptReceipt(outcome)));
-        const runner = createSessionRoomTurnRunner({ waitMs: () => 200, ceilingMs: () => 200 });
-        const turn = bootingTurn(runner, `sess-${outcome}`);
-        await settle();
-
-        expect(
-          (await runner.interrupt({ sessionId: `sess-${outcome}`, agentPath: '/repo/ana' })).outcome
-        ).toBe(outcome);
-
-        // The turn produces its first output — the moment the latch would fire.
-        turn.produce();
-        await settle();
-
-        expect(
-          interruptQuery.mock.calls,
-          `a \`${outcome}\` stop was latched and re-aimed. That receipt says a turn is ALREADY ` +
-            'running and the runtime would not confirm the stop, which is the opposite of the ' +
-            'boot window this latch is for — only `not-running` may arm it'
-        ).toEqual([[`sess-${outcome}`]]);
-        turn.close();
-        await turn.answered;
-      }
-    });
-
-    it('reports a stop it could not even find a runtime for', async () => {
-      // The narrowest failure there is, and the one most easily reported as a
-      // success: a session bound to a runtime this process did not start — the
-      // packaged desktop app ships only one SDK — has nothing behind it at all.
-      // Answering `acked` there would tell an operator a turn was stopped by a
-      // call that never happened, which is the exact confusion DOR-1425 exists
-      // to remove. `failed` and not `not-running`, because a missing runtime is a
-      // delivery problem rather than evidence that the turn was already over.
-      //
-      // Reached through the BINDING, which is the only way a real registry ever
-      // gets asked for a type it does not hold: an unbound session is resolved
-      // off the manifest, and that resolution never names a missing runtime.
-      // Until DOR-1720 this stood on a stub whose `get` answered `undefined`,
-      // where the real one throws — so the receipt this asserts was, against
-      // production, a rejection.
-      sessionOwners.set('sess-no-runtime', 'codex');
-      registeredRuntimes = ['claude-code'];
-
-      expect(
-        await createSessionRoomTurnRunner().interrupt({
-          sessionId: 'sess-no-runtime',
-          agentPath: '/repo/ana',
-        })
-      ).toEqual({ outcome: 'failed', reason: 'delivery-failed', runtime: 'codex' });
-      // And nothing was reached: there was nothing to reach.
-      expect(interruptQuery).not.toHaveBeenCalled();
-    });
-
-    it('never aims it at the NEXT turn, which is the room asking again', async () => {
-      // The lifetime, and the reason it is the claim's rather than the
-      // session's: Stop ends a turn, it does not silence an agent
-      // (`.claude/rules/room-conduct.md`). A stop that found nothing and was
-      // then kept would be delivered into whatever turn came next — a person
-      // pressing Stop and immediately retyping would have their new question
-      // killed by the old stop.
-      const runner = createSessionRoomTurnRunner({ waitMs: () => 200, ceilingMs: () => 200 });
-      const stopped = bootingTurn(runner, 'sess-again');
-      await settle();
-      await runner.interrupt({ sessionId: 'sess-again', agentPath: '/repo/ana' });
-      // It ends without ever producing anything — the stop did reach the
-      // process in the end — so nothing re-aims it and the mark is still there.
-      stopped.close();
-      await stopped.answered;
-      expect(interruptQuery).toHaveBeenCalledTimes(1);
-
-      const next = bootingTurn(runner, 'sess-again');
-      await settle();
-      next.produce();
-      await settle();
-
-      expect(interruptQuery).toHaveBeenCalledTimes(1);
-      next.close();
-      await next.answered;
-    });
+    registerOriginalNativeLaunchCase(
+      'runner-stop-state-pair',
+      'never aims it at the NEXT turn, which is the room asking again',
+      () => runOriginalRoomStopStateComponent(5)
+    );
   });
 
-  it('treats an empty turn as nothing to post', async () => {
-    turnBehaviour = saysAndCloses('   ');
-    expect((await createSessionRoomTurnRunner().run(request())).text).toBeNull();
-  });
+  registerOriginalNativeLaunchCase('runner-empty-text', 'treats an empty turn as nothing to post');
 
-  it('stops at the turn boundary rather than swallowing the next turn', async () => {
-    turnBehaviour = (opts) => {
-      const { sessionId, projector } = opts;
-      openTurn(opts);
-      projector.ingest({ type: 'text_delta', text: 'first' });
-      projector.ingest({ type: 'turn_end' });
-      // Whatever happens on this session afterwards is not this room's answer.
-      projector.ingest({ type: 'text_delta', text: 'second' });
-      return { accepted: true, canonicalId: sessionId };
-    };
-    expect((await createSessionRoomTurnRunner().run(request())).text).toBe('first');
-  });
+  registerOriginalNativeLaunchCase(
+    'runner-turn-boundary',
+    'stops at the turn boundary rather than swallowing the next turn'
+  );
 });
 
 describe('what a room turn actually sends (ADR-0273)', () => {
-  beforeEach(() => {
-    triggered.length = 0;
-    turnBehaviour = saysAndCloses('green');
-    sessionOwners.clear();
-    runtimesAskedFor.length = 0;
-  });
+  registerOriginalNativeLaunchCase(
+    'runner-content',
+    'sends the message byte for byte, with nothing wrapped around it'
+  );
 
-  it('sends the message byte for byte, with nothing wrapped around it', async () => {
-    // The regression guard for the prose prompt this replaced. `content` becomes
-    // the visible user turn in the session transcript, so anything prepended
-    // here is words nobody typed showing up as though a person had typed them.
-    const body = 'is the build green?';
-    await createSessionRoomTurnRunner().run(request({ entryText: body }));
-    expect(triggered).toHaveLength(1);
-    expect(triggered[0].content).toBe(body);
-  });
-
-  it('puts the room framing in the context bag instead', async () => {
-    await createSessionRoomTurnRunner().run(request());
-    expect(triggered[0].roomContext?.room.name).toBe('#backend');
-    // The field the whole phase exists for: an agent can tell a person from a
-    // machine. Assert the subject, not that a roster is merely present.
-    expect(triggered[0].roomContext?.members.find((m) => m.handle === 'dorian')?.isPerson).toBe(
-      true
-    );
-    expect(triggered[0].roomContext?.members.find((m) => m.handle === 'ana')?.isPerson).toBe(false);
-  });
+  registerOriginalNativeLaunchCase(
+    'runner-framing',
+    'puts the room framing in the context bag instead'
+  );
 });
 
 describe('what a room turn runs with (execution defaults)', () => {
-  beforeEach(() => {
-    triggered.length = 0;
-    persistSessionRuntime.mockClear();
-    turnBehaviour = saysAndCloses('green');
-    storedSettings = null;
-    runtimesConfig = USER_CONFIG_DEFAULTS.runtimes;
-    agentManifest = null;
-    registeredRuntimes = ['claude-code', 'codex', 'opencode', 'test-mode'];
-    sessionOwners.clear();
-    runtimesAskedFor.length = 0;
-  });
-
-  it("starts a room agent's first turn on the server's default model and effort", async () => {
-    // The gap this closes: a room turn had NO model or effort path at all. Its
-    // session row is written only after the turn starts, so reading the row —
-    // the way every other session inherits — would always come back empty on
-    // the turn that matters.
-    runtimesConfig = {
-      ...USER_CONFIG_DEFAULTS.runtimes,
-      claudeCode: {
-        ...USER_CONFIG_DEFAULTS.runtimes.claudeCode,
-        defaultModel: 'opus',
-        defaultEffort: 'high',
-      },
-    };
-
-    await createSessionRoomTurnRunner().run(request());
-
-    expect(triggered[0].settings).toEqual({ model: 'opus', effort: 'high' });
-    // The row itself is written by the registry, which resolves the same
-    // defaults on the INSERT that creates it — so the SECOND turn inherits them
-    // the ordinary way rather than through this path.
-    expect(persistSessionRuntime).toHaveBeenLastCalledWith(
-      expect.any(String),
-      'claude-code',
-      roomOrigin(),
-      '/repo/ana'
-    );
-  });
-
-  it('leaves a room session that already has settings alone', async () => {
-    // "Applies to new conversations — running ones keep their settings." A room
-    // conversation with a row is a running one, whatever the default now says.
-    runtimesConfig = {
-      ...USER_CONFIG_DEFAULTS.runtimes,
-      claudeCode: { ...USER_CONFIG_DEFAULTS.runtimes.claudeCode, defaultModel: 'opus' },
-    };
-    storedSettings = { model: 'sonnet' };
-
-    await createSessionRoomTurnRunner().run(request({ sessionId: 'room-session-with-a-row' }));
-
-    expect(triggered[0].settings).toEqual({});
-  });
-
-  it('sends no model at all when nothing is configured', async () => {
-    await createSessionRoomTurnRunner().run(request());
-    expect(triggered[0].settings).toEqual({});
-  });
-
-  it("runs the turn on the addressed agent's own model and effort", async () => {
-    // Rooms are where the per-agent setting earns its keep: the room addressed
-    // THIS agent, so what it says about itself outranks the server's default.
-    runtimesConfig = {
-      ...USER_CONFIG_DEFAULTS.runtimes,
-      claudeCode: {
-        ...USER_CONFIG_DEFAULTS.runtimes.claudeCode,
-        defaultModel: 'opus',
-        defaultEffort: 'high',
-      },
-    };
-    agentManifest = { runtime: 'claude-code', model: 'sonnet', effort: 'low' };
-
-    await createSessionRoomTurnRunner().run(request());
-
-    expect(triggered[0].settings).toEqual({ model: 'sonnet', effort: 'low' });
-  });
-
-  it('never seeds a Codex model onto the claude-code session a missing runtime falls back to', async () => {
-    // The reported break, end to end. This build has no Codex adapter, so the
-    // room turn runs on claude-code — and the agent's `gpt-5.3-codex` would
-    // otherwise ride along onto it, handing the Claude Code SDK an id from
-    // another provider's namespace on the very first turn.
-    registeredRuntimes = ['claude-code'];
-    runtimesConfig = {
-      ...USER_CONFIG_DEFAULTS.runtimes,
-      claudeCode: { ...USER_CONFIG_DEFAULTS.runtimes.claudeCode, defaultModel: 'opus' },
-    };
-    agentManifest = { runtime: 'codex', model: 'gpt-5.3-codex' };
-
-    await createSessionRoomTurnRunner().run(request());
-
-    // The server's default for the runtime it actually landed on — the only
-    // value that can mean anything to that session.
-    expect(triggered[0].settings).toEqual({ model: 'opus' });
-    expect(persistSessionRuntime).toHaveBeenLastCalledWith(
-      expect.any(String),
-      'claude-code',
-      roomOrigin(),
-      '/repo/ana'
-    );
-  });
-
-  it('still seeds that model once the runtime it was written for is registered', async () => {
-    registeredRuntimes = ['claude-code', 'codex'];
-    agentManifest = { runtime: 'codex', model: 'gpt-5.3-codex' };
-
-    await createSessionRoomTurnRunner().run(request());
-
-    expect(triggered[0].settings).toEqual({ model: 'gpt-5.3-codex' });
-  });
-
-  it("keeps the server's effort for an agent that only names a model", async () => {
-    runtimesConfig = {
-      ...USER_CONFIG_DEFAULTS.runtimes,
-      claudeCode: {
-        ...USER_CONFIG_DEFAULTS.runtimes.claudeCode,
-        defaultModel: 'opus',
-        defaultEffort: 'high',
-      },
-    };
-    agentManifest = { runtime: 'claude-code', model: 'sonnet' };
-
-    await createSessionRoomTurnRunner().run(request());
-
-    expect(triggered[0].settings).toEqual({ model: 'sonnet', effort: 'high' });
-  });
-
-  it('answers the same for a relay-triggered turn as for a room turn', async () => {
-    // Which model an agent is is not a question that may depend on who is
-    // asking. It did: the room resolved this whole ladder and the relay
-    // resolved nothing at all, so the same agent answered a person in a channel
-    // on haiku and a colleague over relay on the server default (DOR-1344).
-    // Both surfaces now go through `resolveUnattendedSessionDefaults`, and this
-    // is what would notice one of them growing a second opinion.
-    runtimesConfig = {
-      ...USER_CONFIG_DEFAULTS.runtimes,
-      claudeCode: {
-        ...USER_CONFIG_DEFAULTS.runtimes.claudeCode,
-        defaultModel: 'opus',
-        defaultEffort: 'high',
-      },
-    };
-    agentManifest = { runtime: 'claude-code', model: 'claude-haiku-4-5', effort: 'low' };
-
-    await createSessionRoomTurnRunner().run(request());
-    const viaRelay = await createTurnExecutionSettingsResolver()({
-      runtimeType: 'claude-code',
-      sessionId: 'a-relay-session-with-no-row',
-      agentDirectory: '/repo/ana',
-    });
-
-    expect(viaRelay).toEqual(triggered[0].settings);
-    expect(viaRelay).toEqual({ model: 'claude-haiku-4-5', effort: 'low' });
-  });
+  registerOriginalNativeDefaultsCase(
+    'defaults-server',
+    "starts a room agent's first turn on the server's default model and effort"
+  );
+  registerOriginalNativeDefaultsCase(
+    'defaults-existing',
+    'leaves a room session that already has settings alone'
+  );
+  registerOriginalNativeDefaultsCase(
+    'defaults-empty',
+    'sends no model at all when nothing is configured'
+  );
+  registerOriginalNativeDefaultsCase(
+    'defaults-agent',
+    "runs the turn on the addressed agent's own model and effort"
+  );
+  registerOriginalNativeDefaultsCase(
+    'defaults-missing-runtime',
+    'never seeds a Codex model onto the claude-code session a missing runtime falls back to'
+  );
+  registerOriginalNativeDefaultsCase(
+    'defaults-registered-codex',
+    'still seeds that model once the runtime it was written for is registered'
+  );
+  registerOriginalNativeDefaultsCase(
+    'defaults-kept-effort',
+    "keeps the server's effort for an agent that only names a model"
+  );
+  registerOriginalNativeDefaultsCase(
+    'defaults-relay-equality',
+    'answers the same for a relay-triggered turn as for a room turn'
+  );
 });
 
 /**
@@ -2548,252 +534,55 @@ describe('what a room turn runs with (execution defaults)', () => {
  * The per-TURN mode below is still this file's, because the row is written
  * after the turn starts and cannot seed the turn that matters.
  *
- * Seeded defects, each red before the code stood:
- *
- * - Dropping `permissionMode` from the room's per-turn seed reddens "the FIRST
- *   turn already runs at it" — the row is written after the turn starts, so a
- *   fix that only seeds the row leaves the turn that matters at ask-first.
- * - Dropping `externalAuthor` from the turn origin reddens "never lets a
- *   stranger on a bridged chat start a session at that level" — the fact that
- *   holds DOR-604 on the bridged path is the one the mapping reads.
- * - Resolving the stop for a session that already has a row reddens "leaves a
- *   room conversation that already has settings alone".
+ * These controls observe copied computed defaults immediately before the
+ * original dispatch and inspect the actual persisted session rows. Provider
+ * behavior comes from finite external SDK DATA under the real constructor.
  */
 describe('what power a room turn runs at (DOR-1917)', () => {
-  beforeEach(() => {
-    triggered.length = 0;
-    persistSessionRuntime.mockClear();
-    turnBehaviour = saysAndCloses('green');
-    storedSettings = null;
-    runtimesConfig = USER_CONFIG_DEFAULTS.runtimes;
-    agentManifest = null;
-    registeredRuntimes = ['claude-code', 'codex', 'opencode', 'test-mode'];
-    sessionOwners.clear();
-  });
-
-  /** The `runtimes` section with one stop set, global tier. */
-  function atStop(stop: 'ask' | 'act' | 'autonomy'): UserConfig['runtimes'] {
-    return { ...USER_CONFIG_DEFAULTS.runtimes, defaultTrustStop: stop };
-  }
-
-  it('runs a new room session at the operator’s Full autonomy, on the FIRST turn', async () => {
-    runtimesConfig = atStop('autonomy');
-
-    await createSessionRoomTurnRunner().run(request());
-
-    // The turn itself, not merely the row it leaves behind. The row is written
-    // after the turn starts, so a seed that reached only the row would leave the
-    // one turn a person is waiting on stopping to ask.
-    expect(triggered[0].newSessionPermissionMode).toBe('bypassPermissions');
-    // And NOT folded into the preference bag beside it.
-    expect(triggered[0].settings).toEqual({});
-  });
-
-  it('records that level on the row, so every turn after it inherits the ordinary way', async () => {
-    runtimesConfig = atStop('autonomy');
-
-    await createSessionRoomTurnRunner().run(request());
-
-    // The room no longer resolves a mode for the row: it declares what it IS,
-    // and the one mapping in `session/origin/turn-origin.ts` reads the operator's stop
-    // off that (DOR-2105). What this pins is the declaration — that the call
-    // names a room, with the fact that decides its power.
-    expect(persistSessionRuntime).toHaveBeenLastCalledWith(
-      expect.any(String),
-      'claude-code',
-      roomOrigin(),
-      '/repo/ana'
-    );
-  });
-
-  it('resolves the stop through the runtime’s own vocabulary, not a mode id', async () => {
-    // `act` is `acceptEdits` on Claude Code and something else elsewhere. The
-    // stop is what config stores; the mapping is the runtime's, and it is the
-    // same one the dial renders from — including the first-declared rule that
-    // makes `act` mean `acceptEdits` rather than `auto`.
-    runtimesConfig = atStop('act');
-
-    await createSessionRoomTurnRunner().run(request());
-
-    expect(triggered[0].newSessionPermissionMode).toBe('acceptEdits');
-  });
-
-  it("starts at the agent's own stop only as the permission gate reads it", async () => {
-    // The folder's file asks for Full autonomy; the gate's reader, which narrows
-    // an arriving agent's unscreened settings, says it keeps none of its own.
-    runtimesConfig = atStop('ask');
-    agentManifest = { runtime: 'claude-code', permissions: { filesAndCommands: 'autonomy' } };
-    initPermissionGate({ readAgentPermissions: async () => undefined });
-    try {
-      await createSessionRoomTurnRunner().run(request());
-      expect(triggered[0].newSessionPermissionMode).toBe('default');
-    } finally {
-      resetPermissionGate();
-    }
-  });
-
-  it("uses the agent's own stop when the gate reader keeps it", async () => {
-    runtimesConfig = atStop('ask');
-    agentManifest = { runtime: 'claude-code' };
-    initPermissionGate({ readAgentPermissions: async () => ({ filesAndCommands: 'autonomy' }) });
-    try {
-      await createSessionRoomTurnRunner().run(request());
-      expect(triggered[0].newSessionPermissionMode).toBe('bypassPermissions');
-    } finally {
-      resetPermissionGate();
-    }
-  });
-
-  it('lets the per-runtime setting beat the global one', async () => {
-    runtimesConfig = {
-      ...USER_CONFIG_DEFAULTS.runtimes,
-      defaultTrustStop: 'autonomy',
-      claudeCode: { ...USER_CONFIG_DEFAULTS.runtimes.claudeCode, defaultTrustStop: 'ask' },
-    };
-
-    await createSessionRoomTurnRunner().run(request());
-
-    expect(triggered[0].newSessionPermissionMode).toBe('default');
-  });
-
-  it('sends no permission mode at all when no stop is configured', async () => {
-    // The shipped default, and the whole safety argument for this change: an
-    // install whose operator never answered the power door behaves byte for byte
-    // as it did — no mode on the turn, and no fourth argument on the row, so the
-    // runtime's own default still decides.
-    await createSessionRoomTurnRunner().run(request());
-
-    expect(triggered[0].newSessionPermissionMode).toBeUndefined();
-    expect(triggered[0].settings).toEqual({});
-    expect(persistSessionRuntime).toHaveBeenLastCalledWith(
-      expect.any(String),
-      'claude-code',
-      roomOrigin(),
-      '/repo/ana'
-    );
-  });
-
-  it('leaves a room conversation that already has settings alone', async () => {
-    // "Applies to new conversations — running ones keep their settings." A room
-    // that has been talking is a running conversation, and raising it under the
-    // agent mid-thread is exactly what a person changing a default does not
-    // expect.
-    runtimesConfig = atStop('autonomy');
-    storedSettings = { permissionMode: 'default' };
-
-    await createSessionRoomTurnRunner().run(request({ sessionId: 'room-session-with-a-row' }));
-
-    expect(triggered[0].newSessionPermissionMode).toBeUndefined();
-    expect(triggered[0].settings).toEqual({});
-    expect(persistSessionRuntime).toHaveBeenLastCalledWith(
-      expect.any(String),
-      'claude-code',
-      roomOrigin(),
-      '/repo/ana'
-    );
-    // **And the ROW is left alone too** (DOR-2105 review). The registry is a
-    // mock here, so this cannot read a row — but it can read the origin the
-    // runner actually passed through the REAL mapping, and that answer is what
-    // the registry acts on. `configured-stop-on-insert` is the guarantee: a row
-    // that already exists is never seeded, which is ADR 260908-170643's
-    // "a room conversation that already has settings is untouched". The row
-    // itself is asserted over a real database in
-    // `core/__tests__/runtime-registry.test.ts` ("claims a row an earlier
-    // settings change left unbound") and end to end over a real config in
-    // `routes/__tests__/default-trust-stop.integration.test.ts`.
-    const origin = persistSessionRuntime.mock.lastCall?.[2] as TurnOrigin;
-    expect(permissionSeedForOrigin(origin)).toBe('configured-stop-on-insert');
-  });
-
-  it('never lets a stranger on a bridged chat start a session at that level', async () => {
-    // A bridged Telegram or Slack chat is a projection of a relay binding into a
-    // room, so an off-machine sender's message reaches this same path. A binding
-    // carries its own grant precisely because nobody picked a mode for messages
-    // from off this machine (DOR-604) — so seeding the operator's level from a
-    // stranger's message would make the bridged path strictly looser than the
-    // binding beside it, for the very same sender.
-    runtimesConfig = atStop('autonomy');
-
-    await createSessionRoomTurnRunner().run(request({ externalAuthor: true }));
-
-    expect(triggered[0].newSessionPermissionMode).toBeUndefined();
-    // And the row half of the same rule travels in the origin, where the one
-    // mapping reads it (DOR-2105): the call is made, and it declares that this
-    // message came from off this machine.
-    expect(persistSessionRuntime).toHaveBeenLastCalledWith(
-      expect.any(String),
-      'claude-code',
-      roomOrigin(true),
-      '/repo/ana'
-    );
-  });
-
-  // Power flows downstream, never up (spec `trusted-by-default-flip` §4). The
-  // seed above only reaches a NEW conversation; a room conversation is one per
-  // (room, agent) and usually already exists, so on its own a stranger's
-  // message into a conversation already at Full autonomy ran at Full autonomy.
-  // The ceiling bounds the turn itself, on an existing row too.
-  it('holds a stranger’s turn in an existing Full autonomy conversation to its bound', async () => {
-    runtimesConfig = atStop('autonomy');
-    storedSettings = { permissionMode: 'bypassPermissions' };
-
-    await createSessionRoomTurnRunner().run(
-      request({
-        sessionId: 'room-session-with-a-row',
-        externalAuthor: true,
-        permissionCeiling: 'runtime-default',
-      })
-    );
-
-    expect(triggered[0].newSessionPermissionMode).toBeUndefined();
-    expect(triggered[0].permissionCeiling).toBe('runtime-default');
-  });
-
-  it('holds a turn another agent’s post started to that agent’s level', async () => {
-    storedSettings = { permissionMode: 'bypassPermissions' };
-    const posterLevel = { asks: 'when-risky', reach: 'edit' } as const;
-
-    await createSessionRoomTurnRunner().run(
-      request({ sessionId: 'room-session-with-a-row', permissionCeiling: posterLevel })
-    );
-
-    expect(triggered[0].permissionCeiling).toEqual(posterLevel);
-  });
-
-  it('sends no bound for a person’s own message', async () => {
-    await createSessionRoomTurnRunner().run(request());
-
-    expect(triggered[0].permissionCeiling).toBeUndefined();
-  });
-
-  it('still carries the model and effort for that stranger’s turn', async () => {
-    // The clamp is about POWER and nothing else. Which model an agent is does
-    // not depend on who is speaking to it, and a change that clamped the whole
-    // seed would quietly undo DOR-1344 on the bridged path.
-    runtimesConfig = {
-      ...atStop('autonomy'),
-      claudeCode: { ...USER_CONFIG_DEFAULTS.runtimes.claudeCode, defaultModel: 'opus' },
-    };
-
-    await createSessionRoomTurnRunner().run(request({ externalAuthor: true }));
-
-    expect(triggered[0].settings).toEqual({ model: 'opus' });
-    expect(triggered[0].newSessionPermissionMode).toBeUndefined();
-  });
-
-  it('carries the model and the power level together on one first turn', async () => {
-    // The two seeds share a path now; this is what would notice one of them
-    // dropping the other.
-    runtimesConfig = {
-      ...atStop('autonomy'),
-      claudeCode: { ...USER_CONFIG_DEFAULTS.runtimes.claudeCode, defaultModel: 'opus' },
-    };
-
-    await createSessionRoomTurnRunner().run(request());
-
-    expect(triggered[0].settings).toEqual({ model: 'opus' });
-    expect(triggered[0].newSessionPermissionMode).toBe('bypassPermissions');
-  });
+  registerOriginalNativeDefaultsCase(
+    'power-first',
+    'runs a new room session at the operator’s Full autonomy, on the FIRST turn'
+  );
+  registerOriginalNativeDefaultsCase(
+    'power-origin',
+    'records that level on the row, so every turn after it inherits the ordinary way'
+  );
+  registerOriginalNativeDefaultsCase(
+    'power-vocabulary',
+    'resolves the stop through the runtime’s own vocabulary, not a mode id'
+  );
+  registerOriginalNativeDefaultsCase(
+    'power-gate-clamps',
+    "starts at the agent's own stop only as the permission gate reads it"
+  );
+  registerOriginalNativeDefaultsCase(
+    'power-gate-keeps',
+    "uses the agent's own stop when the gate reader keeps it"
+  );
+  registerOriginalNativeDefaultsCase(
+    'power-runtime-beats-global',
+    'lets the per-runtime setting beat the global one'
+  );
+  registerOriginalNativeDefaultsCase(
+    'power-omitted',
+    'sends no permission mode at all when no stop is configured'
+  );
+  registerOriginalNativeDefaultsCase(
+    'power-existing',
+    'leaves a room conversation that already has settings alone'
+  );
+  registerOriginalNativeDefaultsCase(
+    'power-external-clamp',
+    'never lets a stranger on a bridged chat start a session at that level'
+  );
+  registerOriginalNativeDefaultsCase(
+    'power-external-model',
+    'still carries the model and effort for that stranger’s turn'
+  );
+  registerOriginalNativeDefaultsCase(
+    'power-model-and-mode',
+    'carries the model and the power level together on one first turn'
+  );
 });
 
 /**
@@ -2814,64 +603,43 @@ describe('what power a room turn runs at (DOR-1917)', () => {
  * every `text_delta` of every room turn in the database.
  */
 describe('a room turn is recorded durably', () => {
-  let store: SessionEventStoreInstance;
+  registerOriginalNativeDefaultsCase(
+    'durable-claude-boundaries',
+    'writes rows for a claude-code turn, which used to write none'
+  );
 
-  beforeEach(() => {
-    store = new SessionEventStore(createTestDb());
-    setSessionEventStore(store);
-    internalSessionId = () => undefined;
-    turnBehaviour = saysAndCloses('green');
-    getCapabilities.mockReturnValue(DECLARED_CAPABILITIES);
-    sessionOwners.clear();
-    runtimesAskedFor.length = 0;
-  });
+  registerOriginalNativeDefaultsCase(
+    'durable-claude-no-text',
+    'keeps only the boundaries, so the transcript is not double-stored'
+  );
 
-  afterEach(() => {
-    setSessionEventStore(undefined);
-  });
+  registerOriginalNativeLaunchCase(
+    'runner-durable-error',
+    'records the failure of a turn that ended in an error'
+  );
 
-  it('writes rows for a claude-code turn, which used to write none', async () => {
-    const result = await createSessionRoomTurnRunner().run(request());
+  registerOriginalNativeLaunchCase(
+    'runner-durable-log',
+    'still stores a log-backed runtime in full, because there the rows ARE the history'
+  );
+});
 
-    const recorded = store.readAll(result.sessionId);
-    expect(recorded.map((event: { type: string }) => event.type)).toEqual([
-      'turn_start',
-      'turn_end',
-    ]);
-  });
-
-  it('keeps only the boundaries, so the transcript is not double-stored', async () => {
-    turnBehaviour = saysAndCloses('Green', ' — ', 'nothing failed.');
-
-    const result = await createSessionRoomTurnRunner().run(request());
-
-    const recorded = store.readAll(result.sessionId);
-    expect(recorded.some((event: { type: string }) => event.type === 'text_delta')).toBe(false);
-  });
-
-  it('records the failure of a turn that ended in an error', async () => {
-    // The incident's actual question — did it run and break, or never run? The
-    // terminal reason is the answer, and it is on the row.
-    turnBehaviour = (opts) => {
-      const { sessionId, projector } = opts;
-      openTurn(opts);
-      projector.ingest({ type: 'turn_end', terminalReason: 'error' });
-      return { accepted: true, canonicalId: sessionId };
-    };
-
-    const result = await createSessionRoomTurnRunner().run(request());
-
-    const recorded = store.readAll(result.sessionId);
-    expect(recorded.at(-1)).toMatchObject({ type: 'turn_end', terminalReason: 'error' });
-  });
-
-  it('still stores a log-backed runtime in full, because there the rows ARE the history', async () => {
-    getCapabilities.mockReturnValue({ ...DECLARED_CAPABILITIES, logBackedHistory: true });
-    turnBehaviour = saysAndCloses('green');
-
-    const result = await createSessionRoomTurnRunner().run(request());
-
-    const recorded = store.readAll(result.sessionId);
-    expect(recorded.some((event: { type: string }) => event.type === 'text_delta')).toBe(true);
-  });
+// Upstream power-flow subjects run through the same real isolated native construction.
+describe('upstream Room turn permission bounds with original ownership', () => {
+  registerOriginalNativeLaunchCase(
+    'runner-canonical-level',
+    'carries the turn’s recorded level to the id the runtime renamed it to'
+  );
+  registerOriginalNativeDefaultsCase(
+    'power-stranger-existing',
+    'holds a stranger’s turn in an existing Full autonomy conversation to its bound'
+  );
+  registerOriginalNativeDefaultsCase(
+    'power-agent-bound',
+    'holds a turn another agent’s post started to that agent’s level'
+  );
+  registerOriginalNativeDefaultsCase(
+    'power-human-unbounded',
+    'sends no bound for a person’s own message'
+  );
 });

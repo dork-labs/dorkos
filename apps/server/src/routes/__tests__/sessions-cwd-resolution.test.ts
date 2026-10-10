@@ -1,3 +1,4 @@
+import { registerOriginalNativeLaunchCase } from '../../services/rooms/repo/__tests__/room-original-native-case.js';
 import { MainRequestAdmission } from '../../services/core/lifecycle/main-request-admission.js';
 /**
  * @vitest-environment node
@@ -86,27 +87,32 @@ vi.mock('../../services/workspace/resolve-session-cwd.js', async (importOriginal
   };
 });
 
-vi.mock('../../services/core/runtime-registry.js', () => ({
-  runtimeRegistry: {
-    getNativeSessionCwd: vi.fn(() => null),
-    getDefault: vi.fn(() => fakeRuntime),
-    get: vi.fn(() => fakeRuntime),
-    listRuntimes: vi.fn(() => [fakeRuntime]),
-    getAllCapabilities: vi.fn(() => ({})),
-    getDefaultType: vi.fn(() => 'claude-code'),
-    resolveForSession: vi.fn(async () => fakeRuntime),
-    resolveForSessionWithOwnership: vi.fn(async () => ({
-      runtime: fakeRuntime,
-      bound: sessionBound,
-    })),
-    getSessionRuntimeType: vi.fn(async () => 'claude-code'),
-    persistSessionRuntime: vi.fn(async () => true),
-    getSessionAgentPath: vi.fn(async () => sessionAgentPath),
-    has: vi.fn(() => true),
-    getSessionSettings: vi.fn(async () => null),
-    saveSessionSettings: vi.fn(async () => {}),
-    getSessionSettingsMany: vi.fn(() => new Map()),
-  },
+vi.mock('../../services/core/runtime-registry.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../services/core/runtime-registry.js')>()),
+  runtimeRegistry: Object.assign(
+    (await importOriginal<typeof import('../../services/core/runtime-registry.js')>())
+      .runtimeRegistry,
+    {
+      getNativeSessionCwd: vi.fn(() => null),
+      getDefault: vi.fn(() => fakeRuntime),
+      get: vi.fn(() => fakeRuntime),
+      listRuntimes: vi.fn(() => [fakeRuntime]),
+      getAllCapabilities: vi.fn(() => ({})),
+      getDefaultType: vi.fn(() => 'claude-code'),
+      resolveForSession: vi.fn(async () => fakeRuntime),
+      resolveForSessionWithOwnership: vi.fn(async () => ({
+        runtime: fakeRuntime,
+        bound: sessionBound,
+      })),
+      getSessionRuntimeType: vi.fn(async () => 'claude-code'),
+      persistSessionRuntime: vi.fn(async () => true),
+      getSessionAgentPath: vi.fn(async () => sessionAgentPath),
+      has: vi.fn(() => true),
+      getSessionSettings: vi.fn(async () => null),
+      saveSessionSettings: vi.fn(async () => {}),
+      getSessionSettingsMany: vi.fn(() => new Map()),
+    }
+  ),
   RuntimeNotRegisteredError: class RuntimeNotRegisteredError extends Error {},
 }));
 
@@ -159,7 +165,7 @@ import { disposeProjector } from '../../services/session/session-state-projector
 import { logger } from '../../lib/logger.js';
 import type { AuthorRecord } from '../../services/rooms/author-registry.js';
 import type { RoomWorktreeManager } from '../../services/rooms/repo/room-worktree-manager.js';
-import { RoomError } from '../../services/rooms/room-errors.js';
+import { RoomError } from '../../services/rooms/data/room-errors.js';
 import { roomSessionPlace } from '../../services/rooms/repo/room-turn-place.js';
 import { workspaceGateFor } from '../../services/workspace/index.js';
 
@@ -448,36 +454,15 @@ describe('POST /:id/messages — a managed binding across turns', () => {
  * who names any other directory still outranks the room.
  */
 describe('POST /:id/messages — a room-bound session', () => {
-  it('resumes at the agent’s home, as the room’s agent, with the room’s folders granted', async () => {
-    manifestBinding = { mode: 'home' };
-    sessionAgentPath = AGENT;
-    roomBinding = { roomId: 'room-1', authorId: 'author-1', sessionId: S1 };
+  registerOriginalNativeLaunchCase(
+    'app-resume-home',
+    'resumes at the agent’s home, as the room’s agent, with the room’s folders granted'
+  );
 
-    const opts = await sendAndCapture();
-
-    expect(opts?.cwd).toBe(AGENT);
-    expect(opts?.forAgent).toBe(AGENT);
-    expect(opts?.additionalDirectories).toEqual(
-      expect.arrayContaining([
-        { path: WORKTREE, access: 'write' },
-        { path: REPO, access: 'read' },
-      ])
-    );
-  });
-
-  it('replaces a named copy of the room’s files with the home, keeping the grants', async () => {
-    // The client resends the directory it last showed, which was the copy.
-    manifestBinding = { mode: 'home' };
-    sessionAgentPath = AGENT;
-    roomBinding = { roomId: 'room-1', authorId: 'author-1', sessionId: S1 };
-
-    const opts = await sendAndCapture({ cwd: WORKTREE });
-
-    expect(opts?.cwd).toBe(AGENT);
-    expect(opts?.additionalDirectories).toEqual(
-      expect.arrayContaining([{ path: WORKTREE, access: 'write' }])
-    );
-  });
+  registerOriginalNativeLaunchCase(
+    'app-resume-copy',
+    'replaces a named copy of the room’s files with the home, keeping the grants'
+  );
 
   // The desk guard (spec `agent-home-desk` §3.4): a room's agent stands only
   // at its own desk, so a folder that is no copy of its own is refused before
@@ -495,35 +480,36 @@ describe('POST /:id/messages — a room-bound session', () => {
 
   // A room with no files of its own is the ordinary case, and the manager says
   // so by throwing. Nothing is granted.
-  it('runs at home with nothing granted when the room has no files of its own', async () => {
-    manifestBinding = { mode: 'home' };
-    sessionAgentPath = AGENT;
-    roomBinding = { roomId: 'room-1', authorId: 'author-1', sessionId: S1 };
-    ensureWorktree = () =>
-      Promise.reject(
-        new RoomError('NOT_A_PROJECT_ROOM', 'This room does not have files of its own.')
-      );
+  registerOriginalNativeLaunchCase(
+    'app-resume-no-repo',
+    'runs at home with nothing granted when the room has no files of its own'
+  );
 
-    const opts = await sendAndCapture();
+  registerOriginalNativeLaunchCase(
+    'app-resume-config-off',
+    'runs at home without Room grants while project repos are switched off'
+  );
 
-    expect(opts?.cwd).toBe(AGENT);
-    expect(opts).not.toHaveProperty('additionalDirectories');
-  });
+  registerOriginalNativeLaunchCase(
+    'app-resume-opencode-copy',
+    'refuses an actual OpenCode-typed original native session created in its Room copy before any provider starts'
+  );
 
   // The label is the readable half of the copy's folder name, so the two
   // paths have to read it from the same place.
-  it('asks for the copy under the label the room shows', async () => {
-    const asked = vi.fn(() => Promise.resolve({ path: WORKTREE, repo: REPO }));
-    manifestBinding = { mode: 'home' };
-    sessionAgentPath = AGENT;
-    roomAuthor = agentAuthor('Ana the Reviewer');
-    roomBinding = { roomId: 'room-1', authorId: 'author-1', sessionId: S1 };
-    ensureWorktree = asked;
+  registerOriginalNativeLaunchCase(
+    'app-resume-label',
+    'asks for the copy under the label the room shows'
+  );
 
-    await sendAndCapture();
-
-    expect(asked).toHaveBeenCalledWith('Ana the Reviewer');
-  });
+  registerOriginalNativeLaunchCase(
+    'app-resume-credential-revoked',
+    'refuses Room folder grants when the actual request credential is revoked during placement'
+  );
+  registerOriginalNativeLaunchCase(
+    'app-resume-target-retired',
+    'refuses a resumed Room placement when its original target roster is retired'
+  );
 
   it('leaves a session no room answers with exactly as it was', async () => {
     manifestBinding = { mode: 'home' };

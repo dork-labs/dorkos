@@ -69,7 +69,7 @@ import {
   editQueuedMessage,
 } from '../queued-message-edits.js';
 import { MessageQueueStore, setMessageQueueStore } from '../message-queue-store.js';
-import { roomTurnLaunchStep } from '../../rooms/repo/room-turn-place.js';
+import { registerOriginalNativeLaunchCase } from '../../rooms/repo/__tests__/room-original-native-case.js';
 import { ROOMS } from '../../../config/constants.js';
 import {
   getOrCreateProjector,
@@ -2573,85 +2573,15 @@ describe('isTurnInFlight (spec `agent-home-desk` §6.1)', () => {
   });
 });
 
-describe('a room turn`s launch step asks every bound session (spec `agent-home-desk` §6.1)', () => {
-  /**
-   * The room turn's launch step for session `room-session`, with `session` (the
-   * one these cases dispatch on) as the SECOND session bound to the same
-   * (room, agent) — an app-resumed conversation. The step's busy read is the
-   * dispatcher's own `isTurnInFlight`; `reached` records whether the step got
-   * past it to anything that touches the copy.
-   */
-  function launchStep() {
-    const reached: string[] = [];
-    const step = roomTurnLaunchStep(
-      {
-        boundSessionIds: () => ['room-session', session],
-        isTurnInFlight: (id) => Promise.resolve(isTurnInFlight(id, runtime)),
-        worktrees: {
-          retireLegacyPlumbing: () => {
-            reached.push('retire');
-            return Promise.resolve({ removed: 0, blockRemoved: false });
-          },
-          refreshTarget: () => {
-            reached.push('refresh');
-            return null;
-          },
-        },
-        describeCommits: () => new Map(),
-        forgetBaselines: () => {},
-      },
-      {
-        roomId: 'room-1',
-        worktree: '/rooms/room-1/worktrees/ana-1',
-        agentPath: '/agents/ana',
-        files: {
-          worktreePath: '/rooms/room-1/worktrees/ana-1',
-          branch: 'room/ana-1',
-          repoPath: '/rooms/room-1/repo',
-          behind: 1,
-          ahead: 0,
-        },
-      }
-    );
-    return { step, reached };
-  }
-
-  it('is held busy while the second session`s turn runs, and goes ahead once it settles', async () => {
-    const first = gate();
-    runtime.withScenarios([heldTurn(first.wait)]);
-    await send('an app-resumed turn');
-    await settle();
-    const { step, reached } = launchStep();
-
-    const held = await step('room-session');
-    expect(held.files?.refresh).toEqual({ kind: 'held', reason: 'busy', moved: null });
-    expect(reached).toEqual([]);
-
-    first.open();
-    await settle();
-    await step('room-session');
-    expect(reached).toEqual(['retire', 'refresh']);
-  });
-
-  it('is held busy by a second-session turn holding only the runtime lock (no dispatcher slot)', async () => {
-    // The lossy case the spec names: a turn launched with its queue budget
-    // exhausted runs holding the runtime's real lock and never takes the slot.
-    // Modelled directly — lock held on the second session, nothing dispatched —
-    // because in this harness the budget-exhausted launch ends up holding a
-    // slot by the time it runs, which would let a slot-only read pass.
-    let locked = true;
-    runtime.isLocked.mockImplementation((sid: string) => locked && sid === session);
-    const { step, reached } = launchStep();
-
-    const held = await step('room-session');
-    expect(held.files?.refresh).toEqual({ kind: 'held', reason: 'busy', moved: null });
-    expect(reached).toEqual([]);
-
-    locked = false;
-    await step('room-session');
-    expect(reached).toEqual(['retire', 'refresh']);
-  });
-});
+// Original Runner request custody is created by the real isolated Room post, not a DTO.
+registerOriginalNativeLaunchCase(
+  'second-bound-dispatcher-busy',
+  'is held busy while the second session`s turn runs, and goes ahead once it settles'
+);
+registerOriginalNativeLaunchCase(
+  'second-bound-runtime-lock',
+  'is held busy by a second-session turn holding only the runtime lock (no dispatcher slot)'
+);
 
 describe('a queued room turn across a restart (spec `agent-home-desk` §5.10)', () => {
   it('is gone after a restart, so nothing ever runs it without its grants and agent', async () => {

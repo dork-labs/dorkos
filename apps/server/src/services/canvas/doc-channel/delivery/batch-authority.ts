@@ -46,8 +46,8 @@ export function docBatchLabel(tx: DbTransaction, batch: DocBatchRow): string {
 }
 /** Reconstruct every immutable selected input; absence, alteration or pruning refuses the whole batch. */
 export function readDocBatchAuthority(
-  store: DocChannelStore,
-  grants: DocChannelGrants,
+  store: Pick<DocChannelStore, 'getEvent'>,
+  grants: Pick<DocChannelGrants, 'revalidateBatchGrant'>,
   tx: DbTransaction,
   batch: DocBatchRow
 ): DocBatchAuthority {
@@ -61,8 +61,7 @@ export function readDocBatchAuthority(
     (grant.normalizedRoute && (grant.normalizedRoute as { to?: string }).to === 'room:self')
   )
     refuseDocBatch('document_session_target_required');
-  if (batch.scope.startsWith('session:') && target.sessionId !== batch.scope.slice(8))
-    refuseDocBatch('document_session_target_required');
+  if (target.scope !== batch.scope) refuseDocBatch('document_session_target_required');
   if (
     !batch.inputEventIds.length ||
     batch.inputEventIds.length > 100 ||
@@ -110,7 +109,11 @@ export function readDocBatchAuthority(
   };
 }
 /** Source-owned digest includes exact approved identity, immutable inputs and current canonical ownership. */
-export function docBatchDigest(authority: DocBatchAuthority, previousSessionId?: string): string {
+export function docBatchDigest(
+  authority: DocBatchAuthority,
+  previousSessionId?: string,
+  previousSourceScope?: string
+): string {
   const { batch, grant, target } = authority;
   const binding = (grant.approvalEvidence as { binding?: { origin?: unknown } }).binding;
   return createHash('sha256')
@@ -121,10 +124,7 @@ export function docBatchDigest(authority: DocBatchAuthority, previousSessionId?:
         generation: batch.generation,
         inputs: authority.inputFingerprint,
         documentLabel: authority.context.documentLabel,
-        scope:
-          previousSessionId && batch.scope.startsWith('session:')
-            ? `session:${previousSessionId}`
-            : batch.scope,
+        scope: previousSourceScope ?? batch.scope,
         grantId: grant.grantId,
         grantRevision: grant.revision,
         routeId: batch.routeId,
@@ -147,7 +147,8 @@ export function docBatchDigest(authority: DocBatchAuthority, previousSessionId?:
 export function verifyDocReceipt(
   authority: DocBatchAuthority,
   receipt: SessionMessageAcceptanceReceipt,
-  previousSessionId?: string
+  previousSessionId?: string,
+  previousSourceScope?: string
 ): void {
   if (
     receipt.sourceKind !== 'document_event_batch' ||
@@ -158,7 +159,8 @@ export function verifyDocReceipt(
     receipt.originRuntime !== authority.target.runtime ||
     receipt.originAgentPath !== authority.target.agentPath ||
     receipt.sessionId !== (previousSessionId ?? authority.target.sessionId) ||
-    receipt.originAuthorityDigest !== docBatchDigest(authority, previousSessionId)
+    receipt.originAuthorityDigest !==
+      docBatchDigest(authority, previousSessionId, previousSourceScope)
   )
     refuseDocBatch();
 }

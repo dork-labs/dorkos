@@ -1,14 +1,32 @@
+import { type ServerDocumentRelayOrigin } from '@dorkos/relay/server-private-document';
+import { readOriginalManagerDocumentAdapterOrigin } from './services/relay/adapter-manager.js';
+import {
+  createDocumentRelaySourceAuthority,
+  wakeOriginalRelayAcceptedReceipts,
+} from './services/canvas/doc-channel/delivery/relay-authority.js';
 import { DocChannelMetrics } from './services/observability/doc-channel-metrics.js';
 import { subscribeCommittedDocEvents } from './services/canvas/doc-channel/committed-events.js';
 import { DocChannelLiveBuffer } from './services/canvas/doc-channel/streams/live-buffer.js';
 import { DocScopeStream } from './services/canvas/doc-channel/streams/scope-stream.js';
 import { setDocScopeNotificationsFactory } from './services/canvas/doc-channel/streams/registry.js';
 import { DocBatchAdmission } from './services/canvas/doc-channel/delivery/batch-admission.js';
-import { privateDocTurnBudget } from './services/canvas/doc-channel/delivery/final-budget.js';
 import { DocBatchDeliveryPump } from './services/canvas/doc-channel/delivery/pump.js';
 import { DocDeliveryRunner } from './services/canvas/doc-channel/delivery/runner.js';
-import { createPrivateDocPumpGates } from './services/canvas/doc-channel/delivery/private-gates.js';
+import {
+  createPrivateDocPumpGates,
+  createDocBeforeClaim,
+} from './services/canvas/doc-channel/delivery/private-gates.js';
 import { createDocChannelHttpComposition } from './services/canvas/doc-channel/http-composition.js';
+import { DocChannelStore } from './services/canvas/doc-channel/store.js';
+import {
+  startRecognizedRoomRepoReconciler,
+  stopRecognizedRoomRepoReconciler,
+} from './services/rooms/repo/room-repo-reconciler.js';
+import {
+  InstallationFileWrites,
+  stopInstallationFileWrites,
+  readInstallationFileRoomWrites,
+} from './services/canvas/doc-channel/writes/installation-file-writes.js';
 import { startMainListener } from './services/core/lifecycle/main-listener.js';
 import { MainRequestAdmission } from './services/core/lifecycle/main-request-admission.js';
 import path from 'path';
@@ -418,6 +436,7 @@ import { wireAuditTrail } from './services/audit/index.js';
 import { createExtensionRoutesMiddleware } from './middleware/extension-routes.js';
 import { createExternalMcpServer } from './services/core/mcp-server.js';
 import { composeDorkOsCapabilityRegistry } from './services/core/self-description/dorkos-registry.js';
+import { startCurrentRoomDueScheduler } from './services/canvas/doc-channel/operations/room-due-scheduler.js';
 import {
   initAgentIdentityService,
   getAgentIdentityService,
@@ -436,6 +455,7 @@ import type { DeepHealthDeps } from './services/observability/deep-health/index.
 import type { DebugDeps } from './routes/debug.js';
 import type { UnattendedAutonomyDeps } from './services/core/unattended-autonomy/unattended-autonomy.js';
 import { createCapabilitiesCatalogRouter } from './routes/capabilities-catalog.js';
+import { createCanvasDocManagementRouter } from './routes/canvas-doc-management.js';
 import { createCapabilitiesInvokeRouter } from './routes/capabilities-invoke.js';
 import {
   initCapabilityTierGate,
@@ -455,7 +475,6 @@ import { validateMcpOrigin } from './middleware/mcp-origin.js';
 import { requireMcpEnabled } from './middleware/mcp-enabled.js';
 import { buildMcpRateLimiter } from './middleware/mcp-rate-limit.js';
 import {
-  createDb,
   runMigrations,
   databaseHoldsUserData,
   snapshotBeforeMigrations,
@@ -465,6 +484,7 @@ import {
   agents,
   type Db,
 } from '@dorkos/db';
+import { openServerDatabase } from '@dorkos/db/internal-server';
 import {
   getRemoteCommunityAdapter,
   getRemoteConnectionStore,
@@ -703,6 +723,11 @@ let accountUsageStore: AccountUsageStore | undefined;
 let stopSessionContinuation: (() => void) | undefined;
 /** Stop document recovery before the SQLite connection is disposed. */
 let stopDocDelivery: (() => Promise<void>) | undefined;
+let stopOriginalDocumentRelay: (() => Promise<void>) | undefined;
+let stopCurrentRoomDueMaintenance: (() => Promise<void>) | undefined;
+let stopFileWrites: (() => Promise<void>) | undefined;
+let stopCheckboxWrites: (() => Promise<void>) | undefined;
+let stopRoomRepoReconciliation: (() => Promise<void>) | undefined;
 // The relay's DEFAULT runtime — what answers a relay message that names no
 // runtime at all (a legacy `relay.agent.<sessionId>` subject, a direct
 // agent-to-agent send to a mesh agent). The relay carries every registered
@@ -1128,7 +1153,8 @@ async function start() {
   // be migrated to accept this `db` instance in subsequent tasks.
   const dbPath = path.join(dorkHome, 'dork.db');
   const backupsDir = path.join(dorkHome, 'backups');
-  const db = createDb(dbPath);
+  const openedServerDatabase = openServerDatabase(dbPath);
+  const db = openedServerDatabase.db;
 
   // Asked BEFORE migrating, because afterwards it can no longer be answered: a
   // first boot comes out of `runMigrations` holding every table and not one row,
@@ -2179,43 +2205,69 @@ async function start() {
   // checkout is the contention one-writer forbids. Two rooms never wait on each
   // other.
   const roomRepoMutex = new RoomRepoMutex();
-  const roomRepoService = new RoomRepoService({
-    store: roomRepoStore,
-    mutex: roomRepoMutex,
-    queueWaitMs: () => readRoomRepoConfig().mergeQueueWaitMs,
-    enabled: () => readRoomRepoConfig().enabled,
-    getRoom: (roomId, viewerAuthorId) => roomService.getRoom(roomId, viewerAuthorId),
-    isOwnerAuthor: (authorId) => roomAuthors.isOwner(authorId, readOwnerAccount()?.id ?? null),
-    // The person's own name from their profile, which is the only place a
-    // real human name is stored on this machine — never the room registry's
-    // label for them, which `bindOwner` fixes at 'You' forever (right in
-    // their own window, bizarre in `git log`).
-    operatorGitName: resolveOperatorDisplayName,
-    caps: () => {
-      const repo = readRoomRepoConfig();
-      return {
-        maxFileBytes: repo.maxFileBytes,
-        maxRepoBytes: repo.maxRepoBytes,
-        maxRoomMdBytes: repo.maxRoomMdBytes,
-      };
-    },
-    // What may be SENT, as against what `caps` froze onto a room's sidecar
-    // for what may be merged IN. Read per turn, like every other value here.
-    maxRoomMdBytes: () => readRoomRepoConfig().maxRoomMdBytes,
-    // The room's shared notes land on its canvas the moment it has any, pinned
-    // so the twelve-document ceiling can never push them off. The path is
-    // RELATIVE, exactly as the Room tab's Files section opens one: a document
-    // with no working directory recorded is read back through the room's own
-    // files route, which is the one route every member already has.
-    pinRoomMd: (roomId, authorId) => {
-      roomService.canvas.open(
-        roomId,
-        authorId,
-        { type: 'file', sourcePath: ROOM_MD_FILENAME },
-        { pinned: true }
-      );
-    },
+  // Single migrated Db/store and owning gate exist before any room mutator is constructed.
+  const owningDocChannels = new DocChannelStore(db);
+  const installationFileWrites = new InstallationFileWrites({
+    db,
+    store: owningDocChannels,
+    roomRepos: roomRepoStore,
+    roomMutex: roomRepoMutex,
   });
+  // Retain custody immediately, including startup failure before HTTP construction below.
+  stopFileWrites = () => stopInstallationFileWrites(installationFileWrites, db, owningDocChannels);
+  const owningRoomWriter = readInstallationFileRoomWrites(
+    installationFileWrites,
+    db,
+    owningDocChannels,
+    roomRepoStore
+  );
+  const roomRepoService = new RoomRepoService(
+    {
+      store: roomRepoStore,
+      mutex: roomRepoMutex,
+      queueWaitMs: () => readRoomRepoConfig().mergeQueueWaitMs,
+      enabled: () => readRoomRepoConfig().enabled,
+      getRoom: (roomId, viewerAuthorId) => roomService.getRoom(roomId, viewerAuthorId),
+      isOwnerAuthor: (authorId) => roomAuthors.isOwner(authorId, readOwnerAccount()?.id ?? null),
+      // The person's own name from their profile, which is the only place a
+      // real human name is stored on this machine — never the room registry's
+      // label for them, which `bindOwner` fixes at 'You' forever (right in
+      // their own window, bizarre in `git log`).
+      operatorGitName: resolveOperatorDisplayName,
+      caps: () => {
+        const repo = readRoomRepoConfig();
+        return {
+          maxFileBytes: repo.maxFileBytes,
+          maxRepoBytes: repo.maxRepoBytes,
+          maxRoomMdBytes: repo.maxRoomMdBytes,
+        };
+      },
+      // What may be SENT, as against what `caps` froze onto a room's sidecar
+      // for what may be merged IN. Read per turn, like every other value here.
+      maxRoomMdBytes: () => readRoomRepoConfig().maxRoomMdBytes,
+      // The room's shared notes land on its canvas the moment it has any, pinned
+      // so the twelve-document ceiling can never push them off. The path is
+      // RELATIVE, exactly as the Room tab's Files section opens one: a document
+      // with no working directory recorded is read back through the room's own
+      // files route, which is the one route every member already has.
+      pinRoomMd: (roomId, authorId) => {
+        roomService.canvas.open(
+          roomId,
+          authorId,
+          { type: 'file', sourcePath: ROOM_MD_FILENAME },
+          { pinned: true }
+        );
+      },
+    },
+    {
+      owner: installationFileWrites,
+      writer: owningRoomWriter,
+      db,
+      channels: owningDocChannels,
+      rooms: roomService,
+      roomStore,
+    }
+  );
   setRoomRepoService(roomRepoService);
   // Reading those files back (spec §3.9). It shares the store and nothing
   // else: `hasRepo` already folds the feature flag in, so a room whose files
@@ -2231,42 +2283,53 @@ async function start() {
   // server-side write to `repo/` takes, so a save and a merge can never be in
   // that tree at once, and the same `operatorGitName` seam, so a room's `git
   // log` reads with one voice whoever made the commit.
-  setRoomFileEditor(
-    new RoomFileEditor({
-      store: roomRepoStore,
-      mutex: roomRepoMutex,
-      enabled: () => readRoomRepoConfig().enabled,
-      queueWaitMs: () => readRoomRepoConfig().mergeQueueWaitMs,
-      assertCanWriteFiles: (roomId, authorId) => roomService.assertCanWriteFiles(roomId, authorId),
-      operatorGitName: resolveOperatorDisplayName,
-      // A signed-in person's own name (spec `agent-home-desk` §7.1). The owner's
-      // is their profile name, never the registry's 'You'; anybody else's is the
-      // name the registry holds for their account.
-      personName: (authorId) =>
-        roomAuthors.isOwner(authorId, readOwnerAccount()?.id ?? null)
-          ? resolveOperatorDisplayName()
-          : (sanitizeIdentity(roomAuthors.getById(authorId)?.displayName ?? '') ?? null),
-      // One quiet entry per person's change, in the room's own voice (§7.2).
-      announce: (roomId, input) => roomService.postFileChangeEvent(roomId, input),
-      uploadStagingRoot: () => path.join(dorkHome, '.temp', 'room-uploads'),
-      files: roomFiles,
-    })
-  );
+  const owningRoomFileEditor = new RoomFileEditor({
+    store: roomRepoStore,
+    mutex: roomRepoMutex,
+    installationRoomWrites: owningRoomWriter,
+    enabled: () => readRoomRepoConfig().enabled,
+    queueWaitMs: () => readRoomRepoConfig().mergeQueueWaitMs,
+    assertCanWriteFiles: (roomId, authorId) => roomService.assertCanWriteFiles(roomId, authorId),
+    operatorGitName: resolveOperatorDisplayName,
+    // A signed-in person's own name (spec `agent-home-desk` §7.1). The owner's
+    // is their profile name, never the registry's 'You'; anybody else's is the
+    // name the registry holds for their account.
+    personName: (authorId) =>
+      roomAuthors.isOwner(authorId, readOwnerAccount()?.id ?? null)
+        ? resolveOperatorDisplayName()
+        : (sanitizeIdentity(roomAuthors.getById(authorId)?.displayName ?? '') ?? null),
+    // One quiet entry per person's change, in the room's own voice (§7.2).
+    announce: (roomId, input) => roomService.postFileChangeEvent(roomId, input),
+    uploadStagingRoot: () => path.join(dorkHome, '.temp', 'room-uploads'),
+    files: roomFiles,
+  });
+  setRoomFileEditor(owningRoomFileEditor);
   // One standing working copy per (room, agent), and the reap that tidies away
   // the empty ones (spec `project-rooms` §3.4). It gets no timer of its own:
   // the reconciler below owns the single sweep, and therefore the single
   // overlap guard.
-  const roomWorktrees = new RoomWorktreeManager({
-    store: roomRepoStore,
-    hasRepo: (roomId) => roomRepoService.hasRepo(roomId),
-    listStrandedWorktrees: (roomId) => roomRepoService.listStrandedWorktrees(roomId),
-    reapAfterDays: () => readRoomRepoConfig().worktreeReapDays,
-    // The claim map is the only live record that an agent is mid-turn, and a
-    // live room turn is granted its worktree and works on it by path. Without
-    // this the sweep can delete the copy a turn is working on — a turn that
-    // only reads leaves no mark on any timestamp.
-    busyAgentPaths: () => roomService.listBusyAgentPaths(),
-  });
+  const roomWorktrees = new RoomWorktreeManager(
+    {
+      store: roomRepoStore,
+      hasRepo: (roomId) => roomRepoService.hasRepo(roomId),
+      listStrandedWorktrees: (roomId) => roomRepoService.listStrandedWorktrees(roomId),
+      reapAfterDays: () => readRoomRepoConfig().worktreeReapDays,
+      // The claim map is the only live record that an agent is mid-turn, and a
+      // live room turn is granted its worktree and works on it by path. Without
+      // this the sweep can delete the copy a turn is working on — a turn that
+      // only reads leaves no mark on any timestamp.
+      busyAgentPaths: () => roomService.listBusyAgentPaths(),
+    },
+    {
+      owner: installationFileWrites,
+      writer: owningRoomWriter,
+      mutex: roomRepoMutex,
+      db,
+      channels: owningDocChannels,
+      rooms: roomService,
+      roomStore,
+    }
+  );
   // Every room turn in a room with files is granted its agent's copy through
   // this manager before its context is built (`room-turn-place.ts`, spec
   // `agent-home-desk` §5.1).
@@ -2306,28 +2369,22 @@ async function start() {
     boundSessionIds: (agentPath) =>
       Promise.resolve(runtimeRegistry.listSessionIdsForAgentPath(agentPath)),
   });
-  // The only path work takes back into a room's `main` (spec §3.6). It writes
-  // in `repo/` and nowhere else — an agent's own working copy has exactly one
-  // writer and it is that agent — and it announces every merge through
-  // `RoomService`, so a room's log keeps its single write path.
-  const roomMerges = new RoomMergeService({
-    store: roomRepoStore,
-    mutex: roomRepoMutex,
-    enabled: () => readRoomRepoConfig().enabled,
-    mergeQueueWaitMs: () => readRoomRepoConfig().mergeQueueWaitMs,
-    requireMembership: (roomId, authorId) => roomService.requireMembership(roomId, authorId),
-    listAgentMembers: (roomId) => roomService.listAgentMembers(roomId),
-    listStrandedWorktrees: (roomId) => roomRepoService.listStrandedWorktrees(roomId),
-    announce: (roomId, input) => roomService.postMergeEvent(roomId, input),
-    isOwnerAuthor: (authorId) => roomAuthors.isOwner(authorId, readOwnerAccount()?.id ?? null),
-  });
-  setRoomMergeService(roomMerges);
   // Rebuilds `room_repos` from the sidecars on disk, on the same five-minute
   // cadence the mesh and workspace reconcilers use (ADR-0043). It never deletes
   // a room's files — see its module doc for why an orphaned home directory is
   // reported and left standing, and the worktree manager's for the four gates
   // an agent's working copy has to fail before the reap may remove it.
-  new RoomRepoReconciler(roomRepoStore, undefined, roomWorktrees).start();
+  const roomRepoReconciler = new RoomRepoReconciler(roomRepoStore, undefined, roomWorktrees, {
+    owner: installationFileWrites,
+    writer: owningRoomWriter,
+    db,
+    channels: owningDocChannels,
+    repos: roomRepoStore,
+    mutex: roomRepoMutex,
+    rooms: roomService,
+    roomStore,
+  });
+  stopRoomRepoReconciliation = () => stopRecognizedRoomRepoReconciler(roomRepoReconciler);
 
   // A room's memory is its `room_sessions` binding, and the id in it moves: the
   // room mints a placeholder before the first turn and Claude Code renames the
@@ -2496,6 +2553,7 @@ async function start() {
   // AdapterManager construction is deferred to Phase C (after meshCore init)
   // so that meshCore is available for CWD resolution via buildContext().
   const relayDataDir = relayConfig.dataDir ?? path.join(dorkHome, 'relay');
+  let documentRelayOrigin: ServerDocumentRelayOrigin | undefined;
   if (relayEnabled) {
     try {
       adapterRegistry = new AdapterRegistry();
@@ -2507,31 +2565,31 @@ async function start() {
 
       // traceRelay wraps publish with a relay.dispatch span when debug tracing
       // is on; returns the core untouched otherwise (zero overhead).
-      relayCore = traceRelay(
-        new RelayCore({
-          dataDir: relayDataDir,
-          adapterRegistry,
-          db,
-          traceStore,
-          logger,
-          // The hourly ceiling on turns agent messaging may start (DOR-791),
-          // enforced at the adapter dispatch every surface funnels through.
-          // Read from config PER DISPATCH, not captured here, so a change in
-          // Settings takes effect at once rather than at the next restart —
-          // the same contract the room ceilings have.
-          turnCeiling: {
-            perAgent: () => configManager.get('relay').maxAgentTurnsPerAgentPerHour,
-            global: () => configManager.get('relay').maxAgentTurnsTotalPerHour,
-          },
-          // Tick the Pulse attention badge the instant a message is dead-lettered
-          // (DOR-403) instead of waiting for the 30s dead-letters poll, and
-          // leave a quiet row in the inbox so it is still findable tomorrow.
-          onDeadLetter: (notice) => {
-            eventFanOut.broadcast('relay_dead_letter', notice);
-            void notify('dead-letter.created', deadLetterPayload(notice));
-          },
-        })
-      );
+      const originalDocumentRelay = RelayCore.createServerDocumentRelay({
+        dataDir: relayDataDir,
+        adapterRegistry,
+        db,
+        traceStore,
+        logger,
+        // The hourly ceiling on turns agent messaging may start (DOR-791),
+        // enforced at the adapter dispatch every surface funnels through.
+        // Read from config PER DISPATCH, not captured here, so a change in
+        // Settings takes effect at once rather than at the next restart —
+        // the same contract the room ceilings have.
+        turnCeiling: {
+          perAgent: () => configManager.get('relay').maxAgentTurnsPerAgentPerHour,
+          global: () => configManager.get('relay').maxAgentTurnsTotalPerHour,
+        },
+        // Tick the Pulse attention badge the instant a message is dead-lettered
+        // (DOR-403) instead of waiting for the 30s dead-letters poll, and
+        // leave a quiet row in the inbox so it is still findable tomorrow.
+        onDeadLetter: (notice) => {
+          eventFanOut.broadcast('relay_dead_letter', notice);
+          void notify('dead-letter.created', deadLetterPayload(notice));
+        },
+      });
+      documentRelayOrigin = originalDocumentRelay.origin;
+      relayCore = traceRelay(originalDocumentRelay.relay);
       await relayCore.registerEndpoint('relay.system.console');
       logger.info(`[Relay] RelayCore initialized (dataDir: ${relayDataDir})`);
     } catch (err) {
@@ -2829,6 +2887,50 @@ async function start() {
     setMeshInitError(errInfo.error);
     // Mesh failure is non-fatal: server continues without mesh routes.
   }
+
+  // Native principal policy captures the actual reconciled Mesh constructor.
+  // Build dependent original Room writers only after that genuine port exists.
+  const connectorRuntimePrincipals = meshCore
+    ? new ConnectorRuntimePrincipalService({
+        db,
+        authority: new CanonicalConnectorRuntimeAuthorityResolver({
+          sessions: runtimeRegistry,
+          mesh: meshCore,
+          owner: connectorOwner,
+        }),
+        threadKeys: connectorThreadKeys,
+      })
+    : undefined;
+  if (connectorRuntimePrincipals) await connectorRuntimePrincipals.initializeBoot();
+  docChannelRuntimePrincipals.current = connectorRuntimePrincipals;
+
+  // The only path work takes back into a room's `main` (spec §3.6). It writes
+  // in `repo/` and nowhere else — an agent's own working copy has exactly one
+  // writer and it is that agent — and it announces every merge through
+  // `RoomService`, so a room's log keeps its single write path.
+  const roomMerges = new RoomMergeService(
+    {
+      store: roomRepoStore,
+      mutex: roomRepoMutex,
+      enabled: () => readRoomRepoConfig().enabled,
+      mergeQueueWaitMs: () => readRoomRepoConfig().mergeQueueWaitMs,
+      requireMembership: (roomId, authorId) => roomService.requireMembership(roomId, authorId),
+      listAgentMembers: (roomId) => roomService.listAgentMembers(roomId),
+      listStrandedWorktrees: (roomId) => roomRepoService.listStrandedWorktrees(roomId),
+      announce: (roomId, input) => roomService.postMergeEvent(roomId, input),
+      isOwnerAuthor: (authorId) => roomAuthors.isOwner(authorId, readOwnerAccount()?.id ?? null),
+    },
+    {
+      owner: installationFileWrites,
+      writer: owningRoomWriter,
+      db,
+      channels: owningDocChannels,
+      rooms: roomService,
+      roomStore,
+      nativePrincipals: connectorRuntimePrincipals,
+    }
+  );
+  setRoomMergeService(roomMerges);
 
   // The room worktree folders room turns stood in before they moved home, read
   // once and never grown — see `setAgentSessionSources` above.
@@ -3365,17 +3467,34 @@ async function start() {
   const docChannelMetrics = new DocChannelMetrics(db);
   const docChannelHttp = createDocChannelHttpComposition({
     db,
+    roomConstruction: openedServerDatabase.serverNativeRoomConstruction,
+    owningFileWrites: { channels: owningDocChannels, fileWrites: installationFileWrites },
+    roomFileEditor: owningRoomFileEditor,
+    roomRepoService,
+    roomMergeService: roomMerges,
+    roomWorktreeManager: roomWorktrees,
+    roomRepoReconciler,
     documents: canvasDocuments,
     rooms: roomService,
     roomStore,
     roomRepos: roomRepoStore,
     approvals: approvalService,
     installationId: connectorInstallationId,
+    nativeRuntimePrincipals: connectorRuntimePrincipals,
     runtimePrincipalCurrent: (proof) =>
       docChannelRuntimePrincipals.current?.isPrincipalCurrent(proof) ?? false,
     revalidateRuntime: (proof) =>
       docChannelRuntimePrincipals.current?.revalidatePrincipal(proof) ?? Promise.resolve(false),
   });
+  stopFileWrites = docChannelHttp.stopFileWrites;
+  stopCheckboxWrites = docChannelHttp.stopCheckboxWrites;
+  startRecognizedRoomRepoReconciler(roomRepoReconciler);
+  // Same actual original native service; retain stop custody before later startup can fail.
+  const currentRoomDueScheduler = startCurrentRoomDueScheduler(
+    docChannelHttp.service,
+    runtimeRegistry
+  );
+  stopCurrentRoomDueMaintenance = currentRoomDueScheduler.stop.bind(currentRoomDueScheduler);
   app.locals.docChannelHttp = { ...docChannelHttp, metrics: docChannelMetrics };
   const docStreamAuthority = {
     resolveScope: (scope: string) => canvasDocuments.lifecycle.resolveScope(scope),
@@ -3821,19 +3940,6 @@ async function start() {
     (providerInstanceId, toolkit) => connectorBootstrapper.wayHealth(providerInstanceId, toolkit)
   );
   const connectorProgramPrincipals = new ConnectorProgramPrincipalService(db);
-  const connectorRuntimePrincipals = meshCore
-    ? new ConnectorRuntimePrincipalService({
-        db,
-        authority: new CanonicalConnectorRuntimeAuthorityResolver({
-          sessions: runtimeRegistry,
-          mesh: meshCore,
-          owner: connectorOwner,
-        }),
-        threadKeys: connectorThreadKeys,
-      })
-    : undefined;
-  if (connectorRuntimePrincipals) await connectorRuntimePrincipals.initializeBoot();
-  docChannelRuntimePrincipals.current = connectorRuntimePrincipals;
   let connectorAgentRequests: ConnectorAgentRequestService | undefined;
   let acceptedPrivateSessionCursor: string | undefined;
   const requestAuthority =
@@ -3864,8 +3970,26 @@ async function start() {
     queue: messageQueueStore,
     bootEpoch: connectorBootEpoch,
     existingSources: existingPrivateSources,
-    beforeClaim: privateDocTurnBudget,
+    beforeClaim: createDocBeforeClaim(docChannelHttp.channels, docChannelHttp.grants),
   });
+  if (adapterManager) await adapterManager.adaptersStarted();
+  const originalDocumentAdapter = adapterManager
+    ? readOriginalManagerDocumentAdapterOrigin(adapterManager)
+    : undefined;
+  const originalDocumentSource =
+    documentRelayOrigin && originalDocumentAdapter
+      ? createDocumentRelaySourceAuthority(
+          documentRelayOrigin,
+          docChannelHttp.channels,
+          docChannelHttp.grants,
+          connectorRuntimePrincipals,
+          db,
+          openedServerDatabase.serverNativeRelayConstruction,
+          originalDocumentAdapter,
+          docChannelHttp.service
+        )
+      : undefined;
+  stopOriginalDocumentRelay = originalDocumentSource?.stopOriginalNativeSink;
   const recoveredPrivateAttempts = docBatchAdmission.initializeBoot();
   const privateAcceptance = docBatchAdmission.acceptance;
   setPrivateSessionMessageAcceptanceService(privateAcceptance);
@@ -3876,28 +4000,41 @@ async function start() {
   const docDispatchLifetime = new AbortController();
   const nudgePrivateSession = (sessionId: string, documentReceiptIds?: readonly string[]): void => {
     if (documentReceiptIds && !docDeliveryRunner?.active) return;
-    void Promise.all([
-      runtimeRegistry.resolveForSession(sessionId),
-      runtimeRegistry.getSessionAgentPath(sessionId),
-    ])
-      .then(([runtime, agentPath]) => {
-        if (documentReceiptIds && !docDeliveryRunner?.active) return;
-        if (!agentPath) return;
-        const projector = getOrCreateProjector(sessionId, agentPath);
-        adoptAcceptedPrivateMessages({
-          sessionId,
-          cwd: agentPath,
-          projector,
-          runtime,
-          ...(documentReceiptIds
-            ? {
-                privateDispatchSignal: docDispatchLifetime.signal,
-                privateReceiptSelection: {
-                  sourceKind: 'document_event_batch' as const,
-                  receiptIds: documentReceiptIds,
-                },
-              }
-            : { excludeDocumentMessages: true }),
+    const route =
+      documentReceiptIds && originalDocumentSource
+        ? wakeOriginalRelayAcceptedReceipts(
+            originalDocumentSource,
+            db,
+            sessionId,
+            documentReceiptIds
+          )
+        : Promise.resolve(documentReceiptIds);
+    void route
+      .then((selected) => {
+        if (documentReceiptIds && !selected?.length) return;
+        documentReceiptIds = selected;
+        return Promise.all([
+          runtimeRegistry.resolveForSession(sessionId),
+          runtimeRegistry.getSessionAgentPath(sessionId),
+        ]).then(([runtime, agentPath]) => {
+          if (documentReceiptIds && !docDeliveryRunner?.active) return;
+          if (!agentPath) return;
+          const projector = getOrCreateProjector(sessionId, agentPath);
+          adoptAcceptedPrivateMessages({
+            sessionId,
+            cwd: agentPath,
+            projector,
+            runtime,
+            ...(documentReceiptIds
+              ? {
+                  privateDispatchSignal: docDispatchLifetime.signal,
+                  privateReceiptSelection: {
+                    sourceKind: 'document_event_batch' as const,
+                    receiptIds: documentReceiptIds,
+                  },
+                }
+              : { excludeDocumentMessages: true }),
+          });
         });
       })
       .catch((error: unknown) => {
@@ -5758,7 +5895,10 @@ async function start() {
   capabilityRegistry = composeDorkOsCapabilityRegistry(
     {
       logger,
+      docChannelManagementService: docChannelHttp.service,
+      docChannelManagementFileWrites: docChannelHttp.fileWrites,
       docChannelDownstream: docChannelHttp.downstream,
+      docChannelCheckboxWriter: docChannelHttp.checkboxWriter,
       docChannelGrantDeps: {
         service: docChannelHttp.grants,
         authorization: docChannelHttp.authorization,
@@ -5813,7 +5953,10 @@ async function start() {
         }),
       },
     },
-    createCapabilityAttributionObserver(activityService)
+    createCapabilityAttributionObserver(activityService),
+    connectorRuntimePrincipals
+      ? { service: roomMerges, nativePrincipals: connectorRuntimePrincipals, db }
+      : undefined
   );
   // A running extension's tools join and leave the registry (DOR-2685); every
   // open window re-fetches the catalog and the permissions page when they do.
@@ -5940,6 +6083,16 @@ async function start() {
       });
     }
     if (env.DORKOS_TEST_RUNTIME) {
+      if (env.DORKOS_TEST_RUNTIME_CLAUDE_ALIAS) {
+        const { captureTestModeOriginalRoomEmitter } =
+          await import('./services/runtimes/test-mode/test-mode-runtime.js');
+        captureTestModeOriginalRoomEmitter(
+          runtimeRegistry.get('claude-code'),
+          docChannelHttp.fileWrites,
+          db,
+          docChannelHttp.channels
+        );
+      }
       const callRuntimeConnectorTool = async (input: {
         readonly sessionId: string;
         readonly agentPath: string;
@@ -6047,6 +6200,7 @@ async function start() {
   // never reachable tokenlessly. Mounted at the `/api/capabilities` prefix, which
   // the catalog (`/catalog`) and matrix (`/`) routes do not claim for `POST /:id/invoke`.
   app.use('/api/capabilities', createCapabilitiesInvokeRouter(capabilityRegistry));
+  app.use('/api/canvas/docs', createCanvasDocManagementRouter(capabilityRegistry, docChannelHttp));
   logger.info(
     `[Capabilities] Registry composed (${capabilityRegistry.capabilities.length} capabilities); catalog at GET /api/capabilities/catalog, invoke at POST /api/capabilities/:id/invoke`
   );
@@ -6435,17 +6589,68 @@ function stopCodexCreditsTurns(): void {
   codex?.stopCreditsTurns?.();
 }
 
+/** Attempt each owned drain even when an earlier one rejects, including undefined. */
+let ownedFileLifetimeDrain: Promise<void> | undefined;
+function drainOwnedFileLifetimes(): Promise<void> {
+  if (ownedFileLifetimeDrain) return ownedFileLifetimeDrain;
+  let resolveDrain!: () => void;
+  let rejectDrain!: (cause: unknown) => void;
+  const draining = new Promise<void>((resolve, reject) => {
+    resolveDrain = resolve;
+    rejectDrain = reject;
+  });
+  ownedFileLifetimeDrain = draining;
+  let failed = false;
+  let cause: unknown;
+  const drains = [
+    stopCurrentRoomDueMaintenance,
+    stopRoomRepoReconciliation,
+    () => workspaceReconcilerLifecycle.dispose(),
+    stopDocDelivery,
+    () => docNotificationCleanup?.(),
+    stopOriginalDocumentRelay,
+    stopCheckboxWrites,
+    stopFileWrites,
+  ];
+  // Keep captured handles until successful drain; a failed admin restart must not close Db.
+  // Invoke all captured stops before the first await closes each admission promptly.
+  const pending = drains.map((drain) => {
+    try {
+      return Promise.resolve(drain?.());
+    } catch (error) {
+      return Promise.reject(error);
+    }
+  });
+  void Promise.allSettled(pending).then((outcomes) => {
+    for (const outcome of outcomes) {
+      if (outcome.status === 'rejected' && !failed) {
+        failed = true;
+        cause = outcome.reason;
+      }
+    }
+    if (failed) {
+      rejectDrain(cause);
+      return;
+    }
+    stopCurrentRoomDueMaintenance = undefined;
+    stopRoomRepoReconciliation = undefined;
+    stopDocDelivery = undefined;
+    docNotificationCleanup = undefined;
+    stopOriginalDocumentRelay = undefined;
+    stopFileWrites = undefined;
+    stopCheckboxWrites = undefined;
+    resolveDrain();
+  });
+  return draining;
+}
+
 // Ordered teardown of all running services WITHOUT calling process.exit().
 // Extracted so the admin router can invoke it before a restart.
 let docNotificationCleanup: (() => void) | undefined;
 
 async function shutdownServices() {
   mainRequestAdmission.close();
-  await workspaceReconcilerLifecycle.dispose();
-  await stopDocDelivery?.();
-  stopDocDelivery = undefined;
-  docNotificationCleanup?.();
-  docNotificationCleanup = undefined;
+  await drainOwnedFileLifetimes();
   logger.info('[DorkOS] shutting down services');
   // Drain owned turns while their tool, account and room dependencies remain live.
   await doeRuntime?.shutdown();
@@ -6616,21 +6821,22 @@ process.on('unhandledRejection', (reason) => {
 
 start().catch(async (err) => {
   mainRequestAdmission.close();
+  // Cleanup attempts preserve the actual startup cause used below, even undefined.
   try {
-    await workspaceReconcilerLifecycle.dispose();
+    await drainOwnedFileLifetimes();
   } catch (cleanupError) {
     logger.error(
-      '[workspace] Reconciliation disposal failed during startup cleanup:',
+      '[DorkOS] Owned file lifetime disposal failed during startup cleanup:',
       cleanupError
     );
   }
-  // A later startup failure must not leave the owned offline listener running.
-  await testComposioFixture?.close();
+  // A later startup failure must also attempt the owned offline listener cleanup.
+  try {
+    await testComposioFixture?.close();
+  } catch (cleanupError) {
+    logger.error('[DorkOS] Offline listener disposal failed during startup cleanup:', cleanupError);
+  }
   testComposioFixture = undefined;
-  await stopDocDelivery?.();
-  stopDocDelivery = undefined;
-  docNotificationCleanup?.();
-  docNotificationCleanup = undefined;
   // Two startup failures are addressed to the operator rather than to whoever
   // maintains DorkOS: a database that will not open, and a backup that could not
   // be written. Both carry instructions in their message and both are resolved

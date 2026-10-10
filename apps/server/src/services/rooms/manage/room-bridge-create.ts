@@ -26,10 +26,10 @@ import type {
 } from '../../relay/chat-bridge/bridge-store.js';
 import type { AuthorRecord, AuthorRegistry } from '../author-registry.js';
 import type { RoomCore } from '../service/room-core.js';
-import { RoomError } from '../room-errors.js';
+import { RoomError } from '../data/room-errors.js';
 import type { RoomProjection } from '../service/room-projection.js';
 import type { RoomRoster } from '../room-roster.js';
-import type { NewRoom } from '../room-rows.js';
+import type { NewRoom } from '../data/room-rows.js';
 import { slugify, uniqueChannelSlug } from '../service/room-slugs.js';
 import type { OpenedRoom } from '../service/room-service-deps.js';
 import type { RoomStore } from '../room-store.js';

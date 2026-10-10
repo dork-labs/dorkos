@@ -9,12 +9,16 @@
  * the small allowlisted set of methods, and refuses everything else. It is
  * deliberately framework-agnostic (no React) so it can be unit-tested directly.
  *
- * v1 is render-only: `resources/read` is proxied, `ui/open-link` and
+ * Standard v1 methods remain render-only: `resources/read` is proxied, `ui/open-link` and
  * `ui/request-display-mode` are surfaced to the host, and `tools/call` is
- * explicitly refused (D4). Unknown methods get JSON-RPC method-not-found.
+ * explicitly refused (D4). A hosting Doc may negotiate the namespaced DorkOS
+ * document extension; inline Apps without that original permission remain render-only.
+ * Unknown methods get JSON-RPC method-not-found.
  *
  * @module features/mcp-apps/model/bridge
  */
+
+import { createMcpAppDocExtension, type McpAppDocHost } from './doc-extension';
 
 /** JSON-RPC 2.0 method-not-found error code. */
 const METHOD_NOT_FOUND = -32601;
@@ -70,6 +74,8 @@ export interface McpAppBridgeOptions {
   hostContext: McpAppHostContext;
   /** Host-owned handlers. */
   handlers: McpAppBridgeHandlers;
+  /** Original hosting document permission; inline render-only Apps have none. */
+  docHost?: McpAppDocHost;
 }
 
 /**
@@ -81,18 +87,20 @@ export interface McpAppBridgeOptions {
  * @returns A cleanup function that detaches the `message` listener.
  */
 export function createMcpAppBridge(options: McpAppBridgeOptions): () => void {
-  const { iframe, expectedOrigin, hostContext, handlers } = options;
+  const { iframe, expectedOrigin, hostContext, handlers, docHost } = options;
+  const originalWindow = iframe.contentWindow;
+  let disposed = false;
+  let navigationEpoch = 0;
+  const retireNavigation = () => {
+    navigationEpoch++;
+  };
 
   const post = (message: unknown): void => {
     // Target origin is '*' because a strict-sandbox frame has an opaque ("null")
     // origin that cannot be named; the source-window check on inbound is what
     // secures the channel, and outbound only reaches this specific frame.
-    iframe.contentWindow?.postMessage(message, '*');
-  };
-
-  const respond = (id: JsonRpcRequest['id'], result: unknown): void => {
-    if (id === undefined || id === null) return; // notification — no reply
-    post({ jsonrpc: '2.0', id, result });
+    if (!disposed && iframe.contentWindow === originalWindow)
+      originalWindow?.postMessage(message, '*');
   };
 
   const respondError = (id: JsonRpcRequest['id'], code: number, message: string): void => {
@@ -100,13 +108,43 @@ export function createMcpAppBridge(options: McpAppBridgeOptions): () => void {
     post({ jsonrpc: '2.0', id, error: { code, message } });
   };
 
+  const extension = docHost ? createMcpAppDocExtension(iframe, docHost, post) : undefined;
+
   const handleRequest = async (req: JsonRpcRequest): Promise<void> => {
+    let capturedEpoch = navigationEpoch;
+    const respond = (id: JsonRpcRequest['id'], result: unknown) => {
+      if (
+        capturedEpoch === navigationEpoch &&
+        (req.method === 'ui/initialize' || !docHost || docHost.current()) &&
+        id !== undefined &&
+        id !== null
+      )
+        post({ jsonrpc: '2.0', id, result });
+    };
+    const respondError = (id: JsonRpcRequest['id'], code: number, message: string) => {
+      if (
+        capturedEpoch === navigationEpoch &&
+        (req.method === 'ui/initialize' || !docHost || docHost.current()) &&
+        id !== undefined &&
+        id !== null
+      )
+        post({ jsonrpc: '2.0', id, error: { code, message } });
+    };
     switch (req.method) {
       case 'ui/initialize': {
+        const proposed = extension ? await extension.initialize(req.params) : undefined;
+        const originalHostCurrent = proposed ? docHost?.current() : undefined;
+        const originalLoadCurrent =
+          proposed && originalHostCurrent ? extension?.currentLoad() : undefined;
+        const permission =
+          proposed && originalHostCurrent && originalLoadCurrent ? proposed : undefined;
+        if (permission) capturedEpoch = navigationEpoch;
         respond(req.id, {
+          ...(permission ? { extensions: { 'dorkos/app': permission } } : {}),
           availableDisplayModes: [...ADVERTISED_DISPLAY_MODES],
           hostContext,
         });
+        extension?.publishInitial();
         return;
       }
       case 'resources/read': {
@@ -119,7 +157,11 @@ export function createMcpAppBridge(options: McpAppBridgeOptions): () => void {
           respondError(
             req.id,
             APP_NOT_PERMITTED,
-            err instanceof Error ? err.message : 'read failed'
+            docHost
+              ? 'This resource is unavailable.'
+              : err instanceof Error
+                ? err.message
+                : 'read failed'
           );
         }
         return;
@@ -136,6 +178,16 @@ export function createMcpAppBridge(options: McpAppBridgeOptions): () => void {
         respond(req.id, {
           granted: mode === 'fullscreen' || mode === 'inline' || mode === 'pip',
         });
+        return;
+      }
+      case 'dorkos/app.emit': {
+        if (!extension)
+          return respondError(req.id, APP_NOT_PERMITTED, 'This document operation is unavailable.');
+        try {
+          respond(req.id, await extension.emit(req.params));
+        } catch {
+          respondError(req.id, APP_NOT_PERMITTED, 'This document operation is unavailable.');
+        }
         return;
       }
       case 'tools/call': {
@@ -157,23 +209,43 @@ export function createMcpAppBridge(options: McpAppBridgeOptions): () => void {
   const onMessage = (event: MessageEvent): void => {
     // Source-window check first: only this iframe's window may talk to us. This
     // is the primary guard for a strict-sandbox ("null" origin) frame.
-    if (event.source !== iframe.contentWindow) return;
+    if (disposed || event.source !== originalWindow || iframe.contentWindow !== originalWindow)
+      return;
     // Origin check: reject anything not from the frame's expected (opaque) origin.
     if (event.origin !== expectedOrigin) return;
     const req = parseRequest(event.data);
     if (!req) return;
-    void handleRequest(req);
+    const capturedEpoch = navigationEpoch;
+    void handleRequest(req).catch(() => {
+      if (capturedEpoch === navigationEpoch && (!docHost || docHost.current()))
+        respondError(req.id, APP_NOT_PERMITTED, 'This operation is unavailable.');
+    });
   };
 
   window.addEventListener('message', onMessage);
-  return () => window.removeEventListener('message', onMessage);
+  if (typeof iframe.addEventListener === 'function')
+    iframe.addEventListener('load', retireNavigation);
+  return () => {
+    disposed = true;
+    window.removeEventListener('message', onMessage);
+    if (typeof iframe.removeEventListener === 'function')
+      iframe.removeEventListener('load', retireNavigation);
+    extension?.dispose();
+  };
 }
 
 /** Narrow untrusted `event.data` to a JSON-RPC request, or null. */
 function parseRequest(data: unknown): JsonRpcRequest | null {
   if (typeof data !== 'object' || data === null) return null;
   const d = data as Record<string, unknown>;
-  if (d.jsonrpc !== '2.0' || typeof d.method !== 'string') return null;
+  if (d.jsonrpc !== '2.0' || typeof d.method !== 'string' || d.method.length > 100) return null;
+  if (
+    d.id !== undefined &&
+    d.id !== null &&
+    !(typeof d.id === 'string' && d.id.length <= 200) &&
+    !(typeof d.id === 'number' && Number.isSafeInteger(d.id))
+  )
+    return null;
   return {
     jsonrpc: '2.0',
     method: d.method,

@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   CONTEXT_TAG,
   ClientContextSchema,
+  RoomContextDataSchema,
   AdditionalContextEntrySchema,
   stripTagBlocks,
   stripInjectedTagBlocks,
@@ -192,6 +193,42 @@ describe('AdditionalContextEntrySchema', () => {
       data: { text: '' },
     });
     expect(result.success).toBe(false);
+  });
+
+  it('preserves Room canvas labels through the original context parser and entry union', () => {
+    const canvas = {
+      viewers: 0,
+      documents: [
+        {
+          id: 'document-1',
+          type: 'json',
+          title: 'The plan',
+          author: 'ana',
+          pinned: false,
+          lastChangedAt: '2026-10-05T00:00:00.000Z',
+        },
+      ],
+    };
+    const context = { ...SAMPLE_ROOM_CONTEXT, canvas };
+    expect(RoomContextDataSchema.parse(context).canvas).toEqual(canvas);
+    const entry = AdditionalContextEntrySchema.parse({
+      kind: 'room_context',
+      scope: 'per-turn',
+      data: context,
+    });
+    expect(entry.kind).toBe('room_context');
+    if (entry.kind !== 'room_context') throw new Error('Original context kind changed');
+    expect(entry.data.canvas).toEqual(canvas);
+    expect(RoomContextDataSchema.parse(SAMPLE_ROOM_CONTEXT)).not.toHaveProperty('canvas');
+    expect(
+      RoomContextDataSchema.safeParse({ ...context, canvas: { ...canvas, viewers: -1 } }).success
+    ).toBe(false);
+    expect(
+      RoomContextDataSchema.safeParse({
+        ...context,
+        canvas: { ...canvas, documents: [{ ...canvas.documents[0], pinned: 'false' }] },
+      }).success
+    ).toBe(false);
   });
 
   it('validates a room_context entry', () => {

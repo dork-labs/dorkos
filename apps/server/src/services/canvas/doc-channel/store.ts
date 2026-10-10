@@ -1,3 +1,25 @@
+import { consumeOriginalDocPresenceAppend } from './current/current-operation-engine.js';
+import {
+  buildCurrentSequencePredicate,
+  buildCurrentBatchTransitionPredicate,
+  buildCurrentStatePredicate,
+  buildCurrentPendingBatchPredicate,
+  buildCurrentDeliveryTransitionPredicate,
+  requireCurrentAppendBounds,
+  buildCurrentEventInsertValues,
+  requireCurrentStateInput,
+  buildCurrentAppendRow,
+  buildCurrentInputRow,
+} from './current/current-operation-intentions.js';
+
+import {
+  auditCurrentAppendSlice,
+  readCurrentStorePageEvents,
+  readCurrentStoreGetBatch,
+  readCurrentStoreListDeliveries,
+  readCurrentStoreGetIdentityIntent,
+} from './current/current-operation-row-audit.js';
+import { sameCurrentDocData } from './current/current-operation-data.js';
 /**
  * Synchronous persistence primitives for document channels.
  *
@@ -10,10 +32,9 @@
 import {
   and,
   asc,
-  eq,
-  gt,
-  isNull,
   inArray,
+  eq,
+  isNull,
   lte,
   or,
   sql,
@@ -27,31 +48,60 @@ import {
   type Db,
   type DbTransaction,
 } from '@dorkos/db';
+
 import {
-  CANVAS_CHANNEL_STATE_BYTES,
-  CanvasChannelStateSchema,
-} from '@dorkos/shared/canvas-channel-schemas';
-import { assertJson, assertRowJson, readChecked, DocChannelCorruptionError } from './store-json.js';
-export { DocChannelCorruptionError } from './store-json.js';
-import { documentTransaction, type SynchronousResult } from './store-transaction.js';
+  assertJson,
+  assertRowJson,
+  readChecked,
+  DocChannelCorruptionError,
+} from './storage/store-json.js';
+export { DocChannelCorruptionError } from './storage/store-json.js';
+import { documentTransaction, type SynchronousResult } from './storage/store-transaction.js';
 import {
   readPreparedChannel,
   readPreparedGrant,
   readPreparedIntent,
 } from './readers/prepared-readers.js';
-import { requireDocEventUuidVacant, readDocEventRow } from './writes/reservation-policy-census.js';
-import { consumeCheckboxReservationAppend } from './writes/reservation-bridge.js';
-import { markDocWaitingWarning, markAcceptedDocWaitingWarning } from './store-warnings.js';
+import {
+  requireDocEventUuidVacant,
+  readDocEventRow,
+} from './writes/reservations/reservation-policy-census.js';
+import { consumeCheckboxReservationAppend } from './writes/reservations/reservation-bridge.js';
+import { markDocWaitingWarning, markAcceptedDocWaitingWarning } from './storage/store-warnings.js';
 import {
   queueCommittedDocChannel,
   queueCommittedDocEvent,
   queueCommittedDocGrant,
 } from './committed-events.js';
 
-type EventInput = Omit<typeof canvasDocEvents.$inferInsert, 'docSeq'>;
+import {
+  readCurrentDocIngressInput,
+  assertCurrentDocOperation,
+  readCurrentDocStoreOperation,
+  failCurrentDocOperation,
+  type DocChannelAuthorization,
+} from './authorization.js';
+import { envelopeIdentity } from './envelope.js';
+export type EventInput = Omit<typeof canvasDocEvents.$inferInsert, 'docSeq'>;
 const storeBindings = new WeakMap<
   DocChannelStore,
-  { db: Db; append: (input: EventInput, tx: DbTransaction) => DocEventRow }
+  {
+    db: Db;
+    append: (input: EventInput, tx: DbTransaction) => DocEventRow;
+    relay: Readonly<Pick<DocChannelStore, 'transaction' | 'getBatch' | 'getEvent'>>;
+    downstream: Readonly<
+      Pick<
+        DocChannelStore,
+        'transaction' | 'getChannel' | 'getBatch' | 'getEvent' | 'listDeliveries' | 'appendEvent'
+      >
+    >;
+    grant: Readonly<
+      Pick<
+        DocChannelStore,
+        'transaction' | 'getChannel' | 'insertGrant' | 'getGrant' | 'revokeGrant'
+      >
+    >;
+  }
 >();
 
 /** Constructor identity only; neither a public connection getter nor an overridable transaction probe. */
@@ -104,13 +154,54 @@ export class DocChannelStateConflictError extends Error {
   }
 }
 
-/** Transaction-capable storage; payload-free observers verify rows after the actual commit. */
+/** Transaction-capable document channel storage with no publication side effects. */
+const currentAppendIntentions = new WeakMap<
+  DbTransaction,
+  { store: DocChannelStore; documentId: string; firstSeq: number; rows: DocEventRow[] }
+>();
+
+/** Own document-channel storage and its constructor-captured operations. */
 export class DocChannelStore {
   /** Build a store over the production SQLite connection. */
   readonly #db: Db;
   constructor(db: Db) {
     this.#db = db;
-    storeBindings.set(this, { db, append: (input, tx) => this.#appendEvent(input, tx) });
+    storeBindings.set(this, {
+      db,
+      append: (input, tx) => this.#appendEvent(input, tx),
+      downstream: Object.freeze({
+        transaction: <T>(work: (tx: DbTransaction) => T & SynchronousResult<T>) =>
+          documentTransaction(db, work),
+        getChannel: (id: string, tx?: DbTransaction) => this.#getChannel(id, tx),
+        getBatch: (id: string, tx?: DbTransaction) => readCurrentStoreGetBatch(tx ?? db, id),
+        getEvent: (documentId: string, id: string, tx?: DbTransaction) =>
+          this.#getEvent(documentId, id, tx),
+        listDeliveries: (documentId: string, id: string, tx?: DbTransaction) =>
+          this.#listDeliveries(documentId, id, tx),
+        appendEvent: (input: EventInput, tx?: DbTransaction) => {
+          if (!tx) throw new Error('Native downstream append requires its original transaction.');
+          requireDocEventUuidVacant(tx, input.documentId, input.eventId);
+          return this.#appendEvent(input, tx);
+        },
+      }),
+      relay: Object.freeze({
+        transaction: <T>(work: (tx: DbTransaction) => T & SynchronousResult<T>) =>
+          documentTransaction(db, work),
+        getBatch: (id: string, tx?: DbTransaction) => readCurrentStoreGetBatch(tx ?? db, id),
+        getEvent: (documentId: string, id: string, tx?: DbTransaction) =>
+          this.#getEvent(documentId, id, tx),
+      }),
+      grant: Object.freeze({
+        transaction: <T>(work: (tx: DbTransaction) => T & SynchronousResult<T>) =>
+          documentTransaction(db, work),
+        getChannel: (id: string, tx?: DbTransaction) => this.#getChannel(id, tx),
+        insertGrant: (input: typeof canvasDocGrants.$inferInsert, tx?: DbTransaction) =>
+          this.#insertGrant(input, tx),
+        getGrant: (id: string, tx?: DbTransaction) => this.#getGrant(id, tx),
+        revokeGrant: (id: string, revision: number, time: string, tx?: DbTransaction) =>
+          this.#revokeGrant(id, revision, time, tx),
+      }),
+    });
   }
 
   /** Compose synchronous source mutations atomically; asynchronous callbacks roll back. */
@@ -140,7 +231,6 @@ export class DocChannelStore {
   getChannel(documentId: string, tx?: DbTransaction): DocChannelRow | undefined {
     return this.#getChannel(documentId, tx);
   }
-
   #getChannel(documentId: string, tx?: DbTransaction): DocChannelRow | undefined {
     return readChecked('canvas_doc_channels', documentId, () =>
       readPreparedChannel(tx ?? this.#db, documentId)
@@ -164,33 +254,46 @@ export class DocChannelStore {
     assertRowJson(input);
     const channel = this.#getChannel(input.documentId, tx);
     if (!channel || channel.closedAt !== null) throw new DocChannelClosedError(input.documentId);
-    if (
-      !Number.isSafeInteger(channel.nextDocSeq) ||
-      channel.nextDocSeq < 1 ||
-      channel.nextDocSeq >= Number.MAX_SAFE_INTEGER
-    )
-      throw new DocChannelCorruptionError('canvas_doc_channels', input.documentId);
+    requireCurrentAppendBounds(channel, input.documentId);
+    // Capture complete intended rows before the counter update or any INSERT trigger.
+    const operation = readCurrentDocStoreOperation(this, tx);
+    const intended = buildCurrentAppendRow(input, channel.nextDocSeq);
+    if (operation) {
+      if (operation.documentId !== input.documentId)
+        return failCurrentDocOperation(this, tx, new Error('Current append changed its document.'));
+      let own = currentAppendIntentions.get(tx);
+      if (!own) {
+        own = { store: this, documentId: input.documentId, firstSeq: channel.nextDocSeq, rows: [] };
+        currentAppendIntentions.set(tx, own);
+      }
+      if (
+        own.store !== this ||
+        channel.nextDocSeq !== own.firstSeq + own.rows.length ||
+        own.rows.some((row) => row.eventId === input.eventId)
+      )
+        return failCurrentDocOperation(
+          this,
+          tx,
+          new Error('Current append sequence or UUID was reused.')
+        );
+      own.rows.push(intended);
+    }
     const changed = tx
       .update(canvasDocChannels)
       .set({ nextDocSeq: channel.nextDocSeq + 1, updatedAt: input.receivedAt })
-      .where(
-        and(
-          eq(canvasDocChannels.documentId, input.documentId),
-          eq(canvasDocChannels.nextDocSeq, channel.nextDocSeq),
-          isNull(canvasDocChannels.closedAt)
-        )
-      )
+      .where(buildCurrentSequencePredicate(input.documentId, channel.nextDocSeq))
       .run().changes;
     if (changed !== 1) throw new Error('Document sequence allocation raced.');
     tx.insert(canvasDocEvents)
-      .values({
-        ...input,
-        docSeq: channel.nextDocSeq,
-        payload: input.payload === null ? sql`'null'` : input.payload,
-        provenance: input.provenance === null ? sql`'null'` : input.provenance,
-      })
+      .values(buildCurrentEventInsertValues(input, channel.nextDocSeq))
       .run();
     const event = this.#getEvent(input.documentId, input.eventId, tx)!;
+    if (operation && !sameCurrentDocData(event, intended))
+      return failCurrentDocOperation(
+        this,
+        tx,
+        new Error('Current append trigger changed its intended row.')
+      );
     queueCommittedDocEvent(this.#db, event);
     return event;
   }
@@ -211,29 +314,7 @@ export class DocChannelStore {
     limit: number,
     highWatermark?: number
   ): DocEventRow[] {
-    if (
-      !Number.isSafeInteger(since) ||
-      since < 0 ||
-      !Number.isInteger(limit) ||
-      limit < 1 ||
-      limit > 200
-    )
-      throw new RangeError('Invalid document replay page.');
-    return readChecked('canvas_doc_events', documentId, () =>
-      this.#db
-        .select()
-        .from(canvasDocEvents)
-        .where(
-          and(
-            eq(canvasDocEvents.documentId, documentId),
-            gt(canvasDocEvents.docSeq, since),
-            highWatermark === undefined ? undefined : lte(canvasDocEvents.docSeq, highWatermark)
-          )
-        )
-        .orderBy(asc(canvasDocEvents.docSeq))
-        .limit(limit)
-        .all()
-    );
+    return readCurrentStorePageEvents(this.#db, documentId, since, limit, highWatermark);
   }
 
   /** Read the at most two replay pages' current full event rows in the caller transaction. */
@@ -279,6 +360,9 @@ export class DocChannelStore {
 
   /** Persist route evidence in an existing source transaction. */
   insertGrant(input: typeof canvasDocGrants.$inferInsert, tx?: DbTransaction): void {
+    return this.#insertGrant(input, tx);
+  }
+  #insertGrant(input: typeof canvasDocGrants.$inferInsert, tx?: DbTransaction): void {
     assertRowJson(input);
     (tx ?? this.#db).insert(canvasDocGrants).values(input).run();
     queueCommittedDocGrant(this.#db, this.#getGrant(input.grantId, tx)!);
@@ -288,7 +372,6 @@ export class DocChannelStore {
   getGrant(grantId: string, tx?: DbTransaction): DocGrantRow | undefined {
     return this.#getGrant(grantId, tx);
   }
-
   #getGrant(grantId: string, tx?: DbTransaction): DocGrantRow | undefined {
     return readChecked('canvas_doc_grants', grantId, () =>
       readPreparedGrant(tx ?? this.#db, grantId)
@@ -309,13 +392,7 @@ export class DocChannelStore {
 
   /** Read one batch, retaining immutable generation and source correlation. */
   getBatch(batchId: string, tx?: DbTransaction): DocBatchRow | undefined {
-    return readChecked('canvas_doc_batches', batchId, () =>
-      (tx ?? this.#db)
-        .select()
-        .from(canvasDocBatches)
-        .where(eq(canvasDocBatches.batchId, batchId))
-        .get()
-    );
+    return readCurrentStoreGetBatch(tx ?? this.#db, batchId);
   }
 
   /** Acquire an expired/free lease exactly once for a known generation and state. */
@@ -387,14 +464,7 @@ export class DocChannelStore {
       (tx ?? this.#db)
         .update(canvasDocBatches)
         .set({ status: input.status, updatedAt: input.updatedAt })
-        .where(
-          and(
-            eq(canvasDocBatches.batchId, input.batchId),
-            eq(canvasDocBatches.generation, input.generation),
-            eq(canvasDocBatches.attempt, input.attempt),
-            eq(canvasDocBatches.status, input.expectedStatus)
-          )
-        )
+        .where(buildCurrentBatchTransitionPredicate(input))
         .run().changes === 1
     );
   }
@@ -407,19 +477,10 @@ export class DocChannelStore {
 
   /** Inspect all route outcomes for an input. */
   listDeliveries(documentId: string, eventId: string, tx?: DbTransaction): DocDeliveryRow[] {
-    return readChecked('canvas_doc_deliveries', `${documentId}/${eventId}`, () =>
-      (tx ?? this.#db)
-        .select()
-        .from(canvasDocDeliveries)
-        .where(
-          and(
-            eq(canvasDocDeliveries.documentId, documentId),
-            eq(canvasDocDeliveries.eventId, eventId)
-          )
-        )
-        .orderBy(asc(canvasDocDeliveries.routeId))
-        .all()
-    );
+    return this.#listDeliveries(documentId, eventId, tx);
+  }
+  #listDeliveries(documentId: string, eventId: string, tx?: DbTransaction): DocDeliveryRow[] {
+    return readCurrentStoreListDeliveries(tx ?? this.#db, documentId, eventId);
   }
 
   /** Atomically replace a validated state value, advance revision and append its event. */
@@ -433,17 +494,7 @@ export class DocChannelStore {
     tx?: DbTransaction
   ): DocEventRow {
     if (!tx) return this.transaction((current) => this.replaceState(input, current));
-    assertJson(input.state, CANVAS_CHANNEL_STATE_BYTES);
-    if (!CanvasChannelStateSchema.safeParse(input.state).success)
-      throw new TypeError('Invalid state object');
-    if (
-      !Number.isSafeInteger(input.expectedStateRev) ||
-      input.expectedStateRev < 0 ||
-      input.expectedStateRev >= Number.MAX_SAFE_INTEGER
-    )
-      throw new RangeError('Invalid document state revision.');
-    if (input.event.documentId !== input.documentId)
-      throw new Error('State event document mismatch.');
+    requireCurrentStateInput(input);
     requireDocEventUuidVacant(tx, input.documentId, input.event.eventId);
     const changed = tx
       .update(canvasDocChannels)
@@ -452,13 +503,7 @@ export class DocChannelStore {
         stateRev: input.expectedStateRev + 1,
         updatedAt: input.event.receivedAt,
       })
-      .where(
-        and(
-          eq(canvasDocChannels.documentId, input.documentId),
-          eq(canvasDocChannels.stateRev, input.expectedStateRev),
-          isNull(canvasDocChannels.closedAt)
-        )
-      )
+      .where(buildCurrentStatePredicate(input))
       .run().changes;
     if (changed !== 1) throw new DocChannelStateConflictError();
     return this.appendEvent(input.event, tx);
@@ -494,13 +539,7 @@ export class DocChannelStore {
 
   /** Read identity repair evidence without inventing a successful empty record. */
   getIdentityIntent(id: string, tx?: DbTransaction): DocIdentityIntentRow | undefined {
-    return readChecked('canvas_doc_identity_intents', id, () =>
-      (tx ?? this.#db)
-        .select()
-        .from(canvasDocIdentityIntents)
-        .where(eq(canvasDocIdentityIntents.intentId, id))
-        .get()
-    );
+    return readCurrentStoreGetIdentityIntent(tx ?? this.#db, id);
   }
 
   /** Store before/after evidence before a filesystem effect. */
@@ -540,13 +579,7 @@ export class DocChannelStore {
           effectivePayload: input.effectivePayload === null ? sql`'null'` : input.effectivePayload,
           updatedAt: input.updatedAt,
         })
-        .where(
-          and(
-            eq(canvasDocBatches.batchId, input.batchId),
-            eq(canvasDocBatches.generation, input.generation),
-            eq(canvasDocBatches.status, input.status)
-          )
-        )
+        .where(buildCurrentPendingBatchPredicate(input))
         .run().changes === 1
     );
   }
@@ -569,20 +602,16 @@ export class DocChannelStore {
       (tx ?? this.#db)
         .update(canvasDocDeliveries)
         .set(input.changes)
-        .where(
-          and(
-            eq(canvasDocDeliveries.documentId, input.documentId),
-            eq(canvasDocDeliveries.eventId, input.eventId),
-            eq(canvasDocDeliveries.routeId, input.routeId),
-            eq(canvasDocDeliveries.status, input.expectedStatus)
-          )
-        )
+        .where(buildCurrentDeliveryTransitionPredicate(input))
         .run().changes === 1
     );
   }
 
   /** Revoke an unchanged route revision without replacing its immutable approval evidence. */
   revokeGrant(grantId: string, revision: number, revokedAt: string, tx?: DbTransaction): boolean {
+    return this.#revokeGrant(grantId, revision, revokedAt, tx);
+  }
+  #revokeGrant(grantId: string, revision: number, revokedAt: string, tx?: DbTransaction): boolean {
     const changed =
       (tx ?? this.#db)
         .update(canvasDocGrants)
@@ -641,4 +670,69 @@ export class DocChannelStore {
         .run().changes === 1
     );
   }
+}
+
+/** Genuine private append; accepts no caller event, access, source or capacity credit. */
+export function appendCurrentDocInput(
+  store: DocChannelStore,
+  authorization: DocChannelAuthorization,
+  tx: DbTransaction
+): DocEventRow {
+  const own = storeBindings.get(store);
+  if (!own) throw new Error('Current input append requires a genuine store.');
+  const input = readCurrentDocIngressInput(authorization, store, tx);
+  if (!input.now || !input.access) throw new Error('Current input append lacks its fixed phase.');
+  const identity = envelopeIdentity(input.event);
+  assertCurrentDocOperation(authorization, store, tx);
+  requireDocEventUuidVacant(tx, input.documentId, input.event.id);
+  return own.append(buildCurrentInputRow(input, identity, input.now, input.access.provenance), tx);
+}
+
+/** Fixed quiet presence append: caller supplies no event, viewer, clock or routing data. */
+export function appendOriginalDocPresenceEvent(
+  store: DocChannelStore,
+  authorization: DocChannelAuthorization,
+  tx: DbTransaction
+): DocEventRow {
+  const own = storeBindings.get(store);
+  if (!own) throw new Error('Presence append requires its original store.');
+  assertCurrentDocOperation(authorization, store, tx);
+  const input = consumeOriginalDocPresenceAppend(authorization, store, tx);
+  requireDocEventUuidVacant(tx, input.documentId, input.eventId);
+  return own.append(input, tx);
+}
+/** Complete pre-effect append intentions; caller cannot register, replace or reset them. */
+export function auditCurrentDocAppendIntentions(
+  store: DocChannelStore,
+  authorization: DocChannelAuthorization,
+  tx: DbTransaction
+): readonly DocEventRow[] {
+  readCurrentDocIngressInput(authorization, store, tx);
+  const own = currentAppendIntentions.get(tx);
+  if (!own || own.store !== store)
+    return failCurrentDocOperation(store, tx, new Error('Current append intentions are absent.'));
+  try {
+    return auditCurrentAppendSlice(tx, own);
+  } catch (cause) {
+    return failCurrentDocOperation(store, tx, cause);
+  }
+}
+
+/** Actual constructor-captured store implementations for the original grant core; no public method replacement. */
+export function requireOriginalDocGrantStore(store: DocChannelStore, db: Db) {
+  requireDocChannelStoreDatabase(store, db);
+  return storeBindings.get(store)!.grant;
+}
+
+/** Only actual constructor-captured source reads/SQL; public reflection cannot replace these. */
+export function requireOriginalDocumentRelayStore(store: DocChannelStore) {
+  const own = storeBindings.get(store);
+  if (!own) throw new Error('DOCUMENT_RELAY_ORIGINAL_STORE_REQUIRED');
+  return own.relay;
+}
+
+/** Fixed actual sender dependency; no caller transaction or reflected store method. */
+export function requireOriginalNativeDownstreamStore(store: DocChannelStore, db: Db) {
+  requireDocChannelStoreDatabase(store, db);
+  return storeBindings.get(store)!.downstream;
 }

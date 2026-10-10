@@ -1,3 +1,8 @@
+import {
+  captureOriginalHttpRoomSessionPlacement,
+  originalHttpRoomSessionPlacementRefusal,
+} from '../services/canvas/doc-channel/http-composition.js';
+import type { InstallationFileWrites } from '../services/canvas/doc-channel/writes/installation-file-writes.js';
 import { Router, type Request, type Response } from 'express';
 import { z } from 'zod';
 import { runtimeRegistry } from '../services/core/runtime-registry.js';
@@ -958,21 +963,42 @@ router.post('/:id/messages', async (req, res) => {
   // Read X-Client-Id header, or generate UUID if missing
   const clientId = (req.headers['x-client-id'] as string) || crypto.randomUUID();
 
-  const result = await dispatchSessionMessage({
-    // `{ kind: 'interactive' }` is what unlocks the trust stop, and this route is
-    // where that claim is true: a message posted to `/api/sessions/:id/messages`
-    // came from a person at a control panel holding the session's event stream
-    // open. Rooms, tasks and bindings never pass through here, and each names
-    // itself at its own call (DOR-2105).
-    origin: { kind: 'interactive' },
-    sessionId,
-    request: parsed.data,
-    clientId,
-    meshCore: req.app.locals.meshCore as MeshCore | undefined,
-    roomSessionPlace: req.app.locals.roomSessionPlace as RoomSessionPlacePort | undefined,
-    // Who is asking, for a new workspace a workspaceKey names (DOR-2335).
-    workspaceCaller: workspaceCallerOf(req, res),
-  });
+  let result: Awaited<ReturnType<typeof dispatchSessionMessage>>;
+  try {
+    result = await (async () => {
+      const owner = (
+        req.app.locals.docChannelHttp as { fileWrites?: InstallationFileWrites } | undefined
+      )?.fileWrites;
+      const placement = owner
+        ? await captureOriginalHttpRoomSessionPlacement(owner, req, res, sessionId)
+        : undefined;
+      try {
+        return await dispatchSessionMessage({
+          // `{ kind: 'interactive' }` is what unlocks the trust stop, and this route is
+          // where that claim is true: a message posted to `/api/sessions/:id/messages`
+          // came from a person at a control panel holding the session's event stream
+          // open. Rooms, tasks and bindings never pass through here, and each names
+          // itself at its own call (DOR-2105).
+          origin: { kind: 'interactive' },
+          sessionId,
+          request: parsed.data,
+          clientId,
+          meshCore: req.app.locals.meshCore as MeshCore | undefined,
+          roomSessionPlace:
+            placement?.place ??
+            (req.app.locals.roomSessionPlace as RoomSessionPlacePort | undefined),
+          // Who is asking, for a new workspace a workspaceKey names (DOR-2335).
+          workspaceCaller: workspaceCallerOf(req, res),
+        });
+      } finally {
+        placement?.retire();
+      }
+    })();
+  } catch (cause) {
+    const refusal = originalHttpRoomSessionPlacementRefusal(cause);
+    if (refusal) return sendError(res, refusal.status, refusal.message, refusal.code);
+    throw cause;
+  }
   if (isSessionLaunchRefusal(result)) {
     // The account may not work in this project: the plain sentence, with the
     // project and account it is about (spec `flow-multiproject` §8.3).

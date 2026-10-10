@@ -2,6 +2,7 @@ FROM node:24-bookworm-slim AS build
 RUN corepack enable
 WORKDIR /work
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY patches patches
 COPY apps/community/package.json apps/community/package.json
 COPY packages/db/package.json packages/db/package.json
 COPY packages/relay/package.json packages/relay/package.json

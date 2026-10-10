@@ -12,7 +12,7 @@ import { claudeConfigDirEnv, resolveActiveClaudeRoot } from '../claude-config-di
 import { runtimeEnvironment } from '../../shared/runtime-environment-config.js';
 import path from 'path';
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'fs';
-import { query, type Query, type ModelInfo } from '@anthropic-ai/claude-agent-sdk';
+import type { Query, ModelInfo } from '@anthropic-ai/claude-agent-sdk';
 import type {
   ModelOption,
   SubagentInfo,
@@ -317,6 +317,7 @@ export class RuntimeCache {
 
     this.warmupPromise = (async () => {
       try {
+        const { query } = await import('@anthropic-ai/claude-agent-sdk');
         // eslint-disable-next-line @typescript-eslint/no-empty-function -- intentionally never yields
         const neverYield = (async function* () {})();
         const agentQuery = query({

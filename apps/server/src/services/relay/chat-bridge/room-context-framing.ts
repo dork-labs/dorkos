@@ -16,7 +16,7 @@
  * @module server/services/relay/chat-bridge/room-context-framing
  */
 import type { RelayAdapter } from '@dorkos/relay';
-import { MAX_MESSAGE_LENGTH, TELEGRAM_FORMATTING_RULES } from '@dorkos/relay';
+import { MAX_MESSAGE_LENGTH, TELEGRAM_FORMATTING_RULES } from '@dorkos/relay/telegram-formatting';
 import type { Bridge, BridgeStore } from './bridge-store.js';
 
 /** What `room_context` needs about a bridged room (spec §8, §15). */

@@ -465,13 +465,17 @@
       "types": "./src/canvas-bridge-wire.ts",
       "default": "./dist/canvas-bridge-wire.js"
     },
-    "./canvas-channel-schemas": {
-      "types": "./src/canvas-channel-schemas.ts",
-      "default": "./dist/canvas-channel-schemas.js"
+    "./canvas-doc-incarnation": {
+      "types": "./src/canvas-doc-incarnation.ts",
+      "default": "./dist/canvas-doc-incarnation.js"
     },
     "./canvas-doc-frame-wire": {
       "types": "./src/canvas-doc-frame-wire.ts",
       "default": "./dist/canvas-doc-frame-wire.js"
+    },
+    "./canvas-channel-schemas": {
+      "types": "./src/canvas-channel-schemas.ts",
+      "default": "./dist/canvas-channel-schemas.js"
     },
     "./canvas-app-manifest": {
       "types": "./src/canvas-app-manifest.ts",

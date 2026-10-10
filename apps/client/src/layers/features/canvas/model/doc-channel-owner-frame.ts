@@ -12,15 +12,19 @@ import {
 import { DocChannelFrameResources } from './doc-channel-frame-resources';
 import { prepareDocFrameLoad, attachDocFramePort } from './doc-channel-frame-admission';
 import { captureBoundOriginal, createDocChannelNativePorts } from './doc-channel-native-ports';
-import { readRecordSubject, readRecordNativeOperations } from './doc-channel-owner-record';
+import {
+  readRecordSubject,
+  readRecordNativeOperations,
+  readRecordFrameOperations,
+} from './doc-channel-owner-record';
 import type { DocChannelBinding } from './doc-channel-view';
 import {
   requireOwnedCustody,
+  readOwnedFacts,
   readOwnedTransport,
   captureOwnedSubject,
   readOwnedSubject,
   ownedSubjectCurrent,
-  bindOwnedSubject,
 } from './doc-channel-owner-custody';
 const acquireBinding = FrameLifetimeController.prototype.acquireDoc;
 const entries = new WeakMap<
@@ -39,7 +43,7 @@ function buildFacade(custodyKey: object, frames: DocChannelFrameResources) {
     { record: object; birth: CanvasDocIncarnation }
   >();
   const frameCurrent = (record: object, ticket: number) =>
-    frames.current(ticket) && ownedSubjectCurrent(custodyKey, record, true);
+    frames.current(ticket) && ownedSubjectCurrent(custodyKey, record);
   const frameAdmission = Object.freeze({
     prepareFrameLoad: (controller: FrameLifetimeController, observation: FrameObservation) => {
       if (!(controller instanceof FrameLifetimeController) || observation.loaded) return null;
@@ -50,7 +54,7 @@ function buildFacade(custodyKey: object, frames: DocChannelFrameResources) {
         !record ||
         !baseline ||
         !frames.current(ticket) ||
-        !ownedSubjectCurrent(custodyKey, record, true) ||
+        !ownedSubjectCurrent(custodyKey, record) ||
         controller.getCurrent() !== observation ||
         observation.transportOwner !== transportOwner ||
         !frameCurrent(record, ticket)
@@ -60,11 +64,11 @@ function buildFacade(custodyKey: object, frames: DocChannelFrameResources) {
       let completedObservation: FrameObservation | null = null;
       return prepareDocFrameLoad(frames, ticket, {
         current: () =>
-          ownedSubjectCurrent(custodyKey, record, true) &&
+          ownedSubjectCurrent(custodyKey, record) &&
           readOwnedSubject(custodyKey, record)?.httpBaseline === baseline &&
           controller.getCurrent() === (completedObservation ?? observation) &&
           frames.current(ticket) &&
-          ownedSubjectCurrent(custodyKey, record, true),
+          ownedSubjectCurrent(custodyKey, record),
         complete: () => {
           completedObservation = controller.observeLoaded(observation);
           return completedObservation;
@@ -72,11 +76,11 @@ function buildFacade(custodyKey: object, frames: DocChannelFrameResources) {
         accept: (loaded) => {
           if (
             !frames.current(ticket) ||
-            !ownedSubjectCurrent(custodyKey, record, true) ||
+            !ownedSubjectCurrent(custodyKey, record) ||
             readOwnedSubject(custodyKey, record)?.httpBaseline !== baseline ||
             controller.getCurrent() !== loaded ||
             !frames.current(ticket) ||
-            !ownedSubjectCurrent(custodyKey, record, true) ||
+            !ownedSubjectCurrent(custodyKey, record) ||
             readOwnedSubject(custodyKey, record)?.httpBaseline !== baseline
           )
             return false;
@@ -84,6 +88,25 @@ function buildFacade(custodyKey: object, frames: DocChannelFrameResources) {
           return true;
         },
       });
+    },
+    // A quarantined record cannot issue actions. This predicate retains only passive
+    // custody of the exact completed load; attachFrame still requires fresh qualification.
+    retainsLoadedFrame: (controller: FrameLifetimeController, observation: FrameObservation) => {
+      if (!(controller instanceof FrameLifetimeController) || !observation.loaded) return false;
+      const previous = loadedBirths.get(observation);
+      const record = captureOwnedSubject(custodyKey);
+      const subject = record && readOwnedSubject(custodyKey, record);
+      return (
+        !!previous &&
+        !!record &&
+        !!subject &&
+        readOwnedFacts(custodyKey).live &&
+        previous.record === record &&
+        sameCanvasDocIncarnation(previous.birth, subject.birth) &&
+        readOwnedTransport(custodyKey) === transportOwner &&
+        observation.transportOwner === transportOwner &&
+        controller.getCurrent() === observation
+      );
     },
     subscribeInvalidation: (callback: () => void) => frames.subscribe(callback),
     attachFrame: (
@@ -96,7 +119,7 @@ function buildFacade(custodyKey: object, frames: DocChannelFrameResources) {
       if (
         !record ||
         !frames.current(ticket) ||
-        !ownedSubjectCurrent(custodyKey, record, true) ||
+        !ownedSubjectCurrent(custodyKey, record) ||
         controller.getCurrent() !== observation ||
         observation.transportOwner !== transportOwner ||
         !frameCurrent(record, ticket)
@@ -160,7 +183,12 @@ function buildFacade(custodyKey: object, frames: DocChannelFrameResources) {
             captureOriginal: (request) =>
               captureBoundOriginal(
                 request,
-                (event) => bindOwnedSubject(custodyKey, record)?.captureOriginal(event) ?? null,
+                (event) => {
+                  const operations = readRecordFrameOperations(custodyKey, record);
+                  return operations
+                    ? createDocChannelNativePorts(operations).captureOriginal(event)
+                    : null;
+                },
                 () => frameCurrent(record, ticket)
               ),
             submit: async () => ({ kind: 'terminal' }),

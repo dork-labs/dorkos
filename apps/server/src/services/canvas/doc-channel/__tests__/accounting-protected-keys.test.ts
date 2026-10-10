@@ -1,5 +1,5 @@
 /** Protected-key accounting preserves retention authority without scanning retained events. */
-import { afterEach, expect, it } from 'vitest';
+import { afterEach, expect, it, vi } from 'vitest';
 import { createDb, runMigrations, sql, type Db, type DbTransaction } from '@dorkos/db';
 import { DocChannelStore } from '../store.js';
 import {
@@ -290,4 +290,106 @@ it('uses per-input primary-key probes for a large active batch beside retained h
     expect(tx.get(protectedCapacityQuery('doc-a'))).toEqual(originalUsage(tx, 'doc-a'));
     expect(tx.get(protectedCapacityQuery())).toEqual({ bytes: 100100 });
   });
+});
+
+// The paid SDK process alone is replaced. Authority comes from the real original constructor/FILE DB.
+const nativeRetentionSdk = vi.hoisted(() => ({
+  options: [] as unknown[],
+  prompts: [] as unknown[],
+  parked: true,
+  release: undefined as (() => void) | undefined,
+}));
+vi.mock('@openai/codex-sdk', () => ({
+  Codex: class {
+    constructor(options: unknown) {
+      nativeRetentionSdk.options.push(options);
+    }
+    startThread() {
+      return {
+        id: 'native-retention-source',
+        runStreamed: async (prompt: unknown) => {
+          nativeRetentionSdk.prompts.push(prompt);
+          return {
+            events: (async function* () {
+              yield { type: 'thread.started', thread_id: 'native-retention-source' };
+              if (nativeRetentionSdk.parked)
+                await new Promise<void>((resolve) => {
+                  nativeRetentionSdk.release = resolve;
+                });
+              yield {
+                type: 'turn.completed',
+                usage: { input_tokens: 1, cached_input_tokens: 0, output_tokens: 1 },
+              };
+            })(),
+          };
+        },
+      };
+    }
+    resumeThread() {
+      return this.startThread();
+    }
+  },
+}));
+import { nativeCommittedCodexRoomFixture } from '../writes/__tests__/authority-fixtures.js';
+function originalNativeRetentionSource(disposition: 'settled' | 'unpulled' = 'settled') {
+  nativeRetentionSdk.options.length = 0;
+  nativeRetentionSdk.prompts.length = 0;
+  nativeRetentionSdk.parked = true;
+  nativeRetentionSdk.release = undefined;
+  return nativeCommittedCodexRoomFixture(
+    {
+      options: nativeRetentionSdk.options,
+      prompts: nativeRetentionSdk.prompts,
+      releaseProducer: () => nativeRetentionSdk.release?.(),
+      completeFutureTurns: () => {
+        nativeRetentionSdk.parked = false;
+      },
+    },
+    disposition
+  );
+}
+
+it('counts genuine settled native evidence for retention without charging it as pending backlog', async () => {
+  const h = await originalNativeRetentionSource();
+  let failed = false,
+    first: unknown;
+  try {
+    expect(
+      h.db.get<{ n: number }>(
+        sql`SELECT count(*) AS n FROM room_doc_admission_inputs WHERE document_id=${h.documentId} AND event_id=${h.input.id}`
+      )
+    ).toEqual({ n: 1 });
+    expect(
+      h.db.get<{ count: number; bytes: number }>(protectedCapacityQuery(h.documentId))
+    ).toEqual({ count: 0, bytes: 0 });
+    expect(h.db.get<{ bytes: number }>(protectedCapacityQuery())).toEqual({ bytes: 0 });
+    expect(() =>
+      h.http.channels.transaction((tx) =>
+        checkIngestCapacity(
+          tx,
+          h.documentId,
+          new Date(Date.now() + 61_000).toISOString(),
+          1,
+          undefined,
+          { ...DOC_INGEST_LIMITS, pendingEvents: 1, pendingBytes: 1, installationPendingBytes: 1 }
+        )
+      )
+    ).not.toThrow();
+    expect(h.db.get<{ n: number }>(sql`SELECT count(*) AS n FROM room_turn_spend`)).toEqual({
+      n: 1,
+    });
+  } catch (cause) {
+    failed = true;
+    first = cause;
+  } finally {
+    try {
+      await h.cleanup();
+    } catch (cause) {
+      if (!failed) {
+        failed = true;
+        first = cause;
+      }
+    }
+  }
+  if (failed) throw first;
 });

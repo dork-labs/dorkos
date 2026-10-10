@@ -47,7 +47,11 @@ export function actor(
   };
 }
 /** Build a verified temporary document-channel test fixture or request. */
-export function fixture(senderLimit = 60, filename = ':memory:') {
+export function fixture(
+  senderLimit = 60,
+  filename = ':memory:',
+  afterRuntimeRevalidation?: () => void | Promise<void>
+) {
   const h = harness(filename);
   databases.push(h.db);
   const doc = h.canvas.open(FROM, 'agent', { type: 'markdown', content: 'editable original' });
@@ -108,7 +112,10 @@ export function fixture(senderLimit = 60, filename = ':memory:') {
   });
   const authority = createDocDownstreamAuthority(h.store, authorization, grants, {
     principalCurrent: () => current,
-    revalidateRuntime: async () => current,
+    revalidateRuntime: async () => {
+      await afterRuntimeRevalidation?.();
+      return current;
+    },
     ownsInstallation: (claims) =>
       claims.owner.kind === 'local_install' && claims.owner.installationId === 'installation',
     resolveScope: (scope) => h.documents.lifecycle.resolveScope(scope),
@@ -139,8 +146,11 @@ export function patch(
   return { documentId, eventId: randomUUID(), expectedStateRev, operations };
 }
 /** Build a verified temporary document-channel test fixture or request. */
-export function ackFixture() {
-  const f = fixture();
+export function ackFixture(
+  afterRuntimeRevalidation?: () => void | Promise<void>,
+  filename = ':memory:'
+) {
+  const f = fixture(60, filename, afterRuntimeRevalidation);
   f.db
     .insert(agents)
     .values({

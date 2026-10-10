@@ -1,3 +1,30 @@
+import { retireDocHttpRoomRepoCaller } from '../services/canvas/doc-channel/http-composition.js';
+import {
+  captureRoomRepoHttpOperation,
+  executeRoomRepoEnable,
+  executeRoomRepoRepair,
+  type EnableRoomRepoResult,
+  type RoomMainRepair,
+  type RoomMainRepairResult,
+} from '../services/rooms/repo/room-repo-service.js';
+import {
+  captureRoomMergeHttpOperation,
+  executeRoomHttpMerge,
+  type RoomMergeResult,
+} from '../services/rooms/repo/room-merge-service.js';
+import { RoomFileRequestAuthError } from '../services/canvas/doc-channel/http-composition.js';
+import {
+  captureRoomFileEditorHttpOperation,
+  retireRoomFileEditorHttpOperation,
+  requireRoomFileEditorHttpCurrent,
+  executeRoomFileSave,
+  executeRoomFilePrepareUpload,
+  executeRoomFileUpload,
+  executeRoomFileMove,
+  executeRoomFileRemove,
+  executeRoomFileAttachment,
+} from '../services/rooms/repo/room-file-editor.js';
+import { DocChannelNotFoundError } from '../services/canvas/doc-channel/authorization.js';
 /**
  * Room HTTP API (spec `rooms` §4) — thin handlers over the RoomService.
  *
@@ -19,8 +46,13 @@
  */
 import path from 'path';
 import { pipeline, Readable } from 'node:stream';
-import { Router } from 'express';
+import { Router, type Request, type Response } from 'express';
 import multer from 'multer';
+import { createRoomFileEditorUploadStorage } from '../services/rooms/repo/room-file-editor.js';
+import {
+  completeRoomFileUploadStorage,
+  issueRoomFileUploadSources,
+} from '../services/rooms/repo/room-file-upload-storage.js';
 import { ulid } from 'ulidx';
 import {
   ROOM_EXPORT_CONTENT_TYPE,
@@ -68,15 +100,10 @@ import {
   getRoomService,
   RoomError,
   toAuthorRef,
-  type AuthorRecord,
   type PostedEntry,
 } from '../services/rooms/index.js';
-import {
-  readRoomRepoConfig,
-  ROOM_REPO_EXISTS_CODE,
-  type RoomFileActor,
-} from '../services/rooms/repo/index.js';
-import { listRoomsAcrossCommunities } from '../services/communities/index.js';
+import { readRoomRepoConfig, ROOM_REPO_EXISTS_CODE } from '../services/rooms/repo/index.js';
+import { listRoomsAcrossCommunities } from '../services/communities/list-rooms-across-communities.js';
 import { InvalidRoomAttachmentIdError } from '../services/rooms/attachments/room-attachment-store.js';
 import { sniffImageContentType } from '../services/identity/image-sniff.js';
 import {
@@ -906,11 +933,88 @@ router.post('/:id/holds/:authorId/promote', (req, res) => {
  * With `config.rooms.repo.enabled` off, 409 `ROOM_REPOS_DISABLED` — the
  * install-level fact, checked before the room is looked up.
  */
+function performRoomRepoHttpOperation(
+  req: Request,
+  res: Response,
+  roomId: string,
+  operation: 'enable'
+): Promise<EnableRoomRepoResult>;
+function performRoomRepoHttpOperation(
+  req: Request,
+  res: Response,
+  roomId: string,
+  operation: 'repair',
+  input: RoomMainRepair
+): Promise<RoomMainRepairResult>;
+function performRoomRepoHttpOperation(
+  req: Request,
+  res: Response,
+  roomId: string,
+  operation: 'merge',
+  input: { summary: string; worktree?: string }
+): Promise<RoomMergeResult>;
+async function performRoomRepoHttpOperation(
+  req: Request,
+  res: Response,
+  roomId: string,
+  operation: 'enable' | 'repair' | 'merge',
+  input?: RoomMainRepair | { summary: string; worktree?: string }
+): Promise<EnableRoomRepoResult | RoomMainRepairResult | RoomMergeResult> {
+  const repo = operation === 'merge' ? undefined : getRoomRepoService();
+  const merge = operation === 'merge' ? getRoomMergeService() : undefined;
+  const handle = merge
+    ? await captureRoomMergeHttpOperation(merge, req, res, roomId)
+    : await captureRoomRepoHttpOperation(repo!, req, res, roomId, operation as 'enable' | 'repair');
+  let retirement: Promise<void> | undefined;
+  const retire = (): Promise<void> => (retirement ??= retireDocHttpRoomRepoCaller(handle));
+  const retireOnEnd = (): void => {
+    void retire().catch(() => {
+      /* finally awaits this same retirement */
+    });
+  };
+  req.once('aborted', retireOnEnd);
+  res.once('finish', retireOnEnd);
+  res.once('close', retireOnEnd);
+  // IncomingMessage.close is deliberately not used: parsed body completion is not disconnection.
+  let failed = false,
+    cause: unknown;
+  let result: EnableRoomRepoResult | RoomMainRepairResult | RoomMergeResult | undefined;
+  try {
+    if (req.aborted || res.destroyed || res.writableEnded) await retire();
+    if (operation === 'enable') result = await executeRoomRepoEnable(repo!, handle);
+    else if (operation === 'repair')
+      result = await executeRoomRepoRepair(repo!, handle, input as RoomMainRepair);
+    else
+      result = await executeRoomHttpMerge(
+        merge!,
+        handle,
+        input as { summary: string; worktree?: string }
+      );
+  } catch (error) {
+    failed = true;
+    cause = error;
+  } finally {
+    req.off('aborted', retireOnEnd);
+    res.off('finish', retireOnEnd);
+    res.off('close', retireOnEnd);
+    try {
+      await retire();
+    } catch (error) {
+      if (!failed) {
+        failed = true;
+        cause = error;
+      }
+    }
+  }
+  if (failed) throw cause;
+  return result!;
+}
+
 router.post('/:id/repo', (req, res) => {
   void (async () => {
     try {
-      const caller = resolveCaller(req, res);
-      const result = await getRoomRepoService().enable(req.params.id, caller.id);
+      resolveCaller(req, res);
+      const result = await performRoomRepoHttpOperation(req, res, req.params.id, 'enable');
       if (!result.created) {
         return res.status(409).json({
           error: 'This room already has files of its own.',
@@ -920,7 +1024,7 @@ router.post('/:id/repo', (req, res) => {
       }
       res.status(201).json({ repo: result.repo });
     } catch (err) {
-      sendRoomError(res, err, 'POST /:id/repo');
+      sendRoomFileError(res, err, 'POST /:id/repo');
     }
   })();
 });
@@ -1063,18 +1167,62 @@ router.get('/:id/files/content', (req, res) => {
  * error handler answers **413 `REQUEST_TOO_LARGE`**. That used to be a 500 with
  * no code, which told a person nothing about the one thing they could act on.
  */
+/** Fixed genuine request lifetime. Send only after all original cleanup/drain attempts. */
+async function withRoomFileHttpRequest<T>(
+  req: import('express').Request,
+  res: import('express').Response,
+  work: (editor: ReturnType<typeof getRoomFileEditor>, handle: object) => Promise<T>
+): Promise<T> {
+  const editor = getRoomFileEditor();
+  const roomId = req.params.id;
+  if (typeof roomId !== 'string') throw new Error('Original Room route ID is unavailable.');
+  const handle = await captureRoomFileEditorHttpOperation(editor, roomId, req, res);
+  let failed = false,
+    cause: unknown,
+    value!: T;
+  try {
+    value = await work(editor, handle);
+  } catch (error) {
+    failed = true;
+    cause = error;
+  }
+  try {
+    await retireRoomFileEditorHttpOperation(editor, handle);
+  } catch (error) {
+    if (!failed) {
+      failed = true;
+      cause = error;
+    }
+  }
+  if (failed) throw cause;
+  return value;
+}
+function sendRoomFileError(res: import('express').Response, error: unknown, route: string): void {
+  if (error instanceof RoomFileRequestAuthError) {
+    sendError(res, 401, 'Unauthorized', 'AUTH_REQUIRED');
+    return;
+  }
+  if (error instanceof DocChannelNotFoundError) {
+    sendError(res, 404, 'No such room.', 'ROOM_NOT_FOUND');
+    return;
+  }
+  sendRoomError(res, error, route);
+}
+
 router.put('/:id/files/content', (req, res) => {
   void (async () => {
     try {
       // Caller first, for the reason `GET /:id/files` above writes down.
-      const caller = resolveCaller(req, res);
+      resolveCaller(req, res);
       const body = parseBody(RoomFileSaveRequestSchema, req.body, res);
       if (!body) return;
-      const outcome = await getRoomFileEditor().save(req.params.id, fileActor(caller, res), {
-        path: body.path,
-        baseCommit: body.baseCommit,
-        text: body.text,
-      });
+      const outcome = await withRoomFileHttpRequest(req, res, (editor, handle) =>
+        executeRoomFileSave(editor, handle, {
+          path: body.path,
+          baseCommit: body.baseCommit,
+          text: body.text,
+        })
+      );
       if (outcome.status === 'conflict') {
         return res.status(409).json({
           error:
@@ -1085,25 +1233,10 @@ router.put('/:id/files/content', (req, res) => {
       }
       res.json(outcome.result);
     } catch (err) {
-      sendRoomError(res, err, 'PUT /:id/files/content');
+      sendRoomFileError(res, err, 'PUT /:id/files/content');
     }
   })();
 });
-
-/**
- * Who is changing a room's files, as the file editor needs to know them.
- *
- * `signedIn` is whether a login session made this request — `res.locals.user`
- * is only ever set by `sessionGate`, which only runs with login on. It decides
- * whose name the commit carries (spec `agent-home-desk` §7.1): the signed-in
- * person's, or the operator's.
- *
- * @param caller - The resolved caller.
- * @param res - The response, for the session the gate resolved.
- */
-function fileActor(caller: AuthorRecord, res: { locals: Record<string, unknown> }): RoomFileActor {
-  return { authorId: caller.id, signedIn: res.locals.user !== undefined };
-}
 
 /**
  * Answer a file change that lost the race — the same 409 `FILE_CHANGED` body
@@ -1132,61 +1265,64 @@ function sendFileConflict(res: import('express').Response, conflict: RoomFileCon
  *
  * **Refused before a byte is read** when the caller may not change this room's
  * files — the same gate, in the same order, as a save. Only then is multer
- * started, with **disk storage** into a staging folder of this request's own
+ * started, with **owned descriptor storage** into a staging folder of this request's own
  * under `<dorkHome>/.temp/room-uploads/` (memory storage would hold up to twenty
  * times the room's file cap in RAM), each file capped at the room's own frozen
- * `maxFileBytes`. The staging folder is removed when the request settles,
- * whatever happened. Uploads are bytes: binary files are fine, and nothing that
+ * `maxFileBytes`. Fixed retirement drains acquired FDs and removes the original
+ * empty staging folder; an identity mismatch retains unsafe paths and refuses. Uploads are bytes: binary files are fine, and nothing that
  * arrives this way can be a symlink.
  */
 router.post('/:id/files/upload', (req, res) => {
   void (async () => {
-    let stagingDir: string | null = null;
     // The answer is decided first and SENT last, after the staging folder is
     // gone: a client that sees the response can rely on nothing of its upload
     // being left on disk.
     let reply: () => unknown;
     try {
-      const caller = resolveCaller(req, res);
-      const actor = fileActor(caller, res);
-      const editor = getRoomFileEditor();
-      const prepared = await editor.prepareUpload(req.params.id, actor);
-      stagingDir = prepared.stagingDir;
-      const destination = prepared.stagingDir;
+      resolveCaller(req, res);
+      reply = await withRoomFileHttpRequest(req, res, async (editor, handle) => {
+        const prepared = await executeRoomFilePrepareUpload(editor, handle);
+        const storage = createRoomFileEditorUploadStorage(editor, handle, prepared.stagingDir);
 
-      const files = await new Promise<Express.Multer.File[]>((resolve, reject) => {
-        multer({
-          storage: multer.diskStorage({ destination }),
-          // UTF-8 names: a person's file called `résumé.pdf` is not latin-1.
-          defParamCharset: 'utf8',
-          limits: {
-            fileSize: prepared.maxFileBytes,
-            files: ROOM_UPLOAD_MAX_FILES,
-            fields: 10,
-          },
-        }).array(ROOM_UPLOAD_FILES_FIELD, ROOM_UPLOAD_MAX_FILES)(req, res, (err: unknown) => {
-          if (err) return reject(uploadError(err, prepared.maxFileBytes));
-          resolve((req.files as Express.Multer.File[] | undefined) ?? []);
+        const files = await new Promise<Express.Multer.File[]>((resolve, reject) => {
+          multer({
+            storage,
+            // UTF-8 names: a person's file called `résumé.pdf` is not latin-1.
+            defParamCharset: 'utf8',
+            limits: {
+              fileSize: prepared.maxFileBytes,
+              files: ROOM_UPLOAD_MAX_FILES,
+              fields: 10,
+            },
+          }).array(ROOM_UPLOAD_FILES_FIELD, ROOM_UPLOAD_MAX_FILES)(req, res, (err: unknown) => {
+            // Join actual writes/FD closes, then restore a separately captured falsy/undefined cause.
+            void completeRoomFileUploadStorage(storage, err).then(
+              () => resolve((req.files as Express.Multer.File[] | undefined) ?? []),
+              (cause: unknown) => reject(uploadError(cause, prepared.maxFileBytes))
+            );
+          });
         });
+        const ownedSources = await issueRoomFileUploadSources(storage, req, files);
+        const fields = RoomFileUploadFieldsSchema.safeParse(req.body ?? {});
+        if (!fields.success) {
+          reply = () => parseBody(RoomFileUploadFieldsSchema, req.body ?? {}, res);
+        } else {
+          const outcome = await executeRoomFileUpload(editor, handle, {
+            dir: fields.data.dir,
+            baseCommit: fields.data.baseCommit,
+            replace: fields.data.replace,
+            files: files.map((file, index) => ({
+              name: file.originalname,
+              content: ownedSources[index],
+            })),
+          });
+          reply =
+            outcome.status === 'conflict'
+              ? () => sendFileConflict(res, outcome.conflict)
+              : () => res.json(outcome.result);
+        }
+        return reply;
       });
-      const fields = RoomFileUploadFieldsSchema.safeParse(req.body ?? {});
-      if (!fields.success) {
-        reply = () => parseBody(RoomFileUploadFieldsSchema, req.body ?? {}, res);
-      } else {
-        const outcome = await editor.upload(req.params.id, actor, {
-          dir: fields.data.dir,
-          baseCommit: fields.data.baseCommit,
-          replace: fields.data.replace,
-          files: files.map((file) => ({
-            name: file.originalname,
-            content: { file: file.path, size: file.size },
-          })),
-        });
-        reply =
-          outcome.status === 'conflict'
-            ? () => sendFileConflict(res, outcome.conflict)
-            : () => res.json(outcome.result);
-      }
     } catch (err) {
       // A person closing the tab mid-upload is not a server fault, and there is
       // nobody left to answer: a note, not an error, and no response.
@@ -1197,10 +1333,9 @@ router.post('/:id/files/upload', (req, res) => {
         });
         reply = () => undefined;
       } else {
-        reply = () => sendRoomError(res, err, 'POST /:id/files/upload');
+        reply = () => sendRoomFileError(res, err, 'POST /:id/files/upload');
       }
     }
-    if (stagingDir) await getRoomFileEditor().discardUpload(stagingDir);
     reply();
   })();
 });
@@ -1259,14 +1394,16 @@ function uploadError(err: unknown, maxFileBytes: number): unknown {
 router.post('/:id/files/move', (req, res) => {
   void (async () => {
     try {
-      const caller = resolveCaller(req, res);
+      resolveCaller(req, res);
       const body = parseBody(RoomFileMoveRequestSchema, req.body, res);
       if (!body) return;
-      const outcome = await getRoomFileEditor().move(req.params.id, fileActor(caller, res), body);
+      const outcome = await withRoomFileHttpRequest(req, res, (editor, handle) =>
+        executeRoomFileMove(editor, handle, body)
+      );
       if (outcome.status === 'conflict') return sendFileConflict(res, outcome.conflict);
       res.json(outcome.result);
     } catch (err) {
-      sendRoomError(res, err, 'POST /:id/files/move');
+      sendRoomFileError(res, err, 'POST /:id/files/move');
     }
   })();
 });
@@ -1283,14 +1420,16 @@ router.post('/:id/files/move', (req, res) => {
 router.post('/:id/files/delete', (req, res) => {
   void (async () => {
     try {
-      const caller = resolveCaller(req, res);
+      resolveCaller(req, res);
       const body = parseBody(RoomFileDeleteRequestSchema, req.body, res);
       if (!body) return;
-      const outcome = await getRoomFileEditor().remove(req.params.id, fileActor(caller, res), body);
+      const outcome = await withRoomFileHttpRequest(req, res, (editor, handle) =>
+        executeRoomFileRemove(editor, handle, body)
+      );
       if (outcome.status === 'conflict') return sendFileConflict(res, outcome.conflict);
       res.json(outcome.result);
     } catch (err) {
-      sendRoomError(res, err, 'POST /:id/files/delete');
+      sendRoomFileError(res, err, 'POST /:id/files/delete');
     }
   })();
 });
@@ -1312,43 +1451,45 @@ router.post('/:id/files/from-attachment', (req, res) => {
       const caller = resolveCaller(req, res);
       const body = parseBody(RoomFileFromAttachmentRequestSchema, req.body, res);
       if (!body) return;
-      const actor = fileActor(caller, res);
-      const editor = getRoomFileEditor();
-      // The write gate before the attachment is looked up: a caller who may not
-      // change this room's files learns nothing about its attachments.
-      editor.assertCanChange(req.params.id, actor);
+      const answer = await withRoomFileHttpRequest(req, res, async (editor, handle) => {
+        // The write gate before the attachment is looked up: a caller who may not
+        // change this room's files learns nothing about its attachments.
+        requireRoomFileEditorHttpCurrent(editor, handle);
 
-      const row = getAttachmentRowStore().get(req.params.id, body.attachmentId);
-      if (
-        !row ||
-        row.entryId === null ||
-        !getRoomService().canReadAttachment(req.params.id, caller.id, row)
-      ) {
-        return sendError(res, 404, 'No such file.', 'ATTACHMENT_NOT_FOUND');
-      }
-      const stored = await getRoomAttachmentStore().get(
-        req.params.id,
-        row.id,
-        row.extension,
-        'application/octet-stream'
-      );
-      if (!stored) return sendError(res, 404, 'No such file.', 'ATTACHMENT_NOT_FOUND');
-      const chunks: Buffer[] = [];
-      for await (const chunk of stored.stream) chunks.push(Buffer.from(chunk as Buffer));
+        const row = getAttachmentRowStore().get(req.params.id, body.attachmentId);
+        if (
+          !row ||
+          row.entryId === null ||
+          !getRoomService().canReadAttachment(req.params.id, caller.id, row)
+        ) {
+          return () => sendError(res, 404, 'No such file.', 'ATTACHMENT_NOT_FOUND');
+        }
+        const stored = await getRoomAttachmentStore().get(
+          req.params.id,
+          row.id,
+          row.extension,
+          'application/octet-stream'
+        );
+        if (!stored) return () => sendError(res, 404, 'No such file.', 'ATTACHMENT_NOT_FOUND');
+        const chunks: Buffer[] = [];
+        for await (const chunk of stored.stream) chunks.push(Buffer.from(chunk as Buffer));
 
-      const outcome = await editor.saveAttachment(req.params.id, actor, {
-        dir: body.dir,
-        name: body.name ?? row.name,
-        baseCommit: body.baseCommit,
-        bytes: Buffer.concat(chunks),
+        const outcome = await executeRoomFileAttachment(editor, handle, {
+          dir: body.dir,
+          name: body.name ?? row.name,
+          baseCommit: body.baseCommit,
+          bytes: Buffer.concat(chunks),
+        });
+        return outcome.status === 'conflict'
+          ? () => sendFileConflict(res, outcome.conflict)
+          : () => res.json(outcome.result);
       });
-      if (outcome.status === 'conflict') return sendFileConflict(res, outcome.conflict);
-      res.json(outcome.result);
+      answer();
     } catch (err) {
       if (err instanceof InvalidRoomAttachmentIdError) {
         return sendError(res, 404, 'No such file.', 'ATTACHMENT_NOT_FOUND');
       }
-      sendRoomError(res, err, 'POST /:id/files/from-attachment');
+      sendRoomFileError(res, err, 'POST /:id/files/from-attachment');
     }
   })();
 });
@@ -1373,12 +1514,12 @@ router.post('/:id/files/from-attachment', (req, res) => {
 router.post('/:id/repo/main/repair', (req, res) => {
   void (async () => {
     try {
-      const caller = resolveCaller(req, res);
+      resolveCaller(req, res);
       const body = parseBody(RoomMainRepairRequestSchema, req.body, res);
       if (!body) return;
-      res.json(await getRoomRepoService().repairMainCheckout(req.params.id, caller.id, body));
+      res.json(await performRoomRepoHttpOperation(req, res, req.params.id, 'repair', body));
     } catch (err) {
-      sendRoomError(res, err, 'POST /:id/repo/main/repair');
+      sendRoomFileError(res, err, 'POST /:id/repo/main/repair');
     }
   })();
 });
@@ -1400,10 +1541,10 @@ router.post('/:id/repo/main/repair', (req, res) => {
 router.post('/:id/repo/merge', (req, res) => {
   void (async () => {
     try {
-      const caller = resolveCaller(req, res);
+      resolveCaller(req, res);
       const body = parseBody(MergeRoomRepoRequestSchema, req.body, res);
       if (!body) return;
-      const result = await getRoomMergeService().merge(req.params.id, caller.id, {
+      const result = await performRoomRepoHttpOperation(req, res, req.params.id, 'merge', {
         summary: body.summary,
         ...(body.worktree !== undefined ? { worktree: body.worktree } : {}),
       });
@@ -1416,7 +1557,7 @@ router.post('/:id/repo/merge', (req, res) => {
       if (err instanceof RoomError && err.code === 'MERGE_IN_FLIGHT') {
         res.set('Retry-After', String(Math.ceil(readRoomRepoConfig().mergeQueueWaitMs / 1000)));
       }
-      sendRoomError(res, err, 'POST /:id/repo/merge');
+      sendRoomFileError(res, err, 'POST /:id/repo/merge');
     }
   })();
 });

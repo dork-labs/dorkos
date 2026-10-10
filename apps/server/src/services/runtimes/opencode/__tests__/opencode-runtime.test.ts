@@ -1,5 +1,17 @@
+import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
+import { once } from 'node:events';
+import * as originalCreditsSidecar from '../credits-sidecar.js';
+import * as originalCreditsModels from '../../../core/cloud/credits-models.js';
+import { CreditsUnavailableError } from '../../../core/cloud/credits-protocols.js';
+import {
+  readOpenCodeNativeOperation,
+  readOpenCodePreparedRoomResponder,
+  sendOpenCodeOriginalLockedMessage,
+  retireOpenCodePreparedRoomResponder,
+  startOpenCodeCommittedRoomResponder,
+} from '../opencode-runtime.js';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { mkdtempSync, mkdirSync, realpathSync, rmSync, symlinkSync } from 'node:fs';
+import { writeFileSync, mkdtempSync, mkdirSync, realpathSync, rmSync, symlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import type { OpencodeClient, GlobalEvent } from '@opencode-ai/sdk';
@@ -182,6 +194,7 @@ type MockClient = ReturnType<typeof createMockClient>['client'];
 
 function createProvider(client: MockClient | null) {
   return {
+    turnSettled: vi.fn(async () => undefined),
     getClient: vi.fn(async () => {
       if (!client) throw new Error('sidecar unavailable');
       return client as unknown as OpencodeClient;
@@ -2366,8 +2379,21 @@ describe('OpenCodeRuntime', () => {
       const harness = makeRuntime();
       const principals = connectorPort();
       const stop = vi.fn();
+      vi.mocked(principals.revoke).mockImplementation(async () => {
+        const token = vi.mocked(principals.openTurn).mock.calls[0]![1].nativeOperation!;
+        expect(readOpenCodeNativeOperation(token)).toBeUndefined();
+      });
       vi.mocked(principals.openTurn).mockImplementationOnce(async (_input, ownership) => {
         expect(ownership.isCurrent()).toBe(true);
+        expect(ownership.nativeOperation).toBeDefined();
+        expect(readOpenCodeNativeOperation(ownership.nativeOperation!)).toMatchObject({
+          runtime: 'opencode',
+          canonicalSessionId: _input.canonicalSessionId,
+          agentPath: _input.agentPath,
+          canonicalCwd: _input.canonicalCwd,
+          signal: _input.signal,
+        });
+        expect(readOpenCodeNativeOperation(Object.freeze({}))).toBeUndefined();
         return {
           bindingId: 'binding-1',
           bearer: 'secret-1',
@@ -2416,7 +2442,7 @@ describe('OpenCodeRuntime', () => {
           canonicalCwd: DIRECTORY,
           signal: expect.any(AbortSignal),
         },
-        { isCurrent: expect.any(Function) }
+        { isCurrent: expect.any(Function), nativeOperation: expect.any(Object) }
       );
 
       for (const event of opencodeSimpleTurn(OC_SESSION_A, 'done')) {
@@ -2424,6 +2450,8 @@ describe('OpenCodeRuntime', () => {
       }
       await finished;
       expect(principals.revoke).toHaveBeenCalledWith('binding-1', 'turn_terminal');
+      const token = vi.mocked(principals.openTurn).mock.calls[0]![1].nativeOperation!;
+      expect(readOpenCodeNativeOperation(token)).toBeUndefined();
       expect(stop).toHaveBeenCalledBefore(vi.mocked(principals.revoke));
       expect(vi.mocked(principals.openTurn).mock.calls[0]?.[1].isCurrent()).toBe(false);
     });
@@ -2844,5 +2872,607 @@ describe('OpenCodeRuntime', () => {
         expect(resolveDorkosMcpInjection).not.toHaveBeenCalledWith(DIRECTORY, expect.anything());
       });
     });
+  });
+});
+
+describe('fixed OpenCode committed Room start', () => {
+  it('refuses a copied preparation without resolving a sidecar', () => {
+    const harness = makeRuntime();
+    expect(() =>
+      startOpenCodeCommittedRoomResponder(
+        harness.runtime,
+        Object.freeze({ kind: 'prepared-room-responder' })
+      )
+    ).toThrow('Room responder preparation is not original.');
+    expect(harness.client.session.promptAsync).not.toHaveBeenCalled();
+    expect(harness.provider.getClient).not.toHaveBeenCalled();
+  });
+});
+
+import { agents, canvasDocuments, connectorRuntimeBindings, eq, sql } from '@dorkos/db';
+import { randomUUID } from 'node:crypto';
+import { nativeRoomAuthorityFixture } from '../../../canvas/doc-channel/writes/__tests__/authority-fixtures.js';
+import {
+  submitCurrentDocEvent,
+  prepareServiceOriginalRoomResponder,
+  commitServiceOriginalRoomResponder,
+} from '../../../canvas/doc-channel/service.js';
+import { wakeAuthorizedRoomDue } from '../../../canvas/doc-channel/authorization.js';
+import { docDocumentGeneration } from '../../../canvas/doc-channel/identity/incarnation.js';
+import { feedProjector } from '../../../session/session-event-normalizer.js';
+import type { PreparedRoomResponder } from '../../../canvas/doc-channel/current/current-operation-types.js';
+
+describe('genuine original OpenCode Room source', () => {
+  it('returns the original ordinary iterator before first pull without a native Room issuer', async () => {
+    const ordinary = makeRuntime();
+    const stream = ordinary.runtime.sendMessage(SESSION_ID, 'ordinary', { cwd: DIRECTORY });
+    expect(stream[Symbol.asyncIterator]()).toBe(stream);
+    expect(typeof stream.next).toBe('function');
+    expect(ordinary.client.session.promptAsync).not.toHaveBeenCalled();
+    await stream.return();
+    expect(ordinary.client.session.promptAsync).not.toHaveBeenCalled();
+  });
+  beforeEach(() => {
+    resolveDorkosMcpInjection.mockReset();
+    resolveDorkosMcpInjection.mockResolvedValue(null);
+  });
+  it.each([
+    'same entry once',
+    'entered pending next direct return',
+    'early settings Error',
+    'early settings undefined',
+    'early credits refusal',
+    'early mesh Error with secondary revoke',
+    'early mesh undefined with secondary revoke',
+    'final prompt callback revocation',
+    'foreign runtime',
+    'return before first pull',
+    'unpulled revoke Error',
+    'unpulled revoke undefined',
+  ] as const)('%s', async (scenario) => {
+    const agentDir = mkdtempSync(path.join(tmpdir(), 'opencode-native-room-'));
+    const sessionId = 'native-open-code-room',
+      agentId = '01JOPENCODEROOM000000000000';
+    let h: Awaited<ReturnType<typeof nativeRoomAuthorityFixture>> | undefined;
+    let producer: AsyncGenerator<StreamEvent> | undefined;
+    let producerDone: Promise<StreamEvent[]> | undefined;
+    let projectedWork: ReturnType<typeof feedProjector> | undefined;
+    let projectedRejection: { cause: unknown } | undefined;
+    let projectedRejectionAsserted = false;
+    let prepared: PreparedRoomResponder | undefined;
+    const harness = makeRuntime();
+    let revokeFault: ReturnType<typeof vi.spyOn> | undefined;
+    let pendingChild: ChildProcessWithoutNullStreams | undefined;
+    let pendingChildClosed: Promise<unknown> | undefined;
+    let failed = false,
+      first: unknown;
+    try {
+      mkdirSync(path.join(agentDir, '.dork'));
+      writeFileSync(
+        path.join(agentDir, '.dork', 'agent.json'),
+        JSON.stringify({
+          id: agentId,
+          name: 'original-open-code',
+          runtime: 'opencode',
+          capabilities: [],
+          behavior: { responseMode: 'always' },
+          registeredAt: new Date().toISOString(),
+          registeredBy: 'test',
+        })
+      );
+      h = await nativeRoomAuthorityFixture(agentDir, 'opencode', sessionId, agentId);
+      const actual = h;
+      harness.client.session.get.mockResolvedValue({ data: sessionInfo(OC_SESSION_A, agentDir) });
+      harness.client.session.create.mockResolvedValue({
+        data: sessionInfo(OC_SESSION_A, agentDir),
+      });
+      harness.runtime.setMeshCore({
+        getByPath: (cwd) => {
+          const row = actual.db.select().from(agents).where(eq(agents.id, agentId)).get();
+          return row?.status === 'active' && row.projectPath === cwd
+            ? { id: row.id, name: row.name }
+            : undefined;
+        },
+        updateLastSeen: () => {},
+        listWithPaths: () => [],
+      });
+      harness.runtime.setConnectorRuntimeTools({
+        principals: h.principals,
+        listenerUrl: 'http://127.0.0.1:4341/mcp',
+        agentToolsUrl: 'http://127.0.0.1:4341/agent-mcp',
+        isConnectorCapabilityId: (id) => id.startsWith('connectors.'),
+      });
+      const holder = { on: vi.fn() };
+      expect(harness.runtime.acquireLock(sessionId, 'actual-producer-holder', holder)).toBe(true);
+      producer = sendOpenCodeOriginalLockedMessage(
+        harness.runtime,
+        sessionId,
+        'actual native producer',
+        { cwd: agentDir },
+        holder,
+        sessionId
+      );
+      if (!producer) throw new Error('Genuine OpenCode locked constructor missing.');
+      producerDone = consume(producer).finished;
+      await vi.waitFor(() => expect(harness.client.global.event).toHaveBeenCalled());
+      harness.source.latest().push(globalEvent(agentDir, serverConnected()));
+      await vi.waitFor(() => expect(harness.client.session.promptAsync).toHaveBeenCalled());
+      // The real MCP registration carried this bearer from the constructor's genuine native turn.
+      const calls = harness.client.mcp.add.mock.calls;
+      let authorization: unknown;
+      for (const [options] of calls) {
+        const body = options?.body;
+        if (!body || typeof body !== 'object') continue;
+        const config = Object.getOwnPropertyDescriptor(body, 'config')?.value;
+        const headers =
+          config && typeof config === 'object'
+            ? Object.getOwnPropertyDescriptor(config, 'headers')?.value
+            : undefined;
+        const value =
+          headers && typeof headers === 'object'
+            ? Object.getOwnPropertyDescriptor(headers, 'Authorization')?.value
+            : undefined;
+        if (typeof value === 'string' && value.startsWith('Bearer ')) authorization = value;
+      }
+      if (typeof authorization !== 'string')
+        throw new Error('Actual native MCP authorization missing.');
+      const resolved = await h.principals.resolve({
+        bearer: authorization.slice(7),
+        expectedRuntime: 'opencode',
+        expectedCanonicalCwd: agentDir,
+      });
+      if (resolved.status !== 'resolved')
+        throw new Error('Actual native producer principal missing.');
+      const physical = h.db
+        .select()
+        .from(canvasDocuments)
+        .where(eq(canvasDocuments.id, h.documentId))
+        .get()!;
+      const channel = h.http.channels.getChannel(h.documentId)!;
+      const input = {
+        v: 1 as const,
+        id: randomUUID(),
+        type: 'md.comment',
+        payload: { text: 'real native OpenCode input' },
+      };
+      const accepted = await submitCurrentDocEvent(
+        h.http.service,
+        h.documentId,
+        input,
+        { surface: 'capability', principal: resolved.principal },
+        { expectedGeneration: docDocumentGeneration(physical, channel) }
+      );
+      expect(accepted.receipt.id).toBe(input.id);
+      await new Promise<void>((resolve) => setTimeout(resolve, 110));
+      wakeAuthorizedRoomDue(h.http.authorization);
+      for (const event of opencodeSimpleTurn(OC_SESSION_A, 'producer complete'))
+        harness.source.latest().push(globalEvent(agentDir, event));
+      await producerDone;
+      const promptsBefore = harness.client.session.promptAsync.mock.calls.length;
+      const nativeBefore = h.db.select().from(connectorRuntimeBindings).all().length;
+      const settlementsBefore = harness.provider.turnSettled.mock.calls.length;
+      const cleanupCause = scenario.endsWith('undefined')
+        ? undefined
+        : new Error('actual unpulled revoke');
+      if (scenario.startsWith('unpulled revoke')) {
+        const originalRevoke = h.principals.revoke.bind(h.principals);
+        revokeFault = vi.spyOn(h.principals, 'revoke').mockImplementation(async (...args) => {
+          await originalRevoke(...args);
+          throw cleanupCause;
+        });
+      }
+      if (scenario === 'foreign runtime') {
+        const peer = makeRuntime();
+        await expect(
+          prepareServiceOriginalRoomResponder(h.http.service, peer.runtime, holder, sessionId)
+        ).resolves.toBeUndefined();
+        expect(peer.client.session.promptAsync).not.toHaveBeenCalled();
+      }
+      prepared = await prepareServiceOriginalRoomResponder(
+        h.http.service,
+        harness.runtime,
+        holder,
+        sessionId
+      );
+      if (!prepared) throw new Error('Actual accepted native source unavailable.');
+      const original = readOpenCodePreparedRoomResponder(harness.runtime, prepared);
+      if (!original) throw new Error('Actual original native preparation missing.');
+      expect(h.db.select().from(connectorRuntimeBindings).all()).toHaveLength(nativeBefore + 1);
+      const spendBefore = h.db.get<{ n: number }>(
+        sql`SELECT count(*) AS n FROM room_turn_spend`
+      )!.n;
+      const committed = commitServiceOriginalRoomResponder(
+        h.http.service,
+        harness.runtime,
+        prepared
+      );
+      expect(h.db.get<{ n: number }>(sql`SELECT count(*) AS n FROM room_turn_spend`)!.n).toBe(
+        spendBefore + 1
+      );
+      const raw = startOpenCodeCommittedRoomResponder(harness.runtime, prepared, committed);
+      expect(raw[Symbol.asyncIterator]()).toBe(raw);
+      expect(typeof raw.next).toBe('function');
+      if (scenario === 'entered pending next direct return') {
+        const nativeSignal = readOpenCodeNativeOperation(original.nativeOperation)?.signal;
+        if (!nativeSignal) throw new Error('Original native cancellation signal missing');
+        harness.client.session.promptAsync.mockImplementationOnce(async () => {
+          pendingChild = spawn(globalThis.process.execPath, ['-e', 'setInterval(()=>{},1000)'], {
+            stdio: 'pipe',
+          });
+          pendingChildClosed = once(pendingChild, 'close');
+          return {};
+        });
+        harness.client.session.abort.mockImplementationOnce(async () => {
+          if (!pendingChild) throw new Error('Actual sidecar turn child was not started');
+          pendingChild.kill('SIGTERM');
+          await pendingChildClosed;
+          return { data: true };
+        });
+        const connectionsBefore = harness.source.connections.length;
+        const pending = (async () => {
+          for await (const event of raw) void event;
+        })().then(
+          () => ({ failed: false as const }),
+          (cause: unknown) => ({ failed: true as const, cause })
+        );
+        let pendingSettled = false;
+        void pending.then(() => {
+          pendingSettled = true;
+        });
+        let operationFailed = false,
+          operationCause: unknown;
+        try {
+          await vi.waitFor(() =>
+            expect(harness.source.connections.length).toBeGreaterThan(connectionsBefore)
+          );
+          harness.source.latest().push(globalEvent(agentDir, serverConnected()));
+          await vi.waitFor(() => expect(pendingChild).toBeDefined());
+          const child = pendingChild!;
+          expect(child.exitCode).toBeNull();
+          expect(child.signalCode).toBeNull();
+          expect(nativeSignal.aborted).toBe(false);
+          const returned = raw.return(undefined).then(
+            (result) => ({ failed: false as const, result }),
+            (cause: unknown) => ({ failed: true as const, cause })
+          );
+          expect(nativeSignal.aborted).toBe(true);
+          await vi.waitFor(() => expect(harness.client.session.abort).toHaveBeenCalledTimes(1));
+          await vi.waitFor(() => expect(pendingSettled).toBe(true));
+          await pending;
+          expect(await returned).toEqual({
+            failed: false,
+            result: { done: true, value: undefined },
+          });
+          expect(harness.client.session.abort).toHaveBeenCalledTimes(1);
+          await pendingChildClosed;
+          expect(child.exitCode !== null || child.signalCode !== null).toBe(true);
+          expect(child.stdin.destroyed && child.stdout.destroyed && child.stderr.destroyed).toBe(
+            true
+          );
+          expect(harness.client.session.promptAsync).toHaveBeenCalledTimes(promptsBefore + 1);
+          expect(readOpenCodeNativeOperation(original.nativeOperation)).toBeUndefined();
+          expect(readOpenCodePreparedRoomResponder(harness.runtime, prepared)).toBeUndefined();
+          expect(
+            h.db
+              .select()
+              .from(connectorRuntimeBindings)
+              .all()
+              .every((row) => row.revokedAt !== null)
+          ).toBe(true);
+          expect(
+            h.db.get<{ status: string }>(sql`SELECT status FROM room_doc_admissions
+            WHERE document_id=${h.documentId}`)?.status
+          ).toBe('in_doubt');
+          expect(() =>
+            startOpenCodeCommittedRoomResponder(harness.runtime, prepared!, committed)
+          ).toThrow();
+        } catch (cause) {
+          operationFailed = true;
+          operationCause = cause;
+        } finally {
+          const join = async (work: () => Promise<unknown>) => {
+            try {
+              await work();
+            } catch (cause) {
+              if (!operationFailed) {
+                operationFailed = true;
+                operationCause = cause;
+              }
+            }
+          };
+          // Preserve the assertion first; an unfixed local queue must not trap fixture cleanup.
+          // This supplies a stream failure only after the production cancellation assertion failed.
+          if (operationFailed) {
+            await join(async () => {
+              harness.source.latest().fail(new Error('Failed pending-read control cleanup'));
+              if (
+                pendingChild &&
+                pendingChild.exitCode === null &&
+                pendingChild.signalCode === null
+              )
+                pendingChild.kill('SIGTERM');
+              if (pendingChildClosed) await pendingChildClosed;
+            });
+          }
+          await join(() => retireOpenCodePreparedRoomResponder(harness.runtime, prepared!));
+          await join(() => raw.return(undefined));
+          await join(() => pending);
+        }
+        if (operationFailed) throw operationCause;
+      } else if (scenario.startsWith('early settings')) {
+        // This is the genuine installed runtime's data setup reader, not an
+        // authority or preparation issuer. Native COMMIT/FIRST above stay real.
+        const setupPort = harness.runtime as unknown as {
+          resolveTurnSettings(...args: unknown[]): Promise<unknown>;
+        };
+        const primary = scenario.endsWith('undefined')
+          ? undefined
+          : new Error('actual entered settings read');
+        const setupFault = vi
+          .spyOn(setupPort, 'resolveTurnSettings')
+          .mockImplementationOnce(async () => {
+            throw primary;
+          });
+        try {
+          const outcome = await consume(raw).finished.then(
+            () => ({ failed: false as const }),
+            (cause: unknown) => ({ failed: true as const, cause })
+          );
+          expect(outcome).toEqual({ failed: true, cause: primary });
+          expect(setupFault).toHaveBeenCalledTimes(1);
+          expect(harness.provider.turnSettled).toHaveBeenCalledTimes(settlementsBefore + 1);
+          expect(harness.client.session.promptAsync).toHaveBeenCalledTimes(promptsBefore);
+          expect(readOpenCodePreparedRoomResponder(harness.runtime, prepared)).toBeUndefined();
+          expect(readOpenCodeNativeOperation(original.nativeOperation)).toBeUndefined();
+          expect(
+            h.db
+              .select()
+              .from(connectorRuntimeBindings)
+              .all()
+              .every((row) => row.revokedAt !== null)
+          ).toBe(true);
+          expect(
+            h.db.get<{ status: string }>(sql`SELECT status FROM room_doc_admissions
+            WHERE document_id=${h.documentId}`)?.status
+          ).toBe('in_doubt');
+          expect(h.db.get<{ n: number }>(sql`SELECT count(*) AS n FROM room_turn_spend`)!.n).toBe(
+            spendBefore + 1
+          );
+          expect(() =>
+            startOpenCodeCommittedRoomResponder(harness.runtime, prepared!, committed)
+          ).toThrow();
+        } finally {
+          setupFault.mockRestore();
+        }
+      } else if (scenario === 'early credits refusal') {
+        // Only the credits I/O decision is refused; source/native COMMIT/FIRST are genuine above.
+        const mode = vi
+          .spyOn(originalCreditsSidecar, 'openCodeRunsOnCredits')
+          .mockReturnValue(true);
+        const decision = vi
+          .spyOn(originalCreditsModels, 'decideCreditsLaunchModel')
+          .mockImplementationOnce(async () => {
+            throw new CreditsUnavailableError('not-linked', 'OpenCode');
+          });
+        let failureSeen = false;
+        let primary: unknown;
+        const remember = (cause: unknown) => {
+          if (!failureSeen) {
+            failureSeen = true;
+            primary = cause;
+          }
+        };
+        try {
+          const consumed = consume(raw);
+          const outcome = await consumed.finished.then(
+            () => ({ failed: false as const }),
+            (cause: unknown) => ({ failed: true as const, cause })
+          );
+          expect(outcome).toEqual({ failed: false });
+          expect(consumed.events).toEqual([
+            expect.objectContaining({
+              type: 'error',
+              data: expect.objectContaining({ code: 'credits_unavailable' }),
+            }),
+          ]);
+          expect(decision).toHaveBeenCalledTimes(1);
+          expect(harness.provider.turnSettled).toHaveBeenCalledTimes(settlementsBefore + 1);
+          expect(harness.client.session.promptAsync).toHaveBeenCalledTimes(promptsBefore);
+          expect(readOpenCodeNativeOperation(original.nativeOperation)).toBeUndefined();
+          expect(readOpenCodePreparedRoomResponder(harness.runtime, prepared)).toBeUndefined();
+          expect(
+            h.db.get<{ status: string }>(sql`SELECT status FROM room_doc_admissions
+            WHERE document_id=${h.documentId}`)?.status
+          ).toBe('in_doubt');
+          expect(
+            h.db
+              .select()
+              .from(connectorRuntimeBindings)
+              .all()
+              .every((row) => row.revokedAt !== null)
+          ).toBe(true);
+          expect(h.db.get<{ n: number }>(sql`SELECT count(*) AS n FROM room_turn_spend`)!.n).toBe(
+            spendBefore + 1
+          );
+          expect(() =>
+            startOpenCodeCommittedRoomResponder(harness.runtime, prepared!, committed)
+          ).toThrow();
+        } catch (cause) {
+          remember(cause);
+        } finally {
+          try {
+            decision.mockRestore();
+          } catch (cause) {
+            remember(cause);
+          }
+          try {
+            mode.mockRestore();
+          } catch (cause) {
+            remember(cause);
+          }
+        }
+        if (failureSeen) throw primary;
+      } else if (scenario.startsWith('early mesh')) {
+        const primary = scenario.includes('undefined')
+          ? undefined
+          : new Error('actual early mesh setup');
+        const revoke = h.principals.revoke.bind(h.principals);
+        const revokeSpy = vi.spyOn(h.principals, 'revoke').mockImplementation(async (...args) => {
+          await revoke(...args);
+          throw new Error('secondary original revoke');
+        });
+        harness.runtime.setMeshCore({
+          getByPath: () => {
+            throw primary;
+          },
+          updateLastSeen: () => {},
+          listWithPaths: () => [],
+        });
+        try {
+          const finished = consume(raw).finished;
+          await vi.waitFor(() => expect(harness.client.global.event).toHaveBeenCalled());
+          harness.source.latest().push(globalEvent(agentDir, serverConnected()));
+          await expect(finished).rejects.toBe(primary);
+          expect(revokeSpy).toHaveBeenCalled();
+          expect(readOpenCodeNativeOperation(original.nativeOperation)).toBeUndefined();
+          expect(harness.client.session.promptAsync).toHaveBeenCalledTimes(promptsBefore);
+          expect(
+            h.db.get<{ status: string }>(sql`SELECT status FROM room_doc_admissions
+            WHERE document_id=${h.documentId}`)?.status
+          ).toBe('in_doubt');
+        } finally {
+          revokeSpy.mockRestore();
+        }
+      } else if (
+        scenario === 'return before first pull' ||
+        scenario.startsWith('unpulled revoke')
+      ) {
+        if (scenario.startsWith('unpulled revoke')) {
+          const outcome = await raw.return(undefined).then(
+            () => ({ failed: false }),
+            (cause: unknown) => ({ failed: true, cause })
+          );
+          expect(outcome).toEqual({ failed: true, cause: cleanupCause });
+          expect(revokeFault).toHaveBeenCalledTimes(1);
+          expect(
+            h.db
+              .select()
+              .from(connectorRuntimeBindings)
+              .all()
+              .every((row) => row.revokedAt !== null)
+          ).toBe(true);
+          expect(readOpenCodeNativeOperation(original.nativeOperation)).toBeUndefined();
+        } else await raw.return(undefined);
+        expect(harness.provider.turnSettled).toHaveBeenCalledTimes(settlementsBefore + 1);
+        expect(harness.client.session.promptAsync).toHaveBeenCalledTimes(promptsBefore);
+        expect(readOpenCodePreparedRoomResponder(harness.runtime, prepared)).toBeUndefined();
+        expect(
+          h.db.get<{ status: string }>(
+            sql`SELECT status FROM room_doc_admissions WHERE document_id=${h.documentId}`
+          )?.status
+        ).toBe('in_doubt');
+      } else {
+        if (scenario === 'final prompt callback revocation') {
+          // getClient is a real awaited SDK setup cut. It returns the same exact original client.
+          const originalGet = harness.provider.getClient.getMockImplementation()!;
+          harness.provider.getClient.mockImplementation(async () => {
+            const client = await originalGet();
+            actual.db.run(
+              sql`UPDATE canvas_doc_grants SET revoked_at=${new Date().toISOString()} WHERE grant_id=${actual.granted.grant.grantId}`
+            );
+            return client;
+          });
+        }
+        const connectionsBefore = harness.source.connections.length;
+        const projected = (projectedWork = feedProjector(getOrCreateProjector(sessionId), raw, {
+          originalRoomStream: raw,
+        }));
+        // Retain the original settlement for cleanup even if a preceding assertion fails.
+        void projected.catch((cause: unknown) => {
+          projectedRejection = { cause };
+        });
+        if (scenario === 'final prompt callback revocation') {
+          await expect(projected).rejects.toBeDefined();
+          projectedRejectionAsserted = true;
+          expect(harness.client.session.promptAsync).toHaveBeenCalledTimes(promptsBefore);
+          expect(
+            h.db.get<{ status: string }>(
+              sql`SELECT status FROM room_doc_admissions WHERE document_id=${h.documentId}`
+            )?.status
+          ).toBe('in_doubt');
+        } else {
+          await vi.waitFor(() =>
+            expect(harness.source.connections.length).toBeGreaterThan(connectionsBefore)
+          );
+          harness.source.latest().push(globalEvent(agentDir, serverConnected()));
+          await vi.waitFor(() =>
+            expect(harness.client.session.promptAsync).toHaveBeenCalledTimes(promptsBefore + 1)
+          );
+          for (const event of opencodeSimpleTurn(OC_SESSION_A, 'actual responder complete'))
+            harness.source.latest().push(globalEvent(agentDir, event));
+          await projected;
+          expect(
+            h.db.get<{ status: string; outcome: string }>(
+              sql`SELECT status,outcome FROM room_doc_admissions WHERE document_id=${h.documentId}`
+            )
+          ).toEqual({ status: 'settled', outcome: 'turn_done' });
+          expect(h.db.select().from(connectorRuntimeBindings).all()).toHaveLength(nativeBefore + 1);
+        }
+        expect(() =>
+          startOpenCodeCommittedRoomResponder(harness.runtime, prepared!, committed)
+        ).toThrow();
+      }
+      // The actual original prepared owner settles its provider exactly once,
+      // including entered success and cleanup refusal. Ordinary producer settlement
+      // was observed separately before preparing this dedicated native entry.
+      expect(harness.provider.turnSettled).toHaveBeenCalledTimes(settlementsBefore + 1);
+      expect(h.db.get<{ n: number }>(sql`SELECT count(*) AS n FROM room_turn_spend`)!.n).toBe(
+        spendBefore + 1
+      );
+    } catch (cause) {
+      failed = true;
+      first = cause;
+    } finally {
+      revokeFault?.mockRestore();
+      const attempt = async (work: () => Promise<unknown> | void) => {
+        try {
+          await work();
+        } catch (cause) {
+          if (!failed) {
+            failed = true;
+            first = cause;
+          }
+        }
+      };
+      for (const connection of harness.source.connections) connection.queue.end();
+      await attempt(async () => {
+        if (prepared && readOpenCodePreparedRoomResponder(harness.runtime, prepared))
+          await retireOpenCodePreparedRoomResponder(harness.runtime, prepared);
+      });
+      if (producer) await attempt(() => producer!.return(undefined));
+      if (producerDone) await attempt(() => producerDone!);
+      if (projectedWork)
+        await attempt(async () => {
+          try {
+            await projectedWork;
+          } catch (cause) {
+            if (
+              !projectedRejectionAsserted ||
+              !projectedRejection ||
+              cause !== projectedRejection.cause
+            )
+              throw cause;
+          }
+        });
+      await attempt(async () => {
+        if (pendingChild && pendingChild.exitCode === null && pendingChild.signalCode === null)
+          pendingChild.kill('SIGTERM');
+        if (pendingChildClosed) await pendingChildClosed;
+      });
+      await attempt(() => disposeProjector(sessionId));
+      if (h) await attempt(() => h!.cleanup());
+      await attempt(() => rmSync(agentDir, { recursive: true, force: true }));
+    }
+    if (failed) throw first;
   });
 });

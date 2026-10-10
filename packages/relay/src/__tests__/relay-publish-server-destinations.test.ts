@@ -153,7 +153,9 @@ describe('publish pipeline — only server senders reach server-owned addresses'
   ])('refuses %s -> %s with the rule named, delivering nothing', async (from, subject) => {
     const received = collect(subject);
     await expect(relay.publish(subject, { type: 'forged' }, { from })).rejects.toThrow(
-      SERVER_DESTINATION_REFUSAL
+      subject.startsWith('relay.doc.') || from.startsWith('relay.doc.')
+        ? 'DOCUMENT_RELAY_CONSTRUCTION_REQUIRED'
+        : SERVER_DESTINATION_REFUSAL
     );
     expect(received).toHaveLength(0);
   });
@@ -161,11 +163,14 @@ describe('publish pipeline — only server senders reach server-owned addresses'
   it.each(['relay.*', '*.doc', '*.*'])(
     'refuses %s reaching the bare Doc mailbox',
     async (subject) => {
-      await relay.registerEndpoint('relay.doc');
+      const received = collect('relay.doc');
+      await expect(relay.registerEndpoint('relay.doc')).rejects.toThrow(
+        'DOCUMENT_RELAY_CONSTRUCTION_REQUIRED'
+      );
       await expect(
         relay.publish(subject, { hi: 1 }, { from: 'relay.external.mcp' })
       ).rejects.toThrow(SERVER_DESTINATION_REFUSAL);
-      expect((await relay.readInbox('relay.doc')).messages).toHaveLength(0);
+      expect(received).toHaveLength(0);
     }
   );
 

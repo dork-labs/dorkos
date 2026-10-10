@@ -194,3 +194,69 @@ describe('writeFile', () => {
     });
   });
 });
+
+describe('original document-bound writeFile response', () => {
+  const documentSave = {
+    documentId: 'doc-original',
+    expectedGeneration: 'a'.repeat(64),
+    eventId: '11111111-1111-4111-8111-111111111111',
+    expectedFileHash: 'b'.repeat(64),
+  };
+  const receipt = (id = documentSave.eventId, status: 'recorded' | 'duplicate' = 'recorded') => ({
+    receipt: { id, docSeq: 1, status },
+    deliveries: [],
+  });
+  it('keeps the same original request ID after a lost response and validates the correlated original receipt', async () => {
+    const fetch = vi
+      .fn()
+      .mockRejectedValueOnce(new Error('response lost'))
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            ok: true,
+            hash: 'c'.repeat(64),
+            effect: 'no_op',
+            documentReceipt: receipt(undefined, 'duplicate'),
+          }),
+          { status: 200 }
+        )
+      );
+    vi.stubGlobal('fetch', fetch);
+    const methods = setup();
+    const options = { expectedHash: documentSave.expectedFileHash, documentSave };
+    await expect(methods.writeFile('/repo', 'doc.md', 'confirmed body', options)).rejects.toThrow(
+      'response lost'
+    );
+    await expect(
+      methods.writeFile('/repo', 'doc.md', 'confirmed body', options)
+    ).resolves.toMatchObject({
+      ok: true,
+      effect: 'no_op',
+      documentReceipt: { receipt: { id: documentSave.eventId, status: 'duplicate' } },
+    });
+    expect(fetch.mock.calls[0][1].body).toBe(fetch.mock.calls[1][1].body);
+    expect(JSON.parse(fetch.mock.calls[0][1].body).documentSave).toEqual(documentSave);
+    expect(fetch.mock.calls[0][1].credentials).toBe('include');
+  });
+  it.each([
+    { ok: true, hash: 'c'.repeat(64), effect: 'changed' },
+    {
+      ok: true,
+      hash: 'c'.repeat(64),
+      effect: 'changed',
+      documentReceipt: receipt('22222222-2222-4222-8222-222222222222'),
+    },
+    { ok: true, hash: 'c'.repeat(64), effect: 'no_op', documentReceipt: receipt() },
+  ])('refuses a missing, foreign or false no-op completion', async (body) => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(new Response(JSON.stringify(body), { status: 200 }))
+    );
+    await expect(
+      setup().writeFile('/repo', 'doc.md', 'confirmed body', {
+        expectedHash: documentSave.expectedFileHash,
+        documentSave,
+      })
+    ).rejects.toThrow('Document save receipt');
+  });
+});

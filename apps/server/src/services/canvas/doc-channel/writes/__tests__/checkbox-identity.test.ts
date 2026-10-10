@@ -225,15 +225,12 @@ it('retains the fence through a genuine SQLite exclusive read lock and rechecks 
 it('refuses native SQL admission and checkbox work without resolving any filesystem path', async () => {
   const h = await setup();
   const request = await h.request();
-  const port = (
-    h.coordinator as unknown as { ports: { resolve: (path: string) => Promise<unknown> } }
-  ).ports;
-  const spy = vi.spyOn(port, 'resolve');
+  const resolveCalls = h.readResolveCalls();
   h.db.$client.exec('BEGIN');
   try {
     expect(h.service.writeFence.readiness()).toEqual({ ready: false, reason: 'transaction' });
     await expect(h.service.toggle(request, h.actor)).rejects.toThrow('not available');
-    expect(spy).not.toHaveBeenCalled();
+    expect(h.readResolveCalls()).toBe(resolveCalls);
   } finally {
     h.db.$client.exec('ROLLBACK');
   }

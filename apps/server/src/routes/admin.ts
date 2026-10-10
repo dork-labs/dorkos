@@ -3,6 +3,7 @@ import { spawn } from 'child_process';
 import fs from 'fs/promises';
 import { expressRateLimit } from '../http/rate-limiter.js';
 import { env } from '../env.js';
+import { logger } from '../lib/logger.js';
 import { ResetTokenStore, RESET_TOKEN_TTL_DESCRIPTION } from '../services/core/auth/reset-token.js';
 
 /**
@@ -278,8 +279,9 @@ export function createAdminRouter(deps: AdminDeps): Router {
         await deps.shutdownServices();
         deps.closeDb();
         await fs.rm(deps.dorkHome, { recursive: true, force: true });
-      } catch {
-        // Best-effort cleanup; restart regardless
+      } catch (cause) {
+        logger.error('[Admin] Reset stopped because original cleanup did not complete:', cause);
+        return;
       }
       triggerRestart();
     });
@@ -291,8 +293,9 @@ export function createAdminRouter(deps: AdminDeps): Router {
     setImmediate(async () => {
       try {
         await deps.shutdownServices();
-      } catch {
-        // Best-effort teardown; restart regardless
+      } catch (cause) {
+        logger.error('[Admin] Restart stopped because original shutdown did not complete:', cause);
+        return;
       }
       triggerRestart();
     });

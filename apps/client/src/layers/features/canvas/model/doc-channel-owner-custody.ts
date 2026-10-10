@@ -104,18 +104,17 @@ export function buildOwnedLifecycle(owner: object): CoreEntry {
     const witness = readOwnedCatchupForAdmission(owner, run);
     const subject = captureRecordSubject(owner);
     const record = subject && readRecordSubject(owner, subject);
-    if (
-      !current(run) ||
-      !witness ||
-      witness.through > witness.highest ||
-      !qualifyingBirth ||
-      !record ||
-      !sameCanvasDocIncarnation(qualifyingBirth, record.birth)
-    )
+    if (!current(run) || !witness || witness.through > witness.highest) return false;
+    if (!record && legacyProjection) {
+      // A completed owned legacy HTTP replay displays its page without a Doc issuer.
+      setView((previous) => ({ ...previous, replayObserved: true }), run);
+      return false;
+    }
+    if (!qualifyingBirth || !record || !sameCanvasDocIncarnation(qualifyingBirth, record.birth))
       return false;
     if (!qualifyRecordSubject(owner, run, subject!)) return false;
     qualifyingBirth = undefined;
-    setView((previous) => ({ ...previous, available: true }), run);
+    setView((previous) => ({ ...previous, available: true, replayObserved: true }), run);
     return current(run);
   };
   const applySnapshot = (snapshot: Snapshot, routingCurrent: boolean, run?: object) => {
@@ -284,13 +283,27 @@ export function buildOwnedLifecycle(owner: object): CoreEntry {
         }
         currentScope = notification.scope;
         revision++;
-        if (notification.type === 'canvas_channel_snapshot')
+        const recoverUnverified = () => {
+          // A same-birth stream observation cannot restore HTTP-owned authority.
+          // Retry the existing single-flight replay after an earlier recovery failed.
+          if (
+            alive() &&
+            captureRecordSubject(owner) === record &&
+            readRecordSubject(owner, record)?.verified === false
+          )
+            recover();
+        };
+        if (notification.type === 'canvas_channel_snapshot') {
           applySnapshot(notification.snapshot, true);
-        else if (notification.docSeq > cursor().highest + 1) {
+          recoverUnverified();
+        } else if (notification.docSeq > cursor().highest + 1) {
           const evicted = notice(notification, 'gap');
           if (evicted && alive()) setView((old) => ({ ...old, available: false }));
           if (alive()) recover();
-        } else notice(notification, 'event');
+        } else {
+          notice(notification, 'event');
+          recoverUnverified();
+        }
       },
       transport,
       () => {
@@ -386,10 +399,11 @@ export function buildOwnedLifecycle(owner: object): CoreEntry {
       if (!current(run)) return;
       const subject = captureRecordSubject(owner);
       if (subject) unverifyRecordSubject(owner, subject);
-      setView((previous) => ({ ...previous, available: false }), run);
+      setView((previous) => ({ ...previous, available: false, replayObserved: true }), run);
     },
     unavailable: (run) => {
-      if (current(run)) setView((previous) => ({ ...previous, available: false }), run);
+      if (current(run))
+        setView((previous) => ({ ...previous, available: false, replayObserved: true }), run);
     },
     start,
     dispose: () => {

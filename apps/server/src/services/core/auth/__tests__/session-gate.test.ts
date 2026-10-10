@@ -9,8 +9,15 @@ import path from 'node:path';
 import express from 'express';
 import request from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
-import { createDb, runMigrations, user, session, type Db } from '@dorkos/db';
-import { getAuth, initAuth, sessionGate, toNodeHandler, verifyRequestAuth } from '../index.js';
+import { createDb, runMigrations, user, session, apikey, type Db } from '@dorkos/db';
+import {
+  getAuth,
+  initAuth,
+  sessionGate,
+  toNodeHandler,
+  verifyRequestAuth,
+  recheckAdmittedRequestAuth,
+} from '../index.js';
 import { configManager, initConfigManager } from '../../config-manager.js';
 import { env } from '../../../../env.js';
 import { REQUEST_FACTS_ADAPTERS } from '../../../../http/__tests__/request-facts-adapters.js';
@@ -283,6 +290,141 @@ describe('sessionGate — /api/* and /mcp credential gate (integration)', () => 
   });
 
   describe('verifyRequestAuth (the shared verifier reused by MCP auth in 1.4)', () => {
+    it('charges one genuine API-key admission once and keeps its paid continuation read-only', async () => {
+      const created = await getAuth()!.api.createApiKey({
+        body: { userId: ownerId, name: 'one-admitted-request', remaining: 1 },
+      });
+      const req = { headers: { authorization: `Bearer ${created.key}` } };
+      const principal = await verifyRequestAuth(req);
+      expect(principal).toEqual({
+        userId: ownerId,
+        credential: 'api-key',
+        credentialId: created.id,
+      });
+      const readKey = () => db.select().from(apikey).where(eq(apikey.id, created.id)).get();
+      expect(readKey()?.remaining).toBe(0);
+      // Distinct old timestamps make accidental refresh writes observable without sleeps.
+      db.update(apikey)
+        .set({ lastRequest: new Date(1000), updatedAt: new Date(2000) })
+        .where(eq(apikey.id, created.id))
+        .run();
+      const paid = readKey();
+      expect(paid).toBeDefined();
+      for (let check = 0; check < 5; check++) {
+        expect(await recheckAdmittedRequestAuth(req, principal!)).toBe(true);
+        expect(readKey()).toEqual(paid);
+      }
+      // Neither the same header values on another request nor a copied DTO paid this admission.
+      expect(await recheckAdmittedRequestAuth({ headers: { ...req.headers } }, principal!)).toBe(
+        false
+      );
+      expect(await recheckAdmittedRequestAuth(req, { ...principal! })).toBe(false);
+      expect(readKey()).toEqual(paid);
+      // The next real admission still owes a new unit and the exhausted key cannot pay it.
+      expect(await verifyRequestAuth({ headers: { ...req.headers } })).toBeNull();
+    });
+
+    it.each([
+      'deleted',
+      'disabled',
+      'expired',
+      'hash-changed',
+      'config-changed',
+      'owner-changed',
+    ] as const)(
+      'refuses an originally admitted key after its live row is %s without accounting writes',
+      async (change) => {
+        const created = await getAuth()!.api.createApiKey({
+          body: { userId: ownerId, name: `admitted-${change}`, remaining: 2 },
+        });
+        const req = { headers: { authorization: `Bearer ${created.key}` } };
+        const principal = await verifyRequestAuth(req);
+        expect(principal).toMatchObject({ userId: ownerId, credentialId: created.id });
+        expect(await recheckAdmittedRequestAuth(req, principal!)).toBe(true);
+        const readKey = () => db.select().from(apikey).where(eq(apikey.id, created.id)).get();
+        const admitted = readKey()!;
+        expect(admitted.remaining).toBe(1);
+        switch (change) {
+          case 'deleted':
+            db.delete(apikey).where(eq(apikey.id, created.id)).run();
+            break;
+          case 'disabled':
+            db.update(apikey).set({ enabled: false }).where(eq(apikey.id, created.id)).run();
+            break;
+          case 'expired':
+            db.update(apikey)
+              .set({ expiresAt: new Date(1) })
+              .where(eq(apikey.id, created.id))
+              .run();
+            break;
+          case 'hash-changed':
+            db.update(apikey)
+              .set({ key: `${admitted.key}-replaced` })
+              .where(eq(apikey.id, created.id))
+              .run();
+            break;
+          case 'config-changed':
+            db.update(apikey)
+              .set({ configId: 'different-original-config' })
+              .where(eq(apikey.id, created.id))
+              .run();
+            break;
+          case 'owner-changed':
+            db.update(apikey)
+              .set({ referenceId: `${ownerId}-replaced` })
+              .where(eq(apikey.id, created.id))
+              .run();
+            break;
+        }
+        const changed = readKey();
+        expect(await recheckAdmittedRequestAuth(req, principal!)).toBe(false);
+        expect(readKey()).toEqual(changed);
+      }
+    );
+
+    it('rejects changed request headers', async () => {
+      const created = await getAuth()!.api.createApiKey({
+        body: { userId: ownerId, name: 'admitted-origin' },
+      });
+      const req = { headers: { authorization: `Bearer ${created.key}` } };
+      const principal = await verifyRequestAuth(req);
+      expect(principal).toMatchObject({ userId: ownerId, credentialId: created.id });
+      expect(await recheckAdmittedRequestAuth(req, principal!)).toBe(true);
+      req.headers.authorization = 'Bearer different-key';
+      expect(await recheckAdmittedRequestAuth(req, principal!)).toBe(false);
+      req.headers.authorization = `Bearer ${created.key}`;
+    });
+
+    it('refuses an admitted signed cookie after revocation even while the signed cache remains usable', async () => {
+      const signedIn = await request(fixtureServer)
+        .post('/api/auth/sign-in/email')
+        .set('Origin', ORIGIN)
+        .send({ email: OWNER_EMAIL, password: OWNER_PASSWORD });
+      expect(signedIn.status).toBe(200);
+      const cookie = (signedIn.headers['set-cookie'] as unknown as string[]).join('; ');
+      const req = { headers: { cookie } };
+      const auth = getAuth()!;
+      const live = await auth.api.getSession({
+        headers: new Headers({ cookie }),
+        query: { disableCookieCache: true, disableRefresh: true },
+      });
+      expect(live?.session.id).toEqual(expect.any(String));
+      const principal = await verifyRequestAuth(req);
+      expect(principal).toEqual({ userId: ownerId, credential: 'cookie' });
+      const readSession = () =>
+        db.select().from(session).where(eq(session.id, live!.session.id)).get();
+      const before = readSession();
+      expect(await recheckAdmittedRequestAuth(req, principal!)).toBe(true);
+      expect(readSession()).toEqual(before);
+      db.delete(session).where(eq(session.id, live!.session.id)).run();
+      // This is the actual signed cache, not a mocked getSession response.
+      expect((await auth.api.getSession({ headers: new Headers({ cookie }) }))?.user.id).toBe(
+        ownerId
+      );
+      expect(await recheckAdmittedRequestAuth(req, principal!)).toBe(false);
+      expect(readSession()).toBeUndefined();
+    });
+
     // The `credential` field is asserted, not incidental. A few writes are
     // reserved for a person in the cockpit rather than for anything holding a
     // valid credential, and this is the only place the difference is observable
@@ -454,6 +596,106 @@ describe('sessionGate — /api/* and /mcp credential gate (integration)', () => 
         .set('Authorization', `Bearer ${apiKey}`);
       expect(program.status).toBe(200);
       expect(program.body.user.credential).toBe('api-key');
+    });
+
+    it('refuses a deleted genuine key owner while the original key row remains unchanged', async () => {
+      const admittedOwner = `admitted-owner-deletion-${ownerId}`;
+      const now = new Date();
+      db.insert(user)
+        .values({
+          id: admittedOwner,
+          name: 'Admitted owner',
+          email: admittedOwner + '@' + DOMAIN,
+          role: 'user',
+          createdAt: now,
+          updatedAt: now,
+        })
+        .run();
+      const created = await getAuth()!.api.createApiKey({
+        body: { userId: admittedOwner, name: 'live-owner-row' },
+      });
+      const req = { headers: { authorization: `Bearer ${created.key}` } };
+      const principal = await verifyRequestAuth(req);
+      expect(principal).toMatchObject({ userId: admittedOwner, credentialId: created.id });
+      expect(await recheckAdmittedRequestAuth(req, principal!)).toBe(true);
+      const readKey = () => db.select().from(apikey).where(eq(apikey.id, created.id)).get();
+      const originalKey = readKey();
+      expect(originalKey).toBeDefined();
+      db.delete(user).where(eq(user.id, admittedOwner)).run();
+      expect(readKey()).toEqual(originalKey);
+      expect(await recheckAdmittedRequestAuth(req, principal!)).toBe(false);
+      expect(readKey()).toEqual(originalKey);
+    });
+
+    it('refuses substitution of the original signed-cookie session row by a same-user row', async () => {
+      const signedIn = await request(fixtureServer)
+        .post('/api/auth/sign-in/email')
+        .set('Origin', ORIGIN)
+        .send({ email: OWNER_EMAIL, password: OWNER_PASSWORD });
+      expect(signedIn.status).toBe(200);
+      const cookie = (signedIn.headers['set-cookie'] as unknown as string[]).join('; ');
+      const req = { headers: { cookie } };
+      const auth = getAuth()!;
+      const original = await auth.api.getSession({
+        headers: new Headers({ cookie }),
+        query: { disableCookieCache: true, disableRefresh: true },
+      });
+      expect(original?.session.id).toEqual(expect.any(String));
+      const principal = await verifyRequestAuth(req);
+      expect(principal).toEqual({ userId: ownerId, credential: 'cookie' });
+      expect(await recheckAdmittedRequestAuth(req, principal!)).toBe(true);
+      const replacementId = `${original!.session.id}-replacement`;
+      db.update(session)
+        .set({ id: replacementId })
+        .where(eq(session.id, original!.session.id))
+        .run();
+      const actualReplacement = await auth.api.getSession({
+        headers: new Headers({ cookie }),
+        query: { disableCookieCache: true, disableRefresh: true },
+      });
+      expect(actualReplacement?.user.id).toBe(ownerId);
+      expect(actualReplacement?.session.id).toBe(replacementId);
+      expect(await recheckAdmittedRequestAuth(req, principal!)).toBe(false);
+    });
+
+    it('refuses mutation of the exact admitted principal rather than trusting its current DTO fields', async () => {
+      const created = await getAuth()!.api.createApiKey({
+        body: { userId: ownerId, name: 'admitted-principal-data' },
+      });
+      const req = { headers: { authorization: `Bearer ${created.key}` } };
+      const principal = await verifyRequestAuth(req);
+      expect(principal).toEqual({
+        userId: ownerId,
+        credential: 'api-key',
+        credentialId: created.id,
+      });
+      expect(await recheckAdmittedRequestAuth(req, principal!)).toBe(true);
+      principal!.userId = `${ownerId}-substituted`;
+      expect(await recheckAdmittedRequestAuth(req, principal!)).toBe(false);
+      principal!.userId = ownerId;
+      principal!.credentialId = `${created.id}-substituted`;
+      expect(await recheckAdmittedRequestAuth(req, principal!)).toBe(false);
+      principal!.credentialId = created.id;
+      principal!.credential = 'cookie';
+      expect(await recheckAdmittedRequestAuth(req, principal!)).toBe(false);
+      principal!.credential = 'api-key';
+      expect(await recheckAdmittedRequestAuth(req, principal!)).toBe(true);
+    });
+
+    // Keep singleton replacement last: the original app's auth handler remains
+    // bound to its constructor instance until this fixture is torn down.
+    it('rejects an admitted proof after the original auth instance is replaced', async () => {
+      const created = await getAuth()!.api.createApiKey({
+        body: { userId: ownerId, name: 'admitted-auth-instance' },
+      });
+      const req = { headers: { authorization: `Bearer ${created.key}` } };
+      const principal = await verifyRequestAuth(req);
+      expect(principal).toMatchObject({ userId: ownerId, credentialId: created.id });
+      expect(await recheckAdmittedRequestAuth(req, principal!)).toBe(true);
+      const originalAuth = getAuth();
+      initAuth(db, tmpDir);
+      expect(getAuth()).not.toBe(originalAuth);
+      expect(await recheckAdmittedRequestAuth(req, principal!)).toBe(false);
     });
   });
 });
