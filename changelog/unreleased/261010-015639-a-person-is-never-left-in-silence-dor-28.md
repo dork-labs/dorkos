@@ -3,12 +3,13 @@ covers:
   - 'feat(rooms): a person is never left in silence (DOR-2823)'
   - "fix(rooms): Stop cancels a busy retry, and the receipt is the room's alone (DOR-2823)"
   - "fix(rooms): receipts never spend an agent's reactions, and a chosen no-lead channel stays quiet (DOR-2823)"
+  - 'fix(rooms): say "no agent here" above the message box, not as a room message (DOR-2823)'
 ---
 
 ### Added
 
 - When an agent is picked to answer your message in a room, 👀 appears on it right away, and goes away when the agent is done (DOR-2823)
-- If you write in a channel that has no agent in it, the room says so in one quiet line (DOR-2823)
+- A channel with no agent in it shows a quiet line above the message box saying so, with a way to add one (DOR-2823)
 
 ### Changed
 

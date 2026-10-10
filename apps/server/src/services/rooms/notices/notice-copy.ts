@@ -405,18 +405,6 @@ function clockTime(iso: string): string {
 }
 
 /**
- * The one quiet line a channel writes when a person's message reached no agent
- * because the channel has none (DOR-2823). Never for a message that named
- * somebody: that is addressed, and saying so would be noise.
- */
-export function buildNobodyNotice(): RoomEntryBody {
-  return {
-    text: 'No agent is in this channel to answer. Add one to get answers here.',
-    notice: 'nobody_answering',
-  };
-}
-
-/**
  * The text a bridged chat hears for a `turn_failed` notice, in place of the
  * room's own line (chats-as-channels spec §6.2).
  *

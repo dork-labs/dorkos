@@ -446,11 +446,8 @@ describe('the rooms capability domain', () => {
         'rooms.read_history',
         { roomId: hers.id, limit: 5 },
         'priya-account'
-      )) as { entries: Array<{ kind: string; text: string }> };
-      // A room with no agent in it also gets the room's "nobody is here to
-      // answer" notice (DOR-2823); this test is about whose posts are read.
-      const posts = page.entries.filter((entry) => entry.kind === 'post');
-      expect(posts.map((entry) => entry.text)).toEqual(['mine']);
+      )) as { entries: Array<{ text: string }> };
+      expect(page.entries.map((entry) => entry.text)).toEqual(['mine']);
     });
 
     it('refuses a caller it cannot name at all when login is on', async () => {
@@ -478,10 +475,8 @@ describe('the rooms capability domain', () => {
       const page = (await callAsPerson('rooms.read_history', {
         roomId: ownersRoom.id,
         limit: 5,
-      })) as { entries: Array<{ kind: string; text: string }> };
-      // Skip the room's "nobody is here to answer" notice (DOR-2823).
-      const posts = page.entries.filter((entry) => entry.kind === 'post');
-      expect(posts.map((entry) => entry.text)).toEqual(['a private note']);
+      })) as { entries: Array<{ text: string }> };
+      expect(page.entries.map((entry) => entry.text)).toEqual(['a private note']);
     });
 
     it('lets an agent token win over a person on the same call', async () => {

@@ -308,9 +308,7 @@ describe('exporting a room', () => {
 
       const { header, entries } = readExport(service.exportRoom(late.id, ana));
 
-      // The room with no agent yet wrote its "no agent is in this channel" notice
-      // right after the first post, so Ana's floor is that notice (DOR-2823).
-      expect(header.scope).toEqual({ fromSeq: before.seq + 1, joinFloorApplied: true });
+      expect(header.scope).toEqual({ fromSeq: before.seq, joinFloorApplied: true });
       expect(entries.map((entry) => entry.id)).toEqual([after.id]);
     });
 
@@ -354,10 +352,7 @@ describe('exporting a room', () => {
       expect(theirs.header.scope.joinFloorApplied).toBe(true);
       expect(theirs.entries.map((entry) => entry.id)).toEqual([after.id]);
       expect(mine.header.scope.joinFloorApplied).toBe(false);
-      // Posts only: a room with no agent also carries the room's "no agent is in
-      // this channel" notice (DOR-2823).
-      const minePosts = mine.entries.filter((entry) => entry.kind === 'post');
-      expect(minePosts.map((entry) => entry.id)).toEqual([before.id, after.id]);
+      expect(mine.entries.map((entry) => entry.id)).toEqual([before.id, after.id]);
     });
   });
 

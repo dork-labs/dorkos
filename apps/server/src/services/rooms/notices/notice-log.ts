@@ -48,7 +48,6 @@ import {
   buildBusyNotice,
   buildHaltedNotice,
   buildTurnFailedNotice,
-  buildNobodyNotice,
   buildWaitingNotice,
   BUSY_CONTEXTS,
   type AgentHaltOutcome,
@@ -98,9 +97,6 @@ export interface CascadeStamp {
  */
 export type RoomTurnUnanswered =
   'busy' | 'failed' | 'gone' | 'left' | 'unavailable' | 'runtime-gone';
-
-/** How long one "nobody answered" line stands for its room and reason. */
-const NOBODY_NOTICE_DAMP_MS = 60 * 60_000;
 
 /** How a notice reaches the room's durable log. */
 export interface RoomNoticeWriter {
@@ -308,9 +304,6 @@ export class RoomNoticeLog {
    * their rosters, which is not something a busy room can grow.
    */
   private readonly noticedHalt = new Set<string>();
-
-  /** When each room last said nobody was answering. */
-  private readonly nobodySaid = new Map<string, number>();
 
   constructor(deps: RoomNoticeLogDeps) {
     this.deps = deps;
@@ -788,27 +781,6 @@ export class RoomNoticeLog {
    */
   budgetRecovered(roomId: string): void {
     this.noticedBudget.delete(roomId);
-  }
-
-  /**
-   * Say, once in a while, that a person's message in a channel reached no
-   * agent at all (DOR-2823).
-   *
-   * Damped on the ROOM for an hour: a channel with no agents, where people
-   * talk among themselves, would otherwise answer every message with it. The dispatcher logs every such decision regardless.
-   *
-   * @param room - The channel.
-   * @param entry - The person's message, for the thread it belongs under.
-   * @returns Whether a line was written.
-   */
-  reportNobody(room: Room, entry: RoomEntry): boolean {
-    const key = room.id;
-    const last = this.nobodySaid.get(key);
-    const now = Date.now();
-    if (last !== undefined && now - last < NOBODY_NOTICE_DAMP_MS) return false;
-    const written = this.writeNotice(room, entry, null, buildNobodyNotice());
-    if (written) this.nobodySaid.set(key, now);
-    return written;
   }
 
   /**

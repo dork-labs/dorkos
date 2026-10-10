@@ -113,12 +113,6 @@ function parseExport(body: string): {
   return { header, entries: lines.slice(1, -1) as RoomExportEntry[], summary };
 }
 
-/**
- * The line an agent-less channel writes under a person's first unaddressed
- * post (DOR-2823), damped to one an hour.
- */
-const NOBODY_HERE = 'No agent is in this channel to answer. Add one to get answers here.';
-
 describe('GET /api/rooms/:id/export', () => {
   let db: Db;
   let roomId: string;
@@ -156,8 +150,8 @@ describe('GET /api/rooms/:id/export', () => {
 
     const { header, entries, summary } = parseExport(res.text);
     expect(header.room).toMatchObject({ id: roomId, title: 'Backend', topic: 'the API' });
-    expect(entries.map((entry) => entry.text)).toEqual(['first', NOBODY_HERE, 'second']);
-    expect(summary.entryCount).toBe(3);
+    expect(entries.map((entry) => entry.text)).toEqual(['first', 'second']);
+    expect(summary.entryCount).toBe(2);
   });
 
   it('writes one JSON object per line, and nothing else', async () => {
@@ -168,10 +162,9 @@ describe('GET /api/rooms/:id/export', () => {
     const res = await request(testServer).get(`/api/rooms/${roomId}/export`);
 
     const lines = res.text.split('\n').filter((line) => line.length > 0);
-    // Four lines for four objects (header, the message, the room's nobody-here
-    // line from DOR-2823, summary): the newline inside the message must have
+    // Three lines for three objects: the newline inside the message must have
     // been escaped by JSON.stringify rather than splitting the record in two.
-    expect(lines).toHaveLength(4);
+    expect(lines).toHaveLength(3);
     for (const line of lines) expect(() => JSON.parse(line)).not.toThrow();
     expect(res.text.endsWith('\n')).toBe(true);
   });
@@ -206,7 +199,6 @@ describe('GET /api/rooms/:id/export', () => {
     expect(parseExport(asOperator.text).header.scope.joinFloorApplied).toBe(false);
     expect(parseExport(asOperator.text).entries.map((entry) => entry.text)).toEqual([
       'before ana',
-      NOBODY_HERE,
       'after ana',
     ]);
   });

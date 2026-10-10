@@ -73,7 +73,6 @@ const NOTICES: Record<NoticeBuilder, () => RoomEntryBody[]> = {
     copy.buildTurnFailedNotice('Ana', 'author-ana', '2026-10-09T16:10:00.000Z'),
     copy.buildTurnFailedNotice('Ana', 'author-ana', null),
   ],
-  buildNobodyNotice: () => [copy.buildNobodyNotice()],
   buildAgentGoneNotice: () => [copy.buildAgentGoneNotice('Ana', 'author-ana')],
   buildRuntimeGoneNotice: () => [
     copy.buildRuntimeGoneNotice('Ana', 'author-ana', 'codex'),

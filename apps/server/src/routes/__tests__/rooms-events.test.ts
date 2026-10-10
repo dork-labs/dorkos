@@ -76,12 +76,6 @@ function openRoomStream(
 
 const testServer = listeningServer(app);
 
-/**
- * The line an agent-less channel writes under a person's first unaddressed
- * post (DOR-2823), damped to one an hour, so it sits between the first two.
- */
-const NOBODY_HERE = 'No agent is in this channel to answer. Add one to get answers here.';
-
 /** Port of the file-scoped listener shared by Supertest and the raw SSE client. */
 function testServerPort(): number {
   return (testServer.address() as AddressInfo).port;
@@ -124,8 +118,8 @@ describe('GET /api/rooms/:id/events', () => {
     };
     expect(snapshot.room.id).toBe(roomId);
     expect(snapshot.room.members).toHaveLength(1);
-    expect(snapshot.entries.map((e) => e.body.text)).toEqual(['one', NOBODY_HERE, 'two']);
-    expect(snapshot.cursor).toBe(3);
+    expect(snapshot.entries.map((e) => e.body.text)).toEqual(['one', 'two']);
+    expect(snapshot.cursor).toBe(2);
   });
 
   it('delivers a post made while the stream is open, framed with a resumable id', async () => {
@@ -350,8 +344,7 @@ describe('GET /api/rooms/:id/events', () => {
     const snapshot = frames.find((f) => f.event === 'snapshot')?.data as {
       entries: Array<{ seq: number }>;
     };
-    // One, the nobody-here line (DOR-2823), two.
-    expect(snapshot.entries.map((e) => e.seq)).toEqual([1, 2, 3]);
+    expect(snapshot.entries.map((e) => e.seq)).toEqual([1, 2]);
   });
 
   it('404s the stream for an agent that is not a member', async () => {
@@ -413,14 +406,14 @@ describe('PUT /api/read-cursors/room/:id on the global stream', () => {
 
     await request(testServer)
       .put(`/api/read-cursors/room/${roomId}`)
-      .send({ lastReadSeq: 4 })
+      .send({ lastReadSeq: 3 })
       .expect(200);
     // The same cursor again: monotonic, so it writes nothing and must therefore
     // say nothing. Opening a room already read is the common case, and an event
     // per no-op would be the loudest name on this stream.
     await request(testServer)
       .put(`/api/read-cursors/room/${roomId}`)
-      .send({ lastReadSeq: 4 })
+      .send({ lastReadSeq: 3 })
       .expect(200);
     await request(testServer).post(`/api/rooms/${roomId}/entries`).send({ text: 'sentinel' });
 
@@ -435,8 +428,7 @@ describe('PUT /api/read-cursors/room/:id on the global stream', () => {
       userId: getRoomService().authorRegistry.localHuman().id,
       threadKind: 'room',
       threadId: roomId,
-      // Seq 4 is 'three': the nobody-here line took seq 2 (DOR-2823).
-      lastReadSeq: 4,
+      lastReadSeq: 3,
       unreadCount: 0,
     });
   });
@@ -465,7 +457,7 @@ describe('PUT /api/read-cursors/room/:id on the global stream', () => {
 
     await request(testServer)
       .put(`/api/read-cursors/room/${roomId}`)
-      .send({ lastReadSeq: 3 })
+      .send({ lastReadSeq: 2 })
       .expect(200);
     await request(testServer).post(`/api/rooms/${roomId}/entries`).send({ text: 'sentinel' });
 
@@ -477,15 +469,14 @@ describe('PUT /api/read-cursors/room/:id on the global stream', () => {
     // nothing to patch with, leaving the badge lit on the reader's other device.
     const cursors = frames.filter((f) => f.event === 'read_cursor');
     expect(cursors.map((f) => f.data)).toEqual([
-      // Seq 3 is 'two': the nobody-here line took seq 2 (DOR-2823).
-      { userId: me, threadKind: 'room', threadId: roomId, lastReadSeq: 3, unreadCount: 1 },
+      { userId: me, threadKind: 'room', threadId: roomId, lastReadSeq: 2, unreadCount: 1 },
     ]);
 
     // One stored cursor, read back through the ROOM's own vocabulary: the
     // membership the room detail reports carries what the cursor table holds.
     const room = await request(testServer).get(`/api/rooms/${roomId}`).expect(200);
     expect(room.body.members.find((m: { authorId: string }) => m.authorId === me).lastReadSeq).toBe(
-      3
+      2
     );
   });
 

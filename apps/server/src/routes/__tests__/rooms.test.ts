@@ -238,8 +238,7 @@ describe('/api/rooms', () => {
       const res = await request(testServer).get('/api/rooms');
       expect(res.status).toBe(200);
       expect(res.body.rooms).toHaveLength(1);
-      // The post and the room's "no agent here" line under it (DOR-2823).
-      expect(res.body.rooms[0].unreadCount).toBe(2);
+      expect(res.body.rooms[0].unreadCount).toBe(1);
     });
 
     it('filters by kind', async () => {
@@ -999,8 +998,7 @@ describe('/api/rooms', () => {
           cursor = page[0];
         }
 
-        // Twelve posts and the one "no agent here" line the first earned (DOR-2823).
-        expect(collected).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13]);
+        expect(collected).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]);
       });
 
       it('answers an empty page below the oldest entry, rather than the same page again', async () => {
@@ -1165,9 +1163,8 @@ describe('/api/rooms', () => {
         const res = await request(testServer).get(`/api/rooms/${room.id}/entries`);
 
         // The self-contained page is the common one, and it costs nothing: no
-        // extra rows on the wire and no second read behind them. Three: root,
-        // reply, and the room's "no agent here" line (DOR-2823).
-        expect(res.body.entries).toHaveLength(3);
+        // extra rows on the wire and no second read behind them.
+        expect(res.body.entries).toHaveLength(2);
         expect(res.body.threadRoots).toEqual([]);
       });
 
@@ -1279,12 +1276,11 @@ describe('/api/rooms', () => {
 
       // And the room's unread count still clears, through the one route there
       // is — so the 404 above is a removal and not a regression.
-      // Seq 2 is the room's "no agent here" line under the post (DOR-2823).
       const res = await request(testServer)
         .put(`/api/read-cursors/room/${room.id}`)
-        .send({ lastReadSeq: 2 });
+        .send({ lastReadSeq: 1 });
       expect(res.status).toBe(200);
-      expect(res.body.lastReadSeq).toBe(2);
+      expect(res.body.lastReadSeq).toBe(1);
 
       const list = await request(testServer).get('/api/rooms');
       expect(list.body.rooms[0].unreadCount).toBe(0);

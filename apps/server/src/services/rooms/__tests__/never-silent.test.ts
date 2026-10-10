@@ -9,7 +9,8 @@
  * - **Busy is a wait, not a drop.** A launch the runtime refuses as busy is
  *   tried again on its own, and the room's one line about it says so.
  * - **The reason, when nobody can answer.** A message that reached no agent
- *   because there was nobody to reach gets one quiet line, damped.
+ *   because there was nobody to reach writes no entry (the app shows the hint
+ *   above the composer), but the server logs why.
  * - **Out of usage says when.** A turn that failed on a usage limit names the
  *   time it resets instead of "ran into a problem".
  *
@@ -17,6 +18,7 @@
  */
 import { afterEach, describe, it, expect, vi } from 'vitest';
 import type { RoomEntry, RoomWithRoster } from '@dorkos/shared/room-schemas';
+import { logger } from '../../../lib/logger.js';
 import type { RoomService } from '../room-service.js';
 import { BUSY_RETRY_DELAYS_MS, RECEIPT_EMOJI } from '../room-trigger.js';
 import {
@@ -36,6 +38,7 @@ const AGENTS = agentLookupFor({
 
 afterEach(() => {
   vi.useRealTimers();
+  vi.restoreAllMocks();
 });
 
 interface Wired {
@@ -217,28 +220,28 @@ describe('when nobody can answer', () => {
     expect(notices(w)).toEqual([]);
   });
 
-  it('says it only once an hour in a channel with no agents', async () => {
+  it('stays quiet (writes no entry) in a channel with no agents, and logs why', async () => {
+    const reported = vi.spyOn(logger, 'info').mockImplementation(() => undefined);
     const w = open(
       scriptedRunner(() => null),
       { agentPaths: [] }
     );
-    w.service.post(w.room.id, { authorId: w.human, text: 'hello?' });
+    const first = w.service.post(w.room.id, { authorId: w.human, text: 'hello?' });
     await w.service.triggersIdle();
     w.service.post(w.room.id, { authorId: w.human, text: 'anyone?' });
     await w.service.triggersIdle();
-    expect(notices(w)).toHaveLength(1);
-  });
 
-  it('says the channel has no agents', async () => {
-    const w = open(
-      scriptedRunner(() => null),
-      { agentPaths: [] }
-    );
-    w.service.post(w.room.id, { authorId: w.human, text: 'hello?' });
-    await w.service.triggersIdle();
-    expect(notices(w)).toEqual([
-      'No agent is in this channel to answer. Add one to get answers here.',
+    // A stored line would bump unread counts in people-only channels, so the
+    // app shows the hint instead and the log carries the reason.
+    expect(w.service.listEntries(w.room.id, w.human, { limit: 50 }).map((e) => e.kind)).toEqual([
+      'post',
+      'post',
     ]);
+    expect(reported).toHaveBeenCalledWith('[rooms] nobody was picked to answer a person', {
+      roomId: w.room.id,
+      entryId: first.id,
+      reason: 'no_agents',
+    });
   });
 
   it('says nothing about a message that named only a person', async () => {

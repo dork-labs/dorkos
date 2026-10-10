@@ -220,7 +220,7 @@ import {
   type RoomNoticeWriter,
   type RoomTurnUnanswered,
 } from './notices/notice-log.js';
-import { buildCascadeNotice, type BusyContext } from './notices/notice-copy.js';
+import { buildCascadeNotice } from './notices/notice-copy.js';
 import type { RoomAgentLookup } from './room-errors.js';
 import {
   RoomTurnRuntimeGoneError,
@@ -1083,20 +1083,9 @@ export class RoomTriggerDispatcher {
           entryId: entry.id,
           reason,
         });
-        // **Never silent** (DOR-2823): one quiet line when the message reached
-        // nobody because there is nobody to reach, never when it named somebody
-        // (that is addressed) and never in a chat bridged outside. A channel
-        // with agents but no lead is one a person chose to leave without one,
-        // so it stays quiet; the log above still says why.
-        if (
-          reason === 'no_agents' &&
-          entry.mentions.length === 0 &&
-          this.deps.bridgedFraming(room.id) === null &&
-          // A Community room mirrored here is not this machine's to narrate.
-          !this.deps.store.isRemoteTimelineRoom(room.id)
-        ) {
-          this.notices.reportNobody(room, entry);
-        }
+        // No entry is written for it: a stored line would bump unread counts
+        // in channels where people talk among themselves. The app shows the
+        // "no agent is in this channel" hint above the composer instead.
       }
       // **The commonest shape of the ghost case comes through here**, and it is
       // why this is not a bare `return`. A channel seeds agents at `engaged`, and

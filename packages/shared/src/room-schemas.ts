@@ -178,9 +178,6 @@ export const ROOM_RECEIPT_EMOJI = '👀';
  *   archived room takes no new entries; it names who did it and says the person
  *   can bring the room back.
  *
- * - `nobody_answering` — a person's message in a channel reached no agent
- *   because the channel has no agent in it (DOR-2823). Damped an hour per room.
- *
  * **This four-code addition is the one non-additive change in the whole
  * chats-as-channels feature (spec §11.2, A11.1).** Widening an enum is not
  * additive for a client that already parses this schema: a build pinned to the
@@ -213,7 +210,6 @@ export const RoomNoticeCodeSchema = z
     'bridge_agent_swapped',
     'bridge_history_note',
     'room_archived',
-    'nobody_answering',
   ])
   .openapi('RoomNoticeCode');
 
