@@ -1,7 +1,16 @@
 import { useMemo, useState } from 'react';
 import { toast } from 'sonner';
 import { AppTabStrip, type AppTabMenuActions } from '@/layers/features/app-tabs';
-import type { AppTab } from '@/layers/shared/model';
+import {
+  closeOtherTabsIn,
+  closeTabIn,
+  duplicateTabIn,
+  moveTabIn,
+  openTabIn,
+  pinTabIn,
+  type AppTab,
+  type AppTabsLayout,
+} from '@/layers/shared/model';
 import { sessionHref } from '@/layers/shared/lib';
 import { PlaygroundSection } from '../PlaygroundSection';
 import { ShowcaseLabel } from '../ShowcaseLabel';
@@ -41,84 +50,44 @@ const SAMPLES: AppTab[] = [
   sampleTab('tsi-tasks', '/tasks'),
 ];
 
-/** Pinned tabs first, each side in order — the store's invariant, for the demo. */
-function pinnedFirst(tabs: AppTab[]): AppTab[] {
-  return [...tabs.filter((tab) => tab.pinned), ...tabs.filter((tab) => !tab.pinned)];
-}
-
 /**
- * The real strip over local state. The rules mirror the tab store's (pinning
- * moves a tab to the pinned line, a reorder stays on its own side); the store's
- * own tests are what pin them.
+ * The real strip over local state, arranged by the tab store's own pure
+ * transitions — so the rules shown here are the rules the app runs.
  */
 function InteractiveStrip({ initial }: { initial: AppTab[] }) {
-  const [tabs, setTabs] = useState(initial);
-  const [activeId, setActiveId] = useState(initial[initial.length - 1].id);
-  const [spawned, setSpawned] = useState(0);
+  const [layout, setLayout] = useState<AppTabsLayout>(() => ({
+    tabs: initial,
+    activeTabId: initial[initial.length - 1].id,
+  }));
 
   const menu = useMemo<AppTabMenuActions>(
     () => ({
       togglePin: (id) =>
-        setTabs((current) => {
-          const tab = current.find((t) => t.id === id);
-          if (!tab) return current;
-          const rest = current.filter((t) => t.id !== id);
-          const pinnedCount = rest.filter((t) => t.pinned).length;
-          const next = [...rest];
-          next.splice(pinnedCount, 0, { ...tab, pinned: !tab.pinned });
-          return pinnedFirst(next);
+        setLayout((current) => {
+          const tab = current.tabs.find((t) => t.id === id);
+          return tab ? pinTabIn(current, id, !tab.pinned) : current;
         }),
-      duplicate: (id) => {
-        const copyId = `tsi-copy-${Date.now()}`;
-        setTabs((current) => {
-          const index = current.findIndex((t) => t.id === id);
-          const next = [...current];
-          next.splice(index + 1, 0, { ...current[index], id: copyId });
-          return next;
-        });
-        setActiveId(copyId);
-      },
+      duplicate: (id) => setLayout((current) => duplicateTabIn(current, id)),
       copyLink: (id) => {
-        const tab = tabs.find((t) => t.id === id);
+        const tab = layout.tabs.find((t) => t.id === id);
         toast.success(`Would copy ${window.location.origin}${tab?.href ?? '/'}`);
       },
-      closeOthers: (id) => {
-        setTabs((current) => current.filter((t) => t.id === id || t.pinned));
-        setActiveId(id);
-      },
-      close: (id) =>
-        setTabs((current) => {
-          const index = current.findIndex((t) => t.id === id);
-          const next = current.filter((t) => t.id !== id);
-          if (id === activeId) setActiveId((next[index] ?? next[index - 1]).id);
-          return next;
-        }),
+      closeOthers: (id) => setLayout((current) => closeOtherTabsIn(current, id)),
+      close: (id) => setLayout((current) => closeTabIn(current, id)),
     }),
-    [tabs, activeId]
+    [layout.tabs]
   );
 
   return (
     <div className="border-border overflow-hidden rounded-lg border">
       <AppTabStrip
-        tabs={tabs}
-        activeId={activeId}
-        onActivate={setActiveId}
+        tabs={layout.tabs}
+        activeId={layout.activeTabId}
+        onActivate={(id) => setLayout((current) => ({ ...current, activeTabId: id }))}
         onClose={(id) => menu.close(id)}
-        onCreate={() => {
-          const tab = sampleTab(`tsi-new-${spawned}`, '/');
-          setSpawned((count) => count + 1);
-          setTabs((current) => [...current, tab]);
-          setActiveId(tab.id);
-        }}
+        onCreate={() => setLayout((current) => openTabIn(current, '/'))}
         menu={menu}
-        onReorder={(from, to) =>
-          setTabs((current) => {
-            const next = [...current];
-            const [moved] = next.splice(from, 1);
-            next.splice(to, 0, moved);
-            return pinnedFirst(next);
-          })
-        }
+        onReorder={(from, to) => setLayout((current) => moveTabIn(current, from, to))}
       />
       <div className="text-muted-foreground bg-background p-6 text-center text-xs">
         Content of the active tab

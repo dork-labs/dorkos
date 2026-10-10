@@ -321,6 +321,93 @@ function writePersistedTabs(state: PersistedTabs): void {
   }
 }
 
+/**
+ * A window's tabs and which one is active — what the arranging transitions
+ * below take and return.
+ */
+export type AppTabsLayout = PersistedTabs;
+
+/**
+ * The arranging transitions as pure functions, so the store and the Dev
+ * Playground's demo strip run the same rules. Each returns its input unchanged
+ * when there is nothing to do, which is what lets a Zustand `set` skip a
+ * render. Their contracts are the matching store actions' docs below.
+ */
+
+/** {@link AppTabsState.openTab}, as a pure function. */
+export function openTabIn(layout: AppTabsLayout, href: string): AppTabsLayout {
+  const tab = mintTab(href);
+  const activeIndex = layout.tabs.findIndex((t) => t.id === layout.activeTabId);
+  const tabs = [...layout.tabs];
+  // Right of the active tab, but never inside the pinned run: a new tab is
+  // unpinned, so from a pinned tab it opens first among the unpinned ones.
+  const after = activeIndex >= 0 ? activeIndex + 1 : tabs.length;
+  tabs.splice(Math.max(after, pinnedCount(tabs)), 0, tab);
+  return { tabs, activeTabId: tab.id };
+}
+
+/** {@link AppTabsState.closeTab}, as a pure function. */
+export function closeTabIn(layout: AppTabsLayout, id: string): AppTabsLayout {
+  if (layout.tabs.length <= 1) return layout;
+  const index = layout.tabs.findIndex((t) => t.id === id);
+  if (index === -1) return layout;
+  const tabs = layout.tabs.filter((t) => t.id !== id);
+  if (layout.activeTabId !== id) return { tabs, activeTabId: layout.activeTabId };
+  // The neighbour that slid into this index, else the one before it.
+  const next = tabs[index] ?? tabs[index - 1];
+  return { tabs, activeTabId: next.id };
+}
+
+/** {@link AppTabsState.setTabPinned}, as a pure function. */
+export function pinTabIn(layout: AppTabsLayout, id: string, pinned: boolean): AppTabsLayout {
+  const tab = layout.tabs.find((t) => t.id === id);
+  if (!tab || Boolean(tab.pinned) === pinned) return layout;
+  const rest = layout.tabs.filter((t) => t.id !== id);
+  const { pinned: _was, ...bare } = tab;
+  const next: AppTab = pinned ? { ...bare, pinned: true } : bare;
+  // Either way the tab lands on the line between the two runs: the last
+  // pinned tab, or the first unpinned one.
+  const tabs = [...rest];
+  tabs.splice(pinnedCount(rest), 0, next);
+  return { ...layout, tabs };
+}
+
+/** {@link AppTabsState.duplicateTab}, as a pure function. */
+export function duplicateTabIn(layout: AppTabsLayout, id: string): AppTabsLayout {
+  const index = layout.tabs.findIndex((t) => t.id === id);
+  if (index === -1) return layout;
+  const source = layout.tabs[index];
+  const copy: AppTab = source.pinned
+    ? { ...mintTab(source.href), pinned: true }
+    : mintTab(source.href);
+  const tabs = [...layout.tabs];
+  tabs.splice(index + 1, 0, copy);
+  return { tabs, activeTabId: copy.id };
+}
+
+/** {@link AppTabsState.closeOtherTabs}, as a pure function. */
+export function closeOtherTabsIn(layout: AppTabsLayout, id: string): AppTabsLayout {
+  if (!layout.tabs.some((t) => t.id === id)) return layout;
+  const tabs = layout.tabs.filter((t) => t.id === id || t.pinned);
+  if (tabs.length === layout.tabs.length && layout.activeTabId === id) return layout;
+  return { tabs, activeTabId: id };
+}
+
+/** {@link AppTabsState.moveTab}, as a pure function. */
+export function moveTabIn(layout: AppTabsLayout, from: number, to: number): AppTabsLayout {
+  const tab = layout.tabs[from];
+  if (!tab || !Number.isInteger(to)) return layout;
+  const pinned = pinnedCount(layout.tabs);
+  // The tab's own side of the pinned line, in final positions.
+  const [low, high] = tab.pinned ? [0, pinned - 1] : [pinned, layout.tabs.length - 1];
+  const target = Math.min(Math.max(to, low), high);
+  if (target === from) return layout;
+  const tabs = [...layout.tabs];
+  tabs.splice(from, 1);
+  tabs.splice(target, 0, tab);
+  return { ...layout, tabs };
+}
+
 /** Tab list state and the transitions that can change it. */
 interface AppTabsState extends PersistedTabs {
   /**
@@ -423,29 +510,9 @@ interface AppTabsState extends PersistedTabs {
 export const useAppTabsStore = create<AppTabsState>((set) => ({
   ...(readPersistedTabs() ?? seedTabsFromLocation()),
 
-  openTab: (href) =>
-    set((state) => {
-      const tab = mintTab(href);
-      const activeIndex = state.tabs.findIndex((t) => t.id === state.activeTabId);
-      const tabs = [...state.tabs];
-      // Right of the active tab, but never inside the pinned run: a new tab is
-      // unpinned, so from a pinned tab it opens first among the unpinned ones.
-      const after = activeIndex >= 0 ? activeIndex + 1 : tabs.length;
-      tabs.splice(Math.max(after, pinnedCount(tabs)), 0, tab);
-      return { tabs, activeTabId: tab.id };
-    }),
+  openTab: (href) => set((state) => openTabIn(state, href)),
 
-  closeTab: (id) =>
-    set((state) => {
-      if (state.tabs.length <= 1) return state;
-      const index = state.tabs.findIndex((t) => t.id === id);
-      if (index === -1) return state;
-      const tabs = state.tabs.filter((t) => t.id !== id);
-      if (state.activeTabId !== id) return { tabs, activeTabId: state.activeTabId };
-      // The neighbour that slid into this index, else the one before it.
-      const next = tabs[index] ?? tabs[index - 1];
-      return { tabs, activeTabId: next.id };
-    }),
+  closeTab: (id) => set((state) => closeTabIn(state, id)),
 
   selectTab: (id) =>
     set((state) => (state.tabs.some((t) => t.id === id) ? { activeTabId: id } : state)),
@@ -485,55 +552,13 @@ export const useAppTabsStore = create<AppTabsState>((set) => ({
       return { tabs: state.tabs.map((t) => (t.id === active.id ? moved : t)) };
     }),
 
-  setTabPinned: (id, pinned) =>
-    set((state) => {
-      const tab = state.tabs.find((t) => t.id === id);
-      if (!tab || Boolean(tab.pinned) === pinned) return state;
-      const rest = state.tabs.filter((t) => t.id !== id);
-      const { pinned: _was, ...bare } = tab;
-      const next: AppTab = pinned ? { ...bare, pinned: true } : bare;
-      // Either way the tab lands on the line between the two runs: the last
-      // pinned tab, or the first unpinned one.
-      const tabs = [...rest];
-      tabs.splice(pinnedCount(rest), 0, next);
-      return { tabs };
-    }),
+  setTabPinned: (id, pinned) => set((state) => pinTabIn(state, id, pinned)),
 
-  duplicateTab: (id) =>
-    set((state) => {
-      const index = state.tabs.findIndex((t) => t.id === id);
-      if (index === -1) return state;
-      const source = state.tabs[index];
-      const copy: AppTab = source.pinned
-        ? { ...mintTab(source.href), pinned: true }
-        : mintTab(source.href);
-      const tabs = [...state.tabs];
-      tabs.splice(index + 1, 0, copy);
-      return { tabs, activeTabId: copy.id };
-    }),
+  duplicateTab: (id) => set((state) => duplicateTabIn(state, id)),
 
-  closeOtherTabs: (id) =>
-    set((state) => {
-      if (!state.tabs.some((t) => t.id === id)) return state;
-      const tabs = state.tabs.filter((t) => t.id === id || t.pinned);
-      if (tabs.length === state.tabs.length && state.activeTabId === id) return state;
-      return { tabs, activeTabId: id };
-    }),
+  closeOtherTabs: (id) => set((state) => closeOtherTabsIn(state, id)),
 
-  moveTab: (from, to) =>
-    set((state) => {
-      const tab = state.tabs[from];
-      if (!tab || !Number.isInteger(to)) return state;
-      const pinned = pinnedCount(state.tabs);
-      // The tab's own side of the pinned line, in final positions.
-      const [low, high] = tab.pinned ? [0, pinned - 1] : [pinned, state.tabs.length - 1];
-      const target = Math.min(Math.max(to, low), high);
-      if (target === from) return state;
-      const tabs = [...state.tabs];
-      tabs.splice(from, 1);
-      tabs.splice(target, 0, tab);
-      return { tabs };
-    }),
+  moveTab: (from, to) => set((state) => moveTabIn(state, from, to)),
 }));
 
 // Write-through persistence. Subscribing here (rather than inside each action)
