@@ -15,7 +15,7 @@ import { carryCeiling } from '../warm-ceiling.js';
 
 const QUIET = { quietness: () => ({ quiet: true }) };
 const BUSY = { quietness: () => ({ quiet: false }) };
-const ACCEPT_EDITS: TurnPermissionLevel = { asks: 'sometimes', reach: 'workspace' };
+const ACCEPT_EDITS: TurnPermissionLevel = { asks: 'when-risky', reach: 'workspace' };
 
 describe('the tool gate under a carried ceiling', () => {
   it("answers a stranger's background work at the ceiling after the owner's turn begins", () => {
