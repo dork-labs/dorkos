@@ -125,7 +125,12 @@ function mountPaths() {
   const paths = new Set<string>();
   // Every file that mounts routes: the Express app, the composition root, and
   // the groups that moved to the Hono `/api` app.
-  for (const filename of ['../app.ts', '../index.ts', '../http/better-auth.ts']) {
+  for (const filename of [
+    '../app.ts',
+    '../index.ts',
+    '../http/better-auth.ts',
+    '../http/hono-api.ts',
+  ]) {
     const source = ts.createSourceFile(
       filename,
       readFileSync(new URL(filename, import.meta.url), 'utf8'),
@@ -138,7 +143,7 @@ function mountPaths() {
         ts.isPropertyAccessExpression(node.expression) &&
         ts.isIdentifier(node.expression.expression) &&
         node.expression.expression.text === 'app' &&
-        ['use', 'get', 'post', 'all'].includes(node.expression.name.text) &&
+        ['use', 'get', 'post', 'all', 'route'].includes(node.expression.name.text) &&
         node.arguments[0] &&
         ts.isStringLiteral(node.arguments[0])
       )
@@ -244,8 +249,11 @@ describe('main HTTP admission through the real app', () => {
     expect(mounts).toContain('/api/commitments');
     // 72 -> 71: the `/assets` trap is no longer an Express mount; it lives in
     // `http/client-files.ts`, and is asked for by hand below.
-    expect(mounts).toHaveLength(71);
-    for (const mount of [...mounts, '/', '/x/fixture', '/assets/fixture.js', '/unknown']) {
+    // 71 -> 69: the API docs are one `/api` mount on Hono (`routes/api-docs.ts`),
+    // so their two paths are asked for by hand below too.
+    expect(mounts).toHaveLength(69);
+    const byHand = ['/', '/x/fixture', '/assets/fixture.js', '/api/openapi.json', '/api/docs'];
+    for (const mount of [...mounts, ...byHand, '/unknown']) {
       expectTerminal(
         await request(target.server).get(mount).set('Origin', 'https://untrusted.example')
       );

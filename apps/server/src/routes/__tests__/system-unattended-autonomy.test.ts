@@ -5,7 +5,7 @@ import { MainRequestAdmission } from '../../services/core/lifecycle/main-request
  *
  * The rule itself is specified beside the collector, in
  * `services/core/unattended-autonomy/__tests__/`. What this file pins is the
- * wiring: that the handler reaches the real stores through `app.locals`,
+ * wiring: that the handler reaches the real stores through the deps it is handed,
  * that it resolves the runtime profile rather than trusting mode ids, and that
  * an install without relay or Tasks answers `200` with nothing rather than
  * failing.
@@ -35,11 +35,16 @@ vi.mock('../../services/core/config-manager.js', () => ({
 import request from '@dorkos/test-utils/supertest';
 import { listeningServer } from '@dorkos/test-utils/listening-server';
 import { createApp } from '../../app.js';
+import { composedListener } from '../../http/__tests__/composed-listener.js';
+import type { HonoApiDeps } from '../../http/hono-api.js';
 import { runtimeRegistry } from '../../services/core/runtime-registry.js';
 import type { UnattendedAutonomyDeps } from '../../services/core/unattended-autonomy/unattended-autonomy.js';
 
-const app = createApp({ admission: new MainRequestAdmission() });
-const testServer = listeningServer(app);
+const admission = new MainRequestAdmission();
+const app = createApp({ admission });
+/** What the moved routes read, swapped per test like the running server's bag. */
+const deps: HonoApiDeps = {};
+const testServer = listeningServer(composedListener(app, admission, deps));
 
 /** A profile declaring one asking mode and one autonomy mode. */
 const CAPABILITIES = {
@@ -78,7 +83,7 @@ function withProfile(): void {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  delete app.locals.unattendedAutonomyDeps;
+  delete deps.unattendedAutonomy;
 });
 
 describe('GET /api/system/unattended-autonomy', () => {
@@ -93,7 +98,7 @@ describe('GET /api/system/unattended-autonomy', () => {
 
   it('names the live bindings and tasks that run without asking', async () => {
     withProfile();
-    app.locals.unattendedAutonomyDeps = {
+    deps.unattendedAutonomy = {
       bindings: () => [
         {
           id: 'b1',
@@ -144,7 +149,7 @@ describe('GET /api/system/unattended-autonomy', () => {
     // subsystem that cannot answer must not be able to silence a standing
     // warning about autonomy. Over-reporting is recoverable; going quiet is not.
     withProfile();
-    app.locals.unattendedAutonomyDeps = {
+    deps.unattendedAutonomy = {
       bindings: () => [
         {
           id: 'b1',
@@ -169,7 +174,7 @@ describe('GET /api/system/unattended-autonomy', () => {
     // A test-mode boot. The stores still hold rows; nothing in this process can
     // read what their mode ids mean, so the honest answer is silence.
     vi.mocked(runtimeRegistry.has).mockReturnValue(false);
-    app.locals.unattendedAutonomyDeps = {
+    deps.unattendedAutonomy = {
       bindings: () => [
         {
           id: 'b1',

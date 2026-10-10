@@ -18,12 +18,14 @@
  * @module routes/errors
  */
 
-import { Router } from 'express';
+import { Hono } from 'hono';
 import { z } from 'zod';
+import type { ApiEnv } from '../http/api-chain.js';
+import { readJsonBody } from '../http/request-body.js';
 
 import { captureClientError } from '../services/core/error-reporter.js';
 
-const router = Router();
+const router = new Hono<ApiEnv>();
 
 /**
  * Untrusted client payload. Bounded lengths cap an adversarial body; every field
@@ -37,15 +39,15 @@ const ClientErrorBodySchema = z.object({
   stack: z.string().max(20_000).optional(),
 });
 
-router.post('/', (req, res) => {
-  const parsed = ClientErrorBodySchema.safeParse(req.body ?? {});
+router.post('/', (c) => {
+  const parsed = ClientErrorBodySchema.safeParse(readJsonBody(c, { emptyAs: {} }));
   if (parsed.success) {
     // Fire-and-forget: scrubbing + send happen server-side and must never block
     // or fail the request. A no-op when error reporting is off.
     void captureClientError(parsed.data);
   }
   // Always accept — this is a fire-and-forget stream, not a command to retry.
-  res.status(202).json({ ok: true });
+  return c.json({ ok: true }, 202);
 });
 
 export default router;

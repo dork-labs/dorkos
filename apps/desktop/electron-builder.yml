@@ -255,7 +255,7 @@ asarUnpack:
   # @ngrok/ngrok-win32-x64-msvc, not the plain `win32-x64` the three families
   # above use.
   - '**/node_modules/@ngrok/ngrok-win32-x64-msvc/**'
-  # express.static (app.ts's production SPA serving) cannot reliably read
+  # The static file server (http/client-files.ts, the production SPA serving) cannot reliably read
   # range-requested static assets from inside app.asar — the packaged
   # window now loads the renderer via the bundled server's own
   # http://localhost:<port> (see window-manager.ts) rather than file://, so

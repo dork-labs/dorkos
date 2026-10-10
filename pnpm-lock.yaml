@@ -613,9 +613,6 @@ importers:
       '@opencode-ai/sdk':
         specifier: ^1.18.30
         version: 1.18.30
-      '@scalar/express-api-reference':
-        specifier: ^0.10.23
-        version: 0.10.25
       better-sqlite3:
         specifier: ^12.11.1
         version: 12.11.1
@@ -873,9 +870,9 @@ importers:
       '@opentelemetry/sdk-trace-node':
         specifier: ^2.11.0
         version: 2.11.0(@opentelemetry/api@1.9.1)
-      '@scalar/express-api-reference':
-        specifier: ^0.10.23
-        version: 0.10.25
+      '@scalar/client-side-rendering':
+        specifier: 0.4.7
+        version: 0.4.7
       better-auth:
         specifier: 1.7.6
         version: 1.7.6(@opentelemetry/api@1.9.1)(@prisma/client@5.22.0)(drizzle-kit@0.31.11)(drizzle-orm@0.45.3(@electric-sql/pglite@0.5.8)(@neondatabase/serverless@1.1.0)(@opentelemetry/api@1.9.1)(@prisma/client@5.22.0)(@types/better-sqlite3@7.6.13)(@types/pg@8.23.1)(better-sqlite3@12.11.1)(kysely@0.29.2)(pg@8.23.0))(next@16.3.8(@opentelemetry/api@1.9.1)(@playwright/test@1.63.0)(@types/node@24.13.5)(react-dom@19.3.0(react@19.3.0))(react@19.3.0))(pg@8.23.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(solid-js@1.9.15)(vitest@4.1.11)(vue@3.5.39(typescript@5.9.3))
@@ -1337,9 +1334,6 @@ importers:
       '@opencode-ai/sdk':
         specifier: ^1.18.30
         version: 1.18.30
-      '@scalar/express-api-reference':
-        specifier: ^0.10.23
-        version: 0.10.25
       better-sqlite3:
         specifier: ^12.11.1
         version: 12.11.1
@@ -5518,10 +5512,6 @@ packages:
 
   '@scalar/client-side-rendering@0.4.7':
     resolution: {integrity: sha512-iBn6B92M0p59K3PQUTawvolK5UlfuMdxuBJt59g0as3HCbNm4m2KpTh0tTj5Y2XQpslv9nN6q0jJEseVdtDayA==}
-    engines: {node: '>=22'}
-
-  '@scalar/express-api-reference@0.10.25':
-    resolution: {integrity: sha512-Bc+KSl7+xhiGWY2zbtTxstQcScD0MrSewLq7ruDzU9yyPXJOY1cJ0w5q3ux5p43gA7Nqk/sLrghci0tYUyEW4w==}
     engines: {node: '>=22'}
 
   '@scalar/helpers@0.12.0':
@@ -15725,10 +15715,6 @@ snapshots:
       '@scalar/schemas': 0.12.2
       '@scalar/types': 0.22.3
       '@scalar/validation': 0.6.5
-
-  '@scalar/express-api-reference@0.10.25':
-    dependencies:
-      '@scalar/client-side-rendering': 0.4.7
 
   '@scalar/helpers@0.12.0': {}
 

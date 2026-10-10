@@ -11,7 +11,7 @@
  *
  * @module routes/health
  */
-import { Router } from 'express';
+import { Hono } from 'hono';
 import type { DeepHealthResponse } from '@dorkos/shared/health-schemas';
 import { tunnelManager } from '../services/core/tunnel-manager.js';
 import { SERVER_VERSION } from '../lib/version.js';
@@ -19,32 +19,47 @@ import {
   runDeepHealthChecks,
   type DeepHealthDeps,
 } from '../services/observability/deep-health/index.js';
+import type { ApiEnv } from '../http/api-chain.js';
 
-const router = Router();
+/** What the health routes read from the running server. */
+export interface HealthRouteDeps {
+  /**
+   * The narrow reads behind `/deep`, set once every subsystem they name has
+   * had its chance to start. Absent only in tests that build the server bare,
+   * where every check correctly reports itself skipped.
+   */
+  deepHealth?: DeepHealthDeps;
+}
 
-router.get('/', (_req, res) => {
-  const response: Record<string, unknown> = {
-    status: 'ok',
-    version: SERVER_VERSION,
-    uptime: process.uptime(),
-  };
+/**
+ * The `/api/health` routes.
+ *
+ * @param deps - See {@link HealthRouteDeps}.
+ * @returns The routes, for `app.route('/api/health', …)`.
+ */
+export function createHealthRoutes(deps: HealthRouteDeps = {}): Hono<ApiEnv> {
+  const router = new Hono<ApiEnv>();
 
-  const tunnelStatus = tunnelManager.status;
-  if (tunnelStatus.enabled) {
-    response.tunnel = tunnelStatus;
-  }
+  router.get('/', (c) => {
+    const response: Record<string, unknown> = {
+      status: 'ok',
+      version: SERVER_VERSION,
+      uptime: process.uptime(),
+    };
 
-  res.json(response);
-});
+    const tunnelStatus = tunnelManager.status;
+    if (tunnelStatus.enabled) {
+      response.tunnel = tunnelStatus;
+    }
 
-router.get('/deep', async (req, res) => {
-  // Set once during bootstrap in index.ts, after every subsystem it names has
-  // had its chance to start. Absent only in unit tests that build the app bare,
-  // where every check correctly reports itself skipped.
-  const deps = req.app.locals.deepHealthDeps as DeepHealthDeps | undefined;
-  const checks = await runDeepHealthChecks(deps ?? { dorkHome: '' });
-  const response: DeepHealthResponse = { checks };
-  res.json(response);
-});
+    return c.json(response);
+  });
 
-export default router;
+  router.get('/deep', async (c) => {
+    const checks = await runDeepHealthChecks(deps.deepHealth ?? { dorkHome: '' });
+    const response: DeepHealthResponse = { checks };
+    return c.json(response);
+  });
+
+  return router;
+}

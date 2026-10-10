@@ -60,10 +60,13 @@ vi.mock('../../services/core/config-manager.js', () => ({
 import request from '@dorkos/test-utils/supertest';
 import { listeningServer } from '@dorkos/test-utils/listening-server';
 import { createApp } from '../../app.js';
+import { composedListener } from '../../http/__tests__/composed-listener.js';
 import { runtimeRegistry } from '../../services/core/runtime-registry.js';
 
-const app = createApp({ admission: new MainRequestAdmission() });
-const testServer = listeningServer(app);
+const admission = new MainRequestAdmission();
+const app = createApp({ admission });
+// Routed as the running server routes: the moved groups answer from Hono.
+const testServer = listeningServer(composedListener(app, admission));
 
 describe('Subagents Routes', () => {
   beforeEach(() => {

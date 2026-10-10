@@ -931,7 +931,6 @@ async function buildServer() {
       '@openai/codex-sdk',
       '@opencode-ai/sdk',
       '@ngrok/ngrok',
-      '@scalar/express-api-reference',
       '@asteasolutions/zod-to-openapi',
       'better-sqlite3',
       'node-pty',

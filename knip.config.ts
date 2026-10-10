@@ -104,7 +104,6 @@ const config: KnipConfig = {
         '@asteasolutions/zod-to-openapi',
         '@modelcontextprotocol/sdk',
         '@ngrok/ngrok',
-        '@scalar/express-api-reference',
         'conf',
         'cors',
         'express',

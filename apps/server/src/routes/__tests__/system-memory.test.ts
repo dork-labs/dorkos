@@ -53,6 +53,7 @@ vi.mock('../../services/core/config-manager.js', () => ({
 import request from '@dorkos/test-utils/supertest';
 import { listeningServer } from '@dorkos/test-utils/listening-server';
 import { createApp } from '../../app.js';
+import { composedListener } from '../../http/__tests__/composed-listener.js';
 import { logger } from '../../lib/logger.js';
 import {
   getMemoryProvider,
@@ -60,8 +61,10 @@ import {
   resetMemoryProvider,
 } from '../../services/memory/registry.js';
 
-const app = createApp({ admission: new MainRequestAdmission() });
-const testServer = listeningServer(app);
+const admission = new MainRequestAdmission();
+const app = createApp({ admission });
+// Routed as the running server routes: the moved groups answer from Hono.
+const testServer = listeningServer(composedListener(app, admission));
 const CUSTOM = 'acme-memory';
 
 let warn: ReturnType<typeof vi.spyOn>;

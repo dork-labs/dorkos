@@ -1,7 +1,9 @@
-import { Router } from 'express';
+import { Hono } from 'hono';
+import type { ApiEnv } from '../http/api-chain.js';
+import { readQuery } from '../http/request-query.js';
 import { runtimeRegistry } from '../services/core/runtime-registry.js';
 
-const router = Router();
+const router = new Hono<ApiEnv>();
 
 /**
  * GET /api/subagents — list available subagents reported by the resolved runtime.
@@ -12,14 +14,15 @@ const router = Router();
  * cold-discovery path for screens without session context (onboarding,
  * first-run, agent creation).
  */
-router.get('/', async (req, res) => {
-  const sessionId = typeof req.query.sessionId === 'string' ? req.query.sessionId : undefined;
+router.get('/', async (c) => {
+  const query = readQuery(c);
+  const sessionId = typeof query.sessionId === 'string' ? query.sessionId : undefined;
   const runtime = sessionId
     ? await runtimeRegistry.resolveForSession(sessionId)
     : // cold discovery: no session context (onboarding, first-run)
       runtimeRegistry.getDefault();
   const subagents = await runtime.getSupportedSubagents();
-  res.json({ subagents });
+  return c.json({ subagents });
 });
 
 export default router;
