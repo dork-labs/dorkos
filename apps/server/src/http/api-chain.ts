@@ -14,7 +14,7 @@
  * | 1 | `terminalAdmission`                     | `503` once the server is stopping             |
  * | 2 | first-API-request log line              | the same, through `http/first-contact.ts`     |
  * | 3 | `cors` (delegate form)                  | `hono/cors` over `http/cors-policy.ts`        |
- * | 4 | `X-Content-Type-Options: nosniff`       | the same header, on every response after this |
+ * | 4 | `X-Content-Type-Options: nosniff`       | the same, also carried onto the raw response  |
  * | 5 | `hostGuard` on `/api`                   | `refuseUntrustedHost`                         |
  * | 6 | Better Auth, signed webhook ingress     | {@link ApiChainOptions.beforeBodyParsing}     |
  * | 7 | per-path parsers, then `express.json`   | `parseRequestBody` (`http/request-body.ts`)   |
@@ -128,6 +128,16 @@ export function createApiApp(options: ApiChainOptions): Hono<ApiEnv> {
     underMount(c.req.path, '/api') ? c.json(API_NOT_FOUND_BODY, 404) : c.text('404 Not Found', 404)
   );
 
+  // Hono hands only thrown `Error`s to `onError`; anything else escapes as a
+  // bare text 500. Express's handler takes whatever was thrown, and for a
+  // non-Error answers the generic JSON 500, which an empty message reproduces.
+  app.use(async (_c, next) => {
+    try {
+      await next();
+    } catch (thrown) {
+      throw thrown instanceof Error ? thrown : new Error('', { cause: thrown });
+    }
+  });
   app.use(admit(options.admission));
   const noteFirstApiRequest = createFirstContactMarker('[Client] first API request');
   app.use(async (c, next) => {
@@ -146,8 +156,9 @@ export function createApiApp(options: ApiChainOptions): Hono<ApiEnv> {
     })
   );
   app.use(async (c, next) => {
-    await next();
     c.header('X-Content-Type-Options', 'nosniff');
+    carryHeadersToNodeResponse(c);
+    await next();
   });
   app.use(async (c, next) => {
     if (!underMount(c.req.path, '/api')) return next();
@@ -161,7 +172,9 @@ export function createApiApp(options: ApiChainOptions): Hono<ApiEnv> {
   app.use(parseRequestBody<ApiEnv>(options.bodyRules));
   app.use(async (c, next) => {
     const start = Date.now();
-    const { method, path } = c.req;
+    const { method } = c.req;
+    // As sent, not as Hono decoded it: the line Express writes.
+    const path = rawUrl(c).split('?')[0] ?? c.req.path;
     const { outgoing } = c.env;
     outgoing.once('finish', () =>
       logRequest(method, path, outgoing.statusCode, Date.now() - start)
@@ -194,6 +207,23 @@ export function createApiApp(options: ApiChainOptions): Hono<ApiEnv> {
 /** The request URL exactly as sent: Express's `req.originalUrl`. */
 function rawUrl(c: Context<ApiEnv>): string {
   return c.env.incoming.url ?? c.req.path;
+}
+
+/**
+ * Put the headers the chain has decided so far (CORS, nosniff) on the raw Node
+ * response too, as Express does by setting them there before any route runs.
+ *
+ * A route that answers through Hono gets them on its `Response` anyway, and
+ * those win where both name a header. A route that writes the Node response
+ * itself (an event stream, an extension router) never builds a `Response`, and
+ * without this would go out with no CORS headers, so a credentialed
+ * cross-origin `EventSource` would be refused. `Vary: Origin` is what
+ * `hono/cors` adds after the route returns, which such a route never does.
+ */
+function carryHeadersToNodeResponse(c: Context<ApiEnv>): void {
+  const { outgoing } = c.env;
+  c.res.headers.forEach((value, name) => outgoing.setHeader(name, value));
+  outgoing.setHeader('Vary', 'Origin');
 }
 
 /** Answer `503` once the server has started stopping; admit everything else. */
@@ -235,15 +265,20 @@ const enterAuditScope: MiddlewareHandler<ApiEnv> = async (c, next) => {
  * The chain's `onError`: the Express error handler's log line and answer.
  *
  * A route that already wrote to the raw Node response cannot be given a JSON
- * body any more; like Express's default handler, close the connection.
+ * body any more; like Express's default handler, close the connection. Unlike
+ * it, still leave the log line: Express prints that one to the console.
  */
 function answerError(err: Error, c: Context<ApiEnv>): Response {
+  logRequestError(err, c.req.method, c.req.path);
   const { outgoing } = c.env;
   if (outgoing.headersSent) {
-    outgoing.destroy(err);
+    // Not now: Node holds a response's first bytes until the next tick, and
+    // closing before then would throw away what the route already wrote.
+    // A response the route already ended is left alone: its socket may be
+    // carrying the next request by then.
+    if (!outgoing.writableEnded) setImmediate(() => outgoing.destroy());
     return new Response(null, { headers: RESPONSE_ALREADY_SENT.headers });
   }
-  logRequestError(err, c.req.method, c.req.path);
   const reply = errorReply(err);
   return c.json(reply.body, reply.status as ContentfulStatusCode);
 }

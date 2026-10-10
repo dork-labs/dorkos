@@ -24,6 +24,8 @@ import type { AddressInfo } from 'node:net';
 import { gzipSync } from 'node:zlib';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { getRequestListener } from '@hono/node-server';
+import { RESPONSE_ALREADY_SENT } from '@hono/node-server/utils/response';
+import bodyParser from 'body-parser';
 import type express from 'express';
 import { createDb, runMigrations, user } from '@dorkos/db';
 
@@ -63,6 +65,7 @@ import { currentAuditActor } from '../../services/audit/audit-context.js';
 import { initAuditTrail, resetAuditTrail } from '../../services/audit/audit-trail.js';
 import { recordAudit } from '../../services/audit/audit-trail.js';
 import { BoundaryError } from '../../lib/boundary.js';
+import { logger } from '../../lib/logger.js';
 import { initAuth } from '../../services/core/auth/index.js';
 import type { Context } from 'hono';
 
@@ -117,9 +120,10 @@ function probeReport(method: string, body: unknown, user: unknown, agent: unknow
   };
 }
 
-/** Errors the probe can throw, by name, to compare the two error handlers. */
-const THROWABLE: Record<string, () => Error> = {
+/** What the probe can throw, by name, to compare the two error handlers. */
+const THROWABLE: Record<string, () => unknown> = {
   plain: () => new Error('the probe broke'),
+  'not-an-error': () => 'a thrown string',
   boundary: () => new BoundaryError('outside', 'OUTSIDE_BOUNDARY'),
   'too-large': () => Object.assign(new Error('too big'), { type: 'entity.too.large' }),
 };
@@ -129,6 +133,20 @@ const THROWABLE: Record<string, () => Error> = {
  * (Not `/probe`: the fallback skips paths ending in it as checks, not actions.)
  */
 const RECORDING_PATH = '/api/chain-probe/records';
+/** A route that writes the Node response itself, as an event stream does. */
+const RAW_PATH = '/api/chain-probe/raw';
+/** A route that fails after its response has started. */
+const MIDSTREAM_PATH = '/api/chain-probe/midstream';
+
+/**
+ * The larger limit feedback screenshots get, as the feedback group will bring
+ * it when it moves. On Express it is `feedbackJsonParser`, mounted at
+ * `/api/feedback` ahead of `express.json`.
+ */
+const FEEDBACK_BODY_RULE = {
+  matches: (_method: string, path: string) => /^\/api\/feedback(?:\/|$)/i.test(path),
+  parse: bodyParser.json({ limit: '2mb' }),
+};
 
 function buildExpress(admission: MainRequestAdmission): express.Express {
   const app = createApp({ admission });
@@ -144,12 +162,22 @@ function buildExpress(admission: MainRequestAdmission): express.Express {
   app.all('/api/chain-probe/throw/:kind', (req) => {
     throw THROWABLE[req.params.kind as string]!();
   });
+  app.post('/api/feedback/chain-probe', probe);
+  app.get(RAW_PATH, (_req, res) => {
+    res.writeHead(200, { 'content-type': 'text/plain' });
+    res.end('written to the Node response');
+  });
+  app.get(MIDSTREAM_PATH, (_req, res) => {
+    res.writeHead(200, { 'content-type': 'text/plain' });
+    res.write('partly ');
+    throw new Error('failed mid-stream');
+  });
   finalizeApp(app);
   return app;
 }
 
 function buildHono(admission: MainRequestAdmission) {
-  const app = createApiApp({ admission });
+  const app = createApiApp({ admission, bodyRules: [FEEDBACK_BODY_RULE] });
   const probe = (c: Context<ApiEnv>) =>
     c.json(probeReport(c.req.method, readJsonBody(c), c.get('user'), c.get('agentIdentity')));
   app.all('/api/chain-probe', probe);
@@ -161,6 +189,17 @@ function buildHono(admission: MainRequestAdmission) {
   });
   app.all('/api/chain-probe/throw/:kind', (c) => {
     throw THROWABLE[c.req.param('kind')]!();
+  });
+  app.post('/api/feedback/chain-probe', probe);
+  app.get(RAW_PATH, (c) => {
+    c.env.outgoing.writeHead(200, { 'content-type': 'text/plain' });
+    c.env.outgoing.end('written to the Node response');
+    return new Response(null, { headers: RESPONSE_ALREADY_SENT.headers });
+  });
+  app.get(MIDSTREAM_PATH, (c) => {
+    c.env.outgoing.writeHead(200, { 'content-type': 'text/plain' });
+    c.env.outgoing.write('partly ');
+    throw new Error('failed mid-stream');
   });
   return app;
 }
@@ -182,6 +221,8 @@ interface Answer {
   cookies: string[];
   body: unknown;
   headers: Record<string, string | null>;
+  /** Whether the whole response arrived, or the server cut it off. */
+  complete: boolean;
   audit: unknown[];
 }
 
@@ -237,7 +278,9 @@ async function send(port: number, probe: Probe): Promise<Answer> {
       (res) => {
         const chunks: Buffer[] = [];
         res.on('data', (chunk: Buffer) => chunks.push(chunk));
-        res.on('end', () => {
+        // A response the server cuts off ends in `close` and an `error`, not `end`.
+        res.on('error', () => {});
+        res.on('close', () => {
           const text = Buffer.concat(chunks).toString('utf8');
           let body: unknown = text;
           try {
@@ -250,11 +293,17 @@ async function send(port: number, probe: Probe): Promise<Answer> {
             cookies: res.headers['set-cookie'] ?? [],
             body,
             headers: normalizeResponse(res.statusCode ?? 0, res.headers),
+            complete: res.complete,
           });
         });
       }
     );
-    req.on('error', reject);
+    // A connection closed before any response arrived is an answer too.
+    req.on('error', (error: NodeJS.ErrnoException) =>
+      error.code === 'ECONNRESET'
+        ? resolve({ status: 0, cookies: [], body: null, headers: {}, complete: false })
+        : reject(error)
+    );
     if (probe.body !== undefined && !probe.chunked)
       req.setHeader('content-length', Buffer.byteLength(probe.body));
     req.end(probe.body);
@@ -382,6 +431,8 @@ const REQUESTS: Record<string, Probe> = {
   'POST to an unknown /api path': { method: 'POST', path: '/api/no-such-route' },
   'GET the probe with a trailing slash': { method: 'GET', path: '/api/chain-probe/' },
   'GET the probe with a query': { method: 'GET', path: '/api/chain-probe?x=1' },
+  'HEAD the probe': { method: 'HEAD', path: '/api/chain-probe' },
+  'GET a route that writes the Node response itself': { method: 'GET', path: RAW_PATH },
 };
 
 describe('the chain-parity matrix', () => {
@@ -519,6 +570,12 @@ describe('bodies', () => {
       headers: { host: HOSTS.loopback, 'content-type': 'application/json; charset=latin1' },
       body: '{"a":1}',
     },
+    'a body over 1 MB on a path with a larger limit': {
+      method: 'POST',
+      path: '/api/feedback/chain-probe',
+      headers: json,
+      body: JSON.stringify({ pad: 'x'.repeat(1536 * 1024) }),
+    },
     'an oversized body from a caller with no credential, login on': {
       method: 'POST',
       path: '/api/chain-probe',
@@ -555,7 +612,10 @@ describe('a stopping server', () => {
     const closing = new MainRequestAdmission();
     const viaExpress = await listen(buildExpress(closing) as unknown as RequestListener);
     const viaHono = await listen(
-      getRequestListener(buildHono(closing).fetch, { overrideGlobalObjects: false })
+      getRequestListener(buildHono(closing).fetch, {
+        overrideGlobalObjects: false,
+        autoCleanupIncoming: false,
+      })
     );
     try {
       closing.close();
@@ -568,5 +628,71 @@ describe('a stopping server', () => {
       viaExpress.server.close();
       viaHono.server.close();
     }
+  });
+});
+
+describe('a route that fails after its response has started', () => {
+  it('is cut off the same way, and the Hono chain still logs it', async () => {
+    vi.mocked(logger.error).mockClear();
+    const answers = await both({
+      method: 'GET',
+      path: MIDSTREAM_PATH,
+      headers: { host: HOSTS.loopback },
+    });
+    expect(answers.hono).toMatchObject({ status: 200, body: 'partly ', complete: false });
+    expect(answers.hono).toEqual(answers.express);
+    expect(logger.error).toHaveBeenCalledWith(
+      '[DorkOS Error]',
+      'failed mid-stream',
+      expect.objectContaining({ path: MIDSTREAM_PATH })
+    );
+  });
+});
+
+describe('odd spellings of a gated path', () => {
+  // Each chain must gate the path its own router would route. Express matches
+  // case-insensitively and without decoding; Hono decodes first and has
+  // already folded dot segments. Neither may hand a credential-less caller a
+  // 2xx under any spelling.
+  const SPELLINGS = [
+    '/API/chain-probe',
+    '/api/CHAIN-PROBE',
+    '/api/chain-probe/',
+    '/api//chain-probe',
+    '/api/chain%2Dprobe',
+    '/api/health/deep/chain-probe/',
+    '/api/health//deep/chain-probe',
+    '/api/HEALTH/DEEP/chain-probe',
+    '/api/health/%64eep/chain-probe',
+    '/api/health/./deep/chain-probe',
+    '/api/health/x/../deep/chain-probe',
+  ];
+
+  for (const spelling of SPELLINGS) {
+    it(`never answers ${spelling} without a credential, login on`, async () => {
+      state.login = true;
+      const answers = await both({
+        method: 'GET',
+        path: spelling,
+        headers: { host: HOSTS.loopback },
+      });
+      // Hono's gate runs before its 404 and judges the folded path, so it
+      // refuses every one. Express routes some spellings nowhere, and its 404
+      // is as safe as a 401.
+      expect(answers.hono.status).toBe(401);
+      expect([401, 404]).toContain(answers.express.status);
+    });
+  }
+
+  it('pins the one routing difference: Hono paths are case-sensitive', async () => {
+    // Express routes `/API/chain-probe` to the probe; Hono finds no route.
+    // Moved groups inherit this (see the module doc of `http/api-chain.ts`).
+    const answers = await both({
+      method: 'GET',
+      path: '/API/chain-probe',
+      headers: { host: HOSTS.loopback },
+    });
+    expect(answers.express.status).toBe(200);
+    expect(answers.hono.status).toBe(404);
   });
 });
