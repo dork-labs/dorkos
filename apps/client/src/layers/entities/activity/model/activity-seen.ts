@@ -56,6 +56,27 @@ export const useActivitySeenStore = create<ActivitySeenState>()((set) => ({
   setViewing: (viewing) => set({ viewing }),
 }));
 
+// Another window opening Activity moves the stored moment; follow it, so this
+// window's count does not go on counting events that person has seen. The
+// `storage` event fires only in the OTHER windows of this origin.
+if (typeof window !== 'undefined') {
+  window.addEventListener('storage', (event) => {
+    if (event.key !== STORAGE_KEY) return;
+    useActivitySeenStore.setState({ lastSeenAt: event.newValue });
+  });
+}
+
+/** How many events happened since you last looked. */
+export interface NewActivityCount {
+  /** The events one read counted, up to {@link NEW_EVENTS_LIMIT}. */
+  count: number;
+  /** Whether there are more than that. */
+  more: boolean;
+}
+
+/** Nothing new, minted once for a stable result. */
+const NOTHING_NEW: NewActivityCount = { count: 0, more: false };
+
 /**
  * How many events happened since you last looked at Activity.
  *
@@ -63,20 +84,23 @@ export const useActivitySeenStore = create<ActivitySeenState>()((set) => ({
  * zero while the page is on screen. Sits under the `['activity']` query root,
  * so whatever refreshes the Activity feed refreshes this too.
  *
- * @returns The count, capped at {@link NEW_EVENTS_LIMIT}.
+ * @returns The count, capped at {@link NEW_EVENTS_LIMIT}, and whether there are more.
  */
-export function useNewActivityCount(): number {
+export function useNewActivityCount(): NewActivityCount {
   const transport = useTransport();
   const lastSeenAt = useActivitySeenStore((state) => state.lastSeenAt);
   const viewing = useActivitySeenStore((state) => state.viewing);
   const { data } = useQuery({
     queryKey: ['activity', 'new-since', lastSeenAt],
     queryFn: () => transport.listActivityEvents({ since: lastSeenAt!, limit: NEW_EVENTS_LIMIT }),
-    select: (page) => page.items.length,
+    select: (page): NewActivityCount => ({
+      count: page.items.length,
+      more: page.nextCursor !== null,
+    }),
     enabled: lastSeenAt !== null && !viewing,
     staleTime: 30_000,
     refetchInterval: 60_000,
     refetchIntervalInBackground: false,
   });
-  return lastSeenAt === null || viewing ? 0 : (data ?? 0);
+  return lastSeenAt === null || viewing ? NOTHING_NEW : (data ?? NOTHING_NEW);
 }

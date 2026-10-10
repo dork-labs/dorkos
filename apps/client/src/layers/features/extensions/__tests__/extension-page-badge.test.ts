@@ -92,6 +92,9 @@ describe('setPageBadge', () => {
     ['a negative count', { count: -1 }],
     ['a fractional count', { count: 0.5 }],
     ['a sentence over 80 characters', { sentence: 'x'.repeat(81) }],
+    ['false, which is not a clear', false],
+    ['zero, which is not a clear', 0],
+    ['an empty string, which is not a clear', ''],
   ])('ignores %s, out loud, and keeps the badge it had', (_name, bad) => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     const { api } = createExtensionAPI('flow', realDeps());
@@ -103,6 +106,28 @@ describe('setPageBadge', () => {
 
     expect(badges()).toEqual({ 'flow:': { count: 1 } });
     expect(warn).toHaveBeenCalledWith(expect.stringMatching(/setPageBadge\(''\) was ignored/));
+  });
+
+  it("clears a page's badge when the page is unregistered", () => {
+    const { api } = createExtensionAPI('flow', realDeps());
+    const unregister = api.registerPage('', Page, { title: 'Flow' });
+    api.setPageBadge('', { status: 'needs-you' });
+
+    unregister();
+
+    expect(badges()).toEqual({});
+  });
+
+  it('keeps the badge when a later registration of the same path replaced the page', () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const { api } = createExtensionAPI('flow', realDeps());
+    const first = api.registerPage('', Page, { title: 'Flow' });
+    api.registerPage('', Page, { title: 'Flow' });
+    api.setPageBadge('', { count: 2 });
+
+    first();
+
+    expect(badges()).toEqual({ 'flow:': { count: 2 } });
   });
 
   it('clears its badges, and only its own, when the extension deactivates', () => {

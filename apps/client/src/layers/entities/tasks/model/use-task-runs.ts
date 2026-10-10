@@ -92,13 +92,26 @@ export function useTaskRun(id: string | null) {
 /** How many of the newest runs the always-on readers look at. */
 const RECENT_RUNS_LIMIT = 50;
 
+/** How often the newest runs are re-read while one of them is still going. */
+const RUNNING_POLL_MS = 10_000;
+
 /**
- * The newest runs across every schedule, newest first, re-read every ten
- * seconds while the window is visible.
+ * How often they are re-read otherwise. A slow fallback only: a failed run
+ * and a late report arrive on the event stream (`useTasksSync` invalidates
+ * this query on `task_run_failed` and `task_run_updated`), but nothing
+ * broadcasts a run starting or finishing well, so this is how long one can
+ * take to show at most.
+ */
+const IDLE_POLL_MS = 5 * 60_000;
+
+/**
+ * The newest runs across every schedule, newest first.
  *
- * One query for every always-mounted reader: the sidebar's running count and
- * the Schedules tab's status (DOR-2820) share its cache entry and its poll,
- * each taking only what it needs through `select`.
+ * One cache entry for every reader: the Schedules tab's status (DOR-2820),
+ * always mounted at the shell, and the Tasks view's running count share it,
+ * each taking only what it needs through `select`. Polls every ten seconds
+ * while a run is going, so it sees that run finish, and every five minutes
+ * otherwise.
  */
 function recentTaskRunsOptions<T>(
   transport: ReturnType<typeof useTransport>,
@@ -110,7 +123,8 @@ function recentTaskRunsOptions<T>(
     queryFn: () => transport.listTaskRuns({ limit: RECENT_RUNS_LIMIT }),
     select,
     enabled,
-    refetchInterval: 10_000,
+    refetchInterval: (query: { state: { data?: TaskRun[] } }) =>
+      query.state.data?.some((run) => run.status === 'running') ? RUNNING_POLL_MS : IDLE_POLL_MS,
     refetchIntervalInBackground: false,
   };
 }

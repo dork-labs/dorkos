@@ -304,6 +304,23 @@ export interface SchedulesBadgeInput {
   running: readonly string[];
 }
 
+/** The longest schedule name a running sentence quotes before it counts instead. */
+const MAX_RUNNING_NAME = 40;
+
+/**
+ * "Morning digest is running" for one schedule with a short name, else a count,
+ * so the sentence stays inside the copy cap whatever a schedule is called.
+ */
+function runningSentence(running: readonly string[]): string {
+  const [only] = running;
+  if (running.length === 1 && only) {
+    const named = `${only} is running`;
+    const fits = only.length <= MAX_RUNNING_NAME && named.split(/\s+/).length <= 15;
+    return fits ? named : '1 schedule is running';
+  }
+  return `${running.length} schedules are running`;
+}
+
 /**
  * The Schedules tab's status: waiting for your OK, then a failed last run,
  * then running. Waiting and failed carry their count; running names the
@@ -337,47 +354,30 @@ export function schedulesBadge(input: SchedulesBadgeInput): RouteBadge | null {
             : `${failed} schedules failed their last run`,
       };
     case 'working':
-      return {
-        status,
-        sentence:
-          input.running.length === 1
-            ? `${input.running[0]} is running`
-            : `${input.running.length} schedules are running`,
-      };
+      return { status, sentence: runningSentence(input.running) };
     default:
       return null;
   }
 }
 
 /**
- * How many schedules want a look: waiting for your OK, or failed their last
- * run. What the window title's `(N)` adds for schedules while it is hidden.
- *
- * @param input - What the schedules are doing.
- */
-export function schedulesAttentionCount(input: SchedulesBadgeInput): number {
-  return Math.max(0, input.waiting) + Math.max(0, input.failed);
-}
-
-/**
  * The Activity tab's count of events since you last opened Activity.
  *
- * @param newCount - Events newer than your last visit.
+ * @param newCount - Events newer than your last visit, as far as one read counts.
+ * @param more - Whether there are more than that one read counted.
  * @returns The badge, or `null` when there is nothing new.
  */
-export function activityBadge(newCount: number): RouteBadge | null {
+export function activityBadge(newCount: number, more = false): RouteBadge | null {
   const count = positive(newCount);
   if (count === undefined) return null;
-  return {
-    status: 'new',
-    count,
-    sentence: `${plural(count, 'new event', 'new events')} since you last looked`,
-  };
+  const counted = more ? `${count}+ new events` : plural(count, 'new event', 'new events');
+  return { status: 'new', count, sentence: `${counted} since you last looked` };
 }
 
 /**
- * The Connections tab's count of requests waiting for your OK: what the
- * Connections page lists under Needs you.
+ * The Connections tab's count of requests waiting for your OK. Narrower than
+ * the page's Needs you list, which also keeps decided requests that still need
+ * a sign-in or a check: the tab counts only what waits for a yes or no.
  *
  * @param waiting - Agents asking to use an app, and programs asking to change
  *   a connection, not yet answered.
@@ -722,7 +722,7 @@ export interface WindowTitleState {
   hidden: boolean;
   /** Whether a reply finished while it was hidden. */
   unseenReply: boolean;
-  /** Unread rooms plus schedules that want a look, shown as `(N)` while hidden. */
+  /** Unread rooms plus schedules waiting for your OK, shown as `(N)` while hidden. */
   badgeCount: number;
   /** Whether anything in the app is blocked on you, beyond this page. */
   needsYou?: boolean;

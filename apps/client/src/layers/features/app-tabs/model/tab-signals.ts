@@ -29,11 +29,8 @@ interface TabSignalsState {
    * The seam pages fill for their tab's status and count.
    */
   routeBadges: Readonly<Record<string, RouteBadge>>;
-  /**
-   * Schedules that want a look (waiting for your OK, or failed their last
-   * run): what the window title's `(N)` adds for schedules.
-   */
-  scheduleAttentionCount: number;
+  /** Schedules waiting for your OK: what the window title's `(N)` adds for schedules. */
+  schedulesWaitingCount: number;
   /** Set how many items are waiting on a person. */
   setNeedsYouCount: (count: number) => void;
   /**
@@ -43,15 +40,15 @@ interface TabSignalsState {
    * @param badge - The status, count and sentence, or `null` to clear.
    */
   setRouteBadge: (path: string, badge: RouteBadge | null) => void;
-  /** Set how many schedules want a look. */
-  setScheduleAttentionCount: (count: number) => void;
+  /** Set how many schedules wait for your OK. */
+  setSchedulesWaitingCount: (count: number) => void;
 }
 
 /** The shared tab facts. Read with a selector; write through the setters. */
 export const useTabSignalsStore = create<TabSignalsState>()((set) => ({
   needsYouCount: 0,
   routeBadges: {},
-  scheduleAttentionCount: 0,
+  schedulesWaitingCount: 0,
   setNeedsYouCount: (count) =>
     set((state) => (state.needsYouCount === count ? state : { needsYouCount: count })),
   setRouteBadge: (path, badge) =>
@@ -62,8 +59,8 @@ export const useTabSignalsStore = create<TabSignalsState>()((set) => ({
       else next[path] = badge;
       return { routeBadges: next };
     }),
-  setScheduleAttentionCount: (count) =>
+  setSchedulesWaitingCount: (count) =>
     set((state) =>
-      state.scheduleAttentionCount === count ? state : { scheduleAttentionCount: count }
+      state.schedulesWaitingCount === count ? state : { schedulesWaitingCount: count }
     ),
 }));

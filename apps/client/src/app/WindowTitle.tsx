@@ -31,9 +31,9 @@ export function WindowTitle({ unreadRoomCount }: WindowTitleProps) {
   useTabSignalsSync();
   const isStreaming = useAppStore((s) => s.isStreaming);
   const isWaitingForUser = useAppStore((s) => s.isWaitingForUser);
-  // `(N)` while hidden: unread rooms plus schedules waiting for your OK or
-  // failed their last run, the two things worth coming back for.
-  const scheduleCount = useTabSignalsStore((s) => s.scheduleAttentionCount);
+  // `(N)` while hidden: unread rooms plus schedules waiting for your OK. A
+  // failed run shows on the Schedules tab, not here.
+  const scheduleCount = useTabSignalsStore((s) => s.schedulesWaitingCount);
   const needsYouCount = useTabSignalsStore((s) => s.needsYouCount);
   const href = useRouterState({ select: (state) => state.location.href });
   const page = useTabIdentity(href);

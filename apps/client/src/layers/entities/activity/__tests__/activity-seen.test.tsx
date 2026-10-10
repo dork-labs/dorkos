@@ -39,17 +39,50 @@ describe('useActivitySeenStore', () => {
   });
 });
 
+describe('another window', () => {
+  it("moves this window's reading position when it opens Activity", () => {
+    useActivitySeenStore.setState({ lastSeenAt: '2026-10-01T00:00:00.000Z' });
+    act(() => {
+      window.dispatchEvent(
+        new StorageEvent('storage', {
+          key: 'dorkos:lastVisitedActivity',
+          newValue: '2026-10-09T12:00:00.000Z',
+        })
+      );
+    });
+    expect(useActivitySeenStore.getState().lastSeenAt).toBe('2026-10-09T12:00:00.000Z');
+  });
+
+  it('ignores other keys', () => {
+    useActivitySeenStore.setState({ lastSeenAt: '2026-10-01T00:00:00.000Z' });
+    act(() => {
+      window.dispatchEvent(new StorageEvent('storage', { key: 'other', newValue: 'x' }));
+    });
+    expect(useActivitySeenStore.getState().lastSeenAt).toBe('2026-10-01T00:00:00.000Z');
+  });
+});
+
 describe('useNewActivityCount', () => {
+  it('says there are more when one read could not count them all', async () => {
+    useActivitySeenStore.setState({ lastSeenAt: '2026-10-09T10:00:00.000Z' });
+    vi.mocked(transport.listActivityEvents).mockResolvedValue({
+      items: items(100),
+      nextCursor: 'next',
+    });
+    const { result } = renderHook(() => useNewActivityCount(), { wrapper });
+    await waitFor(() => expect(result.current).toEqual({ count: 100, more: true }));
+  });
+
   it('counts nothing before your first visit, and asks nothing', () => {
     const { result } = renderHook(() => useNewActivityCount(), { wrapper });
-    expect(result.current).toBe(0);
+    expect(result.current.count).toBe(0);
     expect(transport.listActivityEvents).not.toHaveBeenCalled();
   });
 
   it('counts the events since you last looked', async () => {
     useActivitySeenStore.setState({ lastSeenAt: '2026-10-09T10:00:00.000Z' });
     const { result } = renderHook(() => useNewActivityCount(), { wrapper });
-    await waitFor(() => expect(result.current).toBe(3));
+    await waitFor(() => expect(result.current).toEqual({ count: 3, more: false }));
     expect(transport.listActivityEvents).toHaveBeenCalledWith(
       expect.objectContaining({ since: '2026-10-09T10:00:00.000Z' })
     );
@@ -58,8 +91,8 @@ describe('useNewActivityCount', () => {
   it('counts nothing while the Activity page is on screen', async () => {
     useActivitySeenStore.setState({ lastSeenAt: '2026-10-09T10:00:00.000Z' });
     const { result } = renderHook(() => useNewActivityCount(), { wrapper });
-    await waitFor(() => expect(result.current).toBe(3));
+    await waitFor(() => expect(result.current).toEqual({ count: 3, more: false }));
     act(() => useActivitySeenStore.getState().setViewing(true));
-    expect(result.current).toBe(0);
+    expect(result.current.count).toBe(0);
   });
 });

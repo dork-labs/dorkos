@@ -381,8 +381,10 @@ export interface ExtensionAPI {
    * the sentence in the tab's hover card and accessible name. A badge that
    * fails the check (a status outside `PAGE_BADGE_STATUSES`, a count that is
    * not a whole number 0 or more, a sentence over 80 characters) or names a
-   * page you have not registered is ignored with a console warning. Badges
-   * clear when your extension deactivates.
+   * page you have not registered is ignored with a console warning. A page's
+   * badge clears when the page is unregistered, and every badge when your
+   * extension deactivates. Older hosts lack this method: guard the call with
+   * `typeof api.setPageBadge === 'function'`.
    */
   setPageBadge(path: string, badge: ExtensionPageBadge | null): void;
 

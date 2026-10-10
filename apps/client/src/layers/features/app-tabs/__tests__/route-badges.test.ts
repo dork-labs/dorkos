@@ -3,7 +3,6 @@ import {
   activityBadge,
   connectionsBadge,
   routeTabIdentity,
-  schedulesAttentionCount,
   schedulesBadge,
 } from '../lib/tab-identity';
 
@@ -30,17 +29,14 @@ describe('schedulesBadge', () => {
     expect(schedulesBadge({ waiting: 0, failed: 2, running: ['A'] })?.status).toBe('failed');
   });
 
-  it('keeps every sentence within the copy cap', () => {
-    const long = 'A schedule with a name long enough to wrap';
-    const badge = schedulesBadge({ waiting: 0, failed: 0, running: [long] });
-    expect(badge!.sentence!.split(/\s+/).length).toBeLessThanOrEqual(15);
-  });
-});
-
-describe('schedulesAttentionCount', () => {
-  it('adds the waiting and the failed, never the running', () => {
-    expect(schedulesAttentionCount({ waiting: 2, failed: 1, running: ['A', 'B'] })).toBe(3);
-    expect(schedulesAttentionCount({ waiting: 0, failed: 0, running: ['A'] })).toBe(0);
+  it('counts instead of naming a schedule whose name would run long', () => {
+    const long = 'Summarise every unread email from the last week into one digest';
+    expect(schedulesBadge({ waiting: 0, failed: 0, running: [long] })?.sentence).toBe(
+      '1 schedule is running'
+    );
+    expect(schedulesBadge({ waiting: 0, failed: 0, running: ['x'.repeat(41)] })?.sentence).toBe(
+      '1 schedule is running'
+    );
   });
 });
 
@@ -56,6 +52,14 @@ describe('activityBadge', () => {
       sentence: '1 new event since you last looked',
     });
     expect(activityBadge(4)?.sentence).toBe('4 new events since you last looked');
+  });
+
+  it('says 100+ when one read could not count them all', () => {
+    expect(activityBadge(100, true)).toEqual({
+      status: 'new',
+      count: 100,
+      sentence: '100+ new events since you last looked',
+    });
   });
 });
 

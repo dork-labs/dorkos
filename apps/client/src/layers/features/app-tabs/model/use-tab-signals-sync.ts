@@ -25,7 +25,6 @@ import {
 import {
   activityBadge,
   connectionsBadge,
-  schedulesAttentionCount,
   schedulesBadge,
   type RouteBadge,
 } from '../lib/tab-identity';
@@ -44,9 +43,17 @@ function useRouteBadge(path: string, badge: RouteBadge | null): void {
   }, [path, badge, setRouteBadge]);
 }
 
+/** How often the shell re-reads management requests, which no event announces. */
+const REVIEWS_POLL_MS = 5 * 60_000;
+
+/** Whether a schedule can run now: approved and switched on. */
+function isLive(task: Pick<Task, 'status' | 'enabled'>): boolean {
+  return task.status === 'active' && task.enabled;
+}
+
 /**
  * The Schedules tab: waiting for your OK, a failed last run, or running. Also
- * hands the window title how many schedules want a look.
+ * hands the window title how many schedules wait for your OK.
  *
  * @param waiting - Schedules waiting for your OK, from the waiting queue.
  */
@@ -54,14 +61,16 @@ function useSchedulesBadge(waiting: number): void {
   const { enabled } = useTasksEnabledState();
   const { data: tasks } = useTasks(enabled);
   const { data: runs } = useRecentTaskRuns(enabled);
-  const setScheduleAttention = useTabSignalsStore((state) => state.setScheduleAttentionCount);
+  const setSchedulesWaiting = useTabSignalsStore((state) => state.setSchedulesWaitingCount);
 
   const input = useMemo(() => {
     const summary = summarizeRecentRuns(enabled ? (runs ?? []) : []);
-    const byId = new Map((tasks ?? []).map((task) => [task.id, task]));
+    // Only schedules that can run now. A run whose schedule is gone, paused or
+    // switched off has nothing to fix until it runs again, so its old failure
+    // does not stick to the tab.
+    const byId = new Map((tasks ?? []).filter(isLive).map((task) => [task.id, task]));
     return {
       waiting,
-      // A run whose schedule is gone (deleted since) has nobody to fix it.
       failed: summary.failed.filter((id) => byId.has(id)).length,
       running: summary.running.flatMap((id) => {
         const task = byId.get(id);
@@ -75,23 +84,32 @@ function useSchedulesBadge(waiting: number): void {
   const badge = useMemo(() => schedulesBadge(input), [input]);
   useRouteBadge('/tasks', badge);
 
-  const attention = schedulesAttentionCount(input);
   useEffect(() => {
-    setScheduleAttention(attention);
-  }, [attention, setScheduleAttention]);
+    setSchedulesWaiting(waiting);
+  }, [waiting, setSchedulesWaiting]);
 }
 
 /** The Activity tab: events since you last opened Activity. */
 function useActivityBadge(): void {
-  const count = useNewActivityCount();
-  const badge = useMemo(() => activityBadge(count), [count]);
+  const { count, more } = useNewActivityCount();
+  const badge = useMemo(() => activityBadge(count, more), [count, more]);
   useRouteBadge('/activity', badge);
 }
 
-/** The Connections tab: requests waiting for your OK, as its Needs you lists them. */
+/**
+ * The Connections tab: only requests waiting for your OK. Narrower than the
+ * page's Needs you list, which also keeps decided requests that still need a
+ * sign-in or a check.
+ */
 function useConnectionsBadge(): void {
-  const { data: requests } = useConnectorAgentRequests('pending');
-  const { data: reviews } = useConnectorManagementReviews('pending');
+  const { data: requests, isSuccess: canSee } = useConnectorAgentRequests('pending');
+  // Both lists are the owner's alone. The agent requests read (live on its own
+  // event) answers whether this viewer is the owner; the management requests
+  // are read only once it has, so nobody else logs a refusal every load.
+  const { data: reviews } = useConnectorManagementReviews('pending', {
+    enabled: canSee,
+    refetchInterval: REVIEWS_POLL_MS,
+  });
   const waiting = (requests?.length ?? 0) + (reviews?.length ?? 0);
   const badge = useMemo(() => connectionsBadge(waiting), [waiting]);
   useRouteBadge('/connections', badge);

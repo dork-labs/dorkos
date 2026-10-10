@@ -452,17 +452,21 @@ export function activate(api: ExtensionAPI): void {
 - **`count`** is a whole number, 0 or more. A tab shows one mark at most: the count when there is one, else the dot. A count on `needs-you` or `failed` reads as urgent.
 - **`sentence`** is one plain line for the tab's hover card and its accessible name, at most 80 characters: "2 ideas wait for you".
 
-A badge that fails the check, or names a page you have not registered, is ignored with a console warning; the badge you had stays. Badges clear when your extension deactivates. Use it for "something here wants the person", and clear it once they have looked.
+A badge that fails the check, or names a page you have not registered, is ignored with a console warning; the badge you had stays. A page's badge clears when you unregister the page, and all your badges clear when your extension deactivates. Use it for "something here wants the person", and clear it once they have looked.
+
+Older DorkOS versions do not have `setPageBadge`. Check for it before calling, as with any newer method (see [Feature detection](#feature-detection)):
 
 ```typescript
 api.registerPage('', FlowHome, { title: 'Flow' });
 const waiting = decisionsWaiting();
-api.setPageBadge(
-  '',
-  waiting > 0
-    ? { status: 'needs-you', count: waiting, sentence: `${waiting} ideas wait for you` }
-    : null
-);
+if (typeof api.setPageBadge === 'function') {
+  api.setPageBadge(
+    '',
+    waiting > 0
+      ? { status: 'needs-you', count: waiting, sentence: `${waiting} ideas wait for you` }
+      : null
+  );
+}
 ```
 
 ### The status bar

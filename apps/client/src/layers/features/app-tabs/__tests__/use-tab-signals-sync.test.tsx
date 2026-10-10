@@ -36,7 +36,15 @@ function wrapper({ children }: { children: ReactNode }) {
   );
 }
 
-const task = (id: string, name: string) => ({ id, name, displayName: null }) as unknown as Task;
+const task = (id: string, name: string, overrides: Partial<Task> = {}) =>
+  ({
+    id,
+    name,
+    displayName: null,
+    status: 'active',
+    enabled: true,
+    ...overrides,
+  }) as unknown as Task;
 const run = (scheduleId: string, status: TaskRun['status']) =>
   ({ id: `${scheduleId}-${status}`, scheduleId, status }) as TaskRun;
 const badge = (path: string) => useTabSignalsStore.getState().routeBadges[path];
@@ -44,7 +52,7 @@ const badge = (path: string) => useTabSignalsStore.getState().routeBadges[path];
 beforeEach(() => {
   vi.clearAllMocks();
   waitingSchedules.mockReturnValue([]);
-  useTabSignalsStore.setState({ needsYouCount: 0, routeBadges: {}, scheduleAttentionCount: 0 });
+  useTabSignalsStore.setState({ needsYouCount: 0, routeBadges: {}, schedulesWaitingCount: 0 });
   useActivitySeenStore.setState({ lastSeenAt: null, viewing: false });
   vi.mocked(transport.listTasks).mockResolvedValue([
     task('digest', 'Morning digest'),
@@ -61,7 +69,7 @@ describe('useTabSignalsSync', () => {
     );
   });
 
-  it('counts schedules whose last run failed, and hands the count to the title', async () => {
+  it('counts schedules whose last run failed, and leaves them out of the title', async () => {
     vi.mocked(transport.listTaskRuns).mockResolvedValue([
       run('digest', 'failed'),
       run('inbox', 'completed'),
@@ -71,14 +79,42 @@ describe('useTabSignalsSync', () => {
     ]);
     renderHook(() => useTabSignalsSync(), { wrapper });
     await waitFor(() => expect(badge('/tasks')).toMatchObject({ status: 'failed', count: 1 }));
-    expect(useTabSignalsStore.getState().scheduleAttentionCount).toBe(1);
+    // A failure shows on the Schedules tab; the title's (N) counts only waiting.
+    expect(useTabSignalsStore.getState().schedulesWaitingCount).toBe(0);
   });
 
-  it('puts schedules waiting for your OK first, and counts them in the title too', async () => {
+  it.each([
+    ['paused', { status: 'paused' as const }],
+    ['switched off', { enabled: false }],
+  ])('forgets the old failure of a schedule that is %s', async (_name, overrides) => {
+    vi.mocked(transport.listTasks).mockResolvedValue([
+      task('digest', 'Morning digest', overrides),
+      task('inbox', 'Inbox sweep'),
+    ]);
+    vi.mocked(transport.listTaskRuns).mockResolvedValue([
+      run('digest', 'failed'),
+      run('inbox', 'failed'),
+    ]);
+    renderHook(() => useTabSignalsSync(), { wrapper });
+    await waitFor(() => expect(badge('/tasks')).toMatchObject({ status: 'failed', count: 1 }));
+  });
+
+  it('does not say a paused schedule is running', async () => {
+    vi.mocked(transport.listTasks).mockResolvedValue([
+      task('digest', 'Morning digest', { status: 'paused' }),
+    ]);
+    vi.mocked(transport.listTaskRuns).mockResolvedValue([run('digest', 'running')]);
+    renderHook(() => useTabSignalsSync(), { wrapper });
+    await waitFor(() => expect(transport.listTaskRuns).toHaveBeenCalled());
+    await waitFor(() => expect(transport.listTasks).toHaveBeenCalled());
+    expect(badge('/tasks')).toBeUndefined();
+  });
+
+  it('puts schedules waiting for your OK first, and counts only them in the title', async () => {
     waitingSchedules.mockReturnValue([task('new', 'Weekly report')]);
     vi.mocked(transport.listTaskRuns).mockResolvedValue([run('digest', 'failed')]);
     renderHook(() => useTabSignalsSync(), { wrapper });
-    await waitFor(() => expect(useTabSignalsStore.getState().scheduleAttentionCount).toBe(2));
+    await waitFor(() => expect(useTabSignalsStore.getState().schedulesWaitingCount).toBe(1));
     expect(badge('/tasks')).toMatchObject({ status: 'needs-you', count: 1 });
   });
 
@@ -91,6 +127,23 @@ describe('useTabSignalsSync', () => {
     await waitFor(() =>
       expect(badge('/connections')).toMatchObject({ status: 'needs-you', count: 2 })
     );
+  });
+
+  it('reads management requests only once the viewer can read agent requests', async () => {
+    vi.mocked(transport.getConnectorAgentRequests).mockRejectedValue(new Error('owner only'));
+    renderHook(() => useTabSignalsSync(), { wrapper });
+    await waitFor(() => expect(transport.getConnectorAgentRequests).toHaveBeenCalled());
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(transport.getConnectorManagementReviews).not.toHaveBeenCalled();
+  });
+
+  it('adds management requests waiting for the owner', async () => {
+    vi.mocked(transport.getConnectorAgentRequests).mockResolvedValue([
+      {} as ConnectorAgentRequestItem,
+    ]);
+    vi.mocked(transport.getConnectorManagementReviews).mockResolvedValue([{}] as never);
+    renderHook(() => useTabSignalsSync(), { wrapper });
+    await waitFor(() => expect(badge('/connections')).toMatchObject({ count: 2 }));
   });
 
   it('counts what is new on the Activity tab since you last looked', async () => {

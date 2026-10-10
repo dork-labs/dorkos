@@ -19,12 +19,7 @@ import type {
   StatusBarSlotContext,
   StartWorkInput,
 } from '@dorkos/extension-api';
-import {
-  copyPageBadge,
-  isExtensionEventDeclared,
-  pageBadgeProblem,
-  StartWorkError,
-} from '@dorkos/extension-api';
+import { isExtensionEventDeclared, StartWorkError } from '@dorkos/extension-api';
 import type { UiCommand, UiCanvasContent } from '@dorkos/shared/types';
 import {
   DecisionActionResponseSchema,
@@ -51,6 +46,7 @@ import {
 import { toast } from 'sonner';
 import type { ExtensionAPIDeps } from './types';
 import { extensionApiUrl } from './extension-api-url';
+import { applyPageBadge } from './page-badge';
 
 /** Default priority for extension contributions (mid-range, after built-ins). */
 const DEFAULT_PRIORITY = 50;
@@ -232,7 +228,14 @@ export function createExtensionAPI(
         icon: options.icon,
         menu: options.menu !== false,
       };
-      const unsub = deps.registry.register('pages', contribution);
+      const unregister = deps.registry.register('pages', contribution);
+      // The page's badge goes with it, unless a later registration of the
+      // same path replaced it and now owns the badge.
+      const unsub = () => {
+        unregister();
+        const pages = deps.registry.getContributions('pages');
+        if (!pages.some((page) => page.id === id)) deps.registry.setPageBadge(id, null);
+      };
       cleanups.push(unsub);
       return unsub;
     },
@@ -281,19 +284,11 @@ export function createExtensionAPI(
     },
 
     setPageBadge(path: string, badge: ExtensionPageBadge | null): void {
-      const contributionId = `${extId}:${path}`;
-      const owned = deps.registry.getContributions('pages').some((c) => c.id === contributionId);
-      const problem = owned ? badge && pageBadgeProblem(badge) : 'that page is not registered';
-      if (problem) {
-        console.warn(`[extensions] ${extId}: setPageBadge('${path}') was ignored: ${problem}`);
-        return;
-      }
       // Kept apart from the page, so cleared with the extension; queued once.
-      if (!badgesQueuedForCleanup) {
+      if (applyPageBadge(extId, deps.registry, path, badge) && !badgesQueuedForCleanup) {
         badgesQueuedForCleanup = true;
         cleanups.push(() => deps.registry.clearPageBadges(extId));
       }
-      deps.registry.setPageBadge(contributionId, badge && copyPageBadge(badge));
     },
 
     executeCommand(command: UiCommand): void {
