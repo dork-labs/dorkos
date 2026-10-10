@@ -141,7 +141,7 @@ Files: `packages/shared/src/permissions/{permission-ids,permission-presets,permi
 
 PR2, retiring the acknowledgement (no default changes):
 
-- As built: `needsConsentRitual` is renamed `actsWithoutAsking` rather than deleted, because four readers outlive the ritual (the conformance rule that no runtime is born at such a mode, the Always-allow card that may not adopt one, `session_start`'s rule that such a level is named rather than inherited, the scope notes). The `0.101.0` key deletes `ui.autonomyAcknowledgedAt` (`dropAutonomyAcknowledgement`); the frozen `0.57.0` body that once seeded it is untouched. Request fields `acknowledgedAutonomy` / `acknowledgeAutonomy` leave every schema; an old client sending them is ignored.
+- As built: `needsConsentRitual` is renamed `actsWithoutAsking` rather than deleted, because four readers outlive the ritual (the conformance rule that no runtime is born at such a mode, the Always-allow card that may not adopt one, `session_start`'s rule that such a level is named rather than inherited, the scope notes). The `0.102.0` key deletes `ui.autonomyAcknowledgedAt` (`dropAutonomyAcknowledgement`); the frozen `0.57.0` body that once seeded it is untouched. Request fields `acknowledgedAutonomy` / `acknowledgeAutonomy` leave every schema; an old client sending them is ignored.
 - Delete `services/core/approvals/autonomy-consent.ts` and every 428: `routes/sessions.ts:813`, `permission-service.ts:585,695`, `permission-undo.ts:330`, `config-write-policy.ts`, `operator/config-write.ts`, `session-store.ts`, `session-start-permission.ts` (`hasStandingAutonomyAck`), OpenAPI (`openapi-registry.ts`), `packages/shared/src/permission-semantics.ts` (`needsConsentRitual` and its four consumers), `packages/cli/src/{config-write.ts,config-commands.ts,commands/permissions.ts}` (the `acknowledge-autonomy` command is removed), client `features/chat/.../AutonomyConfirmDialog.tsx`, `use-autonomy-consent.ts`, `use-autonomy-acknowledgement.ts`, `use-trust-stop-writes.ts`, `use-set-permission.ts`, `use-session-status.ts`, `ChatStatusSection.tsx`, `FullPowerDoor.tsx` (stops writing the ack).
 - Config: `ui.autonomyAcknowledgedAt` leaves the schema, is declared retired so the first write drops it, and leaves `SAFE_DEFAULTS`. PR2's migration deletes the key from disk.
 - The relay binding dialog and the schedule form stop opening a consent dialog before Full autonomy; picking it is a normal choice, recorded by the audit trail.
@@ -192,7 +192,7 @@ Cancel window for `connectors.execute_destructive`:
 
 ### 5.7 Config migration (PR4)
 
-Key: the next free key above the newest `v*` tag at landing time (today `0.102.0`; PR2 takes `0.101.0`). Pin it in `merged-migration-hashes.ts`. Body `applyTrustedPosture(store)` in `config-manager.ts`:
+Key: the next free key above the newest `v*` tag at landing time (today `0.103.0`; PR2 takes `0.102.0`). Pin it in `merged-migration-hashes.ts`. Body `applyTrustedPosture(store)` in `config-manager.ts`:
 
 1. **Careful intent** = `permissions.preset === 'careful'`, or `preset == null && ui.fullPowerChoice === 'supervised'`. Then: set `preset: 'careful'` if it was `null`, set `ui.trustNoticeSeenAt` to now, change nothing else.
 2. **Otherwise** (`null`, `'balanced'`, `'full'`, or a hand-written unknown):
