@@ -77,6 +77,27 @@ The request scope is lazy: the actor and credential are read the first time some
 - The actor is named explicitly on each row: an async generator's body runs in its consumer's ALS context, so the scope is not reliable there.
 - Target extraction is `toolTarget`; add a tool shape there with a row in its test table. Never record a full input or output: the transcript already has it. A target is swept for secrets before it is cut short, and the writer sweeps `target.id` as well as `target.name`.
 
+## Pausing an agent (PR5)
+
+`services/mesh/pause/` holds the lever: `AgentPauseService` (`agent-pause.ts`), the backstop (`hold-paused-turns.ts`) and the capabilities (`pause-capabilities.ts`). Current state is one row per paused agent in `agent_pauses` (`packages/db/src/schema/mesh.ts`), held in memory and written through, so a pause survives a restart; the history is the audit rows below.
+
+| Row                                                                                 | Written by                            | Actor                                       |
+| ----------------------------------------------------------------------------------- | ------------------------------------- | ------------------------------------------- |
+| `agent.paused` (`change: paused false→true`, `reason`)                              | `AgentPauseService.pause`             | whoever paused it (the capability's caller) |
+| `agent.resumed`, `outcome: ok` or `refused` with `error: CANNOT_RESUME_SELF`        | `AgentPauseService.resume`            | whoever asked                               |
+| `agent.turn_held` (`outcome: refused`, `error: AGENT_PAUSED`), one per held trigger | `recordHeld`, from each refusal point | `system`                                    |
+
+Rules a change here must keep:
+
+- **The hold is at the runtime seam.** `holdPausedAgents` is the outermost decorator in `decorateRuntime`, so a paused agent starts no turn from any surface, on any runtime, including one added later. It resolves the agent exactly as `toolActorOf` does (`resolveAgentHome(cwd, turnAgentOf(opts))`), so a worktree or managed checkout of the agent counts. It also remembers every live turn, which is how a pause interrupts them (`runtime.interruptQuery`) without a per-runtime list, and which agent each session it ran belongs to. It intercepts `sendMessage`, `executeCommandIntent` (a summary is a turn), `deliverIntoTurn` and `canStageSession` (a steer is refused as `stream-closed` and a stage as `unsupported`, so neither boots the agent's process; the queued message then meets the hold) and `onRuntimeTurn`: a turn the agent opens on its own (a helper reporting back, a wake-up timer) has no dispatch to refuse, so it is stopped as it opens and its session ended. A pause marks each tracked turn `stopRequested` whatever its runtime answered, because a turn still launching (signing in, reading settings) answers `not-running`; the hold reads the latch at the turn's next event, ends the session and throws. A refused queued message reaches the chat as an `AGENT_PAUSED` error event (the agent id in `reason`, no stack), which the app renders as the paused notice with Resume. Doe's `runBeat` never passes `sendMessage`, so it checks the pause itself. With no folder in a turn's options, it reads the session's stored one (`getSessionCwd`).
+- **A pause ends the agent's sessions, not just its turns.** `AgentRuntime.endSessionsWhere` (required on every runtime, conformance E1/E2) ends every session the runtime holds live from its OWN records: the turn, the background helpers and shells, the warm process and its timers. Claude Code evicts the process; Codex stops the background work and unloads the thread; OpenCode and Doe have only turns. The count a pause reports is the sessions whose stop was acknowledged.
+- **Entry points refuse earlier, with a clearer answer**, and each records its one `agent.turn_held`: `launch-session.ts` (a message: `AGENT_PAUSED`, `409` with `agentId`, the app offers Resume), the scheduler (a `skipped` run, `AGENT_PAUSED_SKIP_REASON`, Run now included), the room runner (throws `AgentPausedError`; the room writes one `agent_paused` notice per pause, keyed to `pausedAt`). A scheduled task writes one `agent.turn_held` per pause, its later skipped fires only their run rows. Relay and connector deliveries rely on the backstop.
+- **Held triggers are never replayed** on resume.
+- **Unregistering drops the pause** (`unregister-cascade.ts` calls `AgentPauseService.forget`), so no row outlives its agent.
+- **The limit:** a request with no agent token is treated as the person, so a process the agent started outside any runtime's records (a detached script) could call the API as the person, `resume` included. `endSessionsWhere` closes the processes DorkOS knows about; `docs/guides/agents.mdx` states the rest.
+- **Nobody lifts their own pause.** `resume` refuses an agent actor whose id is the paused agent's, and an `unidentified` caller (it could be that agent). Anyone may pause anyone, DorkBot included.
+- **No approval card, ever.** `agent.pause` and `agent.resume` are `act` with no area, and `NEVER_ASKS_ACTIONS` in `permission-enforcement.ts` keeps them out of every area even if one is declared. A revoked identity is still refused by the tier gate.
+
 ## One or the other, never both
 
 A choke point records an action in ONE of two ways:

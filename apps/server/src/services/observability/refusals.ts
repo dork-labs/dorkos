@@ -119,6 +119,12 @@ export const REFUSAL_REASONS = {
    * something back on. `detail.runtime` names which.
    */
   runtime_gone: 'the runtime this conversation started on is not running here',
+  /**
+   * Somebody paused the agent everywhere (spec `audit-trail` PR5), so no turn
+   * started. Not a fault: a person or an agent chose it, and the audit log
+   * names who.
+   */
+  agent_paused: 'the agent is paused',
   /** A prompt only a person can answer expired, and was denied by the clock. */
   interaction_expired: 'nobody answered the prompt in time',
   /**

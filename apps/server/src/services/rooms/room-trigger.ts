@@ -179,6 +179,7 @@ import {
 } from './room-claims.js';
 import { toAuthorRef } from './author-registry.js';
 import { ceilingForEntries, isEntryAuthorExternal } from './limits/turn-ceiling.js';
+import { turnRefusalOf } from './turn-guards/paused-turn.js';
 import { isLiveAuthor } from './handles/author-handles.js';
 import {
   evaluateCascade,
@@ -200,11 +201,7 @@ import { usageLimitNow } from './notices/usage-limit.js';
 import { TurnReceipts } from './receipts/turn-receipts.js';
 import { roomLaunchStepFor } from './repo/room-launch-step.js';
 import type { RoomDispatchSummary, RoomTriggerDeps } from './service/room-trigger-deps.js';
-import {
-  RoomTurnRuntimeGoneError,
-  type LateRoomReply,
-  type RoomTurnReply,
-} from './room-turn-port.js';
+import { type LateRoomReply, type RoomTurnReply } from './room-turn-port.js';
 
 // Re-exported rather than redefined. The turn port moved to its own module
 // (`room-turn-port.ts`), and the room service plus every rooms test imports it
@@ -2233,21 +2230,20 @@ export class RoomTriggerDispatcher {
       // had ever opened, and named neither the program nor a way back. The
       // runner's refusal carries the runtime, which is exactly what the
       // `runtime_gone` line is written out of.
-      const runtimeGone = err instanceof RoomTurnRuntimeGoneError ? err.runtime : null;
+      // A paused agent is not a failure either: somebody chose it, and the
+      // room says so once per pause (spec `audit-trail` PR5).
+      const refused = turnRefusalOf(err);
       // A turn that threw because somebody stopped it did what it was told. The
       // `halted` notice is already on the log and is the whole story; an
       // apology under it would be the room reporting the person's own control
       // action back to them as a fault.
       if (this.wasHalted(target.dispatchId)) outcome = 'halted';
-      else if (runtimeGone !== null) {
+      else if (refused) {
         // Named on the claim as well as in the room: `DISPATCH_OUTCOMES` files
-        // this as `refused` rather than `failed`, so an operator counting
-        // crashes in the debug buffer does not find a missing runtime among
-        // them.
-        outcome = 'runtime-gone';
-        this.notices.reportSilence(room, entry, target, 'runtime-gone', target.dispatchId, {
-          runtime: runtimeGone,
-        });
+        // both as `refused` rather than `failed`, so an operator counting
+        // crashes in the debug buffer does not find a refusal among them.
+        outcome = refused.reason;
+        this.notices.reportSilence(room, entry, target, refused.reason, target.dispatchId, refused);
       } else this.notices.reportSilence(room, entry, target, 'failed', target.dispatchId);
     } finally {
       // `runner.run()` resolving is the end of the WAIT, which is only the end

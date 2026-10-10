@@ -24,6 +24,7 @@ The record also holds things that never show in Activity:
 - every DorkOS tool an agent runs that changes something, after it ran, and whether it worked
 - every setting that changed, with its old and new value
 - packages installed, updated or removed, and updates that failed
+- agents being paused and resumed, who did it and why, and each piece of work a pause held back
 - work merged into a room's files, and who merged it
 - API keys created or revoked, and the sign-in tokens DorkOS gives agents
 - sign-ins, sign-outs, sign-ins that expired or were revoked, and failed sign-ins
@@ -78,6 +79,12 @@ dorkos call audit.account_timeline --input '{"accountId":"<agent id>"}'
 ```
 
 Your agents have the same reads as tools: `audit_query` to search the record, `audit_get` for one line and what it points to, `account_timeline` for one agent's or person's history, and `transcript_read` to read an agent's work chat.
+
+## Acting on what you see
+
+If the record shows an agent doing something it shouldn't, you can stop it everywhere at once: pause it from its profile, or ask any of your agents to. See [Pausing an Agent](/docs/guides/agents#pausing-an-agent).
+
+The record then shows who paused it and why, each piece of work the pause held back, and who lifted the pause. An agent can't lift its own pause, and the record keeps a line when one tries.
 
 ## Activity and the record
 

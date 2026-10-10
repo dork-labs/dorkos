@@ -25,7 +25,7 @@ import {
   evaluateSessionListStream,
   sessionListSilenceWaived,
   sessionListWaitMs,
-} from '../runtime-conformance.js';
+} from '../runtime-conformance-session-list.js';
 
 /** A session-list event that satisfies `SessionListEventSchema`. */
 const VALID_EVENT: SessionListEvent = {

@@ -1,6 +1,7 @@
 /**
  * Cascade: revoke an agent's identity tokens the moment it is deleted or
- * unregistered (spec `agent-trust` §3.1, DOR-490).
+ * unregistered (spec `agent-trust` §3.1, DOR-490), and drop its pause, if it
+ * has one (spec `audit-trail` PR5).
  *
  * `AgentIdentityService.revoke` used to have zero production callers, so an
  * operator's decision to remove an agent had no effect on that agent's
@@ -17,12 +18,13 @@
  * @module services/core/agent-identity/unregister-cascade
  */
 import { recordAudit } from '../../audit/audit-trail.js';
+import { agentPause } from '../../mesh/pause/agent-pause.js';
 import type { Logger } from '@dorkos/shared/logger';
 import type { AgentIdentityService } from './agent-identity-service.js';
 
 /**
  * Build the `MeshCore.onUnregister` callback that revokes an unregistered
- * agent's identity tokens.
+ * agent's identity tokens and drops its pause.
  *
  * Reads the identity service lazily (a getter, not the instance itself) for
  * the same reason every other consumer of the process-wide singleton does:
@@ -42,6 +44,16 @@ export function createAgentIdentityUnregisterCascade(
   logger: Pick<Logger, 'info' | 'warn'>
 ): (agentId: string, agentPath: string) => void {
   return (agentId, agentPath) => {
+    // A removed agent is no longer paused: its pause row goes with it, so a
+    // later agent under the same id does not inherit it (spec `audit-trail` PR5).
+    try {
+      agentPause()?.forget(agentId);
+    } catch (err) {
+      logger.warn('[AgentIdentity] Could not drop the pause of an unregistered agent', {
+        agentId,
+        reason: err instanceof Error ? err.message : String(err),
+      });
+    }
     const service = getService();
     if (!service) return;
     service

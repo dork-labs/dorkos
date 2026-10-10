@@ -1097,7 +1097,8 @@ registry.registerPath({
         'Refused before anything started, for where the turn would run ' +
         '(`DESK_NOT_OWN`, `ROOM_SESSION_MOVED`), or because the account may not work in ' +
         'this project (`account_not_allowed_here`, whose body also names `project` and ' +
-        '`accountId`); the body says what to do instead',
+        '`accountId`), or because the agent is paused (`AGENT_PAUSED`, whose body also ' +
+        'names `agentId`); the body says what to do instead',
       content: { 'application/json': { schema: ErrorResponseSchema } },
     },
   },

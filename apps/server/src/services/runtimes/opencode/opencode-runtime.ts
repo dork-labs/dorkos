@@ -56,7 +56,9 @@ import type {
   ManagedMcpServerResolver,
   SessionUpdateResult,
   TurnPermissionCeiling,
+  LiveSessionRef,
 } from '@dorkos/shared/agent-runtime';
+import { picksSession } from '@dorkos/shared/agent-runtime';
 import type {
   SessionSnapshot,
   SessionEvent,
@@ -134,11 +136,9 @@ import type {
 } from '../../connectors/runtime-principal-port.js';
 import { ConnectorTurnLeaseManager, type ConnectorTurnLease } from './mcp/connector-turn-lease.js';
 import {
-  OPENCODE_CREDITS_PROVIDER_ID,
   OPENCODE_LABEL,
   OPENCODE_OWN_PLAN,
   OpenCodeSwitchPendingError,
-  creditsModelFor,
   openCodeRunsOnCredits,
   type OpenCodeSidecarPlan,
 } from './credits-sidecar.js';
@@ -152,6 +152,7 @@ import {
   decideCreditsLaunchModel,
   type CreditsModelDecision,
 } from '../../core/cloud/credits-models.js';
+import { creditsModelIdOf, creditsPromptModel, creditsSelection } from './credits-mode.js';
 import {
   ConnectorTurnLeaseSupervisor,
   type ConnectorTurnLeaseSupervisorHandle,
@@ -1000,6 +1001,23 @@ export class OpenCodeRuntime implements AgentRuntime {
   /**
    * @inheritdoc
    *
+   * Live here is a turn in flight: the sidecar is shared by every OpenCode
+   * session and keeps no background work of a session's own between turns,
+   * so stopping the turn ends the session's work.
+   */
+  async endSessionsWhere(belongs: (session: LiveSessionRef) => boolean): Promise<string[]> {
+    const ended: string[] = [];
+    for (const [sessionId, turn] of [...this.activeTurns]) {
+      if (!picksSession(belongs, { sessionId, cwd: turn.cwd })) continue;
+      const receipt = await this.interruptQuery(sessionId).catch(() => undefined);
+      if (receipt?.outcome === 'acked' || receipt?.outcome === 'closed') ended.push(sessionId);
+    }
+    return ended;
+  }
+
+  /**
+   * @inheritdoc
+   *
    * Aborts the in-flight turn via `POST /session/{id}/abort`, bounded by
    * {@link awaitAbortAck} (DOR-1299): a wedged sidecar drops the request the
    * same way an ended stdin drops claude-code's, and nothing then answers it,
@@ -1589,42 +1607,4 @@ export class OpenCodeRuntime implements AgentRuntime {
     if (tracked.model !== undefined) session.model = tracked.model;
     if (tracked.fastMode !== undefined) session.fastMode = tracked.fastMode;
   }
-}
-
-/**
- * The credits model id a session's OpenCode selection names: the id after the
- * credits provider's prefix, or the selection as stored when it names another
- * provider (which credits never serve), or `undefined` for none.
- *
- * @param selected - The session's model setting (`provider/model`), if any.
- */
-function creditsModelIdOf(selected: string | undefined): string | undefined {
-  const prefix = `${OPENCODE_CREDITS_PROVIDER_ID}/`;
-  return selected?.startsWith(prefix) ? selected.slice(prefix.length) : selected;
-}
-
-/**
- * The OpenCode selection (`provider/model`) for one credits model id.
- *
- * @param id - A credits model id.
- */
-function creditsSelection(id: string): string {
-  return `${OPENCODE_CREDITS_PROVIDER_ID}/${id}`;
-}
-
-/**
- * The `{providerID, modelID}` a credits turn sends: the session's model when it
- * is one of the credits models, else the default one.
- *
- * @param selected - The session's model setting.
- * @param plan - The credits plan the sidecar runs on.
- * @throws {CreditsUnavailableError} When the plan has no model at all.
- */
-function creditsPromptModel(
-  selected: string | undefined,
-  plan: OpenCodeSidecarPlan
-): { providerID: string; modelID: string } {
-  const modelID = creditsModelFor(selected, plan.models);
-  if (modelID === null) throw new CreditsUnavailableError('unreachable', OPENCODE_LABEL);
-  return { providerID: OPENCODE_CREDITS_PROVIDER_ID, modelID };
 }

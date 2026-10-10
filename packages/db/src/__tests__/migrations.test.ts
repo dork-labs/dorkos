@@ -140,6 +140,9 @@ describe('Database Migrations', () => {
       // mesh reconciler's rebuild-from-files cannot orphan them
       // (agent-trust spec §3.1, migration 0030).
       'agent_identity_tokens',
+      // Agents paused everywhere, current state only; history is audit rows
+      // (spec audit-trail PR5).
+      'agent_pauses',
       'agents',
       'apikey',
       // Approval records for capability invocations that need a person's

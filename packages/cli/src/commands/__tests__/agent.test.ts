@@ -280,3 +280,32 @@ describe('runAgentDispatcher', () => {
     expect(apiCallMock).toHaveBeenCalledWith('GET', '/api/mesh/agents');
   });
 });
+
+describe('dorkos agent pause|resume (spec audit-trail PR5)', () => {
+  it('pauses through the pause route, with the reason', async () => {
+    apiCallMock.mockResolvedValue({ agentId: 'a1', paused: true, changed: true });
+    const code = await runAgentDispatcher(['pause', 'a1', '--reason', 'looping']);
+    expect(code).toBe(0);
+    expect(apiCallMock).toHaveBeenCalledWith('POST', '/api/agents/a1/pause', {
+      reason: 'looping',
+    });
+  });
+
+  it('resumes through the resume route', async () => {
+    apiCallMock.mockResolvedValue({ agentId: 'a1', paused: false, changed: true });
+    expect(await runAgentDispatcher(['resume', 'a1'])).toBe(0);
+    expect(apiCallMock).toHaveBeenCalledWith('POST', '/api/agents/a1/resume', {});
+  });
+
+  it('exits 1 with the server sentence when an agent tries to resume itself', async () => {
+    apiCallMock.mockRejectedValue(
+      new ApiError(403, { error: "An agent can't lift its own pause.", code: 'CANNOT_RESUME_SELF' })
+    );
+    expect(await runAgentDispatcher(['resume', 'a1'])).toBe(1);
+  });
+
+  it('needs an id', async () => {
+    expect(await runAgentDispatcher(['pause'])).toBe(1);
+    expect(apiCallMock).not.toHaveBeenCalled();
+  });
+});

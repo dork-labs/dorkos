@@ -129,6 +129,10 @@ export const ROOM_RECEIPT_EMOJI = '👀';
  *   there is no session to go and read, and nothing changes until a person acts
  *   — and the line names WHICH program and both recoveries, because until
  *   DOR-1720 that was folklore rather than something the room ever said.
+ * - `agent_paused` — somebody paused this agent everywhere (spec `audit-trail`
+ *   PR5), so the room started no turn for it. Said once per pause in a room,
+ *   and again only to a person who asks it directly; nothing it missed is
+ *   replayed when the pause is lifted.
  * - `agent_left` — the message was gathered and a turn was owed for it, and by
  *   the time that batch came round the member was no longer in the room. Its own
  *   code rather than `agent_gone` because the agent is fine — it is still
@@ -198,6 +202,7 @@ export const RoomNoticeCodeSchema = z
     'agent_unavailable',
     'agent_left',
     'runtime_gone',
+    'agent_paused',
     'agent_declined',
     'awaiting_approval',
     'halted',

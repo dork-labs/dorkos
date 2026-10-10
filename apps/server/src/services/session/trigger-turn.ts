@@ -119,6 +119,7 @@ import { awaitDispatchDecision } from './launch/dispatch-decision.js';
 import { SESSIONS } from '../../config/constants.js';
 import { startSpan, SPAN, ATTR } from '../observability/index.js';
 import { logError, logger } from '../../lib/logger.js';
+import { AGENT_PAUSED_CODE } from '@dorkos/shared/mesh-schemas';
 import type {
   PrivateSessionMessageClaimResult,
   PreparedPrivateSessionMessage,
@@ -1145,6 +1146,28 @@ export async function* tapEachEvent(
 }
 
 /**
+ * The error a turn refused because its agent is paused rides the stream as:
+ * its own code, the agent's id in `reason` (the app offers Resume for it), and
+ * no category or stack, because nothing broke (spec `audit-trail` PR5). Read
+ * by its code, so this module need not load the pause service. `undefined`
+ * for every other failure.
+ */
+function pausedErrorEvent(err: unknown): StreamEvent | undefined {
+  if (!(err instanceof Error) || (err as Error & { code?: unknown }).code !== AGENT_PAUSED_CODE) {
+    return undefined;
+  }
+  const agentId = (err as Error & { agent?: { id?: unknown } }).agent?.id;
+  return {
+    type: 'error',
+    data: {
+      message: err.message,
+      code: AGENT_PAUSED_CODE,
+      ...(typeof agentId === 'string' ? { reason: agentId } : {}),
+    },
+  };
+}
+
+/**
  * Forward a turn's `StreamEvent`s, translating a source throw into a clean
  * terminal sequence so `feedProjector` never sees a rejection (it would emit a
  * reason-less `turn_end` from its own `finally` AND leave the consumer racing a
@@ -1188,7 +1211,7 @@ export async function* guardTurnErrors(
     // normalizer projects it onto the turn: rendered inline live, latched into
     // SessionStatus.lastError, and reconstructed into log-backed history.
     const errorMessage = err instanceof Error ? err.message : String(err);
-    yield {
+    yield pausedErrorEvent(err) ?? {
       type: 'error',
       data: {
         message: errorMessage,

@@ -1013,6 +1013,52 @@ describe('the kebab', () => {
     expect(screen.getByRole('menuitem', { name: 'Delete agent and data' })).toBeInTheDocument();
   });
 
+  // Spec `audit-trail` PR5: any agent can be paused everywhere, DorkBot too,
+  // and anyone but the agent itself can lift it.
+  it('pauses an agent everywhere from its profile, with a reason', async () => {
+    const transport = mockTransport();
+    await renderProfile(MANAGED, { transport });
+
+    await userEvent.click(screen.getByRole('button', { name: 'Actions for Warden' }));
+    await userEvent.click(await screen.findByRole('menuitem', { name: 'Pause everywhere' }));
+    await userEvent.type(await screen.findByTestId('pause-reason-input'), 'looping');
+    await userEvent.click(screen.getByRole('button', { name: 'Pause agent' }));
+
+    await waitFor(() =>
+      expect(transport.pauseAgent).toHaveBeenCalledWith(MANAGED.agent!.manifestId, 'looping')
+    );
+    expect(toasts.message).toHaveBeenCalledWith('Warden paused');
+  });
+
+  it('offers Resume on a paused agent, shows it as paused, and resumes it', async () => {
+    const transport = mockTransport({
+      listAgentPauses: vi.fn().mockResolvedValue({
+        pauses: [
+          {
+            agentId: MANAGED.agent!.manifestId,
+            pausedBy: { accountId: 'p', kind: 'person', name: 'Owner' },
+            pausedAt: '2026-10-09T00:00:00.000Z',
+          },
+        ],
+      }),
+    });
+    await renderProfile(MANAGED, { transport });
+
+    expect(await screen.findByTestId('profile-paused-badge')).toHaveTextContent('paused');
+    await userEvent.click(screen.getByRole('button', { name: 'Actions for Warden' }));
+    await userEvent.click(await screen.findByRole('menuitem', { name: 'Resume' }));
+
+    await waitFor(() =>
+      expect(transport.resumeAgent).toHaveBeenCalledWith(MANAGED.agent!.manifestId)
+    );
+  });
+
+  it('lets DorkBot be paused too', async () => {
+    await openKebab(DORKBOT);
+
+    expect(await screen.findByRole('menuitem', { name: 'Pause everywhere' })).toBeInTheDocument();
+  });
+
   it('says why a system agent has none of them', async () => {
     await openKebab(DORKBOT);
 

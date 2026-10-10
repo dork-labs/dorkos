@@ -211,6 +211,17 @@ export type PermissionGatedAction = Pick<GatedAction, 'id' | 'tier' | 'areasForI
   source?: CapabilitySource;
 };
 
+/**
+ * Actions no permission setting can make ask or block: the emergency stop
+ * (spec `audit-trail` PR5). Pausing an agent, and lifting a pause, must work for
+ * anyone at once under every preset, so neither is decided in any area, even if
+ * a later edit gives one an area or a person writes an action-level entry for
+ * it. The tier still decides: both are `act`, which is allowed, except for an
+ * agent whose access was revoked (`enforceCapabilityTier`). Who may lift a
+ * pause is the pause service's rule (never the paused agent itself).
+ */
+export const NEVER_ASKS_ACTIONS: ReadonlySet<string> = new Set(['agent.pause', 'agent.resume']);
+
 /** How strict a state is: Blocked beats Ask beats Allowed. */
 const STATE_RANK: Record<ResolvedPermission['state'], number> = {
   allowed: 0,
@@ -282,6 +293,8 @@ export async function resolveCallPermission(request: {
   input?: unknown;
 }): Promise<CallPermission | null> {
   const { action, identity } = request;
+  // The emergency stop is decided by its tier alone, whatever it declares.
+  if (NEVER_ASKS_ACTIONS.has(action.id)) return null;
   // `undefined` too: a hand-built action from plain JS must not resolve an area it never named.
   const areas = areasForCall(action, request.input);
   if (areas.length === 0) return null;

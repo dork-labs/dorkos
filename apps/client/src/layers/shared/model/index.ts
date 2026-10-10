@@ -159,6 +159,7 @@ export type {
   MessageGrouping,
   GroupPosition,
   MessageAuthor,
+  TransportErrorInfo,
 } from './chat-message-types';
 export { useTabVisibility } from './use-tab-visibility';
 export {

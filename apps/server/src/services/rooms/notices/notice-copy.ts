@@ -524,6 +524,25 @@ export function buildAgentUnavailableNotice(
 }
 
 /**
+ * The durable `notice` for a member somebody paused everywhere (spec
+ * `audit-trail` PR5): the room started no turn for it.
+ *
+ * Damped like `busy`, so a room says it once per pause and again only to a
+ * person who asks the agent directly. It says nothing will be replayed, because
+ * nothing is: a pause drops what it holds rather than saving it for later.
+ *
+ * @param agentName - Display name of the paused agent.
+ * @param subjectAuthorId - Author id of that agent, for rendering.
+ */
+export function buildAgentPausedNotice(agentName: string, subjectAuthorId: string): RoomEntryBody {
+  return {
+    text: `${agentName} is paused, so it won't answer here until someone resumes it.`,
+    notice: 'agent_paused',
+    subjectAuthorId,
+  };
+}
+
+/**
  * The durable `notice` for a member that left the room before the turn it was
  * owed ever ran.
  *

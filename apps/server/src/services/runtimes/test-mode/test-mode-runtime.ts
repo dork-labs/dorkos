@@ -16,7 +16,9 @@ import type {
   ToolDecisionOptions,
   SessionUpdateResult,
   SessionSettingsPort,
+  LiveSessionRef,
 } from '@dorkos/shared/agent-runtime';
+import { picksSession } from '@dorkos/shared/agent-runtime';
 import type { McpServerEntry } from '@dorkos/shared/transport';
 import type {
   StreamEvent,
@@ -799,6 +801,28 @@ export class TestModeRuntime implements AgentRuntime {
     const projector = peekProjector(sessionId);
     for (const interactionId of pending) projector?.resolveInteraction(interactionId);
     return { outcome: declared ?? 'closed', runtime: this.type };
+  }
+
+  /**
+   * @inheritdoc
+   *
+   * Live here is a scripted turn still open or a held scripted process. Each
+   * picked session has its turn aborted and its process given back.
+   */
+  async endSessionsWhere(belongs: (session: LiveSessionRef) => boolean): Promise<string[]> {
+    const ended: string[] = [];
+    for (const sessionId of this.registry.ids()) {
+      const open = this.isTurnOpen(sessionId) || interactionGate.isOpen(sessionId);
+      const warm = heldProcesses.warmth(sessionId) !== 'cold';
+      if (!open && !warm) continue;
+      if (!picksSession(belongs, { sessionId, cwd: this.registry.get(sessionId)?.cwd })) continue;
+      const receipt = await this.interruptQuery(sessionId);
+      const released = heldProcesses.reap(sessionId);
+      if (receipt.outcome === 'acked' || receipt.outcome === 'closed' || released) {
+        ended.push(sessionId);
+      }
+    }
+    return ended;
   }
 
   /**

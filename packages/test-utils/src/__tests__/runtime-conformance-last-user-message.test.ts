@@ -18,7 +18,7 @@ import {
   chooseUserLastMessageAtArm,
   evaluateUserLastMessageAtOmission,
   evaluateUserLastMessageAtPresence,
-} from '../runtime-conformance.js';
+} from '../runtime-conformance-session-list.js';
 
 /** The conversation shape the presence probe must produce: person, then agent. */
 const PERSON_WROTE_AT = '2026-03-01T09:00:00.000Z';

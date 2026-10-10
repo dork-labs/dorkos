@@ -477,8 +477,11 @@ describe('in-session tool exposure', () => {
     // `transcript_read` (spec `audit-trail` PR4), all four DEFERRED like
     // `audit_verify`: reviewing the record or another agent's work is a
     // deliberate step a turn can search for. Both counts move by the same four.
-    expect(tools).toHaveLength(125);
-    expect(deferred).toHaveLength(114);
+    // 125 -> 128 for `pause_agent`, `resume_agent` and `list_paused_agents`
+    // (spec `audit-trail` PR5), DEFERRED: no prompt block names them, and an
+    // emergency stop is a deliberate step a turn can search for.
+    expect(tools).toHaveLength(128);
+    expect(deferred).toHaveLength(117);
     for (const name of [
       'configure_doc_channel',
       'approve_doc_route',

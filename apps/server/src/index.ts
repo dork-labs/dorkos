@@ -415,6 +415,8 @@ import {
 import { currentRecordOwner } from './services/marketplace/lib/records/record-owner.js';
 import { createActivityRouter } from './routes/activity.js';
 import { createAuditRouter } from './routes/audit.js';
+import { createAgentPauseRouter } from './routes/agent-pause.js';
+import { wireAgentPause } from './services/mesh/pause/index.js';
 import {
   auditCapabilityDeps,
   wireAuditTrail,
@@ -464,11 +466,10 @@ import {
   runMigrations,
   databaseHoldsUserData,
   snapshotBeforeMigrations,
-  snapshotDaily,
+  takeDailySnapshot,
   DatabaseOpenError,
   SnapshotFailedError,
   agents,
-  type Db,
 } from '@dorkos/db';
 import {
   getRemoteCommunityAdapter,
@@ -918,25 +919,6 @@ async function warmMcpOAuthTokens(
   await oauth.warm(targets);
 }
 
-/**
- * Take the day's snapshot of `dork.db`, if today has not had one yet.
- *
- * Best-effort by design, and that is the difference from the pre-migration
- * snapshot: nothing irreversible happens next, so a full disk should cost a
- * warning in the log rather than a server that will not start.
- *
- * @param db - The consolidated database.
- * @param backupsDir - `<dorkHome>/backups`.
- */
-function takeDailySnapshot(db: Db, backupsDir: string): void {
-  try {
-    const written = snapshotDaily(db, { dir: backupsDir });
-    if (written) logger.info(`[DB] Daily snapshot written to ${written}`);
-  } catch (err) {
-    logger.warn('[DB] Daily snapshot failed — your data is fine, the backup is not', logError(err));
-  }
-}
-
 async function start() {
   /**
    * Which optional routers this boot actually mounted, reported as ONE line.
@@ -1173,7 +1155,7 @@ async function start() {
   // Skipped on a first boot so a brand-new install is not handed a `backups`
   // folder holding a copy of an empty database. The hourly tick picks the day up
   // later, by which time there may be something in it worth copying.
-  if (!firstBoot) takeDailySnapshot(db, backupsDir);
+  if (!firstBoot) takeDailySnapshot(db, backupsDir, logger);
 
   // Durable session-event store for LOG-BACKED runtimes (codex/opencode/
   // test-mode), injected once here so their completed-turn history survives a
@@ -1318,6 +1300,11 @@ async function start() {
     installId: connectorInstallationId,
     readOwnerAccount,
   });
+
+  // Pausing an agent everywhere (spec `audit-trail` PR5). Read before any
+  // runtime registers, so the hold at the runtime seam sees a pause that
+  // outlived a restart from the first turn on.
+  const agentPauses = wireAgentPause(db, () => schedulerService);
 
   // Who started a chat that no person typed into, and the seam that starts
   // one for an extension (`api.startWork`, `ctx.sessions.start`, spec
@@ -4335,6 +4322,8 @@ async function start() {
       beforeScheduledFire: (task) => agentExecutionWatch.beforeScheduledFire(task),
       // Each run holds the computer awake from placement to its last event.
       keepAwake: keepAwakeService,
+      // A paused agent's runs are skipped, never started (spec `audit-trail` PR5).
+      agentPauses,
     });
     // The ONE registration seam, shared by every writer that can change what a
     // task's schedule is: these routes, the file watcher, and the reconciler.
@@ -5033,6 +5022,11 @@ async function start() {
   // per-agent POST is mounted before the agents router so it answers its path.
   app.use('/api/commitments', commitments.routers.list);
   app.use('/api/agents/:id/commitments', commitments.routers.agent);
+  // Pause an agent everywhere, and lift it (spec `audit-trail` PR5). Mounted
+  // before the agents router so `/api/agents/:id/pause` reaches it first; the
+  // registry is read lazily because it is composed after the routes mount.
+  app.use('/api', createAgentPauseRouter({ registry: () => capabilityRegistry }));
+  mountedRouters.push('agent-pause');
 
   // Always mounted — not behind any feature flag.
   // ADR-0043: pass meshCore (when available) so writes sync to Mesh DB cache.
@@ -5802,6 +5796,8 @@ async function start() {
       // tool servers that reach it.
       // `audit.verify`: anyone may check the audit log's chain (spec `audit-trail`).
       auditDeps: auditCapabilityDeps(auditLog, auditAccounts, runtimeRegistry),
+      // `agent.pause` / `agent.resume`: anyone may stop any agent (spec `audit-trail` PR5).
+      agentPauseDeps: { pauses: agentPauses },
       // Chats messaging chats (spec `spin-off-chats`).
       chatMessageDeps: chatMessaging,
       // What agents promised (spec `heartbeats` §12): an agent records its
@@ -6263,7 +6259,7 @@ async function start() {
   // hands large databases to better-sqlite3's incremental `db.backup()` API,
   // which yields between pages. Not worth the second code path at 2 MB.
   dailySnapshotInterval = setInterval(() => {
-    takeDailySnapshot(db, backupsDir);
+    takeDailySnapshot(db, backupsDir, logger);
   }, INTERVALS.DAILY_SNAPSHOT_CHECK_MS);
 
   // Somebody has to own the disk that session images sit on. Once at boot, so a

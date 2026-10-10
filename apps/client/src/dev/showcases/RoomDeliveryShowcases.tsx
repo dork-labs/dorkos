@@ -50,6 +50,11 @@ const NOTICES: ReadonlyArray<{ code: RoomNoticeCode; text: string; label: string
     text: "Kai answers here through Codex, which isn't running on this machine, so it can't reply. Turn Codex back on to pick up where you left off, or remove Kai from this room and add it back to start fresh.",
   },
   {
+    code: 'agent_paused',
+    label: 'agent_paused — cool, because somebody chose it',
+    text: "Kai is paused, so it won't answer here until someone resumes it.",
+  },
+  {
     code: 'agent_busy',
     label: 'agent_busy — occupied, not broken',
     text: 'Kai was busy with something else and did not pick this up. Send it again when Kai is free.',

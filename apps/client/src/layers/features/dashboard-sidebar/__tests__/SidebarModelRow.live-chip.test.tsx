@@ -39,6 +39,7 @@ vi.mock('../ui/SidebarChrome', () => ({
     manifests: {},
     displayNames: {},
     roomsById: new Map(),
+    pausedAgentIds: new Set<string>(),
     activeTarget: null,
     openTarget,
     newSession: vi.fn(),

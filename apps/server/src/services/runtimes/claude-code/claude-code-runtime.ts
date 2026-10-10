@@ -43,6 +43,7 @@ import type {
   RuntimeDeliveryResult,
   SessionUpdateResult,
   InterruptReceipt,
+  LiveSessionRef,
 } from '@dorkos/shared/agent-runtime';
 import type {
   SessionSnapshot,
@@ -78,6 +79,12 @@ import {
   type LaunchAccountResolution,
 } from './claude-config-dir.js';
 import { isCreditsClaudeRoot } from './credits-root.js';
+import {
+  endSessionsWhere,
+  stopCreditsSessions,
+  sweepEvictedSessions,
+  type SessionEndingPort,
+} from './end-sessions.js';
 import { detectAuthError } from '@dorkos/shared/runtime-error-classification';
 import {
   asCreditsStopped,
@@ -110,7 +117,6 @@ import { projectOfFolder } from '../../core/usage/account-eligibility.js';
 import { checkClaudeLaunchAccount } from './launch-account-check.js';
 import { predictLaunchBillsPerToken, readPerTokenSignals } from './messaging/per-token-billing.js';
 import {
-  disposeProjector,
   getOrCreateProjector,
   overlayApprovalReceipts,
   overlayModelSubstitutions,
@@ -129,7 +135,6 @@ import type { McpAuthEvidencePort } from '../../mesh/mcp-revocation.js';
  * a feed that cannot be written is not a reason for a reload to fail.
  */
 export type PluginReloadActivityPort = (entry: PaidPluginReload) => void;
-import { editBaselineStore } from '../../diff/index.js';
 import type { SessionStateProjector } from '../../session/index.js';
 import type { ConnectorRuntimeTools } from '../connector-tools.js';
 import type { RevokeConnectorTurnReason } from '../../connectors/runtime-principal-port.js';
@@ -197,6 +202,16 @@ export class ClaudeCodeRuntime implements AgentRuntime {
     applyNow: (sessionId) => this.applyHeldPluginReload(sessionId),
     recordPaidReload: (entry) => this.recordPaidPluginReload(entry),
   });
+  /** What ending a session outright reads (`end-sessions.ts`): a pause, an unlink, an eviction. */
+  private readonly ending: SessionEndingPort = {
+    sessionStore: this.sessionStore,
+    pumps: this.pumps,
+    persistent: this.persistent,
+    lockManager: this.lockManager,
+    pluginReloads: this.pluginReloads,
+    interruptQuery: (id) => this.interruptQuery(id),
+    getSessionCwd: (id) => this.getSessionCwd(id),
+  };
   private commandRegistries = new Map<string, CommandRegistryService>();
   private static readonly MAX_COMMAND_REGISTRIES = 50;
 
@@ -1490,18 +1505,19 @@ export class ClaudeCodeRuntime implements AgentRuntime {
    * refused until credits can be had again.
    */
   async stopCreditsSessions(): Promise<void> {
-    const ids = this.sessionStore.sessionIdsWhere((session) => {
-      const root = session.launchedAccountRoot ?? session.accountRoot;
-      return root !== undefined && isCreditsClaudeRoot(root);
-    });
-    for (const id of ids) {
-      await this.interruptQuery(id).catch(() => undefined);
-      // Evicted, not reaped: a polite reap declines a process still holding
-      // background work, and a revoked token must not stay live for hours
-      // behind a running shell (DOR-2065).
-      this.persistent.forget(id);
-      await this.pumps.evict(id).catch(() => undefined);
-    }
+    await stopCreditsSessions(this.ending);
+  }
+
+  /**
+   * @inheritdoc
+   *
+   * Asks the session store, which holds every session this process has run,
+   * and skips the cold ones with nothing running. Each live one is ended, all
+   * at once, as an unlink ends a credits session: its turn interrupted, its
+   * process evicted (`end-sessions.ts`).
+   */
+  async endSessionsWhere(belongs: (session: LiveSessionRef) => boolean): Promise<string[]> {
+    return endSessionsWhere(this.ending, belongs);
   }
 
   /** @inheritdoc */
@@ -2061,62 +2077,7 @@ export class ClaudeCodeRuntime implements AgentRuntime {
 
   /** @inheritdoc */
   checkSessionHealth(): void {
-    // Drop the projector of every evicted session (I1 fix — the registry Map
-    // otherwise grows per session id forever). The store returns each evicted
-    // session's request UUID AND its canonical sdkSessionId: rekeyProjector
-    // moves a brand-new session's projector to the canonical id mid-first-turn,
-    // so disposing by the map key alone would miss every rekeyed projector and
-    // leak it (plus its EventLog). A session evicted MID-TURN is first marked
-    // `interrupted` so any client still on its `/events` stream sees the turn
-    // close (lifecycle `interrupted`) rather than a frozen "Thinking…" before
-    // the projector is disposed (ADR-0262/0264 restart/eviction degradation).
-    // markInterrupted is a no-op for an idle projector.
-    // A session whose warm process is still doing background work is skipped
-    // for now: eviction is unconditional, so it would end a helper agent or an
-    // undelivered notification that the idle reaper already refuses to touch
-    // (spec `warm-process-lifecycle` D1). The pump answers, because the pump is
-    // what holds the level frame; a session with no warm process holds nothing
-    // and evicts exactly as it did before.
-    const evictedIds = this.sessionStore.checkSessionHealth(
-      this.lockManager,
-      (sessionId) => this.pumps.peek(sessionId)?.isHoldingWork() === true
-    );
-    for (const sessionId of evictedIds) {
-      // No subprocess may outlive the session record it belongs to. Eviction
-      // ALWAYS implies a reap; the idle timer's reap never implies an eviction
-      // (spec §4.3). Not awaited, because this sweep is synchronous by contract
-      // and a close that takes its grace window must not hold it up — and never
-      // bare `void`, because a wedged teardown rejecting would take the server
-      // down with it. A no-op for a session that never opted in: nothing warms a
-      // pump unless `runtimes.claudeCode.persistentSession` is on — not a turn,
-      // and not a staged message either, which is what DOR-1307 restored.
-      //
-      // The wiring is forgotten alongside the process, so a session that comes
-      // back builds a fresh pump rather than dispatching into a spent one. Done
-      // FIRST and synchronously: the teardown below is awaited by nobody, and a
-      // message arriving in that window must not find a bundle whose pump is
-      // already on its way out.
-      this.persistent.forget(sessionId);
-      // A reload waiting for this session's cache to go cold has nothing left to
-      // apply: the process is going, and the next launch reads the plugin set
-      // off disk. Dropped rather than paid — nothing was spent, so nothing is
-      // recorded (spec `plugin-reload-cache-cost`).
-      this.pluginReloads.cancel(sessionId);
-      this.pumps.evict(sessionId).catch((err: unknown) => {
-        logger.warn('[ClaudeCodeRuntime] evicted session failed to give back its process', {
-          sessionId,
-          error: err instanceof Error ? err.message : String(err),
-        });
-      });
-      // Drop the session's captured diff baselines (DOR-212) — they are in-memory
-      // and per-session, so an evicted session must not leak them. Idempotent for
-      // an id that captured none.
-      editBaselineStore.clearSession(sessionId);
-      const projector = peekProjector(sessionId);
-      if (!projector) continue;
-      projector.markInterrupted();
-      disposeProjector(sessionId);
-    }
+    sweepEvictedSessions(this.ending);
   }
 
   /** @inheritdoc */

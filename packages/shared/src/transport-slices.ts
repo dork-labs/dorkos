@@ -10,6 +10,7 @@ import type { CommunityConnectionTransport } from './community-connections.js';
 import type { RemoteCommunityTransport } from './community-views.js';
 import type { CommitmentTransport } from './transport-commitments.js';
 import type { ActivityTransport } from './transport-activity.js';
+import type { AgentPauseTransport } from './transport-agent-pause.js';
 
 /** Every Transport slice declared outside `transport.ts`. */
 export interface TransportSlices
@@ -18,4 +19,5 @@ export interface TransportSlices
     CommunityConnectionTransport,
     RemoteCommunityTransport,
     CommitmentTransport,
-    ActivityTransport {}
+    ActivityTransport,
+    AgentPauseTransport {}

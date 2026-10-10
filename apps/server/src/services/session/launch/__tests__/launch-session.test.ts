@@ -377,3 +377,48 @@ describe('dispatchSessionMessage', () => {
     });
   });
 });
+
+describe('a message for a paused agent (spec audit-trail PR5)', () => {
+  afterEach(async () => {
+    const { resetAgentPause } = await import('../../../mesh/pause/agent-pause.js');
+    resetAgentPause();
+  });
+
+  it('is refused with AGENT_PAUSED before anything is bound or queued, and recorded', async () => {
+    const { initAgentPause } = await import('../../../mesh/pause/agent-pause.js');
+    vi.clearAllMocks();
+    vi.mocked(runtimeRegistry.resolveForSessionWithOwnership).mockResolvedValue({
+      runtime: fakeRuntime as never,
+      bound: false,
+    });
+    vi.mocked(resolveSessionCwdWithRoom).mockResolvedValueOnce({
+      cwd: '/agents/known',
+      rung: 'explicit',
+    });
+    const pausedAgentOfTurn = vi.fn(() => ({ id: 'agent-1', name: 'Scout' }));
+    const recordHeld = vi.fn();
+    initAgentPause({ pausedAgentOfTurn, recordHeld } as never);
+
+    const result = await dispatchSessionMessage({
+      sessionId: SESSION,
+      request: { content: 'hi', cwd: '/agents/known' },
+      clientId: 'c',
+      meshCore: mesh,
+      roomSessionPlace: undefined,
+      origin: { kind: 'interactive' },
+    });
+
+    expect(result).toEqual({
+      refused: 'AGENT_PAUSED',
+      message: 'Scout is paused.',
+      agentId: 'agent-1',
+    });
+    expect(pausedAgentOfTurn).toHaveBeenCalledWith({ cwd: '/agents/known' });
+    expect(recordHeld).toHaveBeenCalledWith(
+      { id: 'agent-1', name: 'Scout' },
+      { via: 'message', sessionId: SESSION }
+    );
+    expect(runtimeRegistry.persistSessionRuntime).not.toHaveBeenCalled();
+    expect(dispatchMessage).not.toHaveBeenCalled();
+  });
+});

@@ -636,6 +636,28 @@ describe('createSessionRoomTurnRunner', () => {
       expect(persistSessionRuntime).not.toHaveBeenCalled();
     });
 
+    it('starts no turn for a paused agent, and writes nothing (spec audit-trail PR5)', async () => {
+      const { initAgentPause, resetAgentPause } = await import('../../mesh/pause/agent-pause.js');
+      const recordHeld = vi.fn();
+      const pausedAgentOfTurn = vi.fn((opts: { forAgent?: string }) =>
+        opts.forAgent === '/repo/ana' ? { id: 'agent-ana', name: 'Ana' } : undefined
+      );
+      initAgentPause({ pausedAgentOfTurn, recordHeld } as never);
+      try {
+        await expect(
+          createSessionRoomTurnRunner().run(request({ agentPath: '/repo/ana' }))
+        ).rejects.toMatchObject({ code: 'AGENT_PAUSED' });
+        expect(persistSessionRuntime).not.toHaveBeenCalled();
+        expect(runtimesAskedFor).toEqual([]);
+        expect(recordHeld).toHaveBeenCalledWith(
+          { id: 'agent-ana', name: 'Ana' },
+          expect.objectContaining({ via: 'room' })
+        );
+      } finally {
+        resetAgentPause();
+      }
+    });
+
     it('never redirects that turn onto a runtime this server does have', async () => {
       // The failure mode the refusal exists to prevent, asserted from the other
       // side: falling back to the default would answer on claude-code, which

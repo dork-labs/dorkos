@@ -220,6 +220,53 @@ describe('RuntimeRegistry', () => {
       }
     });
 
+    // Spec `audit-trail` PR5: the backstop. A turn for a paused agent is
+    // refused at the one seam every turn passes, whatever surface started it.
+    it('refuses a paused agent’s turn sent straight through the registry', async () => {
+      const { AgentPauseService, initAgentPause, resetAgentPause } =
+        await import('../../mesh/pause/agent-pause.js');
+      const { setAgentHomeRegistry } = await import('../agent-identity/agent-home.js');
+      const { agents } = await import('@dorkos/db');
+      const db = createTestDb();
+      const now = new Date().toISOString();
+      db.insert(agents)
+        .values({
+          id: 'agent-1',
+          name: 'scout',
+          runtime: 'claude-code',
+          projectPath: '/projects/scout',
+          registeredAt: now,
+          updatedAt: now,
+        })
+        .run();
+      setAgentHomeRegistry({
+        isRegisteredHome: (dir) => dir === '/projects/scout',
+        listRegisteredHomes: () => ['/projects/scout'],
+        managedWorkspaceOwner: () => null,
+        roomsDir: null,
+      });
+      const pauses = new AgentPauseService({ db });
+      initAgentPause(pauses);
+      try {
+        await pauses.pause('agent-1', { accountId: 'p', kind: 'person', name: 'Owner' });
+        const sent = vi.fn();
+        registry.register({
+          ...createMockRuntime('claude-code'),
+          sendMessage: async function* () {
+            sent();
+          },
+        } as AgentRuntime);
+        const turn = registry
+          .get('claude-code')
+          .sendMessage('s1', 'go', { cwd: '/projects/scout' });
+        await expect(turn.next()).rejects.toMatchObject({ code: 'AGENT_PAUSED' });
+        expect(sent).not.toHaveBeenCalled();
+      } finally {
+        resetAgentPause();
+        setAgentHomeRegistry(undefined);
+      }
+    });
+
     it('throws when getting an unregistered type', () => {
       expect(() => registry.get('nonexistent')).toThrow("Runtime 'nonexistent' not registered");
     });

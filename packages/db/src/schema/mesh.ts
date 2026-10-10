@@ -84,3 +84,27 @@ export const agentDenials = sqliteTable('agent_denials', {
   denier: text('denier'),
   createdAt: text('created_at').notNull(),
 });
+
+/**
+ * Agents that are paused everywhere, one row per paused agent (spec
+ * `audit-trail` PR5).
+ *
+ * Current state only: a row exists while the agent is paused and is deleted
+ * when the pause is lifted. Who paused or resumed it, when and why lives in the
+ * audit log (`agent.paused`, `agent.resumed`), which keeps every change. The
+ * row outlives a restart, so a paused agent stays paused.
+ */
+export const agentPauses = sqliteTable('agent_pauses', {
+  /** The paused agent's mesh id. */
+  agentId: text('agent_id').primaryKey(),
+  /** Stable account id of who paused it (a person's account, an agent's mesh id). */
+  pausedBy: text('paused_by').notNull(),
+  /** That account's kind: `person`, `agent`, `system` or `external`. */
+  pausedByKind: text('paused_by_kind').notNull(),
+  /** That account's name at the time. */
+  pausedByName: text('paused_by_name').notNull(),
+  /** When it was paused. ISO 8601 UTC. */
+  pausedAt: text('paused_at').notNull(),
+  /** Why, when whoever paused it said. */
+  reason: text('reason'),
+});

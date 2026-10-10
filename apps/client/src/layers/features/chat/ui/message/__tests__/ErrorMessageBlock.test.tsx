@@ -1382,3 +1382,32 @@ describe('ErrorMessageBlock — a turn refused because DorkOS credits could not 
     expect(useAppStore.getState().retryAccount).toBeNull();
   });
 });
+
+describe('ErrorMessageBlock — a turn refused because its agent is paused (spec audit-trail PR5)', () => {
+  it('shows a turn refused for a paused agent as the paused notice, never an error card', async () => {
+    const transport = renderBlock(
+      <ErrorMessageBlock
+        message="Scout is paused. Resume it before it can work again."
+        code="AGENT_PAUSED"
+        reason="agent-1"
+      />,
+      {
+        listAgentPauses: vi.fn(async () => ({
+          pauses: [
+            {
+              agentId: 'agent-1',
+              pausedBy: { accountId: 'p', kind: 'person' as const, name: 'Owner' },
+              pausedAt: '2026-10-09T00:00:00.000Z',
+            },
+          ],
+        })),
+        resumeAgent: vi.fn(async (agentId: string) => ({ agentId, paused: false, changed: true })),
+      }
+    );
+
+    expect(await screen.findByTestId('agent-paused-notice')).toBeInTheDocument();
+    expect(screen.queryByText('Agent stopped unexpectedly')).toBeNull();
+    await userEvent.click(screen.getByRole('button', { name: 'Resume' }));
+    await waitFor(() => expect(transport.resumeAgent).toHaveBeenCalledWith('agent-1'));
+  });
+});

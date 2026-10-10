@@ -42,6 +42,7 @@ import {
   buildAgentGoneNotice,
   buildAgentLeftNotice,
   buildAgentHaltedNotice,
+  buildAgentPausedNotice,
   buildAgentUnavailableNotice,
   buildRuntimeGoneNotice,
   buildBudgetNotice,
@@ -94,9 +95,13 @@ export interface CascadeStamp {
  *   The one reason that needs {@link SilenceContext.runtime}: its words name the
  *   program, and a line that said only "something isn't running" would leave the
  *   reader exactly where the `failed` line it replaces left them.
+ * - `paused` — somebody paused the agent everywhere (spec `audit-trail` PR5), so
+ *   the runner started no turn. Damps like `busy`: once per pause in a room,
+ *   because the block clears only when the agent next takes a turn here, which
+ *   it cannot do until the pause is lifted.
  */
 export type RoomTurnUnanswered =
-  'busy' | 'failed' | 'gone' | 'left' | 'unavailable' | 'runtime-gone';
+  'busy' | 'failed' | 'gone' | 'left' | 'unavailable' | 'runtime-gone' | 'paused';
 
 /** How a notice reaches the room's durable log. */
 export interface RoomNoticeWriter {
@@ -144,6 +149,12 @@ export interface SilenceContext {
    * fact that came in on the error would be two answers to one question.
    */
   runtime?: string;
+  /**
+   * When the agent's pause began, for a `paused` reason. A second pause is new
+   * news, so the line is damped once per pause, not once per agent. Ignored for
+   * every other reason.
+   */
+  pausedAt?: string;
   /**
    * This message named this agent, even though no stored mention says so.
    *
@@ -257,6 +268,13 @@ export class RoomNoticeLog {
    * next one is news again.
    */
   private readonly noticedSilence = new Set<string>();
+
+  /**
+   * Which pause (by when it began) each `(room, agent)` was told about. A
+   * `paused` line damps only within one pause: when the agent is paused again,
+   * the room is told again, even if it never took a turn in between.
+   */
+  private readonly noticedPauseAt = new Map<string, string>();
 
   /**
    * `(room, agent)` pairs the room has already said are parked on a person.
@@ -382,6 +400,7 @@ export class RoomNoticeLog {
   ): void {
     const busyWith = context.busyWith ?? 'unknown';
     const key = silenceKey(room.id, agent.authorId, dampReason(reason, busyWith));
+    if (reason === 'paused') this.rearmForNewPause(key, context.pausedAt ?? '');
     const asked = directlyAsked(
       this.deps.authors,
       room,
@@ -745,6 +764,7 @@ export class RoomNoticeLog {
    * @param authorId - The agent that answered, refused, or chose to stay quiet.
    */
   recovered(roomId: string, authorId: string): void {
+    this.noticedPauseAt.delete(silenceKey(roomId, authorId, 'paused'));
     for (const reason of SILENCE_REASONS) {
       if (reason !== 'busy') {
         this.noticedSilence.delete(silenceKey(roomId, authorId, reason));
@@ -757,6 +777,18 @@ export class RoomNoticeLog {
         this.noticedSilence.delete(silenceKey(roomId, authorId, dampReason(reason, busyWith)));
       }
     }
+  }
+
+  /**
+   * Forget a `paused` line told about an earlier pause, so this one is news.
+   *
+   * @param key - The `(room, agent, paused)` silence key.
+   * @param pausedAt - When the pause being reported began.
+   */
+  private rearmForNewPause(key: string, pausedAt: string): void {
+    if (this.noticedPauseAt.get(key) === pausedAt) return;
+    this.noticedSilence.delete(key);
+    this.noticedPauseAt.set(key, pausedAt);
   }
 
   /**
@@ -1003,6 +1035,7 @@ const SILENCE_REASONS = Object.keys({
   left: true,
   unavailable: true,
   'runtime-gone': true,
+  paused: true,
 } satisfies Record<RoomTurnUnanswered, true>) as RoomTurnUnanswered[];
 
 /**
@@ -1023,6 +1056,7 @@ const SILENCE_BODIES: Record<
   unavailable: (agent) => buildAgentUnavailableNotice(agent.displayName, agent.authorId),
   'runtime-gone': (agent, { runtime }) =>
     buildRuntimeGoneNotice(agent.displayName, agent.authorId, runtime),
+  paused: (agent) => buildAgentPausedNotice(agent.displayName, agent.authorId),
 };
 
 /**
@@ -1037,6 +1071,7 @@ const REFUSAL_FOR_SILENCE: Record<RoomTurnUnanswered, RefusalReason> = {
   left: 'agent_left',
   unavailable: 'session_bind_failed',
   'runtime-gone': 'runtime_gone',
+  paused: 'agent_paused',
 };
 
 /**

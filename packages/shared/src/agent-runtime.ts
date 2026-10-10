@@ -903,6 +903,33 @@ export interface RuntimeCreditsSupport {
  */
 export type SessionWarmth = 'cold' | 'warming' | 'warm' | 'running' | 'crashed';
 
+/** A session a runtime holds live, as {@link AgentRuntime.endSessionsWhere} offers it. */
+export interface LiveSessionRef {
+  /** The session, in the id the runtime holds it under. */
+  sessionId: string;
+  /** Where it runs, when the runtime knows. */
+  cwd: string | undefined;
+}
+
+/**
+ * Ask an {@link AgentRuntime.endSessionsWhere} picker about one session. A
+ * picker that throws passes the session over, so one bad answer never stops a
+ * runtime from ending the rest.
+ *
+ * @param belongs - The caller's picker
+ * @param session - The session to ask about
+ */
+export function picksSession(
+  belongs: (session: LiveSessionRef) => boolean,
+  session: LiveSessionRef
+): boolean {
+  try {
+    return belongs(session);
+  } catch {
+    return false;
+  }
+}
+
 /** Options for creating or resuming a session. */
 export interface SessionOpts extends SessionSettings {
   /**
@@ -1638,6 +1665,29 @@ export interface AgentRuntime {
    * @param sessionId - Session whose process should be given back
    */
   reapSession?(sessionId: string): Promise<void>;
+
+  /**
+   * End every session this runtime holds live that `belongs` picks: stop its
+   * turn, stop the background work it started, and give back its process
+   * (spec `audit-trail` PR5, pausing an agent everywhere).
+   *
+   * Live means anything that could still act: a running turn, a warm process,
+   * a background helper or shell, a timer that would wake the agent. The
+   * runtime answers from its OWN records, not from anything the server
+   * tracked, because a warm process can open a turn nobody dispatched.
+   *
+   * Unlike {@link reapSession} this is not polite: it ends background work and
+   * an open approval with the process. The session record and its transcript
+   * stay; the next turn starts cold.
+   *
+   * MUST NOT throw. A session it could not end is left out of the answer, so
+   * the answer counts only what really stopped. A runtime with nothing live
+   * answers `[]`.
+   *
+   * @param belongs - Picks the sessions to end, by id and working directory
+   * @returns The ids of the sessions it ended
+   */
+  endSessionsWhere(belongs: (session: LiveSessionRef) => boolean): Promise<string[]>;
 
   /**
    * Subscribe to turns the AGENT started, with nothing dispatched to it (spec

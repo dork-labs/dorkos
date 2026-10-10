@@ -194,6 +194,8 @@ export {
   databaseHoldsUserData,
   snapshotBeforeMigrations,
   snapshotDaily,
+  takeDailySnapshot,
+  type SnapshotLog,
   snapshotBeforeExtensionMigration,
   SnapshotFailedError,
   SNAPSHOT_RETENTION,

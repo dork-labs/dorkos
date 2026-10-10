@@ -325,6 +325,15 @@ const registry = composeDorkOsCapabilityRegistry({
       timeline: () => ({ events: [] }),
     },
   },
+  // The pause domain serves `/api/agents/{agentId}/pause|resume` and
+  // `/api/agents/pauses` (spec `audit-trail` PR5), so the boot registry carries it.
+  agentPauseDeps: {
+    pauses: {
+      pause: async () => ({ agentId: 'a', paused: true, changed: true }),
+      resume: () => ({ agentId: 'a', paused: false, changed: true }),
+      list: () => [],
+    },
+  },
 });
 
 /** Tool names the real in-session adapter registers for the capability surface. */
@@ -589,6 +598,9 @@ capabilityConformance(registry, {
     // No identity in a conformance invocation, so the handler answers its own
     // `no-agent` refusal — wired and reachable, which is what this suite asks.
     'memory.write': { action: 'add', text: 'a conformance note' },
+    // The pause verbs reach the (stub) pause service with a parseable id.
+    'agent.pause': { agentId: 'conformance-agent' },
+    'agent.resume': { agentId: 'conformance-agent' },
     // Anonymous here, so the handler refuses with its own structured error
     // (there is no agent to scope the request to), which is what "wired" means.
     'permissions.request_access': {

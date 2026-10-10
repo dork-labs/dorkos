@@ -13,6 +13,7 @@ import type { TeamMember } from '@dorkos/shared/team-schemas';
 import { cn, useCopyFeedback } from '@/layers/shared/lib';
 import { Badge, Button, IdentityAvatar, IDENTITY_MARK_GROUP, PRESS_MARK } from '@/layers/shared/ui';
 import { teamMemberFace } from '@/layers/entities/team';
+import { useAgentPause } from '@/layers/entities/mesh';
 import type { ProfileRelationship } from '../lib/profile-relationship';
 import { profileStatusText } from '../lib/profile-status';
 import { profileFrameKey } from '../model/profile-stack';
@@ -64,6 +65,9 @@ export function ProfileHeader({
 }: ProfileHeaderProps) {
   const { copied, failed, copy } = useCopyFeedback();
   const status = profileStatusText(member);
+  // Paused everywhere (spec `audit-trail` PR5): a flag on the name row, like
+  // `system` and `default`. Asked only of an agent.
+  const pause = useAgentPause(member.agent?.manifestId ?? null);
   const ownerFace = owner ? teamMemberFace(owner) : null;
 
   function copyHandle() {
@@ -140,6 +144,11 @@ export function ProfileHeader({
         {member.agent?.isDefault && (
           <Badge size="xs" variant="outline">
             default
+          </Badge>
+        )}
+        {pause && (
+          <Badge size="xs" variant="secondary" data-testid="profile-paused-badge">
+            paused
           </Badge>
         )}
       </div>

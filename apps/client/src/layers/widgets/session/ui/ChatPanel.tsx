@@ -71,6 +71,7 @@ import {
 import { SESSION_CAPABILITIES } from '../model/session-capabilities';
 import { useSessionLaneState } from '../model/use-session-lane-state';
 import { useSessionTarget } from '../model/session-target';
+import { SessionErrorNotice } from './SessionErrorNotice';
 import { SessionComposer } from './SessionComposer';
 import { SessionTranscript } from './SessionTranscript';
 
@@ -796,14 +797,11 @@ export function ChatPanel({
         )}
 
         {error && (
-          <div className="mx-4 mb-2">
-            <ErrorMessageBlock
-              message={error.message}
-              heading={error.heading}
-              subtext={error.message}
-              onRetry={error.retryable ? handleTransportRetry : undefined}
-            />
-          </div>
+          <SessionErrorNotice
+            error={error}
+            composerAgent={composerAgent}
+            onRetry={handleTransportRetry}
+          />
         )}
 
         {/* A REPORT, not an offer, so it stays inline rather than joining the

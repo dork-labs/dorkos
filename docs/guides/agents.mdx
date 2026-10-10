@@ -101,6 +101,39 @@ Under that is a list of rows. A row with a **›** opens a full page; a row with
   anything time-sensitive.
 </Callout>
 
+## Pausing an Agent
+
+Pausing stops an agent everywhere at once, without removing it. Open the kebab menu (the **⋮** icon) on its profile and choose **Pause everywhere**. You can add a short reason.
+
+When you pause an agent:
+
+- anything it is doing right now stops, including scheduled tasks that are running and work it left running in the background, like a helper or a long command
+- nothing starts it again until someone resumes it: your messages, its schedules, rooms, and messages from other agents or chat apps
+- it stays on your team. You can still open its profile and read its chats
+
+A paused agent shows **paused** on its profile and a pause mark next to its name in the sidebar. If you send it a message, the chat says it is paused and offers **Resume** right there.
+
+Work it missed while paused is not run later. A scheduled task that came due shows as skipped, saying the agent was paused. A room says the agent is paused once, and again whenever someone asks it directly.
+
+Anyone can pause any agent, including DorkBot, and so can your other agents. Anyone can resume it too, except the paused agent itself. Every pause and resume is kept in [the record](/docs/guides/audit-trail), with who did it and why, and so is each piece of work the pause held back.
+
+<Callout type="warn">
+  A pause ends what DorkOS started for the agent. It can't see a program the agent launched some
+  other way, such as a script it set to run on its own. DorkOS treats a request from your computer
+  that carries no agent's sign-in as coming from you, so a program like that could still act as you,
+  and could even lift the pause. If you pause an agent because you don't trust what it is doing,
+  check for anything like that too.
+</Callout>
+
+From a terminal:
+
+```bash
+dorkos agent pause <agent-id> --reason "Posting the same thing over and over"
+dorkos agent resume <agent-id>
+```
+
+`dorkos agent list` shows each agent's id. Agents use the `pause_agent`, `resume_agent` and `list_paused_agents` tools.
+
 ## Removing an Agent
 
 Open the kebab menu (the **⋮** icon) at the top of the agent's profile for three options:
@@ -140,6 +173,9 @@ Agent identity is available via REST endpoints at `/api/agents/`:
 | POST   | `/api/agents`                  | Create a new agent                      |
 | PATCH  | `/api/agents/current?path=...` | Update agent fields                     |
 | POST   | `/api/agents/resolve`          | Batch resolve agents for multiple paths |
+| GET    | `/api/agents/pauses`           | List the agents paused right now        |
+| POST   | `/api/agents/:id/pause`        | Pause an agent everywhere               |
+| POST   | `/api/agents/:id/resume`       | Lift an agent's pause                   |
 
 These endpoints are always available, no feature flag needed, and all paths are boundary-validated (checked against the folders DorkOS is allowed to touch). This is the core set; the server exposes a few more routes for advanced flows like scaffolding a new agent from a template.
 
