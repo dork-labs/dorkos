@@ -436,7 +436,7 @@ open 'http://127.0.0.1:7342/api/test/fake-cloud/approve?code=DORK-2F7Q'
 curl localhost:7342/api/cloud/credits   # "ready": true, doe "wired"
 ```
 
-Some reads a linked computer makes are not scripted (managed connections, usage, nudges); they fail as unreachable, which is the honest answer from a fake that only knows the first run. Add a route to the fake when a test needs one rather than letting it reach the network.
+The reads a linked computer makes on its own are scripted too, as empty, schema-valid answers: usage, offers, organizations, a nudge (a 404, so nothing renders), managed connections and their events. A fresh server linked from Settings › DorkOS account logs no Cloud errors. Any other path throws; add a route to the fake when a test needs one rather than letting it reach the network.
 
 ### Writing Mock Browser Tests
 

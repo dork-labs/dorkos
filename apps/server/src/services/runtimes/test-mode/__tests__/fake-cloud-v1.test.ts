@@ -9,11 +9,14 @@ import {
   EntitlementsSchema,
   InferenceModelsResponseSchema,
   InferenceTokenSchema,
+  OffersResponseSchema,
+  OrgListResponseSchema,
   SessionSchema,
+  UsageResponseSchema,
   V1_ROUTES,
   v1Path,
 } from '@dork-labs/cloud-api';
-import { createCloudApiClient } from '@dork-labs/cloud-api/client';
+import { CloudApiProblemError, createCloudApiClient } from '@dork-labs/cloud-api/client';
 
 const mockEnv = vi.hoisted(() => ({ DORKOS_TEST_RUNTIME: true }));
 vi.mock('../../../../env.js', () => ({ env: mockEnv }));
@@ -87,9 +90,29 @@ describe('the test-mode /v1 Cloud', () => {
     ]);
   });
 
+  it('answers the reads a linked app makes on its own with empty, valid answers', async () => {
+    const api = client();
+    const usage = await api.get(V1_ROUTES.usage, UsageResponseSchema, {
+      query: { from: '2026-10-01T00:00:00.000Z', to: '2026-10-10T00:00:00.000Z', groupBy: 'day' },
+    });
+    expect(usage).toMatchObject({ groupBy: 'day', rows: [], from: '2026-10-01T00:00:00.000Z' });
+    expect(await api.get(V1_ROUTES.offers, OffersResponseSchema)).toEqual({ offers: [] });
+    expect(await api.get(V1_ROUTES.orgs, OrgListResponseSchema)).toEqual({
+      items: [],
+      nextCursor: null,
+    });
+    // Nothing to nudge: a described 404, which the app reads as "render nothing".
+    const nudge = await api.get(V1_ROUTES.nudge, SessionSchema).catch((error: unknown) => error);
+    expect(nudge).toBeInstanceOf(CloudApiProblemError);
+    expect((nudge as CloudApiProblemError).problem).toMatchObject({
+      status: 404,
+      code: 'not_found',
+    });
+  });
+
   it('throws on any path it does not script — fail loud, never a silent escape', async () => {
-    await expect(client().get(V1_ROUTES.usage, SessionSchema)).rejects.toThrow(
-      'fake cloud /v1: unexpected request GET /v1/usage'
+    await expect(client().get(V1_ROUTES.priceList, SessionSchema)).rejects.toThrow(
+      'fake cloud /v1: unexpected request GET /v1/price-list'
     );
   });
 

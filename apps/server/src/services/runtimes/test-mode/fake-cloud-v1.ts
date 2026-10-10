@@ -20,7 +20,11 @@ import {
   InferenceModelsResponseSchema,
   InferenceTokenRevokeResponseSchema,
   InferenceTokenSchema,
+  OffersResponseSchema,
+  OrgListResponseSchema,
+  ProblemSchema,
   SessionSchema,
+  UsageResponseSchema,
   V1_ROUTES,
 } from '@dork-labs/cloud-api';
 import type { FetchLike } from '@dork-labs/cloud-api/client';
@@ -65,7 +69,7 @@ export function createFakeCloudV1Fetch(options: FakeCloudV1Options): FetchLike {
   let minted = 0;
 
   return async (input, init) => {
-    const { pathname } = new URL(input);
+    const { pathname, searchParams } = new URL(input);
     const method = (init?.method ?? 'GET').toUpperCase();
     const json = (body: unknown) =>
       new Response(JSON.stringify(body), {
@@ -177,6 +181,40 @@ export function createFakeCloudV1Fetch(options: FakeCloudV1Options): FetchLike {
             },
           ],
         })
+      );
+    }
+
+    if (method === 'GET' && pathname === V1_ROUTES.usage) {
+      // Nothing spent yet: an empty window, echoing the window asked for.
+      return json(
+        UsageResponseSchema.parse({
+          from: searchParams.get('from') ?? at(-PERIOD_MS),
+          to: searchParams.get('to') ?? at(0),
+          groupBy: searchParams.get('groupBy') ?? 'model',
+          state: 'active',
+          rows: [],
+          totals: { listPriceMicro: '0', dorkosPriceMicro: '0' },
+        })
+      );
+    }
+
+    if (method === 'GET' && pathname === V1_ROUTES.orgs) {
+      // A personal account: no organizations.
+      return json(OrgListResponseSchema.parse({ items: [], nextCursor: null }));
+    }
+
+    if (method === 'GET' && pathname === V1_ROUTES.offers) {
+      return json(OffersResponseSchema.parse({ offers: [] }));
+    }
+
+    if (method === 'GET' && pathname === V1_ROUTES.nudge) {
+      // Nothing to nudge: the route answers 404 until there is, which the app
+      // reads as "render nothing".
+      return new Response(
+        JSON.stringify(
+          ProblemSchema.parse({ code: 'not_found', status: 404, title: 'Nothing to suggest.' })
+        ),
+        { status: 404, headers: { 'content-type': 'application/problem+json' } }
       );
     }
 

@@ -156,6 +156,19 @@ describe('createFakeCloudLink', () => {
       expect(res.status).toBe(200);
     });
 
+    it('answers the managed-connections reads with no connections and no events', async () => {
+      const fetchImpl = createFakeCloudLinkFetch();
+      const list = await fetchImpl(
+        'https://dorkos.ai/api/instances/connectors/connections?version=1&limit=100'
+      );
+      expect(await list.json()).toEqual({ version: 1, accounts: [] });
+      const pull = await fetchImpl('https://dorkos.ai/api/instances/connectors/events/pull', {
+        method: 'POST',
+        body: JSON.stringify({ limit: 10 }),
+      });
+      expect(await pull.json()).toEqual({ events: [] });
+    });
+
     it('an unknown pathname throws — fail loud, never a silent escape', async () => {
       const fetchImpl = createFakeCloudLinkFetch();
       await expect(fetchImpl('https://dorkos.ai/api/unknown', { method: 'POST' })).rejects.toThrow(

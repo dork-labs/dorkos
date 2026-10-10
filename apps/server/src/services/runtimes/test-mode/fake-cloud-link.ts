@@ -16,6 +16,8 @@
  * @module services/runtimes/test-mode/fake-cloud-link
  */
 import { Router } from 'express';
+import { ManagedConnectorAccountListResponseSchema } from '@dorkos/shared/connector-managed-discovery-schemas';
+import { ManagedConnectorEventPullResponseSchema } from '@dorkos/shared/connector-event-schemas';
 import type { FetchLike, DeviceCodeResponse } from '../../core/auth/cloud-link-client.js';
 import { env } from '../../../env.js';
 
@@ -126,6 +128,18 @@ export function createFakeCloudLink(options: FakeCloudLinkOptions): FakeCloudLin
 
     if (pathname.endsWith('/api/instances/revoke')) {
       return json(200, {});
+    }
+
+    // What a linked computer reads from managed connections on its own:
+    // no connections and no events, each parsed against the real schema.
+    if (pathname.endsWith('/api/instances/connectors/connections')) {
+      return json(
+        200,
+        ManagedConnectorAccountListResponseSchema.parse({ version: 1, accounts: [] })
+      );
+    }
+    if (pathname.endsWith('/api/instances/connectors/events/pull')) {
+      return json(200, ManagedConnectorEventPullResponseSchema.parse({ events: [] }));
     }
 
     // Fail loud: an unknown path is a wiring bug, never a silent escape.
