@@ -46,6 +46,7 @@ import type { AgentHealthStatus, AgentRuntime } from '@dorkos/shared/mesh-schema
 import type { DisplayNameSource } from '@dorkos/shared/config-schema';
 import { sanitizeIdentity } from '@dorkos/shared/untrusted-text';
 import { logger } from '../../lib/logger.js';
+import { currentAuditActor } from '../audit/audit-context.js';
 import {
   authorOrigin,
   isExternalNaturalKey,
@@ -366,6 +367,11 @@ interface OperatorRowFacts {
    * why `undefined` and `null` mean different things.
    */
   nameSuggestedBy: string | null | undefined;
+  /**
+   * The viewer's own account id, when the viewer is a person — the id an
+   * agent's `reportsTo` names them by (spec `heartbeats` §4.1).
+   */
+  accountId: string | undefined;
 }
 
 /**
@@ -409,6 +415,17 @@ function nameSuggestedBy(
   // agent-chosen string headed for a sentence DorkOS wrote, and this is the
   // boundary that hands it to a renderer.
   return source.agentName ? (sanitizeIdentity(source.agentName) ?? null) : null;
+}
+
+/**
+ * The account id of the person reading the roster, from the request's audit
+ * scope: the owner at the app, or a signed-in person. An agent reading the
+ * roster gets none, because the field names the viewer and an agent is not a
+ * person row.
+ */
+function viewerAccountId(): string | undefined {
+  const actor = currentAuditActor()?.actor;
+  return actor?.kind === 'person' ? actor.accountId : undefined;
 }
 
 /**
@@ -463,6 +480,7 @@ function personRow(
       ...(isSelf && operator.nameSuggestedBy !== undefined
         ? { nameSuggestedBy: operator.nameSuggestedBy }
         : {}),
+      ...(isSelf && operator.accountId ? { accountId: operator.accountId } : {}),
       lastSeenAt: isSelf ? now : null,
       // Only for somebody on a platform outside this machine, because only such
       // a row can be claimed (DOR-1778) — a local person's row is either the
@@ -673,6 +691,7 @@ export async function aggregateTeamRoster(sources: TeamRosterSources): Promise<T
     name: operator.displayName,
     email: operator.email,
     nameSuggestedBy: nameSuggestedBy(configNameSource, operator.nameRung),
+    accountId: viewerAccountId(),
   };
   const personRows = people.value.map((record) =>
     personRow(record, record.id === self?.id, operatorRowFacts, now, account?.id ?? null)

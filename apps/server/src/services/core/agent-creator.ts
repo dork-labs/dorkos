@@ -45,6 +45,7 @@ import { notifyAgentCreated } from './agent-created-hook.js';
 import { ScaffoldLedger } from '../../lib/scaffold-ledger.js';
 import { logger } from '../../lib/logger.js';
 import { stagePackageContents } from '../marketplace/lib/stage-package.js';
+import { creatorField } from '../heartbeats/reports-to.js';
 import { inspectTemplate, type TemplateGate } from './agent-templates/template-gate.js';
 import type { SyncFromDiskResult } from '@dorkos/mesh';
 
@@ -517,6 +518,10 @@ export async function createAgentWorkspace(
       conventions,
       registeredAt: new Date().toISOString(),
       registeredBy: 'dorkos-ui',
+      // Who is creating it: the person at the app, or the agent calling
+      // `create_agent` (spec `heartbeats` §4.1). Written once, here, and never
+      // by an update. With no `reportsTo`, the agent reports to this account.
+      ...creatorField(),
       personaEnabled: true,
       isSystem: false,
       // Managed MCP servers are added post-creation through the gated `mcp.*`

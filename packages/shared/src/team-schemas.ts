@@ -225,6 +225,16 @@ export const TeamPersonFactsSchema = z
      * string and a surface prints it inside a sentence DorkOS wrote.
      */
     nameSuggestedBy: z.string().min(1).nullable().optional(),
+    /**
+     * The account id the audit log and the reports-to chain know this person
+     * by (spec `heartbeats` §4.1) — what an agent's `reportsTo` holds when it
+     * reports to them.
+     *
+     * Present ONLY on the viewer's own row, like `email`, and only when the
+     * viewer is a person: it is the id a client needs to say "reports to you",
+     * and nobody else's.
+     */
+    accountId: z.string().min(1).optional(),
   })
   .openapi('TeamPersonFacts');
 

@@ -163,6 +163,11 @@ describe('UserConfigSchema', () => {
         displayNameSource: null,
         rolePromptDismissedAt: null,
         identityPromptDismissedAt: null,
+        // Not told yet: the app seeds the zone from the browser, and null hours
+        // read as Monday to Friday, 9 to 5 (spec `heartbeats` §3.5).
+        timezone: null,
+        workingHours: null,
+        away: null,
       },
       uploads: { maxFileSize: 10 * 1024 * 1024, maxFiles: 10, allowedTypes: ['*/*'] },
       agents: { defaultDirectory: '~/.dork/agents', defaultAgent: 'dorkbot' },
@@ -558,6 +563,11 @@ describe('USER_CONFIG_DEFAULTS', () => {
         displayNameSource: null,
         rolePromptDismissedAt: null,
         identityPromptDismissedAt: null,
+        // Not told yet: the app seeds the zone from the browser, and null hours
+        // read as Monday to Friday, 9 to 5 (spec `heartbeats` §3.5).
+        timezone: null,
+        workingHours: null,
+        away: null,
       },
       uploads: { maxFileSize: 10 * 1024 * 1024, maxFiles: 10, allowedTypes: ['*/*'] },
       agents: { defaultDirectory: '~/.dork/agents', defaultAgent: 'dorkbot' },

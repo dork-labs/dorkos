@@ -15,6 +15,7 @@ import { agents, authors, eq, type Db } from '@dorkos/db';
 import { AgentRegistry, toManifest } from '@dorkos/mesh';
 import { TeamRosterResponseSchema } from '@dorkos/shared/team-schemas';
 import { AuthorRegistry } from '../../rooms/author-registry.js';
+import { runWithAuditActor } from '../../audit/audit-context.js';
 import {
   aggregateTeamRoster,
   type TeamAgentSource,
@@ -801,6 +802,21 @@ describe('aggregateTeamRoster', () => {
       });
       expect(self?.person?.nameSuggestedBy).toBeNull();
       expect(self?.person && 'nameSuggestedBy' in self.person).toBe(true);
+    });
+
+    it('carries the viewer’s account id on their own row, and only for a person (DOR-2788)', async () => {
+      // What a client needs to save "reports to you" (spec `heartbeats` §4.1).
+      const asPerson = await runWithAuditActor(
+        { actor: { accountId: 'acct-viewer', kind: 'person', name: 'Dorian' }, surface: 'app' },
+        () => selfRow({})
+      );
+      expect(asPerson?.person?.accountId).toBe('acct-viewer');
+
+      const asAgent = await runWithAuditActor(
+        { actor: { accountId: '01AGENT', kind: 'agent', name: 'Juno' }, surface: 'mcp' },
+        () => selfRow({})
+      );
+      expect(asAgent?.person && 'accountId' in asAgent.person).toBe(false);
     });
 
     it('says nothing about a name the person saved themselves', async () => {

@@ -10,6 +10,7 @@ import {
   createMeshQueryTopologyHandler,
   type McpToolDeps,
 } from '../../runtimes/claude-code/mcp-tools/index.js';
+import { runWithAuditActor } from '../../audit/audit-context.js';
 
 vi.mock('@dorkos/shared/manifest', () => ({
   readManifest: vi.fn().mockResolvedValue(null),
@@ -144,6 +145,23 @@ describe('Mesh MCP Tools', () => {
       expect(meshCore.registerByPath).toHaveBeenCalledWith(
         '/test/bot',
         expect.objectContaining({ name: 'bot', runtime: 'claude-code' }),
+        'mcp-tool'
+      );
+    });
+
+    it('mesh_register records the calling agent as createdBy (DOR-2788)', async () => {
+      const deps = createMockDeps(true);
+      const meshCore = deps.meshCore as unknown as Record<string, ReturnType<typeof vi.fn>>;
+      meshCore.registerByPath.mockResolvedValue({ id: 'a1', name: 'bot', runtime: 'claude-code' });
+
+      const handler = createMeshRegisterHandler(deps);
+      await runWithAuditActor(
+        { actor: { accountId: '01CALLER', kind: 'agent', name: 'Juno' }, surface: 'mcp' },
+        () => handler({ path: '/test/bot', name: 'bot' })
+      );
+      expect(meshCore.registerByPath).toHaveBeenCalledWith(
+        '/test/bot',
+        expect.objectContaining({ createdBy: '01CALLER' }),
         'mcp-tool'
       );
     });

@@ -474,6 +474,10 @@ export async function register(
     ...seedAgentFace(id, { color: overrides?.color, icon: overrides?.icon }),
     model: overrides?.model,
     effort: overrides?.effort,
+    // Written once, here, and only for a manifest this call mints: an adopted
+    // one returned above keeps whatever its file says (spec `heartbeats` §4.1).
+    ...(overrides?.reportsTo ? { reportsTo: overrides.reportsTo } : {}),
+    ...(overrides?.createdBy ? { createdBy: overrides.createdBy } : {}),
     mcpServers: [],
     workspace: overrides?.workspace ?? { mode: 'home' },
   };
@@ -551,6 +555,9 @@ export async function registerByPath(
     ...seedAgentFace(id, { color: partial.color, icon: partial.icon }),
     model: partial.model,
     effort: partial.effort,
+    // See `register()` above — written once, only on a manifest minted here.
+    ...(partial.reportsTo ? { reportsTo: partial.reportsTo } : {}),
+    ...(partial.createdBy ? { createdBy: partial.createdBy } : {}),
     mcpServers: [],
     workspace: partial.workspace ?? { mode: 'home' },
   };

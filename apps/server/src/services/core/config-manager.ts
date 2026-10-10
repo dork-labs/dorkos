@@ -3451,6 +3451,45 @@ export function seedIdentityPromptDismissedDefault(store: {
 }
 
 /**
+ * Seed `profile.timezone`, `profile.workingHours` and `profile.away` — a
+ * person's zone, hours and away note (spec `heartbeats` §3.5).
+ *
+ * **The mechanism, not an anchor**, for the reason
+ * {@link seedDisplayNameSourceDefault} gives: nested leaves inside a section
+ * every stored config already carries, and conf's pre-migration merge is
+ * shallow, so nothing else writes them to disk for an upgraded install.
+ *
+ * **Each seeds `null`, which is the honest answer for all three.** Nobody has
+ * told this install a zone yet: the app fills `timezone` from the browser the
+ * first time it opens, and seeding the server's own zone here would decide it
+ * from a machine that may sit in a container or another country. `null` hours
+ * read as Monday to Friday, 09:00 to 17:00, and `null` away means here.
+ *
+ * Per leaf, and absence is tested with `in`: the defaults are `null`, so a
+ * `== null` guard would rewrite a stored `null` on every corrupt-recovery
+ * re-run, and a person who already set one leaf keeps it.
+ *
+ * @internal Exported for testing only.
+ * @param store - The `conf` store instance (provides `get`/`set`).
+ */
+export function seedWorkingHoursDefaults(store: {
+  get: (key: string) => unknown;
+  set: (key: string, value: unknown) => void;
+}): void {
+  const profile = store.get('profile');
+  if (profile == null || typeof profile !== 'object') return;
+  const current = profile as Record<string, unknown>;
+  const missing = (['timezone', 'workingHours', 'away'] as const).filter(
+    (leaf) => !(leaf in current)
+  );
+  if (missing.length === 0) return;
+  store.set('profile', {
+    ...current,
+    ...Object.fromEntries(missing.map((leaf) => [leaf, USER_CONFIG_DEFAULTS.profile[leaf]])),
+  });
+}
+
+/**
  * Migration body: reserve `harness.refusedHooks: []` on a `harness` block that
  * predates durable refusals (DOR-1849).
  *
@@ -4930,6 +4969,13 @@ export const CONFIG_MIGRATIONS = {
   // Disjoint from every other key here: it rewrites two `rooms` leaves, and
   // only when each still holds the old shipped default.
   '0.103.0': raiseEngagedWindowDefaults,
+  // v0.101.0 is the newest tag and 0.104.0 is claimed by work in flight, so
+  // this opens 0.105.0. Frozen from merge, for the reason `'0.60.0'` above
+  // states; anything further opens `'0.106.0'`.
+  //
+  // Disjoint from every other key here: it adds three nested leaves under
+  // `profile`, beside the fields it preserves.
+  '0.105.0': seedWorkingHoursDefaults,
 } as const;
 
 /**

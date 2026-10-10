@@ -1147,6 +1147,24 @@ Tell DorkBot what kind of work you do, and every agent on this machine knows who
       type: 'string | null',
       default: 'null',
     },
+    'profile.timezone': {
+      description:
+        'Your time zone, like "Europe/Berlin". The app fills it in from your browser the first time you open it, and never changes it after that. Until then, DorkOS uses the time zone of the computer it runs on. Change it in Settings › Profile › Your hours. Local-only; never included in any telemetry payload.',
+      type: 'string | null',
+      default: 'null',
+    },
+    'profile.workingHours': {
+      description:
+        'The days and times you work, like `{ "days": [1, 2, 3, 4, 5], "start": "09:00", "end": "17:00" }`. Days are numbered from 0 (Sunday) to 6 (Saturday), and times use a 24-hour clock in your time zone. The day has to end after it starts. Empty means Monday to Friday, 9 to 5. Local-only; never included in any telemetry payload.',
+      type: 'object | null',
+      default: 'null',
+    },
+    'profile.away': {
+      description:
+        'That you are away, like `{ "until": "2026-10-20T00:00:00.000Z", "note": "On holiday" }`. An empty `until` means away until you say otherwise. Empty means you are here. DorkBot can set this when you tell it you are off. Local-only; never included in any telemetry payload.',
+      type: 'object | null',
+      default: 'null',
+    },
   }}
 />
 

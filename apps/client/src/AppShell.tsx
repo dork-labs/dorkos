@@ -38,6 +38,7 @@ import {
 } from '@/layers/entities/session';
 import { useCurrentAgent, useAgentVisual } from '@/layers/entities/agent';
 import { useConfig, useConfigSync } from '@/layers/entities/config';
+import { useSeedProfileTimezone } from '@/layers/entities/user-profile';
 import { useAgentsSync } from '@/layers/entities/mesh';
 import { useConnectorAgentRequestsSync } from '@/layers/entities/connectors';
 import { useCommandsSync } from '@/layers/entities/command';
@@ -349,6 +350,9 @@ export function AppShell() {
   // staying in one window meant the list quietly lied.
   useAgentsSync();
   useConfigSync();
+  // The person's time zone comes from the browser, once, never from the server's
+  // own clock (spec `heartbeats` §3.5). A zone already set is left alone.
+  useSeedProfileTimezone();
   useAccountUsageSync();
   // Live agent requests for apps (DOR-2415): a request answered in one window,
   // on the Connections page or in a room retires its chat card everywhere.
