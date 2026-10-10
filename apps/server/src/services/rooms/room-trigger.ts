@@ -1085,15 +1085,17 @@ export class RoomTriggerDispatcher {
         });
         // **Never silent** (DOR-2823): one quiet line when the message reached
         // nobody because there is nobody to reach, never when it named somebody
-        // (that is addressed) and never in a chat bridged outside.
-        if (this.deps.bridgedFraming(room.id) === null && entry.mentions.length === 0) {
-          if (reason === 'no_agents') this.notices.reportNobody(room, entry, 'no_agents');
-          else if (
-            (reason === 'no_conversation' || reason === 'partner_not_answering') &&
-            leadAuthorId === null
-          ) {
-            this.notices.reportNobody(room, entry, 'no_lead');
-          }
+        // (that is addressed) and never in a chat bridged outside. A channel
+        // with agents but no lead is one a person chose to leave without one,
+        // so it stays quiet; the log above still says why.
+        if (
+          reason === 'no_agents' &&
+          entry.mentions.length === 0 &&
+          this.deps.bridgedFraming(room.id) === null &&
+          // A Community room mirrored here is not this machine's to narrate.
+          !this.deps.store.isRemoteTimelineRoom(room.id)
+        ) {
+          this.notices.reportNobody(room, entry);
         }
       }
       // **The commonest shape of the ghost case comes through here**, and it is
@@ -2638,13 +2640,18 @@ export class RoomTriggerDispatcher {
     }
     if (!reply.unanswered) this.busyRetries.delete(retryKey(room.id, target.authorId, entry.id));
     if (reply.unanswered) {
-      const limit =
+      const stored =
         reply.unanswered === 'failed'
           ? (this.deps.usageLimitFor?.(
               // The binding as it stands now: a first turn may have renamed
               // the session, and the limit is filed under the new name.
               this.deps.store.getRoomSession(room.id, target.authorId) ?? target.sessionId
             ) ?? null)
+          : null;
+      // A reset already past is a stale row, not why this turn failed.
+      const limit =
+        stored && (stored.resetsAt === null || Date.parse(stored.resetsAt) > Date.now())
+          ? stored
           : null;
       this.notices.reportSilence(
         room,
@@ -4171,9 +4178,18 @@ export class RoomTriggerDispatcher {
     for (const [entryId, seq] of standing.entries) {
       if (seq > upToSeq) continue;
       // Still waiting on a busy agent: the receipt stays while the room keeps
-      // its promise to answer.
-      if (this.busyRetryTimers.has(retryKey(standing.roomId, standing.authorId, entryId))) {
-        continue;
+      // its promise to answer, unless the turn ending now already read the
+      // message, which answers it and makes the waiting retry moot.
+      const pending = retryKey(standing.roomId, standing.authorId, entryId);
+      const timer = this.busyRetryTimers.get(pending);
+      if (timer !== undefined) {
+        const readTo =
+          this.deps.store.listMembers(standing.roomId).find((m) => m.authorId === standing.authorId)
+            ?.lastReadSeq ?? -1;
+        if (readTo < seq) continue;
+        clearTimeout(timer);
+        this.busyRetryTimers.delete(pending);
+        this.busyRetries.delete(pending);
       }
       standing.entries.delete(entryId);
       try {

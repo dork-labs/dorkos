@@ -590,10 +590,7 @@ export function createRoomSubsystem(opts: {
     usageLimitFor: (sessionId) => {
       const stored = getSessionLimitStore()?.get(sessionId);
       if (!stored || stored.state === 'reset-ready' || stored.state === 'moved') return null;
-      const resetsAt = stored.limit.resetsAt ?? null;
-      // A reset already past is a stale row, not a reason this turn failed.
-      if (resetsAt !== null && Date.parse(resetsAt) <= Date.now()) return null;
-      return { resetsAt };
+      return { resetsAt: stored.limit.resetsAt ?? null };
     },
     bridges,
     agents: agentLookup,

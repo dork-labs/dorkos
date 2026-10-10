@@ -251,7 +251,9 @@ describe('common room document notifications', () => {
         }
         const entry = frames().find((frame) => frame.event === 'entry')!;
         expect(entry.id).toEqual(expect.stringMatching(new RegExp(`-${posted.seq}$`)));
-        expect(f.service.maxSeq(f.room.id)).toBe(posted.seq);
+        // The post plus the room's "no agent is in this channel" notice, since
+        // the fixture room has no agent in it (DOR-2823).
+        expect(f.service.maxSeq(f.room.id)).toBe(posted.seq + 1);
         f.revoke();
         f.append();
         await until(closed);
@@ -306,15 +308,17 @@ describe('common room document notifications', () => {
           docSeq: 1,
           documentId: f.doc.id,
         });
-        expect(f.service.maxSeq(f.room.id)).toBe(1);
+        // The post at seq 1, then the room's "no agent is in this channel" notice
+        // at seq 2, since the fixture room has no agent in it (DOR-2823).
+        expect(f.service.maxSeq(f.room.id)).toBe(2);
         if (sinceCursor === undefined) {
           expect(sink.frames[0]!.event).toBe('snapshot');
           expect(sink.frames[0]!.data).toMatchObject({
-            cursor: 1,
-            entries: [expect.objectContaining({ seq: 1 })],
+            cursor: 2,
+            entries: [expect.objectContaining({ seq: 1 }), expect.objectContaining({ seq: 2 })],
           });
           expect(sink.frames.filter((frame) => frame.event === 'entry')).toHaveLength(0);
-        } else expect(sink.frames.filter((frame) => frame.event === 'entry')).toHaveLength(1);
+        } else expect(sink.frames.filter((frame) => frame.event === 'entry')).toHaveLength(2);
       } finally {
         sink.end();
         await running;

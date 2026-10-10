@@ -94,7 +94,9 @@ describe('the ambient window a room turn is shown', () => {
     // for the same reason as `openRoom` (DOR-2823).
     harness.service.updateRoom(harness.roomId, harness.human, { leadAuthorId: null });
     harness.service.updateMembership(harness.roomId, harness.human, harness.ana, 'mention-only');
-    expect(harness.store.getMember(harness.roomId, harness.ana)?.joinedSeq).toBe(40);
+    // 40 posts plus the one "no agent is in this channel" notice the room wrote
+    // for the first of them, while it had no agent in it (DOR-2823).
+    expect(harness.store.getMember(harness.roomId, harness.ana)?.joinedSeq).toBe(41);
 
     for (let i = 41; i <= 49; i += 1) await say(harness, `m${i}`);
     await say(harness, '@ana where are we?');

@@ -69,7 +69,8 @@
  *
  * @module server/services/rooms/reactions/reaction-budget
  */
-import { roomEntryReactions, and, eq, gt, type Db } from '@dorkos/db';
+import { roomEntryReactions, and, eq, gt, ne, type Db } from '@dorkos/db';
+import { ROOM_RECEIPT_EMOJI } from '@dorkos/shared/room-schemas';
 import { logger } from '../../../lib/logger.js';
 
 /** One hour, the window the ceiling is denominated in. */
@@ -195,7 +196,10 @@ export class ReactionBudget {
           and(
             eq(roomEntryReactions.roomId, roomId),
             eq(roomEntryReactions.authorId, authorId),
-            gt(roomEntryReactions.createdAt, new Date(floor).toISOString())
+            gt(roomEntryReactions.createdAt, new Date(floor).toISOString()),
+            // The room's 👀 receipt is written under the agent's id but is the
+            // room's, never the agent's spend (DOR-2823).
+            ne(roomEntryReactions.emoji, ROOM_RECEIPT_EMOJI)
           )
         )
         .all();

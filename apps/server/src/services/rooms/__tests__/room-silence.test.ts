@@ -138,13 +138,14 @@ describe('a room says why an agent did not answer', () => {
       // The room has no claim of its own to describe here — another writer holds
       // Ana's session, most often the person typing into her directly — so it
       // says what it knows and does not invent what she is doing instead.
+      // A runner-busy outcome is retried on a backoff, so the line promises the
+      // answer rather than describing a miss (DOR-2823).
       expect(notices()[0].body.text).toBe(
-        "Ana was busy in its own chat, so it didn't answer here. It will read your message the next time it picks up work in this room."
+        "Ana is busy in its own chat. It will answer here when it's free."
       );
-      // **Past tense, and no resend.** The message is a committed room entry
-      // sitting behind Ana's read cursor, so the next turn she takes here reads
-      // it whatever triggers that turn — asking the person to type it a second
-      // time was asking them to do work the machine already did.
+      // **No resend.** The room retries the message itself, so asking the
+      // person to type it a second time was asking them to do work the machine
+      // already does.
       expect(notices()[0].body.text).not.toContain('again');
       expect(postsBy(ana)).toHaveLength(0);
     });

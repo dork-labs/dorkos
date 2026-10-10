@@ -47,7 +47,11 @@ describe('the claude-code system prompt append', () => {
     expect(prompt).toContain('<room_tools>');
     expect(prompt).toContain('react_to_room_entry');
     expect(prompt).toContain('"no reply needed", "just ack this"');
-    expect(prompt).toContain('✅ seen, 👍 agreed, 👀 looking');
+    expect(prompt).toContain('(✅ seen, 👍 agreed)');
+    // DOR-2823: 👀 is the room's own "picked to answer" marker, not the agent's.
+    expect(prompt).not.toContain('👀 looking');
+    expect(prompt).toContain("DORKOS PUTS 👀 ON A PERSON'S MESSAGE FOR YOU");
+    expect(prompt).toContain('you cannot use 👀 yourself');
     expect(prompt).toContain('and when\n    something needs saying, say it');
   });
 

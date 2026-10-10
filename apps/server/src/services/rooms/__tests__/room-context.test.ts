@@ -321,7 +321,8 @@ describe('the room context a trigger derives', () => {
       await say('anyone?');
 
       const pending = contextFor(ana).pending;
-      const notices = pending.filter((entry) => entry.text.includes('was busy'));
+      // The runner-busy notice reads "is busy in its own chat" (DOR-2823).
+      const notices = pending.filter((entry) => entry.text.includes('is busy in its own chat'));
       expect(notices).toHaveLength(1);
       expect(notices[0].text).toContain('Bo');
       expect(pending.some((entry) => entry.text.includes('Ana'))).toBe(false);

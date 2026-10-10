@@ -446,8 +446,11 @@ describe('the rooms capability domain', () => {
         'rooms.read_history',
         { roomId: hers.id, limit: 5 },
         'priya-account'
-      )) as { entries: Array<{ text: string }> };
-      expect(page.entries.map((entry) => entry.text)).toEqual(['mine']);
+      )) as { entries: Array<{ kind: string; text: string }> };
+      // A room with no agent in it also gets the room's "nobody is here to
+      // answer" notice (DOR-2823); this test is about whose posts are read.
+      const posts = page.entries.filter((entry) => entry.kind === 'post');
+      expect(posts.map((entry) => entry.text)).toEqual(['mine']);
     });
 
     it('refuses a caller it cannot name at all when login is on', async () => {
@@ -475,8 +478,10 @@ describe('the rooms capability domain', () => {
       const page = (await callAsPerson('rooms.read_history', {
         roomId: ownersRoom.id,
         limit: 5,
-      })) as { entries: Array<{ text: string }> };
-      expect(page.entries.map((entry) => entry.text)).toEqual(['a private note']);
+      })) as { entries: Array<{ kind: string; text: string }> };
+      // Skip the room's "nobody is here to answer" notice (DOR-2823).
+      const posts = page.entries.filter((entry) => entry.kind === 'post');
+      expect(posts.map((entry) => entry.text)).toEqual(['a private note']);
     });
 
     it('lets an agent token win over a person on the same call', async () => {
@@ -643,11 +648,16 @@ describe('the rooms capability domain', () => {
     it('tells the model to react instead of a filler word for an ack-only message (DOR-1234)', () => {
       const react = roomsDomain.capabilities.find((c) => c.id === 'rooms.react');
       expect(react?.description).toContain('"no reply needed", "just ack this"');
-      expect(react?.description).toContain('✅ seen, 👍 agreed, 👀 looking');
+      expect(react?.description).toContain('(✅ seen, 👍 agreed)');
+      // The 👀 receipt is the room's own, never the agent's (DOR-2823).
+      expect(react?.description).toContain('you cannot use 👀 yourself');
+      expect(react?.description).not.toContain('👀 looking');
     });
 
     it('puts an emoji on a message and takes it back', async () => {
       const entry = service.post(channel.id, { authorId: human, text: 'shipping' });
+      // Let the picked agent's turn end, so the room's 👀 receipt is off (DOR-2823).
+      await service.triggersIdle();
 
       await expect(
         call('rooms.react', { roomId: channel.id, entryId: entry.id, emoji: '👍' })

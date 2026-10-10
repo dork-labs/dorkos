@@ -178,12 +178,14 @@ describe('exporting a room', () => {
   });
 
   describe('resolving who said what', () => {
-    it('names the author, the people they addressed, and everyone who reacted', () => {
+    it('names the author, the people they addressed, and everyone who reacted', async () => {
       authors.setHandle(human, 'dorian');
       service.post(channelId, { authorId: human, text: 'ping @ana' });
       const answered = service.post(channelId, { authorId: ana, text: 'here' });
       service.toggleReaction(channelId, answered.id, human, '🎉');
       service.toggleReaction(channelId, answered.id, bo, '🎉');
+      // Let Ana's turn end, so the room's 👀 receipt is off the ping (DOR-2823).
+      await service.triggersIdle();
 
       const { entries } = readExport(service.exportRoom(channelId, human));
 
@@ -306,7 +308,9 @@ describe('exporting a room', () => {
 
       const { header, entries } = readExport(service.exportRoom(late.id, ana));
 
-      expect(header.scope).toEqual({ fromSeq: before.seq, joinFloorApplied: true });
+      // The room with no agent yet wrote its "no agent is in this channel" notice
+      // right after the first post, so Ana's floor is that notice (DOR-2823).
+      expect(header.scope).toEqual({ fromSeq: before.seq + 1, joinFloorApplied: true });
       expect(entries.map((entry) => entry.id)).toEqual([after.id]);
     });
 
@@ -350,7 +354,10 @@ describe('exporting a room', () => {
       expect(theirs.header.scope.joinFloorApplied).toBe(true);
       expect(theirs.entries.map((entry) => entry.id)).toEqual([after.id]);
       expect(mine.header.scope.joinFloorApplied).toBe(false);
-      expect(mine.entries.map((entry) => entry.id)).toEqual([before.id, after.id]);
+      // Posts only: a room with no agent also carries the room's "no agent is in
+      // this channel" notice (DOR-2823).
+      const minePosts = mine.entries.filter((entry) => entry.kind === 'post');
+      expect(minePosts.map((entry) => entry.id)).toEqual([before.id, after.id]);
     });
   });
 

@@ -116,18 +116,21 @@ describe('a message is findable the moment it is said', () => {
     // that ignored the watermark would have made. The unique index would absorb
     // a duplicate silently, so the count is the only thing that tells them apart.
     expect(db.select().from(messages).all()).toHaveLength(3);
-    expect(watermark()).toBe(3);
+    // Four entries read: the first post into this agentless channel is followed
+    // by the room's "nobody answering" notice at seq 2 (DOR-2823).
+    expect(watermark()).toBe(4);
   });
 
   it('advances the frontier past a notice, which is never indexed', () => {
     subsystem.service.post(roomId, { authorId: human, text: 'a kestrel post' });
     subsystem.service.postNotice(roomId, { text: 'the room speaking for itself' });
 
-    // The notice is seq 2 and projects to nothing (a notice is not something
-    // somebody said), but the room HAS been read to seq 2 — a watermark left at
-    // 1 would re-read it on every sweep forever.
+    // Two notices — the room's own "nobody answering" one at seq 2 (DOR-2823)
+    // and this one at seq 3 — and both project to nothing (a notice is not
+    // something somebody said), but the room HAS been read to seq 3 — a
+    // watermark left at 1 would re-read them on every sweep forever.
     expect(db.select().from(messages).all()).toHaveLength(1);
-    expect(watermark()).toBe(2);
+    expect(watermark()).toBe(3);
   });
 
   it('leaves the sweep with nothing to do', async () => {
@@ -171,7 +174,8 @@ describe('a room the index is far behind on', () => {
     // And the deferral is exactly the tested degradation: the sweep catches up.
     const sweep = await new SearchIndexer(db, [roomsSource]).sweep();
     expect(sweep.indexed).toBe(401);
-    expect(find('migration')).toEqual([401]);
+    // 401 posts plus the "nobody answering" notice at seq 2 (DOR-2823).
+    expect(find('migration')).toEqual([402]);
   });
 
   it('resumes indexing inline once the sweep has caught the room up', async () => {
@@ -191,8 +195,9 @@ describe('a room the index is far behind on', () => {
     // 3. And now the room is live again: this post is indexed INLINE, with no
     //    sweep between it and the search below.
     subsystem.service.post(roomId, { authorId: human, text: 'a second kestrel, posted live' });
-    expect(find('live')).toEqual([402]);
-    expect(watermark()).toBe(402);
+    // Seq 401 was the post and 402 the "nobody answering" notice (DOR-2823).
+    expect(find('live')).toEqual([403]);
+    expect(watermark()).toBe(403);
   });
 });
 
@@ -212,8 +217,14 @@ describe('an index that cannot be written', () => {
       subsystem.service.post(roomId, { authorId: human, text: 'the kestrel migration is done' })
     ).not.toThrow();
 
-    // The room has it. The log is the truth, and the truth was written.
-    expect(subsystem.service.entriesAfter(roomId, 0).map((entry) => entry.seq)).toEqual([1]);
+    // The room has it. The log is the truth, and the truth was written — the
+    // post at seq 1, then the room's "nobody answering" notice (DOR-2823).
+    expect(
+      subsystem.service.entriesAfter(roomId, 0).map((entry) => [entry.seq, entry.kind])
+    ).toEqual([
+      [1, 'post'],
+      [2, 'notice'],
+    ]);
   });
 
   it('leaves the message unfindable until the sweep catches up — and then findable', async () => {
@@ -266,6 +277,10 @@ describe('a write-through port that throws', () => {
     expect(() =>
       harness.service.post(room.id, { authorId: harness.human, text: 'still posted' })
     ).not.toThrow();
-    expect(harness.service.entriesAfter(room.id, 0)).toHaveLength(1);
+    // The post, then the room's "nobody answering" notice (DOR-2823).
+    expect(harness.service.entriesAfter(room.id, 0).map((entry) => entry.kind)).toEqual([
+      'post',
+      'notice',
+    ]);
   });
 });

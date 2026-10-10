@@ -49,7 +49,6 @@ import {
   buildHaltedNotice,
   buildTurnFailedNotice,
   buildNobodyNotice,
-  type NobodyNoticeReason,
   buildWaitingNotice,
   BUSY_CONTEXTS,
   type AgentHaltOutcome,
@@ -310,7 +309,7 @@ export class RoomNoticeLog {
    */
   private readonly noticedHalt = new Set<string>();
 
-  /** When each `(room, reason)` last said nobody was answering. */
+  /** When each room last said nobody was answering. */
   private readonly nobodySaid = new Map<string, number>();
 
   constructor(deps: RoomNoticeLogDeps) {
@@ -795,21 +794,19 @@ export class RoomNoticeLog {
    * Say, once in a while, that a person's message in a channel reached no
    * agent at all (DOR-2823).
    *
-   * Damped on the ROOM and the reason for an hour: a channel with no lead
-   * where people talk among themselves would otherwise answer every message
-   * with the same line. The dispatcher logs every such decision regardless.
+   * Damped on the ROOM for an hour: a channel with no agents, where people
+   * talk among themselves, would otherwise answer every message with it. The dispatcher logs every such decision regardless.
    *
    * @param room - The channel.
    * @param entry - The person's message, for the thread it belongs under.
-   * @param reason - Why nobody was picked.
    * @returns Whether a line was written.
    */
-  reportNobody(room: Room, entry: RoomEntry, reason: NobodyNoticeReason): boolean {
-    const key = `${room.id}\u0000${reason}`;
+  reportNobody(room: Room, entry: RoomEntry): boolean {
+    const key = room.id;
     const last = this.nobodySaid.get(key);
     const now = Date.now();
     if (last !== undefined && now - last < NOBODY_NOTICE_DAMP_MS) return false;
-    const written = this.writeNotice(room, entry, null, buildNobodyNotice(reason));
+    const written = this.writeNotice(room, entry, null, buildNobodyNotice());
     if (written) this.nobodySaid.set(key, now);
     return written;
   }

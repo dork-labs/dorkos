@@ -404,22 +404,14 @@ function clockTime(iso: string): string {
   return sameDay ? time : `${at.toLocaleDateString([], { weekday: 'short' })} ${time}`;
 }
 
-/** Why a person's message in a channel reached no agent, as the room says it. */
-export type NobodyNoticeReason = 'no_agents' | 'no_lead';
-
 /**
  * The one quiet line a channel writes when a person's message reached no agent
- * at all (DOR-2823). Never for a message that named somebody or named only
- * people: those are addressed, and saying so would be noise.
- *
- * @param reason - Why nobody was picked.
+ * because the channel has none (DOR-2823). Never for a message that named
+ * somebody: that is addressed, and saying so would be noise.
  */
-export function buildNobodyNotice(reason: NobodyNoticeReason): RoomEntryBody {
+export function buildNobodyNotice(): RoomEntryBody {
   return {
-    text:
-      reason === 'no_agents'
-        ? 'No agent is in this channel to answer. Add one to get answers here.'
-        : 'Nobody answered: this channel has no lead. @mention an agent, or pick a lead.',
+    text: 'No agent is in this channel to answer. Add one to get answers here.',
     notice: 'nobody_answering',
   };
 }

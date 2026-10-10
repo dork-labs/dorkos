@@ -116,7 +116,7 @@ export class ReactionStore {
    *
    * @param emoji - The receipt emoji.
    * @param withinMs - How far back to look.
-   * @returns The `(room, entry)` pairs that lost one, for a re-broadcast.
+   * @returns The `(room, entry)` pairs that lost one, for the boot log.
    */
   clearRecentAgentReactions(
     emoji: string,

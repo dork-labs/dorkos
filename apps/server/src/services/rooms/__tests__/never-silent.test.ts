@@ -180,11 +180,14 @@ describe('a busy agent is tried again', () => {
       return calls === 1 ? { text: null, unanswered: 'busy' } : { text: 'both answered' };
     });
     const w = open(runner, { agentPaths: ['/agents/ana'] });
-    w.service.post(w.room.id, { authorId: w.human, text: '@ana what is next?' });
+    const first = w.service.post(w.room.id, { authorId: w.human, text: '@ana what is next?' });
     await w.service.triggersIdle();
     w.service.post(w.room.id, { authorId: w.human, text: '@ana and after that?' });
     await w.service.triggersIdle();
     expect(calls).toBe(2);
+    // That turn read the first message too, so its 👀 comes off now, not when
+    // the waiting retry would have fired.
+    expect(receiptsOn(w, first)).toEqual([]);
     await vi.advanceTimersByTimeAsync(BUSY_RETRY_DELAYS_MS[0]! + 1_000);
     await w.service.triggersIdle();
     expect(calls).toBe(2);
@@ -206,16 +209,24 @@ describe('a busy agent is tried again', () => {
 });
 
 describe('when nobody can answer', () => {
-  it('says the channel has no lead, once', async () => {
+  it('stays quiet in a channel whose person chose no lead', async () => {
     const w = open(scriptedRunner(() => null));
     w.service.updateRoom(w.room.id, w.human, { leadAuthorId: null });
     w.service.post(w.room.id, { authorId: w.human, text: 'what is next?' });
     await w.service.triggersIdle();
+    expect(notices(w)).toEqual([]);
+  });
+
+  it('says it only once an hour in a channel with no agents', async () => {
+    const w = open(
+      scriptedRunner(() => null),
+      { agentPaths: [] }
+    );
+    w.service.post(w.room.id, { authorId: w.human, text: 'hello?' });
+    await w.service.triggersIdle();
     w.service.post(w.room.id, { authorId: w.human, text: 'anyone?' });
     await w.service.triggersIdle();
-    expect(notices(w)).toEqual([
-      'Nobody answered: this channel has no lead. @mention an agent, or pick a lead.',
-    ]);
+    expect(notices(w)).toHaveLength(1);
   });
 
   it('says the channel has no agents', async () => {
@@ -249,14 +260,31 @@ describe('when nobody can answer', () => {
 });
 
 describe('out of usage', () => {
-  it('says when the agent can answer again', async () => {
+  it('says when the agent can answer again, read from the chat the turn ran on', async () => {
     const resetsAt = new Date(Date.now() + 60 * 60_000).toISOString();
+    const runner = outcomeRunner(() => ({ text: null, unanswered: 'failed' }));
+    const asked: string[] = [];
+    const w = open(runner, {
+      agentPaths: ['/agents/ana'],
+      usageLimitFor: (sessionId) => {
+        asked.push(sessionId);
+        return sessionId === runner.turns[0]?.sessionId ? { resetsAt } : null;
+      },
+    });
+    w.service.post(w.room.id, { authorId: w.human, text: '@ana what is next?' });
+    await w.service.triggersIdle();
+    expect(asked).toHaveLength(1);
+    const line = notices(w).at(-1) ?? '';
+    expect(line).toContain('is out of usage until ');
+    expect(line).not.toContain('ran into a problem');
+  });
+
+  it('treats a reset already past as an ordinary failure', async () => {
+    const resetsAt = new Date(Date.now() - 60_000).toISOString();
     const runner = outcomeRunner(() => ({ text: null, unanswered: 'failed' }));
     const w = open(runner, { agentPaths: ['/agents/ana'], usageLimitFor: () => ({ resetsAt }) });
     w.service.post(w.room.id, { authorId: w.human, text: '@ana what is next?' });
     await w.service.triggersIdle();
-    const line = notices(w).at(-1) ?? '';
-    expect(line).toContain('is out of usage until ');
-    expect(line).not.toContain('ran into a problem');
+    expect(notices(w).at(-1)).toContain('ran into a problem');
   });
 });
