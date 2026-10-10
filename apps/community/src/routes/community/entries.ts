@@ -23,8 +23,8 @@ import {
   transaction,
 } from '../../data.js';
 import { ApiError, json, readJson } from '../../http.js';
-import { resolveCommunityMentions } from '../../content/mentions.js';
-import { channelRoster } from '../../content/roster.js';
+import { mentionCandidates, resolveCommunityMentions } from '../../content/mentions.js';
+import { addressedRoster } from '../../content/roster.js';
 import { attachmentsForEntries } from './attachments.js';
 import { enforcePostingRules } from '../../moderation/posting.js';
 import type { DeliveryReceiptGate } from '../../delivery-receipt-gate.js';
@@ -249,7 +249,14 @@ export function registerEntryRoutes(
         if (owned.rowCount !== body.attachmentIds.length)
           throw new ApiError(409, 'STATE_CONFLICT', 'An attachment is unavailable.');
       }
-      const roster = await channelRoster(client, channel.id, principal.community_id);
+      // Only who this post could address: the whole roster is read once per post otherwise.
+      const roster = await addressedRoster(
+        client,
+        channel.id,
+        principal.community_id,
+        mentionCandidates(body.text),
+        (body.mentions ?? []).filter(isUuid)
+      );
       const resolvedMentions = resolveCommunityMentions(body.text, roster);
       const mentions = body.mentions ?? resolvedMentions;
       const joinedIds = new Set(roster.map((member) => member.id));
