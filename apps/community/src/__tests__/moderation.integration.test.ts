@@ -17,7 +17,7 @@ import { createCommunityApp } from '../app.js';
 import { parseConfig } from '../config.js';
 import { migrate } from '../migrate.js';
 import { eraseMembership } from '../erasure/erasure.js';
-import { OPEN_REPORTS_PER_MEMBER } from '../routes/community/reports.js';
+import { OPEN_REPORTS_PER_MEMBER } from '../routes/community/moderation/reports.js';
 import { hashSecret, randomToken } from '../security.js';
 import {
   bootstrapFirstHost,

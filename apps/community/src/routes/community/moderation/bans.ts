@@ -6,13 +6,13 @@ import {
   CommunityWireBanResponseSchema,
   type CommunityWireBan,
 } from '@dorkos/shared/community-wire';
-import type { CommunityAuth } from '../../auth.js';
-import type { CommunityConfig } from '../../config.js';
+import type { CommunityAuth } from '../../../auth.js';
+import type { CommunityConfig } from '../../../config.js';
 import { z } from 'zod';
-import { requireLiveRole, requireMember, transaction, type Member } from '../../data.js';
-import { ApiError, json, readJson } from '../../http.js';
-import { banEmailKey, outranks } from '../../moderation/bans.js';
-import { remove } from './members.js';
+import { requireLiveRole, requireMember, transaction, type Member } from '../../../data.js';
+import { ApiError, json, readJson } from '../../../http.js';
+import { banEmailKey, outranks } from '../../../moderation/bans.js';
+import { remove } from '../members.js';
 
 interface BanRow {
   id: string;

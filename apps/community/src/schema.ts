@@ -991,6 +991,8 @@ export const entries = pgTable(
       .on(table.threadRootEntryId, table.communityId)
       .where(sql`${table.threadRootEntryId} IS NOT NULL`),
     index('entries_community_created_idx').on(table.communityId, table.createdAt.desc()),
+    // The watch-only checks read the last few minutes across every space (0036).
+    index('entries_created_idx').on(table.createdAt),
     foreignKey({
       name: 'entries_channel_tenant_fk',
       columns: [table.communityId, table.channelId],
@@ -1541,42 +1543,7 @@ export const ownerQuotaWindows = pgTable(
     }),
   ]
 );
-/** Security-relevant membership and channel actions. */
-export const auditEvents = pgTable(
-  'audit_events',
-  {
-    id: uuid('id').primaryKey().defaultRandom(),
-    communityId: uuid('community_id')
-      .notNull()
-      .references(() => communities.id),
-    actorMemberId: uuid('actor_member_id'),
-    action: text('action').notNull(),
-    subjectId: text('subject_id'),
-    actorKind: text('actor_kind').notNull().default('member'),
-    priorState: text('prior_state'),
-    nextState: text('next_state'),
-    changedFields: text('changed_fields').array().notNull().default([]),
-    /** A host takedown the host chose not to tell the owner about; owner exports leave it out. */
-    withheld: boolean('withheld').notNull().default(false),
-    createdAt: time('created_at'),
-    /** `imported` for an event an import restored from an owner export. */
-    origin: text('origin').notNull().default('native'),
-  },
-  (table) => [
-    check('audit_events_origin', sql`${table.origin} IN ('native','imported')`),
-    index('audit_events_community_created_idx').on(table.communityId, table.createdAt),
-    index('audit_events_actor_idx')
-      .on(table.actorMemberId)
-      .where(sql`${table.actorMemberId} IS NOT NULL`),
-    foreignKey({
-      name: 'audit_events_actor_tenant_fk',
-      columns: [table.communityId, table.actorMemberId],
-      foreignColumns: [members.communityId, members.id],
-    }),
-    check('audit_events_actor_kind', sql`${table.actorKind} IN ('member','system','host')`),
-    check('audit_events_changed_fields', sql`cardinality(${table.changedFields}) <= 16`),
-  ]
-);
+// `audit_events` lives in `schema/audit-events.ts`, beside the watch-only checks it records (0036).
 
 /** Host-set caps for one community. A community without a row has no limit. */
 export const communityLimits = pgTable(

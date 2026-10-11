@@ -897,6 +897,13 @@ const actions: Action<unknown>[] = [
     status: 200,
     call: () => ({ method: 'GET', path: '/api/v1/host/erasure-journal' }),
   }),
+  define({
+    rule: 'Read the post checks comparison: host operator yes, community roles no',
+    route: 'GET /host/decisions',
+    allowed: HOST_ROLES,
+    status: 200,
+    call: () => ({ method: 'GET', path: '/api/v1/host/decisions' }),
+  }),
   define<{ id: string }>({
     rule: 'Read one takedown: host operator yes, community roles no',
     route: 'GET /host/takedowns/:takedownId',

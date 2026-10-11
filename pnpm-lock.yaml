@@ -410,6 +410,9 @@ importers:
       '@dork-labs/ui':
         specifier: workspace:*
         version: link:../../packages/ui
+      '@dorkos/decisions':
+        specifier: workspace:*
+        version: link:../../packages/decisions
       '@dorkos/icons':
         specifier: workspace:*
         version: link:../../packages/icons

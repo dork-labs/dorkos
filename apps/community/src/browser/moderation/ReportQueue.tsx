@@ -2,6 +2,7 @@ import { Button } from '@dork-labs/ui';
 import { useCallback, useEffect, useState } from 'react';
 import type {
   CommunityWireReport,
+  CommunityWireReportCheck,
   CommunityWireReportResolveRequest as Resolution,
 } from '@dorkos/shared/community-wire';
 import { describeError, request } from '../api.js';
@@ -25,6 +26,37 @@ export const REPORT_REASON_LABELS: Record<CommunityWireReport['reason'], string>
   other: 'Other',
 };
 
+/** How a check names itself. */
+function checkName(check: string, modelId: string): string {
+  if (check === 'rules') return 'Built-in rules';
+  if (check === 'jev') return 'Jev';
+  return modelId;
+}
+
+/** One check's verdict in plain words, e.g. "Jev: looks like spam, 82% sure". */
+export function describeCheck(hint: CommunityWireReportCheck): string {
+  const sure = `, ${Math.round(hint.confidence * 100)}% sure`;
+  const what =
+    hint.verdict === 'unsure'
+      ? 'no clear answer'
+      : hint.verdict === 'fine'
+        ? `looks fine${sure}`
+        : hint.finding === 'rule'
+          ? `may break rule ${hint.rule}${sure}`
+          : hint.finding === 'promotion'
+            ? `looks like self-promotion${sure}`
+            : `looks like spam${sure}`;
+  return `${checkName(hint.check, hint.modelId)}: ${what}`;
+}
+
+/** Who raised a report: a member, an automatic check, or someone who has since left. */
+function reportedBy(report: CommunityWireReport): string {
+  if (report.reporter) return report.reporter.displayName;
+  if (!report.checkName) return 'a former member';
+  const modelId = report.checks?.find((hint) => hint.check === report.checkName)?.modelId;
+  return `an automatic check (${checkName(report.checkName, modelId ?? report.checkName)})`;
+}
+
 const ACTION_LABELS: Record<NonNullable<CommunityWireReport['action']>, string> = {
   remove: 'Message removed',
   mute: 'Author muted',
@@ -38,6 +70,7 @@ const ACTION_LABELS: Record<NonNullable<CommunityWireReport['action']>, string> 
  */
 export function ReportQueue({ busy, perform }: { busy: boolean; perform: Perform }) {
   const [status, setStatus] = useState<'open' | 'resolved'>('open');
+  const [checksOnly, setChecksOnly] = useState(false);
   const [reports, setReports] = useState<CommunityWireReport[]>([]);
   const [error, setError] = useState('');
   const [muting, setMuting] = useState<CommunityWireReport | null>(null);
@@ -56,6 +89,7 @@ export function ReportQueue({ busy, perform }: { busy: boolean; perform: Perform
   useEffect(() => {
     void reload();
   }, [reload]);
+  const shown = checksOnly ? reports.filter((report) => report.source === 'check') : reports;
   function resolve(report: CommunityWireReport, resolution: Resolution, success: string) {
     void perform(
       () => request(`/api/v1/reports/${report.id}/resolve`, 'POST', resolution),
@@ -66,25 +100,37 @@ export function ReportQueue({ busy, perform }: { busy: boolean; perform: Perform
     <section className="panel" aria-labelledby="report-queue-title">
       <div className="row justify-between">
         <h3 id="report-queue-title">Flagged messages</h3>
-        <Button variant="ghost" onClick={() => setStatus(status === 'open' ? 'resolved' : 'open')}>
-          {status === 'open' ? 'Show resolved' : 'Show open'}
-        </Button>
+        <div className="row">
+          <Button
+            variant="ghost"
+            aria-pressed={checksOnly}
+            onClick={() => setChecksOnly(!checksOnly)}
+          >
+            {checksOnly ? 'Show all' : 'Automatic checks only'}
+          </Button>
+          <Button
+            variant="ghost"
+            onClick={() => setStatus(status === 'open' ? 'resolved' : 'open')}
+          >
+            {status === 'open' ? 'Show resolved' : 'Show open'}
+          </Button>
+        </div>
       </div>
+      <p className="small muted">Automatic checks only flag. They never hide a message.</p>
       {error && (
         <p className="small muted" role="alert">
           {error}
         </p>
       )}
-      {!error && reports.length === 0 && (
+      {!error && shown.length === 0 && (
         <p className="small muted">
           {status === 'open' ? 'Nothing flagged.' : 'Nothing resolved yet.'}
         </p>
       )}
-      {reports.map((report) => (
+      {shown.map((report) => (
         <article className="border-b border-[var(--line)] py-2" key={report.id}>
           <div className="small muted">
-            {REPORT_REASON_LABELS[report.reason]} · From{' '}
-            {report.reporter?.displayName ?? report.checkName ?? 'a former member'}
+            {REPORT_REASON_LABELS[report.reason]} · From {reportedBy(report)}
             {report.action ? ` · ${ACTION_LABELS[report.action]}` : ''}
             {report.status === 'dismissed' ? ' · Dismissed' : ''}
           </div>
@@ -94,6 +140,13 @@ export function ReportQueue({ busy, perform }: { busy: boolean; perform: Perform
             {report.excerpt ?? <span className="muted">In a channel you haven't joined.</span>}
           </p>
           {report.note && <p className="small mb-1">“{report.note}”</p>}
+          {report.checks && report.checks.length > 0 && (
+            <ul className="small muted mb-1" aria-label="Automatic checks">
+              {report.checks.map((hint) => (
+                <li key={hint.check}>{describeCheck(hint)}</li>
+              ))}
+            </ul>
+          )}
           {report.status === 'open' && (
             <div className="row">
               <Button
