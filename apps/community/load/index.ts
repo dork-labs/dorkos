@@ -1,9 +1,10 @@
 #!/usr/bin/env node
 import { randomUUID } from 'node:crypto';
+import { readFile, writeFile } from 'node:fs/promises';
 import { availableParallelism } from 'node:os';
 import { monitorEventLoopDelay } from 'node:perf_hooks';
 import { parseLoadArgs, UsageError } from './args.js';
-import { seedLoadFixture } from './fixture.js';
+import { fixturePart, seedLoadFixture, type LoadFixture } from './fixture.js';
 import { fetchMetrics, type MetricsSnapshot } from './metrics.js';
 import { finishReport, type PeakFigures } from './report.js';
 import { startReaders, type ReaderResults } from './readers.js';
@@ -37,20 +38,43 @@ async function main(): Promise<void> {
   const loopDelay = monitorEventLoopDelay({ resolution: 10 });
   loopDelay.enable();
 
-  console.log(
-    `Seeding a throwaway community at ${args.url}: ${args.readers} readers, ${args.writers} writers...`
-  );
-  const fixture = await seedLoadFixture(args.url, {
-    communityName: args.communityName,
-    channelName: args.channelName,
-    readerCount: args.readers,
-    writerCount: args.writers,
-  });
-  console.log(`Seeded community ${fixture.communityId}, channel ${fixture.channelId}.`);
+  let seeded: LoadFixture;
+  if (args.fixture) {
+    seeded = JSON.parse(await readFile(args.fixture, 'utf8')) as LoadFixture;
+    console.log(`Using ${args.fixture}: community ${seeded.communityId}.`);
+  } else {
+    console.log(
+      `Seeding a throwaway community at ${args.url}: ${args.readers} readers, ${args.writers} writers...`
+    );
+    seeded = await seedLoadFixture(args.url, {
+      communityName: args.communityName,
+      channelName: args.channelName,
+      readerCount: args.readers,
+      writerCount: args.writers,
+    });
+    console.log(`Seeded community ${seeded.communityId}, channel ${seeded.channelId}.`);
+  }
+  if (args.fixtureOut) {
+    // Working credentials for every principal: readable by this account only.
+    await writeFile(args.fixtureOut, JSON.stringify(seeded), { mode: 0o600 });
+    console.log(
+      `Wrote ${args.fixtureOut}. Copy it to every load machine, run each part with --fixture, ` +
+        'and delete every copy when the run ends.'
+    );
+    return;
+  }
+  const fixture = fixturePart(seeded, args.part);
+  // Each part posts its share of the combined rate.
+  const ratePerSecond = args.ratePerSecond / args.part.count;
+  if (args.part.count > 1)
+    console.log(
+      `Part ${args.part.index} of ${args.part.count}: ${fixture.readers.length} readers, ` +
+        `${fixture.writers.length} writers, ${Number(ratePerSecond.toFixed(2))} posts/s.`
+    );
 
   const metricsBefore: MetricsSnapshot = await fetchMetrics(args.url, fixture.metricsKey);
   const durationMs = args.durationSeconds * 1_000;
-  const postCapacity = scheduledPostCount(args.ratePerSecond, durationMs);
+  const postCapacity = scheduledPostCount(ratePerSecond, durationMs);
   const threads = readerThreadCount(args.readerThreads, fixture.readers.length);
   if (fixture.readers.length / Math.max(1, threads) > 2 * READERS_PER_THREAD)
     console.warn(
@@ -107,10 +131,21 @@ async function main(): Promise<void> {
           'Streams that open later count as failures.'
       );
     await sleep(READER_WARMUP_MS);
+    if (args.startAt !== undefined) {
+      const untilStart = args.startAt - Date.now();
+      if (untilStart > 0) {
+        console.log(`Waiting ${Math.ceil(untilStart / 1_000)}s for --start-at...`);
+        await sleep(untilStart);
+      } else
+        console.warn(
+          `Warning: --start-at passed ${Math.ceil(-untilStart / 1_000)}s ago; posting now. ` +
+            'This part overlaps the others for less of the run.'
+        );
+    }
     await takeSample();
 
     console.log(
-      `Posting ${postCapacity} times at ${args.ratePerSecond}/s across ${fixture.writers.length} writers for ${args.durationSeconds}s...`
+      `Posting ${postCapacity} times at ${ratePerSecond}/s across ${fixture.writers.length} writers for ${args.durationSeconds}s...`
     );
     // Only the posting window matters for whether the generator kept up.
     loopDelay.reset();
@@ -122,7 +157,7 @@ async function main(): Promise<void> {
       communityId: fixture.communityId,
       channelId: fixture.channelId,
       writers: fixture.writers,
-      ratePerSecond: args.ratePerSecond,
+      ratePerSecond,
       durationMs,
       runId,
     });
@@ -164,9 +199,9 @@ async function main(): Promise<void> {
     communityId: fixture.communityId,
     channelId: fixture.channelId,
     requested: {
-      readers: args.readers,
-      writers: args.writers,
-      ratePerSecond: args.ratePerSecond,
+      readers: fixture.readers.length,
+      writers: fixture.writers.length,
+      ratePerSecond,
       durationSeconds: args.durationSeconds,
     },
     readerThreads: threads,

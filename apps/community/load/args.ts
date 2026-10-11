@@ -22,6 +22,14 @@ export interface LoadArgs {
   readerThreads: number | 'auto';
   /** How long to wait for every stream to open before posting starts anyway. */
   openTimeoutSeconds: number;
+  /** Seed only, write the fixture here, and exit: the first step of a run split across machines. */
+  fixtureOut?: string;
+  /** Use the fixture `--fixture-out` wrote instead of seeding one. */
+  fixture?: string;
+  /** This machine's share of a split run: part `index` (1-based) of `count`. */
+  part: { index: number; count: number };
+  /** When posting starts, in epoch milliseconds, so every part of a split run posts at once. */
+  startAt?: number;
   /** Things worth saying before the run starts, none of which stops it. */
   warnings: string[];
 }
@@ -74,6 +82,10 @@ export function parseLoadArgs(argv: readonly string[]): LoadArgs {
       'drain-timeout': { type: 'string', default: '120' },
       'reader-threads': { type: 'string', default: 'auto' },
       'open-timeout': { type: 'string', default: '300' },
+      'fixture-out': { type: 'string' },
+      fixture: { type: 'string' },
+      part: { type: 'string', default: '1/1' },
+      'start-at': { type: 'string' },
       'i-understand-this-is-production': { type: 'boolean', default: false },
       help: { type: 'boolean', default: false },
     },
@@ -102,6 +114,16 @@ export function parseLoadArgs(argv: readonly string[]): LoadArgs {
         '                            (default auto: one per 1,000 readers, up to the cores).',
         '  --open-timeout <seconds>  How long to wait for every stream to open before posting',
         '                            starts anyway; late streams count as failures (default 300).',
+        '',
+        'Splitting one run across several load machines (see OPERATIONS.md):',
+        '  --fixture-out <path>      Seed the community, write its credentials here, and exit.',
+        '  --fixture <path>          Use that file instead of seeding. --readers and --writers',
+        '                            are then read from it.',
+        '  --part <k>/<n>            Run part k of n: its share of the readers and writers, at',
+        '                            --rate divided by n (default 1/1).',
+        '  --start-at <time>         Start posting at this ISO 8601 time, so every part posts',
+        "                            together (default: as soon as this part's streams are open).",
+        '',
         '  --i-understand-this-is-production',
         '                            Required to target a non-local --url.',
       ].join('\n'),
@@ -144,6 +166,23 @@ export function parseLoadArgs(argv: readonly string[]): LoadArgs {
   const quietMs = positiveInt('quiet-ms', values['quiet-ms']);
   if (quietMs < MIN_QUIET_MS) throw new UsageError(`--quiet-ms must be at least ${MIN_QUIET_MS}.`);
 
+  const partMatch = /^(\d+)\/(\d+)$/.exec(values.part);
+  const part = partMatch ? { index: Number(partMatch[1]), count: Number(partMatch[2]) } : null;
+  if (!part || part.count < 1 || part.index < 1 || part.index > part.count)
+    throw new UsageError(`--part must look like 2/3 (part 2 of 3), got "${values.part}".`);
+  if (values['fixture-out'] && values.fixture)
+    throw new UsageError('Use --fixture-out to seed, or --fixture to run, not both.');
+  if (part.count > 1 && !values.fixture)
+    throw new UsageError(
+      '--part needs --fixture: seed once with --fixture-out, then give every part that file.'
+    );
+  let startAt: number | undefined;
+  if (values['start-at'] !== undefined) {
+    startAt = Date.parse(values['start-at']);
+    if (Number.isNaN(startAt))
+      throw new UsageError(`--start-at must be an ISO 8601 time, got "${values['start-at']}".`);
+  }
+
   const warnings: string[] = [];
   const perWriter = writers
     ? Math.ceil((ratePerSecond * Math.min(durationSeconds, 600)) / writers)
@@ -172,6 +211,10 @@ export function parseLoadArgs(argv: readonly string[]): LoadArgs {
         ? 'auto'
         : positiveInt('reader-threads', values['reader-threads']),
     openTimeoutSeconds: positiveInt('open-timeout', values['open-timeout']),
+    fixtureOut: values['fixture-out'],
+    fixture: values.fixture,
+    part,
+    startAt,
     warnings,
   };
 }
