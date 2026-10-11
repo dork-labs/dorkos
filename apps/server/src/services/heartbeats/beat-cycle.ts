@@ -44,13 +44,14 @@ import {
 } from './gatherers/index.js';
 import { recordBeat } from './record.js';
 import { standingKey, triageByRules } from './triage-rules.js';
+import { decideBeat, type BeatTriagePort } from './triage/beat-triage.js';
 import type { BeatAgent, BeatOutboxPort, BeatWake, FinishedBeat } from './beat-runner.js';
 
 /** The longest a failing gatherer holds `gathered_through` back. */
 export const GATHER_HOLD_MAX_MS = 24 * 60 * 60_000;
 
 /** Outcomes after which what the beat gathered counts as dealt with. */
-const DEALT_WITH: ReadonlySet<BeatOutcome> = new Set(['quiet', 'worked', 'no-end-beat']);
+const DEALT_WITH: ReadonlySet<BeatOutcome> = new Set(['quiet', 'queued', 'worked', 'no-end-beat']);
 
 /** What one beat reaches. */
 export interface BeatCycleDeps {
@@ -74,6 +75,8 @@ export interface BeatCycleDeps {
   mintId?(): string;
   /** Hears every finished beat. */
   onFinished(beat: FinishedBeat): void;
+  /** Triage on a decision model (§6.2); absent, the rules decide alone. */
+  triage?: BeatTriagePort;
 }
 
 /** What this beat opened, for the runner to close if anything throws. */
@@ -84,6 +87,8 @@ export interface BeatTrack {
   chatSessionId?: string;
   /** Set once the turn's registry entry was settled. */
   settled?: boolean;
+  /** Fires when the runner stops, so a check in flight stops asking. */
+  signal?: AbortSignal;
 }
 
 /** How a beat ended, for the runner's retries. */
@@ -153,7 +158,7 @@ export async function runBeat(
   track: BeatTrack
 ): Promise<BeatResult> {
   const ctx = await openAndTriage(deps, plan, wake, track);
-  if (ctx === 'quiet') return { outcome: 'quiet' };
+  if (ctx === 'quiet' || ctx === 'queued' || ctx === 'skipped') return { outcome: ctx };
   return runTurn(deps, ctx, track);
 }
 
@@ -163,7 +168,7 @@ async function openAndTriage(
   plan: BeatPlan<BeatAgent>,
   wake: BeatWake,
   track: BeatTrack
-): Promise<BeatContext | 'quiet'> {
+): Promise<BeatContext | 'quiet' | 'queued' | 'skipped'> {
   const { agent } = plan;
   const now = new Date(deps.clock.now());
   const startedAt = now.toISOString();
@@ -190,6 +195,17 @@ async function openAndTriage(
     seenStanding,
   });
   if (triage.considered.length > 0) deps.store.patchState(agent.id, { lastChangeAt: startedAt });
+  const decided = await decideBeat(deps.triage, {
+    kind,
+    verdict: triage.verdict,
+    considered: triage.considered,
+    agentName: agent.name,
+    checklist: plan.checklist,
+    ...(track.signal ? { signal: track.signal } : {}),
+  });
+  // Saved at once: a turn that throws or a restart still leaves what the check
+  // spent, and the daily fuse is seeded from these rows.
+  deps.store.finishBeat(beatId, { triage: decided.record });
   const ctx: BeatContext = {
     agent,
     plan,
@@ -199,12 +215,25 @@ async function openAndTriage(
     kind,
     changes: triage.considered,
     counts: JSON.stringify(gathered.counts),
-    triage: JSON.stringify({ rung: 'rules', verdict: triage.verdict }),
+    triage: decided.record,
     changeKeys: JSON.stringify(gathered.changes.map(standingKey)),
     gatheredThrough: nextGatheredThrough(state?.gatheredThrough ?? null, startedAt, gathered),
   };
-  if (kind === 'sweep' || triage.verdict !== 'quiet') return ctx;
+  if (track.signal?.aborted) {
+    // Heartbeats were stopped mid-check: no turn, and nothing counts as seen.
+    finish(deps, ctx, { outcome: 'skipped', summary: 'Stopped before its check finished.' });
+    return 'skipped';
+  }
+  if (decided.decision === 'turn') return ctx;
   const checked = plan.settings.watch.length;
+  if (decided.decision === 'queue') {
+    deps.triage?.queue({ agentId: agent.id, beatId, changes: triage.considered, at: startedAt });
+    finish(deps, ctx, {
+      outcome: 'queued',
+      summary: `Checked ${checked} things. Saved for its next report.`,
+    });
+    return 'queued';
+  }
   finish(deps, ctx, {
     outcome: 'quiet',
     summary:

@@ -47,4 +47,17 @@ describe('notification presentation', () => {
       search: { community: 'remote_owner_a' },
     });
   });
+
+  // Spec heartbeats §6.3. The offer's card is on every agent's Heartbeat page.
+  it('takes the credits offer to the team, where its agents are', () => {
+    const row: NotificationDTO = {
+      id: '01JZG0000000000000000011',
+      kind: 'heartbeat.credits-offer',
+      tier: 'quiet',
+      subject: { type: 'system', id: 'heartbeat-credits-offer' },
+      title: 'Run cheap checks on DorkOS credits?',
+      createdAt: '2026-10-10T12:00:00.000Z',
+    };
+    expect(notificationLink(row)).toEqual({ to: '/team', search: {} });
+  });
 });

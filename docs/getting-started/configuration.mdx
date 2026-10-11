@@ -160,6 +160,12 @@ Whether your agents wake up on their own to check their work. Each agent's own `
       type: 'boolean',
       default: 'true',
     },
+    'heartbeats.triageOnCredits': {
+      description:
+        'Whether quick checks run on DorkOS credits. Empty until you answer the offer on an agent’s Heartbeat page; nothing is spent until you say yes.',
+      type: 'boolean | null',
+      default: 'null',
+    },
   }}
 />
 

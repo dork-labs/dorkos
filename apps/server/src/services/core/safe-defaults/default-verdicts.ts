@@ -496,6 +496,8 @@ export const SAFE_DEFAULTS: Readonly<Record<string, unknown>> = {
   'cloud.credits.offer': 'none',
   // No agent allowed onto credits, and no account the choices belong to yet.
   'cloud.credits.agents': [],
+  // No beat's cheap check runs on credits until a person answers the offer (spec `heartbeats` §6.3).
+  'heartbeats.triageOnCredits': null,
   'cloud.credits.linkedTo': null,
   // Managed remote access starts off, with no consent, link or credential (DOR-2086).
   ...CLOUD_REMOTE_SAFE_DEFAULTS,

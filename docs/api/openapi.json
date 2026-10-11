@@ -1863,6 +1863,9 @@
           },
           "report": {
             "$ref": "#/components/schemas/HeartbeatReportStatus"
+          },
+          "checks": {
+            "$ref": "#/components/schemas/HeartbeatChecks"
           }
         },
         "required": [
@@ -1873,7 +1876,8 @@
           "fileError",
           "lastBeats",
           "held",
-          "report"
+          "report",
+          "checks"
         ]
       },
       "HeartbeatWake": {
@@ -2028,6 +2032,48 @@
           "daily",
           "weekly",
           "off"
+        ]
+      },
+      "HeartbeatChecks": {
+        "type": "object",
+        "properties": {
+          "runsOn": {
+            "type": "string",
+            "enum": [
+              "credits",
+              "runtime"
+            ]
+          },
+          "runtime": {
+            "type": "string"
+          },
+          "today": {
+            "type": "integer"
+          },
+          "tokens": {
+            "type": "integer"
+          },
+          "offer": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "runsOn",
+          "runtime",
+          "today",
+          "tokens",
+          "offer"
+        ]
+      },
+      "TriageCreditsChoice": {
+        "type": "object",
+        "properties": {
+          "useCredits": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "useCredits"
         ]
       },
       "HealthResponse": {
@@ -16823,7 +16869,8 @@
           "credits.refused",
           "extension.approval",
           "extension.decision",
-          "community.owner-replacement"
+          "community.owner-replacement",
+          "heartbeat.credits-offer"
         ]
       },
       "NotificationTier": {
@@ -20608,6 +20655,42 @@
           },
           "404": {
             "description": "No agent with that id"
+          }
+        }
+      }
+    },
+    "/api/heartbeats/triage-credits": {
+      "put": {
+        "tags": [
+          "Heartbeats"
+        ],
+        "summary": "Choose whether cheap checks run on DorkOS credits",
+        "description": "A person’s answer to the one-time offer: `true` is Use credits, `false` is Not now. Owner only, and never an agent. Nothing is spent while the answer is not `true`.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TriageCreditsChoice"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The answer, stored",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TriageCreditsChoice"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The body is not an answer"
+          },
+          "403": {
+            "description": "Only the owner of this DorkOS can answer"
           }
         }
       }

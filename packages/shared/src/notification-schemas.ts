@@ -113,6 +113,11 @@ export const NOTIFICATION_KINDS = [
    * that request completed (DOR-2543). One per request and phase.
    */
   'community.owner-replacement',
+  /**
+   * The one-time offer to run agents' cheap checks on DorkOS credits (spec
+   * `heartbeats` §6.3). Raised once per computer, while nobody has answered.
+   */
+  'heartbeat.credits-offer',
 ] as const;
 
 /** Every kind of notification DorkOS can raise. */

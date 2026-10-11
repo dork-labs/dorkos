@@ -51,6 +51,13 @@ beforeEach(async () => {
           enabled,
           runtimeRegistered: (runtime) => runtime === 'doe',
           isAgent: (id) => id.startsWith('agent-'),
+          checks: async (a, viewer) => ({
+            runsOn: 'runtime',
+            runtime: a.runtime,
+            today: 0,
+            tokens: 0,
+            offer: viewer,
+          }),
         }),
     })
   );
