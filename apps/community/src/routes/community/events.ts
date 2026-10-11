@@ -1,31 +1,30 @@
 import type { Context, Hono } from 'hono';
 import type { Pool } from 'pg';
-import {
-  CommunityWireAttentionResponseSchema,
-  CommunityWireEventSchema,
-  CommunityWireReadCursorRequestSchema,
-  CommunityWireReadCursorResponseSchema,
-  type CommunityWireEvent,
-} from '@dorkos/shared/community-wire';
+import { CommunityWireEventSchema, type CommunityWireEvent } from '@dorkos/shared/community-wire';
 import type { CommunityAuth } from '../../auth.js';
 import type { CommunityConfig } from '../../config.js';
 import { decodeCursor, encodeCursor } from '../../content/cursor.js';
 import {
   assertPrincipalCurrent,
-  assertPrincipalCurrentInTransaction,
   communityHeld,
-  lockChannel,
-  requireJoined,
   requirePrincipal,
-  transaction,
   type Principal,
 } from '../../data.js';
-import { ApiError, ServiceBusy, json, readJson } from '../../http.js';
+import { ApiError, ServiceBusy } from '../../http.js';
 import { LiveStreamLimit, type LiveHub, type LiveStream } from '../../live/hub.js';
-import { entryProjection, originKeyForPrincipal } from './entries.js';
+import { ChannelFeeds, nextTick, type FeedItem } from '../../live/feed.js';
+import { ENTRY_COLUMNS, entryProjection, originKeyForPrincipal, type EntryRow } from './entries.js';
 import { attachmentsForEntries } from './attachments.js';
-import { communityGoneReason } from '../../tenant-context.js';
 import {
+  entryFrame,
+  readStreamEntries,
+  streamEntryReader,
+  type StreamEntry,
+} from './event-feed.js';
+import { communityGoneReason } from '../../tenant-context.js';
+import { registerReadCursorRoutes } from './read-cursors.js';
+import {
+  CachedStreamAccess,
   channelWire,
   liveChannel,
   readStreamAccess,
@@ -40,12 +39,21 @@ import {
 const HEARTBEAT_MS = 15_000;
 /** What a refused stream is told to wait, in seconds, before it opens again. */
 const STREAM_RETRY_SECONDS = 15;
+/** Entries one stream reads for itself at once, when it is behind what its feed keeps. */
+const OWN_BATCH = 100;
+/** How many fallback intervals a passing access check is trusted for; see its use. */
+const TRUST_FACTOR = 1.25;
+/** Entries one stream sends in one write. */
+const SEND_BATCH = 50;
+/** The channel feeds each hub's streams share; see `live/feed.ts`. */
+const feedsByHub = new WeakMap<LiveHub, ChannelFeeds<StreamEntry>>();
 
 /**
- * Register durable SSE replay and monotonic per-member read positions.
+ * Register durable SSE replay, and (through `read-cursors.ts`) per-member read positions.
  *
- * Live streams wake on notices through `hub` rather than polling: each reads the channel once
- * per notice that names it, and rechecks its access once per notice that may have changed it.
+ * Live streams wake on notices through `hub` rather than polling. Each new entry is read once
+ * for every stream on its channel (`live/feed.ts`); each stream rechecks its own access once per
+ * notice that may have changed it, and sends nothing until it has.
  */
 export function registerEventRoutes(
   app: Hono,
@@ -66,109 +74,26 @@ export function registerEventRoutes(
     };
   }
 ) {
+  registerReadCursorRoutes(app, { pool, auth, config });
   const fallbackMs = hub.options.fallbackMs;
-  app.get('/attention', async (c) => {
-    const principal = await requirePrincipal(c, auth, pool, 'read');
-    if (principal.kind !== 'human')
-      throw new ApiError(403, 'FORBIDDEN', 'Agents do not have personal attention summaries.');
-    const result = await pool.query<{ unread_count: string; mention_count: string }>(
-      `SELECT
-         COALESCE(SUM(GREATEST(channel.last_seq-COALESCE(cursor.seq,0),0)),0)::text AS unread_count,
-         COALESCE(SUM((SELECT count(DISTINCT entry.id) FROM entries entry
-           JOIN entry_mentions mention ON mention.entry_id=entry.id
-           WHERE entry.channel_id=channel.id AND entry.community_id=$2 AND mention.community_id=$2
-             AND entry.seq>COALESCE(cursor.seq,0) AND mention.mentioned_member_id=$1)),0)::text AS mention_count
-       FROM channels channel
-       LEFT JOIN channel_members membership ON membership.channel_id=channel.id AND membership.member_id=$1
-       LEFT JOIN read_cursors cursor ON cursor.channel_id=channel.id AND cursor.member_id=$1
-       WHERE channel.community_id=$2 AND (channel.visibility='public' OR membership.member_id IS NOT NULL)`,
-      [principal.id, principal.community_id]
-    );
-    await assertPrincipalCurrent(c, auth, pool, principal, 'read');
-    const row = result.rows[0] ?? { unread_count: '0', mention_count: '0' };
-    return json(c, CommunityWireAttentionResponseSchema, {
-      unreadCount: Number(row.unread_count),
-      mentionCount: Number(row.mention_count),
+  // One set of feeds per hub: an app that shares another's hub (as a test does) shares its feeds,
+  // or the hub would hand each notice to only one of them.
+  let feeds = feedsByHub.get(hub);
+  if (!feeds) {
+    feeds = new ChannelFeeds<StreamEntry>({
+      read: streamEntryReader(
+        pool,
+        () => hooks?.afterEntryAttachmentLookup?.() ?? Promise.resolve()
+      ),
+      wake: (communityId, channelId) => hub.wakeChannel(communityId, channelId),
+      hasStreams: (communityId, channelId) => hub.hasChannelStreams(communityId, channelId),
+      fallbackMs,
+      log: hub.options.log,
     });
-  });
-
-  app.get('/channels/:id/read-cursor', async (c) => {
-    const member = await requirePrincipal(c, auth, pool, 'read');
-    if (member.kind !== 'human')
-      throw new ApiError(403, 'FORBIDDEN', 'Agents do not have read cursors.');
-    const channel = await liveChannel(pool, c.req.param('id'), member);
-    await assertPrincipalCurrent(c, auth, pool, member, 'read');
-    const seq = Number(channel.read_seq);
-    return json(c, CommunityWireReadCursorResponseSchema, {
-      cursor: seq
-        ? encodeCursor(
-            {
-              version: 1,
-              communityId: member.community_id,
-              channelId: channel.id,
-              thread: null,
-              epoch: channel.epoch,
-              seq,
-            },
-            config
-          )
-        : null,
-      unreadCount: Math.max(0, Number(channel.last_seq) - seq),
-    });
-  });
-
-  app.put('/channels/:id/read-cursor', async (c) => {
-    const member = await requirePrincipal(c, auth, pool, 'read');
-    if (member.kind !== 'human')
-      throw new ApiError(403, 'FORBIDDEN', 'Agents do not have read cursors.');
-    const openedSession = member.credentialHash
-      ? undefined
-      : await auth.api.getSession({ headers: c.req.raw.headers });
-    if (!member.credentialHash && !openedSession)
-      throw new ApiError(401, 'UNAUTHENTICATED', 'This sign-in is no longer valid.');
-    const body = await readJson(c, CommunityWireReadCursorRequestSchema);
-    const { channel, current } = await transaction(pool, async (client) => {
-      const channel = await lockChannel(client, c.req.param('id'), member, 'read');
-      requireJoined(channel);
-      await assertPrincipalCurrentInTransaction(client, member, 'read', openedSession?.session.id);
-      const seq = decodeCursor(
-        body.cursor,
-        {
-          communityId: member.community_id,
-          channelId: channel.id,
-          thread: null,
-          epoch: channel.epoch,
-        },
-        config
-      );
-      if (seq > Number(channel.last_seq))
-        throw new ApiError(409, 'STATE_CONFLICT', 'The cursor is ahead of channel history.');
-      const result = await client.query<{ seq: string }>(
-        `INSERT INTO read_cursors(community_id,channel_id,member_id,seq) VALUES($1,$2,$3,$4)
-         ON CONFLICT(channel_id,member_id) DO UPDATE SET seq=GREATEST(read_cursors.seq,EXCLUDED.seq),updated_at=now()
-         RETURNING seq`,
-        [member.community_id, channel.id, member.id, seq]
-      );
-      return { channel, current: Number(result.rows[0].seq) };
-    });
-    return json(c, CommunityWireReadCursorResponseSchema, {
-      cursor: current
-        ? encodeCursor(
-            {
-              version: 1,
-              communityId: member.community_id,
-              channelId: channel.id,
-              thread: null,
-              epoch: channel.epoch,
-              seq: current,
-            },
-            config
-          )
-        : null,
-      unreadCount: Math.max(0, Number(channel.last_seq) - current),
-    });
-  });
-
+    feedsByHub.set(hub, feeds);
+    hub.useFanout(feeds);
+  }
+  const channelFeeds = feeds;
   app.get('/channels/:id/events', async (c) => {
     const principal = await requirePrincipal(c, auth, pool, 'read');
     if (principal.credentialKind === 'grant' && principal.historyOnly)
@@ -237,19 +162,19 @@ export function registerEventRoutes(
       throw new ApiError(410, 'CURSOR_STALE', 'This cursor is ahead of channel history.');
     await hooks?.afterSnapshotWatermark?.();
     const snapshotRows = (
-      await pool.query(
+      await pool.query<EntryRow>(
         resume
-          ? `SELECT e.id,e.channel_id,e.seq,COALESCE(e.author_member_id,e.author_agent_id) AS author_member_id,e.author_agent_id,e.author_display_name,e.text,COALESCE((SELECT array_agg(COALESCE(em.mentioned_member_id,em.mentioned_agent_id) ORDER BY em.position) FROM entry_mentions em WHERE em.entry_id=e.id),'{}'::uuid[]) AS mentions,e.parent_entry_id,e.thread_root_entry_id,e.created_at,e.idempotency_key,a.owner_member_id AS agent_owner_member_id
+          ? `SELECT ${ENTRY_COLUMNS}
              FROM entries e LEFT JOIN agents a ON a.id=e.author_agent_id WHERE e.channel_id=$1 AND e.seq>$2 AND e.seq<=$3 ORDER BY e.seq LIMIT 100`
-          : `SELECT e.id,e.channel_id,e.seq,COALESCE(e.author_member_id,e.author_agent_id) AS author_member_id,e.author_agent_id,e.author_display_name,e.text,COALESCE((SELECT array_agg(COALESCE(em.mentioned_member_id,em.mentioned_agent_id) ORDER BY em.position) FROM entry_mentions em WHERE em.entry_id=e.id),'{}'::uuid[]) AS mentions,e.parent_entry_id,e.thread_root_entry_id,e.created_at,e.idempotency_key,a.owner_member_id AS agent_owner_member_id
+          : `SELECT ${ENTRY_COLUMNS}
              FROM (SELECT * FROM entries WHERE channel_id=$1 AND seq<=$2 ORDER BY seq DESC LIMIT 100) e LEFT JOIN agents a ON a.id=e.author_agent_id ORDER BY e.seq`,
         resume ? [channel.id, position, capturedSeq] : [channel.id, position]
       )
     ).rows;
-    if (snapshotRows.length) position = Number(snapshotRows.at(-1).seq);
+    if (snapshotRows.length) position = Number(snapshotRows.at(-1)!.seq);
     const snapshotAttachments = await attachmentsForEntries(
       pool,
-      snapshotRows.map((row: { id: string }) => row.id)
+      snapshotRows.map((row) => row.id)
     );
     await assertPrincipalCurrent(c, auth, pool, principal, 'read');
     if (openedSession) {
@@ -258,6 +183,7 @@ export function registerEventRoutes(
         throw new ApiError(401, 'UNAUTHENTICATED', 'This sign-in is no longer valid.');
     }
     const encoder = new TextEncoder();
+    const reader = { epoch: channel.epoch, communityId: principal.community_id, principal };
     let closed = false;
     /**
      * Access ended while the reader was not taking events. The closed frame waits for its next
@@ -266,6 +192,11 @@ export function registerEventRoutes(
     let closeWhenRead: StreamCloseReason | null = null;
     let replayComplete = false;
     let lastHeartbeat = Date.now();
+    /** Entries this stream read for itself, because it was behind what the feed keeps. */
+    let own: FeedItem<StreamEntry>[] = [];
+    /** The feed's version when `own` was read: a removal since means they may be stale. */
+    let ownVersion = -1;
+    let seeded = false;
     const currentCursor = () =>
       encodeCursor(
         {
@@ -297,13 +228,11 @@ export function registerEventRoutes(
       live.entries.raise();
       live.access.raise();
     };
-    // A quiet stream re-reads anyway after the fallback interval, in case a notice was lost or
-    // access ended in a way no notice announces (a session simply expiring). Jitter spreads the
-    // re-reads of streams that opened together.
+    // A quiet stream rechecks its access after the fallback interval anyway, in case access ended
+    // in a way no notice announces (a session simply expiring). Jitter spreads the rechecks of
+    // streams that opened together. New entries a lost notice hid are found by the feed's own
+    // fallback re-read, once per channel.
     const fallbackWait = () => Math.round(fallbackMs * (0.8 + Math.random() * 0.4));
-    // A quiet stream rechecks only when a notice says its access may have changed, or after the
-    // fallback interval; every entry is still checked fresh before it is sent.
-    const checkAccess = () => readStreamAccess(pool, principal, openedSession, channel.id);
     // Nothing is visible to the stream's credential any more: tell a takedown and a finished
     // deletion apart from every other way access ends. Both are read after the access query,
     // and each is written in the transaction that ends access, so it is already there.
@@ -313,6 +242,14 @@ export function registerEventRoutes(
         channel.epoch,
         state ? null : await communityGoneReason(pool, principal.community_id)
       );
+    // Trusted a little longer than the quiet-time watch below waits (at most 1.2 × the fallback),
+    // so that watch, jittered per stream, refreshes it first. Trusted for exactly the fallback,
+    // every stream that opened in the same moment rechecked in the same moment too: 5,000 at once
+    // queued posts behind them for seconds.
+    const access = new CachedStreamAccess(live, fallbackMs * TRUST_FACTOR, async () => {
+      const state = await readStreamAccess(pool, principal, openedSession, channel.id);
+      return { reason: await closeReason(state), expiresAt: state?.expires_at?.getTime() };
+    });
     const stream = new ReadableStream<Uint8Array>(
       {
         start(controller) {
@@ -346,7 +283,7 @@ export function registerEventRoutes(
             while (!closed) {
               await live.access.wait(fallbackWait());
               if (closed) return;
-              const reason = await closeReason(await checkAccess());
+              const reason = await access.check();
               if (closed || !reason) continue;
               if (controller.desiredSize !== null && controller.desiredSize > 0) {
                 stop();
@@ -409,42 +346,77 @@ export function registerEventRoutes(
                 });
                 return;
               }
-              const result = await pool.query(
-                `SELECT e.id,e.channel_id,e.seq,COALESCE(e.author_member_id,e.author_agent_id) AS author_member_id,e.author_agent_id,e.author_display_name,e.text,COALESCE((SELECT array_agg(COALESCE(em.mentioned_member_id,em.mentioned_agent_id) ORDER BY em.position) FROM entry_mentions em WHERE em.entry_id=e.id),'{}'::uuid[]) AS mentions,e.parent_entry_id,e.thread_root_entry_id,e.created_at,e.idempotency_key,a.owner_member_id AS agent_owner_member_id
-               FROM entries e LEFT JOIN agents a ON a.id=e.author_agent_id WHERE e.channel_id=$1 AND e.seq>$2 ORDER BY e.seq LIMIT 1`,
-                [channel.id, position]
-              );
-              if (closed) return;
-              const row = result.rows[0];
-              if (row) {
-                position = Number(row.seq);
-                const attachmentMap = await attachmentsForEntries(pool, [row.id]);
-                await hooks?.afterEntryAttachmentLookup?.();
-                // Fresh, never cached: a notice arrives a moment after its commit, and an entry
-                // must not slip out in that moment after access ended.
-                const afterEnrichment = await closeReason(await checkAccess());
-                if (closed) return;
-                if (afterEnrichment) {
-                  stop();
+              const feed = channelFeeds.feed(principal.community_id, channel.id);
+              if (!seeded) {
+                seeded = true;
+                feed.seed(capturedSeq);
+              }
+              let items: FeedItem<StreamEntry>[];
+              let noticedThrough: number;
+              if (own.length && ownVersion !== feed.version) own = [];
+              if (own.length) {
+                items = own.slice(0, SEND_BATCH);
+                // Read without a notice: send only on access checked after the read.
+                noticedThrough = -1;
+              } else {
+                const found = feed.after(position, SEND_BATCH);
+                if (!found.covered) {
+                  const version = feed.version;
+                  const rows = await readStreamEntries(pool, channel.id, position, null, OWN_BATCH);
+                  await hooks?.afterEntryAttachmentLookup?.();
+                  if (closed) return;
+                  const readAt = nextTick();
+                  own = rows.map((value) => ({ seq: Number(value.row.seq), value, readAt }));
+                  ownVersion = version;
+                  // Caught up: the feed can carry this stream, and the next ones, from here.
+                  if (rows.length < OWN_BATCH) feed.seed(own.at(-1)?.seq ?? position);
+                  if (own.length) continue;
+                }
+                items = found.items;
+                noticedThrough = found.noticedThrough;
+              }
+              if (!replayComplete) {
+                // Replay ends at the watermark, with its own event, before any live entry.
+                const replayed = items.filter((item) => item.seq <= capturedSeq);
+                if (!replayed.length && items.length) {
+                  replayComplete = true;
                   writeEvent(controller, {
-                    type: 'closed',
-                    reason: afterEnrichment,
+                    type: 'replay_complete',
+                    capturedSeq,
                     cursor: currentCursor(),
                   });
-                  controller.close();
                   return;
                 }
-                const entry = entryProjection(
-                  row,
-                  channel.epoch,
-                  config,
-                  attachmentMap.get(row.id),
-                  principal.community_id,
-                  originKeyForPrincipal(row, principal)
+                items = replayed;
+              }
+              if (items.length) {
+                // An entry a notice announced goes out on access no notice has questioned since
+                // it was checked. One read without a notice needs a check made after that read.
+                const after = Math.max(
+                  0,
+                  ...items.filter((item) => item.seq > noticedThrough).map((item) => item.readAt)
                 );
-                writeEvent(controller, { type: 'entry', entry, cursor: entry.cursor });
-                if (replayComplete)
-                  hub.observeLag((Date.now() - new Date(row.created_at).getTime()) / 1000);
+                if (!access.allows(after)) {
+                  const reason = await access.check(after);
+                  if (closed) return;
+                  if (reason) {
+                    stop();
+                    writeEvent(controller, { type: 'closed', reason, cursor: currentCursor() });
+                    controller.close();
+                    return;
+                  }
+                  // Look again: what the feed holds may have changed while the check ran.
+                  continue;
+                }
+                const frames = items.map((item) => entryFrame(item.value, reader, config));
+                controller.enqueue(frames.length === 1 ? frames[0] : joinFrames(frames));
+                position = items.at(-1)!.seq;
+                if (own.length) own = own.filter((item) => item.seq > position);
+                if (replayComplete) {
+                  const now = Date.now();
+                  for (const item of items)
+                    hub.observeLag((now - item.value.row.created_at.getTime()) / 1000);
+                }
                 return;
               }
               const sinceHeartbeat = Date.now() - lastHeartbeat;
@@ -478,4 +450,17 @@ export function registerEventRoutes(
       },
     });
   }
+}
+
+/** Several frames as one chunk: one write to the socket instead of one per entry. */
+function joinFrames(frames: Uint8Array[]): Uint8Array {
+  let length = 0;
+  for (const frame of frames) length += frame.length;
+  const joined = new Uint8Array(length);
+  let offset = 0;
+  for (const frame of frames) {
+    joined.set(frame, offset);
+    offset += frame.length;
+  }
+  return joined;
 }

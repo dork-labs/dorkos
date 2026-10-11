@@ -20,7 +20,6 @@ import { gateAccountLink, settleTrustedLink, SIGN_IN_REFUSED_CODE } from './sign
 import { withRequestStart, writtenBeforeClearing } from './sign-in/request-start.js';
 import { communityEmailLinks } from './email-links/plugin.js';
 import { queueEmailConfirmation } from './email-links/requests.js';
-import { notifyLive } from './live/notices.js';
 import { isBanned } from './moderation/bans.js';
 import {
   OPEN_ADMISSION_COOKIE,
@@ -450,21 +449,14 @@ export function createCommunityAuth(
            */
           after: async (session) => {
             if (!(await writtenBeforeClearing(pool, session.userId, { lock: true }))) return;
+            // The session table's delete trigger tells live streams (migration 0035).
             await pool.query('DELETE FROM session WHERE id=$1', [session.id]);
-            await notifyLive(pool, { k: 'user', u: session.userId });
             throw clearedRefusal();
           },
         },
-        /**
-         * Sign-out, revoking one session or all of them, and clearing an expired one: Better Auth
-         * deletes the row itself and calls this after its commit. A live stream opened with that
-         * session rechecks at once rather than at its fallback re-read.
-         */
-        delete: {
-          after: async (session) => {
-            await notifyLive(pool, { k: 'user', u: session.userId });
-          },
-        },
+        // Sign-out, revoking one session or all of them, and clearing an expired one need no
+        // hook here: the session table's delete trigger (migration 0035) sends the live notice
+        // inside the deleting transaction, so it arrives before any message posted after it.
       },
     },
   });

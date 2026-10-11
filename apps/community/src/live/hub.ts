@@ -1,3 +1,4 @@
+import type { LiveEntryFanout } from './feed.js';
 import { LiveListener, type LiveListenerState } from './listener.js';
 import type { LiveNotice, LiveNoticeTarget } from './notices.js';
 
@@ -9,14 +10,40 @@ import type { LiveNotice, LiveNoticeTarget } from './notices.js';
 export class LiveSignal {
   private pending = false;
   private wake: (() => void) | null = null;
+  private count = 0;
+
+  /**
+   * How many times the flag was ever raised. A reader that remembers this before it acts can tell
+   * afterwards whether anything was raised in between, even if another loop took the flag.
+   */
+  get raises(): number {
+    return this.count;
+  }
 
   /** Whether the flag is raised and nobody has taken it yet. */
   get raised(): boolean {
     return this.pending;
   }
 
+  /**
+   * Count a raise without waking anyone yet. The hub marks every stream a notice names at once,
+   * then wakes them in batches: a stream marked but not yet woken already knows it must recheck.
+   */
+  mark(): void {
+    this.count += 1;
+  }
+
   /** Raise the flag, waking the waiter if there is one. */
   raise(): void {
+    this.count += 1;
+    this.rouse();
+  }
+
+  /**
+   * Raise the flag without counting it: for a stream {@link mark} already counted. Counting twice
+   * would make a check run between the two look stale, and the stream check again for nothing.
+   */
+  rouse(): void {
     this.pending = true;
     this.wake?.();
   }
@@ -144,9 +171,10 @@ class MinuteCounter {
  * The in-process fan-out for live channel streams.
  *
  * One {@link LiveListener} receives every notice; the hub wakes only the streams a notice names,
- * by channel, community, member, agent or account. Each stream reads for itself once woken, so a
- * quiet stream costs nothing between notices but its fallback re-read. Nothing crosses processes:
- * a Community runs on one machine.
+ * by channel, community, member, agent or account. A new entry is read once for all of its
+ * channel's streams by the fan-out ({@link useFanout}); each stream rechecks its own access only
+ * when a notice says it may have changed, or after its fallback interval. Nothing crosses
+ * processes: a Community runs on one machine.
  *
  * The listener connects when the first stream opens and disconnects when the last one closes,
  * unless {@link start} pinned it open. The server pins it at boot, after its self-test, so
@@ -163,6 +191,7 @@ export class LiveHub {
   /** Each stream's holder: the agent for an agent's stream, otherwise the person. */
   private readonly byHolder = new Map<string, Set<LiveStream>>();
   private pinned = false;
+  private fanout: LiveEntryFanout | null = null;
   private readonly posts = new MinuteCounter();
   private readonly joins = new MinuteCounter();
   private readonly lagCounts = new Array<number>(LIVE_LAG_BUCKETS.length).fill(0);
@@ -174,7 +203,10 @@ export class LiveHub {
     this.listener = new LiveListener({
       url: options.listenUrl,
       onNotice: (notice) => this.dispatch(notice),
-      onReconnect: () => this.wakeAll(),
+      onReconnect: () => {
+        this.fanout?.reconnect();
+        this.wakeAll();
+      },
       log: options.log,
       probe: options.probe,
     });
@@ -193,6 +225,26 @@ export class LiveHub {
   async stop(): Promise<void> {
     this.pinned = false;
     await this.listener.close();
+  }
+
+  /**
+   * Hand new entries to `fanout`, which reads each one once and wakes the channel's streams
+   * through {@link wakeChannel}. Without one, an entry notice wakes the streams at once and each
+   * reads for itself.
+   */
+  useFanout(fanout: LiveEntryFanout): void {
+    this.fanout = fanout;
+  }
+
+  /** Whether any stream on this server reads the channel. */
+  hasChannelStreams(communityId: string, channelId: string): boolean {
+    return !this.inCommunity(this.byChannel.get(channelId), communityId).next().done;
+  }
+
+  /** Wake every stream on one channel: it may have something new to send. */
+  wakeChannel(communityId: string, channelId: string): void {
+    for (const stream of this.inCommunity(this.byChannel.get(channelId), communityId))
+      stream.entries.raise();
   }
 
   /** The listener's state. `idle` only when nothing has asked it to listen. */
@@ -241,6 +293,7 @@ export class LiveHub {
     };
     this.streams.add(stream);
     for (const [index, key] of this.indexesOf(keys)) add(index, key, stream);
+    this.fanout?.channelOpened(keys.communityId, keys.channelId);
     if (this.listener.state !== 'listening') {
       const opening = this.listener.open().catch(() => {
         // Logged by the listener, which keeps retrying. The stream still works on its fallback.
@@ -265,6 +318,9 @@ export class LiveHub {
   private remove(stream: LiveStream): void {
     if (!this.streams.delete(stream)) return;
     for (const [index, key] of this.indexesOf(stream.keys)) drop(index, key, stream);
+    const { communityId, channelId } = stream.keys;
+    if (this.fanout && !this.hasChannelStreams(communityId, channelId))
+      this.fanout.channelClosed(communityId, channelId);
     if (this.streams.size === 0 && !this.pinned) void this.listener.close();
   }
 
@@ -273,11 +329,16 @@ export class LiveHub {
     switch (notice.k) {
       case 'entry':
         this.posts.add();
-        for (const stream of this.inCommunity(this.byChannel.get(notice.ch), notice.c))
-          stream.entries.raise();
+        if (this.fanout) this.fanout.entry(notice.c, notice.ch, notice.s);
+        else this.wakeChannel(notice.c, notice.ch);
+        return;
+      case 'content':
+        this.fanout?.content(notice.c, notice.ch);
         return;
       case 'channel':
+        // Recheck first: a stream told to recheck sends nothing more until it has.
         this.recheck(this.inCommunity(this.byChannel.get(notice.ch), notice.c));
+        this.fanout?.channel(notice.c, notice.ch);
         return;
       case 'community':
         this.recheck(this.byCommunity.get(notice.c) ?? []);
@@ -303,9 +364,15 @@ export class LiveHub {
     for (const stream of streams ?? []) if (stream.keys.communityId === communityId) yield stream;
   }
 
-  /** Raise access on `streams`, the first batch now and the rest spread out; see ACCESS_BATCH. */
+  /**
+   * Mark access stale on every one of `streams` now, then wake their rechecks, the first batch
+   * now and the rest spread out (see ACCESS_BATCH). The mark is what keeps an entry from going
+   * out on access that a notice already called into question, so it is never batched.
+   */
   private recheck(streams: Iterable<LiveStream>): void {
-    inBatches([...streams], (stream) => stream.access.raise());
+    const named = [...streams];
+    for (const stream of named) stream.access.mark();
+    inBatches(named, (stream) => stream.access.rouse());
   }
 
   /**
@@ -313,9 +380,11 @@ export class LiveHub {
    * Both are released in batches: a reconnect touches every stream on the server at once.
    */
   wakeAll(): void {
-    inBatches([...this.streams], (stream) => {
+    const all = [...this.streams];
+    for (const stream of all) stream.access.mark();
+    inBatches(all, (stream) => {
       stream.entries.raise();
-      stream.access.raise();
+      stream.access.rouse();
     });
   }
 

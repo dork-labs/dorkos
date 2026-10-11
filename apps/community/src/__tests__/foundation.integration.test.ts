@@ -967,10 +967,16 @@ describe('owner foundation over real HTTP and Postgres', () => {
         ).status
       ).toBe(201);
       await atEnrichment;
-      await pool.query('DELETE FROM channel_members WHERE channel_id=$1 AND member_id=$2', [
-        id,
-        bobMemberId,
-      ]);
+      // Through the route, so the removal sends the notice every revocation sends: the entry
+      // was read before it, and must still not go out on access the notice called into question.
+      expect(
+        (
+          await request(`/api/v1/channels/${id}/members/${bobMemberId}`, {
+            method: 'DELETE',
+            headers: { cookie: ownerCookie, origin: config.publicUrl },
+          })
+        ).status
+      ).toBe(200);
       release();
       const event = await nextSse(reader);
       expect(event.event).toBe('closed');
@@ -999,10 +1005,8 @@ describe('owner foundation over real HTTP and Postgres', () => {
     try {
       expect((await nextSse(reader)).event).toBe('snapshot');
       expect((await nextSse(reader)).event).toBe('replay_complete');
-      await pool.query(
-        `DELETE FROM session WHERE "userId"=(SELECT user_id FROM members WHERE id=$1)`,
-        [bobMemberId]
-      );
+      // Signing out deletes the session and announces it; the stream must not carry a later post.
+      expect((await post('/api/auth/sign-out', {}, bobCookie)).status).toBe(200);
       expect(
         (await request(`/api/v1/channels/${id}/entries`, { headers: { cookie: bobCookie } })).status
       ).toBe(401);

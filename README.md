@@ -158,7 +158,9 @@ pnpm dev
 
 This starts the server on port 6242 and the browser client on port 6241.
 
-For how the pieces fit together, start with the [architecture guide](contributing/architecture.md). [CONTRIBUTING.md](CONTRIBUTING.md) has the full contributor workflow, [DOCS.md](DOCS.md) maps where every kind of documentation lives, and [AGENTS.md](AGENTS.md) is the deep technical reference.
+For how the pieces fit together, start with the [architecture guide](contributing/architecture.md). [CONTRIBUTING.md](CONTRIBUTING.md) has the full contributor workflow, [DOCS.md](DOCS.md) maps where every kind of documentation lives, [AGENTS.md](AGENTS.md) is the deep technical reference, and [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) covers how we expect people to treat each other here (currently a draft awaiting approval).
+
+A DorkOS Community Space, one official space everyone using DorkOS can join, is coming. See [the guide](https://dorkos.ai/docs/guides/dorkos-community) for what it will do.
 
 ## License
 

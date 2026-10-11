@@ -48,6 +48,21 @@ export function maskedText(text: string): string {
     .join('\n');
 }
 
+/**
+ * Every handle `text` could address, lowercased: each `@address` as written, and without its
+ * trailing punctuation. {@link resolveCommunityMentions} looks up nothing else, so a roster
+ * narrowed to these handles resolves exactly as the whole roster would.
+ */
+export function mentionCandidates(text: string): string[] {
+  const candidates = new Set<string>();
+  for (const match of maskedText(text).matchAll(MENTION_ADDRESS)) {
+    const raw = match[1].toLowerCase();
+    candidates.add(raw);
+    candidates.add(raw.replace(MENTION_TRAILING_STRIP, ''));
+  }
+  return [...candidates];
+}
+
 /** Resolve joined roster handles once, before persisting a community post. */
 export function resolveCommunityMentions(
   text: string,

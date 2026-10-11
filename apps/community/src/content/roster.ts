@@ -26,6 +26,15 @@ export const CHANNEL_ROSTER_SQL = `SELECT m.id,m.display_name,m.handle,m.role,NU
     AND owner.community_id=$2 AND a.active AND owner.active
   ORDER BY joined_at,id`;
 
+/**
+ * The part of a channel's roster one post can address: whoever has one of `$3`'s lowercased
+ * handles, or one of `$4`'s ids. A post reads this rather than the whole roster, which in a
+ * channel of 20,000 is 20,000 rows read while the channel is locked, once per post.
+ */
+const ADDRESSED_ROSTER_SQL = `SELECT * FROM (${CHANNEL_ROSTER_SQL}) roster
+  WHERE lower(roster.handle)=ANY($3::text[]) OR roster.id=ANY($4::uuid[])
+  ORDER BY roster.joined_at,roster.id`;
+
 /** One row of {@link CHANNEL_ROSTER_SQL}. */
 export interface ChannelRosterRow {
   id: string;
@@ -51,4 +60,27 @@ export async function channelRoster(
   communityId: string
 ): Promise<ChannelRosterRow[]> {
   return (await db.query<ChannelRosterRow>(CHANNEL_ROSTER_SQL, [channelId, communityId])).rows;
+}
+
+/**
+ * Read the members and agents of a channel's roster that `handles` or `ids` name, in roster
+ * order. Nothing named reads nothing, with no query.
+ *
+ * @param db - The pool, or the client of the transaction the roster must be read in.
+ * @param channelId - The channel.
+ * @param communityId - The channel's community; a channel of another community reads as empty.
+ * @param handles - Lowercased handles, as `mentionCandidates` gives them.
+ * @param ids - Member and agent ids.
+ */
+export async function addressedRoster(
+  db: Pick<Pool | PoolClient, 'query'>,
+  channelId: string,
+  communityId: string,
+  handles: readonly string[],
+  ids: readonly string[]
+): Promise<ChannelRosterRow[]> {
+  if (!handles.length && !ids.length) return [];
+  return (
+    await db.query<ChannelRosterRow>(ADDRESSED_ROSTER_SQL, [channelId, communityId, handles, ids])
+  ).rows;
 }
