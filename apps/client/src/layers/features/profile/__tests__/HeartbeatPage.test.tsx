@@ -11,7 +11,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { createMockTransport } from '@dorkos/test-utils';
+import { createMockTransport, emptyHeartbeatMeasures } from '@dorkos/test-utils';
 import type { TeamMember } from '@dorkos/shared/team-schemas';
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
 import type { HeartbeatStatus } from '@dorkos/shared/heartbeat-schemas';
@@ -76,6 +76,7 @@ const STATUS: HeartbeatStatus = {
   held: [],
   report: { cadence: 'daily', to: 'owner', nextReportAt: null, items: 0 },
   checks: { runsOn: 'runtime', runtime: 'claude-code', today: 0, tokens: 0, offer: false },
+  measures: emptyHeartbeatMeasures(),
 };
 
 function renderPage(
@@ -332,5 +333,29 @@ describe('someone else’s agent', () => {
     expect(await screen.findByText('Wakes every 30 minutes in working hours.')).toBeInTheDocument();
     expect(screen.queryByRole('textbox')).not.toBeInTheDocument();
     expect(screen.queryByRole('button')).not.toBeInTheDocument();
+  });
+});
+
+describe('measures', () => {
+  it('shows whether its work on its own helped, on any agent, from the first read', async () => {
+    const measures = emptyHeartbeatMeasures();
+    renderPage(OTHERS_AGENT, {
+      measures: {
+        ...measures,
+        keptRate: { ...measures.keptRate, value: 0.9, part: 9, whole: 10 },
+        supporting: { ...measures.supporting, beats: 12 },
+      },
+    });
+    const section = await screen.findByRole('heading', { name: 'Measures' });
+    expect(section).toBeInTheDocument();
+    expect(screen.getByText('90%')).toBeInTheDocument();
+    expect(screen.getByText('Target 95% or more')).toBeInTheDocument();
+  });
+
+  it('says there is nothing to measure before the first check', async () => {
+    renderPage(MANAGED);
+    expect(
+      await screen.findByText('No checks yet. Measures start after the first.')
+    ).toBeInTheDocument();
   });
 });

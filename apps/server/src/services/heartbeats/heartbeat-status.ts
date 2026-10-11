@@ -7,6 +7,8 @@
  *   valid one in force, and `fileError` says why the file does not read.
  * - **The next report** says who reads it, when it runs and how many things it
  *   covers so far (§9.3).
+ * - **The measures** (§13) say whether its work on its own helped, each with
+ *   its source and its starting target.
  * - **Private parts stay private.** The words of a held raise go only to the
  *   person it is held for (the owner, the one person a raise can reach today);
  *   anyone else sees that it is held, not what it says. Which chat a beat ran in
@@ -19,6 +21,7 @@ import {
   type BeatKind,
   type BeatOutcome,
   type HeartbeatChecks,
+  type HeartbeatMeasures,
   type HeartbeatStatus,
   type RaiseRung,
 } from '@dorkos/shared/heartbeat-schemas';
@@ -29,8 +32,8 @@ import type { RaiseStore } from './raises/raise-store.js';
 import { reportMaterial } from './raises/report-material.js';
 import { readHeartbeatFile } from './heartbeat-file.js';
 
-/** How many past beats the page lists. */
-export const STATUS_BEATS = 20;
+/** How many past beats the page lists (spec §10 PR 6). */
+export const STATUS_BEATS = 50;
 
 /** What the status reads. */
 export interface HeartbeatStatusInput {
@@ -54,6 +57,8 @@ export interface HeartbeatStatusInput {
   viewerIsOwner: boolean;
   /** Where its cheap checks run and what they used today (`triage/triage-checks.ts`). */
   checks(agent: BeatAgent, viewerIsOwner: boolean): Promise<HeartbeatChecks>;
+  /** Whether its work on its own helped, over the last 7 days (`measures/measures.ts`). */
+  measures(agent: BeatAgent): HeartbeatMeasures;
 }
 
 /**
@@ -121,5 +126,6 @@ export async function heartbeatStatus(
       }).count,
     },
     checks: await input.checks(agent, viewerIsOwner),
+    measures: input.measures(agent),
   };
 }
