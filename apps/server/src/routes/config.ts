@@ -495,7 +495,10 @@ function requestConfigWriteAuthority(req: Request, res: Response): ConfigWriteAu
       // DorkOS credits, the same things `/api/cloud/*` guards with the owner
       // bar (DOR-2652). Without it here, a signed-in person who does not own
       // this DorkOS could do through a settings patch what those routes refuse.
-      const cloudPaths = paths.filter((path) => path.startsWith('cloud.'));
+      // `heartbeats.triageOnCredits` spends the same account's credits.
+      const cloudPaths = paths.filter(
+        (path) => path.startsWith('cloud.') || path === 'heartbeats.triageOnCredits'
+      );
       if (cloudPaths.length > 0 && refuseUnlessAccountOwner(req, res) !== undefined) {
         return {
           status: 403,

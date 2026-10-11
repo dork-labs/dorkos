@@ -86,7 +86,7 @@
     "apps/server/src/services/extensions/isolation/isolated-host.ts": 677,
     "apps/server/src/services/harness/status.ts": 520,
     "apps/server/src/services/marketplace/dev-links/dev-link-service.ts": 768,
-    "apps/server/src/services/notifications/notification-registry.ts": 636,
+    "apps/server/src/services/notifications/notification-registry.ts": 622,
     "apps/server/src/services/notifications/notification-store.ts": 534,
     "apps/server/src/services/relay/adapter-manager.ts": 894,
     "apps/server/src/services/relay/binding-router.ts": 651,

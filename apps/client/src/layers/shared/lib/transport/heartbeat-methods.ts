@@ -4,7 +4,7 @@
  *
  * @module shared/lib/transport/heartbeat-methods
  */
-import type { HeartbeatStatus } from '@dorkos/shared/heartbeat-schemas';
+import type { HeartbeatStatus, TriageCreditsChoice } from '@dorkos/shared/heartbeat-schemas';
 import { fetchJSON } from './http-client';
 
 /**
@@ -16,6 +16,12 @@ export function createHeartbeatMethods(baseUrl: string) {
   return {
     getAgentHeartbeat(agentId: string): Promise<HeartbeatStatus> {
       return fetchJSON(baseUrl, `/agents/${encodeURIComponent(agentId)}/heartbeat`);
+    },
+    chooseTriageCredits(useCredits: boolean): Promise<TriageCreditsChoice> {
+      return fetchJSON(baseUrl, '/heartbeats/triage-credits', {
+        method: 'PUT',
+        body: JSON.stringify({ useCredits }),
+      });
     },
   };
 }

@@ -110,6 +110,8 @@ describe('CONFIG_WRITE_POLICY drift guard', () => {
       'harness.refusedHooks',
       // Whether agents wake on their own at all (spec `heartbeats` §3.6).
       'heartbeats.enabled',
+      // Whether cheap checks spend DorkOS credits: the owner's money (spec `heartbeats` §6.3).
+      'heartbeats.triageOnCredits',
       // Whether this computer sleeps while agents work, and whether it may be
       // woken for a schedule: the person's battery and the person's machine
       // (spec `keep-awake`).

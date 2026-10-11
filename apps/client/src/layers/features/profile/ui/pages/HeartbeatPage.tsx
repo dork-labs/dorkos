@@ -26,6 +26,7 @@ import {
 import { reportReaderNames, reportSentence } from '../../lib/report-words';
 import { useProfileAgent } from '../../model/use-profile-agent';
 import { HeartbeatBeats } from '../heartbeat/HeartbeatBeats';
+import { HeartbeatChecks } from '../heartbeat/HeartbeatChecks';
 import { HeartbeatHeld } from '../heartbeat/HeartbeatHeld';
 import { HeartbeatFileEditor } from './ConventionPage';
 import type { ProfilePageContentProps } from './types';
@@ -143,6 +144,7 @@ export function HeartbeatPage(props: ProfilePageContentProps) {
   return (
     <div className="space-y-6" data-slot="profile-heartbeat">
       <WakeSection status={status} now={now} readerName={readerName} />
+      {status.enabled && <HeartbeatChecks checks={status.checks} />}
       {/* With the space switch off from the start there is nothing to tune. */}
       {yours && fileShown && <FileSection {...props} status={status} />}
       <HeartbeatHeld held={status.held} nameOf={nameOf} now={now} />

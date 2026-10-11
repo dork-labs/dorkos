@@ -173,6 +173,8 @@ export interface BeatRunnerDeps {
   mintId?(): string;
   /** The report queue and who reads reports; absent, no agent reports. */
   reports?: Omit<ReportBeatDeps, keyof BeatCycleDeps>;
+  /** Triage on a decision model (spec §6.2); absent, the rules decide alone. */
+  triage?: BeatCycleDeps['triage'];
 }
 
 /** The beat runner. */
@@ -194,6 +196,8 @@ export class BeatRunner {
   /** Agents the scan last found paused, so a resume arms them again. */
   private readonly pausedSeen = new Set<string>();
   private recovered = false;
+  /** Aborted by `stop()`, so a beat's check in flight stops asking. */
+  private stopping = new AbortController();
   private started = false;
   /** Bumped by every start and stop, so a start overtaken by a later one arms nothing. */
   private generation = 0;
@@ -222,6 +226,7 @@ export class BeatRunner {
       clock: this.clock,
       ...(deps.mintId ? { mintId: deps.mintId } : {}),
       onFinished: (beat) => this.notify(beat),
+      ...(deps.triage ? { triage: deps.triage } : {}),
     };
   }
 
@@ -242,6 +247,8 @@ export class BeatRunner {
   stop(): void {
     this.started = false;
     this.generation += 1;
+    this.stopping.abort();
+    this.stopping = new AbortController();
     this.scheduler.clearAll();
     this.reportTimers.clearAll();
     for (const timers of [this.wakeAgainTimers, this.capTimers]) {
@@ -364,7 +371,7 @@ export class BeatRunner {
 
   /** One beat with its clean-up: whatever happens, the next one is armed. */
   private async beat(agent: BeatAgent, wake: BeatWake): Promise<void> {
-    const track: BeatTrack = {};
+    const track: BeatTrack = { signal: this.stopping.signal };
     let capFull = false;
     try {
       const plan = await this.plan(agent);

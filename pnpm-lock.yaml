@@ -807,6 +807,9 @@ importers:
       '@dorkos/db':
         specifier: workspace:*
         version: link:../../packages/db
+      '@dorkos/decisions':
+        specifier: workspace:*
+        version: link:../../packages/decisions
       '@dorkos/doe':
         specifier: workspace:*
         version: link:../../packages/doe

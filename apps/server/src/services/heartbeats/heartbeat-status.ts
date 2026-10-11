@@ -18,6 +18,7 @@ import {
   resolveHeartbeatSettings,
   type BeatKind,
   type BeatOutcome,
+  type HeartbeatChecks,
   type HeartbeatStatus,
   type RaiseRung,
 } from '@dorkos/shared/heartbeat-schemas';
@@ -51,6 +52,8 @@ export interface HeartbeatStatusInput {
   isAgent(accountId: string): boolean;
   /** Whether the person asking owns this install. */
   viewerIsOwner: boolean;
+  /** Where its cheap checks run and what they used today (`triage/triage-checks.ts`). */
+  checks(agent: BeatAgent, viewerIsOwner: boolean): Promise<HeartbeatChecks>;
 }
 
 /**
@@ -117,5 +120,6 @@ export async function heartbeatStatus(
         now: Date.now(),
       }).count,
     },
+    checks: await input.checks(agent, viewerIsOwner),
   };
 }

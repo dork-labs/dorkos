@@ -837,6 +837,8 @@ describe('PATCH /api/config', () => {
         { cloud: { instanceToken: 'dork_inst_other' } },
         { cloud: { credits: { defaults: { 'claude-code': { runsOn: 'credits' } } } } },
         { cloud: { credits: { agents: ['agent-1'] } } },
+        // Cheap checks on credits spend the same account (spec `heartbeats` §6.3).
+        { heartbeats: { triageOnCredits: true } },
       ]) {
         const refused = await request(server).patch('/api/config').send(patch).expect(403);
         expect(refused.body.code).toBe('owner_only');
@@ -846,6 +848,7 @@ describe('PATCH /api/config', () => {
       }
       const { configManager } = await import('../../services/core/config-manager.js');
       expect(configManager.getDot('cloud.instanceToken')).not.toBe('dork_inst_other');
+      expect(configManager.getDot('heartbeats.triageOnCredits')).not.toBe(true);
     });
 
     it('refuses the account settings when no owner account can be read', async () => {

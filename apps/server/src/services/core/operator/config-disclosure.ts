@@ -237,6 +237,9 @@ export const CONFIG_DISCLOSURE = {
   'keepAwake.wakeForScheduledTasks': 'expose',
   // Whether agents wake on their own (spec `heartbeats` §3.6): a plain on/off.
   'heartbeats.enabled': 'expose',
+  // Whether cheap checks may run on DorkOS credits (spec `heartbeats` §6.3): a
+  // plain yes, no or not answered, so an agent can say where its checks run.
+  'heartbeats.triageOnCredits': 'expose',
 
   // How long the Activity feed keeps its rows (spec `audit-trail` §3.5).
   'activity.retentionDays': 'expose',
