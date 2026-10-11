@@ -90,6 +90,11 @@ export function useRemoteCommunityConduct({
     enabled: enabled && authority !== null,
     staleTime: 30_000,
     retry: false,
+    // A mute an owner lifts early opens the composer within a minute, not at the next focus.
+    refetchInterval: (query) =>
+      query.state.data?.mutedUntil && Date.parse(query.state.data.mutedUntil) > Date.now()
+        ? 60_000
+        : false,
   });
   const [slowUntil, setSlowUntil] = useState<number | null>(null);
   const [now, setNow] = useState(() => Date.now());
@@ -113,19 +118,22 @@ export function useRemoteCommunityConduct({
     (cause: unknown) => {
       const code = (cause as { code?: unknown } | null)?.code;
       if (code === 'COMMUNITY_SLOW_MODE') {
+        // Count down only the wait the space named; without one, sending stays open.
         const waitMs = (cause as { retryAfterMs?: unknown }).retryAfterMs;
-        const seconds = standing.data?.slowModeSeconds || 5;
-        const ms = typeof waitMs === 'number' && waitMs > 0 ? waitMs : seconds * 1_000;
-        setNow(Date.now());
-        setSlowUntil(Date.now() + ms);
+        if (typeof waitMs === 'number' && waitMs > 0) {
+          setNow(Date.now());
+          setSlowUntil(Date.now() + waitMs);
+        }
         return;
       }
       void refetch();
     },
-    [refetch, standing.data?.slowModeSeconds]
+    [refetch]
   );
 
   const accept = useMutation({
+    // The rules dialog says what went wrong; a toast as well would say it twice.
+    meta: { suppressErrorToast: true },
     mutationFn: (version: number) => transport.acceptRemoteCommunityRules(community, version),
     onSuccess: (rules) => {
       queries.setQueryData<RemoteCommunityStanding>(key, (current) =>

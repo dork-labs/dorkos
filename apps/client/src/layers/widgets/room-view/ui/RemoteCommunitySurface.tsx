@@ -194,6 +194,7 @@ export function RemoteCommunitySurface({
   });
   // You, and the agents you own here: nobody reports their own message.
   const self = connection?.connectedHumanMemberId ?? null;
+  const selfMember = roster.data?.members.find((m) => m.memberId === self);
   const ownedBySelf = (authorId: string) =>
     authorId === self ||
     roster.data?.members.some((m) => m.memberId === authorId && m.ownerMemberId === self) === true;
@@ -207,12 +208,11 @@ export function RemoteCommunitySurface({
   const marked = useRef<{ address: string; cursor: string } | null>(null);
   const composer = useRef<ComposerInputHandle>(null);
   const timeline = useRef<ConversationTimelineHandle>(null);
-  const canSend =
-    !removed &&
-    access.capabilities.post &&
-    stream.status === 'live' &&
-    room?.writable === true &&
-    conduct.hold === null;
+  // The channel takes posts; a hold (a mute, slow mode, the rules) stops only sending, never
+  // leaving the channel or mentioning someone.
+  const canPost =
+    !removed && access.capabilities.post && stream.status === 'live' && room?.writable === true;
+  const canSend = canPost && conduct.hold === null;
   const entries = useMemo(
     () =>
       removed
@@ -428,7 +428,7 @@ export function RemoteCommunitySurface({
               Rules
             </Button>
           )}
-          {access.capabilities.post && conduct.standing && (
+          {access.capabilities.post && (
             <Button variant="ghost" size="sm" onClick={() => setDialog('name')}>
               Your name
             </Button>
@@ -449,7 +449,7 @@ export function RemoteCommunitySurface({
             <Button
               variant="ghost"
               size="sm"
-              disabled={action !== null || !canSend}
+              disabled={action !== null || !canPost}
               onClick={() =>
                 void perform('leave', async () => {
                   await transport.leaveRemoteCommunityRoom(community, roomId);
@@ -491,7 +491,7 @@ export function RemoteCommunitySurface({
               <RemoteCommunityRoster
                 roster={roster.data}
                 failed={roster.isError}
-                canMention={canSend}
+                canMention={canPost}
                 onMention={(handle) => {
                   drafts.setText(
                     `${drafts.text}${drafts.text && !drafts.text.endsWith(' ') ? ' ' : ''}@${handle} `
@@ -547,9 +547,8 @@ export function RemoteCommunitySurface({
                       entry={row.entry}
                       onThread={onThread}
                       onReport={
-                        access.capabilities.post &&
-                        conduct.standing &&
-                        !ownedBySelf(row.entry.authorId)
+                        // Only once the roster says whose agents are whose.
+                        access.capabilities.post && roster.data && !ownedBySelf(row.entry.authorId)
                           ? () => setReporting(row.entry)
                           : undefined
                       }
@@ -588,6 +587,7 @@ export function RemoteCommunitySurface({
               aboveInput={
                 <RemoteCommunityConductNotice
                   conduct={conduct}
+                  staff={['owner', 'admin'].includes(selfMember?.role ?? '')}
                   onReadRules={() => setDialog('rules')}
                 />
               }
@@ -612,7 +612,7 @@ export function RemoteCommunitySurface({
       <RemoteCommunityNameDialog
         community={community}
         accessFingerprint={access.fingerprint}
-        currentName={roster.data?.members.find((m) => m.memberId === self)?.displayName ?? ''}
+        currentName={selfMember?.displayName ?? ''}
         open={dialog === 'name'}
         onOpenChange={(open) => setDialog(open ? 'name' : null)}
       />

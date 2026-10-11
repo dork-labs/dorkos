@@ -3,10 +3,11 @@
  * may post in a channel now (a mute, slow mode, the rules), accepting the rules, their name in
  * the space, and reporting someone else's message.
  *
- * Accepting the rules, renaming and reporting are a person's own word, so each also clears the
- * agent bar: an agent on this computer, even one holding the owner's key, cannot agree to a
- * space's rules, pick the owner's name or file a report as them. The adapter sends every one on
- * the owner's own grant and never as an enrolled agent.
+ * Each is the person's own business, so each also clears the agent bar: an agent on this
+ * computer, even one holding the owner's key, cannot read the owner's standing, agree to a
+ * space's rules, pick the owner's name or file a report as them. The Community refuses an agent
+ * credential on the same routes. The adapter sends every one on the owner's own grant and never
+ * as an enrolled agent.
  *
  * @module routes/remote-community-conduct
  */
@@ -38,11 +39,11 @@ export interface RemoteCommunityConductDeps {
 }
 
 /** The owner and the space, or `null` once the request has been answered. */
-function resolve(req: Request, res: Response, personOnly: boolean) {
+function resolve(req: Request, res: Response) {
   const owner = resolveCommunityOwner(req, res);
   const ref = CommunityRefSchema.safeParse(req.params.ref);
   if (!owner || !ref.success) return null;
-  if (personOnly && !clearsTheAgentBar(req, res)) {
+  if (!clearsTheAgentBar(req, res)) {
     res.status(403).json({
       code: 'COMMUNITY_PERSON_REQUIRED',
       error: 'Only you can do this in a space, not an agent.',
@@ -63,7 +64,7 @@ export function registerRemoteCommunityConductRoutes(
   { verifiedConnection, fail }: RemoteCommunityConductDeps
 ): void {
   router.get('/:ref/rooms/:roomId/standing', async (req, res) => {
-    const target = resolve(req, res, false);
+    const target = resolve(req, res);
     if (!target) return;
     try {
       await verifiedConnection(target.ref, target.owner, 'read');
@@ -83,7 +84,7 @@ export function registerRemoteCommunityConductRoutes(
   });
 
   router.post('/:ref/rules/accept', async (req, res) => {
-    const target = resolve(req, res, true);
+    const target = resolve(req, res);
     if (!target) return;
     const input = RemoteCommunityRulesAcceptRequestSchema.safeParse(req.body);
     if (!input.success) return res.status(400).json({ error: 'Read the rules first.' });
@@ -99,7 +100,7 @@ export function registerRemoteCommunityConductRoutes(
   });
 
   router.put('/:ref/me/display-name', async (req, res) => {
-    const target = resolve(req, res, true);
+    const target = resolve(req, res);
     if (!target) return;
     const input = RemoteCommunityDisplayNameRequestSchema.safeParse(req.body);
     if (!input.success)
@@ -121,7 +122,7 @@ export function registerRemoteCommunityConductRoutes(
   });
 
   router.post('/:ref/rooms/:roomId/entries/:entryId/reports', async (req, res) => {
-    const target = resolve(req, res, true);
+    const target = resolve(req, res);
     if (!target) return;
     const input = RemoteCommunityReportRequestSchema.safeParse(req.body);
     if (!input.success)

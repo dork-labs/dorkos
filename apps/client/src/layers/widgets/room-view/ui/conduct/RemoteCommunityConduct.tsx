@@ -27,9 +27,12 @@ function message(cause: unknown, fallback: string): string {
  */
 export function RemoteCommunityConductNotice({
   conduct,
+  staff,
   onReadRules,
 }: {
   conduct: UseRemoteCommunityConduct;
+  /** Owners and admins post without waiting, so slow mode says nothing to them. */
+  staff: boolean;
   onReadRules: () => void;
 }) {
   const { hold, standing } = conduct;
@@ -41,7 +44,7 @@ export function RemoteCommunityConductNotice({
         </Button>
       </div>
     );
-  if (hold || !standing?.slowModeSeconds) return null;
+  if (hold || staff || !standing?.slowModeSeconds) return null;
   return (
     <p className="text-muted-foreground px-1 pb-1 text-xs">
       Slow mode: one message every {standing.slowModeSeconds}s.
@@ -146,6 +149,8 @@ function NameForm({
   const authority = useCommunityContentAuthority(true, accessFingerprint, community);
   const [name, setName] = useState(currentName);
   const rename = useMutation({
+    // The form says what went wrong; a toast as well would say it twice.
+    meta: { suppressErrorToast: true },
     mutationFn: (displayName: string) =>
       transport.setRemoteCommunityDisplayName(community, displayName),
     onSuccess: async () => {

@@ -133,6 +133,9 @@ describe('a person’s own conduct in a space, through this computer', () => {
         .post(`${base}/rooms/room-a/entries/entry-a/reports`)
         .set('x-dorkos-agent', 'agent-token')
         .send({ reason: 'spam' }),
+      await request(server)
+        .get(`${base}/rooms/room-a/standing`)
+        .set('x-dorkos-agent', 'agent-token'),
       // An approval token marks a caller acting under someone else's say-so, never the person.
       await request(server)
         .post(`${base}/rules/accept`)
@@ -142,6 +145,7 @@ describe('a person’s own conduct in a space, through this computer', () => {
       expect(response.status).toBe(403);
       expect(response.body.code).toBe('COMMUNITY_PERSON_REQUIRED');
     }
+    expect(fixture.adapter.getStanding).not.toHaveBeenCalled();
     expect(fixture.adapter.acceptRules).not.toHaveBeenCalled();
     expect(fixture.adapter.setDisplayName).not.toHaveBeenCalled();
     expect(fixture.adapter.reportEntry).not.toHaveBeenCalled();

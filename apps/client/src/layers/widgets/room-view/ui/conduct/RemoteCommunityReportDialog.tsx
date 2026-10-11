@@ -57,6 +57,8 @@ function ReportForm({ entry, onClose }: { entry: RemoteCommunityEntry; onClose: 
   const [reason, setReason] = useState<CommunityReportReason | null>(null);
   const [note, setNote] = useState('');
   const report = useMutation({
+    // The dialog says what went wrong; a toast as well would say it twice.
+    meta: { suppressErrorToast: true },
     mutationFn: (input: { reason: CommunityReportReason; note?: string }) =>
       transport.reportRemoteCommunityEntry(entry.community, entry.roomId, entry.id, input),
     onSuccess: () => {

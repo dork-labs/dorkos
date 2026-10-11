@@ -82,7 +82,7 @@ function standing(over: Partial<RemoteCommunityStanding> = {}): RemoteCommunityS
   };
 }
 
-function mount(state: RemoteCommunityStanding = standing()) {
+function mount(state: RemoteCommunityStanding = standing(), role = 'member') {
   const transport = withSpacesExperiment(createMockTransport());
   vi.mocked(transport.listCommunityConnections).mockResolvedValue([
     {
@@ -117,7 +117,7 @@ function mount(state: RemoteCommunityStanding = standing()) {
         kind: 'human',
         displayName: 'Pat',
         handle: 'pat',
-        role: 'member',
+        role,
         ownerMemberId: null,
         joinedAt: '2026-10-01T10:00:00Z',
       },
@@ -172,6 +172,20 @@ describe('a person’s standing in a space channel', () => {
     expect((await screen.findAllByText(/You’re muted here until/)).length).toBeGreaterThan(0);
     await send('Can I talk?');
     expect(transport.postRemoteCommunityEntry).not.toHaveBeenCalled();
+    // A mute stops posting, never leaving.
+    expect(screen.getByRole('button', { name: 'Leave channel' })).toBeEnabled();
+  });
+
+  it('keeps sending open when slow mode refuses without saying how long', async () => {
+    const transport = mount(standing({ slowModeSeconds: 30 }));
+    vi.mocked(transport.postRemoteCommunityEntry).mockRejectedValueOnce(
+      Object.assign(new Error('Slow'), { code: 'COMMUNITY_SLOW_MODE', status: 429 })
+    );
+    expect(await screen.findByText('Slow mode: one message every 30s.')).toBeInTheDocument();
+    const input = await send('Too soon');
+    await waitFor(() => expect(transport.postRemoteCommunityEntry).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(input).toHaveValue('Too soon'));
+    expect(screen.queryByText(/Post again in/)).not.toBeInTheDocument();
   });
 
   it('asks for the rules before the first post, and opens the channel once they are accepted', async () => {
@@ -206,6 +220,13 @@ describe('a person’s standing in a space channel', () => {
     expect(await screen.findByText('Slow mode. Post again in 12s.')).toBeInTheDocument();
     expect(input).toHaveValue('Too soon');
     expect(screen.queryByText('Delivery not confirmed.')).not.toBeInTheDocument();
+  });
+
+  it('says nothing about slow mode to an owner or admin, who never wait', async () => {
+    mount(standing({ slowModeSeconds: 30 }), 'admin');
+    await screen.findByText('Buy cheap watches');
+    await screen.findByRole('button', { name: 'Your name' });
+    await waitFor(() => expect(screen.queryByText(/Slow mode/)).not.toBeInTheDocument());
   });
 
   it('refetches the standing when a post is held for the rules, and asks for them', async () => {
