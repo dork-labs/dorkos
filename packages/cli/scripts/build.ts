@@ -420,7 +420,6 @@ async function buildCLI() {
       '@openai/codex-sdk',
       '@opencode-ai/sdk',
       '@ngrok/ngrok',
-      '@scalar/express-api-reference',
       '@asteasolutions/zod-to-openapi',
       'better-sqlite3',
       // node-pty is a native addon (.node + a spawn-helper binary) that esbuild
