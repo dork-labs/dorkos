@@ -776,11 +776,13 @@ if (tunnelDomain && !process.env.TUNNEL_DOMAIN) {
   process.env.TUNNEL_DOMAIN = tunnelDomain;
 }
 
-// Tasks scheduler: CLI flag > env var > config
+// Tasks scheduler: only an explicit `--tasks` / `--no-tasks` sets the variable.
+// The server reads `scheduler.enabled` itself and lets DORKOS_TASKS_ENABLED
+// overrule it only when the variable is present. Copying the setting into it
+// made every CLI install look env-locked, so the Scheduled runs switch in
+// Settings could never act (DOR-2516, the same bug DOR-2507 fixed for relay).
 if (values.tasks !== undefined) {
   process.env.DORKOS_TASKS_ENABLED = values.tasks ? 'true' : 'false';
-} else if (!process.env.DORKOS_TASKS_ENABLED && cfgMgr.getDot('scheduler.enabled')) {
-  process.env.DORKOS_TASKS_ENABLED = 'true';
 }
 
 // Debug tracing: CLI flag > env var (no config key — a purely local, explicit
