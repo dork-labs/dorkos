@@ -3,7 +3,13 @@
  *
  * @module features/onboarding/lib/approval-url
  */
-import type { FirstRunPendingCode } from '../model/first-run-slots';
+
+/** A code waiting for approval, and the pages that approve it. */
+interface PendingApproval {
+  userCode: string;
+  verificationUri: string;
+  verificationUriComplete?: string;
+}
 
 /**
  * The approval page for a pending code: the service's filled-in address when
@@ -14,7 +20,7 @@ import type { FirstRunPendingCode } from '../model/first-run-slots';
  *
  * @param pending - The code waiting for approval.
  */
-export function approvalUrl(pending: FirstRunPendingCode): string | null {
+export function approvalUrl(pending: PendingApproval): string | null {
   try {
     if (pending.verificationUriComplete) {
       const complete = new URL(pending.verificationUriComplete);

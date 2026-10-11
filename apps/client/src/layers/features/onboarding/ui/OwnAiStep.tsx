@@ -7,12 +7,17 @@ import { cn } from '@/layers/shared/lib';
 import { Button, Label, PasswordInput, Spinner } from '@/layers/shared/ui';
 import type { FirstRunSlots } from '../model/first-run-slots';
 import { firstRunErrorMessage, useChooseFirstRunPath } from '../model/use-first-run';
+import { useFocusOnArrival } from '../model/use-focus-on-arrival';
 import { AiAppSignIn } from './AiAppSignIn';
 
 /** One row of the Own AI list. */
 type OwnAiRow = OwnAiKeyService | 'local' | 'agent-app' | 'custom';
 
-/** The rows, DorkOS's own engine first, each with its one-line promise. */
+/**
+ * The rows, each with its one-line promise: the ways the DorkOS runtime runs
+ * on the person's own AI (a key, a local model) first, then an AI app they
+ * sign in to, then any other service set up by hand.
+ */
 const ROWS: ReadonlyArray<{ id: OwnAiRow; title: string; line: string }> = [
   { id: 'openai', title: 'An OpenAI API key', line: 'Paste a key. DorkOS picks the model.' },
   { id: 'anthropic', title: 'An Anthropic API key', line: 'Paste a key. DorkOS picks the model.' },
@@ -71,7 +76,12 @@ export function OwnAiList({
   const choose = useChooseFirstRunPath();
   const [error, setError] = useState<string | null>(null);
 
-  const save = async (choice: OwnAiChoice): Promise<boolean> => {
+  /**
+   * Record the pick. Resolves `true` once saved; on a refusal shows its
+   * sentence under the row and resolves `false`, or with `rethrow` rejects
+   * with it instead, for a form that shows its own.
+   */
+  const save = async (choice: OwnAiChoice, rethrow = false): Promise<boolean> => {
     setError(null);
     try {
       await beforePick?.();
@@ -81,6 +91,7 @@ export function OwnAiList({
       if (result.modelListed === false) toast('Using a default model. Change it in Settings.');
       return true;
     } catch (err) {
+      if (rethrow) throw new Error(firstRunErrorMessage(err), { cause: err });
       setError(firstRunErrorMessage(err));
       return false;
     }
@@ -152,7 +163,7 @@ function RowBody({
 }: {
   row: OwnAiRow;
   busy: boolean;
-  save: (choice: OwnAiChoice) => Promise<boolean>;
+  save: (choice: OwnAiChoice, rethrow?: boolean) => Promise<boolean>;
   onSaved: () => void;
   slots: OwnAiListProps['slots'];
   simulatedApps: OwnAiListProps['simulatedApps'];
@@ -182,12 +193,17 @@ function RowBody({
       return slots?.renderOtherService ? (
         slots.renderOtherService({
           onSave: async (inference, apiKey) => {
-            const saved = await save({
-              kind: 'custom',
-              inference: inference as Extract<OwnAiChoice, { kind: 'custom' }>['inference'],
-              ...(apiKey ? { apiKey } : {}),
-            });
-            if (saved) onSaved();
+            // Rejects on a refusal, so the form keeps what was typed and says
+            // why in its own place.
+            await save(
+              {
+                kind: 'custom',
+                inference: inference as Extract<OwnAiChoice, { kind: 'custom' }>['inference'],
+                ...(apiKey ? { apiKey } : {}),
+              },
+              true
+            );
+            onSaved();
           },
         })
       ) : (
@@ -265,9 +281,16 @@ interface OwnAiStepProps extends OwnAiListProps {
 
 /** The Own AI screen in the first-run overlay: the list, with a way back. */
 export function OwnAiStep({ onBack, ...list }: OwnAiStepProps) {
+  const headingRef = useFocusOnArrival<HTMLHeadingElement>();
   return (
     <div className="mx-auto flex w-full max-w-md flex-col px-4" data-testid="onboarding-own-ai">
-      <h1 className="text-2xl font-semibold tracking-tight">Use my own AI</h1>
+      <h1
+        ref={headingRef}
+        tabIndex={-1}
+        className="text-2xl font-semibold tracking-tight outline-none"
+      >
+        Use my own AI
+      </h1>
       <p className="text-muted-foreground mt-2 mb-6 text-sm">
         Your agents run on a key, a local model or an AI app.
       </p>

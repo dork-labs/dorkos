@@ -16,7 +16,7 @@ import { zodValidator } from '@tanstack/zod-adapter';
 import { createMockTransport } from '@dorkos/test-utils';
 import type { CloudCreditsStatus } from '@dorkos/shared/cloud-schemas';
 import type { Transport } from '@dorkos/shared/transport';
-import { TransportProvider } from '@/layers/shared/model';
+import { cloudCreditsKeys, TransportProvider } from '@/layers/shared/model';
 import { onboardingStageSearchSchema } from '../model/onboarding-stage';
 import type { FirstRunAccountLink, FirstRunSlots } from '../model/first-run-slots';
 
@@ -40,8 +40,9 @@ const CODE = 'DORK-2F7Q';
 const COMPLETE = `https://dorkos.ai/activate?code=${CODE}&from=complete`;
 
 /** A link that behaves like the real one: start puts a code in flight. */
+let initialLinkState: FirstRunAccountLink['state'] = 'idle';
 function useFakeLink(): FirstRunAccountLink {
-  const [state, setState] = useState<FirstRunAccountLink['state']>('idle');
+  const [state, setState] = useState<FirstRunAccountLink['state']>(initialLinkState);
   return {
     state,
     pending:
@@ -84,7 +85,11 @@ function credits(readiness: CloudCreditsStatus['readiness']): CloudCreditsStatus
   return { linked: readiness !== 'unlinked', runtimes: {}, readiness } as CloudCreditsStatus;
 }
 
-function buildHarness(initialUrl: string, transport: Transport) {
+function buildHarness(
+  initialUrl: string,
+  transport: Transport,
+  seed?: (queryClient: QueryClient) => void
+) {
   const rootRoute = createRootRoute({ staticData: { header: null } });
   const indexRoute = createRoute({
     staticData: { header: null },
@@ -98,6 +103,7 @@ function buildHarness(initialUrl: string, transport: Transport) {
     history: createMemoryHistory({ initialEntries: [initialUrl] }),
   });
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  seed?.(queryClient);
   function Wrapper() {
     // StrictMode, as the app mounts it: its development double mount once
     // closed the tab Continue had just opened, before the code could reach it.
@@ -115,12 +121,16 @@ function buildHarness(initialUrl: string, transport: Transport) {
   return { router, Wrapper, readStage };
 }
 
-async function renderFlow(initialUrl = '/', overrides: Partial<Transport> = {}) {
+async function renderFlow(
+  initialUrl = '/',
+  overrides: Partial<Transport> = {},
+  seed?: (queryClient: QueryClient) => void
+) {
   const transport = createMockTransport({
     getCloudCredits: vi.fn().mockResolvedValue(credits('unlinked')),
     ...overrides,
   });
-  const harness = buildHarness(initialUrl, transport);
+  const harness = buildHarness(initialUrl, transport, seed);
   render(<harness.Wrapper />);
   await waitFor(() => expect(harness.router.state.status).toBe('idle'));
   return { ...harness, transport };
@@ -131,6 +141,7 @@ describe('OnboardingFlow', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    initialLinkState = 'idle';
     vi.spyOn(window, 'open').mockReturnValue(fakeWindow as unknown as Window);
   });
 
@@ -342,5 +353,42 @@ describe('OnboardingFlow', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Save' }));
     await waitFor(() => expect(readStage()).toBe('landing'));
     expect(mockToast).toHaveBeenCalledWith('Using a default model. Change it in Settings.');
+  });
+
+  it('opens no tab when the computer is linked already, since no code is coming', async () => {
+    initialLinkState = 'linked';
+    const { readStage } = await renderFlow('/', {
+      getCloudCredits: vi.fn().mockResolvedValue(credits('needs-card')),
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Continue with DorkOS' }));
+    await waitFor(() => expect(readStage()).toBe('connecting'));
+    expect(await screen.findByText('Add a card to finish.')).toBeTruthy();
+    expect(window.open).not.toHaveBeenCalled();
+    expect(fakeStart).not.toHaveBeenCalled();
+  });
+
+  it('opens one tab however fast Continue is pressed twice', async () => {
+    await renderFlow();
+    const button = screen.getByRole('button', { name: 'Continue with DorkOS' });
+    fireEvent.click(button);
+    fireEvent.click(button);
+    await screen.findByText(CODE);
+    expect(window.open).toHaveBeenCalledTimes(1);
+    expect(fakeStart).toHaveBeenCalledTimes(1);
+  });
+
+  it('never moves on off a cached ready while the pick has not been saved', async () => {
+    const chooseFirstRunPath = vi
+      .fn()
+      .mockRejectedValue(new Error('Couldn’t finish setup. Try again.'));
+    const { readStage } = await renderFlow(
+      '/',
+      { chooseFirstRunPath, getCloudCredits: vi.fn().mockResolvedValue(credits('ready')) },
+      (queryClient) => queryClient.setQueryData(cloudCreditsKeys.status(), credits('ready'))
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Continue with DorkOS' }));
+    expect(await screen.findByText('Couldn’t finish setup. Try again.')).toBeTruthy();
+    expect(readStage()).toBe('connecting');
+    expect(screen.queryByTestId('landing-step')).toBeNull();
   });
 });

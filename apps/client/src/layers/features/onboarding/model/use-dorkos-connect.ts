@@ -65,7 +65,11 @@ export function useDorkosConnect({
   const choose = useChooseFirstRunPath();
   const [failure, setFailure] = useState<string | null>(null);
   const [recorded, setRecorded] = useState(false);
-  const readiness = useCreditsReadiness(recorded);
+  // Only an answer once the pick is saved: the cache this reads is shared, and
+  // a `ready` left in it from before must never carry a person into #team
+  // with their pick unrecorded.
+  const polled = useCreditsReadiness(recorded);
+  const readiness = recorded ? polled : undefined;
 
   // The async run reads the link as it is when each await returns, not as it
   // was when the run began.
@@ -94,7 +98,12 @@ export function useDorkosConnect({
     }
     setRecorded(true);
     const current = linkRef.current;
-    if (current.state === 'linked' || current.state === 'pending') return;
+    if (current.state === 'linked') {
+      // No code is coming, so the tab opened in the click has nowhere to go.
+      closeWindow();
+      return;
+    }
+    if (current.state === 'pending') return;
     const code = await current.start();
     if (code === null) {
       closeWindow();
@@ -149,7 +158,7 @@ function phaseOf(
   recorded: boolean,
   link: FirstRunAccountLink,
   pending: FirstRunPendingCode | null,
-  readiness: ReturnType<typeof useCreditsReadiness>
+  readiness: ReturnType<typeof useCreditsReadiness> | undefined
 ): DorkosConnectPhase {
   if (failure !== null) return { kind: 'failed', message: failure };
   if (readiness === 'refused') return { kind: 'refused' };

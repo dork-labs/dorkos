@@ -15,6 +15,7 @@ type Props = {
    * Save through the caller instead of this form's own writes — the first
    * run's "Other service" row, which records the pick as the first-run path.
    * DorkOS credits are not offered then: the first run has its own way to them.
+   * Rejects with the sentence to show when the setup was refused.
    */
   onSave?: (inference: DoeInferenceConfig, apiKey: string | null) => Promise<void>;
 };
@@ -35,8 +36,11 @@ function InferenceFields({ saved, onConnected, onSave }: Props & { saved: DoeInf
   const transport = useTransport();
   const queryClient = useQueryClient();
   const prefix = useId();
+  // The first run's form offers no DorkOS credits (it has its own way to
+  // them), so a saved credits setup starts it on a key instead.
+  const savedSource = saved.inference?.source ?? 'api-key';
   const [source, setSource] = useState<DoeInferenceConfig['source']>(
-    saved.inference?.source ?? 'api-key'
+    onSave && savedSource === 'dorkos-credits' ? 'api-key' : savedSource
   );
   const [protocol, setProtocol] = useState<DoeInferenceConfig['protocol']>(
     saved.inference?.protocol ?? 'openai-chat-completions'
@@ -87,7 +91,14 @@ function InferenceFields({ saved, onConnected, onSave }: Props & { saved: DoeInf
         body: 'New chats use this source and model.',
       });
     },
-    onError: () => setError('Couldn’t save model settings. Try again.'),
+    // A caller's own save rejects with the sentence to show; the key typed in
+    // stays, so the person can fix it rather than type it again.
+    onError: (err) =>
+      setError(
+        onSave && err instanceof Error && err.message
+          ? err.message
+          : 'Couldn’t save model settings. Try again.'
+      ),
   });
 
   function submit(event: FormEvent) {

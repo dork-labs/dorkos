@@ -6,6 +6,7 @@ import { Button, Spinner } from '@/layers/shared/ui';
 import { approvalUrl } from '../lib/approval-url';
 import type { FirstRunAccountLink, FirstRunPendingCode } from '../model/first-run-slots';
 import type { DorkosConnectPhase } from '../model/use-dorkos-connect';
+import { useFocusOnArrival } from '../model/use-focus-on-arrival';
 
 interface ConnectingStepProps {
   /** What the DorkOS path is doing now. */
@@ -37,9 +38,16 @@ export function ConnectingStep({
   onCancel,
   onUseOwnAi,
 }: ConnectingStepProps) {
+  // The screen, not each phase, takes the focus: the phases change under the
+  // person while they are in the browser, and each change is a status line.
+  const rootRef = useFocusOnArrival<HTMLDivElement>();
   return (
     <div
-      className="mx-auto flex w-full max-w-sm flex-col items-center px-4 text-center"
+      ref={rootRef}
+      tabIndex={-1}
+      className="mx-auto flex w-full max-w-sm flex-col items-center px-4 text-center outline-none"
+      role="region"
+      aria-labelledby="onboarding-connecting-heading"
       data-testid="onboarding-connecting"
       data-phase={phase.kind}
     >
@@ -131,7 +139,14 @@ function Waiting({ heading, line }: { heading: string; line: string }) {
 }
 
 function Heading({ children }: { children: ReactNode }) {
-  return <h1 className="text-2xl font-semibold tracking-tight text-balance">{children}</h1>;
+  return (
+    <h1
+      id="onboarding-connecting-heading"
+      className="text-2xl font-semibold tracking-tight text-balance"
+    >
+      {children}
+    </h1>
+  );
 }
 
 function Line({ children }: { children: ReactNode }) {

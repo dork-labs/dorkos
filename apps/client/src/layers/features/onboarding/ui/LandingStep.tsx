@@ -14,14 +14,23 @@ interface LandingStepProps {
  * The hand-off into #team (spec `one-minute-onboarding` §2.4): DorkBot's
  * welcome is posted, the first run is marked finished, and Home — the #team
  * room — opens under the overlay as it fades. The chips under the welcome take
- * it from there. A failure says so and offers the one retry, because a first
- * run that ends in silence is the worst place to leave somebody.
+ * it from there. A failure says so and offers a retry beside the way on to
+ * #team, because a first run that ends in silence, or in a loop, is the worst
+ * place to leave somebody.
  */
 export function LandingStep({ onComplete }: LandingStepProps) {
   const welcome = usePostOnboardingWelcome();
   const { completeOnboarding } = useOnboarding();
   const navigate = useNavigate();
   const [error, setError] = useState<string | null>(null);
+
+  /** Finish the first run and open Home, which is #team. */
+  const finish = useCallback(() => {
+    completeOnboarding();
+    // The overlay's own `?onboarding=` param goes with the move.
+    void navigate({ ...appRoutes.home(), search: {} });
+    onComplete();
+  }, [completeOnboarding, navigate, onComplete]);
 
   const land = useCallback(async () => {
     setError(null);
@@ -31,11 +40,8 @@ export function LandingStep({ onComplete }: LandingStepProps) {
       setError(firstRunErrorMessage(err));
       return;
     }
-    completeOnboarding();
-    // Home IS #team; the overlay's own `?onboarding=` param goes with the move.
-    void navigate({ ...appRoutes.home(), search: {} });
-    onComplete();
-  }, [welcome, completeOnboarding, navigate, onComplete]);
+    finish();
+  }, [welcome, finish]);
 
   const started = useRef(false);
   useEffect(() => {
@@ -54,9 +60,14 @@ export function LandingStep({ onComplete }: LandingStepProps) {
           <p className="text-destructive text-sm" role="alert">
             {error}
           </p>
-          <Button className="mt-4" onClick={() => void land()}>
-            Try again
-          </Button>
+          <div className="mt-4 flex flex-wrap justify-center gap-2">
+            <Button onClick={() => void land()}>Try again</Button>
+            {/* The welcome is a greeting, not a gate: setup is finished either
+                way, so the first run never pulls the person back in. */}
+            <Button variant="outline" onClick={finish}>
+              Go to #team
+            </Button>
+          </div>
         </>
       ) : (
         <p className="text-muted-foreground flex items-center gap-2 text-sm" role="status">

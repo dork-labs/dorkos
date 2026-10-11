@@ -92,12 +92,16 @@ function FirstRunStages({
   }, []);
 
   const continueWithDorkos = useCallback(() => {
+    // A second press while the first is still on its way would open a second
+    // tab for the same code.
+    if (waitingWindowRef.current !== null || stage === 'connecting') return;
     setWelcomeError(null);
     // Opened now, in the click, or a browser blocks it once a request is in
     // between. A blocked window is fine: the code and the page are on screen.
-    waitingWindowRef.current = link ? openExternalWindowLater() : null;
+    // A computer that is linked already gets no code, so no tab either.
+    waitingWindowRef.current = link && link.state !== 'linked' ? openExternalWindowLater() : null;
     goToStage('connecting');
-  }, [goToStage, link]);
+  }, [goToStage, link, stage]);
 
   const continueWithout = useCallback(async () => {
     setWelcomeError(null);

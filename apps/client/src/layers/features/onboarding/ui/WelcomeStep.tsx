@@ -2,6 +2,7 @@ import { DorkLogo } from '@dorkos/icons/logos';
 import { CloudEligibilityNote } from '@/layers/features/cloud-link';
 import { useSpacesEnabled } from '@/layers/entities/config';
 import { Button, Spinner } from '@/layers/shared/ui';
+import { useFocusOnArrival } from '../model/use-focus-on-arrival';
 
 interface WelcomeStepProps {
   /** Continue with DorkOS: the account path. Called from the click itself. */
@@ -32,6 +33,7 @@ export function WelcomeStep({
   error = null,
 }: WelcomeStepProps) {
   const spaces = useSpacesEnabled();
+  const headingRef = useFocusOnArrival<HTMLHeadingElement>();
 
   return (
     <div
@@ -41,7 +43,11 @@ export function WelcomeStep({
       <DorkLogo size={120} className="mb-8 opacity-90 dark:hidden" />
       <DorkLogo variant="white" size={120} className="mb-8 hidden opacity-90 dark:block" />
 
-      <h1 className="text-3xl font-semibold tracking-tight text-balance sm:text-4xl">
+      <h1
+        ref={headingRef}
+        tabIndex={-1}
+        className="text-3xl font-semibold tracking-tight text-balance outline-none sm:text-4xl"
+      >
         You, Multiplied.
       </h1>
       <p className="text-muted-foreground mt-3 text-balance">
