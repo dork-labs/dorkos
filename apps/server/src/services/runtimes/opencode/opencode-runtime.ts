@@ -33,7 +33,6 @@ import type { OpencodeClient, ProviderListResponse } from '@opencode-ai/sdk';
 import type {
   StreamEvent,
   ModelOption,
-  SubagentInfo,
   Session,
   HistoryMessage,
   TaskItem,
@@ -123,6 +122,7 @@ import { projectModelOptions, projectedProviderIds } from './providers/models.js
 import { OpenCodeContextWindows } from './providers/context-windows.js';
 import { OpenCodeMcpManager } from './mcp/mcp-manager.js';
 import { canonicalDirectory } from '@dorkos/shared/canonical-directory';
+import { listOpenCodeSubagents } from './subagent-list.js';
 import { captureOpenCodeMedia } from './events/media-capture.js';
 import type { SessionAttachmentStore } from '../../session/attachments/index.js';
 import {
@@ -1421,9 +1421,12 @@ export class OpenCodeRuntime implements AgentRuntime {
     return getConnectedOpenCodeProvider();
   }
 
-  /** OpenCode agents are prompt-scoped, not a DorkOS-dispatchable subagent registry. */
-  async getSupportedSubagents(): Promise<SubagentInfo[]> {
-    return [];
+  /**
+   * OpenCode's named agents with `mode` `subagent` or `all`, the ones a turn
+   * can hand work to (DOR-2520); empty when the sidecar is not running.
+   */
+  getSupportedSubagents(): ReturnType<typeof listOpenCodeSubagents> {
+    return listOpenCodeSubagents(this.provider, DEFAULT_CWD);
   }
 
   /**
