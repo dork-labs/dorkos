@@ -504,12 +504,14 @@ export class ChatMessageService {
   /**
    * Whether a steer from one chat may join another's running turn: only when
    * that turn runs no looser than the sender, since a running turn cannot be
-   * lowered to a ceiling. Unknown levels never steer.
+   * lowered to a ceiling, and has read an outsider's words if the sender has,
+   * since a running turn cannot be marked either (spec
+   * `trusted-by-default-flip` §4.7). Unknown levels never steer.
    */
   private maySteer(fromSessionId: string, toSessionId: string): boolean {
     const sender = this.deps.turnLevelOf(fromSessionId);
     const receiver = this.deps.turnLevelOf(toSessionId);
-    if (!sender || !receiver) return false;
+    if (!sender || !receiver || (sender.outsider && !receiver.outsider)) return false;
     if (!isNoLooserThan(sender, receiver)) return false;
     return !receiver.auto || sender.auto === true || sender.asks === 'never';
   }

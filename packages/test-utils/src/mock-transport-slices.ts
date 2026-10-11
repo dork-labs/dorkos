@@ -2,12 +2,13 @@
  * Mocks for the `Transport` slices split out of `mock-factories.ts`: what
  * happened (`ActivityTransport`), where every read answers an empty page, and
  * pausing agents (`AgentPauseTransport`), where nothing is paused and every
- * pause or resume succeeds.
+ * pause or resume succeeds. Heartbeats come from their own mock.
  *
  * @module test-utils/mock-transport-slices
  */
 import { vi } from 'vitest';
 import type { Transport } from '@dorkos/shared/transport';
+import { createMockHeartbeatTransport } from './mock-heartbeat-transport.js';
 
 /** The methods {@link transportSliceMocks} covers. */
 type SliceMethods =
@@ -20,8 +21,10 @@ type SliceMethods =
   | 'resumeAgent';
 
 /** Mocks for every method of the split-out `Transport` slices. */
-export function transportSliceMocks(): Pick<Transport, SliceMethods> {
+export function transportSliceMocks(): Pick<Transport, SliceMethods> &
+  ReturnType<typeof createMockHeartbeatTransport> {
   return {
+    ...createMockHeartbeatTransport(),
     listActivityEvents: vi.fn().mockResolvedValue({ items: [], nextCursor: null }),
     listAuditEvents: vi.fn().mockResolvedValue({ events: [] }),
     getAccountTimeline: vi.fn().mockResolvedValue({ events: [] }),

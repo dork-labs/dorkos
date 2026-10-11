@@ -1,8 +1,8 @@
 /**
- * The registered agents boot hands to the legacy task and skill migration, moved out of the
- * server's bootstrap unchanged.
+ * The registered agents that have a project on disk. Split out of the server's
+ * `index.ts` so that file stays inside its line budget.
  *
- * @module agent-roots
+ * @module services/mesh/roots/registered-agent-roots
  */
 import type { MeshCore } from '@dorkos/mesh';
 

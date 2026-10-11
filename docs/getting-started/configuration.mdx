@@ -148,6 +148,21 @@ DorkOS keeps your computer from falling asleep while agents work, then lets it s
   }}
 />
 
+### Heartbeats
+
+Whether your agents wake up on their own to check their work. Each agent's own `HEARTBEAT.md` says how it wakes; this switch turns it off for all of them at once.
+
+<TypeTable
+  type={{
+    'heartbeats.enabled': {
+      description:
+        'Let agents wake on their own, on a regular beat or when something happens. Off stops every beat at once.',
+      type: 'boolean',
+      default: 'true',
+    },
+  }}
+/>
+
 ### Activity
 
 How long the Activity feed keeps its history. The record behind it keeps every action forever, whatever this says. See [The record](/docs/guides/audit-trail).

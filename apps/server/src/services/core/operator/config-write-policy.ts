@@ -403,6 +403,11 @@ export const CONFIG_WRITE_POLICY = {
   'keepAwake.whileAgentsWork': 'operator-only',
   'keepAwake.wakeForScheduledTasks': 'operator-only',
 
+  // Whether agents wake on their own (spec `heartbeats` §3.6). It decides
+  // whether an agent acts unbidden at all, which is the person's call; an agent
+  // asked to stop its beats can set its own HEARTBEAT.md to `wake: off`.
+  'heartbeats.enabled': 'operator-only',
+
   // How long the Activity feed keeps the history people review (spec
   // `audit-trail` §3.5). Shortening it deletes rows a person may not have read
   // yet; lengthening it spends disk. Either is the person's call.
@@ -1158,6 +1163,8 @@ export const OPERATOR_ONLY_STAKES: readonly OperatorOnlyStakeGroup[] = [
       // The most literal member of this group: it is the one welcome-back
       // setting that decides whether a model turn runs at all (DOR-1046).
       'welcomeBack.offersEnabled',
+      // Whether agents wake on their own at all (spec `heartbeats` §3.6).
+      'heartbeats.enabled',
     ],
   },
   {
@@ -1256,13 +1263,6 @@ export function operatorOnlyAreasForPatch(patch: unknown): OperatorOnlyArea[] {
   return [...new Set(findOperatorOnlyPaths(patch).map(areaOf))];
 }
 
-/**
- * The clause for a refused path with no stake on file. Deliberately says only
- * what is certainly true, so an unclassified path can never be described as
- * something it is not. The drift guard keeps this out of normal use.
- */
-const OPERATOR_ONLY_FALLBACK_DESCRIPTION = 'Settings the person keeps for themselves';
-
 /** The machine-readable code every operator-only refusal carries. */
 export const OPERATOR_ONLY_CONFIG_CODE = 'operator_only_config';
 
@@ -1279,41 +1279,4 @@ const OPERATOR_ONLY_GUARDED = prepareGuardedPaths(OPERATOR_ONLY_CONFIG_PATHS);
  */
 export function findOperatorOnlyPaths(patch: unknown): string[] {
   return findGuardedPaths(patch, OPERATOR_ONLY_GUARDED);
-}
-
-/**
- * The refusal an agent reads. Names exactly what it may not change, says why in
- * one plain sentence, and tells it what to do instead, because this text lands in
- * a model's context and a model that is only told "no" will try again.
- *
- * The "why" is per stake, not one blanket claim: the paths are grouped by
- * {@link OPERATOR_ONLY_STAKES} and each group gets the sentence that is true of
- * it. A refusal that overstates what a setting does is a lie the model then
- * carries into the rest of the conversation (DOR-1044).
- *
- * @param paths - The offending policy paths, from {@link findOperatorOnlyPaths}.
- * @returns One paragraph written for the model.
- */
-export function describeOperatorOnlyRefusal(paths: readonly string[]): string {
-  const remaining = new Set(paths);
-  const clauses: string[] = [];
-
-  for (const group of OPERATOR_ONLY_STAKES) {
-    const matched = paths.filter((path) => group.paths.includes(path));
-    if (matched.length === 0) continue;
-    for (const path of matched) remaining.delete(path);
-    clauses.push(`${group.description}: ${matched.join(', ')}.`);
-  }
-
-  if (remaining.size > 0) {
-    clauses.push(`${OPERATOR_ONLY_FALLBACK_DESCRIPTION}: ${[...remaining].join(', ')}.`);
-  }
-
-  return [
-    'DorkOS changed nothing.',
-    "These settings are the person's to choose, not yours.",
-    ...clauses,
-    'Ask the person to change them in DorkOS Settings.',
-    'If your patch also had ordinary settings in it, send those again on their own and they will go through.',
-  ].join(' ');
 }

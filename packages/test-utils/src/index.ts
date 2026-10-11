@@ -29,6 +29,7 @@ export * from './fake-connector-provider.js';
 export * from './fake-memory-provider.js';
 export * from './memory-conformance.js';
 export * from './mock-factories.js';
+export * from './mock-heartbeat-transport.js';
 export * from './runtime-conformance.js';
 export * from './runtime-conformance-session-list.js';
 export * from './sse-helpers.js';

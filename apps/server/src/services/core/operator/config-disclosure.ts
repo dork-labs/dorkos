@@ -235,6 +235,8 @@ export const CONFIG_DISCLOSURE = {
   // stays awake (spec `keep-awake`).
   'keepAwake.whileAgentsWork': 'expose',
   'keepAwake.wakeForScheduledTasks': 'expose',
+  // Whether agents wake on their own (spec `heartbeats` §3.6): a plain on/off.
+  'heartbeats.enabled': 'expose',
 
   // How long the Activity feed keeps its rows (spec `audit-trail` §3.5).
   'activity.retentionDays': 'expose',

@@ -43,6 +43,7 @@
  *
  * @module services/runtimes/claude-code/mcp-tools/relay-notify-tools
  */
+import { noteBeatBypass } from '../../../heartbeats/beat-turns.js';
 import type { McpToolDeps } from './types.js';
 import { jsonContent } from './types.js';
 import { requireRelay, type SenderIdentity } from './relay-helpers.js';
@@ -236,6 +237,9 @@ export function createRelayNotifyUserHandler(deps: McpToolDeps, identity: Sender
       }
     );
 
+    // A note sent from a running beat, outside `end_beat`, is counted (spec
+    // `heartbeats` §8). Nothing is blocked: the count is how a person sees it.
+    noteBeatBypass(identity.sessionId?.());
     const manifest = deps.meshCore?.get(agentId);
     void notify(
       'agent.note',

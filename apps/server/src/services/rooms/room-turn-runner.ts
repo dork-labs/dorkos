@@ -35,16 +35,13 @@
  * @module server/services/rooms/room-turn-runner
  */
 import { aliasTurnLevel } from '../core/turn-power/turn-levels.js';
+import { outsiderInViewOf } from './limits/turn-ceiling.js';
 import { randomUUID } from 'node:crypto';
 import path from 'node:path';
 import type { AgentRuntime } from '@dorkos/shared/agent-runtime';
 import type { Room } from '@dorkos/shared/room-schemas';
 import type { RoomContextData } from '@dorkos/shared/additional-context';
-import {
-  isBlockingInteractionEvent,
-  type BlockingInteractionEventType,
-  type SessionActivity,
-} from '@dorkos/shared/session-stream';
+import { isBlockingInteractionEvent, type SessionActivity } from '@dorkos/shared/session-stream';
 import type { InterruptReceipt } from '@dorkos/shared/types';
 import { logger } from '../../lib/logger.js';
 import { ROOMS } from '../../config/constants.js';
@@ -56,6 +53,7 @@ import { runtimeRegistry } from '../core/runtime-registry.js';
 import { assertOwnDesk } from '../core/agent-identity/index.js';
 import { refusePausedRoomTurn } from './turn-guards/paused-turn.js';
 import { warnIfTurnCannotPost } from './turn-guards/turn-posting.js';
+import { WAITING_KINDS } from './turn-guards/waiting-kinds.js';
 import { sessionStandsInRoomCopy } from './repo/room-turn-place.js';
 // The one VALUE this module takes from the port, so it comes straight from the
 // port rather than through `room-trigger.js`'s type re-export below: a value
@@ -925,6 +923,9 @@ export function createSessionRoomTurnRunner(options: RoomTurnRunnerOptions = {})
           // Measured once, here, by the code that already measured it for the
           // context block. `null` means git could not be asked — never "level".
           aheadOfMain: request.roomContext.files?.ahead ?? null,
+          // A stranger's line it is shown but does not answer bounds no power,
+          // and still marks what the turn saves or passes on (§4.7).
+          ...outsiderInViewOf(request.roomContext),
         },
         // Omitted, never passed as an empty string, when this room has no files.
         // Not because `''` misbehaves today — it does not: all three adapters
@@ -1309,19 +1310,6 @@ interface OwnTurn {
   /** The `seq` of this turn's `turn_start`, or `null` before it has one. */
   startSeq: number | null;
 }
-
-/**
- * Which kind of wait each blocking event is, in the room's vocabulary.
- *
- * A total map over {@link BlockingInteractionEventType} rather than a chain of
- * comparisons: a fourth way to park a turn on a person would be a type error
- * here rather than a room that silently stopped mentioning it.
- */
-const WAITING_KINDS: Record<BlockingInteractionEventType, RoomTurnWaiting['kind']> = {
-  approval_required: 'approval',
-  question_prompt: 'question',
-  elicitation_prompt: 'elicitation',
-};
 
 /**
  * Accumulate a turn's assistant text from the session's own event stream.

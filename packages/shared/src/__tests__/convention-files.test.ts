@@ -38,11 +38,18 @@ describe('convention-files', () => {
       expect(CONVENTION_FILES.memory).toBe('MEMORY.md');
     });
 
-    // Red when: a fourth convention file is added to the record and one of the
+    // Red when: a fifth convention file is added to the record and one of the
     // sites that enumerates them is missed. The set is small and closed on
-    // purpose — every entry costs prompt budget on every turn.
-    it('is the closed set of three, and the io signatures accept exactly it', () => {
-      expect(Object.values(CONVENTION_FILES).sort()).toEqual(['MEMORY.md', 'NOPE.md', 'SOUL.md']);
+    // purpose. Three of the four cost prompt budget on every turn; HEARTBEAT.md
+    // is read by beats only (spec `heartbeats` §2), which `agent-context.test.ts`
+    // pins.
+    it('is the closed set of four, and the io signatures accept exactly it', () => {
+      expect(Object.values(CONVENTION_FILES).sort()).toEqual([
+        'HEARTBEAT.md',
+        'MEMORY.md',
+        'NOPE.md',
+        'SOUL.md',
+      ]);
     });
   });
 

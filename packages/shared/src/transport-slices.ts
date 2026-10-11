@@ -1,6 +1,6 @@
 /**
  * The slices of the {@link Transport} port kept in modules of their own (rooms,
- * community connections, remote communities, commitments), joined here so
+ * community connections, remote communities, commitments, heartbeats), joined here so
  * `transport.ts` extends one name. Nothing consuming the port sees a difference.
  *
  * @module shared/transport-slices
@@ -11,6 +11,7 @@ import type { RemoteCommunityTransport } from './community-views.js';
 import type { CommitmentTransport } from './transport-commitments.js';
 import type { ActivityTransport } from './transport-activity.js';
 import type { AgentPauseTransport } from './transport-agent-pause.js';
+import type { HeartbeatTransport } from './transport-heartbeats.js';
 
 /** Every Transport slice declared outside `transport.ts`. */
 export interface TransportSlices
@@ -20,4 +21,5 @@ export interface TransportSlices
     RemoteCommunityTransport,
     CommitmentTransport,
     ActivityTransport,
-    AgentPauseTransport {}
+    AgentPauseTransport,
+    HeartbeatTransport {}

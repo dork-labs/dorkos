@@ -400,9 +400,8 @@ import {
   projectSweepDirs,
   projectsOfAgents,
   recoverInterruptedInstalls,
-  retryInFlightTargetsLater,
-  type InstallSweepSummary,
 } from './services/marketplace/recovery/backup-janitor.js';
+import { installSweepLogger } from './services/marketplace/recovery/install-sweep-log.js';
 import { currentRecordOwner } from './services/marketplace/lib/records/record-owner.js';
 import { createActivityRouter } from './routes/activity.js';
 import { createAuditRouter } from './routes/audit.js';
@@ -556,7 +555,6 @@ import {
 } from './services/rooms/manage/departed-agents.js';
 import { registerLocalCommunity } from './services/communities/index.js';
 import { spaceReachable } from './middleware/spaces-enabled.js';
-import { registeredAgentRoots } from './agent-roots.js';
 import { SearchIndexer, selectSearchSources } from './services/search/index.js';
 import { TerminalManager, terminalUpgradeRoute } from './services/terminal/index.js';
 import { attachUpgradeRouter } from './services/core/streams/upgrade-router.js';
@@ -645,6 +643,9 @@ import {
   wireCommitments,
   type CommitmentWiring,
 } from './services/commitments/commitment-wiring.js';
+import * as heartbeats from './services/heartbeats/index.js';
+import { flushRestoredAgents } from './services/marketplace/restored-agents.js';
+import { registeredAgentRoots } from './services/mesh/roots/registered-agent-roots.js';
 import {
   SessionStartedByStore,
   getSessionStartedByStore,
@@ -759,55 +760,8 @@ let testComposioFixture:
     >
   | undefined;
 
-/**
- * Log what an install-recovery sweep did, when it did anything.
- *
- * @param scope - Which installs were swept, for the log line.
- * @param summary - The sweep's totals.
- */
-function logInstallSweep(scope: string, summary: InstallSweepSummary): void {
-  registerRestoredAgents(summary.restoredAgentRoots);
-  const { settled, kept, discarded, inFlightTargets } = summary;
-  if (settled + kept + discarded + inFlightTargets.length > 0) {
-    logger.info(
-      `[Marketplace] Settled interrupted ${scope}: ${settled} settled, ${kept} kept, ${discarded} leftovers removed, ${inFlightTargets.length} left to another running DorkOS`
-    );
-  }
-  // A target left to another process is looked at once more when every record
-  // there has aged past the point where its owner matters.
-  retryInFlightTargetsLater(inFlightTargets, logger, (retry) =>
-    logInstallSweep(`${scope} (retry)`, { ...retry, inFlightTargets: [] })
-  );
-}
-
-/** Agent folders recovery restored before Mesh started, registered once it has. */
-const agentRootsAwaitingMesh: string[] = [];
-
-/**
- * Register again the agents whose interrupted uninstall recovery rolled back
- * (DOR-2245): their `agent.json` is back, but the uninstall had already taken
- * them off the team. The global sweep runs before Mesh exists, so its roots
- * wait for {@link flushRestoredAgents}.
- *
- * @param roots - {@link InstallSweepSummary.restoredAgentRoots}.
- */
-function registerRestoredAgents(roots: readonly string[]): void {
-  if (!meshCore) {
-    agentRootsAwaitingMesh.push(...roots);
-    return;
-  }
-  const mesh = meshCore;
-  for (const root of roots) {
-    mesh.syncFromDisk(root).catch((err: unknown) => {
-      logger.warn(`[Marketplace] Could not register the restored agent at ${root}`, logError(err));
-    });
-  }
-}
-
-/** Register the agents {@link registerRestoredAgents} held until Mesh started. */
-function flushRestoredAgents(): void {
-  registerRestoredAgents(agentRootsAwaitingMesh.splice(0));
-}
+/** Logs what an install-recovery sweep did (see `installSweepLogger`). */
+const logInstallSweep = installSweepLogger(() => meshCore);
 
 /**
  * The project install-recovery sweep, and the projects it read. The legacy
@@ -2475,7 +2429,7 @@ async function start() {
     // itself was making there, and only to entries whose names prove they are
     // DorkOS's own records. Fire-and-forget: each target is settled under its
     // install lock, so an install that races it simply waits.
-    flushRestoredAgents();
+    flushRestoredAgents(meshCore);
     try {
       const projects = projectsOfAgents(meshCore.listWithPaths().map((a) => a.projectPath));
       sweptProjects = projects;
@@ -4447,6 +4401,18 @@ async function start() {
   // takes its resolvers, so the live stream carries it exactly as the routes do.
   app.locals.resolveTouches = (sessionIds: string[]) =>
     getSessionTouchStore()?.resolve(sessionIds) ?? new Map();
+  // Agents wake on a beat or an event (spec `heartbeats`); sets the beat-chat
+  // label resolver, so it runs before the broadcaster takes its resolvers.
+  heartbeats.startHeartbeats({
+    app,
+    db,
+    meshCore: () => meshCore,
+    rooms: roomService,
+    roomAuthors,
+    notifyDm,
+    relay: () => relayChannelDeps,
+    commitments: commitments.service,
+  });
   sessionListBroadcaster.setOriginResolvers(sessionOriginResolvers(app.locals));
   // Who may read each session's transcript (spec `audit-trail` §3.4): an
   // agent sees agent work, never a person's own chat.
@@ -5573,7 +5539,8 @@ async function start() {
         }),
       },
     },
-    createCapabilityAttributionObserver(activityService)
+    // A beat's direct room posts and chat sends are counted (spec `heartbeats` §8).
+    heartbeats.withBeatBypassCount(createCapabilityAttributionObserver(activityService))
   );
   // A running extension's tools join and leave the registry (DOR-2685); every
   // open window re-fetches the catalog and the permissions page when they do.
@@ -6300,6 +6267,7 @@ async function shutdownServices() {
     searchIndexer.stop();
   }
   commitmentWiring?.stop();
+  heartbeats.stopHeartbeats();
   if (meshCore) {
     meshCore.stopPeriodicReconciliation();
     meshCore.close();

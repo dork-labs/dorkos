@@ -80,6 +80,9 @@ const TABLE: ReadonlyArray<readonly [TurnOrigin, OriginPermissionSeed]> = [
   // A limited session resumed by itself after its account's reset: already
   // bound, so its own row is its power.
   [{ kind: 'account-resume' }, 'none'],
+  // An agent's own heartbeat, in a chat minted for its day (spec `heartbeats`
+  // §7.2): the operator's stop on a chat nobody started, like a local room turn.
+  [{ kind: 'heartbeat' }, 'configured-stop-on-insert'],
   // Not a surface anybody ships to.
   [{ kind: 'test-harness' }, 'none'],
 ];
