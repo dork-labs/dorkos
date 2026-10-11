@@ -1,6 +1,8 @@
 ---
 covers:
   - 'feat(onboarding): the first-run server API, Own AI presets and credits readiness (DOR-2783)'
+  - 'fix(onboarding): serialize first-run picks and close the credits door on finish or dismiss (DOR-2783)'
+  - 'fix(onboarding): keep a key whose model list cannot be read, and let a refusal be asked again (DOR-2783)'
 ---
 
 ### Changed
