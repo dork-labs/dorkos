@@ -11,7 +11,8 @@
  *
  * Only managed hostnames are affected; the person's own tunnel and every local
  * name behave exactly as before. Mounted first in `createApp`, ahead of every
- * logger and route, and asked by the upgrade router for WebSockets.
+ * logger and route, in the same place on the Hono `/api` chain
+ * (`http/api-chain.ts`), and asked by the upgrade router for WebSockets.
  *
  * @module middleware/managed-host-guard
  */
@@ -20,6 +21,9 @@ import type { NextFunction, Request, Response } from 'express';
 import { parseHostname } from '../lib/trusted-origins.js';
 import { isManagedIngress } from '../services/core/remote/ingress-mark.js';
 import { tunnelManager } from '../services/core/tunnel-manager.js';
+
+/** The refusal, on both chains. */
+export const MANAGED_HOST_REFUSAL_BODY = { error: 'Forbidden.' } as const;
 
 /**
  * Whether a request names a managed hostname without having come through the
@@ -46,7 +50,7 @@ export function bypassesManagedIngress(req: IncomingMessage): boolean {
  */
 export function managedHostGuard(req: Request, res: Response, next: NextFunction): void {
   if (bypassesManagedIngress(req)) {
-    res.status(403).json({ error: 'Forbidden.' });
+    res.status(403).json(MANAGED_HOST_REFUSAL_BODY);
     return;
   }
   next();
