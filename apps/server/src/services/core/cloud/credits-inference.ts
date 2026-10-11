@@ -221,8 +221,12 @@ export async function primeCreditsInferenceWithContext(
   } catch (error) {
     const status =
       problemOf(error)?.status ?? (error instanceof CloudApiResponseError ? error.status : null);
-    if (context.isCurrent() && attempt === attemptGeneration) {
-      mintRefusal = problemOf(error)?.code ?? null;
+    // Only a definite answer replaces what is remembered: a mint that got no
+    // answer (offline, a timeout) says nothing about whether the account may
+    // use credits, so a real refusal stands through it.
+    const answered = problemOf(error)?.code;
+    if (answered && context.isCurrent() && attempt === attemptGeneration) {
+      mintRefusal = answered;
     }
     if (
       context.isCurrent() &&

@@ -68,6 +68,12 @@ export const FirstRunResultSchema = z.object({
   runtime: z.string(),
   /** The model DorkOS picked for the DorkOS runtime, when this pick set one. */
   model: z.string().optional(),
+  /**
+   * For a key: whether the model came from the service's own list. `false`
+   * means the list could not be read, so the key was kept and DorkOS started
+   * on the service's usual model; the app may say so quietly.
+   */
+  modelListed: z.boolean().optional(),
 });
 
 /** What a first-run pick set up. */
@@ -78,10 +84,11 @@ export type FirstRunResult = z.infer<typeof FirstRunResultSchema>;
  * refusal leaves the previous pick exactly as it was:
  *
  * - `onboarding_complete`: the first run is finished or dismissed.
- * - `invalid_key`: the key was refused (empty, or a subscription token).
+ * - `invalid_key`: the key was refused, by DorkOS (empty, or a subscription
+ *   token) or by the service itself (it answered 401 or 403).
  * - `invalid_setup`: a hand-typed setup did not check out.
- * - `models_unreachable`: the service's model list could not be read with the
- *   key, so nothing was saved; fix the key and save again.
+ * - `models_unreachable`: a model on this computer did not answer. A key is
+ *   never refused for this: a list that cannot be read keeps the key.
  */
 export type FirstRunRefusalCode =
   'onboarding_complete' | 'models_unreachable' | 'invalid_key' | 'invalid_setup';

@@ -103,6 +103,7 @@ describe('creditsReadinessWith', () => {
       firstRunOpen: () => true,
       readCatalog: vi.fn(async () => null),
       readCardOnFile: vi.fn(async () => false),
+      retryMint: vi.fn(),
       now: () => clock,
       tick: (ms) => {
         clock += ms;
@@ -159,5 +160,27 @@ describe('creditsReadinessWith', () => {
       facts: { ...deps().facts, ...ready, awaitingFirstRunChoice: () => true },
     });
     expect(creditsReadinessWith(d)).toBe('linked');
+  });
+
+  it('asks again after a refusal, at most every 30 seconds, while the first run is open', () => {
+    const d = deps({ facts: { ...deps().facts, mintRefusal: () => 'entitlement_required' } });
+    expect(creditsReadinessWith(d)).toBe('refused');
+    expect(creditsReadinessWith(d)).toBe('refused');
+    expect(d.retryMint).toHaveBeenCalledTimes(1);
+    d.tick(29_000);
+    creditsReadinessWith(d);
+    expect(d.retryMint).toHaveBeenCalledTimes(1);
+    d.tick(1_001);
+    creditsReadinessWith(d);
+    expect(d.retryMint).toHaveBeenCalledTimes(2);
+  });
+
+  it('never asks again once the first run is over', () => {
+    const d = deps({
+      firstRunOpen: () => false,
+      facts: { ...deps().facts, mintRefusal: () => 'entitlement_required' },
+    });
+    expect(creditsReadinessWith(d)).toBe('refused');
+    expect(d.retryMint).not.toHaveBeenCalled();
   });
 });

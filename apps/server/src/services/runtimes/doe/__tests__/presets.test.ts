@@ -85,6 +85,28 @@ describe('listPresetModels', () => {
   });
 });
 
+describe('PresetModelsUnreachableError.keyRefused', () => {
+  it('is true only when the service answered 401 or 403', async () => {
+    const statuses = [401, 403, 404, 429, 500];
+    const refused = await Promise.all(
+      statuses.map((status) =>
+        listPresetModels(DOE_PRESETS.openai, 'k', fakeList({}, status)).catch(
+          (e: PresetModelsUnreachableError) => e.keyRefused
+        )
+      )
+    );
+    expect(refused).toEqual([true, true, false, false, false]);
+    const offline = vi.fn<PresetFetch>(async () => {
+      throw new Error('ECONNREFUSED');
+    });
+    const error = await listPresetModels(DOE_PRESETS.openai, 'k', offline).catch(
+      (e: PresetModelsUnreachableError) => e
+    );
+    expect(error).toBeInstanceOf(PresetModelsUnreachableError);
+    expect((error as PresetModelsUnreachableError).keyRefused).toBe(false);
+  });
+});
+
 describe('parseModelList', () => {
   it('reads the sizes each service reports, and skips entries with no id', () => {
     expect(

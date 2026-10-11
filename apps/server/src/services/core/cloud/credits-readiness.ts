@@ -8,7 +8,8 @@
  * waits on the network. While the first run is open and the link is made but
  * not `ready` yet, it starts the reads that can move it on (the models list, the
  * balance) in the background, at most once per {@link REFRESH_EVERY_MS}, so the
- * next poll sees their answer.
+ * next poll sees their answer; a `refused` answer asks for a token again at
+ * most once per {@link RETRY_REFUSED_EVERY_MS}, so it never sticks.
  *
  * @module services/core/cloud/credits-readiness
  */
@@ -23,7 +24,7 @@ import type { RuntimeCreditsProtocol } from '@dorkos/shared/agent-runtime';
 import { logger } from '../../../lib/logger.js';
 import { configManager } from '../config-manager.js';
 import { readCreditsSettings } from './credits-defaults.js';
-import { creditsMintRefusal, heldCreditsToken } from './credits-inference.js';
+import { awaitCreditsToken, creditsMintRefusal, heldCreditsToken } from './credits-inference.js';
 import { creditsLinkKey, peekCreditsModelsFor, readCreditsCatalog } from './credits-models.js';
 import { creditsFormatOf, creditsProtocolServed } from './credits-protocols.js';
 import { isCloudLinked, readCloudInstanceToken, readOrNull } from './v1-client.js';
@@ -37,6 +38,12 @@ export const DOE_CREDITS_PROTOCOLS: readonly RuntimeCreditsProtocol[] = [
 
 /** How often a not-ready answer may start the background reads again. */
 const REFRESH_EVERY_MS = 10_000;
+/**
+ * How often a `refused` answer may ask for a token again. A refusal is the
+ * service's answer at that moment; a person who fixes their account (a card,
+ * a plan) in the browser must not be stuck on it until a restart.
+ */
+const RETRY_REFUSED_EVERY_MS = 30_000;
 
 /** What the readiness answer is read from. Injectable so every state is testable. */
 export interface CreditsReadinessFacts {
@@ -99,6 +106,8 @@ export interface CreditsReadinessDeps {
   readCatalog: () => Promise<unknown>;
   /** Read the balance's card fact; `undefined` when the service did not say. */
   readCardOnFile: () => Promise<boolean | undefined>;
+  /** Ask for a credits token again, in the background. */
+  retryMint: () => void;
   /** The clock. */
   now: () => number;
 }
@@ -106,6 +115,7 @@ export interface CreditsReadinessDeps {
 /** The last card fact read, and the link it was read under. */
 let card: { linkKey: string; onFile: boolean | undefined } | null = null;
 let lastRefreshAt = Number.NEGATIVE_INFINITY;
+let lastRetryAt = Number.NEGATIVE_INFINITY;
 let refreshing = false;
 
 /**
@@ -116,6 +126,7 @@ let refreshing = false;
 export function __resetCreditsReadinessForTests(): void {
   card = null;
   lastRefreshAt = Number.NEGATIVE_INFINITY;
+  lastRetryAt = Number.NEGATIVE_INFINITY;
   refreshing = false;
 }
 
@@ -162,7 +173,14 @@ export function creditsReadinessWith(deps: CreditsReadinessDeps): CloudCreditsRe
     linked: () => linkKey !== null && deps.facts.linked(),
     paymentMethodOnFile: () => card?.onFile,
   });
-  if (linkKey !== null && answer !== 'ready' && answer !== 'refused' && deps.firstRunOpen()) {
+  if (linkKey === null || answer === 'ready' || !deps.firstRunOpen()) return answer;
+  if (answer === 'refused') {
+    const now = deps.now();
+    if (now - lastRetryAt >= RETRY_REFUSED_EVERY_MS) {
+      lastRetryAt = now;
+      deps.retryMint();
+    }
+  } else {
     refreshInBackground(deps, linkKey);
   }
   return answer;
@@ -203,6 +221,8 @@ const productionDeps: CreditsReadinessDeps = {
     return state.completedAt === null && state.dismissedAt === null;
   },
   readCatalog: () => readCreditsCatalog(),
+  // A zero wait: the mint runs on, and the next poll reads its answer.
+  retryMint: () => void awaitCreditsToken(0).catch(() => false),
   readCardOnFile: async () =>
     (await readOrNull((client) => client.get(V1_ROUTES.balance, BalanceSchema)))
       ?.paymentMethodOnFile,

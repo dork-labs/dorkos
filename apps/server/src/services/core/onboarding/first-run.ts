@@ -3,9 +3,11 @@
  * `one-minute-onboarding` §4.1, ADR 261010-143210).
  *
  * Calls run one at a time. Each first checks everything that can refuse (the
- * key, a hand-typed setup, the service's model list read with the key) and
- * writes nothing until all of it passed, so a refusal leaves the previous pick
- * exactly as it was. Then it undoes what the previous call set up, so "press
+ * key, a hand-typed setup, a service that says the key is bad, a local model
+ * that does not answer) and writes nothing until all of it passed, so a
+ * refusal leaves the previous pick exactly as it was. A key whose service's
+ * list cannot be read for any other reason is kept, on the preset's usual
+ * model (`modelListed: false`). Then it undoes what the previous call set up, so "press
  * Continue, cancel, save a key" never leaves DorkOS credits armed or the
  * default runtime moved: the DorkOS runtime's credits record goes back to the
  * person's own sign-in, and `runtimes.default` and DorkBot's runtime go back to
@@ -74,7 +76,7 @@ export interface FirstRunDeps {
   setDorkBotRuntime: (runtime: string) => Promise<void>;
   /** Save a key for the DorkOS runtime (`storeDoeCredential`). */
   storeCredential: (inference: DoeInferenceConfig, secret: string) => Promise<DoeInferenceConfig>;
-  /** Reads a service's model list, after the key was saved. */
+  /** Reads a service's model list with the key, once the person pressed Save. */
   fetch: PresetFetch;
   /** Whether this computer is linked already, so no new link will follow. */
   linked: () => boolean;
@@ -154,9 +156,11 @@ async function undoPreviousPick(
   prior: string
 ): Promise<void> {
   if (previous === null) return;
+  // Cleared BEFORE the first await: a new-link hook that fires while DorkBot's
+  // manifest is written must find no DorkOS pick to record credits for.
+  writeOnboarding(deps, { firstRunPath: null, runtimeDefaultSetAt: null });
   if (previous === 'dorkos') turnDoeCreditsOff(deps);
   await useRuntime(deps, prior);
-  writeOnboarding(deps, { firstRunPath: null, runtimeDefaultSetAt: null });
 }
 
 /** Save the DorkOS runtime's model setup, checked against its schema. */
@@ -166,14 +170,51 @@ function writeInference(deps: FirstRunDeps, inference: DoeInferenceConfig | null
   writeSection(deps, 'runtimes', { ...runtimes, doe: { ...runtimes.doe, inference: parsed } });
 }
 
-/** The service's list, read; a failure becomes the sentence the client shows. */
-async function pickFromList(deps: FirstRunDeps, preset: DoePreset, secret: string | undefined) {
+/** The model a pick starts on, and whether it came from the service's own list. */
+interface PickedModel {
+  model: string;
+  contextWindow: number;
+  maxOutputTokens: number;
+  listed: boolean;
+}
+
+/**
+ * The model to start on, read from the service's list with the key.
+ *
+ * A service that says the key is bad (401, 403) refuses the pick. With a key,
+ * any other failed read (no answer, a 404, a key allowed to call the service
+ * but not to list models) starts on the preset's `fallbackModel` and keeps the
+ * key: spec §6.3, "a failing list read keeps the key". With no key (a model on
+ * this computer) there is nothing to keep, so nothing answering refuses.
+ */
+async function pickFromList(
+  deps: FirstRunDeps,
+  preset: DoePreset,
+  secret: string | undefined
+): Promise<PickedModel> {
   try {
-    return pickPresetModel(preset, await listPresetModels(preset, secret, deps.fetch));
+    return {
+      ...pickPresetModel(preset, await listPresetModels(preset, secret, deps.fetch)),
+      listed: true,
+    };
   } catch (error) {
     if (!(error instanceof PresetModelsUnreachableError)) throw error;
-    const hint = secret ? 'Check the key.' : 'Check that it is running.';
-    throw new FirstRunError(502, 'models_unreachable', `Couldn't reach ${preset.service}. ${hint}`);
+    if (secret && error.keyRefused) {
+      throw new FirstRunError(400, 'invalid_key', `${preset.service} didn't accept the key.`);
+    }
+    if (secret) {
+      return {
+        model: preset.fallbackModel,
+        contextWindow: preset.limits.contextWindow,
+        maxOutputTokens: preset.limits.maxOutputTokens,
+        listed: false,
+      };
+    }
+    throw new FirstRunError(
+      502,
+      'models_unreachable',
+      `Couldn't reach ${preset.service}. Check that it is running.`
+    );
   }
 }
 
@@ -199,6 +240,8 @@ function checkInference(inference: DoeInferenceConfig): DoeInferenceConfig {
 /** An Own AI pick, checked and ready to write: the writes, and the model it runs on. */
 interface PreparedChoice {
   model?: string;
+  /** For a key preset: whether the model came from the service's own list. */
+  modelListed?: boolean;
   write: () => Promise<void>;
 }
 
@@ -213,7 +256,7 @@ async function prepareOwnChoice(deps: FirstRunDeps, choice: OwnAiChoice): Promis
       return { write: async () => {} };
     case 'local': {
       const preset = DOE_PRESETS.local;
-      const picked = await pickFromList(deps, preset, undefined);
+      const { listed: _listed, ...picked } = await pickFromList(deps, preset, undefined);
       return {
         model: picked.model,
         write: async () => writeInference(deps, { ...presetInference(preset), ...picked }),
@@ -239,11 +282,12 @@ async function prepareOwnChoice(deps: FirstRunDeps, choice: OwnAiChoice): Promis
       const secret = choice.apiKey;
       checkKey(secret);
       // The list is read with the key the person just saved in the form, and
-      // only then is anything written: a list that cannot be read changes
-      // nothing, and the person fixes the key and saves again.
-      const picked = await pickFromList(deps, preset, secret);
+      // only then is anything written: a key the service refuses changes
+      // nothing; any other failed read keeps the key on the usual model.
+      const { listed, ...picked } = await pickFromList(deps, preset, secret);
       return {
         model: picked.model,
+        modelListed: listed,
         write: async () => {
           await deps.storeCredential({ ...presetInference(preset), ...picked }, secret);
         },
@@ -262,8 +306,9 @@ let queue: Promise<unknown> = Promise.resolve();
  * @param request - The path, and for Own AI what was picked.
  * @param deps - The config and the writers.
  * @throws {FirstRunError} `onboarding_complete` (409) once the first run is
- *   finished or dismissed; `invalid_key` or `invalid_setup` (400) and
- *   `models_unreachable` (502) before anything is written.
+ *   finished or dismissed; `invalid_key` (400, the key refused by DorkOS or by
+ *   the service), `invalid_setup` (400) and `models_unreachable` (502, a local
+ *   model that did not answer), each before anything is written.
  */
 export function applyFirstRun(
   request: FirstRunRequest,
@@ -305,13 +350,12 @@ async function applyFirstRunNow(
     await useRuntime(deps, DOE);
   } else if (request.path === 'own' && prepared) {
     await prepared.write();
-    if (request.choice.kind !== 'agent-app') {
-      // The person's own AI, whoever set credits as the DorkOS runtime's
-      // default (a gap fill on an earlier link included).
-      turnDoeCreditsOff(deps);
-      await useRuntime(deps, DOE);
-    }
+    if (request.choice.kind !== 'agent-app') await useRuntime(deps, DOE);
   }
+  // Any path but DorkOS: credits are not the DorkOS runtime's default, whoever
+  // set them (a gap fill on an earlier link, or a link that landed while this
+  // pick waited). Last, after every await, so nothing can arm them after it.
+  if (request.path !== 'dorkos') turnDoeCreditsOff(deps);
   // An AI app's connect cards pick the default from what signed in, and they
   // pick only while this stamp is unset.
   const decided = !(request.path === 'own' && request.choice.kind === 'agent-app');
@@ -326,5 +370,6 @@ async function applyFirstRunNow(
     path: request.path,
     runtime: deps.config.get('runtimes').default,
     ...(prepared?.model ? { model: prepared.model } : {}),
+    ...(prepared?.modelListed !== undefined ? { modelListed: prepared.modelListed } : {}),
   };
 }

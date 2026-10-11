@@ -52,7 +52,9 @@ export function registerOnboardingOpenApi(registry: OpenAPIRegistry): void {
     summary: 'Record and set up the path picked on the Welcome screen',
     description:
       'Calls run one at a time. Checks the key and reads the service model list with it first, ' +
-      'and writes nothing when either refuses. Then undoes what an earlier pick set up (a ' +
+      'and writes nothing when the key is refused (by DorkOS, or a 401 or 403 from the ' +
+      'service). Any other failed read keeps the key and starts on the service usual model ' +
+      '(`modelListed: false`). Then undoes what an earlier pick set up (a ' +
       'credits record goes back to the own sign-in, the default runtime and DorkBot go back to ' +
       'what they were) and applies this one: DorkOS moves the default runtime and DorkBot to ' +
       'DorkOS, clears the model setup so DorkOS picks the model, and leaves credits to the new ' +
@@ -72,7 +74,7 @@ export function registerOnboardingOpenApi(registry: OpenAPIRegistry): void {
       ),
       403: refusal('Not this computer, or not the owner'),
       409: refusal('The first run is finished or dismissed (`onboarding_complete`)'),
-      502: refusal("The service's model list could not be read with the key; nothing was saved"),
+      502: refusal('A model on this computer did not answer; nothing was saved'),
     },
   });
 

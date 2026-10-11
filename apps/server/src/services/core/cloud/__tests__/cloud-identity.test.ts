@@ -145,6 +145,20 @@ describe('authoritative Cloud identity for credits', () => {
     expect(creditsMintRefusal()).toBeNull();
   });
 
+  it('keeps a real refusal through a mint that got no answer', async () => {
+    let offline = false;
+    fakeCloud((url) => {
+      if (offline) return Promise.reject(new Error('offline'));
+      if (url.pathname === '/v1/session') return answer(session);
+      return answer({ code: 'entitlement_required', status: 403, title: 'Not available' }, 403);
+    });
+    await primeCreditsInferenceWithContext(captureCloudV1Context());
+    expect(creditsMintRefusal()).toBe('entitlement_required');
+    offline = true;
+    expect(await primeCreditsInferenceWithContext(captureCloudV1Context())).toBe(false);
+    expect(creditsMintRefusal()).toBe('entitlement_required');
+  });
+
   it('refuses a network failure without minting', async () => {
     const fetch = fakeCloud(() => Promise.reject(new Error('offline')));
     expect(await primeCreditsInferenceWithContext(captureCloudV1Context())).toBe(false);

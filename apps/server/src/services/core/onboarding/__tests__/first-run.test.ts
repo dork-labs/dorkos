@@ -106,7 +106,7 @@ describe('applyFirstRun', () => {
 
   it('own key: reads the list with the key, then saves the key with the picked model', async () => {
     const result = await applyFirstRun(OPENAI, h.deps);
-    expect(result).toEqual({ path: 'own', runtime: 'doe', model: 'gpt-5' });
+    expect(result).toEqual({ path: 'own', runtime: 'doe', model: 'gpt-5', modelListed: true });
     expect(h.fetch.mock.invocationCallOrder[0]).toBeLessThan(
       h.storeCredential.mock.invocationCallOrder[0]!
     );
@@ -152,23 +152,40 @@ describe('applyFirstRun', () => {
     });
   });
 
-  it('own key: a list that cannot be read changes nothing at all', async () => {
-    await applyFirstRun({ path: 'dorkos' }, h.deps);
-    const before = h.config();
-    h.deps.fetch = vi.fn<PresetFetch>(async () => list({ error: 'no' }, 401));
-    const error = await applyFirstRun(
-      { path: 'own', choice: { kind: 'anthropic', apiKey: 'sk-ant-api-x' } },
-      h.deps
-    ).catch((e: unknown) => e);
-    expect(error).toBeInstanceOf(FirstRunError);
-    expect(error).toMatchObject({
-      status: 502,
-      code: 'models_unreachable',
-      message: "Couldn't reach Anthropic. Check the key.",
+  for (const status of [401, 403]) {
+    it(`own key: a key the service refuses (${status}) changes nothing at all`, async () => {
+      await applyFirstRun({ path: 'dorkos' }, h.deps);
+      const before = h.config();
+      h.deps.fetch = vi.fn<PresetFetch>(async () => list({ error: 'no' }, status));
+      const error = await applyFirstRun(
+        { path: 'own', choice: { kind: 'anthropic', apiKey: 'sk-ant-api-x' } },
+        h.deps
+      ).catch((e: unknown) => e);
+      expect(error).toBeInstanceOf(FirstRunError);
+      expect(error).toMatchObject({ status: 400, code: 'invalid_key' });
+      expect(h.config()).toBe(before);
+      expect(h.storeCredential).not.toHaveBeenCalled();
     });
-    expect(h.config()).toBe(before);
-    expect(h.storeCredential).not.toHaveBeenCalled();
-  });
+  }
+
+  for (const [why, fetch] of [
+    ['a network failure', async () => Promise.reject(new Error('ECONNRESET'))],
+    ['a 404', async () => list({}, 404)],
+    ['a 500', async () => list({}, 500)],
+    ['an empty list', async () => list({ data: [] })],
+  ] as const) {
+    it(`own key: ${why} keeps the key and starts on the preset's model`, async () => {
+      h.deps.fetch = vi.fn<PresetFetch>(fetch);
+      const result = await applyFirstRun(OPENAI, h.deps);
+      expect(result).toEqual({ path: 'own', runtime: 'doe', model: 'gpt-5', modelListed: false });
+      expect(h.storeCredential).toHaveBeenCalledWith(
+        expect.objectContaining({ model: 'gpt-5', contextWindow: 128_000 }),
+        'sk-test'
+      );
+      expect(h.config().runtimes.default).toBe('doe');
+      expect(h.config().onboarding.firstRunPath).toBe('own');
+    });
+  }
 
   it('own key: a refused key changes nothing and reaches no service', async () => {
     await applyFirstRun({ path: 'dorkos' }, h.deps);
@@ -270,6 +287,79 @@ describe('applyFirstRun', () => {
     expect(h.config().onboarding.firstRunPath).toBe('dorkos');
     expect(h.config().runtimes.doe.inference).toBeNull();
     expect(h.config().cloud.credits?.defaults.doe?.runsOn).toBe('credits');
+  });
+
+  it('a new link arriving mid-undo cannot re-arm credits for an abandoned DorkOS pick', async () => {
+    await applyFirstRun({ path: 'dorkos' }, h.deps);
+    // The new-link hook fires while the undo waits on DorkBot's manifest write.
+    const seen: (string | null)[] = [];
+    h.deps.setDorkBotRuntime = async () => {
+      seen.push(h.config().onboarding.firstRunPath);
+      recordFirstRunCreditsChoice(h.deps.config);
+      await Promise.resolve();
+    };
+    await applyFirstRun({ path: 'none' }, h.deps);
+    expect(seen[0]).toBeNull();
+    expect(h.config().cloud.credits?.defaults.doe?.runsOn ?? 'own-sign-in').toBe('own-sign-in');
+  });
+
+  for (const request of [
+    { path: 'none' },
+    { path: 'own', choice: { kind: 'agent-app' } },
+  ] as const) {
+    it(`${request.path}${'choice' in request ? '/agent-app' : ''}: turns off credits a gap fill set`, async () => {
+      h.edit({
+        cloud: {
+          ...h.config().cloud,
+          credits: {
+            defaults: {
+              doe: {
+                runsOn: 'credits',
+                chosenBy: 'default',
+                announced: false,
+                signInReoffered: false,
+              },
+            },
+            offer: 'none',
+            agents: [],
+            linkedTo: 'acct-1',
+          },
+        },
+      });
+      await applyFirstRun(request, h.deps);
+      expect(h.config().cloud.credits?.defaults.doe?.runsOn).toBe('own-sign-in');
+    });
+  }
+
+  for (const closed of ['completedAt', 'dismissedAt'] as const) {
+    it(`a pick waiting on its list read stops when the first run gets ${closed}`, async () => {
+      let release!: () => void;
+      const gate = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      h.deps.fetch = vi.fn<PresetFetch>(async () => {
+        await gate;
+        return list({ data: [{ id: 'gpt-5' }] });
+      });
+      const pending = applyFirstRun(OPENAI, h.deps);
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      h.edit({ onboarding: { ...h.config().onboarding, [closed]: '2026-10-10T13:00:00.000Z' } });
+      const before = h.config();
+      release();
+      await expect(pending).rejects.toMatchObject({ status: 409, code: 'onboarding_complete' });
+      expect(h.config()).toBe(before);
+      expect(h.storeCredential).not.toHaveBeenCalled();
+    });
+  }
+
+  it('a refused pick does not hold up the next one', async () => {
+    const refused = applyFirstRun(
+      { path: 'own', choice: { kind: 'anthropic', apiKey: 'sk-ant-oat-1' } },
+      h.deps
+    );
+    const next = applyFirstRun({ path: 'dorkos' }, h.deps);
+    await expect(refused).rejects.toMatchObject({ code: 'invalid_key' });
+    await expect(next).resolves.toMatchObject({ path: 'dorkos' });
   });
 
   it('undoes to the built-in default when the runtime before is not registered', async () => {

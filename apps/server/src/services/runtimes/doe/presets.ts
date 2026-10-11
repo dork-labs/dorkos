@@ -4,8 +4,10 @@
  *
  * Each preset says how to reach the service (request format and endpoint) and
  * which model to start on: when the person presses Save, the server reads the
- * service's own model list with their key and picks one ({@link pickPresetModel});
- * only then is the key stored. Nothing reaches a service before Save.
+ * service's own model list with their key and picks one ({@link pickPresetModel}),
+ * then stores the key. A service that says the key is bad (401, 403) stores
+ * nothing; any other failed read stores the key with the preset's
+ * `fallbackModel`. Nothing reaches a service before Save.
  *
  * @module services/runtimes/doe/presets
  */
@@ -30,7 +32,11 @@ export interface DoePreset {
   modelsUrl: string;
   /** Model id prefixes to prefer, best first. Empty means the first listed. */
   preferences: readonly string[];
-  /** The model the key is saved with until the list has been read. */
+  /**
+   * The model to start on when the service's list cannot be read but nothing
+   * says the key is bad (no answer, a 404, a key allowed to call the service
+   * but not to list its models). A real, current model id of the service.
+   */
   fallbackModel: string;
   /** Limits used when the list does not report them. */
   limits: { contextWindow: number; maxOutputTokens: number };
@@ -114,10 +120,20 @@ export class PresetModelsUnreachableError extends Error {
    */
   constructor(
     readonly preset: DoePreset,
-    cause?: unknown
+    cause?: unknown,
+    readonly status?: number
   ) {
     super(`Could not read the ${preset.service} model list`, { cause });
     this.name = 'PresetModelsUnreachableError';
+  }
+
+  /**
+   * Whether the service answered that the key itself is not accepted (401 or
+   * 403). Any other failure (no answer, a timeout, a 404, an empty list) says
+   * nothing about the key.
+   */
+  get keyRefused(): boolean {
+    return this.status === 401 || this.status === 403;
   }
 }
 
@@ -182,9 +198,12 @@ export async function listPresetModels(
       headers: { accept: 'application/json', ...listHeaders(preset, secret) },
       signal: AbortSignal.timeout(LIST_TIMEOUT_MS),
     });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    if (!res.ok) {
+      throw new PresetModelsUnreachableError(preset, new Error(`HTTP ${res.status}`), res.status);
+    }
     models = parseModelList(await res.json());
   } catch (error) {
+    if (error instanceof PresetModelsUnreachableError) throw error;
     throw new PresetModelsUnreachableError(preset, error);
   }
   if (models.length === 0) throw new PresetModelsUnreachableError(preset);

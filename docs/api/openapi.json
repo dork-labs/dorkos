@@ -20375,7 +20375,7 @@
           "Onboarding"
         ],
         "summary": "Record and set up the path picked on the Welcome screen",
-        "description": "Calls run one at a time. Checks the key and reads the service model list with it first, and writes nothing when either refuses. Then undoes what an earlier pick set up (a credits record goes back to the own sign-in, the default runtime and DorkBot go back to what they were) and applies this one: DorkOS moves the default runtime and DorkBot to DorkOS, clears the model setup so DorkOS picks the model, and leaves credits to the new link; Own AI saves the key (or finds the local model) with the model DorkOS picked from the service's list and turns credits off for DorkOS; no account records the path only. This computer and its owner only.",
+        "description": "Calls run one at a time. Checks the key and reads the service model list with it first, and writes nothing when the key is refused (by DorkOS, or a 401 or 403 from the service). Any other failed read keeps the key and starts on the service usual model (`modelListed: false`). Then undoes what an earlier pick set up (a credits record goes back to the own sign-in, the default runtime and DorkBot go back to what they were) and applies this one: DorkOS moves the default runtime and DorkBot to DorkOS, clears the model setup so DorkOS picks the model, and leaves credits to the new link; Own AI saves the key (or finds the local model) with the model DorkOS picked from the service's list and turns credits off for DorkOS; no account records the path only. This computer and its owner only.",
         "requestBody": {
           "content": {
             "application/json": {
@@ -20447,6 +20447,9 @@
                     },
                     "model": {
                       "type": "string"
+                    },
+                    "modelListed": {
+                      "type": "boolean"
                     }
                   },
                   "required": [
@@ -20521,7 +20524,7 @@
             }
           },
           "502": {
-            "description": "The service's model list could not be read with the key; nothing was saved",
+            "description": "A model on this computer did not answer; nothing was saved",
             "content": {
               "application/json": {
                 "schema": {
