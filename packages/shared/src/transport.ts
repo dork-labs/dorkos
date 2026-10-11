@@ -12,12 +12,7 @@ import type {
 } from './transport-mcp.js';
 import type { DoeCreditsCatalog } from './runtime-connect.js';
 import type { DoeInferenceConfig } from './config-schema.js';
-import type {
-  BrowserProfile,
-  BrowserInstance,
-  BrowserCloseRequest,
-  BrowserCloseReceipt,
-} from './browser-schemas.js';
+import type { TransportSupplementalPorts } from './transport-supplemental-ports.js';
 import type {
   CanvasChannelDeclaration,
   CanvasChannelRouteGrantRequest,
@@ -228,7 +223,6 @@ import type {
   FoundClaudeFolder,
   LimitHistoryEntry,
 } from './account-usage.js';
-import type { TransportSlices } from './transport-slices.js';
 import type { CanvasEditingResponse, UpdateCanvasDocumentRequest } from './room-schemas.js';
 import type { CanvasDocument } from './canvas-schemas.js';
 import type { ReadCursor, ReadCursorThreadKind } from './read-cursor-schemas.js';
@@ -521,7 +515,7 @@ export interface ClientErrorReport {
   stack?: string;
 }
 
-export interface Transport extends TransportSlices {
+export interface Transport extends TransportSupplementalPorts {
   /** Optional client identifier for SSE presence tracking. */
   readonly clientId?: string;
   /**
@@ -3592,21 +3586,4 @@ export interface Transport extends TransportSlices {
     accountId: string,
     projects: string[] | null
   ): Promise<OnlyProjectsResponse>;
-  /** Owner-filtered nonsecret browser profile metadata. */
-  getBrowserProfiles(signal?: AbortSignal): Promise<BrowserProfile[]>;
-  /** Read one accessible profile; unavailable and inaccessible requests reject. */
-  getBrowserProfile(profileId: string, signal?: AbortSignal): Promise<BrowserProfile>;
-  /** Current original generation projections, never an authority token. */
-  getBrowserInstances(signal?: AbortSignal): Promise<BrowserInstance[]>;
-  /** Read the exact original generation without silently replacing it. */
-  getBrowserInstance(
-    browserId: string,
-    browserGeneration: number,
-    signal?: AbortSignal
-  ): Promise<BrowserInstance>;
-  /** Explicit stop; unverified cleanup remains an unverified receipt. */
-  closeBrowserInstance(
-    request: BrowserCloseRequest,
-    signal?: AbortSignal
-  ): Promise<BrowserCloseReceipt>;
 }

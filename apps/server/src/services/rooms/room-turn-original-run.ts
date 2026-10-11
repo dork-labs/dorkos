@@ -3,6 +3,7 @@ import type { OwnTurn } from './turn/room-reply-collector-contracts.js';
 import { createRoomLaunchOwnerRollback } from './turn/room-launch-owner-rollback.js';
 import { shouldCancelUnstartedRoomReply } from './turn/room-reply-turn-data.js';
 import { aliasTurnLevel } from '../core/turn-power/turn-levels.js';
+import { outsiderInViewOf } from './limits/turn-ceiling.js';
 import { randomUUID } from 'node:crypto';
 import { type RoomContextData } from '@dorkos/shared/additional-context';
 import { logger } from '../../lib/logger.js';
@@ -699,6 +700,9 @@ export async function runOriginalRoomTurn(
       // Measured once, here, by the code that already measured it for the
       // context block. `null` means git could not be asked — never "level".
       aheadOfMain: request.roomContext.files?.ahead ?? null,
+      // A stranger's line it is shown but does not answer bounds no power,
+      // and still marks what the turn saves or passes on (§4.7).
+      ...outsiderInViewOf(request.roomContext),
     },
     // Omitted, never passed as an empty string, when this room has no files.
     // Not because `''` misbehaves today — it does not: all three adapters

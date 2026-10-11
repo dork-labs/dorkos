@@ -44,13 +44,13 @@ export const docs = Object.freeze([
   }),
 ] as const);
 
-// Actual generated155 identity with a reviewed FK-safe additive SQL correction.
+// Actual generated157 identity; the FK-safe additive SQL is a reviewed source correction.
 // Published Room watermark rows remain separate from the canonical completion.
 export const consolidatedDoc: MigrationEntry & { hash: string } = Object.freeze({
-  idx: 155,
+  idx: 157,
   version: '6',
-  when: 1791690666098,
-  tag: '20261011035106_married_puppet_master',
+  when: 1791701524866,
+  tag: '20261011065204_lonely_sentinel',
   breakpoints: true,
   hash: 'b7390d7499448a3021402bd70f04c0d35096d0015e40305788e6b30fc3ce93c4',
 });
@@ -126,6 +126,26 @@ export const agentPauses = Object.freeze({
   tag: '20261010175157_agent_pauses',
   breakpoints: true,
   hash: 'a9bebbafc28941a7ebc1aefe7962af56ad50c1efe71968bbf6c20601f015bdde',
+} as const);
+
+/** Immutable shipped Main migration identity used for exact history reconciliation. */
+export const heartbeats = Object.freeze({
+  idx: 155,
+  version: '6',
+  when: 1791677140996,
+  tag: '20261011000540_heartbeats',
+  breakpoints: true,
+  hash: '90488f58c9ff5ec27e464cc116ee2e9ba56ca7bfc17d34ebaa54b85d0bdd179b',
+} as const);
+
+/** Immutable shipped Main migration identity used for exact history reconciliation. */
+export const remoteCommandJournal = Object.freeze({
+  idx: 156,
+  version: '6',
+  when: 1791688446887,
+  tag: '20261011031406_remote_command_journal',
+  breakpoints: true,
+  hash: 'f0ea5a4d2b2fb986c26031c0eb25f38335f7a4ded3280e93a0c6632c331b1bd0',
 } as const);
 
 /** Reject invalid legacy Doc migration bookkeeping with the original history error. */

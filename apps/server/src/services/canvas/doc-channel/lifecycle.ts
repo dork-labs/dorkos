@@ -136,7 +136,7 @@ export class DocChannelLifecycle {
         AND batch_id=${batch.batchId} LIMIT 1`)
       )
         continue;
-      const receipt = this.receipt(tx, batch.admissionReceiptId);
+      const receipt = readLifecycleReceipt(tx, batch.admissionReceiptId);
       if (receipt && receipt.state !== 'accepted') continue;
       if (!['pending', 'waiting', 'accepted'].includes(batch.status)) continue;
       if (receipt) {
@@ -440,14 +440,14 @@ export class DocChannelLifecycle {
         .where(eq(canvasDocBatches.documentId, document.id))
         .all();
       for (const batch of batches) {
-        const receipt = this.receipt(tx, batch.admissionReceiptId);
+        const receipt = readLifecycleReceipt(tx, batch.admissionReceiptId);
         if (batch.admissionReceiptId && !receipt) throw new DocChannelIdentityBlockedError();
         if (receipt?.state === 'accepted') {
           const movedTarget = receipt.sessionId === fromId;
           const destination = movedTarget ? toId : receipt.sessionId;
           if (!owners.has(document.id) && !movedTarget) continue;
           if (
-            !this.sameTarget(tx, receipt, destination) ||
+            !sameLifecycleReceiptTarget(tx, receipt, destination) ||
             !this.options.receipts?.rebindAccepted(
               tx,
               receipt.id,
@@ -495,19 +495,6 @@ export class DocChannelLifecycle {
     return changed;
   }
 
-  private receipt(
-    tx: DbTransaction,
-    id: string | null
-  ): SessionMessageAcceptanceReceipt | undefined {
-    return readLifecycleReceipt(tx, id);
-  }
-  private sameTarget(
-    tx: DbTransaction,
-    receipt: SessionMessageAcceptanceReceipt,
-    sessionId: string
-  ): boolean {
-    return sameLifecycleReceiptTarget(tx, receipt, sessionId);
-  }
   private moveQueue(
     tx: DbTransaction,
     receipt: SessionMessageAcceptanceReceipt,

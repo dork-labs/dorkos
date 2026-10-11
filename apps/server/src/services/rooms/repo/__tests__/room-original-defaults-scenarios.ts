@@ -103,7 +103,7 @@ export const originalClaudeDefaultsScenarios = {
     external: true,
     priorFullTurn: true,
     expectedCeiling: 'runtime-default',
-    expectedLevel: { asks: 'always', reach: 'edit' },
+    expectedLevel: { asks: 'always', reach: 'edit', outsider: true },
     expectedSettings: {},
   },
   'power-agent-bound': {

@@ -6,7 +6,7 @@
  * cannot be issued by a native test fixture. Their native pairs have bounded scopes;
  * they do not claim foreign/overlapping private turns or guard-drop mutant proof.
  */
-import { describe, expect, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { AgentRuntime } from '@dorkos/shared/agent-runtime';
 import { FakeAgentRuntime } from '@dorkos/test-utils';
 import { createSessionRoomTurnRunner, warnIfTurnCannotPost } from '../room-turn-runner.js';
@@ -18,6 +18,17 @@ import { runOriginalReplyIdentityComponent } from '../repo/__tests__/room-origin
 import { runOriginalRoomStopStateComponent } from '../repo/__tests__/room-original-stop-state-component.js';
 import { runOriginalReplyWaitClockComponent } from '../repo/__tests__/room-original-reply-wait-clock-component.js';
 import { runOriginalLaunchOwnerRollbackComponent } from '../repo/__tests__/room-original-launch-owner-rollback-component.js';
+
+// Both cases use an independently owned native fixture. The outsider post is
+// visible context, never a synthetic turn request or an answered sender.
+registerOriginalNativeLaunchCase(
+  'runner-outsider-context',
+  "marks a native turn shown a stranger's line it does not answer without bounding its power"
+);
+registerOriginalNativeLaunchCase(
+  'runner-local-context',
+  'leaves a fresh native local-only turn without an outsider marker'
+);
 
 describe('createSessionRoomTurnRunner', () => {
   describe('which runtime takes the turn', () => {

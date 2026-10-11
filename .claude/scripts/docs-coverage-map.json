@@ -1004,6 +1004,14 @@
       ]
     },
     {
+      "doc": "docs/guides/dorkos-community.mdx",
+      "description": "The DorkOS Community Space guide (gated: not open yet), join/leave, display name, report, rules, moderation",
+      "patterns": [
+        "apps/community/",
+        "specs/official-community-space/"
+      ]
+    },
+    {
       "doc": "docs/guides/relay-observability.mdx",
       "description": "Relay observability guide",
       "patterns": [

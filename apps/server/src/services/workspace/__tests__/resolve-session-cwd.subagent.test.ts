@@ -51,7 +51,11 @@ const SERVER_SRC = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '.
  * - the relay adapter factory — the desk guard the claude-code adapter asks
  *   when a relay message arrives, before its turn starts, reads the agent's
  *   desk from the same chain the router stamps it from (spec `agent-home-desk`
- *   §3.4). It runs once per delivery, never inside a running turn.
+ *   §3.4). It runs once per delivery, never inside a running turn;
+ * - the beat launch — the runner starting an agent's beat turn, and titling
+ *   the beat chat afterwards from outside it (spec `heartbeats` §7.1);
+ * - the heartbeats wiring — the workspace gatherer's folder, read before a
+ *   beat decides whether to run a turn at all (spec `heartbeats` §5).
  *
  * Adding a file here is a deliberate act. Adding one that runs INSIDE a turn —
  * a tool handler, a runtime adapter, a transcript reader — breaks the invariant
@@ -66,6 +70,8 @@ const ALLOWED = new Set([
   'services/tasks/task-scheduler-service.ts',
   'services/relay/binding-router.ts',
   'services/relay/adapter-factory.ts',
+  'services/heartbeats/beat-launch.ts',
+  'services/heartbeats/heartbeats-wiring.ts',
 ]);
 
 /** Every `.ts` file under `apps/server/src`, relative to it, tests excluded. */

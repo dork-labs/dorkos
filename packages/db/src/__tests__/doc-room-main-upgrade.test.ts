@@ -12,7 +12,7 @@ const folder = fileURLToPath(new URL('../../drizzle/', import.meta.url));
 const timestamp = '2026-10-09T19:00:00.000Z';
 
 describe('Doc Room upgrade from populated shipped main', () => {
-  it.each([148, 149, 150, 154])(
+  it.each([148, 149, 150, 154, 155, 156])(
     'preserves Main%d rows with foreign keys enforced and no invented custody',
     (idx) => {
       const temporary = mkdtempSync(path.join(os.tmpdir(), 'dorkos-room-upgrade-'));
@@ -22,12 +22,12 @@ describe('Doc Room upgrade from populated shipped main', () => {
         const journal = JSON.parse(readFileSync(path.join(folder, 'meta/_journal.json'), 'utf8'));
         const finalEntry = journal.entries.at(-1);
         expect(finalEntry).toMatchObject({
-          idx: 155,
-          when: 1791690666098,
-          tag: '20261011035106_married_puppet_master',
+          idx: 157,
+          when: 1791701524866,
+          tag: '20261011065204_lonely_sentinel',
         });
         const finalHistoryLength = journal.entries.length;
-        expect(finalHistoryLength).toBe(156);
+        expect(finalHistoryLength).toBe(158);
         journal.entries = journal.entries.filter((entry: { idx: number }) => entry.idx <= idx);
         writeFileSync(path.join(temporary, 'meta/_journal.json'), JSON.stringify(journal));
         for (const entry of journal.entries)
@@ -113,6 +113,8 @@ describe('Doc Room upgrade from populated shipped main', () => {
             created_at: timestamp,
             updated_at: timestamp,
           });
+        if (idx >= 155) seedIncomingMainData(db, idx as 155 | 156);
+        const durable = idx >= 155 ? incomingMainData(db, idx as 155 | 156) : [];
         const tables = [
           'canvas_doc_channels',
           'canvas_doc_grants',
@@ -129,6 +131,7 @@ describe('Doc Room upgrade from populated shipped main', () => {
           .prepare('SELECT * FROM __drizzle_migrations ORDER BY rowid')
           .all();
         runMigrations(db);
+        expectIncomingMainDataPreserved(db, durable);
         for (const { table, rows } of before) {
           const after = db.$client.prepare(`SELECT * FROM ${table}`).all() as Record<
             string,
@@ -158,7 +161,7 @@ describe('Doc Room upgrade from populated shipped main', () => {
         expect(
           db.$client.prepare('SELECT room_spend_floor_ms FROM canvas_doc_channels').get()
         ).toEqual({ room_spend_floor_ms: null });
-        if (idx === 154) {
+        if (idx >= 154) {
           // The real rebuilt tables must preserve data and enforce genuine Room agreement.
           expect(() =>
             db.$client.exec(
@@ -224,3 +227,145 @@ describe('Doc Room upgrade from populated shipped main', () => {
     }
   );
 });
+
+// Seed authenticated shipped Main155/156 rows in genuine migration fixtures.
+// These helpers preserve the durable rows across ordinary migrations and restart.
+function seedIncomingMainData(db: ReturnType<typeof createDb>, through: 155 | 156) {
+  const at = '2026-10-11T00:00:00.000Z';
+  db.$client
+    .prepare(
+      `INSERT INTO heartbeat_beats
+    (id, agent_id, started_at, kind, wake, changes, raises, bypass, summary)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    )
+    .run(
+      'kept-beat',
+      'kept-agent',
+      at,
+      'report',
+      '{"cause":"preserve"}',
+      '{"changed":true}',
+      3,
+      1,
+      'original beat'
+    );
+  db.$client
+    .prepare(
+      `INSERT INTO heartbeat_outbox
+    (id, agent_id, beat_id, to_account, rung, text, key, urgent,
+      deliver_after, state, attempts, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    )
+    .run(
+      'kept-heartbeat-outbox',
+      'kept-agent',
+      'kept-beat',
+      'kept-account',
+      'report',
+      'original report',
+      'kept-key',
+      1,
+      at,
+      'held',
+      2,
+      at
+    );
+  db.$client
+    .prepare(
+      `INSERT INTO heartbeat_state
+    (agent_id, last_beat_at, gathered_through, last_change_keys, wake_again,
+      consecutive_failures, beat_chat_id, frontmatter_hash, new_manager)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    )
+    .run('kept-agent', at, 'kept-entry', '["kept-key"]', 1, 2, 'kept-chat', 'kept-frontmatter', 1);
+  if (through === 156) {
+    db.$client
+      .prepare(
+        `INSERT INTO remote_command_journal
+      (command_id, lease_token, verb, instance_id, outcome, ack_state,
+        ack_attempts, received_at, settled_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      )
+      .run(
+        'kept-command',
+        'kept-lease',
+        'rotate',
+        'kept-instance',
+        '{"ok":true}',
+        'unconfirmed',
+        3,
+        at,
+        at
+      );
+    db.$client
+      .prepare(
+        `INSERT INTO remote_event_outbox
+      (id, idempotency_key, instance_id, batch, attempts, created_at, last_attempt_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?)`
+      )
+      .run('kept-remote-outbox', 'kept-idempotency', 'kept-instance', '[{"kept":true}]', 4, at, at);
+  }
+}
+
+function incomingMainData(db: ReturnType<typeof createDb>, through: 155 | 156) {
+  const tables = ['heartbeat_beats', 'heartbeat_outbox', 'heartbeat_state'];
+  if (through === 156) tables.push('remote_command_journal', 'remote_event_outbox');
+  return tables.map((table) => ({
+    table,
+    rows: db.$client.prepare(`SELECT * FROM ${table} ORDER BY rowid`).all(),
+  }));
+}
+
+function expectIncomingMainDataPreserved(
+  db: ReturnType<typeof createDb>,
+  before: ReturnType<typeof incomingMainData>
+) {
+  for (const value of before)
+    expect(db.$client.prepare(`SELECT * FROM ${value.table} ORDER BY rowid`).all()).toEqual(
+      value.rows
+    );
+  expect(db.$client.pragma('foreign_keys', { simple: true })).toBe(1);
+  expect(db.$client.prepare('PRAGMA foreign_key_check').all()).toEqual([]);
+  // Called only after accepted canonical completion includes all Main150..156.
+  if (before.some((value) => value.table === 'remote_event_outbox')) {
+    expect(() =>
+      db.$client
+        .prepare(
+          `INSERT INTO remote_event_outbox
+      (id, idempotency_key, instance_id, batch, created_at)
+      VALUES ('duplicate-outbox', 'kept-idempotency', 'kept-instance', '[]', 'later')`
+        )
+        .run()
+    ).toThrow(/UNIQUE constraint failed: remote_event_outbox.idempotency_key/);
+  }
+  expect(() =>
+    db.$client
+      .prepare(
+        `INSERT INTO remote_command_journal
+    (command_id, lease_token, verb, instance_id, received_at)
+    VALUES ('invalid-command', 'invalid-lease', 'invented-verb', 'kept-instance', 'later')`
+      )
+      .run()
+  ).toThrow(/CHECK constraint failed: remote_command_journal_verb/);
+  expect(() =>
+    db.$client
+      .prepare(
+        `INSERT INTO heartbeat_beats
+    (id, agent_id, started_at, kind, wake)
+    VALUES ('invalid-beat', 'kept-agent', 'later', 'invented-kind', '{}')`
+      )
+      .run()
+  ).toThrow(/CHECK constraint failed: heartbeat_beats_kind/);
+  expect(
+    db.$client
+      .prepare(
+        `SELECT name FROM sqlite_master
+    WHERE type='index' AND name IN
+      ('heartbeat_beats_agent_started_idx', 'heartbeat_outbox_due_idx',
+       'heartbeat_outbox_key_idx', 'remote_command_journal_ack_idx',
+       'remote_event_outbox_idempotency_key_unique', 'remote_event_outbox_created_idx')
+    ORDER BY name`
+      )
+      .all()
+  ).toHaveLength(6);
+}

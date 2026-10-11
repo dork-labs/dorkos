@@ -1,9 +1,9 @@
+import { wireTestConnectorProbes } from './startup/test-connector-probes.js';
 import { mountOptionalGateways } from './startup/optional-gateway-composition.js';
 import {
   connectorRuntimeConsumer,
-  registeredAgentRoots,
   logLegacySweep,
-  warmMcpOAuthTokens,
+  logInstallSweepWithCurrentMesh,
   takeDailySnapshot,
 } from './startup/boot-helpers.js';
 import { mountOperatorRoutes } from './startup/operator-route-composition.js';
@@ -230,11 +230,6 @@ import {
   startConnectorRuntimeMcpListener,
   type ConnectorRuntimeMcpListener,
 } from './services/runtimes/connector-mcp/index.js';
-import { connectorRuntimeHeaders } from './services/runtimes/connector-tools.js';
-import type {
-  ConnectorRuntimeExecutionProbe,
-  ConnectorRuntimeRequestProbe,
-} from './routes/test-control.js';
 import { getOrCreateInstanceId } from './lib/instance-id.js';
 import {
   toSdkMcpServers,
@@ -291,6 +286,7 @@ import {
   createAlwaysSuggestion,
 } from './services/core/permissions/index.js';
 import { managedRemoteCoordinator } from './services/core/remote/managed-remote-coordinator.js';
+import { managedRemoteCommands } from './services/core/remote/managed-command-service.js';
 import { titleForMcpTool } from './services/core/mcp-tools/mcp-tool-tiers.js';
 import { resolveCaller } from './routes/room-caller.js';
 import { LocalRoomAttachmentStore } from './services/rooms/attachments/local-room-attachment-store.js';
@@ -408,7 +404,6 @@ import {
   projectSweepDirs,
   projectsOfAgents,
   recoverInterruptedInstalls,
-  retryInFlightTargetsLater,
   type InstallSweepSummary,
 } from './services/marketplace/recovery/backup-janitor.js';
 import { currentRecordOwner } from './services/marketplace/lib/records/record-owner.js';
@@ -646,6 +641,9 @@ import {
   wireCommitments,
   type CommitmentWiring,
 } from './services/commitments/commitment-wiring.js';
+import * as heartbeats from './services/heartbeats/index.js';
+import { flushRestoredAgents } from './services/marketplace/restored-agents.js';
+import { registeredAgentRoots } from './services/mesh/roots/registered-agent-roots.js';
 import {
   SessionStartedByStore,
   getSessionStartedByStore,
@@ -771,47 +769,7 @@ let testComposioFixture:
  * @param summary - The sweep's totals.
  */
 function logInstallSweep(scope: string, summary: InstallSweepSummary): void {
-  registerRestoredAgents(summary.restoredAgentRoots);
-  const { settled, kept, discarded, inFlightTargets } = summary;
-  if (settled + kept + discarded + inFlightTargets.length > 0) {
-    logger.info(
-      `[Marketplace] Settled interrupted ${scope}: ${settled} settled, ${kept} kept, ${discarded} leftovers removed, ${inFlightTargets.length} left to another running DorkOS`
-    );
-  }
-  // A target left to another process is looked at once more when every record
-  // there has aged past the point where its owner matters.
-  retryInFlightTargetsLater(inFlightTargets, logger, (retry) =>
-    logInstallSweep(`${scope} (retry)`, { ...retry, inFlightTargets: [] })
-  );
-}
-
-/** Agent folders recovery restored before Mesh started, registered once it has. */
-const agentRootsAwaitingMesh: string[] = [];
-
-/**
- * Register again the agents whose interrupted uninstall recovery rolled back
- * (DOR-2245): their `agent.json` is back, but the uninstall had already taken
- * them off the team. The global sweep runs before Mesh exists, so its roots
- * wait for {@link flushRestoredAgents}.
- *
- * @param roots - {@link InstallSweepSummary.restoredAgentRoots}.
- */
-function registerRestoredAgents(roots: readonly string[]): void {
-  if (!meshCore) {
-    agentRootsAwaitingMesh.push(...roots);
-    return;
-  }
-  const mesh = meshCore;
-  for (const root of roots) {
-    mesh.syncFromDisk(root).catch((err: unknown) => {
-      logger.warn(`[Marketplace] Could not register the restored agent at ${root}`, logError(err));
-    });
-  }
-}
-
-/** Register the agents {@link registerRestoredAgents} held until Mesh started. */
-function flushRestoredAgents(): void {
-  registerRestoredAgents(agentRootsAwaitingMesh.splice(0));
+  logInstallSweepWithCurrentMesh(scope, summary, () => meshCore);
 }
 
 /**
@@ -1103,7 +1061,7 @@ async function start() {
   // Skipped on a first boot so a brand-new install is not handed a `backups`
   // folder holding a copy of an empty database. The hourly tick picks the day up
   // later, by which time there may be something in it worth copying.
-  if (!firstBoot) takeDailySnapshot(db, backupsDir, logger);
+  if (!firstBoot) takeDailySnapshot(db, backupsDir);
 
   // Durable session-event store for LOG-BACKED runtimes (codex/opencode/
   // test-mode), injected once here so their completed-turn history survives a
@@ -2507,7 +2465,7 @@ async function start() {
     // itself was making there, and only to entries whose names prove they are
     // DorkOS's own records. Fire-and-forget: each target is settled under its
     // install lock, so an install that races it simply waits.
-    flushRestoredAgents();
+    flushRestoredAgents(meshCore);
     try {
       const projects = projectsOfAgents(meshCore.listWithPaths().map((a) => a.projectPath));
       sweptProjects = projects;
@@ -4557,6 +4515,18 @@ async function start() {
   // takes its resolvers, so the live stream carries it exactly as the routes do.
   app.locals.resolveTouches = (sessionIds: string[]) =>
     getSessionTouchStore()?.resolve(sessionIds) ?? new Map();
+  // Agents wake on a beat or an event (spec `heartbeats`); sets the beat-chat
+  // label resolver, so it runs before the broadcaster takes its resolvers.
+  heartbeats.startHeartbeats({
+    app,
+    db,
+    meshCore: () => meshCore,
+    rooms: roomService,
+    roomAuthors,
+    notifyDm,
+    relay: () => relayChannelDeps,
+    commitments: commitments.service,
+  });
   sessionListBroadcaster.setOriginResolvers(sessionOriginResolvers(app.locals));
   // Who may read each session's transcript (spec `audit-trail` §3.4): an
   // agent sees agent work, never a person's own chat.
@@ -5475,7 +5445,8 @@ async function start() {
         }),
       },
     },
-    createCapabilityAttributionObserver(activityService),
+    // A beat's direct room posts and chat sends are counted (spec `heartbeats` §8).
+    heartbeats.withBeatBypassCount(createCapabilityAttributionObserver(activityService)),
     connectorRuntimePrincipals
       ? { service: roomMerges, nativePrincipals: connectorRuntimePrincipals, db }
       : undefined
@@ -5615,78 +5586,11 @@ async function start() {
           docChannelHttp.channels
         );
       }
-      const callRuntimeConnectorTool = async (input: {
-        readonly sessionId: string;
-        readonly agentPath: string;
-        readonly signal: AbortSignal;
-        readonly name: 'connectors.request_connection' | 'connectors.execute_read';
-        readonly arguments: Record<string, unknown>;
-      }) => {
-        await runtimeRegistry.persistSessionRuntime(
-          input.sessionId,
-          'claude-code',
-          { kind: 'test-harness' },
-          input.agentPath
-        );
-        let ownsBinding = true;
-        const binding = await connectorRuntimePrincipals.openTurn(
-          {
-            runtime: 'claude-code',
-            canonicalSessionId: input.sessionId,
-            agentPath: input.agentPath,
-            canonicalCwd: input.agentPath,
-            signal: input.signal,
-          },
-          { isCurrent: () => ownsBinding && !input.signal.aborted }
-        );
-        const [{ Client }, { StreamableHTTPClientTransport }] = await Promise.all([
-          import('@modelcontextprotocol/sdk/client/index.js'),
-          import('@modelcontextprotocol/sdk/client/streamableHttp.js'),
-        ]);
-        const client = new Client(
-          { name: 'dorkos-e2e-connector-request', version: '1.0.0' },
-          { capabilities: {} }
-        );
-        try {
-          await client.connect(
-            new StreamableHTTPClientTransport(new URL(connectorRuntimeMcpListener!.url), {
-              requestInit: {
-                headers: connectorRuntimeHeaders({
-                  bearer: binding.bearer,
-                  runtime: 'claude-code',
-                  canonicalCwd: input.agentPath,
-                }),
-              },
-            })
-          );
-          return await client.callTool(
-            {
-              name: input.name,
-              arguments: input.arguments,
-            },
-            undefined,
-            { signal: input.signal, timeout: 120_000 }
-          );
-        } finally {
-          ownsBinding = false;
-          await client.close().catch(() => {});
-          await connectorRuntimePrincipals.revoke(binding.bindingId, 'turn_terminal');
-        }
-      };
-      const runtimeRequestProbe: ConnectorRuntimeRequestProbe = (input) =>
-        callRuntimeConnectorTool({
-          ...input,
-          name: 'connectors.request_connection',
-          arguments: { ...input.request },
-        });
-      const runtimeExecutionProbe: ConnectorRuntimeExecutionProbe = (input) =>
-        callRuntimeConnectorTool({
-          ...input,
-          name: 'connectors.execute_read',
-          arguments: { ...input.target },
-        });
-      app.locals.connectorRuntimeRequestProbe = runtimeRequestProbe;
-      app.locals.connectorRuntimeExecutionProbe = runtimeExecutionProbe;
+      wireTestConnectorProbes(
+        app,
+        connectorRuntimePrincipals,
+        () => connectorRuntimeMcpListener!.url
+      );
     }
     logger.info('[Connectors] Runtime execution listener initialized');
   }
@@ -5791,6 +5695,8 @@ async function start() {
       // hands requests to the same front door and upgrades to the router above.
       // Nothing listens until managed access opens.
       tunnelManager.attachManagedIngress(managedIngressFor(frontDoorListener(frontDoor), server));
+      // Reconnect Cloud's command stream when already set up (DOR-2086); opens nothing.
+      managedRemoteCommands.boot(db);
 
       // Fire-and-forget: record startup in the activity feed so the dashboard
       // shows when the server was last (re)started.
@@ -5946,7 +5852,7 @@ async function start() {
   // hands large databases to better-sqlite3's incremental `db.backup()` API,
   // which yields between pages. Not worth the second code path at 2 MB.
   dailySnapshotInterval = setInterval(() => {
-    takeDailySnapshot(db, backupsDir, logger);
+    takeDailySnapshot(db, backupsDir);
   }, INTERVALS.DAILY_SNAPSHOT_CHECK_MS);
 
   // Somebody has to own the disk that session images sit on. Once at boot, so a
@@ -6240,15 +6146,11 @@ async function shutdownServices() {
     await relayCore.close();
   }
   // Close trace store after RelayCore — ensures final spans are flushed
-  if (traceStore) {
-    traceStore.close();
-  }
+  traceStore?.close();
   if (taskFileWatcher) {
     await taskFileWatcher.stopAll();
   }
-  if (taskReconciler) {
-    taskReconciler.stop();
-  }
+  taskReconciler?.stop();
   // Both halves of the skills trigger, in the order they depend on each other:
   // stop listening for turn boundaries first, so nothing can schedule work into
   // a watcher that is closing its handles.
@@ -6263,10 +6165,9 @@ async function shutdownServices() {
     await devLinkWatcher.stop();
     devLinkWatcher = undefined;
   }
-  if (searchIndexer) {
-    searchIndexer.stop();
-  }
+  searchIndexer?.stop();
   commitmentWiring?.stop();
+  heartbeats.stopHeartbeats();
   if (meshCore) {
     meshCore.stopPeriodicReconciliation();
     meshCore.close();
@@ -6283,6 +6184,7 @@ async function shutdownServices() {
   // the query so the CLI child actually dies. No-op when none was ever warmed,
   // which is every server until the persistent path is opted into.
   await shutdownSessionPumps();
+  await managedRemoteCommands.shutdown();
   await tunnelManager.stop();
   // After every runtime and the scheduler: nothing is left to hold awake.
   await keepAwakeService.stop();

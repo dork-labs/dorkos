@@ -1,5 +1,6 @@
 import type { Room, RoomEntry, SkippedTrigger } from '@dorkos/shared/room-schemas';
 import { logger } from '../../../lib/logger.js';
+import { wakeForRefusedRoomTurn } from '../../heartbeats/room-wakes.js';
 import {
   selectTriggerTargets,
   pickLead,
@@ -321,6 +322,9 @@ export function selectCandidates(
       // the writer itself guessing about why its own message went unanswered,
       // and this answer is private, unduplicated and impossible to spray.
       refused.push({ authorId, reason: decision.reason });
+      // A local author's message to it went unanswered: its beat looks
+      // (spec `heartbeats` §3.3). A stranger's never wakes one.
+      wakeForRefusedRoomTurn(record, reason, entry, decision.reason, facet.deps.authors);
       continue;
     }
     // `naturalKey` is the agentPath — the only handle the turn machinery needs

@@ -1,4 +1,9 @@
 import {
+  revokePriorBootBindings,
+  revokeRuntimeBindingRow,
+  type RuntimeRenewalOwner,
+} from './runtime-principal-durable-data.js';
+import {
   projectRuntimeThreadTargetRefusal,
   projectRuntimeBindingTargetRefusal,
   projectOriginalEmissionBindingRow,
@@ -121,13 +126,7 @@ export class ConnectorRuntimePrincipalService
   /** Process-local deny fence installed before a durable revoke can fail. */
   private readonly revokedBindingIds = new Set<string>();
   /** Exact permit and adapter-owned liveness predicate for each open turn. */
-  private readonly renewalOwners = new Map<
-    string,
-    {
-      readonly permit: PrincipalData.ConnectorTurnRenewalPermit;
-      readonly ownership: PrincipalData.ConnectorTurnOwnership;
-    }
-  >();
+  private readonly renewalOwners = new Map<string, RuntimeRenewalOwner>();
   private bootEpoch?: string;
   readonly #nativeOwners = new Map<string, PrincipalData.NativePrincipalOwnerData>();
   #nativeBootEpoch?: string;
@@ -306,11 +305,7 @@ export class ConnectorRuntimePrincipalService
   async initializeBoot(): Promise<{ readonly bootEpoch: string }> {
     const now = this.now().toISOString();
     const bootEpoch = this.makeBootEpoch();
-    this.db
-      .update(connectorRuntimeBindings)
-      .set({ revokedAt: now, revokeReason: 'server_restart' })
-      .where(isNull(connectorRuntimeBindings.revokedAt))
-      .run();
+    revokePriorBootBindings(this.db, now);
     this.revokedBindingIds.clear();
     this.renewalOwners.clear();
     this.bootEpoch = bootEpoch;
@@ -395,7 +390,7 @@ export class ConnectorRuntimePrincipalService
       return { status: 'refused', reason: 'inactive_owner' };
     }
 
-    const initial = this.bindingRow(input.bindingId);
+    const initial = readRuntimePrincipalBindingRow(this.db, input.bindingId);
     if (!initial) return { status: 'refused', reason: 'invalid' };
     const initialRefusal = this.bindingRefusal(initial);
     if (initialRefusal) return { status: 'refused', reason: initialRefusal };
@@ -408,7 +403,7 @@ export class ConnectorRuntimePrincipalService
     // Everything from this fresh read through the SQLite CAS is synchronous.
     // No callback can replace the active turn or cross expiry between the final
     // process and durable fences and the update.
-    const current = this.bindingRow(input.bindingId);
+    const current = readRuntimePrincipalBindingRow(this.db, input.bindingId);
     if (!current) return { status: 'refused', reason: 'invalid' };
     const currentRefusal = this.bindingRefusal(current);
     if (currentRefusal) return { status: 'refused', reason: currentRefusal };
@@ -449,7 +444,7 @@ export class ConnectorRuntimePrincipalService
       .run().changes;
     if (changed === 1) return { status: 'renewed', expiresAt };
 
-    const committed = this.bindingRow(input.bindingId);
+    const committed = readRuntimePrincipalBindingRow(this.db, input.bindingId);
     const committedOwner = this.renewalOwners.get(input.bindingId);
     if (
       committed &&
@@ -493,7 +488,7 @@ export class ConnectorRuntimePrincipalService
     if (targetRefusal) return { status: 'refused', reason: targetRefusal };
     // Between turns: the key authorizes nothing.
     if (key.bindingId === undefined) return { status: 'refused', reason: 'expired' };
-    const row = this.bindingRow(key.bindingId);
+    const row = readRuntimePrincipalBindingRow(this.db, key.bindingId);
     if (!row || row.canonicalSessionId !== key.scope.canonicalSessionId) {
       return { status: 'refused', reason: 'invalid' };
     }
@@ -525,7 +520,7 @@ export class ConnectorRuntimePrincipalService
       this.#revokeBinding(row.id, 'authority_changed');
       return { status: 'refused', reason: 'authority_changed' };
     }
-    const current = this.bindingRow(row.id);
+    const current = readRuntimePrincipalBindingRow(this.db, row.id);
     if (!current) return { status: 'refused', reason: 'invalid' };
     const currentRefusal = this.bindingRefusal(current);
     if (currentRefusal) return { status: 'refused', reason: currentRefusal };
@@ -542,7 +537,7 @@ export class ConnectorRuntimePrincipalService
   isPrincipalCurrent(principal: ServerPrincipalProof): boolean {
     if (!isServerPrincipal(principal) || principal.claims.kind !== 'runtime') return false;
     const claims = principal.claims;
-    const row = this.bindingRow(claims.bindingId);
+    const row = readRuntimePrincipalBindingRow(this.db, claims.bindingId);
     return Boolean(
       row &&
       !this.bindingRefusal(row) &&
@@ -572,17 +567,7 @@ export class ConnectorRuntimePrincipalService
   ): void {
     this.renewalOwners.delete(bindingId);
     this.revokedBindingIds.add(bindingId);
-    this.db
-      .update(connectorRuntimeBindings)
-      .set({ revokedAt: this.now().toISOString(), revokeReason: reason })
-      .where(
-        and(eq(connectorRuntimeBindings.id, bindingId), isNull(connectorRuntimeBindings.revokedAt))
-      )
-      .run();
-  }
-
-  private bindingRow(bindingId: string): RuntimeBindingRow | undefined {
-    return readRuntimePrincipalBindingRow(this.db, bindingId);
+    revokeRuntimeBindingRow(this.db, bindingId, reason, () => this.now());
   }
 
   private hasCurrentOwner(bindingId: string): boolean {

@@ -15,8 +15,8 @@ import {
   CommunityWireInviteSchema,
   CommunityWireInviteTokenRequestSchema,
 } from '@dorkos/shared/community-wire';
-import type { CommunityAuth } from '../../auth.js';
-import type { CommunityConfig } from '../../config.js';
+import type { CommunityAuth } from '../../../auth.js';
+import type { CommunityConfig } from '../../../config.js';
 import {
   communityHeld,
   lockActiveCommunity,
@@ -25,18 +25,18 @@ import {
   requireMember,
   requireSessionUser,
   transaction,
-} from '../../data.js';
-import { ApiError, json, readJson } from '../../http.js';
-import { assertMemberRoom } from '../../host/limits.js';
-import { inspectInvite, issueInvite } from '../../invites.js';
-import { hashSecret, randomToken, readCookie, signValue, verifyValue } from '../../security.js';
-import { admittedIdentity } from '../../moderation/display-names.js';
-import { readmissionBlocked } from '../../erasure/guards.js';
-import { clearFormerMembership } from './members.js';
-import { refuseBannedAccount } from '../../moderation/bans.js';
-import { joinAutoJoinChannels, lockAutoJoinChannels } from '../../admission/auto-join.js';
-import { resolveCommunityContext } from '../../tenant-context.js';
-import { notifyLive } from '../../live/notices.js';
+} from '../../../data.js';
+import { ApiError, json, readJson } from '../../../http.js';
+import { assertMemberRoom } from '../../../host/limits.js';
+import { inspectInvite, issueInvite } from '../../../invites.js';
+import { hashSecret, randomToken, readCookie, signValue, verifyValue } from '../../../security.js';
+import { admittedIdentity } from '../../../moderation/display-names.js';
+import { readmissionBlocked } from '../../../erasure/guards.js';
+import { clearFormerMembership } from '../members.js';
+import { refuseBannedAccount } from '../../../moderation/bans.js';
+import { joinAutoJoinChannels, lockAutoJoinChannels } from '../../../admission/auto-join.js';
+import { resolveCommunityContext } from '../../../tenant-context.js';
+import { notifyLive } from '../../../live/notices.js';
 import { assertAdmissionOpen, invalidInvitation, invitationRefusal } from './admission-refusals.js';
 
 interface InviteRow {

@@ -1,3 +1,11 @@
+import type {
+  ConnectorRuntimeRequestProbe,
+  ConnectorRuntimeExecutionProbe,
+} from '../services/runtimes/test-mode/connector-runtime-probe-contract.js';
+export type {
+  ConnectorRuntimeRequestProbe,
+  ConnectorRuntimeExecutionProbe,
+} from '../services/runtimes/test-mode/connector-runtime-probe-contract.js';
 import { Router } from 'express';
 import path from 'path';
 import { promises as fs } from 'node:fs';
@@ -10,8 +18,6 @@ import type { TestModeRuntime } from '../services/runtimes/test-mode/test-mode-r
 import {
   ConnectorAgentConnectionRequestInputSchema,
   ConnectorExecutionTargetSchema,
-  type ConnectorAgentConnectionRequestInput,
-  type ConnectorExecutionTarget,
 } from '@dorkos/shared/connector-schemas';
 import type { AgentManifest, McpServerTransport } from '@dorkos/shared/mesh-schemas';
 import { getBoundary, validateBoundary } from '../lib/boundary.js';
@@ -53,28 +59,6 @@ export function setRemoteCommunitySubscriptionProbe(
   next: ((ref: string, roomId: string) => unknown) | undefined
 ): void {
   remoteCommunitySubscriptionProbe = next;
-}
-
-/** Test-only bridge into the authenticated internal connector MCP listener. */
-export interface ConnectorRuntimeRequestProbe {
-  /** Open one real runtime principal, call the request tool, and close the turn. */
-  (input: {
-    readonly sessionId: string;
-    readonly agentPath: string;
-    readonly request: ConnectorAgentConnectionRequestInput;
-    readonly signal: AbortSignal;
-  }): Promise<unknown>;
-}
-
-/** Test-only bridge for one authenticated runtime read through the internal connector listener. */
-export interface ConnectorRuntimeExecutionProbe {
-  /** Open one real runtime principal, call the read tool, and close the turn. */
-  (input: {
-    readonly sessionId: string;
-    readonly agentPath: string;
-    readonly target: ConnectorExecutionTarget;
-    readonly signal: AbortSignal;
-  }): Promise<unknown>;
 }
 
 const remoteCommunitySubscriptionQuerySchema = z

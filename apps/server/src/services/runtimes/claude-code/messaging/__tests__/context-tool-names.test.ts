@@ -494,10 +494,14 @@ describe('the claude-code prompt names tools the way the runtime exposes them', 
     // 121 -> 124 for `chat_send`, `chat_read` and `chat_stop` (spec
     // `spin-off-chats` §1); 124 -> 118 (§7): the six relay send, inbox and
     // endpoint tools retire. `<chat_tools>` names the three chat tools prefixed.
-    // The combined surface contains 39 hand tools and 92 registry tools,
-    // including all ten Doc verbs and Main's commitment, audit and pause tools.
-    expect(advertised.size).toBe(131);
+    // The full registry includes the imported MCP sign-in capability spread:
+    // mcp_signin and mcp_poll_signin remain searchable, alongside end_beat.
+    expect(advertised.size).toBe(134);
+    expect(advertised.has('mcp_set_client')).toBe(false);
     for (const name of [
+      'mcp_signin',
+      'mcp_poll_signin',
+      'end_beat',
       'audit_verify',
       'configure_doc_channel',
       'approve_doc_route',

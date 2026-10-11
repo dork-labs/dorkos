@@ -17,6 +17,11 @@
  *
  * @module config-schema
  */
+import {
+  ActivityConfigSchema,
+  HeartbeatsConfigSchema,
+  KeepAwakeConfigSchema,
+} from './config-sections.js';
 import { z } from 'zod';
 import { EFFORT_LEVELS } from './constants.js';
 // `HARNESS_IDS`, never `HarnessIdSchema`. This module is one of the five
@@ -2550,43 +2555,12 @@ export const UserConfigSchema = z.object({
       maxConcurrentRuns: 4,
       retentionCount: 100,
     })),
-  /**
-   * Whether this computer may idle-sleep while agents work (spec `keep-awake`,
-   * DOR-2718). A whole top-level section on purpose: conf writes a new section
-   * into every stored config on its own, so neither field needs a migration.
-   * Both defaults are declared twice, here and in the section literal below,
-   * and the two must agree.
-   */
-  keepAwake: z
-    .object({
-      /** Hold the computer awake while any agent works; release when idle. */
-      whileAgentsWork: z.boolean().default(true),
-      /**
-       * Wake the computer shortly before each approved scheduled run (needs
-       * one-time admin setup on macOS and Linux). Read by nothing yet: the wake
-       * half of the spec ships later, and Settings offers no switch for it
-       * until then. It ships in this section now so adding it later is not a
-       * nested-leaf migration.
-       */
-      wakeForScheduledTasks: z.boolean().default(false),
-    })
-    .default(() => ({ whileAgentsWork: true, wakeForScheduledTasks: false })),
-  /**
-   * The Activity feed (spec `audit-trail` §3.5). A whole top-level section on
-   * purpose, like `keepAwake`: conf writes a new section into every stored
-   * config on its own, so the field needs no migration. The default is declared
-   * twice, here and in the section literal below, and the two must agree.
-   */
-  activity: z
-    .object({
-      /**
-       * Days of Activity history to keep. `DORKOS_ACTIVITY_RETENTION_DAYS`
-       * overrides it when set. Permission changes are kept regardless, and the
-       * audit log keeps every action forever whatever this says.
-       */
-      retentionDays: z.number().int().min(1).max(3650).default(365),
-    })
-    .default(() => ({ retentionDays: 365 })),
+  /** Whether this computer may idle-sleep while agents work (`config-sections.ts`). */
+  keepAwake: KeepAwakeConfigSchema,
+  /** Whether agents wake on their own (`config-sections.ts`). */
+  heartbeats: HeartbeatsConfigSchema,
+  /** The Activity feed (`config-sections.ts`). */
+  activity: ActivityConfigSchema,
   mesh: z
     .object({
       scanRoots: z.array(z.string()).default(() => []),

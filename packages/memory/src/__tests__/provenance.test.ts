@@ -25,4 +25,13 @@ describe('renderProvenanceSuffix', () => {
       '(noted in the Telegram group, 2026-01-01)'
     );
   });
+
+  it("says the turn read an outsider's words, wherever the note was written", () => {
+    expect(renderProvenanceSuffix({ room: null, date: '2026-10-10', outsider: true })).toBe(
+      "(noted in a direct chat, while reading words DorkOS can't vouch for, 2026-10-10)"
+    );
+    expect(renderProvenanceSuffix({ room: '#general', date: '2026-10-10', outsider: true })).toBe(
+      "(noted in #general, while reading words DorkOS can't vouch for, 2026-10-10)"
+    );
+  });
 });

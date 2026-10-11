@@ -85,6 +85,8 @@ describe('community server port additions', () => {
       credential: 'browser-approved',
       agentActing: true,
       attachments: true,
+      conduct: true,
+      reports: true,
     };
     expect(CommunityCapabilitiesSchema.safeParse(base).success).toBe(true);
     expect(CommunityCapabilitiesSchema.safeParse({ ...base, credential: 'random' }).success).toBe(

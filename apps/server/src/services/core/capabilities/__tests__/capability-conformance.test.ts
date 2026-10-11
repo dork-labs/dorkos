@@ -626,6 +626,8 @@ capabilityConformance(registry, {
     // The pause verbs reach the (stub) pause service with a parseable id.
     'agent.pause': { agentId: 'conformance-agent' },
     'agent.resume': { agentId: 'conformance-agent' },
+    // Outside a beat, so the handler answers its own `NOT_A_BEAT` refusal.
+    'heartbeat.end_beat': { summary: 'A conformance beat.' },
     // Anonymous here, so the handler refuses with its own structured error
     // (there is no agent to scope the request to), which is what "wired" means.
     'permissions.request_access': {

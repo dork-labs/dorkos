@@ -230,11 +230,24 @@ export function raisedAgainst(
  * @param ref - The base commit.
  */
 export function renamesSince(root: string, ref: string): Map<string, string> {
-  const out = execFileSync('git', ['diff', '-M', '--name-status', '-z', '--diff-filter=R', ref], {
-    cwd: root,
-    encoding: 'utf8',
-    maxBuffer: 64 * 1024 * 1024,
-  }).split('\0');
+  const out = execFileSync(
+    'git',
+    [
+      '-c',
+      'diff.autoRefreshIndex=false',
+      'diff',
+      '-M',
+      '--name-status',
+      '-z',
+      '--diff-filter=R',
+      ref,
+    ],
+    {
+      cwd: root,
+      encoding: 'utf8',
+      maxBuffer: 64 * 1024 * 1024,
+    }
+  ).split('\0');
   const renames = new Map<string, string>();
   // -z output: "R<score>", old path, new path, repeated.
   for (let i = 0; i + 2 < out.length; i += 3) {

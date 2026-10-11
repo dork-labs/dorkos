@@ -11,6 +11,8 @@ import {
   commitments,
   channelLeads,
   agentPauses,
+  heartbeats,
+  remoteCommandJournal,
   reviewedPublishedSql,
   agentReports,
   reviewedSql,
@@ -34,7 +36,15 @@ export function bridgePublishedRoomMigration(ownerKey: object): boolean {
   const journal = JSON.parse(readFileSync(join(folder, 'meta/_journal.json'), 'utf8')) as {
     entries: MigrationEntry[];
   };
-  const shipped = [reportBack, agentReports, commitments, channelLeads, agentPauses];
+  const shipped = [
+    reportBack,
+    agentReports,
+    commitments,
+    channelLeads,
+    agentPauses,
+    heartbeats,
+    remoteCommandJournal,
+  ];
   const canonical = new Map(
     journal.entries.slice(150).map((entry) => [
       createHash('sha256')
@@ -149,8 +159,12 @@ export function bridgePublishedRoomMigration(ownerKey: object): boolean {
   const legacy = published.find(
     (entry) => entry.hash === original.hash && entry.when === original.created_at
   )!;
-  if (consolidatedDoc.idx !== 155 || consolidatedDoc.when <= publishedRoom152.when)
-    refuse('new Doc migration does not follow both published Room watermarks');
+  if (
+    consolidatedDoc.idx !== remoteCommandJournal.idx + 1 ||
+    consolidatedDoc.when <= remoteCommandJournal.when ||
+    consolidatedDoc.when <= publishedRoom152.when
+  )
+    refuse('new Doc migration does not follow all shipped Main and published Room watermarks');
   reviewedSql(folder, consolidatedDoc);
   const shippedSql = shipped.map((entry) => reviewedSql(folder, entry));
   const archived = reviewedPublishedSql(folder, legacy);

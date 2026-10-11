@@ -15,6 +15,7 @@
  *
  * @module test-utils/fake-memory-provider
  */
+import { OUTSIDER_PROVENANCE_PHRASE } from '@dorkos/shared/convention-files';
 import {
   MemoryCapExceededError,
   MemoryIOError,
@@ -248,7 +249,9 @@ export class FakeMemoryProvider implements MemoryProvider {
   private _apply(content: string, op: MemoryWriteOp): string {
     if (op.action === 'add') {
       const suffix = op.provenance
-        ? ` (noted in ${op.provenance.room ?? 'a direct chat'}, ${op.provenance.date})`
+        ? ` (noted in ${op.provenance.room ?? 'a direct chat'}${
+            op.provenance.outsider ? `, ${OUTSIDER_PROVENANCE_PHRASE}` : ''
+          }, ${op.provenance.date})`
         : '';
       return `${content}${op.text}${suffix}\n`;
     }

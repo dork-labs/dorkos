@@ -1,3 +1,4 @@
+import type * as CoreTypes from './relay-core-types.js';
 import {
   createOriginalServerDocumentOrigin,
   type OriginalDocumentOriginContext,
@@ -21,12 +22,10 @@ import {
 import * as path from 'node:path';
 import * as os from 'node:os';
 import fs from 'node:fs';
-import type { FSWatcher } from 'chokidar';
 import { RelayDatabase } from './lib/relay-database.js';
 import { EndpointRegistry } from './endpoint-registry.js';
 import { SubscriptionRegistry } from './subscription-registry.js';
 import { MaildirStore } from './maildir-store.js';
-import type { RelayReceiptReadContext } from './delivery-receipt-store.js';
 import { isDetachedAgentSubject } from './lib/detached-agent-subject.js';
 import { SqliteIndex } from './sqlite-index.js';
 import { DeadLetterQueue } from './dead-letter-queue.js';
@@ -46,13 +45,10 @@ import {
   DEFAULT_IN_FLIGHT_RECOVERY_MS,
   DEFAULT_UNDELIVERED_MAIL_RETENTION_MS,
 } from './relay-gc.js';
-import type { RelayGcSweepOptions } from './relay-gc.js';
 import { createReplyFailureNotifier } from './reply-failure-notifier.js';
 import { createChatNoticeSender } from './chat-notice.js';
-import type { ChatNoticeTargetResolver } from './chat-notice.js';
 import { RelayPublishPipeline, createOriginalDocumentPublishPipeline } from './relay-publish.js';
 import { RelayTurnCeiling } from './turn-ceiling.js';
-import type { ServerDocumentRelayOrigin, ServerDocumentRelayAccess } from './document-delivery.js';
 import { executeSubscribe, executeSignal, executeOnSignal } from './relay-subscriptions.js';
 import {
   executeRegisterEndpoint,
@@ -71,34 +67,7 @@ import {
   executeGetMetrics,
 } from './relay-endpoint-management.js';
 import { isDocumentSubject, type Signal, type RelayAccessRule } from '@dorkos/shared/relay-schemas';
-import type {
-  BackpressureConfig,
-  RelayOptions,
-  PublishOptions,
-  PrivateNotificationOptions,
-  PrivateNotificationResult,
-  MessageHandler,
-  SignalHandler,
-  Unsubscribe,
-  EndpointInfo,
-  RelayMetrics,
-  AdapterRegistryLike,
-  AdapterContext,
-  InitiateConsentGate,
-  RelayLogger,
-} from './types.js';
 import { noopLogger } from './types.js';
-import type { DeadLetterEntry, ListDeadOptions } from './dead-letter-queue.js';
-import type { IndexedMessage } from './sqlite-index.js';
-import type { PublishResult } from './relay-publish.js';
-import type { SubscriptionDeps } from './relay-subscriptions.js';
-import type {
-  EndpointManagementDeps,
-  InboxMessage,
-  MessageDetail,
-  ReadInboxOptions,
-  RegisterEndpointOptions,
-} from './relay-endpoint-management.js';
 
 // Re-export public types from sub-modules
 export type { PublishResult } from './relay-publish.js';
@@ -137,14 +106,14 @@ const DEFAULT_CALL_BUDGET = 10;
 
 // Only the actual fresh-bus constructor below can register an origin. No mint/checker
 // callback or existing-bus attachment seam is exported, even from an internal module.
-const documentOrigins = new WeakMap<object, ServerDocumentRelayAccess>();
+const documentOrigins = new WeakMap<object, CoreTypes.ServerDocumentRelayAccess>();
 const originalAccessCheck = AccessControl.prototype.checkAccess;
 const originalDocumentSubscribe = SubscriptionRegistry.prototype.subscribe;
 
 /** Consume the actual new bus binding once; no second source may replace its owner. */
 export function consumeServerDocumentRelayOrigin(
-  origin: ServerDocumentRelayOrigin
-): ServerDocumentRelayAccess {
+  origin: CoreTypes.ServerDocumentRelayOrigin
+): CoreTypes.ServerDocumentRelayAccess {
   const access = documentOrigins.get(origin);
   if (!access) throw new Error('DOCUMENT_RELAY_ORIGIN_REQUIRED');
   // Retire even when closed: failure cannot enable a second assembly.
@@ -183,21 +152,16 @@ export function consumeServerDocumentRelayOrigin(
  */
 export class RelayCore {
   /** Construct a fresh server bus and its single source-assembly origin together. */
-  static createServerDocumentRelay(options: RelayOptions): {
-    relay: RelayCore;
-    origin: ServerDocumentRelayOrigin;
-  } {
+  static createServerDocumentRelay(options: CoreTypes.RelayOptions): CoreTypes.ServerDocumentRelay {
     const relay = new RelayCore(options);
     return createOriginalServerDocumentOrigin(relay.#ownerKey);
   }
   readonly #ownerKey = {};
 
-  readonly #publishDocumentWake: (
-    wake: import('./document-delivery.js').OriginalDocumentRelayWake
-  ) => Promise<PublishResult>;
+  readonly #publishDocumentWake: CoreTypes.PublishDocumentWake;
   private readonly publishPipeline: RelayPublishPipeline;
-  private readonly subscriptionDeps: SubscriptionDeps;
-  private readonly endpointDeps: EndpointManagementDeps;
+  private readonly subscriptionDeps: CoreTypes.SubscriptionDeps;
+  private readonly endpointDeps: CoreTypes.EndpointManagementDeps;
   private readonly subscriptionRegistry: SubscriptionRegistry;
   private readonly deliveryPipeline: DeliveryPipeline;
   private readonly signalEmitter: SignalEmitter;
@@ -206,10 +170,10 @@ export class RelayCore {
   readonly #accessControl: AccessControl;
   readonly #documentTurnCeiling: RelayTurnCeiling;
   private readonly configPath: string;
-  private configWatcher: FSWatcher | null = null;
-  private readonly logger: RelayLogger;
+  private configWatcher: CoreTypes.FSWatcher | null = null;
+  private readonly logger: CoreTypes.RelayLogger;
   private circuitBreaker: CircuitBreakerManager;
-  private backpressureConfig: BackpressureConfig;
+  private backpressureConfig: CoreTypes.BackpressureConfig;
   private readonly dispatchInboxTtlMs: number;
   private readonly ttlSweepIntervalMs: number;
   private ttlSweepInterval?: ReturnType<typeof setInterval>;
@@ -220,13 +184,13 @@ export class RelayCore {
    * Unset means "this relay cannot tell whose chat that is", which is a denial —
    * see {@link setChatNoticeTargetResolver}.
    */
-  private chatNoticeTargetResolver?: ChatNoticeTargetResolver;
+  private chatNoticeTargetResolver?: CoreTypes.ChatNoticeTargetResolver;
   private readonly gcIntervalMs: number;
   private gcInterval?: ReturnType<typeof setInterval>;
   #closed = false;
-  private readonly adapterRegistry?: AdapterRegistryLike;
+  private readonly adapterRegistry?: CoreTypes.AdapterRegistryLike;
 
-  constructor(options?: RelayOptions) {
+  constructor(options?: CoreTypes.RelayOptions) {
     this.logger = options?.logger ?? noopLogger;
     const dataDir = options?.dataDir ?? DEFAULT_DATA_DIR;
     fs.mkdirSync(dataDir, { recursive: true });
@@ -398,7 +362,7 @@ export class RelayCore {
         },
         originalAccessCheck,
         originalDocumentSubscribe,
-        issueOrigin: (origin: ServerDocumentRelayOrigin, access: ServerDocumentRelayAccess) => {
+        issueOrigin: (origin, access) => {
           documentOrigins.set(origin, access);
         },
         publishDocumentWake: (wake: import('./document-delivery.js').OriginalDocumentRelayWake) =>
@@ -410,7 +374,7 @@ export class RelayCore {
         get backpressureConfig() {
           return owner.backpressureConfig;
         },
-        set backpressureConfig(value: BackpressureConfig) {
+        set backpressureConfig(value: CoreTypes.BackpressureConfig) {
           owner.backpressureConfig = value;
         },
         deliveryPipeline: this.deliveryPipeline,
@@ -418,10 +382,10 @@ export class RelayCore {
         get configWatcher() {
           return owner.configWatcher;
         },
-        set configWatcher(value: FSWatcher | null) {
+        set configWatcher(value: CoreTypes.FSWatcher | null) {
           owner.configWatcher = value;
         },
-        loadReliabilityConfig: () => this.loadReliabilityConfig(),
+        loadReliabilityConfig: () => loadOriginalRelayReliability(this.#ownerKey),
         logger: this.logger,
         endpointDeps: this.endpointDeps,
         get dispatchInboxTtlMs() {
@@ -436,8 +400,8 @@ export class RelayCore {
       this.#ownerKey,
       createOriginalOwnerContext(this),
     ]);
-    this.loadReliabilityConfig();
-    this.startConfigWatcher();
+    loadOriginalRelayReliability(this.#ownerKey);
+    startOriginalRelayConfigWatcher(this.#ownerKey);
 
     this.dispatchInboxTtlMs = options?.dispatchInboxTtlMs ?? 30 * 60 * 1000;
     this.ttlSweepIntervalMs = options?.ttlSweepIntervalMs ?? 5 * 60 * 1000;
@@ -457,7 +421,7 @@ export class RelayCore {
    *
    * @param builder - Callback that enriches AdapterContext for a given subject
    */
-  setAdapterContextBuilder(builder: (subject: string) => AdapterContext | undefined): void {
+  setAdapterContextBuilder(builder: CoreTypes.AdapterContextBuilder): void {
     this.publishPipeline.setAdapterContextBuilder(builder);
   }
 
@@ -469,7 +433,7 @@ export class RelayCore {
    *
    * @param gate - The consent gate predicate.
    */
-  setInitiateConsentGate(gate: InitiateConsentGate): void {
+  setInitiateConsentGate(gate: CoreTypes.InitiateConsentGate): void {
     this.publishPipeline.setInitiateConsentGate(gate);
   }
 
@@ -485,7 +449,7 @@ export class RelayCore {
    *
    * @param resolver - Chat subject → the enabled binding that owns it, or null.
    */
-  setChatNoticeTargetResolver(resolver: ChatNoticeTargetResolver): void {
+  setChatNoticeTargetResolver(resolver: CoreTypes.ChatNoticeTargetResolver): void {
     this.chatNoticeTargetResolver = resolver;
   }
 
@@ -495,8 +459,8 @@ export class RelayCore {
   async publish(
     subject: string,
     payload: unknown,
-    options: PublishOptions
-  ): Promise<PublishResult> {
+    options: CoreTypes.PublishOptions
+  ): Promise<CoreTypes.PublishResult> {
     if (options.receiptContext && isDetachedAgentSubject(subject)) {
       this.database.receipts.assertOutsideTransaction();
     }
@@ -505,7 +469,7 @@ export class RelayCore {
   }
 
   /** Read minimized authoritative metadata with a server-resolved ownership policy. */
-  getDeliveryReceipt(messageId: string, context: RelayReceiptReadContext) {
+  getDeliveryReceipt(messageId: string, context: CoreTypes.RelayReceiptReadContext) {
     return this.database.receipts.get(messageId, context);
   }
 
@@ -513,8 +477,8 @@ export class RelayCore {
   async deliverPrivateNotification(
     subject: string,
     text: string,
-    options: PrivateNotificationOptions
-  ): Promise<PrivateNotificationResult> {
+    options: CoreTypes.PrivateNotificationOptions
+  ): Promise<CoreTypes.PrivateNotificationResult> {
     this.assertOpen();
     return this.publishPipeline.deliverPrivateNotification(subject, text, options);
   }
@@ -530,7 +494,7 @@ export class RelayCore {
    * between endpoint registration and subscription (or during a window with
    * zero subscribers) would strand in `new/` forever.
    */
-  subscribe(pattern: string, handler: MessageHandler): Unsubscribe {
+  subscribe(pattern: string, handler: CoreTypes.MessageHandler): CoreTypes.Unsubscribe {
     this.assertOpen();
     const unsubscribe = executeSubscribe(pattern, handler, this.subscriptionDeps);
 
@@ -549,7 +513,7 @@ export class RelayCore {
   }
 
   /** Subscribe to ephemeral signals matching a pattern. */
-  onSignal(pattern: string, handler: SignalHandler): Unsubscribe {
+  onSignal(pattern: string, handler: CoreTypes.SignalHandler): CoreTypes.Unsubscribe {
     this.assertOpen();
     return executeOnSignal(pattern, handler, this.subscriptionDeps);
   }
@@ -565,8 +529,8 @@ export class RelayCore {
    */
   async registerEndpoint(
     subject: string,
-    options?: RegisterEndpointOptions
-  ): Promise<EndpointInfo> {
+    options?: CoreTypes.RegisterEndpointOptions
+  ): Promise<CoreTypes.EndpointInfo> {
     this.assertOpen();
     if (isDocumentSubject(subject)) throw new Error('DOCUMENT_RELAY_CONSTRUCTION_REQUIRED');
     return executeRegisterEndpoint(subject, options, this.endpointDeps);
@@ -579,7 +543,7 @@ export class RelayCore {
   }
 
   /** List all registered endpoints. */
-  listEndpoints(): EndpointInfo[] {
+  listEndpoints(): CoreTypes.EndpointInfo[] {
     this.assertOpen();
     return executeListEndpoints(this.endpointDeps);
   }
@@ -592,7 +556,7 @@ export class RelayCore {
    * @param subject - The endpoint subject to look up
    * @returns The endpoint, or `undefined` when no endpoint is registered
    */
-  getEndpoint(subject: string): EndpointInfo | undefined {
+  getEndpoint(subject: string): CoreTypes.EndpointInfo | undefined {
     this.assertOpen();
     return executeGetEndpoint(subject, this.endpointDeps);
   }
@@ -603,7 +567,7 @@ export class RelayCore {
   }
 
   /** Get a single representative message row from the index by ID. */
-  getMessage(id: string): IndexedMessage | null {
+  getMessage(id: string): CoreTypes.IndexedMessage | null {
     this.assertOpen();
     return executeGetMessage(id, this.endpointDeps);
   }
@@ -612,7 +576,7 @@ export class RelayCore {
    * Get the honest, joined detail for a message id: a representative row plus
    * the full per-endpoint delivery breakdown (all joined on the envelope id).
    */
-  getMessageDetail(id: string): MessageDetail | null {
+  getMessageDetail(id: string): CoreTypes.MessageDetail | null {
     this.assertOpen();
     return executeGetMessageDetail(id, this.endpointDeps);
   }
@@ -624,7 +588,7 @@ export class RelayCore {
     from?: string;
     cursor?: string;
     limit?: number;
-  }): { messages: IndexedMessage[]; nextCursor?: string } {
+  }): { messages: CoreTypes.IndexedMessage[]; nextCursor?: string } {
     this.assertOpen();
     return executeListMessages(filters, this.endpointDeps);
   }
@@ -637,14 +601,14 @@ export class RelayCore {
    */
   async readInbox(
     subject: string,
-    options?: ReadInboxOptions
-  ): Promise<{ messages: InboxMessage[]; nextCursor?: string }> {
+    options?: CoreTypes.ReadInboxOptions
+  ): Promise<{ messages: CoreTypes.InboxMessage[]; nextCursor?: string }> {
     this.assertOpen();
     return executeReadInbox(subject, options, this.endpointDeps);
   }
 
   /** Get dead letters, optionally filtered by endpoint hash. */
-  async getDeadLetters(options?: ListDeadOptions): Promise<DeadLetterEntry[]> {
+  async getDeadLetters(options?: CoreTypes.ListDeadOptions): Promise<CoreTypes.DeadLetterEntry[]> {
     this.assertOpen();
     return executeGetDeadLetters(options, this.endpointDeps);
   }
@@ -698,7 +662,7 @@ export class RelayCore {
   }
 
   /** Get aggregate metrics from the SQLite index. */
-  getMetrics(): RelayMetrics {
+  getMetrics(): CoreTypes.RelayMetrics {
     this.assertOpen();
     return executeGetMetrics(this.endpointDeps);
   }
@@ -743,7 +707,7 @@ export class RelayCore {
    * current subscribers. Claims are atomic renames, so a concurrent watcher
    * dispatch for the same message safely no-ops.
    */
-  private async drainEndpointBacklog(endpoint: EndpointInfo): Promise<void> {
+  private async drainEndpointBacklog(endpoint: CoreTypes.EndpointInfo): Promise<void> {
     return drainOriginalRelayBacklog(this.#ownerKey, endpoint);
   }
   /**
@@ -796,17 +760,9 @@ export class RelayCore {
    * @returns Per-phase removal counts, or `undefined` if the relay is closed.
    */
   async runGcSweep(
-    options?: RelayGcSweepOptions
+    options?: CoreTypes.RelayGcSweepOptions
   ): Promise<Awaited<ReturnType<RelayGc['sweep']>> | undefined> {
     return runOriginalRelayGcSweep(this.#ownerKey, options);
-  }
-  /** Load reliability configuration from disk (hot-reload safe). */
-  private loadReliabilityConfig(): void {
-    loadOriginalRelayReliability(this.#ownerKey);
-  }
-  /** Start the original config watcher without exposing constructor custody. */
-  private startConfigWatcher(): void {
-    startOriginalRelayConfigWatcher(this.#ownerKey);
   }
 
   /** Assert that the relay has not been closed. */

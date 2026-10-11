@@ -44,6 +44,8 @@ export type OriginalNativeLaunchCase =
   | 'runner-false-posting'
   | 'runner-posting-home'
   | 'runner-turn-boundary'
+  | 'runner-outsider-context'
+  | 'runner-local-context'
   | 'runner-home-grants-attachments'
   | 'runner-projection-before-provider'
   | 'runner-measured-launch-context'

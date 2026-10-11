@@ -1,3 +1,5 @@
+import { replaceAgentHomeRegistry } from '../../../core/agent-identity/agent-home.js';
+import { agentIsReadingOutsider } from '../../../core/turn-power/live-outsider-turns.js';
 /** Genuine FILE constructor/approval context; native SDK assembly controls live in their confined runtime suites. */
 import { readServiceOriginalDocManagement } from '../service.js';
 import { describe, expect, it, vi } from 'vitest';
@@ -763,6 +765,27 @@ it('keeps genuine registered TestMode native stream identity and retires a held 
   let runtime: TestModeRuntime | undefined;
   let raw: AsyncGenerator<import('@dorkos/shared/types').StreamEvent> | undefined;
   let observed: typeof raw;
+  const otherAgent = join(dir, 'other-agent');
+  let reenterObservation: (() => void) | undefined;
+  let reentryCause: unknown;
+  const homeRegistry = {
+    isRegisteredHome: (home: string) => {
+      const reenter = reenterObservation;
+      reenterObservation = undefined;
+      if (reenter) {
+        try {
+          reenter();
+        } catch (cause) {
+          reentryCause = cause;
+        }
+      }
+      return home === dir || home === otherAgent;
+    },
+    listRegisteredHomes: () => [dir, otherAgent],
+    managedWorkspaceOwner: () => null,
+    roomsDir: join(dir, 'rooms'),
+  };
+  let ownsHomeRegistry = false;
   const sessionId = randomUUID(),
     agentId = randomUUID(),
     holder = { on: () => {} };
@@ -788,19 +811,34 @@ it('keeps genuine registered TestMode native stream identity and retires a held 
     expect(readOriginalRegisteredRuntime(selected)).toBe(runtime);
     expect(runtime.acquireLock(sessionId, 'original-held-native', holder)).toBe(true);
     scenarioStore.setForSession(sessionId, 'simple-text');
+    await nativeFs.mkdir(otherAgent);
+    ownsHomeRegistry = replaceAgentHomeRegistry(undefined, homeRegistry);
+    expect(ownsHomeRegistry).toBe(true);
+    const turnOptions = { cwd: dir, forAgent: dir, permissionCeiling: 'runtime-default' as const };
     raw = sendTestModeOriginalLockedMessage(
       selected,
       sessionId,
       'actual local scenario',
-      { cwd: dir },
+      turnOptions,
       holder,
       sessionId
     );
     if (!raw) throw new Error('Genuine TestMode native constructor not recognized.');
     expect(readTestModeOriginalNativeStream(selected, raw)).toBeDefined();
     expect(readTestModeOriginalNativeStream({ ...selected }, raw)).toBeUndefined();
+    // Mutating caller DATA after construction cannot relocate the captured native turn.
+    turnOptions.cwd = otherAgent;
+    turnOptions.forAgent = otherAgent;
+    expect(agentIsReadingOutsider(dir)).toBe(false);
+    reenterObservation = () => {
+      observeOriginalRegisteredRuntimeStream(selected, sessionId, raw!);
+    };
     observed = observeOriginalRegisteredRuntimeStream(selected, sessionId, raw);
+    expect(reentryCause).toBeInstanceOf(Error);
+    expect((reentryCause as Error).message).toBe('Original native turn recording reentered.');
     expect((await observed.next()).done).toBe(false);
+    expect(agentIsReadingOutsider(dir)).toBe(true);
+    expect(agentIsReadingOutsider(otherAgent)).toBe(false);
     expect((await resolveTestModeOriginalNativeStreamPrincipal(selected, observed)).status).toBe(
       'resolved'
     );
@@ -808,6 +846,8 @@ it('keeps genuine registered TestMode native stream identity and retires a held 
     registry.register(new TestModeRuntime('claude-code', h.principals));
     expect(readOriginalRegisteredRuntime(selected)).toBeUndefined();
     await expect(observed.next()).rejects.toThrow('Original runtime selection retired');
+    expect(agentIsReadingOutsider(dir)).toBe(false);
+    expect(agentIsReadingOutsider(otherAgent)).toBe(false);
     expect(readTestModeOriginalNativeStream(runtime, raw)).toBeUndefined();
     expect(readTestModeOriginalScenarioEvidence(runtime, raw)).toMatchObject({
       scenarioStarts: 1,
@@ -821,6 +861,9 @@ it('keeps genuine registered TestMode native stream identity and retires a held 
     await cleanup(() => raw?.return(undefined));
     await cleanup(() => runtime?.releaseLock(sessionId, 'original-held-native'));
     await cleanup(() => scenarioStore.clearSession(sessionId));
+    await cleanup(() => {
+      if (ownsHomeRegistry) expect(replaceAgentHomeRegistry(homeRegistry, undefined)).toBe(true);
+    });
     await cleanup(() => h?.cleanup());
     await cleanup(() => nativeFs.rm(dir, { recursive: true, force: true }));
     serverEnv.DORKOS_TEST_RUNTIME = wasTestMode;

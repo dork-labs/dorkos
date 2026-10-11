@@ -1,4 +1,11 @@
 import {
+  sessionApproveHandler,
+  sessionDenyHandler,
+  sessionBatchApproveHandler,
+  sessionBatchDenyHandler,
+  sessionSubmitAnswersHandler,
+} from './session-answerer.js';
+import {
   captureOriginalHttpRoomSessionPlacement,
   originalHttpRoomSessionPlacementRefusal,
 } from '../services/canvas/doc-channel/http-composition.js';
@@ -10,9 +17,6 @@ import {
   UpdateSessionRequestSchema,
   ForkSessionRequestSchema,
   SendMessageRequestSchema,
-  ApprovalRequestSchema,
-  BatchApprovalRequestSchema,
-  SubmitAnswersRequestSchema,
   SubmitElicitationRequestSchema,
   ListSessionsQuerySchema,
   RecentSessionsQuerySchema,
@@ -881,89 +885,13 @@ router.delete('/:id/queue/:messageId', sessionQueueRemoveHandler);
 // {@link requirePersonToAnswer}: the Ask is now reachable from every route in
 // the cockpit, so who may answer it is a property of the endpoint rather than of
 // where the card happened to be drawn.
-router.post('/:id/approve', async (req, res) => {
-  const refusal = requirePersonToAnswer(req, res);
-  if (refusal) return res.status(refusal.status).json({ error: refusal.error, code: refusal.code });
-
-  const sessionId = parseSessionId(req.params.id);
-  if (!sessionId) return sendError(res, 400, 'Invalid session ID', 'INVALID_SESSION_ID');
-
-  const parsed = ApprovalRequestSchema.safeParse(req.body);
-  if (!parsed.success) {
-    return sendError(res, 400, 'Invalid request', 'VALIDATION_ERROR');
-  }
-  const { toolCallId, alwaysAllow } = parsed.data;
-  const runtime = await runtimeRegistry.resolveForSession(sessionId);
-  const answeredByName = answeredBy(res);
-  const approved = runtime.approveTool(sessionId, toolCallId, true, {
-    alwaysAllow,
-    ...(answeredByName ? { answeredBy: answeredByName } : {}),
-  });
-  if (!approved) {
-    if (runtime.hasSession(sessionId)) {
-      return sendError(res, 409, 'Interaction already resolved', 'INTERACTION_ALREADY_RESOLVED');
-    }
-    return sendError(res, 404, 'No pending approval', 'NO_PENDING_APPROVAL');
-  }
-  res.json({ ok: true });
-});
+router.post('/:id/approve', sessionApproveHandler);
 
 // POST /api/sessions/:id/deny - Deny pending tool call
-router.post('/:id/deny', async (req, res) => {
-  // Guarded for the same reason as approve, not as a symmetry: an agent that can
-  // deny can suppress a person's decision and bury the card that would have told
-  // them. Same argument the capability approvals' deny route makes.
-  const refusal = requirePersonToAnswer(req, res);
-  if (refusal) return res.status(refusal.status).json({ error: refusal.error, code: refusal.code });
-
-  const sessionId = parseSessionId(req.params.id);
-  if (!sessionId) return sendError(res, 400, 'Invalid session ID', 'INVALID_SESSION_ID');
-
-  const parsed = ApprovalRequestSchema.safeParse(req.body);
-  if (!parsed.success) {
-    return sendError(res, 400, 'Invalid request', 'VALIDATION_ERROR');
-  }
-  const { toolCallId, reason } = parsed.data;
-  const runtime = await runtimeRegistry.resolveForSession(sessionId);
-  // A blank field is not a reason. Normalising here keeps every runtime and the
-  // receipt copy from having to re-decide what an empty string means.
-  const denyReason = reason?.trim() ? reason.trim() : undefined;
-  const answeredByName = answeredBy(res);
-  const denied = runtime.approveTool(sessionId, toolCallId, false, {
-    denyReason,
-    ...(answeredByName ? { answeredBy: answeredByName } : {}),
-  });
-  if (!denied) {
-    if (runtime.hasSession(sessionId)) {
-      return sendError(res, 409, 'Interaction already resolved', 'INTERACTION_ALREADY_RESOLVED');
-    }
-    return sendError(res, 404, 'No pending approval', 'NO_PENDING_APPROVAL');
-  }
-  res.json({ ok: true });
-});
+router.post('/:id/deny', sessionDenyHandler);
 
 // POST /api/sessions/:id/batch-approve - Approve multiple pending tool calls
-router.post('/:id/batch-approve', async (req, res) => {
-  const refusal = requirePersonToAnswer(req, res);
-  if (refusal) return res.status(refusal.status).json({ error: refusal.error, code: refusal.code });
-
-  const sessionId = parseSessionId(req.params.id);
-  if (!sessionId) return sendError(res, 400, 'Invalid session ID', 'INVALID_SESSION_ID');
-
-  const parsed = BatchApprovalRequestSchema.safeParse(req.body);
-  if (!parsed.success) {
-    return sendError(res, 400, 'Invalid request', 'VALIDATION_ERROR');
-  }
-  const runtime = await runtimeRegistry.resolveForSession(sessionId);
-  const answeredByName = answeredBy(res);
-  const results = parsed.data.toolCallIds.map((id) => ({
-    toolCallId: id,
-    ok: runtime.approveTool(sessionId, id, true, {
-      ...(answeredByName ? { answeredBy: answeredByName } : {}),
-    }),
-  }));
-  res.json({ results });
-});
+router.post('/:id/batch-approve', sessionBatchApproveHandler);
 
 // POST /api/sessions/:id/batch-deny - Deny multiple pending tool calls
 //
@@ -971,56 +899,10 @@ router.post('/:id/batch-approve', async (req, res) => {
 // stack of unrelated asks at once, so a single sentence would be attached to
 // requests it was never about. Each refusal therefore reports honestly that
 // nobody explained it, and the transcript receipts say so.
-router.post('/:id/batch-deny', async (req, res) => {
-  const refusal = requirePersonToAnswer(req, res);
-  if (refusal) return res.status(refusal.status).json({ error: refusal.error, code: refusal.code });
-
-  const sessionId = parseSessionId(req.params.id);
-  if (!sessionId) return sendError(res, 400, 'Invalid session ID', 'INVALID_SESSION_ID');
-
-  const parsed = BatchApprovalRequestSchema.safeParse(req.body);
-  if (!parsed.success) {
-    return sendError(res, 400, 'Invalid request', 'VALIDATION_ERROR');
-  }
-  const runtime = await runtimeRegistry.resolveForSession(sessionId);
-  const answeredByName = answeredBy(res);
-  const results = parsed.data.toolCallIds.map((id) => ({
-    toolCallId: id,
-    ok: runtime.approveTool(sessionId, id, false, {
-      ...(answeredByName ? { answeredBy: answeredByName } : {}),
-    }),
-  }));
-  res.json({ results });
-});
+router.post('/:id/batch-deny', sessionBatchDenyHandler);
 
 // POST /api/sessions/:id/submit-answers - Submit answers for AskUserQuestion
-router.post('/:id/submit-answers', async (req, res) => {
-  // A question is answered by a person too. The three kinds of prompt share one
-  // bar, because they are one object to whoever is being asked.
-  const refusal = requirePersonToAnswer(req, res);
-  if (refusal) return res.status(refusal.status).json({ error: refusal.error, code: refusal.code });
-
-  const sessionId = parseSessionId(req.params.id);
-  if (!sessionId) return sendError(res, 400, 'Invalid session ID', 'INVALID_SESSION_ID');
-
-  const parsed = SubmitAnswersRequestSchema.safeParse(req.body);
-  if (!parsed.success) {
-    return sendError(res, 400, 'Invalid request', 'VALIDATION_ERROR');
-  }
-  const { toolCallId, answers } = parsed.data;
-  const runtime = await runtimeRegistry.resolveForSession(sessionId);
-  const answeredByName = answeredBy(res);
-  const ok = runtime.submitAnswers(sessionId, toolCallId, answers, {
-    ...(answeredByName ? { answeredBy: answeredByName } : {}),
-  });
-  if (!ok) {
-    if (runtime.hasSession(sessionId)) {
-      return sendError(res, 409, 'Interaction already resolved', 'INTERACTION_ALREADY_RESOLVED');
-    }
-    return sendError(res, 404, 'No pending question', 'NO_PENDING_QUESTION');
-  }
-  res.json({ ok: true });
-});
+router.post('/:id/submit-answers', sessionSubmitAnswersHandler);
 
 // POST /api/sessions/:id/ui-action — Generative-UI widget interactivity channel
 // (spec gen-ui-tier1 §3). The handler lives in `session-ui-action-handler.ts`

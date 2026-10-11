@@ -523,6 +523,32 @@ describe('send — steer', () => {
     expect(receipt.note).toMatch(/waits for the turn to end/);
   });
 
+  // Red when: the outsider check in `maySteer` is removed. A running turn
+  // cannot be marked as one that read an outsider's words, so a sender whose
+  // turn did waits for the next turn, which its ceiling marks (§4.7).
+  it('never steers an outsider’s words into a turn that has not read any', async () => {
+    levels.set(ANA.sessionId, { ...TIGHT, outsider: true });
+    levels.set('chat-b', TIGHT);
+
+    const receipt = await service.send(ANA, { to: 'chat-b', message: 'hi', delivery: 'steer' });
+
+    expect(steerInto).not.toHaveBeenCalled();
+    expect(receipt.status).toBe('queued');
+    expect(service.ceilingForQueuedMessage(sentByAna()[0]!.queueMessageId!)).toEqual({
+      ...TIGHT,
+      outsider: true,
+    });
+  });
+
+  it('steers into a turn that has read an outsider’s words already', async () => {
+    levels.set(ANA.sessionId, { ...TIGHT, outsider: true });
+    levels.set('chat-b', { ...TIGHT, outsider: true });
+
+    const receipt = await service.send(ANA, { to: 'chat-b', message: 'hi', delivery: 'steer' });
+
+    expect(receipt.status).toBe('steered');
+  });
+
   it('never steers into a turn looser than the sender: it waits, with a note', async () => {
     levels.set(ANA.sessionId, MIDDLE);
     levels.set('chat-b', LOOSE);

@@ -1,4 +1,9 @@
 import {
+  moveSessionContext,
+  RuntimeNotRegisteredError,
+} from './runtime/runtime-session-identity.js';
+export { RuntimeNotRegisteredError } from './runtime/runtime-session-identity.js';
+import {
   readGetNativeSessionCwd,
   readListSessionIdsForAgentPath,
   readGetSessionAgentPath,
@@ -11,6 +16,7 @@ import {
   pickSettings,
   fillNullsWith,
   type SettingsUpdate,
+  type SessionSettingsSeedOptions,
 } from './runtime/runtime-session-settings.js';
 import {
   readSessionBindings,
@@ -55,7 +61,6 @@ import type { Session, SessionSettings } from '@dorkos/shared/types';
 import {
   resolveSessionDefaults,
   readAgentExecutionDefaults,
-  type AgentExecutionDefaults,
 } from '../session/resolution/resolve-session-defaults.js';
 // Direct, for the same reason and by the same rule as the resolver above: this
 // is a RUNTIME import of a leaf function, so taking it through
@@ -66,13 +71,8 @@ import {
 // (`room-turn-runner.ts` takes `resolveUnattendedPermissionMode` that way).
 // Both names below are also exported from the barrel, and every consumer
 // outside the session layer reaches them there.
+import { seedForTurn, type TurnOrigin } from '../session/origin/turn-origin.js';
 import {
-  permissionSeedForOrigin,
-  type OriginPermissionSeed,
-  type TurnOrigin,
-} from '../session/origin/turn-origin.js';
-import {
-  sessionContext,
   sessionMetadata,
   sessionNativeBindings,
   eq,
@@ -119,59 +119,6 @@ export {
   readOriginalRegisteredRuntimeStream,
   readOriginalRegisteredNativeStream,
 };
-
-/**
- * Move a session's stored context reading (`session_context`, spec
- * `claude-account-fleet` §6 U) from `fromId` to `toId`. When both ids hold one,
- * the newer reading wins. A no-op when `fromId` holds none.
- *
- * @param db - The database.
- * @param fromId - The id the reading is stored under today.
- * @param toId - The id the session is now known by.
- */
-function moveSessionContext(db: Db, fromId: string, toId: string): void {
-  const source = db.select().from(sessionContext).where(eq(sessionContext.sessionId, fromId)).get();
-  if (!source) return;
-  const destination = db
-    .select()
-    .from(sessionContext)
-    .where(eq(sessionContext.sessionId, toId))
-    .get();
-  db.transaction((tx) => {
-    tx.delete(sessionContext).where(eq(sessionContext.sessionId, fromId)).run();
-    if (destination && destination.observedAt >= source.observedAt) return;
-    tx.insert(sessionContext)
-      .values({ ...source, sessionId: toId })
-      .onConflictDoUpdate({
-        target: sessionContext.sessionId,
-        set: {
-          contextTokens: source.contextTokens,
-          contextMaxTokens: source.contextMaxTokens,
-          observedAt: source.observedAt,
-        },
-      })
-      .run();
-  });
-}
-
-/**
- * Error thrown when a session's stored runtime type is not registered with the
- * `RuntimeRegistry`. Surfacing this explicitly (rather than silently falling
- * back to the default runtime) prevents routing bugs where a session's intended
- * runtime is unavailable — e.g., a `codex` session before the Codex adapter
- * ships, or a server started without a runtime that prior sessions depended on.
- */
-export class RuntimeNotRegisteredError extends Error {
-  constructor(
-    public readonly runtime: string,
-    public readonly sessionId: string
-  ) {
-    super(
-      `Session '${sessionId}' is owned by runtime '${runtime}', which is not registered on this server.`
-    );
-    this.name = 'RuntimeNotRegisteredError';
-  }
-}
 
 /**
  * Registry of available agent runtimes, keyed by type string.
@@ -390,7 +337,9 @@ export class RuntimeRegistry {
     const agent = await readAgentExecutionDefaults(agentPath);
     // Asked once, here, and handed down to both branches of the statement —
     // they honour different halves of the same answer.
-    const seedPolicy = permissionSeedForOrigin(origin);
+    // Also notes whether the turn about to run is a stranger's, which is how a
+    // capability learns it (`outsider-turns.ts`).
+    const seedPolicy = seedForTurn(sessionId, origin);
     const seed = this.seedForNewRow(runtime, { agent, seedPolicy });
     const result = await db
       .insert(sessionMetadata)
@@ -937,10 +886,7 @@ export class RuntimeRegistry {
    */
   private seedForNewRow(
     runtime: string,
-    opts: {
-      agent?: AgentExecutionDefaults;
-      seedPolicy: OriginPermissionSeed;
-    }
+    opts: SessionSettingsSeedOptions
   ): Partial<typeof sessionMetadata.$inferInsert> {
     // Read off the REGISTERED runtime, not a table here: a runtime that is not
     // registered on this server has nothing declared to read, so it gets no

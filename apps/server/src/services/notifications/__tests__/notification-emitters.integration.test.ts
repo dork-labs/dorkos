@@ -10,6 +10,10 @@ import { NotificationService, setNotificationService } from '../notification-ser
 import { notifyRunCompleted } from '../emitters/run-completed.js';
 import { watchAskResolution } from '../emitters/ask-resolution.js';
 import { watchSessionLifecycle } from '../emitters/session-lifecycle.js';
+import { registerBeatTurn, resetBeatTurns } from '../../heartbeats/beat-turns.js';
+import { EventWakes } from '../../heartbeats/event-wakes.js';
+import { systemClock } from '../../heartbeats/beat-scheduler.js';
+import { noteTurnOrigin, resetOutsiderTurns } from '../../session/origin/outsider-turns.js';
 import { NotifyBudget } from '../../relay/notify-budget.js';
 import { createRelayNotifyUserHandler } from '../../runtimes/claude-code/mcp-tools/relay-notify-tools.js';
 import {
@@ -364,6 +368,37 @@ describe('a turn that finishes', () => {
     }
   });
 
+  it('stays quiet for a heartbeat turn: a beat finishing is not news (spec heartbeats §7.4)', async () => {
+    unsubscribes.push(watchSessionLifecycle());
+    registerBeatTurn('sess-beat', { agentId: ACME_AGENT_ID, beatId: 'b1', messageId: 'm1' });
+    try {
+      const projector = new SessionStateProjector('sess-beat');
+      projector.cwd = '/Users/dev/acme';
+      projector.ingest({ type: 'turn_start' } as never);
+      projector.ingest({ type: 'turn_end' } as never);
+      await flush();
+      expect(announced().filter((n) => n.kind === 'turn.completed')).toHaveLength(0);
+    } finally {
+      resetBeatTurns();
+    }
+  });
+
+  it('arms no session.error for a heartbeat turn that fails', async () => {
+    unsubscribes.push(watchSessionLifecycle());
+    registerBeatTurn('sess-beat-err', { agentId: ACME_AGENT_ID, beatId: 'b2', messageId: 'm2' });
+    try {
+      const projector = new SessionStateProjector('sess-beat-err');
+      projector.cwd = '/Users/dev/acme';
+      projector.ingest({ type: 'status_change', status: { lifecycle: 'error' } } as never);
+      projector.ingest({ type: 'status_change', status: { lifecycle: 'idle' } } as never);
+      await flush();
+      const rows = service.list({ limit: 25, unread: false }).notifications;
+      expect(rows.filter((r) => r.kind === 'session.error')).toHaveLength(0);
+    } finally {
+      resetBeatTurns();
+    }
+  });
+
   it('escalates session.error, not turn.completed, when a fatal frame closes under an SDK-named reason', async () => {
     // DOR-1676: this shape used to settle idle, so the turn announced itself as
     // COMPLETED. It now settles error, arming the standing session.error
@@ -455,5 +490,40 @@ describe('a session that errors, and clears', () => {
     const [row] = service.list({ limit: 25, unread: false }).notifications;
     expect(row).toMatchObject({ kind: 'session.error', outcome: 'cleared' });
     expect(row.agentId).toBeUndefined();
+  });
+});
+
+describe('a turn of its own that fails outside a beat', () => {
+  it("wakes the agent's beat, but never for a turn a stranger started", async () => {
+    vi.useFakeTimers();
+    const woken: string[] = [];
+    const hub = new EventWakes({
+      clock: systemClock,
+      localDay: () => '2026-10-12',
+      beat: (agentId) => woken.push(agentId),
+      agentIdAt: () => undefined,
+      agentsForConnection: () => [],
+      noteNewManager: () => undefined,
+      refresh: () => undefined,
+    });
+    hub.install();
+    try {
+      unsubscribes.push(watchSessionLifecycle());
+      noteTurnOrigin('sess-bridged', { kind: 'relay-binding' });
+      const fail = (id: string) => {
+        const projector = new SessionStateProjector(id);
+        projector.cwd = '/Users/dev/acme';
+        projector.ingest({ type: 'status_change', status: { lifecycle: 'error' } } as never);
+        vi.advanceTimersByTime(60_000);
+      };
+      fail('sess-bridged');
+      expect(woken).toEqual([]);
+      fail('sess-own');
+      expect(woken).toEqual([ACME_AGENT_ID]);
+    } finally {
+      hub.uninstall();
+      resetOutsiderTurns();
+      vi.useRealTimers();
+    }
   });
 });

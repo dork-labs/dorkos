@@ -173,6 +173,9 @@ export type TurnRuntimeTypeResolver = (turn: {
  * @param binding.agentDirectory - The agent this conversation belongs to, when
  *   one resolved.
  */
+/** See {@link ClaudeCodeAdapterDeps.noteTurnStart}. Must not throw. */
+export type TurnStartNote = (turn: { sessionId: string; from: string }) => void;
+
 export type SessionRuntimeBinder = (binding: {
   sessionId: string;
   runtimeType: string;
@@ -497,6 +500,13 @@ export interface ClaudeCodeAdapterDeps {
    * nothing to consult, which is what every host did before DOR-1774.
    */
   bindSessionRuntime?: SessionRuntimeBinder;
+  /**
+   * Told when a turn is about to start, with the session it runs in and who sent
+   * the message, before anything runs. The host uses it to know, per turn,
+   * whether the turn is a stranger's (a bridged chat, an outside agent), which
+   * the session's first binding alone cannot say. Absent means nobody is told.
+   */
+  noteTurnStart?: TurnStartNote;
   /**
    * Whether a click on a chat platform may authorize one session's tool call.
    *

@@ -33,6 +33,8 @@ import {
   commitments,
   channelLeads,
   agentPauses,
+  heartbeats,
+  remoteCommandJournal,
   reviewedSql,
   refuse,
   type MigrationEntry,
@@ -164,7 +166,15 @@ export function bridgeLegacyDocMigrationHistory(db: Db, folder: string): void {
     finalHash !== consolidatedDoc.hash
   )
     refuse('regenerated migration differs from reviewed SQL');
-  const shipped = [reportBack, agentReports, commitments, channelLeads, agentPauses];
+  const shipped = [
+    reportBack,
+    agentReports,
+    commitments,
+    channelLeads,
+    agentPauses,
+    heartbeats,
+    remoteCommandJournal,
+  ];
   const shippedSql = shipped.map((entry) => reviewedSql(folder, entry));
   reviewedSql(folder, consolidatedDoc);
   const reportRows = rows.filter((row) => row.hash === reportBack.hash);
@@ -179,6 +189,8 @@ export function bridgeLegacyDocMigrationHistory(db: Db, folder: string): void {
     [shippedRows[2]!, commitments],
     [shippedRows[3]!, channelLeads],
     [shippedRows[4]!, agentPauses],
+    [shippedRows[5]!, heartbeats],
+    [shippedRows[6]!, remoteCommandJournal],
     [finalRows, consolidated],
   ] as const) {
     if (matching.length > 1 || (matching[0] && matching[0].created_at !== entry.when))
@@ -233,7 +245,7 @@ export function bridgeLegacyDocMigrationHistory(db: Db, folder: string): void {
       finalRows[0]!.rowIdentity <= shippedIdentity
     )
       refuse('incomplete historical prefix claims consolidated migration');
-    // A durable completed155 permits ordinary future migrations; never replay Doc DDL.
+    // A durable accepted canonical completion permits ordinary future migrations; never replay Doc DDL.
     return;
   }
 

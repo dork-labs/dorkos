@@ -169,6 +169,18 @@ communityConformance(make(AGENT_ACTING), {
   ...hooks(AGENT_ACTING),
 });
 
+// 7. A moderated space, as apps/community is: a person reads their standing,
+//    accepts the rules, picks their name and reports messages.
+const MODERATED: Partial<Omit<CommunityCapabilities, 'type'>> = {
+  credential: 'browser-approved',
+  conduct: true,
+  reports: true,
+};
+communityConformance(make(MODERATED), {
+  name: 'FakeCommunityAdapter (moderated space: standing, rules, names, reports) — conformance',
+  ...hooks(MODERATED),
+});
+
 // ---------------------------------------------------------------------------
 // Guards: the assertions above are only worth having if a wrong adapter fails
 // them. Each case below breaks exactly one property and shows the suite's own
@@ -238,6 +250,47 @@ describe('communityConformance discriminates', () => {
     // Reading is never gated: a read-only backend is still a backend.
     await expect(off.listRooms()).resolves.toHaveLength(1);
     await expect(off.listMembers(roomId)).resolves.not.toHaveLength(0);
+  });
+
+  it('conduct and reports refuse when off, and work for the person when on', async () => {
+    const off = new FakeCommunityAdapter();
+    await off.connect();
+    const offRoom = off.seedRoom({ entries: 1 });
+    await expect(off.getStanding(offRoom)).rejects.toBeInstanceOf(CommunityUnsupportedError);
+    await expect(off.acceptRules(1)).rejects.toBeInstanceOf(CommunityUnsupportedError);
+    await expect(off.setDisplayName('Ada')).rejects.toBeInstanceOf(CommunityUnsupportedError);
+    await expect(off.reportEntry(offRoom, 'x', { reason: 'spam' })).rejects.toBeInstanceOf(
+      CommunityUnsupportedError
+    );
+
+    const on = new FakeCommunityAdapter({ capabilities: { conduct: true, reports: true } });
+    await on.connect();
+    const roomId = on.seedRoom({ entries: 1 });
+    on.conduct.publishRules('Be kind.');
+    on.conduct.slowMode.set(roomId, 30);
+    await expect(on.getStanding(roomId)).resolves.toEqual({
+      mutedUntil: null,
+      slowModeSeconds: 30,
+      rules: { text: 'Be kind.', version: 1, acceptedVersion: 0 },
+    });
+    // Only the version the person read counts.
+    await expect(on.acceptRules(2)).rejects.toThrow();
+    await expect(on.acceptRules(1)).resolves.toMatchObject({ acceptedVersion: 1 });
+    on.conduct.publishRules('Be kind. No spam.');
+    await expect(on.getStanding(roomId)).resolves.toMatchObject({
+      rules: { version: 2, acceptedVersion: 0 },
+    });
+    await expect(on.setDisplayName('  Ada  ')).resolves.toMatchObject({ displayName: 'Ada' });
+
+    // Someone else's message, reported twice, is one report; your own is refused.
+    const other = on.seedEntry(roomId, { text: 'buy now', authorId: 'someone-else' });
+    await on.reportEntry(roomId, other.id, { reason: 'spam', note: 'ad' });
+    await on.reportEntry(roomId, other.id, { reason: 'spam' });
+    expect(on.conduct.reports).toEqual([
+      { roomId, entryId: other.id, input: { reason: 'spam', note: 'ad' } },
+    ]);
+    const own = (await on.listEntries(roomId)).entries[0]!;
+    await expect(on.reportEntry(roomId, own.id, { reason: 'spam' })).rejects.toThrow();
   });
 
   it('a community-scoped invite refuses a room, rather than widening it', async () => {

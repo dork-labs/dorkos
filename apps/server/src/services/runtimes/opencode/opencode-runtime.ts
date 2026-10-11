@@ -590,20 +590,7 @@ export class OpenCodeRuntime implements AgentRuntime {
    * first `sendMessage` retries the binding and surfaces real errors.
    */
   ensureSession(sessionId: string, opts: SessionOpts): void {
-    this.registry.register(sessionId, {
-      permissionMode: opts.permissionMode,
-      ...(opts.model !== undefined ? { model: opts.model } : {}),
-      ...(opts.fastMode !== undefined ? { fastMode: opts.fastMode } : {}),
-      ...(opts.cwd !== undefined ? { cwd: opts.cwd } : {}),
-    });
-    if (opts.cwd !== undefined) {
-      void this.resolveOpenCodeSession(sessionId, opts.cwd).catch((err: unknown) => {
-        logger.debug(
-          '[OpenCodeRuntime] eager session bind failed (will retry on first message)',
-          logError(err)
-        );
-      });
-    }
+    return openCodeAccountTurnLifecycle.ensureSession(this.#originalMethodOwner, sessionId, opts);
   }
 
   hasSession(sessionId: string): boolean {

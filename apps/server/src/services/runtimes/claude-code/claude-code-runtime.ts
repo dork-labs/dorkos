@@ -1,4 +1,8 @@
 import {
+  createIsolatedClaudePreparationViews,
+  createIsolatedClaudeRelayConstructionViews,
+} from './custody/claude-private-view-custody.js';
+import {
   createIsolatedClaudeCommandCacheCustody,
   type OriginalClaudeCommands,
 } from './custody/claude-command-cache-custody.js';
@@ -298,46 +302,17 @@ import {
   resolveReloadableSession,
 } from './operations/claude-held-plugin-reload-operations.js';
 import { createClaudeIntrospectionSession } from './custody/claude-introspection-session-data.js';
-const originalClaudePreparationViews = new WeakMap<object, OriginalClaudeNativePreparationView>();
-const originalClaudePreparationGet = WeakMap.prototype.get;
-const originalClaudePreparationSet = WeakMap.prototype.set;
-const originalClaudePreparationApply = Reflect.apply;
+const originalClaudePreparationCustody = createIsolatedClaudePreparationViews();
 const originalClaudePreparationFreeze = Object.freeze;
 /** Resolve only the original runtime's inaccessible native preparation key before any effects. */
-export function readOriginalClaudeNativePreparationView(
-  key: object
-): OriginalClaudeNativePreparationView {
-  const view = originalClaudePreparationApply(
-    originalClaudePreparationGet,
-    originalClaudePreparationViews,
-    [key]
-  ) as OriginalClaudeNativePreparationView | undefined;
-  if (!view) throw new Error('Original Claude preparation owner unavailable.');
-  return view;
-}
+export const readOriginalClaudeNativePreparationView = originalClaudePreparationCustody.read;
 
 import { assembleOriginalClaudeRelayConstruction } from './operations/claude-relay-construction.js';
 import type { OriginalClaudeRelayConstructionView } from './custody/claude-relay-construction-contracts.js';
-const originalClaudeRelayConstructionViews = new WeakMap<
-  object,
-  Readonly<OriginalClaudeRelayConstructionView>
->();
-const originalClaudeRelayConstructionGet = WeakMap.prototype.get;
-const originalClaudeRelayConstructionSet = WeakMap.prototype.set;
-const originalClaudeRelayConstructionApply = Reflect.apply;
+const originalClaudeRelayConstructionCustody = createIsolatedClaudeRelayConstructionViews();
 const originalClaudeRelayConstructionFreeze = Object.freeze;
 /** Read only the actual runtime constructor's private relay assembly view. */
-export function readOriginalClaudeRelayConstructionView(
-  key: object
-): Readonly<OriginalClaudeRelayConstructionView> {
-  const view = originalClaudeRelayConstructionApply(
-    originalClaudeRelayConstructionGet,
-    originalClaudeRelayConstructionViews,
-    [key]
-  ) as Readonly<OriginalClaudeRelayConstructionView> | undefined;
-  if (!view) throw new Error('Original Claude relay construction owner unavailable.');
-  return view;
-}
+export const readOriginalClaudeRelayConstructionView = originalClaudeRelayConstructionCustody.read;
 
 /** Run Claude Code sessions with their original SDK and native turn lifetimes. */
 export class ClaudeCodeRuntime implements AgentRuntime {
@@ -539,10 +514,9 @@ export class ClaudeCodeRuntime implements AgentRuntime {
           owner.#createMessage(sessionId, content, opts, acquisition, roomOrigin, roomPrepared),
       });
     }
-    originalClaudeRelayConstructionApply(
-      originalClaudeRelayConstructionSet,
-      originalClaudeRelayConstructionViews,
-      [this.#relayConstructionKey, createOriginalClaudeRelayConstructionView(this)]
+    originalClaudeRelayConstructionCustody.register(
+      this.#relayConstructionKey,
+      createOriginalClaudeRelayConstructionView(this)
     );
     assembleOriginalClaudeRelayConstruction(this.#relayConstructionKey);
     this.attachments = attachments ?? null;
@@ -686,10 +660,10 @@ export class ClaudeCodeRuntime implements AgentRuntime {
           owner.#createMessage(sessionId, content, opts, acquisition, roomOrigin, roomPrepared),
       });
     }
-    originalClaudePreparationApply(originalClaudePreparationSet, originalClaudePreparationViews, [
+    originalClaudePreparationCustody.register(
       this.#nativePreparationKey,
-      createOriginalClaudePreparationView(this),
-    ]);
+      createOriginalClaudePreparationView(this)
+    );
   }
 
   /**

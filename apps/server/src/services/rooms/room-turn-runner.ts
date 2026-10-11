@@ -80,6 +80,7 @@ const collectReply = (...args: OriginalReplyArgs): ReturnType<typeof collectOrig
   collectOriginalRoomReply(originalRoomReplyKey, ...args);
 
 import { createRoomTurnStopState } from './turn/room-turn-stop-state.js';
+import { WAITING_KINDS } from './turn-guards/waiting-kinds.js';
 
 import path from 'node:path';
 import type {
@@ -89,7 +90,6 @@ import type {
 } from '@dorkos/shared/agent-runtime';
 import type { Room } from '@dorkos/shared/room-schemas';
 import { RoomContextDataSchema, type RoomContextData } from '@dorkos/shared/additional-context';
-import { type BlockingInteractionEventType } from '@dorkos/shared/session-stream';
 import type { InterruptReceipt } from '@dorkos/shared/types';
 import { logger } from '../../lib/logger.js';
 import { ROOMS } from '../../config/constants.js';
@@ -808,16 +808,3 @@ const MESSAGE_BOUNDARY = new Set(['tool_call', 'tool_result']);
  * be corrected by using the product.
  */
 const WAITING_NOTICE_GRACE_MS = 60_000;
-
-/**
- * Which kind of wait each blocking event is, in the room's vocabulary.
- *
- * A total map over {@link BlockingInteractionEventType} rather than a chain of
- * comparisons: a fourth way to park a turn on a person would be a type error
- * here rather than a room that silently stopped mentioning it.
- */
-const WAITING_KINDS: Record<BlockingInteractionEventType, RoomTurnWaiting['kind']> = {
-  approval_required: 'approval',
-  question_prompt: 'question',
-  elicitation_prompt: 'elicitation',
-};

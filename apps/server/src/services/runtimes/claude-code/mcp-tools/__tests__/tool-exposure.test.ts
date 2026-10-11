@@ -471,12 +471,18 @@ describe('in-session tool exposure', () => {
     // `spin-off-chats` §1), all three DEFERRED on a plain session.
     // 124 -> 118 (spec `spin-off-chats` §7): the six relay send, inbox and
     // endpoint tools retire. Both counts move by the same amounts.
-    // The combined surface contains 39 hand tools and 92 registry tools,
-    // including all ten Doc verbs and Main's commitment, audit and pause tools.
-    // The eleven plain-session eager tools leave 120 searchable deferred tools.
-    expect(tools).toHaveLength(131);
-    expect(deferred).toHaveLength(120);
+    // The full registry includes the imported MCP sign-in capability spread:
+    // mcp_signin and mcp_poll_signin are deferred, alongside end_beat.
+    // Eleven plain-session eager tools remain unchanged.
+    expect(tools).toHaveLength(134);
+    expect(new Set(tools.map((tool) => tool.name)).size).toBe(134);
+    expect(tools.filter((tool) => tool._meta?.[ALWAYS_LOAD_META] === true)).toHaveLength(11);
+    expect(deferred).toHaveLength(123);
+    expect(tools.map((tool) => tool.name)).not.toContain('mcp_set_client');
     for (const name of [
+      'mcp_signin',
+      'mcp_poll_signin',
+      'end_beat',
       'audit_verify',
       'configure_doc_channel',
       'approve_doc_route',

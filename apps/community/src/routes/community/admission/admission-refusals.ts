@@ -1,6 +1,6 @@
 /** Why an invitation or admission is refused: closed admission, and the reasons a person may see. */
 import type { Pool, PoolClient } from 'pg';
-import { ApiError } from '../../http.js';
+import { ApiError } from '../../../http.js';
 
 /** The one refusal a person sees for any invitation that cannot be used. */
 export function invalidInvitation(): ApiError {

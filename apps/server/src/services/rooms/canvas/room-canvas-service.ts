@@ -1,3 +1,5 @@
+import type { RoomCanvasDeps, CanvasOpenOptions } from './room-canvas-contract.js';
+export type { RoomCanvasDeps, CanvasOpenOptions } from './room-canvas-contract.js';
 import {
   canvasChangeSentence,
   discussionOpenedSentence,
@@ -6,7 +8,6 @@ import {
   canonicalPath,
 } from './room-canvas-helpers.js';
 export { canvasChangeSentence, discussionOpenedSentence } from './room-canvas-helpers.js';
-import type { CanvasChannelDeclaration } from '@dorkos/shared/canvas-channel-schemas';
 /**
  * A room's shared canvas: every rule about who may change it, over the one
  * writer that changes it (spec `room-canvas` §3).
@@ -59,7 +60,6 @@ import type { CanvasChannelDeclaration } from '@dorkos/shared/canvas-channel-sch
  * @module server/services/rooms/canvas/room-canvas-service
  */
 import path from 'node:path';
-import type { DbTransaction } from '@dorkos/db';
 import type { CanvasDocument, RoomCanvasChange, RoomEvent } from '@dorkos/shared/room-schemas';
 import type { UiCanvasContent, UiCommand } from '@dorkos/shared/schemas';
 import { logger } from '../../../lib/logger.js';
@@ -195,46 +195,6 @@ export function tooManyCanvasOpsMessage(limit: number): string {
     `You have already changed the canvas ${limit} times in this conversation during this turn, ` +
     `which is the limit. Put the rest in one update next turn.`
   );
-}
-
-/** How a room's canvas reaches the rest of the server. */
-export interface RoomCanvasDeps {
-  /** The one writer, shared with every other scope. */
-  canvas: CanvasService;
-  /** Who may see a room, and who is in it. */
-  visibility: RoomVisibility;
-  /** The room's live stream — who is watching. */
-  broadcaster: RoomBroadcaster;
-  /** The per-turn ceiling, read PER CALL so a change in Settings binds the next operation. */
-  maxOpsPerTurn: () => number;
-  /**
-   * Write one turn's coalesced entry into the room's log.
-   *
-   * Handed in rather than reached for, so the single write path into a room
-   * stays {@link RoomService}'s — the same shape the merge service is given.
-   */
-  postCanvasEvent: (
-    roomId: string,
-    input: { text: string; canvas: RoomCanvasChange; subjectAuthorId: string },
-    bind?: (tx: DbTransaction, entryId: string) => void
-  ) => { id: string } | void;
-  /** How a member is named in the sentence that entry carries. */
-  displayNameFor: (authorId: string) => string;
-  /** The room's shared checkout, or `null` when the room has no files of its own. */
-  roomRepoPath: (roomId: string) => string | null;
-  /** The clock, so a lock's TTL is testable without waiting 45 seconds. */
-  now?: () => number;
-}
-
-/** What `open` was given beyond the content itself. */
-export interface CanvasOpenOptions {
-  channel?: CanvasChannelDeclaration;
-  /** Pin it on creation. */
-  pinned?: boolean;
-  /** Where a file document's path was resolved, absolute. */
-  resolvedCwd?: string | null;
-  /** How that directory is described to a reader: `Ana's copy · 3 ahead of main`. */
-  sourceLabel?: string | null;
 }
 
 /** A room's shared canvas — the room's rules, over the one writer. */

@@ -2,6 +2,7 @@ import { readOriginalOpenCodeRuntimeView } from './opencode-runtime.js';
 import type { StreamEvent, SessionSettings, InterruptReceipt } from '@dorkos/shared/types';
 import type {
   MessageOpts,
+  SessionOpts,
   CommandIntentOpts,
   SessionUpdateResult,
 } from '@dorkos/shared/agent-runtime';
@@ -319,5 +320,24 @@ export async function revokeConnectorTurn(
   } catch (err) {
     if (turn.connectorRevocation === revocation) turn.connectorRevocation = undefined;
     throw err;
+  }
+}
+
+/** Register and eagerly bind the original runtime's session without starting a turn. */
+export function ensureSession(runtimeOwner: object, sessionId: string, opts: SessionOpts): void {
+  const facet = readOriginalOpenCodeRuntimeView(runtimeOwner);
+  facet.registry.register(sessionId, {
+    permissionMode: opts.permissionMode,
+    ...(opts.model !== undefined ? { model: opts.model } : {}),
+    ...(opts.fastMode !== undefined ? { fastMode: opts.fastMode } : {}),
+    ...(opts.cwd !== undefined ? { cwd: opts.cwd } : {}),
+  });
+  if (opts.cwd !== undefined) {
+    void facet.resolveOpenCodeSession(sessionId, opts.cwd).catch((err: unknown) => {
+      logger.debug(
+        '[OpenCodeRuntime] eager session bind failed (will retry on first message)',
+        logError(err)
+      );
+    });
   }
 }

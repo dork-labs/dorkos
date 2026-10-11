@@ -271,14 +271,24 @@ describe('Database Migrations', () => {
         },
         {
           idx: 155,
-          tag: '20261011035106_married_puppet_master',
-          when: 1791690666098,
+          tag: '20261011000540_heartbeats',
+          when: 1791677140996,
+        },
+        {
+          idx: 156,
+          tag: '20261011031406_remote_command_journal',
+          when: 1791688446887,
+        },
+        {
+          idx: 157,
+          tag: '20261011065204_lonely_sentinel',
+          when: 1791701524866,
         },
       ]);
       expect(db.$client.prepare('SELECT * FROM audit_events ORDER BY seq').all()).toEqual(
         publishedAudit
       );
-      // The shipped Main148..154 prefix precedes canonical Doc155; each immutable
+      // The shipped Main148..156 prefix precedes canonical Doc157; each immutable
       // SQL identity is recorded once at its authentic journal timestamp.
       for (const entry of journal.entries.slice(148)) {
         const hash = createHash('sha256')
@@ -290,7 +300,7 @@ describe('Database Migrations', () => {
       }
       expect(history.at(-1)).toMatchObject({
         hash: 'b7390d7499448a3021402bd70f04c0d35096d0015e40305788e6b30fc3ce93c4',
-        created_at: 1791690666098,
+        created_at: 1791701524866,
       });
       const schema = db.$client
         .prepare('SELECT type, name, tbl_name, sql FROM sqlite_master ORDER BY type, name')
@@ -447,6 +457,11 @@ describe('Database Migrations', () => {
       // §7.2, migration 0131).
       'extension_decisions',
       'handle_tombstones',
+      // Heartbeats: each agent's beat facts, one row per beat, and what beats
+      // raised until it reaches its reader (spec heartbeats §11).
+      'heartbeat_beats',
+      'heartbeat_outbox',
+      'heartbeat_state',
       // The project registry (spec flow-multiproject §6.1, migration 0129).
       'known_project_reporters',
       'known_projects',
@@ -491,6 +506,10 @@ describe('Database Migrations', () => {
       'relay_index',
       'relay_receipt_observer_owner',
       'relay_traces',
+      // Managed remote access (DOR-2086): every leased Cloud command, journaled
+      // before it acts, and the activity batches waiting to be reported.
+      'remote_command_journal',
+      'remote_event_outbox',
       // Files uploaded into a room, bound to the entry that carries them inside
       // that entry's own transaction — nullable `entry_id` is the "uploaded,
       // not yet posted" state (room-attachments spec, migration 0058).

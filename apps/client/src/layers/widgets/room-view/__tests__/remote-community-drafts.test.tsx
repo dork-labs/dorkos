@@ -442,3 +442,47 @@ describe('remote community delivery drafts', () => {
     expect(result.current.text).toBe('');
   });
 });
+
+describe('a post the space’s moderation held (DOR-2770)', () => {
+  function held(code: string, retryAfterMs?: number) {
+    return Object.assign(new Error('Held'), {
+      code,
+      status: code === 'COMMUNITY_SLOW_MODE' ? 429 : 403,
+      ...(retryAfterMs ? { retryAfterMs } : {}),
+    });
+  }
+
+  it.each(['COMMUNITY_MUTED', 'COMMUNITY_SLOW_MODE', 'COMMUNITY_RULES_NOT_ACCEPTED'])(
+    'puts a %s message back in its draft and says which hold, never a failed row',
+    async (code) => {
+      const { transport, receipt, wrapper } = harness();
+      const onHold = vi.fn();
+      const refusal = held(code, 12_000);
+      vi.mocked(transport.postRemoteCommunityEntry).mockRejectedValueOnce(refusal);
+      const { result } = renderHook(() => useRemoteCommunityDrafts(options(receipt, { onHold })), {
+        wrapper,
+      });
+      act(() => result.current.setText('hello there'));
+      act(() => result.current.send());
+      await waitFor(() => expect(onHold).toHaveBeenCalledWith(refusal));
+      expect(result.current.text).toBe('hello there');
+      expect(result.current.deliveries).toEqual([]);
+      expect(result.current.error).toBeNull();
+    }
+  );
+
+  it('still shows any other refusal as a failed row to retry', async () => {
+    const { transport, receipt, wrapper } = harness();
+    const onHold = vi.fn();
+    vi.mocked(transport.postRemoteCommunityEntry).mockRejectedValueOnce(
+      held('COMMUNITY_ACCESS_DENIED')
+    );
+    const { result } = renderHook(() => useRemoteCommunityDrafts(options(receipt, { onHold })), {
+      wrapper,
+    });
+    act(() => result.current.setText('hello'));
+    act(() => result.current.send());
+    await waitFor(() => expect(result.current.deliveries[0]?.status).toBe('failed'));
+    expect(onHold).not.toHaveBeenCalled();
+  });
+});

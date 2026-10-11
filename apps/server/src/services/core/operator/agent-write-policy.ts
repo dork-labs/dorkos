@@ -209,6 +209,10 @@ export const AGENT_WRITE_POLICY = {
   // not by caller identity here.
   nopeContent: 'agent-writable',
   memoryContent: 'agent-writable',
+  // HEARTBEAT.md: how the agent wakes and what it watches. An agent's own
+  // heartbeat is part of its job, so changing it is act-then-tell, recorded as
+  // `heartbeat.config_changed` (spec `heartbeats` §2, canon §5.7).
+  heartbeatContent: 'agent-writable',
 } as const satisfies Record<string, AgentWriteAccess>;
 
 /**

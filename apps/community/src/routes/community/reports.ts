@@ -16,6 +16,7 @@ import { requireLiveRole, requireMember, transaction, type Member } from '../../
 import { ApiError, RateLimited, json, readJson } from '../../http.js';
 import { removalAuthority, removeEntry } from '../../content-removal.js';
 import { lockOwnMembership } from '../../moderation/locks.js';
+import { requirePerson } from '../../moderation/person.js';
 import { muteMember } from '../../moderation/mutes.js';
 import { banMember, lockCommunityForBan } from './bans.js';
 
@@ -140,7 +141,8 @@ export function registerReportRoutes(
   { pool, auth, config }: { pool: Pool; auth: CommunityAuth; config: CommunityConfig }
 ): void {
   app.post('/entries/:id/reports', async (c) => {
-    const reporter = await requireMember(c, auth, pool);
+    // The reporter's browser, or their DorkOS install's grant; never an agent (DOR-2770).
+    const { member: reporter, recheck } = await requirePerson(c, auth, pool, 'post');
     const entryId = z.uuid().safeParse(c.req.param('id'));
     if (!entryId.success) throw new ApiError(404, 'NOT_FOUND', 'Entry not found.');
     const body = await readJson(c, CommunityWireReportRequestSchema);
@@ -148,6 +150,7 @@ export function registerReportRoutes(
       // The reporter's own row first, so the open-report bound below counts under a lock.
       await lockOwnMembership(client, reporter);
       await requireLiveRole(client, reporter, ['owner', 'admin', 'member']);
+      await recheck(client);
       const entry = await client.query<{ removed: boolean; own: boolean; readable: boolean }>(
         `SELECT (e.removed_at IS NOT NULL OR e.erased_at IS NOT NULL) AS removed,
            (e.author_member_id=$3 OR a.owner_member_id=$3) AS own,

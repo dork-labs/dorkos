@@ -173,55 +173,31 @@ const codexOriginalActiveSlots = originalCodexCustody.codexOriginalActiveSlots;
 const codexNativeConstructors = originalCodexCustody.codexNativeConstructors;
 const codexNativeControllers = originalCodexCustody.codexNativeControllers;
 /** Original native custody reader bound to the runtime module-private instance. */
-export const readCodexOriginalLockedStream: (
-  ...args: Parameters<typeof originalCodexCustody.readCodexOriginalLockedStream>
-) => ReturnType<typeof originalCodexCustody.readCodexOriginalLockedStream> =
-  originalCodexCustody.readCodexOriginalLockedStream;
+export const readCodexOriginalLockedStream = originalCodexCustody.readCodexOriginalLockedStream;
 /** Original native custody reader bound to the runtime module-private instance. */
-export const readCodexOriginalLockedTurnOptions: (
-  ...args: Parameters<typeof originalCodexCustody.readCodexOriginalLockedTurnOptions>
-) => ReturnType<typeof originalCodexCustody.readCodexOriginalLockedTurnOptions> =
+export const readCodexOriginalLockedTurnOptions =
   originalCodexCustody.readCodexOriginalLockedTurnOptions;
 /** Original native custody reader bound to the runtime module-private instance. */
-export const retireCodexOriginalRoomResponderStream: (
-  ...args: Parameters<typeof originalCodexCustody.retireCodexOriginalRoomResponderStream>
-) => ReturnType<typeof originalCodexCustody.retireCodexOriginalRoomResponderStream> =
+export const retireCodexOriginalRoomResponderStream =
   originalCodexCustody.retireCodexOriginalRoomResponderStream;
 /** Original native custody reader bound to the runtime module-private instance. */
-export const readCodexOriginalRoomResponderStream: (
-  ...args: Parameters<typeof originalCodexCustody.readCodexOriginalRoomResponderStream>
-) => ReturnType<typeof originalCodexCustody.readCodexOriginalRoomResponderStream> =
+export const readCodexOriginalRoomResponderStream =
   originalCodexCustody.readCodexOriginalRoomResponderStream;
 /** Original native custody reader bound to the runtime module-private instance. */
-export const sendCodexOriginalLockedMessage: (
-  ...args: Parameters<typeof originalCodexCustody.sendCodexOriginalLockedMessage>
-) => ReturnType<typeof originalCodexCustody.sendCodexOriginalLockedMessage> =
-  originalCodexCustody.sendCodexOriginalLockedMessage;
+export const sendCodexOriginalLockedMessage = originalCodexCustody.sendCodexOriginalLockedMessage;
 /** Original native custody reader bound to the runtime module-private instance. */
-export const prepareCodexOriginalLockedRoomResponder: (
-  ...args: Parameters<typeof originalCodexCustody.prepareCodexOriginalLockedRoomResponder>
-) => ReturnType<typeof originalCodexCustody.prepareCodexOriginalLockedRoomResponder> =
+export const prepareCodexOriginalLockedRoomResponder =
   originalCodexCustody.prepareCodexOriginalLockedRoomResponder;
 /** Original native custody reader bound to the runtime module-private instance. */
-export const retireCodexPreparedRoomResponder: (
-  ...args: Parameters<typeof originalCodexCustody.retireCodexPreparedRoomResponder>
-) => ReturnType<typeof originalCodexCustody.retireCodexPreparedRoomResponder> =
+export const retireCodexPreparedRoomResponder =
   originalCodexCustody.retireCodexPreparedRoomResponder;
 /** Original native custody reader bound to the runtime module-private instance. */
-export const readCodexPreparedRoomResponder: (
-  ...args: Parameters<typeof originalCodexCustody.readCodexPreparedRoomResponder>
-) => ReturnType<typeof originalCodexCustody.readCodexPreparedRoomResponder> =
-  originalCodexCustody.readCodexPreparedRoomResponder;
+export const readCodexPreparedRoomResponder = originalCodexCustody.readCodexPreparedRoomResponder;
 /** Original native custody reader bound to the runtime module-private instance. */
-export const startCodexCommittedRoomResponder: (
-  ...args: Parameters<typeof originalCodexCustody.startCodexCommittedRoomResponder>
-) => ReturnType<typeof originalCodexCustody.startCodexCommittedRoomResponder> =
+export const startCodexCommittedRoomResponder =
   originalCodexCustody.startCodexCommittedRoomResponder;
 /** Original native custody reader bound to the runtime module-private instance. */
-export const readCodexNativeOperation: (
-  ...args: Parameters<typeof originalCodexCustody.readCodexNativeOperation>
-) => ReturnType<typeof originalCodexCustody.readCodexNativeOperation> =
-  originalCodexCustody.readCodexNativeOperation;
+export const readCodexNativeOperation = originalCodexCustody.readCodexNativeOperation;
 
 /** Run Codex sessions with their original client and native turn lifetimes. */
 export class CodexRuntime implements AgentRuntime {
@@ -1394,14 +1370,17 @@ export class CodexRuntime implements AgentRuntime {
    */
   async endSessionsWhere(belongs: (session: LiveSessionRef) => boolean): Promise<string[]> {
     void this.#queryKey;
-    const ids = new Set([...this.activeTurns.keys(), ...(this.transport.liveSessionIds?.() ?? [])]);
+    const ids = new Set([
+      ...this.activeTurns.keys(),
+      ...(this.#transport.liveSessionIds?.() ?? []),
+    ]);
     const ended: string[] = [];
     for (const sessionId of ids) {
       const cwd = this.registry.get(sessionId)?.cwd ?? this.threadMap.get(sessionId)?.cwd;
       if (!picksSession(belongs, { sessionId, cwd })) continue;
       const receipt = await this.interruptQuery(sessionId).catch(() => undefined);
       const released = await (
-        this.transport.endSession?.(sessionId) ?? Promise.resolve(false)
+        this.#transport.endSession?.(sessionId) ?? Promise.resolve(false)
       ).catch(() => false);
       if (receipt?.outcome === 'acked' || receipt?.outcome === 'closed' || released) {
         ended.push(sessionId);

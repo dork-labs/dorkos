@@ -280,6 +280,15 @@ export interface CapabilityHandlerContext {
   connectorSurface?: 'mcp' | 'rest' | 'cli';
   /** The calling server's hand-registered tools; only the request tool receives it. */
   handTools?: HandToolReach;
+  /**
+   * True when the turn the call came from was started by somebody from off this
+   * machine: a bridged Telegram or Slack sender, an external room author, an
+   * outside agent, a connector event (`session/origin/outsider-turns.ts`). Read
+   * off the invoking {@link sessionId}, so it is absent on surfaces with none.
+   * A handler that would hand a stranger more than the turn's grant covers
+   * refuses on it (PRINCIPLES §1).
+   */
+  turnStartedByOutsider?: boolean;
 }
 
 /**

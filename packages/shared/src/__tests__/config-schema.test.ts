@@ -112,6 +112,7 @@ describe('UserConfigSchema', () => {
       a2a: { enabled: false },
       scheduler: { enabled: true, maxConcurrentRuns: 4, retentionCount: 100 },
       keepAwake: { whileAgentsWork: true, wakeForScheduledTasks: false },
+      heartbeats: { enabled: true },
       activity: { retentionDays: 365 },
       mesh: { scanRoots: [] },
       rooms: {
@@ -524,6 +525,7 @@ describe('USER_CONFIG_DEFAULTS', () => {
       a2a: { enabled: false },
       scheduler: { enabled: true, maxConcurrentRuns: 4, retentionCount: 100 },
       keepAwake: { whileAgentsWork: true, wakeForScheduledTasks: false },
+      heartbeats: { enabled: true },
       activity: { retentionDays: 365 },
       mesh: { scanRoots: [] },
       rooms: {
@@ -849,6 +851,7 @@ describe('per-field and section-literal defaults agree', () => {
     ui: {},
     scheduler: {},
     keepAwake: {},
+    heartbeats: {},
     activity: {},
     runtimes: { claudeCode: {} },
   });
@@ -871,6 +874,11 @@ describe('per-field and section-literal defaults agree', () => {
   it('keepAwake is on while agents work, and wake is off, either way', () => {
     expect(fromFactory.keepAwake).toEqual({ whileAgentsWork: true, wakeForScheduledTasks: false });
     expect(fromFields.keepAwake).toEqual({ whileAgentsWork: true, wakeForScheduledTasks: false });
+  });
+
+  it('heartbeats are on either way', () => {
+    expect(fromFactory.heartbeats).toEqual({ enabled: true });
+    expect(fromFields.heartbeats).toEqual({ enabled: true });
   });
 
   it('activity keeps a year either way', () => {

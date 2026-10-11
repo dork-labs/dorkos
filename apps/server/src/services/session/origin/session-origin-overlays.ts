@@ -23,6 +23,7 @@ import {
   type ResolveStartedBy,
 } from './started-by-origin-overlay.js';
 import { applyTouchedByYouOverlay, type ResolveTouches } from './touched-by-you-overlay.js';
+import { applyHeartbeatOriginOverlay, type ResolveBeatChats } from '../../heartbeats/beat-chat.js';
 
 /**
  * The batched origin lookups, as the composition root wires them.
@@ -41,6 +42,8 @@ export interface SessionOriginResolvers {
   extensionNameOf?: ExtensionNameOf | undefined;
   /** When you opened or wrote in each chat (`session_touches`); absent without a database. */
   resolveTouches?: ResolveTouches | undefined;
+  /** Agents' beat chats (`heartbeat_state`); absent while heartbeats are not running. */
+  resolveBeatChats?: ResolveBeatChats | undefined;
 }
 
 /** One overlay in the ordered chain, named so a failure can say which failed. */
@@ -78,6 +81,11 @@ export function sessionOriginOverlaySteps(
     {
       name: 'Pulse task origin',
       apply: (sessions) => applyTaskOriginOverlay(sessions, resolvers.resolveTaskOrigins),
+    },
+    {
+      // After the task overlay, so a beat chat is labelled for what it is.
+      name: 'heartbeat origin',
+      apply: (sessions) => applyHeartbeatOriginOverlay(sessions, resolvers.resolveBeatChats),
     },
     {
       name: 'started by',
@@ -119,6 +127,7 @@ export function sessionOriginResolvers(locals: {
   resolveStartedBy?: unknown;
   extensionNameOf?: unknown;
   resolveTouches?: unknown;
+  resolveBeatChats?: unknown;
 }): SessionOriginResolvers {
   return {
     resolveRoomOrigins: locals.resolveRoomOrigins as ResolveRoomOrigins | undefined,
@@ -126,5 +135,6 @@ export function sessionOriginResolvers(locals: {
     resolveStartedBy: locals.resolveStartedBy as ResolveStartedBy | undefined,
     extensionNameOf: locals.extensionNameOf as ExtensionNameOf | undefined,
     resolveTouches: locals.resolveTouches as ResolveTouches | undefined,
+    resolveBeatChats: locals.resolveBeatChats as ResolveBeatChats | undefined,
   };
 }

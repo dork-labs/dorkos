@@ -38,6 +38,7 @@
  *
  * @module services/session/origin/turn-origin
  */
+import { noteTurnOrigin } from './outsider-turns.js';
 
 /**
  * What is starting this session, as the thing that knows describes itself.
@@ -157,6 +158,17 @@ export type TurnOrigin =
    */
   | { readonly kind: 'account-resume' }
   /**
+   * An agent's own heartbeat (spec `heartbeats` §7.2): a turn the beat runner
+   * starts in the agent's beat chat for the day, when a beat found work.
+   * Nobody started it by typing, and nobody is waiting on it, the same as a
+   * room turn by a local author: trusted by default, at the operator's
+   * configured stop. The origin seeds the chat's row once; whether a LATER turn
+   * in that chat is a beat is the live registry's question
+   * (`services/heartbeats/beat-turns.ts`), so a person typing in the beat chat
+   * is an ordinary turn.
+   */
+  | { readonly kind: 'heartbeat' }
+  /**
    * The in-process end-to-end harness, reachable only on a server started with
    * `DORKOS_TEST_RUNTIME`. It drives a runtime tool against a session it binds
    * itself.
@@ -242,6 +254,12 @@ export function permissionSeedForOrigin(origin: TurnOrigin): OriginPermissionSee
     // a new chat of their own gets (spec `full-power-defaults`).
     case 'extension-start':
       return 'configured-stop-on-insert';
+    // An agent's beat, in a chat minted for its day (spec `heartbeats` §7.2):
+    // the operator's configured stop on a chat nobody started, as a room turn
+    // by a local author gets. On insert only, so a beat chat a person already
+    // changed the settings of keeps what they chose.
+    case 'heartbeat':
+      return 'configured-stop-on-insert';
     // Everything below seeds nothing, for two different reasons.
     //
     // A schedule's power is already decided and already stored, on the schedule
@@ -291,6 +309,20 @@ export function permissionSeedForOrigin(origin: TurnOrigin): OriginPermissionSee
   }
 }
 
+/**
+ * The power a new session row gets for this origin, and a note of who started
+ * the turn about to run in it (`outsider-turns.ts`), in one call: every
+ * turn-starting surface binds through `runtimeRegistry.persistSessionRuntime`,
+ * which is the one place that knows both the chat and the origin.
+ *
+ * @param sessionId - The chat.
+ * @param origin - What is starting the turn.
+ */
+export function seedForTurn(sessionId: string, origin: TurnOrigin): OriginPermissionSeed {
+  noteTurnOrigin(sessionId, origin);
+  return permissionSeedForOrigin(origin);
+}
+
 /** The subject prefix the server stamps on a message one of our agents sends. */
 const AGENT_SENDER_PREFIX = 'relay.agent.';
 
@@ -311,7 +343,7 @@ const BINDING_SENDER_PREFIXES = ['relay.human.', 'relay.webhook.'] as const;
  *   from a chat app. The person may be thinking aloud; only they (and, until
  *   spaces have more than one person, the owner) read it. The ACTIONS the
  *   agent takes there are still recorded for everyone in the audit log.
- * - `space`: an agent's own work: a room reply, a scheduled run, a message
+ * - `space`: an agent's own work: a room reply, a scheduled run, a beat, a message
  *   from another agent, another chat or an outside sender, something an
  *   extension or a connected app started. Every member, person or agent, may
  *   read it.
@@ -326,6 +358,7 @@ export function sessionVisibilityForOrigin(kind: TurnOrigin['kind']): 'space' | 
       return 'participants';
     case 'room':
     case 'schedule':
+    case 'heartbeat':
     case 'agent-dm':
     case 'outside-sender':
     case 'connector-event':
@@ -381,4 +414,17 @@ export function relayTurnOrigin(from: string): TurnOrigin {
     return { kind: 'relay-binding' };
   }
   return { kind: 'outside-sender' };
+}
+
+/**
+ * Note, before a relay turn runs, who started it: what the relay adapter's
+ * `noteTurnStart` seam is given for every turn it runs (`adapter-factory.ts`),
+ * so a capability that turn calls knows whether a stranger started it.
+ *
+ * @param turn - The session the turn runs in and the envelope's sender.
+ * @param turn.sessionId - The session.
+ * @param turn.from - The envelope's server-stamped sender.
+ */
+export function noteRelayTurnStart(turn: { sessionId: string; from: string }): void {
+  noteTurnOrigin(turn.sessionId, relayTurnOrigin(turn.from));
 }

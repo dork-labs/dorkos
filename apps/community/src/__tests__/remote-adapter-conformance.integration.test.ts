@@ -564,10 +564,20 @@ describe('RemoteCommunityAdapter owner and grant changes', () => {
       await expect(store.personalToken(oldRef, ownerB)).rejects.toThrow();
       await expect(store.personalToken(otherRef, ownerA)).rejects.toThrow();
 
-      await pool.query(
-        'UPDATE connection_grants SET revoked_at=now() WHERE community_id=$1 AND token_hash=$2',
-        [communityId, hashSecret(oldToken)]
-      );
+      // Revoked with the notice the revocation route sends in the same transaction: a live
+      // stream trusts its last access check until a notice calls it into question.
+      const revoking = await pool.connect();
+      try {
+        await revoking.query('BEGIN');
+        await revoking.query(
+          'UPDATE connection_grants SET revoked_at=now() WHERE community_id=$1 AND token_hash=$2',
+          [communityId, hashSecret(oldToken)]
+        );
+        await notifyLive(revoking, { k: 'member', c: communityId, m: ownerMemberId });
+        await revoking.query('COMMIT');
+      } finally {
+        revoking.release();
+      }
       await pool.query(
         'INSERT INTO connection_grants(community_id,member_id,token_hash,scopes,install_name) VALUES($1,$2,$3,$4,$5)',
         [communityId, ownerMemberId, hashSecret(newToken), ['read', 'post'], 'New A stream']

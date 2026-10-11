@@ -64,54 +64,13 @@ import {
   followNativeRedactions,
   NATIVE_REDACTION_POLL_MS,
 } from '../services/communities/remote/native-redaction-follower.js';
-
-function isSafeAttachmentName(value: string): boolean {
-  return [...value].every((character) => {
-    const code = character.codePointAt(0);
-    return code !== undefined && code >= 0x20 && code !== 0x7f;
-  });
-}
-
-const attachmentHeadersSchema = z.object({
-  name: z.string().min(1).max(255).refine(isSafeAttachmentName),
-  contentType: z.string().min(1).max(255),
-  byteSize: z.coerce
-    .number()
-    .int()
-    .nonnegative()
-    .max(25 * 1024 * 1024),
-  idempotencyKey: z.string().min(1).max(128),
-});
-
-/** Parse the raw attachment envelope without letting a file MIME select a body parser. */
-function attachmentHeaders(req: import('express').Request) {
-  const envelopeContentType = req.header('content-type')?.split(';', 1)[0]?.trim().toLowerCase();
-  if (envelopeContentType !== 'application/octet-stream') return null;
-  const encodedName = req.header('x-file-name');
-  let name: string | undefined;
-  try {
-    name = encodedName ? decodeURIComponent(encodedName) : undefined;
-  } catch {
-    return null;
-  }
-  const parsed = attachmentHeadersSchema.safeParse({
-    name,
-    contentType: req.header('x-file-content-type'),
-    byteSize: req.header('x-file-size'),
-    idempotencyKey: req.header('idempotency-key'),
-  });
-  return parsed.success ? parsed.data : null;
-}
+import { attachmentHeaders, requestBytes } from './remote-community-attachment-http.js';
+import { registerRemoteCommunityConductRoutes } from './remote-community-conduct.js';
 
 /** Write one strict event payload without exposing adapter or credential state. */
 function writeEvent(res: import('express').Response, event: unknown): void {
   const parsed = RemoteCommunityEventSchema.parse(event);
   res.write(`event: ${parsed.type}\ndata: ${JSON.stringify(parsed)}\n\n`);
-}
-
-/** Turn an incoming HTTP byte stream into the adapter's portable byte source. */
-async function* requestBytes(req: import('express').Request): AsyncIterable<Uint8Array> {
-  for await (const chunk of req) yield typeof chunk === 'string' ? Buffer.from(chunk) : chunk;
 }
 
 function fail(
@@ -140,6 +99,7 @@ function fail(
   }
   const refusal = communityRefusal(error, action);
   if (refusal) {
+    if (refusal.retryAfterSeconds) res.set('Retry-After', String(refusal.retryAfterSeconds));
     res.status(refusal.status).json({ code: refusal.code, error: refusal.error });
     return;
   }
@@ -796,5 +756,6 @@ export function createRemoteCommunitiesRouter(): Router {
       fail(res, error);
     }
   });
+  registerRemoteCommunityConductRoutes(router, { verifiedConnection, fail });
   return router;
 }

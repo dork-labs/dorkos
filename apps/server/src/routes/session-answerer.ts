@@ -1,3 +1,13 @@
+import type { RequestHandler } from 'express';
+import { runtimeRegistry } from '../services/core/runtime-registry.js';
+import {
+  ApprovalRequestSchema,
+  BatchApprovalRequestSchema,
+  SubmitAnswersRequestSchema,
+} from '@dorkos/shared/schemas';
+import { parseSessionId, sendError } from '../lib/route-utils.js';
+import { requirePersonToAnswer } from './session-decision-caller.js';
+
 /**
  * Who is answering a prompt, named on the receipt (DOR-2335): split out of
  * `sessions.ts`, whose answer routes all ask it.
@@ -54,3 +64,135 @@ export function answeredBy(res: Response): string | undefined {
     return undefined;
   }
 }
+
+export const sessionApproveHandler: RequestHandler = async (req, res) => {
+  const refusal = requirePersonToAnswer(req, res);
+  if (refusal) return res.status(refusal.status).json({ error: refusal.error, code: refusal.code });
+
+  const sessionId = parseSessionId(req.params.id);
+  if (!sessionId) return sendError(res, 400, 'Invalid session ID', 'INVALID_SESSION_ID');
+
+  const parsed = ApprovalRequestSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return sendError(res, 400, 'Invalid request', 'VALIDATION_ERROR');
+  }
+  const { toolCallId, alwaysAllow } = parsed.data;
+  const runtime = await runtimeRegistry.resolveForSession(sessionId);
+  const answeredByName = answeredBy(res);
+  const approved = runtime.approveTool(sessionId, toolCallId, true, {
+    alwaysAllow,
+    ...(answeredByName ? { answeredBy: answeredByName } : {}),
+  });
+  if (!approved) {
+    if (runtime.hasSession(sessionId)) {
+      return sendError(res, 409, 'Interaction already resolved', 'INTERACTION_ALREADY_RESOLVED');
+    }
+    return sendError(res, 404, 'No pending approval', 'NO_PENDING_APPROVAL');
+  }
+  res.json({ ok: true });
+};
+
+export const sessionDenyHandler: RequestHandler = async (req, res) => {
+  // Guarded for the same reason as approve, not as a symmetry: an agent that can
+  // deny can suppress a person's decision and bury the card that would have told
+  // them. Same argument the capability approvals' deny route makes.
+  const refusal = requirePersonToAnswer(req, res);
+  if (refusal) return res.status(refusal.status).json({ error: refusal.error, code: refusal.code });
+
+  const sessionId = parseSessionId(req.params.id);
+  if (!sessionId) return sendError(res, 400, 'Invalid session ID', 'INVALID_SESSION_ID');
+
+  const parsed = ApprovalRequestSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return sendError(res, 400, 'Invalid request', 'VALIDATION_ERROR');
+  }
+  const { toolCallId, reason } = parsed.data;
+  const runtime = await runtimeRegistry.resolveForSession(sessionId);
+  // A blank field is not a reason. Normalising here keeps every runtime and the
+  // receipt copy from having to re-decide what an empty string means.
+  const denyReason = reason?.trim() ? reason.trim() : undefined;
+  const answeredByName = answeredBy(res);
+  const denied = runtime.approveTool(sessionId, toolCallId, false, {
+    denyReason,
+    ...(answeredByName ? { answeredBy: answeredByName } : {}),
+  });
+  if (!denied) {
+    if (runtime.hasSession(sessionId)) {
+      return sendError(res, 409, 'Interaction already resolved', 'INTERACTION_ALREADY_RESOLVED');
+    }
+    return sendError(res, 404, 'No pending approval', 'NO_PENDING_APPROVAL');
+  }
+  res.json({ ok: true });
+};
+
+export const sessionBatchApproveHandler: RequestHandler = async (req, res) => {
+  const refusal = requirePersonToAnswer(req, res);
+  if (refusal) return res.status(refusal.status).json({ error: refusal.error, code: refusal.code });
+
+  const sessionId = parseSessionId(req.params.id);
+  if (!sessionId) return sendError(res, 400, 'Invalid session ID', 'INVALID_SESSION_ID');
+
+  const parsed = BatchApprovalRequestSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return sendError(res, 400, 'Invalid request', 'VALIDATION_ERROR');
+  }
+  const runtime = await runtimeRegistry.resolveForSession(sessionId);
+  const answeredByName = answeredBy(res);
+  const results = parsed.data.toolCallIds.map((id) => ({
+    toolCallId: id,
+    ok: runtime.approveTool(sessionId, id, true, {
+      ...(answeredByName ? { answeredBy: answeredByName } : {}),
+    }),
+  }));
+  res.json({ results });
+};
+
+export const sessionBatchDenyHandler: RequestHandler = async (req, res) => {
+  const refusal = requirePersonToAnswer(req, res);
+  if (refusal) return res.status(refusal.status).json({ error: refusal.error, code: refusal.code });
+
+  const sessionId = parseSessionId(req.params.id);
+  if (!sessionId) return sendError(res, 400, 'Invalid session ID', 'INVALID_SESSION_ID');
+
+  const parsed = BatchApprovalRequestSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return sendError(res, 400, 'Invalid request', 'VALIDATION_ERROR');
+  }
+  const runtime = await runtimeRegistry.resolveForSession(sessionId);
+  const answeredByName = answeredBy(res);
+  const results = parsed.data.toolCallIds.map((id) => ({
+    toolCallId: id,
+    ok: runtime.approveTool(sessionId, id, false, {
+      ...(answeredByName ? { answeredBy: answeredByName } : {}),
+    }),
+  }));
+  res.json({ results });
+};
+
+export const sessionSubmitAnswersHandler: RequestHandler = async (req, res) => {
+  // A question is answered by a person too. The three kinds of prompt share one
+  // bar, because they are one object to whoever is being asked.
+  const refusal = requirePersonToAnswer(req, res);
+  if (refusal) return res.status(refusal.status).json({ error: refusal.error, code: refusal.code });
+
+  const sessionId = parseSessionId(req.params.id);
+  if (!sessionId) return sendError(res, 400, 'Invalid session ID', 'INVALID_SESSION_ID');
+
+  const parsed = SubmitAnswersRequestSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return sendError(res, 400, 'Invalid request', 'VALIDATION_ERROR');
+  }
+  const { toolCallId, answers } = parsed.data;
+  const runtime = await runtimeRegistry.resolveForSession(sessionId);
+  const answeredByName = answeredBy(res);
+  const ok = runtime.submitAnswers(sessionId, toolCallId, answers, {
+    ...(answeredByName ? { answeredBy: answeredByName } : {}),
+  });
+  if (!ok) {
+    if (runtime.hasSession(sessionId)) {
+      return sendError(res, 409, 'Interaction already resolved', 'INTERACTION_ALREADY_RESOLVED');
+    }
+    return sendError(res, 404, 'No pending question', 'NO_PENDING_QUESTION');
+  }
+  res.json({ ok: true });
+};

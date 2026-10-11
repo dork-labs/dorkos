@@ -121,9 +121,23 @@ export interface TurnPermissionLevel {
   readonly reach: PermissionReach;
   /** True when the level IS Claude Code's Auto mode. */
   readonly auto?: true;
+  /**
+   * True when the turn this level was recorded from read words from outside
+   * the owner's circle: a stranger's message, one DorkOS cannot vouch for, or
+   * another agent's that carried such words on (spec `trusted-by-default-flip`
+   * §4.7). Not a power axis: no mode is admitted or refused by it. It rides the
+   * level so every hop that already carries a level carries it too, and a note
+   * the turn saves to memory says so.
+   */
+  readonly outsider?: true;
 }
 
-/** One bound on a turn: a level, or the receiving runtime's own default. */
+/**
+ * One bound on a turn: a level, or the receiving runtime's own default.
+ * `'runtime-default'` is the bound for words DorkOS cannot vouch for (a
+ * stranger's, or a sender whose level is unknown), so a turn held to it is
+ * recorded as one that read an outsider's words.
+ */
 export type TurnPermissionBound = TurnPermissionLevel | 'runtime-default';
 
 /**
@@ -1050,6 +1064,15 @@ export interface MessageOpts extends SessionSettings {
      * different claim from "level with the room" and must not collapse into it.
      */
     aheadOfMain?: number | null;
+    /**
+     * True when the room shows this turn a message from outside the owner's
+     * circle that it does not answer: a stranger's line in the recent window.
+     * It bounds no power (a stranger who spoke once in a shared room must not
+     * hold every later request there to asking), but the turn is recorded as
+     * one that read an outsider's words, so what it saves to memory or passes
+     * on says so (spec `trusted-by-default-flip` §4.7).
+     */
+    outsiderInView?: true;
   };
   /**
    * The home of the agent this turn is dispatched AS, when a server path names

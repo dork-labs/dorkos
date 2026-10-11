@@ -1,3 +1,11 @@
+import type { AgentExecutionDefaults } from '../../session/resolution/resolve-session-defaults.js';
+import type { OriginPermissionSeed } from '../../session/origin/turn-origin.js';
+
+export interface SessionSettingsSeedOptions {
+  agent?: AgentExecutionDefaults;
+  seedPolicy: OriginPermissionSeed;
+}
+
 import type { SessionSettings } from '@dorkos/shared/types';
 import { EffortLevelSchema } from '@dorkos/shared/schemas';
 import { sessionMetadata, sql, type SQL } from '@dorkos/db';

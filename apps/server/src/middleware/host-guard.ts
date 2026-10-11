@@ -190,7 +190,7 @@ export function standaloneDocTokenHostGuard(req: Request, res: Response, next: N
     isHostAllowed({
       hostname,
       trustedHosts: parseTrustedHosts(env.DORKOS_TRUSTED_HOSTS),
-      tunnelHost: getTunnelHost(),
+      tunnelHosts: getTunnelHosts(),
     })
   ) {
     next();

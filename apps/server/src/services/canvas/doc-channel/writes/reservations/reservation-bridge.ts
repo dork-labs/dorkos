@@ -1,3 +1,4 @@
+import { captureSubject } from './reservation-subject.js';
 import {
   recordOriginalReservationTerminal,
   transitionOriginalReservationRow,
@@ -9,7 +10,6 @@ import type {
 } from './reservation-transition-context.js';
 /** Fixed owning-row admission and conversion; no transferable credit or append permit. */
 import { sql, canvasDocEvents, canvasDocWriteIntents, type DbTransaction } from '@dorkos/db';
-import { CanvasChannelCheckboxRequestSchema } from '@dorkos/shared/canvas-channel-schemas';
 import {
   auditCheckboxTerminalProjection,
   requireCheckboxSubjectRow,
@@ -46,11 +46,7 @@ import {
   checkboxAuthoritySync,
   type CheckboxAuthoritySnapshot,
 } from '../authority/authority-snapshot.js';
-import {
-  freezeCheckboxData,
-  validateCheckboxEvidence,
-  VerifiedCheckboxAuthoritySchema,
-} from '../checkbox-evidence.js';
+import { freezeCheckboxData, validateCheckboxEvidence } from '../checkbox-evidence.js';
 import { projectVerifiedCheckbox, type VerifiedCheckboxProjection } from '../completion.js';
 import {
   scanCheckboxReservationPolicies,
@@ -186,21 +182,6 @@ function guarded<T>(
   } catch (cause) {
     return fail(scope, cause);
   }
-}
-function captureSubject(subject: CheckboxReservationSubject): CheckboxReservationSubject {
-  checkboxAuthoritySync(subject);
-  const approved = freezeCheckboxData(VerifiedCheckboxAuthoritySchema.parse(subject.approved));
-  if (subject.kind === 'live')
-    return freezeCheckboxData({
-      kind: 'live',
-      request: CanvasChannelCheckboxRequestSchema.parse(subject.request),
-      actor: { principal: subject.actor.principal, surface: subject.actor.surface },
-      approved,
-    });
-  if (subject.kind !== 'recovery') throw new Error('Unknown checkbox reservation subject.');
-  const original = structuredClone(subject.intent);
-  validateCheckboxEvidence(original);
-  return freezeCheckboxData({ kind: 'recovery', intent: original, approved });
 }
 export interface CheckboxFixedRowInput {
   expected: DocWriteIntentRow;

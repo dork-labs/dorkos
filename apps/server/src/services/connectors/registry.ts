@@ -17,6 +17,7 @@
  *
  * @module services/connectors/registry
  */
+import { wakeAgentsForConnection } from '../heartbeats/event-wakes.js';
 import type { Db } from '@dorkos/db';
 import type {
   ConnectedAccount,
@@ -555,7 +556,17 @@ export class ConnectorRegistry {
   ): SignInStatusChange[] {
     if (this._connections.health().status !== 'ready') return [];
     if (this._providers.get(provider.instanceId) !== provider) return [];
-    return this._connections.refreshSignInStatus(provider.instanceId, listed, listingStartedAt);
+    const changes = this._connections.refreshSignInStatus(
+      provider.instanceId,
+      listed,
+      listingStartedAt
+    );
+    // A connection that lost access wakes the agents it serves (spec `heartbeats` §3.3).
+    for (const change of changes) {
+      if (change.to === 'expired' || change.to === 'revoked')
+        wakeAgentsForConnection(change.connectionId);
+    }
+    return changes;
   }
 
   /**
@@ -569,7 +580,9 @@ export class ConnectorRegistry {
    */
   markSignInEnded(connectionId: ConnectionId, status: 'expired' | 'revoked'): boolean {
     if (this._connections.health().status !== 'ready') return false;
-    return this._connections.markSignInEnded(connectionId, status);
+    const changed = this._connections.markSignInEnded(connectionId, status);
+    if (changed) wakeAgentsForConnection(connectionId);
+    return changed;
   }
 
   /**

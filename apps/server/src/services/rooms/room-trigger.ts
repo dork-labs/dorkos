@@ -1,5 +1,6 @@
 import { TurnReceipts } from './receipts/turn-receipts.js';
 import { usageLimitNow } from './notices/usage-limit.js';
+import { wakeForBudgetRefusal } from '../heartbeats/room-wakes.js';
 import { isClaudeOriginalRoomLaunchAlias } from '../runtimes/claude-code/claude-code-runtime.js';
 import { isTestModeOriginalRoomLaunchAlias } from '../runtimes/test-mode/test-mode-runtime.js';
 /**
@@ -135,18 +136,14 @@ import type {
   AuthorKind,
   AuthorRef,
   Room,
-  RoomAttachment,
   RoomEntry,
   RoomHeldBehind,
-  RoomPresencePayload,
   RoomPresenceState,
   RoomWorkingClaim,
   SkippedTrigger,
 } from '@dorkos/shared/room-schemas';
-import type { RoomContextCanvas } from '@dorkos/shared/additional-context';
 import type { SessionActivity } from '@dorkos/shared/session-stream';
-import type { TurnPermissionBound, TurnPermissionCeiling } from '@dorkos/shared/agent-runtime';
-import { entryLevelOf } from '../core/turn-power/turn-levels.js';
+import '../core/turn-power/turn-levels.js';
 import type { InterruptReceipt } from '@dorkos/shared/types';
 import { newDispatchId } from '@dorkos/shared/dispatch-id';
 import { logger, logError } from '../../lib/logger.js';
@@ -158,7 +155,6 @@ import { type TriggerReason } from './addressing.js';
 import './addressing.js';
 import {
   routeAmbient,
-  type ResponseGateMode,
   type RoutedEntry,
   type RoutingVerdict,
 } from './response-gate/routing-rules.js';
@@ -177,23 +173,16 @@ import {
   type HeldView,
   type TriggerTarget,
 } from './room-claims.js';
-import type { BridgedRoomFraming } from '../relay/chat-bridge/room-context-framing.js';
-import { authorOrigin, toAuthorRef, type AuthorRegistry } from './author-registry.js';
+import { toAuthorRef, type AuthorRegistry } from './author-registry.js';
 import { isLiveAuthor } from './handles/author-handles.js';
 import {
   evaluateCascade,
   type CascadeDecision,
   type CascadeRefusalReason,
 } from './cascade-guard.js';
-import { type EngagedWindow, type EngagementWindow } from './engagement.js';
+import { type EngagementWindow } from './engagement.js';
 import './engagement.js';
-import {
-  RoomCollector,
-  type CollectedTrigger,
-  type CollectWindow,
-  type RoomCollection,
-} from './room-collect.js';
-import type { ReactionStore } from './reactions/reaction-store.js';
+import { RoomCollector, type CollectedTrigger, type RoomCollection } from './room-collect.js';
 import { agentFacingName, nameForAgents } from './room-context.js';
 import type { RoomWorktreeManager } from './repo/room-worktree-manager.js';
 import {
@@ -206,14 +195,9 @@ import {
 } from './repo/room-turn-place.js';
 import { editBaselineStore } from '../diff/index.js';
 import { runtimeRegistry } from '../core/runtime-registry.js';
-import {
-  RoomNoticeLog,
-  type CascadeStamp,
-  type RoomNoticeWriter,
-  type RoomTurnUnanswered,
-} from './notices/notice-log.js';
+import { RoomNoticeLog, type CascadeStamp, type RoomTurnUnanswered } from './notices/notice-log.js';
 import './notices/notice-copy.js';
-import { RoomError, type RoomAgentLookup } from './data/room-errors.js';
+import { RoomError } from './data/room-errors.js';
 import {
   type LateRoomReply,
   type RoomTurnReply,
@@ -222,7 +206,6 @@ import {
 } from './room-turn-port.js';
 import './room-turn-port.js';
 import type { RoomStore } from './room-store.js';
-import type { RoomLimitsResolver } from './limits/room-limits.js';
 import type { RoomTurnBudget } from './limits/turn-budget.js';
 
 import * as triggerSelection from './trigger/room-trigger-selection-operations.js';
@@ -231,6 +214,35 @@ import * as triggerSignals from './trigger/room-trigger-signals-operations.js';
 import * as triggerHalts from './trigger/room-trigger-halts-operations.js';
 import * as triggerTurns from './trigger/room-trigger-turns-operations.js';
 import type { OriginalRoomTriggerFacetView } from './trigger/room-trigger-facet-context.js';
+
+import type {
+  RoomTriggerWriter,
+  TriggerCandidate,
+  RoomDispatchSummary,
+  RoomTriggerDeps,
+  OriginalRoomTriggerRequestData,
+} from './trigger/room-trigger-contract.js';
+export type {
+  RoomTriggerWriter,
+  TriggerCandidate,
+  RoomDispatchSummary,
+  RoomTriggerDeps,
+  OriginalRoomTriggerRequestData,
+} from './trigger/room-trigger-contract.js';
+import {
+  nothingDispatched,
+  withGone,
+  isEntryAuthorExternal,
+  ceilingForEntry,
+  ceilingForEntries,
+} from './trigger/room-trigger-entry-policy.js';
+export {
+  nothingDispatched,
+  withGone,
+  isEntryAuthorExternal,
+  ceilingForEntry,
+  ceilingForEntries,
+} from './trigger/room-trigger-entry-policy.js';
 
 // Re-exported rather than redefined. The turn port moved to its own module
 // (`room-turn-port.ts`), and the room service plus every rooms test imports it
@@ -244,301 +256,6 @@ export type {
   RoomTurnResult,
   RoomTurnRunner,
 } from './room-turn-port.js';
-
-/**
- * How a post gets written back into the room.
- *
- * `replyTo` is what keeps an answer where the question was asked: an agent
- * triggered by a thread reply answers in that thread, not at the channel's top
- * level (ADR 260728-022013). Under the child-room shape the answer landed in the
- * thread for free, because the thread was the room.
- */
-export interface RoomTriggerWriter extends RoomNoticeWriter {
-  post(
-    roomId: string,
-    input: {
-      authorId: string;
-      text: string;
-      sessionId?: string;
-      trigger: CascadeStamp;
-      replyTo?: string;
-      /**
-       * The entry this post answers.
-       *
-       * `replyTo` says which THREAD to land in; this says which MESSAGE was
-       * answered, and the two are different questions — a channel post has no
-       * thread and still answers something. Set on every agent-authored post,
-       * because a reader cannot tell from the outside which answers waited.
-       */
-      answersEntryId?: string;
-    }
-  ): RoomEntry;
-}
-
-/**
- * One agent a message reached, as the guard left it — before anything asks
- * whether a turn can run for it.
- *
- * The line between this and {@link TriggerTarget} is the collect window (RP8):
- * everything here was decided about ONE MESSAGE, and everything a target
- * carries — a session, a dispatch id, a cursor, a budget reservation — belongs
- * to ONE TURN, which may answer several of these at once.
- */
-export interface TriggerCandidate {
-  authorId: string;
-  agentPath: string;
-  displayName: string;
-  /**
-   * This agent as a room member sees it — the projection {@link dispatch}
-   * reports back to the poster.
-   *
-   * Built from the record `selectCandidates` already holds rather than looked up
-   * again: a candidate has survived the liveness check by the time one is made,
-   * so its row's own handle is the one that reaches it and `toAuthorRef` needs no
-   * override (`room-roster.ts` passes `null` precisely for the agents that do not
-   * get this far).
-   */
-  author: AuthorRef;
-  /** The depth the guard allowed this trigger at. */
-  depth: number;
-  /** Its open engaged window when this message landed, or `null`. */
-  engaged: EngagementWindow | null;
-  /** Why the matrix picked it — the response gate's only scoping input. */
-  reason: TriggerReason;
-}
-
-/**
- * What one post asked of a room, as far as the write itself can say.
- *
- * **Everything here is decided synchronously**, inside `RoomService.post` and so
- * inside the HTTP request that wrote the entry — which is exactly why it can ride
- * the 202. Selection, the cascade guard and the liveness check all answer facts
- * about THIS MESSAGE (see {@link RoomTriggerDispatcher.selectCandidates}); the
- * turn budget does not, and is deliberately absent — it is charged when the
- * collect window closes, long after this has been sent, and a refusal it has not
- * made yet is not one to report.
- *
- * **`triggered` is what the room ASKED FOR, not what it guarantees**, and the
- * distinction is not academic. A collected batch is judged again when its window
- * closes, in two separate places, so an agent named here can still end up not
- * answering:
- *
- * - {@link RoomTriggerDispatcher.chooseTrigger} re-asks the cascade guard per
- *   message — asking it once at accept-time was a real defect — and
- *   `claimCollected` then asks the turn budget and the roster. A ceiling reached
- *   by a reply that landed while the batch waited, an exhausted budget, a member
- *   that left: each of those reaches the reader as the room's own durable notice.
- * - {@link RoomTriggerDispatcher.gateBatch} can route an AMBIENT burst to silence
- *   (DOR-1203). That one writes no notice on purpose — a line every time an agent
- *   tactfully says nothing is the over-participation the gate exists to prevent —
- *   and it cannot touch an addressed message: one `mention` or `dm` anywhere in a
- *   burst passes the whole burst through.
- *
- * So this field is the accept-time answer; the room's log is the settled one for
- * everything that announces itself, and deliberate silence is the one outcome
- * neither says out loud.
- *
- * `skipped` is narrower and firmer: nearly every entry in it also carries a
- * notice written on the same pass, and the one exception is the refusal the room
- * deliberately stays quiet about — see
- * {@link RoomTriggerDispatcher.announceCascade}.
- */
-export interface RoomDispatchSummary {
-  /** The agents a turn is now owed from, in the order the roster listed them. */
-  triggered: AuthorRef[];
-  /** The agents this message reached that will not answer it, and why. */
-  skipped: SkippedTrigger[];
-}
-
-/**
- * The answer for a post that asked nothing of anybody — a notice, which never
- * addresses a member.
- *
- * A fresh object each call rather than one shared constant: the arrays reach a
- * response body, and a caller that appended to a shared empty one would be
- * making a claim about every other message this process ever wrote.
- *
- * @returns An empty summary — triggered nobody, skipped nobody.
- */
-export function nothingDispatched(): RoomDispatchSummary {
-  return { triggered: [], skipped: [] };
-}
-
-/**
- * Append the agents that could not be reached at all to the guard's own
- * refusals, one row per agent.
- *
- * **The two sets are disjoint by construction, not by filtering**, and that is
- * worth stating because it is easy to add a branch that breaks it. An author can
- * genuinely arrive from both directions — named by the message AND selected as a
- * target — and {@link RoomTriggerDispatcher.selectCandidates} resolves it at the
- * only place it can: a member already in `gone` is passed over by the guard's
- * refusal branch entirely, so it is reported once, as `gone`, and the room writes
- * it one notice. A de-duplication pass here would be a second answer to a
- * question already settled, and one nothing could ever exercise.
- *
- * @param refused - What the cascade guard stopped, in the order it stopped it.
- * @param gone - Every author whose agent its directory no longer holds.
- * @returns One row per author, guard refusals first.
- */
-export function withGone(
-  refused: readonly SkippedTrigger[],
-  gone: ReadonlySet<string>
-): SkippedTrigger[] {
-  return [
-    ...refused,
-    ...[...gone].map((authorId): SkippedTrigger => ({ authorId, reason: 'gone' })),
-  ];
-}
-
-/** Everything {@link RoomTriggerDispatcher} is constructed from. */
-export interface RoomTriggerDeps {
-  /** Passive original launch DATA; never supplies a request or mutation permission. */
-  observeOriginalLaunch?: (data: Readonly<{ sessionId: string; roomId: string }>) => void;
-  store: RoomStore;
-  /** Read-only here: the room context reports acknowledgments, never writes one. */
-  reactions: ReactionStore;
-  authors: AuthorRegistry;
-  agents: RoomAgentLookup;
-  /** Whether an author is the install's owner — see `RoomContextDeps.isOwnerAuthor`. */
-  isOwnerAuthor(authorId: string): boolean;
-  /**
-   * Put the room's 👀 receipt on a person's message for an agent that was picked
-   * to answer it, or take it off (DOR-2823). Written by the room on the agent's
-   * behalf: it costs the agent no reaction and is never the agent's answer.
-   * Optional so a harness without reactions runs unchanged.
-   */
-  markReceipt?(roomId: string, entryId: string, authorId: string, on: boolean): void;
-  /**
-   * The usage limit a chat's account hit during its last turn, if any: when it
-   * resets (ISO 8601) or `null` when unknown (DOR-2823). Lets a failed turn
-   * say "out of usage until 4:10 PM" instead of "ran into a problem".
-   * Optional so a harness without the limit store runs unchanged.
-   */
-  usageLimitFor?(sessionId: string): { resetsAt: string | null } | null;
-  /** The operator's profile name — see `RoomContextDeps.operatorName`. */
-  operatorName?(): string | null;
-  /**
-   * What a room's turn is told about the chat it projects, or `null` when
-   * unbridged. Read only by `buildRoomContext` — the dispatcher itself never
-   * branches on it, because a bridged room's turns are decided by exactly the
-   * machinery every other room's are (chats-as-channels §11.1).
-   */
-  bridgedFraming(roomId: string): BridgedRoomFraming | null;
-  /**
-   * The stored forum-topic name for a batch of entries. Read only by
-   * `buildRoomContext`, for the same reason as {@link RoomTriggerDeps.bridgedFraming}.
-   */
-  topicNamesFor(entryIds: readonly string[]): Map<string, string>;
-  /**
-   * The attachments on a batch of entries. Read only by `buildRoomContext`, for
-   * the same reason as {@link RoomTriggerDeps.bridgedFraming}.
-   */
-  attachmentsFor(roomId: string, entryIds: readonly string[]): Map<string, RoomAttachment[]>;
-  /**
-   * What is on this room's shared canvas, as LABELS. Read only by
-   * `buildRoomContext`, for the same reason as {@link RoomTriggerDeps.bridgedFraming}.
-   */
-  canvasFor(roomId: string, threadRootEntryId?: string): RoomContextCanvas | null;
-  runner: RoomTurnRunner;
-  /**
-   * The install's room-worktree manager, for granting a turn in a project room
-   * its agent's copy of the room's files (spec `agent-home-desk` §5.1).
-   * Optional: an install with no repo machinery grants nothing, and every turn
-   * runs in the agent's own directory either way.
-   */
-  worktrees?: () => RoomWorktreeManager | null;
-  writer: RoomTriggerWriter;
-  /**
-   * The per-room ceiling on automatic turns, counted whoever the caller claims
-   * to be. The cascade guard reads caller-asserted identity and is therefore
-   * only as strong as the posture; this is not.
-   */
-  budget: RoomTurnBudget;
-  /**
-   * What bounds automatic replies in ONE room: the room's own overrides where
-   * it has them, Settings otherwise (`resolveRoomLimits`, DOR-1429).
-   *
-   * One seam rather than the three loose config readers it replaced, because
-   * the three were never independent — `turnLimitsEnabled` decides whether the
-   * other two are consulted at all, and a caller that read them one at a time
-   * could assemble half a verdict while somebody toggled a setting between two
-   * of the reads.
-   *
-   * Resolved per dispatch, so a change in Settings or on the room binds the
-   * very next message rather than the next server start. The hourly ceilings
-   * are NOT read here: {@link RoomTriggerDeps.budget} owns those, through the
-   * same ladder.
-   */
-  limitsFor: RoomLimitsResolver;
-  /**
-   * The live engaged-window ceilings, read per dispatch for the same reason:
-   * shortening the window in Settings has to bind the very next message.
-   */
-  engagedWindow(): EngagedWindow;
-  /**
-   * The live collect ceilings, read per burst for the same reason: shortening
-   * the gathering window in Settings has to bind the very next message.
-   */
-  collect(): CollectWindow;
-  /**
-   * Whether an overhearing agent may be excused from a message that was plainly
-   * somebody else's — `rooms.responseGate`.
-   *
-   * Read per sweep, like every other setting on this path, so switching it off
-   * binds the very next burst rather than the next server start. `'off'` makes
-   * {@link RoomTriggerDispatcher.gateBatch} return its input untouched, which is
-   * bit-for-bit the behaviour that shipped before DOR-1203.
-   */
-  responseGate(): ResponseGateMode;
-  /**
-   * How long a message may wait on an agent busy in another room before this
-   * room gives up on it, in milliseconds — `rooms.lateReplyCeilingMinutes`.
-   *
-   * The same ceiling the turn runner uses for a late answer, read here for the
-   * same reason it is read there: the two are the same judgement about when a
-   * room stops waiting, at two different grains. Read per tick so a change in
-   * Settings binds the very next sweep.
-   */
-  holdCeilingMs(): number;
-  /**
-   * How many turns one agent may run in its own directory at once —
-   * `rooms.maxConcurrentTurnsPerAgent`, the count behind the second claim
-   * ceiling (see `claimBusyWith`).
-   *
-   * Read at every claim decision rather than captured, so raising it in
-   * Settings lets the very next message start, and lowering it holds the very
-   * next one — without stopping any turn already running.
-   */
-  maxConcurrentTurnsPerAgent(): number;
-  /**
-   * Put one agent's working state on the room's stream — live only, never
-   * logged.
-   *
-   * Deliberately NARROWER than the `RoomService.publishSignal` it is wired to at
-   * construction, which keeps a `signal` parameter because it mirrors the
-   * community port. Here the signal is always `progress` (room-presence spec §1:
-   * reuse the relay's vocabulary, never mint a name; `typing` is not used because
-   * agents do not type, they work), so passing it would be a parameter with one
-   * correct value and several wrong ones. The rule is a type instead of a
-   * comment, and the payload is required rather than optional because a presence
-   * publish that omits it is an indicator no client can key, age, or clear.
-   */
-  publishPresence(roomId: string, authorId: string, presence: RoomPresencePayload): void;
-  /**
-   * Say how many agents are working in a room, to everyone — not just to the
-   * readers who have that room open.
-   *
-   * The sibling of `publishPresence`, on the other stream and at the other
-   * grain. Presence rides the room's own channel and names an agent, an entry
-   * and a start, because the room view draws a sentence about them. This rides
-   * the GLOBAL fan-out and carries a bare count, because the sidebar draws a dot
-   * on a row for a room the reader is not in — and a count is the most a row can
-   * say without leaking who is talking to whom into a list that spans every
-   * room. Both are ephemeral; neither is ever logged.
-   */
-  publishWorkingCount(roomId: string, working: number): void;
-}
 
 /**
  * How often a live claim re-states itself on the room's stream.
@@ -576,51 +293,8 @@ const PRESENCE_REPUBLISH_MS = ROOM_LIVE_BEAT_MS;
  * @param a - One reading, or `undefined` for none.
  * @param b - The other.
  */
-export function sameActivity(
-  a: SessionActivity | undefined,
-  b: SessionActivity | undefined
-): boolean {
-  if (a === undefined || b === undefined) return a === b;
-  return a.toolName === b.toolName && a.target === b.target;
-}
+export { sameActivity } from './presence/same-activity.js';
 
-/**
- * Whether the author of a triggering entry is somebody OUTSIDE this machine.
- *
- * The one decision it feeds is `RoomTurnRequest.externalAuthor`: a room turn
- * follows the operator's configured power level (DOR-1917), and a message from a
- * bridged Telegram or Slack chat must not be what starts a session at it.
- *
- * **An unresolvable author is external.** `authorOrigin` answers `'local'` for
- * any key that does not carry the external prefix, and an empty string is such a
- * key — so a failed lookup folded into a `?? ''` default would quietly grant the
- * operator's power level on the strength of a missing row. The two cases are kept
- * apart here: no record at all is the conservative answer, a stored key is the
- * real derivation. Losing the power level for one turn costs a prompt.
- *
- * @param authors - The registry holding the stored author records.
- * @param authorId - The author of the entry that triggered this turn.
- */
-export function isEntryAuthorExternal(authors: AuthorRegistry, authorId: string): boolean {
-  const naturalKey = authors.getMany([authorId]).get(authorId)?.naturalKey;
-  if (naturalKey === undefined) return true;
-  return authorOrigin(naturalKey) !== 'local';
-}
-
-export interface OriginalRoomTriggerRequestData {
-  readonly trigger: RoomTriggerDispatcher;
-  readonly runner: RoomTurnRunner;
-  readonly store: RoomStore;
-  readonly budget: RoomTurnBudget;
-  readonly roomId: string;
-  readonly entryId: string;
-  readonly entrySeq: number;
-  readonly authorId: string;
-  readonly agentPath: string;
-  readonly initialSessionId: string | null;
-  readonly dispatchId: string;
-  readonly aside: boolean;
-}
 interface OriginalRoomPlacement {
   readonly data: Readonly<OriginalRoomTriggerRequestData>;
   readonly displayName: string;
@@ -672,52 +346,6 @@ export function readOriginalRoomTriggerRequest(
 export function readOriginalRoomTriggerLaunch(request: RoomTurnRequest, runner: RoomTurnRunner) {
   const state = originalTriggerRequests.get(request);
   return state?.data.runner === runner && state.current() ? state.launch : undefined;
-}
-
-/**
- * The ceiling a turn this entry starts runs under, as the spread a
- * `RoomTurnRequest` takes (spec `trusted-by-default-flip` §4).
- *
- * A stranger's message, or one whose author cannot be resolved, is held to the
- * receiving runtime's default. Another agent's post is held to the level its
- * turn ran at when it wrote the post; when that was not kept (a restart, a post
- * with no session), to the runtime's default, because the alternative is to
- * hand out the receiving conversation's level on the strength of a missing
- * record. A person on this machine and the room's own voice are not bounded.
- *
- * @param authors - The registry holding the stored author records.
- * @param entry - The entry that triggered the turn.
- */
-export function ceilingForEntry(
-  authors: AuthorRegistry,
-  entry: Pick<RoomEntry, 'id' | 'authorId'>
-): { permissionCeiling?: TurnPermissionCeiling } {
-  if (isEntryAuthorExternal(authors, entry.authorId)) {
-    return { permissionCeiling: 'runtime-default' };
-  }
-  const kind = authors.getMany([entry.authorId]).get(entry.authorId)?.kind;
-  if (kind !== 'agent') return {};
-  return { permissionCeiling: entryLevelOf(entry.id) ?? 'runtime-default' };
-}
-
-/**
- * The ceiling a turn answering several messages runs under: every author's
- * bound holds at once (a list ceiling, resolved by the runtime to the
- * strictest). Empty when no author is bounded.
- *
- * @param authors - The registry holding the stored author records.
- * @param entries - Every message the turn answers.
- */
-export function ceilingForEntries(
-  authors: AuthorRegistry,
-  entries: readonly Pick<RoomEntry, 'id' | 'authorId'>[]
-): { permissionCeiling?: TurnPermissionCeiling } {
-  const bounds = entries.flatMap((entry) => {
-    const one = ceilingForEntry(authors, entry).permissionCeiling;
-    return one === undefined ? [] : [one as TurnPermissionBound];
-  });
-  if (bounds.length === 0) return {};
-  return { permissionCeiling: bounds.length === 1 ? bounds[0]! : bounds };
 }
 
 /**
@@ -1985,6 +1613,8 @@ export class RoomTriggerDispatcher {
       // given its id above, so the refusal belongs to a real dispatch that
       // never ran.
       this.notices.reportBudget(room, entry, afford.scope ?? 'room', target.dispatchId);
+      // Its beat looks instead, for a local author's message (spec `heartbeats` §3.3).
+      wakeForBudgetRefusal(agentPath, chosen.held.reason, entry, this.deps.authors);
       this.settleCollection(collection, 'refused');
       return null;
     }

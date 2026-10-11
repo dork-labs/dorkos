@@ -19,7 +19,10 @@ import {
   readTestModeOriginalNativeTurnOptions,
   readTestModeOriginalStopTerminalData,
 } from '../../runtimes/test-mode/test-mode-runtime.js';
-import { recordRuntimeTurnLevel } from '../turn-power/turn-levels.js';
+import {
+  recordRuntimeTurnLevel,
+  countRecordedRuntimeTurnStream,
+} from '../turn-power/turn-levels.js';
 
 /** Each call owns isolated custody. Only the registry module's private instance authenticates its runtimes. */
 export function createIsolatedRuntimeRegistryCustody() {
@@ -154,6 +157,12 @@ export function createIsolatedRuntimeRegistryCustody() {
     return own.raw;
   }
 
+  const originalRecordedLevels = new WeakMap<
+    object,
+    import('@dorkos/shared/agent-runtime').TurnPermissionLevel
+  >();
+  const originalCountingStreams = new WeakSet<object>();
+  const originalCountedStreams = new WeakMap<object, AsyncGenerator<StreamEvent>>();
   const originalObservedStreams = new WeakMap<
     object,
     { selection: object; raw: AsyncGenerator<StreamEvent> }
@@ -183,7 +192,7 @@ export function createIsolatedRuntimeRegistryCustody() {
       readOpenCodeOriginalLockedTurnOptions(own.raw, sessionId, stream) ??
       readTestModeOriginalNativeTurnOptions(own.raw, sessionId, stream);
     if (!opened) throw new Error('Original native turn options required.');
-    if (own.recorded.get(stream) === 'recording')
+    if (own.recorded.get(stream) === 'recording' || originalCountingStreams.has(stream))
       throw new Error('Original native turn recording reentered.');
     if (!own.recorded.has(stream)) {
       own.recorded.set(stream, 'recording');
@@ -194,17 +203,43 @@ export function createIsolatedRuntimeRegistryCustody() {
         } catch {
           stored = undefined;
         }
-        recordRuntimeTurnLevel(own.raw, stored, sessionId, opened.options, () => {
+        const level = recordRuntimeTurnLevel(own.raw, stored, sessionId, opened.options, () => {
           if (!originalStreamCurrent(selection, sessionId, stream))
             throw new Error('Original runtime selection retired during turn recording.');
         });
+        originalRecordedLevels.set(stream, level);
         own.recorded.set(stream, 'recorded');
       } catch (cause) {
         own.recorded.delete(stream);
+        originalRecordedLevels.delete(stream);
         throw cause;
       }
     }
-    const observed = own.observe(sessionId, stream, opened.options);
+    let counted = originalCountedStreams.get(stream);
+    if (!counted) {
+      const level = originalRecordedLevels.get(stream);
+      if (!level) throw new Error('Original native turn level required.');
+      originalCountingStreams.add(stream);
+      try {
+        counted = countRecordedRuntimeTurnStream(
+          own.raw,
+          sessionId,
+          opened.options,
+          level,
+          stream,
+          () => {
+            if (!originalStreamCurrent(selection, sessionId, stream))
+              throw new Error('Original runtime selection retired during outsider placement.');
+          }
+        );
+        originalCountedStreams.set(stream, counted);
+      } finally {
+        originalCountingStreams.delete(stream);
+      }
+    }
+    if (!originalStreamCurrent(selection, sessionId, stream))
+      throw new Error('Original runtime selection retired before stream observation.');
+    const observed = own.observe(sessionId, counted, opened.options);
     const returned: AsyncGenerator<StreamEvent> = {
       next: async (value) => {
         try {

@@ -1921,6 +1921,176 @@
           "state"
         ]
       },
+      "HeartbeatStatus": {
+        "type": "object",
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "wake": {
+            "$ref": "#/components/schemas/HeartbeatWake"
+          },
+          "nextBeatAt": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "skippedReason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "fileError": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "lastBeats": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/BeatSummary"
+            }
+          },
+          "held": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/HeldRaise"
+            }
+          }
+        },
+        "required": [
+          "enabled",
+          "wake",
+          "nextBeatAt",
+          "skippedReason",
+          "fileError",
+          "lastBeats",
+          "held"
+        ]
+      },
+      "HeartbeatWake": {
+        "type": "string",
+        "enum": [
+          "timed",
+          "events",
+          "off"
+        ]
+      },
+      "BeatSummary": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "startedAt": {
+            "type": "string"
+          },
+          "endedAt": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "kind": {
+            "$ref": "#/components/schemas/BeatKind"
+          },
+          "wake": {
+            "type": "string"
+          },
+          "outcome": {
+            "$ref": "#/components/schemas/BeatOutcome"
+          },
+          "summary": {
+            "type": "string"
+          },
+          "raises": {
+            "type": "integer"
+          },
+          "sessionId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "startedAt",
+          "endedAt",
+          "kind",
+          "wake",
+          "outcome",
+          "summary",
+          "raises",
+          "sessionId"
+        ]
+      },
+      "BeatKind": {
+        "type": "string",
+        "enum": [
+          "pulse",
+          "sweep",
+          "report"
+        ]
+      },
+      "BeatOutcome": {
+        "type": "string",
+        "enum": [
+          "quiet",
+          "queued",
+          "worked",
+          "no-end-beat",
+          "failed",
+          "refused",
+          "skipped"
+        ]
+      },
+      "HeldRaise": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "to": {
+            "type": "string"
+          },
+          "rung": {
+            "$ref": "#/components/schemas/HeartbeatRaiseRung"
+          },
+          "text": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "deliverAfter": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "to",
+          "rung",
+          "text",
+          "deliverAfter",
+          "createdAt"
+        ]
+      },
+      "HeartbeatRaiseRung": {
+        "type": "string",
+        "enum": [
+          "report",
+          "room",
+          "dm",
+          "note"
+        ]
+      },
       "HealthResponse": {
         "type": "object",
         "properties": {
@@ -12815,6 +12985,14 @@
           "metadata",
           "undoable",
           "undone"
+        ]
+      },
+      "HeartbeatTemplateId": {
+        "type": "string",
+        "enum": [
+          "lead",
+          "doer",
+          "coder"
         ]
       },
       "UndoPermissionChangeResponse": {
@@ -28587,6 +28765,40 @@
                 }
               }
             }
+          }
+        }
+      }
+    },
+    "/api/agents/{id}/heartbeat": {
+      "get": {
+        "tags": [
+          "Heartbeats"
+        ],
+        "summary": "An agent's heartbeat",
+        "description": "How the agent wakes on its own, when its next timed beat is due, its last 20 beats from the record, and the messages to people still held for their working hours.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The heartbeat",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HeartbeatStatus"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No agent with that id"
           }
         }
       }
@@ -76531,6 +76743,9 @@
                     ],
                     "description": "Reasoning effort new sessions for this agent start at. Absent = inherit the server default.",
                     "example": "high"
+                  },
+                  "heartbeatTemplate": {
+                    "$ref": "#/components/schemas/HeartbeatTemplateId"
                   },
                   "approvedTemplateHash": {
                     "type": "string"

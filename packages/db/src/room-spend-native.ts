@@ -1,3 +1,5 @@
+import * as NativeData from './room-spend-native-data.js';
+export type { RoomSpendNativeOperation } from './room-spend-native-data.js';
 import {
   nativeOwnDescriptor,
   nativeOwnKeys,
@@ -24,13 +26,7 @@ import { drizzle } from 'drizzle-orm/better-sqlite3';
 import * as schema from './schema/index.js';
 import { roomDocStatements, type RoomDocNativeOperation } from './room-doc-statements.js';
 
-import type {
-  NativeCall,
-  NativeEngine,
-  Execution,
-  OriginalProtectedRoomDb,
-  ProtectedRoomNativeDatabase,
-} from './room-spend-native-types.js';
+import type { ProtectedRoomNativeDatabase } from './room-spend-native-types.js';
 export type {
   OriginalProtectedRoomDb,
   ProtectedRoomNativeDatabase,
@@ -78,14 +74,7 @@ export function requireOriginalFrameQueryOwner(key: object): OriginalFrameQueryC
   return requirePrivateOwner(frameQueryOwners, key);
 }
 
-type ConstructionCustody = {
-  wrappedDb?: object;
-  relayConsumed: boolean;
-  consumed: boolean;
-  exposed: boolean;
-  wrapped: boolean;
-};
-const constructions = new WeakMap<object, ConstructionCustody>();
+const constructions = new WeakMap<object, NativeData.ConstructionCustody>();
 /** Internal one-shot issuer consumption; no supplied engine can acquire custody. */
 export function consumeRoomNativeConstruction(ticket: object): void {
   const custody = constructions.get(ticket);
@@ -109,48 +98,8 @@ export function requireRelayNativeDatabase(ticket: object, db: object): void {
     throw new Error('Original Relay SAME native database required');
 }
 
-const opaqueMethods = new Set([
-  'function',
-  'aggregate',
-  'table',
-  'loadExtension',
-  'unsafeMode',
-  'defaultSafeIntegers',
-  'backup',
-]);
-const ordinaryMethods = new Set(['prepare', 'transaction', 'pragma', 'exec', 'close', 'serialize']);
-const nativeGetters = new Set(['name', 'open', 'inTransaction', 'readonly', 'memory']);
-
-const ownedOperations = Object.freeze({
-  mainDataVersion: { sql: 'PRAGMA main.data_version', method: 'get' as const },
-  mainSchemaVersion: { sql: 'PRAGMA main.schema_version', method: 'get' as const },
-  tempSchemaVersion: { sql: 'PRAGMA temp.schema_version', method: 'get' as const },
-  spendTable: {
-    sql: "SELECT sql FROM main.sqlite_master WHERE type='table' AND name='room_turn_spend'",
-    method: 'all' as const,
-  },
-  spendTriggers: {
-    sql: "SELECT name FROM main.sqlite_master WHERE type='trigger' AND tbl_name='room_turn_spend' UNION ALL SELECT name FROM temp.sqlite_master WHERE type='trigger' AND tbl_name='room_turn_spend'",
-    method: 'all' as const,
-  },
-  databases: { sql: 'PRAGMA database_list', method: 'all' as const },
-  foreignKeys: { sql: 'PRAGMA foreign_keys', method: 'get' as const },
-  recursiveTriggers: { sql: 'PRAGMA recursive_triggers', method: 'get' as const },
-  insertOrdinary: {
-    sql: 'INSERT INTO main.room_turn_spend (room_id, at) VALUES (?, ?)',
-    method: 'run' as const,
-  },
-  pruneExpired: { sql: 'DELETE FROM main.room_turn_spend WHERE at <= ?', method: 'run' as const },
-  strictCounts: {
-    sql: 'SELECT count(*) AS global, coalesce(sum(room_id = ?), 0) AS room FROM main.room_turn_spend WHERE at > ? AND at <= ?',
-    method: 'get' as const,
-  },
-  receiptRows: {
-    sql: `SELECT id, room_id AS roomId, at FROM main.room_turn_spend WHERE id IN (${Array(200).fill('?').join(',')}) AND at > ? AND at <= ?`,
-    method: 'all' as const,
-  },
-});
-export type RoomSpendNativeOperation = keyof typeof ownedOperations;
+const { opaqueMethods, ordinaryMethods, nativeGetters, ownedOperations } =
+  NativeData.createRoomSpendNativeData();
 
 /** Only this constructor creates a bound ticket; no raw handle or callback is accepted. */
 export function openProtectedRoomNativeDatabase(
@@ -158,7 +107,7 @@ export function openProtectedRoomNativeDatabase(
 ): Readonly<ProtectedRoomNativeDatabase> {
   let generation = 0;
   let unknown = false;
-  let execution: Execution | undefined;
+  let execution: NativeData.Execution | undefined;
   let internalSymbolRead = false;
   const invalidate = () => {
     generation += 1;
@@ -179,7 +128,7 @@ export function openProtectedRoomNativeDatabase(
     if (symbols.length !== 1) throw new Error('Unsupported native database layout');
     const nativeSymbol = symbols[0];
     if (typeof nativeSymbol !== 'symbol') throw new Error('Unsupported native database identity');
-    const engine = Reflect.get(raw, nativeSymbol) as NativeEngine;
+    const engine = Reflect.get(raw, nativeSymbol) as NativeData.NativeEngine;
     const prepareNative = engine.prepare;
     const originals = new Map<PropertyKey, unknown>();
     for (const key of [...ordinaryMethods, ...opaqueMethods]) {
@@ -239,23 +188,8 @@ export function openProtectedRoomNativeDatabase(
     captureNativeCustody(probe);
     const nativeCalls = Object.freeze({ run: probe.run, get: probe.get, all: probe.all });
     const nativeRaw = probe.raw;
-    const nativePrototype = Object.getPrototypeOf(probe) as Record<
-      'run' | 'get' | 'all',
-      NativeCall
-    >;
-    const fixed = new Map<string, Database.Statement>();
-    function statement(sql: string): Database.Statement {
-      let result = fixed.get(sql);
-      if (!result) {
-        result = Reflect.apply(prepareNative, engine, [
-          sql,
-          publicSelf,
-          false,
-        ]) as Database.Statement;
-        fixed.set(sql, result);
-      }
-      return result;
-    }
+    const nativePrototype = Object.getPrototypeOf(probe) as NativeData.NativeMethodRecord;
+    const statement = NativeData.createFixedStatementReader(prepareNative, engine, publicSelf);
     function executeFixed(
       definition: { sql: string; method: 'run' | 'get' | 'all' },
       args: readonly unknown[] | Readonly<Record<string, unknown>>
@@ -267,7 +201,7 @@ export function openProtectedRoomNativeDatabase(
       }
       const target = statement(sql);
       if (nativePrototype[method] !== nativeCalls[method]) taint();
-      const call = nativeCalls[method] as NativeCall;
+      const call = nativeCalls[method] as NativeData.NativeCall;
       const frame = { statement: target, method: call, traces: 0 };
       execution = frame;
       try {
@@ -277,7 +211,10 @@ export function openProtectedRoomNativeDatabase(
         if (frame.traces !== 1) invalidate();
       }
     }
-    function execute(operation: RoomSpendNativeOperation, args: readonly unknown[] = []) {
+    function execute(
+      operation: NativeData.RoomSpendNativeOperation,
+      args: readonly unknown[] = []
+    ) {
       if (!Object.hasOwn(ownedOperations, operation))
         throw new Error('Unknown native spend operation');
       return executeFixed(ownedOperations[operation], args);
@@ -349,7 +286,7 @@ export function openProtectedRoomNativeDatabase(
         taint,
         invalidate,
         getExecution: () => execution,
-        setExecution: (value: Execution | undefined) => {
+        setExecution: (value: NativeData.Execution | undefined) => {
           execution = value;
         },
       } satisfies OriginalFrameQueryContext,
@@ -514,12 +451,7 @@ export function openProtectedRoomNativeDatabase(
         !raw.inTransaction
       );
     }
-    const custody: ConstructionCustody = {
-      relayConsumed: false,
-      consumed: false,
-      exposed: false,
-      wrapped: false,
-    };
+    const custody = NativeData.createConstructionCustody();
     const ticket = Object.freeze({
       get sqlite() {
         custody.exposed = true;
@@ -546,20 +478,7 @@ export function openProtectedRoomNativeDatabase(
           throw new Error('Invalid Room limit identity');
         const row = executeDoc('room-limit-data', { roomId }) as
           Record<string, unknown> | undefined;
-        if (!row) return null;
-        const integer = (key: string): number | null => {
-          const value = row[key];
-          if (value === null) return null;
-          if (!Number.isSafeInteger(value)) throw new Error('Invalid Room limit value');
-          return value as number;
-        };
-        const enabled = integer('turnLimitsEnabled');
-        return Object.freeze({
-          turnLimitsEnabled: enabled === null ? null : enabled === 1,
-          maxAgentDepth: integer('maxAgentDepth'),
-          maxTurnsPerAgentPerCascade: integer('maxTurnsPerAgentPerCascade'),
-          maxAutoTurnsPerHour: integer('maxAutoTurnsPerHour'),
-        });
+        return NativeData.projectRoomLimitData(row);
       },
       requireOriginalPublicQueryCustody,
       beginRelayFrame,

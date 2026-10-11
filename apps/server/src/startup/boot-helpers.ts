@@ -1,3 +1,8 @@
+import { registerRestoredAgents } from '../services/marketplace/restored-agents.js';
+import {
+  retryInFlightTargetsLater,
+  type InstallSweepSummary,
+} from '../services/marketplace/recovery/backup-janitor.js';
 import type { MeshCore } from '@dorkos/mesh';
 import { snapshotDaily, type Db } from '@dorkos/db';
 import type { ConnectorRuntimeToolConsumer } from '../services/runtimes/connector-tools.js';
@@ -106,4 +111,28 @@ export function takeDailySnapshot(db: Db, backupsDir: string): void {
   } catch (err) {
     logger.warn('[DB] Daily snapshot failed — your data is fine, the backup is not', logError(err));
   }
+}
+
+/** Register restored agents with the current mesh and report completed install sweeps. */
+export function logInstallSweepWithCurrentMesh(
+  scope: string,
+  summary: InstallSweepSummary,
+  currentMesh: () => MeshCore | undefined
+): void {
+  registerRestoredAgents(summary.restoredAgentRoots, currentMesh());
+  const { settled, kept, discarded, inFlightTargets } = summary;
+  if (settled + kept + discarded + inFlightTargets.length > 0) {
+    logger.info(
+      `[Marketplace] Settled interrupted ${scope}: ${settled} settled, ${kept} kept, ${discarded} leftovers removed, ${inFlightTargets.length} left to another running DorkOS`
+    );
+  }
+  // A target left to another process is looked at once more when every record
+  // there has aged past the point where its owner matters.
+  retryInFlightTargetsLater(inFlightTargets, logger, (retry) =>
+    logInstallSweepWithCurrentMesh(
+      `${scope} (retry)`,
+      { ...retry, inFlightTargets: [] },
+      currentMesh
+    )
+  );
 }

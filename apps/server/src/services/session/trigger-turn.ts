@@ -1,3 +1,4 @@
+import { runPrepareLaunch } from './dispatch/prepare-launch.js';
 import { tapEachEvent, guardTurnErrors } from './dispatch/turn-stream-guards.js';
 export { tapEachEvent, guardTurnErrors } from './dispatch/turn-stream-guards.js';
 import { SessionTurnQueue } from './session-turn-queue.js';
@@ -316,28 +317,6 @@ export const sessionTurnQueue = new SessionTurnQueue();
 
 /** How long to wait for the first event before falling back to the provided id. */
 export const CANONICAL_ID_TIMEOUT_MS = 5_000;
-
-/**
- * Run a turn's {@link TriggerTurnOpts.prepareLaunch}, never letting it fail the
- * turn: a rejection is logged and the turn launches as it was accepted.
- *
- * @param prepare - The caller's launch-time step.
- * @param sessionId - For the log line.
- */
-async function runPrepareLaunch(
-  prepare: NonNullable<TriggerTurnOpts['prepareLaunch']>,
-  sessionId: string
-): Promise<Partial<Pick<TriggerTurnOpts, 'roomContext'>>> {
-  try {
-    return await prepare();
-  } catch (err) {
-    logger.warn('[turn] launch preparation failed; starting the turn as it was accepted', {
-      sessionId,
-      error: err instanceof Error ? err.message : String(err),
-    });
-    return {};
-  }
-}
 
 /**
  * Acquire the lock, start a detached turn feeding the projector, and resolve the

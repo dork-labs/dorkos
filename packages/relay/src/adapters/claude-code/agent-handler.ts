@@ -34,6 +34,7 @@ import type {
   LateFollowEnd,
   LateTurnSource,
   SessionRuntimeBinder,
+  TurnStartNote,
   TurnDeskCheck,
   TurnExecutionSettings,
 } from './types.js';
@@ -99,6 +100,8 @@ export interface AgentHandlerDeps {
    * session the cockpit binds.
    */
   bindSessionRuntime?: SessionRuntimeBinder;
+  /** Told before the turn starts — see {@link TurnStartNote}. */
+  noteTurnStart?: TurnStartNote;
   /**
    * This turn's clock, injectable so a test can pin the TTL boundary instead of
    * racing it (DOR-1729).
@@ -177,7 +180,10 @@ export function resolveAgentTurnIdentity(
   envelope: RelayEnvelope,
   store: AgentSessionStoreLike | undefined
 ): AgentTurnIdentity | null {
-  const agentId = extractAgentId(subject);
+  // `agentId` and `sessionId` alias the same subject slot here (see the ID
+  // glossary at the top of `claude-code-adapter.ts`); the shared helper reads
+  // both the legacy and the runtime-scoped shape.
+  const agentId = extractSessionIdFromSubject(subject);
   if (!agentId) return null;
   const payload =
     typeof envelope.payload === 'object' && envelope.payload !== null
@@ -653,6 +659,9 @@ export async function handleAgentMessage(
   // so whoever was still listening on behalf of an earlier one stops (DOR-2717).
   if (!stoppedBeforeStart) deps.lateFollowers?.get(sessionScope)?.();
 
+  // Before the turn runs, so whatever it calls already knows who started it.
+  // The host's note must not throw (`TurnStartNote`).
+  if (!stoppedBeforeStart) deps.noteTurnStart?.({ sessionId: ccaSessionKey, from: envelope.from });
   const isInboxReplyTo = envelope.replyTo?.startsWith('relay.inbox.');
   const eventStream = stoppedBeforeStart
     ? NO_EVENTS
@@ -1002,19 +1011,6 @@ async function resolveTurnSettings(
 function requestedAccountOf(payload: Record<string, unknown> | null): string | undefined {
   const account = payload?.account;
   return typeof account === 'string' && account.length > 0 ? account : undefined;
-}
-
-/**
- * Extract agent ID from a `relay.agent.*` subject.
- *
- * Historically `agentId` and `sessionId` alias the same slot here (see the
- * ID glossary at the top of `claude-code-adapter.ts`). Delegates to the shared
- * {@link extractSessionIdFromSubject} helper so both the legacy shape
- * (`relay.agent.<sessionId>`) and the runtime-scoped shape
- * (`relay.agent.<runtimeType>.<sessionId>`) are handled consistently.
- */
-function extractAgentId(subject: string): string | null {
-  return extractSessionIdFromSubject(subject);
 }
 
 /**

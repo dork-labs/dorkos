@@ -31,7 +31,8 @@ describe('bounded per-job and per-post queries', () => {
     ['erasure/erasure.ts', 'channelWatermarks', '../content/watermark.js'],
     ['exports/worker.ts', 'channelWatermarks', '../content/watermark.js'],
     ['routes/community/channels.ts', 'channelRoster', '../../content/roster.js'],
-    ['routes/community/entries.ts', 'channelRoster', '../../content/roster.js'],
+    // A post reads only who it could mention, through the same bounded roster query.
+    ['routes/community/entries.ts', 'addressedRoster', '../../content/roster.js'],
   ])('%s reads through %s', (path, name, module) => {
     // Purpose: fails if a caller drops the shared query for an inline copy.
     const source = read(path);
