@@ -118,3 +118,24 @@ export function bothCeilings(
   const bounds = new Map([...list(a), ...list(b)].map((bound) => [JSON.stringify(bound), bound]));
   return bounds.size === 1 ? [...bounds.values()][0]! : [...bounds.values()];
 }
+
+/**
+ * What bounds the tool gate right now: `'none'`, `'held'` for a ceiling ({@link heldToACeiling}),
+ * or `'stranger'` when this turn's ceiling, or the one background work carries, holds the
+ * `runtime-default` bound only a message from off this machine sets (spec
+ * `official-community-space` D10). Under a stranger's, the read-only tools the CLI asks about
+ * (a file outside the agent's folder, a web page) need a person, as the mode that asks would.
+ *
+ * @param session - This turn's ceiling and the one background work carries.
+ */
+export function ceilingOn(session: {
+  turnPermissionCeiling?: TurnPermissionCeiling;
+  backgroundPermissionCeiling?: TurnPermissionCeiling;
+}): 'none' | 'held' | 'stranger' {
+  const stranger = (ceiling: TurnPermissionCeiling | undefined) =>
+    ceiling !== undefined &&
+    (Array.isArray(ceiling) ? ceiling.includes('runtime-default') : ceiling === 'runtime-default');
+  if (stranger(session.turnPermissionCeiling) || stranger(session.backgroundPermissionCeiling))
+    return 'stranger';
+  return heldToACeiling(session) ? 'held' : 'none';
+}

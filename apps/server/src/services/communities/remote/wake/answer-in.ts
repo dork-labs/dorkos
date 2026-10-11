@@ -118,31 +118,49 @@ export class RemoteAnswerIn {
    * @param store - Where the lists are kept.
    * @param connections - The connection store whose changes are followed.
    * @param budget - The budget every answer-in wake is held to.
+   * @param retryDelaysMs - How long to wait before each further attempt when a read fails and
+   *   there is no answer yet. Past the last one it answers nowhere until the next change.
    */
   constructor(
     private readonly store: AnswerInStore,
     connections: RemoteConnectionStore,
-    private readonly budget: AnswerInBudget = new AnswerInBudget()
+    private readonly budget: AnswerInBudget = new AnswerInBudget(),
+    private readonly retryDelaysMs: readonly number[] = [250, 1_000, 5_000]
   ) {
     connections.onChange(() => {
       void this.reload();
     });
   }
 
-  /** Read every connection's list into memory; a failed read keeps the last good answer. */
+  /**
+   * Read every connection's list into memory. A failed read keeps the last good answer; while
+   * there is none yet, it tries again a bounded number of times (`retryDelaysMs`).
+   */
   async reload(): Promise<void> {
-    const generation = ++this.started;
-    try {
-      const all = await this.store.all();
-      if (generation <= this.applied) return;
-      this.applied = generation;
-      this.channels = new Map(
-        all.map((entry) => [key(entry.ref, entry.ownerKey), new Set(entry.channels)])
-      );
-    } catch (error) {
-      logger.warn('[RemoteAnswerIn] Could not read where agents answer in spaces', {
-        error: error instanceof Error ? error.message : String(error),
-      });
+    for (let attempt = 0; ; attempt += 1) {
+      const generation = ++this.started;
+      try {
+        const all = await this.store.all();
+        if (generation <= this.applied) return;
+        this.applied = generation;
+        // Normalised again on the way in, so a hand-edited `#Help` still matches.
+        this.channels = new Map(
+          all.map((entry) => [
+            key(entry.ref, entry.ownerKey),
+            new Set(entry.channels.map(answerInChannelName)),
+          ])
+        );
+        return;
+      } catch (error) {
+        logger.warn('[RemoteAnswerIn] Could not read where agents answer in spaces', {
+          attempt: attempt + 1,
+          error: error instanceof Error ? error.message : String(error),
+        });
+        const wait = this.retryDelaysMs[attempt];
+        if (this.applied > 0 || wait === undefined) return;
+        await new Promise((resolve) => setTimeout(resolve, wait));
+        if (this.applied > 0) return;
+      }
     }
   }
 

@@ -7,8 +7,13 @@
  *
  * @module services/communities/remote/__tests__/answer-in-wakes
  */
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import type { CommunityEntry, CommunityRef } from '@dorkos/shared/community-adapter';
 import { describe, expect, it } from 'vitest';
+import type { CredentialStore } from '../../../core/credential-provider.js';
+import { RemoteConnectionStore } from '../connection-store.js';
 import {
   agentLookupFor,
   createRoomHarness,
@@ -21,8 +26,9 @@ import {
   RemoteRoomSubscriptionBridge,
   type RemoteLiveEntry,
 } from '../remote-room-subscription-bridge.js';
-import { AnswerInBudget, answerInChannelName } from '../wake/answer-in.js';
-import type { RemoteWakeGate } from '../wake/wake-policy.js';
+import { AnswerInBudget, answerInChannelName, RemoteAnswerIn } from '../wake/answer-in.js';
+import { AnswerInStore } from '../wake/answer-in-store.js';
+import { RemoteWakePolicy, type RemoteWakeGate } from '../wake/wake-policy.js';
 
 const REF = 'remote_official' as CommunityRef;
 const OTHER = 'remote_other' as CommunityRef;
@@ -273,5 +279,82 @@ describe('the budget a flood runs into', () => {
 
     expect(harness.runner.turns).toHaveLength(3);
     expect(budget.take(`${harness.human}\0${REF}`, 'help', OWNER_MEMBER)).toBe(true);
+  });
+});
+
+describe('a post that reaches the bridge twice', () => {
+  it('is charged once, so a second agent’s stream or a repeated frame costs nobody a turn', async () => {
+    const LIMITS = { windowMs: 60_000, perAuthor: 2, perChannel: 20 };
+    const { harness, bridge, help } = space(officialGate(new AnswerInBudget(LIMITS, () => NOW)));
+
+    const first = liveEntry(person('remote-asker'), 'help');
+    bridge.importLive(help, first, LIVE);
+    bridge.importLive(help, first, LIVE);
+    await harness.service.triggersIdle();
+    bridge.importLive(help, liveEntry(person('remote-asker'), 'help'), LIVE);
+    await harness.service.triggersIdle();
+
+    expect(harness.runner.turns).toHaveLength(2);
+  });
+});
+
+describe('the production policy behind the bridge', () => {
+  function memoryCredentials(): CredentialStore {
+    const secrets = new Map<string, string>();
+    return {
+      put: async (name, secret) => {
+        secrets.set(name, secret);
+        return `file:${name}`;
+      },
+      get: async (name) => secrets.get(name) ?? null,
+      delete: async (name) => {
+        secrets.delete(name);
+      },
+    };
+  }
+
+  it('answers in the owner’s listed channel on its own connection, and nowhere else', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'answer-in-wakes-'));
+    try {
+      const wired = space({ wakes: () => false });
+      const connections = new RemoteConnectionStore(directory, memoryCredentials());
+      await connections.addPending(
+        {
+          ref: REF,
+          ownerKey: wired.harness.human,
+          remoteCommunityId: 'community-1',
+          label: 'DorkOS',
+          pinnedOrigin: 'https://community.example',
+          pairingId: 'pairing-1',
+          expiresAt: new Date(Date.now() + 60_000).toISOString(),
+        },
+        'verifier'
+      );
+      await connections.complete(REF, wired.harness.human, OWNER_MEMBER, 'token', {
+        state: 'verified',
+        effective: { read: true, post: true, enrollAgent: true, stream: true },
+        lastKnown: {
+          lifecycle: 'active',
+          capabilities: { read: true, post: true, enrollAgent: true, stream: true },
+          verifiedAt: '2026-10-06T00:00:00.000Z',
+        },
+      });
+      const answerIn = new RemoteAnswerIn(new AnswerInStore(directory, connections), connections);
+      const policy = new RemoteWakePolicy(connections, [], () => 'me', answerIn);
+      await policy.reload();
+      await policy.setAnswerIn(REF, wired.harness.human, ['help']);
+      wired.bridge.useWakeGate(policy);
+
+      wired.bridge.importLive(wired.general, liveEntry(person('remote-stranger'), 'general'), LIVE);
+      await wired.harness.service.triggersIdle();
+      expect(wired.harness.runner.turns).toHaveLength(0);
+
+      wired.bridge.importLive(wired.help, liveEntry(person('remote-stranger'), 'help'), LIVE);
+      await wired.harness.service.triggersIdle();
+      expect(wired.harness.runner.turns).toHaveLength(1);
+      expect(wired.harness.runner.turns[0]!.externalAuthor).toBe(true);
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
   });
 });
