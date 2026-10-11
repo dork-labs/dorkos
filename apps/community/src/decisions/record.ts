@@ -28,6 +28,10 @@ export interface RuleCounts {
   links: number;
 }
 
+/** A key of its own for input hashes, derived from the server's secret, never the secret itself. */
+const inputHashKey = (authSecret: string) =>
+  createHmac('sha256', authSecret).update('community.decision-input.v1').digest();
+
 /**
  * Build the record for one step. Answers keep their value, confidence and failure, and a built-in
  * rule's own reason code; a model's free text is never kept, so a post cannot write into it.
@@ -43,7 +47,7 @@ export function buildRecord(
   check: string,
   authSecret: string
 ): CommunityDecisionRecord {
-  const inputHash = createHmac('sha256', authSecret)
+  const inputHash = createHmac('sha256', inputHashKey(authSecret))
     .update(JSON.stringify(outcome.request))
     .digest('hex');
   const base = {
@@ -99,7 +103,7 @@ export function buildRecord(
  */
 export async function writeRecord(
   client: PoolClient,
-  target: { communityId: string; entryId: string },
+  target: { communityId: string; entryId: string; ownerMemberId?: string },
   record: CommunityDecisionRecord
 ): Promise<boolean> {
   const written = await client.query(
@@ -136,12 +140,21 @@ export function noteFor(record: CommunityDecisionRecord, found: Finding, counts?
 }
 
 /**
- * File a flagged record as a report in the queue, once per message and check, and only while
- * the message is still up. The report is the hint: a moderator acts on it or dismisses it.
+ * The most open check reports one check keeps against one person's messages at once. Past it the
+ * check still records its verdict, and files nothing more until a moderator clears one, so a
+ * flood from one account cannot bury every member's report in the queue.
+ */
+export const OPEN_CHECK_REPORTS_PER_PERSON = 5;
+
+/**
+ * File a flagged record as a report in the queue, once per message and check, only while the
+ * message is still up, and only while the person it counts as (its author, or an agent's owner)
+ * has fewer than {@link OPEN_CHECK_REPORTS_PER_PERSON} open reports from this check. The report is
+ * the hint: a moderator acts on it or dismisses it.
  */
 export async function fileCheckReport(
   client: PoolClient,
-  target: { communityId: string; entryId: string },
+  target: { communityId: string; entryId: string; ownerMemberId: string },
   record: CommunityDecisionRecord,
   counts?: RuleCounts
 ): Promise<void> {
@@ -151,6 +164,11 @@ export async function fileCheckReport(
     `INSERT INTO reports(community_id,entry_id,source,check_name,reason,note)
      SELECT $1,$2,'check',$3,$4,$5 FROM entries e
      WHERE e.id=$2 AND e.community_id=$1 AND e.removed_at IS NULL AND e.erased_at IS NULL
+       AND (SELECT count(*) FROM reports r
+         JOIN entries re ON re.id=r.entry_id AND re.community_id=r.community_id
+         LEFT JOIN agents ra ON ra.id=re.author_agent_id
+         WHERE r.community_id=$1 AND r.status='open' AND r.source='check' AND r.check_name=$3
+           AND COALESCE(re.author_member_id,ra.owner_member_id)=$6) < $7
      ON CONFLICT (entry_id,check_name) WHERE source='check' DO NOTHING
      RETURNING id`,
     [
@@ -159,6 +177,8 @@ export async function fileCheckReport(
       record.check,
       found.finding === 'rule' ? 'other' : 'spam',
       noteFor(record, found, counts).slice(0, 1000),
+      target.ownerMemberId,
+      OPEN_CHECK_REPORTS_PER_PERSON,
     ]
   );
   if (report.rows[0])

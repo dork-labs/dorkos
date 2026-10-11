@@ -19,6 +19,7 @@ import {
   type CommunityWireDecisionModelFigures,
 } from '@dorkos/shared/community-wire';
 import type { HostAuthority } from '../host/authority.js';
+import { transaction } from '../data.js';
 import { json } from '../http.js';
 
 /** The window `/metrics` reports, and the route's default. */
@@ -26,6 +27,12 @@ export const COMPARISON_DAYS = 30;
 
 /** How long `/metrics` reuses one reading, so a fast scraper never runs the query each time. */
 const METRICS_CACHE_MS = 60_000;
+
+/** The longest the comparison query may run; past it the reading fails rather than queue. */
+const QUERY_TIMEOUT_MS = 5_000;
+
+/** How long a `/metrics` scrape waits for a fresh reading before it answers without one. */
+const METRICS_WAIT_MS = 1_500;
 
 interface FiguresRow {
   check: string;
@@ -48,8 +55,11 @@ export async function readComparison(
   pool: Pool,
   since: Date
 ): Promise<CommunityWireDecisionModelFigures[]> {
-  const result = await pool.query<FiguresRow>(
-    `WITH d AS (
+  const result = await transaction(pool, async (client) => {
+    // Bounded: a slow reading must never hold a pooled connection for long.
+    await client.query(`SET LOCAL statement_timeout = ${QUERY_TIMEOUT_MS}`);
+    return client.query<FiguresRow>(
+      `WITH d AS (
        SELECT decision->>'check' AS check,decision->>'modelId' AS model_id,subject_id,
          decision->>'verdict' AS verdict,(decision->>'latencyMs')::float8 AS latency,
          (decision->>'costMicroUsd')::float8 AS cost,decision ? 'skipped' AS skipped
@@ -78,8 +88,9 @@ export async function readComparison(
          AS latency_p95
      FROM d LEFT JOIN ruled ON ruled.subject_id=d.subject_id
      GROUP BY d.check,d.model_id ORDER BY d.check,d.model_id LIMIT 100`,
-    [since]
-  );
+      [since]
+    );
+  });
   return result.rows.map((row) => ({
     check: row.check,
     modelId: row.model_id,
@@ -132,19 +143,37 @@ export function renderComparison(figures: readonly CommunityWireDecisionModelFig
 }
 
 const cache = new WeakMap<Pool, { at: number; text: string }>();
+const reading = new WeakMap<Pool, Promise<string>>();
 
-/** `/metrics`' part: the last {@link COMPARISON_DAYS} days, read at most once a minute. */
+/**
+ * `/metrics`' part: the last {@link COMPARISON_DAYS} days, read at most once a minute, one reading
+ * at a time. A scrape waits at most {@link METRICS_WAIT_MS} for a fresh one and otherwise answers
+ * with the last reading (or none), so a slow or failing query never costs the live-stream figures.
+ */
 export async function comparisonMetrics(pool: Pool, now = Date.now()): Promise<string> {
   const cached = cache.get(pool);
   if (cached && now - cached.at < METRICS_CACHE_MS) return cached.text;
-  const since = new Date(now - COMPARISON_DAYS * 86_400_000);
+  let next = reading.get(pool);
+  if (!next) {
+    const since = new Date(now - COMPARISON_DAYS * 86_400_000);
+    next = readComparison(pool, since)
+      .then((figures) => {
+        const text = renderComparison(figures);
+        cache.set(pool, { at: now, text });
+        return text;
+      })
+      .finally(() => reading.delete(pool));
+    reading.set(pool, next);
+  }
+  const fallback = cached?.text ?? '';
+  let timer: NodeJS.Timeout | undefined;
+  const late = new Promise<string>((resolve) => {
+    timer = setTimeout(() => resolve(fallback), METRICS_WAIT_MS);
+  });
   try {
-    const text = renderComparison(await readComparison(pool, since));
-    cache.set(pool, { at: now, text });
-    return text;
-  } catch {
-    // The live-stream figures matter more during an incident than these; never lose them.
-    return cached?.text ?? '';
+    return await Promise.race([next.catch(() => fallback), late]);
+  } finally {
+    clearTimeout(timer);
   }
 }
 

@@ -48,6 +48,22 @@ import {
   type TenancyMember,
 } from './tenancy-test-harness.js';
 
+/** A watch-only check's record, as `decisions/record.ts` writes one. */
+const DECISION_RECORD = {
+  v: 1,
+  useCase: 'community.post',
+  rung: 1,
+  check: 'jev',
+  modelId: 'typesafe/jev-test',
+  policyVersion: '0123456789abcdef',
+  inputHash: 'a'.repeat(64),
+  answers: { spam: { value: 'a2', confidence: 0.9 } },
+  confidence: 0.9,
+  latencyMs: 12,
+  costMicroUsd: 50,
+  verdict: 'flagged',
+};
+
 const KIB = 1024;
 const MIB = 1024 * KIB;
 /** Enough for four part uploads to one import and one more elsewhere, then a refusal. */
@@ -509,6 +525,12 @@ beforeAll(async () => {
       [source.communityId, marked.reply, source.owner.memberId, source.owner.memberId]
     )
   ).rows[0].id;
+  // A watch-only check's record on one message (0035): it travels, keyed to the derived message.
+  await h.pool.query(
+    `INSERT INTO audit_events(community_id,actor_kind,action,subject_id,next_state,decision)
+     VALUES($1,'system','decision.rung1',$2,'flagged',$3::jsonb)`,
+    [source.communityId, marked.root, JSON.stringify(DECISION_RECORD)]
+  );
   const files = [];
   for (let index = 0; index < 6; index++)
     files.push(
@@ -920,6 +942,15 @@ it('restores a version 2 export uploaded in parts, across a cut-off upload and a
       resolver_member_id: derive(source.owner.memberId),
       origin: 'imported',
     },
+  ]);
+
+  const decisions = await h.pool.query(
+    `SELECT subject_id,origin,decision FROM audit_events
+     WHERE community_id=$1 AND action='decision.rung1'`,
+    [communityId]
+  );
+  expect(decisions.rows).toEqual([
+    { subject_id: derive(marked.root), origin: 'imported', decision: DECISION_RECORD },
   ]);
 
   // The owner keeps their own channels, not every channel; nobody else's membership comes.

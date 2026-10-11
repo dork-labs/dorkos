@@ -348,8 +348,18 @@ if (decisions.unarmedKeys.length > 0)
   console.warn(
     `${decisions.unarmedKeys.join(' and ')} set, but COMMUNITY_DECISIONS_PAID is not 1: post checks use the free built-in rules only.`
   );
+// A pool of its own: the checks never take a connection a request is waiting for. Its idle
+// connections never keep the process alive on the way down.
+const checksPool = new Pool({
+  connectionString: config.databaseUrl,
+  max: 2,
+  allowExitOnIdle: true,
+});
+checksPool.on('error', (error: Error & { code?: string }) => {
+  console.error('Community post checks lost a database connection', error.code ?? error.name);
+});
 const postChecks = startDecisionWorker({
-  pool,
+  pool: checksPool,
   authSecret: config.authSecret,
   models: decisions.models,
   dailyCallCap: decisions.dailyCallCap,

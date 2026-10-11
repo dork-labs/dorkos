@@ -3,9 +3,9 @@
  * `20261006_decision-models.md` §5).
  *
  * **Never in the post's way.** The post route knows nothing of this module. The worker reads
- * messages only after they committed, on its own timer, from its own short transactions, and
- * takes no lock a post waits on. A check that hangs, fails or runs out of budget changes nothing
- * about any message.
+ * messages only after they committed, on its own timer, through its own small connection pool
+ * (`main.ts`), in short transactions that take no lock a post waits on. A check that hangs, fails
+ * or runs out of budget changes nothing about any message.
  *
  * **Watch-only.** For each new message: the built-in rules (rung 0) first; when they do not flag
  * it, each armed decision model (rung 1) side by side on the same message. Every rung writes one
@@ -13,8 +13,14 @@
  * into the moderation queue. Nothing is hidden, held or removed, and no result reaches a
  * permission: the only things written are audit rows and reports.
  *
+ * **Two phases.** The rules (and the claim) run on a whole batch first; the model calls run after,
+ * in a bounded queue of their own, so a slow model never holds up the free checks.
+ *
  * **One check per message.** The rung-0 row is the claim (a unique index), so two replicas never
  * check, or pay for, the same message twice.
+ *
+ * **Private channels stay on this server.** Their messages get the built-in rules only; no model
+ * outside the server ever reads them.
  *
  * @module decisions/worker
  */
@@ -28,7 +34,7 @@ import {
 import type { DecisionModel } from '@dorkos/shared/decision-model';
 import { transaction } from '../data.js';
 import { parseRules, postPolicy, rulesPolicy } from './policy.js';
-import { buildRecord, fileCheckReport, writeRecord, type RuleCounts } from './record.js';
+import { buildRecord, fileCheckReport, writeRecord } from './record.js';
 import { createPostRules, readPostFacts } from './rules.js';
 import type { ModelSlot } from './settings.js';
 
@@ -37,6 +43,7 @@ export const MAX_ITEM_CHARS = 8_000;
 
 /** Settings for {@link checkNewPosts} and {@link startDecisionWorker}. */
 export interface DecisionWorkerOptions {
+  /** The worker's own pool, apart from the one requests use. */
   pool: Pool;
   /** Keys each record's input hash. */
   authSecret: string;
@@ -46,11 +53,13 @@ export interface DecisionWorkerOptions {
   dailyCallCap: number;
   /** Only messages newer than this are checked. Default ten minutes. */
   lookbackMs?: number;
-  /** Messages per sweep. Default 20. */
+  /** Messages the rules check per sweep. Default 50. */
   batch?: number;
-  /** Messages checked at once. Default 4. */
+  /** Messages sent to the models at once. Default 4. */
   concurrency?: number;
-  /** The longest one model call may take. Default 30 seconds. */
+  /** The most messages waiting for the models; past it a message gets the rules only. Default 200. */
+  maxQueued?: number;
+  /** The longest one model's check may take. Default 20 seconds. */
   timeoutMs?: number;
   /** The rung-0 bridge. Default the built-in post rules. */
   rules?: DecisionModel;
@@ -60,15 +69,57 @@ export interface DecisionWorkerOptions {
   onCapReached?: (check: string) => void;
 }
 
+/** One message waiting for the models. */
+interface ModelJob {
+  id: string;
+  communityId: string;
+  ownerMemberId: string;
+  text: string;
+  agent: boolean;
+  reply: boolean;
+  rulesText: string | null;
+}
+
 interface Candidate {
   id: string;
   community_id: string;
   text: string;
+  author_member_id: string | null;
   author_agent_id: string | null;
   owner_member_id: string | null;
   parent_entry_id: string | null;
+  public: boolean;
   rules_text: string | null;
 }
+
+/** What one worker remembers between sweeps. */
+export interface WorkerState {
+  /** Models whose cap was reached and reported today. */
+  capTold: Set<string>;
+  /** Messages whose check failed in this process; not retried, so one cannot block the rest. */
+  failed: Set<string>;
+  /** Messages waiting for the models. */
+  queue: ModelJob[];
+  /** Model checks running now. */
+  running: number;
+  /** Messages that got the rules only because the model queue was full. */
+  overflowed: number;
+  /** Model checks in flight, so a caller can wait for them. */
+  inFlight: Set<Promise<void>>;
+}
+
+/** A fresh {@link WorkerState}. */
+export const workerState = (): WorkerState => ({
+  capTold: new Set(),
+  failed: new Set(),
+  queue: [],
+  running: 0,
+  overflowed: 0,
+  inFlight: new Set(),
+});
+
+/** The most failed messages remembered; they age out of the look-back window anyway. */
+const MAX_FAILED = 1_000;
 
 /** Messages that committed recently and no replica has claimed, oldest first. */
 async function candidates(
@@ -78,11 +129,12 @@ async function candidates(
   skip: ReadonlySet<string>
 ): Promise<Candidate[]> {
   const result = await pool.query<Candidate>(
-    `SELECT e.id,e.community_id,e.text,e.author_agent_id,
+    `SELECT e.id,e.community_id,e.text,e.author_member_id,e.author_agent_id,
        COALESCE(e.author_member_id,a.owner_member_id) AS owner_member_id,
-       e.parent_entry_id,c.rules_text
+       e.parent_entry_id,(ch.visibility='public') AS public,c.rules_text
      FROM entries e
      JOIN communities c ON c.id=e.community_id AND c.lifecycle='active'
+     JOIN channels ch ON ch.id=e.channel_id AND ch.community_id=e.community_id
      LEFT JOIN agents a ON a.id=e.author_agent_id
      WHERE e.created_at > now() - make_interval(secs => $1::float8 / 1000)
        AND e.removed_at IS NULL AND e.erased_at IS NULL
@@ -96,88 +148,54 @@ async function candidates(
   return result.rows;
 }
 
-/** Today's (UTC) start, as the cap counts it. */
+/** Today's (UTC) date, as the cap counts it. */
 const utcDay = (ms: number) => new Date(ms).toISOString().slice(0, 10);
 
 /**
- * A daily counter per model slot, seeded from the calls already recorded today so a restart does
- * not reset the cap. Several replicas may each run a few calls past it at once; never more than
- * their concurrency.
+ * A daily counter for one model, seeded from the checks already recorded today so a restart does
+ * not reset the cap. A cap counts checks: an OpenAI-format server that returns no token
+ * probabilities is asked twice per check. Each model check seeds its own count when it starts, so
+ * the checks in flight at once (on every replica) can run past the cap by at most their number.
  */
-async function slotCounters(
-  pool: Pool,
-  models: readonly ModelSlot[],
-  day: string
-): Promise<Map<string, DailyCallCounter>> {
-  const counts = new Map<string, number>();
-  if (models.length > 0) {
-    const result = await pool.query<{ check: string; n: number }>(
-      `SELECT decision->>'check' AS check,count(*)::int AS n FROM audit_events
-       WHERE action LIKE 'decision.%' AND origin='native'
-         AND created_at >= ($1::date)::timestamp AT TIME ZONE 'UTC'
-         AND decision->>'rung'='1' AND NOT (decision ? 'skipped')
-       GROUP BY 1`,
-      [day]
-    );
-    for (const row of result.rows) counts.set(row.check, row.n);
-  }
-  const counters = new Map<string, DailyCallCounter>();
-  for (const slot of models) {
-    const extra = new Map<string, number>();
-    counters.set(slot.check, {
-      count: (_useCase, _rung, d) =>
-        (d === day ? (counts.get(slot.check) ?? 0) : 0) + (extra.get(d) ?? 0),
-      increment: (_useCase, _rung, d) => {
-        extra.set(d, (extra.get(d) ?? 0) + 1);
-      },
-    });
-  }
-  return counters;
+async function slotCounter(pool: Pool, check: string, day: string): Promise<DailyCallCounter> {
+  const result = await pool.query<{ n: number }>(
+    `SELECT count(*)::int AS n FROM audit_events
+     WHERE action='decision.rung1' AND origin='native'
+       AND created_at >= ($1::date)::timestamp AT TIME ZONE 'UTC'
+       AND decision->>'check'=$2 AND NOT (decision ? 'skipped')`,
+    [day, check]
+  );
+  const seeded = result.rows[0]?.n ?? 0;
+  let extra = 0;
+  return {
+    count: (_useCase, _rung, d) => (d === day ? seeded : 0) + extra,
+    increment: () => {
+      extra += 1;
+    },
+  };
 }
 
-/** One rung's record to write, with what it belongs to. */
-interface Pending {
-  outcome: LadderOutcome;
-  step: LadderStep;
-  check: string;
-  counts?: RuleCounts;
-}
+/** Rung 0 has no cap; the ladder never asks this counter, but it needs one. */
+const NO_CALLS: DailyCallCounter = { count: () => 0, increment: () => undefined };
 
-/** Write records (and reports for the flagged ones) about one message, in one transaction. */
-async function record(
-  pool: Pool,
-  target: { communityId: string; entryId: string },
-  pending: readonly Pending[],
-  authSecret: string
-): Promise<void> {
-  if (pending.length === 0) return;
-  await transaction(pool, async (client) => {
-    for (const p of pending) {
-      const rec = buildRecord(p.outcome, p.step, p.check, authSecret);
-      if (await writeRecord(client, target, rec))
-        await fileCheckReport(client, target, rec, p.counts);
-    }
-  });
-}
-
-/** Check one message: claim it with the rules, then ask the armed models side by side. */
-async function checkOne(
-  opts: Required<Pick<DecisionWorkerOptions, 'timeoutMs'>> & DecisionWorkerOptions,
+/**
+ * Claim one message and run the rules on it, in one short transaction. Returns the job for the
+ * models when the message needs them.
+ */
+async function claimAndRule(
+  opts: DecisionWorkerOptions,
   entry: Candidate,
-  counters: Map<string, DailyCallCounter>,
-  state: WorkerState,
   rules: DecisionModel
-): Promise<void> {
+): Promise<ModelJob | undefined> {
   const owner = entry.owner_member_id;
-  // An agent whose owner is gone has nobody its posts count as; the rules have nothing to read.
-  if (owner === null) return;
-  const target = { communityId: entry.community_id, entryId: entry.id };
-  // Rung 0, and the claim, in one short transaction.
-  const claimed = await transaction(opts.pool, async (client) => {
+  const authorId = entry.author_agent_id ?? entry.author_member_id;
+  // An agent whose owner is gone has nobody its posts count as.
+  if (owner === null || authorId === null) return undefined;
+  const target = { communityId: entry.community_id, entryId: entry.id, ownerMemberId: owner };
+  const needsModels = await transaction(opts.pool, async (client) => {
     const facts = await readPostFacts(client, {
       id: entry.id,
-      communityId: entry.community_id,
-      ownerMemberId: owner,
+      author: { kind: entry.author_agent_id ? 'agent' : 'human', id: authorId },
       text: entry.text,
     });
     const outcome = await runLadder(
@@ -187,129 +205,161 @@ async function checkOne(
       { counter: NO_CALLS }
     );
     const step = outcome.steps[0];
-    if (!step) return { claimed: false, flagged: false };
+    if (!step) return false;
     const rec = buildRecord(outcome, step, 'rules', opts.authSecret);
-    if (!(await writeRecord(client, target, rec))) return { claimed: false, flagged: false };
+    if (!(await writeRecord(client, target, rec))) return false;
     const counts = { rate: facts.postsLastMinute, repeat: facts.sameTextToday, links: facts.links };
     await fileCheckReport(client, target, rec, counts);
-    return { claimed: true, flagged: rec.verdict === 'flagged' };
+    // A message the rules already flag needs no model: a flood never buys model calls.
+    return rec.verdict !== 'flagged';
   });
-  // A message the rules already flag needs no model: a flood never buys model calls.
-  if (!claimed.claimed || claimed.flagged || opts.models.length === 0) return;
-
-  const policy = postPolicy(parseRules(entry.rules_text), opts.dailyCallCap);
-  const request = {
-    item: entry.text.slice(0, MAX_ITEM_CHARS),
-    context: {
-      author: entry.author_agent_id ? 'agent' : 'person',
-      reply: entry.parent_entry_id !== null,
-    },
+  if (!needsModels || !entry.public || opts.models.length === 0) return undefined;
+  return {
+    id: entry.id,
+    communityId: entry.community_id,
+    ownerMemberId: owner,
+    text: entry.text,
+    agent: entry.author_agent_id !== null,
+    reply: entry.parent_entry_id !== null,
+    rulesText: entry.rules_text,
   };
-  const outcomes = await Promise.all(
-    opts.models.map(async (slot): Promise<Pending | undefined> => {
-      const counter = counters.get(slot.check);
-      if (!counter) return undefined;
+}
+
+/** Ask every armed model about one message, side by side, and record what each said. */
+async function askModels(
+  opts: DecisionWorkerOptions,
+  job: ModelJob,
+  state: WorkerState
+): Promise<void> {
+  const day = utcDay((opts.now ?? Date.now)());
+  const policy = postPolicy(parseRules(job.rulesText), opts.dailyCallCap);
+  const request = {
+    item: job.text.slice(0, MAX_ITEM_CHARS),
+    context: { author: job.agent ? 'agent' : 'person', reply: job.reply },
+  };
+  const steps = await Promise.all(
+    opts.models.map(async (slot) => {
       const outcome = await runLadder(policy, { decision: slot.model }, request, {
-        counter,
-        signal: AbortSignal.timeout(opts.timeoutMs),
+        counter: await slotCounter(opts.pool, slot.check, day),
+        signal: AbortSignal.timeout(opts.timeoutMs ?? 20_000),
         now: opts.now,
       });
       const step = outcome.steps[0];
-      if (!step) return undefined;
-      if ('skipped' in step && !state.capTold.has(slot.check)) {
+      if (step && 'skipped' in step && !state.capTold.has(slot.check)) {
         state.capTold.add(slot.check);
         opts.onCapReached?.(slot.check);
       }
-      return { outcome, step, check: slot.check };
+      return step ? { outcome, step, check: slot.check as string } : undefined;
     })
   );
-  await record(
-    opts.pool,
-    target,
-    outcomes.filter((p): p is Pending => p !== undefined),
-    opts.authSecret
+  const pending = steps.filter(
+    (p): p is { outcome: LadderOutcome; step: LadderStep; check: string } => p !== undefined
   );
+  if (pending.length === 0) return;
+  const target = {
+    communityId: job.communityId,
+    entryId: job.id,
+    ownerMemberId: job.ownerMemberId,
+  };
+  await transaction(opts.pool, async (client) => {
+    for (const p of pending) {
+      const rec = buildRecord(p.outcome, p.step, p.check, opts.authSecret);
+      if (await writeRecord(client, target, rec)) await fileCheckReport(client, target, rec);
+    }
+  });
 }
 
-/** Rung 0 has no cap; the ladder never asks this counter, but it needs one. */
-const NO_CALLS: DailyCallCounter = { count: () => 0, increment: () => undefined };
-
-/** What one worker remembers between sweeps. */
-export interface WorkerState {
-  /** Models whose cap was reached and reported today. */
-  capTold: Set<string>;
-  /** Messages whose check failed in this process; not retried, so one cannot block the rest. */
-  failed: Set<string>;
+/** Start queued model checks up to the concurrency. Each one starts the next as it ends. */
+function pump(opts: DecisionWorkerOptions, state: WorkerState): void {
+  while (state.running < (opts.concurrency ?? 4) && state.queue.length > 0) {
+    const job = state.queue.shift()!;
+    state.running += 1;
+    const run: Promise<void> = askModels(opts, job, state)
+      .catch((error: unknown) => {
+        state.failed.add(job.id);
+        console.error(
+          'Community post check failed',
+          error instanceof Error ? error.name : 'unknown'
+        );
+      })
+      .finally(() => {
+        state.running -= 1;
+        state.inFlight.delete(run);
+        pump(opts, state);
+      });
+    state.inFlight.add(run);
+  }
 }
-
-/** A fresh {@link WorkerState}. */
-export const workerState = (): WorkerState => ({ capTold: new Set(), failed: new Set() });
-
-/** The most failed messages remembered; they age out of the look-back window anyway. */
-const MAX_FAILED = 1_000;
 
 /**
- * One sweep: check up to `batch` new messages, `concurrency` at a time. A message that fails is
- * left unchecked (watch-only: an unchecked message is just unchecked), remembered so it is not
- * retried, and the sweep goes on.
+ * One sweep's first phase: claim up to `batch` new messages and run the rules on each, then hand
+ * the ones that need a model to the model queue. A message that fails is left unchecked
+ * (watch-only: an unchecked message is just unchecked), remembered so it is not retried, and the
+ * sweep goes on.
  *
  * @returns How many messages it looked at.
+ */
+export async function sweepNewPosts(
+  opts: DecisionWorkerOptions,
+  state: WorkerState
+): Promise<{ checked: number }> {
+  if (state.failed.size > MAX_FAILED) state.failed.clear();
+  const list = await candidates(
+    opts.pool,
+    opts.lookbackMs ?? 10 * 60_000,
+    opts.batch ?? 50,
+    state.failed
+  );
+  const rules = opts.rules ?? createPostRules();
+  for (const entry of list) {
+    try {
+      const job = await claimAndRule(opts, entry, rules);
+      if (!job) continue;
+      if (state.queue.length >= (opts.maxQueued ?? 200)) state.overflowed += 1;
+      else state.queue.push(job);
+    } catch (error) {
+      state.failed.add(entry.id);
+      console.error('Community post check failed', error instanceof Error ? error.name : 'unknown');
+    }
+  }
+  pump(opts, state);
+  return { checked: list.length };
+}
+
+/**
+ * One whole sweep, both phases, waiting for every model check it started. Tests and one-off runs
+ * use it; the timer runs the phases apart.
  */
 export async function checkNewPosts(
   opts: DecisionWorkerOptions,
   state: WorkerState = workerState()
 ): Promise<{ checked: number }> {
-  const now = opts.now ?? Date.now;
-  if (state.failed.size > MAX_FAILED) state.failed.clear();
-  const list = await candidates(
-    opts.pool,
-    opts.lookbackMs ?? 10 * 60_000,
-    opts.batch ?? 20,
-    state.failed
-  );
-  if (list.length === 0) return { checked: 0 };
-  const counters = await slotCounters(opts.pool, opts.models, utcDay(now()));
-  const rules = opts.rules ?? createPostRules();
-  const full = { ...opts, timeoutMs: opts.timeoutMs ?? 30_000 };
-  let next = 0;
-  const lane = async () => {
-    while (next < list.length) {
-      const entry = list[next++]!;
-      try {
-        await checkOne(full, entry, counters, state, rules);
-      } catch (error) {
-        state.failed.add(entry.id);
-        console.error(
-          'Community post check failed',
-          error instanceof Error ? error.name : 'unknown'
-        );
-      }
-    }
-  };
-  await Promise.all(Array.from({ length: Math.max(1, opts.concurrency ?? 4) }, lane));
-  return { checked: list.length };
+  const result = await sweepNewPosts(opts, state);
+  while (state.inFlight.size > 0) await Promise.all([...state.inFlight]);
+  return result;
 }
 
 /** How often the worker looks for new messages. */
 export const DECISION_POLL_MS = 2_000;
 
 /**
- * Start the checks on a timer. One sweep at a time; a slow sweep skips ticks rather than piling
- * up. The timer is `unref`'d, and stopping it is the caller's (shutdown's) job.
+ * Start the checks on a timer. One rules sweep at a time; model checks run beside it from their
+ * own queue. The timer is `unref`'d, and stopping it is the caller's (shutdown's) job.
  */
 export function startDecisionWorker(opts: DecisionWorkerOptions): NodeJS.Timeout {
-  let running = false;
+  let sweeping = false;
   let capDay = '';
+  let overflowTold = 0;
   const state = workerState();
   const timer = setInterval(() => {
-    if (running) return;
-    running = true;
+    if (sweeping) return;
+    sweeping = true;
     const day = utcDay((opts.now ?? Date.now)());
     if (day !== capDay) {
       capDay = day;
       state.capTold.clear();
     }
-    void checkNewPosts(opts, state)
+    void sweepNewPosts(opts, state)
       .catch((error: unknown) => {
         console.error(
           'Community post checks unavailable',
@@ -317,7 +367,13 @@ export function startDecisionWorker(opts: DecisionWorkerOptions): NodeJS.Timeout
         );
       })
       .finally(() => {
-        running = false;
+        sweeping = false;
+        if (state.overflowed > overflowTold) {
+          console.warn(
+            `Community post checks: ${state.overflowed - overflowTold} posts got the built-in rules only; the models were busy.`
+          );
+          overflowTold = state.overflowed;
+        }
       });
   }, DECISION_POLL_MS);
   timer.unref();

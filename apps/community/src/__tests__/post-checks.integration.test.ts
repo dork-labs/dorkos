@@ -471,6 +471,61 @@ describe('a post and its checks', () => {
     });
   });
 
+  it('never sends a private channel’s message to a model', async () => {
+    const created = await expectStatus(
+      await call(scoped('/channels'), 'POST', ownerCookie, {
+        name: `quiet-${randomUUID().slice(0, 6)}`,
+        visibility: 'private',
+      }),
+      201
+    );
+    const quiet = (created.channel as { id: string }).id;
+    const body = await expectStatus(
+      await call(scoped(`/channels/${quiet}/entries`), 'POST', ownerCookie, {
+        text: `just us ${randomUUID()}`,
+        idempotencyKey: randomUUID(),
+      }),
+      201
+    );
+    const entryId = (body.entry as { id: string }).id;
+    const model = stubModel(spammy);
+    await sweep([{ check: 'jev', model }]);
+    expect(model.calls).toHaveLength(0);
+    expect((await records(entryId)).map((row) => row.record.check)).toEqual(['rules']);
+  });
+
+  it('keeps at most five open check reports against one person, and still records the rest', async () => {
+    const kim = await person('Kim');
+    const words = `Same pitch again and again ${randomUUID().slice(0, 8)}`;
+    const ids: string[] = [];
+    for (let i = 0; i < 9; i++) ids.push(await posted(kim, words));
+    await sweep([]);
+    // The third and every later copy trip the repeat rule: seven flags, five reports.
+    const flagged = await pool.query<{ n: number }>(
+      `SELECT count(*)::int AS n FROM audit_events
+       WHERE action='decision.rung0' AND next_state='flagged' AND subject_id=ANY($1::text[])`,
+      [ids]
+    );
+    expect(flagged.rows[0]!.n).toBe(7);
+    const filed = await pool.query<{ n: number }>(
+      "SELECT count(*)::int AS n FROM reports WHERE source='check' AND entry_id=ANY($1::uuid[])",
+      [ids]
+    );
+    expect(filed.rows[0]!.n).toBe(5);
+  });
+
+  it('flags a fast poster by the rate rule', async () => {
+    const lee = await person('Lee');
+    const ids: string[] = [];
+    for (let i = 0; i < 10; i++) ids.push(await posted(lee, `quick ${i} ${randomUUID()}`));
+    await sweep([]);
+    const last = await records(ids[9]!);
+    expect(last[0]!.record.answers.spam).toMatchObject({ value: 'a2', reason: 'rate' });
+    expect((await checkReports(ids[9]!))[0]?.note).toBe(
+      'Posted 10 messages in one minute. Nothing was hidden.'
+    );
+  });
+
   it('never checks, or pays for, one message twice when two sweeps race', async () => {
     const gina = await person('Gina');
     const entryId = await posted(gina, `race ${randomUUID()}`);

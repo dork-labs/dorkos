@@ -15,11 +15,11 @@ import { SPAM_QUESTION } from './findings.js';
 
 /** What the rules read about one message. Counts only: no other message's words. */
 export interface PostFacts {
-  /** Messages by the same person (with their agents) in the minute up to this one, itself included. */
+  /** Messages by the same author in the minute up to this one, itself included. */
   postsLastMinute: number;
   /** Links in this message. */
   links: number;
-  /** Messages by the same person in the last day with these exact words, this one included. */
+  /** Messages by the same author in the last day with these exact words, this one included. */
   sameTextToday: number;
 }
 
@@ -40,30 +40,33 @@ export function countLinks(text: string): number {
 /** The one message the facts are about. */
 export interface FactsSubject {
   id: string;
-  communityId: string;
-  /** The person the message counts as: its author, or an agent's owner. */
-  ownerMemberId: string;
+  /** Who wrote it: a person, or an agent counted as itself (not its owner). */
+  author: { kind: 'human' | 'agent'; id: string };
   text: string;
 }
 
 /**
- * Read the facts for one message. Both counts use the `(community_id, created_at)` index and
- * stop at the message's own time, so a later flood does not change an earlier message's facts.
+ * Read the facts for one message. The counts are by its author exactly as it posted, a person or
+ * one agent, so an owner whose agents talk busily in a room is not taken for a flood. Each count
+ * leads with the author's own unique index (`entries_author_key_unique` or
+ * `entries_agent_key_unique`), so it reads that author's posts, never the whole space's, and
+ * stops at the message's own time, so a later flood does not change an earlier message's facts.
  */
 export async function readPostFacts(client: PoolClient, entry: FactsSubject): Promise<PostFacts> {
+  const column = entry.author.kind === 'agent' ? 'author_agent_id' : 'author_member_id';
   // The message's own time is read in SQL: a JavaScript Date keeps milliseconds, the column
   // microseconds, so a round trip would leave the message out of its own counts.
   const result = await client.query<{ last_minute: number; same_text: number }>(
-    `WITH self AS (SELECT created_at FROM entries WHERE id=$3 AND community_id=$1)
+    `WITH self AS (SELECT created_at FROM entries WHERE id=$2)
      SELECT
        count(*) FILTER (WHERE e.created_at > self.created_at - interval '1 minute')::int
          AS last_minute,
-       count(*) FILTER (WHERE char_length($4::text) >= $5
-         AND lower(btrim(e.text)) = lower(btrim($4::text)))::int AS same_text
-     FROM self, entries e LEFT JOIN agents a ON a.id=e.author_agent_id
-     WHERE e.community_id=$1 AND (e.author_member_id=$2 OR a.owner_member_id=$2)
+       count(*) FILTER (WHERE char_length($3::text) >= $4
+         AND lower(btrim(e.text)) = lower(btrim($3::text)))::int AS same_text
+     FROM self, entries e
+     WHERE e.${column}=$1
        AND e.created_at > self.created_at - interval '1 day' AND e.created_at <= self.created_at`,
-    [entry.communityId, entry.ownerMemberId, entry.id, entry.text, RULE_LIMITS.repeatMinLength]
+    [entry.author.id, entry.id, entry.text, RULE_LIMITS.repeatMinLength]
   );
   const row = result.rows[0];
   return {
