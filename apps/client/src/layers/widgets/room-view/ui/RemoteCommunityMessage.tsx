@@ -8,9 +8,12 @@ import { Message } from '@/layers/features/conversation';
 export function RemoteCommunityMessage({
   entry,
   onThread,
+  onReport,
 }: {
   entry: RemoteCommunityEntry;
   onThread: (rootId: string) => void;
+  /** Offered only on someone else's message, where reporting it means something. */
+  onReport?: () => void;
 }) {
   const transport = useTransport();
   const labelId = useId();
@@ -84,6 +87,11 @@ export function RemoteCommunityMessage({
           >
             {entry.depth === 0 ? 'Reply in thread' : 'Open thread'}
           </Button>
+          {onReport && (
+            <Button variant="ghost" size="sm" onClick={onReport}>
+              Report
+            </Button>
+          )}
         </Message.Content>
       </Message.Body>
     </Message.Root>

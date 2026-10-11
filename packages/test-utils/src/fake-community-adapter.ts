@@ -42,79 +42,27 @@ import {
   type CommunityRoomClosedReason,
   type CommunityRoomEvent,
   type CommunityRoomListEvent,
+  type CommunityRules,
+  type CommunityStanding,
   type CreateCommunityInviteInput,
   type CreateCommunityRoomInput,
   type ListCommunityEntriesOpts,
   type PostCommunityEntryInput,
+  type ReportCommunityEntryInput,
   type UpdateCommunityRoomInput,
   type UploadCommunityAttachmentInput,
 } from '@dorkos/shared/community-adapter';
 import type { ResponseMode } from '@dorkos/shared/mesh-schemas';
 import type { RoomKind } from '@dorkos/shared/room-schemas';
 import type { SignalType } from '@dorkos/shared/relay-schemas';
+import { FakeCommunityConduct } from './fake-community-conduct.js';
+import { DEFAULT_CAPABILITIES, Pushable } from './fake-community-support.js';
 
 /** Default page size when a caller does not ask for one. */
 const DEFAULT_PAGE_SIZE = 50;
 
 /** Poll interval a `roomList: 'poll'` fake declares — small enough for a test to wait on. */
 const DEFAULT_POLL_INTERVAL_MS = 20;
-
-/**
- * A push-driven async iterable. Events queue until a consumer pulls them, so a
- * snapshot pushed before the caller starts iterating is never lost.
- */
-class Pushable<T> implements AsyncIterable<T> {
-  private readonly _queue: T[] = [];
-  private readonly _waiters: ((result: IteratorResult<T>) => void)[] = [];
-  private _ended = false;
-
-  /**
-   * Build a stream that unregisters itself when the consumer walks away.
-   *
-   * @param onClose - Called once when the consumer stops iterating, so the
-   *   producer can unregister this stream.
-   */
-  constructor(private readonly onClose: () => void) {}
-
-  /**
-   * Queue one event, delivering it immediately if a consumer is parked.
-   *
-   * @param value - The event to deliver.
-   */
-  push(value: T): void {
-    if (this._ended) return;
-    const waiter = this._waiters.shift();
-    if (waiter) waiter({ value, done: false });
-    else this._queue.push(value);
-  }
-
-  /** Terminate the stream after everything already queued has been read. */
-  end(): void {
-    if (this._ended) return;
-    this._ended = true;
-    let waiter = this._waiters.shift();
-    while (waiter) {
-      waiter({ value: undefined as never, done: true });
-      waiter = this._waiters.shift();
-    }
-  }
-
-  [Symbol.asyncIterator](): AsyncIterator<T> {
-    return {
-      next: (): Promise<IteratorResult<T>> => {
-        const queued = this._queue.shift();
-        if (queued !== undefined) return Promise.resolve({ value: queued, done: false });
-        if (this._ended) return Promise.resolve({ value: undefined as never, done: true });
-        return new Promise<IteratorResult<T>>((resolve) => this._waiters.push(resolve));
-      },
-      return: (): Promise<IteratorResult<T>> => {
-        this.end();
-        this.onClose();
-        return Promise.resolve({ value: undefined as never, done: true });
-      },
-    };
-  }
-}
 
 /** One entry as the fake stores it — the DTO plus its per-room ordinal. */
 interface StoredEntry {
@@ -156,35 +104,6 @@ export interface FakeCommunityAdapterOpts {
   epoch?: string;
 }
 
-/** The established capability profile; new file and agent-acting paths opt in explicitly. */
-const DEFAULT_CAPABILITIES: Omit<CommunityCapabilities, 'type'> = {
-  roomList: 'push',
-  roomAddressing: 'slug',
-  canPost: true,
-  roomAdmin: true,
-  agentActing: false,
-  attachments: false,
-  roles: {
-    supported: true,
-    default: 'member',
-    values: [
-      { id: 'owner', label: 'Owner', administers: true, isOwner: true },
-      { id: 'admin', label: 'Admin', administers: true },
-      { id: 'member', label: 'Member', administers: false },
-      { id: 'bot', label: 'Bot', administers: false },
-    ],
-  },
-  admission: 'open',
-  invite: 'room',
-  agentAdmission: 'owner-vouched',
-  readCursor: 'server',
-  responseMode: true,
-  threadDepth: 1,
-  signals: 'both',
-  credential: 'machine-managed',
-  features: {},
-};
-
 /**
  * A full in-memory {@link CommunityAdapter} for Vitest tests.
  *
@@ -222,6 +141,8 @@ export class FakeCommunityAdapter implements CommunityAdapter {
   private readonly _pollTimers = new Set<ReturnType<typeof setTimeout>>();
   private _counter = 0;
   private _connected = false;
+  /** The connected person's standing, rules and reports; arrange and read them here. */
+  readonly conduct = new FakeCommunityConduct();
 
   /**
    * Construct a fake adapter with the given capability configuration.
@@ -691,6 +612,38 @@ export class FakeCommunityAdapter implements CommunityAdapter {
     });
   }
 
+  // --- Conduct -------------------------------------------------------------
+
+  getStanding(roomId: string): Promise<CommunityStanding> {
+    return this._conducting('conduct', 'getStanding', () => {
+      if (!this._rooms.has(roomId)) throw new CommunityRoomNotFoundError(this.community, roomId);
+      return this.conduct.standing(roomId);
+    });
+  }
+
+  acceptRules(version: number): Promise<CommunityRules> {
+    return this._conducting('conduct', 'acceptRules', () => this.conduct.accept(version));
+  }
+
+  setDisplayName(displayName: string): Promise<CommunityMember> {
+    return this._conducting('conduct', 'setDisplayName', () => {
+      const record = this._directory.get(this._identityMemberId);
+      if (!record?.displayName || !displayName.trim()) throw new Error('Enter a name.');
+      record.displayName = displayName.trim();
+      return { ...record, role: null };
+    });
+  }
+
+  reportEntry(roomId: string, entryId: string, input: ReportCommunityEntryInput): Promise<void> {
+    return this._conducting('reports', 'reportEntry', () => {
+      const entry = this._rooms.get(roomId)?.entries.find((held) => held.entry.id === entryId);
+      if (!entry) throw new CommunityRoomNotFoundError(this.community, roomId);
+      if (entry.entry.authorId === this._identityMemberId)
+        throw new Error('You can’t report your own message.');
+      this.conduct.report({ roomId, entryId, input });
+    });
+  }
+
   // --- Ephemeral -----------------------------------------------------------
 
   publishSignal(
@@ -936,6 +889,21 @@ export class FakeCommunityAdapter implements CommunityAdapter {
    */
   private _copyEntry(entry: CommunityEntry): CommunityEntry {
     return structuredClone(entry);
+  }
+
+  /** Refuse a conduct call whose capability is off; otherwise settle `work` as a promise. */
+  private _conducting<T>(
+    capability: 'conduct' | 'reports',
+    method: string,
+    work: () => T
+  ): Promise<T> {
+    if (!this._capabilities[capability])
+      return Promise.reject(new CommunityUnsupportedError(this.community, capability, method));
+    try {
+      return Promise.resolve(work());
+    } catch (err) {
+      return Promise.reject(err instanceof Error ? err : new Error(String(err)));
+    }
   }
 
   /** Resolve a selected owned agent without falling back to the connected human. */

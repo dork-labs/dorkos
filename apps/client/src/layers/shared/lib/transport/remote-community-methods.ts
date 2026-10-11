@@ -13,6 +13,10 @@ import {
   RemoteCommunityEnrollmentResponseSchema,
   RemoteCommunityEjectionResponseSchema,
   RemoteCommunityAttachmentResponseSchema,
+  RemoteCommunityStandingSchema,
+  RemoteCommunityRulesResponseSchema,
+  RemoteCommunityDisplayNameResponseSchema,
+  RemoteCommunityReportRequestSchema,
   type RemoteCommunityTransport,
 } from '@dorkos/shared/community-views';
 import { CommunityDeliverySnapshotSchema } from '@dorkos/shared/community-deliveries';
@@ -101,6 +105,44 @@ export function createRemoteCommunityMethods(baseUrl: string): RemoteCommunityTr
     },
     leaveRemoteCommunityRoom(ref, roomId) {
       return fetchNoContent(baseUrl, `${roomPath(ref, roomId)}/membership`, { method: 'DELETE' });
+    },
+    async getRemoteCommunityStanding(ref, roomId) {
+      return qualified(
+        RemoteCommunityStandingSchema.parse(
+          await fetchJSON(baseUrl, `${roomPath(ref, roomId)}/standing`)
+        ),
+        ref,
+        roomId
+      );
+    },
+    async acceptRemoteCommunityRules(ref, version) {
+      return qualified(
+        RemoteCommunityRulesResponseSchema.parse(
+          await fetchJSON(baseUrl, `${communityPath(ref)}/rules/accept`, {
+            method: 'POST',
+            body: JSON.stringify({ version }),
+          })
+        ),
+        ref
+      ).rules;
+    },
+    async setRemoteCommunityDisplayName(ref, displayName) {
+      return qualified(
+        RemoteCommunityDisplayNameResponseSchema.parse(
+          await fetchJSON(baseUrl, `${communityPath(ref)}/me/display-name`, {
+            method: 'PUT',
+            body: JSON.stringify({ displayName }),
+          })
+        ),
+        ref
+      ).displayName;
+    },
+    reportRemoteCommunityEntry(ref, roomId, entryId, input) {
+      return fetchNoContent(
+        baseUrl,
+        `${roomPath(ref, roomId)}/entries/${encodeURIComponent(entryId)}/reports`,
+        { method: 'POST', body: JSON.stringify(RemoteCommunityReportRequestSchema.parse(input)) }
+      );
     },
     async getRemoteCommunityReadCursor(ref, roomId) {
       return RemoteCommunityReadCursorSchema.parse(
