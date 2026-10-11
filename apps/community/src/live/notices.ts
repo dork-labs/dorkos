@@ -11,20 +11,25 @@ const id = z.string().min(1).max(64);
  * payload at 8 kB, and a notice is a wake-up, not data. Each stream that the notice touches reads
  * what it needs itself.
  *
- * - `entry`: a new message in a channel. Wakes that channel's streams and counts as a post.
+ * - `entry`: a new message in a channel, with its sequence number `s`. The channel's feed reads
+ *   it once for every stream there (see `feed.ts`), and it counts as a post.
+ * - `content`: messages' text or files changed (a removal, redaction or erasure), in channel `ch`,
+ *   or anywhere in the space when `ch` is absent. Feeds forget the copies they kept.
  * - `channel`: a channel was archived, reopened, deleted or had its history reset. Rechecks
  *   every stream on the channel.
  * - `community`: the space's lifecycle changed (held, suspended, archived, taken down, deleted).
  *   Rechecks every stream in it.
- * - `member`: a member's access changed: deactivated, banned, muted, removed from a channel, or a
- *   connection of theirs revoked. Rechecks their streams and their agents' streams.
+ * - `member`: a member's access changed: deactivated, banned, removed from a channel, or a
+ *   connection of theirs revoked. Rechecks their streams and their agents' streams. A mute
+ *   stops posting, not reading, so it sends none.
  * - `agent`: an agent was deactivated, removed from a channel, or its credential revoked.
  * - `user`: an account's sign-in sessions ended, in every space it belongs to.
  * - `join`: someone joined a space. Counted for monitoring only.
  * - `probe`: the listener's own startup self-test.
  */
 export const LiveNoticeSchema = z.discriminatedUnion('k', [
-  z.object({ k: z.literal('entry'), c: id, ch: id }),
+  z.object({ k: z.literal('entry'), c: id, ch: id, s: z.number().int().nonnegative() }),
+  z.object({ k: z.literal('content'), c: id, ch: id.optional() }),
   z.object({ k: z.literal('channel'), c: id, ch: id }),
   z.object({ k: z.literal('community'), c: id }),
   z.object({ k: z.literal('member'), c: id, m: id }),

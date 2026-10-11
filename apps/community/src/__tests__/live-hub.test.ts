@@ -87,7 +87,7 @@ describe('LiveHub routing', () => {
     // stream it names, including an agent's stream through its owner.
     const made = hub();
     const all = await streams(made);
-    made.dispatch({ k: 'entry', c: A, ch: 'general' });
+    made.dispatch({ k: 'entry', c: A, ch: 'general', s: 1 });
     expect(await woken(all, 'entries')).toEqual(['person', 'sameChannel']);
     expect(await woken(all, 'access')).toEqual([]);
 
@@ -102,7 +102,7 @@ describe('LiveHub routing', () => {
     made.dispatch({ k: 'community', c: B });
     expect(await woken(all, 'access')).toEqual(['elsewhere']);
     // A channel id is only meaningful inside its community.
-    made.dispatch({ k: 'entry', c: B, ch: 'general' });
+    made.dispatch({ k: 'entry', c: B, ch: 'general', s: 1 });
     expect(await woken(all, 'entries')).toEqual(['elsewhere']);
   });
 
@@ -146,7 +146,7 @@ describe('LiveHub routing', () => {
     const all = await streams(made);
     all.person.release();
     all.person.release();
-    made.dispatch({ k: 'entry', c: A, ch: 'general' });
+    made.dispatch({ k: 'entry', c: A, ch: 'general', s: 1 });
     expect(await woken(all, 'entries')).toEqual(['sameChannel']);
     expect(made.snapshot().streams).toBe(3);
   });
@@ -190,12 +190,22 @@ describe('LiveHub limits', () => {
 
 describe('live notices', () => {
   it('reads well-formed notices and ignores anything else', () => {
-    expect(parseLiveNotice('{"k":"entry","c":"a","ch":"b"}')).toEqual({
+    expect(parseLiveNotice('{"k":"entry","c":"a","ch":"b","s":7}')).toEqual({
       k: 'entry',
       c: 'a',
       ch: 'b',
+      s: 7,
     });
-    for (const bad of [undefined, '', 'not json', '{"k":"entry","c":"a"}', '{"k":"nope"}'])
+    expect(parseLiveNotice('{"k":"content","c":"a"}')).toEqual({ k: 'content', c: 'a' });
+    for (const bad of [
+      undefined,
+      '',
+      'not json',
+      '{"k":"entry","c":"a"}',
+      '{"k":"entry","c":"a","ch":"b"}',
+      '{"k":"entry","c":"a","ch":"b","s":-1}',
+      '{"k":"nope"}',
+    ])
       expect(parseLiveNotice(bad), String(bad)).toBeNull();
   });
 });
@@ -204,7 +214,7 @@ describe('metrics text', () => {
   it('reports streams, posts, joins, pool waits, listener health and lag', async () => {
     const made = hub();
     await made.open({ communityId: 'a"b', channelId: 'x', memberId: '1' });
-    made.dispatch({ k: 'entry', c: 'a"b', ch: 'x' });
+    made.dispatch({ k: 'entry', c: 'a"b', ch: 'x', s: 1 });
     made.dispatch({ k: 'join', c: 'a"b' });
     made.observeLag(0.2);
     const text = renderMetrics(made, { waitingCount: 3, totalCount: 7, idleCount: 2 } as never);
