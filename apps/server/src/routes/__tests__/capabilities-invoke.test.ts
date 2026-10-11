@@ -23,10 +23,19 @@ import {
 import { ApprovalService } from '../../services/core/approvals/index.js';
 import { eventFanOut } from '../../services/core/event-fan-out.js';
 import type { AgentIdentity } from '../../services/core/agent-identity/index.js';
-import { createCapabilitiesInvokeRouter } from '../capabilities-invoke.js';
+import { createCapabilitiesInvokeRoutes } from '../capabilities-invoke.js';
 import { createApprovalsRouter } from '../approvals.js';
-import { createCapabilitiesCatalogRouter } from '../capabilities-catalog.js';
-import capabilitiesMatrixRouter from '../capabilities.js';
+import { createCapabilitiesCatalogRoutes } from '../capabilities-catalog.js';
+import capabilitiesMatrixRoutes from '../capabilities.js';
+import type { ApiEnv } from '../../http/api-chain.js';
+import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
+import type { MiddlewareHandler } from 'hono';
+
+// The routes are served through the `/api` chain, whose host guard and session
+// gate read the login setting: off, as on a fresh install.
+vi.mock('../../services/core/config-manager.js', () => ({
+  configManager: { get: vi.fn(() => undefined), set: vi.fn() },
+}));
 
 const fixtureTarget = swappableServer();
 const fixtureServer = fixtureTarget.server;
@@ -63,10 +72,18 @@ const testDomain: CapabilityDomain = {
 
 function buildApp() {
   const registry = composeRegistry([testDomain], { logger: noopLogger });
-  const app = express();
-  app.use(express.json());
-  app.use('/api/capabilities', createCapabilitiesInvokeRouter(registry));
-  return app;
+  return honoGroupListener({
+    path: '/api/capabilities',
+    routes: createCapabilitiesInvokeRoutes(registry),
+  });
+}
+
+/** Stand in for the identity the chain would have resolved, if any. */
+function presenting(identity?: AgentIdentity): MiddlewareHandler<ApiEnv> {
+  return async (c, next) => {
+    if (identity) c.set('agentIdentity', identity);
+    await next();
+  };
 }
 
 describe('POST /api/capabilities/:id/invoke', () => {
@@ -116,16 +133,16 @@ describe('POST /api/capabilities/:id/invoke', () => {
     expect(res.body).toEqual({ error: 'boom', code: 'DELIBERATE' });
   });
 
-  // The three routers share the `/api/capabilities` prefix in production
+  // The three groups share the `/api/capabilities` prefix in production
   // (matrix at `/`, catalog at `/catalog`, invoke at `/:id/invoke`); prove the
   // mount order does not shadow invoke and that catalog still resolves.
-  it('coexists with the matrix and catalog routers on the shared prefix', async () => {
+  it('coexists with the matrix and catalog routes on the shared prefix', async () => {
     const registry = composeRegistry([testDomain], { logger: noopLogger });
-    const app = express();
-    app.use(express.json());
-    app.use('/api/capabilities', capabilitiesMatrixRouter);
-    app.use('/api/capabilities/catalog', createCapabilitiesCatalogRouter(registry));
-    app.use('/api/capabilities', createCapabilitiesInvokeRouter(registry));
+    const app = honoGroupListener([
+      { path: '/api/capabilities', routes: capabilitiesMatrixRoutes },
+      { path: '/api/capabilities/catalog', routes: createCapabilitiesCatalogRoutes(registry) },
+      { path: '/api/capabilities', routes: createCapabilitiesInvokeRoutes(registry) },
+    ]);
 
     const invoke = await request(fixtureTarget.mount(app))
       .post('/api/capabilities/test.echo/invoke')
@@ -175,14 +192,10 @@ describe('POST /api/capabilities/:id/invoke — tier enforcement', () => {
   /** An app that presents the given identity, as the real middleware would. */
   function buildGatedApp(identity?: AgentIdentity) {
     const registry = composeRegistry([gateDomain()], { logger: noopLogger });
-    const app = express();
-    app.use(express.json());
-    app.use((_req, res, next) => {
-      if (identity) res.locals.agentIdentity = identity;
-      next();
-    });
-    app.use('/api/capabilities', createCapabilitiesInvokeRouter(registry));
-    return app;
+    return honoGroupListener(
+      { path: '/api/capabilities', routes: createCapabilitiesInvokeRoutes(registry) },
+      { before: presenting(identity) }
+    );
   }
 
   const AGENT: AgentIdentity = {
@@ -300,15 +313,20 @@ describe('POST /api/capabilities/:id/invoke — tier enforcement', () => {
      */
     function buildFullApp(identity?: AgentIdentity) {
       const registry = composeRegistry([gateDomain()], { logger: noopLogger });
-      const app = express();
-      app.use(express.json());
-      app.use((_req, res, next) => {
+      const legacy = express();
+      legacy.use(express.json());
+      legacy.use((_req, res, next) => {
         if (identity) res.locals.agentIdentity = identity;
         next();
       });
-      app.use('/api/capabilities', createCapabilitiesInvokeRouter(registry));
-      app.use('/api/approvals', createApprovalsRouter(approvals, { isLoginEnabled: () => false }));
-      return app;
+      legacy.use(
+        '/api/approvals',
+        createApprovalsRouter(approvals, { isLoginEnabled: () => false })
+      );
+      return honoGroupListener(
+        { path: '/api/capabilities', routes: createCapabilitiesInvokeRoutes(registry) },
+        { before: presenting(identity), legacy }
+      );
     }
 
     it('breaks the reproduced three-step self-approval chain', async () => {

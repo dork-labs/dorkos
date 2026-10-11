@@ -78,8 +78,15 @@ import {
   TOKEN_ABSOLUTE_TTL_MS,
 } from '../../services/core/agent-identity/agent-identity-service.js';
 import { agentIdentityTokens } from '@dorkos/db';
-import { createCapabilitiesInvokeRouter } from '../capabilities-invoke.js';
+import { createCapabilitiesInvokeRoutes } from '../capabilities-invoke.js';
+import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
 import { createMcpRouter } from '../mcp.js';
+
+// The routes are served through the `/api` chain, whose host guard and session
+// gate read the login setting: off, as on a fresh install.
+vi.mock('../../services/core/config-manager.js', () => ({
+  configManager: { get: vi.fn(() => undefined), set: vi.fn() },
+}));
 
 const fixtureTarget = swappableServer();
 
@@ -216,13 +223,12 @@ describe('an unverifiable agent token on the mcp.* capability surfaces', () => {
   }
 
   describe('POST /api/capabilities/mcp.add/invoke', () => {
-    /** The invoke route behind the identity middleware, as `index.ts` mounts it. */
-    function app(): express.Express {
-      const server = express();
-      server.use(express.json());
-      server.use(resolveAgentIdentity);
-      server.use('/api/capabilities', createCapabilitiesInvokeRouter(registry));
-      return server;
+    /** The invoke route behind the `/api` chain, which resolves the agent identity. */
+    function app() {
+      return honoGroupListener({
+        path: '/api/capabilities',
+        routes: createCapabilitiesInvokeRoutes(registry),
+      });
     }
 
     /**

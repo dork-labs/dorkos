@@ -10,7 +10,7 @@
  * a person can reach). A test that only asserted the column would pass against
  * an implementation that changes nothing a person can see.
  */
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import express from 'express';
 import type { Server } from 'node:http';
 import request from '@dorkos/test-utils/supertest';
@@ -21,7 +21,14 @@ import { user, eq, type Db } from '@dorkos/db';
 import { AuthorRegistry, type AuthorRecord } from '../../services/rooms/author-registry.js';
 import type { AvatarStore } from '../../services/identity/avatar-store.js';
 import { createProfileRouter, type ProfileRouterDeps } from '../profile.js';
-import { createTeamRouter } from '../team.js';
+import { createTeamRoutes } from '../team.js';
+import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
+
+// The routes are served through the `/api` chain, whose host guard and session
+// gate read the login setting: off, as on a fresh install.
+vi.mock('../../services/core/config-manager.js', () => ({
+  configManager: { get: vi.fn(() => undefined), set: vi.fn() },
+}));
 
 const OWNER_USER_ID = 'user-1';
 
@@ -68,25 +75,28 @@ describe('PATCH /api/profile', () => {
         ...overrides,
       })
     );
-    server.use(
-      '/api/team',
-      createTeamRouter({
-        authors: registry,
-        // The roster is what these tests read back; the rooms reader is a
-        // required dependency of the router and answers nothing here.
-        rooms: { listRoomsForMember: () => [], listMembersForRooms: () => [] },
-        activeClaims: () => [],
-        listRooms: () => [],
-        sessionActivity: () => Promise.resolve({}),
-        ownerAccount: () =>
-          hasAccount ? { id: OWNER_USER_ID, name: storedAccountName() ?? '' } : null,
-        ownerEmail: () => (hasAccount ? 'dorian@dorkos.ai' : null),
-        configDisplayName: () => storedProfileName,
-        configDisplayNameSource: () => storedNameSource,
-        defaultAgentName: () => null,
-      })
+    const routes = honoGroupListener(
+      {
+        path: '/api/team',
+        routes: createTeamRoutes({
+          authors: registry,
+          // The roster is what these tests read back; the rooms reader is a
+          // required dependency of the router and answers nothing here.
+          rooms: { listRoomsForMember: () => [], listMembersForRooms: () => [] },
+          activeClaims: () => [],
+          listRooms: () => [],
+          sessionActivity: () => Promise.resolve({}),
+          ownerAccount: () =>
+            hasAccount ? { id: OWNER_USER_ID, name: storedAccountName() ?? '' } : null,
+          ownerEmail: () => (hasAccount ? 'dorian@dorkos.ai' : null),
+          configDisplayName: () => storedProfileName,
+          configDisplayNameSource: () => storedNameSource,
+          defaultAgentName: () => null,
+        }),
+      },
+      { legacy: server }
     );
-    return target.mount(server);
+    return target.mount(routes);
   }
 
   function storedAccountName(): string | null {

@@ -18,17 +18,49 @@ import type { MainRequestAdmission } from '../services/core/lifecycle/main-reque
 import { createApiApp, type ApiEnv } from './api-chain.js';
 import { mountBetterAuth } from './better-auth.js';
 import { createFrontDoor, type FrontDoor } from './front-door.js';
+import type { ActivityService } from '../services/activity/activity-service.js';
+import type { CapabilityRegistry } from '../services/core/capabilities/index.js';
+import { createActivityRoutes } from '../routes/activity.js';
 import { createApiDocsRoutes } from '../routes/api-docs.js';
+import { createAuditRoutes, type AuditRouterDeps } from '../routes/audit.js';
+import capabilitiesRoutes from '../routes/capabilities.js';
+import { createCapabilitiesCatalogRoutes } from '../routes/capabilities-catalog.js';
+import { createCapabilitiesInvokeRoutes } from '../routes/capabilities-invoke.js';
 import commandRoutes from '../routes/commands.js';
 import errorRoutes from '../routes/errors.js';
 import { createHealthRoutes, type HealthRouteDeps } from '../routes/health.js';
 import keepAwakeRoutes from '../routes/keep-awake.js';
 import modelRoutes from '../routes/models.js';
+import { createSearchRoutes, type SearchRouterDeps } from '../routes/search.js';
 import subagentRoutes from '../routes/subagents.js';
 import { createSystemRoutes, type SystemRouteDeps } from '../routes/system.js';
+import { createTeamRoutes, type TeamRouterDeps } from '../routes/team.js';
+
+/**
+ * The groups that are only mounted when the server hands over what they read.
+ * A test that builds the server bare passes none of them, and those paths then
+ * answer the `/api` 404, as they did when `index.ts` mounted them on Express.
+ */
+export interface ComposedGroupDeps {
+  /** The team roster's reads (`/api/team`). */
+  team?: TeamRouterDeps;
+  /** The message index (`/api/search`). */
+  search?: SearchRouterDeps;
+  /** The activity feed (`/api/activity`). */
+  activity?: ActivityService;
+  /** The audit log and its account names (`/api/audit`). */
+  audit?: AuditRouterDeps;
+  /**
+   * The composed capability registry, behind the catalog
+   * (`GET /api/capabilities/catalog`) and the invoke endpoint
+   * (`POST /api/capabilities/:id/invoke`). The runtime matrix
+   * (`GET /api/capabilities`) needs none and is always mounted.
+   */
+  capabilities?: CapabilityRegistry;
+}
 
 /** What the moved route groups read from the running server, handed over by `index.ts`. */
-export type HonoApiDeps = HealthRouteDeps & SystemRouteDeps;
+export type HonoApiDeps = HealthRouteDeps & SystemRouteDeps & ComposedGroupDeps;
 
 /** Options for {@link createHonoApi}. */
 export interface HonoApiOptions {
@@ -64,6 +96,19 @@ export function createHonoApi(options: HonoApiOptions): Hono<ApiEnv> {
   app.route('/api/system', createSystemRoutes(deps));
   app.route('/api/keep-awake', keepAwakeRoutes);
   app.route('/api/errors', errorRoutes);
+  if (deps.team) app.route('/api/team', createTeamRoutes(deps.team));
+  if (deps.search) app.route('/api/search', createSearchRoutes(deps.search));
+  if (deps.activity) app.route('/api/activity', createActivityRoutes(deps.activity));
+  if (deps.audit) app.route('/api/audit', createAuditRoutes(deps.audit));
+  // Three groups share this prefix. The catalog is one segment deeper than the
+  // matrix's `/`, and is mounted first so nothing shorter can claim it.
+  if (deps.capabilities) {
+    app.route('/api/capabilities/catalog', createCapabilitiesCatalogRoutes(deps.capabilities));
+  }
+  app.route('/api/capabilities', capabilitiesRoutes);
+  if (deps.capabilities) {
+    app.route('/api/capabilities', createCapabilitiesInvokeRoutes(deps.capabilities));
+  }
   app.route('/api', createApiDocsRoutes());
   return app;
 }

@@ -18,6 +18,7 @@ import {
 import { readOwnerAccount, type RequestUser } from '../services/core/auth/index.js';
 import { getRequestAgentIdentity, presentsAgentIdentity } from '../middleware/agent-identity.js';
 import { ROOM_CALLER_LOCAL } from './room-caller-local.js';
+import type { RequestFacts } from '../http/request-facts.js';
 
 /**
  * Who this request is.
@@ -95,36 +96,52 @@ import { ROOM_CALLER_LOCAL } from './room-caller-local.js';
  * is scoped to the caller's membership, could read any room by naming a member
  * of it.
  *
- * @param req - Anything holding the request's headers, for the raw
- *   `X-DorkOS-Agent` the refusal above reads: an Express `Request`, or the
- *   upgrade headers a WebSocket route is handed (`UpgradeAttempt.headers`). The
- *   raw header rather than a flag on `locals`, so a surface that somehow skips
- *   the identity middleware fails closed instead of open.
- * @param res - Anything holding the resolved agent identity and, when login is
- *   on, the resolved account: an Express `Response`, or the locals a WebSocket
- *   upgrade resolved for itself (an upgrade runs no middleware, so it fills the
- *   same two slots by hand — see `services/core/streams/stream-upgrade-auth.ts`).
+ * Takes a request's facts (`http/request-facts.ts`), which is how a Hono
+ * route asks, or a request-and-response pair. Only the pair form keeps the
+ * caller for `sendRoomError` on `res.locals`; a Hono route holds the caller it
+ * got back and words a refusal with `roomErrorReply` itself.
+ *
+ * @param req - The request's facts, or anything holding the request's headers,
+ *   for the raw `X-DorkOS-Agent` the refusal above reads: an Express `Request`,
+ *   or the upgrade headers a WebSocket route is handed (`UpgradeAttempt.headers`).
+ *   The raw header rather than a flag on `locals`, so a surface that somehow
+ *   skips the identity middleware fails closed instead of open.
+ * @param res - With a pair: anything holding the resolved agent identity and,
+ *   when login is on, the resolved account: an Express `Response`, or the locals
+ *   a WebSocket upgrade resolved for itself (an upgrade runs no middleware, so it
+ *   fills the same two slots by hand — see
+ *   `services/core/streams/stream-upgrade-auth.ts`).
  * @throws {RoomError} `AGENT_IDENTITY_UNVERIFIED` when the caller presented an
  *   agent token this machine could not verify.
  */
+export function resolveCaller(request: CallerFacts): AuthorRecord;
 export function resolveCaller(
   req: Pick<Request, 'headers'>,
   res: Pick<Response, 'locals'>
+): AuthorRecord;
+export function resolveCaller(
+  req: Pick<Request, 'headers'> | CallerFacts,
+  res?: Pick<Response, 'locals'>
 ): AuthorRecord {
-  const caller = resolveCallerRecord(req, res);
+  if (!res) return resolveCallerRecord(req as CallerFacts);
+  const caller = resolveCallerRecord({
+    headers: req.headers,
+    agentIdentity: getRequestAgentIdentity(res),
+    user: res.locals.user as RequestUser | undefined,
+  });
   // Kept for `sendRoomError`, which words one refusal differently for the
   // operator than for anybody else (DOR-2457) and is handed only `res`.
   res.locals[ROOM_CALLER_LOCAL] = caller;
   return caller;
 }
 
+/** What {@link resolveCaller} reads: the raw agent header and what the chain resolved. */
+type CallerFacts = Pick<RequestFacts, 'headers' | 'agentIdentity' | 'user'>;
+
 /** {@link resolveCaller}'s three branches and its refusal, without the bookkeeping. */
-function resolveCallerRecord(
-  req: Pick<Request, 'headers'>,
-  res: Pick<Response, 'locals'>
-): AuthorRecord {
+function resolveCallerRecord(facts: CallerFacts): AuthorRecord {
   const registry = getRoomService().authorRegistry;
-  const identity = getRequestAgentIdentity(res);
+  const identity = facts.agentIdentity;
   // `!identity.inactive` preserves this route's existing answer through a change
   // one module over (DOR-486 review). `resolve()` used to return `undefined` for
   // a revoked or expired token, so those callers fell into the 401 below by
@@ -135,7 +152,7 @@ function resolveCallerRecord(
   if (identity && !identity.inactive) {
     return registry.resolveAgent(identity.agentPath, identity.displayName);
   }
-  if (presentsAgentIdentity(req, res)) {
+  if (presentsAgentIdentity(facts)) {
     throw new RoomError(
       'AGENT_IDENTITY_UNVERIFIED',
       'That agent identity could not be verified. Its token may have been revoked, or it may have expired.'
@@ -143,7 +160,7 @@ function resolveCallerRecord(
   }
 
   const owner = readOwnerAccount();
-  const session = res.locals.user as RequestUser | undefined;
+  const session = facts.user;
   if (session) {
     return session.userId === owner?.id
       ? registry.bindOwner(owner.id)

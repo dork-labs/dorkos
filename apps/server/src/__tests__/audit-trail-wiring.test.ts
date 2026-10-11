@@ -21,9 +21,8 @@ describe('audit trail startup wiring', () => {
   });
 
   it('serves /api/audit and registers the audit capabilities with the same log', () => {
-    expect(source).toContain(
-      "app.use('/api/audit', createAuditRouter({ log: auditLog, accounts: auditAccounts }));"
-    );
+    // Served from the Hono `/api` app (`http/hono-api.ts`), which reads this.
+    expect(source).toContain('deps.audit = { log: auditLog, accounts: auditAccounts };');
     expect(source).toContain(
       'auditDeps: auditCapabilityDeps(auditLog, auditAccounts, runtimeRegistry),'
     );

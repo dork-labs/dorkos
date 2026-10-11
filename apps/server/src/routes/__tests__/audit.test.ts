@@ -2,15 +2,21 @@
  * `/api/audit` (spec `audit-trail`): the chain check and the reads over HTTP,
  * under the same visibility rule as the capabilities.
  */
-import { describe, it, expect, beforeEach } from 'vitest';
-import express from 'express';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import request from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
 import { createTestDb } from '@dorkos/test-utils/db';
 import { auditEvents, eq, type Db } from '@dorkos/db';
-import { createAuditRouter } from '../audit.js';
+import { createAuditRoutes } from '../audit.js';
+import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
 import { AuditLog } from '../../services/audit/audit-log.js';
 import { AccountIds } from '../../services/audit/account-ids.js';
+
+// The routes are served through the `/api` chain, whose host guard and session
+// gate read the login setting: off, as on a fresh install.
+vi.mock('../../services/core/config-manager.js', () => ({
+  configManager: { get: vi.fn(() => undefined), set: vi.fn() },
+}));
 
 const fixtureTarget = swappableServer();
 const fixtureServer = fixtureTarget.server;
@@ -32,15 +38,15 @@ describe('Audit routes', () => {
         summary: 'DorkOS started',
       });
     }
-    const app = express();
-    app.use(
-      '/api/audit',
-      createAuditRouter({
-        log,
-        accounts: new AccountIds({ db, installId: 'inst-1', readOwnerAccount: () => null }),
+    fixtureTarget.mount(
+      honoGroupListener({
+        path: '/api/audit',
+        routes: createAuditRoutes({
+          log,
+          accounts: new AccountIds({ db, installId: 'inst-1', readOwnerAccount: () => null }),
+        }),
       })
     );
-    fixtureTarget.mount(app);
   });
 
   it('reports an intact chain', async () => {

@@ -260,9 +260,7 @@ import { managedRemoteCoordinator } from './services/core/remote/managed-remote-
 import { managedRemoteCommands } from './services/core/remote/managed-command-service.js';
 import { autostartOwnTunnel, currentRemoteBootPlan } from './services/core/remote/remote-boot.js';
 import { titleForMcpTool } from './services/core/mcp-tool-tiers.js';
-import { createTeamRouter } from './routes/team.js';
 import { createProfileRouter } from './routes/profile.js';
-import { createSearchRouter } from './routes/search.js';
 import { resolveCaller } from './routes/room-caller.js';
 import { LocalAvatarStore } from './services/identity/local-avatar-store.js';
 import { LocalRoomAttachmentStore } from './services/rooms/attachments/local-room-attachment-store.js';
@@ -337,8 +335,6 @@ import {
 } from './services/marketplace/recovery/backup-janitor.js';
 import { installSweepLogger } from './services/marketplace/recovery/install-sweep-log.js';
 import { currentRecordOwner } from './services/marketplace/lib/records/record-owner.js';
-import { createActivityRouter } from './routes/activity.js';
-import { createAuditRouter } from './routes/audit.js';
 import { createAgentPauseRouter } from './routes/agent-pause.js';
 import { wireAgentPause } from './services/mesh/pause/index.js';
 import {
@@ -364,8 +360,6 @@ import {
 import { ApprovalService, resolveApprovalTtlMs } from './services/core/approvals/index.js';
 import { createApprovalsRouter } from './routes/approvals.js';
 import type { DebugDeps } from './routes/debug.js';
-import { createCapabilitiesCatalogRouter } from './routes/capabilities-catalog.js';
-import { createCapabilitiesInvokeRouter } from './routes/capabilities-invoke.js';
 import {
   initCapabilityTierGate,
   initPermissionGate,
@@ -4335,46 +4329,44 @@ async function start() {
   // The team roster — one READ of every identity on this install (ADR
   // 260806-222535). Always mounted, and mounted even when the mesh did not
   // start: the person reading the page is on the roster, so a missing agent
-  // registry is a `warnings[]` entry rather than a dead route.
-  app.use(
-    '/api/team',
-    createTeamRouter({
-      authors: roomAuthors,
-      // `GET /api/team/:memberId/rooms` — where one member can be found (spec
-      // `profile-unification` §3.2). The store rather than `RoomService`: this
-      // is two membership reads and no room behaviour.
-      rooms: roomStore,
-      ...(meshCore && { meshCore }),
-      // What is working RIGHT NOW, from the one map that knows: the room
-      // dispatcher's claims. Nothing else on this install can answer it.
-      activeClaims: () => roomService.listActiveClaims(),
-      // Archived included on purpose — a room can be archived while an agent is
-      // still mid-turn in it, and the status sentence should still name it.
-      listRooms: () =>
-        roomStore
-          .listRooms({ includeArchived: true })
-          .map((room) => ({ id: room.id, name: room.title })),
-      // When each agent last ran, for the agents mesh health cannot speak for
-      // (it is stamped by the claude-code turn paths only). `limit: 1` because
-      // only the `agentActivity` map is wanted here — it is computed across
-      // every session before that trim, so the map is complete either way.
-      sessionActivity: async () => {
-        const { agentActivity } = await listRecentSessions({
-          runtimes: runtimeRegistry.listRuntimes(),
-          agentPaths: meshCore ? meshCore.listWithPaths().map((a) => a.projectPath) : [],
-          limit: 1,
-        });
-        return agentActivity;
-      },
-      ownerAccount: () => readOwnerAccount(),
-      ownerEmail: (userId) => getUserById(userId)?.email ?? null,
-      // `config.profile.displayName` is what the user likes to be called — the
-      // second rung of the operator-name precedence, under the account name.
-      configDisplayName: () => configManager.getAll().profile.displayName,
-      configDisplayNameSource: () => configManager.getAll().profile.displayNameSource,
-      defaultAgentName: () => configManager.getAll().agents.defaultAgent,
-    })
-  );
+  // registry is a `warnings[]` entry rather than a dead route. Served from the
+  // Hono `/api` app (`http/hono-api.ts`), which reads this.
+  deps.team = {
+    authors: roomAuthors,
+    // `GET /api/team/:memberId/rooms` — where one member can be found (spec
+    // `profile-unification` §3.2). The store rather than `RoomService`: this
+    // is two membership reads and no room behaviour.
+    rooms: roomStore,
+    ...(meshCore && { meshCore }),
+    // What is working RIGHT NOW, from the one map that knows: the room
+    // dispatcher's claims. Nothing else on this install can answer it.
+    activeClaims: () => roomService.listActiveClaims(),
+    // Archived included on purpose — a room can be archived while an agent is
+    // still mid-turn in it, and the status sentence should still name it.
+    listRooms: () =>
+      roomStore
+        .listRooms({ includeArchived: true })
+        .map((room) => ({ id: room.id, name: room.title })),
+    // When each agent last ran, for the agents mesh health cannot speak for
+    // (it is stamped by the claude-code turn paths only). `limit: 1` because
+    // only the `agentActivity` map is wanted here — it is computed across
+    // every session before that trim, so the map is complete either way.
+    sessionActivity: async () => {
+      const { agentActivity } = await listRecentSessions({
+        runtimes: runtimeRegistry.listRuntimes(),
+        agentPaths: meshCore ? meshCore.listWithPaths().map((a) => a.projectPath) : [],
+        limit: 1,
+      });
+      return agentActivity;
+    },
+    ownerAccount: () => readOwnerAccount(),
+    ownerEmail: (userId) => getUserById(userId)?.email ?? null,
+    // `config.profile.displayName` is what the user likes to be called — the
+    // second rung of the operator-name precedence, under the account name.
+    configDisplayName: () => configManager.getAll().profile.displayName,
+    configDisplayNameSource: () => configManager.getAll().profile.displayNameSource,
+    defaultAgentName: () => configManager.getAll().agents.defaultAgent,
+  };
 
   // The operator's own profile — their photo and their name (spec
   // `identity-consistency` §W3.3, §W3.5). The store is chosen HERE and nowhere
@@ -4406,7 +4398,7 @@ async function start() {
   // mounted and read-only. An install whose index is empty answers `[]`, which is
   // the honest answer and needs no flag; who may see what is resolved per request
   // through the rooms domain, never from this line.
-  app.use('/api/search', createSearchRouter({ db }));
+  deps.search = { db };
 
   // Template catalog — always available, merges built-in + user templates.
   app.use('/api/templates', createTemplateRouter(dorkHome));
@@ -4438,8 +4430,8 @@ async function start() {
   );
 
   // Activity feed — always available, not behind a feature flag.
-  app.use('/api/activity', createActivityRouter(activityService));
-  app.use('/api/audit', createAuditRouter({ log: auditLog, accounts: auditAccounts }));
+  deps.activity = activityService;
+  deps.audit = { log: auditLog, accounts: auditAccounts };
   app.locals.activityService = activityService;
   mountedRouters.push('activity');
 
@@ -4961,15 +4953,14 @@ async function start() {
   // different, client-facing contract; the registry catalog lives one segment
   // deeper.) Declared as the `capabilities.list` capability's `http` surface so it
   // projects into OpenAPI (task 2.5).
-  app.use('/api/capabilities/catalog', createCapabilitiesCatalogRouter(capabilityRegistry));
+  //
   // POST /api/capabilities/:id/invoke — the generic capability dispatch endpoint
   // (task 2.4). Dispatches through the same composed registry, so every
-  // capability is reachable by id; it rides the app-wide sessionGate (mounted in
-  // `app.ts` before the routes), giving it the standard `/api/*` auth posture —
-  // not the tokenless `/mcp` read-only carve-out — so mutating capabilities are
-  // never reachable tokenlessly. Mounted at the `/api/capabilities` prefix, which
-  // the catalog (`/catalog`) and matrix (`/`) routes do not claim for `POST /:id/invoke`.
-  app.use('/api/capabilities', createCapabilitiesInvokeRouter(capabilityRegistry));
+  // capability is reachable by id; it rides the `/api` chain's session gate,
+  // giving it the standard `/api/*` auth posture — not the tokenless `/mcp`
+  // read-only carve-out — so mutating capabilities are never reachable
+  // tokenlessly. Both are served from the Hono `/api` app (`http/hono-api.ts`).
+  deps.capabilities = capabilityRegistry;
   logger.info(
     `[Capabilities] Registry composed (${capabilityRegistry.capabilities.length} capabilities); catalog at GET /api/capabilities/catalog, invoke at POST /api/capabilities/:id/invoke`
   );
