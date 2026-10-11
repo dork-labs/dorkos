@@ -12,7 +12,7 @@ import { CommunityChannelGroups } from './CommunityChannelGroups';
 import { useCallback, type ReactNode } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { communityRefFromRouteDestination, useCommunityRouteEpoch } from '@/layers/shared/model';
-import { useSpacesEnabled } from '@/layers/entities/config';
+import { useSpaceVisible } from '@/layers/entities/community';
 import {
   setGroupCollapsed,
   setSectionCollapsed,
@@ -124,9 +124,11 @@ export function SidebarZones({
 }: SidebarZonesProps) {
   const { update } = useUpdateSidebarPrefs();
   const route = useCommunityRouteEpoch();
-  // A space's channels replace the panel only while spaces are on (DOR-2740).
-  const spaces = useSpacesEnabled();
-  const selectedCommunity = spaces ? communityRefFromRouteDestination(route.destination) : null;
+  // A space's channels replace the panel only while that space is reachable:
+  // any with spaces on, the official one alone with them off (DOR-2740).
+  const routeCommunity = communityRefFromRouteDestination(route.destination);
+  const space = useSpaceVisible(routeCommunity ?? undefined);
+  const selectedCommunity = space.visible ? routeCommunity : null;
   const boot = useBootState();
   const reducedMotion = useReducedMotion();
   // Getting started leaves the shared slot the frame a real signal wants it and

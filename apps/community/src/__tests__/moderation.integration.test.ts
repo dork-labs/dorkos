@@ -449,7 +449,7 @@ describe('rules', () => {
     expect(read).toEqual({ text: 'Be kind. No spam.', version, acceptedVersion: 0 });
     await expectStatus(
       await call(scoped('/rules/accept'), 'POST', agentOf(alice), { version }),
-      401
+      403
     );
     await expectStatus(
       await call(scoped('/rules/accept'), 'POST', human(alice), { version: version + 1 }),
@@ -509,7 +509,7 @@ describe('reports', () => {
 
     const own = await posted(agentOf(alice), 'mine');
     await expectStatus(await report(human(alice), own), 409);
-    await expectStatus(await report(agentOf(bob)), 401);
+    await expectStatus(await report(agentOf(bob)), 403);
     await expectStatus(await report(human(bob), randomUUID()), 404);
 
     const hidden = await expectStatus(
@@ -814,7 +814,7 @@ describe('display names', () => {
     );
     await expectStatus(
       await call(scoped('/me'), 'PATCH', agentOf(alice), { displayName: 'Agent' }),
-      401
+      403
     );
   });
 
@@ -999,5 +999,83 @@ describe('the moderation record through erasure', () => {
       frank.memberId,
     ]);
     expect(clocks.rowCount).toBe(0);
+  });
+});
+
+describe('a person’s own DorkOS install', () => {
+  /** A grant the person approved for their install, as pairing mints one. */
+  async function grantFor(memberId: string, scopes = '{read,post}', historyOnly = false) {
+    const token = randomToken();
+    await pool.query(
+      `INSERT INTO connection_grants(community_id,member_id,token_hash,scopes,install_name,history_only)
+       VALUES($1,$2,$3,$4,'Conduct test install',$5)`,
+      [communityId, memberId, hashSecret(token), scopes, historyOnly]
+    );
+    return { token };
+  }
+
+  it('reads standing, accepts the rules, renames and reports for the person, never as an agent', async () => {
+    const june = await person('June');
+    const install = await grantFor(june.memberId);
+    const set = await expectStatus(
+      await call(scoped('/rules'), 'PUT', human({ cookie: ownerCookie }), {
+        text: 'Be kind to June.',
+        expectedVersion: (await expectStatus(await call(scoped('/rules'), 'GET', human(june)), 200))
+          .version,
+      }),
+      200
+    );
+    const version = set.version as number;
+
+    const standing = await expectStatus(await call(scoped('/me/standing'), 'GET', install), 200);
+    expect(standing).toEqual({ mutedUntil: null });
+
+    // Their agent's credential is refused on every one of a person's own acts.
+    for (const [path, method, body] of [
+      ['/me/standing', 'GET', undefined],
+      ['/rules/accept', 'POST', { version }],
+      ['/me', 'PATCH', { displayName: 'Agent June' }],
+    ] as const)
+      expect((await call(scoped(path), method, agentOf(june), body)).status, path).toBe(403);
+
+    await expectStatus(await call(scoped('/rules/accept'), 'POST', install, { version }), 200);
+    expect(await auditCount('rules.accept', june.memberId)).toBe(1);
+    const renamed = await expectStatus(
+      await call(scoped('/me'), 'PATCH', install, { displayName: 'June Bug' }),
+      200
+    );
+    expect((renamed.member as { displayName: string }).displayName).toBe('June Bug');
+
+    const target = await posted(human({ cookie: ownerCookie }), 'report me');
+    await expectStatus(
+      await call(scoped(`/entries/${target}/reports`), 'POST', agentOf(june), { reason: 'spam' }),
+      403
+    );
+    await expectStatus(
+      await call(scoped(`/entries/${target}/reports`), 'POST', install, {
+        reason: 'spam',
+        note: 'From the app',
+      }),
+      201
+    );
+    const filed = await pool.query(
+      'SELECT reporter_member_id,note FROM reports WHERE entry_id=$1 AND source=$2',
+      [target, 'member']
+    );
+    expect(filed.rows).toEqual([{ reporter_member_id: june.memberId, note: 'From the app' }]);
+  });
+
+  it('lets a history-only or read-only grant read standing but change nothing', async () => {
+    const kit = await person('Kit');
+    for (const install of [
+      await grantFor(kit.memberId, '{read}', true),
+      await grantFor(kit.memberId, '{read}'),
+    ]) {
+      await expectStatus(await call(scoped('/me/standing'), 'GET', install), 200);
+      await expectStatus(
+        await call(scoped('/me'), 'PATCH', install, { displayName: 'Kit Kat' }),
+        403
+      );
+    }
   });
 });

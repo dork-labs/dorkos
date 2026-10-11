@@ -1,9 +1,9 @@
 /**
- * The next step a person is offered when DorkOS could not read its own config
- * file, chosen by what the operating system said. Split out of
- * `config-manager.ts`, which builds the errors that carry it.
+ * The next step a config-load failure offers, chosen by what the operating system said: the
+ * errno groups that pass on their own, need the person, or need disk space, and the advice
+ * text for each. Moved out of `config-manager.ts` unchanged; no migration reaches it.
  *
- * @module services/core/config/boot-advice
+ * @module services/core/config/load-error-advice
  */
 import path from 'path';
 

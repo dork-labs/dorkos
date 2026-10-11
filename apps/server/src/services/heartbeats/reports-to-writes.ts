@@ -11,6 +11,7 @@
  */
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
 import { recordAudit } from '../audit/audit-trail.js';
+import { wakeAgent } from './event-wakes.js';
 import { createReportsToChain, type ReportsToMesh } from './reports-to.js';
 
 export type { ReportsToMesh } from './reports-to.js';
@@ -96,6 +97,8 @@ export function recordReportsToChange(
   after: string | null
 ): void {
   if (before === after) return;
+  // Its next beat opens with how it reports, for the new manager (§4.2).
+  wakeAgent(agent.id, { type: 'reports-to-changed' });
   recordAudit({
     action: 'agent.reports_to_changed',
     operation: 'modify',

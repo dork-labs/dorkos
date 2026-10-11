@@ -13,7 +13,12 @@
 import type { CommunityRef } from '@dorkos/shared/community-adapter';
 import { logger } from '../../../../lib/logger.js';
 import type { RemoteConnectionStore } from '../connection-store.js';
-import { readWakeAgentsFrom, type WakeAgentsFrom } from './wake-setting.js';
+import {
+  DEFAULT_WAKE_AGENTS_FROM,
+  readWakeAgentsFrom,
+  type ConnectionWakeSetting,
+  type WakeAgentsFrom,
+} from './wake-setting.js';
 
 /** The question the live stream bridge asks before a space message may start a turn. */
 export interface RemoteWakeGate {
@@ -27,8 +32,12 @@ export interface RemoteWakeGate {
   wakes(communityRef: CommunityRef, ownerAuthorId: string, authorMemberId: string): boolean;
 }
 
-interface Entry {
-  from: WakeAgentsFrom;
+/** Where a connection points, which decides its default: the official space's is narrower. */
+export type WakePlace = Pick<ConnectionWakeSetting, 'pinnedOrigin' | 'remoteCommunityId'>;
+
+interface Entry extends WakePlace {
+  /** The owner's choice, or `null` when the default applies. */
+  chosen: WakeAgentsFrom | null;
   ownerMemberId: string | null;
 }
 
@@ -46,10 +55,16 @@ export class RemoteWakePolicy implements RemoteWakeGate {
    * @param retryDelaysMs - How long to wait before each further attempt when a read fails and
    *   the gate has no answer yet. Bounded: past the last one the gate keeps waking nobody until
    *   the next connection change reads again.
+   * @param defaultFor - Who may wake agents on a connection whose owner never chose, asked on
+   *   every message with the place the connection points at, so a change of the official space's
+   *   link applies at once and nothing hangs on another in-memory answer having loaded (narrower
+   *   for the official space, spec `official-community-space` D9).
    */
   constructor(
     private readonly store: RemoteConnectionStore,
-    private readonly retryDelaysMs: readonly number[] = [250, 1_000, 5_000]
+    private readonly retryDelaysMs: readonly number[] = [250, 1_000, 5_000],
+    private readonly defaultFor: (place: WakePlace) => WakeAgentsFrom = () =>
+      DEFAULT_WAKE_AGENTS_FROM
   ) {
     store.onChange(() => {
       void this.reload();
@@ -73,7 +88,12 @@ export class RemoteWakePolicy implements RemoteWakeGate {
           this.entries = new Map(
             settings.map((setting) => [
               key(setting.ref, setting.ownerKey),
-              { from: setting.wakeAgentsFrom, ownerMemberId: setting.connectedHumanMemberId },
+              {
+                chosen: setting.chosen,
+                ownerMemberId: setting.connectedHumanMemberId,
+                pinnedOrigin: setting.pinnedOrigin,
+                remoteCommunityId: setting.remoteCommunityId,
+              },
             ])
           );
         }
@@ -119,7 +139,7 @@ export class RemoteWakePolicy implements RemoteWakeGate {
       // And newer than every read already in flight, so none that started before
       // this write can land afterwards and put the old answer back.
       this.applied = ++this.started;
-      this.entries = new Map(this.entries).set(key(ref, ownerKey), { ...current, from: value });
+      this.entries = new Map(this.entries).set(key(ref, ownerKey), { ...current, chosen: value });
     }
     await this.reload();
   }
@@ -128,7 +148,7 @@ export class RemoteWakePolicy implements RemoteWakeGate {
   wakes(communityRef: CommunityRef, ownerAuthorId: string, authorMemberId: string): boolean {
     const entry = this.entries?.get(key(communityRef, ownerAuthorId));
     if (!entry) return false;
-    if (entry.from === 'members') return true;
+    if ((entry.chosen ?? this.defaultFor(entry)) === 'members') return true;
     return entry.ownerMemberId !== null && entry.ownerMemberId === authorMemberId;
   }
 }

@@ -24,7 +24,14 @@ vi.mock('@/layers/entities/config', () => ({
   useUpdateSidebarPrefs: () => ({ update: vi.fn() }),
   setSectionCollapsed: (prefs: unknown) => prefs,
   setGroupCollapsed: (prefs: unknown) => prefs,
-  useSpacesEnabled: () => spaces.on,
+}));
+// Whether the route's space may show: the experiment alone here, since no official space is
+// named (spec `official-community-space` D5; `use-space-visible.test.tsx` covers that rule).
+vi.mock('@/layers/entities/community', () => ({
+  useSpaceVisible: (ref: string | undefined) => ({
+    visible: spaces.on && ref !== undefined,
+    isLoading: false,
+  }),
 }));
 // The space's channels have their own transport-backed tests; here only whether
 // they are drawn matters.

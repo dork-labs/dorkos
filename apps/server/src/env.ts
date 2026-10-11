@@ -160,6 +160,11 @@ export const serverEnvSchema = z.object({
   DORKOS_APPROVAL_TTL_MS: z.coerce.number().int().min(1000).optional(),
   // Feature flags (boolean after transform)
   DORKOS_A2A_ENABLED: boolFlag,
+  // The official DorkOS space's public link (spec `official-community-space`
+  // D4). When set, even to '', it overrules `spaces.official.url` in config;
+  // '' turns the exception off. Read through
+  // services/communities/remote/official-space.ts, never compared directly.
+  DORKOS_OFFICIAL_SPACE_URL: z.string().max(2048).optional(),
   // A2A gateway — public base URL advertised on agent cards. Defaults to
   // http://{DORKOS_HOST}:{DORKOS_PORT}, which is non-routable when the host
   // is 0.0.0.0; set this when DorkOS sits behind a proxy/tunnel
@@ -339,6 +344,16 @@ export const serverEnvSchema = z.object({
   TUNNEL_PORT: z.coerce.number().int().min(1).max(65535).optional(),
   TUNNEL_AUTH: z.string().optional(),
   TUNNEL_DOMAIN: z.string().optional(),
+  // DorkOS managed remote access (DOR-2086). Off until the live supplier proof
+  // passes: unset, nothing managed is offered, no Cloud command stream runs, and
+  // the person's own ngrok tunnel above is untouched either way. `1` or `true`
+  // switches it on. A free spelling rather than `boolFlag`, because the plan
+  // names `=1` and a feature switch must not refuse to boot over it. Read by
+  // `services/core/remote/managed-availability.ts`.
+  DORKOS_MANAGED_REMOTE: z
+    .string()
+    .optional()
+    .transform((value) => value === '1' || value?.toLowerCase() === 'true'),
   NGROK_AUTHTOKEN: z.string().optional(),
   // DorkOS cloud base URL for device-link (accounts-and-auth P2). Defaults to
   // production; override for local dev against the site (e.g.

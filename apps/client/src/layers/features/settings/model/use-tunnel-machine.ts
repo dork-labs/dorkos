@@ -19,7 +19,12 @@
  */
 
 import { useState, useEffect } from 'react';
-import { useRemoteAccess, type TunnelReport, type TunnelState } from '@/layers/entities/tunnel';
+import {
+  useRemoteAccess,
+  type ManagedRemoteAccess,
+  type TunnelReport,
+  type TunnelState,
+} from '@/layers/entities/tunnel';
 import {
   type ViewState,
   LATENCY_INTERVAL_MS,
@@ -42,6 +47,11 @@ export interface TunnelMachine {
    */
   tunnel: TunnelReport | undefined;
   tokenConfigured: boolean;
+  /**
+   * Managed remote access, while the server offers it here (DOR-2086); `null`
+   * means the panel draws the person's own ngrok setup exactly as before.
+   */
+  managed: ManagedRemoteAccess | null;
   isTransitioning: boolean;
   isChecked: boolean;
 
@@ -163,6 +173,7 @@ export function useTunnelMachine({ open }: { open: boolean }): TunnelMachine {
     error: remote.error,
     tunnel,
     tokenConfigured: remote.tokenConfigured,
+    managed: remote.managed,
     isTransitioning: remote.isTransitioning,
     isChecked: remote.isChecked,
     showSetup,

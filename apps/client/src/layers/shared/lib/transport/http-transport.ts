@@ -16,6 +16,7 @@ import { createMeshMethods } from './mesh-methods';
 import { createSessionMethods } from './session-methods';
 import { createSessionStreamMethods } from './session-stream-methods';
 import { createSystemMethods } from './system-methods';
+import { createRemoteAccessMethods } from './remote-access-methods';
 import { createMarketplaceMethods } from './marketplace-methods';
 import { createHarnessMethods } from './harness-methods';
 import { createShapeMethods } from './shape-methods';
@@ -33,6 +34,7 @@ import { createFeedbackMethods } from './feedback-methods';
 import { createApprovalMethods } from './approval-methods';
 import { createPermissionMethods } from './permission-methods';
 import { createCommitmentMethods } from './commitment-methods';
+import { createHeartbeatMethods } from './heartbeat-methods';
 import { createNotificationMethods } from './notification-methods';
 import { createPushMethods } from './push-methods';
 import { createConnectorMethods } from './connector-methods';
@@ -62,6 +64,7 @@ export interface HttpTransport
     ReturnType<typeof createSessionMethods>,
     ReturnType<typeof createSessionStreamMethods>,
     ReturnType<typeof createSystemMethods>,
+    ReturnType<typeof createRemoteAccessMethods>,
     ReturnType<typeof createMarketplaceMethods>,
     ReturnType<typeof createHarnessMethods>,
     ReturnType<typeof createShapeMethods>,
@@ -79,6 +82,7 @@ export interface HttpTransport
     ReturnType<typeof createApprovalMethods>,
     ReturnType<typeof createPermissionMethods>,
     ReturnType<typeof createCommitmentMethods>,
+    ReturnType<typeof createHeartbeatMethods>,
     ReturnType<typeof createNotificationMethods>,
     ReturnType<typeof createPushMethods>,
     ReturnType<typeof createConnectorMethods>,
@@ -111,6 +115,7 @@ export class HttpTransport implements Transport {
       createSessionMethods(baseUrl, () => this.clientId, this.etagCache, this.messageCache),
       createSessionStreamMethods(baseUrl, this),
       createSystemMethods(baseUrl),
+      createRemoteAccessMethods(baseUrl),
       createMarketplaceMethods(baseUrl),
       createHarnessMethods(baseUrl),
       createShapeMethods(baseUrl),
@@ -128,6 +133,7 @@ export class HttpTransport implements Transport {
       createApprovalMethods(baseUrl),
       createPermissionMethods(baseUrl),
       createCommitmentMethods(baseUrl),
+      createHeartbeatMethods(baseUrl),
       createNotificationMethods(baseUrl),
       createPushMethods(baseUrl),
       createConnectorMethods(baseUrl),

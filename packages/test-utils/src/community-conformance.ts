@@ -70,6 +70,7 @@
 import { describe } from 'vitest';
 import type { CommunityAdapter } from '@dorkos/shared/community-adapter';
 import { registerCapabilityBranchedAssertions } from './community-conformance-branched.js';
+import { registerConductAssertions } from './community-conformance-conduct.js';
 import {
   createCommunityConformanceContext,
   type CommunityConformanceOpts,
@@ -101,5 +102,6 @@ export function communityConformance(
   describe(ctx.opts.name, () => {
     registerUniversalAssertions(ctx);
     registerCapabilityBranchedAssertions(ctx);
+    registerConductAssertions(ctx);
   });
 }

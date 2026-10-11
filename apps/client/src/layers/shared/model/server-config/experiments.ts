@@ -41,11 +41,24 @@ export function readExperimentEnabled(queryClient: QueryClient, path: string): b
 }
 
 /**
- * Whether the spaces experiment is on, from the config cache, for code outside
- * React. The single non-hook spaces check, beside `useSpacesEnabled`.
+ * The official DorkOS space's link from a config answer, or `null` when the server names none
+ * (spec `official-community-space` D4). While it is `null`, every official-space prompt stays
+ * hidden; the server has already checked the link is usable.
+ *
+ * @param config - The server config, or `undefined` before it arrives.
+ */
+export function officialSpaceLink(config: ServerConfig | undefined): string | null {
+  return config?.officialSpace?.url ?? null;
+}
+
+/**
+ * Whether any space can be reached right now, from the config cache, for code outside React:
+ * the spaces experiment is on, or an official space is configured (spec
+ * `official-community-space` D5). The server still judges each space by its ref.
  *
  * @param queryClient - The app's query client.
  */
-export function readSpacesEnabled(queryClient: QueryClient): boolean {
-  return readExperimentEnabled(queryClient, SPACES_EXPERIMENT);
+export function readAnySpaceReachable(queryClient: QueryClient): boolean {
+  const config = queryClient.getQueryData<ServerConfig>(configKeys.current());
+  return isExperimentEnabled(config, SPACES_EXPERIMENT) || officialSpaceLink(config) !== null;
 }

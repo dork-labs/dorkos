@@ -249,7 +249,11 @@ export function handRegisteredInSessionToolSet(
       };
     }),
     ...getTasksTools(deps, resolveTaskProvenance),
-    ...getRelayTools(deps, relayIdentity),
+    // The calling chat rides along so a note from a running beat is counted.
+    ...getRelayTools(deps, {
+      ...relayIdentity,
+      sessionId: () => session?.sdkSessionId || sessionId,
+    }),
     ...getAdapterTools(deps),
     ...getBindingTools(deps),
     ...getTraceTools(deps),

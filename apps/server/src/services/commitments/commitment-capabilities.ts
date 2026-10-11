@@ -24,14 +24,13 @@
  * made in is the owner's to see, in the app, and chats are owner-only
  * everywhere else too. It defaults to open promises, 50 rows at most.
  *
- * ## Known limit: outsiders (closed by DOR-2788 PR 3)
+ * ## Strangers
  *
- * The capability context carries no turn origin, so `commitments_list` can run
- * on a room turn an outsider started (a Telegram or Slack message), and that
- * turn reads every agent's open promises. The promise texts are the agents'
- * own words, not secrets, but trust does not extend to strangers (PRINCIPLES
- * §1). DOR-2788 PR 3 threads the turn origin through and closes this; until
- * then it is a known gap, not a decision.
+ * `commitments_list` refuses on a turn somebody from off this machine started
+ * (a bridged Telegram or Slack sender, an external room author, an outside
+ * agent: `context.turnStartedByOutsider`). The promise texts are the agents'
+ * own words, not secrets, but trust never extends to strangers (PRINCIPLES §1),
+ * and a stranger's turn runs under the binding's grant, not the space's.
  *
  * @module services/commitments/commitment-capabilities
  */
@@ -111,6 +110,15 @@ const NO_AGENT: Refusal = {
     'so nothing was recorded.',
 };
 
+/** The refusal for a list asked for on a turn a stranger started. */
+const OUTSIDER_TURN: Refusal = {
+  ok: false,
+  code: 'OUTSIDER_TURN',
+  error:
+    'Promises are read by the team, and this turn was started by someone outside it, so ' +
+    'nothing was listed.',
+};
+
 /**
  * The calling agent's Mesh id, or a refusal.
  *
@@ -185,7 +193,8 @@ export const commitmentsDomain: CapabilityDomain = {
         'chat. Everyone on the team can read your list. `what` is the promise in one plain line ' +
         '("Send Acme the revised quote"). `to` is who it was made to: a person, an agent id, or ' +
         '`external:<name>` for someone outside the business. `dueAt` is when it is due (ISO ' +
-        '8601 with an offset, never in the past); an hour after it comes due it is marked missed ' +
+        '8601 with an offset, never in the past); when it comes due you are woken to deal with ' +
+        'it, and an hour later it is marked missed ' +
         'unless you kept it or moved the date. A promise to an outsider ' +
         '(a date, a price, a discount) commits other people: ask first, then record it. When you ' +
         'have done it, mark it kept with the promise-update tool.',
@@ -324,11 +333,14 @@ export const commitmentsDomain: CapabilityDomain = {
           .optional()
           .describe('Only promises made to this person, agent or `external:<name>`.'),
       }),
-      output: z.object({
-        commitments: z.array(CommitmentSchema),
-        /** True when more matched than `limit`, so a cut list is never silent. */
-        truncated: z.boolean(),
-      }),
+      output: z.union([
+        z.object({
+          commitments: z.array(CommitmentSchema),
+          /** True when more matched than `limit`, so a cut list is never silent. */
+          truncated: z.boolean(),
+        }),
+        RefusalSchema,
+      ]),
       surfaces: {
         mcp: {
           toolName: COMMITMENTS_LIST_TOOL,
@@ -336,7 +348,9 @@ export const commitmentsDomain: CapabilityDomain = {
           annotations: { idempotentHint: true },
         },
       },
-      invoke: async (deps, input) => {
+      invoke: async (deps, input, context) => {
+        // A stranger's turn reads nobody's promises (module TSDoc, "Strangers").
+        if (context.turnStartedByOutsider) return OUTSIDER_TURN;
         const { state = 'open', limit = LIST_DEFAULT_LIMIT, ...filter } = input;
         const list = requireCommitmentDeps(deps).service.list(
           { ...filter, ...(state === 'all' ? {} : { state }) },

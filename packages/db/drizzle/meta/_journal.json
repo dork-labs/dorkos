@@ -1086,6 +1086,20 @@
       "when": 1791654717694,
       "tag": "20261010175157_agent_pauses",
       "breakpoints": true
+    },
+    {
+      "idx": 155,
+      "version": "6",
+      "when": 1791677140996,
+      "tag": "20261011000540_heartbeats",
+      "breakpoints": true
+    },
+    {
+      "idx": 156,
+      "version": "6",
+      "when": 1791688446887,
+      "tag": "20261011031406_remote_command_journal",
+      "breakpoints": true
     }
   ]
 }

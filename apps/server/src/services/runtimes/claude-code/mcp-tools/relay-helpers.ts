@@ -29,6 +29,11 @@ export interface SenderIdentity {
    * Used by `relay_notify_user` to resolve the caller's own integration bindings.
    */
   agentId?: string;
+  /**
+   * The calling chat, read at call time, when the tool runs in one. Used only
+   * to count a note sent from a running heartbeat outside `end_beat`.
+   */
+  sessionId?: () => string | undefined;
 }
 
 /**

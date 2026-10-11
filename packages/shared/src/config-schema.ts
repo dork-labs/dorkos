@@ -17,6 +17,11 @@
  *
  * @module config-schema
  */
+import {
+  ActivityConfigSchema,
+  HeartbeatsConfigSchema,
+  KeepAwakeConfigSchema,
+} from './config-sections.js';
 import { z } from 'zod';
 import { EFFORT_LEVELS } from './constants.js';
 // `HARNESS_IDS`, never `HarnessIdSchema`. This module is one of the five
@@ -42,6 +47,7 @@ import { ROOM_REPO_CAP_DEFAULTS } from './room-repo.js';
 import { RuntimeEnvironmentSchema } from './runtime-environment-schema.js';
 import { CredentialReferenceSchema } from './credential-reference.js';
 import * as remote from './remote-access-settings.js';
+import { CommunityNavigationRefSchema, SpacesSettingsSchema } from './spaces-settings.js';
 // Plain id lists, never the named schemas in `permissions/permission-schemas.ts`:
 // the same SRC-alias reason as `HARNESS_IDS` above.
 import {
@@ -56,10 +62,6 @@ export {
   isReservedRuntimeEnvName,
   RUNTIME_RESERVED_ENV_NAMES,
 } from './runtime-environment-schema.js';
-
-const CommunityNavigationRefSchema = z
-  .string()
-  .regex(/^[0-9A-Za-z][0-9A-Za-z_-]*$/, 'A community ref must be path-safe');
 
 /**
  * Where a copy of an extension came from, when this machine can prove it (spec
@@ -2525,8 +2527,15 @@ export const UserConfigSchema = z.object({
    * turns this on in Settings → Experiments. This machine's own rooms and
    * #team are not spaces and never read it. Read on every request, so a change
    * takes effect at once.
+   *
+   * `official.url` is the one exception (spec `official-community-space` D4):
+   * the public link of the official DorkOS space. Its row shows, and it can be
+   * joined, even with the experiment off. `''` turns the exception off, which
+   * is the shipped default until that space exists. `DORKOS_OFFICIAL_SPACE_URL`
+   * overrides it. Only a person may change it: it decides which outside server
+   * this install talks to with spaces off.
    */
-  spaces: z.object({ enabled: z.boolean().default(false) }).default(() => ({ enabled: false })),
+  spaces: SpacesSettingsSchema,
   /**
    * Letting agents on other systems talk to the agents on this one.
    *
@@ -2568,43 +2577,12 @@ export const UserConfigSchema = z.object({
       maxConcurrentRuns: 4,
       retentionCount: 100,
     })),
-  /**
-   * Whether this computer may idle-sleep while agents work (spec `keep-awake`,
-   * DOR-2718). A whole top-level section on purpose: conf writes a new section
-   * into every stored config on its own, so neither field needs a migration.
-   * Both defaults are declared twice, here and in the section literal below,
-   * and the two must agree.
-   */
-  keepAwake: z
-    .object({
-      /** Hold the computer awake while any agent works; release when idle. */
-      whileAgentsWork: z.boolean().default(true),
-      /**
-       * Wake the computer shortly before each approved scheduled run (needs
-       * one-time admin setup on macOS and Linux). Read by nothing yet: the wake
-       * half of the spec ships later, and Settings offers no switch for it
-       * until then. It ships in this section now so adding it later is not a
-       * nested-leaf migration.
-       */
-      wakeForScheduledTasks: z.boolean().default(false),
-    })
-    .default(() => ({ whileAgentsWork: true, wakeForScheduledTasks: false })),
-  /**
-   * The Activity feed (spec `audit-trail` §3.5). A whole top-level section on
-   * purpose, like `keepAwake`: conf writes a new section into every stored
-   * config on its own, so the field needs no migration. The default is declared
-   * twice, here and in the section literal below, and the two must agree.
-   */
-  activity: z
-    .object({
-      /**
-       * Days of Activity history to keep. `DORKOS_ACTIVITY_RETENTION_DAYS`
-       * overrides it when set. Permission changes are kept regardless, and the
-       * audit log keeps every action forever whatever this says.
-       */
-      retentionDays: z.number().int().min(1).max(3650).default(365),
-    })
-    .default(() => ({ retentionDays: 365 })),
+  /** Whether this computer may idle-sleep while agents work (`config-sections.ts`). */
+  keepAwake: KeepAwakeConfigSchema,
+  /** Whether agents wake on their own (`config-sections.ts`). */
+  heartbeats: HeartbeatsConfigSchema,
+  /** The Activity feed (`config-sections.ts`). */
+  activity: ActivityConfigSchema,
   mesh: z
     .object({
       scanRoots: z.array(z.string()).default(() => []),

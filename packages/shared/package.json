@@ -53,6 +53,10 @@
       "types": "./src/transport-rooms.ts",
       "default": "./dist/transport-rooms.js"
     },
+    "./transport-heartbeats": {
+      "types": "./src/transport-heartbeats.ts",
+      "default": "./dist/transport-heartbeats.js"
+    },
     "./transport-onboarding": {
       "types": "./src/transport-onboarding.ts",
       "default": "./dist/transport-onboarding.js"
@@ -496,6 +500,10 @@
     "./commitment-schemas": {
       "types": "./src/commitment-schemas.ts",
       "default": "./dist/commitment-schemas.js"
+    },
+    "./heartbeat-schemas": {
+      "types": "./src/heartbeat-schemas.ts",
+      "default": "./dist/heartbeat-schemas.js"
     }
   },
   "scripts": {

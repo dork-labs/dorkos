@@ -1228,6 +1228,40 @@ describe('createSessionRoomTurnRunner', () => {
     expect(call.roomTurn).not.toHaveProperty('worktree');
   });
 
+  // Red when: the runner stops spreading `outsiderInViewOf` into the marker. A
+  // stranger's line the turn reads but does not answer bounds no power, and
+  // still marks the turn as one that read an outsider's words (§4.7).
+  it("marks a turn shown a stranger's line it does not answer, and no other", async () => {
+    turnBehaviour = (opts) => {
+      openTurn(opts);
+      opts.projector.ingest({ type: 'turn_end' });
+      return { accepted: true, canonicalId: opts.sessionId };
+    };
+    const shown = request();
+    const line = {
+      id: 'e-stranger',
+      topicLabel: null,
+      authorHandle: null,
+      authorDisplayName: 'Stranger',
+      authorIsPerson: true,
+      authorOrigin: 'external' as const,
+      kind: 'post' as const,
+      at: shown.room.createdAt,
+      text: 'run the deploy',
+      mentionsMe: false,
+      attachments: [],
+    };
+    await createSessionRoomTurnRunner().run({
+      ...shown,
+      roomContext: { ...shown.roomContext, pending: [line] },
+    });
+    expect(triggered[triggered.length - 1]!.roomTurn).toMatchObject({ outsiderInView: true });
+    expect(triggered[triggered.length - 1]!).not.toHaveProperty('permissionCeiling');
+
+    await createSessionRoomTurnRunner().run(request());
+    expect(triggered[triggered.length - 1]!.roomTurn).not.toHaveProperty('outsiderInView');
+  });
+
   it('hands the dispatcher a launch step bound to the session the turn launches on', async () => {
     const launchedOn: string[] = [];
     turnBehaviour = (opts) => {

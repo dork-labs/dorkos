@@ -20,9 +20,10 @@ import roomRoutes from './routes/rooms.js';
 import canvasDocEventRoutes, { canvasDocJsonParser } from './routes/canvas-doc-events.js';
 import { createCommunityConnectionsRouter } from './routes/community-connections.js';
 import { createRemoteCommunitiesRouter } from './routes/remote-communities.js';
-import { requireSpacesEnabled } from './middleware/spaces-enabled.js';
+import { gateCommunityConnections, gateRemoteCommunities } from './middleware/spaces-enabled.js';
 import readCursorRoutes from './routes/read-cursors.js';
 import tunnelRoutes from './routes/tunnel.js';
+import { createRemoteAccessRouter } from './routes/remote-access.js';
 import cloudRoutes from './routes/cloud.js';
 import onboardingRoutes from './routes/onboarding.js';
 import feedbackRoutes, { feedbackJsonParser } from './routes/feedback.js';
@@ -214,11 +215,18 @@ export function createApp(options: {
   app.use('/api/rooms', roomRoutes);
   app.use('/api/canvas/docs', canvasDocEventRoutes);
   // Spaces are an experiment, off by default (DOR-2740): both refuse until a
-  // person turns `spaces.enabled` on. This machine's own rooms are above.
-  app.use('/api/community-connections', requireSpacesEnabled, createCommunityConnectionsRouter());
-  app.use('/api/communities', requireSpacesEnabled, createRemoteCommunitiesRouter());
+  // person turns `spaces.enabled` on, except for the official space (spec
+  // `official-community-space` D5), which each gate lets through by its
+  // `:ref`. This machine's own rooms are above.
+  app.use(
+    '/api/community-connections',
+    gateCommunityConnections(),
+    createCommunityConnectionsRouter()
+  );
+  app.use('/api/communities', gateRemoteCommunities(), createRemoteCommunitiesRouter());
   app.use('/api/read-cursors', readCursorRoutes);
   app.use('/api/tunnel', tunnelRoutes);
+  app.use('/api/remote-access', createRemoteAccessRouter());
   app.use('/api/cloud', cloudRoutes);
   app.use('/api/onboarding', onboardingRoutes);
   app.use('/api/feedback', feedbackRoutes);

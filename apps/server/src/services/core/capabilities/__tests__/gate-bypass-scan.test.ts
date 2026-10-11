@@ -51,7 +51,6 @@
  *
  * @module services/core/capabilities/__tests__/gate-bypass-scan
  */
-import { existsSync } from 'node:fs';
 import { readdir, readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -70,17 +69,6 @@ interface ProtectedEffect {
   call: string;
   /** Paths relative to `apps/server/src`, each with why it is allowed. */
   allowed: Record<string, string>;
-  /**
-   * Allowed callers that are not written yet, each with the gate it will run.
-   *
-   * For an effect that lands before the one module meant to reach it (DOR-2086
-   * lands its protected effects first, then the dispatcher and coordinator
-   * that call them). A planned path is exempt from the "still calls it" check
-   * only while its file does not exist. The day it is created the scan FAILS
-   * until the entry is promoted to `allowed`, so the pull request that writes
-   * the caller has to edit this file and say, in review, which gate it runs.
-   */
-  planned?: Record<string, string>;
 }
 
 const PROTECTED_EFFECTS: ProtectedEffect[] = [
@@ -151,12 +139,14 @@ const PROTECTED_EFFECTS: ProtectedEffect[] = [
         'PUT /agents/defaultAgent — a name, not a posture, and the operator-only paths on this router go through the guarded step instead (logConfigWrite: "the default-agent route")',
       'routes/tunnel.ts':
         'start/stop — `tunnel.*` IS operator-only, so start runs the cookie bar then the agent bar before reaching here; stop runs neither on purpose, because stopping only narrows exposure (DOR-1738)',
+      'routes/remote-access.ts':
+        '`POST /api/remote-access/mode` with `off` writes `tunnel.enabled: false`, exactly as `POST /api/tunnel/stop` does, and only after the cookie, trusted-caller and local-caller bars; it only ever narrows (logConfigWrite: "turning remote access off")',
       'services/runtimes/connect/doe-setup-router.ts':
         'PUT /doe/inference writes only the fixed DorkOS inference metadata leaf after the loopback and refuseUnlessAccountOwner bars: identified agents and approval-token requesters are refused in every posture; under login an install-owner cookie is required. logConfigWrite records the before/after runtimes section as the DorkOS model setup',
       'services/core/agent-creator.ts':
         'records the agent it just created as the default (logConfigWrite: "the agent creator")',
       'services/core/auth/cloud-link.ts':
-        'stores the token this instance was linked with, behind the link flow (logConfigWrite: "the account link" / "unlinking this instance")',
+        'stores the token this instance was linked with, behind the link flow; an unlink, and a new key replacing a held one, also narrow `cloud.remote` with `withdrawnRemoteState` (logConfigWrite: "the account link" / "unlinking this instance")',
       'services/core/auth/seed-legacy-mcp-key.ts':
         'a boot migration that CLEARS a legacy key — narrowing only, and no request reaches it (logConfigWrite: "the MCP key migration")',
       'services/core/remote/remote-state.ts':
@@ -472,10 +462,8 @@ const PROTECTED_EFFECTS: ProtectedEffect[] = [
     call: 'mintCloudAuthority(',
     allowed: {
       'services/core/capabilities/cloud-authority.ts': 'the definition itself',
-    },
-    planned: {
       'services/core/remote/command-dispatcher.ts':
-        'the command dispatcher (S4), its only caller: it mints once per command read from the instance-authenticated stream, under the link context the stream was opened with, after the command is journaled; the mint itself refuses a stale link, a non-authorizing kind, a missing lease and an absent enrolment',
+        'the command dispatcher, its only caller: it mints once per command read from the instance-authenticated stream, under the link context the stream was opened with, only after the command is journaled; the mint itself refuses a stale link, a non-authorizing kind, a missing lease and an absent enrolment, and `inbox_pending` never reaches it',
     },
   },
   {
@@ -486,10 +474,9 @@ const PROTECTED_EFFECTS: ProtectedEffect[] = [
     // ASK. The two entries after the next pin the layer beneath it.
     what: 'opens managed forwarding, publishing this computer at the address Cloud issued',
     call: 'tunnelManager.startManaged(',
-    allowed: {},
-    planned: {
+    allowed: {
       'services/core/remote/command-dispatcher.ts':
-        'a Cloud `open` (or `rotate` switch) command, holding a `CloudAuthority` it re-checks with `isStillValid()` immediately before the call; never from a request',
+        'a Cloud `open` command, or the listener switch of a confirmed `rotate`, holding a `CloudAuthority` for that verb that it re-checks with `isStillValid()` immediately before the call; never from a request',
     },
   },
   {
@@ -498,11 +485,10 @@ const PROTECTED_EFFECTS: ProtectedEffect[] = [
     // publishes this computer at another address, so who may ask is pinned.
     what: 'changes which Cloud-issued hostnames managed forwarding serves',
     call: 'tunnelManager.applyHosts(',
+    // No caller, on purpose: a host change rides `startManaged`, which diffs
+    // the host set of an open session itself. A caller added later has to be
+    // listed here with the gate it runs.
     allowed: {},
-    planned: {
-      'services/core/remote/command-dispatcher.ts':
-        'a Cloud host-set command for the open credential, holding a `CloudAuthority`; never from a request',
-    },
   },
   {
     // DOR-2086. The layer beneath `tunnelManager.startManaged(`. Reached around
@@ -544,24 +530,22 @@ const PROTECTED_EFFECTS: ProtectedEffect[] = [
     // DOR-2086. Storing a managed credential's two one-time secrets.
     what: 'stores a managed tunnel credential and its edge proof secret',
     call: 'remoteCredentials.put(',
-    allowed: {},
-    planned: {
+    allowed: {
       'services/core/remote/managed-remote-coordinator.ts':
-        'the enrolment ceremony a person started on this computer (S3): stores what Cloud issued after a person approved, behind the cookie, trusted-caller and local-caller bars on the setup route',
+        'the enrolment ceremony a person started on this computer: stores what Cloud issued only after a person approved on Cloud and only while the captured link and setup are still current, reached through `startEnrolment(` (pinned below to the setup route and its cookie, trusted-caller, local-caller and login bars). The references reach config only after Cloud confirmed the store',
       'services/core/remote/command-dispatcher.ts':
-        'a Cloud `rotate` command, holding a `CloudAuthority` for `rotate`',
+        'a Cloud `rotate` command, holding a `CloudAuthority` for `rotate` it re-checks immediately before; the replacement is stored under its own new id, and its references reach config only after Cloud confirmed it',
     },
   },
   {
     // DOR-2086. Forgetting one. Only ever narrows reach.
     what: 'forgets a managed tunnel credential and its edge proof secret',
     call: 'remoteCredentials.delete(',
-    allowed: {},
-    planned: {
+    allowed: {
       'services/core/remote/managed-remote-coordinator.ts':
-        'local withdrawal and unlink (S3): forgetting narrows only, so like `POST /api/tunnel/stop` it is reachable without the setup bars',
+        'local withdrawal (`POST /api/remote-access/withdraw`, behind the cookie, trusted-caller and local-caller bars but never the login bar) and the unlink step the server runs itself, and a setup that went stale or was not confirmed forgetting what it stored: forgetting narrows only',
       'services/core/remote/command-dispatcher.ts':
-        'a Cloud `revoke` command, or the old credential after a confirmed `rotate`, holding a `CloudAuthority`',
+        'a Cloud `revoke` command, the replaced credential after a confirmed `rotate`, or a replacement that was not confirmed, each holding a `CloudAuthority`; forgetting narrows only',
     },
   },
   {
@@ -570,8 +554,7 @@ const PROTECTED_EFFECTS: ProtectedEffect[] = [
     // edge secret, so who may ask is pinned like the writes.
     what: 'reads the managed tunnel credential and its edge proof secret out of the encrypted store',
     call: 'remoteCredentials.resolve(',
-    allowed: {},
-    planned: {
+    allowed: {
       'services/core/remote/command-dispatcher.ts':
         'a Cloud `open` or `rotate` switch, holding a `CloudAuthority` it re-checks immediately before, resolving the secrets it hands to `tunnelManager.startManaged(` and nothing else',
     },
@@ -593,12 +576,33 @@ const PROTECTED_EFFECTS: ProtectedEffect[] = [
     call: 'updateRemoteState(',
     allowed: {
       'services/core/remote/remote-state.ts': 'the definition itself',
-    },
-    planned: {
       'services/core/remote/managed-remote-coordinator.ts':
-        'a person selecting a mode, finishing enrolment, or withdrawing on this computer (S3): selection and enrolment behind the cookie, trusted-caller and local-caller bars; withdrawal unguarded because it only narrows',
+        'a person selecting a mode (`selectMode(`) or finishing enrolment (`startEnrolment(`) on this computer, both pinned below to the setup route and its cookie, trusted-caller and local-caller bars, with a real login for anything managed; withdrawal (`POST /api/remote-access/withdraw`, behind the cookie, trusted-caller and local-caller bars but never the login bar, so it works with login or Cloud down; and the unlink step the server runs itself): mode off, enrolment and references cleared; and narrowing an enrolment recorded under another link (`withdrawnRemoteState`), which only narrows',
       'services/core/remote/command-dispatcher.ts':
-        'a Cloud `rotate` or `revoke` command recording the credential it switched to or forgot, holding a `CloudAuthority`; never the mode or the enrolment',
+        'a Cloud `rotate` or `revoke` command recording the credential it switched to or forgot, holding a `CloudAuthority` it re-checks immediately before; it writes only the credential fields, never the mode or the enrolment',
+    },
+  },
+  {
+    // DOR-2086. Starting managed setup: it asks Cloud for an enrolment request
+    // and, once a person approves it there, stores a credential and selects
+    // managed mode. A person's, at this computer, so its one caller is pinned.
+    what: 'starts DorkOS remote access setup, which ends in a stored credential and managed mode once a person approves on Cloud',
+    call: 'startEnrolment(',
+    allowed: {
+      'services/core/remote/managed-remote-coordinator.ts': 'the definition itself',
+      'routes/remote-access.ts':
+        '`POST /api/remote-access/enrolment`, behind the cookie bar under login, the trusted-caller bar, the local-caller bar and `canExpose`, in that order',
+    },
+  },
+  {
+    // DOR-2086. Choosing managed mode is a person's choice of who can reach
+    // this computer; choosing off or byo closes managed access.
+    what: "records the remote access mode a person chose, closing the other kind's listeners",
+    call: 'selectMode(',
+    allowed: {
+      'services/core/remote/managed-remote-coordinator.ts': 'the definition itself',
+      'routes/remote-access.ts':
+        '`POST /api/remote-access/mode`, behind the cookie bar under login, the trusted-caller bar and the local-caller bar, and `canExpose` for `managed`',
     },
   },
   {
@@ -638,6 +642,8 @@ const PROTECTED_EFFECTS: ProtectedEffect[] = [
         "two person bars on this router, each for a person in their own app. (1) `POST /claude-code/accounts/:id/probe`: checking an idle Claude account's usage (DOR-2381). Gated: the cookie bar under login, then this one, because the route starts the Claude binary in a registered account's folder; agents check usage with the `accounts_probe` MCP tool, which runs through the tool gate at the act tier. (2) `POST /claude-code/accounts/found/dismiss`: hiding a found Claude account folder, which writes the operator-only `runtimes.claudeCode.dismissedFolders`, so it runs both bars from `PATCH /api/config` for such a leaf, in the same order: the cookie bar under login, then this one. It writes only that fixed leaf (see its `configManager.setDot(` entry) and takes a JSON body, so a plain cross-site form POST cannot reach the write (it is refused at parsing)",
       'routes/tunnel.ts':
         'a person turning Remote Access on in their own cockpit, which publishes this machine and writes `tunnel.enabled` (DOR-1738). Gated: both bars from `PATCH /api/config` for an operator-only setting, in the same order — the cookie bar under login, then this one — because `tunnel.*` IS operator-only in config-write-policy and this route writes the flag straight through `configManager`, around the door that enforces that. `POST /api/tunnel/stop` deliberately runs neither bar and reaches no effect on this list: stopping only ever narrows exposure, and gating it stranded a running tunnel once already (DOR-574)',
+      'routes/remote-access.ts':
+        'a person starting DorkOS remote access setup or choosing a remote access mode on this computer (DOR-2086). Gated: the cookie bar under login, then this one, then `isLocalCaller` (a phone over a tunnel or managed access is not at this computer), then `canExpose` for anything managed. `POST /withdraw` runs the cookie, trusted-caller and local-caller bars but never `canExpose`, so it works with login or Cloud down; `POST /close` runs no bar on purpose: it only narrows',
       'services/core/capabilities/trusted-caller.ts': 'the definition itself',
     },
   },
@@ -876,16 +882,6 @@ describe('the managed credential store names (DOR-2086)', () => {
 });
 
 describe('no ungated path reaches a protected effect', () => {
-  it('names only planned callers that are not also allowed', () => {
-    // A path listed in both would read as planned forever and hide nothing, but
-    // it would also mean two reasons for one caller; keep one.
-    for (const effect of PROTECTED_EFFECTS) {
-      for (const planned of Object.keys(effect.planned ?? {})) {
-        expect(Object.keys(effect.allowed), `${effect.call}: ${planned}`).not.toContain(planned);
-      }
-    }
-  });
-
   it('found the server sources to scan', () => {
     // A scan over an empty file list is vacuously green, which is the one way
     // this test could fail to do its job without saying so.
@@ -895,18 +891,6 @@ describe('no ungated path reaches a protected effect', () => {
   for (const effect of PROTECTED_EFFECTS) {
     it(`${effect.call} is called only by modules that gate it`, () => {
       const actual = callersOf(effect.call);
-      // A planned caller that now exists is not silently allowed: the pull
-      // request that wrote it promotes the entry, and says which gate it runs.
-      const written = Object.keys(effect.planned ?? {}).filter((f) =>
-        existsSync(path.join(SERVER_SRC, f))
-      );
-      expect(
-        written,
-        written.length
-          ? `\n${written.join('\n')}\n\nThese planned callers of ${effect.call} now exist. ` +
-              `Promote this entry to \`allowed\` in this file, with the gate the module runs.`
-          : ''
-      ).toEqual([]);
       const allowed = Object.keys(effect.allowed).sort();
       const unexpected = actual.filter((f) => !allowed.includes(f));
       const missing = allowed.filter((f) => !actual.includes(f));

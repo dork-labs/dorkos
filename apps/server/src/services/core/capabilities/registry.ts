@@ -17,6 +17,7 @@
  *
  * @module services/core/capabilities/registry
  */
+import { turnStartedByOutsider } from '../../session/origin/outsider-turns.js';
 import { createHash } from 'node:crypto';
 import { runAsAgent } from '../../audit/audit-trail.js';
 import { z } from 'zod';
@@ -331,6 +332,15 @@ export interface CapabilityHandlerContext {
   connectorSurface?: 'mcp' | 'rest' | 'cli';
   /** The calling server's hand-registered tools; only the request tool receives it. */
   handTools?: HandToolReach;
+  /**
+   * True when the turn the call came from was started by somebody from off this
+   * machine: a bridged Telegram or Slack sender, an external room author, an
+   * outside agent, a connector event (`session/origin/outsider-turns.ts`). Read
+   * off the invoking {@link sessionId}, so it is absent on surfaces with none.
+   * A handler that would hand a stranger more than the turn's grant covers
+   * refuses on it (PRINCIPLES §1).
+   */
+  turnStartedByOutsider?: boolean;
 }
 
 /**
@@ -800,6 +810,9 @@ export function composeRegistry(
         ...(supplied.signal ? { signal: supplied.signal } : {}),
         ...(supplied.connectorAgentId ? { connectorAgentId: supplied.connectorAgentId } : {}),
         ...(supplied.connectorSurface ? { connectorSurface: supplied.connectorSurface } : {}),
+        ...(supplied.sessionId && turnStartedByOutsider(supplied.sessionId)
+          ? { turnStartedByOutsider: true }
+          : {}),
       };
       const invocationContext: CapabilityHandlerContext = supplied.trusted
         ? { trusted: supplied.trusted, ...surface }

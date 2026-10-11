@@ -22,9 +22,9 @@ import {
   OPERATOR_ONLY_CONFIG_PATHS,
   OPERATOR_ONLY_STAKES,
   findOperatorOnlyPaths,
-  describeOperatorOnlyRefusal,
   operatorOnlyAreasForPatch,
 } from '../config-write-policy.js';
+import { describeOperatorOnlyRefusal } from '../operator-only-refusal.js';
 
 /**
  * A patch that writes exactly one policy path, `[]` segments turned into a
@@ -108,6 +108,8 @@ describe('CONFIG_WRITE_POLICY drift guard', () => {
       'harness.global.askedAt',
       'harness.global.harnesses',
       'harness.refusedHooks',
+      // Whether agents wake on their own at all (spec `heartbeats` §3.6).
+      'heartbeats.enabled',
       // Whether this computer sleeps while agents work, and whether it may be
       // woken for a schedule: the person's battery and the person's machine
       // (spec `keep-awake`).
@@ -222,6 +224,7 @@ describe('CONFIG_WRITE_POLICY drift guard', () => {
       'scheduler.maxConcurrentRuns',
       'server.boundary',
       'spaces.enabled',
+      'spaces.official.url',
       'telemetry.aiMetadata',
       'telemetry.errorReporting',
       'telemetry.heartbeat',

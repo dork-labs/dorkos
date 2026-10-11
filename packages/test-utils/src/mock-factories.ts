@@ -3,6 +3,8 @@ import crypto from 'node:crypto';
 import { vi } from 'vitest';
 import { commitmentTransportMocks } from './mock-commitments.js';
 import { roomFileTransportMocks } from './mock-room-files.js';
+import { remoteCommunityTransportMocks } from './mock-remote-community.js';
+import { remoteAccessTransportMocks } from './mock-remote-access.js';
 import type {
   Session,
   StreamEvent,
@@ -1065,8 +1067,7 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
       installMethod: 'brew',
       status: { running: true, models: [] },
     }),
-    startTunnel: vi.fn().mockResolvedValue({ url: 'https://test.ngrok.io' }),
-    stopTunnel: vi.fn().mockResolvedValue(undefined),
+    ...remoteAccessTransportMocks(),
     // Tasks
     listTasks: vi.fn().mockResolvedValue([]),
     createTask: vi.fn(),
@@ -1391,28 +1392,7 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
     listShapes: vi.fn().mockResolvedValue([]),
     applyShape: vi.fn(),
     forkShape: vi.fn(),
-    listRemoteCommunityRooms: vi.fn(),
-    getRemoteCommunityRoom: vi.fn(),
-    listRemoteCommunityEntries: vi.fn(),
-    postRemoteCommunityEntry: vi.fn(),
-    subscribeRemoteCommunityRoom: vi.fn(),
-    listRemoteCommunityMembers: vi.fn(),
-    joinRemoteCommunityRoom: vi.fn(),
-    leaveRemoteCommunityRoom: vi.fn(),
-    getRemoteCommunityReadCursor: vi.fn(),
-    setRemoteCommunityReadCursor: vi.fn(),
-    listRemoteCommunityAgents: vi.fn(),
-    enrollRemoteCommunityAgent: vi.fn(),
-    ejectRemoteCommunityAgent: vi.fn(),
-    joinRemoteCommunityAgentRoom: vi.fn(),
-    leaveRemoteCommunityAgentRoom: vi.fn(),
-    haltRemoteCommunityRoom: vi.fn().mockResolvedValue({ stopped: 0 }),
-    haltRemoteCommunityAgent: vi.fn().mockResolvedValue({ stopped: 0 }),
-    retryRemoteCommunityDelivery: vi
-      .fn()
-      .mockImplementation(async (community, roomId) => ({ community, roomId, deliveries: [] })),
-    uploadRemoteCommunityAttachment: vi.fn(),
-    downloadRemoteCommunityAttachment: vi.fn(),
+    ...remoteCommunityTransportMocks(),
     listCommunityConnections: vi.fn().mockResolvedValue([]),
     startCommunityConnection: vi.fn(),
     getCommunityConnection: vi.fn(),

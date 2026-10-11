@@ -78,3 +78,14 @@ export async function fillCreditsGapsOnNewLink(
   if (!recordFirstRunCreditsChoice()) return switched;
   return switched.filter((type) => type !== 'doe');
 }
+
+/**
+ * Stop every Codex turn running on DorkOS credits, when Codex is registered.
+ * Structural, because the Codex runtime is constructed inside an optional
+ * registration and is not held by the composition root.
+ */
+export function stopCodexCreditsTurns(): void {
+  const codex = runtimeRegistry.listRuntimes().find((runtime) => runtime.type === 'codex') as
+    { stopCreditsTurns?: () => void } | undefined;
+  codex?.stopCreditsTurns?.();
+}

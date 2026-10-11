@@ -257,6 +257,20 @@ describe('the handler without a person’s yes', () => {
     expect(written).toEqual([]);
   });
 
+  // Spec `official-community-space` D4: which space is official decides the one outside server
+  // this install talks to with spaces off, so an agent can never name it.
+  it('refuses an agent naming the official space', async () => {
+    const result = await createConfigPatchHandler(AGENT)({
+      patch: { spaces: { official: { url: 'https://space.example/c/x' } } },
+    });
+    expect(result.isError).toBe(true);
+    expect(JSON.parse(result.content[0]!.text)).toMatchObject({
+      code: 'operator_only_config',
+      paths: ['spaces.official.url'],
+    });
+    expect(written).toEqual([]);
+  });
+
   it('writes a guarded setting when the gate spent a person’s approval on it', async () => {
     const result = await createConfigPatchHandler(AGENT, {
       via: 'approval',

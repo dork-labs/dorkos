@@ -45,15 +45,13 @@ vi.mock('@/layers/shared/model', async (importOriginal) => ({
   useSafeSearch: () => route.search,
 }));
 // Off unless a test turns it on, as spaces ship.
-vi.mock('@/layers/entities/config', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('@/layers/entities/config')>()),
-  useSpacesEnabled: () => route.spaces,
-}));
 // A space's own reads, answered so the space bar has something to name.
 vi.mock('@/layers/entities/community', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/layers/entities/community')>()),
   useCommunityConnections: () => ({ data: [{ ref: 'acme', label: 'Acme' }] }),
   useRemoteCommunityRoom: () => ({ data: { title: 'design-review' } }),
+  // Whether the space may show: the experiment alone here, since no official space is named.
+  useSpaceVisible: () => ({ visible: route.spaces, isLoading: false }),
 }));
 
 vi.mock('@/layers/entities/room', async (importOriginal) => {

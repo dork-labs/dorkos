@@ -2,6 +2,7 @@ import { CloudEligibilityNote, CloudLinkPanel } from '@/layers/features/cloud-li
 import { CloudPlanPanel, creditsRuntimesOnOffer } from '@/layers/features/cloud-plan';
 import { useCloudCredits } from '@/layers/shared/model';
 import { useSpacesEnabled } from '@/layers/entities/config';
+import { OfficialSpaceOfferCard } from '@/layers/entities/community';
 
 /**
  * Settings › DorkOS account — the hosted account's one home in the app
@@ -16,10 +17,15 @@ import { useSpacesEnabled } from '@/layers/entities/config';
  *
  * No badge and no dot anywhere on it: an install without an account is a
  * complete install, and this tab never suggests otherwise.
+ *
+ * Once linked, it offers the DorkOS community once (spec
+ * `official-community-space` D5): the card draws nothing without an official
+ * space, after joining, or after Not now.
  */
 export function DorkosAccountTab() {
   return (
     <CloudLinkPanel signedOut={<SignedOutPage />}>
+      <OfficialSpaceOfferCard />
       <CloudPlanPanel />
     </CloudLinkPanel>
   );

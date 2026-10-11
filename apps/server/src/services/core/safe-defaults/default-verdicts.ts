@@ -328,6 +328,9 @@ export const SAFE_DEFAULTS: Readonly<Record<string, unknown>> = {
   'browser.enabled': false,
   // Spaces stay hidden until a person opts in (DOR-2740).
   'spaces.enabled': false,
+  // No official space until a release or a person names one (spec
+  // `official-community-space` D4).
+  'spaces.official.url': '',
   // The external A2A surface starts unmounted, so no agent outside DorkOS can
   // reach the ones inside it until a person opens that door (DOR-1304).
   'a2a.enabled': false,
@@ -526,6 +529,11 @@ export const PERMISSIVE_DEFAULTS: Readonly<Record<string, PermissiveDefault>> = 
     value: {},
     reason:
       'No project limits which accounts it may use by default, which is how every project behaved before account rules existed (spec `flow-multiproject` §8). A list a person sets for a project narrows which credentials work there, so it is closed to agent writes (operator-only) and carried across a wipe (PROTECTIVE_CARRYOVERS).',
+  },
+  'heartbeats.enabled': {
+    value: true,
+    reason:
+      'Agents wake on their own by default (spec `heartbeats` §3.6, PRINCIPLES "proactive co-workers"), but only an agent whose HEARTBEAT.md asks for timed beats runs a turn on a timer; the rest wake on events, and a beat that finds nothing runs no model. Every beat is in the record, and one switch turns them all off.',
   },
   'auth.enabled': {
     value: false,

@@ -4310,6 +4310,10 @@ export type RemoteAccessAvailability = z.infer<typeof RemoteAccessAvailabilitySc
  * - `none` — no person has approved managed access for this computer.
  * - `pending` — a person started setup here and Cloud is waiting for them to
  *   approve it at `approveUrl` with `userCode`, before `expiresAt`.
+ * - `denied` — the last setup started here was declined on the approval page.
+ *   Nothing was enrolled; a person may start again.
+ * - `expired` — the last setup started here lapsed unanswered, or was replaced
+ *   or ended by Cloud. Nothing was enrolled; a person may start again.
  * - `enrolled` — a person approved it. Enrolment is consent, not reachability:
  *   whether the address works is `state`.
  */
@@ -4325,6 +4329,8 @@ export const RemoteAccessEnrolmentSchema = z
       /** When the request stops being approvable (ISO 8601). */
       expiresAt: z.string().datetime({ offset: true }),
     }),
+    z.object({ status: z.literal('denied') }),
+    z.object({ status: z.literal('expired') }),
     z.object({ status: z.literal('enrolled') }),
   ])
   .openapi('RemoteAccessEnrolment');
@@ -4345,7 +4351,12 @@ export const RemoteAccessReportSchema = z
     mode: RemoteAccessModeSchema,
     /** Where it stands. See {@link RemoteAccessStateSchema}. */
     state: RemoteAccessStateSchema,
-    /** The address, present only while it is usable (`open`). Never shown otherwise. */
+    /**
+     * The address. Present while it is usable (`open`), and while `asleep`,
+     * when it is the address this computer answers at once it is opened again
+     * (the closed page Cloud serves there is not this app). Absent in every
+     * other state, so a surface never offers an address that cannot work.
+     */
     url: z.string().url().optional(),
     /**
      * Why it is `blocked`, or what is happening, in words a person can read.
@@ -5027,6 +5038,10 @@ export const ServerConfigSchema = z
       })
       .optional()
       .openapi({ description: 'Cockpit UI preferences surfaced to the client' }),
+    officialSpace: z.object({ url: z.string() }).nullable().optional().openapi({
+      description:
+        'The official DorkOS space this install offers to join, even with the spaces experiment off (spec official-community-space D4). Null while no usable link is configured, which hides every official-space prompt',
+    }),
     experiments: z.array(ExperimentStateSchema).optional().openapi({
       description:
         'The staged opt-ins Settings → Experiments offers, already resolved, in the order to show them. An EMPTY array is a normal answer — it means every experiment has graduated or been withdrawn. A server that omits the block has no Experiments section at all',

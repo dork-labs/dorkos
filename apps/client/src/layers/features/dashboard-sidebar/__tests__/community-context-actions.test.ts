@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { CommunityConnectionDescriptor } from '@dorkos/shared/community-connections';
 import {
   buildCommunityContextNodes,
@@ -65,11 +65,41 @@ describe('buildCommunityContextNodes', () => {
     onLeave: () => {},
     onDisconnect: () => {},
     onJoin: () => {},
+    onJoinOfficial: null,
     creationOrigins: [] as string[],
     onCreate: () => {},
     onDeploy: () => {},
     hosting: null,
   };
+
+  // Purpose: with spaces off, the official DorkOS space is the only way in (spec
+  // `official-community-space` D5). Fails if "Add a space" survives the switch, or
+  // if the official row is missing while there is one to join.
+  it('offers only the DorkOS community while other spaces are off', () => {
+    const join = vi.fn();
+    const nodes = buildCommunityContextNodes({
+      ...handlers,
+      selected: null,
+      onJoin: null,
+      onJoinOfficial: join,
+    });
+    expect(nodes.map((node) => node.id)).toEqual(['join-official-space']);
+    expect(nodes[0]).toMatchObject({ label: 'Join the DorkOS community' });
+    (nodes[0] as { run: () => void }).run();
+    expect(join).toHaveBeenCalledOnce();
+    expect(
+      buildCommunityContextNodes({ ...handlers, selected: null, onJoin: null }).map((n) => n.id)
+    ).toEqual([]);
+  });
+
+  it('offers the DorkOS community beside "Add a space" with spaces on', () => {
+    const nodes = buildCommunityContextNodes({
+      ...handlers,
+      selected: null,
+      onJoinOfficial: () => {},
+    });
+    expect(nodes.map((node) => node.id)).toEqual(['join-official-space', 'add-community']);
+  });
 
   it('offers only "Add a space" while this DorkOS is selected', () => {
     const nodes = buildCommunityContextNodes({ ...handlers, selected: null });
