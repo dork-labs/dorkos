@@ -13,4 +13,3 @@ export { RemoteAccessBeacon } from './ui/RemoteAccessBeacon';
 export { RemoteAccessPanel } from './ui/RemoteAccessPanel';
 export type { RemoteAccessPanelProps } from './ui/RemoteAccessPanel';
 export { useConnectRipple } from './model/use-connect-ripple';
-export { remoteAccessHeading } from './model/remote-access-copy';
