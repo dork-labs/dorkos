@@ -513,23 +513,28 @@ export class MemoryMatchError extends Error {
    *
    * @param kind - `'ambiguous'` when the text matched more than once,
    *   `'not-found'` when it matched nothing, `'protected-header'` when it
-   *   matched inside the file's own explanatory header.
+   *   matched inside the file's own explanatory header, `'protected-stamp'`
+   *   when a `replace` would change the stamp DorkOS wrote at the end of a
+   *   note (where it was learned, and whether it was read beside words DorkOS
+   *   cannot vouch for), or would run past the end of one note into the next.
    * @param needle - The text the caller named.
    * @param nearMatches - Lines from the current memory that came closest, for
    *   the caller to choose between or correct against. May be empty when
    *   nothing resembled it.
    */
   constructor(
-    readonly kind: 'ambiguous' | 'not-found' | 'protected-header',
+    readonly kind: 'ambiguous' | 'not-found' | 'protected-header' | 'protected-stamp',
     readonly needle: string,
     readonly nearMatches: string[]
   ) {
     const lead =
       kind === 'ambiguous'
         ? `The text you named appears more than once in your memory, so it does not say which note you meant.`
-        : kind === 'protected-header'
-          ? `The text you named is inside the header comment at the top of your memory file, which explains what the file is and who can see it. That header is not a note and cannot be edited from here — a person can change it by opening the file. Name one of your own notes instead.`
-          : `Nothing in your memory matches the text you named.`;
+        : kind === 'protected-stamp'
+          ? `The text you named reaches into the stamp at the end of a note, which DorkOS wrote to say where the note came from, or past the end of a note. Neither can be edited from here. Name only the words of one note.`
+          : kind === 'protected-header'
+            ? `The text you named is inside the header comment at the top of your memory file, which explains what the file is and who can see it. That header is not a note and cannot be edited from here — a person can change it by opening the file. Name one of your own notes instead.`
+            : `Nothing in your memory matches the text you named.`;
     const near =
       nearMatches.length > 0
         ? ` Closest lines:\n${nearMatches.map((line) => `- ${line}`).join('\n')}`

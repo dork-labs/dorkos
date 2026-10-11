@@ -59,11 +59,12 @@ function adjust(key: string, by: 1 | -1): void {
  * and ends when it finishes, fails or is closed.
  *
  * @param place - Where the turn stands and the agent it is dispatched as.
- * @param events - The runtime's own stream for the turn.
+ * @param events - The runtime's own stream for the turn, or for a turn the
+ *   agent started on its own (a Codex wake after background work).
  */
 export function countWhileRunning(
   place: { cwd?: string; forAgent?: string },
-  events: AsyncGenerator<StreamEvent>
+  events: AsyncIterable<StreamEvent>
 ): AsyncGenerator<StreamEvent> {
   const key = homeKey(place.cwd, place.forAgent) ?? UNPLACED;
   return (async function* counted() {

@@ -60,7 +60,7 @@ import {
 
 const MODES = CLAUDE_CODE_CAPABILITIES.permissionModes;
 const OUTSIDER_STAMP =
-  /\(noted in a direct chat, while reading an outsider's words, \d{4}-\d{2}-\d{2}\)$/;
+  /\(noted in a direct chat, while reading words DorkOS can't vouch for, \d{4}-\d{2}-\d{2}\)$/;
 const OPERATOR_STAMP = /\(noted in a direct chat, \d{4}-\d{2}-\d{2}\)$/;
 
 /** A runtime whose turns stay open until released, wrapped the way the registry wraps it. */
@@ -261,16 +261,25 @@ describe("a stranger's line the turn is shown but does not answer", () => {
     expect(await lastNote()).toMatch(OUTSIDER_STAMP);
   });
 
-  it('counts an agent’s post that carried outsider words on, and not one that did not', async () => {
-    const { runtime } = seam({});
+  it('counts an agent’s post that carried outsider words on, and not one that did not or kept no level', async () => {
     const ana = fresh('ana');
+    const { runtime } = seam({ [ana]: 'bypassPermissions' });
     await run(runtime, ana, ceilingForEntry(AUTHORS, { id: fresh('e'), authorId: 'stranger' }));
+    const agentPost = (id: string) =>
+      ({ id, authorOrigin: 'local', authorIsPerson: false, kind: 'post' }) as never;
     const carried = fresh('post');
     noteEntryLevel(carried, postLevelFor([ana]));
-    const local = { id: carried, authorOrigin: 'local' as const };
-    expect(outsiderInViewOf({ pending: [local as never] })).toEqual({ outsiderInView: true });
-    const plain = { id: fresh('plain'), authorOrigin: 'local' as const };
-    expect(outsiderInViewOf({ pending: [plain as never], channelTail: [] })).toEqual({});
+    expect(outsiderInViewOf({ pending: [agentPost(carried)] })).toEqual({ outsiderInView: true });
+    // Kept no level: not counted, so the owner's edits stay open after a restart.
+    expect(outsiderInViewOf({ pending: [agentPost(fresh('no-level'))] })).toEqual({});
+
+    await run(runtime, ana);
+    const plain = fresh('plain');
+    noteEntryLevel(plain, postLevelFor([ana]));
+    const person = { id: fresh('p'), authorOrigin: 'local', authorIsPerson: true, kind: 'post' };
+    expect(
+      outsiderInViewOf({ pending: [agentPost(plain), person as never], channelTail: [] })
+    ).toEqual({});
   });
 });
 
@@ -323,6 +332,43 @@ describe('memory written in a turn that read an outsider’s words', () => {
     await turn.return(undefined);
     await boWrites({ action: 'add', text: 'the vendor is Acme, really' });
     expect(await lastNote()).toMatch(OPERATOR_STAMP);
+  });
+
+  // Red when: the seam stops counting turns the agent starts on its own. A
+  // Codex wake after background work is no `sendMessage`, and Codex has no
+  // session to name, so the count is the only thing that can mark its notes.
+  it('from a Codex wake after background work the marked turn left running', async () => {
+    let wake: ((sessionId: string, events: AsyncIterable<StreamEvent>) => void) | undefined;
+    const codex = {
+      type: 'codex',
+      getCapabilities: () => CLAUDE_CODE_CAPABILITIES,
+      async *sendMessage() {
+        yield { type: 'done', data: {} } as StreamEvent;
+      },
+      onRuntimeTurn: (listener: typeof wake) => {
+        wake = listener;
+        return () => undefined;
+      },
+    } as unknown as AgentRuntime;
+    const recorded = recordTurnLevels(codex, () => null);
+    const session = fresh('codex');
+    await run(recorded, session, { cwd: boPath, permissionCeiling: 'runtime-default' });
+
+    let seen: AsyncIterable<StreamEvent> | undefined;
+    recorded.onRuntimeTurn!((_id, events) => {
+      seen = events;
+    });
+    wake!(
+      session,
+      (async function* () {
+        yield { type: 'done', data: {} } as StreamEvent;
+      })()
+    );
+    const woken = seen![Symbol.asyncIterator]();
+    await woken.next();
+    await boWrites({ action: 'add', text: 'the build finished green' });
+    expect(await lastNote()).toMatch(OUTSIDER_STAMP);
+    await woken.return?.(undefined);
   });
 
   it("is not marked for another agent's outsider turn", async () => {

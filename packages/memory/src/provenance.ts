@@ -12,8 +12,8 @@ import type { MemoryProvenance } from '@dorkos/shared/memory-provider';
  * Two places and no third: a room the note came from, or a one-to-one chat with
  * no room. `(noted in #general, 2026-08-24)` and
  * `(noted in a direct chat, 2026-08-24)`. Either can say the turn had read an
- * outsider's words: `(noted in a direct chat, while reading an outsider's
- * words, 2026-08-24)`. That part is what keeps a stranger's words, carried on
+ * outsider's words: `(noted in a direct chat, while reading words DorkOS can't
+ * vouch for, 2026-08-24)`. That part is what keeps a stranger's words, carried on
  * by another agent into a direct chat, from passing as the operator's.
  *
  * **The room label is rendered exactly as given.** The caller passes what a

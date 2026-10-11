@@ -57,6 +57,8 @@ const AUTO_FALLBACK_MODE_ID = 'default';
 
 const turnLevels = new Map<string, TurnPermissionLevel>();
 const entryLevels = new Map<string, TurnPermissionLevel>();
+/** Where each marked turn stood, so a turn its agent starts later is counted against the same agent. */
+const outsiderPlaces = new Map<string, { cwd?: string; forAgent?: string }>();
 
 /** Set a key as the newest, dropping the oldest past the bound. */
 function remember(map: Map<string, TurnPermissionLevel>, key: string, level: TurnPermissionLevel) {
@@ -262,8 +264,34 @@ export function recordTurnLevels(
           const events = target.sendMessage(sessionId, content, opts);
           if (!level.outsider) return events;
           // A caller that cannot name this session can still name its agent.
-          return countWhileRunning(placeOf(target, sessionId, opts), events);
+          const place = placeOf(target, sessionId, opts);
+          outsiderPlaces.delete(sessionId);
+          outsiderPlaces.set(sessionId, place);
+          if (outsiderPlaces.size > TURN_LEVEL_MEMORY) {
+            outsiderPlaces.delete(outsiderPlaces.keys().next().value!);
+          }
+          return countWhileRunning(place, events);
         };
+      }
+      if (prop === 'onRuntimeTurn' && typeof target.onRuntimeTurn === 'function') {
+        // A turn the agent starts on its own (a Codex wake after background
+        // work) runs under the session's latest dispatched turn, so it is
+        // counted while it runs when that turn read an outsider's words: a
+        // caller with no session (Codex over the external server) is read
+        // through it.
+        const subscribe = target.onRuntimeTurn.bind(target);
+        return (listener: (sessionId: string, events: AsyncIterable<StreamEvent>) => void) =>
+          subscribe((sessionId, events) =>
+            listener(
+              sessionId,
+              turnLevels.get(sessionId)?.outsider
+                ? countWhileRunning(
+                    outsiderPlaces.get(sessionId) ?? placeOf(target, sessionId, undefined),
+                    events
+                  )
+                : events
+            )
+          );
       }
       const value = Reflect.get(target, prop, target);
       return typeof value === 'function' ? value.bind(target) : value;
