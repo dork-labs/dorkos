@@ -1,6 +1,9 @@
 ---
 covers:
   - 'feat(onboarding): a one-minute first run that lands in #team (DOR-2783)'
+  - "fix(onboarding): keep the approval tab open through React's double mount (DOR-2783)"
+  - 'fix(onboarding): no moment covers #team in the launch the first run ends (DOR-2783)'
+  - 'fix(onboarding): drop a waiting code before another path is recorded (DOR-2783)'
 ---
 
 ### Changed
