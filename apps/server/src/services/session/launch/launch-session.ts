@@ -19,7 +19,7 @@ import { validateBoundaryOrDorkHome } from '../../../lib/boundary.js';
  */
 import path from 'node:path';
 import type { MeshCore } from '@dorkos/mesh';
-import type { DirectoryGrant } from '@dorkos/shared/agent-runtime';
+import type { DirectoryGrant, TurnPermissionCeiling } from '@dorkos/shared/agent-runtime';
 import type { SendMessageRequest } from '@dorkos/shared/schemas';
 import { newDispatchId } from '@dorkos/shared/dispatch-id';
 import { sanitizeWorkspaceKey } from '@dorkos/shared/workspace';
@@ -97,6 +97,14 @@ export interface DispatchSessionMessageOpts {
    * dispatching. Passed straight through; see `DispatchMessageOpts.messageId`.
    */
   messageId?: string;
+  /**
+   * The loosest level this first turn may run at. Passed straight through;
+   * `MessageOpts.permissionCeiling` is the authority on what it means. Sent by
+   * `session_start` when the calling turn read an outsider's words, so the new
+   * session's turn is recorded as one that did (spec `trusted-by-default-flip`
+   * §4.7).
+   */
+  permissionCeiling?: TurnPermissionCeiling;
 }
 
 /**
@@ -645,6 +653,9 @@ async function launchSessionMessage(
       // until the native rungs land (P4). The receipt says which it was.
       ...(disposition ? { disposition } : {}),
       ...(unattended ? { unattended: true } : {}),
+      ...(opts.permissionCeiling !== undefined
+        ? { permissionCeiling: opts.permissionCeiling }
+        : {}),
       projector,
       runtime,
       onError: (err) => {

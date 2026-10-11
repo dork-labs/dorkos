@@ -327,6 +327,14 @@ export const MemoryProvenanceSchema = z.object({
   room: z.string().min(1).nullable(),
   /** The day it was learned, `YYYY-MM-DD`. */
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'a provenance date must be YYYY-MM-DD'),
+  /**
+   * True when the turn that wrote the note had read words from outside the
+   * owner's circle: a stranger's message, one passed on by another agent, or
+   * one DorkOS could not vouch for (spec `trusted-by-default-flip` §4.7). The
+   * stamp then says so, wherever the note was written, so a later session
+   * never reads it as the operator's own.
+   */
+  outsider: z.boolean().optional(),
 });
 /** Where a note came from. See {@link MemoryProvenanceSchema}. */
 export type MemoryProvenance = z.infer<typeof MemoryProvenanceSchema>;

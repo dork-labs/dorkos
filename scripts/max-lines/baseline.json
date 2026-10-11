@@ -99,7 +99,7 @@
     "apps/server/src/services/rooms/room-capabilities.ts": 1213,
     "apps/server/src/services/rooms/room-store.ts": 950,
     "apps/server/src/services/rooms/room-trigger.ts": 1579,
-    "apps/server/src/services/rooms/room-turn-runner.ts": 546,
+    "apps/server/src/services/rooms/room-turn-runner.ts": 540,
     "apps/server/src/services/runtimes/claude-code/claude-code-runtime.ts": 1079,
     "apps/server/src/services/runtimes/claude-code/mcp-tools/task-tools.ts": 506,
     "apps/server/src/services/runtimes/claude-code/messaging/context-builder.ts": 513,

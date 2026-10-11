@@ -30,9 +30,17 @@
  *
  * @module services/core/turn-power/turn-levels
  */
-import type { AgentRuntime, MessageOpts, TurnPermissionLevel } from '@dorkos/shared/agent-runtime';
+import type {
+  AgentRuntime,
+  MessageOpts,
+  TurnPermissionBound,
+  TurnPermissionLevel,
+} from '@dorkos/shared/agent-runtime';
 import type { StreamEvent } from '@dorkos/shared/types';
+import { turnAgentOf } from '../agent-identity/agent-home.js';
+import { agentIsReadingOutsider, countWhileRunning } from './live-outsider-turns.js';
 import {
+  ceilingCarriesOutsider,
   levelOfMode,
   READ_ONLY_LEVEL,
   resolveCeilingLevel,
@@ -95,6 +103,32 @@ export function postLevelFor(
 }
 
 /**
+ * The bound work a caller starts must carry because the caller's turn read an
+ * outsider's words, or `undefined` when it did not (spec
+ * `trusted-by-default-flip` §4.7). Read by `memory_write`, which stamps the
+ * note, and `session_start`, which sends it as the new session's ceiling.
+ *
+ * The caller's session answers when this process recorded a turn on it: its
+ * own level, which bounds no tighter than the turn already ran. A caller with
+ * no session, or one with no record, is read through its agent: while any of
+ * that agent's turns that read an outsider's words is running, the runtime
+ * default, the bound a stranger's own message carries.
+ *
+ * @param sessionId - The calling session, when the surface verified one.
+ * @param agentPath - The calling agent's home, from its verified identity.
+ */
+export function outsiderBoundOf(
+  sessionId: string | null | undefined,
+  agentPath: string | undefined
+): TurnPermissionBound | undefined {
+  const level = sessionId ? turnLevels.get(sessionId) : undefined;
+  if (level !== undefined) return level.outsider ? level : undefined;
+  return agentPath !== undefined && agentIsReadingOutsider(agentPath)
+    ? 'runtime-default'
+    : undefined;
+}
+
+/**
  * Keep a level with a room post. Called as the post is written, before
  * anything it triggers is dispatched, so a later turn of the same author
  * cannot change it.
@@ -128,13 +162,33 @@ export function entryLevelOf(entryId: string): TurnPermissionLevel | undefined {
 }
 
 /**
- * The level one turn runs at, as well as this process can tell without asking
+ * The level one turn runs at, marked when the turn reads an outsider's words
+ * (spec `trusted-by-default-flip` §4.7): its ceiling carries them (a
+ * stranger's message, a sender DorkOS cannot vouch for, another turn that read
+ * them), or a room shows it a stranger's message it does not answer. The mark
+ * changes no power; it travels with the level to every turn this one's
+ * messages start, and onto every note it saves to memory.
+ */
+function levelForTurn(
+  runtime: AgentRuntime,
+  stored: string | null | undefined,
+  opts: MessageOpts | undefined
+): TurnPermissionLevel {
+  const level = powerForTurn(runtime, stored, opts);
+  const outsider =
+    opts?.roomTurn?.outsiderInView === true ||
+    (opts?.permissionCeiling !== undefined && ceilingCarriesOutsider(opts.permissionCeiling));
+  return outsider && !level.outsider ? { ...level, outsider: true } : level;
+}
+
+/**
+ * The power one turn runs at, as well as this process can tell without asking
  * the runtime: the stricter of the stored mode and a per-send mode, else the
  * runtime's default, then held to the turn's ceiling. Errs strict, because what
  * it feeds is a ceiling for somebody else: a runtime that cannot describe its
  * modes records {@link READ_ONLY_LEVEL}.
  */
-function levelForTurn(
+function powerForTurn(
   runtime: AgentRuntime,
   stored: string | null | undefined,
   opts: MessageOpts | undefined
@@ -153,10 +207,21 @@ function levelForTurn(
   const base =
     known.length > 0
       ? known.reduce(stricterLevel)
-      : resolveCeilingLevel(declared, 'runtime-default');
+      : (levelOfMode(declared, declared.default) ?? READ_ONLY_LEVEL);
   return opts?.permissionCeiling !== undefined
     ? stricterLevel(base, resolveCeilingLevel(declared, opts.permissionCeiling))
     : base;
+}
+
+/** Where a turn stands and whom it is for, for {@link countWhileRunning}. */
+function placeOf(runtime: AgentRuntime, sessionId: string, opts: MessageOpts | undefined) {
+  let cwd = opts?.cwd ?? opts?.roomTurn?.cwd;
+  try {
+    cwd ??= runtime.getSessionCwd?.(sessionId);
+  } catch {
+    // An unknown folder is counted under no agent, which marks more, not less.
+  }
+  return { cwd, forAgent: turnAgentOf(opts) };
 }
 
 /**
@@ -166,7 +231,9 @@ function levelForTurn(
  *
  * Synchronous on purpose, like the other decorators at that seam: it records
  * at the call and hands back the runtime's own generator untouched, so it adds
- * no step between a dispatch and the turn it starts.
+ * no step between a dispatch and the turn it starts. The one exception is a
+ * turn that read an outsider's words, whose stream is counted against its
+ * agent while it runs ({@link countWhileRunning}); that adds no step either.
  *
  * @param runtime - The runtime to wrap.
  * @param storedModeOf - Reads a session's stored permission mode; a failure
@@ -190,8 +257,12 @@ export function recordTurnLevels(
           } catch {
             stored = undefined;
           }
-          remember(turnLevels, sessionId, levelForTurn(target, stored, opts));
-          return target.sendMessage(sessionId, content, opts);
+          const level = levelForTurn(target, stored, opts);
+          remember(turnLevels, sessionId, level);
+          const events = target.sendMessage(sessionId, content, opts);
+          if (!level.outsider) return events;
+          // A caller that cannot name this session can still name its agent.
+          return countWhileRunning(placeOf(target, sessionId, opts), events);
         };
       }
       const value = Reflect.get(target, prop, target);

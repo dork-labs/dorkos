@@ -5,6 +5,7 @@
  * @module server/services/rooms/limits/turn-ceiling
  */
 import type { RoomEntry } from '@dorkos/shared/room-schemas';
+import type { RoomContextData } from '@dorkos/shared/additional-context';
 import type { TurnPermissionBound, TurnPermissionCeiling } from '@dorkos/shared/agent-runtime';
 import { entryLevelOf } from '../../core/turn-power/turn-levels.js';
 import { authorOrigin, type AuthorRegistry } from '../author-registry.js';
@@ -76,4 +77,37 @@ export function ceilingForEntries(
   });
   if (bounds.length === 0) return {};
   return { permissionCeiling: bounds.length === 1 ? bounds[0]! : bounds };
+}
+
+/**
+ * Whether a room turn is SHOWN words from outside the owner's circle that it
+ * does not answer, as the `roomTurn` spread that says so (spec
+ * `trusted-by-default-flip` §4.7): a stranger's line in the recent window, the
+ * gathered burst or the channel tail, or another agent's post that was itself
+ * written in a turn that read one.
+ *
+ * **Fenced, not ceilinged — that is the decision this makes.** The turn
+ * answers somebody else, usually the person who owns the room, and holding it
+ * to asking because a stranger once spoke in the same shared channel would
+ * take the owner's own power away in every room a space member ever posted
+ * in. The lines are already rendered inside the untrusted fence, the same as
+ * a web page the agent reads. What the mark adds is that the turn is recorded
+ * as one that read an outsider's words, so a note it saves says so and a turn
+ * its post or chat message starts carries the same mark on.
+ *
+ * An agent's post whose level was not kept is NOT counted here, unlike one the
+ * turn answers (held to the runtime default, which marks it): most agents'
+ * replies keep no level, and counting them would mark nearly every turn in a
+ * room two agents share, which says nothing.
+ *
+ * @param context - The room context the turn is about to be shown.
+ */
+export function outsiderInViewOf(
+  context: Pick<RoomContextData, 'pending' | 'gathered' | 'channelTail'>
+): { outsiderInView?: true } {
+  const shown = [...context.pending, ...(context.gathered ?? []), ...(context.channelTail ?? [])];
+  const outsider = shown.some(
+    (entry) => entry.authorOrigin === 'external' || entryLevelOf(entry.id)?.outsider === true
+  );
+  return outsider ? { outsiderInView: true } : {};
 }
