@@ -41,6 +41,7 @@ import { createConnectorMethods } from './connector-methods';
 import { createMcpMethods } from './mcp-methods';
 import { createTeamMethods } from './team-methods';
 import { createProfileMethods } from './profile-methods';
+import { createOnboardingMethods } from './onboarding-methods';
 import { createSearchMethods } from './search-methods';
 import { createAccountMethods } from './account-methods';
 import { createAuditMethods } from './audit-methods';
@@ -88,6 +89,7 @@ export interface HttpTransport
     ReturnType<typeof createMcpMethods>,
     ReturnType<typeof createTeamMethods>,
     ReturnType<typeof createProfileMethods>,
+    ReturnType<typeof createOnboardingMethods>,
     ReturnType<typeof createSearchMethods>,
     ReturnType<typeof createAccountMethods>,
     ReturnType<typeof createAuditMethods> {}
@@ -138,6 +140,7 @@ export class HttpTransport implements Transport {
       createMcpMethods(baseUrl),
       createTeamMethods(baseUrl),
       createProfileMethods(baseUrl),
+      createOnboardingMethods(baseUrl),
       createSearchMethods(baseUrl),
       createAccountMethods(baseUrl),
       createAuditMethods(baseUrl)

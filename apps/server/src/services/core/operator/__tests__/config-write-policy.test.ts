@@ -137,6 +137,15 @@ describe('CONFIG_WRITE_POLICY drift guard', () => {
       'notifications.sounds.allClear',
       'notifications.sounds.knock',
       'notifications.sounds.turnEnd',
+      // The first run (one-minute-onboarding §4.1): its DorkOS path is what a
+      // new link reads to record credits as the person's own pick, so it decides
+      // who pays; finished and dismissed close that door, so an agent may not
+      // reopen it; the undo target and the welcome's entry are the route's own.
+      'onboarding.completedAt',
+      'onboarding.dismissedAt',
+      'onboarding.firstRunPath',
+      'onboarding.priorRuntime',
+      'onboarding.welcomeEntryId',
       // What agents may do. The generic writers refuse these outright; this is
       // the second line (spec `agent-permissions` D10).
       'permissions.defaults.actions',

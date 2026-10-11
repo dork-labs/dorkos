@@ -37,6 +37,7 @@ import { registerAccountEligibilityOpenApi } from './usage/account-eligibility-o
 import { registerKeepAwakeOpenApi } from './keep-awake/keep-awake-openapi.js';
 import { registerCommitmentsOpenApi } from '../commitments/commitments-openapi.js';
 import { registerHeartbeatsOpenApi } from '../heartbeats/heartbeats-openapi.js';
+import { registerOnboardingOpenApi } from './onboarding/onboarding-openapi.js';
 import { registerExtensionDecisionsOpenApi } from '../extensions/inbox/extension-decisions-openapi.js';
 import {
   PermissionModeSchema,
@@ -652,6 +653,7 @@ registerAccountEligibilityOpenApi(registry);
 registerKeepAwakeOpenApi(registry);
 registerCommitmentsOpenApi(registry);
 registerHeartbeatsOpenApi(registry);
+registerOnboardingOpenApi(registry);
 
 // `relay_flow` is broadcast on the unified `/api/events` WebSocket stream, which
 // (like its `relay_bindings_changed`/`relay_adapters_changed` siblings) has
@@ -3981,6 +3983,9 @@ const StartLinkResultSchema = z.object({
     .string()
     .openapi({ description: 'The 8-character code the human enters at the cloud.' }),
   verificationUri: z.string().openapi({ description: 'Where the human goes to approve the link.' }),
+  verificationUriComplete: z.string().optional().openapi({
+    description: 'The approval page with the code already filled in, when the service sent one.',
+  }),
   expiresAt: z.string().openapi({ description: 'ISO timestamp after which the code is dead.' }),
 });
 

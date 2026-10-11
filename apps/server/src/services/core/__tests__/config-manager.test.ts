@@ -66,6 +66,7 @@ import {
   seedDisplayNameSourceDefault,
   seedIdentityPromptDismissedDefault,
   seedWorkingHoursDefaults,
+  seedFirstRunOnboardingLeaves,
   seedHarnessAutoAdopt,
   seedHarnessGlobal,
   seedHarnessRefusedHooks,
@@ -1643,6 +1644,95 @@ describe('seedWorkingHoursDefaults migration (DOR-2788)', () => {
       // Everything the person had set is untouched.
       expect(onDisk.profile.displayName).toBe('Dorian');
       expect(onDisk.profile.identityPromptDismissedAt).toBe('2026-09-01T00:00:00.000Z');
+      expect(() => UserConfigSchema.parse(onDisk)).not.toThrow();
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('seedFirstRunOnboardingLeaves migration (DOR-2783)', () => {
+  it('reserves the three first-run leaves on an `onboarding` block that predates them', () => {
+    // conf's pre-migration merge is shallow, so a stored `onboarding` never gains
+    // a member on its own. Drop the body and these read `undefined`.
+    const store = createMockStore({
+      onboarding: { completedSteps: ['meet-dorkbot'], completedAt: '2026-07-01T00:00:00.000Z' },
+    });
+    seedFirstRunOnboardingLeaves(store);
+    expect(store.data.onboarding).toEqual({
+      completedSteps: ['meet-dorkbot'],
+      completedAt: '2026-07-01T00:00:00.000Z',
+      firstRunPath: null,
+      welcomeEntryId: null,
+      priorRuntime: null,
+    });
+  });
+
+  it('keeps a leaf already set and fills only the missing ones', () => {
+    const store = createMockStore({ onboarding: { firstRunPath: 'own' } });
+    seedFirstRunOnboardingLeaves(store);
+    expect(store.data.onboarding).toEqual({
+      firstRunPath: 'own',
+      welcomeEntryId: null,
+      priorRuntime: null,
+    });
+  });
+
+  it('leaves a block that already has all three alone (idempotent, by identity)', () => {
+    const onboarding = { firstRunPath: null, welcomeEntryId: null, priorRuntime: null };
+    const store = createMockStore({ onboarding });
+    seedFirstRunOnboardingLeaves(store);
+    expect(store.data.onboarding).toBe(onboarding);
+  });
+
+  it('does nothing when there is no `onboarding` block to extend', () => {
+    const store = createMockStore({ server: { port: 4242 } });
+    seedFirstRunOnboardingLeaves(store);
+    expect(store.data.onboarding).toBeUndefined();
+  });
+
+  it('a real pre-0.108.0 config file gains the leaves on disk (full conf path)', () => {
+    // Read from the FILE: Ajv's `useDefaults` answers `null` from a discarded
+    // copy, so a `getDot` assertion would pass with the body deleted (DOR-1496).
+    const dir = path.join(os.tmpdir(), 'test-dork-first-run-mig-' + Date.now());
+    const cfgPath = path.join(dir, 'config.json');
+    fs.mkdirSync(dir, { recursive: true });
+    try {
+      fs.writeFileSync(
+        cfgPath,
+        JSON.stringify({
+          version: 1,
+          onboarding: {
+            completedSteps: [],
+            skippedSteps: [],
+            startedAt: null,
+            dismissedAt: null,
+            completedAt: '2026-09-01T00:00:00.000Z',
+            runtimeDefaultSetAt: '2026-09-01T00:00:00.000Z',
+          },
+          __internal__: { migrations: { version: '0.107.0' } },
+        }),
+        'utf-8'
+      );
+
+      new Conf({
+        configName: 'config',
+        cwd: dir,
+        schema: CONF_JSON_SCHEMA as unknown as Schema<Record<string, unknown>>,
+        defaults: USER_CONFIG_DEFAULTS,
+        clearInvalidConfig: false,
+        projectVersion: '0.108.0',
+        migrations: CONFIG_MIGRATIONS,
+      });
+
+      const onDisk = JSON.parse(fs.readFileSync(cfgPath, 'utf-8')) as {
+        onboarding: Record<string, unknown>;
+      };
+      expect(onDisk.onboarding).toHaveProperty('firstRunPath', null);
+      expect(onDisk.onboarding).toHaveProperty('welcomeEntryId', null);
+      expect(onDisk.onboarding).toHaveProperty('priorRuntime', null);
+      // Everything the install already had is untouched.
+      expect(onDisk.onboarding.completedAt).toBe('2026-09-01T00:00:00.000Z');
       expect(() => UserConfigSchema.parse(onDisk)).not.toThrow();
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
@@ -4127,7 +4217,7 @@ describe('CONFIG_MIGRATIONS append-only pins (DOR-1222 regression guard)', () =>
     // pass this having scanned nothing. The count is the knowable bound; the
     // table is append-only, so raising it is the deliberate act of adding a
     // migration, which is exactly when this check should be re-read.
-    expect(Object.keys(bodies)).toHaveLength(49);
+    expect(Object.keys(bodies)).toHaveLength(50);
 
     const reaching = Object.keys(bodies).filter((key) =>
       reachedDeclarations(bodies[key]!, pool).includes('describeLoadError')

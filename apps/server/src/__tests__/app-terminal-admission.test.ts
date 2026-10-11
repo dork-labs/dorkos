@@ -258,7 +258,9 @@ describe('main HTTP admission through the real app', () => {
     expect(mounts).toContain('/api/remote-access');
     // 72 -> 70: the API docs are one `/api` mount on Hono (`routes/api-docs.ts`),
     // so their two paths are asked for by hand below too.
-    expect(mounts).toHaveLength(70);
+    // 70 -> 71: `/api/onboarding`, the first-run routes (spec `one-minute-onboarding` §4).
+    expect(mounts).toContain('/api/onboarding');
+    expect(mounts).toHaveLength(71);
     const byHand = ['/', '/x/fixture', '/assets/fixture.js', '/api/openapi.json', '/api/docs'];
     for (const mount of [...mounts, ...byHand, '/unknown']) {
       expectTerminal(

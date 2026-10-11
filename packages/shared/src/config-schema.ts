@@ -451,6 +451,24 @@ export const OnboardingStateSchema = z.object({
    * where they change it.
    */
   runtimeDefaultSetAt: z.string().nullable().default(null),
+  /**
+   * Which first-run path the person picked on the Welcome screen (spec
+   * `one-minute-onboarding` §4.1): DorkOS's own account, their own AI, or no
+   * account yet. `null` until they pick. `'dorkos'` is what lets a NEW link
+   * record credits as the person's choice for the DorkOS runtime, and only
+   * while `completedAt` is still null.
+   */
+  firstRunPath: z.enum(['dorkos', 'own', 'none']).nullable().default(null),
+  /**
+   * The #team entry DorkBot's first-run welcome was posted as, so posting it is
+   * done once and the suggestion chips know which entry they sit under.
+   */
+  welcomeEntryId: z.string().nullable().default(null),
+  /**
+   * The default runtime as it was before the first-run route's first call, so
+   * choosing another path can put `runtimes.default` and DorkBot back first.
+   */
+  priorRuntime: z.string().nullable().default(null),
 });
 
 export type OnboardingState = z.infer<typeof OnboardingStateSchema>;
@@ -2989,14 +3007,9 @@ export const UserConfigSchema = z.object({
       maxPosts: 3,
       offersEnabled: true,
     })),
-  onboarding: OnboardingStateSchema.default(() => ({
-    completedSteps: [],
-    skippedSteps: [],
-    startedAt: null,
-    dismissedAt: null,
-    completedAt: null,
-    runtimeDefaultSetAt: null,
-  })),
+  // Parsed from the section's own schema rather than restated as a literal, so
+  // a field added above can never be missing from a fresh install's section.
+  onboarding: OnboardingStateSchema.default(() => OnboardingStateSchema.parse({})),
   tours: ToursStateSchema.default(() => ({ seen: [], declined: [] })),
   /** Who the user is, in their own words. Local-only — see {@link UserProfileSchema}. */
   profile: UserProfileSchema.default(() => ({

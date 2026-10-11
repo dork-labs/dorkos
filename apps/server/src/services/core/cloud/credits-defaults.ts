@@ -289,6 +289,36 @@ export async function fillCreditsGaps(
 }
 
 /**
+ * A NEW link made from the first run's DorkOS path (spec
+ * `one-minute-onboarding` §4.1): the DorkOS runtime runs on credits, recorded
+ * as the person's own pick, because pressing Continue with DorkOS was it. So
+ * no "DorkOS chose for you" notice follows. Runs after {@link fillCreditsGaps},
+ * which starts the choices over on a new account.
+ *
+ * Only while the first run is still open (neither finished nor dismissed) and
+ * its recorded path is `dorkos`: a person who switched to their own AI, or
+ * finished or dismissed the first run, is never armed by a link approved later.
+ *
+ * @param config - Config reader/writer.
+ * @returns Whether credits were recorded.
+ */
+export function recordFirstRunCreditsChoice(config: CreditsConfigPort = configManager): boolean {
+  const onboarding = config.get('onboarding');
+  if (onboarding?.firstRunPath !== 'dorkos') return false;
+  // Finished or dismissed closes the door; both are written only by a person.
+  if (onboarding.completedAt !== null || onboarding.dismissedAt !== null) return false;
+  const current = readCreditsSettings(config);
+  writeCreditsSettings(config, {
+    ...current,
+    defaults: {
+      ...current.defaults,
+      doe: { runsOn: 'credits', chosenBy: 'user', announced: true, signInReoffered: false },
+    },
+  });
+  return true;
+}
+
+/**
  * Record which account the choices belong to when it was not known yet (a
  * link made before this was recorded). Never changes a known value: only a
  * new link may do that.

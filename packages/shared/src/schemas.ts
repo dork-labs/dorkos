@@ -4805,6 +4805,17 @@ export const ServerConfigSchema = z
           description:
             'ISO timestamp when first-run setup decided the default runtime. Non-null means that decision is closed and is never made again.',
         }),
+        firstRunPath: z.enum(['dorkos', 'own', 'none']).nullable().openapi({
+          description:
+            'The first-run path the person picked: their DorkOS account, their own AI, or no account yet. Null until they pick.',
+        }),
+        welcomeEntryId: z.string().nullable().openapi({
+          description: "The #team entry DorkBot's first-run welcome was posted as, or null.",
+        }),
+        priorRuntime: z.string().nullable().openapi({
+          description:
+            'The default runtime before the first-run path was picked, kept so another pick can undo it.',
+        }),
       })
       .optional()
       .openapi({ description: 'First-time user onboarding state' }),

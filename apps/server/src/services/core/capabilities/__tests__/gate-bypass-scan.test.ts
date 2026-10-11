@@ -172,6 +172,8 @@ const PROTECTED_EFFECTS: ProtectedEffect[] = [
       'services/runtimes/connect/doe-setup-router.ts':
         'POST /doe/credential runs the same loopback and refuseUnlessAccountOwner bars before the encrypted store is touched; the helper audits both changed config sections without logging the plaintext key',
       'services/runtimes/connect/doe-credentials.ts': 'the definition itself',
+      'routes/onboarding.ts':
+        'POST /api/onboarding/first-run saves the key a person typed in the Own AI list, after the same loopback and refuseUnlessAccountOwner bars as POST /doe/credential, and only once the key passed `validateDoeSecret` and the service listed models with it. Its other writes (the default runtime, the DorkOS model setup, the credits record, the onboarding record, whose `firstRunPath`, `priorRuntime`, `welcomeEntryId`, `completedAt` and `dismissedAt` are operator-only) go through `services/core/onboarding/first-run.ts`, one call at a time, each leaving a logConfigWrite line (spec `one-minute-onboarding` §4.1)',
     },
   },
   {
@@ -783,6 +785,8 @@ const PROTECTED_EFFECTS: ProtectedEffect[] = [
       'services/core/operator/operator-tool-handlers.ts':
         '`update_agent` refuses the three outright; `update_agent_boundaries` writes only the NOPE fields; `update_agent_execution` is tier `destructive`, so a person approved the call before it gets here',
       'services/core/operator/agent-updater.ts': 'the definition itself',
+      'routes/onboarding.ts':
+        "`POST /api/onboarding/first-run` writes DorkBot's `runtime` and nothing else, to the runtime the person picked on the Welcome screen or back to the one before it, after the loopback and refuseUnlessAccountOwner bars, which refuse an agent in every posture (spec `one-minute-onboarding` §4.1)",
     },
   },
   // `meshCore.update(` and its spellings. A mesh handle is named `mesh` or

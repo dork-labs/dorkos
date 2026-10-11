@@ -210,6 +210,7 @@ import {
   CLOUD_REMOTE_REACH_PATHS,
   CLOUD_REMOTE_WRITE_POLICY,
 } from '../remote/remote-config-policy.js';
+import { ONBOARDING_CREDENTIAL_PATHS, ONBOARDING_WRITE_POLICY } from './onboarding-write-policy.js';
 
 /**
  * Whether an agent may write one config leaf through `config_patch`.
@@ -534,15 +535,8 @@ export const CONFIG_WRITE_POLICY = {
   'welcomeBack.maxPosts': 'operator-only',
   'welcomeBack.offersEnabled': 'operator-only',
 
-  'onboarding.completedSteps': 'agent-writable',
-  'onboarding.skippedSteps': 'agent-writable',
-  'onboarding.startedAt': 'agent-writable',
-  'onboarding.dismissedAt': 'agent-writable',
-  'onboarding.completedAt': 'agent-writable',
-  // A timestamp saying the first-run flow already picked a default runtime. It
-  // grants nothing and guards nothing; an agent rewriting it can at most let
-  // first-run setup ask the question again on a machine that is past it.
-  'onboarding.runtimeDefaultSetAt': 'agent-writable',
+  // The first-run section, in its own module (`onboarding-write-policy.ts`).
+  ...ONBOARDING_WRITE_POLICY,
 
   'tours.seen': 'agent-writable',
   'tours.declined': 'agent-writable',
@@ -1032,6 +1026,7 @@ export const OPERATOR_ONLY_STAKES: readonly OperatorOnlyStakeGroup[] = [
       'cloud.credits.agents',
       'cloud.credits.linkedTo',
       ...CLOUD_REMOTE_CREDENTIAL_PATHS,
+      ...ONBOARDING_CREDENTIAL_PATHS,
       'heartbeats.triageOnCredits',
       'runtimes.codex.credentialRef',
       'runtimes.environment.inherit.claudeCode',
@@ -1232,6 +1227,8 @@ export const OPERATOR_ONLY_STAKES: readonly OperatorOnlyStakeGroup[] = [
       'ui.communityNavigation.owners[].ownerKey',
       'ui.communityNavigation.owners[].installationDestination.path',
       'ui.communityNavigation.owners[].installationDestination.search',
+      // Which #team entry the app shows as DorkBot's first-run welcome.
+      'onboarding.welcomeEntryId',
     ],
   },
   {

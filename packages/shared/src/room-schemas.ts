@@ -1316,6 +1316,12 @@ export const RoomEntryBodySchema = z
     canvas: RoomCanvasChangeSchema.optional(),
     fileChange: RoomFileChangeEventSchema.optional(),
     waitingKind: RoomWaitingKindSchema.optional(),
+    greeting: z
+      .enum(['first-run'])
+      .optional()
+      .describe(
+        "Set on an agent's scripted greeting DorkOS wrote for it, such as DorkBot's first-run welcome in #team. It woke nobody, and it stays in the app: a chat bridge never delivers it."
+      ),
     answersEntryId: z
       .string()
       .optional()

@@ -303,6 +303,9 @@ export const CONFIG_DISCLOSURE = {
   'onboarding.dismissedAt': 'expose',
   'onboarding.completedAt': 'expose',
   'onboarding.runtimeDefaultSetAt': 'expose',
+  'onboarding.firstRunPath': 'expose',
+  'onboarding.welcomeEntryId': 'expose',
+  'onboarding.priorRuntime': 'expose',
 
   'tours.seen': 'expose',
   'tours.declined': 'expose',

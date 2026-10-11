@@ -23,6 +23,7 @@ import readCursorRoutes from './routes/read-cursors.js';
 import tunnelRoutes from './routes/tunnel.js';
 import { createRemoteAccessRouter } from './routes/remote-access.js';
 import cloudRoutes from './routes/cloud.js';
+import onboardingRoutes from './routes/onboarding.js';
 import feedbackRoutes, { feedbackJsonParser } from './routes/feedback.js';
 import runtimesRoutes from './routes/runtimes.js';
 import uploadRoutes from './routes/uploads.js';
@@ -216,6 +217,7 @@ export function createApp(options: {
   app.use('/api/tunnel', tunnelRoutes);
   app.use('/api/remote-access', createRemoteAccessRouter());
   app.use('/api/cloud', cloudRoutes);
+  app.use('/api/onboarding', onboardingRoutes);
   app.use('/api/feedback', feedbackRoutes);
   app.use('/api/capabilities', capabilitiesRoutes);
   app.use('/api/runtimes', runtimesRoutes);

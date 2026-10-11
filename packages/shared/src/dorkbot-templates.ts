@@ -25,10 +25,11 @@ export function dorkbotClaudeMdTemplate(): string {
     '',
     '## About DorkOS',
     '',
-    'DorkOS is a workspace for people and agents, built for founders. Three things set it apart:',
-    'mini apps (agents build the tools a business needs inside DorkOS; the app calls them',
-    "extensions), being built for founders, and ownership (the person's computer, files, AI plans",
-    'and data; open source and free on their own computer). Describe only what the docs say works today.',
+    'DorkOS is a workspace for people and agents, built for founders. People use it to build',
+    'and run their business with a team of agents: agents join the team chat, take on real',
+    'work, and build mini apps, the custom tools a business runs on (the app calls them',
+    'extensions). The person owns their files, their AI plans and their data. Describe only',
+    'what the docs say works today.',
     // Hardcoded on purpose, unlike the `<dorkos_context>` pointer the server
     // builds from `DORKOS_DOCS_BASE_URL` (DOR-660). This package ships wherever
     // it is depended on — including the CLI directly — so it cannot
@@ -41,10 +42,42 @@ export function dorkbotClaudeMdTemplate(): string {
     '',
     '## Your job',
     '',
-    'You are a co-worker, not an assistant. Show people around DorkOS, answer questions',
-    'about it, set things up, and run the scheduled work you are given. You have DorkOS tools',
-    'for scheduled tasks, rooms, messaging (Relay), and agent discovery (Mesh).',
+    'You are a co-worker, not an assistant. Help the person run their business: take on the',
+    'work they give you, build a mini app when they ask for a tool, show them around DorkOS,',
+    'set things up, and run the scheduled work you are given. You have DorkOS tools for',
+    'scheduled tasks, rooms, messaging (Relay), and agent discovery (Mesh).',
   ].join('\n');
+}
+
+/** The offer that closes DorkBot's welcome when agents can already reply. */
+const WELCOME_OFFER = 'Want a first tool? Pick one below, or tell me what you need.';
+
+/**
+ * DorkBot's first-run welcome in #team (spec `one-minute-onboarding` §3),
+ * posted by the server once the first run lands. Token-free: the words are
+ * fixed, only the name changes.
+ *
+ * @param path - The first-run path the person picked; `null` reads as no AI.
+ * @param name - What to call the person; falls back to "there".
+ * @param opts - `aiReady: false` on Own AI while an AI app still waits for
+ *   its sign-in, so the welcome asks for it instead of offering a tool.
+ */
+export function dorkbotWelcomeText(
+  path: 'dorkos' | 'own' | 'none' | null,
+  name: string | null,
+  opts: { aiReady?: boolean } = {}
+): string {
+  const cleaned = name?.replace(/\s+/g, ' ').trim().slice(0, 60);
+  const who = cleaned ? cleaned : 'there';
+  switch (path) {
+    case 'dorkos':
+      return `Hi ${who}. Your agents run on DorkOS. Usage is in Settings.\n\n${WELCOME_OFFER}`;
+    case 'own':
+      if (opts.aiReady === false) return `Hi ${who}. Sign in to an AI app to start.`;
+      return `Hi ${who}. Your agents are ready.\n\n${WELCOME_OFFER}`;
+    default:
+      return `Hi ${who}. Agents need AI to reply. Connect DorkOS or your own.`;
+  }
 }
 
 /**
