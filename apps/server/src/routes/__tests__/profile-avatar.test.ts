@@ -9,7 +9,7 @@
  * asserts the roster serves exactly that, with no route, schema or client change.
  * That block is what makes "sync-ready" a fact rather than a claim.
  */
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import express from 'express';
 import request from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
@@ -23,7 +23,14 @@ import { RoomError } from '../../services/rooms/room-errors.js';
 import { LocalAvatarStore } from '../../services/identity/local-avatar-store.js';
 import type { AvatarStore } from '../../services/identity/avatar-store.js';
 import { createProfileRouter, type ProfileRouterDeps } from '../profile.js';
-import { createTeamRouter } from '../team.js';
+import { createTeamRoutes } from '../team.js';
+import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
+
+// The routes are served through the `/api` chain, whose host guard and session
+// gate read the login setting: off, as on a fresh install.
+vi.mock('../../services/core/config-manager.js', () => ({
+  configManager: { get: vi.fn(() => undefined), set: vi.fn() },
+}));
 
 const fixtureTarget = swappableServer();
 const fixtureServer = fixtureTarget.server;
@@ -77,24 +84,27 @@ describe('/api/profile/avatar', () => {
         ...overrides,
       })
     );
-    server.use(
-      '/api/team',
-      createTeamRouter({
-        authors: registry,
-        // The roster is what these tests read back; the rooms reader is a
-        // required dependency of the router and answers nothing here.
-        rooms: { listRoomsForMember: () => [], listMembersForRooms: () => [] },
-        activeClaims: () => [],
-        listRooms: () => [],
-        sessionActivity: () => Promise.resolve({}),
-        ownerAccount: () => ({ id: OWNER_USER_ID, name: 'Dorian' }),
-        ownerEmail: () => 'dorian@dorkos.ai',
-        configDisplayName: () => null,
-        configDisplayNameSource: () => null,
-        defaultAgentName: () => null,
-      })
+    const routes = honoGroupListener(
+      {
+        path: '/api/team',
+        routes: createTeamRoutes({
+          authors: registry,
+          // The roster is what these tests read back; the rooms reader is a
+          // required dependency of the router and answers nothing here.
+          rooms: { listRoomsForMember: () => [], listMembersForRooms: () => [] },
+          activeClaims: () => [],
+          listRooms: () => [],
+          sessionActivity: () => Promise.resolve({}),
+          ownerAccount: () => ({ id: OWNER_USER_ID, name: 'Dorian' }),
+          ownerEmail: () => 'dorian@dorkos.ai',
+          configDisplayName: () => null,
+          configDisplayNameSource: () => null,
+          defaultAgentName: () => null,
+        }),
+      },
+      { legacy: server }
     );
-    return server;
+    return routes;
   }
 
   function storedAccountImage(): string | null | undefined {

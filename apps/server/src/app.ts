@@ -9,7 +9,6 @@ import directoryRoutes from './routes/directory.js';
 import configRoutes from './routes/config.js';
 import fileRoutes from './routes/files.js';
 import diffRoutes from './routes/diff.js';
-import capabilitiesRoutes from './routes/capabilities.js';
 import workbenchServeRoutes from './routes/workbench-serve.js';
 import gitRoutes from './routes/git.js';
 import workspaceRoutes from './routes/workspaces.js';
@@ -219,7 +218,6 @@ export function createApp(options: {
   app.use('/api/cloud', cloudRoutes);
   app.use('/api/onboarding', onboardingRoutes);
   app.use('/api/feedback', feedbackRoutes);
-  app.use('/api/capabilities', capabilitiesRoutes);
   app.use('/api/runtimes', runtimesRoutes);
   app.use('/api/events', eventsRouter);
   app.use('/api/uploads', uploadRoutes);

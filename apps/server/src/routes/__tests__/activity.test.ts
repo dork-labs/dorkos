@@ -1,11 +1,17 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import express from 'express';
 import request from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
-import { createActivityRouter } from '../activity.js';
+import { createActivityRoutes } from '../activity.js';
+import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
 import { ActivityService } from '../../services/activity/activity-service.js';
 import { createTestDb } from '@dorkos/test-utils/db';
 import type { Db } from '@dorkos/db';
+
+// The routes are served through the `/api` chain, whose host guard and session
+// gate read the login setting: off, as on a fresh install.
+vi.mock('../../services/core/config-manager.js', () => ({
+  configManager: { get: vi.fn(() => undefined), set: vi.fn() },
+}));
 
 const fixtureTarget = swappableServer();
 const fixtureServer = fixtureTarget.server;
@@ -15,23 +21,15 @@ vi.mock('../../lib/logger.js', () => ({
 }));
 
 describe('Activity routes', () => {
-  let app: express.Application;
   let activityService: ActivityService;
   let db: Db;
 
   beforeEach(() => {
     db = createTestDb();
     activityService = new ActivityService(db);
-    app = express();
-    app.use(express.json());
-    app.use('/api/activity', createActivityRouter(activityService));
-    app.use(
-      (err: Error, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
-        res.status(500).json({ error: err.message });
-      }
+    fixtureTarget.mount(
+      honoGroupListener({ path: '/api/activity', routes: createActivityRoutes(activityService) })
     );
-
-    fixtureTarget.mount(app);
   });
 
   describe('GET /api/activity', () => {

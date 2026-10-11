@@ -18,13 +18,16 @@
  *
  * @module routes/audit
  */
-import { Router } from 'express';
+import { Hono } from 'hono';
 import {
   AuditQuerySchema,
   AuditTimelineQuerySchema,
   AuditVerifyQuerySchema,
 } from '@dorkos/shared/audit-schemas';
-import { parseBody, sendError } from '../lib/route-utils.js';
+import { errorBody, validationFailureBody } from '../lib/route-utils.js';
+import type { ApiEnv } from '../http/api-chain.js';
+import { honoRequestFacts } from '../http/request-facts.js';
+import { readQuery } from '../http/request-query.js';
 import type { AuditLog } from '../services/audit/audit-log.js';
 import type { AccountIds } from '../services/audit/account-ids.js';
 import { readableSessionIds } from '../services/audit/session-visibility.js';
@@ -51,42 +54,42 @@ export interface AuditRouterDeps {
 }
 
 /**
- * Create the audit router.
+ * The `/api/audit` routes.
  *
  * @param deps - The audit log and the account-id resolver.
+ * @returns The routes, for `app.route('/api/audit', …)`.
  */
-export function createAuditRouter(deps: AuditRouterDeps): Router {
-  const router = Router();
+export function createAuditRoutes(deps: AuditRouterDeps): Hono<ApiEnv> {
+  const router = new Hono<ApiEnv>();
 
-  router.get('/verify', (req, res) => {
-    const query = parseBody(AuditVerifyQuerySchema, req.query, res);
-    if (!query) return;
-    return res.json(deps.log.verify(query));
+  router.get('/verify', (c) => {
+    const query = AuditVerifyQuerySchema.safeParse(readQuery(c));
+    if (!query.success) return c.json(validationFailureBody(query.error), 400);
+    return c.json(deps.log.verify(query.data));
   });
 
-  router.get('/', (req, res) => {
-    const query = parseBody(AuditQuerySchema, req.query, res);
-    if (!query) return;
-    const reader = readerOfRequest(req, res, deps.accounts);
-    return res.json(readAuditQuery(deps.log, query, reader, readableTo(reader)));
+  router.get('/', (c) => {
+    const query = AuditQuerySchema.safeParse(readQuery(c));
+    if (!query.success) return c.json(validationFailureBody(query.error), 400);
+    const reader = readerOfRequest(honoRequestFacts(c), deps.accounts);
+    return c.json(readAuditQuery(deps.log, query.data, reader, readableTo(reader)));
   });
 
-  router.get('/accounts/:accountId/timeline', (req, res) => {
-    const query = parseBody(
-      AuditTimelineQuerySchema,
-      { ...req.query, accountId: req.params.accountId },
-      res
-    );
-    if (!query) return;
-    const reader = readerOfRequest(req, res, deps.accounts);
-    return res.json(readAuditTimeline(deps.log, query, reader, readableTo(reader)));
+  router.get('/accounts/:accountId/timeline', (c) => {
+    const query = AuditTimelineQuerySchema.safeParse({
+      ...readQuery(c),
+      accountId: c.req.param('accountId'),
+    });
+    if (!query.success) return c.json(validationFailureBody(query.error), 400);
+    const reader = readerOfRequest(honoRequestFacts(c), deps.accounts);
+    return c.json(readAuditTimeline(deps.log, query.data, reader, readableTo(reader)));
   });
 
-  router.get('/:id', (req, res) => {
-    const reader = readerOfRequest(req, res, deps.accounts);
-    const found = readAuditEvent(deps.log, req.params.id, reader, readableTo(reader));
-    if (!found) return sendError(res, 404, 'No audit event with that id.', 'NOT_FOUND');
-    return res.json(found);
+  router.get('/:id', (c) => {
+    const reader = readerOfRequest(honoRequestFacts(c), deps.accounts);
+    const found = readAuditEvent(deps.log, c.req.param('id'), reader, readableTo(reader));
+    if (!found) return c.json(errorBody('No audit event with that id.', 'NOT_FOUND'), 404);
+    return c.json(found);
   });
 
   return router;

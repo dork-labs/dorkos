@@ -36,7 +36,6 @@ import { logger } from './lib/logger.js';
 import { initConfigManager } from './services/core/config-manager.js';
 import { initAgentIdentityService } from './services/core/agent-identity/index.js';
 import { composeDorkOsCapabilityRegistry } from './services/core/self-description/dorkos-registry.js';
-import { createCapabilitiesInvokeRouter } from './routes/capabilities-invoke.js';
 import { runtimeRegistry } from './services/core/runtime-registry.js';
 import {
   SessionEventStore,
@@ -151,11 +150,12 @@ export async function bootInProcessTestServer(dorkHome: string): Promise<InProce
   // but a route that answers 500 for a missing local is worse than one wired.
   app.locals.meshCore = mesh;
 
-  // **The capability invoke route, with the rooms domain on it.** `createApp()`
-  // mounts the catalog but not `POST /api/capabilities/:id/invoke`, which
-  // `start()` wires after composing the registry — so on this boot there was no
-  // way to reach `post_to_room` at all, and a rooms eval about the flip could
-  // only assert what the room did with a turn's TEXT.
+  // **The capability invoke route, with the rooms domain on it.** The Hono
+  // `/api` app mounts `POST /api/capabilities/:id/invoke` (and the catalog)
+  // only when it is handed a registry, which `start()` composes — so without
+  // this there was no way to reach `post_to_room` at all on this boot, and a
+  // rooms eval about the flip could only assert what the room did with a turn's
+  // TEXT.
   //
   // Deliberately the rooms domain and nothing else: every other bag
   // `composeDorkOsCapabilityRegistry` takes is optional, and a harness that
@@ -163,12 +163,10 @@ export async function bootInProcessTestServer(dorkHome: string): Promise<InProce
   // drives. The tier gate is left UNARMED, which is the safe direction — until
   // `initCapabilityTierGate` runs it refuses destructive invocations rather than
   // allowing them, and both rooms writes are `act`.
-  app.use(
-    '/api/capabilities',
-    createCapabilitiesInvokeRouter(
-      composeDorkOsCapabilityRegistry({ logger, roomDeps: { rooms: rooms.service } })
-    )
-  );
+  const capabilities = composeDorkOsCapabilityRegistry({
+    logger,
+    roomDeps: { rooms: rooms.service },
+  });
 
   // **The test-control routes, mounted here rather than left to `createApp()`.**
   // `env.ts` validates the environment ONCE at module load, so `createApp()`
@@ -188,7 +186,7 @@ export async function bootInProcessTestServer(dorkHome: string): Promise<InProce
   finalizeApp(app);
 
   return {
-    listener: frontDoorListener(composeFrontDoor(app, admission)),
+    listener: frontDoorListener(composeFrontDoor(app, admission, { capabilities })),
     dispose: () => {
       // Close the underlying better-sqlite3 handle so the sandbox teardown can
       // remove the db (and its WAL sidecars) without a lingering open descriptor.

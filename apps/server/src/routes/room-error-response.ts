@@ -207,10 +207,43 @@ export const STATUS_BY_CODE: Record<RoomErrorCode, number> = {
   MERGE_IN_FLIGHT: 429,
 };
 
+/** A room refusal as a status and a body, before either chain writes it. */
+export interface RoomErrorReply {
+  /** The HTTP status. */
+  status: number;
+  /** The JSON body. */
+  body: object;
+}
+
 /**
- * Map a thrown value onto a response. A {@link RoomError} carries its own code;
- * anything else is a bug and gets a generic 500 with the detail in the log, not
- * on the wire.
+ * Map a thrown value onto a status and body. A {@link RoomError} carries its
+ * own code; anything else is a bug and gets a generic 500 with the detail in
+ * the log, not on the wire.
+ *
+ * {@link sendRoomError} writes it on Express; a Hono route returns
+ * `c.json(reply.body, reply.status)`.
+ *
+ * @param err - The caught value.
+ * @param context - Route label for the log line.
+ * @param ownerAsking - Whether the caller is the install's owner; see
+ *   {@link isOwnerCaller}.
+ * @returns The reply.
+ */
+export function roomErrorReply(
+  err: unknown,
+  context: string,
+  ownerAsking: () => boolean
+): RoomErrorReply {
+  if (err instanceof RoomError) {
+    // Worded before a status is chosen, so nothing can leave a half-written reply.
+    return { status: STATUS_BY_CODE[err.code], body: roomRefusalFor(err, ownerAsking) };
+  }
+  logger.error(`[rooms] ${context} failed`, { err });
+  return { status: 500, body: { error: 'Internal server error' } };
+}
+
+/**
+ * Map a thrown value onto a response: {@link roomErrorReply}, written.
  *
  * @param res - The response to write to.
  * @param err - The caught value.
@@ -221,14 +254,8 @@ export function sendRoomError(
   err: unknown,
   context: string
 ): void {
-  if (err instanceof RoomError) {
-    // Worded before a status is set, so nothing can leave a half-written reply.
-    const body = roomRefusalFor(err, () => ownerAsking(res));
-    res.status(STATUS_BY_CODE[err.code]).json(body);
-    return;
-  }
-  logger.error(`[rooms] ${context} failed`, { err });
-  res.status(500).json({ error: 'Internal server error' });
+  const reply = roomErrorReply(err, context, () => ownerAsking(res));
+  res.status(reply.status).json(reply.body);
 }
 
 /**
@@ -239,6 +266,14 @@ export function sendRoomError(
  * @param res - The response, carrying the caller `resolveCaller` resolved.
  */
 export function ownerAsking(res: Pick<Response, 'locals'>): boolean {
-  const caller = res.locals[ROOM_CALLER_LOCAL] as AuthorRecord | undefined;
+  return isOwnerCaller(res.locals[ROOM_CALLER_LOCAL] as AuthorRecord | undefined);
+}
+
+/**
+ * Whether a resolved room caller is the install's owner; `false` for none.
+ *
+ * @param caller - The caller `resolveCaller` returned, if it returned one.
+ */
+export function isOwnerCaller(caller: AuthorRecord | undefined): boolean {
   return caller !== undefined && isOwnerRecord(caller, readOwnerAccount()?.id ?? null);
 }

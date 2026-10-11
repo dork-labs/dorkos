@@ -49,17 +49,21 @@
  *
  * @module routes/search
  */
-import { Router, type Request, type Response } from 'express';
+import { Hono } from 'hono';
+import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import type { Db } from '@dorkos/db';
+import type { ApiEnv } from '../http/api-chain.js';
+import { honoRequestFacts } from '../http/request-facts.js';
+import { readQuery } from '../http/request-query.js';
 import { presentsAgentIdentity } from '../middleware/agent-identity.js';
 import { readOwnerAccount } from '../services/core/auth/index.js';
 import { isOwnerRecord } from '../services/rooms/author-registry.js';
-import { getRoomService } from '../services/rooms/index.js';
+import { getRoomService, type AuthorRecord } from '../services/rooms/index.js';
 import { answerSearch, type SearchScope } from '../services/search/index.js';
 import { readableSessionIds } from '../services/audit/session-visibility.js';
 import { readerOfRequest } from './audit-reader.js';
 import { resolveCaller } from './room-caller.js';
-import { sendRoomError } from './room-error-response.js';
+import { isOwnerCaller, roomErrorReply } from './room-error-response.js';
 
 /** What the search router reads. It writes nothing and holds no state. */
 export interface SearchRouterDeps {
@@ -68,18 +72,21 @@ export interface SearchRouterDeps {
 }
 
 /**
- * Build the search router.
+ * The `/api/search` routes.
  *
  * @param deps - The index to read.
- * @returns The router, to mount at `/api/search`.
+ * @returns The routes, for `app.route('/api/search', …)`.
  */
-export function createSearchRouter(deps: SearchRouterDeps): Router {
-  const router = Router();
+export function createSearchRoutes(deps: SearchRouterDeps): Hono<ApiEnv> {
+  const router = new Hono<ApiEnv>();
 
-  router.get('/', (req: Request, res: Response) => {
+  router.get('/', (c) => {
+    const facts = honoRequestFacts(c);
+    // Held for a refusal's wording, which differs for the owner (DOR-2457).
+    let caller: AuthorRecord | undefined;
     try {
       const rooms = getRoomService();
-      const caller = resolveCaller(req, res);
+      caller = resolveCaller(facts);
       // `isOwnerRecord` answers "is this the person who owns the install", and it
       // is the half that decides today: an agent resolves to an agent author and
       // fails it, and a caller whose token did not verify never gets this far
@@ -95,25 +102,28 @@ export function createSearchRouter(deps: SearchRouterDeps): Router {
       // A machine gets agent work sessions only, through the same rule every
       // transcript read uses (spec `audit-trail` §3.4): `readableSessionIds`,
       // which is `canRead` with a session standing in for a row.
-      const agent = presentsAgentIdentity(req, res);
+      const agent = presentsAgentIdentity(facts);
       const sessions: SearchScope['sessions'] = agent
         ? {
-            readable: (ids) => readableSessionIds(readerOfRequest(req, res), ids),
+            readable: (ids) => readableSessionIds(readerOfRequest(facts), ids),
           }
         : isOwnerRecord(caller, readOwnerAccount()?.id ?? null);
 
       const answer = answerSearch(
         deps.db,
         { rooms: rooms.searchScope(caller.id), sessions },
-        req.query
+        readQuery(c)
       );
       if (!answer.ok) {
-        res.status(answer.status).json({ error: answer.error, code: answer.code });
-        return;
+        return c.json(
+          { error: answer.error, code: answer.code },
+          answer.status as ContentfulStatusCode
+        );
       }
-      res.json(answer.response);
+      return c.json(answer.response);
     } catch (err) {
-      sendRoomError(res, err, 'GET /api/search');
+      const reply = roomErrorReply(err, 'GET /api/search', () => isOwnerCaller(caller));
+      return c.json(reply.body, reply.status as ContentfulStatusCode);
     }
   });
 

@@ -16,8 +16,11 @@
  *
  * @module routes/capabilities-catalog
  */
-import { Router } from 'express';
-import { z } from 'zod';
+import { Hono } from 'hono';
+
+import type { ApiEnv } from '../http/api-chain.js';
+import { readQuery } from '../http/request-query.js';
+import { validationFailureBody } from '../lib/route-utils.js';
 
 import type { CapabilityRegistry } from '../services/core/capabilities/index.js';
 import {
@@ -27,26 +30,20 @@ import {
 } from '../services/core/self-description/catalog-projection.js';
 
 /**
- * Build the capability-catalog router over a composed registry.
+ * The capability-catalog routes over a composed registry.
  *
  * @param registry - The boot-composed capability registry to serialize.
- * @returns An Express router serving `GET /` (mounted at `/api/capabilities/catalog`).
+ * @returns The routes serving `GET /`, for `app.route('/api/capabilities/catalog', …)`.
  */
-export function createCapabilitiesCatalogRouter(registry: CapabilityRegistry): Router {
-  const router = Router();
-  router.get('/', (req, res) => {
-    const parsed = listCapabilitiesInputSchema.safeParse(req.query);
-    if (!parsed.success) {
-      res.status(400).json({ error: 'Validation failed', details: z.flattenError(parsed.error) });
-      return;
-    }
+export function createCapabilitiesCatalogRoutes(registry: CapabilityRegistry): Hono<ApiEnv> {
+  const router = new Hono<ApiEnv>();
+  router.get('/', (c) => {
+    const parsed = listCapabilitiesInputSchema.safeParse(readQuery(c));
+    if (!parsed.success) return c.json(validationFailureBody(parsed.error), 400);
     try {
-      res.json(projectCatalog(registry.catalog(), parsed.data));
+      return c.json(projectCatalog(registry.catalog(), parsed.data));
     } catch (err) {
-      if (err instanceof InvalidCursorError) {
-        res.status(400).json({ error: err.message });
-        return;
-      }
+      if (err instanceof InvalidCursorError) return c.json({ error: err.message }, 400);
       throw err;
     }
   });

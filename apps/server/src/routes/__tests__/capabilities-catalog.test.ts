@@ -9,16 +9,22 @@
  *
  * @vitest-environment node
  */
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { z } from 'zod';
-import express from 'express';
 import request from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
 import { noopLogger } from '@dorkos/shared/logger';
 
 import type { McpToolDeps } from '../../services/runtimes/claude-code/mcp-tools/types.js';
 import { composeDorkOsCapabilityRegistry } from '../../services/core/self-description/dorkos-registry.js';
-import { createCapabilitiesCatalogRouter } from '../capabilities-catalog.js';
+import { createCapabilitiesCatalogRoutes } from '../capabilities-catalog.js';
+import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
+
+// The routes are served through the `/api` chain, whose host guard and session
+// gate read the login setting: off, as on a fresh install.
+vi.mock('../../services/core/config-manager.js', () => ({
+  configManager: { get: vi.fn(() => undefined), set: vi.fn() },
+}));
 
 const fixtureTarget = swappableServer();
 
@@ -28,9 +34,10 @@ function buildApp(
     operatorDeps: {} as McpToolDeps,
   })
 ) {
-  const app = express();
-  app.use('/api/capabilities/catalog', createCapabilitiesCatalogRouter(registry));
-  return app;
+  return honoGroupListener({
+    path: '/api/capabilities/catalog',
+    routes: createCapabilitiesCatalogRoutes(registry),
+  });
 }
 
 describe('GET /api/capabilities/catalog', () => {
