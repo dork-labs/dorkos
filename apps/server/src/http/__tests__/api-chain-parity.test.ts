@@ -61,6 +61,7 @@ import { createApp, finalizeApp } from '../../app.js';
 import { createApiApp, type ApiEnv } from '../api-chain.js';
 import { readJsonBody } from '../request-body.js';
 import { MainRequestAdmission } from '../../services/core/lifecycle/main-request-admission.js';
+import { tunnelManager } from '../../services/core/tunnel-manager.js';
 import { currentAuditActor } from '../../services/audit/audit-context.js';
 import { initAuditTrail, resetAuditTrail } from '../../services/audit/audit-trail.js';
 import { recordAudit } from '../../services/audit/audit-trail.js';
@@ -621,6 +622,37 @@ describe('a stopping server', () => {
       expect(fromHono.status).toBe(503);
       expect(fromHono).toEqual(fromExpress);
     } finally {
+      viaExpress.server.close();
+      viaHono.server.close();
+    }
+  });
+});
+
+describe('a managed hostname that skipped the managed ingress', () => {
+  it('is refused alike, before any route', async () => {
+    const managed = tunnelManager as unknown as { managedHosts?: string[] };
+    managed.managedHosts = ['abc.remote.example'];
+    const admission = new MainRequestAdmission();
+    const viaExpress = await listen(buildExpress(admission) as unknown as RequestListener);
+    const viaHono = await listen(
+      getRequestListener(buildHono(admission).fetch, {
+        overrideGlobalObjects: false,
+        autoCleanupIncoming: false,
+      })
+    );
+    try {
+      const probe = {
+        method: 'GET',
+        path: '/api/chain-probe',
+        headers: { host: 'abc.remote.example' },
+      };
+      const fromExpress = await send(viaExpress.port, probe);
+      const fromHono = await send(viaHono.port, probe);
+      expect(fromHono.status).toBe(403);
+      expect(fromHono.body).toEqual({ error: 'Forbidden.' });
+      expect(fromHono).toEqual(fromExpress);
+    } finally {
+      delete managed.managedHosts;
       viaExpress.server.close();
       viaHono.server.close();
     }
