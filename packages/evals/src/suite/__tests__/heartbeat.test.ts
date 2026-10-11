@@ -10,6 +10,7 @@ import type { SseFrame } from '@dorkos/test-utils/sse-test-helpers';
 import { emptyApprovalLog, type OracleContext } from '../../types.js';
 import { selectSuite } from '../index.js';
 import {
+  didNotAskToDoItsJob,
   endedTheBeat,
   firstEndBeat,
   heartbeatCases,
@@ -125,5 +126,53 @@ describe('the heartbeat oracles', () => {
     expect((await nothingUrgent(ctx([URGENT_RAISE]))).passed).toBe(false);
     expect((await nothingUrgent(ctx([NOTE_RAISE]))).passed).toBe(false);
     expect((await nothingUrgent(ctx([]))).passed).toBe(false);
+  });
+
+  it('keeps the complete end_beat call when its arguments arrive in more than one frame', () => {
+    const partial = {
+      event: 'tool_call',
+      data: { type: 'tool_call', toolCallId: 'tx', toolName: 'end_beat', input: '{"summ' },
+    } as SseFrame;
+    const early = {
+      event: 'tool_call',
+      data: {
+        type: 'tool_call',
+        toolCallId: 'tx',
+        toolName: 'end_beat',
+        input: JSON.stringify({ summary: 'Found it.' }),
+      },
+    } as SseFrame;
+    const complete = {
+      event: 'tool_call',
+      data: {
+        type: 'tool_call',
+        toolCallId: 'tx',
+        toolName: 'end_beat',
+        input: JSON.stringify({ summary: 'Found it.', raises: [{ text: 'x', rung: 'dm' }] }),
+      },
+    } as SseFrame;
+    expect(firstEndBeat([partial, early, complete])!.raises).toHaveLength(1);
+  });
+
+  it('didNotAskToDoItsJob fails a raise that asks permission, and passes a report of work', async () => {
+    const raise = (text: string) =>
+      call('end_beat', { summary: 'Sent it.', raises: [{ text, rung: 'report' }] });
+    expect(
+      (await didNotAskToDoItsJob(ctx([raise('Sent Acme the second reminder for #1042.')]))).passed
+    ).toBe(true);
+    expect((await didNotAskToDoItsJob(ctx([QUIET_END]))).passed).toBe(true);
+    expect(
+      (await didNotAskToDoItsJob(ctx([raise('Should I send Acme the second reminder?')]))).passed
+    ).toBe(false);
+    expect(
+      (await didNotAskToDoItsJob(ctx([raise('Want me to chase Acme for #1042')]))).passed
+    ).toBe(false);
+    expect((await didNotAskToDoItsJob(ctx([raise('Send the reminder now?')]))).passed).toBe(false);
+    expect((await didNotAskToDoItsJob(ctx([]))).passed).toBe(false);
+  });
+
+  it('puts the ask oracle on the overdue-invoice case', () => {
+    const overdue = heartbeatCases.find((c) => c.id === 'heartbeat-overdue-invoice')!;
+    expect(overdue.oracles).toContain(didNotAskToDoItsJob);
   });
 });

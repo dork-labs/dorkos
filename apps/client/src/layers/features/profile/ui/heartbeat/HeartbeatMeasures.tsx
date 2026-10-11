@@ -9,10 +9,11 @@
 import type { HeartbeatMeasures as Measures } from '@dorkos/shared/heartbeat-schemas';
 import { MoreDetails } from '@/layers/shared/ui';
 import {
+  interruptionsWords,
   mutesDetailWords,
+  noChecksWords,
   partOfWords,
   percentWords,
-  ratioWords,
   supportingLines,
   targetWords,
   windowWords,
@@ -50,6 +51,20 @@ function MeasureRow({
   );
 }
 
+/** Mutes and pauses: shown with or without checks, since a pause can be why there are none. */
+function MutesRow({ measures }: { measures: Measures }) {
+  const { mutesAndPauses } = measures;
+  return (
+    <MeasureRow
+      label="Mutes and pauses"
+      value={String(mutesAndPauses.total)}
+      detail={mutesDetailWords(measures)}
+      target={mutesAndPauses.target}
+      source={mutesAndPauses.source}
+    />
+  );
+}
+
 /** Props for {@link HeartbeatMeasures}. */
 export interface HeartbeatMeasuresProps {
   /** The agent's measures. */
@@ -63,13 +78,14 @@ export function HeartbeatMeasures({ measures }: HeartbeatMeasuresProps) {
     return (
       <section className="space-y-1" data-slot="heartbeat-measures" data-state="empty">
         <h3 className="text-sm font-semibold">Measures</h3>
-        <p className="text-muted-foreground text-sm">
-          No checks yet. Measures start after the first.
-        </p>
+        <p className="text-muted-foreground text-sm">{noChecksWords(measures)}</p>
+        <dl>
+          <MutesRow measures={measures} />
+        </dl>
       </section>
     );
   }
-  const { keptRate, usefulRaiseRate, interruptions, mutesAndPauses } = measures;
+  const { keptRate, usefulRaiseRate, interruptions } = measures;
   const supporting = supportingLines(measures);
   return (
     <section className="space-y-2" data-slot="heartbeat-measures" data-state="measured">
@@ -96,19 +112,17 @@ export function HeartbeatMeasures({ measures }: HeartbeatMeasuresProps) {
         />
         <MeasureRow
           label="Interruptions per useful outcome"
-          value={ratioWords(interruptions.value) ?? nothing}
-          detail={`${interruptions.messages} sent, ${interruptions.usefulOutcomes} useful`}
+          value={interruptionsWords(interruptions) ?? nothing}
+          detail={
+            interruptions.value === null
+              ? null
+              : `${interruptions.messages} sent, ${interruptions.usefulOutcomes} useful`
+          }
           target={interruptions.target}
           source={interruptions.source}
         />
         <MeasureRow label="Surprises" value="Not measured yet" source={measures.surprises.source} />
-        <MeasureRow
-          label="Mutes and pauses"
-          value={String(mutesAndPauses.total)}
-          detail={mutesDetailWords(measures)}
-          target={mutesAndPauses.target}
-          source={mutesAndPauses.source}
-        />
+        <MutesRow measures={measures} />
       </dl>
       {supporting.length > 0 && (
         <MoreDetails label="Supporting measures" openLabel="Fewer measures">

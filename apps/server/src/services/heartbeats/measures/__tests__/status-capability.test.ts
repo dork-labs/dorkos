@@ -22,7 +22,15 @@ const juno = {
 
 const MEASURES = computeMeasures(
   'agent-otto',
-  { beats: [], deliveries: [], answers: new Map(), audit: [], dmRoomIds: [], commitments: [] },
+  {
+    beats: [],
+    deliveries: [],
+    answers: new Map(),
+    audit: [],
+    agentActions: [],
+    dmRoomIds: [],
+    commitments: [],
+  },
   { agentPath: '/agents/otto', isAgent: () => false, windowDays: 7, since: 'x', now: 0 }
 );
 

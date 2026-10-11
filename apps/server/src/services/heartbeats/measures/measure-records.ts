@@ -7,7 +7,7 @@
  *
  * @module services/heartbeats/measures/measure-records
  */
-import { and, eq, gte, inArray, isNotNull, lte, sql } from 'drizzle-orm';
+import { and, eq, gte, inArray, isNotNull, lte, notLike, or, sql } from 'drizzle-orm';
 import {
   auditEvents,
   commitments,
@@ -22,6 +22,7 @@ import {
 export type MeasureBeat = Pick<
   HeartbeatBeatRow,
   | 'id'
+  | 'kind'
   | 'startedAt'
   | 'endedAt'
   | 'outcome'
@@ -60,6 +61,14 @@ export interface MeasureAuditRow {
   change: Array<{ field: string; before?: unknown; after?: unknown }>;
 }
 
+/** Something an agent did itself, in one of its beat chats: a mutating audit row. */
+export interface MeasureAgentAction {
+  /** The chat it happened in. */
+  sessionId: string;
+  /** When (ISO 8601). */
+  at: string;
+}
+
 /** A promise that came due in the window. */
 export interface MeasureCommitment {
   /** Where it stands. */
@@ -78,21 +87,26 @@ export interface MeasureRecords {
   deliveries: MeasureDelivery[];
   /** What people did with each delivered room entry, by entry id. */
   answers: Map<string, EntryAnswer>;
-  /** Pauses, heartbeat edits, settings changes and stops by people, since the window began. */
+  /** Pauses, heartbeat edits and settings changes by people, since the window began. */
   audit: MeasureAuditRow[];
+  /** What the agent itself did in its beat chats: tool calls and actions that change things. */
+  agentActions: MeasureAgentAction[];
   /** The direct-message rooms the agent is in, for a muted DM. */
   dmRoomIds: string[];
   /** Its promises that came due in the window. */
   commitments: MeasureCommitment[];
 }
 
-/** The audit actions a person's hand shows up in. */
-const PERSON_ACTIONS = [
-  'agent.paused',
-  'chat.stopped',
-  'heartbeat.config_changed',
-  'config.changed',
-] as const;
+/**
+ * The audit actions a person's hand shows up in. A person stopping a beat's
+ * chat is not among them: no production path records that as a person's row
+ * yet (only an agent's `chat_stop` writes `chat.stopped`), so it is not
+ * measured rather than measured as never happening.
+ */
+const PERSON_ACTIONS = ['agent.paused', 'heartbeat.config_changed', 'config.changed'] as const;
+
+/** Operations that change something, as opposed to reading it. */
+const MUTATING_OPERATIONS = ['create', 'modify', 'remove', 'execute'] as const;
 
 /** One parsed `change` column. */
 function parseChange(raw: string | null): MeasureAuditRow['change'] {
@@ -108,8 +122,8 @@ function parseChange(raw: string | null): MeasureAuditRow['change'] {
 /**
  * Who answered, and how, each room entry a beat's message landed as. Only a
  * person counts (`authors.kind = 'human'`): an agent replying to an agent is
- * not a person finding it useful. In a direct message any later post is a
- * reply; in a shared room only a reply in its thread is.
+ * not a person finding it useful. A reply in its thread always counts; in a
+ * direct message, so does a later post, until the agent posts again.
  *
  * @param db - The server's database.
  * @param entryIds - The entries.
@@ -127,7 +141,19 @@ function readAnswers(db: Db, entryIds: string[]): Map<string, EntryAnswer> {
     JOIN rooms room ON room.id = s.room_id
     LEFT JOIN room_entries r
       ON r.room_id = s.room_id AND r.seq > s.seq AND r.kind = 'post'
-      AND (room.kind = 'dm' OR r.parent_entry_id = s.id OR r.thread_root_entry_id = s.id)
+      AND (
+        r.parent_entry_id = s.id OR r.thread_root_entry_id = s.id
+        OR (
+          room.kind = 'dm'
+          -- In a DM a reply answers the agent's latest message only: one reply
+          -- never credits every message the agent sent before it.
+          AND NOT EXISTS (
+            SELECT 1 FROM room_entries later
+            WHERE later.room_id = s.room_id AND later.author_id = s.author_id
+              AND later.seq > s.seq AND later.seq < r.seq
+          )
+        )
+      )
       AND r.author_id IN (SELECT id FROM authors WHERE kind = 'human')
     WHERE s.id IN (${ids})
     GROUP BY s.id
@@ -184,6 +210,7 @@ export function readMeasureRecords(
   const beats = db
     .select({
       id: heartbeatBeats.id,
+      kind: heartbeatBeats.kind,
       startedAt: heartbeatBeats.startedAt,
       endedAt: heartbeatBeats.endedAt,
       outcome: heartbeatBeats.outcome,
@@ -221,9 +248,10 @@ export function readMeasureRecords(
         eq(heartbeatOutbox.agentId, agentId),
         inArray(heartbeatOutbox.state, ['delivered', 'resolved']),
         gte(heartbeatOutbox.closedAt, since),
-        // A row resolved while still held never reached anybody: it closed
-        // before its moment came. One that went out closed at or after it.
-        lte(heartbeatOutbox.deliverAfter, heartbeatOutbox.closedAt)
+        // Reached its reader: it landed as an entry, or it is still marked
+        // delivered (a note outside the app has no entry). A row resolved while
+        // held has neither and never reached anybody.
+        or(isNotNull(heartbeatOutbox.deliveredEntryId), eq(heartbeatOutbox.state, 'delivered'))
       )
     )
     .all();
@@ -254,6 +282,28 @@ export function readMeasureRecords(
     )
     .all()
     .map((row) => ({ ...row, change: parseChange(row.change) }));
+  const sessionIds = [
+    ...new Set(beats.map((beat) => beat.turnSessionId).filter((id): id is string => id !== null)),
+  ];
+  const agentActions =
+    sessionIds.length === 0
+      ? []
+      : db
+          .select({ sessionId: auditEvents.sessionId, at: auditEvents.at })
+          .from(auditEvents)
+          .where(
+            and(
+              inArray(auditEvents.sessionId, sessionIds),
+              eq(auditEvents.actorKind, 'agent'),
+              inArray(auditEvents.operation, [...MUTATING_OPERATIONS]),
+              eq(auditEvents.outcome, 'ok'),
+              // The beat's own bookkeeping (end_beat, delivery) is not work.
+              notLike(auditEvents.action, 'heartbeat.%'),
+              gte(auditEvents.at, since)
+            )
+          )
+          .all()
+          .filter((row): row is MeasureAgentAction => row.sessionId !== null);
   const due = db
     .select({ state: commitments.state, dueAt: commitments.dueAt, closedAt: commitments.closedAt })
     .from(commitments)
@@ -271,6 +321,7 @@ export function readMeasureRecords(
     deliveries: [...delivered, ...held],
     answers: readAnswers(db, entryIds),
     audit,
+    agentActions,
     dmRoomIds: readDmRooms(db, input.agentPath),
     commitments: due,
   };

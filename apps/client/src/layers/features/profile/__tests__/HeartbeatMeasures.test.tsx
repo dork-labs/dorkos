@@ -28,10 +28,36 @@ function row(label: string): HTMLElement {
 }
 
 describe('HeartbeatMeasures', () => {
-  it('says there is nothing to measure before the first check', () => {
-    render(<HeartbeatMeasures measures={emptyHeartbeatMeasures()} />);
-    expect(screen.getByText('No checks yet. Measures start after the first.')).toBeInTheDocument();
+  it('says there were no checks in the window, and still shows mutes and pauses', () => {
+    const base = emptyHeartbeatMeasures();
+    render(
+      <HeartbeatMeasures
+        measures={{
+          ...base,
+          windowDays: 30,
+          mutesAndPauses: { ...base.mutesAndPauses, total: 1, pauses: 1 },
+        }}
+      />
+    );
+    expect(screen.getByText('No checks in the last 30 days.')).toBeInTheDocument();
     expect(screen.queryByText('Work that stuck')).not.toBeInTheDocument();
+    const mutes = row('Mutes and pauses');
+    expect(within(mutes).getByText('1')).toBeInTheDocument();
+    expect(within(mutes).getByText('1 pause')).toBeInTheDocument();
+  });
+
+  it('shows messages sent with nothing useful as the value, not an empty state', () => {
+    const base = emptyHeartbeatMeasures();
+    render(
+      <HeartbeatMeasures
+        measures={measured({
+          interruptions: { ...base.interruptions, value: null, messages: 5, usefulOutcomes: 0 },
+        })}
+      />
+    );
+    const interruptions = row('Interruptions per useful outcome');
+    expect(within(interruptions).getByText('5 sent, none useful')).toBeInTheDocument();
+    expect(within(interruptions).queryByText('Nothing to count yet')).not.toBeInTheDocument();
   });
 
   it('says a rate has nothing to count yet rather than showing 0%', () => {

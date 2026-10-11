@@ -125,6 +125,24 @@ function recordBy(
   });
 }
 
+/** Something the agent itself did in a chat: a mutating (or reading) audit row. */
+function agentDid(
+  sessionId: string,
+  msAgo: number,
+  operation: 'execute' | 'access' = 'execute',
+  action = 'runtime.tool_used'
+): void {
+  audit.record({
+    at: ago(msAgo),
+    actor: { accountId: AGENT, kind: 'agent', name: 'Juno' },
+    source: { surface: 'runtime-tool', sessionId },
+    action,
+    operation,
+    outcome: 'ok',
+    summary: action,
+  });
+}
+
 /** The measures now, over the default window unless `days` says otherwise. */
 function measure(days?: number) {
   return measureAgent(db, {
@@ -186,18 +204,28 @@ describe('no beats yet', () => {
 });
 
 describe('kept rate', () => {
-  it('counts a worked beat as undone only for a person’s stop, a pause within an hour, or 👎', () => {
-    beat('b-clean', 3 * HOUR, { outcome: 'worked', turnSessionId: 'chat-a' });
-    beat('b-stopped', 4 * HOUR, { outcome: 'worked', turnSessionId: 'chat-b' });
-    beat('b-paused', 6 * HOUR, { outcome: 'worked', turnSessionId: 'chat-c' });
-    beat('b-disliked', 8 * HOUR, { outcome: 'worked', turnSessionId: 'chat-d', raises: 1 });
-    beat('b-agent-stop', 10 * HOUR, { outcome: 'worked', turnSessionId: 'chat-e' });
-    beat('b-late-pause', 30 * HOUR, { outcome: 'worked', turnSessionId: 'chat-f' });
-    beat('b-quiet', 12 * HOUR); // never acted, so never in the rate
-    // A person pressed stop on b-stopped while it ran.
-    recordBy('person', 'chat.stopped', 4 * HOUR - 60_000, { type: 'session', id: 'chat-b' });
-    // An agent stopping a beat chat is not a person undoing it.
-    recordBy('agent', 'chat.stopped', 10 * HOUR - 60_000, { type: 'session', id: 'chat-e' });
+  it('counts only beats that left a mark, and undoes them for a pause within an hour or 👎', () => {
+    // Acted: raised something, posted around end_beat, or changed something in its chat.
+    beat('b-raised', 3 * HOUR, { outcome: 'worked', turnSessionId: 'chat-a', raises: 1 });
+    beat('b-bypass', 4 * HOUR, { outcome: 'worked', turnSessionId: 'chat-b', bypass: 1 });
+    beat('b-tool', 5 * HOUR, { outcome: 'worked', turnSessionId: 'chat-c' });
+    agentDid('chat-c', 5 * HOUR - 60_000);
+    beat('b-paused', 6 * HOUR, { outcome: 'worked', turnSessionId: 'chat-d', raises: 1 });
+    beat('b-disliked', 8 * HOUR, { outcome: 'worked', turnSessionId: 'chat-e', raises: 1 });
+    beat('b-late-pause', 30 * HOUR, { outcome: 'worked', turnSessionId: 'chat-f', raises: 1 });
+    // Not acted: a turn that only looked, read-only or bookkeeping rows, work
+    // outside the beat's window, and a report beat.
+    beat('b-looked', 9 * HOUR, { outcome: 'worked', turnSessionId: 'chat-g' });
+    agentDid('chat-g', 9 * HOUR - 60_000, 'access');
+    agentDid('chat-g', 9 * HOUR - 60_000, 'execute', 'heartbeat.raised');
+    agentDid('chat-g', 8 * HOUR + 30 * 60_000);
+    beat('b-report', 10 * HOUR, {
+      kind: 'report',
+      outcome: 'worked',
+      turnSessionId: 'chat-h',
+      raises: 1,
+    });
+    beat('b-quiet', 12 * HOUR);
     // Paused 30 minutes after b-paused ended; b-late-pause's pause came 3 hours after.
     recordBy('person', 'agent.paused', 6 * HOUR - 35 * 60_000, { type: 'agent', id: AGENT });
     recordBy('person', 'agent.paused', 27 * HOUR, { type: 'agent', id: AGENT });
@@ -208,10 +236,13 @@ describe('kept rate', () => {
 
     const { keptRate } = measure();
     expect(keptRate.whole).toBe(6);
-    // b-clean, b-agent-stop and b-late-pause.
-    expect(keptRate.part).toBe(3);
-    expect(keptRate.value).toBeCloseTo(0.5);
-    expect(keptRate.source).toMatch(/Reverts are not seen yet/);
+    // b-raised, b-bypass, b-tool and b-late-pause.
+    expect(keptRate.part).toBe(4);
+    expect(keptRate.source).toMatch(/Stops, reverts not seen/);
+    expect(keptRate.source).not.toMatch(/turns/);
+    expect(
+      keptRate.source.split(/\s+/).filter((w) => /[\p{L}\d]/u.test(w)).length
+    ).toBeLessThanOrEqual(15);
   });
 });
 
@@ -261,13 +292,31 @@ describe('useful-raise rate', () => {
     const { usefulRaiseRate } = measure();
     expect(usefulRaiseRate).toMatchObject({ part: 2, whole: 5, target: '60% or more' });
   });
+
+  it('credits a DM reply to the latest message only, and leaves out one still inside 48h', () => {
+    beat('b1', 4 * DAY, { outcome: 'worked', turnSessionId: 'chat-1', raises: 3 });
+    // Two messages in a row, then one reply: only the second was answered.
+    entry('e-first', 'room-dm', 'author-juno', 3 * DAY);
+    entry('e-second', 'room-dm', 'author-juno', 3 * DAY - HOUR);
+    entry('e-reply', 'room-dm', 'author-person', 3 * DAY - 2 * HOUR);
+    outboxRow('o-first', 'b1', 3 * DAY, { deliveredEntryId: 'e-first' });
+    outboxRow('o-second', 'b1', 3 * DAY - HOUR, { deliveredEntryId: 'e-second' });
+    // Sent an hour ago, no answer yet: too early to call.
+    entry('e-fresh', 'room-dm', 'author-juno', HOUR);
+    outboxRow('o-fresh', 'b1', HOUR, { deliveredEntryId: 'e-fresh' });
+
+    expect(measure().usefulRaiseRate).toMatchObject({ part: 1, whole: 2 });
+  });
 });
 
 describe('interruptions per useful outcome', () => {
-  it('divides messages that reached a person by kept actions plus useful raises', () => {
+  it('divides messages that reached a person by kept actions plus useful messages', () => {
     beat('b1', 2 * DAY, { outcome: 'worked', turnSessionId: 'chat-1', raises: 3 });
     beat('b2', 1 * DAY, { outcome: 'worked', turnSessionId: 'chat-2' });
-    // Two raises batched into one DM: one interruption, two raises.
+    agentDid('chat-2', DAY - 60_000);
+    // A turn that did nothing is not a useful outcome.
+    beat('b3', 20 * HOUR, { outcome: 'worked', turnSessionId: 'chat-3' });
+    // Two raises batched into one DM: one interruption, one message answered.
     entry('e-batch', 'room-dm', 'author-juno', 30 * HOUR);
     entry('e-answer', 'room-dm', 'author-person', 29 * HOUR);
     outboxRow('o-a', 'b1', 30 * HOUR, { deliveredEntryId: 'e-batch' });
@@ -275,17 +324,21 @@ describe('interruptions per useful outcome', () => {
     // A note outside the app and a report reach a person too.
     outboxRow('o-note', 'b1', 20 * HOUR, { rung: 'note' });
     outboxRow('o-report', 'b2', 10 * HOUR, { key: 'report:b2', rung: 'dm' });
-    // Still held, and a message to an agent: neither reached a person.
+    // Still held, resolved while held, and a message to an agent: none reached a person.
     outboxRow('o-held', 'b2', 0, { state: 'held', closedAt: null, deliverAfter: ago(-HOUR) });
+    outboxRow('o-resolved-held', 'b2', 20 * HOUR, {
+      state: 'resolved',
+      deliverAfter: ago(30 * HOUR),
+    });
     outboxRow('o-agent', 'b2', 5 * HOUR, { rung: 'report', toAccount: 'agent-otto' });
 
     const { interruptions, usefulRaiseRate, keptRate } = measure();
     expect(interruptions.messages).toBe(3);
-    // 2 kept beats + 2 answered raises (the batch shares its answer).
-    expect(keptRate.part).toBe(2);
-    expect(usefulRaiseRate.part).toBe(2);
-    expect(interruptions.usefulOutcomes).toBe(4);
-    expect(interruptions.value).toBeCloseTo(0.75);
+    // b1 and b2 kept (b3 did nothing), plus the one answered message.
+    expect(keptRate).toMatchObject({ part: 2, whole: 2 });
+    expect(usefulRaiseRate.part).toBe(1);
+    expect(interruptions.usefulOutcomes).toBe(3);
+    expect(interruptions.value).toBeCloseTo(1);
     expect(interruptions.target).toBe('1 or less');
   });
 });
@@ -340,6 +393,7 @@ describe('supporting measures', () => {
       turnUsage: JSON.stringify({ inputTokens: 1500, outputTokens: 500 }),
     });
     beat('b-no-end', 8 * HOUR, { outcome: 'no-end-beat', turnSessionId: 'chat-n' });
+    beat('b-bypass', 8 * HOUR + 30 * 60_000, { turnSessionId: 'chat-b', bypass: 1 });
     beat('b-skipped', 9 * HOUR, { outcome: 'skipped' });
     outboxRow('o-held', 'b-worked', 0, {
       state: 'held',
@@ -366,20 +420,21 @@ describe('supporting measures', () => {
     promise('not-due-yet', 'open', -DAY, null);
 
     const { supporting } = measure();
-    expect(supporting.beats).toBe(4);
-    expect(supporting.quietBeats).toMatchObject({ part: 3, whole: 4 });
+    expect(supporting.beats).toBe(5);
+    // A beat with no end_beat is unknown, and one that posted around it spoke.
+    expect(supporting.quietBeats).toMatchObject({ part: 2, whole: 4 });
     expect(supporting.commitmentsOnTime).toMatchObject({ part: 1, whole: 3 });
     expect(supporting.noEndBeat).toBe(1);
     expect(supporting.triage).toEqual({ checks: 2, tokens: 640 });
-    expect(supporting.turns).toEqual({ count: 2, tokensPerTurn: 2000 });
-    expect(supporting.bypass).toBe(2);
+    expect(supporting.turns).toEqual({ count: 3, tokensPerTurn: 2000 });
+    expect(supporting.bypass).toBe(3);
     expect(supporting.held).toBe(1);
   });
 });
 
 describe('the window', () => {
   it('leaves out beats older than the window, and a wider window takes them in', () => {
-    beat('b-old', 10 * DAY, { outcome: 'worked', turnSessionId: 'chat-old' });
+    beat('b-old', 10 * DAY, { outcome: 'worked', turnSessionId: 'chat-old', raises: 1 });
     beat('b-new', DAY);
     expect(measure().supporting.beats).toBe(1);
     const wide = measure(30);

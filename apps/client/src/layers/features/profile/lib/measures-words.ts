@@ -37,12 +37,28 @@ export function targetWords(target: string): string {
 }
 
 /**
- * Interruptions per useful outcome to one decimal, or null with nothing to divide by.
+ * Interruptions per useful outcome to one decimal. With messages sent and
+ * nothing useful to divide by, the counts are the value ("5 sent, none useful");
+ * with neither, null.
  *
- * @param value - The ratio.
+ * @param interruptions - The agent's interruptions measure.
  */
-export function ratioWords(value: number | null): string | null {
-  return value === null ? null : value.toFixed(1);
+export function interruptionsWords(
+  interruptions: HeartbeatMeasures['interruptions']
+): string | null {
+  if (interruptions.value !== null) return interruptions.value.toFixed(1);
+  return interruptions.messages > 0 ? `${interruptions.messages} sent, none useful` : null;
+}
+
+/**
+ * "No checks in the last 7 days."
+ *
+ * @param measures - The agent's measures.
+ */
+export function noChecksWords(measures: HeartbeatMeasures): string {
+  return measures.windowDays === 1
+    ? 'No checks in the last day.'
+    : `No checks in the last ${measures.windowDays} days.`;
 }
 
 /**

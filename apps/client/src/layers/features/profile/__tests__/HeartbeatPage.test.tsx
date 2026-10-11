@@ -352,10 +352,8 @@ describe('measures', () => {
     expect(screen.getByText('Target 95% or more')).toBeInTheDocument();
   });
 
-  it('says there is nothing to measure before the first check', async () => {
+  it('says there were no checks in the window when there were none', async () => {
     renderPage(MANAGED);
-    expect(
-      await screen.findByText('No checks yet. Measures start after the first.')
-    ).toBeInTheDocument();
+    expect(await screen.findByText('No checks in the last 7 days.')).toBeInTheDocument();
   });
 });

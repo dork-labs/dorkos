@@ -116,14 +116,20 @@ the agent's own account of itself.
 
 | Measure                              | What it counts                                                                        | Starting target |
 | ------------------------------------ | ------------------------------------------------------------------------------------- | --------------- |
-| **Work that stuck**                  | Work it did on a beat that nobody undid within 7 days                                 | 95% or more     |
+| **Work that stuck**                  | Beats where it did something real, and nobody undid it within 7 days                  | 95% or more     |
 | **Useful messages**                  | Its messages to people that got a reply, or a reaction other than 👎, within 48 hours | 60% or more     |
 | **Interruptions per useful outcome** | Messages that reached a person, divided by work that stuck plus useful messages       | 1 or less       |
 | **Surprises**                        | Not measured yet                                                                      | 0               |
 | **Mutes and pauses**                 | Times a person paused it, switched its heartbeat off, or muted it                     | Trending to 0   |
 
-Today, work counts as undone when a person stopped that beat's chat, paused the agent within an hour
-of it, or reacted 👎 to what it sent. DorkOS does not see reverted code yet. A target is a starting
+A beat counts as doing something real when it sent a message, posted in a room, or changed something
+(ran a command or edited a file, for example). A beat that only looked around is not counted, and
+neither is a report. Today, work counts as undone when a person paused the agent within an hour of it
+or reacted 👎 to what it sent. Not measured yet: a person stopping the beat's chat, and reverted code.
+
+These numbers are approximate. Recent work counts as kept until something undoes it, even before its
+7 days are up. A message sent in the last 48 hours with no answer yet is left out until its time is
+up. A reply in a direct message counts for the agent's latest message only. A target is a starting
 point to compare against, not a grade. Under **Supporting measures** you can also see how many beats
 were quiet, how many promises were kept on time, and what the cheap checks used.
 

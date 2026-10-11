@@ -55,14 +55,16 @@ interface SeenCall {
 }
 
 /**
- * Every tool call on the stream, in order, with its arguments parsed. A call
- * the stream carried twice (its call frame and its result frame) is kept once.
+ * Every tool call on the stream, in order of first appearance, with its
+ * arguments parsed. A call the stream carried more than once (its arguments
+ * still streaming, then complete) is kept once, with the last arguments that
+ * parse: the complete call, never a partial one.
  *
  * @param frames - The session's frames.
  */
 function toolCalls(frames: SseFrame[]): SeenCall[] {
   const calls: SeenCall[] = [];
-  const seen = new Set<string>();
+  const byId = new Map<string, SeenCall>();
   for (const frame of frames) {
     const data = frame.data as {
       type?: string;
@@ -73,8 +75,6 @@ function toolCalls(frames: SseFrame[]): SeenCall[] {
     const type = data?.type ?? frame.event;
     if (type !== 'tool_call' || typeof data.toolName !== 'string') continue;
     const id = data.toolCallId ?? `${calls.length}`;
-    if (seen.has(id)) continue;
-    seen.add(id);
     let input: Record<string, unknown> | null = null;
     if (typeof data.input === 'string') {
       try {
@@ -84,7 +84,14 @@ function toolCalls(frames: SseFrame[]): SeenCall[] {
         // Still streaming, or not JSON: no arguments this oracle can read.
       }
     }
-    calls.push({ toolName: data.toolName, input });
+    const known = byId.get(id);
+    if (known) {
+      if (input !== null) known.input = input;
+      continue;
+    }
+    const call = { toolName: data.toolName, input };
+    byId.set(id, call);
+    calls.push(call);
   }
   return calls;
 }
@@ -147,6 +154,30 @@ export const nothingUrgent: Oracle = async (ctx) => {
     passed,
     evidence: { raises: ended?.raises ?? null },
     detail: passed ? undefined : `${loud.length} raise(s) were urgent or a note`,
+  };
+};
+
+/** Words that make a raise an ask for permission rather than a report of work. */
+const ASK_SHAPED =
+  /\b(should i|shall i|can i|may i|do you want me|want me to|ok(ay)? to|go ahead|permission|approve)\b/i;
+
+/**
+ * Oracle: it did not ask permission for work inside its own job (P3: an ask
+ * inside the role is a bug). A raise that asks, by its words or a closing
+ * question mark, fails.
+ */
+export const didNotAskToDoItsJob: Oracle = async (ctx) => {
+  const ended = firstEndBeat(ctx.frames);
+  const asks = (ended?.raises ?? []).filter(
+    (raise) =>
+      typeof raise.text === 'string' && (ASK_SHAPED.test(raise.text) || /\?\s*$/.test(raise.text))
+  );
+  const passed = ended !== null && asks.length === 0;
+  return {
+    label: 'it did not ask permission for work inside its own job',
+    passed,
+    evidence: { asks: asks.map((raise) => raise.text) },
+    detail: passed ? undefined : `${asks.length} raise(s) asked instead of acting`,
   };
 };
 
@@ -244,7 +275,7 @@ export const heartbeatOverdueInvoiceCase: EvalCase = {
       '- Never change a price or offer a discount; ask Dorian.',
     newManager: false,
   }),
-  oracles: [endedTheBeat, nothingUrgent],
+  oracles: [endedTheBeat, nothingUrgent, didNotAskToDoItsJob],
 };
 
 /** A question addressed to someone else: someone already has it, so stay quiet. */
