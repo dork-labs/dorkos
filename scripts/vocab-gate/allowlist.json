@@ -919,6 +919,24 @@
       "path": "apps/site/src/app/(public)/privacy/page.tsx",
       "terms": ["session", "sessions", "conversation", "conversations"],
       "reason": "DOR-2789. The privacy policy is a legal page and is not reworded in a vocabulary sweep. Its uses are legal and analytics terms (a sign-in session record, \"session recording\" in analytics) and data the installation stores, each worded for the policy rather than the app."
+    },
+    {
+      "path": "apps/client/src/layers/entities/community/ui/OfficialSpaceOfferCard.tsx",
+      "terms": ["community"],
+      "contains": "Join the DorkOS community",
+      "reason": "\"The DorkOS community\" names the people who use DorkOS, gathered in the official space, in the words the spec gives its join step (spec `official-community-space` work item 5, DOR-2769). The ordinary English sense, as on the marketplace pages; every other line here still says \"space\"."
+    },
+    {
+      "path": "apps/client/src/layers/entities/community/ui/OfficialSpaceUnreachableNotice.tsx",
+      "terms": ["community"],
+      "contains": "The DorkOS community isn",
+      "reason": "\"The DorkOS community\" names the people who use DorkOS, gathered in the official space, in the words the spec gives its join step (spec `official-community-space` work item 5, DOR-2769). The ordinary English sense, as on the marketplace pages; every other line here still says \"space\"."
+    },
+    {
+      "path": "apps/client/src/layers/features/dashboard-sidebar/ui/context/community-context-actions.ts",
+      "terms": ["community"],
+      "contains": "Join the DorkOS community",
+      "reason": "\"The DorkOS community\" names the people who use DorkOS, gathered in the official space, in the words the spec gives its join step (spec `official-community-space` work item 5, DOR-2769). The ordinary English sense, as on the marketplace pages; every other line here still says \"space\"."
     }
   ]
 }
