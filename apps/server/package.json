@@ -14,7 +14,8 @@
     "./services/search": "./src/services/search/index.ts",
     "./services/core/auth": "./src/services/core/auth/index.ts",
     "./services/connectors": "./src/services/connectors/index.ts",
-    "./services/core/capabilities": "./src/services/core/capabilities/index.ts"
+    "./services/core/capabilities": "./src/services/core/capabilities/index.ts",
+    "./services/heartbeats/beat-prompt": "./src/services/heartbeats/beat-prompt.ts"
   },
   "scripts": {
     "dev": "tsx watch src/index.ts",
