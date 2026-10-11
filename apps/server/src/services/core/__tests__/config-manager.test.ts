@@ -1800,7 +1800,6 @@ describe('seedDoeDefaultModel migration (DOR-2784)', () => {
   });
 });
 
-
 describe('seedDisplayNameSourceDefault migration (DOR-1022)', () => {
   it('reserves the leaf on a `profile` block that predates it', () => {
     // What this catches: conf merges top-level defaults SHALLOWLY, so an

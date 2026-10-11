@@ -85,7 +85,7 @@ router.get('/', async (c) => {
     : account === CREDITS_ACCOUNT_ID && runtime.getCapabilities().credits !== undefined;
   if (onCredits) {
     const picked = picksCreditsModel(runtime) ? await runtime.autoCreditsModels(sessionId) : null;
-    if (picked) return res.json({ models: picked });
+    if (picked) return c.json({ models: picked });
     const menu = await creditsMenuFor(creditsCapabilitiesFor(runtime, sessionId));
     if (menu.kind === 'filtered') return c.json({ models: menu.models });
     // The service says nothing about protocols: the runtime's own menu, as before.
