@@ -357,8 +357,27 @@ describe('ConfigManager', () => {
     const configManager = initConfigManager(testDir);
 
     const onDisk = JSON.parse(fs.readFileSync(configPath, 'utf-8')) as { heartbeats?: unknown };
-    expect(onDisk.heartbeats).toEqual({ enabled: true });
+    expect(onDisk.heartbeats).toEqual({ enabled: true, triageOnCredits: null });
     expect(configManager.get('heartbeats').enabled).toBe(true);
+  });
+
+  it('reads a stored heartbeats section without triageOnCredits as not chosen', () => {
+    // Spec `heartbeats` §6.3: the leaf has no migration because its absence
+    // already says "nobody answered the offer". Pinned so a later default that
+    // is not `null` breaks here instead of spending credits nobody chose.
+    fs.mkdirSync(testDir, { recursive: true });
+    fs.writeFileSync(
+      configPath,
+      JSON.stringify({
+        version: 1,
+        heartbeats: { enabled: true },
+        __internal__: { migrations: { version: '0.105.0' } },
+      })
+    );
+
+    const configManager = initConfigManager(testDir);
+
+    expect(configManager.get('heartbeats').triageOnCredits ?? null).toBeNull();
   });
 
   it('lands memory.provider on disk for a config written before memory existed', () => {

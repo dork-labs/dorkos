@@ -61,6 +61,7 @@ export const notifications = sqliteTable(
         'extension.approval',
         'extension.decision',
         'community.owner-replacement',
+        'heartbeat.credits-offer',
       ],
     }).notNull(),
 

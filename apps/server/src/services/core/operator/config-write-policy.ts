@@ -407,6 +407,9 @@ export const CONFIG_WRITE_POLICY = {
   // whether an agent acts unbidden at all, which is the person's call; an agent
   // asked to stop its beats can set its own HEARTBEAT.md to `wake: off`.
   'heartbeats.enabled': 'operator-only',
+  // Whether cheap checks spend DorkOS credits (spec `heartbeats` §6.3). Only a
+  // person's **Use credits** may say yes: it spends the account owner's money.
+  'heartbeats.triageOnCredits': 'operator-only',
 
   // How long the Activity feed keeps the history people review (spec
   // `audit-trail` §3.5). Shortening it deletes rows a person may not have read
@@ -1029,6 +1032,7 @@ export const OPERATOR_ONLY_STAKES: readonly OperatorOnlyStakeGroup[] = [
       'cloud.credits.agents',
       'cloud.credits.linkedTo',
       ...CLOUD_REMOTE_CREDENTIAL_PATHS,
+      'heartbeats.triageOnCredits',
       'runtimes.codex.credentialRef',
       'runtimes.environment.inherit.claudeCode',
       'runtimes.environment.inherit.codex',

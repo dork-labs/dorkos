@@ -43,6 +43,7 @@ import { EventWakes, wakeAgent } from './event-wakes.js';
 import { systemClock } from './beat-scheduler.js';
 import { heartbeatStatus } from './heartbeat-status.js';
 import { setRaiseRecipientCheck } from './heartbeat-capabilities.js';
+import { mountTriage, type TriageMount } from './triage/triage-mount.js';
 import {
   beatChatResolver,
   createDeliveries,
@@ -182,6 +183,7 @@ export function startHeartbeats(deps: HeartbeatsWiringDeps): HeartbeatsHandle {
   const presenceOf = () => ({ hours: hours(), away: configManager.get('profile').away ?? null });
   const nameOf = (id: string) =>
     agents.get(id)?.name ?? configManager.get('profile').displayName ?? 'your manager';
+  const triage = mountTriage({ app: deps.app, db, raises, timezone: () => hours().timezone });
   const outbox = new BeatOutbox({
     store,
     raises,
@@ -208,6 +210,7 @@ export function startHeartbeats(deps: HeartbeatsWiringDeps): HeartbeatsHandle {
     reports: { raises, managerOf, isAgent, presenceOf, nameOf },
     ownTurnRunning: (agentId) => ownTurnRunning(resolveAgentIdForPath, agentId),
     resolveCwd: async (agent) => (await resolveSessionCwd({ agentPath: agent.projectPath })).cwd,
+    triage: triage.port,
   });
   const hub = new EventWakes({
     clock: systemClock,
@@ -253,11 +256,12 @@ export function startHeartbeats(deps: HeartbeatsWiringDeps): HeartbeatsHandle {
       for (const agent of agents.list()) void runner.refreshReport(agent.id);
     },
   });
-  mountStatus(deps, { store, raises, managerOf, runner, agents, enabled });
+  mountStatus(deps, { store, raises, managerOf, runner, agents, enabled, triage });
   const handle: HeartbeatsHandle = {
     runner,
     stop: () => {
       stopFollowing();
+      triage.stop();
       setRaiseRecipientCheck(undefined);
       hub.uninstall();
       outbox.stop();
@@ -331,6 +335,7 @@ function mountStatus(
     runner: BeatRunner;
     agents: { get(id: string): BeatAgent | undefined };
     enabled: () => boolean;
+    triage: TriageMount;
   }
 ): void {
   deps.app.locals.resolveBeatChats = beatChatResolver(deps.db);
@@ -349,6 +354,7 @@ function mountStatus(
           runtimeRegistered: (runtime) => runtimeRegistry.has(runtime),
           isAgent: (id) => deps.meshCore()?.get(id) !== undefined,
           viewerIsOwner,
+          checks: (agent, owner) => parts.triage.checks(agent, owner),
         }),
     })
   );

@@ -196,6 +196,13 @@ export const DecisionResultSchema = z.object({
   latencyMs: z.number().min(0),
   /** What the call cost, in millionths of a US dollar, when known. */
   costMicroUsd: z.number().min(0).optional(),
+  /** Tokens the call read and wrote, summed over every ask, when the model reports them. */
+  usage: z
+    .object({
+      inputTokens: z.number().int().min(0),
+      outputTokens: z.number().int().min(0),
+    })
+    .optional(),
 });
 /** What one bridge said about one request. */
 export type DecisionResult = z.infer<typeof DecisionResultSchema>;

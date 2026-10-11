@@ -53,8 +53,14 @@ export interface OpenAiCompatibleModelOptions {
   baseUrl: string;
   /** The model id the server knows, ideally pinned to a version. */
   model: string;
-  /** Bearer key, when the server needs one. Passed in; never read from the environment. */
-  apiKey?: string;
+  /**
+   * Bearer key, when the server needs one. Passed in; never read from the
+   * environment. A function is called on every request, so a key that is
+   * replaced while the bridge lives (a short-lived token re-minted) is picked
+   * up without building a new bridge; one that throws makes that ask an
+   * `outage`, and nothing it threw is kept.
+   */
+  apiKey?: string | (() => string);
   /** The fetch to call. Injected so tests never touch the network. */
   fetch: FetchLike;
   /**
@@ -65,6 +71,11 @@ export interface OpenAiCompatibleModelOptions {
   timeoutMs?: number;
   /** Ask for token probabilities. Default true; turn off for servers that reject the field. */
   logprobs?: boolean;
+  /**
+   * The most tokens one answer may use (`max_tokens`). Unset sends no limit.
+   * A forced JSON answer to a few questions needs a few dozen.
+   */
+  maxTokens?: number;
   /**
    * Confidence when the two asks agree, and when they disagree. Default 0.8 and
    * 0.4. A second ask that fails makes the answer unsure (confidence 0).
@@ -118,7 +129,8 @@ function describeQuestion(id: string, question: DecisionQuestion): string {
 function buildBody(
   model: string,
   req: DecisionRequest,
-  logprobs: boolean
+  logprobs: boolean,
+  maxTokens: number | undefined
 ): Record<string, unknown> {
   const system = [
     'You answer questions about one item. Reply with JSON only, matching the given schema.',
@@ -150,6 +162,7 @@ function buildBody(
       },
     },
     ...(logprobs ? { logprobs: true } : {}),
+    ...(maxTokens !== undefined ? { max_tokens: maxTokens } : {}),
   };
 }
 
@@ -271,6 +284,23 @@ function readAnswers(
 }
 
 /**
+ * The authorization header for one request, the key read now. `undefined` when
+ * a key function throws: that ask is an outage, and what it threw is dropped
+ * so a message that might name the key goes nowhere.
+ */
+function authorization(
+  apiKey: OpenAiCompatibleModelOptions['apiKey']
+): Record<string, string> | undefined {
+  let key: string | undefined;
+  try {
+    key = typeof apiKey === 'function' ? apiKey() : apiKey;
+  } catch {
+    return undefined;
+  }
+  return key ? { authorization: `Bearer ${key}` } : {};
+}
+
+/**
  * Build an OpenAI-compatible chat bridge, wrapped in a circuit breaker unless
  * `circuitBreaker: false`.
  *
@@ -282,16 +312,15 @@ export function createOpenAiCompatibleModel(opts: OpenAiCompatibleModelOptions):
   const timeoutMs = opts.timeoutMs ?? 15_000;
   const wantLogprobs = opts.logprobs ?? true;
   const askTwice = opts.askTwiceConfidence ?? { agree: 0.8, disagree: 0.4 };
-  const headers: Record<string, string> = opts.apiKey
-    ? { authorization: `Bearer ${opts.apiKey}` }
-    : {};
 
   async function ask(req: DecisionRequest, signal: AbortSignal): Promise<ParsedReply> {
+    const headers = authorization(opts.apiKey);
+    if (headers === undefined) return { ok: false, failure: 'outage' };
     const outcome = await postJson({
       fetch: opts.fetch,
       url,
       headers,
-      body: buildBody(opts.model, req, wantLogprobs),
+      body: buildBody(opts.model, req, wantLogprobs, opts.maxTokens),
       timeoutMs,
       signal,
     });
@@ -347,7 +376,11 @@ export function createOpenAiCompatibleModel(opts: OpenAiCompatibleModelOptions):
               probabilities: { [String(a.value)]: p, [String(!a.value)]: 1 - p },
             };
           } else {
-            answers[qid] = { value: a.value, confidence: p };
+            answers[qid] = {
+              value: a.value,
+              confidence: p,
+              probabilities: { [String(a.value)]: p },
+            };
           }
           continue;
         }
@@ -360,6 +393,12 @@ export function createOpenAiCompatibleModel(opts: OpenAiCompatibleModelOptions):
       }
 
       const result: DecisionResult = { answers, modelId: opts.model, latencyMs: elapsed() };
+      if (usages.length > 0) {
+        result.usage = {
+          inputTokens: usages.reduce((sum, u) => sum + u.promptTokens, 0),
+          outputTokens: usages.reduce((sum, u) => sum + u.completionTokens, 0),
+        };
+      }
       if (opts.costMicroUsd && usages.length > 0) {
         result.costMicroUsd = usages.reduce((sum, u) => sum + opts.costMicroUsd!(u), 0);
       }

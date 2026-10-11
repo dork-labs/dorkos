@@ -144,6 +144,8 @@ function fixtureHeartbeat(): HeartbeatStatus {
       },
     ],
     report: { cadence: 'daily', to: 'owner', nextReportAt: minutesFromNow(15 * 60), items: 3 },
+    // The credits offer stands, so the showcase draws its card.
+    checks: { runsOn: 'runtime', runtime: 'claude-code', today: 0, tokens: 0, offer: true },
   };
 }
 

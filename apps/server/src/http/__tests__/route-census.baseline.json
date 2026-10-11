@@ -548,6 +548,7 @@
     "PUT /api/extensions/:id/secrets/:key",
     "PUT /api/extensions/:id/settings/:key",
     "PUT /api/files/content",
+    "PUT /api/heartbeats/triage-credits",
     "PUT /api/mesh/topology/access",
     "PUT /api/permissions/preset",
     "PUT /api/read-cursors/:kind/:id",

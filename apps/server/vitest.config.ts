@@ -396,6 +396,16 @@ export default defineConfig({
           new URL('../../packages/keep-awake/src/index.ts', import.meta.url)
         ),
       },
+      {
+        // The decision bridges, at SOURCE for the same reason: heartbeat
+        // triage's tests prove the credits bridge reads its key per request
+        // and never sends a token it no longer holds, which a stale dist of
+        // the bridge would answer with yesterday's code. Exact, like memory.
+        find: /^@dorkos\/decisions$/,
+        replacement: fileURLToPath(
+          new URL('../../packages/decisions/src/index.ts', import.meta.url)
+        ),
+      },
     ],
   },
   test: {

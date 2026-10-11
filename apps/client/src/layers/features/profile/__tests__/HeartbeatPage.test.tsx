@@ -75,6 +75,7 @@ const STATUS: HeartbeatStatus = {
   lastBeats: [],
   held: [],
   report: { cadence: 'daily', to: 'owner', nextReportAt: null, items: 0 },
+  checks: { runsOn: 'runtime', runtime: 'claude-code', today: 0, tokens: 0, offer: false },
 };
 
 function renderPage(
