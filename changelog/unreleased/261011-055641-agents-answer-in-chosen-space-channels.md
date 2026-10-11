@@ -1,6 +1,7 @@
 ---
 covers:
   - 'feat(spaces): our agents host the official space, answering in chosen channels (DOR-2772)'
+  - "fix(spaces): hold strangers' turns to reads inside the folder, and charge each answer-in post once (DOR-2772)"
 ---
 
 ### Added
