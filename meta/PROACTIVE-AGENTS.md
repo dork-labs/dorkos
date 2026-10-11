@@ -2,7 +2,7 @@
 
 > **Canon, and a design guide.** How a DorkOS agent takes initiative: what it does when nobody is talking to it, when it acts, when it asks, when it stays quiet, and how it reports up. It sits beside the north-star set ([`VISION.md`](VISION.md), [`PRINCIPLES.md`](PRINCIPLES.md), [`VOICE.md`](VOICE.md), [`ROADMAP.md`](ROADMAP.md)) and follows them. Written 2026-10-07 at Dorian's request. The evidence behind it is [`research/20261007_proactive-persistent-agents.md`](../research/20261007_proactive-persistent-agents.md).
 >
-> **Status: decided direction, mostly not built.** Schedules (Tasks), agent memory (`MEMORY.md`), rooms, notes to a person (`relay_notify_user`) and the decision-model ladder (`packages/decisions`) exist today. Agents messaging each other in chats people can open (`chat_send`, `chat_read`, `chat_stop`) and spin-off chats that report back on their own (section 9.5) arrive with DOR-2790 (spec `spin-off-chats`), and are built once its four pull requests merge. The heartbeat and `HEARTBEAT.md` ship before launch and are not built yet (DOR-2788); reporting lines, agent templates, the commitments list and the measures below are roadmap. Section 9 and the decisions in section 10 were added on 2026-10-07 after Dorian answered the open questions and four role-plays tested the design ([`research/20261007_agent-teams-role-play.md`](../research/20261007_agent-teams-role-play.md)). Public copy follows the demo-claim gate in [`ROADMAP.md`](ROADMAP.md#the-demo-claim-gate): never say an agent checks in on its own until heartbeats ship.
+> **Status: decided direction, partly built.** Schedules (Tasks), agent memory (`MEMORY.md`), rooms, notes to a person (`relay_notify_user`) and the decision-model ladder (`packages/decisions`) exist today. Agents messaging each other in chats people can open (`chat_send`, `chat_read`, `chat_stop`) and spin-off chats that report back on their own (section 9.5) arrive with DOR-2790 (spec `spin-off-chats`), and are built once its four pull requests merge. The heartbeat, `HEARTBEAT.md`, reporting lines, the commitments list and the measures below are built (DOR-2788): agents wake on a beat or an event, triage cheaply, hold messages for people's hours, report up, and their measures show on each agent's Heartbeat page. Still roadmap: agent templates by type beyond the three `HEARTBEAT.md` templates, stepping past an away manager to the next person up, the weekly review, a roll-up of measures across agents, surprises as a measure, and the loop watcher (DOR-2745). Section 9 and the decisions in section 10 were added on 2026-10-07 after Dorian answered the open questions and four role-plays tested the design ([`research/20261007_agent-teams-role-play.md`](../research/20261007_agent-teams-role-play.md)). Public copy follows the demo-claim gate in [`ROADMAP.md`](ROADMAP.md#the-demo-claim-gate).
 
 ---
 
@@ -50,7 +50,7 @@ Two refinements from the role-plays:
 
 ### P4. Report up like a colleague
 
-Every agent has someone it **reports to**: a person or another agent. It is an optional field on every profile (roadmap, DOR-2743); when it is not set, the default rules in section 9.2 decide. Reporting up means:
+Every agent has someone it **reports to**: a person or another agent. It is an optional field on every profile (built, DOR-2788); when it is not set, the default rules in section 9.2 decide. Reporting up means:
 
 - **A regular report**, at a rhythm the manager picks (daily by default): what it finished, what it is working on, what is at risk, what it needs. One message, written for a busy reader, linked to the record for detail. If nothing worth saying happened, it says so in one line, or skips the report when the manager has asked for that.
 - **Escalation** when something is at risk that it cannot fix, or a call is above its role. Escalation goes to whoever it reports to, then up. Never sideways to whoever happens to be online, and never straight to the top unless it is urgent.
@@ -113,7 +113,7 @@ Beats complement, not replace, the other ways an agent starts work:
 
 - **Schedules (Tasks, built):** exact jobs at exact times. "Send the weekly invoice run at 9am Monday."
 - **Events (partly built):** something happened that the agent watches. A message mentioning it, a failed payment, a new support email, a failing build.
-- **Beats (roadmap):** a regular look around for everything else. "Is anything I own at risk? Is there something useful I should start?"
+- **Beats (built):** a regular look around for everything else. "Is anything I own at risk? Is there something useful I should start?"
 
 A schedule says _when_. An event says _what_. A beat says _what now?_
 
