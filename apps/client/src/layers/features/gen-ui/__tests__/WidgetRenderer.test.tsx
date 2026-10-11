@@ -64,6 +64,28 @@ describe('WidgetRenderer catalog nodes', () => {
     expect(screen.getByText('64°F')).toBeInTheDocument();
   });
 
+  it('wraps a horizontal stack so every control stays reachable on a phone', () => {
+    const button = (label: string) => ({
+      type: 'button' as const,
+      label,
+      action: { kind: 'url' as const, href: 'https://example.com' },
+    });
+    renderDoc({
+      type: 'stack',
+      direction: 'horizontal',
+      children: [button('One'), button('Two'), button('Three')],
+    });
+    const row = screen.getByRole('button', { name: 'One' }).closest('.flex-row')!;
+    expect(row).toHaveClass('flex-wrap');
+    expect(row).toContainElement(screen.getByRole('button', { name: 'Three' }));
+  });
+
+  it('leaves a vertical stack as a single column', () => {
+    renderDoc({ type: 'stack', direction: 'vertical', children: [{ type: 'text', text: 'Only' }] });
+    const column = screen.getByText('Only').closest('.flex-col')!;
+    expect(column).not.toHaveClass('flex-wrap');
+  });
+
   it('renders a table with columns and rows', () => {
     renderDoc({
       type: 'table',
