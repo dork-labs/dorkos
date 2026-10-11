@@ -96,6 +96,11 @@ export const SDK_NAME = 'dorkos.minimal';
  * credential-reference schemes (`keychain:`/`env:`/`file:`).
  */
 const TOKEN_PATTERNS: RegExp[] = [
+  // An Authorization header with a scheme word. It runs first because the
+  // generic `authorization: value` rule below takes only one word, so it masked
+  // the scheme (`Basic`) and left the credential after it (DOR-2235). The rest
+  // of the line goes: a Digest credential is several comma-separated fields.
+  /\b(?:proxy-)?authorization\s*[:=]\s*(?:basic|bearer|digest|token|negotiate|ntlm)\b[^\r\n]*/gi,
   /\b(?:sk|pk|rk)-[A-Za-z0-9_-]{8,}/g, // OpenAI/Anthropic-style keys
   /\bgh[posu]_[A-Za-z0-9]{16,}/g, // GitHub tokens
   /\bxox[baprs]-[A-Za-z0-9-]{10,}/g, // Slack tokens

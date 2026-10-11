@@ -34,6 +34,25 @@ describe('redactPaths', () => {
 });
 
 describe('redactTokens', () => {
+  it.each([
+    ['Basic', 'dXNlcjpwYXNz'],
+    ['Bearer', 'abc.def-ghi'],
+    [
+      'Digest',
+      'username="user", realm="r", nonce="n1", response="6629fae49393a05397450978507c4ef1"',
+    ],
+    ['token', 'ghs_secretvalue'],
+  ])('masks the credential of an Authorization: %s header', (scheme, credential) => {
+    const out = redactTokens(`GET /x Authorization: ${scheme} ${credential}`);
+    expect(out).toBe('GET /x [redacted]');
+    expect(out).not.toContain(credential.split(' ')[0]);
+    expect(out).not.toContain('user:pass');
+  });
+
+  it('masks a Proxy-Authorization credential too', () => {
+    expect(redactTokens('Proxy-Authorization: Basic dXNlcjpwYXNz')).toBe('[redacted]');
+  });
+
   it('redacts provider keys, github tokens, bearer, and credential refs', () => {
     expect(redactTokens('key sk-abcdefgh12345678 end')).toBe('key [redacted] end');
     expect(redactTokens('ghp_0123456789abcdefghij')).toBe('[redacted]');
