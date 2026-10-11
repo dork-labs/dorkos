@@ -199,6 +199,48 @@ describe('describeElement — the names a person can search for', () => {
   });
 });
 
+describe('describeElement — a container’s test id is not the element’s (DOR-1963)', () => {
+  /** Give an element a layout height, which jsdom does not compute. */
+  function setHeight(element: Element, height: number): void {
+    element.getBoundingClientRect = () =>
+      ({ x: 0, y: 0, top: 0, left: 0, right: 200, bottom: height, width: 200, height }) as DOMRect;
+  }
+
+  it('leaves the Testid line out when only a whole-sidebar container carries one', () => {
+    // Pointing at a sidebar row reported `sidebar-body-swap`, the container
+    // around the whole sidebar, which named nothing a person could find.
+    mount(
+      '<aside data-testid="sidebar-body-swap"><ul><li><a data-slot="sidebar-row"><span>DorkBot</span></a></li></ul></aside>'
+    );
+    setHeight(find('[data-testid="sidebar-body-swap"]'), 800);
+    setHeight(find('span'), 20);
+
+    const identity = describeElement(find('span'));
+
+    expect(identity.testId).toBeUndefined();
+    expect(identity.slot).toBe('sidebar-row');
+    expect(nameElement(find('span'))).toEqual({ text: 'Sidebar row', onScreen: false });
+  });
+
+  it('keeps a test id on a tight ancestor, like the button around an icon', () => {
+    mount('<button data-testid="close-feedback"><svg><path /></svg></button>');
+    setHeight(find('button'), 32);
+    setHeight(find('path'), 16);
+
+    expect(describeElement(find('path')).testId).toBe('close-feedback');
+  });
+
+  it('does not name an unlabelled element after a container far taller than it', () => {
+    mount(
+      '<section data-testid="sidebar-body-swap" data-slot="sidebar"><div><i></i></div></section>'
+    );
+    setHeight(find('section'), 800);
+    setHeight(find('i'), 16);
+
+    expect(nameElement(find('i'))).toEqual({ text: 'Sidebar', onScreen: false });
+  });
+});
+
 describe('describeElement — the wire cap on names', () => {
   it('leaves out a name too long to be one anybody wrote, rather than cutting it', () => {
     const longTestId = 'y'.repeat(MAX_FEEDBACK_ELEMENT_NAME_LEN + 1);

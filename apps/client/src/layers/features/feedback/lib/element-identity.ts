@@ -195,14 +195,53 @@ function nearestAttribute(element: Element, attribute: string): string | undefin
 }
 
 /**
+ * How many times taller than the pointed element an ancestor may be and still
+ * lend it its `data-testid` (DOR-1963).
+ *
+ * The nearest test id above a sidebar row was the whole sidebar's
+ * (`sidebar-body-swap`), which names a container, not the thing pointed at. A
+ * component's own element is usually a hop or two up and about the same height
+ * (an icon inside its button); a container spans many rows. Height is the
+ * measure because width cannot tell them apart: an icon in a wide button is far
+ * narrower than the button that names it. Past this ratio the line is left out
+ * rather than misleading triage, and the selector still says which element it
+ * was. Without layout (a zero-height target, as in a test DOM) there is nothing
+ * to compare, so the nearest test id stands.
+ */
+const MAX_TESTID_HEIGHT_RATIO = 8;
+
+/**
+ * The element that should lend `element` its `data-testid`: itself or the
+ * nearest ancestor that carries one, unless that ancestor is a container far
+ * taller than the element (see {@link MAX_TESTID_HEIGHT_RATIO}).
+ *
+ * @param element - The element under the pointer.
+ * @param from - Where to start looking: the element itself, or its parent.
+ */
+function testIdHolder(element: Element, from: Element | null): Element | null {
+  const holder = from?.closest('[data-testid]') ?? null;
+  if (!holder || holder === element) return holder;
+  const pointed = element.getBoundingClientRect().height;
+  if (pointed <= 0) return holder;
+  return holder.getBoundingClientRect().height <= pointed * MAX_TESTID_HEIGHT_RATIO ? holder : null;
+}
+
+/**
  * Describe the element a person pointed at.
+ *
+ * The Testid line is left out when the nearest `data-testid` belongs to a
+ * container far taller than the element (more than
+ * {@link MAX_TESTID_HEIGHT_RATIO} times), because that names the container, not
+ * the thing pointed at (DOR-1963). Triage reads a missing Testid line as "only
+ * a container had one".
  *
  * @param element - The element under the pointer when they clicked.
  * @returns Its selector, and whichever of the two naming attributes it has.
  */
 export function describeElement(element: Element): ElementIdentity {
   const slot = nearestAttribute(element, 'data-slot');
-  const testId = nearestAttribute(element, 'data-testid');
+  const holder = testIdHolder(element, element);
+  const testId = holder ? nearestAttribute(holder, 'data-testid') : undefined;
   const label = accessibleLabel(element);
   return {
     selector: buildSelector(element),
@@ -382,7 +421,9 @@ export function humanizeName(raw: string): string | null {
  * Closest-first, because the nearest name is the most specific one:
  * 1. its accessible name — the words on it (see {@link accessibleLabel});
  * 2. its OWN `data-testid`, then its own `data-slot`;
- * 3. the nearest ancestor's, testid before slot on the same element.
+ * 3. the nearest ancestor's, testid before slot on the same element; a test id
+ *    on a container far taller than the element is skipped, as in
+ *    {@link describeElement} (DOR-1963).
  *
  * Reading the nearest `data-slot` first is what once named a starter chip "App
  * shell": the chip had no slot of its own, and the shell around everything did.
@@ -399,7 +440,11 @@ export function nameElement(element: Element): ElementName | null {
   const ownName = own ? humanizeName(own) : null;
   if (ownName) return { text: ownName, onScreen: false };
   const holder = element.parentElement?.closest('[data-testid], [data-slot]');
-  const inherited = holder?.getAttribute('data-testid') ?? holder?.getAttribute('data-slot');
+  // A container's test id names the container, not this (DOR-1963): fall back
+  // to the holder's slot when the test id is not one this element may borrow.
+  const testId =
+    holder && testIdHolder(element, holder) === holder ? holder.getAttribute('data-testid') : null;
+  const inherited = testId ?? holder?.getAttribute('data-slot');
   const inheritedName = inherited ? humanizeName(inherited) : null;
   return inheritedName ? { text: inheritedName, onScreen: false } : null;
 }
