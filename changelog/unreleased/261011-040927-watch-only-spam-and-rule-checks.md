@@ -2,6 +2,7 @@
 covers:
   - 'feat(community): watch-only spam and rule checks on posts (DOR-2777)'
   - 'fix(community): post checks keep to their own pool, cap their flags and spare private channels (DOR-2777)'
+  - 'fix(community): build the decisions package wherever the Community server is built (DOR-2777)'
 ---
 
 ### Added
