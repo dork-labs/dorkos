@@ -10,6 +10,7 @@ import { AuditLog } from '../../audit/audit-log.js';
 import { AccountIds } from '../../audit/account-ids.js';
 import { initAuditTrail, resetAuditTrail } from '../../audit/audit-trail.js';
 import { HeartbeatStore } from '../heartbeat-store.js';
+import { RaiseStore } from '../raises/raise-store.js';
 import {
   BeatOutbox,
   DELIVERY_BACKOFF_MS,
@@ -43,6 +44,7 @@ let ids = 0;
 function outbox(overrides: Partial<OutboxDeps> = {}): BeatOutbox {
   return new BeatOutbox({
     store,
+    raises: new RaiseStore(db),
     managerOf: () => 'acct-owner',
     chainPersonOf: () => 'acct-owner',
     isAgent: (id) => id.startsWith('agent-'),
@@ -160,7 +162,7 @@ describe('batching per agent', () => {
       chatSessionId: 'chat',
       raises: [
         { text: 'First thing.', rung: 'dm' },
-        { text: 'Second thing.', rung: 'report' },
+        { text: 'Second thing.', rung: 'dm' },
       ],
     });
     await box.accept({

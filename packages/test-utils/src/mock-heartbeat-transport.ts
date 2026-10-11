@@ -20,6 +20,7 @@ export function createMockHeartbeatTransport(): HeartbeatTransport {
       fileError: null,
       lastBeats: [],
       held: [],
+      report: { cadence: 'daily', to: 'owner', nextReportAt: null, items: 0 },
     }),
   };
 }

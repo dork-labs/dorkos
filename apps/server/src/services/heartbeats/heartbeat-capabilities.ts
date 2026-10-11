@@ -89,6 +89,9 @@ const REFUSALS = {
   NOT_A_BEAT:
     'This turn is not a heartbeat, so there is no beat to end. Reply in the chat as usual.',
   ALREADY_ENDED: 'This beat already ended. Nothing more was handed over.',
+  NOT_A_REPORT_BEAT:
+    'This is not a report beat, so `report` cannot be sent now. Leave it out, or put the ' +
+    'news in a raise with rung `report` for your next report. Nothing was handed over.',
 } as const;
 
 /** The heartbeat domain. */
@@ -109,7 +112,9 @@ export const heartbeatDomain: CapabilityDomain = {
         'at risk, a security problem still open, a customer being harmed, or a hard deadline. A ' +
         'problem you already fixed is not urgent. Messages to people wait for their working ' +
         'hours unless urgent. `about` lists the change keys a raise is about. `pace` asks for a ' +
-        'faster beat for a while (5 to 60 minutes, at most 12 hours). Call it once.',
+        'faster beat for a while (5 to 60 minutes, at most 12 hours). `report` is for report ' +
+        'beats only: the report itself, or null to skip it this time. `resolved` lists keys of ' +
+        'earlier raises that are settled. Call it once.',
       tier: 'act',
       area: null,
       areaNote: 'how a beat ends; blocking it would hide what a beat found without stopping work',

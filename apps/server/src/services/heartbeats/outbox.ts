@@ -8,11 +8,18 @@
  *   which waits for their hours like a `dm`. A refused room post becomes a held
  *   `dm` to the manager. `dm` goes to the agent's in-app DM with the person.
  *   `note` goes the way `relay_notify_user` goes: a bound Telegram or Slack
- *   chat, else the in-app DM. `report` has no report to ride yet (PR 4), so it
- *   is delivered as a held `dm`: nothing a beat raises is lost.
- * - **Agents have no quiet hours.** A raise whose reader is an agent becomes a
- *   `report`-kind chat message to it at once, retried like any other delivery
- *   when it fails.
+ *   chat, else the in-app DM. `report` joins the agent's report queue (§9.3),
+ *   whoever reads it. Two words, kept apart: the *raise* rung `report` means
+ *   "save it for my report"; the *delivery* rung `report` on a held row means
+ *   "a chat message to another agent" (a raise to an agent, or a report whose
+ *   reader is one).
+ * - **Raise once, away, de-duplication** (§9.2, PR 4): a raise to a person meets
+ *   `raise-manners.ts` first, and may be moved to the report or dropped as
+ *   already raised. Stepping up past an away person is not wired yet: one person
+ *   per server has nobody above them (`personAbove`, DOR-2743). Each is recorded.
+ * - **Agents have no quiet hours.** A raise whose reader is an agent (any rung
+ *   but `room` and `report`) becomes a `report`-kind chat message to it at
+ *   once, held as a row due now so a failed send is retried like any other.
  * - **Hours** (§9.2). A message to a person outside their working hours, or
  *   while they are away, waits for the next start of their hours unless it is
  *   `urgent`. That is the agent's own judgment carried out, not a cap: urgent
@@ -28,8 +35,10 @@
  *   earlier version is still held replaces it — only the same raise to the same
  *   reader on the same rung, into the same room, so a DM's words never land in
  *   a channel.
- * - **Open raises** are the ones delivered and not yet resolved, for 14 days;
- *   every beat prompt lists them (§7.2), and `end_beat.resolved` closes them.
+ * - **Open raises** are the ones delivered to people and not yet resolved, for
+ *   14 days; every beat prompt lists them (§7.2), read from the raise store
+ *   (`raises/raise-store.ts`), the one place that says what is open. A report
+ *   and a message to an agent are never open. `end_beat.resolved` closes them.
  * - **Delivery** runs on a one-minute tick that reads due rows only, and only
  *   while heartbeats are on. A failed delivery is retried at 1, 5, 15 and 60
  *   minutes, then dropped with a record line. Delivery is at-least-once: a row
@@ -40,11 +49,6 @@
  */
 import { randomUUID } from 'node:crypto';
 import type { EndBeatRaise } from '@dorkos/shared/heartbeat-schemas';
-import {
-  isWithinWorkingHours,
-  nextWorkingStart,
-  type ResolvedWorkingHours,
-} from '@dorkos/shared/working-hours';
 import type { HeartbeatOutboxRow } from '@dorkos/db';
 import type { BeatAgent, BeatOutboxPort } from './beat-runner.js';
 import { systemClock, type BeatClock } from './beat-scheduler.js';
@@ -52,23 +56,25 @@ import type { HeartbeatStore, NewOutboxRow } from './heartbeat-store.js';
 import { recordHeartbeatEvent } from './record.js';
 import type { OpenRaise } from './beat-prompt.js';
 import { HOUR_MS, URGENT_PER_PERSON_PER_HOUR, urgentDeliveryTime } from './urgent-ceiling.js';
+import { recordRoute, routeRaise, type MannersDeps } from './raises/raise-manners.js';
+import {
+  OPEN_RAISE_MAX_MS,
+  REPORT_KEY_PREFIX,
+  type NewReportItem,
+  type RaiseStore,
+} from './raises/raise-store.js';
+import { settleReports } from './raises/report-delivery.js';
+import { deliveryTime, raiseKey, type PersonPresence } from './raises/delivery-time.js';
+
+export { deliveryTime, raiseKey, type PersonPresence };
 
 export { URGENT_PER_PERSON_PER_HOUR };
 
 /** How often held raises are checked. */
 export const OUTBOX_TICK_MS = 60_000;
 
-/** How often an away person with no return date is checked again. */
-const AWAY_RECHECK_MS = HOUR_MS;
-
 /** What separates batched raises in one message. */
 const BATCH_SEPARATOR = '\n\n';
-
-/** How long a delivered raise stays open in the agent's prompt. */
-const OPEN_RAISE_MS = 14 * 24 * HOUR_MS;
-
-/** The most open raises one prompt lists. */
-const OPEN_RAISES_MAX = 20;
 
 /** When a failed delivery is tried again, by attempt; the next failure drops it. */
 export const DELIVERY_BACKOFF_MS = [1, 5, 15, 60].map((minutes) => minutes * 60_000);
@@ -76,18 +82,12 @@ export const DELIVERY_BACKOFF_MS = [1, 5, 15, 60].map((minutes) => minutes * 60_
 /** Where a delivered message landed. */
 export type DeliveryResult = { ok: true; entryId?: string } | { ok: false; reason: string };
 
-/** A person's hours and away state, as delivery reads them. */
-export interface PersonPresence {
-  /** Their working hours, in their zone. */
-  hours: ResolvedWorkingHours;
-  /** That they are away, or null. `until: null` is away until they say otherwise. */
-  away: { until: string | null } | null;
-}
-
 /** What the outbox is built from. */
-export interface OutboxDeps {
+export interface OutboxDeps extends Pick<MannersDeps, 'personAbove'> {
   /** The heartbeat tables. */
   store: HeartbeatStore;
+  /** The report queue and open raises. */
+  raises: RaiseStore;
   /** Who a raise with no `to` goes to: the agent's manager (§4.1). */
   managerOf(agentId: string): string;
   /** The first person up the agent's chain. */
@@ -119,39 +119,6 @@ export interface OutboxDeps {
   clock?: BeatClock;
   /** Mints ids. */
   mintId?(): string;
-}
-
-/**
- * When a message to a person may be delivered, at or after `now`.
- *
- * @param presence - Their hours and away state.
- * @param now - Epoch ms.
- * @returns Epoch ms; `now` when it may go now.
- */
-export function deliveryTime(presence: PersonPresence, now: number): number {
-  const { hours, away } = presence;
-  let from = now;
-  if (away) {
-    const until = away.until ? Date.parse(away.until) : NaN;
-    if (Number.isNaN(until)) return now + AWAY_RECHECK_MS;
-    if (until > now) from = until;
-  }
-  if (hours.days.length === 0 || isWithinWorkingHours(new Date(from), hours)) return from;
-  return nextWorkingStart(new Date(from), hours)?.getTime() ?? from;
-}
-
-/**
- * A raise's stable key: the one it names, else its `about` keys sorted, else a
- * hash of its text (§8).
- *
- * @param raise - The raise.
- */
-export function raiseKey(raise: EndBeatRaise): string {
-  if (raise.key) return raise.key;
-  if (raise.about?.length) return [...raise.about].sort().join('|');
-  let hash = 0;
-  for (const char of raise.text) hash = (hash * 31 + char.charCodeAt(0)) | 0;
-  return `text:${(hash >>> 0).toString(36)}`;
 }
 
 /** What one beat hands the outbox. */
@@ -220,6 +187,8 @@ export class BeatOutbox implements BeatOutboxPort {
    * @param input - The agent, its beat, the beat chat and the raises.
    */
   async accept(input: Handover & { raises: readonly EndBeatRaise[] }): Promise<number> {
+    // A person may have answered since: their raise is no longer open.
+    this.deps.raises.closeAnswered(input.agent.id);
     let taken = 0;
     for (const raise of input.raises) {
       this.acceptOne(input, raise);
@@ -237,13 +206,73 @@ export class BeatOutbox implements BeatOutboxPort {
       return;
     }
     const to = raise.to ?? this.deps.managerOf(agent.id);
+    if (raise.rung === 'report') {
+      this.queueForReport(handover, raise, to);
+      return;
+    }
     if (this.deps.isAgent(to)) {
       // Due at once; held as a row so a failed send is retried, not lost.
       this.hold(handover, raise, to, 'report', null);
       return;
     }
-    // A report has nothing to ride until PR 4: it goes as a held DM.
-    this.hold(handover, raise, to, raise.rung === 'note' ? 'note' : 'dm', null);
+    const route = this.route(agent, raise, to, false);
+    if (route.kind === 'still-open') this.queueStillOpen(handover, raise);
+    if (route.kind !== 'deliver') return;
+    this.hold(handover, raise, route.to, raise.rung === 'note' ? 'note' : 'dm', null);
+  }
+
+  /** Where a raise to a person goes (`raise-manners.ts`), with its record line. */
+  private route(agent: BeatAgent, raise: EndBeatRaise, to: string, forReport: boolean) {
+    const route = routeRaise(
+      { ...this.deps, presenceOf: (id) => this.deps.presenceOf(id) },
+      { agentId: agent.id, raise, key: raiseKey(raise), to, forReport, now: this.clock.now() }
+    );
+    recordRoute(agent, route, (id) => this.deps.agentOf(id)?.name ?? 'another agent');
+    return route;
+  }
+
+  /** A `report` raise: into the agent's next report, unless already raised. */
+  private queueForReport(handover: Handover, raise: EndBeatRaise, to: string): void {
+    const { agent } = handover;
+    if (!this.deps.isAgent(to)) {
+      const route = this.route(agent, raise, to, true);
+      if (route.kind === 'duplicate') return;
+      if (route.kind === 'still-open') return this.queueStillOpen(handover, raise);
+    }
+    this.queueLine(handover, raise, 'raise', raise.to ? to : null);
+    recordHeartbeatEvent({
+      action: 'heartbeat.raised',
+      agent,
+      actAsAgent: true,
+      summary: 'Saved for its next report.',
+    });
+  }
+
+  /** A raise still open from before: its next report says so instead. */
+  private queueStillOpen(handover: Handover, raise: EndBeatRaise): void {
+    this.queueLine(handover, { ...raise, text: `Still open: ${raise.text}` }, 'still-open', null);
+  }
+
+  /** Add one line to the agent's report queue. */
+  private queueLine(
+    handover: Handover,
+    raise: EndBeatRaise,
+    kind: NewReportItem['kind'],
+    toAccount: string | null
+  ): void {
+    this.deps.raises.queueItem(
+      (this.deps.mintId ?? randomUUID)(),
+      {
+        agentId: handover.agent.id,
+        kind,
+        text: raise.text,
+        key: raiseKey(raise),
+        about: raise.about ? JSON.stringify(raise.about) : null,
+        beatId: handover.beatId,
+        toAccount,
+      },
+      new Date(this.clock.now()).toISOString()
+    );
   }
 
   /**
@@ -412,25 +441,29 @@ export class BeatOutbox implements BeatOutboxPort {
   }
 
   /**
-   * Close earlier held raises the agent says are settled.
+   * Close earlier raises the agent says are settled: held, delivered and still
+   * open, or waiting in its report queue.
    *
    * @param agentId - The agent.
    * @param keys - The raise keys.
    */
   resolve(agentId: string, keys: readonly string[]): void {
-    this.deps.store.resolveRaises(agentId, keys, new Date(this.clock.now()).toISOString());
+    const at = new Date(this.clock.now()).toISOString();
+    this.deps.store.resolveRaises(agentId, keys, at);
+    this.deps.raises.resolveKeys(agentId, keys, at);
   }
 
   /**
-   * The raises an agent is still waiting on: delivered to people in the last
-   * 14 days and not resolved, newest first. The beat prompt reads them through
-   * {@link BeatOutboxPort.openRaises}, the one seam a richer raise store swaps.
+   * The raises an agent is still waiting on, for its beat prompt (§7.2): read
+   * from the raise store, the one place that says what is open, once any its
+   * reader answered since the last look are closed.
    *
    * @param agentId - The agent.
    */
   openRaises(agentId: string): OpenRaise[] {
-    const since = new Date(this.clock.now() - OPEN_RAISE_MS).toISOString();
-    return this.deps.store.openRaises(agentId, since, OPEN_RAISES_MAX);
+    this.deps.raises.closeAnswered(agentId);
+    const since = new Date(this.clock.now() - OPEN_RAISE_MAX_MS).toISOString();
+    return this.deps.raises.openRaises(agentId, since);
   }
 
   /**
@@ -459,6 +492,49 @@ export class BeatOutbox implements BeatOutboxPort {
   }
 
   /**
+   * Deliver a report (§9.3) as a held row like any message: to a person, their
+   * in-app DM at the start of their hours; to an agent, a `report`-kind chat
+   * message due at once. Either way a failed delivery is retried, and dropped
+   * after the last try. Never de-duplicated or moved: a report is not a raise.
+   * Its lines are cleared only once it arrives, and go back in the queue if it
+   * is dropped (`raises/report-delivery.ts`).
+   *
+   * @param input - The agent, its report beat, the beat chat, the reader, the
+   *   words and the queued lines it carries.
+   * @returns Whether it was handed over.
+   */
+  async deliverReport(
+    input: Handover & { to: string; text: string; lineIds: string[] }
+  ): Promise<void> {
+    const { agent, to, text } = input;
+    const now = this.clock.now();
+    const toAgent = this.deps.isAgent(to);
+    const deliverAfter = toAgent ? now : deliveryTime(this.deps.presenceOf(to), now);
+    const rowId = (this.deps.mintId ?? randomUUID)();
+    this.deps.store.insertOutbox({
+      id: rowId,
+      agentId: agent.id,
+      beatId: input.beatId,
+      toAccount: to,
+      rung: toAgent ? 'report' : 'dm',
+      text,
+      key: `${REPORT_KEY_PREFIX}${input.beatId}`,
+      about: null,
+      urgent: 0,
+      roomId: null,
+      deliverAfter: new Date(deliverAfter).toISOString(),
+      state: 'held',
+      createdAt: new Date(now).toISOString(),
+    });
+    if (toAgent) this.reportChats.set(rowId, input.chatSessionId);
+    this.deps.raises.linkToReport(input.lineIds, rowId);
+    if (deliverAfter > now)
+      this.recordHeld(agent, { urgent: false, ceiling: false, deliverAfter, now, text });
+    // The report is handed over; a delivery that throws is retried by the tick, never resent here.
+    await this.tick().catch(() => undefined);
+  }
+
+  /**
    * Deliver every held raise that has come due, batched per agent and reader.
    * One that arrives mid-tick goes out in a second pass before this resolves.
    */
@@ -482,6 +558,8 @@ export class BeatOutbox implements BeatOutboxPort {
   /** The tick's body. */
   private async deliverDue(): Promise<void> {
     const now = this.clock.now();
+    this.deps.raises.closeAnswered();
+    this.deps.raises.expireOpen(new Date(now - OPEN_RAISE_MAX_MS).toISOString());
     const groups = new Map<string, HeartbeatOutboxRow[]>();
     for (const row of this.deps.store.dueOutbox(new Date(now).toISOString())) {
       // Hours may have moved since the row was held (a new away, a new zone).
@@ -507,6 +585,7 @@ export class BeatOutbox implements BeatOutboxPort {
     const agent = this.deps.agentOf(first.agentId);
     if (!agent) {
       this.deps.store.closeOutbox(ids, 'dropped', at);
+      settleReports(this.deps, rows, false, at);
       return;
     }
     const unsent = rows.filter((row) => !this.sent.has(row.id));
@@ -518,6 +597,7 @@ export class BeatOutbox implements BeatOutboxPort {
         this.reportChats.delete(id);
       }
       this.deps.store.closeOutbox(ids, 'delivered', at, result.entryId);
+      settleReports(this.deps, rows, true, at);
       recordHeartbeatEvent({
         action: 'heartbeat.delivered',
         agent,
@@ -573,6 +653,7 @@ export class BeatOutbox implements BeatOutboxPort {
     }
     this.deps.store.closeOutbox(ids, 'dropped', new Date(now).toISOString());
     for (const id of ids) this.reportChats.delete(id);
+    settleReports(this.deps, rows, false, new Date(now).toISOString());
     recordHeartbeatEvent({
       action: 'heartbeat.raised',
       agent,

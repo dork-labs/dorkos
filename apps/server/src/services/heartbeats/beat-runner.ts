@@ -16,6 +16,10 @@
  * - **Retries.** A busy beat chat sets `wake_again`, run a few minutes after
  *   the beat. A full launch cap is retried at 1, 2 and 5 minutes, then dropped
  *   to the next beat. The two never share a timer.
+ * - **Report beats** (§3.4) have a timer of their own per agent, at the start
+ *   of its chain person's day (`report-clock.ts`), whatever its `wake`, so an
+ *   agent that wakes only on events still reports. A report due while a beat
+ *   runs is re-armed when that beat ends.
  * - {@link BeatRunner.observe} hands every finished beat to the loop watcher
  *   (DOR-2745) without this domain knowing it.
  *
@@ -43,6 +47,9 @@ import { readHeartbeatFile, type HeartbeatFileRead } from './heartbeat-file.js';
 import type { HeartbeatStore } from './heartbeat-store.js';
 import type { GathererRegistry } from './gatherers/index.js';
 import { pruneOldBeats, recordBeat, recordHeartbeatEvent } from './record.js';
+import { deliveryTime } from './raises/delivery-time.js';
+import { REPORT_WAKE, reportBeatAt } from './raises/report-clock.js';
+import { runReportBeat, type ReportBeatDeps } from './raises/report-beat.js';
 
 /** One minute, in ms. */
 const MINUTE = 60_000;
@@ -98,6 +105,18 @@ export interface BeatOutboxPort {
   openRaises(agentId: string): readonly OpenRaise[];
   /** The runner's own raise when an agent's beats keep failing (§7.5), with the error. */
   raiseFailing(agent: BeatAgent, beatId: string, error?: string): Promise<void>;
+  /**
+   * Hand a report to the outbox for its reader (§9.3); the outbox delivers
+   * and retries it.
+   */
+  deliverReport(input: {
+    agent: BeatAgent;
+    beatId: string;
+    chatSessionId: string;
+    to: string;
+    text: string;
+    lineIds: string[];
+  }): Promise<void>;
 }
 
 /** One finished beat, as observers hear it. */
@@ -152,12 +171,15 @@ export interface BeatRunnerDeps {
   random?(): number;
   /** Mints ids. */
   mintId?(): string;
+  /** The report queue and who reads reports; absent, no agent reports. */
+  reports?: Omit<ReportBeatDeps, keyof BeatCycleDeps>;
 }
 
 /** The beat runner. */
 export class BeatRunner {
   private readonly clock: BeatClock;
   private readonly scheduler: BeatScheduler;
+  private readonly reportTimers: BeatScheduler;
   private readonly cycle: BeatCycleDeps;
   private readonly running = new Map<string, Promise<void>>();
   private readonly wakeAgainTimers = new Map<string, unknown>();
@@ -185,6 +207,9 @@ export class BeatRunner {
     this.clock = deps.clock ?? systemClock;
     this.scheduler = new BeatScheduler(this.clock, (agentId) => {
       void this.wake(agentId, { wake: 'timer' });
+    });
+    this.reportTimers = new BeatScheduler(this.clock, (agentId) => {
+      void this.wake(agentId, { wake: REPORT_WAKE });
     });
     this.cycle = {
       store: deps.store,
@@ -218,6 +243,7 @@ export class BeatRunner {
     this.started = false;
     this.generation += 1;
     this.scheduler.clearAll();
+    this.reportTimers.clearAll();
     for (const timers of [this.wakeAgainTimers, this.capTimers]) {
       for (const handle of timers.values()) this.clock.clearTimeout(handle);
       timers.clear();
@@ -252,6 +278,19 @@ export class BeatRunner {
   }
 
   /**
+   * Re-arm only an agent's report timer, leaving its timed beat where it is:
+   * what a change to a person's hours or away state calls.
+   *
+   * @param agentId - The agent.
+   */
+  async refreshReport(agentId: string): Promise<void> {
+    const agent = this.deps.agents.get(agentId);
+    if (!agent || !this.started) return;
+    const plan = await this.plan(agent);
+    if (this.started) this.armReport(plan);
+  }
+
+  /**
    * When an agent's next timed beat is due, or null.
    *
    * @param agentId - The agent.
@@ -261,10 +300,26 @@ export class BeatRunner {
     return at === null ? null : new Date(at);
   }
 
-  /** How many timers are armed, retries and housekeeping included. */
+  /**
+   * When an agent's next report beat is due, or null.
+   *
+   * @param agentId - The agent.
+   */
+  nextReportAt(agentId: string): Date | null {
+    const at = this.reportTimers.nextAt(agentId);
+    return at === null ? null : new Date(at);
+  }
+
+  /** How many timers are armed, retries, reports and housekeeping included. */
   get armedTimers(): number {
     const housekeeping = [this.pruneHandle, this.scanHandle].filter((h) => h !== undefined).length;
-    return this.scheduler.size + this.wakeAgainTimers.size + this.capTimers.size + housekeeping;
+    return (
+      this.scheduler.size +
+      this.reportTimers.size +
+      this.wakeAgainTimers.size +
+      this.capTimers.size +
+      housekeeping
+    );
   }
 
   /**
@@ -298,7 +353,8 @@ export class BeatRunner {
       return;
     }
     if (this.running.has(agentId)) {
-      this.deps.store.patchState(agentId, { wakeAgain: 1 });
+      // A report owed is re-armed when the running beat ends; any other wake is owed a beat.
+      if (wake.wake !== REPORT_WAKE) this.deps.store.patchState(agentId, { wakeAgain: 1 });
       return;
     }
     const run = this.beat(agent, wake).finally(() => this.running.delete(agentId));
@@ -318,7 +374,11 @@ export class BeatRunner {
       }
       // A stray timer for an agent that no longer beats on one does nothing.
       if (wake.wake === 'timer' && plan.settings.wake !== 'timed') return;
-      capFull = (await runBeat(this.cycle, plan, wake, track)).capFull === true;
+      const result =
+        wake.wake === REPORT_WAKE
+          ? await this.reportBeat(plan, wake, track)
+          : await runBeat(this.cycle, plan, wake, track);
+      capFull = result?.capFull === true;
     } catch (err) {
       logger.warn('[heartbeats] a beat failed to run', {
         agentId: agent.id,
@@ -330,6 +390,13 @@ export class BeatRunner {
       this.afterBeat(agent.id, wake, capFull);
       await this.refreshAgent(agent.id).catch(() => undefined);
     }
+  }
+
+  /** A report beat, or nothing when the agent no longer reports. */
+  private async reportBeat(plan: BeatPlan<BeatAgent>, wake: BeatWake, track: BeatTrack) {
+    const reports = this.deps.reports;
+    if (!reports || plan.settings.report === 'off') return undefined;
+    return runReportBeat({ ...this.cycle, ...reports }, plan, wake, track);
   }
 
   /** After a beat: retry a full cap, or run the beat a wake during it owed. */
@@ -400,6 +467,7 @@ export class BeatRunner {
   /** Record once per process that an agent's heartbeat is off (§3.6). */
   private noteOff(agent: BeatAgent): void {
     this.scheduler.cancel(agent.id);
+    this.reportTimers.cancel(agent.id);
     if (this.offRecorded.has(agent.id)) return;
     this.offRecorded.add(agent.id);
     recordHeartbeatEvent({
@@ -450,6 +518,7 @@ export class BeatRunner {
       const plan = await this.plan(agent);
       // Stopped (or restarted) while that read was in flight: arm nothing.
       if (generation !== this.generation) return;
+      this.armReport(plan);
       if (plan.settings.wake !== 'timed') continue;
       const state = this.deps.store.getState(agent.id);
       const interval = beatInterval(this.cadence(agent.id), now);
@@ -519,9 +588,54 @@ export class BeatRunner {
     return plan;
   }
 
-  /** Arm an agent's next timed beat, or disarm it when it does not beat on a timer. */
+  /** Arm an agent's next report beat, or disarm it when it does not report. */
+  private armReport(plan: BeatPlan<BeatAgent>): void {
+    const reports = this.deps.reports;
+    const { agent, settings } = plan;
+    if (!reports || !this.beatsAt(agent) || settings.wake === 'off' || settings.report === 'off') {
+      this.reportTimers.cancel(agent.id);
+      return;
+    }
+    const now = this.clock.now();
+    const reader = reports.managerOf(agent.id);
+    const presence = reports.isAgent(reader) ? null : reports.presenceOf(reader);
+    const next = reportBeatAt({
+      cadence: settings.report,
+      hours: this.deps.hoursFor(agent.id),
+      lastAttemptAt: reports.raises.lastReportAttemptAt(agent.id),
+      readerAvailableAt: !presence
+        ? now
+        : presence.away && presence.away.until === null
+          ? null
+          : deliveryTime(presence, now),
+      now,
+      ...(this.deps.random ? { random: this.deps.random } : {}),
+    });
+    if (next === null) {
+      this.reportTimers.cancel(agent.id);
+      return;
+    }
+    // An owed report already armed sooner stays put: re-arming after every beat would push it
+    // back. A later one (a regular start armed while its reader was away) is brought forward.
+    const armed = this.reportTimers.nextAt(agent.id);
+    if (next.owed && armed !== null && armed > now && armed <= next.at) return;
+    this.reportTimers.armAt(agent.id, next.at);
+  }
+
+  /** Whether this runner may arm anything for an agent now. */
+  private beatsAt(agent: BeatAgent): boolean {
+    return (
+      this.started &&
+      this.deps.enabled() &&
+      this.deps.isPaused?.(agent.id) !== true &&
+      this.deps.runtimeRegistered(agent.runtime)
+    );
+  }
+
+  /** Arm an agent's next timed beat and report, or disarm what it no longer has. */
   private armNext(plan: BeatPlan<BeatAgent>): void {
     const { agent, settings } = plan;
+    this.armReport(plan);
     if (
       !this.started ||
       !this.deps.enabled() ||
