@@ -72,7 +72,7 @@ export const messageItem = tv({
     // Role no longer changes layout — only the weight the two voices read at.
     role: {
       user: { content: 'font-[var(--msg-user-font-weight)]' },
-      assistant: { content: 'font-[var(--msg-assistant-font-weight)]' },
+      assistant: { content: 'font-[var(--msg-prose-font-weight)]' },
     },
     // Vertical rhythm: a group opens and closes with air, its middle stays tight.
     position: {
