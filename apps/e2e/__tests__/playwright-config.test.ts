@@ -80,6 +80,30 @@ describe('playwright.config.ts webServer legs', () => {
     expect(clientLegs).toHaveLength(2);
     for (const command of clientLegs) expect(command).toContain('DORKOS_E2E_NO_HMR=true');
   });
+
+  it('gives each client leg its own Vite pre-bundle cache', async () => {
+    // DOR-2487. Two dev servers sharing `node_modules/.vite` let one server's
+    // runtime re-optimize hand the other's pages a second copy of React. The
+    // client config names the cache after the leg's port, so read each leg's
+    // env, load the real config with it, and compare the folders it picks.
+    const clientLegs = commands.filter((command) =>
+      command.includes('turbo dev --filter=@dorkos/client')
+    );
+    expect(clientLegs).toHaveLength(2);
+    const cacheDirs: string[] = [];
+    for (const command of clientLegs) {
+      const port = /VITE_PORT=(\S+)/.exec(command)?.[1];
+      expect(port).toBeTruthy();
+      vi.resetModules();
+      vi.stubEnv('VITE_PORT', port!);
+      vi.stubEnv('DORKOS_E2E_NO_HMR', 'true');
+      const { default: viteConfig } = await import('../../client/vite.config.js');
+      cacheDirs.push((viteConfig as { cacheDir?: string }).cacheDir ?? '');
+      vi.unstubAllEnvs();
+    }
+    expect(cacheDirs.every((dir) => dir.startsWith('node_modules/.vite-e2e-'))).toBe(true);
+    expect(new Set(cacheDirs).size).toBe(2);
+  });
 });
 
 /**

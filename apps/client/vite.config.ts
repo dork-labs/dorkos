@@ -141,6 +141,16 @@ export default defineConfig({
   },
   root: '.',
   publicDir: 'public',
+  // **Each browser-suite dev server gets its own pre-bundle cache** (DOR-2487).
+  // The suite runs two Vite servers from this one package; sharing
+  // `node_modules/.vite` meant a runtime re-optimize on one handed the other's
+  // pages chunks from two bundle versions, two copies of React, and "Invalid
+  // hook call" (how #2217's build race became a queue-wide red). The two legs
+  // in `apps/e2e/playwright.config.ts` always run on different ports, so the
+  // port names the folder.
+  ...(process.env.DORKOS_E2E_NO_HMR === 'true' && {
+    cacheDir: `node_modules/.vite-e2e-${process.env.VITE_PORT || 4241}`,
+  }),
   optimizeDeps: {
     // Pin streamdown into the initial dep-optimization pass. It renders code
     // blocks through a lazily-imported chunk (its syntax-highlighted body); if
