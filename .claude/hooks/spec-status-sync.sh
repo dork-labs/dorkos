@@ -40,35 +40,22 @@ append_context() {
 }
 
 # --- 1. Status sync -------------------------------------------------------
-# Determine the highest artifact number in the spec directory
-HIGHEST=0
-for f in "$SPEC_DIR"/0[1-5]-*.md; do
-  if [[ -f "$f" ]]; then
-    NUM=$(basename "$f" | sed 's/^0\([1-5]\)-.*/\1/')
-    if [[ "$NUM" -gt "$HIGHEST" ]]; then
-      HIGHEST=$NUM
-    fi
-  fi
-done
-
-if [[ "$HIGHEST" -eq 0 ]]; then
+# The status comes from the same list of known artifact names that
+# spec-manifest-ops.ts reads (spec-artifact-status.ts), never from the highest
+# 0N- number: `04-acceptance.md` or `05-live-checklist.md` does not mean the
+# spec is built (DOR-2704). Scripts resolve beside this hook, so a test can run
+# it against a sandbox repo.
+SCRIPTS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../scripts" && pwd)"
+NEW_STATUS=$(node --experimental-strip-types --disable-warning=ExperimentalWarning \
+  "$SCRIPTS_DIR/spec-artifact-status.ts" "$SPEC_DIR" 2>/dev/null) || true
+if [[ -z "$NEW_STATUS" ]]; then
   exit 0
 fi
-
-# Map artifact number to status
-case $HIGHEST in
-  1) NEW_STATUS="ideation" ;;
-  2) NEW_STATUS="specified" ;;
-  3) NEW_STATUS="specified" ;;
-  4) NEW_STATUS="implemented" ;;
-  5) NEW_STATUS="implemented" ;;
-  *) exit 0 ;;
-esac
 
 # Delegate to spec-manifest-ops.ts for status update
 # The script handles: reading current status, progression checks, no-op if unchanged, writing manifest
 OUTPUT=$(node --experimental-strip-types --disable-warning=ExperimentalWarning \
-  "$PROJECT_ROOT/.claude/scripts/spec-manifest-ops.ts" \
+  "$SCRIPTS_DIR/spec-manifest-ops.ts" \
   update-status "$SLUG" "$NEW_STATUS" --quiet 2>&1) || true
 
 if [[ -n "$OUTPUT" ]]; then
