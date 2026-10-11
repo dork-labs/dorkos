@@ -26,6 +26,7 @@
  *   green, which is the pair that tells a relay from an invention.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { createMockSession } from '@dorkos/test-utils';
 import { eventFanOut, type FanOutClient } from '../../core/event-fan-out.js';
 import type { CallerPrincipal } from '../../../lib/caller-principal.js';
 import {
@@ -34,10 +35,13 @@ import {
 } from '../catalog/session-list-broadcaster.js';
 import { disposeProjector, getOrCreateProjector, type RawSessionEvent } from '../index.js';
 import { projectRegistry } from '../../projects/project-registry.js';
+import { initSessionVisibility, resetSessionVisibility } from '../../audit/session-visibility.js';
 
 const TIMEOUT_MS = 10 * 60 * 1000;
 const ROOM_SESSION = 'broadcast-room-session';
 const LONE_SESSION = 'broadcast-lone-session';
+/** A person's own chat: no agent may hear about it (spec `audit-trail` §3.4). */
+const PRIVATE_SESSION = '44444444-4444-4444-8444-444444444444';
 
 /** Every broadcast this case produced, in order. */
 let broadcasts: Array<{ name: string; payload: unknown }>;
@@ -278,11 +282,63 @@ describe('who the Ask actually reaches on the wire', () => {
     registered = [];
     // The outer suite stubs `broadcast`; these cases need the real one.
     vi.mocked(eventFanOut.broadcast).mockRestore();
+    initSessionVisibility(
+      (ids) =>
+        new Map(ids.map((id) => [id, id === PRIVATE_SESSION ? 'participants' : 'space'] as const))
+    );
   });
 
   afterEach(() => {
     for (const unregister of registered) unregister();
+    resetSessionVisibility();
+    disposeProjector(PRIVATE_SESSION);
   });
+
+  it('tells an agent nothing about a person’s own chat, and the cockpit everything', async () => {
+    const cockpit = reader({ kind: 'operator' });
+    const agent = reader({ kind: 'agent' });
+
+    const projector = getOrCreateProjector(PRIVATE_SESSION, '/work/me');
+    projector.ingest({ type: 'turn_start' });
+    park(PRIVATE_SESSION, '/work/me', 'tc-9');
+    projector.resolveInteraction('tc-9', 'approved');
+    // An upsert carries the title, through a runtime's own list stream.
+    const listed = new SessionListBroadcaster();
+    const upsert = {
+      type: 'session_upserted' as const,
+      session: createMockSession({ id: PRIVATE_SESSION, title: 'Thinking aloud' }),
+    };
+    listed.start([
+      {
+        type: 'fake',
+        getInternalSessionId: () => undefined,
+        subscribeSessionList: () => ({
+          async *[Symbol.asyncIterator]() {
+            yield upsert;
+          },
+        }),
+      } as never,
+    ]);
+    await vi.waitFor(() => expect(cockpit.events).toContain('session_upserted'));
+    await listed.stop();
+
+    expect(cockpit.events).toEqual(
+      expect.arrayContaining(['session_status', 'interaction_pending', 'interaction_resolved'])
+    );
+    expect(agent.events).toEqual([]);
+    expect(sendSessionStatusSnapshotTo({ kind: 'agent' })).toEqual([]);
+  });
+
+  /**
+   * The connect preamble, as one fresh connection hears it.
+   *
+   * @param principal - Who is connecting.
+   */
+  function sendSessionStatusSnapshotTo(principal: CallerPrincipal): string[] {
+    const who = reader(principal);
+    sendSessionStatusSnapshot(who.client, principal);
+    return who.events;
+  }
 
   it('writes an Ask to the cockpit’s connection and not to an agent’s', () => {
     const cockpit = reader({ kind: 'operator' });
@@ -389,8 +445,9 @@ describe('who the Ask actually reaches on the wire', () => {
 
   it('sends the receipt to BOTH, because it names no tool, no path and no command', () => {
     // Decision 9, pinned rather than left as prose: address
-    // `interaction_resolved` too and this goes red. A client that never got the
-    // `pending` simply has nothing to close.
+    // `interaction_resolved` by entitlement too and this goes red. A client
+    // that never got the `pending` simply has nothing to close. (Only who may
+    // read the session at all narrows it, as it narrows every frame here.)
     const cockpit = reader({ kind: 'operator' });
     const agent = reader({ kind: 'agent' });
     park(LONE_SESSION, '/work/beta', 'tc-1');

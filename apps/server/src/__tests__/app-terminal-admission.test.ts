@@ -39,14 +39,17 @@ vi.mock('../services/core/auth/index.js', async (original) => {
   const actual = await original<typeof import('../services/core/auth/index.js')>();
   return {
     ...actual,
-    getAuth: () => ({ api: { getSession: async () => null } }),
-    toNodeHandler: () => (_req: unknown, res: import('express').Response) => {
-      state.authDispatch();
-      res.status(401).json({ error: 'auth fixture refusal' });
-    },
+    getAuth: () => ({
+      api: { getSession: async () => null },
+      handler: async () => {
+        state.authDispatch();
+        return Response.json({ error: 'auth fixture refusal' }, { status: 401 });
+      },
+    }),
   };
 });
 import { createApp, finalizeApp } from '../app.js';
+import { composedListener } from '../http/__tests__/composed-listener.js';
 import { MainRequestAdmission } from '../services/core/lifecycle/main-request-admission.js';
 import { logger } from '../lib/logger.js';
 
@@ -71,7 +74,9 @@ function signed() {
 }
 function boot(admission = new MainRequestAdmission()) {
   const app = createApp({ admission, connectorEventIngress: { verifier: () => verifier, accept } });
-  target.mount(app);
+  // Routed as the running server routes: Better Auth answers from the Hono
+  // `/api` app, everything else from Express behind the front door.
+  target.mount(composedListener(app, admission));
   return { admission, app };
 }
 function deferred<T>() {
@@ -118,7 +123,9 @@ function expectTerminal(response: {
 /** Census actual mounts in both composition files, including conditional/later mounts. */
 function mountPaths() {
   const paths = new Set<string>();
-  for (const filename of ['../app.ts', '../index.ts']) {
+  // Every file that mounts routes: the Express app, the composition root, and
+  // the groups that moved to the Hono `/api` app.
+  for (const filename of ['../app.ts', '../index.ts', '../http/better-auth.ts']) {
     const source = ts.createSourceFile(
       filename,
       readFileSync(new URL(filename, import.meta.url), 'utf8'),
@@ -140,7 +147,7 @@ function mountPaths() {
     }
     visit(source);
   }
-  return [...paths].map((mount) => mount.replace(/:[A-Za-z]+|\*[A-Za-z]+/g, 'admission-fixture'));
+  return [...paths].map((mount) => mount.replace(/:[A-Za-z]+|\*[A-Za-z]*/g, 'admission-fixture'));
 }
 
 beforeAll(() => {
@@ -233,8 +240,15 @@ describe('main HTTP admission through the real app', () => {
     expect(mounts).toContain('/api/canvas/token/docs');
     expect(mounts).toContain('/api/audit');
     expect(mounts).toContain('/api/session-locations');
-    expect(mounts).toHaveLength(71);
-    for (const mount of [...mounts, '/', '/x/fixture', '/unknown']) {
+    // 70 -> 72: `/api/commitments` and `/api/agents/:id/commitments` (spec
+    // `heartbeats` §12).
+    expect(mounts).toContain('/api/commitments');
+    // 72 -> 71: the `/assets` trap is no longer an Express mount; it lives in
+    // `http/client-files.ts`, and is asked for by hand below.
+    // 71 -> 72: `/api/remote-access`, the remote access report and actions (DOR-2086).
+    expect(mounts).toContain('/api/remote-access');
+    expect(mounts).toHaveLength(72);
+    for (const mount of [...mounts, '/', '/x/fixture', '/assets/fixture.js', '/unknown']) {
       expectTerminal(
         await request(target.server).get(mount).set('Origin', 'https://untrusted.example')
       );

@@ -41,11 +41,25 @@
  * explains itself and offers only "Copy link". This handler's job is the click,
  * not the policy, and it stays on the seam so the two cannot drift.
  *
+ * **A plain address to a chat, channel or DM draws as a chip** (DOR-2824):
+ * the page's icon, its name and its live status, drawn by whatever the app
+ * shell put in the link chip slot (`shared/model/link-chip`). The chip
+ * only changes what the link looks like. It is still this `<a>`, with these
+ * click rules.
+ *
  * Passed to `Streamdown` as `components={{ a: MarkdownLink }}` — see
  * `contributing/link-dispatch-policy.md` for how this fits the rest of the
  * app's link-dispatch policy.
  */
-import { memo, useCallback, useState, type ComponentProps, type MouseEvent } from 'react';
+import {
+  memo,
+  useCallback,
+  useMemo,
+  useState,
+  type ComponentProps,
+  type MouseEvent,
+  type ReactNode,
+} from 'react';
 import {
   classifyLink,
   isWebUrl,
@@ -54,6 +68,10 @@ import {
   plainAppAddress,
 } from '@/layers/shared/lib/link-navigation';
 import { cn } from '@/layers/shared/lib/utils';
+import {
+  useLinkChipSlot,
+  type LinkChipAnchorProps,
+} from '@/layers/shared/model/link-chip/link-chip-slot';
 import { LinkSafetyModal } from './link-safety-modal';
 
 export type MarkdownLinkProps = Omit<ComponentProps<'a'>, 'onClick'> & {
@@ -69,6 +87,15 @@ function isAppLaunch(href: string): boolean {
 
 function MarkdownLinkImpl({ href, className, children, node: _node, ...rest }: MarkdownLinkProps) {
   const [isConfirmOpen, setIsConfirmOpen] = useState(false);
+  const chipSlot = useLinkChipSlot();
+  // A plain address to a chat, channel or DM draws as a chip naming it
+  // (DOR-2824). Only a plain address: a launch link or an extension page stays
+  // a plain link, so a chip never dresses up something that confirms first.
+  const chipAddress = useMemo(() => {
+    if (chipSlot === null || href === undefined) return null;
+    const address = plainAppAddress(href);
+    return address !== null && chipSlot.accepts(address) ? address : null;
+  }, [chipSlot, href]);
 
   const handleClick = useCallback(
     (event: MouseEvent<HTMLAnchorElement>) => {
@@ -142,43 +169,59 @@ function MarkdownLinkImpl({ href, className, children, node: _node, ...rest }: M
     setIsConfirmOpen(false);
   }, [href]);
 
+  const renderAnchor = (content: ReactNode, chip?: LinkChipAnchorProps) => (
+    <a
+      data-streamdown="link"
+      {...rest}
+      aria-label={chip?.['aria-label']}
+      data-chip={chip?.['data-chip']}
+      className={
+        chip
+          ? cn('focus-ring', chip.className)
+          : cn(
+              'text-primary rounded-sm font-medium wrap-anywhere underline',
+              'focus-ring',
+              className
+            )
+      }
+      href={href}
+      rel="noopener noreferrer"
+      target="_blank"
+      onClick={handleClick}
+      // A middle click arrives as `auxclick`, which the browser acts on by
+      // itself. Only an app link that does more than show a page is stopped;
+      // a plain left click on it still confirms.
+      onAuxClick={(event) => {
+        if (href !== undefined && isAppLaunch(href)) event.preventDefault();
+      }}
+      // Stop the row's own right-click menu (Radix `ContextMenuTrigger`,
+      // `the room's body renderer`) from ever seeing this event, so the BROWSER's
+      // native link menu wins instead — "Copy Link Address", "Open Link in
+      // New Tab", and so on (DOR-1272 blocker 1). React's synthetic events
+      // walk the React tree, not the raw DOM, so stopping propagation here
+      // reaches exactly as far up as the anchor's own ancestors — nothing
+      // outside this link's own row is affected. The identical `contextmenu`
+      // DOM event fires for the keyboard path too (Shift+F10 / the
+      // ContextMenu key on a focused link), so a keyboard user who tabs
+      // onto a link and opens a context menu gets the same browser link
+      // menu a mouse user does — not the row's action menu. That is the
+      // intended behaviour, not a gap: it is what focusing a real link and
+      // asking for its context menu means on the rest of the web.
+      onContextMenu={(event) => event.stopPropagation()}
+    >
+      {content}
+    </a>
+  );
+
   return (
     <>
-      <a
-        data-streamdown="link"
-        {...rest}
-        className={cn(
-          'text-primary rounded-sm font-medium wrap-anywhere underline',
-          'focus-ring',
-          className
-        )}
-        href={href}
-        rel="noopener noreferrer"
-        target="_blank"
-        onClick={handleClick}
-        // A middle click arrives as `auxclick`, which the browser acts on by
-        // itself. Only an app link that does more than show a page is stopped;
-        // a plain left click on it still confirms.
-        onAuxClick={(event) => {
-          if (href !== undefined && isAppLaunch(href)) event.preventDefault();
-        }}
-        // Stop the row's own right-click menu (Radix `ContextMenuTrigger`,
-        // `the room's body renderer`) from ever seeing this event, so the BROWSER's
-        // native link menu wins instead — "Copy Link Address", "Open Link in
-        // New Tab", and so on (DOR-1272 blocker 1). React's synthetic events
-        // walk the React tree, not the raw DOM, so stopping propagation here
-        // reaches exactly as far up as the anchor's own ancestors — nothing
-        // outside this link's own row is affected. The identical `contextmenu`
-        // DOM event fires for the keyboard path too (Shift+F10 / the
-        // ContextMenu key on a focused link), so a keyboard user who tabs
-        // onto a link and opens a context menu gets the same browser link
-        // menu a mouse user does — not the row's action menu. That is the
-        // intended behaviour, not a gap: it is what focusing a real link and
-        // asking for its context menu means on the rest of the web.
-        onContextMenu={(event) => event.stopPropagation()}
-      >
-        {children}
-      </a>
+      {chipAddress !== null && chipSlot !== null
+        ? chipSlot.render({
+            address: chipAddress,
+            label: children,
+            anchor: (content, chip) => renderAnchor(content, chip ?? {}),
+          })
+        : renderAnchor(children)}
       <LinkSafetyModal
         url={href ?? ''}
         isOpen={isConfirmOpen}

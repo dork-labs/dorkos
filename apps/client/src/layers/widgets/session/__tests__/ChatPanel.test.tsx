@@ -161,7 +161,6 @@ vi.mock('@/layers/shared/model/app-store', () => ({
       setIsStreaming: vi.fn(),
       setIsTextStreaming: vi.fn(),
       setIsWaitingForUser: vi.fn(),
-      setActiveForm: vi.fn(),
       enableMessagePolling: false,
       setEnableMessagePolling: vi.fn(),
     };

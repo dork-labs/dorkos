@@ -30,6 +30,8 @@ import {
 } from '../../host/authority.js';
 import { ApiError, json, readJson } from '../../http.js';
 import { hashSecret, randomToken, readCookie, signValue, verifyValue } from '../../security.js';
+import { joinAutoJoinChannels, lockAutoJoinChannels } from '../../admission/auto-join.js';
+import { refuseBannedAccount } from '../../moderation/bans.js';
 
 /**
  * Refuse an owner claim for a community whose import has not finished: until it is `ready`,
@@ -218,6 +220,7 @@ export function registerOwnerClaimRoutes(
       );
       if (!grant.rows[0]) throw new ApiError(403, 'FORBIDDEN', 'The owner claim is unavailable.');
       await assertImportReady(client, community.rows[0].id);
+      const autoJoin = await lockAutoJoinChannels(client, community.rows[0].id);
       const owner = await client.query(
         "SELECT 1 FROM members WHERE community_id=$1 AND role='owner' AND active",
         [community.rows[0].id]
@@ -232,6 +235,8 @@ export function registerOwnerClaimRoutes(
           'STATE_CONFLICT',
           'This account is being deleted, so it cannot claim a space.'
         );
+      // A ban an import carried in still holds: a banned person cannot claim the space.
+      await refuseBannedAccount(client, community.rows[0].id, user.id, config.authSecret);
       // An imported community's owner adopts the row of the owner who made the export, so
       // their own history stays theirs; every other past author stays historical.
       const adopted = await client.query<{ id: string }>(
@@ -257,6 +262,8 @@ export function registerOwnerClaimRoutes(
             );
             return inserted;
           })();
+      // The new owner lands where every arrival does.
+      await joinAutoJoinChannels(client, community.rows[0].id, member.rows[0].id, autoJoin);
       await client.query(
         `UPDATE communities SET lifecycle='active',activated_at=now(),
            lifecycle_version=lifecycle_version+1 WHERE id=$1`,

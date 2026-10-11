@@ -7,7 +7,7 @@ import {
 import type { z } from 'zod';
 import { describeError, request } from '../api.js';
 import { CopyableLink } from '../connect/CopyableLink.js';
-import { FocusDialog } from '../components/CommunityAdministration.js';
+import { FocusDialog } from '../components/FocusDialog.js';
 import {
   activeCooldown,
   cooldownSentence,

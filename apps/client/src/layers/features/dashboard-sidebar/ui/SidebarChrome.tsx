@@ -43,7 +43,7 @@ import {
   useUpdateSidebarPrefs,
 } from '@/layers/entities/config';
 import { useInteractionStore } from '@/layers/entities/interactions';
-import { useMeshAgentPaths, useMeshMemberIds } from '@/layers/entities/mesh';
+import { useAgentPauses, useMeshAgentPaths, useMeshMemberIds } from '@/layers/entities/mesh';
 import { getRuntimeDescriptor } from '@/layers/entities/runtime';
 import { hasUnread, useRooms, useRoomOpenThreadStore, useTeamRoom } from '@/layers/entities/room';
 import {
@@ -116,6 +116,11 @@ export interface SidebarChromeValue {
    * Mute/Unmute item in its menu are about the room's own setting.
    */
   mutedRoomIds: ReadonlySet<string>;
+  /**
+   * Mesh ids of the agents paused everywhere (spec `audit-trail` PR5), read
+   * once here so every agent row draws its paused mark from one query.
+   */
+  pausedAgentIds: ReadonlySet<string>;
   /**
    * The hand-made section each room is filed into, for the rows that offer
    * "Move to section ▸". Absent from the map means "not in one".
@@ -320,6 +325,11 @@ export function SidebarChrome({ activeTarget, children }: SidebarChromeProps) {
   // defeated memo. The stored lists keep their identity across a write that did
   // not touch them, so these do too (`SidebarChrome.memo.test.tsx`).
   const mutedRooms = useMemo(() => mutedRoomIds(prefs.muted), [prefs.muted]);
+  const { data: pauseData } = useAgentPauses();
+  const pausedAgentIds = useMemo(
+    () => new Set((pauseData?.pauses ?? []).map((pause) => pause.agentId)),
+    [pauseData]
+  );
   const roomSections = useMemo(() => roomSectionIds(prefs.groups), [prefs.groups]);
   const moveTargets = useMemo(() => moveTargetGroups(prefs.groups), [prefs.groups]);
   const unreadRoomIds = useMemo<SidebarUnreadRoomIds>(() => {
@@ -566,6 +576,7 @@ export function SidebarChrome({ activeTarget, children }: SidebarChromeProps) {
       roomsById,
       roomVisualOf,
       mutedRoomIds: mutedRooms,
+      pausedAgentIds,
       roomSectionIds: roomSections,
       moveTargetGroups: moveTargets,
       unreadRoomIds,
@@ -596,6 +607,7 @@ export function SidebarChrome({ activeTarget, children }: SidebarChromeProps) {
       roomsById,
       roomVisualOf,
       mutedRooms,
+      pausedAgentIds,
       roomSections,
       moveTargets,
       unreadRoomIds,

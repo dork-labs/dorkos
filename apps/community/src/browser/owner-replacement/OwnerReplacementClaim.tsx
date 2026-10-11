@@ -8,7 +8,7 @@ import {
   communitySettingsPath,
 } from '@dorkos/shared/community-wire';
 import { describeError, hostRequest, RequestError } from '../api.js';
-import { FocusDialog } from '../components/CommunityAdministration.js';
+import { FocusDialog } from '../components/FocusDialog.js';
 import { HostPolicyLinks } from '../components/HostLinks.js';
 import { rememberCommunity } from '../remembered-community.js';
 import { returnedSignIn, takeSignInFailure, useSignInOptions } from '../sign-in-options.js';

@@ -33,6 +33,10 @@ test.describe('Conversation — the peek behind the live lane', () => {
     // Silenced by the fixture, so nothing here can start a real turn. The claims
     // below are published rather than run.
     const room = await roomsApi.createChannel(slug, slug, [ana, bo]);
+    // No lead: these presences are published by hand, and a lead would answer
+    // the unaddressed posts with a real turn and a real chat (DOR-2823).
+    const cleared = await request.patch(`/api/rooms/${room.id}`, { data: { leadAuthorId: null } });
+    if (!cleared.ok()) throw new Error(`Could not clear the lead: ${await cleared.text()}`);
     await roomsApi.postEntries(room.id, [
       'can you log today’s decisions?',
       'and can somebody check the deploy',

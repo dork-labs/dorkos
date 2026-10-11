@@ -126,6 +126,10 @@ import { awaitDispatchDecision } from './launch/dispatch-decision.js';
 import { SESSIONS } from '../../config/constants.js';
 import { startSpan, SPAN, ATTR } from '../observability/index.js';
 import { logError, logger } from '../../lib/logger.js';
+import type {
+  PrivateSessionMessageClaimResult,
+  PreparedPrivateSessionMessage,
+} from './private-messages/acceptance.js';
 
 /**
  * A self-controlled {@link SseResponse} that decouples the session write-lock

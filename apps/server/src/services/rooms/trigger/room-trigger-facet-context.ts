@@ -1,3 +1,4 @@
+import type { TurnReceipts } from '../receipts/turn-receipts.js';
 import type {
   Room,
   RoomEntry,
@@ -28,6 +29,7 @@ export interface OriginalRoomTriggerFacetView {
   readonly held: Map<string, HeldRecord>;
   readonly collector: RoomCollector;
   readonly notices: RoomNoticeLog;
+  readonly receipts: TurnReceipts;
   readonly haltedTurns: Set<string>;
   readonly stoppedHere: Map<string, { roomId: string; authorId: string }>;
   readonly originalDispatch: Readonly<{

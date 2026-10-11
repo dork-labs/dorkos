@@ -153,8 +153,12 @@ router.post('/stop', async (_req, res) => {
   // OFF, and a default install with a stale `tunnel.enabled: true` from a
   // prior session could never self-heal. Stopping a tunnel only ever narrows
   // exposure, so it must always succeed regardless of the login posture.
+  //
+  // It stops the person's OWN tunnel only. DorkOS managed remote access has its
+  // own close (DOR-2086), and never both are open at once, so this route never
+  // needs to reach managed access to keep that true.
   try {
-    await tunnelManager.stop();
+    await tunnelManager.stopOwnTunnel();
 
     // Persist disabled state
     const tunnelConfig = configManager.get('tunnel');

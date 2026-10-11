@@ -42,7 +42,7 @@ import { deriveDorkosSessionId } from '../runtimes/opencode/sessions/session-map
  *
  * @module server/services/search/session-links
  */
-import { codexThreads, opencodeSessions, inArray, type Db } from '@dorkos/db';
+import { chunked, codexThreads, opencodeSessions, inArray, type Db } from '@dorkos/db';
 import { claudeCodeSource, codexSource, openCodeSource } from './registry.js';
 
 /**
@@ -104,11 +104,13 @@ export function resolveSessionIds(
 
   const codexKeys = bySource.get(codexSource.id);
   if (codexKeys !== undefined && codexKeys.size > 0) {
-    const rows = db
-      .select({ sessionId: codexThreads.sessionId, threadId: codexThreads.threadId })
-      .from(codexThreads)
-      .where(inArray(codexThreads.threadId, [...codexKeys]))
-      .all();
+    const rows = chunked([...codexKeys]).flatMap((keys) =>
+      db
+        .select({ sessionId: codexThreads.sessionId, threadId: codexThreads.threadId })
+        .from(codexThreads)
+        .where(inArray(codexThreads.threadId, keys))
+        .all()
+    );
     for (const row of rows) {
       sessions.set(containerKey(codexSource.id, row.threadId), row.sessionId);
     }
@@ -116,11 +118,16 @@ export function resolveSessionIds(
 
   const openCodeKeys = bySource.get(openCodeSource.id);
   if (openCodeKeys !== undefined && openCodeKeys.size > 0) {
-    const rows = db
-      .select({ sessionId: opencodeSessions.sessionId, ocSessionId: opencodeSessions.ocSessionId })
-      .from(opencodeSessions)
-      .where(inArray(opencodeSessions.ocSessionId, [...openCodeKeys]))
-      .all();
+    const rows = chunked([...openCodeKeys]).flatMap((keys) =>
+      db
+        .select({
+          sessionId: opencodeSessions.sessionId,
+          ocSessionId: opencodeSessions.ocSessionId,
+        })
+        .from(opencodeSessions)
+        .where(inArray(opencodeSessions.ocSessionId, keys))
+        .all()
+    );
     for (const row of rows) {
       sessions.set(containerKey(openCodeSource.id, row.ocSessionId), row.sessionId);
     }

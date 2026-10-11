@@ -68,6 +68,8 @@ export interface McpToolSession {
    * that. Read at call time.
    */
   turnPermissionCeiling?: TurnPermissionCeiling;
+  /** The ceiling background work from an earlier ceilinged turn still runs under. */
+  backgroundPermissionCeiling?: TurnPermissionCeiling;
 }
 
 /**

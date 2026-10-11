@@ -44,15 +44,15 @@ export const docs = Object.freeze([
   }),
 ] as const);
 
-// Root's authentic combined-schema migration identifies the reviewed Room watermark.
-// Exact timestamps distinguish published150, published151 and current152 despite shared SQL.
+// Actual generated155 identity with a reviewed FK-safe additive SQL correction.
+// Published Room watermark rows remain separate from the canonical completion.
 export const consolidatedDoc: MigrationEntry & { hash: string } = Object.freeze({
-  idx: 152,
+  idx: 155,
   version: '6',
-  when: 1791639241501,
-  tag: '20261010133401_milky_jocasta',
+  when: 1791690666098,
+  tag: '20261011035106_married_puppet_master',
   breakpoints: true,
-  hash: '44321f0c067d6ce35619f22ac071fcd08bdddd8dec4a7b099f8ce31998b1324f',
+  hash: 'b7390d7499448a3021402bd70f04c0d35096d0015e40305788e6b30fc3ce93c4',
 });
 export const reportBack = Object.freeze({
   idx: 150,
@@ -88,6 +88,46 @@ export const agentReports = Object.freeze({
   hash: 'a7f1de118e0678648345368108a441c4ff7d76cf8be40320eca8127b58c9fa04',
 } as const);
 
+/** Immutable published Room migration identity used for exact history reconciliation. */
+export const publishedRoom152 = Object.freeze({
+  idx: 152,
+  version: '6',
+  when: 1791639241501,
+  tag: '20261010133401_milky_jocasta',
+  breakpoints: true,
+  hash: '44321f0c067d6ce35619f22ac071fcd08bdddd8dec4a7b099f8ce31998b1324f',
+} as const);
+
+/** Immutable shipped Main migration identity used for exact history reconciliation. */
+export const commitments = Object.freeze({
+  idx: 152,
+  version: '6',
+  when: 1791638862326,
+  tag: '20261010132742_commitments',
+  breakpoints: true,
+  hash: '02b6d9816a78dbd9a2117cde805c695426c11226c61d7e21db8f5dcb2930d2c0',
+} as const);
+
+/** Immutable shipped Main migration identity used for exact history reconciliation. */
+export const channelLeads = Object.freeze({
+  idx: 153,
+  version: '6',
+  when: 1791647993524,
+  tag: '20261010155953_channel_leads',
+  breakpoints: true,
+  hash: '6ac61a54875e70b272d9089b1b48f49942e3c2aaa25131df1a94df38ab853d7b',
+} as const);
+
+/** Immutable shipped Main migration identity used for exact history reconciliation. */
+export const agentPauses = Object.freeze({
+  idx: 154,
+  version: '6',
+  when: 1791654717694,
+  tag: '20261010175157_agent_pauses',
+  breakpoints: true,
+  hash: 'a9bebbafc28941a7ebc1aefe7962af56ad50c1efe71968bbf6c20601f015bdde',
+} as const);
+
 /** Reject invalid legacy Doc migration bookkeeping with the original history error. */
 export function refuse(detail: string): never {
   throw new Error(`Invalid legacy Doc migration history: ${detail}`);
@@ -112,5 +152,17 @@ export function reviewedSql(folder: string, expected: MigrationEntry & { hash: s
   const bytes = readFileSync(path.join(folder, `${entry.tag}.sql`));
   if (createHash('sha256').update(bytes).digest('hex') !== expected.hash)
     refuse('reviewed canonical SQL differs');
+  return bytes;
+}
+
+/** Read immutable published Room SQL from its actual retained historical location. */
+export function reviewedPublishedSql(
+  folder: string,
+  expected: MigrationEntry & { hash: string }
+): Buffer {
+  const location = expected === publishedRoom152 ? folder : path.join(folder, 'legacy-doc');
+  const bytes = readFileSync(path.join(location, `${expected.tag}.sql`));
+  if (createHash('sha256').update(bytes).digest('hex') !== expected.hash)
+    refuse('published Room SQL differs from its reviewed immutable identity');
   return bytes;
 }

@@ -15,7 +15,7 @@ import type { PermissionModeDescriptor } from '@dorkos/shared/agent-runtime';
 import { actsWithoutAsking, isNoLooserThan } from '@dorkos/shared/permission-semantics';
 import { logError, logger } from '../../../../lib/logger.js';
 import { runtimeRegistry } from '../../../core/runtime-registry.js';
-import { turnPermissionMode } from '../turn-permission.js';
+import { gatePermissionMode } from '../turn-permission.js';
 import type { McpToolSession } from './types.js';
 
 /**
@@ -67,7 +67,11 @@ export function runningPermissionMode(
   session:
     | Pick<
         McpToolSession,
-        'permissionMode' | 'model' | 'autoModeConfirmedFor' | 'turnPermissionCeiling'
+        | 'permissionMode'
+        | 'model'
+        | 'autoModeConfirmedFor'
+        | 'turnPermissionCeiling'
+        | 'backgroundPermissionCeiling'
       >
     | undefined
 ): string | undefined {
@@ -75,10 +79,15 @@ export function runningPermissionMode(
   // own level for that turn, and must start nothing above it (spec
   // `trusted-by-default-flip` §4).
   const mode = session
-    ? turnPermissionMode({
+    ? gatePermissionMode({
         permissionMode: session.permissionMode,
         ...(session.turnPermissionCeiling !== undefined
           ? { turnPermissionCeiling: session.turnPermissionCeiling }
+          : {}),
+        // And background work an earlier ceilinged turn left running, which can
+        // call `session_start` too (`warm-ceiling.ts`).
+        ...(session.backgroundPermissionCeiling !== undefined
+          ? { backgroundPermissionCeiling: session.backgroundPermissionCeiling }
           : {}),
       })
     : undefined;

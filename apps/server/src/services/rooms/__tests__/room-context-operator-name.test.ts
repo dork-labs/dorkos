@@ -44,6 +44,9 @@ async function contextFor(opts: {
     { kind: 'channel', title: 'Release train', members: [], agentPaths: ['/agents/ana'] },
     harness.human
   );
+  // No lead: this case is about how the operator is named, and a lead would
+  // answer the unaddressed post (DOR-2823).
+  harness.service.updateRoom(room.id, harness.human, { leadAuthorId: null });
   if (opts.secondPerson) {
     const dee = harness.authors.resolve({
       kind: 'human',

@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from 'vitest';
 import type { StreamEvent, ErrorEvent } from '@dorkos/shared/types';
 import { guardTurnErrors } from '../trigger-turn.js';
 import { SessionStateProjector } from '../session-state-projector.js';
+import { AgentPausedError } from '../../mesh/pause/agent-pause.js';
 
 /** An async source that yields nothing and throws the given error mid-turn. */
 function throwingSource(err: unknown): AsyncIterable<StreamEvent> {
@@ -52,5 +53,18 @@ describe('guardTurnErrors', () => {
     expect(errorData(events)?.category).toBe('execution_error');
     // The original error is reported to the caller.
     expect(onError).toHaveBeenCalledOnce();
+  });
+
+  it('names a paused agent’s refusal by its own code, with no category or stack', async () => {
+    const projector = new SessionStateProjector('sess-paused');
+    const refused = new AgentPausedError({ id: 'agent-1', name: 'Scout' });
+    const events = await drain(guardTurnErrors(projector, throwingSource(refused), vi.fn()));
+
+    expect(errorData(events)).toEqual({
+      message: 'Scout is paused. Resume it before it can work again.',
+      code: 'AGENT_PAUSED',
+      reason: 'agent-1',
+    });
+    expect(events.at(-1)?.type).toBe('done');
   });
 });

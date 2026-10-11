@@ -616,7 +616,7 @@ describe('feedback route', () => {
       // someone moves the mount below `express.json`, which is the regression.
       const source = await readFile(new URL('../../app.ts', import.meta.url), 'utf8');
       const scoped = source.indexOf("app.use('/api/feedback', feedbackJsonParser)");
-      const appWide = source.indexOf("app.use(express.json({ limit: '1mb' }))");
+      const appWide = source.indexOf('app.use(express.json({ limit: API_JSON_BODY_LIMIT }))');
 
       expect(scoped).toBeGreaterThan(-1);
       expect(appWide).toBeGreaterThan(-1);

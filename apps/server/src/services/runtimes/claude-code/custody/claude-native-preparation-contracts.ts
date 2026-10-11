@@ -1,3 +1,4 @@
+import type { SessionEndingPort } from '../end-sessions.js';
 import type { Query } from '@anthropic-ai/claude-agent-sdk';
 import type {
   AgentRegistryPort,
@@ -95,6 +96,7 @@ export interface OriginalClaudeNativePreparationView {
   readonly transcriptReader: TranscriptReader;
   readonly cwd: string;
   readonly persistent: PersistentDispatch;
+  readonly ending: SessionEndingPort;
   readonly relayPreparing: Map<
     string,
     { retired: boolean; cleanupFailed?: boolean; cleanupCause?: unknown }

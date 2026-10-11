@@ -160,6 +160,8 @@ describe('every source-scanning guard in this package shares the one stripper', 
 // These cases name two real files by path, on purpose: they are the files the
 // two live failures hid in, and a fixture copy of them would stop being the
 // evidence. If either moves, follow it here rather than deleting the case.
+// The route glob that hid the first one lived in `app.ts` until Better Auth
+// moved to the Hono chain (DOR-2807); it is `http/better-auth.ts`'s now.
 describe('the two files the failures were found in', () => {
   /** One lexed source by its path relative to `apps/server/src`. */
   function lexed(relative: string): string {
@@ -168,14 +170,14 @@ describe('the two files the failures were found in', () => {
     return file.code;
   }
 
-  it("app.ts's router mount table survives its own route glob", () => {
-    // Everything below `app.all('/api/auth/*splat', …)`, which line-comments-first
+  it("better-auth.ts's code survives its own route glob", () => {
+    // Everything below `app.all('/api/auth/*', …)`, which line-comments-first
     // stripping lost to a fake block comment opened by that route string.
-    const code = lexed('app.ts');
+    const code = lexed(path.join('http', 'better-auth.ts'));
 
-    expect(code).toContain('sessionGate');
-    expect(code).toContain('resolveAgentIdentity');
-    expect(code).toContain('sessionRoutes');
+    expect(code).toContain('requestForBetterAuth');
+    expect(code).toContain('carriesBody');
+    expect(code).toContain('httpVersionMajor');
   });
 
   it("token.ts's code survives the apostrophe in its own TSDoc", () => {
@@ -185,10 +187,10 @@ describe('the two files the failures were found in', () => {
     expect(code).toContain('export');
   });
 
-  it('sees a call seeded inside the span app.ts used to hide', async () => {
-    const file = path.join(SERVER_SRC, 'app.ts');
+  it('sees a call seeded inside the span the route glob used to hide', async () => {
+    const file = path.join(SERVER_SRC, 'http', 'better-auth.ts');
     const lines = (await readFile(file, 'utf-8')).split('\n');
-    const glob = lines.findIndex((line) => line.includes('/api/auth/*splat'));
+    const glob = lines.findIndex((line) => line.includes("'/api/auth/*'"));
     expect(glob).toBeGreaterThan(-1);
 
     lines.splice(glob + 1, 0, "    applyShape('evil');");
@@ -198,10 +200,10 @@ describe('the two files the failures were found in', () => {
     expect(lex(lines.join('\n'), file).code).toContain('applyShape(');
   });
 
-  it('does not see the same call seeded inside a real comment in app.ts', async () => {
-    const file = path.join(SERVER_SRC, 'app.ts');
+  it('does not see the same call seeded inside a real comment there', async () => {
+    const file = path.join(SERVER_SRC, 'http', 'better-auth.ts');
     const lines = (await readFile(file, 'utf-8')).split('\n');
-    const glob = lines.findIndex((line) => line.includes('/api/auth/*splat'));
+    const glob = lines.findIndex((line) => line.includes("'/api/auth/*'"));
 
     lines.splice(glob + 1, 0, "    // applyShape('evil');", "    /* applyShape('evil'); */");
 

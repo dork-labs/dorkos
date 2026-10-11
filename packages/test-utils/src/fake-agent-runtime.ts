@@ -14,6 +14,7 @@ import type {
   DeliverIntoTurnOpts,
   RuntimeDeliveryResult,
   SessionUpdateResult,
+  LiveSessionRef,
 } from '@dorkos/shared/agent-runtime';
 import type { RuntimeCommandIntentId } from '@dorkos/shared/command-intents';
 import type { McpServerEntry } from '@dorkos/shared/transport';
@@ -551,6 +552,14 @@ export class FakeAgentRuntime implements AgentRuntime {
   stopTask = vi.fn<(sessionId: string, taskId: string) => Promise<InterruptReceipt>>();
   /** Defaults to `not-running` / `no-open-turn`; see {@link FakeAgentRuntime.stopTask}. */
   interruptQuery = vi.fn<(sessionId: string) => Promise<InterruptReceipt>>();
+  /**
+   * Ends nothing by default (`[]`): this fake holds no process between turns.
+   * Spied so a pause test can assert every runtime was asked, and which
+   * sessions it picked.
+   */
+  endSessionsWhere = vi
+    .fn<(belongs: (session: LiveSessionRef) => boolean) => Promise<string[]>>()
+    .mockResolvedValue([]);
   getSessionSnapshot = vi
     .fn<(ctx: SessionOpts, sessionId: string) => Promise<SessionSnapshot>>()
     .mockResolvedValue({

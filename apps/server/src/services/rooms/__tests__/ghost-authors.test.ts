@@ -213,6 +213,9 @@ describe('typing a ghost’s name is answered, not swallowed', () => {
     const harness = liveHarness();
     registerAgent(harness.db, { id: 'ULID_ANA', projectPath: ANA_PATH, name: 'ana' });
     const seeded = channelWith(harness, [ANA_PATH]);
+    // No lead: this case is about what a ghost's NAME reaches, and a lead would
+    // answer the unaddressed post (DOR-2823).
+    harness.service.updateRoom(seeded.id, harness.human, { leadAuthorId: null });
     const ghost = harness.authors.resolveAgent(ANA_PATH, 'ana');
     harness.db.delete(agents).where(eq(agents.projectPath, ANA_PATH)).run();
     return { harness, roomId: seeded.id, ghostId: ghost.id };

@@ -95,13 +95,19 @@ describe('SessionListBroadcaster — multi-runtime fan-in (ADR-0310)', () => {
   let broadcaster: SessionListBroadcaster;
   let runtimeA: FakeAgentRuntime;
   let runtimeB: FakeAgentRuntime;
-  let broadcastSpy: ReturnType<typeof vi.spyOn>;
+  /** What was broadcast, by name and payload; the audience is the asks suite's to check. */
+  let broadcastSpy: ReturnType<typeof vi.fn<(name: string, data: unknown) => void>>;
 
   beforeEach(() => {
     broadcaster = new SessionListBroadcaster();
     runtimeA = new FakeAgentRuntime();
     runtimeB = new FakeAgentRuntime();
-    broadcastSpy = vi.spyOn(eventFanOut, 'broadcast');
+    broadcastSpy = vi.fn<(name: string, data: unknown) => void>();
+    const broadcast = eventFanOut.broadcast.bind(eventFanOut);
+    vi.spyOn(eventFanOut, 'broadcast').mockImplementation((name, data, audience) => {
+      broadcastSpy(name, data);
+      broadcast(name, data, audience);
+    });
   });
 
   afterEach(async () => {

@@ -2,6 +2,15 @@ import { tool } from '@anthropic-ai/claude-agent-sdk';
 import { z } from 'zod';
 import type { McpToolDeps } from './types.js';
 import { jsonContent } from './types.js';
+import { readableSessionIds } from '../../../audit/session-visibility.js';
+import type { AuditReader } from '../../../audit/visibility.js';
+
+/**
+ * Who reads a binding session's id: an agent this server cannot name, since
+ * the tool runs in a session and is handed no identity. It sees ids open to
+ * every agent and never a person's own chat (spec `audit-trail` §3.4).
+ */
+const UNNAMED_AGENT: AuditReader = { kind: 'agent', accountId: 'unidentified' };
 
 /** Guard that returns an error response when BindingStore is not available. */
 function requireBindingStore(deps: McpToolDeps) {
@@ -87,6 +96,12 @@ export function createBindingListSessionsHandler(deps: McpToolDeps) {
       : deps.bindingRouter.getAllSessions();
 
     const adapters = deps.adapterManager?.listAdapters() ?? [];
+    // A chat bridged from a chat app is a person's own: its subject is enough
+    // to message them, so the session id, a handle on their history, is left out.
+    const readable = readableSessionIds(
+      UNNAMED_AGENT,
+      rawSessions.map((s) => s.sessionId)
+    );
     const adapterMap = new Map(adapters.map((a) => [a.config.id, a]));
 
     const sessions = rawSessions.map((s) => {
@@ -106,7 +121,7 @@ export function createBindingListSessionsHandler(deps: McpToolDeps) {
         scope: s.scope,
         chatId,
         ...(s.userId ? { userId: s.userId } : {}),
-        sessionId: s.sessionId,
+        ...(readable.has(s.sessionId) ? { sessionId: s.sessionId } : {}),
         lastActivityAt: s.lastActivityAt,
         subject: chatId ? `relay.human.${adapterType}.${adapterId}.${chatId}` : undefined,
       };
@@ -158,7 +173,7 @@ export function bindingToolDefinitions(deps: McpToolDeps) {
     ),
     tool(
       'binding_list_sessions',
-      'List active chat sessions for adapter-agent bindings. Returns active chats with pre-computed relay subjects for outbound messaging. Use this to discover what channels are available for sending messages.',
+      "List active chat sessions for adapter-agent bindings. Returns active chats with pre-computed relay subjects for outbound messaging. Use this to discover what channels are available for sending messages. A person's own chat lists its subject but not its session id.",
       {
         bindingId: z
           .string()

@@ -9,7 +9,8 @@
 import { describe, expect, vi } from 'vitest';
 import type { AgentRuntime } from '@dorkos/shared/agent-runtime';
 import { FakeAgentRuntime } from '@dorkos/test-utils';
-import { warnIfTurnCannotPost } from '../room-turn-runner.js';
+import { createSessionRoomTurnRunner, warnIfTurnCannotPost } from '../room-turn-runner.js';
+import type { RoomTurnRequest } from '../room-trigger.js';
 import { registerOriginalNativeLaunchCase } from '../repo/__tests__/room-original-native-case.js';
 import { registerOriginalNativeDefaultsCase } from '../repo/__tests__/room-original-defaults-case.js';
 import { registerOriginalNativeHomeResumeCase } from '../repo/__tests__/room-original-home-resume-case.js';
@@ -20,6 +21,41 @@ import { runOriginalLaunchOwnerRollbackComponent } from '../repo/__tests__/room-
 
 describe('createSessionRoomTurnRunner', () => {
   describe('which runtime takes the turn', () => {
+    it('starts no turn for a paused agent, and writes nothing (spec audit-trail PR5)', async () => {
+      const { initAgentPause, resetAgentPause } = await import('../../mesh/pause/agent-pause.js');
+      const { refusePausedRoomTurn } = await import('../turn-guards/paused-turn.js');
+      const recordHeld = vi.fn();
+      const pausedAgentOfTurn = vi.fn((opts: { forAgent?: string }) =>
+        opts.forAgent === '/repo/ana' ? { id: 'agent-ana', name: 'Ana' } : undefined
+      );
+      const waitMs = vi.fn(() => 500);
+      const runner = createSessionRoomTurnRunner({ waitMs });
+      // Only these DATA fields may be read before the pause refuses the turn.
+      // The genuine factory owns the private key; no request grants launch authority.
+      const pausedRequest = {
+        cwd: '/repo/ana',
+        agentPath: '/repo/ana',
+        sessionId: null,
+      } as RoomTurnRequest;
+      initAgentPause({ pausedAgentOfTurn, recordHeld } as never);
+      try {
+        for (const foreignKey of [{}, runner, new Proxy({}, {})]) {
+          expect(() => refusePausedRoomTurn(foreignKey, pausedRequest)).toThrow();
+        }
+        expect(pausedAgentOfTurn).not.toHaveBeenCalled();
+        expect(recordHeld).not.toHaveBeenCalled();
+        await expect(runner.run(pausedRequest)).rejects.toMatchObject({ code: 'AGENT_PAUSED' });
+        // The refusal precedes the first original wait/runtime/placement work.
+        expect(waitMs).not.toHaveBeenCalled();
+        expect(recordHeld).toHaveBeenCalledWith(
+          { id: 'agent-ana', name: 'Ana' },
+          expect.objectContaining({ via: 'room' })
+        );
+      } finally {
+        resetAgentPause();
+      }
+    });
+
     registerOriginalNativeLaunchCase(
       'runner-bound-codex',
       'keeps a running conversation on the runtime that started it, whatever the manifest now says'

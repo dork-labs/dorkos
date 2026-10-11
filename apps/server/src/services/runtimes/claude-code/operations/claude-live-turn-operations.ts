@@ -1,6 +1,6 @@
+import { stopCreditsSessions as stopOriginalClaudeCreditsSessions } from '../end-sessions.js';
 import { readOriginalClaudeNativePreparationView } from '../claude-code-runtime.js';
 import type { DeliverIntoTurnOpts, RuntimeDeliveryResult } from '@dorkos/shared/agent-runtime';
-import { isCreditsClaudeRoot } from '../credits-root.js';
 import { SESSIONS } from '../../../../config/constants.js';
 
 /** Execute original deliverIntoTurn behavior after actual runtime private-key admission. */
@@ -54,20 +54,9 @@ export function isHelperWorking(ownerKey: object, sessionId: string): boolean {
 }
 
 /** Execute original stopCreditsSessions behavior after actual runtime private-key admission. */
-export async function stopCreditsSessions(ownerKey: object): Promise<void> {
-  const facet = readOriginalClaudeNativePreparationView(ownerKey);
-  const ids = facet.sessionStore.sessionIdsWhere((session) => {
-    const root = session.launchedAccountRoot ?? session.accountRoot;
-    return root !== undefined && isCreditsClaudeRoot(root);
-  });
-  for (const id of ids) {
-    await facet.interruptQuery(id).catch(() => undefined);
-    // Evicted, not reaped: a polite reap declines a process still holding
-    // background work, and a revoked token must not stay live for hours
-    // behind a running shell (DOR-2065).
-    facet.persistent.forget(id);
-    await facet.pumps.evict(id).catch(() => undefined);
-  }
+export function stopCreditsSessions(ownerKey: object): Promise<void> {
+  readOriginalClaudeNativePreparationView(ownerKey);
+  return stopOriginalClaudeCreditsSessions(ownerKey);
 }
 
 /** Execute original reapSession behavior after actual runtime private-key admission. */

@@ -8,7 +8,13 @@ import {
 } from '@/layers/entities/team';
 import { usePendingRead, useProfileDeepLink } from '@/layers/shared/model';
 import { AgentGhostRows } from '@/layers/features/agents-list';
-import { identityLinkErrorMessage, useSetIdentityLinkedToMe } from '@/layers/features/profile';
+import { CommitmentList, rosterNameLookup } from '@/layers/features/commitments';
+import {
+  deriveRelationship,
+  identityLinkErrorMessage,
+  useSetIdentityLinkedToMe,
+} from '@/layers/features/profile';
+import type { Commitment } from '@dorkos/shared/commitment-schemas';
 import {
   TeamRosterGrid,
   TeamRosterSkeleton,
@@ -90,6 +96,20 @@ export function TeamPage({ filters, onFiltersChange }: TeamPageProps) {
   const visible = useMemo(() => filterTeamMembers(roster, activeFilters), [roster, activeFilters]);
   const people = useMemo(() => roster.filter((member) => member.kind === 'human'), [roster]);
   const hasAgents = roster.some((member) => member.kind === 'agent');
+  const nameOf = useMemo(() => rosterNameLookup(roster), [roster]);
+  // You can change your own agents' commitments (and DorkBot's), never someone
+  // else's: the same rule the profile uses for its controls.
+  const canChange = useMemo(() => {
+    const yours = new Set(
+      roster
+        .filter((member) => {
+          const relationship = deriveRelationship(member, roster);
+          return relationship === 'managed' || relationship === 'system';
+        })
+        .flatMap((member) => (member.agent?.manifestId ? [member.agent.manifestId] : []))
+    );
+    return (commitment: Commitment) => yours.has(commitment.agentId);
+  }, [roster]);
   // Whether a control is hiding anyone. "Nothing matched" and "there is nobody
   // here" are different facts, and one of them is a lie when a filter is on.
   const isNarrowed =
@@ -161,6 +181,16 @@ export function TeamPage({ filters, onFiltersChange }: TeamPageProps) {
         <div className="flex justify-center py-6">
           <AgentGhostRows />
         </div>
+      )}
+      {/* Every agent's promises, readable by everyone (spec `heartbeats` §12).
+          Below the roster, and only once there are agents to have promised. */}
+      {!isLoading && hasAgents && (
+        <section aria-labelledby="team-commitments" className="flex flex-col gap-2 pt-2">
+          <h2 id="team-commitments" className="text-sm font-medium">
+            Commitments
+          </h2>
+          <CommitmentList nameOf={nameOf} canChange={canChange} />
+        </section>
       )}
     </PageContainer>
   );

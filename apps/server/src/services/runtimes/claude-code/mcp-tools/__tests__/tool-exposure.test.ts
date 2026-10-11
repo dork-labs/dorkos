@@ -471,9 +471,11 @@ describe('in-session tool exposure', () => {
     // `spin-off-chats` §1), all three DEFERRED on a plain session.
     // 124 -> 118 (spec `spin-off-chats` §7): the six relay send, inbox and
     // endpoint tools retire. Both counts move by the same amounts.
-    expect(tools).toHaveLength(123);
-    expect(deferred).toHaveLength(112);
-    // Five owned Doc management/task tools remain deferred: 123 total, 112 deferred.
+    // The combined surface contains 39 hand tools and 92 registry tools,
+    // including all ten Doc verbs and Main's commitment, audit and pause tools.
+    // The eleven plain-session eager tools leave 120 searchable deferred tools.
+    expect(tools).toHaveLength(131);
+    expect(deferred).toHaveLength(120);
     for (const name of [
       'audit_verify',
       'configure_doc_channel',

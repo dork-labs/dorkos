@@ -2,6 +2,8 @@ import { createMockBinding } from './mock-relay-and-readiness.js';
 import { agentBrowserConnection } from '@dorkos/shared/agent-browser';
 import crypto from 'node:crypto';
 import { vi } from 'vitest';
+import { commitmentTransportMocks } from './mock-commitments.js';
+import { roomFileTransportMocks } from './mock-room-files.js';
 import type {
   Session,
   StreamEvent,
@@ -12,6 +14,7 @@ import type {
   UiCanvasContent,
 } from '@dorkos/shared/types';
 import type { Transport } from '@dorkos/shared/transport';
+import { transportSliceMocks } from './mock-transport-slices.js';
 import type { AccountUsage } from '@dorkos/shared/account-usage';
 import type { LimitPlan, SessionLimit } from '@dorkos/shared/session-stream';
 import type { TrackerItemRef } from '@dorkos/shared/types';
@@ -288,18 +291,6 @@ const mockAgent: AgentManifest = {
 async function* emptyAsyncIterable(): AsyncIterable<never> {}
 
 /**
- * The refusal a room with no files of its own answers with, shaped the way the
- * HTTP adapter shapes it: an `Error` carrying `code` and `status`, which is
- * what every client reads to tell one refusal from another.
- */
-function mockRoomHasNoRepoError(): Error & { code: string; status: number } {
-  return Object.assign(new Error('This room does not have files of its own.'), {
-    code: 'ROOM_HAS_NO_REPO',
-    status: 409,
-  });
-}
-
-/**
  * One page of a room's history, shaped the way `GET /api/rooms/:id/entries`
  * shapes it — the page, and the thread roots it points at from outside itself.
  *
@@ -493,7 +484,6 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
     createSessionLocation: vi.fn().mockResolvedValue({ id: 'test-location' }),
     getSessionLocation: vi.fn().mockResolvedValue({ cwd: '/test/project' }),
     markSessionOpened: vi.fn().mockResolvedValue(undefined),
-    getChatActivity: vi.fn().mockResolvedValue({ sent: [], stops: [] }),
     getSessionRuntimeType: vi.fn().mockResolvedValue('claude-code'),
     // Nothing stored, which is what a brand-new session id genuinely has. A
     // test about a settings change made BEFORE the first message overrides this
@@ -697,22 +687,7 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
     getRoom: vi.fn(),
     updateRoom: vi.fn(),
     listRoomEntries: vi.fn().mockResolvedValue(mockRoomEntryPage()),
-    // A room with no files of its own, which is what nearly every room is: the
-    // surfaces that offer files read this code and show nothing at all. A test
-    // about a room's files overrides both; a test about anything else must not
-    // have to know rooms can have files.
-    readRoomFiles: vi.fn().mockRejectedValue(mockRoomHasNoRepoError()),
-    readRoomFileContent: vi.fn().mockRejectedValue(mockRoomHasNoRepoError()),
-    readRoomRepoStatus: vi.fn().mockRejectedValue(mockRoomHasNoRepoError()),
-    saveRoomFile: vi.fn().mockRejectedValue(mockRoomHasNoRepoError()),
-    uploadRoomFiles: vi.fn().mockRejectedValue(mockRoomHasNoRepoError()),
-    moveRoomFile: vi.fn().mockRejectedValue(mockRoomHasNoRepoError()),
-    deleteRoomFile: vi.fn().mockRejectedValue(mockRoomHasNoRepoError()),
-    saveAttachmentToRoomFiles: vi.fn().mockRejectedValue(mockRoomHasNoRepoError()),
-    repairRoomMain: vi.fn().mockRejectedValue(mockRoomHasNoRepoError()),
-    mergeRoomMain: vi.fn().mockRejectedValue(mockRoomHasNoRepoError()),
-    readRoomCanvasDiff: vi.fn().mockRejectedValue(mockRoomHasNoRepoError()),
-    writeRoomCanvasDiff: vi.fn().mockRejectedValue(mockRoomHasNoRepoError()),
+    ...roomFileTransportMocks(),
     postToRoom: vi.fn().mockResolvedValue({ accepted: true, entryId: 'entry-mock', seq: 1 }),
     // Nothing attached, by default: a test that is about attachments overrides
     // this, and every other test posts a message with no files the way a person
@@ -1270,8 +1245,7 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
     prepareReset: vi.fn().mockResolvedValue({ token: 'test-reset-token' }),
     resetAllData: vi.fn().mockResolvedValue({ message: 'Reset initiated. Server will restart.' }),
     restartServer: vi.fn().mockResolvedValue({ message: 'Restart initiated.' }),
-    // Activity Feed
-    listActivityEvents: vi.fn().mockResolvedValue({ items: [], nextCursor: null }),
+    ...transportSliceMocks(),
     // Templates
     getTemplates: vi.fn().mockResolvedValue([]),
     // Marketplace
@@ -1373,6 +1347,7 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
       exceptions: [],
       agentCount: 0,
     }),
+    ...commitmentTransportMocks(),
     getAgentPermissions: vi.fn().mockImplementation((agentId: string) =>
       Promise.resolve({
         agentId,

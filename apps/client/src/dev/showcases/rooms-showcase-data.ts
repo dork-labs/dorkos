@@ -189,6 +189,30 @@ export const CHANNEL_ROOM: RoomWithRoster = createRoomWithRoster({
 });
 
 /**
+ * The same channel with a lead (DOR-2823): Mio Clicker PM answers whatever
+ * nobody else is answering, and its row wears the Lead badge.
+ */
+export const LEAD_CHANNEL_ROOM: RoomWithRoster = createRoomWithRoster({
+  id: 'room-general-led',
+  members: [MEMBER.reader, MEMBER.pm, MEMBER.code, MEMBER.kai],
+  leadAuthorId: MEMBER.pm.authorId,
+});
+
+/**
+ * #team, whose lead is the install's default agent — named in the panel, never
+ * offered as a choice there.
+ */
+export const TEAM_ROOM: RoomWithRoster = createRoomWithRoster({
+  id: 'room-team',
+  slug: 'team',
+  title: 'Team',
+  topic: 'Everyone, every agent',
+  wellKnown: 'team',
+  members: [MEMBER.reader, MEMBER.pm, MEMBER.code, MEMBER.kai],
+  leadAuthorId: MEMBER.pm.authorId,
+});
+
+/**
  * A channel whose topic is a paragraph, with a link and one 200-character word
  * in it — the case the panel used to cut off after a few words (DOR-2117). The
  * unbroken tokens are the hard part: they have no space to wrap at, so they

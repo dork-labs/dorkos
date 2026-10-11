@@ -39,7 +39,7 @@ export { useIsBelowDesktop } from './media/use-is-below-desktop';
 export { useIsTouchOnly } from './media/use-is-touch-only';
 export { useVisualViewportBottomInset } from './viewport/use-visual-viewport-inset';
 export { useFavicon } from './use-favicon';
-export { useDocumentTitle } from './use-document-title';
+export { useDocumentTitle, type DocumentTitleState } from './use-document-title';
 export { useElapsedTime } from './use-elapsed-time';
 export {
   useIdleDetector,
@@ -109,6 +109,13 @@ export {
   type CreditsOfferProps,
   type CreditsOfferSlot,
 } from './credits-offer/credits-offer-slot';
+export {
+  LinkChipProvider,
+  useLinkChipSlot,
+  type LinkChipAnchorProps,
+  type LinkChipRenderProps,
+  type LinkChipSlot,
+} from './link-chip/link-chip-slot';
 export { useCommunityAuthority } from './use-community-authority';
 export {
   commitCommunityRouteEpoch,
@@ -159,6 +166,7 @@ export type {
   MessageGrouping,
   GroupPosition,
   MessageAuthor,
+  TransportErrorInfo,
 } from './chat-message-types';
 export { useTabVisibility } from './use-tab-visibility';
 export {
@@ -200,6 +208,7 @@ export {
   type StatusBarContribution,
   type TabMarker,
   useTabMarker,
+  usePageBadge,
   menuExtensionPages,
   useMenuExtensionPages,
   useExtensionPageAtPath,

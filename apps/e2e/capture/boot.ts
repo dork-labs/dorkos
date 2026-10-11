@@ -58,6 +58,9 @@ export function baseEnv(): NodeJS.ProcessEnv {
     // branded, "connected" option to show instead of the internal 'test-mode'
     // label. Still the same fake runtime underneath; only the type key differs.
     DORKOS_TEST_RUNTIME_CLAUDE_ALIAS: 'true',
+    // The capture never opens the fake Cloud's approval page, so the fake
+    // approves its own code after two polls and the linked state can be shot.
+    DORKOS_TEST_CLOUD_AUTO_APPROVE: 'true',
     DORKOS_PORT: String(SERVER_PORT),
     VITE_PORT: String(VITE_PORT),
     DORK_HOME: CAPTURE_HOME,

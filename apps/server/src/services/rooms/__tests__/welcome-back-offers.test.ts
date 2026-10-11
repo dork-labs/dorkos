@@ -239,7 +239,7 @@ describe('offers in #team', () => {
     }
     // #team names a fallback seat, so an unaddressed post reaches somebody.
     // Nothing this file writes may be that somebody.
-    service.setFallbackSeat(room.id, human, ana);
+    service.setLead(room.id, human, ana);
     return new WelcomeBackGreeter({
       settings: () => settings,
       teamRoomId: () => room.id,

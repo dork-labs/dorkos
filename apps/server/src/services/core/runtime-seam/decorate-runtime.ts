@@ -11,6 +11,7 @@ import { traceRuntime, watchRuntimeSignin } from '../../observability/index.js';
 import { holdAwakeDuringTurns } from '../keep-awake/hold-during-turn.js';
 import { recordTurnLevels } from '../turn-power/turn-levels.js';
 import { recordToolUse } from '../../audit/record-tool-use.js';
+import { holdPausedAgents } from '../../mesh/pause/hold-paused-turns.js';
 
 /**
  * Wrap one runtime in every registration-seam decorator, innermost first:
@@ -30,6 +31,10 @@ import { recordToolUse } from '../../audit/record-tool-use.js';
  * 5. **Keep-awake** wraps outermost so its hold spans everything inside it: the
  *    computer stays awake for as long as the caller is consuming the turn,
  *    whoever the caller is (spec `keep-awake`).
+ * 6. **The pause hold** wraps everything: a turn for a paused agent is refused
+ *    before any decorator inside sees it, so a held turn keeps nothing awake
+ *    and records no tool use, and every turn that does run can be stopped by a
+ *    pause (spec `audit-trail` PR5).
  *
  * @param runtime - The runtime being registered.
  * @param storedModeOf - Reads a session's stored permission mode, synchronously.
@@ -38,7 +43,9 @@ export function decorateRuntime(
   runtime: AgentRuntime,
   storedModeOf: (sessionId: string) => string | null | undefined
 ): AgentRuntime {
-  return holdAwakeDuringTurns(
-    recordToolUse(watchRuntimeSignin(traceRuntime(recordTurnLevels(runtime, storedModeOf))))
+  return holdPausedAgents(
+    holdAwakeDuringTurns(
+      recordToolUse(watchRuntimeSignin(traceRuntime(recordTurnLevels(runtime, storedModeOf))))
+    )
   );
 }

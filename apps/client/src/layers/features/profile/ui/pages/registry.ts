@@ -61,11 +61,21 @@ const PROFILE_PAGES: Partial<Record<ProfilePageId, ProfilePageDefinition>> = {
     title: 'Schedules',
     component: lazy(() => import('./TasksPage').then((m) => ({ default: m.TasksPage }))),
   },
+  commitments: {
+    title: 'Commitments',
+    component: lazy(() =>
+      import('./CommitmentsPage').then((m) => ({ default: m.CommitmentsPage }))
+    ),
+  },
   notifications: {
     title: 'Notifications',
     component: lazy(() =>
       import('./NotificationsPage').then((m) => ({ default: m.NotificationsPage }))
     ),
+  },
+  activity: {
+    title: 'Activity',
+    component: lazy(() => import('./ActivityPage').then((m) => ({ default: m.ActivityPage }))),
   },
   skills: {
     title: 'Skills',

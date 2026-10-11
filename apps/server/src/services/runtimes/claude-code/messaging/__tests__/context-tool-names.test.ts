@@ -113,7 +113,7 @@ vi.mock('@dorkos/shared/manifest', () => ({
     personaEnabled: true,
   }),
 }));
-vi.mock('../../../../lib/logger.js', () => ({
+vi.mock('../../../../../lib/logger.js', () => ({
   logger: { info: vi.fn(), error: vi.fn(), warn: vi.fn(), debug: vi.fn() },
 }));
 
@@ -494,8 +494,9 @@ describe('the claude-code prompt names tools the way the runtime exposes them', 
     // 121 -> 124 for `chat_send`, `chat_read` and `chat_stop` (spec
     // `spin-off-chats` §1); 124 -> 118 (§7): the six relay send, inbox and
     // endpoint tools retire. `<chat_tools>` names the three chat tools prefixed.
-    expect(advertised.size).toBe(123);
-    // Five owned Doc management/task tools remain advertised: 123 total.
+    // The combined surface contains 39 hand tools and 92 registry tools,
+    // including all ten Doc verbs and Main's commitment, audit and pause tools.
+    expect(advertised.size).toBe(131);
     for (const name of [
       'audit_verify',
       'configure_doc_channel',

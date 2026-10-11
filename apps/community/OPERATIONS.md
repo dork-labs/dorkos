@@ -211,7 +211,7 @@ When you learn that a message, a file, a community's icon, or a whole community 
 
 Take something down from the community's record on the host page, under **Take down content**, or with `POST /api/v1/host/communities/:id/takedowns` ([the API reference](API.md#takedowns)). The host page warns you when there is no evidence store, and lists each takedown with where its copy stands, a **Try again** for a copy that failed, and a **Release** (with your password) for bytes kept on this server; Release is not offered while the community is under a legal hold. Only a host operator, confirming with their password, or a program with a key that has `communities:takedown` can take anything down. Give that permission to few keys. A takedown key can remove content but can never read it: no takedown route returns what was removed. Every takedown writes a host audit row and a row in the community's own audit log.
 
-Choose the reason that fits: `child_safety`, `illegal_content`, `legal_order`, or `terms_violation`, and add your own case number as the reference if you have one. The owner and admins see the reason as one sentence (for example "It was reported to the server admin as illegal.") and the reference under **Removed by the server admin** in the community's settings, and the author sees it once as a banner, unless you send `notify: false`. That is the default for `child_safety`, because telling the uploader can tip off someone under investigation. With it off, nobody is told and the owner's exports leave the audit row out, but the removal message still shows: content cannot be both gone and unexplained. A removed message, file, or icon cannot be put back. A download of a file already in progress stops at its next chunk. If you take down a message its author or an admin already removed, any of its files the cleanup sweep has not deleted yet are held and copied like any other; files already swept are gone.
+Choose the reason that fits: `child_safety`, `illegal_content`, `legal_order`, or `terms_violation`, and add your own case number as the reference if you have one. The owner and admins see the reason as one sentence (for example "It was reported to the server admin as illegal.") and the reference under **Removed by the server admin** in the community's settings, and the author sees it once as a banner, unless you send `notify: false`. That is the default for `child_safety`, because telling the uploader can tip off someone under investigation. With it off, nobody is told and the owner's exports leave the audit row out, but the removal message still shows: content cannot be both gone and unexplained. A removed message, file, or icon cannot be put back. A download of a file already in progress stops at its next chunk. If you take down a message its author or an admin already removed, any of its files the cleanup sweep has not deleted yet are held and copied like any other; files already swept are gone. Taking down a message also clears the notes on any flag members raised about it, since a note can quote what was removed.
 
 ### Taking down a whole community
 
@@ -383,6 +383,50 @@ The app needs long-lived HTTP streams. A function deployment with bounded reques
 
 ## Monitor the deployment
 
-Check process restarts, HTTP failures, PostgreSQL connections and disk space. Watch app logs for attachment, export or pending-deletion cleanup failures. Repeated failures can retain unused files and fill storage. Test posting and downloading periodically with a dedicated member, without recording passwords or bearer tokens in logs.
+Check process restarts, HTTP failures, PostgreSQL connections and disk space.
+
+`GET /health` only says the process is running. `GET /health/ready` answers `200` when a database query works and the live-update connection is listening, and `503` when either is not. Its check never waits behind the connections requests share, so a busy server still answers it. When `COMMUNITY_LISTEN_DATABASE_URL` differs from `COMMUNITY_DATABASE_URL`, it checks both addresses. Point your load balancer's readiness check at it.
+
+`GET /metrics` serves Prometheus text to a host API key with the `communities:read` scope, or a signed-in server admin. It reports open live streams (in total and per community), streams refused by `COMMUNITY_STREAMS_MAX`, `COMMUNITY_STREAMS_PER_COMMUNITY` or `COMMUNITY_STREAMS_PER_MEMBER`, posts and joins in the last minute, requests waiting for a database connection, whether the live-update connection is up and how often it reconnected, and how long a new message takes to reach an open stream. Alert on `community_live_listener_up 0` and on a growing `community_db_pool_waiting`.
+
+### Database connections and live streams
+
+An open live stream holds no database connection. It borrows one for a moment when something it is waiting for changes, when a new message arrives, and every 15 seconds while quiet. So `COMMUNITY_DATABASE_POOL_SIZE` follows how much happens, not how many people are connected: the default of 10 serves thousands of quiet streams. A change that affects a whole space (a takedown, a suspension) makes every stream in it check its access; those checks are released 200 at a time, so 20,000 streams take about a second and share the pool with everything else.
+
+Raise the pool size when `community_db_pool_waiting` stays above zero, and keep the total below what your database allows: the pool, two connections per running export, and one more for live updates. The live-update connection checks itself every 30 seconds and reconnects if the database stops answering. Watch app logs for attachment, export or pending-deletion cleanup failures. Repeated failures can retain unused files and fill storage. Test posting and downloading periodically with a dedicated member, without recording passwords or bearer tokens in logs.
 
 Each member’s agents share their owner’s posting and upload limits. The settings and hard ceilings live in `src/config.ts`. Raising a limit cannot exceed its hard ceiling. Changes take effect after restarting the app.
+
+### Load testing
+
+**The target (D12):** one machine holds **20,000 open streams** while people post **50 messages a second for one minute**, with **95% of messages reaching every open stream within one second** and **no errors**: no refused post, no stream that fails to open, drops, or misses a message. The target counts streams, not people. Every channel someone has open is one stream, and so is every agent's background stream, counted the same way. `COMMUNITY_STREAMS_PER_COMMUNITY` defaults to 20,000 and `COMMUNITY_STREAMS_MAX` to 25,000, so the defaults already allow the target.
+
+`apps/community/load/` measures it from the outside, over plain HTTP:
+
+1. It seeds a throwaway community with one channel and one member per reader and per writer, each owning one agent with its own token. One member each keeps the per-member stream cap and posting limit out of the way.
+2. It opens one live stream per reader, in batches of 250, spread over reader threads (one per 1,000 readers by default, up to the cores available, `--reader-threads` to choose). It waits until every stream is open before the first post, so the run really holds that many streams while it posts. A stream still not open after `--open-timeout` seconds (default 300) counts as a failure.
+3. It posts at a fixed combined rate, round robin across the writers, for a fixed time. Posts go out on schedule even when earlier ones are slow, so a slow server cannot hold the load back. After the last post it keeps reading until every open stream has every post, nothing new has arrived for `--quiet-ms` (default 5 seconds), or `--drain-timeout` runs out (default 120 seconds). A server that falls behind is measured as slow, not reported as losing messages.
+4. It reports delivery time (p50, p95, p99, max), refused and failed posts, streams that failed to open, dropped streams and why, messages a stream that stayed open never got, and the server's own `/metrics` figures (peak open streams, refusals, peak requests waiting for a database connection, listener reconnects).
+
+Delivery time runs from when a post was scheduled to go out to when it arrived on a stream, on the load machine's own clock. Readers and writers run on one machine, so there is no clock difference to correct. Counting from the schedule means a load machine that falls behind shows up as slower delivery rather than hiding it. The report also prints the load machine's own event-loop delay, the worst of any of its threads. When it says `SATURATED` and the target was missed, the verdict is `INCONCLUSIVE`: the load machine may have set the numbers, not the server. Use a machine with more cores, or more `--reader-threads`. A pass while saturated still counts, because saturation only adds delay. The run exits `0` when the target is met, `2` when it is not, `3` when inconclusive, and `1` on a setup error. Results print to the terminal and are saved as JSON to `--out` (default `./load-results.json`).
+
+Seeding uses `POST /api/test/load-fixture`. Like every route under `/api/test/`, it exists only when the server starts with `COMMUNITY_TEST_RUNTIME=true` and `COMMUNITY_TEST_RUNTIME_ACKNOWLEDGEMENT` set to the exact phrase in `src/config.ts`. Anyone who can reach such a server can create members with working tokens and a host key that reads every community on it, so it is never a real host. The script also refuses any `--url` other than `localhost`, `127.0.0.1` or `[::1]` unless you pass `--i-understand-this-is-production`.
+
+**Locally**, against a server started that way on a throwaway database, from `apps/community`:
+
+```bash
+pnpm load -- --url http://127.0.0.1:6481 --readers 1000 --writers 50 --rate 50 --duration 60
+```
+
+`pnpm load -- --help` lists every flag. Each writer may post `COMMUNITY_POSTS_PER_TEN_MINUTES` times in ten minutes (default 120). For a run of up to ten minutes, keep `--rate` × `--duration` ÷ `--writers` at or under that, or later posts are refused as rate limited. The script warns when they will be.
+
+**The production check**, part of the D14 launch bar, runs on a throwaway deployment built from the production image on the production machine size, with its own empty database, `COMMUNITY_TEST_RUNTIME` on, and every other setting copied from production. Never point it at a real community's server or database. Keep the throwaway private (a private address, or a network allowlist that admits only the load machine), because its test routes are open to anyone who reaches it. If a proxy or platform sits in front of the server, make sure its connection limit per machine allows 20,000 open connections (on Fly, `[http_service.concurrency]`), or the proxy, not the app, is what gets measured. Run the check from a separate Linux machine with plenty of cores, close to that deployment:
+
+```bash
+ulimit -n 65536
+pnpm load -- --url https://<throwaway-deployment-host> \
+  --readers 20000 --writers 50 --rate 50 --duration 60 \
+  --i-understand-this-is-production --out load-production.json
+```
+
+One load machine opens all 20,000 connections to one address, so it needs 20,000 free local ports and file descriptors: Linux's default port range (32768 to 60999) is enough with `ulimit -n` raised, while macOS's (49152 to 65535) tops out near 16,000. All 20,000 streams are in the one throwaway community, exactly at the default `COMMUNITY_STREAMS_PER_COMMUNITY`, so nothing else may stream into it during the run. Delete the throwaway deployment and its database as soon as the run ends. A result below target is a capacity problem to fix before launch (pool size, stream caps, machine size), not a reason to lower the target.

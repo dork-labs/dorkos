@@ -615,11 +615,12 @@ describe('a room says when a turn has stopped', () => {
       await settleUntil(() => stubborn.turns.length === 2, 'the follow-up to become a turn');
 
       // Exactly one hour's worth (`AGENT_REACTIONS_PER_ROOM_PER_HOUR`), each a
-      // distinct emoji so every one of them LANDS and therefore spends.
+      // distinct emoji so every one of them LANDS and therefore spends. Never 👀,
+      // which is the room's receipt and refused to an agent (DOR-2823).
       const anHourOfReactions = [
         '👍',
         '🎉',
-        '👀',
+        '👏',
         '✅',
         '❤️',
         '🔥',

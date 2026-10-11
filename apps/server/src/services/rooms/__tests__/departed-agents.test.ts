@@ -237,13 +237,13 @@ describe('unregistering an agent cascades into its rooms', () => {
     registerAgent(harness.db, { id: 'ULID_ANA', projectPath: ANA_PATH, name: 'ana' });
     const general = channel(harness, 'general', [ANA_PATH]);
     const ana = harness.authors.resolveAgent(ANA_PATH, 'ana').id;
-    harness.service.setFallbackSeat(general.id, harness.human, ana);
+    harness.service.setLead(general.id, harness.human, ana);
     const mesh = fakeMesh(harness.db);
     registerRoomUnregisterCascade(mesh, harness.service, quiet);
 
     mesh.unregister('ULID_ANA', ANA_PATH);
 
-    expect(read(harness, general.id).fallbackSeatAuthorId ?? null).toBeNull();
+    expect(read(harness, general.id).leadAuthorId ?? null).toBeNull();
   });
 
   it('takes nobody out while the directory still holds a registered agent', () => {
@@ -392,7 +392,7 @@ describe('an agent that comes back gets its channels back', () => {
     const general = channel(harness, 'general', [ANA_PATH]);
     const ana = harness.authors.resolveAgent(ANA_PATH, 'ana').id;
     harness.service.updateMembership(general.id, harness.human, ana, 'mention-only');
-    harness.service.setFallbackSeat(general.id, harness.human, ana);
+    harness.service.setLead(general.id, harness.human, ana);
     harness.db
       .update(roomMembers)
       .set({ lastReadSeq: 7 })
@@ -413,7 +413,7 @@ describe('an agent that comes back gets its channels back', () => {
     const room = read(harness, general.id);
     const seat = room.members.find((m) => m.authorId === ana);
     expect(seat).toMatchObject({ responseMode: 'mention-only', lastReadSeq: 7 });
-    expect(room.fallbackSeatAuthorId).toBe(ana);
+    expect(room.leadAuthorId).toBe(ana);
     expect(events).toContainEqual({
       name: 'room_member_added',
       data: { roomId: general.id, authorId: ana },
@@ -459,13 +459,13 @@ describe('an agent that comes back gets its channels back', () => {
     registerAgent(harness.db, { id: 'ULID_BO', projectPath: BO_PATH, name: 'bo' });
     harness.service.addMember(general.id, harness.human, { agentPath: BO_PATH });
     const bo = harness.authors.resolveAgent(BO_PATH, 'bo').id;
-    harness.service.setFallbackSeat(general.id, harness.human, bo);
+    harness.service.setLead(general.id, harness.human, bo);
 
     mesh.register('ULID_ANA', ANA_PATH, 'ana');
 
     const room = read(harness, general.id);
     expect(memberIds(room)).toContain(ana);
-    expect(room.fallbackSeatAuthorId).toBe(bo);
+    expect(room.leadAuthorId).toBe(bo);
   });
 
   it('gives back nothing to a different agent at the same folder', () => {

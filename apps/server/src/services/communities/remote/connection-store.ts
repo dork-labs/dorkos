@@ -46,9 +46,10 @@ type ConnectionRecord = z.infer<typeof RecordSchema>;
 
 /**
  * The small records kept beside connections.json, each keyed by owner and ref:
- * `not-found-since.json` holds the ISO time of the first `404 NOT_FOUND`, and
+ * `not-found-since.json` holds the ISO time of the first `404 NOT_FOUND`,
  * `undelivered-when-gone.json` how many agent posts never arrived when the community was found
- * deleted or taken down.
+ * deleted or taken down, and `wake-agents-from.json` who in a space may wake this owner's
+ * agents (spec `official-community-space` D9).
  */
 const SIDE_RECORDS = {
   'not-found': {
@@ -59,9 +60,12 @@ const SIDE_RECORDS = {
     file: 'undelivered-when-gone.json',
     schema: z.record(z.string(), z.number().int().positive()),
   },
+  wake: { file: 'wake-agents-from.json', schema: z.record(z.string(), z.enum(['me', 'members'])) },
 } as const;
 type SideRecordName = keyof typeof SIDE_RECORDS;
 type SideEntries<Name extends SideRecordName> = z.infer<(typeof SIDE_RECORDS)[Name]['schema']>;
+/** `wake/wake-setting.ts`'s `WakeAgentsFrom`, as the side record parses it. */
+type WakeAgentsFrom = SideEntries<'wake'>[string];
 
 /** Non-secret status handed to the browser through the local route. */
 export type RemoteConnectionDescriptor = CommunityConnectionDescriptor;
@@ -276,8 +280,11 @@ export class RemoteConnectionStore {
       return SIDE_RECORDS[name].schema.parse(
         JSON.parse(await readFile(this.sideFile(name), 'utf8'))
       ) as SideEntries<Name>;
-    } catch {
-      // Missing or unreadable: nothing recorded, so nothing is shown.
+    } catch (error) {
+      // Missing or unreadable: nothing recorded, so nothing is shown. Except who may wake
+      // agents, where "nothing recorded" means `members`: only a missing file reads as that,
+      // so a failed read keeps the gate's last answer and a write never lands on a blank.
+      if (name === 'wake' && (error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
       return {} as SideEntries<Name>;
     }
   }
@@ -302,6 +309,33 @@ export class RemoteConnectionStore {
       delete entries[key];
       await this.writeSide(name, entries);
     });
+  }
+
+  /**
+   * Record who in this space may wake the owner's agents. Owner-only by construction: the one
+   * route that calls it refuses every caller but this install's owner, and no DorkOS tool or
+   * config key reaches this file.
+   */
+  async setWakeAgentsFrom(ref: CommunityRef, ownerKey: string, to: WakeAgentsFrom): Promise<void> {
+    await this.exclusive(async () => {
+      await this.get(ref, ownerKey);
+      const entries = await this.readSide('wake');
+      await this.writeSide('wake', { ...entries, [`${ownerKey}\0${ref}`]: to });
+    });
+  }
+
+  /**
+   * Every owner's connection with its wake setting (`wake/wake-setting.ts`'s `ConnectionWakeSetting`),
+   * for the in-memory gate a live stream reads.
+   */
+  async wakeSettings() {
+    const [records, wake] = await Promise.all([this.read(), this.readSide('wake')]);
+    return records.map((record) => ({
+      ref: record.ref,
+      ownerKey: record.ownerKey,
+      connectedHumanMemberId: record.connectedHumanMemberId,
+      wakeAgentsFrom: wake[`${record.ownerKey}\0${record.ref}`] ?? ('members' as const),
+    }));
   }
 
   /**
@@ -638,7 +672,7 @@ export class RemoteConnectionStore {
 
   /** Delete local metadata, encrypted credentials and this ref's derived cache. */
   async disconnect(ref: CommunityRef, ownerKey: string): Promise<void> {
-    return this.exclusive(async () => {
+    await this.exclusive(async () => {
       const record = await this.get(ref, ownerKey);
       for (const agentId of record.agentIds)
         await this.credentials.delete(`community:${ref}:agent:${agentId}`);
@@ -649,5 +683,7 @@ export class RemoteConnectionStore {
       this.announce([{ ownerKey, ref, status: 'removed' }]);
       await rm(path.join(this.directory, 'cache', ref), { recursive: true, force: true });
     });
+    // Its own lock, after the record is gone: nothing reads a setting without its connection.
+    await this.clearSide('wake', ref, ownerKey);
   }
 }

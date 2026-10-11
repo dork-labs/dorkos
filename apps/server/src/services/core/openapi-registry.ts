@@ -36,6 +36,7 @@ import { registerProjectsOpenApi } from '../projects/projects-openapi.js';
 import { registerDocChannelOpenApi } from '../canvas/doc-channel/openapi.js';
 import { registerAccountEligibilityOpenApi } from './usage/account-eligibility-openapi.js';
 import { registerKeepAwakeOpenApi } from './keep-awake/keep-awake-openapi.js';
+import { registerCommitmentsOpenApi } from '../commitments/commitments-openapi.js';
 import { registerExtensionDecisionsOpenApi } from '../extensions/inbox/extension-decisions-openapi.js';
 import {
   PermissionModeSchema,
@@ -650,6 +651,7 @@ registerProjectsOpenApi(registry);
 registerDocChannelOpenApi(registry);
 registerAccountEligibilityOpenApi(registry);
 registerKeepAwakeOpenApi(registry);
+registerCommitmentsOpenApi(registry);
 
 // `relay_flow` is broadcast on the unified `/api/events` WebSocket stream, which
 // (like its `relay_bindings_changed`/`relay_adapters_changed` siblings) has
@@ -1097,7 +1099,8 @@ registry.registerPath({
         'Refused before anything started, for where the turn would run ' +
         '(`DESK_NOT_OWN`, `ROOM_SESSION_MOVED`), or because the account may not work in ' +
         'this project (`account_not_allowed_here`, whose body also names `project` and ' +
-        '`accountId`); the body says what to do instead',
+        '`accountId`), or because the agent is paused (`AGENT_PAUSED`, whose body also ' +
+        'names `agentId`); the body says what to do instead',
       content: { 'application/json': { schema: ErrorResponseSchema } },
     },
   },

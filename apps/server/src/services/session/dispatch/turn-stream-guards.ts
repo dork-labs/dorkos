@@ -1,3 +1,4 @@
+import { AGENT_PAUSED_CODE } from '@dorkos/shared/mesh-schemas';
 import type { StreamEvent } from '@dorkos/shared/types';
 import type { SessionEvent } from '@dorkos/shared/session-stream';
 import { detectAuthError } from '@dorkos/shared/runtime-error-classification';
@@ -39,6 +40,28 @@ export async function* tapEachEvent(
     // Empty stream or a throw before the first yield still releases the waiter.
     if (!fired) onEvent();
   }
+}
+
+/**
+ * The error a turn refused because its agent is paused rides the stream as:
+ * its own code, the agent's id in `reason` (the app offers Resume for it), and
+ * no category or stack, because nothing broke (spec `audit-trail` PR5). Read
+ * by its code, so this module need not load the pause service. `undefined`
+ * for every other failure.
+ */
+function pausedErrorEvent(err: unknown): StreamEvent | undefined {
+  if (!(err instanceof Error) || (err as Error & { code?: unknown }).code !== AGENT_PAUSED_CODE) {
+    return undefined;
+  }
+  const agentId = (err as Error & { agent?: { id?: unknown } }).agent?.id;
+  return {
+    type: 'error',
+    data: {
+      message: err.message,
+      code: AGENT_PAUSED_CODE,
+      ...(typeof agentId === 'string' ? { reason: agentId } : {}),
+    },
+  };
 }
 
 /**
@@ -85,7 +108,7 @@ export async function* guardTurnErrors(
     // normalizer projects it onto the turn: rendered inline live, latched into
     // SessionStatus.lastError, and reconstructed into log-backed history.
     const errorMessage = err instanceof Error ? err.message : String(err);
-    yield {
+    yield pausedErrorEvent(err) ?? {
       type: 'error',
       data: {
         message: errorMessage,

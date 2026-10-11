@@ -6,7 +6,9 @@
  * Every handler is thin and boundary-safe: it resolves the caller-supplied path
  * through {@link resolveWithinCwd} (the same guard `routes/files.ts` uses, which
  * closes the symlinked-parent hole), then delegates to the `services/diff`
- * domain. Per-hunk text reverts are NOT here — the client reuses
+ * domain. Every route names a session, and an agent caller gets 404 for one it
+ * may not read (spec `audit-trail` §3.4), the same answer as the session routes:
+ * a person's own chat's edits are theirs. Per-hunk text reverts are NOT here — the client reuses
  * `PUT /api/files/content` (optimistic-concurrency, atomic, existing-file-only).
  * The one write this router owns is `POST /revert`, the binary-safe whole-file
  * restore for the image diff, whose bytes are server-held (never
@@ -33,6 +35,7 @@ import {
   revertToBaseline,
 } from '../services/diff/index.js';
 import { logger } from '../lib/logger.js';
+import { refuseUnreadableSession } from './audit-reader.js';
 
 const router = Router();
 
@@ -50,6 +53,7 @@ router.get('/baseline', async (req, res) => {
     return res.status(400).json({ error: 'Invalid query', details: z.treeifyError(parsed.error) });
   }
   const { cwd, path: relPath, sessionId, mode } = parsed.data;
+  if (refuseUnreadableSession(req, res, sessionId)) return;
 
   let validatedCwd: string;
   let resolved: string;
@@ -93,6 +97,7 @@ router.post('/baseline/advance', async (req, res) => {
     return res.status(400).json({ error: 'Invalid body', details: z.flattenError(parsed.error) });
   }
   const { cwd, path: relPath, sessionId } = parsed.data;
+  if (refuseUnreadableSession(req, res, sessionId)) return;
 
   let resolved: string;
   try {
@@ -124,6 +129,7 @@ router.get('/pending', async (req, res) => {
     return res.status(400).json({ error: 'Invalid query', details: z.treeifyError(parsed.error) });
   }
   const { cwd, sessionId } = parsed.data;
+  if (refuseUnreadableSession(req, res, sessionId)) return;
 
   let validatedCwd: string;
   try {
@@ -167,6 +173,7 @@ router.get('/baseline/raw', async (req, res) => {
     return res.status(400).json({ error: 'Invalid query', details: z.treeifyError(parsed.error) });
   }
   const { cwd, path: relPath, sessionId } = parsed.data;
+  if (refuseUnreadableSession(req, res, sessionId)) return;
 
   let validatedCwd: string;
   let resolved: string;
@@ -238,6 +245,7 @@ router.post('/revert', async (req, res) => {
     return res.status(400).json({ error: 'Invalid body', details: z.flattenError(parsed.error) });
   }
   const { cwd, path: relPath, sessionId } = parsed.data;
+  if (refuseUnreadableSession(req, res, sessionId)) return;
 
   let validatedCwd: string;
   let resolved: string;

@@ -25,6 +25,7 @@ import type { AuthorRegistry } from '../author-registry.js';
 import type { RoomService } from '../room-service.js';
 import type { RoomStore } from '../room-store.js';
 import { RoomTurnRuntimeGoneError } from '../room-turn-port.js';
+import { AgentPausedError } from '../../mesh/pause/agent-pause.js';
 import {
   agentLookupFor,
   createRoomHarness,
@@ -138,13 +139,14 @@ describe('a room says why an agent did not answer', () => {
       // The room has no claim of its own to describe here — another writer holds
       // Ana's session, most often the person typing into her directly — so it
       // says what it knows and does not invent what she is doing instead.
+      // A runner-busy outcome is retried on a backoff, so the line promises the
+      // answer rather than describing a miss (DOR-2823).
       expect(notices()[0].body.text).toBe(
-        "Ana was busy in its own chat, so it didn't answer here. It will read your message the next time it picks up work in this room."
+        "Ana is busy in its own chat. It will answer here when it's free."
       );
-      // **Past tense, and no resend.** The message is a committed room entry
-      // sitting behind Ana's read cursor, so the next turn she takes here reads
-      // it whatever triggers that turn — asking the person to type it a second
-      // time was asking them to do work the machine already did.
+      // **No resend.** The room retries the message itself, so asking the
+      // person to type it a second time was asking them to do work the machine
+      // already does.
       expect(notices()[0].body.text).not.toContain('again');
       expect(postsBy(ana)).toHaveLength(0);
     });
@@ -500,6 +502,40 @@ describe('a room says why an agent did not answer', () => {
 
       expect(runner.turns).toHaveLength(2);
       expect(noticesAbout(ana).map((entry) => entry.body.notice)).toEqual(['runtime_gone']);
+    });
+  });
+
+  describe('when the agent is paused everywhere (spec audit-trail PR5)', () => {
+    // The runner refuses a paused agent's turn before it starts (an
+    // `AGENT_PAUSED` throw); the room says so once per pause, not once per
+    // message, and nothing about it reads as a broken agent.
+    const pausedError = (pausedAt = '2026-10-10T00:00:00.000Z') =>
+      new AgentPausedError({ id: 'agent-ana', name: 'Ana', pausedAt });
+
+    it('says the agent is paused, once, however many messages arrive', async () => {
+      open(outcomeRunner(() => ({ throws: pausedError() })));
+      await seedAndSettle();
+      await seedAndSettle('and now?');
+
+      expect(runner.turns).toHaveLength(2);
+      expect(noticesAbout(ana).map((entry) => entry.body.notice)).toEqual(['agent_paused']);
+      expect(noticesAbout(ana)[0]!.body.text).toBe(
+        "Ana is paused, so it won't answer here until someone resumes it."
+      );
+    });
+
+    it('says so again when the agent is paused a second time', async () => {
+      let pausedAt = '2026-10-10T00:00:00.000Z';
+      open(outcomeRunner(() => ({ throws: pausedError(pausedAt) })));
+      await seedAndSettle();
+      // Resumed and paused again, with no turn taken here in between.
+      pausedAt = '2026-10-11T00:00:00.000Z';
+      await seedAndSettle('and now?');
+
+      expect(noticesAbout(ana).map((entry) => entry.body.notice)).toEqual([
+        'agent_paused',
+        'agent_paused',
+      ]);
     });
   });
 

@@ -105,7 +105,8 @@ export type TurnOrigin =
    */
   | { readonly kind: 'connector-event' }
   /**
-   * An agent started this session through the `session_start` tool. Nobody
+   * An agent started this session through the `session_start` tool, or by
+   * posting to `POST /api/sessions/:id/messages` with its identity. Nobody
    * chose a trust stop for it: the operator's stop is a promise about a person
    * who can answer, and the agent that asked for the session is not that
    * person. So the row seeds no operator stop. Its power is the mode the tool
@@ -294,12 +295,90 @@ export function permissionSeedForOrigin(origin: TurnOrigin): OriginPermissionSee
 const AGENT_SENDER_PREFIX = 'relay.agent.';
 
 /**
+ * The sender prefixes a chat binding's own adapters stamp: a person on Telegram
+ * or Slack (`relay.human.<platform>.<adapter>...`), or a webhook
+ * (`relay.webhook.<adapter>`).
+ */
+const BINDING_SENDER_PREFIXES = ['relay.human.', 'relay.webhook.'] as const;
+
+/**
+ * Who may read a session's transcript, decided by what started it (spec
+ * `audit-trail` §3.4). The visibility half of the rule {@link
+ * permissionSeedForOrigin} is the power half of, and exhaustive the same way:
+ * a new origin does not compile until somebody decides who can read it.
+ *
+ * - `participants`: a person's own conversation with an agent, in the app or
+ *   from a chat app. The person may be thinking aloud; only they (and, until
+ *   spaces have more than one person, the owner) read it. The ACTIONS the
+ *   agent takes there are still recorded for everyone in the audit log.
+ * - `space`: an agent's own work: a room reply, a scheduled run, a message
+ *   from another agent, another chat or an outside sender, something an
+ *   extension or a connected app started. Every member, person or agent, may
+ *   read it.
+ *
+ * @param kind - What started the session, as stored (`session_metadata.launch_origin`).
+ * @returns Who may read it.
+ */
+export function sessionVisibilityForOrigin(kind: TurnOrigin['kind']): 'space' | 'participants' {
+  switch (kind) {
+    case 'interactive':
+    case 'relay-binding':
+      return 'participants';
+    case 'room':
+    case 'schedule':
+    case 'agent-dm':
+    case 'outside-sender':
+    case 'connector-event':
+    case 'agent-launch':
+    case 'extension-start':
+    case 'extension-message':
+    case 'chat-message':
+      return 'space';
+    // These never name a session first (they act on one already bound), and
+    // the harness is not a real surface: if one ever does, the cautious answer
+    // is the private one.
+    case 'account-handoff':
+    case 'account-resume':
+    case 'test-harness':
+      return 'participants';
+    default: {
+      const unhandled: never = kind;
+      throw new Error(`unhandled turn origin: ${String(unhandled)}`);
+    }
+  }
+}
+
+/**
+ * The origin of a message posted to `POST /api/sessions/:id/messages`: a
+ * person at the app (`interactive`), or an agent calling the API with its
+ * identity (`agent-launch`), whose new chat is its own work rather than a
+ * person's private one, and which seeds no operator stop.
+ *
+ * @param agentCaller - Whether the request presented an agent identity.
+ */
+export function httpTurnOrigin(agentCaller: boolean): TurnOrigin {
+  return agentCaller ? { kind: 'agent-launch' } : { kind: 'interactive' };
+}
+
+/**
  * The origin of a conversation a relay message addressed to an agent started,
  * from the sender the server stamped on it: `agent-dm` for one of our agents,
- * `outside-sender` for anybody else (the A2A gateway, an external MCP client).
+ * `relay-binding` for a chat binding's own adapter (a person on Telegram or
+ * Slack, a webhook), `outside-sender` for anybody else (the A2A gateway, an
+ * external MCP client).
+ *
+ * The binding case matters even though the binding's session creator already
+ * wrote `relay-binding` first: that write is best-effort, and if it failed this
+ * one is the first, and a person's chat from Telegram must not become readable
+ * by every agent because of it (spec `audit-trail` §3.4). Both origins seed no
+ * permission mode, so the power answer is the same either way.
  *
  * @param from - The envelope's server-stamped sender.
  */
 export function relayTurnOrigin(from: string): TurnOrigin {
-  return from.startsWith(AGENT_SENDER_PREFIX) ? { kind: 'agent-dm' } : { kind: 'outside-sender' };
+  if (from.startsWith(AGENT_SENDER_PREFIX)) return { kind: 'agent-dm' };
+  if (BINDING_SENDER_PREFIXES.some((prefix) => from.startsWith(prefix))) {
+    return { kind: 'relay-binding' };
+  }
+  return { kind: 'outside-sender' };
 }

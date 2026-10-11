@@ -2,6 +2,7 @@ import type { Room, RoomEntry, SkippedTrigger } from '@dorkos/shared/room-schema
 import { logger } from '../../../lib/logger.js';
 import {
   selectTriggerTargets,
+  pickLead,
   standDownFallbackSeat,
   whyNobody,
   type AddressingMember,
@@ -69,13 +70,16 @@ export function selectCandidates(
   const threadRootEntryId = entry.threadRootEntryId ?? null;
   const engaged = new Map<string, EngagementWindow>();
   const addressing: AddressingMember[] = [];
-  // Who holds this room's FALLBACK SEAT — the member that answers a message a
-  // person typed without addressing anybody (team-room-home spec D3.4), which
-  // today is #team's default agent and `null` everywhere else. Read off the
-  // room rather than inferred from anyone's `always` mode, because a person
-  // may set that mode themselves and mean it (`rooms.fallback_seat_author_id`);
-  // and read from the room this dispatch already holds, so it costs no query.
-  const seatAuthorId = room.fallbackSeatAuthorId ?? null;
+  // The channel's LEAD — the agent that answers a person's message nobody
+  // else is answering (DOR-2823). Read from the room this dispatch already
+  // holds, so it costs no query.
+  const leadAuthorId = room.leadAuthorId ?? null;
+  // Who holds this room's FALLBACK SEAT: the lead of a system room, which is
+  // #team's default agent held on `always` (team-room-home spec D3.4), and
+  // `null` everywhere else. Only there does the seat's stand-down apply: in
+  // any other channel a person may set the lead to `always` themselves and
+  // mean it, and the lead's own rule (`pickLead`, below) needs no `always`.
+  const seatAuthorId = room.wellKnown ? leadAuthorId : null;
   // Resolved once and read three times, because every rule below asks the
   // same question about the same post: only a PERSON's message implicitly
   // addresses anybody. An author row that has vanished reads as `system`,
@@ -156,7 +160,7 @@ export function selectCandidates(
     entry,
     members: addressing,
   });
-  const selected = standDownFallbackSeat({
+  const answered = standDownFallbackSeat({
     entry,
     authorKind,
     seatAuthorId,
@@ -164,21 +168,36 @@ export function selectCandidates(
     selected: matrix,
     conversationPartners: conversation?.partners ?? [],
   });
+  // **A person's post nobody else is answering goes to the channel's lead**
+  // (DOR-2823), whatever the lead's mode. Only when the rules above picked
+  // nobody, so a conversation with another agent is never interrupted by it,
+  // and never for an agent's post: agents talking to each other stay quiet.
+  // Never in a channel connected to an outside chat: its one agent answers
+  // @mentions only there, and strangers' messages must not change that.
+  const lead =
+    answered.length === 0 && followsConversation && facet.deps.bridgedFraming(room.id) === null
+      ? pickLead({ entry, leadAuthorId, members: addressing })
+      : null;
+  const selected = lead ? [lead] : answered;
   if (selected.length === 0) {
     // A person's post in a channel that reaches nobody is the failure
     // DOR-2823 is about, so every one is logged with why. Never a member's
     // name or a message body, only ids and the reason.
     if (followsConversation) {
+      const reason = whyNobody({
+        entry,
+        members: addressing,
+        namedUnreachable,
+        partners: conversation?.partners ?? [],
+      });
       logger.info('[rooms] nobody was picked to answer a person', {
         roomId: room.id,
         entryId: entry.id,
-        reason: whyNobody({
-          entry,
-          members: addressing,
-          namedUnreachable,
-          partners: conversation?.partners ?? [],
-        }),
+        reason,
       });
+      // No entry is written for it: a stored line would bump unread counts
+      // in channels where people talk among themselves. The app shows the
+      // "no agent is in this channel" hint above the composer instead.
     }
     // **The commonest shape of the ghost case comes through here**, and it is
     // why this is not a bare `return`. A channel seeds agents at `engaged`, and

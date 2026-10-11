@@ -17,6 +17,7 @@ import { facesOfRoster, useRoomFaces } from '@/layers/features/room-management';
 import type { RoomWithRoster } from '@dorkos/shared/room-schemas';
 import { useOneBarState } from '../model/one-bar-context';
 import { BarTitle, OneBar } from './OneBar';
+import { RoomLeadChip } from './RoomLeadChip';
 import { RoomMembersChip } from './RoomMembersChip';
 import { RoomRunState } from './RoomRunState';
 
@@ -172,6 +173,7 @@ function LocalChannelsBar() {
               mode is a group concept, rooms spec §8). */}
           {room.bridge?.visibility && <BridgeVisibilityBadge visibility={room.bridge.visibility} />}
           <RoomRunState roomId={room.id} roomName={name} />
+          <RoomLeadChip room={room} />
           <RoomMembersChip room={room} count={room.members.length} />
         </>
       }

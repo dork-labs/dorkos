@@ -46,6 +46,7 @@ import { persistenceModeFor } from '../projector-persistence.js';
 import type { TurnOrigin } from '../origin/turn-origin.js';
 import type { AccountNotAllowedError } from '../../core/usage/account-eligibility.js';
 import type { LaunchAccountResolution } from '../../runtimes/claude-code/claude-config-dir.js';
+import { agentPause } from '../../mesh/pause/agent-pause.js';
 
 /** What {@link dispatchSessionMessage} needs to start or feed one session. */
 export interface DispatchSessionMessageOpts {
@@ -134,6 +135,9 @@ export function isAgentLaunchCapFull(): boolean {
  * - `ACCOUNT_NOT_ALLOWED` — the account this new session would run on may not
  *   work in its folder's project, whoever picked it (`409
  *   account_not_allowed_here`, spec `flow-multiproject` §8.4).
+ * - `AGENT_PAUSED` — the agent this message is for is paused everywhere, so no
+ *   turn starts and nothing is queued (`409`, spec `audit-trail` PR5). The app
+ *   offers Resume; the message is not kept for later.
  */
 export interface SessionLaunchRefusal {
   /** Which check refused the launch. */
@@ -143,9 +147,12 @@ export interface SessionLaunchRefusal {
     | 'ROOM_SESSION_MOVED'
     | 'DESK_NOT_OWN'
     | 'LAUNCH_CAP_FULL'
-    | 'ACCOUNT_NOT_ALLOWED';
+    | 'ACCOUNT_NOT_ALLOWED'
+    | 'AGENT_PAUSED';
   /** The sentence a caller shows as-is. */
   message: string;
+  /** With `AGENT_PAUSED`: the paused agent's mesh id, so the app can resume it. */
+  agentId?: string;
   /** With `ACCOUNT_NOT_ALLOWED`: the refusal, with its project and account. */
   accountError?: AccountNotAllowedError;
 }
@@ -467,6 +474,22 @@ async function launchSessionMessage(
         `This chat would run inside a room's files ("${path.resolve(effectiveCwd)}"), ` +
         `which is never where an agent works. Start it in the agent's own folder instead.`,
     };
+  }
+
+  // **A paused agent starts no turn** (spec `audit-trail` PR5). Asked of the
+  // same folder and agent the turn itself would carry, the way the hold at the
+  // runtime seam asks, and before anything is bound or queued: a refused
+  // message is not kept to run later.
+  const paused = agentPause()?.pausedAgentOfTurn({
+    cwd: effectiveCwd,
+    ...(roomPlace.forAgent !== undefined ? { forAgent: roomPlace.forAgent } : {}),
+  });
+  if (paused) {
+    agentPause()?.recordHeld(paused, {
+      via: origin.kind === 'interactive' ? 'message' : 'turn',
+      sessionId,
+    });
+    return { refused: 'AGENT_PAUSED', message: `${paused.name} is paused.`, agentId: paused.id };
   }
 
   if (origin.kind === 'interactive') await validateBoundaryOrDorkHome(effectiveCwd ?? DEFAULT_CWD);

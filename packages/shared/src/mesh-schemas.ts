@@ -18,6 +18,7 @@ import {
   PERMISSION_AREA_IDS,
   type PermissionAreaId,
 } from './permissions/permission-schemas.js';
+import { AuditActorSchema } from './audit-schemas.js';
 
 extendZodWithOpenApiOnce();
 
@@ -743,6 +744,81 @@ export const DenialRecordSchema = z
   .openapi('DenialRecord');
 
 export type DenialRecord = z.infer<typeof DenialRecordSchema>;
+
+// === Pausing an agent (spec `audit-trail` PR5) ===
+
+/**
+ * The code a turn, a message or a run is refused with while its agent is
+ * paused. The app reads it to offer Resume instead of Retry.
+ */
+export const AGENT_PAUSED_CODE = 'AGENT_PAUSED';
+
+/** The code an agent gets when it tries to lift its own pause. */
+export const CANNOT_RESUME_SELF_CODE = 'CANNOT_RESUME_SELF';
+
+/** The longest reason a pause or a resume keeps. */
+export const AGENT_PAUSE_REASON_MAX = 500;
+
+/** One paused agent: who paused it, when, and why. */
+export const AgentPauseSchema = z
+  .object({
+    /** The paused agent's mesh id. */
+    agentId: z.string().min(1),
+    /** Who paused it, by stable account id and the name they had then. */
+    pausedBy: AuditActorSchema,
+    /** When. ISO 8601 UTC. */
+    pausedAt: z.string(),
+    /** Why, when they said. */
+    reason: z.string().optional(),
+  })
+  .openapi('AgentPause');
+
+/** One paused agent. */
+export type AgentPause = z.infer<typeof AgentPauseSchema>;
+
+/** Every agent paused right now. */
+export const AgentPauseListSchema = z
+  .object({ pauses: z.array(AgentPauseSchema) })
+  .openapi('AgentPauseList');
+
+/** Every agent paused right now. */
+export type AgentPauseList = z.infer<typeof AgentPauseListSchema>;
+
+/** What pausing or resuming an agent takes. */
+export const AgentPauseRequestSchema = z
+  .object({
+    agentId: z.string().min(1).describe('The mesh id of the agent to pause or resume.'),
+    reason: z
+      .string()
+      .max(AGENT_PAUSE_REASON_MAX)
+      .optional()
+      .describe('Why, in a sentence. Kept in the audit log with who did it.'),
+  })
+  .openapi('AgentPauseRequest');
+
+/** What pausing or resuming an agent takes. */
+export type AgentPauseRequest = z.infer<typeof AgentPauseRequestSchema>;
+
+/** What pausing or resuming an agent answers. */
+export const AgentPauseResultSchema = z
+  .object({
+    /** The agent acted on. */
+    agentId: z.string(),
+    /** Whether it is paused now. */
+    paused: z.boolean(),
+    /** Whether this call changed anything (false when it already was so). */
+    changed: z.boolean(),
+    /** The pause now in force, when there is one. */
+    pause: AgentPauseSchema.optional(),
+    /** How many of its turns were stopped (pause only). */
+    stoppedTurns: z.number().int().optional(),
+    /** How many of its scheduled runs were stopped (pause only). */
+    stoppedRuns: z.number().int().optional(),
+  })
+  .openapi('AgentPauseResult');
+
+/** What pausing or resuming an agent answers. */
+export type AgentPauseResult = z.infer<typeof AgentPauseResultSchema>;
 
 // === Topology ===
 

@@ -40,6 +40,7 @@
  */
 import { readOnlyCarveOutToolNames } from '../capabilities/index.js';
 import { auditDomain } from '../../audit/audit-capabilities.js';
+import { agentPauseDomain } from '../../mesh/pause/pause-capabilities.js';
 import { operatorDomain } from '../operator/operator-capabilities.js';
 import { marketplaceDomain } from '../../marketplace-mcp/marketplace-capabilities.js';
 import { connectorDomain } from '../../connectors/connector-capabilities.js';
@@ -217,5 +218,8 @@ export const READ_ONLY_MCP_TOOL_NAMES: ReadonlySet<string> = new Set<string>([
     // Listed for the same reason: `audit_verify` withholds `readOnlyCarveOut`,
     // because a tokenless health check has no need to walk the audit log.
     ...auditDomain.capabilities,
+    // Listed for the same reason: `list_paused_agents` withholds
+    // `readOnlyCarveOut`; a tokenless caller has no need of who paused whom.
+    ...agentPauseDomain.capabilities,
   ]),
 ]);

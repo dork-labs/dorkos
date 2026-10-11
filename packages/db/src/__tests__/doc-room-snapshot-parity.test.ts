@@ -1,4 +1,4 @@
-/** Actual migration structure must equal the untouched official generated snapshot. */
+/** Canonical155 migration structure preserves the archived published152 Doc/Room schema. */
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { expect, it } from 'vitest';
@@ -25,7 +25,15 @@ type Table = {
 };
 const snapshot = JSON.parse(
   readFileSync(
-    fileURLToPath(new URL('../../drizzle/meta/20261010133401_snapshot.json', import.meta.url)),
+    fileURLToPath(new URL('../../drizzle/meta/20261011035106_snapshot.json', import.meta.url)),
+    'utf8'
+  )
+) as { id: string; prevId: string; tables: Record<string, Table> };
+const publishedSnapshot = JSON.parse(
+  readFileSync(
+    fileURLToPath(
+      new URL('../../drizzle/legacy-doc/20261010133401_snapshot.json', import.meta.url)
+    ),
     'utf8'
   )
 ) as { id: string; prevId: string; tables: Record<string, Table> };
@@ -43,6 +51,8 @@ const tables = [
   'chat_messages',
   'chat_read_cursors',
   'agents',
+  'commitments',
+  'agent_pauses',
 ];
 const sorted = <T>(rows: T[]) =>
   rows.sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b)));
@@ -93,8 +103,11 @@ function storedChecks(sql: string): string[] {
   return result.sort();
 }
 
-it('migrates all nine Doc/Room structures and three shipped Chat structures to the official snapshot', () => {
-  expect(snapshot.prevId).toBe('ae4719be-7fef-48ec-b6d0-7dc6ab4f3c07');
+it('migrates canonical155 including Main154 while preserving the published152 Doc/Room and Chat snapshot structures', () => {
+  expect(publishedSnapshot.prevId).toBe('ae4719be-7fef-48ec-b6d0-7dc6ab4f3c07');
+  expect(publishedSnapshot.id).not.toBe(publishedSnapshot.prevId);
+  expect(snapshot.prevId).toBe('cf14735e-18ab-4851-8595-5562b4f9efdb');
+  expect(snapshot.id).toBe('c852ea0d-2f1f-4faf-9d0e-1106bbd84d1a');
   expect(snapshot.id).not.toBe(snapshot.prevId);
   const db = createDb(':memory:');
   try {
@@ -103,6 +116,8 @@ it('migrates all nine Doc/Room structures and three shipped Chat structures to t
     for (const name of tables) {
       const expected = snapshot.tables[name]!;
       expect(expected, name).toBeDefined();
+      if (name !== 'commitments' && name !== 'agent_pauses')
+        expect(expected, `preserved published152 ${name}`).toEqual(publishedSnapshot.tables[name]);
       const primary =
         Object.values(expected.compositePrimaryKeys)[0]?.columns ??
         Object.values(expected.columns)

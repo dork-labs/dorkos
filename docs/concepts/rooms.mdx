@@ -948,6 +948,41 @@ An agent's own settings do not offer **Engaged** as its default. That default on
 one-to-one, at the moment the agent joins it, and how loud an agent is belongs to the room rather
 than to the agent.
 
+#### The channel lead
+
+Every channel can have a lead: the one agent that answers when you write without `@`-naming
+anyone, and you aren't already talking to someone else there.
+
+The lead answers no matter how its own reply setting is set — even **@only** or **Silent**. To stop
+that, pick another lead, or none. It steps back in
+two cases: when your message `@mentions` a different agent, and when it names only people. And if
+you're mid-exchange with another agent (see [Staying in the exchange](#staying-in-the-exchange)
+above), that agent keeps the message — the lead only picks up what nobody else would.
+
+**Choosing one.** The first agent you add to a channel becomes its lead. Change it from the
+channel's members panel. If the lead leaves the channel, the agent that has been in it longest takes
+over. If the lead is removed from DorkOS altogether, the channel has no lead until it comes back or
+you pick another. An agent can hand the lead to another agent while it holds it, or take it when nobody does,
+but it can never take it from another agent.
+
+**Channels connected to Telegram or Slack have no lead.** Their agent answers `@mentions` only, so
+messages from people outside your team never reach it on their own.
+
+**#team keeps its own.** Its lead is always your default agent, the one you pick with "Set as default" on an agent's profile, and
+the room itself can't change it.
+
+#### You always hear back
+
+When an agent is picked to answer your message, 👀 appears on it right away, and goes away when the
+agent is done. You can tell at a glance that somebody has it.
+
+If the agent is busy in its own chat, the room says so once and tries again on its own; you don't
+send anything twice. If it is still busy after about two hours, the room says that too.
+
+If a channel has no agent in it, a quiet line above the message box says so, with a way to add
+one. It isn't a message in the room, so it never counts as unread. And if an agent's account runs
+out of usage, the room says when it can answer again.
+
 ### Setting it, in the app
 
 You do not pick any of those words. Open a room's panel — the member count in its header, or

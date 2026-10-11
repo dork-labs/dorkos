@@ -93,6 +93,11 @@ export interface ResponseModeControlProps {
    * an inline arrow here is safe.
    */
   onPreview?: (rung: ResponseRung | null) => void;
+  /**
+   * True when this agent leads the channel. A lead answers what nobody else
+   * does whatever its rung (DOR-2823), so each rung's consequence says so.
+   */
+  isLead?: boolean;
   className?: string;
 }
 
@@ -136,6 +141,7 @@ export function ResponseModeControl({
   engagedWindow,
   disabledReasonId = null,
   onPreview,
+  isLead = false,
   className,
 }: ResponseModeControlProps) {
   const isMobile = useIsMobile();
@@ -364,7 +370,7 @@ export function ResponseModeControl({
                     with it is a second thought, and four of them stacked would
                     turn a list you glance at into a page you read. */}
                 <span id={consequenceId} className="text-muted-foreground block text-xs">
-                  {explainRung(option.rung, roomKind, engagedWindow).sentence}
+                  {explainRung(option.rung, roomKind, engagedWindow, isLead).sentence}
                 </span>
               </span>
             </button>
@@ -374,7 +380,7 @@ export function ResponseModeControl({
     );
   }
 
-  const explanation = explainRung(shown, roomKind, engagedWindow);
+  const explanation = explainRung(shown, roomKind, engagedWindow, isLead);
   const explanationId = `${groupId}-explanation`;
   return (
     <div

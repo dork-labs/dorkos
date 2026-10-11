@@ -36,7 +36,8 @@ interface OperatorRouteComposition {
   approvalService: Parameters<typeof createApprovalsRouter>[0];
   activityService: Parameters<typeof createActivityRouter>[0];
   permissionService: NonNullable<Parameters<typeof createApprovalsRouter>[1]>['permissions'];
-  auditLog: Parameters<typeof createAuditRouter>[0];
+  auditLog: Parameters<typeof createAuditRouter>[0]['log'];
+  auditAccounts: Parameters<typeof createAuditRouter>[0]['accounts'];
   notificationService: Parameters<typeof createNotificationsRouter>[0];
   pushSubscriptions: Parameters<typeof createPushRouter>[0]['subscriptions'];
   webPushChannel: Parameters<typeof createPushRouter>[0]['channel'];
@@ -57,6 +58,7 @@ export function mountOperatorRoutes(app: Application, deps: OperatorRouteComposi
     activityService,
     permissionService,
     auditLog,
+    auditAccounts,
     notificationService,
     pushSubscriptions,
     webPushChannel,
@@ -175,7 +177,7 @@ export function mountOperatorRoutes(app: Application, deps: OperatorRouteComposi
 
   // Activity feed — always available, not behind a feature flag.
   app.use('/api/activity', createActivityRouter(activityService));
-  app.use('/api/audit', createAuditRouter(auditLog));
+  app.use('/api/audit', createAuditRouter({ log: auditLog, accounts: auditAccounts }));
   app.locals.activityService = activityService;
   mountedRouters.push('activity');
 

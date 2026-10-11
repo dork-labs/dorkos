@@ -18,12 +18,25 @@ import type { ConnectorAuthenticationFlowState } from '@dorkos/shared/connector-
 import { useTransport } from '@/layers/shared/model';
 import { connectorKeys } from '../api/query-keys';
 
-/** Read owner-visible connector management requests by lifecycle group. */
-export function useConnectorManagementReviews(state?: 'pending' | 'resolved') {
+/**
+ * Read owner-visible connector management requests by lifecycle group.
+ *
+ * @param state - Which group, or every request when omitted.
+ * @param options - `enabled` skips the read (a reader that is not the owner
+ *   would only get a refusal); `refetchInterval` keeps an always-mounted reader
+ *   current, since no event announces a new request.
+ */
+export function useConnectorManagementReviews(
+  state?: 'pending' | 'resolved',
+  options: { enabled?: boolean; refetchInterval?: number } = {}
+) {
   const transport = useTransport();
   return useQuery<ConnectorManagementReviewItem[]>({
     queryKey: connectorKeys.reviewList(state),
     queryFn: () => transport.getConnectorManagementReviews(state),
+    enabled: options.enabled ?? true,
+    refetchInterval: options.refetchInterval,
+    refetchIntervalInBackground: false,
   });
 }
 

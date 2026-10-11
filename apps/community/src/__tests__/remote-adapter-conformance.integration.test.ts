@@ -25,6 +25,7 @@ import { createCommunityApp } from '../app.js';
 import { parseConfig } from '../config.js';
 import { migrate } from '../migrate.js';
 import { hashSecret } from '../security.js';
+import { notifyLive } from '../live/notices.js';
 import { RemoteConnectionStore } from '../../../server/src/services/communities/remote/connection-store.js';
 import {
   RemoteCommunityAdapter,
@@ -334,6 +335,9 @@ communityConformance(() => new RemoteCommunityAdapter(ref, ownerKey, store), {
       roomId,
       ownerMemberId,
     ]);
+    // The notice every route that removes a member from a channel sends; without it an open
+    // stream learns of this direct write only at its fallback re-read.
+    await notifyLive(pool, { k: 'member', c: communityId, m: ownerMemberId });
     return 'access-revoked';
   },
   makeRemovedRoom: async (_adapter, roomId) => {

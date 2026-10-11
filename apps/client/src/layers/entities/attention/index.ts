@@ -34,6 +34,7 @@ export { usePendingScheduleApprovals } from './model/use-pending-schedule-approv
 export { usePendingApprovals, PENDING_APPROVALS_QUERY_KEY } from './model/use-pending-approvals';
 export {
   usePendingInteractions,
+  pendingInteractionsQueryOptions,
   PENDING_INTERACTIONS_QUERY_KEY,
 } from './model/use-pending-interactions';
 // The one answer to "is anything waiting on me?" — read by the Inbox popover

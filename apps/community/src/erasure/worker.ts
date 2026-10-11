@@ -4,6 +4,7 @@ import { transaction } from '../data.js';
 import { ERASURE_WAITS_ON_LEGAL_HOLD_SQL, ERASURE_WAITS_ON_TAKEDOWN_SQL } from './guards.js';
 import { eraseAccount, eraseMembership, ErasureError, type ErasureOptions } from './erasure.js';
 import { cleanupBackoffSql } from '../storage/pending-deletions.js';
+import { notifyAccountAccess } from '../live/notices.js';
 
 /** How often the server looks for due erasures. */
 export const ERASURE_POLL_MS = 30_000;
@@ -54,6 +55,7 @@ export async function sweepErasures(
     );
     if (row.kind === 'account') {
       await client.query('DELETE FROM session WHERE "userId"=$1', [row.user_id]);
+      await notifyAccountAccess(client, row.user_id!);
     }
     return row;
   });

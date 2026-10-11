@@ -11,6 +11,11 @@ import { CommunityAdministration } from './CommunityAdministration.js';
 import { RemovedByHost } from '../takedowns/TakedownNotices.js';
 import { EraseMembershipPanel } from './Erasure.js';
 import { ExportPanel } from './ExportPanel.js';
+import { SpaceMembers } from './members/SpaceMembers.js';
+import { ReportQueue } from '../moderation/ReportQueue.js';
+import { ConductSettings } from '../moderation/ConductSettings.js';
+import { ChannelPanel } from '../moderation/ChannelPanel.js';
+import { DisplayNamePanel } from '../moderation/DisplayNamePanel.js';
 import type { Agent, Channel, Member } from '../types.js';
 import type { CommunitySettingsSection } from '@dorkos/shared/community-wire';
 
@@ -162,7 +167,7 @@ export function Manage({
   // a closed community with a plain reason.
   const readAdmission = useCallback(
     () =>
-      request<{ admissionPolicy: 'invite_only' | 'closed' }>('/api/v1/settings')
+      request<{ admissionPolicy: 'invite_only' | 'closed' | 'open' }>('/api/v1/settings')
         .then((body) => {
           const closed = body.admissionPolicy === 'closed';
           setAdmissionClosed(closed);
@@ -340,6 +345,7 @@ export function Manage({
             onOpenPeople={() => setTab('members')}
           />
         )}
+        {tab === 'settings' && moderator && !readOnly && <ConductSettings role={me.role} />}
         {tab === 'settings' && moderator && (
           <RemovedByHost communityId={communityId} channels={channels} />
         )}
@@ -470,61 +476,13 @@ export function Manage({
               </>
             )}
             {selectedChannel && (
-              <section className="panel">
-                <h3>#{selectedChannel.name}</h3>
-                <p className="small muted">
-                  {selectedChannel.visibility} · {selectedChannel.archived ? 'Archived' : 'Active'}
-                </p>
-                {moderator && (
-                  <div className="row">
-                    <Button
-                      variant="outline"
-                      disabled={busy}
-                      onClick={() => {
-                        const name = window.prompt('Channel name', selectedChannel.name);
-                        if (name)
-                          void perform(
-                            () =>
-                              request(`/api/v1/channels/${selectedChannel!.id}`, 'PATCH', { name }),
-                            'Channel renamed.'
-                          );
-                      }}
-                    >
-                      Rename
-                    </Button>
-                    <Button
-                      variant="outline"
-                      disabled={busy}
-                      onClick={() =>
-                        void perform(
-                          () =>
-                            request(`/api/v1/channels/${selectedChannel!.id}`, 'PATCH', {
-                              archived: !selectedChannel.archived,
-                            }),
-                          selectedChannel.archived ? 'Channel reopened.' : 'Channel archived.'
-                        )
-                      }
-                    >
-                      {selectedChannel.archived ? 'Reopen' : 'Archive'}
-                    </Button>
-                  </div>
-                )}
-                {selectedChannel.joined && me.role !== 'owner' && (
-                  <Button
-                    variant="outline"
-                    className="mt-3"
-                    disabled={busy}
-                    onClick={() =>
-                      void perform(
-                        () => request(`/api/v1/channels/${selectedChannel!.id}/leave`, 'POST', {}),
-                        `You left #${selectedChannel.name}. You are still a member of ${communityName}.`
-                      )
-                    }
-                  >
-                    Leave channel
-                  </Button>
-                )}
-              </section>
+              <ChannelPanel
+                channel={selectedChannel}
+                communityName={communityName}
+                me={me}
+                busy={busy}
+                perform={perform}
+              />
             )}
           </div>
         )}
@@ -616,64 +574,16 @@ export function Manage({
               )}
             </section>
             {moderator && (
-              <section className="panel">
-                <h3>Space members</h3>
-                {directory.map((member) => (
-                  <div
-                    className="row justify-between border-b border-[var(--line)] py-2"
-                    key={member.memberId}
-                  >
-                    <div>
-                      <strong>{member.displayName}</strong>
-                      <div className="small muted">
-                        @{member.handle} · {member.role}
-                      </div>
-                    </div>
-                    <div className="row">
-                      {me.role === 'owner' && member.memberId !== me.memberId && (
-                        <Button
-                          variant="ghost"
-                          aria-label={`${member.role === 'admin' ? 'Remove admin from' : 'Make'} ${member.displayName}${member.role === 'admin' ? '' : ' admin'}`}
-                          disabled={busy}
-                          onClick={() =>
-                            void perform(
-                              () =>
-                                request(`/api/v1/members/${member.memberId}/role`, 'PATCH', {
-                                  role: member.role === 'admin' ? 'member' : 'admin',
-                                }),
-                              member.role === 'admin' ? 'Admin removed.' : 'Admin granted.'
-                            )
-                          }
-                        >
-                          {member.role === 'admin' ? 'Make member' : 'Make admin'}
-                        </Button>
-                      )}
-                      {member.memberId !== me.memberId && member.role === 'member' && (
-                        <Button
-                          variant="ghost"
-                          disabled={busy}
-                          aria-label={`Remove ${member.displayName} from space`}
-                          onClick={() => {
-                            if (window.confirm(`Remove ${member.displayName} from this space?`))
-                              void perform(
-                                () => request(`/api/v1/members/${member.memberId}`, 'DELETE'),
-                                'Member removed.'
-                              );
-                          }}
-                        >
-                          <Trash2 size={16} />
-                        </Button>
-                      )}
-                    </div>
-                  </div>
-                ))}
-                {directoryCursor && (
-                  <Button variant="outline" className="mt-3" onClick={() => void moreMembers()}>
-                    Show more members
-                  </Button>
-                )}
-              </section>
+              <SpaceMembers
+                me={me}
+                directory={directory}
+                hasMore={Boolean(directoryCursor)}
+                busy={busy}
+                perform={perform}
+                onMore={() => void moreMembers()}
+              />
             )}
+            {moderator && <ReportQueue busy={busy} perform={perform} />}
           </div>
         )}
         {!readOnly && tab === 'agents' && (
@@ -798,6 +708,9 @@ export function Manage({
         )}
         {tab === 'account' && (
           <div className="settings-grid">
+            {!readOnly && (
+              <DisplayNamePanel me={me} onChanged={() => void onCurrentMemberChanged()} />
+            )}
             <section className="panel" aria-labelledby="this-browser-title">
               <h3 id="this-browser-title">This browser</h3>
               <p className="small muted">

@@ -2,16 +2,7 @@ import { Cron } from 'croner';
 import { outsideAuditScope } from '../audit/audit-context.js';
 import type { RelayCore } from '@dorkos/relay';
 import type { MeshCore } from '@dorkos/mesh';
-import type {
-  EffortLevel,
-  InterruptReceipt,
-  Task,
-  TaskRun,
-  TaskRunTrigger,
-  PermissionMode,
-  StreamEvent,
-} from '@dorkos/shared/types';
-import type { RuntimeCapabilities, SseResponse } from '@dorkos/shared/agent-runtime';
+import type { Task, TaskRun, TaskRunTrigger, PermissionMode } from '@dorkos/shared/types';
 import { isTerminalRunStatus, type TaskStore } from './task-store.js';
 import type { ActivityService } from '../activity/activity-service.js';
 import { isRelayEnabled } from '../relay/relay-state.js';
@@ -56,16 +47,22 @@ import { resolveRunSession } from './session/sticky-session.js';
 import { claimRunTurn, SESSION_BUSY_ERROR, type RunTurn } from './session/run-projection.js';
 import { resolveSessionCwd } from '../workspace/resolve-session-cwd.js';
 import { assertOwnDesk, deskBindingFor } from '../core/agent-identity/index.js';
+import { resolveRunExecution, type RunExecution } from './execution/resolve-run-execution.js';
 import {
-  resolveRunExecution,
-  type RunExecution,
-  type RunExecutionRuntimes,
-} from './execution/resolve-run-execution.js';
+  singleRuntimeSource,
+  type SchedulerAgentManager,
+  type SchedulerRuntimes,
+} from './execution/scheduler-runtimes.js';
 import { runtimeRegistry } from '../core/runtime-registry.js';
 import type { AgentExecutionDefaults } from '../session/resolution/resolve-session-defaults.js';
 import type { AccountNotAllowedError } from '../core/usage/account-eligibility.js';
 import type { TaskAwakeHold, TaskAwakeHolds } from '../core/keep-awake/index.js';
 import { scheduleAccountRefusal } from './lifecycle/schedule-account-eligibility.js';
+import {
+  AGENT_PAUSED_SKIP_REASON,
+  TaskPauseHold,
+  type TaskAgentPauses,
+} from './lifecycle/agent-pause-hold.js';
 
 /**
  * Whether the relay can run a turn on this runtime — asked per run, answered by
@@ -115,6 +112,11 @@ const V1_RELAY_RUNTIME: RelayRuntimePredicate = (runtimeType) =>
     : { deliverable: false, reason: 'runtime-not-on-bus' };
 
 export type { CancelRunOutcome } from './run-cancel.js';
+export {
+  singleRuntimeSource,
+  type SchedulerAgentManager,
+  type SchedulerRuntimes,
+} from './execution/scheduler-runtimes.js';
 
 const logger = createTaggedLogger('Tasks');
 
@@ -137,168 +139,6 @@ interface ScheduledFire {
  * operator's cancel from a shutdown abort and from the runtime deadline.
  */
 const OPERATOR_CANCEL = Symbol('operator-cancel');
-
-/** Narrow interface for the AgentManager methods used by the scheduler. */
-export interface SchedulerAgentManager {
-  ensureSession(
-    sessionId: string,
-    opts: {
-      permissionMode: PermissionMode;
-      cwd?: string;
-      hasStarted?: boolean;
-      /**
-       * True for every scheduled run: nobody is watching, so a prompt this run
-       * raises is refused at the countdown rather than waiting for an answer
-       * that is not coming (spec `ask-parks-on-timeout` §7).
-       */
-      unattended?: boolean;
-      /**
-       * The model this run resolved to, in the runtime's own id space, or absent
-       * for "the runtime decides" (DOR-1347).
-       *
-       * Asked HERE and not only at `sendMessage`, because for claude-code this
-       * is the only call that can answer it: the runtime reads `session.model`
-       * when it launches a query, and that field is written once, when the
-       * session record is created (`messaging/launch-resolver.ts`). A model
-       * handed over afterwards reaches nothing. `agent-handler.ts` in the relay
-       * spreads its resolved settings into both calls for exactly this reason.
-       */
-      model?: string;
-      /** The reasoning-effort rung this run resolved to; absent leaves it unset. */
-      effort?: EffortLevel;
-      /**
-       * The schedule's Claude account (DOR-2384). Arrives here only because the
-       * run's settings are spread whole into both calls; the claude-code launch
-       * reads it off the send ({@link SchedulerAgentManager.sendMessage}).
-       */
-      accountHint?: string;
-    }
-  ): void;
-  sendMessage(
-    sessionId: string,
-    content: string,
-    opts?: {
-      permissionMode?: PermissionMode;
-      cwd?: string;
-      systemPromptAppend?: string;
-      /**
-       * Nobody can answer an approval card inside this turn, so it must not hold
-       * for one (`MessageOpts.unattendedApprovals`, spec `agent-permissions` D6).
-       */
-      unattendedApprovals?: boolean;
-      /**
-       * Sent again, for the same reason the permission mode and the cwd are: the
-       * runtime contract resolves a turn as per-send override → persisted → its
-       * own default, and a runtime whose sessions are not held in memory sees
-       * this call and not `ensureSession`.
-       */
-      model?: string;
-      /** See {@link SchedulerAgentManager.sendMessage}'s `model`. */
-      effort?: EffortLevel;
-      /**
-       * The schedule's Claude account as the launch hint
-       * (`MessageOpts.accountHint`, DOR-2384): read by the claude-code launch
-       * ladder only when this run starts a conversation, ignored by every other
-       * runtime. An id nobody registered falls through the ladder.
-       */
-      accountHint?: string;
-    }
-  ): AsyncGenerator<StreamEvent>;
-  /**
-   * End the in-flight turn for a session (`AgentRuntime.interruptQuery`).
-   *
-   * This is the ONLY way to stop a scheduled run: `sendMessage` takes no
-   * `AbortSignal` (see `MessageOpts`), so abandoning its stream leaves the agent
-   * running. Answers the {@link InterruptReceipt} vocabulary — `not-running`
-   * when there was no in-flight turn to abort.
-   */
-  interruptQuery(sessionId: string): Promise<InterruptReceipt>;
-  /**
-   * The runtime's OWN session id for a session key, after the SDK has minted or
-   * kept one (`AgentRuntime.getInternalSessionId`).
-   *
-   * Every run reads this once its turn is over to learn the real id the SDK
-   * wrote its transcript under, then persists it as the run's `sessionId`: it is
-   * what makes the run clickable through to the conversation it actually had,
-   * and what a sticky task's next fire resumes (DOR-1571). Returns undefined
-   * when the session is gone or never started, and the run then records the id
-   * it asked to run under.
-   */
-  getInternalSessionId(sessionId: string): string | undefined;
-  /**
-   * Take the session write-lock (`AgentRuntime.acquireLock`), answering whether
-   * it was taken.
-   *
-   * An ATTENDED run holds it for the whole of its turn, for the reason a
-   * person's turn does: it is the only seam that serializes against a DIFFERENT
-   * writer, and a sticky task can resume the very session somebody is typing in
-   * (`session/run-projection.ts`). A scheduled fire on a fresh session never
-   * contends for it, and takes it uncontested.
-   */
-  acquireLock(sessionId: string, clientId: string, res: SseResponse, token?: symbol): boolean;
-  /** Give back a lock this run took (`AgentRuntime.releaseLock`). */
-  releaseLock(sessionId: string, clientId: string, token?: symbol): void;
-  /**
-   * End a turn the runtime left open (`AgentRuntime.settleOpenTurn`). Absent for
-   * a runtime that cannot strand one, which reads as "nothing to settle".
-   */
-  settleOpenTurn?(sessionId: string): Promise<boolean>;
-}
-
-/**
- * Where the scheduler gets an agent manager for the runtime a run RESOLVED to
- * (DOR-1615).
- *
- * This replaces the single boot-bound `agentManager` the scheduler used to hold.
- * That binding was the reason a scheduled run could only ever happen on Claude
- * Code: `index.ts` constructed one `ClaudeCodeRuntime` and handed it over, so
- * `runtimes.default` moved which runtime a new CHAT got and never reached a
- * scheduled run at all.
- *
- * Deliberately the narrow shape rather than `RuntimeRegistry` itself — the
- * registry satisfies it structurally, and a test can hand over three functions
- * instead of a registry with a database behind it.
- */
-export interface SchedulerRuntimes extends RunExecutionRuntimes {
-  /**
-   * The agent manager for a registered runtime type.
-   *
-   * Only ever called for a type {@link RunExecutionRuntimes.has} has already
-   * answered `true` for — {@link resolveRunExecution} refuses an unregistered
-   * one before anything reaches here — so a throw from this is a bug, not a
-   * state to handle.
-   */
-  get(type: string): SchedulerAgentManager;
-}
-
-/**
- * Present ONE agent manager as a whole registry.
- *
- * Says "this one manager answers for whatever runtime the task resolves to" —
- * which is precisely what the scheduler did for EVERY task before this change,
- * so a caller that wraps a single fake keeps testing what it was written to
- * test. The capability profiles and the default type still come from the real
- * registry, so a scheduler built this way resolves power and settings exactly as
- * a wired one does; only the "which manager runs it" lookup is collapsed.
- *
- * Exported because the tests are its callers and the collapse should be visible
- * at each one rather than inferred from which constructor overload was used.
- * Production never takes this path: `index.ts` hands over the registry itself.
- *
- * @param agentManager - The single manager to answer every lookup with.
- */
-export function singleRuntimeSource(agentManager: SchedulerAgentManager): SchedulerRuntimes {
-  return {
-    // Never refuses. This source has one manager and no registry to ask, so
-    // refusing here would fail runs over a question it cannot answer. The
-    // capability profiles below may still come back empty, which is a
-    // different (and non-fatal) fact — see {@link RunExecution.capabilities}.
-    has: () => true,
-    get: () => agentManager,
-    getDefaultType: () => runtimeRegistry.getDefaultType(),
-    getAllCapabilities: () => runtimeRegistry.getAllCapabilities(),
-  };
-}
 
 /**
  * Where one scheduled run happens — resolved once, used by everything
@@ -387,6 +227,13 @@ export interface SchedulerDeps {
    * holds anything.
    */
   keepAwake?: TaskAwakeHolds;
+  /**
+   * Which agents are paused (spec `audit-trail` PR5). A run of a paused agent's
+   * task is recorded as skipped and never started. The first skipped fire of
+   * each task in a pause is one `agent.turn_held` audit row; the run rows
+   * record the rest. Absent in tests that do not care.
+   */
+  agentPauses?: TaskAgentPauses;
 }
 
 /**
@@ -447,6 +294,8 @@ export class TaskSchedulerService {
     ((task: Task) => Promise<AgentExecutionDefaults | undefined>) | null = null;
   /** See {@link SchedulerDeps.keepAwake}. */
   private keepAwake: TaskAwakeHolds | null = null;
+  /** See {@link SchedulerDeps.agentPauses}. */
+  private pauseHold = new TaskPauseHold(null);
 
   constructor(
     store: TaskStore,
@@ -474,6 +323,7 @@ export class TaskSchedulerService {
       this.activityService = storeOrDeps.activityService ?? null;
       this.beforeScheduledFire = storeOrDeps.beforeScheduledFire ?? null;
       this.keepAwake = storeOrDeps.keepAwake ?? null;
+      this.pauseHold = new TaskPauseHold(storeOrDeps.agentPauses ?? null);
       this.leaderLock =
         storeOrDeps.leaderLock ??
         (storeOrDeps.dorkHome ? new SchedulerLock({ dorkHome: storeOrDeps.dorkHome }) : null);
@@ -799,6 +649,10 @@ export class TaskSchedulerService {
     if (!task) return null;
 
     const run = this.store.createRun(taskId, 'manual');
+    // A paused agent starts nothing, a person's Run now included: the run is
+    // recorded as skipped, saying why, and the pause records what it held.
+    const paused = this.pauseHold.pausedAgentOf(task.agentId);
+    if (paused) return this.store.updateRun(run.id, this.pauseHold.skipManualRun(paused, run.id));
     // Fire and forget — executeRun handles its own error handling
     this.executeRun(task, run).catch((err) => {
       logger.error(`manual run error for ${task.name}:`, err);
@@ -888,6 +742,22 @@ export class TaskSchedulerService {
         'Nothing picked up the stop request. The agent may still be working — ' +
         'check the run again in a moment.',
     };
+  }
+
+  /**
+   * Stop every running run of one agent's tasks (spec `audit-trail` PR5: a
+   * pause stops what the agent is doing). Each goes through {@link cancelRun},
+   * so a relay-dispatched run is asked over the bus like any other stop.
+   *
+   * @param agentId - The agent's mesh id.
+   * @returns How many runs were asked to stop.
+   */
+  async cancelRunsForAgent(agentId: string): Promise<number> {
+    const runs = this.store
+      .getRunningRuns()
+      .filter((run) => this.store.getTask(run.scheduleId)?.agentId === agentId);
+    const outcomes = await Promise.all(runs.map((run) => this.cancelRun(run.id)));
+    return outcomes.filter((outcome) => outcome.state === 'stopping').length;
   }
 
   /**
@@ -1084,15 +954,20 @@ export class TaskSchedulerService {
     // its previous run is still going must NOT open a second turn on it — that
     // would corrupt the very session sticky exists to keep coherent. All three
     // end in the same `skipped` run row.
+    // A paused agent starts nothing (spec `audit-trail` PR5). Ahead of the
+    // cap: a paused agent's tick is skipped for that reason whatever else holds.
+    const pausedAgent = this.pauseHold.pausedAgentOf(current.agentId);
     const atCap = this.runs.count() >= this.config.maxConcurrentRuns;
     const stickyBusy = !atCap && current.sticky && this.store.hasRunningRunForTask(current.id);
     const skipReason = occurrence?.stale
       ? STALE_SKIP_REASON
-      : atCap
-        ? this.atCapReason()
-        : stickyBusy
-          ? this.stickyBusyReason()
-          : null;
+      : pausedAgent
+        ? AGENT_PAUSED_SKIP_REASON
+        : atCap
+          ? this.atCapReason()
+          : stickyBusy
+            ? this.stickyBusyReason()
+            : null;
 
     // Idempotency gate (ADR-285): atomically claim this scheduled occurrence,
     // opening its run row in the same transaction. If another process (or a
@@ -1135,6 +1010,12 @@ export class TaskSchedulerService {
       // wrong. Deliberately NOT an activity-feed event as well — one record of
       // a non-event is enough, and the feed is for things that happened.
       logger.warn(`skipped a scheduled run of "${task.name}" — ${skipReason}`);
+      // Only the process that wrote the skipped run records the hold, and only
+      // the first fire of this task in this pause: every later one has its
+      // own skipped run row already.
+      if (pausedAgent && skipReason === AGENT_PAUSED_SKIP_REASON) {
+        this.pauseHold.recordScheduledSkip(current.id, pausedAgent, run.id);
+      }
       return;
     }
 

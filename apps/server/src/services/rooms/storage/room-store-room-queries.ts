@@ -32,9 +32,10 @@ export function createRoom(
     // caller-supplied key would be a second expression of the member set,
     // free to disagree with the rows beside it.
     dmMemberKey: facet.dmMemberKeyFor(room.kind, bridged, members),
-    // Empty at creation always: the seat is assigned by the boot hook that
-    // resolves the default agent, never by whoever opened the room.
-    fallbackSeatAuthorId: null,
+    // Whoever opened a channel picks its lead, defaulting to the first agent
+    // added (DOR-2823); #team's is assigned by the boot hook that resolves the
+    // default agent.
+    leadAuthorId: room.leadAuthorId ?? null,
     archived: false,
     ambientMaxEntries: DEFAULT_AMBIENT_MAX_ENTRIES,
     // Inheriting, always: a room is created with no opinion of its own about

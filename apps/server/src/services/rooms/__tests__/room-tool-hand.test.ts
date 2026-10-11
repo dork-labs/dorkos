@@ -495,8 +495,10 @@ describe('the room tool hand', () => {
   // ── The reaction reversal ───────────────────────────────────────────────
 
   describe('agents may react', () => {
-    it('lets an agent put an emoji on a message', () => {
+    it('lets an agent put an emoji on a message', async () => {
       const entry = service.post(channel.id, { authorId: human, text: 'shipping today' });
+      // Past Ana's turn, so the room's 👀 receipt on the post is gone (DOR-2823).
+      await service.triggersIdle();
 
       expect(service.toggleReaction(channel.id, entry.id, ana, '👍').reacted).toBe(true);
       expect(service.reactionsFor(channel.id, entry.id)).toEqual([
@@ -505,6 +507,9 @@ describe('the room tool hand', () => {
     });
 
     it('writes no entry, spends no turn and triggers nobody', async () => {
+      // No lead: this case is about a reaction, and a lead would answer the
+      // unaddressed post (DOR-2823).
+      service.updateRoom(channel.id, human, { leadAuthorId: null });
       const entry = service.post(channel.id, { authorId: human, text: 'shipping today' });
       const before = store.listEntries(channel.id, { limit: 50 }).length;
       runner.turns.length = 0;

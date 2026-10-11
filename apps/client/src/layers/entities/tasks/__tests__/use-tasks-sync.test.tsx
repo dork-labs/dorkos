@@ -33,6 +33,7 @@ vi.mock('@/layers/shared/model', async (importOriginal) => {
 
 import { useTasks } from '../model/use-tasks';
 import { useTasksSync } from '../model/use-tasks-sync';
+import { useRecentTaskRuns } from '../model/use-task-runs';
 
 afterEach(() => {
   cleanup();
@@ -141,4 +142,24 @@ describe('useTasksSync', () => {
     // ...but the session-scoped todo query is left alone.
     expect(sessionScopedFetch).toHaveBeenCalledTimes(1);
   });
+
+  it.each(['task_run_failed', 'task_run_updated'])(
+    'refetches the newest runs when the server broadcasts %s (DOR-2820)',
+    async (event) => {
+      const transport = createMockTransport({ listTaskRuns: vi.fn().mockResolvedValue([]) });
+      const { result } = renderHook(
+        () => {
+          useTasksSync();
+          return useRecentTaskRuns();
+        },
+        { wrapper: harness(transport) }
+      );
+      await waitFor(() => expect(result.current.isSuccess).toBe(true));
+      expect(transport.listTaskRuns).toHaveBeenCalledTimes(1);
+
+      handlers.get(event)!();
+
+      await waitFor(() => expect(transport.listTaskRuns).toHaveBeenCalledTimes(2));
+    }
+  );
 });

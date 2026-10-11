@@ -23,7 +23,7 @@ import {
  *
  * @module server/services/rooms/service/room-core
  */
-import type { RoomPresencePayload } from '@dorkos/shared/room-schemas';
+import { ROOM_RECEIPT_EMOJI, type RoomPresencePayload } from '@dorkos/shared/room-schemas';
 import type { RoomContextCanvas } from '@dorkos/shared/additional-context';
 import type { ReadCursorService } from '../../core/read-cursor-service.js';
 import { eventFanOut } from '../../core/event-fan-out.js';
@@ -31,6 +31,7 @@ import type { BridgeStore } from '../../relay/chat-bridge/bridge-store.js';
 import {
   bridgedRoomFraming,
   topicNamesForEntries,
+  type BridgedRoomFraming,
 } from '../../relay/chat-bridge/room-context-framing.js';
 import type { AuthorRecord, AuthorRegistry } from '../author-registry.js';
 import type { RoomLimitsResolver } from '../limits/room-limits.js';
@@ -65,8 +66,8 @@ import {
   readOriginalRoomTriggerPlacement,
   readOriginalRoomTriggerBusyAgents,
   type OriginalRoomTriggerRequestData,
-  type RoomTriggerWriter,
 } from '../room-trigger.js';
+import type { RoomTriggerWriter } from './room-trigger-deps.js';
 import type {
   RoomEntryIndexer,
   RoomMessageFinder,
@@ -76,6 +77,12 @@ import type {
   GrantedDocTargetBinding,
 } from './room-service-deps.js';
 
+/**
+ * What a turn in a space's channel copy is told about the room: people outside
+ * this machine post here, nothing about visibility is partial, and there are
+ * no far-end formatting rules (spec `official-community-space` D10).
+ */
+const SPACE_ROOM_FRAMING: BridgedRoomFraming = { visibility: null };
 declare const originalDispatchBrand: unique symbol;
 export interface OriginalRoomDispatchCustody {
   readonly [originalDispatchBrand]: true;
@@ -515,6 +522,21 @@ export function createRoomCore(deps: RoomServiceDeps, writeBack: RoomWriteBack):
     // Who the owner is and what they like to be called, so an agent reads the
     // operator by name rather than by the registry's 'You' (DOR-2458).
     isOwnerAuthor: deps.isOwnerAuthor,
+    // The 👀 receipt (DOR-2823): written straight to the reaction store, so it
+    // is the room's courtesy and never the agent's answer or its reaction budget.
+    markReceipt: (roomId, entryId, authorId, on) => {
+      deps.reactions.set(
+        { roomId, entryId, authorId, emoji: ROOM_RECEIPT_EMOJI },
+        new Date().toISOString(),
+        on
+      );
+      deps.broadcaster.publish(roomId, {
+        type: 'reaction',
+        entryId,
+        reactions: deps.reactions.listForEntry(roomId, entryId),
+      });
+    },
+    ...(deps.usageLimitFor ? { usageLimitFor: deps.usageLimitFor } : {}),
     ...(deps.operatorName ? { operatorName: deps.operatorName } : {}),
     // Read per turn, never captured: a room becomes bridged partway through
     // its life, and the standing line in the fence has to follow that rather
@@ -525,9 +547,17 @@ export function createRoomCore(deps: RoomServiceDeps, writeBack: RoomWriteBack):
     // already in the log, and a room whose history holds a stranger's words
     // should not quietly lose the sentence that says so — so this reads
     // `findBridgeByRoom`, not a live-only lookup.
+    //
+    // A space's channel copy is framed the same way (spec
+    // `official-community-space` D10): anyone who joined the space posts
+    // there, so the standing line about strangers belongs on every turn in it.
+    // It has no partial visibility to report and no far-end formatting rules.
     bridgedFraming: (roomId) => {
       const bridge = deps.bridges.findBridgeByRoom(roomId);
-      return bridge ? bridgedRoomFraming(bridge) : null;
+      if (bridge) return bridgedRoomFraming(bridge);
+      // `canRead` answers `null` for an ordinary local room whoever asks, and a boolean for any
+      // space copy, so the author asked about here is irrelevant.
+      return (deps.mirrorAccess?.canRead(roomId, '') ?? null) !== null ? SPACE_ROOM_FRAMING : null;
     },
     topicNamesFor: (entryIds) => topicNamesForEntries(deps.bridges, entryIds),
     attachmentsFor: (roomId, entryIds) => deps.attachments.listFor(roomId, entryIds),

@@ -28,6 +28,7 @@ import { env } from '../env.js';
 import { errorHandler } from '../middleware/error-handler.js';
 import { createAdapterRouter } from '../routes/relay-adapters.js';
 import { createApp, finalizeApp } from '../app.js';
+import { composedListener } from '../http/__tests__/composed-listener.js';
 import { createRelayRouter } from '../routes/relay.js';
 import type { AdapterManager } from '../services/relay/adapter-manager.js';
 import { MainRequestAdmission } from '../services/core/lifecycle/main-request-admission.js';
@@ -123,7 +124,7 @@ beforeEach(async () => {
   );
   app.use('/api/relay', createRelayRouter(publisher as unknown as RelayCore, manager));
   finalizeApp(app);
-  target.mount(app);
+  target.mount(composedListener(app, admission));
 });
 
 afterEach(async () => {

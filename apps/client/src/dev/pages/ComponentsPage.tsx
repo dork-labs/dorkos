@@ -6,6 +6,8 @@ import { BannerShowcases } from '../showcases/BannerShowcases';
 import { FeedbackShowcases } from '../showcases/FeedbackShowcases';
 import { NavigationShowcases } from '../showcases/NavigationShowcases';
 import { TabStripInteractionsShowcases } from '../showcases/TabStripInteractionsShowcases';
+import { TabIdentityShowcases } from '../showcases/TabIdentityShowcases';
+import { LinkChipShowcases } from '../showcases/LinkChipShowcases';
 import { SidebarShowcases } from '../showcases/SidebarShowcases';
 import { VerbLadderShowcases } from '../showcases/VerbLadderShowcases';
 import { OverlayShowcases } from '../showcases/OverlayShowcases';
@@ -30,6 +32,8 @@ export function ComponentsPage() {
       <FeedbackShowcases />
       <NavigationShowcases />
       <TabStripInteractionsShowcases />
+      <TabIdentityShowcases />
+      <LinkChipShowcases />
       <SidebarShowcases />
       <VerbLadderShowcases />
       <OverlayShowcases />

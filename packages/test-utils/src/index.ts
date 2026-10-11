@@ -30,6 +30,7 @@ export * from './fake-memory-provider.js';
 export * from './memory-conformance.js';
 export * from './mock-factories.js';
 export * from './runtime-conformance.js';
+export * from './runtime-conformance-session-list.js';
 export * from './sse-helpers.js';
 export * from './sse-test-helpers.js';
 export * from './test-scenarios.js';

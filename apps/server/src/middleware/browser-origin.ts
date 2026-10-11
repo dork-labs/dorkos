@@ -14,7 +14,7 @@
  */
 import type { RequestFacts } from '../http/request-facts.js';
 import { env } from '../env.js';
-import { type BrowserOriginFacts, getTunnelHost, parseHostname } from '../lib/trusted-origins.js';
+import { type BrowserOriginFacts, getTunnelHosts, parseHostname } from '../lib/trusted-origins.js';
 import { isHostAllowed, parseTrustedHosts } from './host-guard.js';
 
 /** What {@link resolveBrowserOriginFacts} cannot read off the request itself. */
@@ -32,7 +32,7 @@ export interface BrowserOriginContext {
  *
  * Every value is resolved per call, never captured at mount time: a tunnel that
  * connects after boot has to be trusted without a restart, which is the reason
- * `resolveTrustedOrigins` and `getTunnelHost` are functions in the first place.
+ * `resolveTrustedOrigins` and `getTunnelHosts` are functions in the first place.
  *
  * ## Raw headers, never `req.protocol` or `req.hostname`
  *
@@ -63,7 +63,7 @@ export function resolveBrowserOriginFacts(
     hostAllowed: isHostAllowed({
       hostname: parseHostname(headers.host),
       trustedHosts: parseTrustedHosts(env.DORKOS_TRUSTED_HOSTS),
-      tunnelHost: getTunnelHost(),
+      tunnelHosts: getTunnelHosts(),
     }),
     // eslint-disable-next-line no-restricted-syntax -- DORKOS_CORS_ORIGIN is not in env.ts; read the same way app.ts reads it
     configuredOrigins: process.env.DORKOS_CORS_ORIGIN,

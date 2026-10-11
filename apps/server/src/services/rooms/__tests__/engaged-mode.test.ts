@@ -67,6 +67,10 @@ function open(
   const ana = harness.authors.resolveAgent('/agents/ana', 'ana').id;
   const bo = harness.authors.resolveAgent('/agents/bo', 'bo').id;
   if (opts.withBo) harness.service.updateMembership(room.id, harness.human, bo, 'silent');
+  // No lead: these cases are about the engaged rules alone, and a channel's
+  // lead would answer every post they expect to reach nobody (DOR-2823;
+  // `channel-lead.test.ts` covers the lead).
+  harness.service.updateRoom(room.id, harness.human, { leadAuthorId: null });
   return {
     service: harness.service,
     authors: harness.authors,

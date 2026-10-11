@@ -147,7 +147,8 @@ function rows(db: ReturnType<typeof createDb>, hasDoc: boolean) {
 function verifyFinal(db: ReturnType<typeof createDb>) {
   const applied = history(db);
   const legacy = applied.some((row) => hashes.includes(row.hash));
-  expect(applied).toHaveLength(journal.entries.length + (legacy ? 3 : 0));
+  const published = applied.some((row) => row.hash === publishedRoom.hash);
+  expect(applied).toHaveLength(journal.entries.length + (legacy ? 3 : 0) + (published ? 1 : 0));
   for (const [i, hash] of hashes.entries()) {
     const matching = applied.filter((row) => row.hash === hash);
     expect(matching).toHaveLength(legacy ? 1 : 0);
@@ -158,7 +159,7 @@ function verifyFinal(db: ReturnType<typeof createDb>) {
     .update(readFileSync(path.join(folder, `${main.tag}.sql`)))
     .digest('hex');
   expect(applied.filter((row) => row.hash === mainHash)).toHaveLength(1);
-  for (const entry of journal.entries.slice(149, 153)) {
+  for (const entry of journal.entries.slice(149)) {
     const hash = createHash('sha256')
       .update(readFileSync(path.join(folder, `${entry.tag}.sql`)))
       .digest('hex');
@@ -431,6 +432,37 @@ function publishedDatabase(source: Entry = publishedRoom) {
     (session_id, kind, origin_extension_id, created_at) VALUES (?, ?, ?, ?)`
     )
     .run('preserved-start', 'extension', 'preserved-extension', '2026-10-09T00:00:00Z');
+  db.$client
+    .prepare(
+      `INSERT INTO canvas_doc_events
+    (document_id, event_id, doc_seq, direction, type, payload, envelope_hash, received_at, provenance)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    )
+    .run(
+      'preserved-document',
+      'preserved-event',
+      1,
+      'upstream',
+      'task.changed',
+      '{"text":"preserved"}',
+      'd'.repeat(64),
+      '2026-10-09T00:00:00Z',
+      '{}'
+    );
+  db.$client
+    .prepare(
+      `INSERT INTO canvas_doc_deliveries
+    (document_id, event_id, route_id, batch_id, status, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?)`
+    )
+    .run(
+      'preserved-document',
+      'preserved-event',
+      'preserved-route',
+      'preserved-batch',
+      'turn_started',
+      '2026-10-09T00:00:00Z'
+    );
   return db;
 }
 
@@ -444,11 +476,7 @@ describe('published consolidated Room150 across shipped report_back150', () => {
       const batches = db.$client.prepare('SELECT * FROM canvas_doc_batches').all();
       const start = db.$client.prepare('SELECT * FROM session_started_by').get();
       runMigrations(db);
-      expect(history(db).slice(0, before.length)).toEqual(
-        before.map((row) =>
-          row.hash === publishedRoom.hash ? { ...row, created_at: journal.entries[152]!.when } : row
-        )
-      );
+      expect(history(db).slice(0, before.length)).toEqual(before);
       expect(rows(db, true)).toEqual(data);
       expect(db.$client.prepare('SELECT * FROM canvas_doc_room_pending_sources').all()).toEqual(
         pending
@@ -458,9 +486,7 @@ describe('published consolidated Room150 across shipped report_back150', () => {
       expect(db.$client.prepare('SELECT report_back FROM session_started_by').get()).toEqual({
         report_back: 1,
       });
-      expect(history(db).filter((row) => row.hash === publishedRoom.hash)).toEqual([
-        { ...before[150]!, created_at: journal.entries[152]!.when },
-      ]);
+      expect(history(db).filter((row) => row.hash === publishedRoom.hash)).toEqual([before[150]!]);
       expect(history(db).filter((row) => row.hash === reportBackHash)).toHaveLength(1);
       const canonicalRoom = history(db).find((row) => row.hash === publishedRoom.hash)!;
       const report = history(db).find((row) => row.hash === reportBackHash)!;
@@ -473,15 +499,15 @@ describe('published consolidated Room150 across shipped report_back150', () => {
     }
   });
 
-  it('rolls back shipped DDL and new history together if covered152 bookkeeping fails, then resumes', () => {
+  it('rolls back shipped DDL and new history together if canonical155 recording fails, then resumes', () => {
     const db = publishedDatabase();
     try {
-      const final = journal.entries[152]!;
+      const final = journal.entries[155]!;
       const finalHash = createHash('sha256')
         .update(readFileSync(path.join(folder, `${final.tag}.sql`)))
         .digest('hex');
       db.$client.exec(`CREATE TRIGGER owned_report_back_abort
-        BEFORE UPDATE OF created_at ON __drizzle_migrations WHEN OLD.hash = '${finalHash}'
+        BEFORE INSERT ON __drizzle_migrations WHEN NEW.hash = '${finalHash}'
         BEGIN SELECT RAISE(ABORT, 'owned-report-back-abort'); END;`);
       const before = history(db),
         beforeSchema = schema(db),
@@ -521,7 +547,7 @@ describe('published consolidated Room150 across shipped report_back150', () => {
         else if (invalid === 'unbacked canonical stamp')
           db.$client
             .prepare('UPDATE __drizzle_migrations SET created_at = ? WHERE hash = ?')
-            .run(journal.entries[152]!.when, publishedRoom.hash);
+            .run(journal.entries[155]!.when, publishedRoom.hash);
         else if (invalid === 'duplicate published row')
           db.$client
             .prepare('INSERT INTO __drizzle_migrations (hash, created_at) VALUES (?, ?)')
@@ -598,7 +624,7 @@ for (const variant of ['published150', 'fresh151', 'bridged151'] as const) {
       : variant === 'fresh151'
         ? publishedDatabase(publishedRoom151)
         : previouslyBridged151();
-  describe(`${variant} across shipped agent151 and canonical Room152`, () => {
+  describe(`${variant} across shipped Main150 through154 and canonical Room155`, () => {
     it('preserves populated data and original Room row identity, installs missing Main once and restarts', () => {
       const db = build();
       try {
@@ -620,13 +646,7 @@ for (const variant of ['published150', 'fresh151', 'bridged151'] as const) {
             before.find((row) => row.hash === reportBackHash)!.rowIdentity
           );
         runMigrations(db);
-        expect(history(db).slice(0, before.length)).toEqual(
-          before.map((row) =>
-            row.hash === publishedRoom.hash
-              ? { ...row, created_at: journal.entries[152]!.when }
-              : row
-          )
-        );
+        expect(history(db).slice(0, before.length)).toEqual(before);
         expect(rows(db, true)).toEqual(data);
         expect(db.$client.prepare('SELECT * FROM canvas_doc_room_pending_sources').all()).toEqual(
           pending
@@ -639,9 +659,7 @@ for (const variant of ['published150', 'fresh151', 'bridged151'] as const) {
           reports_to: null,
           created_by: null,
         });
-        expect(history(db).filter((row) => row.hash === publishedRoom.hash)).toEqual([
-          { ...original, created_at: journal.entries[152]!.when },
-        ]);
+        expect(history(db).filter((row) => row.hash === publishedRoom.hash)).toEqual([original]);
         expect(history(db).filter((row) => row.hash === reportBackHash)).toHaveLength(1);
         expect(history(db).filter((row) => row.hash === agentReportsHash)).toHaveLength(1);
         verifyFinal(db);
@@ -652,12 +670,13 @@ for (const variant of ['published150', 'fresh151', 'bridged151'] as const) {
       }
     });
 
-    it('rolls back all missing shipped DDL and history if original Room retiming aborts', () => {
+    it('rolls back all missing shipped DDL and history if canonical155 recording aborts', () => {
       const db = build();
       try {
         seedPublishedAgent(db);
+        const canonicalRoomHash = migrationHash(journal.entries[155]!);
         db.$client.exec(`CREATE TRIGGER owned_room152_abort
-          BEFORE UPDATE OF created_at ON __drizzle_migrations WHEN OLD.hash = '${publishedRoom.hash}'
+          BEFORE INSERT ON __drizzle_migrations WHEN NEW.hash = '${canonicalRoomHash}'
           BEGIN SELECT RAISE(ABORT, 'owned-room152-abort'); END;`);
         const before = history(db),
           beforeSchema = schema(db),
@@ -708,7 +727,7 @@ for (const variant of ['published150', 'fresh151', 'bridged151'] as const) {
           else
             db.$client
               .prepare('INSERT INTO __drizzle_migrations (hash, created_at) VALUES (?, ?)')
-              .run('unknown-room152', journal.entries[152]!.when + 1);
+              .run('unknown-room155', journal.entries[155]!.when + 1);
           const before = history(db),
             beforeSchema = schema(db),
             data = rows(db, true),
@@ -790,15 +809,15 @@ function futureMigrationFolder() {
       path.join(isolated, 'legacy-doc', `${tag}.sql`)
     );
   const first: Entry = {
-    idx: 153,
+    idx: journal.entries.length,
     version: '6',
-    when: journal.entries[152]!.when + 1,
+    when: journal.entries[journal.entries.length - 1]!.when + 1,
     tag: 'test_future_owned_table',
     breakpoints: true,
   };
   const second: Entry = {
     ...first,
-    idx: 154,
+    idx: first.idx + 1,
     when: first.when + 1,
     tag: 'test_future_owned_column',
   };
@@ -824,7 +843,7 @@ it('restarts across exact applied future table and column migrations while pendi
   try {
     runMigrations(db);
     const { isolated, first, second } = futureMigrationFolder();
-    // The later journal prefix is pending: restart must compare only recorded152.
+    // The later journal prefix is pending: restart must compare only recorded155.
     const initial = history(db),
       initialSchema = schema(db);
     bridgeLegacyDocMigrationHistory(db, isolated);
@@ -895,6 +914,257 @@ it.each(['gap', 'wrong-stamp', 'duplicate', 'unbacked-schema'] as const)(
       );
       expect(history(db)).toEqual(before);
       expect(schema(db)).toEqual(beforeSchema);
+    } finally {
+      db.$client.close();
+    }
+  }
+);
+
+const publishedRoom152 = {
+  idx: 152,
+  version: '6',
+  when: 1791639241501,
+  tag: '20261010133401_milky_jocasta',
+  breakpoints: true,
+  hash: publishedRoom.hash,
+};
+
+function migrationHash(entry: Entry): string {
+  return createHash('sha256')
+    .update(readFileSync(path.join(folder, `${entry.tag}.sql`)))
+    .digest('hex');
+}
+
+/** Rebuild only an empty fixture table from its genuine stored DDL and preserve its indexes. */
+function alterEmptyFixtureTable(
+  db: ReturnType<typeof createDb>,
+  table: 'room_doc_admissions',
+  change: (sql: string) => string
+) {
+  expect(db.$client.prepare(`SELECT count(*) AS count FROM ${table}`).get()).toEqual({ count: 0 });
+  const original = db.$client
+    .prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name=?")
+    .get(table) as { sql: string };
+  const indexes = db.$client
+    .prepare(
+      "SELECT sql FROM sqlite_master WHERE type='index' AND tbl_name=? AND sql IS NOT NULL ORDER BY name"
+    )
+    .all(table) as { sql: string }[];
+  const replacement = change(original.sql);
+  expect(replacement).not.toBe(original.sql);
+  db.$client.pragma('foreign_keys = OFF');
+  try {
+    db.$client.transaction(() => {
+      db.$client.exec(`DROP TABLE ${table}`);
+      db.$client.exec(replacement);
+      for (const index of indexes) db.$client.exec(index.sql);
+    })();
+  } finally {
+    db.$client.pragma('foreign_keys = ON');
+  }
+  expect(db.$client.pragma('foreign_keys', { simple: true })).toBe(1);
+  expect(db.$client.prepare('PRAGMA foreign_key_check').all()).toEqual([]);
+}
+
+for (const source of [publishedRoom, publishedRoom151, publishedRoom152]) {
+  describe(`published Room${source.idx} across all shipped Main steps and canonical155`, () => {
+    it('preserves every original ledger field and linked populated rows through ordered completion and restart', () => {
+      const db = publishedDatabase(source);
+      try {
+        seedPublishedAgent(db);
+        const before = history(db);
+        const tables = [
+          'canvas_doc_channels',
+          'canvas_doc_channel_tokens',
+          'canvas_doc_grants',
+          'canvas_doc_events',
+          'canvas_doc_batches',
+          'canvas_doc_deliveries',
+          'canvas_doc_room_pending_sources',
+        ];
+        const data = tables.map((table) => ({
+          table,
+          rows: db.$client.prepare(`SELECT * FROM ${table}`).all(),
+        }));
+        const original = before.find((row) => row.hash === source.hash)!;
+        expect(db.$client.pragma('foreign_keys', { simple: true })).toBe(1);
+        runMigrations(db);
+        const complete = history(db);
+        expect(complete.slice(0, before.length)).toEqual(before);
+        expect(complete.filter((row) => row.hash === source.hash)).toEqual([original]);
+        for (const value of data)
+          expect(db.$client.prepare(`SELECT * FROM ${value.table}`).all()).toEqual(value.rows);
+        const shipped = journal.entries.slice(150, 155).map((entry) => {
+          const recorded = complete.filter((row) => row.hash === migrationHash(entry));
+          expect(recorded).toHaveLength(1);
+          expect(recorded[0]!.created_at).toBe(entry.when);
+          return recorded[0]!;
+        });
+        for (let index = 1; index < shipped.length; index++)
+          expect(shipped[index]!.rowIdentity).toBeGreaterThan(shipped[index - 1]!.rowIdentity);
+        const canonical = complete.filter(
+          (row) => row.hash === migrationHash(journal.entries[155]!)
+        );
+        expect(canonical).toHaveLength(1);
+        expect(canonical[0]!.created_at).toBe(1791690666098);
+        expect(canonical[0]!.rowIdentity).toBeGreaterThan(shipped[4]!.rowIdentity);
+        const finalSchema = schema(db);
+        for (let attempt = 0; attempt < 2; attempt++) {
+          runMigrations(db);
+          expect(history(db)).toEqual(complete);
+          expect(schema(db)).toEqual(finalSchema);
+          for (const value of data)
+            expect(db.$client.prepare(`SELECT * FROM ${value.table}`).all()).toEqual(value.rows);
+        }
+        expect(db.$client.pragma('foreign_keys', { simple: true })).toBe(1);
+        expect(db.$client.prepare('PRAGMA foreign_key_check').all()).toEqual([]);
+        verifyFinal(db);
+      } finally {
+        db.$client.close();
+      }
+    });
+
+    it('refuses forged canonical155 completion before Main154 without any schema, history, or data writes', () => {
+      const db = publishedDatabase(source);
+      try {
+        db.$client
+          .prepare('INSERT INTO __drizzle_migrations (hash, created_at) VALUES (?, ?)')
+          .run(migrationHash(journal.entries[155]!), journal.entries[155]!.when);
+        const before = history(db),
+          beforeSchema = schema(db),
+          data = rows(db, true);
+        const deliveries = db.$client.prepare('SELECT * FROM canvas_doc_deliveries').all();
+        expect(() => runMigrations(db)).toThrow(/legacy Doc migration history/i);
+        expect(history(db)).toEqual(before);
+        expect(schema(db)).toEqual(beforeSchema);
+        expect(rows(db, true)).toEqual(data);
+        expect(db.$client.prepare('SELECT * FROM canvas_doc_deliveries').all()).toEqual(deliveries);
+      } finally {
+        db.$client.close();
+      }
+    });
+  });
+}
+
+it.each(['quoted-check-space', 'crossed-composite-foreign-keys'] as const)(
+  'refuses genuine stored schema tampering %s before recording any Main completion',
+  (tamper) => {
+    const db = publishedDatabase(publishedRoom152);
+    try {
+      const beforeForeignKeys = db.$client
+        .prepare("PRAGMA foreign_key_list('room_doc_admissions')")
+        .all();
+      const flattenForeignKeys = (values: unknown[]) =>
+        values
+          .map((value) => {
+            const { id: _id, ...rest } = value as Record<string, unknown>;
+            return JSON.stringify(rest);
+          })
+          .sort();
+      const beforeColumns = db.$client.prepare("PRAGMA table_xinfo('room_doc_admissions')").all();
+      const beforeIndexes = db.$client
+        .prepare(
+          "SELECT name, sql FROM sqlite_master WHERE type='index' AND tbl_name='room_doc_admissions' ORDER BY name"
+        )
+        .all();
+      alterEmptyFixtureTable(db, 'room_doc_admissions', (sql) => {
+        if (tamper === 'quoted-check-space') return sql.replace("'claimed'", "'cl aimed'");
+        const first = 'FOREIGN KEY (`room_id`,`entry_id`)';
+        const second = 'FOREIGN KEY (`root_room_id`,`root_entry_id`)';
+        expect(sql).toContain(first);
+        expect(sql).toContain(second);
+        return sql
+          .replace(first, 'FOREIGN KEY (`room_id`,`root_entry_id`)')
+          .replace(second, 'FOREIGN KEY (`root_room_id`,`entry_id`)');
+      });
+      expect(db.$client.prepare("PRAGMA table_xinfo('room_doc_admissions')").all()).toEqual(
+        beforeColumns
+      );
+      expect(
+        db.$client
+          .prepare(
+            "SELECT name, sql FROM sqlite_master WHERE type='index' AND tbl_name='room_doc_admissions' ORDER BY name"
+          )
+          .all()
+      ).toEqual(beforeIndexes);
+      if (tamper === 'crossed-composite-foreign-keys') {
+        const crossed = db.$client.prepare("PRAGMA foreign_key_list('room_doc_admissions')").all();
+        expect(crossed).not.toEqual(beforeForeignKeys);
+        expect(flattenForeignKeys(crossed)).toEqual(flattenForeignKeys(beforeForeignKeys));
+      }
+      const before = history(db),
+        beforeSchema = schema(db),
+        data = rows(db, true);
+      const pending = db.$client.prepare('SELECT * FROM canvas_doc_room_pending_sources').all();
+      expect(() => runMigrations(db)).toThrow(/legacy Doc migration history/i);
+      expect(history(db)).toEqual(before);
+      expect(schema(db)).toEqual(beforeSchema);
+      expect(rows(db, true)).toEqual(data);
+      expect(db.$client.prepare('SELECT * FROM canvas_doc_room_pending_sources').all()).toEqual(
+        pending
+      );
+      expect(db.$client.pragma('foreign_keys', { simple: true })).toBe(1);
+    } finally {
+      db.$client.close();
+    }
+  }
+);
+
+it('rolls back all three missing Main steps and their history if canonical155 recording aborts for published152', () => {
+  const db = publishedDatabase(publishedRoom152);
+  try {
+    seedPublishedAgent(db);
+    const canonicalHash = migrationHash(journal.entries[155]!);
+    db.$client.exec(`CREATE TRIGGER owned_published152_completion_abort
+      BEFORE INSERT ON __drizzle_migrations WHEN NEW.hash = '${canonicalHash}'
+      BEGIN SELECT RAISE(ABORT, 'owned-published152-completion-abort'); END;`);
+    const before = history(db),
+      beforeSchema = schema(db),
+      data = rows(db, true);
+    const batches = db.$client.prepare('SELECT * FROM canvas_doc_batches').all();
+    const deliveries = db.$client.prepare('SELECT * FROM canvas_doc_deliveries').all();
+    const agents = db.$client.prepare('SELECT * FROM agents').all();
+    expect(() => runMigrations(db)).toThrow(/owned-published152-completion-abort/);
+    expect(history(db)).toEqual(before);
+    expect(schema(db)).toEqual(beforeSchema);
+    expect(rows(db, true)).toEqual(data);
+    expect(db.$client.prepare('SELECT * FROM canvas_doc_batches').all()).toEqual(batches);
+    expect(db.$client.prepare('SELECT * FROM canvas_doc_deliveries').all()).toEqual(deliveries);
+    expect(db.$client.prepare('SELECT * FROM agents').all()).toEqual(agents);
+    expect(db.$client.pragma('foreign_keys', { simple: true })).toBe(1);
+    db.$client.exec('DROP TRIGGER owned_published152_completion_abort');
+    runMigrations(db);
+    expect(history(db).slice(0, before.length)).toEqual(before);
+    expect(db.$client.prepare('SELECT * FROM canvas_doc_batches').all()).toEqual(batches);
+    expect(db.$client.prepare('SELECT * FROM canvas_doc_deliveries').all()).toEqual(deliveries);
+    expect(rows(db, true)).toEqual(data);
+    verifyFinal(db);
+  } finally {
+    db.$client.close();
+  }
+});
+
+it.each([150, 151] as const)(
+  'refuses published152 missing authentic Main%s predecessor before any write',
+  (missing) => {
+    const db = publishedDatabase(publishedRoom152);
+    try {
+      const absentHash = migrationHash(journal.entries[missing]!);
+      expect(
+        db.$client.prepare('DELETE FROM __drizzle_migrations WHERE hash=?').run(absentHash).changes
+      ).toBe(1);
+      const before = history(db),
+        beforeSchema = schema(db),
+        data = rows(db, true);
+      const batches = db.$client.prepare('SELECT * FROM canvas_doc_batches').all();
+      const deliveries = db.$client.prepare('SELECT * FROM canvas_doc_deliveries').all();
+      expect(() => runMigrations(db)).toThrow(/legacy Doc migration history/i);
+      expect(history(db)).toEqual(before);
+      expect(schema(db)).toEqual(beforeSchema);
+      expect(rows(db, true)).toEqual(data);
+      expect(db.$client.prepare('SELECT * FROM canvas_doc_batches').all()).toEqual(batches);
+      expect(db.$client.prepare('SELECT * FROM canvas_doc_deliveries').all()).toEqual(deliveries);
+      expect(db.$client.pragma('foreign_keys', { simple: true })).toBe(1);
     } finally {
       db.$client.close();
     }

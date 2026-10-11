@@ -53,6 +53,27 @@ describe('createStop', () => {
     expect(pool.end).toHaveBeenCalledTimes(1);
   });
 
+  it('closes the live-notice connection after the last stream and before the pool', async () => {
+    // Purpose: fails if the notice listener is left open (the process would never exit) or is
+    // closed while streams still depend on it, or if its failure keeps the pool from ending.
+    const order: string[] = [];
+    const server = {
+      close: vi.fn((callback?: (error?: Error) => void) => {
+        order.push('close');
+        callback?.();
+      }),
+    };
+    const pool = { end: vi.fn(async () => void order.push('end')) };
+    const live = {
+      stop: vi.fn(async () => {
+        order.push('live');
+        throw new Error('already gone');
+      }),
+    };
+    await createStop({ server, pool, live })();
+    expect(order).toEqual(['close', 'live', 'end']);
+  });
+
   it('reports a listener that fails to close, once, and still ends the pool', async () => {
     const server = {
       close: vi.fn((callback?: (error?: Error) => void) => callback?.(new Error('no'))),

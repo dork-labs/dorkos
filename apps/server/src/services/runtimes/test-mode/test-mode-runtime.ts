@@ -163,18 +163,20 @@ import type {
   SseResponse,
   ManagedMcpServerResolver,
   SessionSettingsPort,
+  LiveSessionRef,
 } from '@dorkos/shared/agent-runtime';
 
 import type { StreamEvent } from '@dorkos/shared/types';
 
+import { picksSession } from '@dorkos/shared/agent-runtime';
 import type { RuntimeCommandIntentId } from '@dorkos/shared/command-intents';
 
 import '../../session/session-state-projector.js';
 import '../../../lib/logger.js';
 import '../../session/event-log-history.js';
 import '../../session/log-backed-history.js';
-import './held-process.js';
-import './interaction-gate.js';
+import { heldProcesses } from './held-process.js';
+import { interactionGate } from './interaction-gate.js';
 import './scenario-store.js';
 import { TestModeSessionRegistry } from './session-registry.js';
 import { TEST_MODE_CAPABILITIES } from './runtime-constants.js';
@@ -599,6 +601,29 @@ export class TestModeRuntime
   /** Start answering a declared canonical id, and move the tracked metadata to it. */
   private revealCanonicalSessionId(sessionId: string): void {
     return testModeSessionsMethods.revealCanonicalSessionId(this.#sessionsKey, sessionId);
+  }
+
+  /**
+   * @inheritdoc
+   *
+   * Live here is a scripted turn still open or a held scripted process. Each
+   * picked session has its turn aborted and its process given back.
+   */
+  async endSessionsWhere(belongs: (session: LiveSessionRef) => boolean): Promise<string[]> {
+    readOriginalTestModeSessionsView(this.#sessionsKey);
+    const ended: string[] = [];
+    for (const sessionId of this.registry.ids()) {
+      const open = this.isTurnOpen(sessionId) || interactionGate.isOpen(sessionId);
+      const warm = heldProcesses.warmth(sessionId) !== 'cold';
+      if (!open && !warm) continue;
+      if (!picksSession(belongs, { sessionId, cwd: this.registry.get(sessionId)?.cwd })) continue;
+      const receipt = await this.interruptQuery(sessionId);
+      const released = heldProcesses.reap(sessionId);
+      if (receipt.outcome === 'acked' || receipt.outcome === 'closed' || released) {
+        ended.push(sessionId);
+      }
+    }
+    return ended;
   }
 }
 

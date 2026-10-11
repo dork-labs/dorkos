@@ -825,6 +825,29 @@ describe('background work (spec §12)', () => {
     expect((await h.transport.stopTask('s1', bg.itemId)).outcome).toBe('not-running');
   });
 
+  it('ends a paused agent’s session: its command stopped, its thread given back, no wake', async () => {
+    const h = harness();
+    const seen = wakes(h);
+    const bg = backgroundCommandTurn('pnpm dev');
+    h.host.home(PERSON_HOME).nextTurn(bg.script);
+    await h.run(h.request({ sessionId: 's1' }));
+    expect(h.transport.liveSessionIds()).toEqual(['s1']);
+
+    expect(await h.transport.endSession('s1')).toBe(true);
+
+    const fake = h.host.home(PERSON_HOME).processes[0]!;
+    expect(fake.requestsOf('thread/backgroundTerminals/terminate')).toEqual([
+      { threadId: h.bindings[0]!.threadId, processId: bg.processId },
+    ]);
+    expect(h.transport.getSessionWarmth('s1')).toBe('cold');
+    await waitFor(() => seen.length === 1);
+    expect(seen[0]).toMatchObject({ startTurn: false });
+    expect(h.transport.holdsBackgroundWork('s1')).toBe(false);
+    expect(h.transport.liveSessionIds()).toEqual([]);
+    // Nothing left: ending it again is honest about it.
+    expect(await h.transport.endSession('s1')).toBe(false);
+  });
+
   it('keeps the result of a command that ended just before its stop, and wakes no model turn', async () => {
     const h = harness();
     const seen = wakes(h);

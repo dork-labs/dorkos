@@ -15,6 +15,7 @@
     "test:browser": "pnpm build && node -e \"require('node:fs').rmSync('browser-report.json',{force:true})\" && playwright test --config playwright.config.ts && tsx scripts/assert-browser-tests.ts && tsx scripts/tenancy-receipt.ts browser",
     "test:backup-restore": "node scripts/rehearse-backup-restore.mjs",
     "auth-options:probe": "tsx scripts/auth-options-probe.ts",
+    "load": "tsx load/index.ts",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "db:migrate": "tsx src/migrate.ts",

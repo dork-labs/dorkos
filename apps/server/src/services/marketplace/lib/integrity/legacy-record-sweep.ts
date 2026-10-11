@@ -21,6 +21,7 @@ import { isInstallSiblingName } from '@dorkos/shared/marketplace-schemas';
 import { installRootsUnder, projectScopeRoot } from '../install-roots.js';
 import { readInstalledFiles } from '../records/installed-files.js';
 import { hasPackageIdentity } from '../locate-install.js';
+import { logger } from '../../../../lib/logger.js';
 import {
   rebuildRecordStrict,
   STRICT_RECORD_TEMP_PREFIX,
@@ -173,4 +174,17 @@ export async function removeRecordTempLeftovers(tempRoot: string = tmpdir()): Pr
     if (!stats?.isDirectory() || stats.mtimeMs > cutoff) continue;
     await rm(full, { recursive: true, force: true }).catch(() => undefined);
   }
+}
+
+/**
+ * Log what the legacy record sweep did, when it did anything.
+ *
+ * @param summary - The sweep's outcome lists.
+ */
+export function logLegacySweep(summary: LegacySweepSummary): void {
+  const { rebuilt, mismatch, noSource, fetchFailed } = summary;
+  if (rebuilt.length + mismatch.length + noSource.length + fetchFailed.length === 0) return;
+  logger.info(
+    `[Marketplace] Records for packages an older DorkOS installed: ${rebuilt.length} rebuilt, ${mismatch.length} changed since install, ${noSource.length} installed from a local folder, ${fetchFailed.length} to retry`
+  );
 }

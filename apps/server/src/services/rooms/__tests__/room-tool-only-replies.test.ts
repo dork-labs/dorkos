@@ -272,13 +272,14 @@ describe('a room turn that speaks only through the tool', () => {
       // Spend Ana's whole hourly allowance BEFORE the turn runs, so the turn's
       // reaction is the one that is refused rather than racing the fillers.
       const filler = service.post(room.id, { authorId: human, text: 'nothing to see' });
+      // Never 👀: it is the room's receipt and refused to an agent (DOR-2823).
       for (let i = 0; i < 20; i += 1) {
-        service.toggleReaction(room.id, filler.id, ana, ['👀', '✅', '👍', '🎉', '🚀'][i % 5]!);
+        service.toggleReaction(room.id, filler.id, ana, ['👏', '✅', '👍', '🎉', '🚀'][i % 5]!);
         service.toggleReaction(
           room.id,
           filler.id,
           ana,
-          ['👀', '✅', '👍', '🎉', '🚀'][i % 5]!,
+          ['👏', '✅', '👍', '🎉', '🚀'][i % 5]!,
           false
         );
       }

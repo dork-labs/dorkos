@@ -224,7 +224,7 @@ describe('Database Migrations', () => {
       const history = db.$client.prepare('SELECT * FROM __drizzle_migrations ORDER BY id').all();
       const journal = JSON.parse(
         readFileSync(path.join(DRIZZLE_DIR, 'meta/_journal.json'), 'utf-8')
-      ) as { entries: { idx: number; tag: string }[] };
+      ) as { entries: { idx: number; tag: string; when: number }[] };
       expect(history).toHaveLength(journal.entries.length);
       expect(history.slice(0, 148)).toEqual(publishedHistory);
       expect(db.$client.prepare('SELECT * FROM session_locations ORDER BY id').all()).toEqual(
@@ -233,19 +233,65 @@ describe('Database Migrations', () => {
       expect(
         db.$client.prepare('SELECT * FROM session_native_bindings ORDER BY session_id').all()
       ).toEqual(publishedBindings);
-      expect(journal.entries.slice(148).map((entry) => entry.idx)).toEqual([
-        148, 149, 150, 151, 152,
+      expect(journal.entries.slice(148).map(({ idx, tag, when }) => ({ idx, tag, when }))).toEqual([
+        {
+          idx: 148,
+          tag: '20261008170031_session_touches',
+          when: 1791478831717,
+        },
+        {
+          idx: 149,
+          tag: '20261009171311_chat_messages',
+          when: 1791565991417,
+        },
+        {
+          idx: 150,
+          tag: '20261009173712_started_by_report_back',
+          when: 1791567432144,
+        },
+        {
+          idx: 151,
+          tag: '20261010095454_agent_reports_to',
+          when: 1791626094991,
+        },
+        {
+          idx: 152,
+          tag: '20261010132742_commitments',
+          when: 1791638862326,
+        },
+        {
+          idx: 153,
+          tag: '20261010155953_channel_leads',
+          when: 1791647993524,
+        },
+        {
+          idx: 154,
+          tag: '20261010175157_agent_pauses',
+          when: 1791654717694,
+        },
+        {
+          idx: 155,
+          tag: '20261011035106_married_puppet_master',
+          when: 1791690666098,
+        },
       ]);
       expect(db.$client.prepare('SELECT * FROM audit_events ORDER BY seq').all()).toEqual(
         publishedAudit
       );
-      // Fresh/main-only upgrades apply immutable Chat149/report_back150 and Main agent151 and genuine Doc152 once.
-      for (const entry of journal.entries.slice(149, 153)) {
+      // The shipped Main148..154 prefix precedes canonical Doc155; each immutable
+      // SQL identity is recorded once at its authentic journal timestamp.
+      for (const entry of journal.entries.slice(148)) {
         const hash = createHash('sha256')
           .update(readFileSync(path.join(DRIZZLE_DIR, `${entry.tag}.sql`)))
           .digest('hex');
-        expect(history.filter((row) => (row as { hash: string }).hash === hash)).toHaveLength(1);
+        const appliedRows = history.filter((row) => (row as { hash: string }).hash === hash);
+        expect(appliedRows).toHaveLength(1);
+        expect(appliedRows[0]).toMatchObject({ hash, created_at: entry.when });
       }
+      expect(history.at(-1)).toMatchObject({
+        hash: 'b7390d7499448a3021402bd70f04c0d35096d0015e40305788e6b30fc3ce93c4',
+        created_at: 1791690666098,
+      });
       const schema = db.$client
         .prepare('SELECT type, name, tbl_name, sql FROM sqlite_master ORDER BY type, name')
         .all();
@@ -305,6 +351,9 @@ describe('Database Migrations', () => {
       // mesh reconciler's rebuild-from-files cannot orphan them
       // (agent-trust spec §3.1, migration 0030).
       'agent_identity_tokens',
+      // Agents paused everywhere, current state only; history is audit rows
+      // (spec audit-trail PR5).
+      'agent_pauses',
       'agents',
       'apikey',
       // Approval records for capability invocations that need a person's
@@ -343,6 +392,8 @@ describe('Database Migrations', () => {
       'chat_messages',
       'chat_read_cursors',
       'codex_threads',
+      // What each agent promised, to whom and by when (spec heartbeats §12).
+      'commitments',
       // Remote community enrollment, mirrored history, and durable delivery.
       'community_agent_enrollments',
       'community_entry_origins',

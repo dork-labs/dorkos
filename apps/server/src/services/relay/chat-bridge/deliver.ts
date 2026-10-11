@@ -133,6 +133,9 @@ const DELIVERABLE_NOTICES: ReadonlySet<RoomNoticeCode> = new Set<RoomNoticeCode>
   // things done to the install, and the DM a notice is delivered to by default
   // is the operator's own (spec §6.2).
   'runtime_gone',
+  // A paused agent answers nobody, and a bridged chat is owed the sentence
+  // the room gets rather than silence (spec `audit-trail` PR5).
+  'agent_paused',
 ]);
 
 /**

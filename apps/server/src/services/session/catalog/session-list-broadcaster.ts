@@ -49,6 +49,7 @@ import {
 } from '../origin/session-origin-overlays.js';
 import { askEntitlement, type AskSubject } from '../asks/ask-entitlement.js';
 import type { CallerPrincipal } from '../../../lib/caller-principal.js';
+import { sessionAudience } from '../../audit/session-visibility.js';
 import { DEFAULT_CWD } from '../../../lib/resolve-root.js';
 import { projectRegistry } from '../../projects/project-registry.js';
 import { logger } from '../../../lib/logger.js';
@@ -212,6 +213,7 @@ function carriesBlockedDetail(event: SessionListEvent): boolean {
 export function sendSessionStatusSnapshot(client: FanOutClient, principal: CallerPrincipal): void {
   for (const update of listProjectorStatuses()) {
     if (!SNAPSHOT_LIFECYCLES.has(update.status.lifecycle)) continue;
+    if (!sessionAudience(update.sessionId)(principal)) continue;
     if (client.bufferedBytes > SSE.MAX_BUFFERED_BYTES) {
       logger.warn(
         '[SessionListBroadcaster] connect snapshot truncated (client buffer over limit)',
@@ -233,6 +235,11 @@ export function sendSessionStatusSnapshot(client: FanOutClient, principal: Calle
       : withoutBlockedDetail(event);
     client.send(encodeBroadcast(outgoing.type, outgoing));
   }
+}
+
+/** The session a list event is about. */
+function sessionIdOf(event: SessionListEvent): string {
+  return event.type === 'session_upserted' ? event.session.id : event.sessionId;
 }
 
 /**
@@ -580,11 +587,12 @@ export class SessionListBroadcaster {
    * `session_status`. That is a different fact — nobody is being asked for
    * anything — and narrowing it is not this spec's to do.
    *
-   * `interaction_resolved` deliberately keeps the plain broadcast. It carries a
+   * `interaction_resolved` is not addressed by entitlement. It carries a
    * session id, an interaction id and an outcome, and no detail at all; a client
-   * that never received the `pending` simply has nothing to close, and
-   * addressing the receipt would cost a second subject resolution on every
-   * resolution to withhold a fact the session's own stream already carries.
+   * that never received the `pending` simply has nothing to close. It goes,
+   * like every session frame here, only to connections that may read the
+   * session (spec `audit-trail` §3.4), so an agent never learns a person's own
+   * chat was asked anything.
    *
    * `.parse` rather than `safeParse`: a malformed payload is a bug in this
    * module, and it should fail here — inside the listener's own throw
@@ -634,7 +642,8 @@ export class SessionListBroadcaster {
         outcome: change.outcome,
         resolvedAt: new Date().toISOString(),
         ...(change.resolvedBy ? { resolvedBy: change.resolvedBy } : {}),
-      })
+      }),
+      sessionAudience(change.sessionId)
     );
   }
 
@@ -707,20 +716,26 @@ export class SessionListBroadcaster {
     }
   }
 
-  /** Put one validated, overlaid event on the wire. */
+  /**
+   * Put one validated, overlaid event on the wire. An agent's connection hears
+   * only about sessions it may read (spec `audit-trail` §3.4): a person's own
+   * chat, its title included, never reaches it.
+   */
   private send(outgoing: SessionListEvent): void {
     if (outgoing.type === 'session_removed') notifySessionRemoved(outgoing.sessionId);
+    const sessionId = sessionIdOf(outgoing);
+    const audience = sessionAudience(sessionId);
     if (carriesBlockedDetail(outgoing)) {
-      const sessionId = outgoing.type === 'session_status' ? outgoing.sessionId : '';
       eventFanOut.broadcastRedacted(
         outgoing.type,
         outgoing,
         withoutBlockedDetail(outgoing),
-        (principal) => maySeeBlockedDetail(principal, sessionId)
+        (principal) => maySeeBlockedDetail(principal, sessionId),
+        audience
       );
       return;
     }
-    eventFanOut.broadcast(outgoing.type, outgoing);
+    eventFanOut.broadcast(outgoing.type, outgoing, audience);
   }
 }
 

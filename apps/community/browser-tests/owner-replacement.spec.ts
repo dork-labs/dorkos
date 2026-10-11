@@ -18,6 +18,8 @@ import { serve } from '@hono/node-server';
 import { serveStatic } from '@hono/node-server/serve-static';
 import { Pool } from 'pg';
 import { createCommunityApp } from '../src/app.js';
+import { createLiveHub } from '../src/live/app-hub.js';
+import type { LiveHub } from '../src/live/hub.js';
 import { parseConfig } from '../src/config.js';
 import { migrate } from '../src/migrate.js';
 import { formatReplacementDate } from '../src/owner-replacement/dates.js';
@@ -68,6 +70,7 @@ const operator = { email: 'operator@replace.test', password: TENANCY_PASSWORD };
 const clock = new TestClock();
 let pool: Pool;
 let server: ReturnType<typeof serve>;
+let live: LiveHub | undefined;
 let baseUrl: string;
 let blobDir: string;
 let host: ReplacementHost;
@@ -260,10 +263,12 @@ test.beforeAll(async () => {
     COMMUNITY_OWNER_REPLACEMENT_UNREACHABLE_DAYS: 14,
   });
   const blobStore = new FileSystemBlobStore(blobDir);
+  live = createLiveHub(config);
   const app = createCommunityApp({
     config,
     pool,
     blobStore,
+    live,
     hooks: { now: clock.now },
     noticeComposers: COMPOSERS,
   });
@@ -289,6 +294,7 @@ test.beforeAll(async () => {
     config,
     pool,
     blobStore,
+    live,
     baseUrl,
     call(path, init = {}) {
       const headers: Record<string, string> = { ...init.headers };
@@ -340,6 +346,7 @@ test.afterAll(async () => {
     if ('closeAllConnections' in server) server.closeAllConnections();
     await new Promise<void>((resolve) => server.close(() => resolve()));
   }
+  await live?.stop();
   await pool?.end();
   await admin.query(`DROP DATABASE IF EXISTS ${dbName}`);
   await admin.end();

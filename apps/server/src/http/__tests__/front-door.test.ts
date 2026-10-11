@@ -31,7 +31,13 @@ import { KeepAwakeStatusSchema } from '@dorkos/shared/schemas';
 import { createApp, finalizeApp } from '../../app.js';
 import { MainRequestAdmission } from '../../services/core/lifecycle/main-request-admission.js';
 import { attachUpgradeRouter } from '../../services/core/streams/upgrade-router.js';
-import { createFrontDoor, createFrontDoorServer, frontDoorListener } from '../front-door.js';
+import {
+  createFrontDoor,
+  createFrontDoorServer,
+  frontDoorListener,
+  type FrontDoorOptions,
+} from '../front-door.js';
+import { createApiApp } from '../api-chain.js';
 
 const TWO_MB = 2 * 1024 * 1024;
 
@@ -113,8 +119,11 @@ afterEach(async () => {
 });
 
 /** Serve `legacy` through the front door on an ephemeral loopback port. */
-async function serveThroughFrontDoor(legacy: RequestListener): Promise<string> {
-  const server = createFrontDoorServer(createFrontDoor(legacy));
+async function serveThroughFrontDoor(
+  legacy: RequestListener,
+  options: FrontDoorOptions = {}
+): Promise<string> {
+  const server = createFrontDoorServer(createFrontDoor(legacy, options));
   servers.push(server);
   server.listen(0, '127.0.0.1');
   await once(server, 'listening');
@@ -235,7 +244,6 @@ describe('front door', () => {
 
   it.each([
     ['no Host at all (HTTP/1.0)', 'GET /head HTTP/1.0\r\n\r\n'],
-    ['a Host in capitals', 'GET /head HTTP/1.1\r\nHost: LocalHost:1\r\nConnection: close\r\n\r\n'],
     [
       'a port out of range',
       'GET /head HTTP/1.1\r\nHost: localhost:99999\r\nConnection: close\r\n\r\n',
@@ -249,6 +257,32 @@ describe('front door', () => {
     const raw = await rawRequest(base, request);
     expect(raw.split('\r\n')[0]).toBe('HTTP/1.1 200 OK');
     expect(raw).toMatch(/x-fixture: yes/i);
+  });
+
+  it('lower-cases a Host in capitals, so a moved route still answers it', async () => {
+    const api = createApiApp({ admission: new MainRequestAdmission() });
+    api.get('/api/moved', (c) => c.json({ answeredBy: 'hono', host: c.env.incoming.headers.host }));
+    const base = await serveThroughFrontDoor(fixtureApp(), { api });
+    const raw = await rawRequest(
+      base,
+      'GET /api/moved HTTP/1.1\r\nHost: LocalHost:1\r\nConnection: close\r\n\r\n'
+    );
+    expect(raw.split('\r\n')[0]).toBe('HTTP/1.1 200 OK');
+    expect(raw).toContain('{"answeredBy":"hono","host":"localhost:1"}');
+    // And the rest still reaches Express.
+    const legacy = await rawRequest(
+      base,
+      'GET /head HTTP/1.1\r\nHost: LocalHost:1\r\nConnection: close\r\n\r\n'
+    );
+    expect(legacy).toMatch(/x-fixture: yes/i);
+  });
+
+  it('claims only the moved routes: chain middleware claims nothing', async () => {
+    const api = createApiApp({ admission: new MainRequestAdmission() });
+    api.get('/api/moved', (c) => c.json({ answeredBy: 'hono' }));
+    const door = createFrontDoor(fixtureApp(), { api });
+    const claimed = door.app.routes.map((route) => `${route.method} ${route.path}`);
+    expect(claimed).toEqual(['GET /api/moved', 'ALL /*']);
   });
 
   it('hands Express an OPTIONS * request', async () => {

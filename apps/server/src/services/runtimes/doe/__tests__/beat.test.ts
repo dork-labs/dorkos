@@ -1,4 +1,10 @@
 import { expect, it, vi } from 'vitest';
+import {
+  AgentPausedError,
+  initAgentPause,
+  resetAgentPause,
+  type AgentPauseService,
+} from '../../../mesh/pause/agent-pause.js';
 import { engine, makeRuntime, projectDir } from './runtime-fixture.js';
 it('preflight skips the actual isolated Beat with zero model calls', async () => {
   const run = vi.fn(engine().run);
@@ -46,3 +52,25 @@ it.each(['quiet', 'raises'] as const)(
     expect(runtime.sessions.models.outcomes('beat', `beat:${kind}`)[0]?.result).toEqual(result);
   }
 );
+it('refuses a Beat for a paused agent before any model call, and records it', async () => {
+  const run = vi.fn(engine().run);
+  const runtime = makeRuntime({ engineFactory: () => engine(run) });
+  runtime.ensureSession('beat', { cwd: projectDir, permissionMode: 'default' });
+  const recordHeld = vi.fn();
+  initAgentPause({
+    pausedAgentOfSession: () => ({ id: 'agent-1', name: 'Doe' }),
+    recordHeld,
+  } as unknown as AgentPauseService);
+  try {
+    await expect(
+      runtime.runBeat('beat', { id: 'held', prompt: 'Check progress' })
+    ).rejects.toBeInstanceOf(AgentPausedError);
+    expect(run).not.toHaveBeenCalled();
+    expect(recordHeld).toHaveBeenCalledWith(
+      { id: 'agent-1', name: 'Doe' },
+      { via: 'turn', sessionId: 'beat', runtime: 'doe' }
+    );
+  } finally {
+    resetAgentPause();
+  }
+});

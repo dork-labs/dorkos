@@ -135,6 +135,12 @@ export const STATUS_BY_CODE: Record<RoomErrorCode, number> = {
   // one really is somebody asking to claim a row that is not claimable.
   IDENTITY_NOT_EXTERNAL: 400,
   NOT_A_BRIDGED_ROOM: 409,
+  // A 400: the request named somebody who is not an agent member of this
+  // channel, or asked a direct message for a lead.
+  INVALID_LEAD: 400,
+  // A 400: the 👀 receipt is the room's own, so an agent's request for it is
+  // malformed rather than refused for lack of a credential.
+  RECEIPT_EMOJI_RESERVED: 400,
   NO_SURVIVING_BRIDGE: 409,
   ATTACHMENT_NOT_FOUND: 404,
   ATTACHMENT_ALREADY_POSTED: 409,

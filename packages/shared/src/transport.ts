@@ -10,7 +10,6 @@ import type {
   McpClientCredentials,
   McpSigninPollResult,
 } from './transport-mcp.js';
-import type { ChatActivityResponse } from './chat-messages.js';
 import type { DoeCreditsCatalog } from './runtime-connect.js';
 import type { DoeInferenceConfig } from './config-schema.js';
 import type {
@@ -153,7 +152,6 @@ import type {
 } from './schemas.js';
 import type { TemplateEntry } from './template-catalog.js';
 import type { ClientContext } from './additional-context.js';
-import type { ListActivityQuery, ListActivityResponse } from './activity-schemas.js';
 import type {
   ApprovalAnswer,
   ApprovalDecisionResponse,
@@ -230,9 +228,7 @@ import type {
   FoundClaudeFolder,
   LimitHistoryEntry,
 } from './account-usage.js';
-import type { RoomTransport } from './transport-rooms.js';
-import type { CommunityConnectionTransport } from './community-connections.js';
-import type { RemoteCommunityTransport } from './community-views.js';
+import type { TransportSlices } from './transport-slices.js';
 import type { CanvasEditingResponse, UpdateCanvasDocumentRequest } from './room-schemas.js';
 import type { CanvasDocument } from './canvas-schemas.js';
 import type { ReadCursor, ReadCursorThreadKind } from './read-cursor-schemas.js';
@@ -525,8 +521,7 @@ export interface ClientErrorReport {
   stack?: string;
 }
 
-export interface Transport
-  extends RoomTransport, CommunityConnectionTransport, RemoteCommunityTransport {
+export interface Transport extends TransportSlices {
   /** Optional client identifier for SSE presence tracking. */
   readonly clientId?: string;
   /**
@@ -590,14 +585,6 @@ export interface Transport
    * @param sessionId - The chat being shown.
    */
   markSessionOpened(sessionId: string): Promise<void>;
-  /**
-   * What a chat sent other chats, and the times another chat stopped it (spec
-   * `spin-off-chats` §6): the Sent cards and the "Stopped by" lines. Re-read
-   * whenever the chat's stream carries a `chat_activity` event.
-   *
-   * @param sessionId - The chat.
-   */
-  getChatActivity(sessionId: string): Promise<ChatActivityResponse>;
   /** Reserve a durable, caller-scoped opaque reference to a launch directory. */
   createSessionLocation(cwd: string): Promise<{ id: string }>;
   /** Resolve a launch reference without putting its private directory in a URL. */
@@ -2292,9 +2279,6 @@ export interface Transport
   restartServer(): Promise<{ message: string }>;
 
   // --- Activity Feed ---
-
-  /** List activity events with optional filters and cursor-based pagination. */
-  listActivityEvents(query?: Partial<ListActivityQuery>): Promise<ListActivityResponse>;
 
   // --- Templates ---
 

@@ -1,7 +1,8 @@
 /**
  * Startup wires the audit trail (spec `audit-trail`): `index.ts` builds it with
  * `wireAuditTrail`, serves `/api/audit`, and hands the log to the capability
- * registry so `audit.verify` is registered. The behaviour of each piece is
+ * registry so the `audit.*` capabilities are registered, and sets the session
+ * visibility lookup the transcript reads use. The behaviour of each piece is
  * tested where it lives; this pins that startup actually uses them.
  */
 import { readFileSync } from 'node:fs';
@@ -19,9 +20,19 @@ describe('audit trail startup wiring', () => {
     expect(prune).toBeGreaterThan(wire);
   });
 
-  it('serves /api/audit and registers audit.verify with the same log', () => {
-    expect(source).toContain("app.use('/api/audit', createAuditRouter(auditLog));");
-    expect(source).toContain('auditDeps: { log: auditLog },');
+  it('serves /api/audit and registers the audit capabilities with the same log', () => {
+    expect(source).toContain(
+      "app.use('/api/audit', createAuditRouter({ log: auditLog, accounts: auditAccounts }));"
+    );
+    expect(source).toContain(
+      'auditDeps: auditCapabilityDeps(auditLog, auditAccounts, runtimeRegistry),'
+    );
+  });
+
+  it('sets the session visibility lookup from the stored origin and the overlays', () => {
+    expect(source).toContain(
+      'wireSessionVisibility({ db, accounts: auditAccounts, resolveTaskOrigins, resolveStartedBy });'
+    );
   });
 
   it('enters the request audit scope after both identity gates, before any route', () => {

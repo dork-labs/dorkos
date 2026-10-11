@@ -118,10 +118,10 @@ describe('an unaddressed post in #team', () => {
     expect(turnsFor(w, w.ace)).toBe(0);
   });
 
-  it('still reaches nobody in an ordinary room', async () => {
-    // The E7 guarantee is not weakened globally. #team answers because of ONE
-    // membership on ONE room, so a channel you opened yourself is exactly as
-    // quiet as it was.
+  it('reaches only the lead in an ordinary room', async () => {
+    // The E7 guarantee is not weakened globally. A channel you opened yourself
+    // answers a message nobody else is answering with ONE agent, its lead — the
+    // first agent added (DOR-2823) — and nobody else is listening.
     const w = boot();
     const backend = w.service.createRoom(
       { kind: 'channel', title: 'Backend', members: [], agentPaths: [DORKBOT, NOVA] },
@@ -131,7 +131,8 @@ describe('an unaddressed post in #team', () => {
     w.service.post(backend.id, { authorId: w.human, text: 'what is on for today?' });
     await w.service.triggersIdle();
 
-    expect(w.runner.turns.filter((turn) => turn.roomId === backend.id)).toHaveLength(0);
+    const here = w.runner.turns.filter((turn) => turn.roomId === backend.id);
+    expect(here.map((turn) => turn.authorId)).toEqual([w.dorkbot]);
   });
 
   it('keeps reaching the default agent on the next message', async () => {
@@ -407,6 +408,19 @@ describe('changing the default agent', () => {
     await say(w, 'thanks, when will it be out?');
     expect(turnsFor(w, w.nova)).toBe(1);
     expect(turnsFor(w, w.dorkbot)).toBe(dorkbotBefore + 1);
+  });
+
+  it('keeps its lead in Settings, not in the room', () => {
+    // #team's lead is the default agent, which the boot hook keeps in step with
+    // Settings; a write here would be undone, so it is refused (DOR-2823).
+    const w = boot();
+    let code: string | undefined;
+    try {
+      w.service.updateRoom(w.roomId, w.human, { leadAuthorId: w.nova });
+    } catch (err) {
+      code = (err as { code?: string }).code;
+    }
+    expect(code).toBe('INVALID_LEAD');
   });
 
   it('is the setting, not the room key, that decides — #team is otherwise ordinary', async () => {

@@ -33,6 +33,7 @@ import { createTerminalMethods } from './terminal-methods';
 import { createFeedbackMethods } from './feedback-methods';
 import { createApprovalMethods } from './approval-methods';
 import { createPermissionMethods } from './permission-methods';
+import { createCommitmentMethods } from './commitment-methods';
 import { createNotificationMethods } from './notification-methods';
 import { createPushMethods } from './push-methods';
 import { createConnectorMethods } from './connector-methods';
@@ -41,6 +42,7 @@ import { createTeamMethods } from './team-methods';
 import { createProfileMethods } from './profile-methods';
 import { createSearchMethods } from './search-methods';
 import { createAccountMethods } from './account-methods';
+import { createAuditMethods } from './audit-methods';
 
 // ---------------------------------------------------------------------------
 // Declaration merging
@@ -77,6 +79,7 @@ export interface HttpTransport
     ReturnType<typeof createFeedbackMethods>,
     ReturnType<typeof createApprovalMethods>,
     ReturnType<typeof createPermissionMethods>,
+    ReturnType<typeof createCommitmentMethods>,
     ReturnType<typeof createNotificationMethods>,
     ReturnType<typeof createPushMethods>,
     ReturnType<typeof createConnectorMethods>,
@@ -84,7 +87,8 @@ export interface HttpTransport
     ReturnType<typeof createTeamMethods>,
     ReturnType<typeof createProfileMethods>,
     ReturnType<typeof createSearchMethods>,
-    ReturnType<typeof createAccountMethods> {}
+    ReturnType<typeof createAccountMethods>,
+    ReturnType<typeof createAuditMethods> {}
 
 // ---------------------------------------------------------------------------
 // Class
@@ -124,6 +128,7 @@ export class HttpTransport implements Transport {
       createFeedbackMethods(baseUrl),
       createApprovalMethods(baseUrl),
       createPermissionMethods(baseUrl),
+      createCommitmentMethods(baseUrl),
       createNotificationMethods(baseUrl),
       createPushMethods(baseUrl),
       createConnectorMethods(baseUrl),
@@ -131,7 +136,8 @@ export class HttpTransport implements Transport {
       createTeamMethods(baseUrl),
       createProfileMethods(baseUrl),
       createSearchMethods(baseUrl),
-      createAccountMethods(baseUrl)
+      createAccountMethods(baseUrl),
+      createAuditMethods(baseUrl)
     );
   }
 }

@@ -90,7 +90,9 @@ import type {
   InteractionAnswerOptions,
   DeliverIntoTurnOpts,
   RuntimeDeliveryResult,
+  LiveSessionRef,
 } from '@dorkos/shared/agent-runtime';
+import { picksSession } from '@dorkos/shared/agent-runtime';
 import type {
   SessionSnapshot,
   SessionEvent,
@@ -1381,6 +1383,31 @@ export class CodexRuntime implements AgentRuntime {
     }
     logger.debug('[CodexRuntime] interrupted in-flight turn', { sessionId });
     return this.#transport.interrupt(sessionId);
+  }
+
+  /**
+   * @inheritdoc
+   *
+   * Live here is a turn in flight, plus whatever the transport still holds for
+   * the session: background work that could wake it, a loaded thread. Each is
+   * interrupted, then ended at the transport, so no wake follows.
+   */
+  async endSessionsWhere(belongs: (session: LiveSessionRef) => boolean): Promise<string[]> {
+    void this.#queryKey;
+    const ids = new Set([...this.activeTurns.keys(), ...(this.transport.liveSessionIds?.() ?? [])]);
+    const ended: string[] = [];
+    for (const sessionId of ids) {
+      const cwd = this.registry.get(sessionId)?.cwd ?? this.threadMap.get(sessionId)?.cwd;
+      if (!picksSession(belongs, { sessionId, cwd })) continue;
+      const receipt = await this.interruptQuery(sessionId).catch(() => undefined);
+      const released = await (
+        this.transport.endSession?.(sessionId) ?? Promise.resolve(false)
+      ).catch(() => false);
+      if (receipt?.outcome === 'acked' || receipt?.outcome === 'closed' || released) {
+        ended.push(sessionId);
+      }
+    }
+    return ended;
   }
 
   // --- Session queries (storage) ---

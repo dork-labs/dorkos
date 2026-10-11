@@ -1190,6 +1190,30 @@ describe('useChatSession — send (trigger-only POST → /events)', () => {
     expect(result.current.error?.retryable).toBe(false);
   });
 
+  it('carries a paused agent’s code and id to the error, so the app can offer Resume', async () => {
+    // Spec `audit-trail` PR5: the server refuses a message to a paused agent
+    // with `AGENT_PAUSED` and the agent's id; the composer reads both.
+    const refusal = Object.assign(new Error('Scout is paused.'), {
+      code: 'AGENT_PAUSED',
+      status: 409,
+      body: { error: 'Scout is paused.', code: 'AGENT_PAUSED', agentId: 'agent-1' },
+    });
+    const transport = createMockTransport({ postMessage: vi.fn().mockRejectedValue(refusal) });
+    const { result } = renderHook(() => useChatSession('s1'), {
+      wrapper: createWrapper(transport),
+    });
+    await waitFor(() => expect(result.current.status).toBe('idle'));
+    act(() => {
+      result.current.setInput('Hello');
+    });
+    await waitFor(() => expect(result.current.input).toBe('Hello'));
+    await act(async () => {
+      await result.current.handleSubmit();
+    });
+
+    expect(result.current.error).toMatchObject({ code: 'AGENT_PAUSED', agentId: 'agent-1' });
+  });
+
   it('a failed KICKOFF raises no error banner (no dead Retry) and marks the greeting failed', async () => {
     // The birth session's auto-first-turn: the person typed nothing, so a
     // "Couldn’t send message" banner with a Retry (which would find no user

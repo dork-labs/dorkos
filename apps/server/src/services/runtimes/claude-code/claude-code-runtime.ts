@@ -190,6 +190,7 @@ import type {
   RuntimeDeliveryResult,
   SessionUpdateResult,
   InterruptReceipt,
+  LiveSessionRef,
 } from '@dorkos/shared/agent-runtime';
 import type {
   SessionSnapshot,
@@ -219,6 +220,7 @@ import './credits-root.js';
 import '@dorkos/shared/runtime-error-classification';
 import './messaging/credits-launch.js';
 import './claude-config-env-lock.js';
+import { endSessionsWhere, type SessionEndingPort } from './end-sessions.js';
 import { logger } from '../../../lib/logger.js';
 import '../../../config/constants.js';
 import { DEFAULT_CWD } from '../../../lib/resolve-root.js';
@@ -395,6 +397,16 @@ export class ClaudeCodeRuntime implements AgentRuntime {
     applyNow: (sessionId) => this.applyHeldPluginReload(sessionId),
     recordPaidReload: (entry) => this.recordPaidPluginReload(entry),
   });
+  /** What ending a session outright reads (`end-sessions.ts`): a pause, an unlink, an eviction. */
+  private readonly ending: SessionEndingPort = {
+    sessionStore: this.sessionStore,
+    pumps: this.pumps,
+    persistent: this.#persistent,
+    lockManager: this.lockManager,
+    pluginReloads: this.pluginReloads,
+    interruptQuery: (id) => this.interruptQuery(id),
+    getSessionCwd: (id) => this.getSessionCwd(id),
+  };
   private commandRegistries = new Map<string, CommandRegistryService>();
   private static readonly MAX_COMMAND_REGISTRIES = 50;
 
@@ -632,6 +644,7 @@ export class ClaudeCodeRuntime implements AgentRuntime {
         transcriptReader: () => owner.transcriptReader,
         cwd: () => owner.cwd,
         persistent: () => owner.#persistent,
+        ending: () => owner.ending,
         relayPreparing: () => owner.#relayPreparing,
         roomPreparing: () => owner.#roomPreparing,
         claudeRuntimeEntries,
@@ -1514,6 +1527,18 @@ export class ClaudeCodeRuntime implements AgentRuntime {
    */
   stopCreditsSessions(): Promise<void> {
     return stopCreditsSessions(this.#nativePreparationKey);
+  }
+
+  /**
+   * @inheritdoc
+   *
+   * Asks the session store, which holds every session this process has run,
+   * and skips the cold ones with nothing running. Each live one is ended, all
+   * at once, as an unlink ends a credits session: its turn interrupted, its
+   * process evicted (`end-sessions.ts`).
+   */
+  async endSessionsWhere(belongs: (session: LiveSessionRef) => boolean): Promise<string[]> {
+    return endSessionsWhere(this.#nativePreparationKey, belongs);
   }
 
   /** @inheritdoc */

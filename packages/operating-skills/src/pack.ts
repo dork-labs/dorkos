@@ -334,8 +334,12 @@ export interface OperatingSkill {
  *   `chat_stop`, and a spin-off reports back by itself. The new skill seeds
  *   without a bump, so the bump is for the sibling lists in `operating-dorkos`
  *   and `answering-dorkos-questions`, which would otherwise keep omitting it.
+ * - 39: `operating-dorkos` tells agents to record a promise with
+ *   `commitment_add` once made, mark it kept with `commitment_update`, and ask
+ *   before promising an outsider anything (spec `heartbeats` §12, DOR-2788). An
+ *   agent seeded at 38 would keep its promises only in a chat nobody else reads.
  */
-export const OPERATING_SKILLS_VERSION = 38;
+export const OPERATING_SKILLS_VERSION = 39;
 
 /**
  * The canonical pack, umbrella skill first. Every entry is validated against the

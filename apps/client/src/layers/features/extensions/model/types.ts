@@ -1,4 +1,9 @@
-import type { ExtensionAPI, ExtensionModule, ExtensionManifest } from '@dorkos/extension-api';
+import type {
+  ExtensionAPI,
+  ExtensionModule,
+  ExtensionManifest,
+  ExtensionPageBadge,
+} from '@dorkos/extension-api';
 import type { ExtensionPointId, ExtensionEvent, ExtensionEventKind } from '@dorkos/extension-api';
 import type { DispatcherContext } from '@/layers/shared/lib/ui-action-dispatcher';
 
@@ -25,6 +30,10 @@ export interface ExtensionAPIDeps {
     setTabMarker: (contributionId: string, marker: 'attention' | null) => void;
     /** Clear every tab mark an extension set. */
     clearTabMarkers: (extensionId: string) => void;
+    /** Set or clear one page's tab badge (the page's contribution id). */
+    setPageBadge: (contributionId: string, badge: ExtensionPageBadge | null) => void;
+    /** Clear every page badge an extension set. */
+    clearPageBadges: (extensionId: string) => void;
   };
   /**
    * Curated event bridge (features layer) powering `api.events.subscribe`. The

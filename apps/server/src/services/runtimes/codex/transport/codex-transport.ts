@@ -189,6 +189,16 @@ export interface CodexTransport {
   holdsBackgroundWork?(sessionId: string): boolean;
   /** Whether the open turn has helper agents working (inside the ceiling). */
   isHelperWorking?(sessionId: string): boolean;
+  /**
+   * The sessions with anything live: an open turn, background work, a loaded
+   * thread. Absent on a transport whose work ends with its turn (exec).
+   */
+  liveSessionIds?(): string[];
+  /**
+   * End a session (a pause): stop its background work and give back what it
+   * holds. `true` when anything was running. Absent on exec.
+   */
+  endSession?(sessionId: string): Promise<boolean>;
   /** Stop the credits-home process, if this transport keeps one (an unlink). */
   closeCreditsProcess?(): Promise<void>;
   /** Stop everything this transport started. */

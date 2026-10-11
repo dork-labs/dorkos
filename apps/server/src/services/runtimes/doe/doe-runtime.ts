@@ -18,7 +18,9 @@ import type {
   ToolDecisionOptions,
   McpAppServerConnection,
   RuntimeCreditsProtocol,
+  LiveSessionRef,
 } from '@dorkos/shared/agent-runtime';
+import { picksSession } from '@dorkos/shared/agent-runtime';
 import type {
   StreamEvent,
   ModelOption,
@@ -48,6 +50,7 @@ import { type DoeHostOptions, type DoeHostAssembly } from './tools.js';
 import { renderDoeContextEntry } from './context.js';
 import { DOE_CREDITS_SUPPORT, inspectDoeInference } from './credentials.js';
 import { listDoeModels } from './models.js';
+import { AgentPausedError, agentPause } from '../../mesh/pause/agent-pause.js';
 /** Host injection permits real offline fixtures without replacing the adapter's session behavior. */
 export interface DoeRuntimeOptions {
   directory?: string;
@@ -168,8 +171,22 @@ export class DoeRuntime extends DoeSessionRuntime implements AgentRuntime {
       await this.waitTurn(turn);
     }
   }
-  /** Run the isolated engine Beat; the caller decides how structured raises are delivered. */
+  /**
+   * Run the isolated engine Beat; the caller decides how structured raises are delivered.
+   *
+   * A Beat is a model turn that never passes `sendMessage`, so the pause hold
+   * at the runtime seam cannot see it: it is refused here for a paused agent
+   * (spec `audit-trail` PR5), recorded like any held turn.
+   *
+   * @throws {AgentPausedError} When the session's agent is paused.
+   */
   async runBeat(id: string, request: BeatRequest, opts?: MessageOpts): Promise<BeatResult> {
+    const pauses = agentPause();
+    const paused = pauses?.pausedAgentOfSession(id, () => this.getSessionCwd(id), opts);
+    if (paused) {
+      pauses?.recordHeld(paused, { via: 'turn', sessionId: id, runtime: this.type });
+      throw new AgentPausedError(paused);
+    }
     let result: BeatResult | undefined;
     let failure: string | undefined;
     for await (const event of this.runTurn(id, undefined, opts, false, {
@@ -226,6 +243,16 @@ export class DoeRuntime extends DoeSessionRuntime implements AgentRuntime {
   /** No detached task survives an owned turn; unknown task ids are not running. */
   async stopTask(): Promise<InterruptReceipt> {
     return { outcome: 'not-running', reason: 'no-open-turn', runtime: this.type };
+  }
+  /** End each picked turn in flight; no detached work outlives a turn here. */
+  async endSessionsWhere(belongs: (session: LiveSessionRef) => boolean): Promise<string[]> {
+    const ended: string[] = [];
+    for (const id of [...this.active.keys()]) {
+      if (!picksSession(belongs, { sessionId: id, cwd: this.getSessionCwd(id) })) continue;
+      const receipt = await this.interruptQuery(id).catch(() => undefined);
+      if (receipt?.outcome === 'acked' || receipt?.outcome === 'closed') ended.push(id);
+    }
+    return ended;
   }
   /** Abort and observe owned cleanup; a deadline without completion is explicitly unconfirmed. */
   async interruptQuery(id: string): Promise<InterruptReceipt> {

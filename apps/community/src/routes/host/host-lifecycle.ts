@@ -25,6 +25,7 @@ import {
 import { ApiError, json, readJson } from '../../http.js';
 import { endOwnerReplacement } from '../../owner-replacement/end.js';
 import type { BlobStore } from '../../storage/index.js';
+import { notifyLive } from '../../live/notices.js';
 
 const DAY_MS = 24 * 60 * 60_000;
 
@@ -119,6 +120,7 @@ export function registerHostLifecycleRoutes(
            WHERE id=$1`,
           [row.id, row.lifecycle]
         );
+        await notifyLive(client, { k: 'community', c: row.id });
       } else if (body.action === 'resume') {
         if (row.lifecycle !== 'suspended' || !row.suspended_from_state) {
           throw new ApiError(409, 'STATE_CONFLICT', 'This space is not suspended.');
@@ -129,6 +131,7 @@ export function registerHostLifecycleRoutes(
              lifecycle_version=lifecycle_version+1 WHERE id=$1`,
           [row.id, next]
         );
+        await notifyLive(client, { k: 'community', c: row.id });
       } else if (body.action === 'hold' && row.lifecycle === 'suspended') {
         // Hold a suspended community in one step (DOR-2299). Resuming and then holding in two
         // calls left it live if the second failed; here the only states anyone can observe are
@@ -153,6 +156,7 @@ export function registerHostLifecycleRoutes(
              lifecycle_version=lifecycle_version+1 WHERE id=$1`,
           [row.id, at, notice]
         );
+        await notifyLive(client, { k: 'community', c: row.id });
       } else if (body.action === 'hold') {
         if (row.lifecycle !== 'active' && row.lifecycle !== 'archived') {
           throw new ApiError(
@@ -172,6 +176,7 @@ export function registerHostLifecycleRoutes(
              deletion_notice_at=$3,lifecycle_version=lifecycle_version+1 WHERE id=$1`,
           [row.id, at, notice]
         );
+        await notifyLive(client, { k: 'community', c: row.id });
       } else if (body.action === 'release') {
         if (row.lifecycle !== 'held' || !row.held_from_state) {
           throw new ApiError(409, 'STATE_CONFLICT', 'This space is not held.');
@@ -184,6 +189,7 @@ export function registerHostLifecycleRoutes(
              lifecycle_version=lifecycle_version+1 WHERE id=$1`,
           [row.id]
         );
+        await notifyLive(client, { k: 'community', c: row.id });
       } else {
         if (row.lifecycle !== 'held') {
           throw new ApiError(409, 'STATE_CONFLICT', 'Only a held space has a deletion notice.');
@@ -198,6 +204,7 @@ export function registerHostLifecycleRoutes(
            WHERE id=$1`,
           [row.id, notice]
         );
+        await notifyLive(client, { k: 'community', c: row.id });
       }
       await recordHostAudit(client, actor, {
         action: `community.${body.action}`,
@@ -268,6 +275,7 @@ export function registerHostLifecycleRoutes(
          WHERE id=$1 RETURNING lifecycle_version`,
         [row.id, at, deleteAfter, requester]
       );
+      await notifyLive(client, { k: 'community', c: row.id });
       await client.query(
         `INSERT INTO community_deletion_jobs(
            community_id,requested_by_host_actor,lifecycle_version,delete_after,next_attempt_at
@@ -327,6 +335,7 @@ export function registerHostLifecycleRoutes(
          WHERE id=$1`,
         [row.id]
       );
+      await notifyLive(client, { k: 'community', c: row.id });
       await client.query('DELETE FROM community_deletion_jobs WHERE community_id=$1', [row.id]);
       await recordHostAudit(client, actor, {
         action: 'community.delete.cancel',

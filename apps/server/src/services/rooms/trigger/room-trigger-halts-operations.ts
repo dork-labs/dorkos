@@ -41,6 +41,7 @@ import { readOriginalRoomTriggerFacetView } from '../room-trigger.js';
  */
 export async function halt(triggerOwner: object, room: Room): Promise<number> {
   const facet = readOriginalRoomTriggerFacetView(triggerOwner);
+  facet.receipts.cancelRetries(room.id);
   const claims = [...facet.claimed.values()].filter((claim) => claim.roomId === room.id);
   // **Marked before anything else, and before the first `await`.** A turn
   // whose stream closes while this method is still delivering interrupts must
@@ -201,6 +202,7 @@ export async function haltAgent(
   byAuthorId: string
 ): Promise<number> {
   const facet = readOriginalRoomTriggerFacetView(triggerOwner);
+  facet.receipts.cancelRetries(room.id, authorId);
   const key = agentKey(room.id, authorId);
   const claim = facet.claimed.get(key);
   // Read BEFORE the mark, or it would always be true. A press that is still

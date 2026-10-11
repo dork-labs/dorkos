@@ -39,7 +39,8 @@ test.describe('Room panel — what only a laid-out page can show @smoke', () => 
     const roomLine = sheet.locator('[data-slot="room-loudness-line"]');
     await expect(roomLine).toBeVisible();
     // The fixture silences every agent it seeds, so this is the room's real
-    // resting answer and the preview below has somewhere to move to.
+    // resting answer and the preview below has somewhere to move to. It clears
+    // the channel's lead too (DOR-2823), so nobody answers what nobody addressed.
     await expect(roomLine).toContainText('Nobody here will answer you');
     await expect(roomLine).not.toHaveAttribute('data-preview', 'true');
 

@@ -95,6 +95,12 @@ export interface ChatReadDeps {
   store: ChatMessageStore;
   /** Whether the calling chat may read the target. */
   mayRead: (caller: ChatCaller, target: string) => Promise<boolean>;
+  /**
+   * Whether the calling chat may learn the target's title: the reader rule
+   * alone (spec `audit-trail` §3.4), so sending to a person's own chat never
+   * hands back what it is called.
+   */
+  maySeeTitle: (caller: ChatCaller, target: string) => Promise<boolean>;
   /** The chat's history, stamped. */
   history: (sessionId: string) => Promise<HistoryMessage[]>;
   /** The chat's status, when a live projector holds one. */

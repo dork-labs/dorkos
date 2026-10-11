@@ -47,7 +47,7 @@ import { clearComposerOnConfirmed } from '../lib/clear-composer-on-confirmed';
 import { sequenceEnqueue } from '../lib/enqueue-sequencer';
 import type { SessionStoreActions } from './use-session-store-actions';
 import type { NativeCommandResult } from './native-commands';
-import type { ChatSessionOptions, ChatStatus } from './chat-types';
+import type { ChatSessionOptions, ChatStatus, TransportErrorInfo } from './chat-types';
 
 // ---------------------------------------------------------------------------
 // Interface
@@ -128,6 +128,21 @@ interface UseSessionSubmitParams {
 // ---------------------------------------------------------------------------
 // Hook
 // ---------------------------------------------------------------------------
+
+/**
+ * The server's refusal code, and the agent it names, when a send was refused
+ * for a reason the app can act on (`AGENT_PAUSED` offers Resume, spec
+ * `audit-trail` PR5). Empty for any other failure.
+ */
+function refusalOf(err: unknown): Pick<TransportErrorInfo, 'code' | 'agentId'> {
+  const failure = err as { code?: unknown; body?: { agentId?: unknown } } | null;
+  const code = typeof failure?.code === 'string' ? failure.code : undefined;
+  const agentId = failure?.body?.agentId;
+  return {
+    ...(code ? { code } : {}),
+    ...(typeof agentId === 'string' ? { agentId } : {}),
+  };
+}
 
 /**
  * Submission and stop callbacks for a chat session (trigger-only POST → `/events`).
@@ -577,6 +592,7 @@ export function useSessionSubmit({
           heading: 'Couldn’t send message',
           message: (err as Error).message || 'Couldn’t reach DorkOS. Try again.',
           retryable: true,
+          ...refusalOf(err),
         });
       }
     },
@@ -753,6 +769,7 @@ export function useSessionSubmit({
             // away. A Retry button here would re-send the PREVIOUS user message,
             // which is not what anyone asked for.
             retryable: false,
+            ...refusalOf(err),
           });
           return false;
         }

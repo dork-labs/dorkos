@@ -4,7 +4,12 @@ import path from 'node:path';
 import { migrate } from 'drizzle-orm/better-sqlite3/migrator';
 import type { Db } from './index.js';
 import { constructDatabase } from './database-construction.js';
-import { consolidatedDoc, refuse, type MigrationEntry } from './doc-migration-identities.js';
+import {
+  consolidatedDoc,
+  reviewedPublishedSql,
+  refuse,
+  type MigrationEntry,
+} from './doc-migration-identities.js';
 
 /** Compare real PRAGMA structure and CHECK/index semantics against a fresh canonical migration. */
 export function verifyCanonicalSchema(
@@ -38,16 +43,57 @@ export function verifyCanonicalSchema(
     for (const entry of entries)
       writeFileSync(
         path.join(temporary, `${entry.tag}.sql`),
-        readFileSync(
-          path.join(
-            folder,
-            ...(published && entry === published ? ['legacy-doc'] : []),
-            `${entry.tag}.sql`
-          )
-        )
+        published && entry === published
+          ? reviewedPublishedSql(folder, published)
+          : readFileSync(path.join(folder, `${entry.tag}.sql`))
       );
     migrate(reference, { migrationsFolder: temporary });
-    const normalize = (sql: string) => sql.replace(/[`"\s]/g, '');
+    // Preserve token boundaries and every quoted byte while ignoring only code formatting.
+    // CHECK-like text inside strings or SQL comments has no constraint authority.
+    const tokens = (sql: string): string[] => {
+      const result: string[] = [];
+      for (let at = 0; at < sql.length;) {
+        const character = sql[at]!;
+        if (/[ \t\r\n\f]/.test(character)) {
+          at++;
+          continue;
+        }
+        if (sql.startsWith('--', at)) {
+          const end = sql.indexOf('\n', at + 2);
+          at = end < 0 ? sql.length : end + 1;
+          continue;
+        }
+        if (sql.startsWith('/*', at)) {
+          const end = sql.indexOf('*/', at + 2);
+          if (end < 0) refuse('unterminated stored SQL comment');
+          at = end + 2;
+          continue;
+        }
+        const start = at;
+        if (character === "'" || character === '"' || character === '`' || character === '[') {
+          const quote = character === '[' ? ']' : character;
+          let closed = false;
+          for (at++; at < sql.length; at++) {
+            if (sql[at] !== quote) continue;
+            if (sql[at + 1] === quote) {
+              at++;
+              continue;
+            }
+            at++;
+            closed = true;
+            break;
+          }
+          if (!closed) refuse('unterminated stored SQL quote');
+        } else if (/[A-Za-z0-9_$]/.test(character)) {
+          for (at++; at < sql.length && /[A-Za-z0-9_$]/.test(sql[at]!); at++) {
+            /* token */
+          }
+        } else at++;
+        result.push(sql.slice(start, at));
+      }
+      return result;
+    };
+    const normalize = (sql: string) => JSON.stringify(tokens(sql));
     const tableNames = (value: Db) =>
       value.$client
         .prepare(
@@ -67,11 +113,38 @@ export function verifyCanonicalSchema(
           })
           .sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b)))
       );
+    const stableForeignKeys = (rows: unknown[]) => {
+      const groups = new Map<number, Record<string, unknown>[]>();
+      for (const value of rows) {
+        const row = value as Record<string, unknown>;
+        if (
+          typeof row.id !== 'number' ||
+          !Number.isInteger(row.id) ||
+          typeof row.seq !== 'number' ||
+          !Number.isInteger(row.seq)
+        )
+          refuse('invalid legacy foreign key grouping');
+        const group = groups.get(row.id) ?? [];
+        group.push(row);
+        groups.set(row.id, group);
+      }
+      const normalized = [...groups.values()].map((group) => {
+        group.sort((left, right) => (left.seq as number) - (right.seq as number));
+        const ordered = group.map((row, sequence) => {
+          if (row.seq !== sequence) refuse('invalid legacy composite foreign key sequence');
+          const { id: _id, ...rest } = row;
+          return rest;
+        });
+        return JSON.stringify(ordered);
+      });
+      return JSON.stringify(normalized.sort());
+    };
     for (const name of expected) {
       const escaped = name.replaceAll("'", "''");
       for (const pragma of ['table_xinfo', 'foreign_key_list']) {
         const read = (value: Db) => value.$client.prepare(`PRAGMA ${pragma}('${escaped}')`).all();
-        if (stable(read(db)) !== stable(read(reference)))
+        const compare = pragma === 'foreign_key_list' ? stableForeignKeys : stable;
+        if (compare(read(db)) !== compare(read(reference)))
           refuse(`legacy ${name} ${pragma} differs`);
       }
       const readIndexes = (value: Db) =>
@@ -90,30 +163,19 @@ export function verifyCanonicalSchema(
         const row = value.$client
           .prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name=?")
           .get(name) as { sql: string };
-        const sql = row.sql;
+        const sql = tokens(row.sql);
         const expressions: string[] = [];
-        // SQLite's own stored CREATE SQL; walk balanced CHECK expressions including quoted literals.
         for (let at = 0; at < sql.length; at++) {
-          const match = /^CHECK\s*\(/i.exec(sql.slice(at));
-          if (!match) continue;
-          let end = at + match[0].length,
-            depth = 1,
-            quote = '';
+          if (sql[at]!.toUpperCase() !== 'CHECK' || sql[at + 1] !== '(') continue;
+          let end = at + 2;
+          let depth = 1;
           const start = end;
           for (; end < sql.length && depth; end++) {
-            const character = sql[end]!;
-            if (quote) {
-              if (character === quote) {
-                if (sql[end + 1] === quote) end++;
-                else quote = '';
-              }
-            } else if (character === "'" || character === '"' || character === '`')
-              quote = character;
-            else if (character === '(') depth++;
-            else if (character === ')') depth--;
+            if (sql[end] === '(') depth++;
+            else if (sql[end] === ')') depth--;
           }
           if (depth) refuse('invalid stored CHECK expression');
-          expressions.push(normalize(sql.slice(start, end - 1)));
+          expressions.push(JSON.stringify(sql.slice(start, end - 1)));
           at = end - 1;
         }
         return expressions.sort();

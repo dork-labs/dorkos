@@ -4,13 +4,9 @@ import type { Db } from '@dorkos/db';
 import type { DependencyCheck, SessionSettingsPort } from '@dorkos/shared/agent-runtime';
 import type { StreamEvent } from '@dorkos/shared/types';
 import type { ThreadEvent } from '@openai/codex-sdk';
-import {
-  CodexRuntime,
-  MAX_CONSECUTIVE_WAKES,
-  WAKE_BUDGET_SPENT_COPY,
-  sendCodexOriginalLockedMessage,
-} from '../codex-runtime.js';
+import { CodexRuntime, sendCodexOriginalLockedMessage } from '../codex-runtime.js';
 import { CodexSessionRegistry } from '../session-registry.js';
+import { MAX_CONSECUTIVE_WAKES, WAKE_BUDGET_SPENT_COPY } from '../app-server/background-wake.js';
 import { resolveCodexTransport, type CodexTransport } from '../transport/index.js';
 import type { BackgroundCompletion, BackgroundWake } from '../app-server/background-work.js';
 import { buildCodexOptions } from '../codex-options.js';

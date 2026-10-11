@@ -1,11 +1,9 @@
 /** Persistent-pump DATA contracts and pure receipt/content builders. */
-import nodePath from 'node:path';
-import type { StreamEvent, QueuedWaitingOn } from '@dorkos/shared/types';
+import type { StreamEvent } from '@dorkos/shared/types';
 import type { MessageOpts } from '@dorkos/shared/agent-runtime';
 import type { AdditionalContext } from '@dorkos/shared/additional-context';
 import type { Query, SDKMessage } from '@anthropic-ai/claude-agent-sdk';
 import { renderContextEntry } from '../../messaging/context-builder.js';
-import { SESSIONS } from '../../../../../config/constants.js';
 import type { AgentSession } from '../../agent-types.js';
 import type { MessageSenderOpts } from '../../messaging/message-sender-shared.js';
 import type { SessionPump } from '../session-pump.js';
@@ -13,7 +11,6 @@ import type { SessionTurnWindows } from '../session-turn-windows.js';
 import type { SessionCrashRecovery } from '../session-crash-recovery.js';
 import type { LaunchFingerprint } from '../launch-fingerprint.js';
 import type { PumpLaunchPlan } from '../warm-process/pump-launch.js';
-import type { Quietness } from '../warm-process/session-pump-contract.js';
 import type { PluginReloadCacheImpact } from '../../messaging/plugin-reload-policy.js';
 
 /** One session's pump, its windower, and its crash policy, wired together. */
@@ -124,29 +121,7 @@ export function* terminalFailure(
   yield { type: 'done', data: { sessionId } };
 }
 
-/**
- * What a held message shows the person: what is running, and what the restart
- * is for (spec `warm-process-lifecycle` D2a, DOR-2065).
- *
- * @param busy - What the process is doing
- * @param changed - The pins that moved
- * @param effectiveCwd - Where the message would run
- */
-export function waitingOnFor(
-  busy: Extract<Quietness, { quiet: false }>,
-  changed: readonly string[],
-  effectiveCwd: string
-): QueuedWaitingOn {
-  return {
-    reason: 'background-work',
-    holding: { agents: busy.holding.agents, shells: busy.shells, other: busy.holding.other },
-    because: busy.because,
-    pins: [...changed],
-    ...(changed.includes('cwd') ? { targetFolderName: nodePath.basename(effectiveCwd) } : {}),
-    since: busy.busySince,
-    releaseAt: busy.busySince + SESSIONS.BACKGROUND_WORK_PARK_CEILING_MS,
-  };
-}
+export { waitingOnFor } from '../warm-process/pump-launch.js';
 
 /** Assemble delivered context without consuming a stream or changing pump state. */
 export function enrichDeliveredContent(

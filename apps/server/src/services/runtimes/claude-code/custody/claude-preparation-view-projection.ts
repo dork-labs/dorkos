@@ -45,6 +45,7 @@ export interface OriginalClaudePreparationProjectionSources {
   readonly transcriptReader: () => OriginalClaudeNativePreparationView['transcriptReader'];
   readonly cwd: () => OriginalClaudeNativePreparationView['cwd'];
   readonly persistent: () => OriginalClaudeNativePreparationView['persistent'];
+  readonly ending: () => OriginalClaudeNativePreparationView['ending'];
   readonly relayPreparing: () => OriginalClaudeNativePreparationView['relayPreparing'];
   readonly roomPreparing: () => OriginalClaudeNativePreparationView['roomPreparing'];
   readonly claudeRuntimeEntries: OriginalClaudeNativePreparationView['claudeRuntimeEntries'];
@@ -182,6 +183,9 @@ export function projectOriginalClaudePreparationView(
     },
     get persistent() {
       return sources.persistent();
+    },
+    get ending() {
+      return sources.ending();
     },
     get relayPreparing() {
       return sources.relayPreparing();

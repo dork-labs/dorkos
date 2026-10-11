@@ -15,7 +15,7 @@ import type { RoomWithRoster } from '@dorkos/shared/room-schemas';
 import type { StreamEvent } from '@dorkos/shared/types';
 import { CLAUDE_CODE_CAPABILITIES } from '../../runtimes/claude-code/runtime-constants.js';
 import { entryLevelOf, recordTurnLevels } from '../../core/turn-power/turn-levels.js';
-import { ceilingForEntry } from '../room-trigger.js';
+import { ceilingForEntry } from '../limits/turn-ceiling.js';
 import type { AuthorRegistry } from '../author-registry.js';
 import type { RoomService } from '../room-service.js';
 import type { RoomTurnRequest } from '../room-turn-port.js';

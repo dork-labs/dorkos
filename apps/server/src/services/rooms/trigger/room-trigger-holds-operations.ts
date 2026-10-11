@@ -101,6 +101,8 @@ export function restateSiblingHolds(triggerOwner: object, record: HeldRecord): v
  */
 export function releaseHold(triggerOwner: object, key: string, reason: HoldEnd): void {
   const facet = readOriginalRoomTriggerFacetView(triggerOwner);
+  // Nothing will answer a hold that ends any way but starting, so its 👀 goes.
+  if (reason !== 'started') facet.receipts.clearUpTo(key, Number.POSITIVE_INFINITY);
   const record = facet.held.get(key);
   if (record === undefined) return;
   facet.held.delete(key);
@@ -464,6 +466,9 @@ export function settleCollection(
   reason: HoldEnd
 ): void {
   const facet = readOriginalRoomTriggerFacetView(triggerOwner);
-  facet.releaseHold(agentKey(collection.room.id, collection.authorId), reason);
+  const key = agentKey(collection.room.id, collection.authorId);
+  const newest = collection.entries.at(-1)?.entry.seq;
+  if (newest !== undefined) facet.receipts.clearUpTo(key, newest);
+  facet.releaseHold(key, reason);
   facet.settleOne();
 }

@@ -146,6 +146,9 @@ export const activitySearchSchema = mergeDialogSearch(
     actorType: z.string().optional(),
     actorId: z.string().optional(),
     since: z.string().optional(),
+    // `all` shows every recorded action (the audit log) instead of the Activity
+    // feed. Anything else lands on the default feed rather than a Zod error.
+    view: z.literal('all').optional().catch(undefined),
   })
 );
 

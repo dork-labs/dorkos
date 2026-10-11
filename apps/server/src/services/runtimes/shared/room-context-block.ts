@@ -1091,10 +1091,19 @@ function preamble(data: RoomContextData, where: string, nonce: string): string[]
   if (data.room.bridged && data.room.formatting) lines.push(data.room.formatting.instructions);
 
   const identity = self ? selfIdentity(self) : 'You are a member here.';
-  const addressed = data.addressing.addressedNow ? ' This message mentions you.' : '';
-  lines.push(
-    `${identity} ${respondsSentence(data.addressing.responseMode, data.room.kind)}${addressed}`
-  );
+  const addressed = data.addressing.addressedNow
+    ? ' This message mentions you.'
+    : data.addressing.answerOwed === 'conversation'
+      ? ' This message is for you: they are talking with you here.'
+      : data.addressing.answerOwed === 'lead'
+        ? ' This message is for you: you lead this channel, and nobody else is answering it.'
+        : '';
+  // An owed answer overrides what the member's mode would say: a lead set to
+  // answer @mentions only is still the one answering this message (DOR-2823).
+  const responds = data.addressing.answerOwed
+    ? ''
+    : ` ${respondsSentence(data.addressing.responseMode, data.room.kind)}`;
+  lines.push(`${identity}${responds}${addressed}`);
   // Straight after the line that says this message is for you, because the next
   // thing an agent decides is what to DO about it — and every way of doing
   // something here takes an id.
@@ -1559,10 +1568,11 @@ function channelBranches(
   callWith: (placeholder: string) => string
 ): [string, string] {
   return [
-    data.addressing.addressedNow
+    data.addressing.addressedNow || data.addressing.answerOwed
       ? `You are not going to answer: react to their message, or call ` +
-        `${callWith(`<a short "I don't know">`)} — they named you, so going quiet leaves ` +
-        `them waiting on you. Vanishing is not one of your options here.`
+        `${callWith(`<a short "I don't know">`)} — ` +
+        `${data.addressing.addressedNow ? 'they named you' : 'this message is yours to answer'}, ` +
+        `so going quiet leaves them waiting on you. Vanishing is not one of your options here.`
       : `You have nothing to add: post nothing, and end the turn.`,
     `You decided to say something: call ${callWith('<your answer>')}. Anything you write ` +
       `instead of calling it reaches nobody.`,

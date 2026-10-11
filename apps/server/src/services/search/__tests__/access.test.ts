@@ -126,7 +126,7 @@ function transcribe(
 }
 
 /** What this caller may search, as the route composes it. */
-function scopeFor(authorId: string, sessions: boolean): SearchScope {
+function scopeFor(authorId: string, sessions: SearchScope['sessions']): SearchScope {
   return { rooms: subsystem.service.searchScope(authorId), sessions };
 }
 
@@ -353,6 +353,34 @@ describe('session history over an MCP-shaped caller', () => {
     expect(hits.filter((hit) => hit.source === 'codex').map((hit) => hit.container)).toEqual([
       'codex-thread-1',
     ]);
+  });
+});
+
+describe('an agent with a session filter (spec `audit-trail` §3.4)', () => {
+  /** `session-b` is agent work (a scheduled run); every other session is a person's own. */
+  const agentWork: SearchScope['sessions'] = {
+    readable: (ids) => new Set(ids.filter((id) => id === 'session-b')),
+  };
+
+  it('finds a phrase from an agent work session', () => {
+    const hits = search(scopeFor(agentId, agentWork), 'kestrel').results;
+    expect(hits.filter((hit) => hit.source !== 'rooms').map((hit) => hit.sessionId)).toEqual([
+      'session-b',
+    ]);
+  });
+
+  it("finds nothing from a person's own chat, which the owner does find", () => {
+    const agentHits = search(scopeFor(agentId, agentWork), 'pelican').results;
+    expect(agentHits.filter((hit) => hit.source !== 'rooms')).toEqual([]);
+    const ownerHits = search(scopeFor(ownerId, true), 'pelican').results;
+    expect(
+      ownerHits.filter((hit) => hit.source === 'claude-code').map((hit) => hit.sessionId)
+    ).toEqual(['session-a']);
+  });
+
+  it('asks the filter only about sessions, so a session sharing a room id stays private', () => {
+    const hits = search(scopeFor(agentId, agentWork), 'kestrel', 'claude-code').results;
+    expect(hits.map((hit) => hit.container)).toEqual(['session-b']);
   });
 });
 

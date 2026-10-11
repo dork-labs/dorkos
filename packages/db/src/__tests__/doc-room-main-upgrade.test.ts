@@ -1,5 +1,6 @@
 /** Populated shipped-main upgrades retain data and never invent Room custody. */
 import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -11,7 +12,7 @@ const folder = fileURLToPath(new URL('../../drizzle/', import.meta.url));
 const timestamp = '2026-10-09T19:00:00.000Z';
 
 describe('Doc Room upgrade from populated shipped main', () => {
-  it.each([148, 149, 150])(
+  it.each([148, 149, 150, 154])(
     'preserves Main%d rows with foreign keys enforced and no invented custody',
     (idx) => {
       const temporary = mkdtempSync(path.join(os.tmpdir(), 'dorkos-room-upgrade-'));
@@ -19,6 +20,14 @@ describe('Doc Room upgrade from populated shipped main', () => {
       try {
         mkdirSync(path.join(temporary, 'meta'));
         const journal = JSON.parse(readFileSync(path.join(folder, 'meta/_journal.json'), 'utf8'));
+        const finalEntry = journal.entries.at(-1);
+        expect(finalEntry).toMatchObject({
+          idx: 155,
+          when: 1791690666098,
+          tag: '20261011035106_married_puppet_master',
+        });
+        const finalHistoryLength = journal.entries.length;
+        expect(finalHistoryLength).toBe(156);
         journal.entries = journal.entries.filter((entry: { idx: number }) => entry.idx <= idx);
         writeFileSync(path.join(temporary, 'meta/_journal.json'), JSON.stringify(journal));
         for (const entry of journal.entries)
@@ -149,13 +158,61 @@ describe('Doc Room upgrade from populated shipped main', () => {
         expect(
           db.$client.prepare('SELECT room_spend_floor_ms FROM canvas_doc_channels').get()
         ).toEqual({ room_spend_floor_ms: null });
+        if (idx === 154) {
+          // The real rebuilt tables must preserve data and enforce genuine Room agreement.
+          expect(() =>
+            db.$client.exec(
+              "UPDATE canvas_doc_batches SET delivery_kind='room_app_event' WHERE batch_id='batch'"
+            )
+          ).toThrow(/CHECK constraint failed/);
+          expect(() =>
+            db.$client.exec(
+              "UPDATE canvas_doc_deliveries SET delivery_kind='room_app_event' WHERE event_id='event'"
+            )
+          ).toThrow(/CHECK constraint failed/);
+          expect(() =>
+            db.$client.exec(`INSERT INTO canvas_doc_batches
+            (batch_id, document_id, scope, route_id, grant_id, grant_revision,
+             generation, input_event_ids, effective_payload, due_at, status, created_at, updated_at)
+            SELECT 'duplicate-active', document_id, scope, route_id, grant_id, grant_revision,
+              generation, input_event_ids, effective_payload, due_at, status, created_at, updated_at
+            FROM canvas_doc_batches WHERE batch_id='batch'`)
+          ).toThrow(
+            /UNIQUE constraint failed: canvas_doc_batches.document_id, canvas_doc_batches.route_id/
+          );
+          const indexes = db.$client.prepare("PRAGMA index_list('canvas_doc_batches')").all() as {
+            name: string;
+            unique: number;
+          }[];
+          expect(indexes).toEqual(
+            expect.arrayContaining([
+              expect.objectContaining({ name: 'canvas_doc_batches_active_unique', unique: 1 }),
+              expect.objectContaining({
+                name: 'canvas_doc_batches_room_admission_unique',
+                unique: 1,
+              }),
+            ])
+          );
+          expect(
+            db.$client.prepare('SELECT COUNT(*) AS count FROM canvas_doc_batches').get()
+          ).toEqual({ count: 1 });
+          expect(
+            db.$client.prepare('SELECT COUNT(*) AS count FROM canvas_doc_deliveries').get()
+          ).toEqual({ count: 1 });
+        }
         expect(db.$client.pragma('foreign_keys', { simple: true })).toBe(1);
         expect(db.$client.prepare('PRAGMA foreign_key_check').all()).toEqual([]);
         const afterHistory = db.$client
           .prepare('SELECT * FROM __drizzle_migrations ORDER BY rowid')
           .all();
         expect(afterHistory.slice(0, idx + 1)).toEqual(history);
-        expect(afterHistory).toHaveLength(153);
+        expect(afterHistory).toHaveLength(finalHistoryLength);
+        expect(afterHistory.at(-1)).toMatchObject({
+          hash: createHash('sha256')
+            .update(readFileSync(path.join(folder, `${finalEntry.tag}.sql`)))
+            .digest('hex'),
+          created_at: finalEntry.when,
+        });
         runMigrations(db);
         expect(
           db.$client.prepare('SELECT * FROM __drizzle_migrations ORDER BY rowid').all()

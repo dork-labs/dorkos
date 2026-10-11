@@ -20,6 +20,7 @@ import type { DispatchOutcome } from '../observability/dispatch-buffers.js';
 import type { BusyContext } from './notices/notice-copy.js';
 import type { CascadeStamp, RoomTurnUnanswered } from './notices/notice-log.js';
 import type { EngagementWindow } from './engagement.js';
+import type { TriggerReason } from './addressing.js';
 
 /**
  * One turn in flight: which cascade it belongs to, how deep it sits, what it is
@@ -324,6 +325,17 @@ export interface TriggerTarget {
    * the same answer.
    */
   engaged: EngagementWindow | null;
+  /**
+   * Why a person is owed this agent's answer though the message did not name
+   * it (DOR-2823): their exchange with it, or its lead of the channel. Carried
+   * from the message the turn answers, so the context never offers silence.
+   */
+  answerOwed?: 'conversation' | 'lead';
+  /**
+   * Why the message this turn answers picked this agent, so a launch refused as
+   * busy can be put back exactly as it was picked (DOR-2823).
+   */
+  reason?: TriggerReason;
   /** This target's own dispatch id — one per `(entry, target)` pair, never per entry. */
   dispatchId: string;
   /** The `(room, agent)` session, bound at claim time so a race resolves to one. */
@@ -466,6 +478,9 @@ export const DISPATCH_OUTCOMES: Record<ClaimOutcome, DispatchOutcome> = {
   // nothing broke, no model ran, and an operator reading the dispatch buffer for
   // crashes should not find this install's missing runtime in with them.
   'runtime-gone': 'refused',
+  // A claim was taken and the runner refused the turn before it started,
+  // because somebody paused the agent (spec `audit-trail` PR5). Nothing broke.
+  paused: 'refused',
 };
 
 /**
@@ -500,6 +515,8 @@ export const PRESENCE_OUTCOMES: Record<ClaimOutcome, 'answered' | 'silent' | und
   // The `runtime_gone` line is durable and says both recoveries; an ephemeral
   // marker beside it would be the second, vaguer version of the same news.
   'runtime-gone': undefined,
+  // The `agent_paused` line is durable; a marker beside it would say it twice.
+  paused: undefined,
 };
 
 /**

@@ -83,6 +83,25 @@ const LIMIT_MESSAGES: Partial<Record<string, string>> = {
   STORAGE_LIMIT_REACHED: 'This space is out of file space.',
 };
 
+/** A post the space's moderation holds, by the Community's code (DOR-2768). */
+const MODERATION_HOLDS: Partial<Record<string, CommunityRefusal>> = {
+  COMMUNITY_MUTED: {
+    status: 403,
+    code: 'COMMUNITY_MUTED',
+    error: 'You’re muted in this space for now.',
+  },
+  COMMUNITY_SLOW_MODE: {
+    status: 429,
+    code: 'COMMUNITY_SLOW_MODE',
+    error: 'This channel is in slow mode. Wait a moment, then post again.',
+  },
+  COMMUNITY_RULES_NOT_ACCEPTED: {
+    status: 403,
+    code: 'COMMUNITY_RULES_NOT_ACCEPTED',
+    error: 'Accept this space’s rules in the space before you post.',
+  },
+};
+
 /**
  * Map a refused Community request to a local answer.
  *
@@ -123,6 +142,9 @@ export function communityRefusal(
   if (remoteCode === 'COMMUNITY_SUSPENDED')
     return { status: 423, code: 'COMMUNITY_SUSPENDED', error: 'This space is suspended.' };
   if (status < 400 || status >= 500) return null;
+  // The space's moderation holds this person's posts: say which hold, so they know what to do.
+  const held = remoteCode ? MODERATION_HOLDS[remoteCode] : undefined;
+  if (held) return held;
   switch (status) {
     case 401:
     case 403:

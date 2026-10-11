@@ -1763,6 +1763,164 @@
         ],
         "description": "Why not, when `supported` is false; null otherwise."
       },
+      "ListCommitmentsResponse": {
+        "type": "object",
+        "properties": {
+          "commitments": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Commitment"
+            }
+          }
+        },
+        "required": [
+          "commitments"
+        ]
+      },
+      "Commitment": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "agentId": {
+            "type": "string"
+          },
+          "to": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "what": {
+            "type": "string"
+          },
+          "dueAt": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "state": {
+            "$ref": "#/components/schemas/CommitmentState"
+          },
+          "overdue": {
+            "type": "boolean"
+          },
+          "sourceSessionId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "sourceRoomEntryId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "createdAt": {
+            "type": "string"
+          },
+          "closedAt": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "note": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "agentId",
+          "to",
+          "what",
+          "dueAt",
+          "state",
+          "overdue",
+          "sourceSessionId",
+          "sourceRoomEntryId",
+          "createdAt",
+          "closedAt",
+          "note"
+        ]
+      },
+      "CommitmentState": {
+        "type": "string",
+        "enum": [
+          "open",
+          "kept",
+          "missed",
+          "dropped"
+        ]
+      },
+      "CommitmentError": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "type": "string"
+          },
+          "code": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "error",
+          "code"
+        ]
+      },
+      "CreateCommitmentRequest": {
+        "type": "object",
+        "properties": {
+          "what": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 300
+          },
+          "to": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "dueAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "what"
+        ]
+      },
+      "UpdateCommitmentRequest": {
+        "type": "object",
+        "properties": {
+          "state": {
+            "$ref": "#/components/schemas/CommitmentState"
+          },
+          "dueAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "note": {
+            "type": "string",
+            "maxLength": 500
+          },
+          "from": {
+            "$ref": "#/components/schemas/CommitmentState"
+          }
+        },
+        "required": [
+          "state"
+        ]
+      },
       "HealthResponse": {
         "type": "object",
         "properties": {
@@ -1825,6 +1983,14 @@
             "type": [
               "string",
               "null"
+            ]
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "off",
+              "byo",
+              "managed"
             ]
           }
         },
@@ -13371,12 +13537,12 @@
             ],
             "description": "The stable name a room DorkOS itself depends on is found by — `'team'` for the #team channel every install gets at boot — and `null` for every room a person or an agent opened (team-room-home spec D3.1). It is also the tell that this is a SYSTEM room: only the owner may rename or archive one, so a client draws those controls off this field rather than guessing. It never changes, which is what makes it findable after a rename. The server always sends it, `null` included; it is optional only so that the thirty client fixtures that assemble a room by hand need not each carry a field none of them reads. Absent and `null` mean the same thing — an ordinary room."
           },
-          "fallbackSeatAuthorId": {
+          "leadAuthorId": {
             "type": [
               "string",
               "null"
             ],
-            "description": "The one member that answers a message somebody typed in this room without addressing anybody — #team's default agent (team-room-home spec D3.4) — and `null` in every room a person opened. Held on the room rather than read off a member's `always` mode, because a person may set any agent to \"Everything\" themselves and that choice must not be mistaken for this one. Optional for the same reason `wellKnown` is: client fixtures that assemble a room by hand do not carry a field they never read, and absent means the same as `null`."
+            "description": "The channel's LEAD: the agent member that answers a person's message nobody else is answering — not @mentioned to anyone, and not part of a conversation with another agent (DOR-2823). It answers whatever its response mode, and steps back when the message @mentions another agent. #team's default agent is its lead. `null` when the room has none. Optional for the same reason `wellKnown` is: client fixtures that assemble a room by hand do not carry a field they never read, and absent means the same as `null`."
           },
           "turnLimitsEnabled": {
             "type": [
@@ -13787,6 +13953,11 @@
             },
             "default": [],
             "description": "Agent directories to seed the roster with, minting an author row for any agent that has never been in a room. The DorkOS app knows agents by path and not by author id, so without this a DM takes two calls and a failed second one leaves a room with nobody in it. A DM may name any number of agents: one gives a one-to-one conversation, several give a group."
+          },
+          "leadAgentPath": {
+            "type": "string",
+            "minLength": 1,
+            "description": "A channel's lead, as one of `agentPaths` (DOR-2823). Omitted, a channel's lead is the first agent in `agentPaths`. Refused with INVALID_LEAD on a direct message, or when it is not in `agentPaths`."
           }
         },
         "required": [
@@ -13841,6 +14012,14 @@
           },
           "archived": {
             "type": "boolean"
+          },
+          "leadAuthorId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "minLength": 1,
+            "description": "Set or clear a channel's lead (DOR-2823): an agent member's author id, or `null` for none. Refused with INVALID_LEAD on a direct message, or for an id that is not an agent member of this room."
           },
           "deliverNotices": {
             "type": "boolean",
@@ -14122,6 +14301,7 @@
           "agent_unavailable",
           "agent_left",
           "runtime_gone",
+          "agent_paused",
           "agent_declined",
           "awaiting_approval",
           "halted",
@@ -17044,6 +17224,476 @@
           "checked",
           "lastSeq",
           "lastHash"
+        ]
+      },
+      "AuditQueryResult": {
+        "type": "object",
+        "properties": {
+          "events": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AuditEvent"
+            }
+          },
+          "nextBeforeSeq": {
+            "type": "integer",
+            "exclusiveMinimum": 0
+          }
+        },
+        "required": [
+          "events"
+        ]
+      },
+      "AuditEvent": {
+        "type": "object",
+        "properties": {
+          "seq": {
+            "type": "integer",
+            "exclusiveMinimum": 0
+          },
+          "id": {
+            "type": "string"
+          },
+          "at": {
+            "type": "string"
+          },
+          "spaceId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "actor": {
+            "$ref": "#/components/schemas/AuditActor"
+          },
+          "onBehalfOf": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "accountId": {
+                  "type": "string"
+                },
+                "via": {
+                  "type": "string",
+                  "enum": [
+                    "schedule",
+                    "delegation",
+                    "room-turn",
+                    "extension",
+                    "bridge"
+                  ]
+                }
+              },
+              "required": [
+                "accountId",
+                "via"
+              ]
+            }
+          },
+          "credential": {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string"
+              },
+              "idHash": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind",
+              "idHash"
+            ]
+          },
+          "source": {
+            "$ref": "#/components/schemas/AuditSource"
+          },
+          "action": {
+            "type": "string"
+          },
+          "operation": {
+            "$ref": "#/components/schemas/AuditOperation"
+          },
+          "target": {
+            "$ref": "#/components/schemas/AuditTarget"
+          },
+          "outcome": {
+            "$ref": "#/components/schemas/AuditOutcome"
+          },
+          "error": {
+            "type": "string"
+          },
+          "change": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AuditChange"
+            }
+          },
+          "reason": {
+            "type": "string"
+          },
+          "links": {
+            "$ref": "#/components/schemas/AuditLinks"
+          },
+          "summary": {
+            "type": "string"
+          },
+          "visibility": {
+            "$ref": "#/components/schemas/AuditVisibility"
+          },
+          "participants": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "prevHash": {
+            "type": "string"
+          },
+          "hash": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "seq",
+          "id",
+          "at",
+          "spaceId",
+          "actor",
+          "source",
+          "action",
+          "operation",
+          "target",
+          "outcome",
+          "summary",
+          "visibility",
+          "prevHash",
+          "hash"
+        ]
+      },
+      "AuditActor": {
+        "type": "object",
+        "properties": {
+          "accountId": {
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/AuditActorKind"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "accountId",
+          "kind",
+          "name"
+        ]
+      },
+      "AuditActorKind": {
+        "type": "string",
+        "enum": [
+          "person",
+          "agent",
+          "system",
+          "external"
+        ]
+      },
+      "AuditSource": {
+        "type": "object",
+        "properties": {
+          "surface": {
+            "$ref": "#/components/schemas/AuditSurface"
+          },
+          "runtime": {
+            "type": "string"
+          },
+          "sessionId": {
+            "type": "string"
+          },
+          "turnId": {
+            "type": "string"
+          },
+          "taskRunId": {
+            "type": "string"
+          },
+          "toolCallId": {
+            "type": "string"
+          },
+          "ip": {
+            "type": "string"
+          },
+          "userAgent": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "surface"
+        ]
+      },
+      "AuditSurface": {
+        "type": "string",
+        "enum": [
+          "app",
+          "http",
+          "mcp",
+          "cli",
+          "relay",
+          "task",
+          "bridge",
+          "runtime-tool",
+          "system"
+        ]
+      },
+      "AuditOperation": {
+        "type": "string",
+        "enum": [
+          "create",
+          "modify",
+          "remove",
+          "access",
+          "execute",
+          "auth"
+        ]
+      },
+      "AuditTarget": {
+        "type": [
+          "object",
+          "null"
+        ],
+        "properties": {
+          "type": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "containerId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "id"
+        ]
+      },
+      "AuditOutcome": {
+        "type": "string",
+        "enum": [
+          "ok",
+          "failed",
+          "refused"
+        ]
+      },
+      "AuditChange": {
+        "type": "object",
+        "properties": {
+          "field": {
+            "type": "string"
+          },
+          "before": {},
+          "after": {},
+          "redacted": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "field"
+        ]
+      },
+      "AuditLinks": {
+        "type": "object",
+        "properties": {
+          "activityId": {
+            "type": "string"
+          },
+          "approvalId": {
+            "type": "string"
+          },
+          "traceId": {
+            "type": "string"
+          },
+          "causedBy": {
+            "type": "string"
+          },
+          "connectorAttemptId": {
+            "type": "string"
+          }
+        }
+      },
+      "AuditVisibility": {
+        "type": "string",
+        "enum": [
+          "space",
+          "participants",
+          "admins"
+        ]
+      },
+      "AuditGetResult": {
+        "type": "object",
+        "properties": {
+          "event": {
+            "$ref": "#/components/schemas/AuditEvent"
+          },
+          "activity": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "eventType": {
+                "type": "string"
+              },
+              "summary": {
+                "type": "string"
+              },
+              "occurredAt": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "eventType",
+              "summary",
+              "occurredAt"
+            ]
+          },
+          "approval": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "capabilityTitle": {
+                "type": "string"
+              },
+              "summary": {
+                "type": "string"
+              },
+              "state": {
+                "type": "string",
+                "enum": [
+                  "pending",
+                  "granted",
+                  "denied"
+                ]
+              },
+              "decidedAt": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "capabilityTitle",
+              "summary",
+              "state"
+            ]
+          },
+          "session": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "readable": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "id",
+              "readable"
+            ]
+          }
+        },
+        "required": [
+          "event"
+        ]
+      },
+      "AgentPauseResult": {
+        "type": "object",
+        "properties": {
+          "agentId": {
+            "type": "string"
+          },
+          "paused": {
+            "type": "boolean"
+          },
+          "changed": {
+            "type": "boolean"
+          },
+          "pause": {
+            "$ref": "#/components/schemas/AgentPause"
+          },
+          "stoppedTurns": {
+            "type": "integer"
+          },
+          "stoppedRuns": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "agentId",
+          "paused",
+          "changed"
+        ]
+      },
+      "AgentPause": {
+        "type": "object",
+        "properties": {
+          "agentId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "pausedBy": {
+            "$ref": "#/components/schemas/AuditActor"
+          },
+          "pausedAt": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "agentId",
+          "pausedBy",
+          "pausedAt"
+        ]
+      },
+      "AgentPauseRequest": {
+        "type": "object",
+        "properties": {
+          "agentId": {
+            "type": "string",
+            "minLength": 1,
+            "description": "The mesh id of the agent to pause or resume."
+          },
+          "reason": {
+            "type": "string",
+            "maxLength": 500,
+            "description": "Why, in a sentence. Kept in the audit log with who did it."
+          }
+        },
+        "required": [
+          "agentId"
+        ]
+      },
+      "AgentPauseList": {
+        "type": "object",
+        "properties": {
+          "pauses": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AgentPause"
+            }
+          }
+        },
+        "required": [
+          "pauses"
         ]
       },
       "ListExtensionDecisionsResponse": {
@@ -27732,6 +28382,215 @@
         }
       }
     },
+    "/api/commitments": {
+      "get": {
+        "tags": [
+          "Commitments"
+        ],
+        "summary": "What agents promised",
+        "description": "Every agent's promises, readable by anyone in the space: open first (soonest due first), then kept, missed and dropped, newest first. `overdue` is computed on read.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": false,
+            "name": "agentId",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "$ref": "#/components/schemas/CommitmentState"
+            },
+            "required": false,
+            "name": "state",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": false,
+            "name": "to",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 500
+            },
+            "required": false,
+            "name": "limit",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The promises",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ListCommitmentsResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/agents/{id}/commitments": {
+      "post": {
+        "tags": [
+          "Commitments"
+        ],
+        "summary": "Add a promise for an agent",
+        "description": "A person records something an agent promised. Agents record their own with `commitment_add`, so a caller presenting an agent identity is refused.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateCommitmentRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "The new promise",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Commitment"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid body, or a past date (`PAST_DUE`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommitmentError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller is an agent (`NOT_A_PERSON`), or not the owner (`NOT_YOURS`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommitmentError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No agent has that id (`UNKNOWN_AGENT`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommitmentError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/commitments/{id}": {
+      "patch": {
+        "tags": [
+          "Commitments"
+        ],
+        "summary": "Close a promise or move its date",
+        "description": "Mark a promise kept, missed or dropped. `state: \"open\"` moves an open promise to a new `dueAt`, or reopens a closed one. Only the agent that promised, or a person, may change it.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateCommitmentRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The promise, changed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Commitment"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid body, nothing to change (`NOTHING_TO_CHANGE`), or a past date (`PAST_DUE`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommitmentError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Another agent made it, or the person is not the owner (`NOT_YOURS`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommitmentError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No promise has that id (`NOT_FOUND`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommitmentError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "It is no longer in the `from` state the caller named (`CONFLICT`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommitmentError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/health": {
       "get": {
         "tags": [
@@ -28226,7 +29085,7 @@
             }
           },
           "409": {
-            "description": "Refused before anything started, for where the turn would run (`DESK_NOT_OWN`, `ROOM_SESSION_MOVED`), or because the account may not work in this project (`account_not_allowed_here`, whose body also names `project` and `accountId`); the body says what to do instead",
+            "description": "Refused before anything started, for where the turn would run (`DESK_NOT_OWN`, `ROOM_SESSION_MOVED`), or because the account may not work in this project (`account_not_allowed_here`, whose body also names `project` and `accountId`), or because the agent is paused (`AGENT_PAUSED`, whose body also names `agentId`); the body says what to do instead",
             "content": {
               "application/json": {
                 "schema": {
@@ -85554,7 +86413,7 @@
           "Audit"
         ],
         "summary": "Check the audit log",
-        "description": "Check that the DorkOS audit log has not been edited: walk its hash chain and recompute every link. Returns ok, how many rows were checked, the last row and its hash, and — if the chain is broken — the first row that does not check out and why. Optional fromSeq and limit check a stretch instead of the whole log.",
+        "description": "Check that the DorkOS audit log has not been edited: walk its hash chain and recompute every link. Returns ok, how many rows were checked, the last row and its hash, and — if the chain is broken — the first row that does not check out and why. One call checks at most 100,000 rows; when more remain, call again with fromSeq set to nextFromSeq and prevHash set to lastHash.",
         "parameters": [
           {
             "schema": {
@@ -85592,6 +86451,324 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/AuditVerifyResult"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/audit": {
+      "get": {
+        "tags": [
+          "Audit"
+        ],
+        "summary": "Read the audit log",
+        "description": "Read the DorkOS audit log: every action anyone took, person or agent, newest first. Filter by actorId (who did it), targetId (what it was done to), action (a prefix such as \"config.\" or \"runtime.tool_used\"), operation, sessionId, and a since/until time window. Page backwards by passing nextBeforeSeq as beforeSeq. You see every action and every agent's work; a person's private chat and sign-in details are not shown to agents.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": false,
+            "name": "actorId",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": false,
+            "name": "targetId",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "required": false,
+            "name": "action",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "$ref": "#/components/schemas/AuditOperation"
+            },
+            "required": false,
+            "name": "operation",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": false,
+            "name": "sessionId",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "required": false,
+            "name": "since",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "required": false,
+            "name": "until",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "exclusiveMinimum": 0
+            },
+            "required": false,
+            "name": "beforeSeq",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 200,
+              "default": 50
+            },
+            "required": false,
+            "name": "limit",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Read the audit log result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuditQueryResult"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/audit/{id}": {
+      "get": {
+        "tags": [
+          "Audit"
+        ],
+        "summary": "Read one audit event",
+        "description": "Read one event from the DorkOS audit log by its id, with its links (the Activity row, the approval, the chat) so you can follow it to the transcript.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "description": "The event id (a ULID)."
+            },
+            "required": true,
+            "description": "The event id (a ULID).",
+            "name": "id",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Read one audit event result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuditGetResult"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/audit/accounts/{accountId}/timeline": {
+      "get": {
+        "tags": [
+          "Audit"
+        ],
+        "summary": "Read one account’s history",
+        "description": "Everything one account did, had done to it, or had done on its behalf, newest first: the per-account timeline of the audit log. accountId is an agent id, a person’s account id, or the install id the owner had before making an account (the two are read as one). The same filters and paging as reading the whole log.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "required": false,
+            "name": "action",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "$ref": "#/components/schemas/AuditOperation"
+            },
+            "required": false,
+            "name": "operation",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": false,
+            "name": "sessionId",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "required": false,
+            "name": "since",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "required": false,
+            "name": "until",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "exclusiveMinimum": 0
+            },
+            "required": false,
+            "name": "beforeSeq",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 200,
+              "default": 50
+            },
+            "required": false,
+            "name": "limit",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": true,
+            "name": "accountId",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Read one account’s history result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuditQueryResult"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/agents/{agentId}/pause": {
+      "post": {
+        "tags": [
+          "Agent"
+        ],
+        "summary": "Pause an agent everywhere",
+        "description": "Stop an agent everywhere at once: its running turns end, its running scheduled runs stop, and nothing starts a new turn for it (messages, schedules, rooms, relay) until someone resumes it. Anyone may pause any agent, including DorkBot; it never waits for approval. Held work is not replayed later. Recorded with who did it and why. Pass the mesh id of the agent and, ideally, a reason.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentPauseRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Pause an agent everywhere result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentPauseResult"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/agents/{agentId}/resume": {
+      "post": {
+        "tags": [
+          "Agent"
+        ],
+        "summary": "Resume a paused agent",
+        "description": "Lift a pause so the agent can work again. Anyone may resume an agent except the paused agent itself. Work it was held from is not replayed. Recorded with who did it and why.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentPauseRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Resume a paused agent result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentPauseResult"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/agents/pauses": {
+      "get": {
+        "tags": [
+          "Agent"
+        ],
+        "summary": "List paused agents",
+        "description": "List every agent that is paused right now, with who paused it, when, and why.",
+        "responses": {
+          "200": {
+            "description": "List paused agents result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentPauseList"
                 }
               }
             }

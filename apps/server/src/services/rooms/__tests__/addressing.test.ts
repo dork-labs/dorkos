@@ -15,6 +15,7 @@ import { describe, it, expect } from 'vitest';
 import type { ResponseMode } from '@dorkos/shared/mesh-schemas';
 import type { AuthorKind, RoomKind } from '@dorkos/shared/room-schemas';
 import {
+  pickLead,
   respondsTo,
   selectTriggerTargets,
   standDownFallbackSeat,
@@ -531,5 +532,48 @@ describe('standDownFallbackSeat', () => {
       const silentSeat: AddressingMember = { ...seat, responseMode: 'silent' };
       expect(stand(['ace'], ['ace'], [silentSeat, nova, ace, human])).toEqual(['ace']);
     });
+  });
+});
+
+describe('pickLead — the channel lead (DOR-2823)', () => {
+  const lead: AddressingMember = {
+    authorId: 'ana',
+    kind: 'agent',
+    responseMode: 'silent',
+    isEngaged: false,
+  };
+  const other: AddressingMember = {
+    authorId: 'bo',
+    kind: 'agent',
+    responseMode: 'engaged',
+    isEngaged: false,
+  };
+  const kai: AddressingMember = {
+    authorId: 'kai',
+    kind: 'human',
+    responseMode: 'always',
+    isEngaged: false,
+  };
+  const members = [lead, other, kai];
+  const pick = (mentions: string[], authorId = 'dorian') =>
+    pickLead({ entry: { authorId, mentions }, leadAuthorId: 'ana', members });
+
+  it('takes a post that named nobody, whatever its own mode', () => {
+    expect(pick([])).toEqual({ authorId: 'ana', reason: 'lead' });
+  });
+  it('takes a post that named the lead itself', () => {
+    expect(pick(['ana'])).toEqual({ authorId: 'ana', reason: 'lead' });
+  });
+  it('steps back for a post that named another agent', () => {
+    expect(pick(['bo'])).toBeNull();
+  });
+  it('steps back for a post that named only people', () => {
+    expect(pick(['kai'])).toBeNull();
+  });
+  it('never answers its own post, or a room with no lead', () => {
+    expect(pick([], 'ana')).toBeNull();
+    expect(
+      pickLead({ entry: { authorId: 'dorian', mentions: [] }, leadAuthorId: null, members })
+    ).toBeNull();
   });
 });

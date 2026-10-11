@@ -203,7 +203,10 @@ export interface ContractCase {
   readonly expect: {
     /** The status. */
     readonly status: number;
-    /** Headers that must match; `null` means the header must be absent. */
+    /**
+     * Headers that must match; `null` means the header must be absent. A
+     * pattern against a repeated header must match one of its values.
+     */
     readonly headers?: Record<string, string | RegExp | null>;
     /** The body, compared as JSON when it parses, else as text. */
     readonly body?: unknown;
@@ -269,7 +272,14 @@ export async function checkContractCase(baseUrl: string, testCase: ContractCase)
     const raw = res.headers[name.toLowerCase()];
     const have = Array.isArray(raw) ? raw.join(', ') : (raw ?? null);
     if (want === null) expect(have, `header ${name}`).toBeNull();
-    else if (want instanceof RegExp) expect(have, `header ${name}`).toMatch(want);
+    else if (want instanceof RegExp && Array.isArray(raw)) {
+      // A repeated header (`Set-Cookie`): one of its values must match on its
+      // own, so a pattern cannot borrow from the value beside it.
+      expect(
+        raw.some((value) => want.test(value)),
+        `header ${name}: ${have}`
+      ).toBe(true);
+    } else if (want instanceof RegExp) expect(have, `header ${name}`).toMatch(want);
     else expect(have, `header ${name}`).toBe(fill(want));
   }
   let parsed: unknown = res.text;
@@ -282,18 +292,30 @@ export async function checkContractCase(baseUrl: string, testCase: ContractCase)
   if (testCase.expect.schema) testCase.expect.schema.parse(parsed);
 }
 
+/** Options for {@link contractSuite}. */
+export interface ContractSuiteOptions {
+  /** More environment for the server, over the defaults. */
+  readonly env?: Record<string, string>;
+}
+
 /**
  * A contract suite for one route group: boot the composed server once, then
- * run every case against it.
+ * run every case against it, in order. A case may rely on what an earlier
+ * one did (an account created, an attempt counted); say so in its name.
  *
  * @param group - The route group, as the plan names it.
  * @param cases - The cases.
+ * @param options - See {@link ContractSuiteOptions}.
  */
-export function contractSuite(group: string, cases: readonly ContractCase[]): void {
+export function contractSuite(
+  group: string,
+  cases: readonly ContractCase[],
+  options: ContractSuiteOptions = {}
+): void {
   describe(`contract: ${group}`, () => {
     let server: ComposedServer | undefined;
     beforeAll(async () => {
-      server = await bootComposedServer();
+      server = await bootComposedServer(options.env);
     }, BOOT_HOOK_TIMEOUT_MS);
     afterAll(async () => {
       await server?.close();

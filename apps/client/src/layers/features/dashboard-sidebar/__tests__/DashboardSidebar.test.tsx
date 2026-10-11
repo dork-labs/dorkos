@@ -390,6 +390,8 @@ vi.mock('@/layers/entities/mesh', () => ({
         .filter((a) => !mockUnmappedPaths().includes(a.projectPath))
         .map((a) => [a.projectPath, a.id])
     ),
+  // Nothing is paused in these rooms (spec `audit-trail` PR5).
+  useAgentPauses: () => ({ data: { pauses: [] } }),
 }));
 
 vi.mock('@/layers/entities/agent', async () => ({
@@ -474,7 +476,6 @@ vi.mock('@/layers/entities/session', async (importOriginal) => ({
   useStartNewSession: (await importOriginal<typeof import('@/layers/entities/session')>())
     .useStartNewSession,
   useAgentSessions: () => ({ sessions: [], activeSessionId: null, isLoading: false }),
-  useSessionBorderState: () => ({ kind: 'idle', color: 'x', pulse: false, label: 'Idle' }),
   useAgentHottestStatus: () => ({ kind: 'idle', color: 'x', pulse: false, label: 'Idle' }),
   useAgentsAggregateStatus: () => false,
   useAgentAttentionMap: (paths: string[], broken?: string[]) => mockAttentionMap(paths, broken),

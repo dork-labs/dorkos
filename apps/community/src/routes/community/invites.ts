@@ -30,10 +30,14 @@ import { ApiError, json, readJson } from '../../http.js';
 import { assertMemberRoom } from '../../host/limits.js';
 import { inspectInvite, issueInvite } from '../../invites.js';
 import { hashSecret, randomToken, readCookie, signValue, verifyValue } from '../../security.js';
-import { mintHandle } from '../../handles.js';
+import { admittedIdentity } from '../../moderation/display-names.js';
 import { readmissionBlocked } from '../../erasure/guards.js';
 import { clearFormerMembership } from './members.js';
+import { refuseBannedAccount } from '../../moderation/bans.js';
+import { joinAutoJoinChannels, lockAutoJoinChannels } from '../../admission/auto-join.js';
 import { resolveCommunityContext } from '../../tenant-context.js';
+import { notifyLive } from '../../live/notices.js';
+import { assertAdmissionOpen, invalidInvitation, invitationRefusal } from './admission-refusals.js';
 
 interface InviteRow {
   id: string;
@@ -60,51 +64,6 @@ function projection(row: InviteRow) {
   });
 }
 
-function invalidInvitation(): ApiError {
-  return new ApiError(403, 'FORBIDDEN', 'This invitation cannot be used. Ask for a new link.');
-}
-
-/** A closed community admits no one new; existing members are unaffected. */
-class AdmissionClosed extends ApiError {
-  constructor() {
-    super(409, 'STATE_CONFLICT', 'This space is closed to new members.');
-  }
-}
-
-/**
- * Refuse new admission while the owner has closed the community. The write paths call this
- * after `lockActiveCommunity` has taken the community row in share mode in the same
- * transaction; that lock is what serializes them with the settings update that closes
- * admission (it takes the row for update, then revokes every invitation), so an invitation or
- * admission either commits first and is revoked by the close, or reads `closed` here. With
- * `lock` the read also takes that share lock itself, so it stays correct for any caller; the
- * read-only preview reads without it.
- */
-async function assertAdmissionOpen(
-  client: PoolClient | Pool,
-  communityId: string,
-  lock: boolean
-): Promise<void> {
-  const result = await client.query<{ admission_policy: string }>(
-    `SELECT admission_policy FROM communities WHERE id=$1${lock ? ' FOR SHARE' : ''}`,
-    [communityId]
-  );
-  if (result.rows[0]?.admission_policy === 'closed') throw new AdmissionClosed();
-}
-
-/**
- * Keep the closed, full, and held reasons visible, so a person learns before signing up that
- * they cannot join yet; hide every other invitation failure. Each is reached only after the
- * link's signature checks out.
- */
-function invitationRefusal(error: ApiError): ApiError {
-  return error instanceof AdmissionClosed ||
-    error.code === 'MEMBER_LIMIT_REACHED' ||
-    error.code === 'COMMUNITY_HELD'
-    ? error
-    : invalidInvitation();
-}
-
 /**
  * The account already signed in on this browser, if any. An invitation to a full community
  * still opens for someone who is already an active member, who takes no new seat.
@@ -121,24 +80,6 @@ function admissionCookie(c: Context, config: CommunityConfig): string {
   );
   if (!value) throw new ApiError(403, 'FORBIDDEN', 'Start with an invitation before joining.');
   return value;
-}
-
-/** Delete one bounded batch of expired admission transactions and their cascading receipts. */
-export async function sweepExpiredAdmissions(pool: Pool, batchSize = 100): Promise<number> {
-  const result = await pool.query(
-    `WITH expired AS (
-       SELECT id FROM pending_admissions
-       WHERE expires_at<=now()
-       ORDER BY expires_at,id
-       LIMIT $1
-       FOR UPDATE SKIP LOCKED
-     )
-     DELETE FROM pending_admissions p USING expired
-     WHERE p.id=expired.id
-     RETURNING p.id`,
-    [batchSize]
-  );
-  return result.rowCount ?? 0;
 }
 
 async function validInvite(
@@ -308,10 +249,11 @@ export function registerInviteRoutes(
       preview = await transaction(pool, async (client) => {
         const { invite, communityName } = await validInvite(c, client, token, config, true);
         if (invite.use_count >= invite.seat_limit) throw invalidInvitation();
-        await assertMemberRoom(client, invite.community_id, {
-          lock: false,
-          userId: await signedInUserId(c, auth),
-        });
+        const userId = await signedInUserId(c, auth);
+        // A banned account learns no more than any other refused invitation.
+        if (userId)
+          await refuseBannedAccount(client, invite.community_id, userId, config.authSecret);
+        await assertMemberRoom(client, invite.community_id, { lock: false, userId });
         await client.query(
           'INSERT INTO pending_admissions(community_id,invite_id,token_hash,expires_at) VALUES($1,$2,$3,$4)',
           [invite.community_id, invite.id, hashSecret(pending), expiresAt]
@@ -490,6 +432,8 @@ export function registerInviteRoutes(
           channelId,
           grant.community_id,
         ]);
+      // The channels everyone joins on arrival, under the same rule.
+      const autoJoin = await lockAutoJoinChannels(client, grant.community_id);
       const inviteResult = await client.query<InviteRow>(
         `SELECT i.* FROM invites i
          JOIN members issuer ON issuer.id=i.issuer_member_id AND issuer.community_id=i.community_id
@@ -517,28 +461,37 @@ export function registerInviteRoutes(
         'SELECT id,active FROM members WHERE community_id=$1 AND user_id=$2 FOR UPDATE',
         [invite.community_id, user.id]
       );
+      // A ban on this account, or on its confirmed email, outlasts any invitation. Read after the
+      // member lock, under the community lock a ban waits on (see refuseBannedAccount).
+      await refuseBannedAccount(client, invite.community_id, user.id, config.authSecret);
+      // Someone already in the space keeps the channels they chose; only an arrival is placed.
+      const arriving = !member.rows[0]?.active;
       if (!member.rows[0]) {
-        const handle = await mintHandle(client, invite.community_id, user.name);
+        const { handle, name } = await admittedIdentity(client, invite.community_id, user.name);
         member = await client.query(
           'INSERT INTO members(community_id,user_id,display_name,handle,role) VALUES($1,$2,$3,$4,$5) RETURNING id,active',
-          [invite.community_id, user.id, user.name, handle, 'member']
+          [invite.community_id, user.id, name, handle, 'member']
         );
         await client.query(
           'INSERT INTO community_handles(community_id,handle,member_id) VALUES($1,$2,$3)',
           [invite.community_id, handle, member.rows[0].id]
         );
+        await notifyLive(client, { k: 'join', c: invite.community_id });
       } else if (!member.rows[0].active) {
         await clearFormerMembership(client, member.rows[0].id, invite.community_id);
         await client.query(
           "UPDATE members SET active=true,removed_at=NULL,role='member' WHERE id=$1",
           [member.rows[0].id]
         );
+        await notifyLive(client, { k: 'join', c: invite.community_id });
       }
       if (invite.channel_id)
         await client.query(
           'INSERT INTO channel_members(community_id,channel_id,member_id) VALUES($1,$2,$3) ON CONFLICT DO NOTHING',
           [invite.community_id, invite.channel_id, member.rows[0].id]
         );
+      if (arriving)
+        await joinAutoJoinChannels(client, invite.community_id, member.rows[0].id, autoJoin);
       if (!previous.rowCount) {
         await client.query(
           'INSERT INTO invite_uses(community_id,invite_id,user_id) VALUES($1,$2,$3)',

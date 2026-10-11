@@ -534,9 +534,12 @@ test.describe('Rooms — every message gets a menu', () => {
     await expect(roomsPage.entries.nth(1)).toBeFocused();
 
     // And the way out: Ctrl+End leaves the feed for the first thing after it,
-    // which on this page is the composer.
+    // which on this page is the "no agent" hint's "Add one" (DOR-2823): the
+    // channel has no agent and has messages, so the hint sits above the composer.
     await page.keyboard.press('Control+End');
-    await expect(roomsPage.composer(`#${slug}`)).toBeFocused();
+    await expect(
+      page.getByTestId('no-agent-hint').getByRole('button', { name: 'Add one' })
+    ).toBeFocused();
   });
 
   test('a reply lands in the panel beside the room, and a reply to a reply joins it', async ({

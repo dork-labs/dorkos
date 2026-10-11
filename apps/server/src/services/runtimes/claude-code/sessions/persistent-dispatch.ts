@@ -218,11 +218,8 @@ import {
 } from './launch-fingerprint.js';
 import { extensionSkillPluginsDir } from '@dorkos/harness/workspace-data';
 import { resolveDorkHome } from '../../../../lib/dork-home.js';
-import {
-  createPumpLauncher,
-  decideProcessReuse,
-  type PumpLaunchPlan,
-} from './warm-process/pump-launch.js';
+import { createPumpLauncher, type PumpLaunchPlan } from './warm-process/pump-launch.js';
+import { carryCeiling, ceilingMissed, decideCeilingedReuse } from '../warm-ceiling.js';
 import {
   conversationTokens,
   pluginReloadIsWorthHolding,
@@ -730,7 +727,7 @@ export class PersistentDispatch {
         );
       }
     }
-    const reuse = decideProcessReuse(bundle.fingerprint, compared, {
+    const reuse = decideCeilingedReuse(session, bundle.pump, bundle.fingerprint, compared, {
       holdPluginReloadWhenCacheWarm: pluginReloadIsWorthHolding(contextTokens),
       sessionId,
       ...(contextTokens !== undefined ? { contextTokens } : {}),
@@ -800,6 +797,11 @@ export class PersistentDispatch {
           // setter that went unanswered inside its bound leaves its pin where it
           // was, and the next dispatch has to see that (DOR-1301).
           bundle.fingerprint = await reuse.apply(control);
+          // A ceiling the process did not take is not run on (`warm-ceiling.ts`).
+          if (ceilingMissed(sessionId, session, bundle.fingerprint, plan.fingerprint)) {
+            await this.replaceProcess(key);
+            bundle = this.acquire(key, session, opts);
+          }
         } catch (err) {
           if (err instanceof AccountPinViolationError) {
             logger.error('[persistent-dispatch] refused a cross-account dispatch', {
@@ -819,6 +821,8 @@ export class PersistentDispatch {
     }
 
     bundle.plan = plan;
+    // What the tool gate holds background work to from here (`warm-ceiling.ts`).
+    session.backgroundPermissionCeiling = carryCeiling(session, bundle.pump);
     // A credits swap is saved only once its notice has gone out (DOR-2636).
     yield* deliverStatusEvents(plan);
 

@@ -58,6 +58,9 @@ describe('acknowledgments in the room context', () => {
       { kind: 'channel', title: 'Backend', members: [], agentPaths: ['/agents/ana'] },
       human
     );
+    // No lead: this case is about acknowledgments in the context, and a lead
+    // would answer the unaddressed post (DOR-2823).
+    service.updateRoom(room.id, human, { leadAuthorId: null });
     ana = authors.resolveAgent('/agents/ana', 'Ana').id;
     // Explicit rather than seeded, for the reason `room-context.test.ts` gives:
     // a channel's own default is a window, and these scenarios want every post

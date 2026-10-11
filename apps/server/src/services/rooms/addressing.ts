@@ -76,7 +76,13 @@ export type TriggerReason =
   /** `always`, which fires on everything. */
   | 'always'
   /** The room's fallback seat, standing up for a post nobody addressed. */
-  | 'seat';
+  | 'seat'
+  /**
+   * The channel's lead, taking a person's post nobody else is answering:
+   * not @mentioned to another agent, and not part of a conversation with one
+   * (DOR-2823). Whatever the lead's response mode. Never gated.
+   */
+  | 'lead';
 
 /** One member the matrix picked, and why. */
 export interface TriggerSelection {
@@ -355,6 +361,45 @@ export function standDownFallbackSeat(opts: {
   if (!addressedAnotherAgent && opts.authorKind !== 'agent') return labelled;
 
   return labelled.filter((selection) => selection.authorId !== seatAuthorId);
+}
+
+/**
+ * The channel's lead, for a person's post nothing else picked anybody for
+ * (DOR-2823).
+ *
+ * The caller runs this only when the matrix and the seat's stand-down left the
+ * post with nobody, and only for a person's post in a channel. The lead takes
+ * it whatever its response mode, because a person is owed an answer and the
+ * lead is who the channel says answers. It steps back exactly where the seat
+ * does: when the post @mentioned another agent, which is that agent's to
+ * answer (or that agent's to stay silent on), and when it named only people,
+ * who it is for.
+ *
+ * @param opts.entry - The post.
+ * @param opts.leadAuthorId - The room's lead, or `null`.
+ * @param opts.members - The roster, as addressing saw it.
+ * @returns The lead's selection, or `null` when there is no lead to take it.
+ */
+export function pickLead(opts: {
+  entry: AddressingEntry;
+  leadAuthorId: string | null;
+  members: readonly AddressingMember[];
+}): TriggerSelection | null {
+  const { leadAuthorId } = opts;
+  if (leadAuthorId === null || leadAuthorId === opts.entry.authorId) return null;
+  const lead = opts.members.find((member) => member.authorId === leadAuthorId);
+  if (lead?.kind !== 'agent') return null;
+  const mentioned = new Set(opts.entry.mentions);
+  const namedAnotherAgent = opts.members.some(
+    (member) =>
+      member.kind === 'agent' && member.authorId !== leadAuthorId && mentioned.has(member.authorId)
+  );
+  if (namedAnotherAgent) return null;
+  // A post that names only people is for them: `@kai lunch?` is not the
+  // lead's to answer.
+  const namedOnlyPeople = mentioned.size > 0 && !mentioned.has(leadAuthorId);
+  if (namedOnlyPeople) return null;
+  return { authorId: leadAuthorId, reason: 'lead' };
 }
 
 /** Why nobody was picked. A closed set, so a log query can group by it. */

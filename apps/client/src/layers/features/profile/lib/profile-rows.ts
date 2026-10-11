@@ -120,6 +120,19 @@ export interface ProfileRowsContext {
    * while its manifest is still being read (spec `heartbeats` §4.3).
    */
   reportsTo?: string | null;
+  /**
+   * This agent's open promises and how many are overdue, or `null` while
+   * unknown. Read for every agent: anyone may read any agent's promises.
+   */
+  commitments?: ProfileCommitmentsSummary | null;
+}
+
+/** An agent's promises, as the Commitments row wants them. */
+export interface ProfileCommitmentsSummary {
+  /** Promises still open. */
+  open: number;
+  /** Open promises past their due date. */
+  overdue: number;
 }
 
 /**
@@ -266,6 +279,22 @@ function roomsRow(ctx: ProfileRowsContext): ProfileRowModel {
   };
 }
 
+/**
+ * The Commitments row: how many promises are open, and how many are overdue.
+ * Drawn on every agent's profile, because anyone may read any agent's list.
+ */
+function commitmentsRow(ctx: ProfileRowsContext): ProfileRowModel {
+  const summary = ctx.commitments;
+  return {
+    id: 'commitments',
+    kind: 'nav',
+    label: 'Commitments',
+    value: countValue(summary?.open, 'open', 'open'),
+    ...(summary && summary.overdue > 0 ? { meta: `${summary.overdue} overdue` } : {}),
+    page: 'commitments',
+  };
+}
+
 /** Another person on this install: what they do, what they own, where they are. */
 function personRows(member: TeamMember, ctx: ProfileRowsContext): ProfileRowGroup[] {
   const rows: ProfileRowModel[] = [];
@@ -292,7 +321,8 @@ function runsOnValue(member: TeamMember): string | null {
 }
 
 /**
- * What this agent has been doing: its conversations, its schedules, its rooms.
+ * What this agent has been doing: its conversations, its schedules, its rooms,
+ * and every action on record.
  *
  * The same three rows for an agent you manage and for DorkBot — what DorkBot
  * withholds is its identity, not its work.
@@ -321,6 +351,7 @@ function workRows(ctx: ProfileRowsContext): ProfileRowModel[] {
       page: 'tasks',
     });
   }
+  rows.push(commitmentsRow(ctx));
   rows.push(roomsRow(ctx));
   // No count on this one, deliberately. Everything above answers "how much of
   // this exists"; this answers "what has it told me", and the number that would
@@ -332,6 +363,9 @@ function workRows(ctx: ProfileRowsContext): ProfileRowModel[] {
     value: null,
     page: 'notifications',
   });
+  // What it did, and what was done to it, from the audit log. No value: a count
+  // of every recorded action is a number nobody acts on.
+  rows.push({ id: 'activity', kind: 'nav', label: 'Activity', value: null, page: 'activity' });
   return rows;
 }
 
@@ -446,6 +480,7 @@ function otherAgentRows(member: TeamMember, ctx: ProfileRowsContext): ProfileRow
       rows: [
         { id: 'about', kind: 'text', label: 'About', value: ctx.description ?? null },
         { id: 'runs-on', kind: 'text', label: 'Runs on', value: runsOnValue(member) },
+        commitmentsRow(ctx),
         roomsRow(ctx),
       ],
     },

@@ -89,6 +89,62 @@ export function useTaskRun(id: string | null) {
   });
 }
 
+/** How many of the newest runs the always-on readers look at. */
+const RECENT_RUNS_LIMIT = 50;
+
+/** How often the newest runs are re-read while one of them is still going. */
+const RUNNING_POLL_MS = 10_000;
+
+/**
+ * How often they are re-read otherwise. A slow fallback only: a failed run
+ * and a late report arrive on the event stream (`useTasksSync` invalidates
+ * this query on `task_run_failed` and `task_run_updated`), but nothing
+ * broadcasts a run starting or finishing well, so this is how long one can
+ * take to show at most.
+ */
+const IDLE_POLL_MS = 5 * 60_000;
+
+/**
+ * The newest runs across every schedule, newest first.
+ *
+ * One cache entry for every reader: the Schedules tab's status (DOR-2820),
+ * always mounted at the shell, and the Tasks view's running count share it,
+ * each taking only what it needs through `select`. Polls every ten seconds
+ * while a run is going, so it sees that run finish, and every five minutes
+ * otherwise.
+ */
+function recentTaskRunsOptions<T>(
+  transport: ReturnType<typeof useTransport>,
+  enabled: boolean,
+  select: (runs: TaskRun[]) => T
+) {
+  return {
+    queryKey: [...TASK_RUNS_KEY, 'recent'] as const,
+    queryFn: () => transport.listTaskRuns({ limit: RECENT_RUNS_LIMIT }),
+    select,
+    enabled,
+    refetchInterval: (query: { state: { data?: TaskRun[] } }) =>
+      query.state.data?.some((run) => run.status === 'running') ? RUNNING_POLL_MS : IDLE_POLL_MS,
+    refetchIntervalInBackground: false,
+  };
+}
+
+/** Hand the runs back as they are. */
+const allRuns = (runs: TaskRun[]) => runs;
+
+/** Count the runs still going. */
+const countRunning = (runs: TaskRun[]) => runs.filter((r) => r.status === 'running').length;
+
+/**
+ * The newest runs across every schedule, newest first.
+ *
+ * @param enabled - When false the query is skipped (Tasks feature gate).
+ */
+export function useRecentTaskRuns(enabled = true) {
+  const transport = useTransport();
+  return useQuery(recentTaskRunsOptions(transport, enabled, allRuns));
+}
+
 /**
  * Return the count of currently running Tasks.
  *
@@ -96,17 +152,7 @@ export function useTaskRun(id: string | null) {
  */
 export function useActiveTaskRunCount(enabled = true) {
   const transport = useTransport();
-
-  return useQuery({
-    queryKey: [...TASK_RUNS_KEY, 'active-count'],
-    queryFn: async () => {
-      const runs = await transport.listTaskRuns({ limit: 50 });
-      return runs.filter((r) => r.status === 'running').length;
-    },
-    enabled,
-    refetchInterval: 10_000,
-    refetchIntervalInBackground: false,
-  });
+  return useQuery(recentTaskRunsOptions(transport, enabled, countRunning));
 }
 
 /**

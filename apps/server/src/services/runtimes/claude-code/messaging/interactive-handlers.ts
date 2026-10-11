@@ -46,9 +46,8 @@ import {
   WITHDRAWN_DENIALS,
 } from '../sessions/tool-result-outcome.js';
 import { randomUUID } from 'node:crypto';
-import type { TurnPermissionCeiling } from '@dorkos/shared/agent-runtime';
 import { CHAT_SEND_TOOL, CHAT_STOP_TOOL } from '@dorkos/shared/chat-messages';
-import { turnPermissionMode } from '../turn-permission.js';
+import { gatePermissionMode, heldToACeiling, type CeilingedMode } from '../turn-permission.js';
 
 // ---------------------------------------------------------------------------
 // Auto-approved tool sets (module-level to avoid per-call reconstruction)
@@ -1065,10 +1064,7 @@ async function hasAgentIdentity(
  *   disk.
  */
 export function createCanUseTool(
-  session: InteractiveSession & {
-    permissionMode: PermissionModeId;
-    turnPermissionCeiling?: TurnPermissionCeiling;
-  },
+  session: InteractiveSession & CeilingedMode<PermissionModeId>,
   log: ToolGateLogger,
   onToolPreflight?: (toolName: string, input: Record<string, unknown>) => Promise<void>,
   resolveIdentity: () => Promise<unknown> = createInSessionContextResolver(
@@ -1100,7 +1096,7 @@ export function createCanUseTool(
       // itself `dorkos` presents the same `mcp__dorkos__…` names, and its call
       // falls through to the mode table like any other foreign tool.
       isHostServedOrUnattributed(context.mcpServer) &&
-      isAutoAllowedCall(toolName, input, session.turnPermissionCeiling !== undefined) &&
+      isAutoAllowedCall(toolName, input, heldToACeiling(session)) &&
       // The owner-facing verbs skip the card only for a session that resolves an
       // agent identity: without one the rooms verbs run as the OWNER — who sees
       // every room on the install and posts as a person — and a proactive note
@@ -1114,8 +1110,9 @@ export function createCanUseTool(
     }
 
     // The turn's mode, not the session's: a turn held to a ceiling must not be
-    // auto-allowed on the strength of the level a person chose for others.
-    if (resolveModeDecision(turnPermissionMode(session)) === 'ask') {
+    // auto-allowed on the strength of the level a person chose for others, and
+    // nor may background work an earlier ceilinged turn left running.
+    if (resolveModeDecision(gatePermissionMode(session)) === 'ask') {
       // The measurement (spec `auto-mode-classifier-context`). Reaching here in
       // AUTO mode with a DorkOS tool means the runtime's classifier decided this
       // call deserved a person, and DorkOS's own auto-allow list did not cover

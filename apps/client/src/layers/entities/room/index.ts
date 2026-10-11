@@ -120,6 +120,7 @@ export {
   useUnarchiveRoom,
   useSetDeliverNotices,
   useSetRoomLimits,
+  useSetRoomLead,
 } from './model/use-room-settings';
 export type {
   RenameRoomInput,
@@ -127,6 +128,7 @@ export type {
   UnarchiveRoomInput,
   SetDeliverNoticesInput,
   SetRoomLimitsInput,
+  SetRoomLeadInput,
 } from './model/use-room-settings';
 export {
   useAddRoomMember,
@@ -155,6 +157,8 @@ export {
   NOT_IN_ROOM_SENTENCE,
 } from './lib/membership-copy';
 export { profileMemberIdOf } from './lib/profile-target';
+export { roomLead, leadCandidates } from './lib/lead';
+export type { RoomLeadInput } from './lib/lead';
 export { roomIdentityMark, identityMarkFaces } from './lib/identity-mark';
 export type { IdentityMark, RoomIdentityMarkInput } from './lib/identity-mark';
 export { honestReplyCount, replyRootFor, threadReplySummary, threadRootIdOf } from './lib/thread';

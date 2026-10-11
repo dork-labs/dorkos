@@ -77,14 +77,16 @@ beforeEach(() => vi.clearAllMocks());
 afterEach(cleanup);
 
 describe('pinned tabs', () => {
-  it('draw icon-only, with the name kept in the accessible name and the tooltip', () => {
+  it('draw icon-only, with the name kept in the accessible name', () => {
     renderStrip([HOME, ACTIVITY]);
+    // The name is there for a screen reader, not on screen; the hover card
+    // carries it for the eye.
     const pinned = screen.getByRole('tab', { name: 'Home' });
-    expect(pinned).toHaveAttribute('title', 'Home');
-    // The name is there for a screen reader, not on screen.
-    expect(within(pinned).getByText('Home').closest('.sr-only')).not.toBeNull();
-    // An unpinned tab keeps its visible name and has no tooltip of its own.
-    expect(screen.getByRole('tab', { name: 'Activity' })).not.toHaveAttribute('title');
+    expect(within(pinned).queryByText('Home')).toBeNull();
+    // An unpinned tab keeps its visible name.
+    expect(
+      within(screen.getByRole('tab', { name: 'Activity' })).getByText('Activity')
+    ).toBeInTheDocument();
   });
 
   it('offer no close control, even when other tabs can close', () => {

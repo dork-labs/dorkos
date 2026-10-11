@@ -398,6 +398,35 @@ function namesPermissions(patch: unknown): boolean {
 }
 
 /**
+ * The refusal code a general config write answers a `cloud.remote` patch with
+ * (DOR-2086).
+ */
+export const USE_REMOTE_ACCESS_API_CODE = 'USE_REMOTE_ACCESS_API';
+
+/** The sentence that refusal carries. */
+const USE_REMOTE_ACCESS_API_MESSAGE =
+  'Remote access through DorkOS is set up in Settings, on this computer. DorkOS changed nothing.';
+
+/**
+ * Whether a config patch names `cloud.remote` at any depth, nested or dotted.
+ *
+ * @param patch - The raw patch a caller supplied.
+ */
+function namesCloudRemote(patch: unknown): boolean {
+  if (patch === null || typeof patch !== 'object' || Array.isArray(patch)) return false;
+  for (const key of Object.keys(patch)) {
+    if (key === 'cloud.remote' || key.startsWith('cloud.remote.')) return true;
+  }
+  const cloud = (patch as Record<string, unknown>).cloud;
+  return (
+    cloud !== null &&
+    typeof cloud === 'object' &&
+    !Array.isArray(cloud) &&
+    Object.hasOwn(cloud, 'remote')
+  );
+}
+
+/**
  * Apply a general-purpose config write: the policy bar, the write itself, and
  * the audit line — in that order, once.
  *
@@ -435,6 +464,27 @@ export function applyGuardedConfigWrite(write: GuardedConfigWrite): GuardedConfi
         error: USE_PERMISSIONS_API_MESSAGE,
         message: USE_PERMISSIONS_API_MESSAGE,
         paths: ['permissions'],
+      },
+    };
+  }
+
+  // Step 0, again: managed remote access is never written here either
+  // (DOR-2086). Its record is a person's consent, an enrolment Cloud holds, and
+  // references to stored secrets, and they only make sense together, so one
+  // module (`services/core/remote/remote-state.ts`) writes them, behind the
+  // local enrolment and withdrawal routes. Refused for every caller, the
+  // operator included: a hand-written `mode: 'managed'` with no enrolment
+  // behind it would be a selection nobody consented to.
+  if (namesCloudRemote(requested)) {
+    return {
+      ok: false,
+      kind: 'refused',
+      refusal: {
+        status: 400,
+        code: USE_REMOTE_ACCESS_API_CODE,
+        error: USE_REMOTE_ACCESS_API_MESSAGE,
+        message: USE_REMOTE_ACCESS_API_MESSAGE,
+        paths: ['cloud.remote'],
       },
     };
   }

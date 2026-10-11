@@ -24,6 +24,13 @@ export const ERROR_STATES_SECTIONS: PlaygroundSection[] = [
     keywords: ['crash', 'fatal', 'reload', 'catastrophic', 'inline styles'],
   },
   {
+    id: 'agent-paused-notice',
+    title: 'Agent Paused Notice',
+    page: 'error-states',
+    category: 'Error States',
+    keywords: ['pause', 'paused', 'resume', 'agent', 'composer', 'audit'],
+  },
+  {
     id: 'error-toasts',
     title: 'Error Toasts',
     page: 'error-states',

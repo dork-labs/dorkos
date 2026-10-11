@@ -26,6 +26,7 @@ import {
   Link2Off,
   Megaphone,
   MessageSquareOff,
+  Pause,
   PowerOff,
   RefreshCw,
   Repeat,
@@ -133,6 +134,10 @@ const NOTICE_STYLES: Record<RoomNoticeCode, { Icon: LucideIcon; tone?: string }>
   // and a plug rather than `agent_gone`'s missing-person mark: the agent is
   // there and answering elsewhere — what is missing is what it runs on.
   runtime_gone: { Icon: PowerOff, tone: 'text-status-warning' },
+  // Somebody paused the agent everywhere (spec `audit-trail` PR5). Cool: a
+  // person or an agent chose it, nothing is broken, and the remedy (Resume on
+  // its profile) is a choice too, not a repair.
+  agent_paused: { Icon: Pause },
   // Somebody asked, the agent read it, and it chose not to reply. Cool rather
   // than warm, deliberately: nothing is broken and nothing is waiting on the
   // reader — an agent exercising judgment is the room working as designed, and a

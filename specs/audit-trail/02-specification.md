@@ -129,7 +129,9 @@ What is written as what in v1:
 | API key and agent token create/revoke                                            | `space` (no IP; `idHash` only)                                        |
 | Anything scoped to a person-to-person DM (none exist yet; the type is ready)     | `participants`                                                        |
 
-**Session visibility.** Transcripts follow the same three classes. A new nullable column `session_metadata.visibility` (+ `visibility_participants`) is written first-write-wins inside `persistSessionRuntime` from its required `TurnOrigin` by an exhaustive switch (`sessionVisibilityForOrigin`, beside `permissionSeedForOrigin` in `turn-origin.ts`, with the same `never` so a new origin breaks the build until someone decides):
+**Session visibility.** Transcripts follow the same three classes. The class is decided from the session's required `TurnOrigin` by an exhaustive switch (`sessionVisibilityForOrigin`, beside `permissionSeedForOrigin` in `turn-origin.ts`, with the same `never` so a new origin breaks the build until someone decides).
+
+_As built (PR4):_ no new column. `persistSessionRuntime` already writes `session_metadata.launch_origin` first-write-wins from the same `TurnOrigin` (it decides account carry-over, spec `claude-account-fleet` D9), so the class is derived from it at read time instead of stored beside it. Same intent (decided once, at binding, from the origin; never rewritten), no migration, and a later change to the mapping applies to old sessions without a backfill. The only two classes sessions have today are `space` and `participants` [owner]; a stored participant list waits for spaces with more than one person. `chat-message` and `outside-sender`, origins added after this table was written, are `space`.
 
 | `TurnOrigin.kind`                                                                                         | Session visibility                                                                                      |
 | --------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
@@ -139,6 +141,30 @@ What is written as what in v1:
 | `room`, `schedule`, `agent-dm`, `agent-launch`, `extension-start`, `extension-message`, `connector-event` | `space`                                                                                                 |
 
 A session with no stored class (born before PR4, or a bare-CLI session) is derived at read time from the existing origin overlays: a room binding, a task run, or a `session_started_by` row means `space`; anything else is `participants` [owner]. Unknown is private.
+
+_As built (PR4 review):_
+
+- **A room turn is decided by its room, not its origin.** The stored origin is only `room`, and a room can be a person's own conversation. Read at request time through the room binding (`room_sessions`, which always holds the live id), by `resolveRoomSessionVisibility` (`services/rooms/session-bindings/room-session-visibility.ts`):
+
+  | The room the session answers in                                    | Session visibility                  |
+  | ------------------------------------------------------------------ | ----------------------------------- |
+  | Bridged from a chat app (any `room_bridges` row, live or archived) | `participants` [owner]              |
+  | A DM with a person (an author of kind `human`) among its members   | `participants` [owner]              |
+  | A DM between agents only                                           | the room's agent members, and owner |
+  | A channel that is not bridged, even one a person posts in          | the room's agent members, and owner |
+  | No room binds it any more                                          | `participants` (unknown)            |
+
+  The same rule applies to a session with no stored origin that a room binds. _As built (PR4 review, round 2):_ membership is checked as it stands at read time, not from the point an agent joined: a transcript has no room `seq` to cut it at, so an agent added to a channel later reads the channel's earlier sessions too, and one removed stops reading them. A live-stream connection (`GET /api/events`) does not say which agent it is, so it hears about no room session at all.
+
+- **`account-handoff`** (a chat carried to another account) is read as the chat it continues, through its `carried` `session_started_by` row; with none (a person's own chat moved) it stays `participants`.
+- **A relay message from a chat binding's own adapter** (`relay.human.*`, `relay.webhook.*`) is `relay-binding`, not `outside-sender` (`relayTurnOrigin`), so a binding session whose first, best-effort `relay-binding` write failed is still private when the dispatch writes its origin.
+- **The one exception (`chat_read`).** A person's private chat that itself started a chat has chosen to involve it, so that spin-off may read it (`canReadSession(reader, visibility, involvedBy)` in `session-visibility.ts`; `mayReadChat` routes through it). Nothing else widens it: another agent, a sibling spin-off, a chat the private one messaged or was sent to, or one started further down the chain is refused. _Round 2:_ a message is deliberately not enough. Any agent can `chat_send` a person's chat and draw a reply, and that must not open the person's whole history; the reader already holds what was sent to it. `chat_send` answers a null `chatTitle` for a chat its sender may not read, so it never learns what a person's chat is called.
+- **An agent starting a chat over HTTP.** `POST /api/sessions/:id/messages` from a caller presenting an agent identity binds the new chat as `agent-launch`, not `interactive` (`httpTurnOrigin`), so it is agent work the agent can keep reading, and it seeds no operator stop.
+- **Other lists that name sessions.** The diff routes (`routes/diff.ts`), which take a session id in the query or body, answer 404 to an agent for a session it may not read. `GET /api/debug/dispatches`, `/refusals` and `/projectors` leave out rows about such a session for an agent caller. `binding_list_sessions` keeps a bridged chat's relay subject, which is how an agent messages the person, and leaves its session id off when the session is private.
+- **A `targetId` filter that hid every row on a page** answers that page with no `nextBeforeSeq`, so a cursor beside no rows never confirms a private chat was acted on.
+- **Audit rows that point into a private session.** The row stays `space` (what was done is public), but for a reader who may not read that session the row loses `source.sessionId`, `turnId` and `toolCallId`, `audit_get` leaves the session link off, and a `sessionId` filter on that session answers an empty page, the same as a session that does not exist (`services/audit/audit-session-scrub.ts`).
+- **HTTP and the live stream.** Every `/api/sessions/:id/*` route sits behind one `router.param('id')` guard (`routes/session-read-guard.ts`), so a new route cannot forget it; starting a new chat (`POST /:id/messages` with `create: true` on an unused id) is the one pass. `GET /api/events` (SSE and WebSocket) sends an agent's connection no frame about a session it may not read (`sessionAudience`).
+- **The limit.** An agent is recognised only when it presents `X-DorkOS-Agent` (or reaches DorkOS through its in-session tools). A caller that omits it reads as the owner, and transcript files on disk are readable by any program on the computer. The rule keeps a person's chats out of what agents see through DorkOS's tools and API; it is not a filesystem boundary.
 
 ### 3.5 Activity
 
@@ -247,11 +273,12 @@ Every PR: `pnpm verify` green, TSDoc on exports, a changelog fragment in `change
 
 **Files**
 
-- `packages/db` migration: `session_metadata.visibility`, `visibility_participants`.
-- `services/session/origin/turn-origin.ts`: `sessionVisibilityForOrigin`; `RuntimeRegistry.persistSessionRuntime` writes it (first-write-wins; also when it binds a row a settings write created earlier).
+- ~~`packages/db` migration: `session_metadata.visibility`, `visibility_participants`.~~ Not built: the class is derived from the existing `session_metadata.launch_origin` (see §3.4 "As built").
+- `services/session/origin/turn-origin.ts`: `sessionVisibilityForOrigin`, read over the stored `launch_origin` that `RuntimeRegistry.persistSessionRuntime` already writes first-write-wins (also when it binds a row a settings write created earlier).
 - `services/audit/session-visibility.ts`: read the stored class or derive (§3.4).
 - Capabilities (tier observe, area null, both MCP servers, HTTP, CLI): `audit.query` (`audit_query`: filters actor, target, action prefix, operation, session, time window, `before` cursor on `seq`, limit ≤ 200), `audit.get` (`audit_get`: one event plus resolved links: Activity row, approval, trace id, session), `audit.account_timeline` (`account_timeline`: actor OR target OR on-behalf-of = account, aliases from `account.linked`), `audit.transcript_read` (`transcript_read`: a session's messages via the runtime, paginated, refused with `TRANSCRIPT_PRIVATE` when `canRead` fails).
 - Routes `apps/server/src/routes/audit.ts`: `GET /api/audit`, `/api/audit/:id`, `/api/audit/accounts/:id/timeline`, `/api/audit/verify` (from PR1).
+- As built: `routes/audit-reader.ts` (who is reading, from a request; the 404 session check), and the session stream's WebSocket twin (`routes/session-events-socket.ts`) gets the same check as the SSE route.
 - Leak fixes in `routes/sessions.ts` (`GET /`, `/recent`, `/:id`, `/:id/messages`, `/:id/tasks`) and `routes/session-events-handler.ts` (`GET /:id/events`): an agent caller sees `space` sessions only; a `participants` session it is not in reads as 404 (not 403, so its existence is not confirmed). `routes/debug.ts` `/sessions/:id` gets the same check. `routes/search.ts:94-96` changes from "no sessions for agents" to "space sessions for agents" through the same function.
 - Client: `features/activity-feed-page` gains an "All actions" mode reading `/api/audit` (rows open the linked session, room entry or trace); `features/profile/ui/pages/ActivityPage.tsx` registered in `pages/registry.ts`, an agent's timeline from `account_timeline`. Uses the existing Activity row components; copy follows `writing-app-copy`. A Dev Playground entry if the row component changes (`maintaining-dev-playground`).
 - `AGENTS.md` Message search paragraph: replace "Sessions are owner-only and reachable by no agent (spec §7)" with "Agents can search and read agent work sessions; a person's own chats stay private (spec `audit-trail` §3.4)". Update `specs/message-search/02-specification.md` §7 with a pointer.
@@ -275,12 +302,14 @@ Every PR: `pnpm verify` green, TSDoc on exports, a changelog fragment in `change
 **Files**
 
 - `packages/db`: table `agent_pauses` (agent_id PK, paused_by, paused_at, reason) holding current state; history lives in audit.
-- `services/mesh/agent-pause.ts`: `pause(agentId, actor, reason?)`, `resume(...)`, `isPaused(agentPathOrId)`.
-  - **Stop current turns**: interrupt every live session whose cwd resolves to the agent (via the projector registry and `runtime.interrupt`), and stop its running task runs.
+- `services/mesh/pause/agent-pause.ts` (a folder, beside the hold and the capabilities, because `services/mesh/` is at its file limit): `pause(agentId, actor, reason?)`, `resume(...)`, `isPaused(agentPathOrId)`.
+  - **Stop current turns**: interrupt every live turn whose folder resolves to the agent (the hold at the runtime seam remembers each live turn, so every runtime is covered; `runtime.interruptQuery`), and stop its running task runs.
   - **Hold**: a Proxy in `runtimeRegistry.register()` refuses `sendMessage` for a paused agent's cwd with a typed `AGENT_PAUSED` error. This is the backstop; nicer refusals sit at the entry points: `dispatchMessage` (person messages: a clear error the app shows with a Resume button), the task scheduler (the run is recorded as skipped, "agent paused"), room turn runner (no turn; a quiet notice once per pause), relay/connector-event deliveries (not run; recorded). Held triggers are not replayed on resume (replaying could fire a pile of stale work at once); each held trigger is one `agent.turn_held` audit row so nothing is silent.
   - The agent stays registered, readable and messageable; its profile and the sidebar show "Paused".
 - Capabilities `agent.pause` and `agent.resume` (tier `act`, both MCP servers, HTTP `POST /api/agents/:id/pause|resume`, CLI): any account, person or agent, may pause any agent. Any account may resume EXCEPT the paused agent itself: an agent can never lift its own pause (refused `CANNOT_RESUME_SELF`, and the refusal is recorded). Both record who acted. No approval card for either (operator decision, 2026-10-06). They must never stop for approval, so they are exempted from area prompting the way other emergency levers are (verify against `permission-enforcement.ts`; add an explicit carve-out with a test if none exists). System agents (DorkBot) can be paused like any other.
 - Client: a Pause/Resume button in `features/profile/ui/ProfileAgentActions.tsx`, a paused badge, and the error state in the composer.
+- **Ending, not just interrupting** (review, 2026-10-10): interrupting live turns leaves a warm process able to open turns of its own (a helper reporting back, a wake-up timer). A pause also ends every session of the agent each runtime holds live, from the runtime's own records (`AgentRuntime.endSessionsWhere`, every runtime), and the hold stops an agent-started turn as it opens.
+- **Known trade-off, for the operator to revisit:** any account other than the paused agent may resume it, agents included. An agent steered by a stranger (a prompt injected through a web page, a chat message from outside) could therefore lift a pause a person set. Kept as decided (2026-10-06); options if it bites: only the account that paused, or only a person, may lift a person's pause. A related limit: a request with no agent token counts as the person, so a program the paused agent started outside DorkOS's records could resume it.
 
 **Tests**
 

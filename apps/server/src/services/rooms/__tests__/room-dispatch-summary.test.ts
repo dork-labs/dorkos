@@ -76,6 +76,9 @@ function openRoom(opts: Parameters<typeof createRoomHarness>[0] = { agents: twoA
     { kind: 'channel', title: 'Backend', members: [], agentPaths: [ANA_PATH, BO_PATH] },
     harness.human
   );
+  // No lead: this case is about what a post's dispatch summary says, and a lead
+  // would answer the unaddressed post (DOR-2823).
+  harness.service.updateRoom(room.id, harness.human, { leadAuthorId: null });
   const ana = harness.authors.resolveAgent(ANA_PATH, 'Ana').id;
   const bo = harness.authors.resolveAgent(BO_PATH, 'Bo').id;
   for (const authorId of [ana, bo]) {

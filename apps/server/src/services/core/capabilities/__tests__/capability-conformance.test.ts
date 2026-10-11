@@ -320,7 +320,21 @@ const registry = composeDorkOsCapabilityRegistry({
   // The audit domain serves `GET /api/audit/verify`, so the boot registry must
   // carry it for the docs/boot parity check (spec `audit-trail`).
   auditDeps: {
-    log: { verify: () => ({ ok: true, checked: 0, lastSeq: 0, lastHash: '0'.repeat(64) }) },
+    log: {
+      verify: () => ({ ok: true, checked: 0, lastSeq: 0, lastHash: '0'.repeat(64) }),
+      query: () => ({ events: [] }),
+      getWithLinks: () => undefined,
+      timeline: () => ({ events: [] }),
+    },
+  },
+  // The pause domain serves `/api/agents/{agentId}/pause|resume` and
+  // `/api/agents/pauses` (spec `audit-trail` PR5), so the boot registry carries it.
+  agentPauseDeps: {
+    pauses: {
+      pause: async () => ({ agentId: 'a', paused: true, changed: true }),
+      resume: () => ({ agentId: 'a', paused: false, changed: true }),
+      list: () => [],
+    },
   },
 });
 
@@ -583,6 +597,11 @@ capabilityConformance(registry, {
       group: 'no-such-conformance-section',
       items: [{ kind: 'agent', path: SANDBOX_CWD }],
     },
+    // The audit reads need their required ids to parse; each then answers its
+    // own structured NOT_FOUND / TRANSCRIPT_PRIVATE from the stub log.
+    'audit.get': { id: 'no-such-conformance-event' },
+    'audit.account_timeline': { accountId: 'no-such-conformance-account' },
+    'audit.transcript_read': { sessionId: 'no-such-conformance-session' },
     'marketplace.get': { name: 'nonexistent-conformance-pkg' },
     'marketplace.recommend': { context: 'observability for a next.js app' },
     'marketplace.install': { name: 'nonexistent-conformance-pkg' },
@@ -604,6 +623,9 @@ capabilityConformance(registry, {
     // No identity in a conformance invocation, so the handler answers its own
     // `no-agent` refusal — wired and reachable, which is what this suite asks.
     'memory.write': { action: 'add', text: 'a conformance note' },
+    // The pause verbs reach the (stub) pause service with a parseable id.
+    'agent.pause': { agentId: 'conformance-agent' },
+    'agent.resume': { agentId: 'conformance-agent' },
     // Anonymous here, so the handler refuses with its own structured error
     // (there is no agent to scope the request to), which is what "wired" means.
     'permissions.request_access': {

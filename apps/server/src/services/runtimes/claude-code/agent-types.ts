@@ -162,6 +162,14 @@ export interface AgentSession {
    * own.
    */
   turnPermissionCeiling?: TurnPermissionCeiling;
+  /**
+   * The ceiling background work an earlier ceilinged turn started still runs
+   * under, while it may be running in this session's warm process. Unlike
+   * {@link turnPermissionCeiling} it outlives its turn; owned by the warm-process
+   * dispatcher (`warm-ceiling.ts`) and read by the tool gate through
+   * `gatePermissionMode`, never by the launch.
+   */
+  backgroundPermissionCeiling?: TurnPermissionCeiling;
   /** True when auto-created by updateSession — sendMessage should check transcript before first query. */
   needsTranscriptCheck?: boolean;
   /**

@@ -34,6 +34,7 @@ function depsWith(service: { send?: unknown; stopChat?: unknown }, read?: Partia
       },
       read: {
         mayRead: vi.fn(async () => false),
+        maySeeTitle: vi.fn(async () => true),
         ...read,
       } as unknown as ChatReadDeps,
     },
@@ -140,6 +141,24 @@ describe('chat domain', () => {
       chatTitle: null,
       link: '[New chat](/session?session=b)',
     });
+  });
+
+  it('never names a chat the sender may not read, such as a person’s own', async () => {
+    const send = vi.fn(async () => ({ messageId: 'm1', chatId: 'b', status: 'queued' as const }));
+    const describe = vi.fn(async () => ({ title: 'My private plans', agent: 'Bo' }));
+    const deps = depsWith({ send }, { describe, maySeeTitle: vi.fn(async () => false) });
+
+    const result = await capability('chat.send').invoke(deps, { to: 'b', message: 'hi' } as never, {
+      sessionId: 's1',
+      identity,
+    });
+
+    expect(result).toMatchObject({
+      ok: true,
+      chatTitle: null,
+      link: '[New chat](/session?session=b)',
+    });
+    expect(describe).not.toHaveBeenCalled();
   });
 
   it('answers a ChatMessageError as a refusal with its code', async () => {

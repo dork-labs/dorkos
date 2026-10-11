@@ -300,6 +300,23 @@ export const serverEnvSchema = z.object({
     .string()
     .optional()
     .transform((v) => v === 'true'),
+  // Test mode only — also registers the DorkOS runtime (Doe) beside
+  // TestModeRuntime, so a chat on DorkOS credits runs end to end against the
+  // test-mode Cloud and its fake inference stream (DOR-2783). Off by default so
+  // existing e2e suites see the same runtime set. Ignored unless
+  // DORKOS_TEST_RUNTIME is also true.
+  DORKOS_TEST_RUNTIME_DOE: z
+    .string()
+    .optional()
+    .transform((v) => v === 'true'),
+  // Test mode only — the fake DorkOS Cloud approves a device code by itself
+  // after two polls, for flows that never open its approval page (the capture
+  // pipeline). Off by default, so a test can prove that opening the page is
+  // what approves the code. Ignored unless DORKOS_TEST_RUNTIME is also true.
+  DORKOS_TEST_CLOUD_AUTO_APPROVE: z
+    .string()
+    .optional()
+    .transform((v) => v === 'true'),
   // Q3 contention harness (DOR-500) — read ONLY by the `q3-*` test-mode
   // scenarios (services/runtimes/test-mode/q3-contention-scenarios.ts), which
   // are unreachable unless DORKOS_TEST_RUNTIME is true and a `q3-*` name is
@@ -322,6 +339,16 @@ export const serverEnvSchema = z.object({
   TUNNEL_PORT: z.coerce.number().int().min(1).max(65535).optional(),
   TUNNEL_AUTH: z.string().optional(),
   TUNNEL_DOMAIN: z.string().optional(),
+  // DorkOS managed remote access (DOR-2086). Off until the live supplier proof
+  // passes: unset, nothing managed is offered, no Cloud command stream runs, and
+  // the person's own ngrok tunnel above is untouched either way. `1` or `true`
+  // switches it on. A free spelling rather than `boolFlag`, because the plan
+  // names `=1` and a feature switch must not refuse to boot over it. Read by
+  // `services/core/remote/managed-availability.ts`.
+  DORKOS_MANAGED_REMOTE: z
+    .string()
+    .optional()
+    .transform((value) => value === '1' || value?.toLowerCase() === 'true'),
   NGROK_AUTHTOKEN: z.string().optional(),
   // DorkOS cloud base URL for device-link (accounts-and-auth P2). Defaults to
   // production; override for local dev against the site (e.g.

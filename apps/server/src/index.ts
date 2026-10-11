@@ -47,29 +47,20 @@ import { HARNESS_MANIFEST_PATH } from '@dorkos/harness';
 import type { PermissionAreaId } from '@dorkos/shared/permissions';
 import { randomUUID } from 'node:crypto';
 import { createApp, finalizeApp } from './app.js';
-import { createFrontDoor, createFrontDoorServer } from './http/front-door.js';
+import { createFrontDoorServer, frontDoorListener } from './http/front-door.js';
+import { composeFrontDoor } from './http/hono-api.js';
 import { createSessionLocationsRouter } from './routes/session-locations.js';
 import { ManagedConnectorCloudError } from './services/core/auth/cloud-link-client.js';
 import { DoeRuntime } from './services/runtimes/doe/index.js';
+import { registerRuntimes } from './startup/runtimes.js';
 import { ClaudeCodeRuntime } from './services/runtimes/claude-code/claude-code-runtime.js';
 import { shutdownSessionPumps } from './services/runtimes/claude-code/sessions/session-pump-registry.js';
 import { reapOrphanedWarmProcesses } from './services/runtimes/claude-code/sessions/warm-process/warm-process-ledger.js';
 import { sharedBackgroundWorkLedger } from './services/runtimes/claude-code/messaging/background-work-ledger.js';
 import { inventorySessionIds } from './services/runtimes/claude-code/sessions/session-inventory.js';
 import { previewListeners } from './services/workbench-serve/index.js';
-import { CodexRuntime, CodexThreadMap } from './services/runtimes/codex/index.js';
-import {
-  OpenCodeRuntime,
-  OpenCodeSessionMap,
-  openCodeServerManager,
-  planOpenCodeSidecar,
-  planOpenCodeTurn,
-} from './services/runtimes/opencode/index.js';
-import {
-  runtimeRegistry,
-  applyAndWatchConfiguredDefaultRuntime,
-  registerOptionalRuntime,
-} from './services/core/runtime-registry.js';
+import { openCodeServerManager } from './services/runtimes/opencode/index.js';
+import { runtimeRegistry } from './services/core/runtime-registry.js';
 import {
   initAuth,
   seedLegacyMcpApiKey,
@@ -80,15 +71,18 @@ import {
 import { canExpose, checkBindAllowed } from './services/core/auth/exposure-guard.js';
 import { tunnelManager } from './services/core/tunnel-manager.js';
 import { resolveTunnelSettings } from './services/core/config/tunnel-settings.js';
-import { initCloudLinkManager, getCloudLinkManager } from './services/core/auth/cloud-link.js';
+import { getCloudLinkManager } from './services/core/auth/cloud-link.js';
 import {
   revokeHeldCreditsToken,
   startCreditsLifecycle,
   stopCreditsLifecycle,
 } from './services/core/cloud/credits-inference.js';
 import { readCloudAccountKey } from './services/core/cloud/v1-client.js';
-import { fillCreditsGapsOnNewLink } from './services/core/cloud/credits-runtimes.js';
-import { startCreditsRelay, type CreditsRelay } from './services/core/cloud/credits-relay.js';
+import {
+  fillCreditsGapsOnNewLink,
+  stopCodexCreditsTurns,
+} from './services/core/cloud/credits-runtimes.js';
+import type { CreditsRelay } from './services/core/cloud/credits-relay.js';
 import { initMoveStaging } from './services/core/cloud/community-move-upload.js';
 import {
   initConfigManager,
@@ -222,7 +216,6 @@ import type { ConnectorOwnerAuthority } from './services/connectors/principal/se
 import { ConnectorRuntimePrincipalService } from './services/connectors/principal/runtime-principal-service.js';
 import { connectorThreadKeys } from './services/connectors/principal/thread-keys.js';
 import { codexAppServerPool } from './services/runtimes/codex/app-server/process-pool.js';
-import { resolveCodexTransport } from './services/runtimes/codex/transport/index.js';
 import { CanonicalConnectorRuntimeAuthorityResolver } from './services/connectors/principal/runtime-authority-resolver.js';
 import {
   ConnectorAgentRequestService,
@@ -249,6 +242,7 @@ import {
 } from './services/runtimes/claude-code/mcp-server-config.js';
 import { AgentMcpServerService } from './services/mesh/agent-mcp-server-service.js';
 import { AgentMcpOAuthService } from './services/mesh/agent-mcp-oauth-service.js';
+import { warmMcpOAuthTokens } from './services/mesh/warm-mcp-oauth-tokens.js';
 import { resumeAfterMcpSignin } from './services/mesh/mcp-signin-resume.js';
 import { createMcpRevocationWatch } from './services/mesh/mcp-revocation.js';
 import { createMcpOAuthRouter } from './routes/mcp-oauth.js';
@@ -296,13 +290,12 @@ import {
   personWriter,
   createAlwaysSuggestion,
 } from './services/core/permissions/index.js';
+import { managedRemoteCoordinator } from './services/core/remote/managed-remote-coordinator.js';
 import { titleForMcpTool } from './services/core/mcp-tools/mcp-tool-tiers.js';
 import { resolveCaller } from './routes/room-caller.js';
 import { LocalRoomAttachmentStore } from './services/rooms/attachments/local-room-attachment-store.js';
 import {
-  LocalSessionAttachmentStore,
   SESSION_ATTACHMENT_SWEEP_INTERVAL_MS,
-  setSessionAttachmentStore,
   sweepSessionAttachments,
 } from './services/session/attachments/index.js';
 import { createAdminRouter } from './routes/admin.js';
@@ -419,7 +412,13 @@ import {
   type InstallSweepSummary,
 } from './services/marketplace/recovery/backup-janitor.js';
 import { currentRecordOwner } from './services/marketplace/lib/records/record-owner.js';
-import { wireAuditTrail } from './services/audit/index.js';
+import { createAgentPauseRouter } from './routes/agent-pause.js';
+import { wireAgentPause } from './services/mesh/pause/index.js';
+import {
+  auditCapabilityDeps,
+  wireAuditTrail,
+  wireSessionVisibility,
+} from './services/audit/index.js';
 import { createExternalMcpServer } from './services/core/mcp-server.js';
 import { composeDorkOsCapabilityRegistry } from './services/core/self-description/dorkos-registry.js';
 import { startCurrentRoomDueScheduler } from './services/canvas/doc-channel/operations/room-due-scheduler.js';
@@ -466,13 +465,13 @@ import {
   DatabaseOpenError,
   SnapshotFailedError,
   agents,
-  type Db,
 } from '@dorkos/db';
 import { openServerDatabase } from '@dorkos/db/internal-server';
 import {
   getRemoteCommunityAdapter,
   getRemoteConnectionStore,
   getRemotePairingService,
+  getRemoteWakePolicy,
   publishRemoteCommunityDeliveryChanges,
   setRemoteCommunityDb,
   setRemoteCommunityDeliveryProjection,
@@ -563,6 +562,7 @@ import { spacesEnabled } from './middleware/spaces-enabled.js';
 import { SearchIndexer, selectSearchSources } from './services/search/index.js';
 import { TerminalManager, terminalUpgradeRoute } from './services/terminal/index.js';
 import { attachUpgradeRouter } from './services/core/streams/upgrade-router.js';
+import { managedIngressFor } from './services/core/remote/managed-ingress.js';
 import { durableStreamRoutes } from './routes/stream-sockets.js';
 import { createTerminalRouter } from './routes/terminal.js';
 import { registerDorkosCommunityTelemetry } from './services/marketplace/telemetry/telemetry-reporter.js';
@@ -642,6 +642,10 @@ import {
 import { AgentSendStore } from './services/extensions/agent-send/agent-send-store.js';
 import { ChatMessageStore } from './services/session/chat-messages/chat-message-store.js';
 import { wireChatMessaging } from './services/session/chat-messages/chat-message-wiring.js';
+import {
+  wireCommitments,
+  type CommitmentWiring,
+} from './services/commitments/commitment-wiring.js';
 import {
   SessionStartedByStore,
   getSessionStartedByStore,
@@ -842,6 +846,7 @@ let attachAgentTaskRoots: ((projectPath: string, agentId: string) => Promise<voi
 const mainRequestAdmission = new MainRequestAdmission();
 const workspaceReconcilerLifecycle = new WorkspaceReconcilerLifecycle();
 let searchIndexer: SearchIndexer | undefined;
+let commitmentWiring: CommitmentWiring | undefined;
 let healthCheckInterval: ReturnType<typeof setInterval> | undefined;
 let dailySnapshotInterval: ReturnType<typeof setInterval> | undefined;
 let sessionAttachmentSweepInterval: ReturnType<typeof setInterval> | undefined;
@@ -1098,7 +1103,7 @@ async function start() {
   // Skipped on a first boot so a brand-new install is not handed a `backups`
   // folder holding a copy of an empty database. The hourly tick picks the day up
   // later, by which time there may be something in it worth copying.
-  if (!firstBoot) takeDailySnapshot(db, backupsDir);
+  if (!firstBoot) takeDailySnapshot(db, backupsDir, logger);
 
   // Durable session-event store for LOG-BACKED runtimes (codex/opencode/
   // test-mode), injected once here so their completed-turn history survives a
@@ -1194,7 +1199,7 @@ async function start() {
   );
 
   // Initialize the Better Auth identity core over the consolidated DB. Mounted
-  // by createApp() at /api/auth/* regardless of `config.auth.enabled` (the gate
+  // by createHonoApi() at /api/auth/* regardless of `config.auth.enabled` (the gate
   // is a later task) so the enable-login flow can create the owner account
   // before the flag flips. See services/core/auth/.
   // dorkHome is threaded through so the session-signing secret resolves from
@@ -1237,12 +1242,17 @@ async function start() {
   // until an account exists. The startup check walks the recent end of the
   // chain and only warns: a broken chain is evidence to keep, not a reason to
   // refuse to start.
-  const { log: auditLog } = wireAuditTrail({
+  const { log: auditLog, accounts: auditAccounts } = wireAuditTrail({
     db,
     activity: activityService,
     installId: connectorInstallationId,
     readOwnerAccount,
   });
+
+  // Pausing an agent everywhere (spec `audit-trail` PR5). Read before any
+  // runtime registers, so the hold at the runtime seam sees a pause that
+  // outlived a restart from the first turn on.
+  const agentPauses = wireAgentPause(db, () => schedulerService);
 
   // Who started a chat that no person typed into, and the seam that starts
   // one for an extension (`api.startWork`, `ctx.sessions.start`, spec
@@ -1285,6 +1295,9 @@ async function start() {
     meshCore: () => meshCore,
     roomSessionPlace: () => roomSessionPlacePort,
   });
+  // What agents promised (spec `heartbeats` §12). The due timers are rebuilt
+  // from the table here, so a restart loses no wake and no missed mark.
+  const commitments = (commitmentWiring = wireCommitments({ db, meshCore: () => meshCore }));
   // Sharing with every agent that ends as a side effect (a disconnect, a move
   // to a DorkOS account) is recorded too, so every change to it leaves a
   // trace. Set here, before any provider registers, so boot-time changes count.
@@ -1670,197 +1683,11 @@ async function start() {
   }
 
   // --- Register runtime: TestModeRuntime in test mode, ClaudeCodeRuntime otherwise ---
-  if (env.DORKOS_TEST_RUNTIME) {
-    const { TestModeRuntime } = await import('./services/runtimes/test-mode/test-mode-runtime.js');
-    const testRuntime = new TestModeRuntime();
-    testRuntime.setSessionSettings(runtimeRegistry);
-    runtimeRegistry.register(testRuntime);
-    relayAgentRuntime = testRuntime;
-    // Optional SECOND instance under a distinct type — gives e2e a server with
-    // more than one registered runtime (status-bar picker, ?runtime= launch
-    // binding, session-list runtime marks) with zero real agent binaries.
-    // Test branch only; the production path never registers test runtimes.
-    if (env.DORKOS_TEST_RUNTIME_SECONDARY) {
-      const secondaryRuntime = new TestModeRuntime('test-mode-b');
-      secondaryRuntime.setSessionSettings(runtimeRegistry);
-      runtimeRegistry.register(secondaryRuntime);
-      logger.info('[TestMode] Secondary TestModeRuntime registered as test-mode-b');
-    }
-    // Optional claude-code-typed alias (DOR-952): a seeded agent's manifest can
-    // only declare a real runtime enum (claude-code/codex/opencode), so the
-    // managed-MCP OAuth e2e needs a runtime registered under 'claude-code' for
-    // `GET /api/mcp-config?runtime=claude-code` to resolve `getMcpStatus` instead
-    // of 400ing. Same TestModeRuntime class; the resolver injection below reaches
-    // it too. Test branch only.
-    if (env.DORKOS_TEST_RUNTIME_CLAUDE_ALIAS) {
-      const aliasRuntime = new TestModeRuntime('claude-code');
-      aliasRuntime.setSessionSettings(runtimeRegistry);
-      runtimeRegistry.register(aliasRuntime);
-      logger.info('[TestMode] TestModeRuntime alias registered as claude-code (DOR-952)');
-    }
-    runtimeRegistry.setDefault('test-mode');
-    logger.info('[TestMode] TestModeRuntime registered — no real Claude API calls will be made');
-    // Cloud-link transport: fake the network dependency to dorkos.ai only, so
-    // the capture pipeline can photograph a real pending→linked flip offline.
-    // Dynamic import keeps fake-cloud-link.ts out of the production module
-    // graph — same pattern as TestModeRuntime above.
-    const { createFakeCloudLinkFetch } =
-      await import('./services/runtimes/test-mode/fake-cloud-link.js');
-    initCloudLinkManager({ fetchImpl: createFakeCloudLinkFetch() });
-  } else {
-    // Where images a turn produces live is chosen HERE and nowhere else: the
-    // adapters and the serving route depend on the `SessionAttachmentStore`
-    // interface and never build a path, so the day those bytes live somewhere
-    // other than this machine, this line is what changes. Same doctrine as the
-    // room attachment store below. Registered for the route, and handed to
-    // every adapter that can produce media — an adapter given none declares
-    // `mediaOutput: 'none'` rather than promising something it cannot keep.
-    const sessionAttachmentStore = new LocalSessionAttachmentStore(dorkHome);
-    setSessionAttachmentStore(sessionAttachmentStore);
-
-    claudeRuntime = new ClaudeCodeRuntime(dorkHome, env.DORKOS_DEFAULT_CWD, sessionAttachmentStore);
-    relayAgentRuntime = claudeRuntime;
-    runtimeRegistry.register(claudeRuntime);
-    // Inject the core session-settings store (ADR-0260). The registry implements
-    // SessionSettingsPort structurally over session_metadata; setDb() ran above.
-    claudeRuntime.setSessionSettings(runtimeRegistry);
-    logger.info('[Runtime] ClaudeCodeRuntime registered as default');
-
-    // Non-blocking warm-up — populates model cache without delaying server listen
-    claudeRuntime.warmup().catch((err) => {
-      logger.warn('[Startup] Model warm-up failed (will retry on first API call)', { err });
-    });
-
-    // Non-blocking plugin scan — populates activatedPlugins cache so the first
-    // session picks up any previously installed marketplace plugins (ADR-0239).
-    claudeRuntime.refreshActivatedPlugins().catch((err) => {
-      logger.warn('[Startup] Plugin activation scan failed (will retry on next install)', { err });
-    });
-
-    // --- Codex runtime (spec additional-agent-runtimes, ADR-0309) ---
-    // Gated on `runtimes.codex.enabled` config. Must register BEFORE
-    // sessionListBroadcaster.start() below — runtimes registered after
-    // start() are not fanned into the global session-list stream.
-    const codexConfig = configManager.get('runtimes').codex;
-    const openCodeConfig = configManager.get('runtimes').opencode;
-    // The loopback relay a backend's credits provider is pointed at, so the
-    // credits token never enters that backend's process (ADR 261002-221210,
-    // amended by 261005-113107: Codex on app-server goes through it too).
-    // Started where Codex or OpenCode runs; if it cannot start, a credits turn
-    // on either can pay for nothing and refuses, never falls back.
-    if (codexConfig.enabled || openCodeConfig.enabled) {
-      creditsRelay = await startCreditsRelay().catch((err: unknown) => {
-        logger.warn('[Cloud] Could not start the credits relay', logError(err));
-        return null;
-      });
-    }
-    if (codexConfig.enabled) {
-      // Construction no longer depends on a resolvable `codex` binary: the
-      // runtime resolves one lazily, per turn, so a machine with no Codex still
-      // registers it and reports an honest `missing` with an install hint
-      // (DOR-1334 / F9). registerOptionalRuntime stays as the last-resort guard
-      // against any OTHER synchronous construction failure taking start() —
-      // and the whole server process — down with it.
-      registerOptionalRuntime(
-        'CodexRuntime',
-        'install the Codex CLI or set runtimes.codex.enabled to false in config to silence this',
-        () => {
-          const codexRuntime = new CodexRuntime({
-            // The thread map shares the consolidated Drizzle handle injected into
-            // runtimeRegistry.setDb() above (one DB, one `codex_threads` table).
-            threadMap: new CodexThreadMap(db),
-            // Where images a turn's MCP tools hand back are kept. Wiring it here
-            // is what makes the runtime declare `mediaOutput: 'attachments'` —
-            // the composition root owns the deployment decision, and the adapter
-            // reports what it was actually given (ADR 260901-135657).
-            attachments: sessionAttachmentStore,
-            // How turns reach Codex (ADR 261005-113107). Read once: a change
-            // takes effect at the next start, because clients cache capabilities.
-            transport: resolveCodexTransport(codexConfig.transport),
-            creditsRelay: () => creditsRelay ?? undefined,
-          });
-          // Durable per-session settings hydrate/write-through (ADR-0260), same
-          // port the Claude adapter uses.
-          codexRuntime.setSessionSettings(runtimeRegistry);
-          runtimeRegistry.register(codexRuntime);
-          // Non-blocking session hydration — re-seeds the in-memory registry from
-          // the durable `codex_threads` rows so past sessions survive a restart.
-          // The registry emits session_upserted per hydrated session, so the live
-          // list self-heals even when this completes after the broadcaster starts.
-          codexRuntime.hydrateSessions().catch((err) => {
-            logger.warn(
-              '[Startup] Codex session hydration failed — past sessions stay off the list until their next turn',
-              { err }
-            );
-          });
-          logger.info('[Runtime] CodexRuntime registered');
-          return codexRuntime;
-        }
-      );
-    }
-
-    // --- OpenCode runtime (spec additional-agent-runtimes, ADR-0308) ---
-    // Gated on `runtimes.opencode.enabled` config. Must register BEFORE
-    // sessionListBroadcaster.start() below, same as Codex. The sidecar spawns
-    // lazily on first use; its shutdown is wired into shutdownServices().
-    if (openCodeConfig.enabled) {
-      // Same construct-can-throw exposure as Codex above — the sidecar's
-      // binary discovery can throw synchronously if it isn't installed.
-      // registerOptionalRuntime isolates the failure so it can't take the
-      // server down with it.
-      registerOptionalRuntime(
-        'OpenCodeRuntime',
-        'install the OpenCode CLI or set runtimes.opencode.enabled to false in config to silence this',
-        () => {
-          // The sidecar plans each boot and turn with the live credits token
-          // and model list (ADR 261001-000811); without these it fails closed.
-          openCodeServerManager.usePlanners({
-            planSidecar: planOpenCodeSidecar,
-            planTurn: planOpenCodeTurn,
-            relay: creditsRelay ?? undefined,
-          });
-          const openCodeRuntime = new OpenCodeRuntime({
-            provider: openCodeServerManager,
-            // Durable sessionId <-> OpenCode-session-id map on the shared Drizzle
-            // handle, so DorkOS-facing ids survive a server restart (DOR-251).
-            sessionMap: new OpenCodeSessionMap(db),
-            // Where images a turn produces are kept. Wiring it here is what
-            // makes the runtime declare `mediaOutput: 'attachments'` — the
-            // composition root owns the deployment decision, and the adapter
-            // reports what it was actually given (ADR 260901-135657).
-            attachments: sessionAttachmentStore,
-          });
-          // Durable per-session settings hydrate/write-through (ADR-0260), same
-          // port the Claude adapter uses.
-          openCodeRuntime.setSessionSettings(runtimeRegistry);
-          runtimeRegistry.register(openCodeRuntime);
-          logger.info('[Runtime] OpenCodeRuntime registered');
-          return openCodeRuntime;
-        }
-      );
-    }
-
-    // Register before the broadcaster subscribes; construction performs no inference.
-    if (configManager.get('runtimes').doe.enabled) {
-      registerOptionalRuntime('DorkOS', 'check the DorkOS data directory permissions', () => {
-        doeRuntime = new DoeRuntime();
-        doeRuntime.setSessionSettings(runtimeRegistry);
-        runtimeRegistry.register(doeRuntime);
-        return doeRuntime;
-      });
-    }
-
-    // Apply the user's configured default runtime (runtimes.default) once all
-    // production runtimes are registered — and keep applying it, so changing it
-    // in Settings takes effect on the next session rather than the next restart.
-    // An unregistered value (disabled runtime, typo) keeps the built-in default
-    // rather than failing boot.
-    applyAndWatchConfiguredDefaultRuntime(runtimeRegistry, {
-      read: () => configManager.get('runtimes').default,
-      onChange: (listener) => configManager.onChange(listener),
-    });
-    initCloudLinkManager(); // real fetch, real defaults — behavior-preserving
-  }
+  ({ claudeRuntime, doeRuntime, relayAgentRuntime, creditsRelay } = await registerRuntimes({
+    db,
+    dorkHome,
+    currentCreditsRelay: () => creditsRelay,
+  }));
 
   // Every runtime is registered, so the messages extensions sent before a
   // restart can be settled and re-armed, and held ones retried.
@@ -1941,9 +1768,7 @@ async function start() {
   // Both the worker and native stream lifecycle must remain inert until Mesh
   // has reconciled the on-disk manifest registry for this process boot.
   let meshStartupReconciled = false;
-  const remoteCommunityBridge: { current: RemoteRoomSubscriptionBridge | undefined } = {
-    current: undefined,
-  };
+  const remoteCommunityBridge: { current?: RemoteRoomSubscriptionBridge } = {};
   const {
     service: roomService,
     store: roomStore,
@@ -2008,6 +1833,9 @@ async function start() {
     remoteCommunityRuntime,
     spacesEnabled
   );
+  // Who in each space may wake an agent here (spec `official-community-space` D9). It starts
+  // loading now, long before the streams start below, and wakes nobody until it has.
+  remoteCommunityBridge.current.useWakeGate(getRemoteWakePolicy());
   remoteRedactionSync = new RemoteRedactionSync({
     db,
     mirrors: remoteCommunityRuntime.mirrors,
@@ -4368,6 +4196,8 @@ async function start() {
       beforeScheduledFire: (task) => agentExecutionWatch.beforeScheduledFire(task),
       // Each run holds the computer awake from placement to its last event.
       keepAwake: keepAwakeService,
+      // A paused agent's runs are skipped, never started (spec `audit-trail` PR5).
+      agentPauses,
     });
     // The ONE registration seam, shared by every writer that can change what a
     // task's schedule is: these routes, the file watcher, and the reconciler.
@@ -4728,6 +4558,10 @@ async function start() {
   app.locals.resolveTouches = (sessionIds: string[]) =>
     getSessionTouchStore()?.resolve(sessionIds) ?? new Map();
   sessionListBroadcaster.setOriginResolvers(sessionOriginResolvers(app.locals));
+  // Who may read each session's transcript (spec `audit-trail` §3.4): an
+  // agent sees agent work, never a person's own chat.
+  const { resolveTaskOrigins, resolveStartedBy } = app.locals;
+  wireSessionVisibility({ db, accounts: auditAccounts, resolveTaskOrigins, resolveStartedBy });
   // Live session upserts carry the flow items a chat works on, exactly as
   // `GET /api/sessions` does, so the first upsert after a list read no longer
   // wipes them from the client's cache (spec `flow-multiproject` §6.8, D10).
@@ -5058,6 +4892,16 @@ async function start() {
   );
   mountedRouters.push('permissions');
 
+  // What agents promised (spec `heartbeats` §12). Always mounted; the
+  // per-agent POST is mounted before the agents router so it answers its path.
+  app.use('/api/commitments', commitments.routers.list);
+  app.use('/api/agents/:id/commitments', commitments.routers.agent);
+  // Pause an agent everywhere, and lift it (spec `audit-trail` PR5). Mounted
+  // before the agents router so `/api/agents/:id/pause` reaches it first; the
+  // registry is read lazily because it is composed after the routes mount.
+  app.use('/api', createAgentPauseRouter({ registry: () => capabilityRegistry }));
+  mountedRouters.push('agent-pause');
+
   // Always mounted — not behind any feature flag.
   // ADR-0043: pass meshCore (when available) so writes sync to Mesh DB cache.
   // The confirmation provider is composed further down this boot, inside the
@@ -5081,6 +4925,7 @@ async function start() {
     activityService,
     permissionService,
     auditLog,
+    auditAccounts,
     notificationService,
     pushSubscriptions,
     webPushChannel,
@@ -5616,9 +5461,14 @@ async function start() {
       // Built here, once: its once-an-hour budget must outlive the per-session
       // tool servers that reach it.
       // `audit.verify`: anyone may check the audit log's chain (spec `audit-trail`).
-      auditDeps: { log: auditLog },
+      auditDeps: auditCapabilityDeps(auditLog, auditAccounts, runtimeRegistry),
+      // `agent.pause` / `agent.resume`: anyone may stop any agent (spec `audit-trail` PR5).
+      agentPauseDeps: { pauses: agentPauses },
       // Chats messaging chats (spec `spin-off-chats`).
       chatMessageDeps: chatMessaging,
+      // What agents promised (spec `heartbeats` §12): an agent records its
+      // own, and anyone reads every agent's list.
+      commitmentDeps: commitments.capabilityDeps,
       sessionCompactionDeps: {
         compaction: new AgentCompactionService({
           resolveRuntime: (sessionId: string) => runtimeRegistry.resolveForSession(sessionId),
@@ -5913,15 +5763,14 @@ async function start() {
     logger.warn(`[Auth] ${bindCheck.warning}`);
   }
 
+  const frontDoor = composeFrontDoor(app, mainRequestAdmission);
   const server = startMainListener({
     admission: mainRequestAdmission,
-    // Hono is the front door; every route still answers from the Express app
-    // behind it (`http/front-door.ts`, ADR 261009-192542).
-    listen: () =>
-      createFrontDoorServer(createFrontDoor(app, { census: env.DORKOS_TEST_RUNTIME })).listen(
-        PORT,
-        host
-      ),
+    // Hono is the front door: moved route groups answer from the Hono `/api`
+    // app (`http/hono-api.ts`), everything else from the Express app behind it
+    // (`http/front-door.ts`, ADR 261009-192542). Managed remote access serves
+    // the same door, so its requests meet the same routes and gates.
+    listen: () => createFrontDoorServer(frontDoor).listen(PORT, host),
     onListening: (server) => {
       logger.info(`[DorkOS] server running on http://${host}:${PORT}`);
 
@@ -5936,6 +5785,12 @@ async function start() {
         mainRequestAdmission
       );
       logger.info('[DorkOS] WebSocket upgrade router attached');
+
+      // The managed remote-access ingress: a loopback listener of its own that
+      // managed forwarding targets. It runs the edge-proof and host checks, then
+      // hands requests to the same front door and upgrades to the router above.
+      // Nothing listens until managed access opens.
+      tunnelManager.attachManagedIngress(managedIngressFor(frontDoorListener(frontDoor), server));
 
       // Fire-and-forget: record startup in the activity feed so the dashboard
       // shows when the server was last (re)started.
@@ -6091,7 +5946,7 @@ async function start() {
   // hands large databases to better-sqlite3's incremental `db.backup()` API,
   // which yields between pages. Not worth the second code path at 2 MB.
   dailySnapshotInterval = setInterval(() => {
-    takeDailySnapshot(db, backupsDir);
+    takeDailySnapshot(db, backupsDir, logger);
   }, INTERVALS.DAILY_SNAPSHOT_CHECK_MS);
 
   // Somebody has to own the disk that session images sit on. Once at boot, so a
@@ -6223,6 +6078,9 @@ async function start() {
   ensureCreditsClaudeRoot();
   startCreditsLifecycle();
   getCloudLinkManager().setOnUnlink(async () => {
+    // First, while the link still stands: managed remote access withdraws
+    // locally at once and sends its Cloud calls under the old key (DOR-2086).
+    void managedRemoteCoordinator.withdrawOnUnlink();
     await revokeHeldCreditsToken();
     await claudeRuntime?.stopCreditsSessions();
     stopCodexCreditsTurns();
@@ -6248,17 +6106,6 @@ async function start() {
       });
     }
   });
-}
-
-/**
- * Stop every Codex turn running on DorkOS credits, when Codex is registered.
- * Structural, because the Codex runtime is constructed inside an optional
- * registration and is not held here.
- */
-function stopCodexCreditsTurns(): void {
-  const codex = runtimeRegistry.listRuntimes().find((runtime) => runtime.type === 'codex') as
-    { stopCreditsTurns?: () => void } | undefined;
-  codex?.stopCreditsTurns?.();
 }
 
 /** Attempt each owned drain even when an earlier one rejects, including undefined. */
@@ -6419,6 +6266,7 @@ async function shutdownServices() {
   if (searchIndexer) {
     searchIndexer.stop();
   }
+  commitmentWiring?.stop();
   if (meshCore) {
     meshCore.stopPeriodicReconciliation();
     meshCore.close();

@@ -117,7 +117,9 @@ import type {
   ManagedMcpServerResolver,
   SessionUpdateResult,
   TurnPermissionCeiling,
+  LiveSessionRef,
 } from '@dorkos/shared/agent-runtime';
+import { picksSession } from '@dorkos/shared/agent-runtime';
 import type {
   SessionSnapshot,
   SessionEvent,
@@ -1026,6 +1028,24 @@ export class OpenCodeRuntime implements AgentRuntime {
   /** OpenCode exposes no addressable background tasks — nothing to stop. */
   async stopTask(): Promise<InterruptReceipt> {
     return { outcome: 'not-running', reason: 'no-open-turn', runtime: this.type };
+  }
+
+  /**
+   * @inheritdoc
+   *
+   * Live here is a turn in flight: the sidecar is shared by every OpenCode
+   * session and keeps no background work of a session's own between turns,
+   * so stopping the turn ends the session's work.
+   */
+  async endSessionsWhere(belongs: (session: LiveSessionRef) => boolean): Promise<string[]> {
+    readOriginalOpenCodeRuntimeView(this.#originalMethodOwner);
+    const ended: string[] = [];
+    for (const [sessionId, turn] of [...this.activeTurns]) {
+      if (!picksSession(belongs, { sessionId, cwd: turn.cwd })) continue;
+      const receipt = await this.interruptQuery(sessionId).catch(() => undefined);
+      if (receipt?.outcome === 'acked' || receipt?.outcome === 'closed') ended.push(sessionId);
+    }
+    return ended;
   }
 
   /**

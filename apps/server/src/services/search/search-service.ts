@@ -21,11 +21,13 @@
  * and `session-links.ts` is where the difference is argued. A container with no
  * DorkOS session behind it sends none, and the box shows the hit without a link.
  *
- * **A source nobody has scoped is owner-only.** {@link buildScopes} knows one
- * source by name, `rooms`; every other registered source is treated as session
- * history and reached only by the operator. So Codex arriving as a third
- * registry row is invisible to agents on the day it lands rather than on the day
- * somebody remembers, which is the direction a default has to fail in.
+ * **A source nobody has scoped is session history.** {@link buildScopes} knows
+ * one source by name, `rooms`; every other registered source is treated as
+ * session history: the operator reaches all of it, an agent only the sessions
+ * its {@link SessionReadFilter} allows. A new source `session-links.ts` cannot
+ * map to sessions resolves none, so it is invisible to agents on the day it
+ * lands rather than on the day somebody remembers, which is the direction a
+ * default has to fail in.
  *
  * @module server/services/search/search-service
  */
@@ -63,15 +65,26 @@ export interface SearchScope {
    */
   rooms: 'all' | ReadonlyMap<string, number>;
   /**
-   * Whether session transcripts are in reach. **Owner-only in v1**, and false
-   * for anything that presented an agent identity.
+   * Which session transcripts are in reach: `true` for every one (the owner),
+   * `false` for none, or a filter naming the sessions this caller may read.
    *
-   * The two open holes that make this the only safe answer are recorded in spec
-   * §7: the external MCP surface collapses every caller onto one Relay sender,
-   * and a caller that simply omits `X-DorkOS-Agent` resolves to the install
-   * owner, who may see everything. Absence is never consent.
+   * An agent gets the filter (spec `audit-trail` §3.4): agent work sessions are
+   * readable, a person's own chats are not. A container with no DorkOS session
+   * behind it (a conversation held in a runtime's own command-line tool) is
+   * never in a filtered scope, because unknown is private. The route decides
+   * which of the three a caller gets; this module only applies it.
    */
-  sessions: boolean;
+  sessions: boolean | SessionReadFilter;
+}
+
+/** The sessions one caller may read, as the route resolved it. */
+export interface SessionReadFilter {
+  /**
+   * The subset of `sessionIds` this caller may read.
+   *
+   * @param sessionIds - DorkOS session ids.
+   */
+  readable: (sessionIds: readonly string[]) => ReadonlySet<string>;
 }
 
 /** What to search for, and how much to bring back. */
@@ -98,7 +111,7 @@ export function searchForCaller(
   scope: SearchScope,
   request: SearchRequest
 ): SearchResponse {
-  const scopes = buildScopes(scope, request.source);
+  const scopes = buildScopes(db, scope, request.source);
   const hits = searchMessages(db, {
     scopes,
     query: request.query,
@@ -150,7 +163,7 @@ export function searchForCaller(
  *   rather than a hint about what exists.
  * @returns The scopes, possibly empty.
  */
-function buildScopes(scope: SearchScope, source?: string): SourceScope[] {
+function buildScopes(db: Db, scope: SearchScope, source?: string): SourceScope[] {
   const scopes: SourceScope[] = [];
 
   if (source === undefined || source === roomsSource.id) {
@@ -172,11 +185,51 @@ function buildScopes(scope: SearchScope, source?: string): SourceScope[] {
     for (const registered of SEARCH_SOURCES) {
       if (registered.id === roomsSource.id) continue;
       if (source !== undefined && source !== registered.id) continue;
-      scopes.push({ sourceId: registered.id, visibility: 'all' });
+      scopes.push(
+        scope.sessions === true
+          ? { sourceId: registered.id, visibility: 'all' }
+          : {
+              sourceId: registered.id,
+              visibility: 'containers',
+              containers: readableContainers(db, registered.id, scope.sessions),
+            }
+      );
     }
   }
 
   return scopes;
+}
+
+/**
+ * The containers of one session source whose DorkOS session the filter allows.
+ *
+ * Enumerated, unlike the owner's clause, and deliberately: a filter that misses
+ * a container here hides it, which is the direction an agent's scope has to
+ * fail in.
+ *
+ * @param db - The database holding the index and the runtime bindings.
+ * @param sourceId - The session source.
+ * @param filter - Which sessions the caller may read.
+ */
+function readableContainers(
+  db: Db,
+  sourceId: string,
+  filter: SessionReadFilter
+): { originKey: string }[] {
+  const containers = db
+    .select({ originKey: searchSourcesTable.originKey })
+    .from(searchSourcesTable)
+    .where(eq(searchSourcesTable.sourceId, sourceId))
+    .all()
+    .map(({ originKey }) => ({ sourceId, originKey }));
+  const sessions = resolveSessionIds(db, containers);
+  const readable = filter.readable([...new Set(sessions.values())]);
+  return containers
+    .filter(({ originKey }) => {
+      const sessionId = sessions.get(containerKey(sourceId, originKey));
+      return sessionId !== undefined && readable.has(sessionId);
+    })
+    .map(({ originKey }) => ({ originKey }));
 }
 
 /**

@@ -4,6 +4,7 @@ import { serveStatic } from '@hono/node-server/serve-static';
 import { Pool } from 'pg';
 import { COMMUNITY_EMAIL_LINK_PAGES } from '@dorkos/shared/community-wire';
 import { createCommunityApp } from './app.js';
+import { createLiveHub } from './live/app-hub.js';
 import { parseConfig } from './config.js';
 import { oidcCallbackUrl } from './oidc.js';
 import { migrate } from './migrate.js';
@@ -14,13 +15,14 @@ import { createBlobStore } from './storage/index.js';
 import { sweepExpiredAttachments } from './routes/community/attachments.js';
 import { sweepExpiredExports } from './exports/sweep.js';
 import { startExportWorker } from './exports/worker.js';
-import { sweepExpiredAdmissions } from './routes/community/invites.js';
+import { sweepExpiredAdmissions } from './admission/sweep.js';
 import { sweepPendingBlobDeletions } from './storage/pending-deletions.js';
 import { sweepCommunityDeletions, sweepCommunityDeletionTombstones } from './deletion-worker.js';
 import { ERASURE_POLL_MS, pruneErasureRequests, sweepErasures } from './erasure/worker.js';
 import { pruneErasureJournal } from './erasure/journal.js';
 import { sweepExpiredPairings } from './routes/community/pairings.js';
 import { IMPORT_POLL_MS, pruneImports, sweepImports } from './imports/worker.js';
+import { banEmailKey } from './moderation/bans.js';
 import { IMPORT_UPLOAD_LEASE_MS } from './imports/store.js';
 import { sweepImportTempDirs } from './imports/upload.js';
 import { configureServerTimeouts } from './http.js';
@@ -39,15 +41,15 @@ import { pruneEmailLinks } from './email-links/tokens.js';
 const config = parseConfig(process.env);
 if (config.testRuntime)
   console.warn(
-    "WARNING: COMMUNITY_TEST_RUNTIME is on. Anyone who can reach this server can call /api/test/ without signing in and pause or refuse agents' posts. Never run a real host this way."
+    "WARNING: COMMUNITY_TEST_RUNTIME is on. Anyone who can reach this server can call /api/test/ without signing in, pause or refuse agents' posts, and create members with working credentials. Never run a real host this way."
   );
 await migrate(config.databaseUrl);
 // Each running export holds one connection for its collection read (one REPEATABLE READ
 // snapshot) and briefly a second to commit a segment, so the pool grows with export concurrency
-// and requests keep the ten connections they had before.
+// and requests keep COMMUNITY_DATABASE_POOL_SIZE connections of their own.
 const pool = new Pool({
   connectionString: config.databaseUrl,
-  max: 10 + 2 * config.exports.concurrency,
+  max: config.database.poolSize + 2 * config.exports.concurrency,
 });
 // A database restart or failover drops idle connections. The pool has already discarded the
 // broken one and opens a fresh one for the next query, so log it rather than crash the server.
@@ -68,11 +70,24 @@ const noticeComposers: NoticeComposers = {
   // Mailed reset, sign-in and confirmation links: on exactly when mail is.
   ...emailLinkComposers(config),
 };
+// Live streams wake on Postgres notices received on one direct connection. Prove at boot that a
+// notice really arrives: behind a transaction-mode pooler LISTEN succeeds and nothing comes.
+const live = createLiveHub(config);
+try {
+  await live.start(pool);
+} catch (error) {
+  console.error(
+    'Community live updates could not start. COMMUNITY_LISTEN_DATABASE_URL (or COMMUNITY_DATABASE_URL) must be a direct Postgres connection, not a transaction pooler.',
+    error instanceof Error ? error.message : 'unknown'
+  );
+  process.exit(1);
+}
 const app = createCommunityApp({
   config,
   pool,
   blobStore,
   noticeComposers,
+  live,
 });
 const staticRoot = fileURLToPath(new URL('../dist/', import.meta.url));
 app.use('/assets/*', serveStatic({ root: staticRoot }));
@@ -266,13 +281,18 @@ const exports = startExportWorker({
   concurrency: config.exports.concurrency,
 });
 let importing = false;
+// Imports are held to this host's content limits, and key a carried-over ban with its secret.
+const importLimits = {
+  ...config.limits,
+  banEmailKey: (email: string) => banEmailKey(email, config.authSecret),
+};
 const imports = setInterval(() => {
   if (importing) return;
   importing = true;
   void (async () => {
     // One import at a time on this replica, a bounded number per tick.
     for (let claimed = 0; claimed < 10; claimed++) {
-      const result = await sweepImports(pool, blobStore, config.limits);
+      const result = await sweepImports(pool, blobStore, importLimits);
       if (!result.claimed) break;
     }
   })()
@@ -320,6 +340,7 @@ const onSignal = createSignalHandler(
   createStop({
     server,
     pool,
+    live,
     timers: [
       cleanup,
       erasures,

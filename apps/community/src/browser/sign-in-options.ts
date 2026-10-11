@@ -77,6 +77,7 @@ export function singleSignOnLead(
 const MESSAGES: Record<string, string> = {
   invitation_required:
     'This account is not on this server yet. Open your invitation link first, then sign in.',
+  admission_refused: "You can't join this space.",
   age_confirmation_required:
     'Your account was not created. Choose to create an account, tick the box that confirms your age, then try again.',
   account_not_linked:

@@ -76,4 +76,10 @@ export type { RosterAgentInfo } from './lib/agent-details';
  */
 export { agentFacesByRef } from './lib/agent-details';
 export { ChannelComposer } from './ui/ChannelComposer';
+/**
+ * The line over a channel's composer when no agent is in it (DOR-2823),
+ * exported for the Dev Playground's composer bench. The routed app mounts it
+ * through {@link RoomSurface}.
+ */
+export { NoAgentHint } from './ui/NoAgentHint';
 export { useRoomTarget } from './model/room-target';

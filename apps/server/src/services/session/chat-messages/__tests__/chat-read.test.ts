@@ -36,6 +36,7 @@ beforeEach(() => {
   deps = {
     store,
     mayRead: vi.fn(async () => mayRead),
+    maySeeTitle: vi.fn(async () => mayRead),
     history: vi.fn(async () => history),
     status: vi.fn(() => null),
     describe: vi.fn(async () => ({ title: 'Build', agent: 'Bo' })),

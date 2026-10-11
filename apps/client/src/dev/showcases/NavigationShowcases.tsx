@@ -54,7 +54,7 @@ export function NavigationShowcases() {
 
       <PlaygroundSection
         title="AppTabStrip"
-        description="The cockpit window's tab strip. Each tab is one location; the name, icon and live dot are all derived from its href. The last tab has no close control, and the whole strip is a single Tab stop with arrow-key traversal."
+        description="The window’s tab strip. Each tab is one location; its name, icon and status all come from its href. The last tab has no close control, and the whole strip is a single Tab stop with arrow-key traversal."
       >
         <ShowcaseLabel>One tab (nothing to close)</ShowcaseLabel>
         <ShowcaseDemo responsive>

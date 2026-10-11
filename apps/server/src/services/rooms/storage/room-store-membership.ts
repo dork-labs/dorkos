@@ -120,14 +120,14 @@ export function setResponseMode(
   return facet.getMember(roomId, authorId);
 }
 
-/** Original setFallbackSeat responsibility after exact constructor-private store recognition. */
-export function setFallbackSeat(
+/** Original setLead responsibility after exact constructor-private store recognition. */
+export function setLead(
   opaqueRoomStoreKey: object,
   roomId: string,
   authorId: string | null
 ): Room | null {
   const facet = readOriginalRoomStoreMethodView(opaqueRoomStoreKey);
-  facet.db.update(rooms).set({ fallbackSeatAuthorId: authorId }).where(eq(rooms.id, roomId)).run();
+  facet.db.update(rooms).set({ leadAuthorId: authorId }).where(eq(rooms.id, roomId)).run();
   return facet.getRoom(roomId);
 }
 

@@ -30,6 +30,9 @@ import {
   consolidatedDoc,
   reportBack,
   agentReports,
+  commitments,
+  channelLeads,
+  agentPauses,
   reviewedSql,
   refuse,
   type MigrationEntry,
@@ -161,23 +164,37 @@ export function bridgeLegacyDocMigrationHistory(db: Db, folder: string): void {
     finalHash !== consolidatedDoc.hash
   )
     refuse('regenerated migration differs from reviewed SQL');
-  const reportBytes = reviewedSql(folder, reportBack);
-  const agentBytes = reviewedSql(folder, agentReports);
+  const shipped = [reportBack, agentReports, commitments, channelLeads, agentPauses];
+  const shippedSql = shipped.map((entry) => reviewedSql(folder, entry));
   reviewedSql(folder, consolidatedDoc);
   const reportRows = rows.filter((row) => row.hash === reportBack.hash);
   const agentRows = rows.filter((row) => row.hash === agentReports.hash);
+  const shippedRows = shipped.map((entry) => rows.filter((row) => row.hash === entry.hash));
   const chatRows = rows.filter((row) => row.hash === chatHash);
   const finalRows = rows.filter((row) => row.hash === finalHash);
   for (const [matching, entry] of [
     [chatRows, chat],
     [reportRows, reportBack],
     [agentRows, agentReports],
+    [shippedRows[2]!, commitments],
+    [shippedRows[3]!, channelLeads],
+    [shippedRows[4]!, agentPauses],
     [finalRows, consolidated],
   ] as const) {
     if (matching.length > 1 || (matching[0] && matching[0].created_at !== entry.when))
       refuse('current migration bookkeeping differs');
   }
-  if (agentRows.length && !reportRows.length) refuse('shipped Main151 precedes Main150 history');
+  let shippedGap = false;
+  let shippedIdentity = 0;
+  for (const matching of shippedRows) {
+    if (!matching.length) {
+      shippedGap = true;
+      continue;
+    }
+    if (shippedGap || matching[0]!.rowIdentity <= shippedIdentity)
+      refuse('shipped Main history is not an ordered contiguous prefix');
+    shippedIdentity = matching[0]!.rowIdentity;
+  }
   const futureRows = journal.entries.slice(consolidatedDoc.idx + 1).flatMap((entry) => {
     const hash = createHash('sha256')
       .update(readFileSync(path.join(folder, `${entry.tag}.sql`)))
@@ -199,6 +216,7 @@ export function bridgeLegacyDocMigrationHistory(db: Db, folder: string): void {
         !chatRows.includes(row) &&
         !reportRows.includes(row) &&
         !agentRows.includes(row) &&
+        !shippedRows.flat().includes(row) &&
         !finalRows.includes(row) &&
         !futureRows.includes(row)
     )
@@ -210,10 +228,12 @@ export function bridgeLegacyDocMigrationHistory(db: Db, folder: string): void {
       legacy.length ||
       !chatRows.length ||
       !reportRows.length ||
-      !agentRows.length
+      !agentRows.length ||
+      shippedRows.some((matching) => matching.length !== 1) ||
+      finalRows[0]!.rowIdentity <= shippedIdentity
     )
       refuse('incomplete historical prefix claims consolidated migration');
-    // A durable completed152 permits ordinary future migrations; never replay Doc DDL.
+    // A durable completed155 permits ordinary future migrations; never replay Doc DDL.
     return;
   }
 
@@ -298,19 +318,13 @@ export function bridgeLegacyDocMigrationHistory(db: Db, folder: string): void {
   // Original Doc DDL is already present; never replay consolidated CREATEs.
   // Only an exact final schema/FK match permits recording that covered step.
   sqlite.transaction(() => {
-    if (!reportRows.length) {
-      for (const statement of reportBytes.toString('utf8').split('--> statement-breakpoint'))
+    for (const [i, entry] of shipped.entries()) {
+      if (shippedRows[i]!.length) continue;
+      for (const statement of shippedSql[i]!.toString('utf8').split('--> statement-breakpoint'))
         if (statement.trim()) sqlite.exec(statement);
       sqlite
         .prepare('INSERT INTO __drizzle_migrations (hash, created_at) VALUES (?, ?)')
-        .run(reportBack.hash, reportBack.when);
-    }
-    if (!agentRows.length) {
-      for (const statement of agentBytes.toString('utf8').split('--> statement-breakpoint'))
-        if (statement.trim()) sqlite.exec(statement);
-      sqlite
-        .prepare('INSERT INTO __drizzle_migrations (hash, created_at) VALUES (?, ?)')
-        .run(agentReports.hash, agentReports.when);
+        .run(entry.hash, entry.when);
     }
     verifyCanonicalSchema(db, folder);
     sqlite

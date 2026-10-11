@@ -21,7 +21,17 @@ import { searchMessages } from '../../search/query.js';
 import type { RoomSessionPlacePort } from '../../workspace/room-session-place.js';
 import { deliverSteer, setQueuedChatCeilingResolver } from '../message-dispatcher.js';
 import { rememberedChatTitle } from '../origin/started-by-origin-overlay.js';
-import { getSessionStartedByStore } from '../origin/session-started-by-store.js';
+import {
+  getSessionStartedByStore,
+  type SessionStartedByStore,
+} from '../origin/session-started-by-store.js';
+import { auditTrail } from '../../audit/audit-trail.js';
+import {
+  canReadSession,
+  readSessionVisibilities,
+  type SessionInvolvement,
+} from '../../audit/session-visibility.js';
+import type { AuditReader } from '../../audit/visibility.js';
 import { resolveSessionCwdOrNull } from '../resolution/resolve-read-cwd.js';
 import {
   onProjectorInteractionChange,
@@ -136,6 +146,11 @@ export async function chatHistoryOf(sessionId: string): Promise<HistoryMessage[]
  * a message. Sending a chat a message, or stopping it, does not make it
  * readable: send reaches further than read until roles exist.
  *
+ * Inside that, the reader rule still holds (spec `audit-trail` §3.4): a
+ * person's own chat is read only under `canReadSession`'s one exception, when
+ * that chat itself started the reader. A private chat that merely messaged the
+ * reader, or one it reaches only as a descendant, is refused.
+ *
  * @param store - The chat-message store.
  * @param caller - The reading chat.
  * @param target - The chat it wants to read.
@@ -143,10 +158,41 @@ export async function chatHistoryOf(sessionId: string): Promise<HistoryMessage[]
 export function mayReadChat(store: ChatMessageStore, caller: ChatCaller, target: string): boolean {
   if (target === caller.sessionId) return true;
   const startedBy = getSessionStartedByStore();
-  if (startedBy?.get(caller.sessionId)?.startedBySessionId === target) return true;
-  if (store.sendersTo(caller.sessionId).has(target)) return true;
-  if (!startedBy) return false;
-  let frontier = [caller.sessionId];
+  const involvedBy: SessionInvolvement = {
+    startedReader: startedBy?.get(caller.sessionId)?.startedBySessionId === target,
+  };
+  const related =
+    involvedBy.startedReader ||
+    store.sendersTo(caller.sessionId).has(target) ||
+    (startedBy !== undefined && startedDescendant(startedBy, caller.sessionId, target));
+  if (!related) return false;
+  const visibility = readSessionVisibilities([target]).get(target) ?? 'participants';
+  return canReadSession(chatReader(caller), visibility, involvedBy);
+}
+
+/**
+ * Whether a chat may know of `target` at all, by the reader rule alone (spec
+ * `audit-trail` §3.4): itself, agent work it may read, or the private chat that
+ * started it. No relation is needed, and a message sent is not one.
+ *
+ * @param caller - The chat asking.
+ * @param target - The chat it asks about.
+ */
+export function maySeeChat(caller: ChatCaller, target: string): boolean {
+  if (target === caller.sessionId) return true;
+  const startedReader =
+    getSessionStartedByStore()?.get(caller.sessionId)?.startedBySessionId === target;
+  const visibility = readSessionVisibilities([target]).get(target) ?? 'participants';
+  return canReadSession(chatReader(caller), visibility, { startedReader });
+}
+
+/** Whether `target` is in the chain of chats `root` started, a few levels down. */
+function startedDescendant(
+  startedBy: SessionStartedByStore,
+  root: string,
+  target: string
+): boolean {
+  let frontier = [root];
   const seen = new Set(frontier);
   for (let depth = 0; depth < DESCENDANT_DEPTH && frontier.length > 0; depth += 1) {
     const next: string[] = [];
@@ -162,6 +208,15 @@ export function mayReadChat(store: ChatMessageStore, caller: ChatCaller, target:
     frontier = next;
   }
   return false;
+}
+
+/** The agent behind a reading chat, as the reader rule names it. */
+function chatReader(caller: ChatCaller): AuditReader {
+  const accounts = auditTrail()?.accounts;
+  return {
+    kind: 'agent',
+    accountId: accounts ? accounts.agentAtHome(caller.agentPath).accountId : 'unidentified',
+  };
 }
 
 /** What boot hands {@link wireChatMessaging}. */
@@ -208,6 +263,7 @@ export function wireChatMessaging(deps: WireChatMessagingDeps): {
   const read: ChatReadDeps = {
     store: deps.store,
     mayRead: async (caller, target) => mayReadChat(deps.store, caller, target),
+    maySeeTitle: async (caller, target) => maySeeChat(caller, target),
     history: chatHistoryOf,
     status: (sessionId) => {
       const projector = peekProjector(sessionId);
