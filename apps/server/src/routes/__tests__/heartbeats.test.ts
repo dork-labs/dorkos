@@ -14,17 +14,21 @@ import { HeartbeatStatusSchema } from '@dorkos/shared/heartbeat-schemas';
 import { createHeartbeatRouter } from '../heartbeats.js';
 import { HeartbeatStore } from '../../services/heartbeats/heartbeat-store.js';
 import { heartbeatStatus } from '../../services/heartbeats/heartbeat-status.js';
+import { RaiseStore } from '../../services/heartbeats/raises/raise-store.js';
 
 const target = swappableServer();
 let root: string;
 let store: HeartbeatStore;
+let raises: RaiseStore;
 let enabled: boolean;
 let owner: boolean;
 
 beforeEach(async () => {
   root = await mkdtemp(join(tmpdir(), 'heartbeat-route-'));
   await mkdir(join(root, '.dork'), { recursive: true });
-  store = new HeartbeatStore(createTestDb());
+  const db = createTestDb();
+  store = new HeartbeatStore(db);
+  raises = new RaiseStore(db);
   enabled = true;
   owner = true;
   const agent = { id: 'agent-juno', name: 'Juno', runtime: 'doe', projectPath: root };
@@ -38,7 +42,12 @@ beforeEach(async () => {
           viewerIsOwner,
           agent: agentId === agent.id ? agent : undefined,
           store,
-          runner: { nextBeatAt: () => new Date('2026-10-12T15:00:00Z') },
+          runner: {
+            nextBeatAt: () => new Date('2026-10-12T15:00:00Z'),
+            nextReportAt: () => new Date('2026-10-13T13:00:00Z'),
+          },
+          raises,
+          managerOf: () => 'acct-owner',
           enabled,
           runtimeRegistered: (runtime) => runtime === 'doe',
           isAgent: (id) => id.startsWith('agent-'),
@@ -99,6 +108,22 @@ describe('GET /api/agents/:id/heartbeat', () => {
       { id: 'b1', outcome: 'worked', summary: 'Answered Dorian.', sessionId: 'beat-chat-1' },
     ]);
     expect(body.held).toMatchObject([{ id: 'o1', text: 'Acme paid.' }]);
+    // The next report: who reads it, when, and the one beat turn it covers so far.
+    raises.queueItem(
+      'i1',
+      { agentId: 'agent-juno', kind: 'raise', text: 'Invoice sent.' },
+      '2026-10-12T14:01:00Z'
+    );
+    const withLine = HeartbeatStatusSchema.parse(
+      (await request(target.server).get('/api/agents/agent-juno/heartbeat')).body
+    );
+    expect(body.report).toEqual({
+      cadence: 'daily',
+      to: 'acct-owner',
+      nextReportAt: '2026-10-13T13:00:00.000Z',
+      items: 1,
+    });
+    expect(withLine.report.items).toBe(2);
 
     // Anyone else sees that something is held, not what it says, nor the chat.
     owner = false;

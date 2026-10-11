@@ -49,6 +49,8 @@ export interface WakeEvent {
   eventId?: string;
   /** For a failure: which source failed (a schedule id, a connection id). */
   source?: string;
+  /** For `reports-to-changed`: the stored `reportsTo` before and after. */
+  managerChange?: { before: string | null; after: string | null };
 }
 
 /** What the hub needs from the running server. */
@@ -63,8 +65,11 @@ export interface EventWakeDeps {
   agentIdAt(agentPath: string): string | undefined;
   /** The agents a connection is attached to. */
   agentsForConnection(connectionId: string): string[];
-  /** Note that the agent's manager changed, so its next beat opens with it. */
-  noteNewManager(agentId: string): void;
+  /**
+   * Note that the agent's manager changed: its next beat opens with it, and the
+   * old and new manager each get a line in its next report (§4.2).
+   */
+  noteNewManager(agentId: string, event: WakeEvent): void;
   /** Re-arm the agent's timer after its `HEARTBEAT.md` changed. */
   refresh(agentId: string): void;
 }
@@ -114,7 +119,7 @@ export class EventWakes {
   wake(agentId: string, event: WakeEvent): void {
     const now = this.deps.clock.now();
     if (FAILURE_TYPES.has(event.type) && !this.firstFailureToday(agentId, event, now)) return;
-    if (event.type === 'reports-to-changed') this.deps.noteNewManager(agentId);
+    if (event.type === 'reports-to-changed') this.deps.noteNewManager(agentId, event);
     if (this.pending.has(agentId)) return;
     const handle = this.deps.clock.setTimeout(() => {
       const held = this.pending.get(agentId);

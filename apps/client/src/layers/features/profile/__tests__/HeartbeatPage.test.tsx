@@ -74,6 +74,7 @@ const STATUS: HeartbeatStatus = {
   fileError: null,
   lastBeats: [],
   held: [],
+  report: { cadence: 'daily', to: 'owner', nextReportAt: null, items: 0 },
 };
 
 function renderPage(
@@ -154,6 +155,32 @@ describe('how it wakes', () => {
     expect(screen.getByText('Sent Acme’s second reminder.')).toBeInTheDocument();
     expect(screen.queryByRole('textbox')).not.toBeInTheDocument();
     expect(screen.queryByRole('button')).not.toBeInTheDocument();
+  });
+});
+
+describe('the next report', () => {
+  it('says who reads it, how often, and how much it covers so far', async () => {
+    renderPage(MANAGED, {
+      report: { cadence: 'daily', to: 'owner', nextReportAt: null, items: 3 },
+    });
+    expect(
+      await screen.findByText('Reports to you each workday. 3 items so far.')
+    ).toBeInTheDocument();
+    cleanup();
+
+    const lead = byId('agent-cartographer');
+    renderPage(MANAGED, {
+      report: { cadence: 'weekly', to: lead.agent!.manifestId!, nextReportAt: null, items: 0 },
+    });
+    expect(
+      await screen.findByText(`Reports to ${lead.displayName} each week. Nothing to report yet.`)
+    ).toBeInTheDocument();
+  });
+
+  it('says nothing about reports when the agent does not beat here', async () => {
+    renderPage(MANAGED, { wake: 'off', skippedReason: 'Heartbeat off.' });
+    await screen.findByText('Heartbeat off.');
+    expect(screen.queryByText(/^Reports to/)).not.toBeInTheDocument();
   });
 });
 

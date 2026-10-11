@@ -14,6 +14,7 @@
  *
  * @module services/heartbeats/heartbeats-wiring
  */
+import { randomUUID } from 'node:crypto';
 import { agentPause } from '../mesh/pause/index.js';
 import type { Express } from 'express';
 import { and, desc, eq, gt, inArray } from 'drizzle-orm';
@@ -32,6 +33,8 @@ import { auditTrail } from '../audit/audit-trail.js';
 import { createHeartbeatRouter } from '../../routes/heartbeats.js';
 import { createReportsToChain, OWNER_FALLBACK_ACCOUNT_ID } from './reports-to.js';
 import { HeartbeatStore } from './heartbeat-store.js';
+import { RaiseStore } from './raises/raise-store.js';
+import { queueManagerChange } from './raises/report-beat.js';
 import { BeatOutbox } from './outbox.js';
 import { BeatRunner, type BeatAgent } from './beat-runner.js';
 import { createBeatTurnLauncher, ownTurnRunning } from './beat-launch.js';
@@ -168,14 +171,25 @@ export function startHeartbeats(deps: HeartbeatsWiringDeps): HeartbeatsHandle {
   setRaiseRecipientCheck(createRecipientCheck(deps.meshCore, chain, ownerAccountId));
   const hours = () => resolveWorkingHours(configManager.get('profile'));
   const agents = agentReader(deps.meshCore);
+  const isOwner = (id: string) => chain.canonical(id) === ownerAccountId();
+  // A raise is answered by its reader posting in the DM it landed in; only the owner has one.
+  const raises = new RaiseStore(db, {
+    recipientAuthor: (to) => (isOwner(to) ? (deps.notifyDm?.operatorAuthorId() ?? null) : null),
+  });
+  const managerOf = (id: string) => chain.resolveManager(id).accountId;
+  const isAgent = (id: string) => deps.meshCore()?.get(id) !== undefined;
+  // One person per server today; their hours live in the owner's profile.
+  const presenceOf = () => ({ hours: hours(), away: configManager.get('profile').away ?? null });
+  const nameOf = (id: string) =>
+    agents.get(id)?.name ?? configManager.get('profile').displayName ?? 'your manager';
   const outbox = new BeatOutbox({
     store,
-    managerOf: (id) => chain.resolveManager(id).accountId,
+    raises,
+    managerOf,
     chainPersonOf: (id) => chain.resolveChainPerson(id).accountId,
-    isAgent: (id) => deps.meshCore()?.get(id) !== undefined,
-    // One person per server today; their hours live in the owner's profile.
-    presenceOf: () => ({ hours: hours(), away: configManager.get('profile').away ?? null }),
-    ...createDeliveries(deps, (id) => chain.canonical(id) === ownerAccountId()),
+    isAgent,
+    presenceOf,
+    ...createDeliveries(deps, isOwner),
     agentOf: agents.get,
     enabled,
   });
@@ -191,6 +205,7 @@ export function startHeartbeats(deps: HeartbeatsWiringDeps): HeartbeatsHandle {
     commitments: deps.commitments,
     launcher: createBeatTurnLauncher(deps.meshCore),
     outbox,
+    reports: { raises, managerOf, isAgent, presenceOf, nameOf },
     ownTurnRunning: (agentId) => ownTurnRunning(resolveAgentIdForPath, agentId),
     resolveCwd: async (agent) => (await resolveSessionCwd({ agentPath: agent.projectPath })).cwd,
   });
@@ -206,11 +221,39 @@ export function startHeartbeats(deps: HeartbeatsWiringDeps): HeartbeatsHandle {
         .where(eq(agentConnectionAttachments.connectionId, connectionId))
         .all()
         .map((row) => row.agentId),
-    noteNewManager: (agentId) => store.patchState(agentId, { newManager: 1 }),
+    noteNewManager: (agentId, event) => {
+      store.patchState(agentId, { newManager: 1 });
+      const at = new Date(systemClock.now()).toISOString();
+      queueManagerChange(
+        {
+          raises,
+          managerOf,
+          nameOf,
+          exists: (id) => chain.names(id),
+          canonical: (id) => chain.canonical(id),
+        },
+        {
+          agentId,
+          before: event.managerChange?.before ?? null,
+          id: randomUUID(),
+          oldLineId: randomUUID(),
+          at,
+        }
+      );
+    },
     refresh: (agentId) => void runner.refreshAgent(agentId),
   });
-  const stopFollowing = follow(deps, { enabled, hub, outbox, runner });
-  mountStatus(deps, { store, runner, agents, enabled });
+  const stopFollowing = follow(deps, {
+    enabled,
+    hub,
+    outbox,
+    runner,
+    refreshAll: () => {
+      // Report timers only: a profile write must not push back anyone's timed beat.
+      for (const agent of agents.list()) void runner.refreshReport(agent.id);
+    },
+  });
+  mountStatus(deps, { store, raises, managerOf, runner, agents, enabled });
   const handle: HeartbeatsHandle = {
     runner,
     stop: () => {
@@ -235,7 +278,13 @@ export function startHeartbeats(deps: HeartbeatsWiringDeps): HeartbeatsHandle {
  */
 function follow(
   deps: HeartbeatsWiringDeps,
-  parts: { enabled: () => boolean; hub: EventWakes; outbox: BeatOutbox; runner: BeatRunner }
+  parts: {
+    enabled: () => boolean;
+    hub: EventWakes;
+    outbox: BeatOutbox;
+    runner: BeatRunner;
+    refreshAll: () => void;
+  }
 ): () => void {
   const apply = (): void => {
     if (parts.enabled()) {
@@ -257,6 +306,8 @@ function follow(
   });
   const unwatchConfig = configManager.onChange((change) => {
     if (change.sections.includes('heartbeats')) apply();
+    // New hours or a new away: every report timer reads them.
+    if (change.sections.includes('profile')) parts.refreshAll();
   });
   return () => {
     unwatchTurns();
@@ -275,6 +326,8 @@ function mountStatus(
   deps: HeartbeatsWiringDeps,
   parts: {
     store: HeartbeatStore;
+    raises: RaiseStore;
+    managerOf: (agentId: string) => string;
     runner: BeatRunner;
     agents: { get(id: string): BeatAgent | undefined };
     enabled: () => boolean;
@@ -289,6 +342,8 @@ function mountStatus(
         heartbeatStatus({
           agent: parts.agents.get(agentId),
           store: parts.store,
+          raises: parts.raises,
+          managerOf: parts.managerOf,
           runner: parts.runner,
           enabled: parts.enabled(),
           runtimeRegistered: (runtime) => runtimeRegistry.has(runtime),

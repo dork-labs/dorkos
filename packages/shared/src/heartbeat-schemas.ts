@@ -296,6 +296,23 @@ export const HeldRaiseSchema = z
 /** One raise held for a person's hours. */
 export type HeldRaise = z.infer<typeof HeldRaiseSchema>;
 
+/** An agent's next report (spec §3.4, §9.3). */
+export const HeartbeatReportStatusSchema = z
+  .object({
+    /** How often it reports, from its `HEARTBEAT.md`. */
+    cadence: HeartbeatReportSchema,
+    /** Who reads it: a person's account id or an agent's mesh id. */
+    to: z.string(),
+    /** When its next report beat runs, or null when none is scheduled. */
+    nextReportAt: z.string().nullable(),
+    /** What the next report covers so far: queued lines plus beat turns since the last one. */
+    items: z.number().int(),
+  })
+  .openapi('HeartbeatReportStatus');
+
+/** An agent's next report. */
+export type HeartbeatReportStatus = z.infer<typeof HeartbeatReportStatusSchema>;
+
 /** The answer to GET /api/agents/:id/heartbeat. */
 export const HeartbeatStatusSchema = z
   .object({
@@ -317,6 +334,8 @@ export const HeartbeatStatusSchema = z
     lastBeats: z.array(BeatSummarySchema),
     /** Raises to people still held for their hours. */
     held: z.array(HeldRaiseSchema),
+    /** Its next report. */
+    report: HeartbeatReportStatusSchema,
   })
   .openapi('HeartbeatStatus');
 

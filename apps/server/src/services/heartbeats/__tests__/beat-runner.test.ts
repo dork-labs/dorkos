@@ -68,6 +68,7 @@ const outbox: BeatOutboxPort = {
     failingRaises += 1;
     failingErrors.push(error);
   },
+  deliverReport: async () => undefined,
 };
 
 /** A launcher that runs the turn on the fake runtime, as the launch service would. */
