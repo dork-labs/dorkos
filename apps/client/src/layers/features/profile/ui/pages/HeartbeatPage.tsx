@@ -23,23 +23,39 @@ import {
   nextCheckWords,
   wakeSentence,
 } from '../../lib/heartbeat-words';
+import { reportReaderNames, reportSentence } from '../../lib/report-words';
 import { useProfileAgent } from '../../model/use-profile-agent';
 import { HeartbeatBeats } from '../heartbeat/HeartbeatBeats';
 import { HeartbeatHeld } from '../heartbeat/HeartbeatHeld';
 import { HeartbeatFileEditor } from './ConventionPage';
 import type { ProfilePageContentProps } from './types';
 
-/** How the agent wakes, and when it next checks in. */
-function WakeSection({ status, now }: { status: HeartbeatStatus; now: number }) {
+/** How the agent wakes, when it next checks in, and its next report. */
+function WakeSection({
+  status,
+  now,
+  readerName,
+}: {
+  status: HeartbeatStatus;
+  now: number;
+  readerName: (accountId: string) => string;
+}) {
   const next =
     status.enabled && status.wake === 'timed'
       ? nextCheckWords(status.nextBeatAt, new Date(now))
       : null;
+  // A report runs only where beats run, and never with `wake: off`.
+  const reports = status.enabled && status.skippedReason === null;
   return (
     <section className="space-y-1" data-slot="heartbeat-wake">
       <h3 className="text-sm font-semibold">How it wakes</h3>
       <p className="text-sm">{wakeSentence(status)}</p>
       {next && <p className="text-muted-foreground text-xs">{next}</p>}
+      {reports && (
+        <p className="text-muted-foreground text-xs" data-slot="heartbeat-next-report">
+          {reportSentence(status.report, readerName(status.report.to))}
+        </p>
+      )}
     </section>
   );
 }
@@ -106,6 +122,7 @@ export function HeartbeatPage(props: ProfilePageContentProps) {
   const relationship = deriveRelationship(member, roster);
   const yours = relationship === 'managed' || relationship === 'system';
   const nameOf = useMemo(() => heldRecipientNames(roster, member), [roster, member]);
+  const readerName = useMemo(() => reportReaderNames(roster, member), [roster, member]);
   // Ticks the "in 12 min" and "5m ago" lines, which move with no new data.
   const now = useNow(30_000);
   // Once the editor has been drawn it stays, even if the space switch goes off
@@ -125,7 +142,7 @@ export function HeartbeatPage(props: ProfilePageContentProps) {
 
   return (
     <div className="space-y-6" data-slot="profile-heartbeat">
-      <WakeSection status={status} now={now} />
+      <WakeSection status={status} now={now} readerName={readerName} />
       {/* With the space switch off from the start there is nothing to tune. */}
       {yours && fileShown && <FileSection {...props} status={status} />}
       <HeartbeatHeld held={status.held} nameOf={nameOf} now={now} />

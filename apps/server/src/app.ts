@@ -4,14 +4,12 @@ import express from 'express';
 import cors from 'cors';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { apiReference } from '@scalar/express-api-reference';
 import sessionRoutes from './routes/sessions.js';
-import commandRoutes from './routes/commands.js';
-import healthRoutes from './routes/health.js';
 import directoryRoutes from './routes/directory.js';
 import configRoutes from './routes/config.js';
 import fileRoutes from './routes/files.js';
 import diffRoutes from './routes/diff.js';
+import capabilitiesRoutes from './routes/capabilities.js';
 import workbenchServeRoutes from './routes/workbench-serve.js';
 import gitRoutes from './routes/git.js';
 import workspaceRoutes from './routes/workspaces.js';
@@ -27,18 +25,11 @@ import { createRemoteAccessRouter } from './routes/remote-access.js';
 import cloudRoutes from './routes/cloud.js';
 import onboardingRoutes from './routes/onboarding.js';
 import feedbackRoutes, { feedbackJsonParser } from './routes/feedback.js';
-import modelRoutes from './routes/models.js';
-import subagentRoutes from './routes/subagents.js';
-import capabilitiesRoutes from './routes/capabilities.js';
-import systemRoutes from './routes/system.js';
-import keepAwakeRoutes from './routes/keep-awake.js';
 import runtimesRoutes from './routes/runtimes.js';
 import uploadRoutes from './routes/uploads.js';
 import mcpConfigRoutes from './routes/mcp-config.js';
-import errorRoutes from './routes/errors.js';
 import debugRoutes from './routes/debug.js';
 import eventsRouter from './routes/events.js';
-import { generateOpenAPISpec } from './services/core/openapi-registry.js';
 import { errorHandler } from './middleware/error-handler.js';
 import { hostGuard } from './middleware/host-guard.js';
 import { managedHostGuard } from './middleware/managed-host-guard.js';
@@ -202,8 +193,6 @@ export function createApp(options: {
 
   // API routes
   app.use('/api/sessions', sessionRoutes);
-  app.use('/api/commands', commandRoutes);
-  app.use('/api/health', healthRoutes);
   app.use('/api/directory', directoryRoutes);
   app.use('/api/config', configRoutes);
   app.use('/api/files', fileRoutes);
@@ -230,19 +219,14 @@ export function createApp(options: {
   app.use('/api/cloud', cloudRoutes);
   app.use('/api/onboarding', onboardingRoutes);
   app.use('/api/feedback', feedbackRoutes);
-  app.use('/api/models', modelRoutes);
-  app.use('/api/subagents', subagentRoutes);
   app.use('/api/capabilities', capabilitiesRoutes);
-  app.use('/api/system', systemRoutes);
-  app.use('/api/keep-awake', keepAwakeRoutes);
   app.use('/api/runtimes', runtimesRoutes);
   app.use('/api/events', eventsRouter);
   app.use('/api/uploads', uploadRoutes);
   app.use('/api/mcp-config', mcpConfigRoutes);
-  app.use('/api/errors', errorRoutes);
   // Diagnostic reads (`GET /api/debug/*`). Mounted here rather than in
   // `index.ts` — it needs no singleton the composition root has to hand it, only
-  // `app.locals.debugDeps`, which `index.ts` sets alongside the deep-health bag.
+  // `app.locals.debugDeps`, which `index.ts` sets beside the moved routes' `deps`.
   // ALWAYS mounted and read-only: an env gate would make it unavailable in the
   // one situation it exists for, because enabling it needs a restart and a
   // restart destroys the in-memory state you wanted to read. It carries only
@@ -261,11 +245,6 @@ export function createApp(options: {
     // way, so none of these paths exist in production.
     app.use(createMockMcpOAuthRouter());
   }
-
-  // OpenAPI spec + interactive docs
-  const spec = generateOpenAPISpec();
-  app.get('/api/openapi.json', (_req, res) => res.json(spec));
-  app.use('/api/docs', apiReference({ content: spec }));
 
   return app;
 }

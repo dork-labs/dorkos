@@ -22,10 +22,12 @@
  */
 import path from 'node:path';
 import { mkdir } from 'node:fs/promises';
-import type { Express } from 'express';
+import type { RequestListener } from 'node:http';
 import { createDb, runMigrations, type Db } from '@dorkos/db';
 import { MeshCore } from '@dorkos/mesh';
 import { createApp, finalizeApp } from './app.js';
+import { frontDoorListener } from './http/front-door.js';
+import { composeFrontDoor } from './http/hono-api.js';
 import { MainRequestAdmission } from './services/core/lifecycle/main-request-admission.js';
 import { env } from './env.js';
 import { testControlRouter } from './routes/test-control.js';
@@ -50,10 +52,14 @@ import {
 } from './services/rooms/index.js';
 import { LocalRoomAttachmentStore } from './services/rooms/attachments/local-room-attachment-store.js';
 
-/** A booted in-process harness server: the Express app plus a DB-closing teardown. */
+/** A booted in-process harness server: its routing plus a DB-closing teardown. */
 export interface InProcessTestServer {
-  /** The configured Express app (routes + a registered test-mode runtime). */
-  app: Express;
+  /**
+   * The server's routing, as the running server serves it: the front door,
+   * the Hono `/api` app with the moved route groups, and the configured
+   * Express app behind it (routes + a registered test-mode runtime).
+   */
+  listener: RequestListener;
   /** Close the sandbox DB handle so the sandbox directory can be removed cleanly. */
   dispose: () => void;
 }
@@ -73,7 +79,7 @@ export interface InProcessTestServer {
  * red when they drift.
  *
  * @param dorkHome - The sandbox data directory every wired singleton is scoped to.
- * @returns The built app and a teardown that closes the DB.
+ * @returns The server's routing and a teardown that closes the DB.
  */
 export async function bootInProcessTestServer(dorkHome: string): Promise<InProcessTestServer> {
   // Config store first — `sessionGate` reads it on every request; without it
@@ -182,7 +188,7 @@ export async function bootInProcessTestServer(dorkHome: string): Promise<InProce
   finalizeApp(app);
 
   return {
-    app,
+    listener: frontDoorListener(composeFrontDoor(app, admission)),
     dispose: () => {
       // Close the underlying better-sqlite3 handle so the sandbox teardown can
       // remove the db (and its WAL sidecars) without a lingering open descriptor.

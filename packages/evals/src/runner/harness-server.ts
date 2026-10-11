@@ -25,7 +25,7 @@
  * @module evals/runner/harness-server
  */
 import net, { type AddressInfo } from 'node:net';
-import type { Server } from 'node:http';
+import { createServer, type Server } from 'node:http';
 import { bootInProcessTestServer } from '@dorkos/server/harness-boot';
 import type { IsolationLauncher, ServerExit } from './isolation/index.js';
 import { ChildProcessLauncher } from './isolation/index.js';
@@ -148,10 +148,10 @@ export async function startInProcessServer(
   // registered). The wired singletons are process-global, so in-process servers
   // boot SERIALLY, one sandbox at a time (concurrent isolation is the
   // child-process tier's job).
-  const { app, dispose: closeDb } = await bootInProcessTestServer(opts.dorkHome);
+  const { listener, dispose: closeDb } = await bootInProcessTestServer(opts.dorkHome);
 
   const server: Server = await new Promise((resolve, reject) => {
-    const s = app.listen(0, host);
+    const s = createServer(listener).listen(0, host);
     s.once('listening', () => resolve(s));
     s.once('error', reject);
   });

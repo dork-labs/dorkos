@@ -24,15 +24,20 @@ import request from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
 import { DeepHealthResponseSchema } from '@dorkos/shared/health-schemas';
 import { createApp } from '../../app.js';
+import { composedListener } from '../../http/__tests__/composed-listener.js';
 import type { DeepHealthDeps } from '../../services/observability/deep-health/index.js';
 
 const fixtureTarget = swappableServer();
 
+/** The server's routing, with the deep-health reads a test hands it, if any. */
+function serve(deepHealth?: DeepHealthDeps) {
+  const admission = new MainRequestAdmission();
+  return composedListener(createApp({ admission }), admission, { deepHealth });
+}
+
 describe('GET /api/health/deep', () => {
   it('answers 200 with a schema-valid body even when nothing is wired', async () => {
-    const res = await request(
-      fixtureTarget.mount(createApp({ admission: new MainRequestAdmission() }))
-    ).get('/api/health/deep');
+    const res = await request(fixtureTarget.mount(serve())).get('/api/health/deep');
 
     expect(res.status).toBe(200);
     expect(DeepHealthResponseSchema.safeParse(res.body).success).toBe(true);
@@ -40,11 +45,10 @@ describe('GET /api/health/deep', () => {
   });
 
   it('answers 200 — not 500 — when a check finds something broken', async () => {
-    const app = createApp({ admission: new MainRequestAdmission() });
-    app.locals.deepHealthDeps = {
+    const app = serve({
       dorkHome: '/nonexistent',
       relay: { isAccessControlQuarantined: () => true, listAccessRules: () => [] },
-    } satisfies DeepHealthDeps;
+    });
 
     const res = await request(fixtureTarget.mount(app)).get('/api/health/deep');
 
@@ -53,8 +57,7 @@ describe('GET /api/health/deep', () => {
   });
 
   it('answers 200 with the other checks intact when a subsystem throws', async () => {
-    const app = createApp({ admission: new MainRequestAdmission() });
-    app.locals.deepHealthDeps = {
+    const app = serve({
       dorkHome: '/nonexistent',
       relay: {
         isAccessControlQuarantined: () => {
@@ -62,7 +65,7 @@ describe('GET /api/health/deep', () => {
         },
         listAccessRules: () => [],
       },
-    } satisfies DeepHealthDeps;
+    });
 
     const res = await request(fixtureTarget.mount(app)).get('/api/health/deep');
 
@@ -73,9 +76,7 @@ describe('GET /api/health/deep', () => {
   });
 
   it('leaves the liveness probe alone', async () => {
-    const res = await request(
-      fixtureTarget.mount(createApp({ admission: new MainRequestAdmission() }))
-    ).get('/api/health');
+    const res = await request(fixtureTarget.mount(serve())).get('/api/health');
 
     expect(res.status).toBe(200);
     expect(res.body).toHaveProperty('status', 'ok');

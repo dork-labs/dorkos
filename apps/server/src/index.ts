@@ -18,7 +18,7 @@ import type { PermissionAreaId } from '@dorkos/shared/permissions';
 import { randomUUID } from 'node:crypto';
 import { createApp, finalizeApp } from './app.js';
 import { createFrontDoorServer, frontDoorListener } from './http/front-door.js';
-import { composeFrontDoor } from './http/hono-api.js';
+import { composeFrontDoor, type HonoApiDeps } from './http/hono-api.js';
 import { createSessionLocationsRouter } from './routes/session-locations.js';
 import { ManagedConnectorCloudError } from './services/core/auth/cloud-link-client.js';
 import { DoeRuntime } from './services/runtimes/doe/index.js';
@@ -430,9 +430,7 @@ import {
 } from './services/core/agent-identity/index.js';
 import { ApprovalService, resolveApprovalTtlMs } from './services/core/approvals/index.js';
 import { createApprovalsRouter } from './routes/approvals.js';
-import type { DeepHealthDeps } from './services/observability/deep-health/index.js';
 import type { DebugDeps } from './routes/debug.js';
-import type { UnattendedAutonomyDeps } from './services/core/unattended-autonomy/unattended-autonomy.js';
 import { createCapabilitiesCatalogRouter } from './routes/capabilities-catalog.js';
 import { createCapabilitiesInvokeRouter } from './routes/capabilities-invoke.js';
 import {
@@ -4498,7 +4496,10 @@ async function start() {
   // messaging, integrations, and agents. Handed over as one bag of narrow reads,
   // set after every subsystem above has had its chance to start; whatever is off
   // simply reports its checks skipped. Nothing here runs until a request asks.
-  app.locals.deepHealthDeps = {
+  // `deps` is what the moved Hono routes read (`http/hono-api.ts`): this bag and
+  // the banner's below.
+  const deps: HonoApiDeps = {};
+  deps.deepHealth = {
     dorkHome,
     roomSessions: roomStore,
     // The boot sweep's own probe, so the two cannot disagree (DOR-805).
@@ -4530,7 +4531,7 @@ async function start() {
     },
     // The same once-per-process read the startup warning logged (DOR-2326).
     gitProtection: installedGitProtection,
-  } satisfies DeepHealthDeps;
+  };
 
   // The same live reads, for `GET /api/debug/*`. A separate bag from the one
   // above and deliberately so: deep health ANSWERS questions ("is anything
@@ -4560,7 +4561,7 @@ async function start() {
   // which is awaited on a different path from this one — capturing it here
   // would bake in whichever of the two happened to run first and leave the
   // banner permanently blind to integrations on the losing ordering.
-  app.locals.unattendedAutonomyDeps = {
+  deps.unattendedAutonomy = {
     bindings: () => adapterManager?.getBindingStore()?.getAll() ?? [],
     tasks: () => taskStore?.getTasks() ?? [],
     adapterName: (adapterId: string) => adapterManager?.resolveAdapterName(adapterId) ?? adapterId,
@@ -4570,7 +4571,7 @@ async function start() {
     // tells the truth about whether a message can still arrive.
     adapterLive: (adapterId: string) => adapterManager?.getRegistry().get(adapterId) !== undefined,
     agentLive: (agentId: string) => meshCore?.getProjectPath(agentId) !== undefined,
-  } satisfies UnattendedAutonomyDeps;
+  };
 
   // Shape schedule service — file-first schedule creator + re-binder the Shape
   // apply flow and the agent-create seam share. Built here (not just inside the
@@ -5815,7 +5816,7 @@ async function start() {
     logger.warn(`[Auth] ${bindCheck.warning}`);
   }
 
-  const frontDoor = composeFrontDoor(app, mainRequestAdmission);
+  const frontDoor = composeFrontDoor(app, mainRequestAdmission, deps);
   const server = startMainListener({
     admission: mainRequestAdmission,
     // Hono is the front door: moved route groups answer from the Hono `/api`

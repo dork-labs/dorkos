@@ -10,7 +10,7 @@ import type { RequestListener } from 'node:http';
 import type { Express } from 'express';
 import type { MainRequestAdmission } from '../../services/core/lifecycle/main-request-admission.js';
 import { frontDoorListener } from '../front-door.js';
-import { composeFrontDoor } from '../hono-api.js';
+import { composeFrontDoor, type HonoApiDeps } from '../hono-api.js';
 
 /**
  * A Node request listener routing as the running server does
@@ -18,11 +18,13 @@ import { composeFrontDoor } from '../hono-api.js';
  *
  * @param legacy - The Express app from `createApp`.
  * @param admission - The same admission the Express app was built with.
+ * @param deps - What the moved groups read, when the test hands them any.
  * @returns The listener.
  */
 export function composedListener(
   legacy: Express,
-  admission: MainRequestAdmission
+  admission: MainRequestAdmission,
+  deps?: HonoApiDeps
 ): RequestListener {
-  return frontDoorListener(composeFrontDoor(legacy, admission));
+  return frontDoorListener(composeFrontDoor(legacy, admission, deps));
 }

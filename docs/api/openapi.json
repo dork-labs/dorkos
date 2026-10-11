@@ -1860,6 +1860,9 @@
             "items": {
               "$ref": "#/components/schemas/HeldRaise"
             }
+          },
+          "report": {
+            "$ref": "#/components/schemas/HeartbeatReportStatus"
           }
         },
         "required": [
@@ -1869,7 +1872,8 @@
           "skippedReason",
           "fileError",
           "lastBeats",
-          "held"
+          "held",
+          "report"
         ]
       },
       "HeartbeatWake": {
@@ -1990,6 +1994,40 @@
           "room",
           "dm",
           "note"
+        ]
+      },
+      "HeartbeatReportStatus": {
+        "type": "object",
+        "properties": {
+          "cadence": {
+            "$ref": "#/components/schemas/HeartbeatReport"
+          },
+          "to": {
+            "type": "string"
+          },
+          "nextReportAt": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "items": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "cadence",
+          "to",
+          "nextReportAt",
+          "items"
+        ]
+      },
+      "HeartbeatReport": {
+        "type": "string",
+        "enum": [
+          "daily",
+          "weekly",
+          "off"
         ]
       },
       "HealthResponse": {

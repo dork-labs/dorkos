@@ -141,6 +141,8 @@ export const heartbeatOutbox = sqliteTable(
   (table) => [
     index('heartbeat_outbox_due_idx').on(table.toAccount, table.state, table.deliverAfter),
     index('heartbeat_outbox_key_idx').on(table.key),
+    // Cross-agent de-duplication reads one reader's raises of the last week.
+    index('heartbeat_outbox_to_created_idx').on(table.toAccount, table.createdAt),
     check('heartbeat_outbox_rung', sql`${table.rung} IN ('report', 'room', 'dm', 'note')`),
     check(
       'heartbeat_outbox_state',
@@ -151,3 +153,68 @@ export const heartbeatOutbox = sqliteTable(
 
 /** A row of {@link heartbeatOutbox}. */
 export type HeartbeatOutboxRow = typeof heartbeatOutbox.$inferSelect;
+
+/**
+ * What waits for an agent's next report (spec `heartbeats` §9.3): `report`-rung
+ * raises, raises raise-once moved here because they are still open, reports-to
+ * change lines, and (PR 5) triage results that can wait. The summaries of its
+ * beat turns are not copied here; the report reads them from
+ * {@link heartbeatBeats}.
+ *
+ * Its own table rather than `heartbeat_outbox` rows: an item is not a message
+ * waiting for someone's hours, it has a kind of its own, and the outbox's tick
+ * must never deliver one.
+ */
+export const heartbeatReportItems = sqliteTable(
+  'heartbeat_report_items',
+  {
+    /** ULID. */
+    id: text('id').primaryKey(),
+    /** The agent whose report it goes in. */
+    agentId: text('agent_id').notNull(),
+    /** `raise`, `still-open`, `reports-to` or `triage`. */
+    kind: text('kind', { enum: ['raise', 'still-open', 'reports-to', 'triage'] }).notNull(),
+    /**
+     * Who it is for, or NULL for whoever the report goes to. An old manager's
+     * reports-to line, or a `report` raise that named someone, names them.
+     */
+    toAccount: text('to_account'),
+    /** The line, markdown. */
+    text: text('text').notNull(),
+    /** The raise key it carries, for raise-once and `end_beat.resolved`, or NULL. */
+    key: text('key'),
+    /** The gathered change keys it is about, as a JSON array, or NULL. */
+    about: text('about'),
+    /** The beat that queued it, or NULL when no beat did. */
+    beatId: text('beat_id'),
+    /**
+     * The outbox row of the report carrying it while that report waits for its
+     * reader's hours, or NULL. The line is `reported` only once that row is
+     * delivered, and goes back in the queue if the row is dropped.
+     */
+    reportRowId: text('report_row_id'),
+    /** `queued` until a report carries it. */
+    state: text('state', { enum: ['queued', 'reported', 'resolved'] }).notNull(),
+    /** When it was queued (ISO 8601). */
+    createdAt: text('created_at').notNull(),
+    /** When it left `queued` (ISO 8601), or NULL. */
+    closedAt: text('closed_at'),
+  },
+  (table) => [
+    index('heartbeat_report_items_agent_state_idx').on(table.agentId, table.state),
+    index('heartbeat_report_items_to_created_idx').on(table.toAccount, table.createdAt),
+    // Settling a delivered or dropped report finds its lines by this.
+    index('heartbeat_report_items_report_row_idx').on(table.reportRowId),
+    check(
+      'heartbeat_report_items_kind',
+      sql`${table.kind} IN ('raise', 'still-open', 'reports-to', 'triage')`
+    ),
+    check(
+      'heartbeat_report_items_state',
+      sql`${table.state} IN ('queued', 'reported', 'resolved')`
+    ),
+  ]
+);
+
+/** A row of {@link heartbeatReportItems}. */
+export type HeartbeatReportItemRow = typeof heartbeatReportItems.$inferSelect;

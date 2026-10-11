@@ -124,4 +124,33 @@ describe('startHeartbeats', () => {
     }
     expect(isBeatTurn('beat-chat')).toBe(false);
   });
+
+  it('re-arms only report timers when a person’s hours or away change, never timed beats', async () => {
+    config.enabled = true;
+    const manifest = { id: 'agent-juno', name: 'juno', runtime: 'claude-code' };
+    const handle = startHeartbeats({
+      app: express(),
+      db: createTestDb(),
+      meshCore: () =>
+        ({
+          list: () => [manifest],
+          get: (id: string) => (id === manifest.id ? manifest : undefined),
+          getProjectPath: () => '/agents/juno',
+          getByPath: () => manifest,
+        }) as never,
+      rooms: { postFromTool: vi.fn() } as never,
+      roomAuthors: { resolveAgent: vi.fn() } as never,
+      notifyDm: undefined,
+      relay: () => undefined,
+      commitments: { observe: vi.fn(() => () => undefined), list: () => [] } as never,
+    });
+    await settle();
+    const beats = vi.spyOn(handle.runner, 'refreshAgent');
+    const reports = vi.spyOn(handle.runner, 'refreshReport');
+    for (const listener of config.listeners)
+      listener({ sections: ['profile'], paths: ['profile.away'] });
+    await settle();
+    expect(reports).toHaveBeenCalledWith('agent-juno');
+    expect(beats).not.toHaveBeenCalled();
+  });
 });

@@ -5,6 +5,8 @@
  *
  * - **The same settings the runner uses.** An invalid header shows the last
  *   valid one in force, and `fileError` says why the file does not read.
+ * - **The next report** says who reads it, when it runs and how many things it
+ *   covers so far (§9.3).
  * - **Private parts stay private.** The words of a held raise go only to the
  *   person it is held for (the owner, the one person a raise can reach today);
  *   anyone else sees that it is held, not what it says. Which chat a beat ran in
@@ -22,6 +24,8 @@ import {
 import type { BeatAgent, BeatRunner } from './beat-runner.js';
 import { frontmatterInForce } from './beat-plan.js';
 import type { HeartbeatStore } from './heartbeat-store.js';
+import type { RaiseStore } from './raises/raise-store.js';
+import { reportMaterial } from './raises/report-material.js';
 import { readHeartbeatFile } from './heartbeat-file.js';
 
 /** How many past beats the page lists. */
@@ -33,8 +37,12 @@ export interface HeartbeatStatusInput {
   agent: BeatAgent | undefined;
   /** The heartbeat tables. */
   store: HeartbeatStore;
-  /** The runner, for the next beat. */
-  runner: Pick<BeatRunner, 'nextBeatAt'>;
+  /** The runner, for the next beat and report. */
+  runner: Pick<BeatRunner, 'nextBeatAt' | 'nextReportAt'>;
+  /** The report queue. */
+  raises: Pick<RaiseStore, 'queuedItems' | 'turnSummariesSince'>;
+  /** Who the agent reports to. */
+  managerOf(agentId: string): string;
   /** `heartbeats.enabled`. */
   enabled: boolean;
   /** Whether a runtime id is one this server runs. */
@@ -66,6 +74,8 @@ export async function heartbeatStatus(
         ? 'Heartbeat off.'
         : null;
   const next = input.runner.nextBeatAt(agent.id);
+  const nextReport = input.runner.nextReportAt(agent.id);
+  const lastReportAt = store.getState(agent.id)?.lastReportAt ?? null;
   return {
     enabled: input.enabled,
     wake: settings.wake,
@@ -94,5 +104,18 @@ export async function heartbeatStatus(
         deliverAfter: row.deliverAfter,
         createdAt: row.createdAt,
       })),
+    report: {
+      cadence: settings.report,
+      to: input.managerOf(agent.id),
+      nextReportAt: nextReport ? nextReport.toISOString() : null,
+      // What this report will carry, counted the way the report beat reads it.
+      items: reportMaterial(input.raises, {
+        agentId: agent.id,
+        reader: input.managerOf(agent.id),
+        lastReportAt,
+        cadence: settings.report,
+        now: Date.now(),
+      }).count,
+    },
   };
 }
