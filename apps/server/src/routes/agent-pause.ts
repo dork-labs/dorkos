@@ -14,7 +14,7 @@
  *
  * @module routes/agent-pause
  */
-import { Router, type Request, type Response } from 'express';
+import { Hono, type Context } from 'hono';
 import { z } from 'zod';
 import { CANNOT_RESUME_SELF_CODE } from '@dorkos/shared/mesh-schemas';
 import {
@@ -22,8 +22,10 @@ import {
   CapabilityToolError,
   type CapabilityRegistry,
 } from '../services/core/capabilities/index.js';
-import { getRequestAgentIdentity, presentsAgentIdentity } from '../middleware/agent-identity.js';
-import type { RequestUser } from '../services/core/auth/index.js';
+import { presentsAgentIdentity } from '../middleware/agent-identity.js';
+import type { ApiEnv } from '../http/api-chain.js';
+import { readJsonBody } from '../http/request-body.js';
+import { honoRequestFacts } from '../http/request-facts.js';
 import { logger } from '../lib/logger.js';
 
 /** What the routes need, read lazily: the registry is composed after the routes mount. */
@@ -33,35 +35,36 @@ export interface AgentPauseRouterDeps {
 }
 
 /** The status each refusal code answers with. */
-function statusForCode(code: unknown): number {
+function statusForCode(code: unknown): 403 | 404 | 400 {
   if (code === CANNOT_RESUME_SELF_CODE) return 403;
   if (code === 'AGENT_NOT_FOUND') return 404;
   return 400;
 }
 
 /**
- * Build the pause router.
+ * The pause routes, to mount at `/api`. Only these concrete paths are
+ * registered, so the group answers nothing else under `/api`.
  *
  * @param deps - The registry, read per request.
+ * @returns The routes serving `/agents/pauses` and `/agents/:id/{pause,resume}`.
  */
-export function createAgentPauseRouter(deps: AgentPauseRouterDeps): Router {
-  const router = Router();
+export function createAgentPauseRoutes(deps: AgentPauseRouterDeps): Hono<ApiEnv> {
+  const router = new Hono<ApiEnv>();
 
   /** Invoke one capability as the request's caller, answering its result or refusal. */
   async function invoke(
-    req: Request,
-    res: Response,
+    c: Context<ApiEnv>,
     capabilityId: string,
     input: Record<string, unknown>
-  ): Promise<void> {
+  ): Promise<Response> {
     const registry = deps.registry();
     if (!registry) {
-      res.status(503).json({ error: 'DorkOS is still starting. Try again.', code: 'NOT_READY' });
-      return;
+      return c.json({ error: 'DorkOS is still starting. Try again.', code: 'NOT_READY' }, 503);
     }
-    const identity = getRequestAgentIdentity(res);
-    const agentIdentityPresented = presentsAgentIdentity(req, res);
-    const user = res.locals.user as RequestUser | undefined;
+    const facts = honoRequestFacts(c);
+    const identity = facts.agentIdentity;
+    const agentIdentityPresented = presentsAgentIdentity(facts);
+    const user = facts.user;
     try {
       const result = await registry.invoke(capabilityId, input, {
         ...(identity ? { identity } : {}),
@@ -69,41 +72,38 @@ export function createAgentPauseRouter(deps: AgentPauseRouterDeps): Router {
         ...(user ? { userId: user.userId } : {}),
         retryChannel: 'http-header',
       });
-      res.json(result);
+      return c.json(result);
     } catch (err) {
       if (err instanceof CapabilityGateRefusal) {
         const status = err.decision.outcome === 'approval_required' ? 202 : 403;
-        res.status(status).json(err.decision.payload);
-        return;
+        return c.json(err.decision.payload, status);
       }
       if (err instanceof z.ZodError) {
-        res.status(400).json({ error: 'Validation failed', details: z.flattenError(err) });
-        return;
+        return c.json({ error: 'Validation failed', details: z.flattenError(err) }, 400);
       }
       if (err instanceof CapabilityToolError) {
         const payload = (err.payload ?? {}) as { code?: unknown };
-        res.status(statusForCode(payload.code)).json(payload);
-        return;
+        return c.json(payload, statusForCode(payload.code));
       }
       logger.error('[agent-pause] invoke failed', { capabilityId, err });
-      res.status(500).json({ error: 'Internal server error' });
+      return c.json({ error: 'Internal server error' }, 500);
     }
   }
 
-  /** The optional reason from a body Express 5 may leave undefined. */
-  const reasonOf = (req: Request): Record<string, unknown> => {
-    const reason = (req.body as { reason?: unknown } | undefined)?.reason;
+  /** The optional reason from a body that may be absent. */
+  const reasonOf = (c: Context<ApiEnv>): Record<string, unknown> => {
+    const reason = (readJsonBody(c) as { reason?: unknown } | undefined)?.reason;
     return reason === undefined ? {} : { reason };
   };
 
-  router.get('/agents/pauses', (req, res) => invoke(req, res, 'agent.list_paused', {}));
+  router.get('/agents/pauses', (c) => invoke(c, 'agent.list_paused', {}));
 
-  router.post('/agents/:id/pause', (req, res) =>
-    invoke(req, res, 'agent.pause', { agentId: req.params.id, ...reasonOf(req) })
+  router.post('/agents/:id/pause', (c) =>
+    invoke(c, 'agent.pause', { agentId: c.req.param('id'), ...reasonOf(c) })
   );
 
-  router.post('/agents/:id/resume', (req, res) =>
-    invoke(req, res, 'agent.resume', { agentId: req.params.id, ...reasonOf(req) })
+  router.post('/agents/:id/resume', (c) =>
+    invoke(c, 'agent.resume', { agentId: c.req.param('id'), ...reasonOf(c) })
   );
 
   return router;

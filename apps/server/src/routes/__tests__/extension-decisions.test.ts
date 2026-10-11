@@ -50,7 +50,12 @@ import path from 'path';
 import express, { Router } from 'express';
 import request from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
-import { createExtensionDecisionsRouter } from '../extension-decisions.js';
+import { Hono, type MiddlewareHandler } from 'hono';
+import { getRequestListener } from '@hono/node-server';
+import { createExtensionDecisionsRoutes } from '../extension-decisions.js';
+import type { ApiEnv } from '../../http/api-chain.js';
+import { parseRequestBody } from '../../http/request-body.js';
+import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
 import { createExtensionsRouter } from '../extensions.js';
 import { createExtensionRoutesMiddleware } from '../../middleware/extension-routes.js';
 import { createDataProviderContext } from '../../services/extensions/extension-server-api-factory.js';
@@ -62,6 +67,15 @@ import {
 
 const target = swappableServer();
 const server = target.server;
+/**
+ * The decision routes with no `/api` chain in front, only its body parser. Two
+ * of the person bar's refusals sit behind a chain step that refuses first (CORS
+ * for a foreign `Origin`, the session gate for a request with no credential
+ * under login), so they are defense in depth, and this is the only way to show
+ * they still hold.
+ */
+const bareTarget = swappableServer();
+const bareServer = bareTarget.server;
 const TRUSTED_ORIGIN = 'http://localhost:7777';
 
 afterAll(() => vi.unstubAllEnvs());
@@ -90,24 +104,41 @@ beforeEach(() => {
     listPublic: () => [],
   };
 
+  const activity = {
+    emit: vi.fn(async (event: { summary: string }) => {
+      emitted.push(event);
+    }),
+  };
+  // What the session gate would put on `c.var` for a signed-in person.
+  const signedIn: MiddlewareHandler<ApiEnv> = async (c, next) => {
+    if (signedInUser) c.set('user', signedInUser);
+    await next();
+  };
+  const decisions = createExtensionDecisionsRoutes({ activity });
+
   const app = express();
   app.use(express.json());
   app.use((_req, res, next) => {
     if (signedInUser) res.locals.user = signedInUser;
     next();
   });
-  app.locals.activityService = {
-    emit: vi.fn(async (event: { summary: string }) => {
-      emitted.push(event);
-    }),
-  };
-  app.use('/api/extension-decisions', createExtensionDecisionsRouter());
+  app.locals.activityService = activity;
   app.use(
     '/api/extensions',
     createExtensionsRouter(manager as never, dorkHome, () => null)
   );
   app.use('/api/ext/:id', createExtensionRoutesMiddleware(manager as never));
-  target.mount(app);
+  target.mount(
+    honoGroupListener(
+      { path: '/api/extension-decisions', routes: decisions },
+      { before: signedIn, legacy: app }
+    )
+  );
+  const bare = new Hono<ApiEnv>()
+    .use(parseRequestBody())
+    .use(signedIn)
+    .route('/api/extension-decisions', decisions);
+  bareTarget.mount(getRequestListener(bare.fetch, { overrideGlobalObjects: false }));
 });
 
 afterEach(() => {
@@ -161,7 +192,7 @@ describe('POST /api/extension-decisions/:id/action', () => {
   it('refuses a request from another site', async () => {
     fx.inbox.setHandler('flow', () => ({ resolve: 'approved' }));
     const id = await raised();
-    const res = await request(server)
+    const res = await request(bareServer)
       .post(`/api/extension-decisions/${id}/action`)
       .set('origin', 'https://evil.example')
       .send({ action: 'approve' });
@@ -172,13 +203,13 @@ describe('POST /api/extension-decisions/:id/action', () => {
     state.authEnabled = true;
     fx.inbox.setHandler('flow', () => ({ resolve: 'approved' }));
     const id = await raised();
-    const refused = await request(server)
+    const refused = await request(bareServer)
       .post(`/api/extension-decisions/${id}/action`)
       .set('origin', TRUSTED_ORIGIN)
       .send({ action: 'approve' });
     expect(refused.status).toBeGreaterThanOrEqual(401);
     signedInUser = { userId: 'u1', credential: 'cookie' };
-    const ok = await request(server)
+    const ok = await request(bareServer)
       .post(`/api/extension-decisions/${id}/action`)
       .set('origin', TRUSTED_ORIGIN)
       .send({ action: 'approve' });

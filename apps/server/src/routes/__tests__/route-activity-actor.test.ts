@@ -17,8 +17,9 @@
  * ## The two rules, and why it takes both
  *
  * 1. **No emit call site asserts its own actor.** Every `.emit({ … })` in
- *    `routes/` must spread `readActivityActor(req, res)` — the one reader that
- *    turns a request into an actor — unless it is named in {@link EXEMPT_SITES}
+ *    `routes/` must spread `readActivityActor(…)` over the request (the Express
+ *    pair, or a Hono request's facts) — the one reader that turns a request
+ *    into an actor — unless it is named in {@link EXEMPT_SITES}
  *    with a reason. Checked per CALL SITE, by brace-matching the object literal,
  *    so a router that reads the caller in one route and hardcodes in the next is
  *    caught; a whole-file `source.includes(...)` would not be.
@@ -57,6 +58,17 @@ import { describe, it, expect } from 'vitest';
 import path from 'node:path';
 import { readdirSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
+
+/**
+ * Helpers that write Activity for a route and read the caller from facts the
+ * route handed down, by file: the one parameter name allowed there, typed as
+ * the request's facts. Named per file so a hand-built object that happens to
+ * share the name elsewhere is not read as a caller.
+ */
+const FACTS_PARAMETERS: Record<string, string> = {
+  // `recordSettingsChange(activity, caller: Pick<RequestFacts, …>, …)`
+  'extension-decisions.ts': 'caller',
+};
 
 /** The `routes/` directory this guard walks. */
 const ROUTES_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -238,11 +250,23 @@ describe('no route names the Activity feed actor by hand', () => {
           unusedExemptions.get(file)?.delete(exemption.contains);
           continue;
         }
+        // An Express route reads the pair (`readActivityActor(req, res)`); a
+        // route moved to Hono reads the request's facts
+        // (`readActivityActor(honoRequestFacts(c))`), or a helper reads the
+        // facts its route handed down, under the one parameter name listed for
+        // that file in FACTS_PARAMETERS. Either way the spread is the reader,
+        // never a literal.
+        const handedDown = FACTS_PARAMETERS[file];
+        const readers = [
+          'req, res',
+          'honoRequestFacts\\(c\\)',
+          ...(handedDown ? [handedDown] : []),
+        ];
         expect(
           site,
           `${file} writes Activity without reading the caller — spread ` +
-            '`...readActivityActor(req, res)` or add a reasoned entry to EXEMPT_SITES'
-        ).toContain('readActivityActor(req, res)');
+            '`readActivityActor(…)` or add a reasoned entry to EXEMPT_SITES'
+        ).toMatch(new RegExp(`readActivityActor\\((${readers.join('|')})\\)`));
       }
     }
 

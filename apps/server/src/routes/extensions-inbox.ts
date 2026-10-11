@@ -38,6 +38,8 @@ import {
 } from '../services/extensions/inbox/extension-project-settings.js';
 import { projectRegistry } from '../services/projects/project-registry.js';
 import { logger } from '../lib/logger.js';
+import type { ActivityService } from '../services/activity/activity-service.js';
+import { expressRequestFacts } from '../http/request-facts.js';
 import { DECISION_BAR, recordSettingsChange } from './extension-decisions.js';
 import { refuseIfNotAPerson, type PersonBarCopy } from './extensions-person-bar.js';
 
@@ -158,11 +160,11 @@ export function registerExtensionInboxRoutes(
         }
         throw err;
       }
-      await recordSettingsChange(req, res, {
-        extensionId: id,
-        extensionName: record.manifest.name,
-        projectName: resolved.name,
-      });
+      await recordSettingsChange(
+        req.app.locals.activityService as ActivityService | undefined,
+        expressRequestFacts(req, res),
+        { extensionId: id, extensionName: record.manifest.name, projectName: resolved.name }
+      );
       return res.status(204).end();
     } catch (err) {
       logger.error('[Extensions] Failed to write project settings', err);

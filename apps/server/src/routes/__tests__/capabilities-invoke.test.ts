@@ -5,7 +5,6 @@
  * @vitest-environment node
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import express from 'express';
 import request from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
 import { z } from 'zod';
@@ -24,7 +23,7 @@ import { ApprovalService } from '../../services/core/approvals/index.js';
 import { eventFanOut } from '../../services/core/event-fan-out.js';
 import type { AgentIdentity } from '../../services/core/agent-identity/index.js';
 import { createCapabilitiesInvokeRoutes } from '../capabilities-invoke.js';
-import { createApprovalsRouter } from '../approvals.js';
+import { createApprovalsRoutes } from '../approvals.js';
 import { createCapabilitiesCatalogRoutes } from '../capabilities-catalog.js';
 import capabilitiesMatrixRoutes from '../capabilities.js';
 import type { ApiEnv } from '../../http/api-chain.js';
@@ -313,19 +312,15 @@ describe('POST /api/capabilities/:id/invoke — tier enforcement', () => {
      */
     function buildFullApp(identity?: AgentIdentity) {
       const registry = composeRegistry([gateDomain()], { logger: noopLogger });
-      const legacy = express();
-      legacy.use(express.json());
-      legacy.use((_req, res, next) => {
-        if (identity) res.locals.agentIdentity = identity;
-        next();
-      });
-      legacy.use(
-        '/api/approvals',
-        createApprovalsRouter(approvals, { isLoginEnabled: () => false })
-      );
       return honoGroupListener(
-        { path: '/api/capabilities', routes: createCapabilitiesInvokeRoutes(registry) },
-        { before: presenting(identity), legacy }
+        [
+          { path: '/api/capabilities', routes: createCapabilitiesInvokeRoutes(registry) },
+          {
+            path: '/api/approvals',
+            routes: createApprovalsRoutes(approvals, { isLoginEnabled: () => false }),
+          },
+        ],
+        { before: presenting(identity) }
       );
     }
 

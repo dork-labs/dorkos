@@ -21,7 +21,11 @@ import { createFrontDoor, type FrontDoor } from './front-door.js';
 import type { Db } from '@dorkos/db';
 import type { ActivityService } from '../services/activity/activity-service.js';
 import type { CapabilityRegistry } from '../services/core/capabilities/index.js';
+import type { NotificationService } from '../services/notifications/notification-service.js';
+import type { ApprovalService } from '../services/core/approvals/index.js';
 import { createActivityRoutes } from '../routes/activity.js';
+import { createAgentPauseRoutes, type AgentPauseRouterDeps } from '../routes/agent-pause.js';
+import { createApprovalsRoutes, type ApprovalsRouterOptions } from '../routes/approvals.js';
 import { createApiDocsRoutes } from '../routes/api-docs.js';
 import { createAuditRoutes, type AuditRouterDeps } from '../routes/audit.js';
 import capabilitiesRoutes from '../routes/capabilities.js';
@@ -30,12 +34,19 @@ import { createCapabilitiesInvokeRoutes } from '../routes/capabilities-invoke.js
 import commandRoutes from '../routes/commands.js';
 import directoryRoutes from '../routes/directory.js';
 import errorRoutes from '../routes/errors.js';
+import {
+  createExtensionDecisionsRoutes,
+  type ExtensionDecisionsRouterDeps,
+} from '../routes/extension-decisions.js';
 import gitRoutes from '../routes/git.js';
 import { createHarnessRoutes, type HarnessRouterDeps } from '../routes/harness.js';
 import { createHealthRoutes, type HealthRouteDeps } from '../routes/health.js';
 import keepAwakeRoutes from '../routes/keep-awake.js';
 import modelRoutes from '../routes/models.js';
+import { createNotificationsRoutes } from '../routes/notifications.js';
+import { createPermissionsRoutes, type PermissionsRouterDeps } from '../routes/permissions.js';
 import projectRoutes from '../routes/projects.js';
+import { createPushRoutes, type PushRouterDeps } from '../routes/push.js';
 import readCursorRoutes from '../routes/read-cursors.js';
 import { createSearchRoutes, type SearchRouterDeps } from '../routes/search.js';
 import { createSessionLocationsRoutes } from '../routes/session-locations.js';
@@ -78,6 +89,18 @@ export interface ComposedGroupDeps {
    * handed over when the marketplace started (`startup/marketplace.ts`).
    */
   shapes?: ShapesRouterDeps;
+  /** The Inbox (`/api/notifications`). */
+  notifications?: NotificationService;
+  /** Web push devices (`/api/push`). */
+  push?: PushRouterDeps;
+  /** Request cards and their answers (`/api/approvals`). */
+  approvals?: { service: ApprovalService; options: ApprovalsRouterOptions };
+  /** Answers to extension decisions (`/api/extension-decisions`). */
+  extensionDecisions?: ExtensionDecisionsRouterDeps;
+  /** What agents may do (`/api/permissions*`, `/api/agents/:id/permissions`). */
+  permissions?: PermissionsRouterDeps;
+  /** Pausing an agent everywhere (`/api/agents/pauses`, `/api/agents/:id/{pause,resume}`). */
+  agentPause?: AgentPauseRouterDeps;
 }
 
 /** What the moved route groups read from the running server, handed over by `index.ts`. */
@@ -132,6 +155,22 @@ export function createHonoApi(options: HonoApiOptions): Hono<ApiEnv> {
   if (deps.search) app.route('/api/search', createSearchRoutes(deps.search));
   if (deps.activity) app.route('/api/activity', createActivityRoutes(deps.activity));
   if (deps.audit) app.route('/api/audit', createAuditRoutes(deps.audit));
+  if (deps.notifications) {
+    app.route('/api/notifications', createNotificationsRoutes(deps.notifications));
+  }
+  if (deps.push) app.route('/api/push', createPushRoutes(deps.push));
+  if (deps.approvals) {
+    const { service, options } = deps.approvals;
+    app.route('/api/approvals', createApprovalsRoutes(service, options));
+  }
+  if (deps.extensionDecisions) {
+    app.route('/api/extension-decisions', createExtensionDecisionsRoutes(deps.extensionDecisions));
+  }
+  // These two were Express routers mounted on all of `/api`. Their groups
+  // register only their own concrete paths, so mounting them at `/api` claims
+  // nothing else: every other path still reaches its group or the `/api` 404.
+  if (deps.permissions) app.route('/api', createPermissionsRoutes(deps.permissions));
+  if (deps.agentPause) app.route('/api', createAgentPauseRoutes(deps.agentPause));
   // Three groups share this prefix. The catalog is one segment deeper than the
   // matrix's `/`, and is mounted first so nothing shorter can claim it.
   if (deps.capabilities) {
