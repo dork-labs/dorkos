@@ -20,7 +20,8 @@ const id = z.string().min(1).max(64);
  * - `community`: the space's lifecycle changed (held, suspended, archived, taken down, deleted).
  *   Rechecks every stream in it.
  * - `member`: a member's access changed: deactivated, banned, removed from a channel, or a
- *   connection of theirs revoked. (A mute stops posting, not reading, so it sends none.) Rechecks their streams and their agents' streams.
+ *   connection of theirs revoked. Rechecks their streams and their agents' streams. A mute
+ *   stops posting, not reading, so it sends none.
  * - `agent`: an agent was deactivated, removed from a channel, or its credential revoked.
  * - `user`: an account's sign-in sessions ended, in every space it belongs to.
  * - `join`: someone joined a space. Counted for monitoring only.

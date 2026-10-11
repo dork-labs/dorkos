@@ -13,6 +13,7 @@
 -- Backout: revert the code first; older code sends the same notice itself after the commit.
 -- Then `DROP TRIGGER session_live_notice ON session; DROP FUNCTION notify_session_ended();`.
 
+-- 'community_live' is LIVE_NOTICE_CHANNEL in src/live/notices.ts; rename both together.
 CREATE OR REPLACE FUNCTION notify_session_ended() RETURNS trigger LANGUAGE plpgsql AS $$
 BEGIN
   PERFORM pg_notify('community_live', json_build_object('k', 'user', 'u', OLD."userId")::text);

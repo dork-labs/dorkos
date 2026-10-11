@@ -85,6 +85,8 @@ const READ_BATCH = 200;
 const KEEP_MS = 60_000;
 /** The least time between two wakes of one channel's streams; see `wakeSoon`. */
 const WAKE_GAP_MS = 100;
+/** Refreshes a run of removals may throw away before the feed gives up on its kept entries. */
+const MAX_DISCARDS = 3;
 /** The first pause before a failed read is tried again. */
 const RETRY_FIRST_MS = 250;
 /** At most this many per feed: a full minute of about 68 posts a second in one channel. */
@@ -101,8 +103,13 @@ export class ChannelFeed<T> {
   private generation = 0;
   private reading = false;
   private pollWanted = false;
-  /** Kept entries may have changed (a removal): hidden until they are read again. */
-  private stale = false;
+  /**
+   * Kept entries up to here may have changed (a removal): hidden from streams behind it until
+   * they are read again. Entries after it were read since, and stay visible. -1: none.
+   */
+  private staleThrough = -1;
+  /** Refreshes thrown away by yet another removal, in this stale spell; see MAX_DISCARDS. */
+  private discards = 0;
   private pollTimer: ReturnType<typeof setTimeout> | null = null;
   private retryTimer: ReturnType<typeof setTimeout> | null = null;
   private retryMs = RETRY_FIRST_MS;
@@ -131,8 +138,9 @@ export class ChannelFeed<T> {
   after(position: number, max: number): FeedRead<T> {
     const noticedThrough = this.noticed;
     if (this.head < 0 || position < this.base) return { covered: false, items: [], noticedThrough };
-    // Streams wait for the fresh copies rather than each reading the changed entries itself.
-    if (this.stale) return { covered: true, items: [], noticedThrough };
+    // Streams behind a removal wait for the fresh copies rather than each reading them itself.
+    // A stream at or past it gets new entries as usual: they were all read after the removal.
+    if (position < this.staleThrough) return { covered: true, items: [], noticedThrough };
     let low = 0;
     let high = this.items.length;
     while (low < high) {
@@ -169,14 +177,15 @@ export class ChannelFeed<T> {
   }
 
   /**
-   * An entry's text or files changed (a removal, a redaction, an erasure). Hide every kept entry
-   * and read them all again, once, for every stream: a stream that is behind then sends the
-   * changed text. A read under way is thrown away, since it may hold the old text.
+   * An entry's text or files changed (a removal, a redaction, an erasure). Hide the kept entries
+   * from streams behind them and read them all again, once, for every stream: a stream that is
+   * behind then sends the changed text. A read under way is thrown away, since it may hold the
+   * old text. New entries keep flowing to streams that are caught up.
    */
   dropKept(): void {
     this.generation += 1;
-    if (this.head < 0) return;
-    this.stale = true;
+    if (this.head < 0 || !this.items.length) return;
+    this.staleThrough = Math.max(this.staleThrough, this.head);
     this.pump();
   }
 
@@ -186,7 +195,8 @@ export class ChannelFeed<T> {
    */
   reset(): void {
     this.generation += 1;
-    this.stale = false;
+    this.staleThrough = -1;
+    this.discards = 0;
     this.base = -1;
     this.head = -1;
     this.noticed = 0;
@@ -237,18 +247,19 @@ export class ChannelFeed<T> {
       this.reading = false;
       // Seeded, or told of more, between the last loop and here: read again.
       if (this.closed || this.head < 0) return;
-      if (this.stale || this.pollWanted || this.head < this.noticed) this.pump();
+      if (this.staleThrough >= 0 || this.pollWanted || this.head < this.noticed) this.pump();
     });
   }
 
   private async drain(): Promise<void> {
     while (!this.closed && this.head >= 0) {
-      if (this.stale) {
+      const poll = this.pollWanted;
+      if (!poll && this.head >= this.noticed) {
+        // New entries first, so a removal never holds up streams that are caught up.
+        if (this.staleThrough < 0) return;
         if (!(await this.refresh())) return;
         continue;
       }
-      const poll = this.pollWanted;
-      if (!poll && this.head >= this.noticed) return;
       this.pollWanted = false;
       const generation = this.generation;
       const from = this.head;
@@ -298,21 +309,35 @@ export class ChannelFeed<T> {
     this.wakeTimer.unref();
   }
 
-  /** Read every kept entry again after a removal. False when the read failed. */
+  /** Read the kept entries a removal hid, once, for every stream. False when the read failed. */
   private async refresh(): Promise<boolean> {
     const generation = this.generation;
     const base = this.base;
-    const head = this.head;
-    const kept = this.items;
-    const rows = kept.length ? await this.tryRead(base, head, kept.length) : [];
+    const through = this.staleThrough;
+    const kept = this.items.filter((item) => item.seq <= through);
+    const rows = kept.length ? await this.tryRead(base, through, kept.length) : [];
     if (!rows) return false;
-    if (this.closed || generation !== this.generation || base !== this.base || head !== this.head)
+    if (this.closed) return true;
+    if (generation !== this.generation || base !== this.base) {
+      // Another removal, or a trim, landed while this read ran. A run of removals (an erasure
+      // working through its batches) could throw away every refresh: after a few, give up on
+      // these entries instead, and let the few streams behind them read for themselves.
+      if (generation !== this.generation && ++this.discards >= MAX_DISCARDS) {
+        this.base = Math.max(this.base, this.staleThrough);
+        this.items = this.items.filter((item) => item.seq > this.base);
+        this.staleThrough = -1;
+        this.discards = 0;
+        this.wakeSoon();
+      }
       return true;
+    }
     const keptAt = new Map(kept.map((item) => [item.seq, item.keptAt]));
     const readAt = nextTick();
     const now = Date.now();
-    this.items = rows.map((row) => ({ ...row, readAt, keptAt: keptAt.get(row.seq) ?? now }));
-    this.stale = false;
+    const fresh = rows.map((row) => ({ ...row, readAt, keptAt: keptAt.get(row.seq) ?? now }));
+    this.items = [...fresh, ...this.items.filter((item) => item.seq > through)];
+    this.staleThrough = -1;
+    this.discards = 0;
     this.wakeSoon();
     return true;
   }
@@ -353,6 +378,7 @@ export class ChannelFeed<T> {
     if (!drop) return;
     this.base = this.items[drop - 1].seq;
     this.items = this.items.slice(drop);
+    if (this.staleThrough >= 0 && this.base >= this.staleThrough) this.staleThrough = -1;
   }
 }
 

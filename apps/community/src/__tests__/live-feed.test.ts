@@ -165,6 +165,53 @@ describe('ChannelFeeds', () => {
     expect(db.reads).toEqual([{ after: 0, upTo: 2 }]);
   });
 
+  it('keeps sending new entries to caught-up streams while a removal is refreshed', async () => {
+    // Purpose: fails if a removal holds up every stream on the channel, not just those behind it.
+    const db = channel();
+    const { set } = feeds(db.read);
+    set.channelOpened(C, CH);
+    const feed = set.feed(C, CH);
+    feed.seed(0);
+    await settle();
+    set.entry(C, CH, db.commit('one'));
+    await settle();
+    set.content(C, CH);
+    set.entry(C, CH, db.commit('two'));
+    await settle();
+    await settle();
+    // The new entry was read after the removal, so a stream at 1 gets it straight away.
+    expect(feed.after(1, 10).items.map((item) => item.value)).toEqual(['two']);
+  });
+
+  it('gives up refreshing after a run of removals, so streams behind read for themselves', async () => {
+    // Purpose: fails if an erasure sending removal after removal can keep the refresh from
+    // ever finishing, which would hold streams behind it forever.
+    const db = channel();
+    let removing = false;
+    let refreshes = 0;
+    // Every refresh read is overtaken by another removal, as during a long erasure.
+    const { set } = feeds(async (c, ch, after, upTo, limit) => {
+      const rows = await db.read(c, ch, after, upTo, limit);
+      if (removing) {
+        refreshes += 1;
+        set.content(C, CH);
+      }
+      return rows;
+    });
+    set.channelOpened(C, CH);
+    const feed = set.feed(C, CH);
+    feed.seed(0);
+    await settle();
+    set.entry(C, CH, db.commit('one'));
+    await settle();
+    removing = true;
+    set.content(C, CH);
+    for (let n = 0; n < 10; n += 1) await settle();
+    expect(refreshes).toBe(3);
+    expect(feed.after(0, 10).covered).toBe(false);
+    expect(feed.after(1, 10).covered).toBe(true);
+  });
+
   it('starts over when the channel changes, until a stream seeds it again', async () => {
     const db = channel();
     const { set } = feeds(db.read);
