@@ -18,7 +18,11 @@ import {
 } from '../../session/fleet/session-limit-store.js';
 import { NotificationStore } from '../notification-store.js';
 import { NotificationService, setNotificationService } from '../notification-service.js';
-import { notifyAutoMoveFailed, watchSessionLifecycle } from '../emitters/session-lifecycle.js';
+import {
+  notifyAccountReset,
+  notifyAutoMoveFailed,
+  watchSessionLifecycle,
+} from '../emitters/session-lifecycle.js';
 import { notificationEntry } from '../notification-registry.js';
 
 const armEscalation = vi.hoisted(() => vi.fn());
@@ -213,5 +217,46 @@ describe('account.limited', () => {
     expect(repeat?.body).toBe(
       'DorkOS could not move it automatically, so the chat is waiting for you.'
     );
+  });
+});
+
+describe('account.reset', () => {
+  const RESET = {
+    accountPath: null,
+    resetsAt: '2026-09-28T20:00:00.000Z',
+    resetConfirmedAt: '2026-09-28T20:05:00.000Z',
+    pausedCount: 2,
+  };
+
+  it('names a Codex or OpenCode reset by its own runtime’s account, never "Your Claude account"', async () => {
+    // DOR-2475: the reset notice looked every account up under Claude Code.
+    runtimeRegistry.setDb(db);
+    const bind = (sessionId: string, runtime: string) =>
+      db
+        .insert(sessionMetadata)
+        .values({ sessionId, runtime, createdAt: new Date().toISOString() })
+        .run();
+    bind('r-codex', 'codex');
+    bind('r-opencode', 'opencode');
+
+    notifyAccountReset('r-codex', undefined, { ...RESET, accountId: 'default' });
+    notifyAccountReset('r-opencode', undefined, { ...RESET, accountId: 'unlabelled' });
+    await flush();
+
+    const reset = rows().filter((r) => r.kind === 'account.reset');
+    const titleOf = (id: string) => reset.find((r) => r.subject?.id === id)?.title;
+    expect(titleOf('r-codex')).toBe(
+      "Main (this computer's sign-in) is back: 2 paused sessions can continue"
+    );
+    expect(titleOf('r-opencode')).toBe(
+      'Your OpenCode account is back: 2 paused sessions can continue'
+    );
+  });
+
+  it('still says "Your Claude account" for an unlabelled Claude Code account', async () => {
+    notifyAccountReset('r-claude', undefined, { ...RESET, accountId: 'default' });
+    await flush();
+    const [row] = rows().filter((r) => r.kind === 'account.reset');
+    expect(row!.title).toBe('Your Claude account is back: 2 paused sessions can continue');
   });
 });

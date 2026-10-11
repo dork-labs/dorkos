@@ -222,17 +222,20 @@ export function notifyAccountReset(
   facts: AccountResetFacts
 ): void {
   const agentId = resolveAgentIdForPath(cwd);
+  // The session's own runtime, as for the limit it ends: Codex's and
+  // OpenCode's accounts are not Claude Code's (DOR-2475).
+  const runtime = ledgerRuntimeOf(sessionId);
   const usageStore = getAccountUsageStore();
   const usage = facts.accountId
-    ? usageStore?.peek('claude-code', [facts.accountId])[0]
+    ? usageStore?.peek(runtime, [facts.accountId])[0]
     : facts.accountPath
-      ? (usageStore?.usageAtPath('claude-code', facts.accountPath) ?? undefined)
+      ? (usageStore?.usageAtPath(runtime, facts.accountPath) ?? undefined)
       : undefined;
   void notify('account.reset', {
     sessionId,
     accountId: facts.accountId,
     // A raw id (`default`, `default-2`) is never shown: without a label, say what it is.
-    accountLabel: usage?.label ?? 'Your Claude account',
+    accountLabel: usage?.label ?? UNLABELLED_ACCOUNT[runtime],
     pausedCount: facts.pausedCount,
     resetsAt: facts.resetsAt,
     resetConfirmedAt: facts.resetConfirmedAt,
