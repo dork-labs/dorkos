@@ -296,6 +296,25 @@ describe('StreamManager', () => {
     expect(onSessionConnectionState).toHaveBeenCalledWith('sess-a', 'connected');
   });
 
+  it('announces connecting when a session stream opens, over the last stream’s state', () => {
+    // DOR-1916: a fresh connection starts at `connecting` and only announces a
+    // change, so the store kept session A's `disconnected` across a switch away
+    // and back and showed "Live updates lost" over a healthy connect.
+    const onSessionConnectionState = vi.fn();
+    const { manager, connections } = setup();
+    manager.setListeners({ onSessionConnectionState });
+    manager.attachSession('sess-a');
+    connections[0]!.emitState('disconnected');
+    manager.attachSession('sess-b');
+
+    onSessionConnectionState.mockClear();
+    manager.attachSession('sess-a');
+
+    // Before the new socket says anything, sess-a already reads `connecting`.
+    const forA = onSessionConnectionState.mock.calls.filter(([id]) => id === 'sess-a');
+    expect(forA.at(-1)).toEqual(['sess-a', 'connecting']);
+  });
+
   it('records a bug-report breadcrumb when the session stream disconnects', async () => {
     // Real failure mode: a bug filed right after a stream drop should carry
     // "the session stream just disconnected" without the user having to notice

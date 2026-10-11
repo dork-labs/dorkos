@@ -753,9 +753,8 @@ export class StreamManager {
       // session stream dropping is exactly the kind of "what just happened"
       // context a bug report benefits from, without the user having to notice
       // and describe it themselves.
-      if (state === 'disconnected') {
+      if (state === 'disconnected')
         addBreadcrumb('sse_disconnect', `session stream disconnected (${sessionId})`);
-      }
       this.listeners.onSessionConnectionState?.(sessionId, state);
     };
     const connection = this.createConnection(
@@ -774,6 +773,11 @@ export class StreamManager {
       connect: () => {
         if (!retired) {
           armed = true;
+          // A fresh connection starts at `connecting` and announces only a
+          // change, so say it here, as `connectList` does: otherwise the store
+          // keeps the last session stream's `disconnected` and shows "Live
+          // updates lost" over a healthy connect (DOR-1916).
+          this.listeners.onSessionConnectionState?.(sessionId, 'connecting');
           connection.connect();
         }
       },
