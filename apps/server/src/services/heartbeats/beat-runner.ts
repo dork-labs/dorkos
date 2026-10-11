@@ -287,7 +287,12 @@ export class BeatRunner {
    */
   async wake(agentId: string, wake: BeatWake): Promise<void> {
     const agent = this.deps.agents.get(agentId);
-    if (!agent || !this.deps.enabled() || this.deps.isPaused?.(agentId)) return;
+    if (!agent || !this.deps.enabled()) return;
+    if (this.deps.isPaused?.(agentId)) {
+      // Its timer chain ends here; the scan arms it again once it is resumed.
+      this.pausedSeen.add(agentId);
+      return;
+    }
     if (!this.deps.runtimeRegistered(agent.runtime)) {
       this.noteSkipped(agent);
       return;

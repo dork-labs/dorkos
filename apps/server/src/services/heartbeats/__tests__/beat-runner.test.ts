@@ -311,11 +311,27 @@ describe('who beats', () => {
     // Its armed beat comes due while paused and is dropped, not re-armed.
     await vi.advanceTimersByTimeAsync(13 * 60 * 60_000);
     const due = r.nextBeatAt(juno.id);
-    expect(due === null || Date.parse(due) <= Date.now()).toBe(true);
+    expect(due === null || due.getTime() <= Date.now()).toBe(true);
     paused = false;
     await vi.advanceTimersByTimeAsync(FILE_SCAN_MS);
     const next = r.nextBeatAt(juno.id);
-    expect(next !== null && Date.parse(next) > Date.now()).toBe(true);
+    expect(next !== null && next.getTime() > Date.now()).toBe(true);
+    r.stop();
+  });
+
+  it('arms again after a pause shorter than the scan that ate a timed beat', async () => {
+    heartbeatFile = file('---\nwake: timed\n---\n');
+    let paused = false;
+    const r = runner({ isPaused: () => paused });
+    await r.start();
+    const due = r.nextBeatAt(juno.id)!.getTime();
+    await vi.advanceTimersByTimeAsync(due - Date.now() - 1);
+    paused = true;
+    await vi.advanceTimersByTimeAsync(2);
+    paused = false;
+    await vi.advanceTimersByTimeAsync(FILE_SCAN_MS);
+    const next = r.nextBeatAt(juno.id);
+    expect(next !== null && next.getTime() > Date.now()).toBe(true);
     r.stop();
   });
 

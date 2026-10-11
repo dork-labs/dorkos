@@ -1,5 +1,6 @@
 ---
 covers:
+  - "fix(heartbeats): a short pause never stops an agent's timed beats (DOR-2788)"
   - 'fix(heartbeats): review round 1 — no wake loops, nothing gathered is lost, strangers per turn, manners hardened (DOR-2788)'
   - 'feat(heartbeats): agents wake on a beat or an event, look around for free, and tell people at a decent hour (DOR-2788)'
 ---
