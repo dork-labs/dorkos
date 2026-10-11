@@ -1,6 +1,7 @@
 ---
 covers:
   - 'feat(spaces): report a message, accept the rules and pick your name in a space (DOR-2770)'
+  - 'fix(spaces): a hold never blocks leaving, quieter errors and honest slow mode (DOR-2770)'
 ---
 
 ### Added
