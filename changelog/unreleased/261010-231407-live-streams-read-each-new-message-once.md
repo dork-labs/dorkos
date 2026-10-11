@@ -4,6 +4,7 @@ covers:
   - 'perf(community): a post reads only the part of the roster it could mention (DOR-2830)'
   - 'perf(community): streams keep a minute of entries and spread their access rechecks (DOR-2830)'
   - "fix(community): a session ends in its own transaction's notice, and a removal refreshes kept entries once (DOR-2830)"
+  - 'perf(community): a busy channel wakes its streams at most every 100 ms (DOR-2830)'
 ---
 
 ### Changed
