@@ -40,8 +40,8 @@ describe('assertPublishedSetComplete', () => {
   });
 
   it('rejects a set missing a still, naming the file', () => {
-    const set = completeSet().filter((a) => a.file !== 'cockpit-light.png');
-    expect(() => assertPublishedSetComplete(set)).toThrowError(/cockpit-light\.png/);
+    const set = completeSet().filter((a) => a.file !== 'team-room-light.png');
+    expect(() => assertPublishedSetComplete(set)).toThrowError(/team-room-light\.png/);
   });
 
   it('rejects a set missing a loop or its poster', () => {
@@ -53,10 +53,10 @@ describe('assertPublishedSetComplete', () => {
 
   it('lists every gap at once so one re-record fixes them all', () => {
     const set = completeSet().filter(
-      (a) => a.file !== 'cockpit-light.png' && a.file !== 'canvas-dark.webm'
+      (a) => a.file !== 'team-room-light.png' && a.file !== 'canvas-dark.webm'
     );
     expect(() => assertPublishedSetComplete(set)).toThrowError(
-      /cockpit-light\.png.*canvas-dark\.webm|canvas-dark\.webm.*cockpit-light\.png/s
+      /team-room-light\.png.*canvas-dark\.webm|canvas-dark\.webm.*team-room-light\.png/s
     );
   });
 });
@@ -68,11 +68,11 @@ describe('publishWithRollback', () => {
   async function seededOutputDir(): Promise<string> {
     const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'dorkos-publish-'));
     dirs.push(dir);
-    await fs.writeFile(path.join(dir, 'cockpit-light.png'), 'OLD cockpit');
+    await fs.writeFile(path.join(dir, 'team-room-light.png'), 'OLD team-room');
     await fs.writeFile(path.join(dir, 'canvas-dark.webm'), 'OLD canvas loop');
     await fs.writeFile(path.join(dir, 'manifest.json'), '{"count":2}\n');
     await fs.mkdir(path.join(dir, 'archive', 'v0.66.0'), { recursive: true });
-    await fs.writeFile(path.join(dir, 'archive', 'v0.66.0', 'cockpit-light.png'), 'ARCHIVED');
+    await fs.writeFile(path.join(dir, 'archive', 'v0.66.0', 'team-room-light.png'), 'ARCHIVED');
     await fs.writeFile(path.join(dir, 'README.md'), 'not a shot');
     return dir;
   }
@@ -96,14 +96,14 @@ describe('publishWithRollback', () => {
     // written stills into the output dir by the time the backstop fires.
     await expect(
       publishWithRollback(async () => {
-        await fs.writeFile(path.join(dir, 'cockpit-light.png'), 'NEW cockpit');
+        await fs.writeFile(path.join(dir, 'team-room-light.png'), 'NEW team-room');
         await fs.writeFile(path.join(dir, 'agents-light.png'), 'NEW agents');
         assertPublishedSetComplete(completeSet().filter((a) => a.file !== 'canvas-dark.webm'));
       }, dir)
     ).rejects.toThrowError(/canvas-dark\.webm/);
 
     expect(await listing(dir)).toEqual(before);
-    expect(await fs.readFile(path.join(dir, 'cockpit-light.png'), 'utf8')).toBe('OLD cockpit');
+    expect(await fs.readFile(path.join(dir, 'team-room-light.png'), 'utf8')).toBe('OLD team-room');
     expect(await fs.readFile(path.join(dir, 'canvas-dark.webm'), 'utf8')).toBe('OLD canvas loop');
     expect(await fs.readFile(path.join(dir, 'manifest.json'), 'utf8')).toBe('{"count":2}\n');
     // The half-written new set is gone rather than mixed in with the old one.
@@ -116,7 +116,7 @@ describe('publishWithRollback', () => {
 
     await publishWithRollback(async () => {
       seen = await listing(dir);
-      await fs.writeFile(path.join(dir, 'cockpit-light.png'), 'NEW cockpit');
+      await fs.writeFile(path.join(dir, 'team-room-light.png'), 'NEW team-room');
     }, dir);
 
     // The publish starts from a clean slate — no stale shot survives it — while
@@ -125,9 +125,9 @@ describe('publishWithRollback', () => {
     expect(seen).not.toContain('manifest.json');
     expect(seen).toContain('archive');
     expect(seen).toContain('README.md');
-    expect(await listing(dir)).toEqual(['README.md', 'archive', 'cockpit-light.png']);
+    expect(await listing(dir)).toEqual(['README.md', 'archive', 'team-room-light.png']);
     expect(
-      await fs.readFile(path.join(dir, 'archive', 'v0.66.0', 'cockpit-light.png'), 'utf8')
+      await fs.readFile(path.join(dir, 'archive', 'v0.66.0', 'team-room-light.png'), 'utf8')
     ).toBe('ARCHIVED');
   });
 
@@ -136,16 +136,16 @@ describe('publishWithRollback', () => {
     const own = path.join(dir, `.publish-backup-${process.pid}`);
     const foreign = path.join(dir, '.publish-backup-999999');
     await fs.mkdir(own, { recursive: true });
-    await fs.writeFile(path.join(own, 'cockpit-light.png'), 'RECYCLED-PID LEFTOVER');
+    await fs.writeFile(path.join(own, 'team-room-light.png'), 'RECYCLED-PID LEFTOVER');
     await fs.mkdir(foreign, { recursive: true });
     await fs.writeFile(path.join(foreign, 'topology-light.png'), 'ANOTHER RUN, ONLY COPY');
 
     await publishWithRollback(async () => {
-      await fs.writeFile(path.join(dir, 'cockpit-light.png'), 'NEW cockpit');
+      await fs.writeFile(path.join(dir, 'team-room-light.png'), 'NEW team-room');
     }, dir);
 
     // Ours was reclaimed, and never shadowed the set actually being published…
-    expect(await fs.readFile(path.join(dir, 'cockpit-light.png'), 'utf8')).toBe('NEW cockpit');
+    expect(await fs.readFile(path.join(dir, 'team-room-light.png'), 'utf8')).toBe('NEW team-room');
     expect(await listing(dir)).not.toContain(path.basename(own));
     // …while the other run's parked media — which a single fixed backup name
     // deleted outright, and which may be the only copy left of it — is untouched.
@@ -178,7 +178,7 @@ describe('publishWithRollback', () => {
     expect(caught.cause).toBe(publishError);
 
     // Everything restorable was restored: one bad file strands only itself.
-    expect(await fs.readFile(path.join(dir, 'cockpit-light.png'), 'utf8')).toBe('OLD cockpit');
+    expect(await fs.readFile(path.join(dir, 'team-room-light.png'), 'utf8')).toBe('OLD team-room');
     expect(await fs.readFile(path.join(dir, 'manifest.json'), 'utf8')).toBe('{"count":2}\n');
     // And the parking directory outlives the run, because a backup that did not
     // finish restoring is the only copy of whatever is still in it.

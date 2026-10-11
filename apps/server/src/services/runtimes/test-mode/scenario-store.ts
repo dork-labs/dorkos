@@ -1,6 +1,7 @@
 import type { MessageOpts } from '@dorkos/shared/agent-runtime';
 import type { InterruptOutcome, StreamEvent } from '@dorkos/shared/types';
 import { DEMO_SCENARIOS } from './demo-scenarios.js';
+import { DEMO_TEAM_ROOM_SCENARIOS } from './demo-team-room-scenario.js';
 import { HELD_PROCESS_SCENARIOS } from './held-process-scenarios.js';
 import { CONNECTION_REQUEST_SCENARIOS } from './connection-request-scenarios.js';
 import { interactionGate, type ScenarioContext } from './interaction-gate.js';
@@ -284,6 +285,9 @@ function compactingTurn(options: { hold: boolean }): ScenarioFn {
  */
 const BUILT_IN_SCENARIOS: Record<string, ScenarioFn> = {
   ...DEMO_SCENARIOS,
+  // The #team conversation the capture films: each agent answers through a
+  // real room turn (`demo-team-room-scenario.ts`).
+  ...DEMO_TEAM_ROOM_SCENARIOS,
   ...Q3_SCENARIOS,
   ...INTERACTIVE_SCENARIOS,
   ...HELD_PROCESS_SCENARIOS,

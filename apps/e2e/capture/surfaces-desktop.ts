@@ -13,7 +13,6 @@ import {
   shoot,
   sleep,
   url,
-  waitForAppShell,
   WAIT_MS,
   type LoopMark,
   type LoopSpec,
@@ -21,6 +20,7 @@ import {
 import { driveMultiSession, shootMultiSession } from './surfaces-desktop-fleet.js';
 import { shootControlCenter, shootSettingsRooms } from './surfaces-desktop-power.js';
 import { shootRoomFiles } from './surfaces-desktop-rooms.js';
+import { shootTeamRoom } from './surfaces-desktop-team.js';
 import { shootTaskRuntimePicker } from './surfaces-desktop-tasks.js';
 
 /**
@@ -28,37 +28,14 @@ import { shootTaskRuntimePicker } from './surfaces-desktop-tasks.js';
  * onboarding agent-discovery flow. Each `shootX` waits for its money state
  * before the screenshot; each `driveX` is shared between still and loop.
  *
- * Two groups live in sibling modules, both driven from the capture entry points
- * below: the power surfaces (Control Center, Settings → Room limits, the full-power
- * door) in `surfaces-desktop-power`, and the four-agent fleet drive behind
- * `multi-session` in `surfaces-desktop-fleet`.
+ * Several drives live in sibling modules, all driven from the capture entry
+ * points below: the #team conversation behind `team-room` in
+ * `surfaces-desktop-team`, the power surfaces (Control Center, Settings → Room
+ * limits, the full-power door) in `surfaces-desktop-power`, and the four-agent
+ * fleet drive behind `multi-session` in `surfaces-desktop-fleet`.
  *
  * @module capture/surfaces-desktop
  */
-
-/**
- * Capture the cockpit home — the #team room.
- *
- * **This shot currently ships an EMPTY room** ("Nothing said here yet"), and
- * that is a known gap, not the intended frame. Nothing in `seed.ts` puts
- * entries in #team, and nothing can directly: `POST /api/rooms/:id/entries`
- * forces `authorId` to the calling person, so an agent-authored entry only
- * exists as the output of a real turn `RoomTriggerDispatcher` ran.
- * Inhabiting this room therefore means DRIVING it — post as the person and let
- * the default agent's fallback seat answer (`team-room-home` 2.2) — the same
- * shape as `openLiveTurn`, and it needs the test-mode runtime's room-turn
- * behavior confirmed first. Until then the shot is honest but unflattering, and
- * it violates the README's "inhabited app" art direction.
- */
-async function shootCockpit(page: Page, theme: Theme, rec: RunRecorder): Promise<void> {
-  await page.goto(url('/'));
-  await waitForAppShell(page);
-  // The composer, not a seeded agent's name: Home is a room now
-  // (`team-room-home` D3.2), so the money state is "the room has drawn" rather
-  // than "the activity feed has an agent in it".
-  await page.waitForSelector('[data-testid="home-composer"]', { timeout: WAIT_MS });
-  await shoot(page, 'cockpit', theme, rec);
-}
 
 /** Capture the fleet/agents list. */
 async function shootAgents(page: Page, theme: Theme, rec: RunRecorder): Promise<void> {
@@ -666,7 +643,7 @@ export async function captureLightStills(browser: Browser, rec: RunRecorder): Pr
   });
   await seedThemeOnContext(ctx, theme);
   const page = await ctx.newPage();
-  await attemptShot('cockpit', 'cockpit-light', () => shootCockpit(page, theme, rec));
+  await attemptShot('team-room', 'team-room-light', () => shootTeamRoom(page, theme, rec));
   await attemptShot('control-center', 'control-center-light', () =>
     shootControlCenter(page, theme, rec)
   );

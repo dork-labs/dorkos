@@ -152,6 +152,21 @@ describe('LiveLane', () => {
     );
   });
 
+  it('clears at once with reduced motion when a burst of turns ends', () => {
+    // DOR-2762: with reduced motion the lane draws straight from state, no exit
+    // to wait for, so the last state is the only thing on screen.
+    const { rerender } = render(<LiveLane state={WORKING} reducedMotionOverride />);
+    rerender(<LiveLane state={READING} reducedMotionOverride />);
+    rerender(<LiveLane state={{ kind: 'empty' }} reducedMotionOverride />);
+    rerender(<LiveLane state={WORKING} reducedMotionOverride />);
+    rerender(<LiveLane state={{ kind: 'empty' }} reducedMotionOverride />);
+
+    const lane = document.querySelector('[data-slot="live-lane"]')!;
+    expect(lane).not.toHaveTextContent('Kai');
+    expect(lane.querySelector('button')).toBeNull();
+    expect(lane.querySelector('[aria-hidden="true"]')).not.toBeNull();
+  });
+
   it('fits the stalled sentence on a phone without losing what it can do', () => {
     // At 375px the full sentence truncated at "New messages aren't coming thr…",
     // which drops the half a person can act on and leaves it behind a `title` no

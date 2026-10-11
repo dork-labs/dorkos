@@ -124,11 +124,6 @@ export type ProductSurface =
   | 'canvas'
   | 'canvas-editing'
   | 'chat-streaming'
-  // Internal media key only, never rendered as words. DOR-1517 retired
-  // "cockpit" from everything a visitor reads, but this name keys
-  // `cockpit-light.png` in `public/product/manifest.json` and in every
-  // archived per-version manifest, so renaming it would orphan that media.
-  | 'cockpit'
   | 'control-center'
   | 'gen-ui-tictactoe'
   | 'gen-ui-widgets'
@@ -140,6 +135,7 @@ export type ProductSurface =
   | 'personality'
   | 'subagents'
   | 'tasks'
+  | 'team-room'
   | 'tool-approval'
   | 'topology';
 
@@ -345,8 +341,8 @@ export const features: Feature[] = [
     moment:
       'You come back after a few hours and open DorkOS. The room greets you with one line on what got done while you were gone, and anything waiting on you sits at the top of the sidebar.',
     media: {
-      surface: 'cockpit',
-      alt: 'The DorkOS Home tab open on the #team room, with every agent listed in the sidebar',
+      surface: 'team-room',
+      alt: 'The #team room on the DorkOS Home tab: you ask three agents about a launch, and each answers',
       crop: 'top',
     },
     docsUrl: '/docs/concepts/rooms',

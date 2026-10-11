@@ -28,7 +28,7 @@ describe('shot registry', () => {
   });
 
   it('resolves shots by id and reports unknown ids as undefined', () => {
-    expect(getShot('cockpit')?.frame).toBe('desktop');
+    expect(getShot('team-room')?.frame).toBe('desktop');
     expect(getShot('mobile-chat')?.frame).toBe('mobile');
     expect(getShot('does-not-exist')).toBeUndefined();
   });
@@ -47,7 +47,7 @@ describe('shot registry', () => {
 
   describe('target dimensions', () => {
     it('desktop still is 2560×1600 (1280×800 @2x)', () => {
-      expect(shotTargetDimensions(getShot('cockpit')!, 'still')).toEqual({
+      expect(shotTargetDimensions(getShot('team-room')!, 'still')).toEqual({
         width: 2560,
         height: 1600,
       });

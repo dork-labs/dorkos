@@ -93,8 +93,8 @@ export default function ComparePage() {
 
           {/* The thing being compared, shown rather than described */}
           <ProductFrame
-            surface="cockpit"
-            alt="The DorkOS #team room, where you and your agents work together"
+            surface="team-room"
+            alt="The DorkOS #team room, where you ask your agents a question and each one answers"
             size="hero"
             priority
           />

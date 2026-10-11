@@ -10,7 +10,7 @@ import {
 /**
  * The shot registry — the single source of truth for every piece of product
  * media the capture pipeline produces. A "shot" is one logical surface of the
- * DorkOS UI (the cockpit, the topology graph, a streaming chat) captured for a
+ * DorkOS UI (the #team room, the topology graph, a streaming chat) captured for a
  * downstream consumer. Marketing, docs, and changelogs all draw from this one
  * list, so a shot can be added for docs without ever appearing on the marketing
  * site, and vice-versa.
@@ -80,13 +80,7 @@ export interface Shot {
  */
 export const SHOTS: readonly Shot[] = [
   // --- Desktop stills (marketing; several also embed in the docs) ---
-  // `cockpit` keeps a word the product no longer says (DOR-1517 retired
-  // "cockpit" and "mission control" from all user-facing prose). The id is a
-  // purely internal key, and it names `cockpit-light.png` in the live
-  // `public/product/manifest.json` plus every archived per-version manifest
-  // back to v0.46.0. Renaming it would orphan that generated media, which no
-  // visitor ever sees a word of, so the key stays and the copy moved on.
-  { id: 'cockpit', kind: 'still', frame: 'desktop', consumers: ['marketing', 'docs'] },
+  { id: 'team-room', kind: 'still', frame: 'desktop', consumers: ['marketing', 'docs'] },
   { id: 'agents', kind: 'still', frame: 'desktop', consumers: ['marketing', 'docs'] },
   { id: 'tasks', kind: 'still', frame: 'desktop', consumers: ['marketing', 'docs'] },
   { id: 'marketplace', kind: 'still', frame: 'desktop', consumers: ['marketing', 'docs'] },
@@ -224,8 +218,8 @@ export function shotTargetDimensions(shot: Shot, kind: ShotKind): Dimensions {
  *   same stack. Pinning both to shard 0 keeps that summary tied to one stack's
  *   state instead of letting it vary with shard placement. (No other shot reads
  *   the sidebar's zones: the remaining chat surfaces are single-session views,
- *   and the cockpit's recent activity comes from the seeded sessions present in
- *   every shard.)
+ *   and `team-room` holds its own #team conversation in whichever stack drives
+ *   it.)
  * - `agent-discovery` flips its stack's global onboarding state, which every
  *   other shot in the same stack needs left dismissed — it stays a singleton on
  *   shard 0, where the record phase drives it in the closing pair (discovery,
