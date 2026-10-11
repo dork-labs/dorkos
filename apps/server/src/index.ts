@@ -1,5 +1,17 @@
+import { mountOptionalGateways } from './startup/optional-gateway-composition.js';
+import {
+  connectorRuntimeConsumer,
+  registeredAgentRoots,
+  logLegacySweep,
+  warmMcpOAuthTokens,
+  takeDailySnapshot,
+} from './startup/boot-helpers.js';
+import { mountOperatorRoutes } from './startup/operator-route-composition.js';
 import { type ServerDocumentRelayOrigin } from '@dorkos/relay/server-private-document';
-import { readOriginalManagerDocumentAdapterOrigin } from './services/relay/adapter-manager.js';
+import {
+  readOriginalManagerDocumentAdapterOrigin,
+  AdapterManager,
+} from './services/relay/adapter-manager.js';
 import {
   createDocumentRelaySourceAuthority,
   wakeOriginalRelayAcceptedReceipts,
@@ -41,7 +53,7 @@ import { ManagedConnectorCloudError } from './services/core/auth/cloud-link-clie
 import { DoeRuntime } from './services/runtimes/doe/index.js';
 import { ClaudeCodeRuntime } from './services/runtimes/claude-code/claude-code-runtime.js';
 import { shutdownSessionPumps } from './services/runtimes/claude-code/sessions/session-pump-registry.js';
-import { reapOrphanedWarmProcesses } from './services/runtimes/claude-code/sessions/warm-process-ledger.js';
+import { reapOrphanedWarmProcesses } from './services/runtimes/claude-code/sessions/warm-process/warm-process-ledger.js';
 import { sharedBackgroundWorkLedger } from './services/runtimes/claude-code/messaging/background-work-ledger.js';
 import { inventorySessionIds } from './services/runtimes/claude-code/sessions/session-inventory.js';
 import { previewListeners } from './services/workbench-serve/index.js';
@@ -64,14 +76,8 @@ import {
   resolveMcpLocalToken,
   readOwnerAccount,
   getUserById,
-  setUserImage,
-  setUserName,
 } from './services/core/auth/index.js';
-import {
-  canExpose,
-  checkA2aExposure,
-  checkBindAllowed,
-} from './services/core/auth/exposure-guard.js';
+import { canExpose, checkBindAllowed } from './services/core/auth/exposure-guard.js';
 import { tunnelManager } from './services/core/tunnel-manager.js';
 import { resolveTunnelSettings } from './services/core/config/tunnel-settings.js';
 import { initCloudLinkManager, getCloudLinkManager } from './services/core/auth/cloud-link.js';
@@ -90,7 +96,7 @@ import {
   ConfigBootError,
 } from './services/core/config-manager.js';
 import { readOperatorDisplayName } from './services/core/config/operator-display-name.js';
-import { logConfigWrite } from './services/core/operator/config-write.js';
+import { logConfigWrite, onTrustStopChange } from './services/core/operator/config-write.js';
 import { initClaudeAccountApplier } from './services/core/operator/config-patch.js';
 import { applyClaudeAccountChange } from './services/runtimes/claude-code/account-switch.js';
 import {
@@ -107,8 +113,6 @@ import { TaskStore } from './services/tasks/task-store.js';
 import { startAgentExecutionWatch } from './services/tasks/approvals/agent-execution-watch.js';
 import { raiseStanding } from './services/notifications/standing-events.js';
 import { broadcastTasksChanged } from './services/tasks/task-sse-events.js';
-import { createNotificationsRouter } from './routes/notifications.js';
-import { createPushRouter } from './routes/push.js';
 import { NotificationStore } from './services/notifications/notification-store.js';
 import {
   connectorAgentRequestsChangedAnnouncer,
@@ -233,10 +237,7 @@ import {
   startConnectorRuntimeMcpListener,
   type ConnectorRuntimeMcpListener,
 } from './services/runtimes/connector-mcp/index.js';
-import {
-  connectorRuntimeHeaders,
-  type ConnectorRuntimeToolConsumer,
-} from './services/runtimes/connector-tools.js';
+import { connectorRuntimeHeaders } from './services/runtimes/connector-tools.js';
 import type {
   ConnectorRuntimeExecutionProbe,
   ConnectorRuntimeRequestProbe,
@@ -251,13 +252,12 @@ import { AgentMcpOAuthService } from './services/mesh/agent-mcp-oauth-service.js
 import { resumeAfterMcpSignin } from './services/mesh/mcp-signin-resume.js';
 import { createMcpRevocationWatch } from './services/mesh/mcp-revocation.js';
 import { createMcpOAuthRouter } from './routes/mcp-oauth.js';
-import type { McpCapabilityDeps } from './services/mesh/mcp-capability-deps.js';
+import type { McpCapabilityDeps } from './services/mesh/capabilities/mcp-capability-deps.js';
 import {
   relayStartsEnabled,
   setRelayEnabled,
   setRelayInitError,
 } from './services/relay/relay-state.js';
-import { AdapterManager } from './services/relay/adapter-manager.js';
 import { RELAY_NOT_BUILT } from './services/relay/task-dispatch/readiness.js';
 import {
   createInitiateConsentGate,
@@ -271,8 +271,6 @@ import { createMeshRouter } from './routes/mesh.js';
 import { setMeshInitError } from './services/mesh/mesh-state.js';
 import { ensureDorkBot } from './services/mesh/ensure-dorkbot.js';
 import { setAgentPathLookup } from './services/mesh/agent-path-lookup.js';
-import { createA2aRouter } from './routes/a2a.js';
-import { buildA2aRateLimiters } from './middleware/a2a-rate-limit.js';
 import { createAgentsRouter } from './routes/agents.js';
 import { createPermissionsRouter } from './routes/permissions.js';
 import { resolveToolVisibilityFor } from './services/runtimes/shared/permission-tool-filter.js';
@@ -298,13 +296,8 @@ import {
   personWriter,
   createAlwaysSuggestion,
 } from './services/core/permissions/index.js';
-import { onTrustStopChange } from './services/core/operator/config-write.js';
-import { titleForMcpTool } from './services/core/mcp-tool-tiers.js';
-import { createTeamRouter } from './routes/team.js';
-import { createProfileRouter } from './routes/profile.js';
-import { createSearchRouter } from './routes/search.js';
+import { titleForMcpTool } from './services/core/mcp-tools/mcp-tool-tiers.js';
 import { resolveCaller } from './routes/room-caller.js';
-import { LocalAvatarStore } from './services/identity/local-avatar-store.js';
 import { LocalRoomAttachmentStore } from './services/rooms/attachments/local-room-attachment-store.js';
 import {
   LocalSessionAttachmentStore,
@@ -312,16 +305,13 @@ import {
   setSessionAttachmentStore,
   sweepSessionAttachments,
 } from './services/session/attachments/index.js';
-import { createDiscoveryRouter } from './routes/discovery.js';
-import { createTemplateRouter } from './routes/templates.js';
-import { createHarnessRouter } from './routes/harness.js';
 import { createAdminRouter } from './routes/admin.js';
 import { ExtensionManager } from './services/extensions/extension-manager.js';
 import { startExtensionApprovalQueue } from './services/extensions/extension-approval-queue.js';
 import { ensureCoreExtensions } from './services/core-extensions/ensure-core-extensions.js';
 import { warnRedundantEnabledEntries } from './services/core-extensions/warn-redundant-enabled.js';
 import type { CoreExtensionInfo } from './services/extensions/extension-enable-resolution.js';
-import { createExtensionsRouter, broadcastExtensionReloaded } from './routes/extensions.js';
+import { broadcastExtensionReloaded } from './routes/extensions.js';
 import { knownProjectRootsForExtensions } from './services/projects/extension-scan-roots.js';
 import { createAgentWorkspace } from './services/core/agent-creator.js';
 import { gitTreeSource } from './services/marketplace/lib/git/git-tree.js';
@@ -334,7 +324,6 @@ import {
   legacySweepDirs,
   rebuildLegacyRecords,
   removeRecordTempLeftovers,
-  type LegacySweepSummary,
 } from './services/marketplace/lib/integrity/legacy-record-sweep.js';
 import { withIntegrity } from './services/marketplace/lib/integrity/verify-install.js';
 import { scanInstallationsAcrossScopes } from './services/marketplace/installed-scanner.js';
@@ -384,6 +373,7 @@ import { MarketplaceInstaller } from './services/marketplace/installer/marketpla
 import { createMarketplaceRouter } from './routes/marketplace.js';
 import { runAutoProjection } from './services/harness/auto-project.js';
 import { backfillAgentWorkspaceSkills } from './services/harness/project-agent-workspace.js';
+import { refreshUntouchedTemplates } from './services/mesh/refresh-untouched-templates.js';
 import { runAgentCreatedProjection } from './services/harness/project-on-agent-created.js';
 import {
   createEveryAgentArrivalReaction,
@@ -429,10 +419,7 @@ import {
   type InstallSweepSummary,
 } from './services/marketplace/recovery/backup-janitor.js';
 import { currentRecordOwner } from './services/marketplace/lib/records/record-owner.js';
-import { createActivityRouter } from './routes/activity.js';
-import { createAuditRouter } from './routes/audit.js';
 import { wireAuditTrail } from './services/audit/index.js';
-import { createExtensionRoutesMiddleware } from './middleware/extension-routes.js';
 import { createExternalMcpServer } from './services/core/mcp-server.js';
 import { composeDorkOsCapabilityRegistry } from './services/core/self-description/dorkos-registry.js';
 import { startCurrentRoomDueScheduler } from './services/canvas/doc-channel/operations/room-due-scheduler.js';
@@ -449,7 +436,6 @@ import {
   createAgentIdentityUnregisterCascade,
 } from './services/core/agent-identity/index.js';
 import { ApprovalService, resolveApprovalTtlMs } from './services/core/approvals/index.js';
-import { createApprovalsRouter } from './routes/approvals.js';
 import type { DeepHealthDeps } from './services/observability/deep-health/index.js';
 import type { DebugDeps } from './routes/debug.js';
 import type { UnattendedAutonomyDeps } from './services/core/unattended-autonomy/unattended-autonomy.js';
@@ -477,7 +463,6 @@ import {
   runMigrations,
   databaseHoldsUserData,
   snapshotBeforeMigrations,
-  snapshotDaily,
   DatabaseOpenError,
   SnapshotFailedError,
   agents,
@@ -644,7 +629,6 @@ import {
   getExtensionInbox,
   setExtensionInbox,
 } from './services/extensions/inbox/extension-inbox.js';
-import { createExtensionDecisionsRouter } from './routes/extension-decisions.js';
 import {
   StartWorkService,
   getStartWorkService,
@@ -687,7 +671,6 @@ import {
   expireOrphanedAsks,
   sweepOrphanedMessageQueues,
   sessionOriginResolvers,
-  listRecentSessions,
   setAgentSessionSources,
   setPrivateSessionMessageAcceptanceService,
   adoptAcceptedPrivateMessages,
@@ -777,39 +760,6 @@ let testComposioFixture:
     >
   | undefined;
 
-function connectorRuntimeConsumer(runtime: unknown): ConnectorRuntimeToolConsumer | undefined {
-  if (
-    typeof runtime === 'object' &&
-    runtime !== null &&
-    'setConnectorRuntimeTools' in runtime &&
-    typeof (runtime as { setConnectorRuntimeTools?: unknown }).setConnectorRuntimeTools ===
-      'function'
-  ) {
-    return runtime as ConnectorRuntimeToolConsumer;
-  }
-  return undefined;
-}
-/**
- * Every registered agent that has a project on disk, as the legacy migration
- * wants them.
- *
- * Lives here rather than inline because the filter is the interesting part: an
- * agent with no resolvable project path has no `.dork/tasks/` to migrate and no
- * `.agents/skills/` to migrate into, and asking about it would only produce a
- * pair of ENOENTs.
- *
- * @param meshCore - The registry, absent when Mesh is switched off.
- */
-function registeredAgentRoots(
-  meshCore: MeshCore | undefined
-): { agentId: string; projectPath: string }[] {
-  if (!meshCore) return [];
-  return meshCore.list().flatMap((agent) => {
-    const projectPath = meshCore.getProjectPath(agent.id);
-    return projectPath ? [{ agentId: agent.id, projectPath }] : [];
-  });
-}
-
 /**
  * Log what an install-recovery sweep did, when it did anything.
  *
@@ -870,19 +820,6 @@ let projectInstallRecovery: Promise<unknown> = Promise.resolve();
 const legacyRecordSweep = new AbortController();
 let sweptProjects: string[] = [];
 
-/**
- * Log what the legacy record sweep did, when it did anything.
- *
- * @param summary - The sweep's outcome lists.
- */
-function logLegacySweep(summary: LegacySweepSummary): void {
-  const { rebuilt, mismatch, noSource, fetchFailed } = summary;
-  if (rebuilt.length + mismatch.length + noSource.length + fetchFailed.length === 0) return;
-  logger.info(
-    `[Marketplace] Records for packages an older DorkOS installed: ${rebuilt.length} rebuilt, ${mismatch.length} changed since install, ${noSource.length} installed from a local folder, ${fetchFailed.length} to retry`
-  );
-}
-
 let taskFileWatcher: TaskFileWatcher | undefined;
 let taskReconciler: TaskReconciler | undefined;
 let taskRegistrar: TaskRegistrar | undefined;
@@ -923,58 +860,6 @@ let terminalManager: TerminalManager | undefined;
 // shutdownServices() rather than shutdown(), because the admin restart path runs
 // the former and then spawns a successor that must find the directory free.
 let releaseInstanceLock: (() => void) | undefined;
-
-/**
- * Re-prime the managed-MCP OAuth token cache from disk on boot (DOR-942): for
- * every registered agent's enabled http/sse servers, hand the OAuth engine the
- * `(agentId, serverName, serverUrl)` targets so it can load any stored token and
- * schedule its background refresh. A server with no stored token is skipped by
- * the engine (stays needs-auth). Best-effort per agent — an unreadable manifest
- * for one agent never blocks warming the rest.
- *
- * @param oauth - The managed-MCP OAuth engine to warm.
- * @param service - The managed-server service that lists each agent's servers.
- * @param mesh - The mesh core whose registry enumerates the agents.
- */
-async function warmMcpOAuthTokens(
-  oauth: AgentMcpOAuthService,
-  service: AgentMcpServerService,
-  mesh: MeshCore
-): Promise<void> {
-  const targets: { agentId: string; serverName: string; serverUrl: string }[] = [];
-  for (const agent of mesh.agentRegistry.list()) {
-    try {
-      const servers = await service.list(agent.id);
-      for (const s of servers) {
-        if (s.enabled && s.connection.transport !== 'stdio') {
-          targets.push({ agentId: agent.id, serverName: s.name, serverUrl: s.connection.url });
-        }
-      }
-    } catch {
-      // Unreadable/absent manifest for one agent: skip it, warm the others.
-    }
-  }
-  await oauth.warm(targets);
-}
-
-/**
- * Take the day's snapshot of `dork.db`, if today has not had one yet.
- *
- * Best-effort by design, and that is the difference from the pre-migration
- * snapshot: nothing irreversible happens next, so a full disk should cost a
- * warning in the log rather than a server that will not start.
- *
- * @param db - The consolidated database.
- * @param backupsDir - `<dorkHome>/backups`.
- */
-function takeDailySnapshot(db: Db, backupsDir: string): void {
-  try {
-    const written = snapshotDaily(db, { dir: backupsDir });
-    if (written) logger.info(`[DB] Daily snapshot written to ${written}`);
-  } catch (err) {
-    logger.warn('[DB] Daily snapshot failed — your data is fine, the backup is not', logError(err));
-  }
-}
 
 async function start() {
   /**
@@ -2851,6 +2736,11 @@ async function start() {
       const workspaces = meshCore.listWithPaths().map((agent) => agent.projectPath);
       backfillAgentWorkspaceSkills(workspaces, dorkHome).catch((err: unknown) => {
         logger.warn('[Mesh] Agent workspace skill backfill failed', logError(err));
+      });
+      // Same agent homes, same fire-and-forget shape: starter text nobody
+      // edited catches up with today's template (DOR-2779, ADR-0302 amendment).
+      refreshUntouchedTemplates(workspaces, dorkHome).catch((err: unknown) => {
+        logger.warn('[Mesh] Starter text refresh failed', logError(err));
       });
     } catch (err) {
       logger.warn('[Mesh] Failed to start agent workspace skill backfill', logError(err));
@@ -5181,251 +5071,39 @@ async function start() {
     })
   );
 
-  // The team roster — one READ of every identity on this install (ADR
-  // 260806-222535). Always mounted, and mounted even when the mesh did not
-  // start: the person reading the page is on the roster, so a missing agent
-  // registry is a `warnings[]` entry rather than a dead route.
-  app.use(
-    '/api/team',
-    createTeamRouter({
-      authors: roomAuthors,
-      // `GET /api/team/:memberId/rooms` — where one member can be found (spec
-      // `profile-unification` §3.2). The store rather than `RoomService`: this
-      // is two membership reads and no room behaviour.
-      rooms: roomStore,
-      ...(meshCore && { meshCore }),
-      // What is working RIGHT NOW, from the one map that knows: the room
-      // dispatcher's claims. Nothing else on this install can answer it.
-      activeClaims: () => roomService.listActiveClaims(),
-      // Archived included on purpose — a room can be archived while an agent is
-      // still mid-turn in it, and the status sentence should still name it.
-      listRooms: () =>
-        roomStore
-          .listRooms({ includeArchived: true })
-          .map((room) => ({ id: room.id, name: room.title })),
-      // When each agent last ran, for the agents mesh health cannot speak for
-      // (it is stamped by the claude-code turn paths only). `limit: 1` because
-      // only the `agentActivity` map is wanted here — it is computed across
-      // every session before that trim, so the map is complete either way.
-      sessionActivity: async () => {
-        const { agentActivity } = await listRecentSessions({
-          runtimes: runtimeRegistry.listRuntimes(),
-          agentPaths: meshCore ? meshCore.listWithPaths().map((a) => a.projectPath) : [],
-          limit: 1,
-        });
-        return agentActivity;
-      },
-      ownerAccount: () => readOwnerAccount(),
-      ownerEmail: (userId) => getUserById(userId)?.email ?? null,
-      // `config.profile.displayName` is what the user likes to be called — the
-      // second rung of the operator-name precedence, under the account name.
-      configDisplayName: () => configManager.getAll().profile.displayName,
-      configDisplayNameSource: () => configManager.getAll().profile.displayNameSource,
-      defaultAgentName: () => configManager.getAll().agents.defaultAgent,
-    })
-  );
+  mountOperatorRoutes(app, {
+    dorkHome,
+    roomAuthors,
+    roomStore,
+    activeClaims: () => roomService.listActiveClaims(),
+    readMeshCore: () => meshCore,
+    approvalService,
+    activityService,
+    permissionService,
+    auditLog,
+    notificationService,
+    pushSubscriptions,
+    webPushChannel,
+    mountedRouters,
+    readCapabilityRegistry: () => capabilityRegistry,
+    db,
+  });
 
-  // The operator's own profile — their photo and their name (spec
-  // `identity-consistency` §W3.3, §W3.5). The store is chosen HERE and nowhere
-  // else: the router depends on the `AvatarStore` interface, so the day photos
-  // live somewhere other than this machine, this line is what changes.
-  app.use(
-    '/api/profile',
-    createProfileRouter({
-      avatars: new LocalAvatarStore(dorkHome),
-      caller: (req, res) => resolveCaller(req, res),
-      authors: roomAuthors,
-      ownerAccount: () => readOwnerAccount(),
-      setAccountImage: (userId, imageUrl) => setUserImage(userId, imageUrl),
-      setAccountName: (userId, name) => setUserName(userId, name),
-      setProfileDisplayName: (displayName, source) => {
-        const before = configManager.get('profile');
-        // The name and the record of who wrote it go in ONE write, so no reader
-        // can catch the new name still carrying the previous writer's stamp.
-        // `set` rather than two `setDot`s for exactly that reason (DOR-1022);
-        // WHICH source is the route's call, not this line's.
-        configManager.set('profile', { ...before, displayName, displayNameSource: source });
-        logConfigWrite('the profile route', 'profile', before, configManager.get('profile'));
-      },
-    })
-  );
-
-  // Message search — "where did we talk about X", over the derived index the
-  // reconciler above keeps caught up (message-search spec §6, §7). Always
-  // mounted and read-only. An install whose index is empty answers `[]`, which is
-  // the honest answer and needs no flag; who may see what is resolved per request
-  // through the rooms domain, never from this line.
-  app.use('/api/search', createSearchRouter({ db }));
-
-  // Template catalog — always available, merges built-in + user templates.
-  app.use('/api/templates', createTemplateRouter(dorkHome));
-
-  // Harness Sync — "what does every agent tool do with every agent file in this
-  // project", and the Sync now button that acts on it. The GET writes nothing
-  // (DOR-678's rule, stated in the route); the POST is person-only and takes
-  // the project lock. The approval service is what lets the sync ask about a
-  // package's hooks, exactly as the install path does.
-  app.use('/api/harness', createHarnessRouter({ dorkHome, approvals: approvalService }));
-  mountedRouters.push('harness');
-
-  // Approvals — always available. The cockpit lists what is waiting on a person
-  // and records their decision (spec `agent-trust` §3.3).
-  // The test-only seam that seeds a request card reads it from here; production
-  // mounts no test router, so nothing else does.
-  app.locals.approvalService = approvalService;
-  app.use(
-    '/api/approvals',
-    createApprovalsRouter(approvalService, {
-      activity: activityService,
-      // An "Always allow" writes through the one permission write owner, like
-      // Settings does (spec `agent-permissions` D7).
-      permissions: permissionService,
-      // Names the action for the answer's audit line. Read lazily: the registry
-      // is composed later in boot.
-      describeCapability: (capabilityId) => capabilityRegistry?.get(capabilityId),
-    })
-  );
-
-  // Activity feed — always available, not behind a feature flag.
-  app.use('/api/activity', createActivityRouter(activityService));
-  app.use('/api/audit', createAuditRouter(auditLog));
-  app.locals.activityService = activityService;
-  mountedRouters.push('activity');
-
-  // The Inbox — always available for the same reason: the history is written
-  // whether or not any channel could carry it.
-  app.use('/api/notifications', createNotificationsRouter(notificationService));
-  mountedRouters.push('notifications');
-
-  // Web push — how the escalation ladder reaches a browser DorkOS is not open
-  // in. Always mounted: a person can subscribe a device before anything has ever
-  // needed to escalate, and the routes are what tell the Settings tab whether
-  // this install can push at all.
-  app.use(
-    '/api/push',
-    createPushRouter({ subscriptions: pushSubscriptions, channel: webPushChannel })
-  );
-  mountedRouters.push('push');
-
-  // The bell and the Activity inbox answer extension decisions here (spec
-  // `flow-multiproject` §7.3). Always mounted: with no extension system it
-  // simply lists nothing.
-  app.use('/api/extension-decisions', createExtensionDecisionsRouter());
-  mountedRouters.push('extension-decisions');
-
-  // Mount Extensions routes if extension system initialized successfully.
-  if (extensionManager) {
-    app.use(
-      '/api/extensions',
-      createExtensionsRouter(extensionManager, dorkHome, () => env.DORKOS_DEFAULT_CWD ?? null)
-    );
-
-    // Delegate /api/ext/:id/* to extension-registered Express routers
-    app.use('/api/ext/:id', createExtensionRoutesMiddleware(extensionManager));
-
-    mountedRouters.push('extensions');
-  }
-
-  // Mount Discovery routes when MeshCore is available (delegates to meshCore.discover())
-  if (meshCore) {
-    app.use('/api/discovery', createDiscoveryRouter(meshCore));
-    mountedRouters.push('discovery');
-  }
-
-  // Mount A2A gateway if enabled — requires both Relay (message routing) and Mesh (agent registry)
-  //
-  // The gate is `a2a.enabled` in config, with `DORKOS_A2A_ENABLED` winning in
-  // BOTH directions when it is present — the same shape Tasks and Relay use
-  // above, so a headless deployment keeps deciding from its environment and the
-  // Experiments section can honestly report the setting as locked (DOR-1304).
-  const a2aEnabled =
-    // eslint-disable-next-line no-restricted-syntax -- Checking presence, not value: env.ts can't distinguish "unset" from "set to false"
-    'DORKOS_A2A_ENABLED' in process.env
-      ? env.DORKOS_A2A_ENABLED
-      : (configManager.get('a2a')?.enabled ?? false);
-  if (a2aEnabled && relayCore && meshCore) {
-    // The A2A surface is guarded by createMcpAuth({ surface: 'a2a' }). In
-    // login-off mode the per-instance local token gates JSON-RPC execution, but
-    // that token is a loopback-trust mechanism (a 0600 file only a local operator
-    // can read) — it does not make the surface safe on a non-loopback bind. So the
-    // exposure guard still keys off a network-reachable credential (an env key,
-    // the legacy compat key, or login) to decide whether A2A may mount off loopback.
-    //
-    // This answers "may A2A face the network?" and nothing else. It is NOT what
-    // Agent Cards advertise: execution is gated in every posture, so cards state
-    // the bearer requirement unconditionally (DOR-1824, agent-card-generator.ts).
-    const authConfigured =
-      !!env.MCP_API_KEY?.trim() ||
-      !!configManager.get('mcp')?.apiKey ||
-      configManager.get('auth')?.enabled === true;
-
-    // Exposure guard: refuse to mount the external A2A surface (JSON-RPC plus
-    // the agent-card discovery endpoints) on a non-loopback host when nothing
-    // gates it — otherwise remote prompt execution against every agent would be
-    // open to the network. Unlike the bind check this is not a hard exit: the
-    // loopback cockpit stays usable; only the A2A surface is withheld.
-    const a2aExposure = checkA2aExposure({
-      host: env.DORKOS_HOST,
-      authConfigured,
-      allowInsecureBind: env.DORKOS_ALLOW_INSECURE_BIND,
-    });
-    if (!a2aExposure.allowed) {
-      logger.error(`[A2A] ${a2aExposure.reason}`);
-      // Also to stderr so an operator starting from a terminal sees why the
-      // surface they enabled did not come up.
-      console.error(`\n${a2aExposure.reason}\n`);
-    } else {
-      if (a2aExposure.warning) logger.warn(`[A2A] ${a2aExposure.warning}`);
-
-      // Advertised card URL: prefer the explicit public URL — behind a proxy or
-      // tunnel the {host}:{port} bind is non-routable (e.g. http://0.0.0.0:PORT).
-      // Trailing slashes are stripped so `${baseUrl}/a2a` stays clean.
-      const baseUrl = (env.DORKOS_PUBLIC_URL ?? `http://${env.DORKOS_HOST}:${PORT}`).replace(
-        /\/+$/,
-        ''
-      );
-      const version = env.DORKOS_VERSION_OVERRIDE ?? '0.0.0';
-      const { rpc: rpcRateLimiter, card: cardRateLimiter } = buildA2aRateLimiters({
-        rpcMaxPerMinute: env.DORKOS_A2A_RPC_RATE_LIMIT,
-        cardMaxPerMinute: env.DORKOS_A2A_CARD_RATE_LIMIT,
-      });
-
-      const { router: a2aRouter, fleetCardHandler } = createA2aRouter({
-        meshCore,
-        relay: relayCore,
-        db,
-        baseUrl,
-        version,
-        rpcRateLimiter,
-        cardRateLimiter,
-      });
-
-      // Fleet Agent Card at the spec well-known path (AGENT_CARD_PATH in the
-      // A2A SDK — standard clients discover the card here). The legacy
-      // /.well-known/agent.json path is kept during the transition. Cards get
-      // the lighter discovery limiter, applied before auth so unauthenticated
-      // scraping is throttled too.
-      const a2aAuth = createMcpAuth({ surface: 'a2a' });
-      app.get('/.well-known/agent-card.json', cardRateLimiter, a2aAuth, fleetCardHandler);
-      app.get('/.well-known/agent.json', cardRateLimiter, a2aAuth, fleetCardHandler);
-
-      // Per-agent cards and JSON-RPC under /a2a (per-route limiters live in the router)
-      app.use('/a2a', a2aAuth, a2aRouter);
-
-      // Names the credential a caller must send. "none" was never true here —
-      // execution is gated in every posture; only WHICH credential changes.
-      // With login OFF but an env/legacy key set, acceptor 4 in mcp-auth.ts is
-      // gated on `!authEnabled` — not on the key — so the local token still
-      // passes there too. Name every credential that works, or the line trades
-      // one lie for a smaller one.
-      const a2aAuthMode = authConfigured
-        ? 'auth: API key, login, or local MCP token'
-        : 'auth: local MCP token (loopback)';
-      logger.info(
-        `[A2A] Gateway mounted (fleet card: /.well-known/agent-card.json, RPC: POST /a2a, ${a2aAuthMode})`
-      );
-    }
-  }
+  mountOptionalGateways(app, {
+    get extensionManager() {
+      return extensionManager;
+    },
+    get meshCore() {
+      return meshCore;
+    },
+    get relayCore() {
+      return relayCore;
+    },
+    db,
+    dorkHome,
+    port: PORT,
+    mountedRouters,
+  });
 
   // Mount Admin routes (reset, restart)
   app.use(

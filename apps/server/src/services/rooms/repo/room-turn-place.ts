@@ -1,4 +1,4 @@
-import type { RoomWorktreeRefreshTarget } from './room-worktree-refresh.js';
+import type { RoomWorktreeRefreshTarget } from './worktree/room-worktree-refresh.js';
 import { readOriginalRoomRunnerLaunch } from '../room-turn-runner.js';
 import {
   executeOriginalRoomWorktreeLaunch,
@@ -83,7 +83,7 @@ import {
   executeOriginalRoomWorktreePlacement,
   type RoomWorktreeManager,
 } from './room-worktree-manager.js';
-import { launchFiles, type RoomWorktreeRefreshDeps } from './room-worktree-refresh.js';
+import { launchFiles, type RoomWorktreeRefreshDeps } from './worktree/room-worktree-refresh.js';
 
 /** Where one room turn stands, and what it may reach. */
 export interface RoomTurnPlace {

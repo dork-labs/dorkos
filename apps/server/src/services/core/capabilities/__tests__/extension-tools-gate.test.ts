@@ -24,7 +24,7 @@ import type { ExtensionToolSpec } from '../extension-contribution.js';
 import { ApprovalService, isAlwaysOffered } from '../../approvals/index.js';
 import { eventFanOut } from '../../event-fan-out.js';
 import { permissionActions } from '../../permissions/index.js';
-import { MCP_TOOL_TIERS } from '../../mcp-tool-tiers.js';
+import { MCP_TOOL_TIERS } from '../../mcp-tools/mcp-tool-tiers.js';
 import { composeCapabilityRegistryForDocs } from '../../self-description/dorkos-registry.js';
 import { resolveToolVisibility } from '../../../runtimes/shared/permission-tool-filter.js';
 import type { AgentIdentity } from '../../agent-identity/agent-identity-service.js';

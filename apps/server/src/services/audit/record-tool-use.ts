@@ -57,7 +57,7 @@ import {
   OPENCODE_DORKOS_TOOL_PREFIX,
 } from '../runtimes/shared/dorkos-tool-names.js';
 import { homeOf, resolveAgentHome, turnAgentOf } from '../core/agent-identity/agent-home.js';
-import { MCP_TOOL_TIERS } from '../core/mcp-tool-tiers.js';
+import { MCP_TOOL_TIERS } from '../core/mcp-tools/mcp-tool-tiers.js';
 import { auditTrail, recordAudit } from './audit-trail.js';
 import { redactAuditText } from './audit-log.js';
 

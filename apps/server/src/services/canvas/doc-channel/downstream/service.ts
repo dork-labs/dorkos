@@ -1,5 +1,15 @@
+import {
+  createIsolatedDownstreamEmitterCustody,
+  type OriginalEmitterBinding,
+} from './emitter-custody.js';
+import {
+  sendOriginalNativeRoom,
+  sendOriginalNativeRoomInsideFrame,
+  readOriginalReplyBatch,
+} from './native-frame-operations.js';
+import type { OriginalDownstreamOperationView } from './native-frame-context.js';
 /** Durable agent events, state CAS and exact per-input acknowledgements without a routing/wake port. */
-import { randomUUID } from 'node:crypto';
+
 import { and, eq, canvasDocDeliveries, sql, type Db, type DbTransaction } from '@dorkos/db';
 import {
   CanvasChannelAppAckSchema,
@@ -12,10 +22,7 @@ import {
   type IngestReceipt,
 } from '@dorkos/shared/canvas-channel-schemas';
 import { hashApprovalInput } from '../../../core/approvals/approval-input-hash.js';
-import {
-  isServerPrincipal,
-  type ServerPrincipalProof,
-} from '../../../connectors/principal/server-principal.js';
+import { isServerPrincipal } from '../../../connectors/principal/server-principal.js';
 import type { DocChannelActor } from '../authorization.js';
 import {
   DocChannelStore,
@@ -25,284 +32,73 @@ import {
 } from '../store.js';
 import { patchDocState } from './state.js';
 
-import {
-  requireNativePrincipalDatabase,
-  requireSameOriginalNativePrincipalPorts,
-} from '../../../connectors/principal/runtime-principal-service.js';
-import type {
-  OriginalCommittedRoomResponder,
-  PreparedRoomResponder,
-  OriginalRoomEmissionStage,
-} from '../current/current-operation-types.js';
-import {
-  prepareOriginalRoomResponderEmission,
-  refreshOriginalRoomEmissionStage,
-  readOriginalRoomEmissionPrincipal,
-  readOriginalRoomEmissionSource,
-  requireOriginalRoomEmissionTransaction,
-  requireOriginalRoomEmissionPrincipalPort,
-  retireOriginalRoomEmissionStage,
-  executeOriginalRoomResponderEmission,
-  requireOriginalRoomEmissionFrameTransaction,
-  requireOriginalRoomEmissionStageClosed,
-} from '../operations/room-responder-operation.js';
+import { requireNativePrincipalDatabase } from '../../../connectors/principal/runtime-principal-service.js';
+import type { OriginalRoomEmissionStage } from '../current/current-operation-types.js';
+
 import type { OriginalDownstreamRoomEmitter } from './native-room-emitter.js';
 
-interface PreparedOriginalEmission {
-  request: CanvasChannelSendRequest;
-  ack: ReturnType<typeof CanvasChannelAppAckSchema.parse> | undefined;
-  principal: ServerPrincipalProof;
-  source: ReturnType<typeof readOriginalRoomEmissionSource>;
-  now: string;
-}
-interface OriginalEmitterBinding {
-  db: Db;
-  principals: object;
-  retired: boolean;
-  stop?: Promise<void>;
-  source: ReturnType<typeof requireOriginalNativeDownstreamStore>;
-  active?: { stage: OriginalRoomEmissionStage; tx: DbTransaction; principal: ServerPrincipalProof };
-  stages: Set<OriginalRoomEmissionStage>;
-  prepared: WeakMap<OriginalRoomEmissionStage, PreparedOriginalEmission>;
-  pending: Set<Promise<{ receipt: IngestReceipt }>>;
-  inside: (
-    stage: OriginalRoomEmissionStage,
-    tx: DbTransaction,
-    request: CanvasChannelSendRequest
-  ) => { receipt: IngestReceipt };
-  send: (stage: OriginalRoomEmissionStage, raw: unknown) => Promise<{ receipt: IngestReceipt }>;
-}
-const originalEmitters = new WeakMap<OriginalDownstreamRoomEmitter, OriginalEmitterBinding>();
-const originalEmitterStores = new WeakSet<DocChannelStore>();
-
-/** Lookup-only actual captured child closure. No stop, reporter or exception-class inference. */
-export function requireOriginalDownstreamRoomEmissionClosed(
-  emitter: OriginalDownstreamRoomEmitter,
-  db: Db
-): void {
-  const own = originalEmitters.get(emitter);
-  if (!own || own.db !== db) throw new Error('Original downstream child/SAME database required');
-  if (own.active || own.pending.size !== 0)
-    throw new Error('Original downstream emission remains active');
-  // Closed stages are removed only after the original engine-owned closed witness
-  // positively succeeds. Retained stages include UNKNOWN raw causes, even undefined.
-  for (const stage of own.stages) requireOriginalRoomEmissionStageClosed(stage, db);
-}
-
-/** Only the actual captured sender callback can establish a native final-transaction context. */
-export function requireOriginalDownstreamEmissionTransaction(
-  emitter: OriginalDownstreamRoomEmitter,
-  stage: OriginalRoomEmissionStage,
-  db: Db,
-  tx: DbTransaction,
-  principal: ServerPrincipalProof
-): void {
-  const own = originalEmitters.get(emitter);
-  if (
-    !own ||
-    own.retired ||
-    own.db !== db ||
-    own.active?.stage !== stage ||
-    own.active.tx !== tx ||
-    own.active.principal !== principal
-  )
-    throw new DocDownstreamError('ORIGINAL_DOWNSTREAM_TRANSACTION_REQUIRED', 409);
-  requireOriginalRoomEmissionPrincipalPort(stage, db, own.principals);
-}
-
-/** Fixed original installation-child lookup checks SAME constructor-owned principal core. */
-export function requireOriginalDownstreamRoomEmitterOwner(
-  emitter: OriginalDownstreamRoomEmitter,
-  db: Db,
-  principals: object
-): void {
-  const own = originalEmitters.get(emitter);
-  if (!own || own.db !== db || own.retired)
-    throw new DocDownstreamError('ORIGINAL_DOWNSTREAM_EMITTER_REQUIRED', 409);
-  requireNativePrincipalDatabase(principals, db);
-  requireSameOriginalNativePrincipalPorts(own.principals, principals);
-}
-
-/** Only an actual original engine-generated Room frame may invoke the captured synchronous child. */
-export function sendOriginalDownstreamRoomInsideFrame(
-  emitter: OriginalDownstreamRoomEmitter,
-  stage: OriginalRoomEmissionStage,
-  tx: DbTransaction,
-  request: CanvasChannelSendRequest
-): { receipt: IngestReceipt } {
-  const own = originalEmitters.get(emitter);
-  if (!own || own.retired || own.prepared.get(stage)?.request !== request)
-    throw new DocDownstreamError('ORIGINAL_DOWNSTREAM_FRAME_REQUIRED', 409);
-  requireOriginalRoomEmissionFrameTransaction(stage, own.db, tx, emitter);
-  return own.inside(stage, tx, request);
-}
-
-/** The native lane supplies its actual committed tuple, never a page actor or source DTO. */
-export function sendOriginalRoomResponderEvent(
-  emitter: OriginalDownstreamRoomEmitter,
-  token: OriginalCommittedRoomResponder,
-  runtime: object,
-  prepared: PreparedRoomResponder,
-  operation: object,
-  raw: unknown
-): Promise<{ receipt: IngestReceipt }> {
-  return enqueueOriginalRoomResponderEvent(emitter, token, runtime, prepared, operation, raw);
-}
-/** Fixed TestMode script: correlation comes from the original stage, never its model prompt. */
-export function sendOriginalRoomResponderScriptStep(
-  emitter: OriginalDownstreamRoomEmitter,
-  token: OriginalCommittedRoomResponder,
-  runtime: object,
-  prepared: PreparedRoomResponder,
-  operation: object,
-  step: 'ack-first' | 'reply-second'
-): Promise<{ receipt: IngestReceipt }> {
-  if (step !== 'ack-first' && step !== 'reply-second')
-    return Promise.reject(new DocDownstreamError('INVALID_ORIGINAL_ROOM_SCRIPT_STEP', 409));
-  return enqueueOriginalRoomResponderEvent(
-    emitter,
-    token,
-    runtime,
-    prepared,
-    operation,
-    undefined,
-    step
-  );
-}
-/** Original installation child recognition before a runtime captures its opaque emitter. */
-export function requireOriginalRoomEmitterPrincipalPort(
-  emitter: OriginalDownstreamRoomEmitter,
-  principals: object
-): void {
-  const own = originalEmitters.get(emitter);
-  if (!own || own.retired)
-    throw new DocDownstreamError('ORIGINAL_DOWNSTREAM_EMITTER_REQUIRED', 409);
-  requireSameOriginalNativePrincipalPorts(own.principals, principals);
-}
-
-/** The native lane supplies its actual committed token/runtime/prepared/op, never a page DTO. */
-function enqueueOriginalRoomResponderEvent(
-  emitter: OriginalDownstreamRoomEmitter,
-  token: OriginalCommittedRoomResponder,
-  runtime: object,
-  prepared: PreparedRoomResponder,
-  operation: object,
-  raw: unknown,
-  script?: 'ack-first' | 'reply-second'
-): Promise<{ receipt: IngestReceipt }> {
-  const own = originalEmitters.get(emitter);
-  if (!own || own.retired)
-    return Promise.reject(new DocDownstreamError('ORIGINAL_DOWNSTREAM_EMITTER_REQUIRED', 409));
-  // Register the complete preparation/send/retirement promise before owner callbacks can reenter stop.
-  const promise = Promise.resolve().then(async () => {
-    if (own.retired) throw new DocDownstreamError('ORIGINAL_DOWNSTREAM_EMITTER_RETIRED', 409);
-    const stage = await prepareOriginalRoomResponderEmission(
-      token,
-      runtime,
-      prepared,
-      operation,
-      own.db
-    );
-    own.stages.add(stage);
-    let failed = false;
-    let first: unknown;
-    let result: { receipt: IngestReceipt } | undefined;
-    try {
-      requireOriginalRoomEmissionPrincipalPort(stage, own.db, own.principals);
-      if (own.retired) throw new DocDownstreamError('ORIGINAL_DOWNSTREAM_EMITTER_RETIRED', 409);
-      let request = raw;
-      if (script !== undefined) {
-        const source = readOriginalRoomEmissionSource(stage, own.db);
-        if (source.inputs.length !== 2 || source.inputs[0].eventId === source.inputs[1].eventId)
-          throw new DocDownstreamError('ORIGINAL_ROOM_SCRIPT_REQUIRES_TWO_INPUTS', 409);
-        const eventId = randomUUID();
-        request =
-          script === 'ack-first'
-            ? {
-                documentId: source.documentId,
-                roomId: source.roomId,
-                eventId,
-                type: 'app.ack',
-                payload: {
-                  batchId: source.batchId,
-                  routeId: source.routeId,
-                  eventIds: [source.inputs[0].eventId],
-                  outcome: 'handled',
-                },
-              }
-            : {
-                documentId: source.documentId,
-                roomId: source.roomId,
-                eventId,
-                type: 'agent.reply',
-                payload: {
-                  inReplyTo: [source.inputs[1].eventId],
-                  text: 'Original native second-input reply',
-                },
-              };
-      }
-      result = await own.send(stage, request);
-    } catch (cause) {
-      failed = true;
-      first = cause;
-    } finally {
-      try {
-        retireOriginalRoomEmissionStage(stage, own.db);
-      } catch (cause) {
-        if (!failed) {
-          failed = true;
-          first = cause;
-        }
-      }
-      try {
-        requireOriginalRoomEmissionStageClosed(stage, own.db);
-        own.stages.delete(stage);
-      } catch (cause) {
-        own.retired = true;
-        if (!failed) {
-          failed = true;
-          first = cause;
-        }
-      }
-    }
-    if (failed) throw first;
-    return result!;
-  });
-  own.pending.add(promise);
-  void promise.then(
-    () => {
-      own.pending.delete(promise);
-    },
-    () => {
-      own.pending.delete(promise);
-    }
-  );
-  return promise;
-}
-
-/** Captured installation cleanup retires new sends then drains actual pending original sends. */
-function stopOriginalEmitter(emitter: OriginalDownstreamRoomEmitter): Promise<void> {
-  const own = originalEmitters.get(emitter)!;
-  if (own.stop) return own.stop;
-  own.retired = true;
-  own.stop = Promise.allSettled([...own.pending]).then(() => {
-    // Ordinary settled sender refusals are drained. Only original native close witnesses decide custody.
-    let failed = false;
-    let first: unknown;
-    for (const stage of own.stages) {
-      try {
-        requireOriginalRoomEmissionStageClosed(stage, own.db);
-        own.stages.delete(stage);
-      } catch (cause) {
-        if (!failed) {
-          failed = true;
-          first = cause;
-        }
-      }
-    }
-    if (failed) throw first;
-  });
-  return own.stop;
+const originalDownstreamEmitterCustody = createIsolatedDownstreamEmitterCustody();
+const originalEmitters = originalDownstreamEmitterCustody.originalEmitters;
+const originalEmitterStores = originalDownstreamEmitterCustody.originalEmitterStores;
+const stopOriginalEmitter = originalDownstreamEmitterCustody.stopOriginalEmitter;
+/** Original emitter operation bound to the service module-private custody instance. */
+export const requireOriginalDownstreamRoomEmissionClosed: (
+  ...args: Parameters<
+    typeof originalDownstreamEmitterCustody.requireOriginalDownstreamRoomEmissionClosed
+  >
+) => ReturnType<
+  typeof originalDownstreamEmitterCustody.requireOriginalDownstreamRoomEmissionClosed
+> = originalDownstreamEmitterCustody.requireOriginalDownstreamRoomEmissionClosed;
+/** Original emitter operation bound to the service module-private custody instance. */
+export const requireOriginalDownstreamEmissionTransaction: (
+  ...args: Parameters<
+    typeof originalDownstreamEmitterCustody.requireOriginalDownstreamEmissionTransaction
+  >
+) => ReturnType<
+  typeof originalDownstreamEmitterCustody.requireOriginalDownstreamEmissionTransaction
+> = originalDownstreamEmitterCustody.requireOriginalDownstreamEmissionTransaction;
+/** Original emitter operation bound to the service module-private custody instance. */
+export const requireOriginalDownstreamRoomEmitterOwner: (
+  ...args: Parameters<
+    typeof originalDownstreamEmitterCustody.requireOriginalDownstreamRoomEmitterOwner
+  >
+) => ReturnType<typeof originalDownstreamEmitterCustody.requireOriginalDownstreamRoomEmitterOwner> =
+  originalDownstreamEmitterCustody.requireOriginalDownstreamRoomEmitterOwner;
+/** Original emitter operation bound to the service module-private custody instance. */
+export const sendOriginalDownstreamRoomInsideFrame: (
+  ...args: Parameters<typeof originalDownstreamEmitterCustody.sendOriginalDownstreamRoomInsideFrame>
+) => ReturnType<typeof originalDownstreamEmitterCustody.sendOriginalDownstreamRoomInsideFrame> =
+  originalDownstreamEmitterCustody.sendOriginalDownstreamRoomInsideFrame;
+/** Original emitter operation bound to the service module-private custody instance. */
+export const sendOriginalRoomResponderEvent: (
+  ...args: Parameters<typeof originalDownstreamEmitterCustody.sendOriginalRoomResponderEvent>
+) => ReturnType<typeof originalDownstreamEmitterCustody.sendOriginalRoomResponderEvent> =
+  originalDownstreamEmitterCustody.sendOriginalRoomResponderEvent;
+/** Original emitter operation bound to the service module-private custody instance. */
+export const sendOriginalRoomResponderScriptStep: (
+  ...args: Parameters<typeof originalDownstreamEmitterCustody.sendOriginalRoomResponderScriptStep>
+) => ReturnType<typeof originalDownstreamEmitterCustody.sendOriginalRoomResponderScriptStep> =
+  originalDownstreamEmitterCustody.sendOriginalRoomResponderScriptStep;
+/** Original emitter operation bound to the service module-private custody instance. */
+export const requireOriginalRoomEmitterPrincipalPort: (
+  ...args: Parameters<
+    typeof originalDownstreamEmitterCustody.requireOriginalRoomEmitterPrincipalPort
+  >
+) => ReturnType<typeof originalDownstreamEmitterCustody.requireOriginalRoomEmitterPrincipalPort> =
+  originalDownstreamEmitterCustody.requireOriginalRoomEmitterPrincipalPort;
+const originalDownstreamOperationViews = new WeakMap<object, OriginalDownstreamOperationView>();
+const originalDownstreamApply = Reflect.apply,
+  originalDownstreamGet = WeakMap.prototype.get,
+  originalDownstreamSet = WeakMap.prototype.set;
+/** Refuse all public downstream, emitter, Db or forged values before exposing original private ports. */
+export function readOriginalDownstreamOperationView(
+  owner: object
+): OriginalDownstreamOperationView {
+  const view = originalDownstreamApply(originalDownstreamGet, originalDownstreamOperationViews, [
+    owner,
+  ]) as OriginalDownstreamOperationView | undefined;
+  if (!view) throw new Error('Unknown original downstream operation owner.');
+  return view;
 }
 
 /** Verified document-only write authority; senderKey is server-derived and never projected to pages. */
@@ -347,6 +143,7 @@ function synchronous<T>(value: T): T {
 }
 /** Agent-originated persistence. No dispatcher, retry, admission or runtime wake callback exists here. */
 export class DocChannelDownstream {
+  readonly #operationKey = Object.freeze({});
   /** One original downstream child is born with its native origin, SAME Db/store/principal core. */
   static createInstallationDownstream(
     db: Db,
@@ -400,6 +197,29 @@ export class DocChannelDownstream {
     });
     this.#clock = clock;
     this.#senderLimit = senderLimit;
+    originalDownstreamApply(originalDownstreamSet, originalDownstreamOperationViews, [
+      this.#operationKey,
+      Object.freeze({
+        store: this.#store,
+        emitter: (emitter: OriginalDownstreamRoomEmitter) => originalEmitters.get(emitter),
+        actor: (actor: DocChannelActor) => this.#actor(actor),
+        clock: () => this.#clock(),
+        atomic: <T>(work: () => T): T => this.#atomic(work),
+        rate: (access: DocDownstreamAccess, now: string, tx: DbTransaction) =>
+          this.#rate(access, now, tx),
+        event: (
+          documentId: string,
+          eventId: string,
+          type: string,
+          payload: CanvasChannelJsonValue,
+          hash: string,
+          request: CanvasChannelSendRequest | CanvasChannelPatchStateRequest,
+          access: DocDownstreamAccess,
+          now: string
+        ) => this.#event(documentId, eventId, type, payload, hash, request, access, now),
+        receipt: (event: DocEventRow, duplicate: boolean) => this.#receipt(event, duplicate),
+      }),
+    ]);
   }
   /** Persist one authorized downstream event, settling only the exact named ack inputs when applicable. */
   async send(raw: unknown, actor: DocChannelActor): Promise<{ receipt: IngestReceipt }> {
@@ -504,102 +324,14 @@ export class DocChannelDownstream {
     actor: DocChannelActor,
     tx?: DbTransaction
   ): DocBatchRow | undefined {
-    const claims = actor.principal.claims;
-    if (claims.kind !== 'runtime') return undefined;
-    const payload = request.payload;
-    if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return undefined;
-    const ids = (payload as { inReplyTo?: unknown }).inReplyTo;
-    if (
-      !Array.isArray(ids) ||
-      !ids.length ||
-      ids.length > 100 ||
-      ids.some((id) => typeof id !== 'string') ||
-      new Set(ids).size !== ids.length
-    )
-      return undefined;
-    const candidates = new Map<string, DocBatchRow>();
-    for (const delivery of this.#store.listDeliveries(request.documentId, ids[0]!, tx)) {
-      if (!delivery.batchId) continue;
-      const batch = this.#store.getBatch(delivery.batchId, tx);
-      if (
-        !batch ||
-        batch.documentId !== request.documentId ||
-        !batch.scope.startsWith('session:') ||
-        !ids.every((id) => batch.inputEventIds.includes(id))
-      )
-        continue;
-      const grant = this.#store.getGrant(batch.grantId, tx);
-      if (
-        !grant ||
-        grant.targetAgentId !== claims.agentId ||
-        grant.targetRuntime !== claims.runtime
-      )
-        continue;
-      if (
-        !ids.every((id) =>
-          this.#store
-            .listDeliveries(request.documentId, id, tx)
-            .some((row) => row.batchId === batch.batchId && row.routeId === batch.routeId)
-        )
-      )
-        continue;
-      candidates.set(batch.batchId, batch);
-    }
-    // Before preflight, select only an identifier; disclose ambiguity after current responder authorization.
-    if (tx && candidates.size > 1)
-      throw new DocDownstreamError('INVALID_AGENT_REPLY_CORRELATION', 409);
-    return candidates.values().next().value;
+    return readOriginalReplyBatch(this.#operationKey, request, actor, tx);
   }
   async #sendNativeRoom(
     emitter: OriginalDownstreamRoomEmitter,
     stage: OriginalRoomEmissionStage,
     raw: unknown
   ): Promise<{ receipt: IngestReceipt }> {
-    const own = originalEmitters.get(emitter)!;
-    const request = CanvasChannelSendRequestSchema.parse(raw);
-    const ack =
-      request.type === 'app.ack' ? CanvasChannelAppAckSchema.parse(request.payload) : undefined;
-    const principal = readOriginalRoomEmissionPrincipal(stage, own.db);
-    const source = readOriginalRoomEmissionSource(stage, own.db);
-    this.#actor({ surface: 'capability', principal });
-    if (
-      request.documentId !== source.documentId ||
-      request.roomId !== source.roomId ||
-      source.scope !== `room:${source.roomId}`
-    )
-      throw new DocDownstreamError('INVALID_NATIVE_ROOM_CORRELATION', 409);
-    const ids = source.inputs.map((input) => input.eventId);
-    if (ack) {
-      if (
-        ack.batchId !== source.batchId ||
-        ack.routeId !== source.routeId ||
-        ack.eventIds.some((id) => !ids.includes(id))
-      )
-        throw new DocDownstreamError('INVALID_APP_ACK_CORRELATION', 409);
-    } else {
-      const reply = request.payload as { inReplyTo?: unknown };
-      if (
-        !reply ||
-        typeof reply !== 'object' ||
-        !Array.isArray(reply.inReplyTo) ||
-        !reply.inReplyTo.length ||
-        new Set(reply.inReplyTo).size !== reply.inReplyTo.length ||
-        reply.inReplyTo.some((id) => typeof id !== 'string' || !ids.includes(id))
-      )
-        throw new DocDownstreamError('INVALID_NATIVE_ROOM_REPLY_CORRELATION', 409);
-    }
-    // All original awaited preflight happened in prepare. Capture configured clock before final native refresh.
-    const now = this.#clock().toISOString();
-    refreshOriginalRoomEmissionStage(stage, own.db);
-    if (own.retired) throw new DocDownstreamError('ORIGINAL_DOWNSTREAM_EMITTER_RETIRED', 409);
-    if (own.prepared.has(stage))
-      throw new DocDownstreamError('ORIGINAL_DOWNSTREAM_STAGE_REENTRY', 409);
-    own.prepared.set(stage, { request, ack, principal, source, now });
-    try {
-      return executeOriginalRoomResponderEmission(stage, emitter, request);
-    } finally {
-      own.prepared.delete(stage);
-    }
+    return sendOriginalNativeRoom(this.#operationKey, emitter, stage, raw);
   }
   #sendNativeRoomInsideFrame(
     emitter: OriginalDownstreamRoomEmitter,
@@ -607,113 +339,7 @@ export class DocChannelDownstream {
     tx: DbTransaction,
     request: CanvasChannelSendRequest
   ): { receipt: IngestReceipt } {
-    const own = originalEmitters.get(emitter)!;
-    const prepared = own.prepared.get(stage);
-    if (!prepared || prepared.request !== request)
-      throw new DocDownstreamError('ORIGINAL_DOWNSTREAM_STAGE_REQUIRED', 409);
-    const { ack, principal, source, now } = prepared;
-    return this.#atomic(() => {
-      if (own.active) throw new DocDownstreamError('ORIGINAL_DOWNSTREAM_TRANSACTION_REENTRY', 409);
-      own.active = { stage, tx, principal };
-      try {
-        requireOriginalRoomEmissionTransaction(stage, own.db, tx, principal, emitter);
-        const batch = own.source.getBatch(source.batchId, tx);
-        const channel = own.source.getChannel(source.documentId, tx);
-        if (
-          !batch ||
-          batch.generation !== source.generation ||
-          batch.documentId !== source.documentId ||
-          batch.routeId !== source.routeId ||
-          batch.grantId !== source.grantId ||
-          batch.grantRevision !== source.grantRevision ||
-          !channel ||
-          channel.closedAt ||
-          channel.scope !== source.scope
-        )
-          throw new DocDownstreamError('INVALID_NATIVE_ROOM_CORRELATION', 409);
-        const claims = principal.claims;
-        if (claims.kind !== 'runtime')
-          throw new DocDownstreamError('CANVAS_DOCUMENT_NOT_FOUND', 404);
-        const access: DocDownstreamAccess = {
-          id: source.documentId,
-          scope: source.scope,
-          senderKey: `runtime:${claims.runtime}:${claims.agentId}`,
-          evidence: {
-            agentId: claims.agentId,
-            runtime: claims.runtime,
-            sessionId: claims.canonicalSessionId,
-            agentPath: claims.agentPath,
-            bindingId: claims.bindingId,
-            grantId: source.grantId,
-            grantRevision: source.grantRevision,
-            batchId: source.batchId,
-            generation: source.generation,
-            admissionId: source.admissionId,
-            originalSourceHash: source.originalSourceHash,
-          },
-        };
-        const hash = hashApprovalInput(request);
-        const existing = own.source.getEvent(source.documentId, request.eventId, tx);
-        if (existing) {
-          if (existing.envelopeHash !== hash || existing.direction !== 'downstream')
-            throw new DocDownstreamError('DOC_EVENT_ID_CONFLICT', 409);
-          requireOriginalRoomEmissionTransaction(stage, own.db, tx, principal, emitter);
-          return { receipt: this.#receipt(existing, true) };
-        }
-        this.#rate(access, now, tx);
-        const deliveries = ack
-          ? ack.eventIds.map((id) =>
-              own.source
-                .listDeliveries(source.documentId, id, tx)
-                .find((row) => row.routeId === source.routeId && row.batchId === source.batchId)
-            )
-          : [];
-        if (deliveries.some((row) => !row || (row.ackOutcome && row.ackOutcome !== ack!.outcome)))
-          throw new DocDownstreamError('INVALID_APP_ACK_CORRELATION', 409);
-        // Fixed last native/current source/FIRST gate; no awaited/configured callback follows before mutations.
-        requireOriginalRoomEmissionTransaction(stage, own.db, tx, principal, emitter);
-        for (const row of deliveries) {
-          if (row!.ackOutcome) continue;
-          tx.update(canvasDocDeliveries)
-            .set({
-              ackOutcome: ack!.outcome,
-              acknowledgedAt: now,
-              acknowledgedBy: access.senderKey,
-              ackEvidence: {
-                ...access.evidence,
-                downstreamEventId: request.eventId,
-                routeId: source.routeId,
-              },
-              updatedAt: now,
-            })
-            .where(
-              and(
-                eq(canvasDocDeliveries.documentId, source.documentId),
-                eq(canvasDocDeliveries.eventId, row!.eventId),
-                eq(canvasDocDeliveries.routeId, source.routeId)
-              )
-            )
-            .run();
-        }
-        const event = own.source.appendEvent(
-          this.#event(
-            source.documentId,
-            request.eventId,
-            request.type,
-            request.payload,
-            hash,
-            request,
-            access,
-            now
-          ),
-          tx
-        );
-        requireOriginalRoomEmissionTransaction(stage, own.db, tx, principal, emitter);
-        return { receipt: this.#receipt(event, false) };
-      } finally {
-        own.active = undefined;
-      }
-    });
+    return sendOriginalNativeRoomInsideFrame(this.#operationKey, emitter, stage, tx, request);
   }
   /** Advance separate JSON state and append its patch atomically; retries return the original revision. */
   async patchState(

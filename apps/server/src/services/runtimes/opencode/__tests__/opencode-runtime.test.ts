@@ -2899,7 +2899,7 @@ import {
 } from '../../../canvas/doc-channel/service.js';
 import { wakeAuthorizedRoomDue } from '../../../canvas/doc-channel/authorization.js';
 import { docDocumentGeneration } from '../../../canvas/doc-channel/identity/incarnation.js';
-import { feedProjector } from '../../../session/session-event-normalizer.js';
+import { feedProjector } from '../../../session/projection/session-event-normalizer.js';
 import type { PreparedRoomResponder } from '../../../canvas/doc-channel/current/current-operation-types.js';
 
 describe('genuine original OpenCode Room source', () => {

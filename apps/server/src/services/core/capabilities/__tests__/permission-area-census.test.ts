@@ -14,7 +14,7 @@ import { describe, it, expect } from 'vitest';
 import { PERMISSION_AREA_IDS, isFloorArea } from '@dorkos/shared/permissions';
 
 import { composeCapabilityRegistryForDocs } from '../../self-description/dorkos-registry.js';
-import { MCP_TOOL_TIERS, type McpToolTier } from '../../mcp-tool-tiers.js';
+import { MCP_TOOL_TIERS, type McpToolTier } from '../../mcp-tools/mcp-tool-tiers.js';
 import { serializeCapability } from '../registry.js';
 
 /** One action as the census reads it, from either source. */

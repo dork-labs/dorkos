@@ -67,7 +67,7 @@ import {
 import { ApprovalService } from '../../services/core/approvals/index.js';
 import { eventFanOut } from '../../services/core/event-fan-out.js';
 import { mcpDomain } from '../../services/mesh/mcp-capabilities.js';
-import type { McpCapabilityDeps } from '../../services/mesh/mcp-capability-deps.js';
+import type { McpCapabilityDeps } from '../../services/mesh/capabilities/mcp-capability-deps.js';
 import { createExternalMcpServer } from '../../services/core/mcp-server.js';
 import type { McpToolDeps } from '../../services/runtimes/claude-code/mcp-tools/types.js';
 import { NotifyBudget } from '../../services/relay/notify-budget.js';

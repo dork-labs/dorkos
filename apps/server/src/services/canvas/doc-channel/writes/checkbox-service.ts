@@ -1,38 +1,27 @@
 /** Durable physical checkbox effects through genuine current authority and fixed completion. */
-import { ZodError } from 'zod';
-import { open, rename } from 'node:fs/promises';
 import { type Db, type DbTransaction } from '@dorkos/db';
 import { CanvasChannelCheckboxRequestSchema } from '@dorkos/shared/canvas-channel-schemas';
 import type { DocChannelActor } from '../authorization.js';
 import {
   DocChannelStore,
-  DocChannelCorruptionError,
   requireDocChannelStoreDatabase,
   type DocWriteIntentRow,
 } from '../store.js';
 import { findCheckboxIntent, quarantineCheckboxIntent } from './write-recovery.js';
 import {
   CanonicalFileWriteCoordinator,
-  CanonicalFileIdentityChangedError,
   type CanonicalWriteLease,
   requireOriginalCanonicalWriteLease,
-  withRecognizedCanonicalFiles,
 } from './canonical-writer.js';
 import {
   assertCheckboxReplacement,
-  cleanCheckboxTemporary,
   readCheckboxSource,
   readOriginalCheckboxFileCloseFailure,
-  verifyCheckboxTemporary,
 } from './checkbox-file.js';
-import { prepareCheckboxBytes, rawByteHash } from './checkbox-bytes.js';
 import {
   CheckboxWriteFence,
   CheckboxFenceUnavailableError,
   hasRecognizedCheckboxUnresolved,
-  assertRecognizedCheckboxAdmission,
-  assertRecognizedCheckboxOwnedAdmission,
-  assertRecognizedCheckboxRecoveryRead,
 } from './checkbox-fence.js';
 import {
   DocCheckboxAuthority,
@@ -44,20 +33,19 @@ import type { DocIngestLimits } from '../current/accounting.js';
 import type { DocChannelService } from '../service.js';
 import { requireInstallationOriginalCheckboxWriter } from './installation-file-writes.js';
 import {
-  UNRESOLVED_CHECKBOX_STATUSES,
-  VerifiedCheckboxAuthoritySchema,
   CheckboxEvidenceError,
   validateCheckboxEvidence,
   freezeCheckboxData,
-  requireSameCheckboxAuthority,
   preEffectCheckboxConflict,
-  observedCheckboxIntent,
   sync,
   type CheckboxRequest,
   type CheckboxReceipt,
   type VerifiedCheckboxAuthority,
   type CheckboxServiceOptions,
 } from './checkbox-evidence.js';
+import { runOriginalCheckboxToggleCurrent } from './checkbox/checkbox-toggle-current.js';
+import { runOriginalCheckboxRecoverCurrent } from './checkbox/checkbox-recover-current.js';
+import type { OriginalCheckboxWriteOperationContext } from './checkbox/checkbox-operation-context.js';
 export {
   VerifiedCheckboxAuthoritySchema,
   type CheckboxRequest,
@@ -66,6 +54,23 @@ export {
   type CheckboxServiceOptions,
 } from './checkbox-evidence.js';
 export { UNRESOLVED_CHECKBOX_STATUSES } from './checkbox-evidence.js';
+
+const checkboxOperationOwners = new WeakMap<object, OriginalCheckboxWriteOperationContext>();
+const checkboxOperationGet = WeakMap.prototype.get;
+const checkboxOperationSet = WeakMap.prototype.set;
+const checkboxOperationApply = Reflect.apply;
+/** Recognize only the inaccessible constructor key; public writer, DB and copied views cannot issue operations. */
+export function readOriginalCheckboxWriteOperationContext(
+  engineOwner: object
+): OriginalCheckboxWriteOperationContext {
+  const context: OriginalCheckboxWriteOperationContext | undefined = checkboxOperationApply(
+    checkboxOperationGet,
+    checkboxOperationOwners,
+    [engineOwner]
+  );
+  if (!context) throw new CheckboxEvidenceError('Foreign original checkbox operation owner.');
+  return context;
+}
 
 const originalCheckboxWriters = new WeakMap<
   DocCheckboxWriteService,
@@ -137,6 +142,8 @@ export function recoverOriginalCheckboxWriter(
 
 /** No caller-controlled authority checker, host acceptance callback or default delivery policy. */
 export class DocCheckboxWriteService {
+  readonly #operationKey: object;
+
   readonly #writeFence: CheckboxWriteFence;
   readonly #db: Db;
   readonly #store: DocChannelStore;
@@ -193,6 +200,35 @@ export class DocCheckboxWriteService {
       toggle: (raw, actor) => this.#toggleOriginal(raw, actor),
       recover: (id) => this.#recoverOriginal(id),
     });
+    const operationKey = {};
+    this.#operationKey = operationKey;
+    const operationView: OriginalCheckboxWriteOperationContext = {
+      authority: this.#authority,
+      completion: this.#completion,
+      coordinator: this.#coordinator,
+      db: this.#db,
+      store: this.#store,
+      writeFence: this.#writeFence,
+      authorityRefused: (...args) => this.#authorityRefused(...args),
+      boundary: (...args) => this.#boundary(...args),
+      checkpoint: (...args) => this.#checkpoint(...args),
+      complete: (...args) => this.#complete(...args),
+      duplicate: (...args) => this.#duplicate(...args),
+      find: (...args) => this.#find(...args),
+      live: (...args) => this.#live(...args),
+      preEffectConflict: (...args) => this.#preEffectConflict(...args),
+      quarantine: (...args) => this.#quarantine(...args),
+      readSource: (...args) => this.#readSource(...args),
+      receipt: (...args) => this.#receipt(...args),
+      retainCloseFailure: (...args) => this.#retainCloseFailure(...args),
+      time: (...args) => this.#time(...args),
+      track: <T>(work: () => Promise<T>): Promise<T> => this.#track(work),
+      validate: (...args) => this.#validate(...args),
+    };
+    checkboxOperationApply(checkboxOperationSet, checkboxOperationOwners, [
+      operationKey,
+      Object.freeze(operationView),
+    ]);
   }
   async toggle(raw: unknown, actor: DocChannelActor): Promise<CheckboxReceipt> {
     return this.#toggleOriginal(raw, actor);
@@ -260,201 +296,7 @@ export class DocCheckboxWriteService {
     return { kind: 'live', request, actor, approved };
   }
   async #toggleCurrent(request: CheckboxRequest, actor: DocChannelActor): Promise<CheckboxReceipt> {
-    this.#boundary();
-    await this.#authority.preflight(request.documentId, actor);
-    this.#boundary();
-    const digest = rawByteHash(Buffer.from(JSON.stringify(request)));
-    const previous = this.#find(request.documentId, request.eventId);
-    if (previous) return this.#duplicate(previous, digest, actor);
-    const approved = freezeCheckboxData(
-      VerifiedCheckboxAuthoritySchema.parse(await this.#authority.prepare(request, actor))
-    );
-    this.#boundary();
-    let entered = false;
-    return withRecognizedCanonicalFiles(
-      this.#coordinator,
-      [approved.binding.canonicalPath],
-      async (identities, lease) => {
-        entered = true;
-        this.#boundary();
-        const existing = this.#find(request.documentId, request.eventId);
-        if (existing) return this.#duplicate(existing, digest, actor);
-        const granted = identities[0]!;
-        if (granted.canonicalPath !== approved.binding.canonicalPath)
-          throw new CheckboxEvidenceError('Checkbox source changed.');
-        const assertUnfenced = () => {
-          this.#boundary();
-          assertRecognizedCheckboxAdmission(this.#writeFence, this.#db, this.#store, granted);
-        };
-        const file = await this.#readSource(approved, assertUnfenced);
-        if (file.device !== granted.device || file.inode !== granted.inode)
-          throw new CheckboxEvidenceError('Checkbox granted source identity changed.');
-        let edit: ReturnType<typeof prepareCheckboxBytes> | undefined;
-        try {
-          edit = prepareCheckboxBytes(file.bytes, request);
-        } catch {
-          /* A parser/version refusal has no physical effect. */
-        }
-        const observed = observedCheckboxIntent(
-          request,
-          approved,
-          digest,
-          this.#time(),
-          rawByteHash(file.bytes),
-          { device: file.device, inode: file.inode },
-          edit
-        );
-        const freshSnapshot = await this.#authority.refreshCurrent(request, actor, approved);
-        const checked = await this.#readSource(approved, assertUnfenced);
-        if (
-          checked.device !== file.device ||
-          checked.inode !== file.inode ||
-          checked.rootIdentity !== file.rootIdentity ||
-          rawByteHash(checked.bytes) !== rawByteHash(file.bytes)
-        )
-          throw new CheckboxEvidenceError('Checkbox observed source changed.');
-        const subject = this.#live(request, actor, approved);
-        const terminal = this.#authority.transaction((tx) => {
-          const raced = this.#find(request.documentId, request.eventId, tx);
-          if (raced) return this.#duplicate(raced, digest, actor, tx);
-          const input = { candidate: observed.intent, liveSubject: subject, freshSnapshot };
-          if (observed.receipt?.status === 'no_op')
-            return this.#completion.insertNoOpInTransaction(input, tx);
-          if (observed.receipt?.status === 'conflict')
-            return this.#completion.insertConflictInTransaction(input, tx);
-          this.#completion.insertPreparedInTransaction(input, tx);
-          return undefined;
-        });
-        if (terminal) return terminal;
-        let current = this.#store.getWriteIntent(observed.intent.intentId)!;
-        const assertOwned = () => {
-          this.#boundary();
-          assertRecognizedCheckboxOwnedAdmission(
-            this.#writeFence,
-            this.#db,
-            this.#store,
-            granted,
-            current
-          );
-        };
-        let temp: string | undefined, ownedTemp: { device: string; inode: string } | undefined;
-        try {
-          await this.#checkpoint('prepared', current);
-          assertOwned();
-          const candidate = this.#validate(current).tempPath!;
-          const handle = await open(candidate, 'wx', file.mode & 0o777);
-          temp = candidate;
-          // Join this scope to its captured cleanup before returning or reporting failure.
-          const drainOriginalCleanup = async () => {
-            try {
-              await handle.close();
-            } catch (cause) {
-              this.#retainCloseFailure(cause);
-              throw cause;
-            }
-          };
-          try {
-            assertOwned();
-            const temporary = await handle.stat({ bigint: true });
-            ownedTemp = { device: String(temporary.dev), inode: String(temporary.ino) };
-            const stagedSnapshot = await this.#authority.refreshCurrent(request, actor, approved);
-            assertOwned();
-            current = this.#authority.transaction((tx) =>
-              this.#completion.stageInTransaction(
-                {
-                  expected: current,
-                  subject,
-                  freshSnapshot: stagedSnapshot,
-                  replacement: ownedTemp!,
-                },
-                tx
-              )
-            );
-            await handle.writeFile(edit!.after);
-            assertOwned();
-            await handle.chmod(file.mode & 0o777);
-            assertOwned();
-            await handle.sync();
-          } finally {
-            await drainOriginalCleanup();
-          }
-          await this.#checkpoint('staged', current);
-          const adopted = await lease.reserveReplacement(temp);
-          assertOwned();
-          const expectedTemp = this.#validate(current).tempIdentity!;
-          if (
-            adopted.canonicalPath !== temp ||
-            adopted.device !== expectedTemp.device ||
-            adopted.inode !== expectedTemp.inode
-          )
-            throw new CheckboxEvidenceError('Checkbox replacement identity changed.');
-          // Authority observation precedes the final real source and owned-temp byte/path proofs.
-          const renameSnapshot = await this.#authority.refreshCurrent(request, actor, approved);
-          const final = await this.#readSource(approved, assertOwned);
-          if (
-            final.device !== file.device ||
-            final.inode !== file.inode ||
-            final.rootIdentity !== file.rootIdentity ||
-            rawByteHash(final.bytes) !== current.beforeHash
-          )
-            throw new CheckboxEvidenceError('Checkbox source changed before replacement.');
-          try {
-            await verifyCheckboxTemporary(current, assertOwned);
-          } finally {
-            const failure = readOriginalCheckboxFileCloseFailure(assertOwned);
-            if (failure) this.#retainCloseFailure(failure.cause);
-          }
-          assertOwned();
-          this.#completion.requireEffect({
-            expected: current,
-            subject,
-            freshSnapshot: renameSnapshot,
-          });
-          await rename(temp, current.canonicalPath);
-          temp = undefined;
-          await this.#checkpoint('replaced', current);
-          const written = await this.#readSource(approved, assertOwned);
-          assertCheckboxReplacement(current, written);
-          const replacedSnapshot = await this.#authority.refreshCurrent(request, actor, approved);
-          const rechecked = await this.#readSource(approved, assertOwned);
-          assertCheckboxReplacement(current, rechecked);
-          assertOwned();
-          current = this.#authority.transaction((tx) =>
-            this.#completion.replaceInTransaction(
-              { expected: current, subject, freshSnapshot: replacedSnapshot },
-              tx
-            )
-          );
-          await this.#checkpoint('verified', current);
-          return await this.#complete(current, subject, assertOwned, lease);
-        } catch (error) {
-          // Lost current authority never manufactures a no-effect conflict or frees the reservation.
-          if (this.#authorityRefused(error) || error instanceof CheckboxEvidenceError)
-            this.#quarantine(current, 'write_unverified');
-          throw error;
-        } finally {
-          if (temp)
-            await cleanCheckboxTemporary(
-              {
-                ...current,
-                evidence: {
-                  ...this.#validate(current),
-                  tempIdentity: ownedTemp ?? this.#validate(current).tempIdentity,
-                },
-              },
-              () => {
-                if (this.#db.$client.inTransaction) throw new Error('FS inside SQL');
-              }
-            ).catch(() => {
-              /* Unknown/unowned cleanup remains fenced; never unlink a substituted inode. */
-            });
-        }
-      }
-    ).catch(async (error: unknown) => {
-      if (entered || !(error instanceof CanonicalFileIdentityChangedError)) throw error;
-      this.#boundary();
-      return this.#preEffectConflict(request, actor, approved, digest);
-    });
+    return runOriginalCheckboxToggleCurrent(this.#operationKey, request, actor);
   }
   async #preEffectConflict(
     request: CheckboxRequest,
@@ -568,113 +410,7 @@ export class DocCheckboxWriteService {
     return this.#recoverOriginal(id);
   }
   #recoverOriginal(id: string): Promise<CheckboxReceipt> {
-    return this.#track(async () => {
-      this.#boundary();
-      const row = freezeCheckboxData(this.#store.getWriteIntent(id));
-      if (!row) throw new Error('Checkbox intent is absent.');
-      this.#validate(row);
-      if (
-        !UNRESOLVED_CHECKBOX_STATUSES.includes(
-          row.status as (typeof UNRESOLVED_CHECKBOX_STATUSES)[number]
-        ) ||
-        row.status === 'in_doubt'
-      )
-        return this.#receipt(row);
-      const approved = this.#validate(row).authority;
-      try {
-        const prepared = await this.#authority.prepareRecovery(row);
-        requireSameCheckboxAuthority(approved, prepared);
-        this.#boundary();
-        return await withRecognizedCanonicalFiles<CheckboxReceipt>(
-          this.#coordinator,
-          [row.canonicalPath],
-          async (identities, lease) => {
-            this.#boundary();
-            let current = this.#store.getWriteIntent(id)!;
-            this.#validate(current);
-            if (current.status === 'committed') return this.#receipt(current);
-            if (JSON.stringify(current) !== JSON.stringify(row))
-              throw new CheckboxEvidenceError('Checkbox recovery raced.');
-            const assertFs = () => {
-              this.#boundary();
-              assertRecognizedCheckboxRecoveryRead(
-                this.#writeFence,
-                this.#db,
-                this.#store,
-                identities[0]!,
-                current
-              );
-            };
-            const snapshot = await this.#authority.refreshRecoveryCurrent(current, approved);
-            const file = await this.#readSource(approved, assertFs);
-            if (file.device !== identities[0]!.device || file.inode !== identities[0]!.inode)
-              throw new CheckboxEvidenceError('Checkbox recovery source identity changed.');
-            this.#authority.transaction((tx) =>
-              this.#authority.requireRecoveryCurrent(current, approved, snapshot, tx)
-            );
-            await cleanCheckboxTemporary(current, assertFs);
-            assertFs();
-            const checked = await this.#readSource(approved, assertFs);
-            const hash = rawByteHash(checked.bytes);
-            if (hash === current.beforeHash) return this.#receipt(current);
-            if (hash !== current.afterHash || current.beforeHash === current.afterHash) {
-              this.#quarantine(current, 'unknown_file_state');
-              return this.#receipt(this.#store.getWriteIntent(id) ?? current);
-            }
-            const evidence = this.#validate(current),
-              before = Buffer.from(checked.bytes);
-            before[evidence.markerOffset!] = evidence.beforeMarker!;
-            assertCheckboxReplacement(current, checked);
-            let edit: ReturnType<typeof prepareCheckboxBytes>;
-            try {
-              edit = prepareCheckboxBytes(
-                before,
-                CanvasChannelCheckboxRequestSchema.parse(current.input)
-              );
-            } catch (cause) {
-              throw new CheckboxEvidenceError('Checkbox reconstructed source differs.', { cause });
-            }
-            if (edit.markerOffset !== evidence.markerOffset || !edit.after.equals(checked.bytes))
-              throw new CheckboxEvidenceError('Checkbox reconstructed source differs.');
-            if (current.status === 'prepared') {
-              const replacedSnapshot = await this.#authority.refreshRecoveryCurrent(
-                current,
-                approved
-              );
-              const verified = await this.#readSource(approved, assertFs);
-              assertCheckboxReplacement(current, verified);
-              assertFs();
-              current = this.#authority.transaction((tx) =>
-                this.#completion.replaceInTransaction(
-                  {
-                    expected: current,
-                    subject: { kind: 'recovery', intent: current, approved },
-                    freshSnapshot: replacedSnapshot,
-                  },
-                  tx
-                )
-              );
-            }
-            // Changed-row recovery obtains a NEW full-row snapshot, never the prepared token.
-            return this.#complete(
-              current,
-              { kind: 'recovery', intent: current, approved },
-              assertFs,
-              lease
-            );
-          }
-        );
-      } catch (error) {
-        if (
-          error instanceof CheckboxEvidenceError ||
-          error instanceof ZodError ||
-          error instanceof DocChannelCorruptionError ||
-          this.#authorityRefused(error)
-        )
-          this.#quarantine(row, 'recovery_authority_unavailable');
-        throw error;
-      }
-    });
+    return runOriginalCheckboxRecoverCurrent(this.#operationKey, id);
   }
   #authorityRefused(error: unknown): boolean {
     try {

@@ -322,6 +322,22 @@ jobs:
           BOUNDARY_REQUIRE_TERMS: ${{ (vars.BOUNDARY_TERMS_REQUIRED != '' && github.event.pull_request.head.repo.fork != true && github.actor != 'dependabot[bot]' && github.triggering_actor != 'dependabot[bot]') && '1' || '' }}
         run: pnpm run check:boundary
 
+      # The 500-line ratchet (DOR-2822). `max-lines` is `warn`, and a warning
+      # fails nothing, so files over the limit kept growing. This holds them to
+      # scripts/max-lines/baseline.json: none may grow, no new file may pass 500,
+      # a shrink must lower its entry. Rides THIS job for the reason every gate
+      # above does: `typecheck` is required, unfiltered and reports on
+      # `merge_group`, so no new required check. `--base` refuses a baseline
+      # raised by hand; the base is the merge commit's first parent, fetched one
+      # level deep exactly as the ledger-coverage step below does, which works
+      # on `pull_request`, `merge_group` and the canary alike.
+      - name: File-size ratchet (DOR-2822)
+        if: ${{ !cancelled() }}
+        run: |
+          git fetch --no-tags --depth=2 origin "$GITHUB_SHA"
+          base="$(git rev-parse HEAD^1)"
+          pnpm run check:max-lines -- --base "$base"
+
       # Raw NUL bytes pasted into text files (DOR-1561). Rides THIS job for
       # the same reason the gate above it does: `typecheck` is already a
       # required status check that reports on `merge_group`, and a gate on a

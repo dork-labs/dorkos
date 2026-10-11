@@ -21,7 +21,7 @@ import type { SenderIdentity } from '../../runtimes/claude-code/mcp-tools/relay-
 import { getRelayTools } from '../../runtimes/claude-code/mcp-tools/relay-tools.js';
 import { adapterToolDefinitions } from '../../runtimes/claude-code/mcp-tools/adapter-tools.js';
 import { traceToolDefinitions } from '../../runtimes/claude-code/mcp-tools/trace-tools.js';
-import { ToolAnnotationPresets } from '../mcp-tool-metadata.js';
+import { ToolAnnotationPresets } from '../mcp-tools/mcp-tool-metadata.js';
 import { registerFromDefinitions, type ExternalToolConfigs } from './register-from-definitions.js';
 
 const A = ToolAnnotationPresets;

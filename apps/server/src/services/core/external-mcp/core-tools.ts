@@ -14,7 +14,7 @@ import { AgentManifestSchema } from '@dorkos/shared/mesh-schemas';
 import type { ToolRegistrar } from '../mcp-tool-gate.js';
 import type { McpToolDeps } from '../../runtimes/claude-code/mcp-tools/types.js';
 import { getCoreTools } from '../../runtimes/claude-code/mcp-tools/core-tools.js';
-import { ToolAnnotationPresets } from '../mcp-tool-metadata.js';
+import { ToolAnnotationPresets } from '../mcp-tools/mcp-tool-metadata.js';
 import { registerFromDefinitions, type ExternalToolConfigs } from './register-from-definitions.js';
 
 const A = ToolAnnotationPresets;

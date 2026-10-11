@@ -7,10 +7,10 @@ import {
   type DocIngestLimits,
 } from '../../current/accounting.js';
 import { DOC_EVENTS_PROMPT_BYTES, docEventsPromptBytes } from '../../prompt.js';
-import { DocIngestRefusal } from '../../ingest-types.js';
+import { DocIngestRefusal } from '../../ingest-data/ingest-types.js';
 import type { DocWriteIntentRow, DocBatchRow } from '../../store.js';
 import { freezeCheckboxData, validateCheckboxEvidence } from '../checkbox-evidence.js';
-import { checkboxAuthoritySync } from '../authority-snapshot.js';
+import { checkboxAuthoritySync } from '../authority/authority-snapshot.js';
 import type { VerifiedCheckboxProjection } from '../completion.js';
 import type {
   CheckboxPolicySummary,

@@ -1,27 +1,40 @@
+import {
+  readGetNativeSessionCwd,
+  readListSessionIdsForAgentPath,
+  readGetSessionAgentPath,
+  readGetSessionLaunchOrigin,
+  readGetLastAutoResumeFor,
+  readStoredPermissionModeOf,
+  readGetSessionSettings,
+} from './runtime/runtime-session-reads.js';
+import {
+  pickSettings,
+  fillNullsWith,
+  type SettingsUpdate,
+} from './runtime/runtime-session-settings.js';
+import {
+  readSessionBindings,
+  readSessionSettingsMany,
+  type SessionBinding,
+  type SessionRuntimeResolution,
+} from './runtime/runtime-session-batch-reads.js';
+export type {
+  SessionBinding,
+  SessionRuntimeResolution,
+} from './runtime/runtime-session-batch-reads.js';
+export {
+  applyConfiguredDefaultRuntime,
+  applyAndWatchConfiguredDefaultRuntime,
+  registerOptionalRuntime,
+} from './runtime-configuration.js';
+export type { DefaultRuntimeConfigSource } from './runtime-configuration.js';
+import { createIsolatedRuntimeRegistryCustody } from './runtime/runtime-registry-custody.js';
 import { requireNativePrincipalDatabase } from '../connectors/principal/runtime-principal-service.js';
-import type { StreamEvent } from '@dorkos/shared/types';
 import {
   observeOriginalSigninRuntimeStream,
   onOriginalSigninRuntimeRelease,
 } from '../observability/runtime-signin-watch.js';
 import { observeRuntimeTurn } from '../observability/ai-metadata.js';
-import {
-  readClaudeOriginalLockedStream,
-  readClaudeOriginalLockedTurnOptions,
-} from '../runtimes/claude-code/claude-code-runtime.js';
-import {
-  readCodexOriginalLockedStream,
-  readCodexOriginalLockedTurnOptions,
-} from '../runtimes/codex/codex-runtime.js';
-import {
-  readOpenCodeOriginalLockedStream,
-  readOpenCodeOriginalLockedTurnOptions,
-} from '../runtimes/opencode/opencode-runtime.js';
-import {
-  readTestModeOriginalNativeStream,
-  readTestModeOriginalNativeTurnOptions,
-  readTestModeOriginalStopTerminalData,
-} from '../runtimes/test-mode/test-mode-runtime.js';
 import { resolveCodexHome } from '../runtimes/codex/codex-home.js';
 import type { CallerPrincipal } from '../../lib/caller-principal.js';
 import { validateBoundaryOrDorkHome } from '../../lib/boundary.js';
@@ -31,7 +44,6 @@ import {
 } from '../session/resolution/session-lookup-error.js';
 import type { AgentRuntime, RuntimeCapabilities } from '@dorkos/shared/agent-runtime';
 import type { Session, SessionSettings } from '@dorkos/shared/types';
-import { EffortLevelSchema } from '@dorkos/shared/schemas';
 // The module directly rather than the `../session/index.js` barrel. There is no
 // cycle to dodge today — nothing that barrel exports imports this file, and
 // `room-turn-runner.ts` does take the same resolver through it. The reason is
@@ -68,7 +80,6 @@ import {
   isNull,
   sql,
   type Db,
-  type SQL,
 } from '@dorkos/db';
 import { logger } from '../../lib/logger.js';
 import { withSessionLimitStore } from '../session/fleet/session-limit-store.js';
@@ -77,409 +88,37 @@ import { getSessionTouchStore } from '../session/origin/session-touch-store.js';
 import { moveDurableSessionIdentity } from '../session/turn-identity/durable-rekey.js';
 import { traceRuntime, watchRuntimeSignin } from '../observability/index.js';
 import { recordToolUse, observeOriginalRuntimeToolStream } from '../audit/record-tool-use.js';
-import { recordTurnLevels, recordRuntimeTurnLevel } from './turn-power/turn-levels.js';
+import { recordTurnLevels } from './turn-power/turn-levels.js';
 import {
   holdAwakeDuringTurns,
   observeOriginalAwakeRoomRuntimeStream,
 } from './keep-awake/hold-during-turn.js';
 
-const originalRegisteredRuntimes = new WeakMap<
-  object,
-  {
-    registry: RuntimeRegistry;
-    slots: Map<string, AgentRuntime>;
-    type: string;
-    raw: AgentRuntime;
-    wrapped: AgentRuntime;
-    retired: boolean;
-    storedModeOf(sessionId: string): string | null | undefined;
-    recorded: WeakMap<object, 'recording' | 'recorded'>;
-    acquire(
-      sessionId: string,
-      clientId: string,
-      holder: import('@dorkos/shared/agent-runtime').SseResponse,
-      token: symbol
-    ): boolean;
-    release(sessionId: string, clientId: string, token: symbol): void;
-    observe(
-      sessionId: string,
-      stream: AsyncGenerator<StreamEvent>,
-      opts: import('@dorkos/shared/agent-runtime').MessageOpts
-    ): AsyncGenerator<StreamEvent>;
-  }
->();
-const originalRuntimeMapGet = Map.prototype.get;
-const originalRuntimeRegistryOwners = new WeakMap<
-  object,
-  {
-    slots: Map<string, AgentRuntime>;
-    db?: Db;
-    releaseHints: Set<() => void>;
-    storedModeOf(sessionId: string): string | null | undefined;
-    rekeySettings(principals: object, fromId: string, toId: string): Promise<void>;
-  }
->();
-/** Captured original settings move. This updates DATA, never issues a principal or alias proof. */
-const originalRuntimeSettingOwners = new WeakMap<
-  object,
-  {
-    registry: RuntimeRegistry;
-    type: string;
-    wrapped: AgentRuntime;
-  }
->();
-/** Rekey settings through the registered runtime's captured original implementation. */
-export function rekeyOriginalRuntimeSessionSettings(
-  runtime: object,
-  principals: object,
-  fromId: string,
-  toId: string
-): Promise<void> {
-  const binding = originalRuntimeSettingOwners.get(runtime);
-  const own = binding && originalRuntimeRegistryOwners.get(binding.registry);
-  if (
-    !binding ||
-    !own?.db ||
-    readOriginalRuntimeRegistrySelection(binding.registry, own.db, binding.type) !==
-      binding.wrapped ||
-    readOriginalRegisteredRuntime(binding.wrapped) !== runtime
-  )
-    throw new Error('Original registered runtime settings owner required');
-  return own.rekeySettings(principals, fromId, toId);
-}
-/** Actual registry/owning Db selection only. Returned wrapper remains subject to slot replacement guards. */
-export function readOriginalRuntimeRegistrySelection(
-  registry: RuntimeRegistry,
-  db: Db,
-  type: string
-) {
-  const own = originalRuntimeRegistryOwners.get(registry);
-  if (
-    !own ||
-    own.db !== db ||
-    Object.getOwnPropertyDescriptor(registry, 'runtimes')?.value !== own.slots
-  )
-    throw new Error('Original owning runtime registry required.');
-  const selected = originalRuntimeMapGet.call(own.slots, type) as AgentRuntime | undefined;
-  if (!selected || !readOriginalRegisteredRuntime(selected)) return undefined;
-  return selected;
-}
-/** Subscribe to release of the original registered runtime. */
-export function onOriginalRegisteredRuntimeRelease(
-  registry: RuntimeRegistry,
-  listener: () => void
-): () => void {
-  const own = originalRuntimeRegistryOwners.get(registry);
-  if (!own || Object.getOwnPropertyDescriptor(registry, 'runtimes')?.value !== own.slots)
-    throw new Error('Original runtime registry required.');
-  own.releaseHints.add(listener);
-  return () => {
-    own.releaseHints.delete(listener);
-  };
-}
-/** Acquire the original registered runtime's captured lifetime. */
-export function acquireOriginalRegisteredRuntime(
-  selection: object,
-  sessionId: string,
-  clientId: string,
-  holder: import('@dorkos/shared/agent-runtime').SseResponse,
-  token: symbol
-): boolean {
-  const own = originalRegisteredRuntimes.get(selection);
-  if (!own || !readOriginalRegisteredRuntime(selection)) return false;
-  const acquired = own.acquire(sessionId, clientId, holder, token);
-  if (acquired && !readOriginalRegisteredRuntime(selection)) {
-    own.release(sessionId, clientId, token);
-    return false;
-  }
-  return acquired;
-}
-/** Cleanup retains exact original registration capture even after its selected authority retires. */
-export function releaseOriginalRegisteredRuntime(
-  selection: object,
-  sessionId: string,
-  clientId: string,
-  token: symbol
-) {
-  const own = originalRegisteredRuntimes.get(selection);
-  if (!own) throw new Error('Original runtime release is foreign.');
-  own.release(sessionId, clientId, token);
-}
-/** Lookup-only genuine registration result. Replacement refuses the old wrapper; no copied proxy/type match. */
-export function readOriginalRegisteredRuntime(runtime: object): AgentRuntime | undefined {
-  const own = originalRegisteredRuntimes.get(runtime);
-  if (
-    !own ||
-    own.retired ||
-    Object.getOwnPropertyDescriptor(own.registry, 'runtimes')?.value !== own.slots ||
-    originalRuntimeMapGet.call(own.slots, own.type) !== own.wrapped
-  )
-    return undefined;
-  return own.raw;
-}
-
-const originalObservedStreams = new WeakMap<
-  object,
-  { selection: object; raw: AsyncGenerator<StreamEvent> }
->();
-function originalStreamCurrent(selection: object, sessionId: string, stream: object): boolean {
-  const raw = readOriginalRegisteredRuntime(selection);
-  return (
-    !!raw &&
-    (readClaudeOriginalLockedStream(raw, sessionId, stream) ||
-      readCodexOriginalLockedStream(raw, sessionId, stream) ||
-      readOpenCodeOriginalLockedStream(raw, sessionId, stream) ||
-      !!readTestModeOriginalNativeStream(raw, stream))
-  );
-}
-/** Same registration observers over a genuine raw locked/native stream; no second provider entry. */
-export function observeOriginalRegisteredRuntimeStream(
-  selection: object,
-  sessionId: string,
-  stream: AsyncGenerator<StreamEvent>
-): AsyncGenerator<StreamEvent> {
-  const own = originalRegisteredRuntimes.get(selection);
-  if (!own || !originalStreamCurrent(selection, sessionId, stream))
-    throw new Error('Current original registered native stream required.');
-  const opened =
-    readClaudeOriginalLockedTurnOptions(own.raw, sessionId, stream) ??
-    readCodexOriginalLockedTurnOptions(own.raw, sessionId, stream) ??
-    readOpenCodeOriginalLockedTurnOptions(own.raw, sessionId, stream) ??
-    readTestModeOriginalNativeTurnOptions(own.raw, sessionId, stream);
-  if (!opened) throw new Error('Original native turn options required.');
-  if (own.recorded.get(stream) === 'recording')
-    throw new Error('Original native turn recording reentered.');
-  if (!own.recorded.has(stream)) {
-    own.recorded.set(stream, 'recording');
-    try {
-      let stored: string | null | undefined;
-      try {
-        stored = own.storedModeOf(sessionId);
-      } catch {
-        stored = undefined;
-      }
-      recordRuntimeTurnLevel(own.raw, stored, sessionId, opened.options, () => {
-        if (!originalStreamCurrent(selection, sessionId, stream))
-          throw new Error('Original runtime selection retired during turn recording.');
-      });
-      own.recorded.set(stream, 'recorded');
-    } catch (cause) {
-      own.recorded.delete(stream);
-      throw cause;
-    }
-  }
-  const observed = own.observe(sessionId, stream, opened.options);
-  const returned: AsyncGenerator<StreamEvent> = {
-    next: async (value) => {
-      try {
-        if (
-          !originalStreamCurrent(selection, sessionId, stream) &&
-          !(
-            readOriginalRegisteredRuntime(selection) &&
-            readTestModeOriginalStopTerminalData(readOriginalRegisteredRuntime(selection)!, stream)
-          )
-        )
-          throw new Error('Original runtime selection retired.');
-        const result = await observed.next(value);
-        // Natural end retires the raw entry; selection itself must remain current even at end.
-        if (
-          !readOriginalRegisteredRuntime(selection) ||
-          (!result.done &&
-            !originalStreamCurrent(selection, sessionId, stream) &&
-            !readTestModeOriginalStopTerminalData(
-              readOriginalRegisteredRuntime(selection)!,
-              stream,
-              result.value
-            ))
-        )
-          throw new Error('Original runtime selection retired during held stream.');
-        return result;
-      } catch (first) {
-        // The original read/refusal cause wins, including undefined; every cleanup duty is attempted.
-        try {
-          await stream.return(undefined);
-        } catch {}
-        try {
-          await observed.return(undefined);
-        } catch {}
-        throw first;
-      }
-    },
-    return: async (value) => {
-      let failed = false,
-        first: unknown;
-      let result: IteratorResult<StreamEvent, void> | undefined;
-      try {
-        await stream.return(value);
-      } catch (cause) {
-        failed = true;
-        first = cause;
-      }
-      try {
-        result = await observed.return(value);
-      } catch (cause) {
-        if (!failed) {
-          failed = true;
-          first = cause;
-        }
-      }
-      if (failed) throw first;
-      return result!;
-    },
-    throw: async (cause) => {
-      // The caller's original thrown value wins, including undefined; retirement still runs.
-      try {
-        await stream.return(undefined);
-      } catch {}
-      return observed.throw(cause);
-    },
-    async [Symbol.asyncDispose]() {
-      await disposeOriginalStream();
-    },
-    [Symbol.asyncIterator]() {
-      return this;
-    },
-  };
-  const disposeOriginalStream = returned.return.bind(returned, undefined);
-  originalObservedStreams.set(returned, { selection, raw: stream });
-  return returned;
-}
-/** Native consumers retain original stream identity; a retired selection cannot unwrap into authority. */
-export function readOriginalRegisteredRuntimeStream(
-  selection: object,
-  stream: object
-): object | undefined {
-  const own = originalObservedStreams.get(stream);
-  return own && own.selection === selection && readOriginalRegisteredRuntime(selection)
-    ? own.raw
-    : undefined;
-}
-
-/** Fixed lookup from an actual observed stream to its current selected original stream. */
-export function readOriginalRegisteredNativeStream(stream: object): object | undefined {
-  const own = originalObservedStreams.get(stream);
-  return own && readOriginalRegisteredRuntime(own.selection) ? own.raw : undefined;
-}
-
-/** Columns read from `session_metadata` for the settings projection. */
-type SettingsRow = {
-  permissionMode: string | null;
-  model: string | null;
-  effort: string | null;
-  fastMode: boolean | null;
+const {
+  originalRegisteredRuntimes,
+  originalRuntimeRegistryOwners,
+  originalRuntimeSettingOwners,
+  rekeyOriginalRuntimeSessionSettings,
+  readOriginalRuntimeRegistrySelection,
+  onOriginalRegisteredRuntimeRelease,
+  acquireOriginalRegisteredRuntime,
+  releaseOriginalRegisteredRuntime,
+  readOriginalRegisteredRuntime,
+  observeOriginalRegisteredRuntimeStream,
+  readOriginalRegisteredRuntimeStream,
+  readOriginalRegisteredNativeStream,
+} = createIsolatedRuntimeRegistryCustody();
+export {
+  rekeyOriginalRuntimeSessionSettings,
+  readOriginalRuntimeRegistrySelection,
+  onOriginalRegisteredRuntimeRelease,
+  acquireOriginalRegisteredRuntime,
+  releaseOriginalRegisteredRuntime,
+  readOriginalRegisteredRuntime,
+  observeOriginalRegisteredRuntimeStream,
+  readOriginalRegisteredRuntimeStream,
+  readOriginalRegisteredNativeStream,
 };
-
-/**
- * Map a settings DB row (NULLs) to a `SessionSettings` object (omitted keys).
- *
- * `effort` is the one column parsed rather than cast. It is a free-form TEXT
- * column, so what comes back is whatever was written — including a rung that a
- * later release removed from the ladder, or anything a person put there by hand.
- * A cast made that string travel as an `EffortLevel` all the way into an adapter,
- * where claude-code's own mapper drops it (harmless) and codex's
- * `EFFORT_TO_REASONING` lookup yields `undefined` and sends
- * `modelReasoningEffort: undefined` into the SDK. An unreadable value means "no
- * preference" — the same thing NULL means — so it is dropped here, once, rather
- * than at three adapter edges.
- */
-function rowToSettings(row: SettingsRow): SessionSettings {
-  const settings: SessionSettings = {};
-  if (row.permissionMode != null) settings.permissionMode = row.permissionMode;
-  if (row.model != null) settings.model = row.model;
-  if (row.effort != null) {
-    const effort = EffortLevelSchema.safeParse(row.effort);
-    if (effort.success) settings.effort = effort.data;
-    else
-      logger.warn('[RuntimeRegistry] ignoring an unreadable stored effort level', {
-        stored: row.effort,
-      });
-  }
-  if (row.fastMode != null) settings.fastMode = row.fastMode;
-  return settings;
-}
-
-/**
- * How many session ids one `WHERE session_id IN (...)` may carry. Every id
- * spends one of SQLite's compiled-in bound variables (~32k), so a list past the
- * ceiling would fail the whole read rather than part of it — the same ceiling,
- * and the same 500, the queue store chunks its deletes at.
- */
-const BOUND_RUNTIME_CHUNK_SIZE = 500;
-
-/** One session's ownership row, as a caller that must not guess reads it. */
-export interface SessionBinding {
-  /** The runtime type the row names. Never inferred, never a default. */
-  runtime: string;
-  /**
-   * When the row was written, epoch ms; `null` when the stored timestamp cannot
-   * be parsed, which a caller must treat as "unknown", never as "long ago".
-   */
-  boundAt: number | null;
-}
-
-/**
- * Where a session's runtime came from, for a caller that has to know.
- *
- * The registry answers "which runtime" for every session id it is handed,
- * including ids nothing has bound yet — see
- * {@link RuntimeRegistry.resolveSessionRuntime}. Routing wants that tolerance.
- * A gate does not: refusing a request on an inferred runtime refuses it on a
- * guess.
- */
-export interface SessionRuntimeResolution {
-  /** The runtime type to route by — the bound owner, or the inference. */
-  type: string;
-  /**
-   * True when durable metadata or a native store identifies the owner. False
-   * means no store has identified this session, and {@link type} is the
-   * fallback rather than an answer.
-   */
-  bound: boolean;
-}
-
-/** Reduce `SessionSettings` to only the explicitly-provided keys for an UPSERT patch. */
-function pickSettings(settings: SessionSettings): Partial<typeof sessionMetadata.$inferInsert> {
-  const patch: Partial<typeof sessionMetadata.$inferInsert> = {};
-  if (settings.permissionMode !== undefined) patch.permissionMode = settings.permissionMode;
-  if (settings.model !== undefined) patch.model = settings.model;
-  if (settings.effort !== undefined) patch.effort = settings.effort;
-  if (settings.fastMode !== undefined) patch.fastMode = settings.fastMode;
-  return patch;
-}
-
-/** The settings columns, as UPDATE expressions rather than plain values. */
-type SettingsUpdate = { [K in keyof SessionSettings & string]?: SQL };
-
-/**
- * Turn a seed into an UPDATE that fills only the columns still holding NULL.
- *
- * The UPSERT's INSERT branch gets "an explicit value wins" for free by ordering
- * (`...seed, ...patch`). Its UPDATE branch cannot: the value it must not
- * overwrite is already in the row, not in this statement. `coalesce(<column>,
- * <seed>)` is that same rule expressed against the stored row — which is what
- * lets a binding write seed a session whose settings were chosen before it
- * started, without touching one of those choices.
- *
- * **The model and the effort, and deliberately no other column.**
- * `permissionMode` needs more than filling — a stored mode has to be checked
- * against what the runtime being bound declares, so it has its own expression
- * ({@link RuntimeRegistry.claimedPermissionMode}). `fastMode` is never seeded:
- * {@link resolveSessionDefaults} has no tier for it, and it is also the one
- * BOOLEAN here — better-sqlite3 refuses to bind a JS boolean as a raw parameter
- * ("can only bind numbers, strings, bigints, buffers, and null"), so a seed that
- * ever grew a `fastMode` would throw here rather than quietly do nothing. Add it
- * with a driver-encoded value, not by extending this list.
- *
- * @param seed - The columns a newly-created row would have carried.
- */
-function fillNullsWith(seed: Partial<typeof sessionMetadata.$inferInsert>): SettingsUpdate {
-  const update: SettingsUpdate = {};
-  for (const key of ['model', 'effort'] as const) {
-    const value = seed[key];
-    if (value !== undefined) update[key] = sql`coalesce(${sessionMetadata[key]}, ${value})`;
-  }
-  return update;
-}
 
 /**
  * Move a session's stored context reading (`session_context`, spec
@@ -1021,15 +660,7 @@ export class RuntimeRegistry {
 
   /** Actual native directory, distinct from the agent's ownership provenance. */
   getNativeSessionCwd(sessionId: string): string | null {
-    const db = this.db;
-    if (!db) return null;
-    return (
-      db
-        .select({ cwd: sessionNativeBindings.cwd })
-        .from(sessionNativeBindings)
-        .where(eq(sessionNativeBindings.sessionId, sessionId))
-        .get()?.cwd ?? null
-    );
+    return readGetNativeSessionCwd(() => this.db, sessionId);
   }
 
   // ---------------------------------------------------------------------------
@@ -1058,14 +689,7 @@ export class RuntimeRegistry {
    * @param agentPath - The agent's directory, exactly as it was bound.
    */
   listSessionIdsForAgentPath(agentPath: string): Set<string> {
-    const db = this.db;
-    if (!db) return new Set();
-    const rows = db
-      .select({ sessionId: sessionMetadata.sessionId })
-      .from(sessionMetadata)
-      .where(eq(sessionMetadata.agentPath, agentPath))
-      .all();
-    return new Set(rows.map((row) => row.sessionId));
+    return readListSessionIdsForAgentPath(() => this.db, agentPath);
   }
 
   /**
@@ -1079,13 +703,7 @@ export class RuntimeRegistry {
    * @param sessionId - Session identifier
    */
   async getSessionAgentPath(sessionId: string): Promise<string | null> {
-    const db = this.requireDb('getSessionAgentPath');
-    const row = db
-      .select({ agentPath: sessionMetadata.agentPath })
-      .from(sessionMetadata)
-      .where(eq(sessionMetadata.sessionId, sessionId))
-      .get();
-    return row?.agentPath ?? null;
+    return readGetSessionAgentPath((method) => this.requireDb(method), sessionId);
   }
 
   /**
@@ -1097,13 +715,7 @@ export class RuntimeRegistry {
    * @param sessionId - Session identifier
    */
   getSessionLaunchOrigin(sessionId: string): string | null {
-    const db = this.requireDb('getSessionLaunchOrigin');
-    const row = db
-      .select({ launchOrigin: sessionMetadata.launchOrigin })
-      .from(sessionMetadata)
-      .where(eq(sessionMetadata.sessionId, sessionId))
-      .get();
-    return row?.launchOrigin ?? null;
+    return readGetSessionLaunchOrigin((method) => this.requireDb(method), sessionId);
   }
 
   /**
@@ -1116,13 +728,7 @@ export class RuntimeRegistry {
    * @param sessionId - Session identifier
    */
   getLastAutoResumeFor(sessionId: string): string | null {
-    const db = this.requireDb('getLastAutoResumeFor');
-    const row = db
-      .select({ lastAutoResumeFor: sessionMetadata.lastAutoResumeFor })
-      .from(sessionMetadata)
-      .where(eq(sessionMetadata.sessionId, sessionId))
-      .get();
-    return row?.lastAutoResumeFor ?? null;
+    return readGetLastAutoResumeFor((method) => this.requireDb(method), sessionId);
   }
 
   /**
@@ -1159,13 +765,7 @@ export class RuntimeRegistry {
    * @param sessionId - Session identifier
    */
   storedPermissionModeOf(sessionId: string): string | null {
-    const db = this.requireDb('storedPermissionModeOf');
-    const row = db
-      .select({ permissionMode: sessionMetadata.permissionMode })
-      .from(sessionMetadata)
-      .where(eq(sessionMetadata.sessionId, sessionId))
-      .get();
-    return row?.permissionMode ?? null;
+    return readStoredPermissionModeOf((method) => this.requireDb(method), sessionId);
   }
 
   /**
@@ -1175,18 +775,7 @@ export class RuntimeRegistry {
    * @param sessionId - Session identifier
    */
   async getSessionSettings(sessionId: string): Promise<SessionSettings | null> {
-    const db = this.requireDb('getSessionSettings');
-    const row = db
-      .select({
-        permissionMode: sessionMetadata.permissionMode,
-        model: sessionMetadata.model,
-        effort: sessionMetadata.effort,
-        fastMode: sessionMetadata.fastMode,
-      })
-      .from(sessionMetadata)
-      .where(eq(sessionMetadata.sessionId, sessionId))
-      .get();
-    return row ? rowToSettings(row) : null;
+    return readGetSessionSettings((method) => this.requireDb(method), sessionId);
   }
 
   /**
@@ -1576,33 +1165,7 @@ export class RuntimeRegistry {
    * @param ids - Session identifiers to read
    */
   getSessionBindings(ids: string[]): Map<string, SessionBinding> {
-    const result = new Map<string, SessionBinding>();
-    if (ids.length === 0) return result;
-    const db = this.requireDb('getSessionBindings');
-    for (let i = 0; i < ids.length; i += BOUND_RUNTIME_CHUNK_SIZE) {
-      const rows = db
-        .select({
-          sessionId: sessionMetadata.sessionId,
-          runtime: sessionMetadata.runtime,
-          createdAt: sessionMetadata.createdAt,
-        })
-        .from(sessionMetadata)
-        .where(inArray(sessionMetadata.sessionId, ids.slice(i, i + BOUND_RUNTIME_CHUNK_SIZE)))
-        .all();
-      for (const row of rows) {
-        if (!row.runtime) continue;
-        // `created_at` is free-form TEXT that this class writes as ISO 8601.
-        // Anything that does not parse is reported as unknown rather than as a
-        // number a caller would compare against — the same treatment
-        // `rowToSettings` gives an unreadable effort level.
-        const parsed = Date.parse(row.createdAt);
-        result.set(row.sessionId, {
-          runtime: row.runtime,
-          boundAt: Number.isFinite(parsed) ? parsed : null,
-        });
-      }
-    }
-    return result;
+    return readSessionBindings((method) => this.requireDb(method), ids);
   }
 
   /**
@@ -1613,22 +1176,7 @@ export class RuntimeRegistry {
    * @param ids - Session identifiers to read
    */
   getSessionSettingsMany(ids: string[]): Map<string, SessionSettings> {
-    const result = new Map<string, SessionSettings>();
-    if (ids.length === 0) return result;
-    const db = this.requireDb('getSessionSettingsMany');
-    const rows = db
-      .select({
-        sessionId: sessionMetadata.sessionId,
-        permissionMode: sessionMetadata.permissionMode,
-        model: sessionMetadata.model,
-        effort: sessionMetadata.effort,
-        fastMode: sessionMetadata.fastMode,
-      })
-      .from(sessionMetadata)
-      .where(inArray(sessionMetadata.sessionId, ids))
-      .all();
-    for (const row of rows) result.set(row.sessionId, rowToSettings(row));
-    return result;
+    return readSessionSettingsMany((method) => this.requireDb(method), ids);
   }
 
   /**
@@ -1678,136 +1226,6 @@ export class RuntimeRegistry {
       );
     }
     return this.db;
-  }
-}
-
-/**
- * Apply the user's configured default runtime (`runtimes.default`) once all
- * production runtimes are registered. An unregistered value (disabled runtime,
- * typo) keeps the built-in default rather than failing boot. Returns whether
- * the configured value was applied so the caller can log the outcome.
- *
- * The default is shape-neutral: nothing reads `getDefault()` expecting a
- * Claude-shaped runtime. Callers use only the `AgentRuntime` interface, so
- * `codex` or `opencode` is a legitimate `runtimes.default` — the surfaces that
- * fall back to it (models, commands, subagents, MCP config) report that
- * runtime's own truth, and MCP config degrades to "no servers" rather than
- * reading Claude's `.mcp.json`. `claude-code` remains the *shipped* default;
- * that is a product choice, not a structural constraint.
- *
- * The relay is the one genuinely Claude-specific consumer, and it does not read
- * the default at all: the composition root binds it to the concrete claude-code
- * runtime (`relayAgentRuntime` in `index.ts`). {@link getDefaultType} is still
- * consulted once inside the relay — the binding subsystem prefers the default
- * when choosing which runtime to create chat-originated sessions on — but a
- * default the relay does not hold now falls back to the runtime it does hold and
- * logs the mismatch, instead of aborting binding initialization.
- *
- * @param registry - The registry with all production runtimes registered
- * @param configured - The `runtimes.default` config value
- */
-export function applyConfiguredDefaultRuntime(
-  registry: RuntimeRegistry,
-  configured: string
-): boolean {
-  if (registry.has(configured)) {
-    registry.setDefault(configured);
-    return true;
-  }
-  return false;
-}
-
-/**
- * The settings this module reads, and the news that it changed — the whole of
- * `ConfigManager` this needs, named as a port so the watcher is testable without
- * a config file.
- */
-export interface DefaultRuntimeConfigSource {
-  /** The `runtimes.default` value as it stands right now. */
-  read(): string;
-  /** Subscribe to settings writes; returns an unsubscribe function. */
-  onChange(listener: (change: { sections: readonly string[] }) => void): () => void;
-}
-
-/**
- * Apply `runtimes.default` now, and keep applying it when it changes.
- *
- * The default runtime is the one execution setting that is APPLIED rather than
- * read at use: the registry holds it, and everything that mints a session asks
- * the registry. Without this, changing it in Settings would agree with the person
- * and then do nothing until they restarted the server — which is the reason the
- * change-subscription primitive exists at all (spec `execution-defaults` §3.2).
- *
- * The model and effort defaults need nothing like this. They are read at the
- * moment a session is created, so a change simply governs the next session.
- *
- * @param registry - The registry with all production runtimes registered.
- * @param source - Where the value is read from and where the news comes from.
- * @returns An unsubscribe function.
- */
-export function applyAndWatchConfiguredDefaultRuntime(
-  registry: RuntimeRegistry,
-  source: DefaultRuntimeConfigSource
-): () => void {
-  const apply = (): void => {
-    const configured = source.read();
-    if (applyConfiguredDefaultRuntime(registry, configured)) return;
-    // An unregistered value keeps the built-in default rather than failing —
-    // silently, when the two already agree (a fresh install naming 'claude-code'
-    // before the adapter registers is not news).
-    if (configured !== registry.getDefaultType()) {
-      logger.warn('[Runtime] configured runtimes.default is not registered; keeping built-in', {
-        configured,
-        active: registry.getDefaultType(),
-      });
-    }
-  };
-
-  apply();
-  return source.onChange((change) => {
-    if (!change.sections.includes('runtimes')) return;
-    const before = registry.getDefaultType();
-    apply();
-    const after = registry.getDefaultType();
-    if (before !== after) {
-      logger.info('[Runtime] default runtime changed without a restart', { before, after });
-    }
-  });
-}
-
-/**
- * Construct and register an optional runtime (Codex, OpenCode), tolerating a
- * synchronous construction failure. The Codex and OpenCode SDKs resolve their
- * CLI binary at `new` time and throw if it isn't found — the norm in the
- * packaged desktop app, which bundles only the claude-code SDK. Left
- * unguarded, that throw rejects `start()` and kills the whole server process
- * (the launch-blocking crash this exists to prevent). Mirrors the "keep
- * built-in default rather than fail boot" tolerance in
- * {@link applyConfiguredDefaultRuntime} and the per-runtime degradation
- * principle already established for session listing (ADR-0310): one optional
- * runtime failing to initialize must never take the others — or the server —
- * down with it.
- *
- * @param name - Human-readable runtime name for the warning log (e.g. `'CodexRuntime'`)
- * @param remedy - Plain-language hint naming what to install or disable to silence the warning
- * @param init - Synchronous callback that constructs, registers, and wires up the runtime; its return value passes through on success
- * @returns The initialized runtime, or `undefined` if construction/registration failed
- */
-export function registerOptionalRuntime<T>(
-  name: string,
-  remedy: string,
-  init: () => T
-): T | undefined {
-  try {
-    return init();
-  } catch (err) {
-    logger.warn(
-      `[Runtime] ${name} failed to initialize — this runtime is disabled for this session; ${remedy}`,
-      {
-        err,
-      }
-    );
-    return undefined;
   }
 }
 

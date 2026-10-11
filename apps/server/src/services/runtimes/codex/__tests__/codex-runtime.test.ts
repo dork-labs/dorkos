@@ -22,7 +22,7 @@ import { checkCodexDependencies } from '../check-dependencies.js';
 import { enumerateCodexMcpServers } from '../enumerate-mcp-servers.js';
 import { scanSkillCommands } from '../scan-skill-commands.js';
 import { getOrCreateProjector } from '../../../session/session-state-projector.js';
-import { feedProjector } from '../../../session/session-event-normalizer.js';
+import { feedProjector } from '../../../session/projection/session-event-normalizer.js';
 import { wrapKickoff, filterKickoffHistory } from '@dorkos/shared/kickoff';
 import {
   THREAD_ID,

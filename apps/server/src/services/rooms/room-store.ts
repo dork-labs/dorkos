@@ -10,31 +10,47 @@
  *
  * @module server/services/rooms/room-store
  */
+import type { OriginalRoomStoreMethodView } from './storage/room-store-method-context.js';
+import * as room_store_room_queries from './storage/room-store-room-queries.js';
+import * as room_store_membership from './storage/room-store-membership.js';
+import * as room_store_entry_windows from './storage/room-store-entry-windows.js';
+import * as room_store_entry_history from './storage/room-store-entry-history.js';
+import * as room_store_thread_inventory from './storage/room-store-thread-inventory.js';
+import * as room_store_entry_append from './storage/room-store-entry-append.js';
+import * as room_store_session_bindings from './storage/room-store-session-bindings.js';
+const originalRoomStoreFreeze = Object.freeze;
+const originalRoomStoreGet = WeakMap.prototype.get;
+const originalRoomStoreSet = WeakMap.prototype.set;
+const originalRoomStoreApply = Reflect.apply;
+const originalRoomStoreMethodViews = new WeakMap<object, OriginalRoomStoreMethodView>();
+/** Refuse every key except the actual constructor's distinct private method key before effects. */
+export function readOriginalRoomStoreMethodView(owner: object): OriginalRoomStoreMethodView {
+  const view: OriginalRoomStoreMethodView | undefined = originalRoomStoreApply(
+    originalRoomStoreGet,
+    originalRoomStoreMethodViews,
+    [owner]
+  );
+  if (!view) throw new Error('Original private Room store method owner required.');
+  return view;
+}
 import {
-  DEFAULT_AMBIENT_MAX_ENTRIES,
   authors,
   agents,
   canonicalDmMemberKey,
-  communityRoomMirrors,
   rooms,
   roomMembers,
   roomEntries,
   roomSessions,
-  readCursors,
   eq,
   and,
-  inArray,
   notInArray,
   lt,
   lte,
   gt,
   ne,
-  or,
   isNull,
   isNotNull,
-  alias,
   sql,
-  count,
   desc,
   type Db,
   type DbTransaction,
@@ -44,7 +60,6 @@ import type { ResponseMode } from '@dorkos/shared/mesh-schemas';
 import type {
   Room,
   RoomEntry,
-  RoomEntryBody,
   RoomKind,
   RoomMember,
   RoomMomentKind,
@@ -53,17 +68,14 @@ import type {
   GrantedDocTargetBindingReader,
   GrantedDocTargetBinding,
 } from './service/room-service-deps.js';
-import { logger } from '../../lib/logger.js';
+import '../../lib/logger.js';
 import {
   RoomSessionLedger,
   readOriginalLedgerTargetInsideEmission,
 } from './session-bindings/room-session-ledger.js';
 import { DepartedSeatStore } from './manage/departed-seat-store.js';
 import {
-  parseEntryBody,
   toEntry,
-  toMember,
-  toRoom,
   type NewRoom,
   type NewRoomEntry,
   type ThreadAggregateRow,
@@ -454,6 +466,7 @@ function dmMemberKeyFor(
 
 /** Persistence for rooms, memberships, entries, and per-room agent sessions. */
 export class RoomStore {
+  readonly #methodKey = originalRoomStoreFreeze({});
   private readonly remoteTimelineRoomIds = new Set<string>();
 
   /**
@@ -673,6 +686,84 @@ export class RoomStore {
           ),
       })
     );
+
+    /** Build the original live store view without exporting its owner or private key. */
+    const createMethodView = (store: RoomStore): Readonly<OriginalRoomStoreMethodView> =>
+      originalRoomStoreFreeze<OriginalRoomStoreMethodView>({
+        originalStore: store,
+        get afterTimelineEntry() {
+          const run = store.afterTimelineEntry;
+          return (...args: Parameters<typeof run>): ReturnType<typeof run> =>
+            originalRoomStoreApply(run, store, args);
+        },
+        get beforeTimelineEntry() {
+          const run = store.beforeTimelineEntry;
+          return (...args: Parameters<typeof run>): ReturnType<typeof run> =>
+            originalRoomStoreApply(run, store, args);
+        },
+        get db() {
+          return store.db;
+        },
+        get docTargetBindingReader() {
+          const run = store.docTargetBindingReader;
+          return (...args: Parameters<typeof run>): ReturnType<typeof run> =>
+            originalRoomStoreApply(run, store, args);
+        },
+        get getMember() {
+          const run = store.getMember;
+          return (...args: Parameters<typeof run>): ReturnType<typeof run> =>
+            originalRoomStoreApply(run, store, args);
+        },
+        get getRoom() {
+          const run = store.getRoom;
+          return (...args: Parameters<typeof run>): ReturnType<typeof run> =>
+            originalRoomStoreApply(run, store, args);
+        },
+        get getRoomSession() {
+          const run = store.getRoomSession;
+          return (...args: Parameters<typeof run>): ReturnType<typeof run> =>
+            originalRoomStoreApply(run, store, args);
+        },
+        get inOneTransaction() {
+          const run = store.inOneTransaction;
+          return (...args: Parameters<typeof run>): ReturnType<typeof run> =>
+            originalRoomStoreApply(run, store, args);
+        },
+        get maxSeq() {
+          const run = store.maxSeq;
+          return (...args: Parameters<typeof run>): ReturnType<typeof run> =>
+            originalRoomStoreApply(run, store, args);
+        },
+        get recentPostsInScope() {
+          const run = store.recentPostsInScope;
+          return (...args: Parameters<typeof run>): ReturnType<typeof run> =>
+            originalRoomStoreApply(run, store, args);
+        },
+        get sessionLedger() {
+          return store.sessionLedger;
+        },
+        get syncDmMemberKey() {
+          const run = store.syncDmMemberKey;
+          return (...args: Parameters<typeof run>): ReturnType<typeof run> =>
+            originalRoomStoreApply(run, store, args);
+        },
+        get timelineOrder() {
+          const run = store.timelineOrder;
+          return (...args: Parameters<typeof run>): ReturnType<typeof run> =>
+            originalRoomStoreApply(run, store, args);
+        },
+        get timelineScope() {
+          const run = store.timelineScope;
+          return (...args: Parameters<typeof run>): ReturnType<typeof run> =>
+            originalRoomStoreApply(run, store, args);
+        },
+        dmMemberKeyFor,
+        topLevelWindow,
+      });
+    originalRoomStoreApply(originalRoomStoreSet, originalRoomStoreMethodViews, [
+      this.#methodKey,
+      createMethodView(this),
+    ]);
   }
 
   // === Rooms ===
@@ -716,50 +807,7 @@ export class RoomStore {
     members: ReadonlyArray<{ authorId: string; responseMode: ResponseMode; joinedAt: string }>,
     within?: (tx: DbTransaction) => void
   ): Room {
-    const { bridged = false, ...columns } = room;
-    const row = {
-      ...columns,
-      wellKnown: room.wellKnown ?? null,
-      // Computed HERE, from the roster this call is about to write, rather than
-      // handed in by the caller (DOR-1616). The key and the memberships have to
-      // describe the same set of people, and the only way to guarantee that is
-      // to derive one from the other in the transaction that writes both — a
-      // caller-supplied key would be a second expression of the member set,
-      // free to disagree with the rows beside it.
-      dmMemberKey: dmMemberKeyFor(room.kind, bridged, members),
-      // Empty at creation always: the seat is assigned by the boot hook that
-      // resolves the default agent, never by whoever opened the room.
-      fallbackSeatAuthorId: null,
-      archived: false,
-      ambientMaxEntries: DEFAULT_AMBIENT_MAX_ENTRIES,
-      // Inheriting, always: a room is created with no opinion of its own about
-      // automatic-reply limits, so it follows Settings until somebody says
-      // otherwise (DOR-1429). Written explicitly rather than left to the column
-      // default because this literal is also what `toRoom` hands back, and a
-      // created room must read exactly as a re-fetched one does.
-      turnLimitsEnabled: null,
-      maxAgentDepth: null,
-      maxTurnsPerAgentPerCascade: null,
-      maxAutoTurnsPerHour: null,
-      lastActivityAt: room.createdAt,
-    };
-    this.db.transaction(
-      (tx) => {
-        tx.insert(rooms).values(row).run();
-        for (const member of members) {
-          tx.insert(roomMembers)
-            // Both seqs are 0 by construction rather than by default: a room
-            // being created holds no entries yet, so nobody seeded onto its
-            // roster has anything behind them or anything to have read.
-            .values({ ...member, roomId: room.id, joinedSeq: 0, lastReadSeq: 0 })
-            .onConflictDoNothing()
-            .run();
-        }
-        within?.(tx);
-      },
-      { behavior: 'immediate' }
-    );
-    return toRoom(row);
+    return room_store_room_queries.createRoom(this.#methodKey, room, members, within);
   }
 
   /**
@@ -768,8 +816,7 @@ export class RoomStore {
    * @param id - The room id.
    */
   getRoom(id: string): Room | null {
-    const row = this.db.select().from(rooms).where(eq(rooms.id, id)).get();
-    return row ? toRoom(row) : null;
+    return room_store_room_queries.getRoom(this.#methodKey, id);
   }
 
   /**
@@ -792,16 +839,7 @@ export class RoomStore {
    * @param filter.includeArchived - Include archived rooms (default false).
    */
   listRooms(filter: { kind?: RoomKind; includeArchived?: boolean } = {}): Room[] {
-    const conditions = [];
-    if (filter.kind) conditions.push(eq(rooms.kind, filter.kind));
-    if (!filter.includeArchived) conditions.push(eq(rooms.archived, false));
-    const rows = this.db
-      .select()
-      .from(rooms)
-      .where(conditions.length > 0 ? and(...conditions) : undefined)
-      .orderBy(desc(rooms.lastActivityAt), desc(rooms.id))
-      .all();
-    return rows.map(toRoom);
+    return room_store_room_queries.listRooms(this.#methodKey, filter);
   }
 
   /**
@@ -823,17 +861,7 @@ export class RoomStore {
     memberAuthorId: string,
     filter: { kind?: RoomKind; includeArchived?: boolean } = {}
   ): Room[] {
-    const conditions = [eq(roomMembers.authorId, memberAuthorId)];
-    if (filter.kind) conditions.push(eq(rooms.kind, filter.kind));
-    if (!filter.includeArchived) conditions.push(eq(rooms.archived, false));
-    const rows = this.db
-      .select({ room: rooms })
-      .from(rooms)
-      .innerJoin(roomMembers, eq(roomMembers.roomId, rooms.id))
-      .where(and(...conditions))
-      .orderBy(desc(rooms.lastActivityAt), desc(rooms.id))
-      .all();
-    return rows.map((row) => toRoom(row.room));
+    return room_store_room_queries.listRoomsForMember(this.#methodKey, memberAuthorId, filter);
   }
 
   /**
@@ -883,17 +911,7 @@ export class RoomStore {
    * @returns The matching DM, or `null` when no room holds exactly these authors.
    */
   findDmByMemberSet(authorIds: readonly string[]): Room | null {
-    const key = canonicalDmMemberKey(authorIds);
-    if (key === '') return null;
-    const row = this.db
-      .select()
-      .from(rooms)
-      // `kind` is redundant given that only a DM ever carries a key, and it is
-      // here so the predicate MATCHES the partial index's own — which is what
-      // lets the planner use it rather than scanning.
-      .where(and(eq(rooms.kind, 'dm'), eq(rooms.dmMemberKey, key)))
-      .get();
-    return row ? toRoom(row) : null;
+    return room_store_room_queries.findDmByMemberSet(this.#methodKey, authorIds);
   }
 
   /**
@@ -903,12 +921,7 @@ export class RoomStore {
    * @param slug - The channel slug.
    */
   findLiveChannelBySlug(slug: string): Room | null {
-    const row = this.db
-      .select()
-      .from(rooms)
-      .where(and(eq(rooms.slug, slug), eq(rooms.kind, 'channel'), eq(rooms.archived, false)))
-      .get();
-    return row ? toRoom(row) : null;
+    return room_store_room_queries.findLiveChannelBySlug(this.#methodKey, slug);
   }
 
   /**
@@ -930,13 +943,7 @@ export class RoomStore {
    * @param slug - The channel slug.
    */
   anyChannelHoldsSlug(slug: string): boolean {
-    return (
-      this.db
-        .select({ id: rooms.id })
-        .from(rooms)
-        .where(and(eq(rooms.slug, slug), eq(rooms.kind, 'channel')))
-        .get() !== undefined
-    );
+    return room_store_room_queries.anyChannelHoldsSlug(this.#methodKey, slug);
   }
 
   /**
@@ -950,8 +957,7 @@ export class RoomStore {
    * @param key - The well-known key (`'team'`).
    */
   findByWellKnown(key: string): Room | null {
-    const row = this.db.select().from(rooms).where(eq(rooms.wellKnown, key)).get();
-    return row ? toRoom(row) : null;
+    return room_store_room_queries.findByWellKnown(this.#methodKey, key);
   }
 
   /**
@@ -981,10 +987,7 @@ export class RoomStore {
       maxAutoTurnsPerHour?: number | null;
     }
   ): Room | null {
-    if (Object.keys(patch).length > 0) {
-      this.db.update(rooms).set(patch).where(eq(rooms.id, id)).run();
-    }
-    return this.getRoom(id);
+    return room_store_room_queries.updateRoom(this.#methodKey, id, patch);
   }
 
   // === Membership ===
@@ -1022,18 +1025,7 @@ export class RoomStore {
     },
     tx?: DbTransaction
   ): RoomMember {
-    const row = { ...member, joinedSeq: this.maxSeq(member.roomId), lastReadSeq: 0 };
-    // The join and the room's member key are ONE write: a DM whose roster moved
-    // without its key moving would leave `findDmByMemberSet` confidently
-    // answering with a room that no longer holds those people (DOR-1616).
-    this.inOneTransaction(tx, (exec) => {
-      exec.insert(roomMembers).values(row).onConflictDoNothing().run();
-      this.syncDmMemberKey(member.roomId, exec);
-    });
-    // Read back through `this.db` even inside a transaction, for the reason
-    // `createRoom` records: one connection, so a read here sees the open
-    // transaction's own uncommitted write.
-    return this.getMember(member.roomId, member.authorId) ?? toMember(row);
+    return room_store_membership.addMember(this.#methodKey, member, tx);
   }
 
   /**
@@ -1043,12 +1035,7 @@ export class RoomStore {
    * @param authorId - The member.
    */
   getMember(roomId: string, authorId: string): RoomMember | null {
-    const row = this.db
-      .select()
-      .from(roomMembers)
-      .where(and(eq(roomMembers.roomId, roomId), eq(roomMembers.authorId, authorId)))
-      .get();
-    return row ? toMember(row) : null;
+    return room_store_membership.getMember(this.#methodKey, roomId, authorId);
   }
 
   /**
@@ -1066,13 +1053,7 @@ export class RoomStore {
    * @param roomId - The room.
    */
   listMembers(roomId: string): RoomMember[] {
-    const rows = this.db
-      .select()
-      .from(roomMembers)
-      .where(eq(roomMembers.roomId, roomId))
-      .orderBy(roomMembers.joinedAt, roomMembers.authorId)
-      .all();
-    return rows.map(toMember);
+    return room_store_membership.listMembers(this.#methodKey, roomId);
   }
 
   /**
@@ -1090,14 +1071,7 @@ export class RoomStore {
    * @param roomIds - The rooms to read. An empty list reads nothing.
    */
   listMembersForRooms(roomIds: readonly string[]): RoomMember[] {
-    if (roomIds.length === 0) return [];
-    const rows = this.db
-      .select()
-      .from(roomMembers)
-      .where(inArray(roomMembers.roomId, [...new Set(roomIds)]))
-      .orderBy(roomMembers.roomId, roomMembers.joinedAt, roomMembers.authorId)
-      .all();
-    return rows.map(toMember);
+    return room_store_membership.listMembersForRooms(this.#methodKey, roomIds);
   }
 
   /**
@@ -1106,8 +1080,7 @@ export class RoomStore {
    * @param authorId - The member.
    */
   listMembershipsFor(authorId: string): RoomMember[] {
-    const rows = this.db.select().from(roomMembers).where(eq(roomMembers.authorId, authorId)).all();
-    return rows.map(toMember);
+    return room_store_membership.listMembershipsFor(this.#methodKey, authorId);
   }
 
   /**
@@ -1138,12 +1111,7 @@ export class RoomStore {
    *   has never written anywhere, which is the answer a fresh install gives.
    */
   roomsPostedInBy(authorId: string): Set<string> {
-    const rows = this.db
-      .selectDistinct({ roomId: roomEntries.roomId })
-      .from(roomEntries)
-      .where(eq(roomEntries.authorId, authorId))
-      .all();
-    return new Set(rows.map((row) => row.roomId));
+    return room_store_membership.roomsPostedInBy(this.#methodKey, authorId);
   }
 
   /**
@@ -1155,12 +1123,7 @@ export class RoomStore {
    * @returns The updated membership, or `null` when there is none.
    */
   setResponseMode(roomId: string, authorId: string, responseMode: ResponseMode): RoomMember | null {
-    this.db
-      .update(roomMembers)
-      .set({ responseMode })
-      .where(and(eq(roomMembers.roomId, roomId), eq(roomMembers.authorId, authorId)))
-      .run();
-    return this.getMember(roomId, authorId);
+    return room_store_membership.setResponseMode(this.#methodKey, roomId, authorId, responseMode);
   }
 
   /**
@@ -1178,8 +1141,7 @@ export class RoomStore {
    * @returns The updated room, or `null` when there is no such room.
    */
   setFallbackSeat(roomId: string, authorId: string | null): Room | null {
-    this.db.update(rooms).set({ fallbackSeatAuthorId: authorId }).where(eq(rooms.id, roomId)).run();
-    return this.getRoom(roomId);
+    return room_store_membership.setFallbackSeat(this.#methodKey, roomId, authorId);
   }
 
   /**
@@ -1200,18 +1162,7 @@ export class RoomStore {
    * @returns The updated membership, or `null` when there is none.
    */
   setReadCursor(roomId: string, authorId: string, lastReadSeq: number): RoomMember | null {
-    this.db
-      .update(roomMembers)
-      .set({ lastReadSeq })
-      .where(
-        and(
-          eq(roomMembers.roomId, roomId),
-          eq(roomMembers.authorId, authorId),
-          lt(roomMembers.lastReadSeq, lastReadSeq)
-        )
-      )
-      .run();
-    return this.getMember(roomId, authorId);
+    return room_store_membership.setReadCursor(this.#methodKey, roomId, authorId, lastReadSeq);
   }
 
   /**
@@ -1249,18 +1200,7 @@ export class RoomStore {
     authorId: string,
     opts: { from: number; to: number }
   ): RoomMember | null {
-    this.db
-      .update(roomMembers)
-      .set({ lastReadSeq: opts.to })
-      .where(
-        and(
-          eq(roomMembers.roomId, roomId),
-          eq(roomMembers.authorId, authorId),
-          eq(roomMembers.lastReadSeq, opts.from)
-        )
-      )
-      .run();
-    return this.getMember(roomId, authorId);
+    return room_store_membership.rewindReadCursor(this.#methodKey, roomId, authorId, opts);
   }
 
   /**
@@ -1275,22 +1215,7 @@ export class RoomStore {
    *   {@link RoomStore.syncDmMemberKey}.
    */
   removeMember(roomId: string, authorId: string): boolean {
-    const existed = this.getMember(roomId, authorId) !== null;
-    // All three writes together, for the reason `addMember` gives: a roster that
-    // moved without the room's member key moving is a key that describes people
-    // who are no longer there.
-    this.inOneTransaction(undefined, (exec) => {
-      exec
-        .delete(roomMembers)
-        .where(and(eq(roomMembers.roomId, roomId), eq(roomMembers.authorId, authorId)))
-        .run();
-      exec
-        .delete(roomSessions)
-        .where(and(eq(roomSessions.roomId, roomId), eq(roomSessions.authorId, authorId)))
-        .run();
-      this.syncDmMemberKey(roomId, exec);
-    });
-    return existed;
+    return room_store_membership.removeMember(this.#methodKey, roomId, authorId);
   }
 
   /**
@@ -1315,19 +1240,7 @@ export class RoomStore {
    * @param roomId - The room.
    */
   listFormerAuthorIds(roomId: string): string[] {
-    return this.db
-      .select({ id: authors.id })
-      .from(authors)
-      .where(
-        and(
-          ne(authors.kind, 'system'),
-          sql`exists (select 1 from ${roomEntries} where ${roomEntries.authorId} = ${authors.id} and ${roomEntries.roomId} = ${roomId})`,
-          sql`not exists (select 1 from ${roomMembers} where ${roomMembers.authorId} = ${authors.id} and ${roomMembers.roomId} = ${roomId})`
-        )
-      )
-      .orderBy(authors.createdAt, authors.id)
-      .all()
-      .map((row) => row.id);
+    return room_store_membership.listFormerAuthorIds(this.#methodKey, roomId);
   }
 
   /**
@@ -1475,79 +1388,7 @@ export class RoomStore {
     within?: (tx: DbTransaction) => void,
     bind?: (tx: DbTransaction, seq: number) => void
   ): RoomEntry {
-    return this.db.transaction(
-      (tx) => {
-        within?.(tx);
-        const allocated = tx
-          .select({ next: sql<number>`COALESCE(MAX(${roomEntries.seq}), 0) + 1` })
-          .from(roomEntries)
-          .where(eq(roomEntries.roomId, entry.roomId))
-          .get();
-        const seq = allocated?.next ?? 1;
-        // A post written here into a mirrored Community room follows the room's remote history,
-        // in `seq` order (`room_entries.timeline_band`). Read from the table, not from the
-        // in-memory registration: a row stored without its place would drop out of the room's
-        // timeline for good.
-        const mirrored =
-          tx
-            .select({ id: communityRoomMirrors.localRoomId })
-            .from(communityRoomMirrors)
-            .where(eq(communityRoomMirrors.localRoomId, entry.roomId))
-            .get() !== undefined;
-
-        tx.insert(roomEntries)
-          .values({
-            roomId: entry.roomId,
-            seq,
-            timelineBand: mirrored ? 1 : null,
-            timelinePos: mirrored ? seq : null,
-            id: entry.id,
-            authorId: entry.authorId,
-            kind: entry.kind,
-            body: JSON.stringify(entry.body),
-            mentions: JSON.stringify(entry.mentions),
-            mentionSpans: JSON.stringify(entry.mentionSpans ?? []),
-            sessionId: entry.sessionId,
-            cascadeRoot: entry.cascadeRoot,
-            cascadeDepth: entry.cascadeDepth,
-            // Which turn wrote this, when a turn did — the repeat rule's unit
-            // (DOR-1434). Every writer that is not inside a turn omits it, and
-            // `null` is the honest record of "no turn behind this write".
-            dispatchId: entry.dispatchId ?? null,
-            parentEntryId: entry.parentEntryId,
-            threadRootEntryId: entry.threadRootEntryId,
-            signature: null,
-            createdAt: entry.createdAt,
-          })
-          .run();
-
-        tx.update(rooms)
-          .set({ lastActivityAt: entry.createdAt })
-          .where(eq(rooms.id, entry.roomId))
-          .run();
-
-        bind?.(tx, seq);
-
-        return {
-          roomId: entry.roomId,
-          seq,
-          id: entry.id,
-          authorId: entry.authorId,
-          kind: entry.kind,
-          body: entry.body,
-          mentions: [...entry.mentions],
-          mentionSpans: [...(entry.mentionSpans ?? [])],
-          sessionId: entry.sessionId,
-          cascadeRoot: entry.cascadeRoot,
-          cascadeDepth: entry.cascadeDepth,
-          parentEntryId: entry.parentEntryId,
-          threadRootEntryId: entry.threadRootEntryId,
-          signature: null,
-          createdAt: entry.createdAt,
-        };
-      },
-      { behavior: 'immediate' }
-    );
+    return room_store_entry_append.appendEntry(this.#methodKey, entry, within, bind);
   }
 
   /**
@@ -1571,20 +1412,7 @@ export class RoomStore {
     roomId: string,
     opts: { before?: number; afterSeq?: number; threadRootEntryId?: string; limit: number }
   ): RoomEntry[] {
-    const conditions = [eq(roomEntries.roomId, roomId)];
-    if (opts.before !== undefined) conditions.push(this.beforeTimelineEntry(roomId, opts.before));
-    if (opts.afterSeq !== undefined) conditions.push(gt(roomEntries.seq, opts.afterSeq));
-    if (opts.threadRootEntryId !== undefined) {
-      conditions.push(eq(roomEntries.threadRootEntryId, opts.threadRootEntryId));
-    }
-    const rows = this.db
-      .select()
-      .from(roomEntries)
-      .where(and(...conditions, this.timelineScope(roomId, opts.threadRootEntryId)))
-      .orderBy(...this.timelineOrder(roomId, 'desc'))
-      .limit(opts.limit)
-      .all();
-    return rows.reverse().map(toEntry);
+    return room_store_entry_windows.listEntries(this.#methodKey, roomId, opts);
   }
 
   /**
@@ -1637,15 +1465,7 @@ export class RoomStore {
    * @param seqs - The positions to read. An empty list reads nothing.
    */
   listEntriesBySeq(roomId: string, seqs: readonly number[]): RoomEntry[] {
-    const wanted = [...new Set(seqs)];
-    if (wanted.length === 0) return [];
-    return this.db
-      .select()
-      .from(roomEntries)
-      .where(and(eq(roomEntries.roomId, roomId), inArray(roomEntries.seq, wanted)))
-      .orderBy(roomEntries.seq)
-      .all()
-      .map(toEntry);
+    return room_store_entry_windows.listEntriesBySeq(this.#methodKey, roomId, seqs);
   }
 
   /**
@@ -1665,15 +1485,7 @@ export class RoomStore {
    * @param ids - The entries to read. An empty list reads nothing.
    */
   listEntriesByIds(roomId: string, ids: readonly string[]): RoomEntry[] {
-    const wanted = [...new Set(ids)];
-    if (wanted.length === 0) return [];
-    return this.db
-      .select()
-      .from(roomEntries)
-      .where(and(eq(roomEntries.roomId, roomId), inArray(roomEntries.id, wanted)))
-      .orderBy(...this.timelineOrder(roomId, 'asc'))
-      .all()
-      .map(toEntry);
+    return room_store_entry_windows.listEntriesByIds(this.#methodKey, roomId, ids);
   }
 
   /**
@@ -1739,41 +1551,7 @@ export class RoomStore {
       threadRootEntryId?: string;
     }
   ): RoomEntry[] {
-    const rows = this.db
-      .select()
-      .from(roomEntries)
-      .where(
-        and(
-          eq(roomEntries.roomId, roomId),
-          gt(roomEntries.seq, opts.afterSeq),
-          lte(roomEntries.seq, opts.throughSeq),
-          ne(roomEntries.authorId, opts.excludeAuthorId),
-          // `notInArray` over an EMPTY list is `false` in some dialects, so the
-          // clause is omitted rather than emitted empty. Unreachable today — the
-          // triggering entry is always in it — and left as a property of the
-          // method rather than of its one caller.
-          ...(opts.excludeEntryIds.length === 0
-            ? []
-            : [notInArray(roomEntries.id, [...opts.excludeEntryIds])]),
-          // Reads `idx_room_entries_thread_root`, whose third column is `seq` —
-          // so a thread scattered through a long channel is paged rather than
-          // sorted (migration 0040, and the measurement in
-          // {@link RoomStore.listRecentPostsByOthers}).
-          ...(opts.threadRootEntryId === undefined
-            ? []
-            : [eq(roomEntries.threadRootEntryId, opts.threadRootEntryId)]),
-          // In SQL with the rest of them, for the reason the cap is: filtering
-          // afterwards would return fewer than `limit` rows and make the
-          // truncation flag lie. `json_extract` reads the subject out of the
-          // body column; a row with no subject yields NULL, and `IS NOT` is the
-          // null-safe comparison that keeps it.
-          sql`json_extract(${roomEntries.body}, '$.subjectAuthorId') IS NOT ${opts.excludeAuthorId}`
-        )
-      )
-      .orderBy(...this.timelineOrder(roomId, 'desc'))
-      .limit(opts.limit)
-      .all();
-    return rows.reverse().map(toEntry);
+    return room_store_entry_windows.listUnreadEntries(this.#methodKey, roomId, opts);
   }
 
   /**
@@ -1822,15 +1600,7 @@ export class RoomStore {
    * @param opts.limit - How many of the newest to return.
    */
   listRecentTopLevelEntries(roomId: string, opts: TopLevelWindow & { limit: number }): RoomEntry[] {
-    if (opts.limit <= 0) return [];
-    const rows = this.db
-      .select()
-      .from(roomEntries)
-      .where(topLevelWindow(roomId, opts))
-      .orderBy(...this.timelineOrder(roomId, 'desc'))
-      .limit(opts.limit)
-      .all();
-    return rows.reverse().map(toEntry);
+    return room_store_entry_windows.listRecentTopLevelEntries(this.#methodKey, roomId, opts);
   }
 
   /**
@@ -1848,12 +1618,7 @@ export class RoomStore {
    * @param opts - Exactly the window the list read, minus its limit.
    */
   countRecentTopLevelEntries(roomId: string, opts: TopLevelWindow): number {
-    const row = this.db
-      .select({ total: sql<number>`count(*)` })
-      .from(roomEntries)
-      .where(topLevelWindow(roomId, opts))
-      .get();
-    return row?.total ?? 0;
+    return room_store_entry_windows.countRecentTopLevelEntries(this.#methodKey, roomId, opts);
   }
 
   /**
@@ -1868,14 +1633,7 @@ export class RoomStore {
    * @param limit - How many of the newest to return.
    */
   listEntriesByAuthor(roomId: string, authorId: string, limit: number): RoomEntry[] {
-    const rows = this.db
-      .select()
-      .from(roomEntries)
-      .where(and(eq(roomEntries.roomId, roomId), eq(roomEntries.authorId, authorId)))
-      .orderBy(...this.timelineOrder(roomId, 'desc'))
-      .limit(limit)
-      .all();
-    return rows.reverse().map(toEntry);
+    return room_store_entry_windows.listEntriesByAuthor(this.#methodKey, roomId, authorId, limit);
   }
 
   /**
@@ -1931,7 +1689,7 @@ export class RoomStore {
     roomId: string,
     opts: { threadRootEntryId: string | null; excludeAuthorId: string; limit: number }
   ): RoomEntry[] {
-    return this.recentPostsInScope(roomId, opts);
+    return room_store_entry_windows.listRecentPostsByOthers(this.#methodKey, roomId, opts);
   }
 
   /**
@@ -1953,7 +1711,7 @@ export class RoomStore {
     roomId: string,
     opts: { threadRootEntryId: string | null; limit: number }
   ): RoomEntry[] {
-    return this.recentPostsInScope(roomId, { ...opts, excludeAuthorId: null });
+    return room_store_entry_windows.listRecentPostsInScope(this.#methodKey, roomId, opts);
   }
 
   /** The shared body of the two scoped reads above; `null` excludes nobody. */
@@ -2054,24 +1812,7 @@ export class RoomStore {
     roomId: string,
     opts: { afterSeq: number; limit: number; threadRootEntryId?: string }
   ): RoomEntry[] {
-    if (opts.limit <= 0) return [];
-    const rows = this.db
-      .select()
-      .from(roomEntries)
-      .where(
-        and(
-          eq(roomEntries.roomId, roomId),
-          this.afterTimelineEntry(roomId, opts.afterSeq),
-          opts.threadRootEntryId === undefined
-            ? isNull(roomEntries.parentEntryId)
-            : eq(roomEntries.threadRootEntryId, opts.threadRootEntryId),
-          this.timelineScope(roomId, opts.threadRootEntryId)
-        )
-      )
-      .orderBy(...this.timelineOrder(roomId, 'asc'))
-      .limit(opts.limit)
-      .all();
-    return rows.map(toEntry);
+    return room_store_entry_history.listEntriesFrom(this.#methodKey, roomId, opts);
   }
 
   /**
@@ -2096,27 +1837,7 @@ export class RoomStore {
     roomId: string,
     rootEntryIds: readonly string[]
   ): Map<string, { replyCount: number; lastReplyAt: string }> {
-    const summaries = new Map<string, { replyCount: number; lastReplyAt: string }>();
-    const wanted = [...new Set(rootEntryIds)];
-    if (wanted.length === 0) return summaries;
-    const rows = this.db
-      .select({
-        rootEntryId: roomEntries.threadRootEntryId,
-        replyCount: count(),
-        lastReplyAt: sql<string>`MAX(${roomEntries.createdAt})`,
-      })
-      .from(roomEntries)
-      .where(and(eq(roomEntries.roomId, roomId), inArray(roomEntries.threadRootEntryId, wanted)))
-      .groupBy(roomEntries.threadRootEntryId)
-      .all();
-    for (const row of rows) {
-      if (row.rootEntryId === null) continue;
-      summaries.set(row.rootEntryId, {
-        replyCount: row.replyCount,
-        lastReplyAt: row.lastReplyAt,
-      });
-    }
-    return summaries;
+    return room_store_entry_history.countThreadRepliesFor(this.#methodKey, roomId, rootEntryIds);
   }
 
   /**
@@ -2127,13 +1848,7 @@ export class RoomStore {
    * @param afterSeq - Return entries with `seq` strictly above this.
    */
   listEntriesAfter(roomId: string, afterSeq: number): RoomEntry[] {
-    const rows = this.db
-      .select()
-      .from(roomEntries)
-      .where(and(eq(roomEntries.roomId, roomId), gt(roomEntries.seq, afterSeq)))
-      .orderBy(roomEntries.seq)
-      .all();
-    return rows.map(toEntry);
+    return room_store_entry_history.listEntriesAfter(this.#methodKey, roomId, afterSeq);
   }
 
   /**
@@ -2155,21 +1870,7 @@ export class RoomStore {
    * @param opts.limit - How many of the oldest matching entries to return.
    */
   listEntriesForExport(roomId: string, opts: { afterSeq: number; limit: number }): RoomEntry[] {
-    if (opts.limit <= 0) return [];
-    const rows = this.db
-      .select()
-      .from(roomEntries)
-      .where(
-        and(
-          eq(roomEntries.roomId, roomId),
-          this.afterTimelineEntry(roomId, opts.afterSeq),
-          this.timelineScope(roomId)
-        )
-      )
-      .orderBy(...this.timelineOrder(roomId, 'asc'))
-      .limit(opts.limit)
-      .all();
-    return rows.map(toEntry);
+    return room_store_entry_history.listEntriesForExport(this.#methodKey, roomId, opts);
   }
 
   /**
@@ -2179,12 +1880,7 @@ export class RoomStore {
    * @param entryId - The entry id.
    */
   getEntryById(roomId: string, entryId: string): RoomEntry | null {
-    const row = this.db
-      .select()
-      .from(roomEntries)
-      .where(and(eq(roomEntries.roomId, roomId), eq(roomEntries.id, entryId)))
-      .get();
-    return row ? toEntry(row) : null;
+    return room_store_entry_history.getEntryById(this.#methodKey, roomId, entryId);
   }
 
   /**
@@ -2207,38 +1903,7 @@ export class RoomStore {
     roomId: string,
     shas: readonly string[]
   ): Map<string, { kind: 'merge' | 'person'; subjectAuthorId: string | null }> {
-    const found = new Map<string, { kind: 'merge' | 'person'; subjectAuthorId: string | null }>();
-    if (shas.length === 0) return found;
-    const wanted = [...shas];
-    const rows = this.db
-      .select({ body: roomEntries.body })
-      .from(roomEntries)
-      .where(
-        and(
-          eq(roomEntries.roomId, roomId),
-          or(
-            inArray(sql`json_extract(${roomEntries.body}, '$.merge.commit')`, wanted),
-            inArray(sql`json_extract(${roomEntries.body}, '$.fileChange.commit')`, wanted)
-          )
-        )
-      )
-      .all();
-    for (const row of rows) {
-      let body: RoomEntryBody;
-      try {
-        body = JSON.parse(row.body) as RoomEntryBody;
-      } catch {
-        continue;
-      }
-      const subjectAuthorId = body.subjectAuthorId ?? null;
-      const merged = body.merge?.commit;
-      if (merged && wanted.includes(merged)) found.set(merged, { kind: 'merge', subjectAuthorId });
-      const changed = body.fileChange?.commit;
-      if (changed && wanted.includes(changed)) {
-        found.set(changed, { kind: 'person', subjectAuthorId });
-      }
-    }
-    return found;
+    return room_store_entry_history.commitAnnouncements(this.#methodKey, roomId, shas);
   }
 
   /**
@@ -2275,26 +1940,7 @@ export class RoomStore {
     roomId: string,
     key: { kind: RoomMomentKind; ref?: string; observedAt?: string }
   ): boolean {
-    const conditions = [
-      eq(roomEntries.roomId, roomId),
-      sql`json_extract(${roomEntries.body}, '$.moment.kind') = ${key.kind}`,
-    ];
-    if (key.ref !== undefined) {
-      conditions.push(sql`json_extract(${roomEntries.body}, '$.moment.source.ref') = ${key.ref}`);
-    }
-    if (key.observedAt !== undefined) {
-      conditions.push(
-        sql`json_extract(${roomEntries.body}, '$.moment.source.observedAt') = ${key.observedAt}`
-      );
-    }
-    return (
-      this.db
-        .select({ seq: roomEntries.seq })
-        .from(roomEntries)
-        .where(and(...conditions))
-        .limit(1)
-        .get() !== undefined
-    );
+    return room_store_entry_history.hasMoment(this.#methodKey, roomId, key);
   }
 
   /**
@@ -2314,18 +1960,7 @@ export class RoomStore {
    * @returns The newest moment's `createdAt` within that window, or `null`.
    */
   latestMomentAt(roomId: string, scan: number): string | null {
-    if (scan <= 0) return null;
-    const rows = this.db
-      .select({ createdAt: roomEntries.createdAt, body: roomEntries.body })
-      .from(roomEntries)
-      .where(and(eq(roomEntries.roomId, roomId), this.timelineScope(roomId)))
-      .orderBy(...this.timelineOrder(roomId, 'desc'))
-      .limit(scan)
-      .all();
-    for (const row of rows) {
-      if (parseEntryBody(row.body).moment) return row.createdAt;
-    }
-    return null;
+    return room_store_entry_history.latestMomentAt(this.#methodKey, roomId, scan);
   }
 
   /**
@@ -2334,12 +1969,7 @@ export class RoomStore {
    * @param roomId - The room.
    */
   maxSeq(roomId: string): number {
-    const row = this.db
-      .select({ value: sql<number>`COALESCE(MAX(${roomEntries.seq}), 0)` })
-      .from(roomEntries)
-      .where(eq(roomEntries.roomId, roomId))
-      .get();
-    return row?.value ?? 0;
+    return room_store_entry_history.maxSeq(this.#methodKey, roomId);
   }
 
   /**
@@ -2370,12 +2000,7 @@ export class RoomStore {
    * @param lastReadSeq - The member's read cursor.
    */
   countUnread(roomId: string, lastReadSeq: number): number {
-    const row = this.db
-      .select({ value: count() })
-      .from(roomEntries)
-      .where(and(eq(roomEntries.roomId, roomId), gt(roomEntries.seq, lastReadSeq)))
-      .get();
-    return row?.value ?? 0;
+    return room_store_entry_history.countUnread(this.#methodKey, roomId, lastReadSeq);
   }
 
   /**
@@ -2395,14 +2020,7 @@ export class RoomStore {
    * @param threadRootEntryId - The entry the thread hangs off.
    */
   countThreadReplies(roomId: string, threadRootEntryId: string): number {
-    const row = this.db
-      .select({ value: count() })
-      .from(roomEntries)
-      .where(
-        and(eq(roomEntries.roomId, roomId), eq(roomEntries.threadRootEntryId, threadRootEntryId))
-      )
-      .get();
-    return row?.value ?? 0;
+    return room_store_entry_history.countThreadReplies(this.#methodKey, roomId, threadRootEntryId);
   }
 
   /**
@@ -2461,67 +2079,11 @@ export class RoomStore {
     limit: number,
     cursor: 'user' | 'membership'
   ): ThreadAggregateRow[] {
-    const root = alias(roomEntries, 'thread_root');
-    const readCursor = sql`COALESCE(${readCursors.lastReadSeq}, 0)`;
-    // MAX over the replies' timestamps: a thread's activity is its newest
-    // reply. Named once and reused for the ORDER BY, so the sort and the value
-    // the row reports can never be two different expressions.
-    const lastActivityAt = sql<string>`MAX(${roomEntries.createdAt})`;
-    return (
-      this.db
-        .select({
-          roomId: roomEntries.roomId,
-          roomKind: rooms.kind,
-          roomSlug: rooms.slug,
-          roomTitle: rooms.title,
-          rootEntryId: root.id,
-          rootAuthorId: root.authorId,
-          rootBody: root.body,
-          replyCount: count(),
-          unreadCount: sql<number>`SUM(CASE WHEN ${roomEntries.seq} > ${
-            cursor === 'user' ? readCursor : roomMembers.lastReadSeq
-          } THEN 1 ELSE 0 END)`,
-          lastActivityAt,
-        })
-        .from(roomEntries)
-        .innerJoin(
-          root,
-          and(eq(root.roomId, roomEntries.roomId), eq(root.id, roomEntries.threadRootEntryId))
-        )
-        .innerJoin(rooms, eq(rooms.id, roomEntries.roomId))
-        // The membership join is the privacy boundary and stays INNER whichever
-        // cursor is measured; the cursor join below is LEFT, because having read
-        // nothing is not the same as not being here.
-        .innerJoin(
-          roomMembers,
-          and(eq(roomMembers.roomId, roomEntries.roomId), eq(roomMembers.authorId, viewerAuthorId))
-        )
-        .leftJoin(
-          readCursors,
-          and(
-            eq(readCursors.userId, viewerAuthorId),
-            eq(readCursors.threadKind, 'room'),
-            eq(readCursors.threadId, roomEntries.roomId)
-          )
-        )
-        .where(
-          and(
-            isNotNull(roomEntries.threadRootEntryId),
-            eq(rooms.archived, false),
-            sql`(${root.authorId} = ${viewerAuthorId} OR EXISTS (
-            SELECT 1 FROM ${roomEntries} AS participation
-            WHERE participation.room_id = ${roomEntries.roomId}
-              AND participation.thread_root_entry_id = ${roomEntries.threadRootEntryId}
-              AND participation.author_id = ${viewerAuthorId}
-          ))`
-          )
-        )
-        .groupBy(roomEntries.roomId, roomEntries.threadRootEntryId)
-        // The id breaks a tie so two threads answered in the same second never
-        // swap places between reads, the same rule every room list ends on.
-        .orderBy(desc(lastActivityAt), desc(root.id))
-        .limit(limit)
-        .all()
+    return room_store_thread_inventory.listThreadsForMember(
+      this.#methodKey,
+      viewerAuthorId,
+      limit,
+      cursor
     );
   }
 
@@ -2562,18 +2124,7 @@ export class RoomStore {
    * @param cascadeRoot - The entry id that began the cascade.
    */
   turnsByAuthorInCascade(roomId: string, cascadeRoot: string): Map<string, number> {
-    const rows = this.db
-      .select({
-        authorId: roomEntries.authorId,
-        // `IS NULL` yields 1/0 in SQLite, so the second half needs no CASE.
-        turns: sql<number>`COUNT(DISTINCT ${roomEntries.dispatchId})
-          + SUM(${roomEntries.dispatchId} IS NULL)`,
-      })
-      .from(roomEntries)
-      .where(and(eq(roomEntries.roomId, roomId), eq(roomEntries.cascadeRoot, cascadeRoot)))
-      .groupBy(roomEntries.authorId)
-      .all();
-    return new Map(rows.map((row) => [row.authorId, row.turns]));
+    return room_store_entry_history.turnsByAuthorInCascade(this.#methodKey, roomId, cascadeRoot);
   }
 
   // === Per-room agent sessions ===
@@ -2592,7 +2143,8 @@ export class RoomStore {
     approvedCanonicalSessionId: string,
     approvedRuntime: string
   ): Readonly<GrantedDocTargetBinding> | null {
-    return this.docTargetBindingReader(
+    return room_store_session_bindings.readGrantedDocTargetBinding(
+      this.#methodKey,
       roomId,
       approvedAgentId,
       approvedCanonicalSessionId,
@@ -2601,12 +2153,7 @@ export class RoomStore {
   }
 
   getRoomSession(roomId: string, authorId: string): string | null {
-    const row = this.db
-      .select()
-      .from(roomSessions)
-      .where(and(eq(roomSessions.roomId, roomId), eq(roomSessions.authorId, authorId)))
-      .get();
-    return row?.sessionId ?? null;
+    return room_store_session_bindings.getRoomSession(this.#methodKey, roomId, authorId);
   }
 
   /**
@@ -2623,14 +2170,7 @@ export class RoomStore {
    * @returns One entry per bound room member.
    */
   listRoomSessions(): Array<{ roomId: string; authorId: string; sessionId: string }> {
-    return this.db
-      .select({
-        roomId: roomSessions.roomId,
-        authorId: roomSessions.authorId,
-        sessionId: roomSessions.sessionId,
-      })
-      .from(roomSessions)
-      .all();
+    return room_store_session_bindings.listRoomSessions(this.#methodKey);
   }
 
   /**
@@ -2657,29 +2197,7 @@ export class RoomStore {
    * @returns One entry per bound session; absent means "not a room turn".
    */
   resolveRoomOrigins(sessionIds: string[]): Map<string, { roomLabel: string; roomId: string }> {
-    const result = new Map<string, { roomLabel: string; roomId: string }>();
-    if (sessionIds.length === 0) return result;
-    const rows = this.db
-      .select({
-        sessionId: roomSessions.sessionId,
-        roomId: rooms.id,
-        kind: rooms.kind,
-        slug: rooms.slug,
-        title: rooms.title,
-      })
-      .from(roomSessions)
-      .innerJoin(rooms, eq(rooms.id, roomSessions.roomId))
-      .where(inArray(roomSessions.sessionId, sessionIds))
-      .all();
-    for (const row of rows) {
-      // Several agents in one room answer with several sessions, so many ids can
-      // map to the same room — but one id is bound in at most one place, and the
-      // first row for it wins if that ever stops being true.
-      if (result.has(row.sessionId)) continue;
-      const label = row.kind === 'channel' && row.slug ? `#${row.slug}` : row.title;
-      result.set(row.sessionId, { roomLabel: label, roomId: row.roomId });
-    }
-    return result;
+    return room_store_session_bindings.resolveRoomOrigins(this.#methodKey, sessionIds);
   }
 
   /**
@@ -2693,12 +2211,13 @@ export class RoomStore {
    * @returns The bound session id — the existing one when there already was one.
    */
   bindRoomSession(roomId: string, authorId: string, sessionId: string, createdAt: string): string {
-    this.db
-      .insert(roomSessions)
-      .values({ roomId, authorId, sessionId, createdAt })
-      .onConflictDoNothing()
-      .run();
-    return this.getRoomSession(roomId, authorId) ?? sessionId;
+    return room_store_session_bindings.bindRoomSession(
+      this.#methodKey,
+      roomId,
+      authorId,
+      sessionId,
+      createdAt
+    );
   }
 
   /**
@@ -2750,22 +2269,12 @@ export class RoomStore {
    *   pointing at a dead id, and stop reporting it as stranded.
    */
   rebindRoomSession(roomId: string, authorId: string, sessionId: string): boolean {
-    const successor = this.sessionLedger.successorFor(sessionId);
-    if (successor !== undefined) {
-      logger.warn('[rooms] refused to rebind a room onto a retired session id', {
-        roomId,
-        authorId,
-        retiredSessionId: sessionId,
-        canonicalSessionId: successor,
-      });
-      return false;
-    }
-    this.db
-      .update(roomSessions)
-      .set({ sessionId })
-      .where(and(eq(roomSessions.roomId, roomId), eq(roomSessions.authorId, authorId)))
-      .run();
-    return true;
+    return room_store_session_bindings.rebindRoomSession(
+      this.#methodKey,
+      roomId,
+      authorId,
+      sessionId
+    );
   }
 }
 

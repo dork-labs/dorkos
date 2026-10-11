@@ -5,7 +5,7 @@ import { createMockTransport } from '@dorkos/test-utils';
 import { ownDocChannelConnection } from '@/layers/shared/lib/transport/doc-channel-ownership';
 import { createDocChannelOwner } from '../model/doc-channel-owner';
 import { emptyDocChannelView } from '../model/doc-channel-view';
-import { readOwnedCursor, readOwnedRunCapture } from '../model/doc-channel-owner-replay';
+import { readOwnedCursor, readOwnedRunCapture } from '../model/doc-owner/doc-channel-owner-replay';
 const birth = {
   v: 1 as const,
   documentId: 'doc',

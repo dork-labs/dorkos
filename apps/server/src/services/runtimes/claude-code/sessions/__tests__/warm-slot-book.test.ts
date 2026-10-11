@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 
-import { WarmSlotBook } from '../warm-slot-book.js';
+import { WarmSlotBook } from '../warm-process/warm-slot-book.js';
 
 describe('WarmSlotBook slot reservations', () => {
   // Purpose: the arithmetic behind the ceiling fix, stated without a pump in the

@@ -14,7 +14,7 @@ import {
   readMcpJsonServers,
   summarizeMcpJsonServers,
   resolveMcpJsonConnection,
-} from '../mcp-json.js';
+} from '../capabilities/mcp-json.js';
 
 const tempDirs: string[] = [];
 

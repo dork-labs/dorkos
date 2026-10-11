@@ -103,7 +103,7 @@ import {
   afterFailedWrite,
   type RoomWorktreeRefreshTarget,
   type RoomWorktreeRefreshDeps,
-} from '../room-worktree-refresh.js';
+} from '../worktree/room-worktree-refresh.js';
 
 /** Portable public fixture types retain the real constructors and shared native Db. */
 export interface OriginalNativeLaunchFixture {

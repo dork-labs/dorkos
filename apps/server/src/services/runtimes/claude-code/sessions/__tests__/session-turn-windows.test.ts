@@ -17,12 +17,12 @@ import type { SessionEvent } from '@dorkos/shared/session-stream';
 import type { StreamEvent } from '@dorkos/shared/types';
 import { initBoundary } from '../../../../../lib/boundary.js';
 import { logger } from '../../../../../lib/logger.js';
-import { feedProjector } from '../../../../session/session-event-normalizer.js';
+import { feedProjector } from '../../../../session/projection/session-event-normalizer.js';
 import { SessionStateProjector } from '../../../../session/session-state-projector.js';
 import { mapSdkMessage } from '../../sdk/sdk-event-mapper.js';
 import { createToolState } from '../../agent-types.js';
 import type { AgentSession } from '../../agent-types.js';
-import { PumpRefusedError } from '../session-pump-contract.js';
+import { PumpRefusedError } from '../warm-process/session-pump-contract.js';
 import { SessionPump } from '../session-pump.js';
 import {
   SessionTurnWindows,

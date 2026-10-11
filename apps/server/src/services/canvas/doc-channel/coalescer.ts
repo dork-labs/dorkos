@@ -3,8 +3,6 @@ import {
   captureCurrentBatchOriginalInputs,
   buildCurrentRoomInputIntention,
   requireCurrentAdmissionIdentity,
-  buildBatchDocContext as batchContext,
-  requireCurrentBatchSliceBounds,
   freezeAdmissionData,
 } from './current/current-operation-intentions.js';
 
@@ -26,14 +24,20 @@ import {
   type DocBatchRow,
   type DocEventRow,
 } from './store.js';
-import { type DocIngestAccess, type DocRouteDecision, DocIngestRefusal } from './ingest-types.js';
+import {
+  type DocIngestAccess,
+  type DocRouteDecision,
+  DocIngestRefusal,
+} from './ingest-data/ingest-types.js';
 
 import { isCurrentDocQueueScope, failCurrentDocOperation } from './authorization.js';
 import { readChecked } from './storage/store-json.js';
 import { readDocEventRow } from './writes/reservations/reservation-policy-census.js';
 import { copyCurrentDocData, sameCurrentDocData } from './current/current-operation-data.js';
 import { isOriginalCheckboxQueueScope } from './writes/reservations/reservation-bridge.js';
-import { docEventsPromptBytes, DOC_EVENTS_PROMPT_BYTES } from './prompt.js';
+import { DOC_EVENTS_PROMPT_BYTES } from './prompt.js';
+import { selectBatchSlice } from './batch-selection.js';
+export { selectBatchSlice } from './batch-selection.js';
 
 import type {
   CurrentQueueIntent,
@@ -384,49 +388,6 @@ export function queueInput(
 
 /** Exact immutable inputs offered to an admission owner, excluding superseded receipts. */
 export type { DocBatchSlice } from './current/current-operation-types.js';
-
-/** Select at most 100 originals and the exact rendered byte budget; no input is silently dropped. */
-export function selectBatchSlice(
-  store: DocChannelStore,
-  tx: DbTransaction,
-  batch: DocBatchRow,
-  maxBatch: number,
-  documentLabel: string,
-  promptBytes = DOC_EVENTS_PROMPT_BYTES
-): DocBatchSlice {
-  requireCurrentBatchSliceBounds(promptBytes, maxBatch);
-  if (!['pending', 'waiting'].includes(batch.status))
-    throw new Error('Only pending inputs can be selected.');
-  if (new Set(batch.inputEventIds).size !== batch.inputEventIds.length)
-    throw new DocChannelCorruptionError('canvas_doc_batches', batch.batchId);
-  const selected: DocEventRow[] = [];
-  const inputs = batch.inputEventIds
-    .map((id) => {
-      const event = store.getEvent(batch.documentId, id, tx);
-      if (!event || event.payloadPrunedAt !== null)
-        throw new DocChannelCorruptionError('canvas_doc_batches', batch.batchId);
-      return event;
-    })
-    .sort((a, b) => a.docSeq - b.docSeq);
-  for (const event of inputs) {
-    if (
-      selected.length === maxBatch ||
-      docEventsPromptBytes(batchContext(batch, [...selected, event], documentLabel)) > promptBytes
-    )
-      break;
-    selected.push(event);
-  }
-  if (!selected.length) throw new DocIngestRefusal('DOC_EVENT_CONTEXT_TOO_LARGE', 413);
-  return {
-    batch: {
-      ...batch,
-      inputEventIds: selected.map((event) => event.eventId),
-      effectivePayload: { eventIds: selected.map((event) => event.eventId), documentLabel },
-    },
-    context: batchContext(batch, selected, documentLabel),
-    overflowIds: inputs.slice(selected.length).map((event) => event.eventId),
-  };
-}
 
 /** Split atomically with external admission; the callback must move the selected batch out of the pending slot. */
 export function admitBatchSlice<T>(

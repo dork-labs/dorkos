@@ -1,34 +1,12 @@
-import { executeDocumentWork } from '../storage/store-transaction.js';
-import type {
-  CanvasChannelSendRequest,
-  IngestReceipt,
-} from '@dorkos/shared/canvas-channel-schemas';
-import {
-  requireOriginalDownstreamEmissionTransaction,
-  sendOriginalDownstreamRoomInsideFrame,
-  type OriginalDownstreamRoomEmitter,
-} from '../downstream/native-room-emitter.js';
+import { type OriginalDownstreamRoomEmitter } from '../downstream/native-room-emitter.js';
 import { readOriginalRegisteredRuntime } from '../../../core/runtime-registry.js';
 import {
   isOriginalNativeTestModeRuntime,
   prepareTestModeOriginalLockedRoomResponder,
   readTestModePreparedRoomResponder,
   retireTestModePreparedRoomResponder,
-  readTestModeOriginalRoomResponderStream,
 } from '../../../runtimes/test-mode/test-mode-runtime.js';
-import { projectOriginalRoomDestinationData } from '../current/current-operation-data.js';
 import type { OriginalRoomCommittedData } from '../current/current-operation-types.js';
-
-import { projectOriginalRoomClaimData } from '../current/current-operation-data.js';
-import {
-  peekProjector,
-  requireOriginalSessionProjection,
-  type SessionStateProjector,
-} from '../../../session/session-state-projector.js';
-import type { SessionEvent } from '@dorkos/shared/session-stream';
-import { readClaudeOriginalRoomResponderStream } from '../../../runtimes/claude-code/claude-code-runtime.js';
-import { readCodexOriginalRoomResponderStream } from '../../../runtimes/codex/codex-runtime.js';
-import { readOpenCodeOriginalRoomResponderStream } from '../../../runtimes/opencode/opencode-runtime.js';
 import {
   prepareClaudeOriginalLockedRoomResponder,
   retireClaudePreparedRoomResponder,
@@ -41,36 +19,21 @@ import {
   prepareOpenCodeOriginalLockedRoomResponder,
   retireOpenCodePreparedRoomResponder,
 } from '../../../runtimes/opencode/opencode-runtime.js';
-import { createRoomStoreDocBudgetCompanion } from '../../../rooms/service/room-core.js';
-import { readRoomDocBudgetFirst } from '../../../rooms/limits/turn-budget.js';
-
 import {
   captureOriginalPreparedNativeTime,
-  resolveOriginalNativePrincipal,
-  requireSameOriginalNativePrincipalPorts,
   readOriginalPreparedNativePrincipal,
-  captureOriginalRoomEmissionPrincipal,
   readOriginalRoomEmissionPrincipalBinding,
 } from '../../../connectors/principal/runtime-principal-service.js';
-
 import { readClaudePreparedRoomResponder } from '../../../runtimes/claude-code/claude-code-runtime.js';
-
 import { readCodexPreparedRoomResponder } from '../../../runtimes/codex/codex-runtime.js';
 import { readOpenCodePreparedRoomResponder } from '../../../runtimes/opencode/opencode-runtime.js';
-/** Internal original acceptance custody. Copied package data never grants SDK authority. */
-const originalDate = Date;
-const originalDateNow = Date.now;
-const originalIso = Date.prototype.toISOString;
-import { randomUUID } from 'node:crypto';
 import { type Db, type DbTransaction } from '@dorkos/db';
 import { type FixedNativeRoomDocFacade } from '@dorkos/db/internal-server';
-
 import {
   readRoomStoreGrantedDocTargetBindingInsideOriginalEmission,
   type RoomStore,
 } from '../../../rooms/room-store.js';
 import { type ConnectorRuntimePrincipalService } from '../../../connectors/principal/runtime-principal-service.js';
-
 import type {
   OriginalFrozenRoomSource,
   CurrentDocOperationEngineCore,
@@ -79,331 +42,38 @@ import type {
   OriginalRoomEmissionStage,
   PreparedRoomResponder,
 } from '../current/current-operation-types.js';
-import { copyCurrentDocData, sameCurrentDocData } from '../current/current-operation-data.js';
-
+import { sameCurrentDocData } from '../current/current-operation-data.js';
 import {
   requireOriginalRoomResponderOwner,
   readOriginalRoomResponderFrozenSource,
   type CurrentRoomOperation,
 } from './room-current-operation.js';
+import * as custody from './room-responder-emission-custody.js';
+import {
+  createOriginalRoomResponderPublicOperations,
+  type OriginalRoomResponderPublicOperations,
+} from './room-responder-public-operations.js';
+import { commitOriginalRoomResponder } from './room-responder-commitment.js';
+import type {
+  ActiveEmissionOwner,
+  EmissionStageOwner,
+  OriginalRoomResponderCustodyView,
+  OriginalRoomResponderCommitView,
+} from './room-responder-private-types.js';
 
+const originalDate = Date;
+const originalDateNow = Date.now;
+const originalIso = Date.prototype.toISOString;
 const committedRoomResponders = new WeakMap<
   OriginalCommittedRoomResponder,
   OriginalRoomCommittedData
 >();
-interface ActiveEmissionOwner {
-  db: Db;
-  prepare: () => Promise<OriginalRoomEmissionStage>;
-}
-interface EmissionStageOwner {
-  effectiveTargetSessionId: string;
-  db: Db;
-  token: OriginalCommittedRoomResponder;
-  committed: OriginalRoomCommittedData;
-  principal: import('../../../connectors/principal/server-principal.js').ServerPrincipalProof;
-  source: Readonly<import('@dorkos/db/internal-server').RoomDocSourceData>;
-  principals: object;
-  phase: 'prepared' | 'ready' | 'active' | 'retired';
-  tx?: DbTransaction;
-  refresh: () => void;
-  require: () => void;
-  readNativeBinding: (bindingId: string) => Readonly<Record<string, unknown>> | undefined;
-  readNativeTarget: () => readonly Readonly<Record<string, unknown>>[];
-  frameState: 'not_started' | 'open' | 'closed' | 'unknown';
-  closeFailure?: Readonly<{ cause: unknown }>;
-  run: (
-    stage: OriginalRoomEmissionStage,
-    emitter: OriginalDownstreamRoomEmitter,
-    request: CanvasChannelSendRequest
-  ) => { receipt: IngestReceipt };
-}
 const activeEmissionOwners = new WeakMap<OriginalCommittedRoomResponder, ActiveEmissionOwner>();
 const emissionStages = new WeakMap<OriginalRoomEmissionStage, EmissionStageOwner>();
 const originalEmissionFrames = new WeakMap<
   OriginalRoomEmissionStage,
   { db: Db; tx: DbTransaction; emitter: OriginalDownstreamRoomEmitter }
 >();
-function requireEmissionStage(stage: OriginalRoomEmissionStage, db: Db): EmissionStageOwner {
-  const own = emissionStages.get(stage);
-  if (
-    !own ||
-    own.db !== db ||
-    own.phase === 'retired' ||
-    !db.$client.open ||
-    committedRoomResponders.get(own.token) !== own.committed ||
-    own.committed.consumed !== true
-  )
-    throw new Error('Original active Room emission is unavailable.');
-  return own;
-}
-/** Only the consumed original native COMMIT/FIRST entry can prepare an emission stage. */
-export function prepareOriginalRoomResponderEmission(
-  token: OriginalCommittedRoomResponder,
-  runtime: object,
-  prepared: PreparedRoomResponder,
-  operation: object,
-  db: Db
-): Promise<OriginalRoomEmissionStage> {
-  const committed = committedRoomResponders.get(token),
-    owner = activeEmissionOwners.get(token);
-  if (
-    !committed ||
-    !owner ||
-    owner.db !== db ||
-    db.$client.inTransaction ||
-    committed.consumed !== true ||
-    committed.runtime !== runtime ||
-    committed.prepared !== prepared ||
-    committed.operation !== operation
-  )
-    throw new Error('Foreign original Room emission entry.');
-  return owner.prepare();
-}
-/** Native configured time is refreshed after awaited sender preflight, before SQL entry. */
-export function refreshOriginalRoomEmissionStage(stage: OriginalRoomEmissionStage, db: Db): void {
-  const own = requireEmissionStage(stage, db);
-  if (db.$client.inTransaction || own.tx || own.phase === 'active')
-    throw new Error('Original Room emission refresh requires inactive SQL.');
-  own.refresh();
-  requireEmissionStage(stage, db);
-  own.phase = 'ready';
-}
-/** Fixed currentness tail only; no configured clock or await executes in this original SQL stage. */
-export function requireOriginalRoomEmissionTransaction(
-  stage: OriginalRoomEmissionStage,
-  db: Db,
-  tx: DbTransaction,
-  principal: import('../../../connectors/principal/server-principal.js').ServerPrincipalProof,
-  emitter: OriginalDownstreamRoomEmitter
-): void {
-  const own = requireEmissionStage(stage, db);
-  if (
-    !db.$client.inTransaction ||
-    own.principal !== principal ||
-    !['ready', 'active'].includes(own.phase) ||
-    (own.tx && own.tx !== tx)
-  )
-    throw new Error('Foreign original Room emission transaction.');
-  requireOriginalRoomEmissionFrameTransaction(stage, db, tx, emitter);
-  requireOriginalDownstreamEmissionTransaction(emitter, stage, db, tx, principal);
-  own.tx = tx;
-  own.phase = 'active';
-  own.require();
-  requireEmissionStage(stage, db);
-  requireOriginalDownstreamEmissionTransaction(emitter, stage, db, tx, principal);
-}
-/** Only this engine's actual native Room frame creates the synchronous scoped sender handle. */
-export function requireOriginalRoomEmissionFrameTransaction(
-  stage: OriginalRoomEmissionStage,
-  db: Db,
-  tx: DbTransaction,
-  emitter: OriginalDownstreamRoomEmitter
-): void {
-  const own = requireEmissionStage(stage, db),
-    frame = originalEmissionFrames.get(stage);
-  if (
-    own.frameState !== 'open' ||
-    !db.$client.inTransaction ||
-    !frame ||
-    frame.db !== db ||
-    frame.tx !== tx ||
-    frame.emitter !== emitter
-  )
-    throw new Error('Original Room emission requires its generated native frame transaction.');
-}
-/** Fixed constructor-owned native statement, not a mutable generated query builder. */
-export function readOriginalRoomEmissionRuntimeBindingRow(
-  stage: OriginalRoomEmissionStage,
-  db: Db,
-  tx: DbTransaction,
-  emitter: OriginalDownstreamRoomEmitter,
-  bindingId: string
-) {
-  requireOriginalRoomEmissionFrameTransaction(stage, db, tx, emitter);
-  return requireEmissionStage(stage, db).readNativeBinding(bindingId);
-}
-/** Exact stage-bound original statement; copied selectors cannot select a different target. */
-export function readOriginalRoomEmissionTargetBindingRow(
-  stage: OriginalRoomEmissionStage,
-  db: Db,
-  tx: DbTransaction,
-  emitter: OriginalDownstreamRoomEmitter,
-  roomId: string,
-  agentId: string,
-  sessionId: string,
-  runtime: string
-): readonly Readonly<{
-  roomId: string;
-  targetAuthorId: string;
-  targetAgentId: string;
-  targetSessionId: string;
-  targetRuntime: string;
-  targetAgentPath: string;
-}>[] {
-  requireOriginalRoomEmissionFrameTransaction(stage, db, tx, emitter);
-  const own = requireEmissionStage(stage, db),
-    source = own.source;
-  if (
-    roomId !== source.roomId ||
-    agentId !== source.targetAgentId ||
-    sessionId !== own.effectiveTargetSessionId ||
-    runtime !== source.targetRuntime
-  )
-    throw new Error('Original native target selectors changed.');
-  const rows = own.readNativeTarget();
-  if (rows.length > 2) throw new Error('Original native target read exceeded its fixed limit.');
-  const copied = rows.map((row) => {
-    const {
-      roomId,
-      targetAuthorId,
-      targetAgentId,
-      targetSessionId,
-      targetRuntime,
-      targetAgentPath,
-    } = row;
-    if (
-      typeof roomId !== 'string' ||
-      typeof targetAuthorId !== 'string' ||
-      typeof targetAgentId !== 'string' ||
-      typeof targetSessionId !== 'string' ||
-      typeof targetRuntime !== 'string' ||
-      typeof targetAgentPath !== 'string' ||
-      roomId !== source.roomId ||
-      targetAuthorId !== source.targetAuthorId ||
-      targetAgentId !== source.targetAgentId ||
-      targetSessionId !== own.effectiveTargetSessionId ||
-      targetRuntime !== source.targetRuntime ||
-      targetAgentPath !== source.targetAgentPath
-    )
-      throw new Error('Original native target row disagrees with committed source.');
-    return Object.freeze({
-      roomId,
-      targetAuthorId,
-      targetAgentId,
-      targetSessionId,
-      targetRuntime,
-      targetAgentPath,
-    });
-  });
-  requireOriginalRoomEmissionFrameTransaction(stage, db, tx, emitter);
-  return Object.freeze(copied);
-}
-/** Emit through the exact original Room stage and installed downstream emitter. */
-export function executeOriginalRoomResponderEmission(
-  stage: OriginalRoomEmissionStage,
-  emitter: OriginalDownstreamRoomEmitter,
-  request: CanvasChannelSendRequest
-): { receipt: IngestReceipt } {
-  const own = emissionStages.get(stage);
-  if (!own) throw new Error('Unknown original Room emission stage.');
-  requireEmissionStage(stage, own.db);
-  if (own.db.$client.inTransaction || own.phase !== 'ready' || own.frameState !== 'not_started')
-    throw new Error('Original Room emission entry cannot reenter.');
-  return own.run(stage, emitter, request);
-}
-/** Cleanup witness only. Ordinary refused sends are safely closed; UNKNOWN preserves its raw cause. */
-export function requireOriginalRoomEmissionStageClosed(
-  stage: OriginalRoomEmissionStage,
-  db: Db
-): void {
-  const own = emissionStages.get(stage);
-  if (!own || own.db !== db) throw new Error('Foreign original Room emission cleanup.');
-  if (own.frameState === 'unknown') throw own.closeFailure?.cause;
-  if (own.phase !== 'retired' || !['not_started', 'closed'].includes(own.frameState))
-    throw new Error('Original Room emission is not positively retired and closed.');
-}
-/** Actual original principal and immutable correlation DATA, never reconstructed actor claims. */
-export function requireOriginalRoomEmissionPrincipalPort(
-  stage: OriginalRoomEmissionStage,
-  db: Db,
-  principals: object
-): void {
-  requireSameOriginalNativePrincipalPorts(requireEmissionStage(stage, db).principals, principals);
-}
-/** Read the principal retained by the exact original Room emission stage. */
-export function readOriginalRoomEmissionPrincipal(stage: OriginalRoomEmissionStage, db: Db) {
-  return requireEmissionStage(stage, db).principal;
-}
-/** Read copied source DATA from the exact original Room emission stage. */
-export function readOriginalRoomEmissionSource(stage: OriginalRoomEmissionStage, db: Db) {
-  const source = requireEmissionStage(stage, db).source;
-  return copyCurrentDocData({
-    documentId: source.documentId,
-    batchId: source.batchId,
-    generation: source.generation,
-    scope: source.scope,
-    roomId: source.roomId,
-    grantId: source.grantId,
-    grantRevision: source.grantRevision,
-    routeId: source.routeId,
-    admissionId: source.admissionId,
-    originalSourceHash: source.originalSourceHash,
-    targetAgentId: source.targetAgentId,
-    targetAuthorId: source.targetAuthorId,
-    targetSessionId: requireEmissionStage(stage, db).effectiveTargetSessionId,
-    originalTargetSessionId: source.targetSessionId,
-    targetRuntime: source.targetRuntime,
-    targetAgentPath: source.targetAgentPath,
-    inputs: source.inputs.map((input) => ({ eventId: input.eventId, docSeq: input.docSeq })),
-  });
-}
-/** Retire the emission stage bound to the exact original database. */
-export function retireOriginalRoomEmissionStage(stage: OriginalRoomEmissionStage, db: Db): void {
-  const own = emissionStages.get(stage);
-  if (!own || own.db !== db) throw new Error('Foreign original Room emission retirement.');
-  own.phase = 'retired';
-}
-/** Lookup-only original commit/entry association, never a caller registrar or readiness boolean. */
-export function requireOriginalCommittedRoomResponder(
-  token: OriginalCommittedRoomResponder | undefined,
-  runtime: object,
-  prepared: PreparedRoomResponder,
-  operation: object
-): void {
-  const own = token && committedRoomResponders.get(token);
-  if (
-    !own ||
-    own.consumed ||
-    own.runtime !== runtime ||
-    own.prepared !== prepared ||
-    own.operation !== operation
-  )
-    throw new Error('Room committed start authority is not available.');
-}
-/** Recheck original source/native authority without consuming its once-only effect. */
-export function requireCurrentOriginalCommittedRoomResponder(
-  token: OriginalCommittedRoomResponder,
-  runtime: object,
-  prepared: PreparedRoomResponder,
-  operation: object
-): void {
-  requireOriginalCommittedRoomResponder(token, runtime, prepared, operation);
-  const own = committedRoomResponders.get(token)!;
-  own.requireCurrent();
-  requireOriginalCommittedRoomResponder(token, runtime, prepared, operation);
-  if (committedRoomResponders.get(token) !== own)
-    throw new Error('Original Room commitment changed during currentness.');
-}
-/** Only original constructor-issued COMMIT/FIRST custody can be consumed by its exact installed SDK entry. */
-export function consumeOriginalCommittedRoomResponder(
-  token: OriginalCommittedRoomResponder,
-  runtime: object,
-  prepared: PreparedRoomResponder,
-  operation: object
-) {
-  const own = committedRoomResponders.get(token);
-  if (
-    !own ||
-    own.consumed ||
-    own.runtime !== runtime ||
-    own.prepared !== prepared ||
-    own.operation !== operation
-  )
-    throw new Error('Room start requires its original committed responder.');
-  own.consumed = true; // Once, even if final currentness refuses.
-  return own.consume();
-}
-
 const closedRoomCommitments = new WeakMap<
   object,
   Readonly<{
@@ -412,33 +82,103 @@ const closedRoomCommitments = new WeakMap<
     operation: object;
   }>
 >();
-/** Retire only the exact original unconsumed commitment; no model retry or budget refund. */
-export function retireOriginalCommittedRoomResponder(
-  token: OriginalCommittedRoomResponder,
-  runtime: object,
-  prepared: PreparedRoomResponder,
-  operation: object
-): void {
-  const own = committedRoomResponders.get(token);
-  const closed = closedRoomCommitments.get(token);
-  if (!own) {
-    if (
-      closed?.runtime === runtime &&
-      closed.prepared === prepared &&
-      closed.operation === operation
-    )
-      return;
-    throw new Error('Room retirement requires its original committed responder.');
-  }
-  if (own.runtime !== runtime || own.prepared !== prepared || own.operation !== operation)
-    throw new Error('Room retirement requires its original committed responder.');
-  committedRoomResponders.delete(token);
-  closedRoomCommitments.set(token, { runtime, prepared, operation });
-  own.retire();
+const custodyKey = Object.freeze({});
+const custodyViews = new WeakMap<object, OriginalRoomResponderCustodyView>();
+const commitViews = new WeakMap<object, OriginalRoomResponderCommitView>();
+const commitApply = Reflect.apply;
+const commitGet = WeakMap.prototype.get;
+const commitSet = WeakMap.prototype.set;
+commitApply(commitSet, custodyViews, [
+  custodyKey,
+  Object.freeze({
+    committedRoomResponders,
+    activeEmissionOwners,
+    emissionStages,
+    originalEmissionFrames,
+    closedRoomCommitments,
+  }),
+]);
+/** Require the original private module selector before reading emission maps. */
+export function readOriginalRoomResponderCustodyView(
+  owner: object
+): OriginalRoomResponderCustodyView {
+  const view = commitApply(commitGet, custodyViews, [owner]) as
+    OriginalRoomResponderCustodyView | undefined;
+  if (!view) throw new Error('Original responder emission custody required');
+  return view;
 }
+/** Require the exact constructor-private commitment selector before native effects. */
+export function readOriginalRoomResponderCommitView(
+  owner: object
+): OriginalRoomResponderCommitView {
+  const view = commitApply(commitGet, commitViews, [owner]) as
+    OriginalRoomResponderCommitView | undefined;
+  if (!view) throw new Error('Original responder commitment custody required');
+  return view;
+}
+/** Original public emission operations retain actual private map membership. */
+const originalRoomResponderExplicitPublicBindings: Readonly<OriginalRoomResponderPublicOperations> =
+  createOriginalRoomResponderPublicOperations(custodyKey);
+/** Original public function reference with its exact named declaration contract. */
+export const prepareOriginalRoomResponderEmission: OriginalRoomResponderPublicOperations['prepareOriginalRoomResponderEmission'] =
+  originalRoomResponderExplicitPublicBindings.prepareOriginalRoomResponderEmission;
+/** Original public function reference with its exact named declaration contract. */
+export const refreshOriginalRoomEmissionStage: OriginalRoomResponderPublicOperations['refreshOriginalRoomEmissionStage'] =
+  originalRoomResponderExplicitPublicBindings.refreshOriginalRoomEmissionStage;
+/** Original public function reference with its exact named declaration contract. */
+export const requireOriginalRoomEmissionTransaction: OriginalRoomResponderPublicOperations['requireOriginalRoomEmissionTransaction'] =
+  originalRoomResponderExplicitPublicBindings.requireOriginalRoomEmissionTransaction;
+/** Original public function reference with its exact named declaration contract. */
+export const requireOriginalRoomEmissionFrameTransaction: OriginalRoomResponderPublicOperations['requireOriginalRoomEmissionFrameTransaction'] =
+  originalRoomResponderExplicitPublicBindings.requireOriginalRoomEmissionFrameTransaction;
+/** Original public function reference with its exact named declaration contract. */
+export const readOriginalRoomEmissionRuntimeBindingRow: OriginalRoomResponderPublicOperations['readOriginalRoomEmissionRuntimeBindingRow'] =
+  originalRoomResponderExplicitPublicBindings.readOriginalRoomEmissionRuntimeBindingRow;
+/** Original public function reference with its exact named declaration contract. */
+export const readOriginalRoomEmissionTargetBindingRow: OriginalRoomResponderPublicOperations['readOriginalRoomEmissionTargetBindingRow'] =
+  originalRoomResponderExplicitPublicBindings.readOriginalRoomEmissionTargetBindingRow;
+/** Original public function reference with its exact named declaration contract. */
+export const executeOriginalRoomResponderEmission: OriginalRoomResponderPublicOperations['executeOriginalRoomResponderEmission'] =
+  originalRoomResponderExplicitPublicBindings.executeOriginalRoomResponderEmission;
+/** Original public function reference with its exact named declaration contract. */
+export const requireOriginalRoomEmissionStageClosed: OriginalRoomResponderPublicOperations['requireOriginalRoomEmissionStageClosed'] =
+  originalRoomResponderExplicitPublicBindings.requireOriginalRoomEmissionStageClosed;
+/** Original public function reference with its exact named declaration contract. */
+export const requireOriginalRoomEmissionPrincipalPort: OriginalRoomResponderPublicOperations['requireOriginalRoomEmissionPrincipalPort'] =
+  originalRoomResponderExplicitPublicBindings.requireOriginalRoomEmissionPrincipalPort;
+/** Original public function reference with its exact named declaration contract. */
+export const readOriginalRoomEmissionPrincipal: OriginalRoomResponderPublicOperations['readOriginalRoomEmissionPrincipal'] =
+  originalRoomResponderExplicitPublicBindings.readOriginalRoomEmissionPrincipal;
+/** Original public function reference with its exact named declaration contract. */
+export const readOriginalRoomEmissionSource: OriginalRoomResponderPublicOperations['readOriginalRoomEmissionSource'] =
+  originalRoomResponderExplicitPublicBindings.readOriginalRoomEmissionSource;
+/** Original public function reference with its exact named declaration contract. */
+export const retireOriginalRoomEmissionStage: OriginalRoomResponderPublicOperations['retireOriginalRoomEmissionStage'] =
+  originalRoomResponderExplicitPublicBindings.retireOriginalRoomEmissionStage;
+/** Original public function reference with its exact named declaration contract. */
+export const requireOriginalCommittedRoomResponder: OriginalRoomResponderPublicOperations['requireOriginalCommittedRoomResponder'] =
+  originalRoomResponderExplicitPublicBindings.requireOriginalCommittedRoomResponder;
+/** Original public function reference with its exact named declaration contract. */
+export const requireCurrentOriginalCommittedRoomResponder: OriginalRoomResponderPublicOperations['requireCurrentOriginalCommittedRoomResponder'] =
+  originalRoomResponderExplicitPublicBindings.requireCurrentOriginalCommittedRoomResponder;
+/** Original public function reference with its exact named declaration contract. */
+export const consumeOriginalCommittedRoomResponder: OriginalRoomResponderPublicOperations['consumeOriginalCommittedRoomResponder'] =
+  originalRoomResponderExplicitPublicBindings.consumeOriginalCommittedRoomResponder;
+/** Original public function reference with its exact named declaration contract. */
+export const retireOriginalCommittedRoomResponder: OriginalRoomResponderPublicOperations['retireOriginalCommittedRoomResponder'] =
+  originalRoomResponderExplicitPublicBindings.retireOriginalCommittedRoomResponder;
+/** Original public function reference with its exact named declaration contract. */
+export const observeOriginalRoomResponderProjection: OriginalRoomResponderPublicOperations['observeOriginalRoomResponderProjection'] =
+  originalRoomResponderExplicitPublicBindings.observeOriginalRoomResponderProjection;
+/** Original public function reference with its exact named declaration contract. */
+export const settleOriginalRoomResponderProjection: OriginalRoomResponderPublicOperations['settleOriginalRoomResponderProjection'] =
+  originalRoomResponderExplicitPublicBindings.settleOriginalRoomResponderProjection;
+
+const originalDocPrivateConstructionFreeze = Object.freeze;
 
 /** Own original Room responder preparation, commitment and native lifecycle custody. */
 export class OriginalRoomResponderOperation {
+  readonly #commitKey = originalDocPrivateConstructionFreeze({});
   readonly #helper: CurrentRoomOperation;
   readonly #engine: CurrentDocOperationEngineCore;
   readonly #db: Db;
@@ -484,6 +224,43 @@ export class OriginalRoomResponderOperation {
     this.#principals = principals;
     this.#roomStore = roomStore;
     this.#facade = facade;
+    const createOriginalView = (
+      responder: OriginalRoomResponderOperation
+    ): Readonly<OriginalRoomResponderCommitView> =>
+      originalDocPrivateConstructionFreeze<OriginalRoomResponderCommitView>({
+        db,
+        principals,
+        roomStore,
+        facade,
+        claiming: this.#claiming,
+        readPrepared: (runtime, prepared, emissionStage) =>
+          responder.#readPrepared(runtime, prepared, emissionStage),
+        requireCurrentResponder: (
+          runtime,
+          prepared,
+          expectedCursor,
+          originalEmissionTime,
+          emissionStage
+        ) =>
+          responder.#requireCurrentResponder(
+            runtime,
+            prepared,
+            expectedCursor,
+            originalEmissionTime,
+            emissionStage
+          ),
+        closePrepared: (prepared) => responder.#closePrepared(prepared),
+        requireEmissionStage: (stage, db) => custody.requireEmissionStage(custodyKey, stage, db),
+        now: () => originalDateNow(),
+        Date: originalDate,
+        iso: originalIso,
+        committedRoomResponders,
+        activeEmissionOwners,
+        emissionStages,
+        originalEmissionFrames,
+        closedRoomCommitments,
+      });
+    commitApply(commitSet, commitViews, [this.#commitKey, createOriginalView(this)]);
   }
   #requireOwner(): void {
     requireOriginalRoomResponderOwner(
@@ -745,323 +522,6 @@ export class OriginalRoomResponderOperation {
     runtime: object,
     prepared: PreparedRoomResponder
   ): OriginalCommittedRoomResponder {
-    runtime = readOriginalRegisteredRuntime(runtime) ?? runtime;
-    const own = this.#readPrepared(runtime, prepared),
-      source = own.own.source;
-    const effectiveTargetSessionId = own.own.effectiveTargetSessionId;
-    if (!effectiveTargetSessionId)
-      throw new Error('Original Room preparation has no captured destination.');
-    if (this.#claiming.has(prepared)) throw new Error('Original Room claim has already begun.');
-    this.#claiming.add(prepared);
-    const companion = createRoomStoreDocBudgetCompanion(
-      this.#roomStore,
-      this.#db,
-      source.roomId,
-      source.targetAgentId,
-      effectiveTargetSessionId,
-      source.targetRuntime
-    );
-    const owner = companion.begin(source.originalSourceHash, source.roomId);
-    const policy = companion.readDestinationPolicy(owner);
-    companion.readGlobal(owner);
-    companion.readRoom(owner);
-    // Destination membership, never the historical producer cursor.
-    const membership = this.#facade.readCurrentRoomMembership(
-      source.roomId,
-      source.targetAgentPath
-    );
-    const destination = projectOriginalRoomDestinationData(
-      membership,
-      this.#facade.readCurrentRoomMembership(source.roomId, 'system'),
-      source.targetAuthorId
-    );
-    const entryId = randomUUID(),
-      dispatchId = randomUUID();
-    const at = originalDateNow(),
-      nowIso = originalIso.call(new originalDate(at));
-    const data = projectOriginalRoomClaimData(source, own.own.producerRoomFacts, {
-      nowIso,
-      at,
-      effectiveTargetSessionId,
-      systemAuthorId: destination.systemAuthorId,
-      entryId,
-      dispatchId,
-      maxAgentDepth: policy.maxAgentDepth,
-      expectedReadSeq: destination.expectedReadSeq,
-    });
-    this.#requireCurrentResponder(runtime, prepared, data.expectedReadSeq);
-    const barrier = companion.prepare(owner, data);
-    if (barrier.state !== 'confirmed')
-      throw new Error('Original Room claim barrier was not confirmed.');
-    // A new fixed capture after every observable pre-frame cut; native repeats full SQL/CAS inside BEGIN.
-    this.#requireCurrentResponder(runtime, prepared, data.expectedReadSeq);
-    // Capture the owning budget clock after the native barrier, so its commit window includes it.
-    companion.readClock(owner);
-    const result = companion.commit(owner, data);
-    if (result.state !== 'confirmed') throw new Error('Original Room commit was not confirmed.');
-    const commit = result.value;
-    const committedMember = this.#facade
-      .readCurrentRoomMembership(source.roomId, source.targetAgentPath)
-      .members.find((row) => row.author_id === source.targetAuthorId);
-    const committedCursor = committedMember?.last_read_seq;
-    if (!Number.isSafeInteger(committedCursor) || Number(committedCursor) < 0) {
-      try {
-        this.#facade.markClaimUnknown(commit);
-      } catch {}
-      throw new Error('Original committed destination cursor is unavailable.');
-    }
-    if (!readRoomDocBudgetFirst(companion, commit)) {
-      this.#facade.markClaimUnknown(commit);
-      throw new Error('Original Room commit lacks SAMEbudget FIRST.');
-    }
-    try {
-      this.#requireCurrentResponder(runtime, prepared, Number(committedCursor));
-    } catch (cause) {
-      try {
-        this.#facade.markClaimUnknown(commit);
-      } catch {}
-      throw cause;
-    }
-    const token: OriginalCommittedRoomResponder = Object.freeze({
-      kind: 'original-committed-room-responder',
-    });
-    committedRoomResponders.set(token, {
-      runtime,
-      prepared,
-      operation: own.nativeOperation,
-      requireCurrent: () => {
-        this.#requireCurrentResponder(runtime, prepared, Number(committedCursor));
-        if (!readRoomDocBudgetFirst(companion, commit))
-          throw new Error('Original Room FIRST recognition changed.');
-      },
-      project: (projector, event) => {
-        requireOriginalSessionProjection(projector, event);
-        if (peekProjector(effectiveTargetSessionId) !== projector || event.type !== 'turn_start')
-          throw new Error('Original destination projection changed.');
-        this.#requireCurrentResponder(runtime, prepared, Number(committedCursor));
-        const result = this.#facade.observeProjectedStart(
-          commit,
-          `${effectiveTargetSessionId}:${event.seq}`
-        );
-        if (result.state !== 'confirmed')
-          throw new Error('Original projected start was not confirmed.');
-      },
-      terminal: (projector, event, outcome) => {
-        requireOriginalSessionProjection(projector, event);
-        try {
-          if (
-            peekProjector(effectiveTargetSessionId) !== projector ||
-            event.type !== 'turn_end' ||
-            outcome === undefined
-          )
-            throw new Error('Original terminal evidence is unavailable.');
-          this.#requireCurrentResponder(runtime, prepared, Number(committedCursor));
-          const result = this.#facade.settleKnownTerminal(commit, outcome);
-          if (result.state !== 'confirmed')
-            throw new Error('Original terminal settlement was not confirmed.');
-        } catch (cause) {
-          try {
-            this.#facade.markClaimUnknown(commit);
-          } catch {}
-          throw cause;
-        } finally {
-          this.#closePrepared(prepared);
-        }
-      },
-      retire: () => {
-        this.#closePrepared(prepared);
-        this.#facade.markClaimUnknown(commit);
-      },
-      consume: () => {
-        try {
-          this.#requireCurrentResponder(runtime, prepared, Number(committedCursor));
-          if (!readRoomDocBudgetFirst(companion, commit))
-            throw new Error('Original Room FIRST recognition changed.');
-          return Object.freeze({ content: 'Document update', commit });
-        } catch (cause) {
-          try {
-            this.#facade.markClaimUnknown(commit);
-          } catch {}
-          throw cause;
-        }
-      },
-    });
-    const committedOwner = committedRoomResponders.get(token)!;
-    activeEmissionOwners.set(token, {
-      db: this.#db,
-      prepare: async () => {
-        if (
-          this.#db.$client.inTransaction ||
-          committedRoomResponders.get(token) !== committedOwner ||
-          committedOwner.consumed !== true
-        )
-          throw new Error('Original Room emission cannot prepare.');
-        committedOwner.requireCurrent();
-        const resolved = await resolveOriginalNativePrincipal(
-          this.#principals,
-          own.nativeOperation
-        );
-        if (resolved.status !== 'resolved')
-          throw new Error('Original Room emission principal retired.');
-        committedOwner.requireCurrent();
-        let time = captureOriginalPreparedNativeTime(
-          this.#principals,
-          this.#db,
-          own.nativeOperation
-        );
-        const stage: OriginalRoomEmissionStage = Object.freeze({
-          kind: 'original-room-emission-stage',
-        });
-        const requireFixed = () => {
-          // Clock capture exists during preparation too; only the actual private frame selects native SQL.
-          const original = emissionStages.get(stage),
-            frame = originalEmissionFrames.get(stage);
-          if (original?.frameState === 'unknown') throw original.closeFailure?.cause;
-          if (
-            (original?.frameState === 'open' && !frame) ||
-            (frame && original?.frameState !== 'open')
-          )
-            throw new Error('Original emission frame lifecycle changed.');
-          this.#requireCurrentResponder(
-            runtime,
-            prepared,
-            Number(committedCursor),
-            time,
-            frame ? stage : undefined
-          );
-          if (!readRoomDocBudgetFirst(companion, commit))
-            throw new Error('Original Room emission FIRST retired.');
-        };
-        requireFixed();
-        emissionStages.set(stage, {
-          db: this.#db,
-          token,
-          committed: committedOwner,
-          principal: resolved.principal,
-          source: source,
-          effectiveTargetSessionId,
-          principals: this.#principals,
-          phase: 'prepared',
-          frameState: 'not_started',
-          run: (actualStage, emitter, request) => {
-            const activeStage = requireEmissionStage(actualStage, this.#db);
-            activeStage.frameState = 'open';
-            try {
-              const outcome = this.#facade.runOriginalCommittedRoomEmission(
-                commit,
-                (queryDb, sourceDb) => {
-                  if (sourceDb !== this.#db)
-                    throw new Error('Original Room emission database changed.');
-                  return executeDocumentWork(queryDb as DbTransaction, (tx) => {
-                    originalEmissionFrames.set(actualStage, { db: this.#db, tx, emitter });
-                    try {
-                      return sendOriginalDownstreamRoomInsideFrame(
-                        emitter,
-                        actualStage,
-                        tx,
-                        request
-                      );
-                    } finally {
-                      originalEmissionFrames.delete(actualStage);
-                    }
-                  });
-                }
-              );
-              activeStage.frameState = outcome.state === 'unknown' ? 'unknown' : 'closed';
-              if (outcome.state !== 'confirmed') {
-                if (outcome.state === 'unknown')
-                  activeStage.closeFailure = Object.freeze({ cause: outcome.cause });
-                throw outcome.cause;
-              }
-              return outcome.value;
-            } catch (cause) {
-              if (activeStage.frameState === 'open') {
-                activeStage.frameState = 'unknown';
-                activeStage.closeFailure = Object.freeze({ cause });
-              }
-              throw cause;
-            } finally {
-              originalEmissionFrames.delete(actualStage);
-            }
-          },
-          refresh: () => {
-            committedOwner.requireCurrent();
-            time = captureOriginalPreparedNativeTime(
-              this.#principals,
-              this.#db,
-              own.nativeOperation
-            );
-            requireFixed();
-            time = captureOriginalRoomEmissionPrincipal(
-              this.#principals,
-              this.#db,
-              own.nativeOperation,
-              stage
-            );
-          },
-          require: requireFixed,
-          readNativeBinding: (bindingId) => this.#facade.readOriginalRuntimeBinding(bindingId),
-          readNativeTarget: () => this.#facade.readOriginalEmissionTargetBinding(source),
-        });
-        return stage;
-      },
-    });
-    return token;
-  }
-}
-
-/** Only SDK constructor-created raw iterators can identify their private committed entry. */
-function readOriginalStream(stream: object, event?: import('@dorkos/shared/types').StreamEvent) {
-  return (
-    readClaudeOriginalRoomResponderStream(undefined, stream, event) ??
-    readCodexOriginalRoomResponderStream(undefined, stream, event) ??
-    readOpenCodeOriginalRoomResponderStream(undefined, stream, event) ??
-    readTestModeOriginalRoomResponderStream(undefined, stream, event)
-  );
-}
-/** Observe a stamped projection from the original Room responder stream. */
-export function observeOriginalRoomResponderProjection(
-  stream: object,
-  projector: SessionStateProjector,
-  stamped: SessionEvent
-): void {
-  const read = readOriginalStream(stream);
-  if (!read) return;
-  const own = committedRoomResponders.get(read.committed);
-  if (
-    !own ||
-    own.runtime !== read.runtime ||
-    own.prepared !== read.prepared ||
-    own.operation !== read.operation
-  )
-    throw new Error('Original stream commitment changed.');
-  own.project(projector, stamped);
-}
-/** Settle the original Room responder projection using its stamped event. */
-export function settleOriginalRoomResponderProjection(
-  stream: object,
-  projector: SessionStateProjector,
-  stamped: SessionEvent,
-  event?: import('@dorkos/shared/types').StreamEvent
-): void {
-  const read = readOriginalStream(stream, event);
-  if (!read) return;
-  const own = committedRoomResponders.get(read.committed);
-  if (
-    !own ||
-    own.runtime !== read.runtime ||
-    own.prepared !== read.prepared ||
-    own.operation !== read.operation
-  )
-    throw new Error('Original stream terminal commitment changed.');
-  try {
-    own.terminal(projector, stamped, event?.type === 'done' ? read.outcome : undefined);
-  } finally {
-    closedRoomCommitments.set(read.committed, {
-      runtime: own.runtime,
-      prepared: own.prepared,
-      operation: own.operation,
-    });
-    committedRoomResponders.delete(read.committed);
+    return commitOriginalRoomResponder(this.#commitKey, runtime, prepared);
   }
 }

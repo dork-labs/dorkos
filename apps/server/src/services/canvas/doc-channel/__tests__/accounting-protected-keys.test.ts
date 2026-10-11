@@ -8,7 +8,7 @@ import {
   protectedCapacityQuery,
   protectedEventSql,
 } from '../current/accounting.js';
-import { DocIngestRefusal } from '../ingest-types.js';
+import { DocIngestRefusal } from '../ingest-data/ingest-types.js';
 
 const NOW = '2026-10-01T12:00:00.000Z';
 const OLD = '2026-10-01T10:00:00.000Z';

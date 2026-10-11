@@ -104,6 +104,13 @@ export interface StatusPromotionContext {
    */
   permissionDescriptor: PermissionModeDescriptor | null;
   /**
+   * Whether the Permissions picker is open right now. An open picker keeps its
+   * item on the line whatever the mode: picking Ask first would otherwise drop
+   * the item, and its popover, out from under the person mid-choice, taking the
+   * "make it the default" offer with it. Absent reads as closed.
+   */
+  permissionPickerOpen?: boolean;
+  /**
    * The way of working this runtime offers and whether the session is in it, or
    * `null` when the runtime offers none (most of them) — the same rule every
    * other nullable field here follows: nothing to say, no slot.
@@ -562,13 +569,20 @@ export const STATUS_BAR_REGISTRY: readonly StatusBarItemConfig[] = [
     // so the two never compete for one budget slot. Pinned in
     // `status-bar-registry.test.ts` ("plan mode reads QUIET here, on
     // purpose").
-    promote: (ctx) => isElevatedPermissionMode(ctx),
+    //
+    // An open picker holds the item, and its rank, until it closes: the person
+    // is pointing at it (see `permissionPickerOpen`). On a narrow, full line
+    // that rank can push a lower item off while the picker is open; keeping
+    // the popover under the cursor is worth it.
+    promote: (ctx) => isElevatedPermissionMode(ctx) || ctx.permissionPickerOpen === true,
     severity: (ctx) => {
       const bypassed = ctx.permissionDescriptor
         ? isBypassSemantics(ctx.permissionDescriptor)
         : isBypassPermissionMode(ctx.permissionMode);
       if (bypassed) return SEVERITY.PERMISSION_BYPASS;
-      return isElevatedPermissionMode(ctx) ? SEVERITY.PERMISSION_ELEVATED : SEVERITY.QUIET;
+      return isElevatedPermissionMode(ctx) || ctx.permissionPickerOpen === true
+        ? SEVERITY.PERMISSION_ELEVATED
+        : SEVERITY.QUIET;
     },
   },
   {

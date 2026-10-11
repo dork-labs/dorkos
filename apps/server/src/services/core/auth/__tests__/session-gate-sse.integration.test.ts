@@ -40,7 +40,7 @@ vi.mock('../../../../lib/boundary.js', () => ({
 // Declared at module scope so the vi.mock factory closure can reference it.
 let fakeRuntime: FakeAgentRuntime;
 
-vi.mock('../../../../services/core/runtime-registry.js', () => ({
+vi.mock('../../runtime-registry.js', () => ({
   runtimeRegistry: {
     getNativeSessionCwd: vi.fn(() => null),
     getDefault: vi.fn(() => fakeRuntime),

@@ -5,7 +5,7 @@ import { createDb, runMigrations, sql, type Db, type DbTransaction } from '@dork
 import { DocChannelStore } from '../store.js';
 import { DocChannelIngest } from '../ingest.js';
 import { admitBatchSlice, selectBatchSlice } from '../coalescer.js';
-import type { DocIngestAccess } from '../ingest-types.js';
+import type { DocIngestAccess } from '../ingest-data/ingest-types.js';
 const dbs: Db[] = [];
 afterEach(() => {
   for (const db of dbs.splice(0)) db.$client.close();

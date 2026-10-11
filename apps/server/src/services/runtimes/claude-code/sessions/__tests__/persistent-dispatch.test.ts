@@ -65,8 +65,8 @@ const swap = vi.hoisted(() => ({
 }));
 // A reuse the warm process refuses as another account's (the cross-account
 // guard), on demand, so the refused-dispatch path can be driven.
-vi.mock('../pump-launch.js', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../pump-launch.js')>();
+vi.mock('../warm-process/pump-launch.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../warm-process/pump-launch.js')>();
   const { AccountPinViolationError } = await import('../launch-fingerprint.js');
   return {
     ...actual,
@@ -175,7 +175,7 @@ import { buildSystemPromptAppend } from '../../messaging/context-builder.js';
 import { extensionSkillPluginRoots } from '../../../../extensions/agent-skills/running-skills-ledger.js';
 import { validateBoundaryOrDorkHome } from '../../../../../lib/boundary.js';
 import { SESSIONS } from '../../../../../config/constants.js';
-import { feedProjector } from '../../../../session/session-event-normalizer.js';
+import { feedProjector } from '../../../../session/projection/session-event-normalizer.js';
 import { SessionStateProjector } from '../../../../session/session-state-projector.js';
 import {
   ClaudeCodeRuntime,

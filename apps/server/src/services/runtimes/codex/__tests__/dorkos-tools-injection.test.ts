@@ -5,7 +5,7 @@ import {
   disposeProjector,
   SessionStateProjector,
 } from '../../../session/session-state-projector.js';
-import { feedProjector } from '../../../session/session-event-normalizer.js';
+import { feedProjector } from '../../../session/projection/session-event-normalizer.js';
 async function actualCodexProducerPrincipal(
   principals: Awaited<ReturnType<typeof nativeRoomAuthorityFixture>>['principals'],
   expectedCanonicalCwd: string

@@ -18,7 +18,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { mapResultEvent } from '../../runtimes/claude-code/sdk/event-mappers/result-event-mapper.js';
-import { feedProjector } from '../session-event-normalizer.js';
+import { feedProjector } from '../projection/session-event-normalizer.js';
 import { SessionStateProjector } from '../session-state-projector.js';
 
 import type { SessionLifecycle } from '@dorkos/shared/session-stream';

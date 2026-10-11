@@ -134,7 +134,7 @@ import {
   type PermissionService,
   type PermissionWriter,
 } from '../services/core/permissions/index.js';
-import { titleForMcpTool } from '../services/core/mcp-tool-tiers.js';
+import { titleForMcpTool } from '../services/core/mcp-tools/mcp-tool-tiers.js';
 import { writerForPosture } from './permissions.js';
 import { logger } from '../lib/logger.js';
 import { projectsOfFolders } from '../services/projects/project-registry.js';

@@ -34,7 +34,7 @@ import type { DocWriteIntentRow } from '../../store.js';
 import { rawByteHash } from '../checkbox-bytes.js';
 import { recoverCheckboxPage } from '../write-recovery.js';
 import { VerifiedCheckboxAuthoritySchema } from '../checkbox-evidence.js';
-import { observeCheckboxSource } from '../authority-snapshot.js';
+import { observeCheckboxSource } from '../authority/authority-snapshot.js';
 import { readDocSourceDescriptor } from '../../http-composition.js';
 
 const crashTests: { drain(): Promise<void> }[] = [];
@@ -341,25 +341,9 @@ afterEach(async () => {
   );
   if (cleanupFailed) throw firstCleanupCause;
 });
-async function fixture(
-  options: CheckboxServiceOptions = {},
-  recoveryPhase?: (phase: 'cleanup-start' | 'cleanup-settled') => void
-) {
+async function fixture(options: CheckboxServiceOptions = {}) {
   const h = await makeFixture(options);
-  const cleanup = h.cleanup;
-  cleanups.push(
-    recoveryPhase
-      ? async () => {
-          recoveryPhase('cleanup-start');
-          try {
-            await cleanup();
-          } finally {
-            // Settled is not a positive native closure witness; the original failure propagates.
-            recoveryPhase('cleanup-settled');
-          }
-        }
-      : cleanup
-  );
+  cleanups.push(h.cleanup);
   return h;
 }
 it('writes exactly one raw marker, preserves mode/BOM/CRLF and atomically completes original event/outbox/receipt', async () => {
@@ -897,7 +881,6 @@ it('raw fence reuse still decodes replaced evidence codecs and refuses malformed
 describe('bounded original-intent recovery census', () => {
   let h: Awaited<ReturnType<typeof fixture>>;
   let before: Buffer;
-  let phase: (value: string) => void;
   let assertActive: () => void;
   let runBody: (work: () => Promise<void>) => Promise<void>;
 
@@ -930,20 +913,9 @@ describe('bounded original-intent recovery census', () => {
       },
     });
     const setupPending = (async () => {
-      const started = process.hrtime.bigint();
-      phase = (value: string) =>
-        console.error(
-          'ORIGINAL_101_RECOVERY_PHASE',
-          JSON.stringify({
-            phase: value,
-            elapsedMs: Number(process.hrtime.bigint() - started) / 1_000_000,
-          })
-        );
-      phase('fixture-start');
-      h = await fixture({}, phase);
+      h = await fixture();
       current = h;
       assertActive();
-      phase('fixture-ready');
       before = await readFile(h.path);
       assertActive();
       h.failCompletion(true);
@@ -955,7 +927,6 @@ describe('bounded original-intent recovery census', () => {
       assertActive();
       const base = h.store.getWriteIntent(h.row().intentId)!;
       h.db.$client.prepare("UPDATE canvas_doc_write_intents SET status='prepared'").run();
-      phase('seed-start');
       for (let i = 0; i < 100; i++) {
         const intentId = randomUUID(),
           eventId = randomUUID();
@@ -978,7 +949,6 @@ describe('bounded original-intent recovery census', () => {
         h.store.transaction((tx) => tx.insert(canvasDocWriteIntents).values(seeded).run());
         h.service.validate(h.store.getWriteIntent(intentId)!);
       }
-      phase('seed-ready');
       assertActive();
     })();
     void setupPending.catch(() => {});
@@ -989,9 +959,7 @@ describe('bounded original-intent recovery census', () => {
     const currentFixture = h;
     await runBody(async () => {
       const h = currentFixture;
-      phase('body-start');
       const one = await recoverCheckboxPage(h.service);
-      phase('page-one-returned');
       assertActive();
       expect(one).toMatchObject({
         selected: 100,
@@ -1000,7 +968,6 @@ describe('bounded original-intent recovery census', () => {
         hasMore: true,
       });
       const two = await recoverCheckboxPage(h.service, one.cursor);
-      phase('page-two-returned');
       assertActive();
       expect(two).toMatchObject({ selected: 1, verified: 0, retryableFailures: 0, hasMore: false });
       expect(one.cursor).not.toEqual(two.cursor);
@@ -1013,7 +980,6 @@ describe('bounded original-intent recovery census', () => {
       ).rejects.toThrow('cursor');
       assertActive();
       await expect(recoverCheckboxPage(h.service, undefined, 101)).rejects.toThrow('limit');
-      phase('assertions-complete');
     });
   });
 });

@@ -158,6 +158,16 @@ describe('STATUS_BAR_REGISTRY — promotion rules', () => {
     }
   );
 
+  // Picking Ask first used to drop the item, and its open popover, out from
+  // under the person, taking the "make it the default" offer with it.
+  it('keeps permissions on the line at the safe stop while the picker is open', () => {
+    expect(promotedKeys(restingContext())).not.toContain('permission');
+    expect(promotedKeys(restingContext({ permissionPickerOpen: true }))).toContain('permission');
+    expect(severityOf('permission', restingContext({ permissionPickerOpen: true }))).toBe(
+      severityOf('permission', restingContext({ permissionMode: 'acceptEdits' }))
+    );
+  });
+
   it('promotes runtime when it is not the default', () => {
     expect(
       promotedKeys(restingContext({ runtime: { isDefault: false, canSelect: false } }))

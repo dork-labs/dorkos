@@ -20,9 +20,9 @@
 import { HARNESS_LABELS, type HarnessId } from '../manifest/schema.js';
 import type { ActionBase, ProjectionAction } from './types.js';
 import { setActionContent } from './content-map.js';
+import { CLAUDE_INSTRUCTION_CONTENT } from '../workspace-data.js';
 
-/** The deterministic body of the scaffolded Claude instruction pointer. */
-export const CLAUDE_INSTRUCTION_CONTENT = '@../AGENTS.md\n';
+export { CLAUDE_INSTRUCTION_CONTENT } from '../workspace-data.js';
 
 /**
  * Build a deterministic markdown pointer file that defers to AGENTS.md.

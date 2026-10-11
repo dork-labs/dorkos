@@ -43,7 +43,7 @@
 import type { ToolAnnotations } from '@modelcontextprotocol/sdk/types.js';
 import type { AnySchema, ZodRawShapeCompat } from '@modelcontextprotocol/sdk/server/zod-compat.js';
 import type { ToolRegistrar, SdkMcpTool } from '../mcp-tool-gate.js';
-import type { McpToolName } from '../mcp-tool-tiers.js';
+import type { McpToolName } from '../mcp-tools/mcp-tool-tiers.js';
 
 /**
  * The external-only additions for one tool.

@@ -217,7 +217,7 @@ export { withStallGuard } from './stall-guard.js';
 export type { StallGuardOpts } from './stall-guard.js';
 export { TurnWindowSignal } from './turn-window-signal.js';
 export type { TurnWindowWatcher } from './turn-window-signal.js';
-export { toRawSessionEvent, feedProjector } from './session-event-normalizer.js';
+export { toRawSessionEvent, feedProjector } from './projection/session-event-normalizer.js';
 export {
   callerNamedCwd,
   resolveSessionCwdOrDefault,

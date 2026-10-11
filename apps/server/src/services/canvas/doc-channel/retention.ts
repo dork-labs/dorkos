@@ -16,7 +16,7 @@ import {
   retainedRoomEventSql,
   backfillEnvelopeAccounting,
 } from './current/accounting.js';
-import { DocIngestRefusal } from './ingest-types.js';
+import { DocIngestRefusal } from './ingest-data/ingest-types.js';
 
 /** Completed history caps include compact headers and receipt outcomes, not only app payloads. */
 export interface DocRetentionPolicy {

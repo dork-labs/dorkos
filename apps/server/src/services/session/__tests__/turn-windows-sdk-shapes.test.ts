@@ -17,7 +17,7 @@
  */
 import { describe, it, expect } from 'vitest';
 import type { StreamEvent } from '@dorkos/shared/types';
-import { feedProjector } from '../session-event-normalizer.js';
+import { feedProjector } from '../projection/session-event-normalizer.js';
 import { SessionStateProjector } from '../session-state-projector.js';
 import { mapSdkMessage } from '../../runtimes/claude-code/sdk/sdk-event-mapper.js';
 import { createToolState } from '../../runtimes/claude-code/agent-types.js';

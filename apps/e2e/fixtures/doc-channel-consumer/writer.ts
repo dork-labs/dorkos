@@ -1,51 +1,27 @@
+import {
+  UUID,
+  need,
+  canonical,
+  digest,
+  request,
+  type WriteRequest,
+  type WriterReceipt,
+  type WriterOperation,
+  type FaultStage,
+} from './writer-data.js';
+export { canonical, digest } from './writer-data.js';
+export type { WriteRequest, WriterReceipt, WriterOperation, FaultStage } from './writer-data.js';
 /** Sanitized temporary writer effect evidence; never a production grant/ledger. */
-import { createHash, randomUUID } from 'node:crypto';
+import { randomUUID } from 'node:crypto';
 import { mkdtemp, mkdir, open, readFile, rename, rm, lstat, realpath } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import {
-  CanvasChannelEventReceiptSchema,
-  type CanvasChannelEventReceipt,
-} from '@dorkos/shared/canvas-channel-schemas';
+import { CanvasChannelEventReceiptSchema } from '@dorkos/shared/canvas-channel-schemas';
 
 const MAX_LEDGER = 8 * 1024 * 1024;
 const MAX_NOTE = 64 * 1024;
 const MAX_RECORD = 128 * 1024;
 const MAX_CHANNEL_CAPTURE = 32 * 1024; // Fixture resource bound; NOT a promised protocol maximum.
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-export type WriteRequest =
-  | { operationId: string; kind: 'comment'; text: string }
-  | { operationId: string; kind: 'toggle'; checked: boolean }
-  | { operationId: string; kind: 'undo'; originalOperationId: string };
-export interface WriterReceipt {
-  operationId: string;
-  requestHash: string;
-  beforeHash: string;
-  afterHash: string;
-  file: 'notes/task.md';
-  savedAt: string;
-  mutationOrdinal: number;
-}
-export interface WriterOperation {
-  request: WriteRequest;
-  requestHash: string;
-  envelopeHash: string;
-  beforeHash: string;
-  afterHash: string;
-  after: string;
-  createdAt: number;
-  phase: 'intent' | 'saved' | 'in_doubt';
-  writerReceipt?: WriterReceipt;
-  handoff: 'pending' | 'sending' | 'recorded' | 'in_doubt';
-  event: {
-    v: 1;
-    id: string;
-    type: 'task.comment' | 'task.toggle';
-    payload: Record<string, string | boolean>;
-    coalesceKey?: string;
-  };
-  channelReceipt?: CanvasChannelEventReceipt;
-}
 interface Ledger {
   v: 1;
   owner: string;
@@ -53,62 +29,6 @@ interface Ledger {
   mutations: number;
   health: 'ready' | 'in_doubt';
   operations: Record<string, WriterOperation>;
-}
-export type FaultStage = 'intent-durable' | 'file-replaced' | 'receipt-durable';
-function need(value: unknown, reason: string): asserts value {
-  if (!value) throw new Error(reason);
-}
-/** Encode closed writer request DATA with deterministic object key order. */
-export function canonical(value: unknown): string {
-  if (value === null || typeof value === 'string' || typeof value === 'boolean')
-    return JSON.stringify(value);
-  if (typeof value === 'number' && Number.isFinite(value)) return JSON.stringify(value);
-  if (Array.isArray(value)) return '[' + value.map(canonical).join(',') + ']';
-  need(
-    typeof value === 'object' && Object.getPrototypeOf(value) === Object.prototype,
-    'Plain canonical request required'
-  );
-  return (
-    '{' +
-    Object.keys(value as object)
-      .sort()
-      .map((key) => JSON.stringify(key) + ':' + canonical((value as Record<string, unknown>)[key]))
-      .join(',') +
-    '}'
-  );
-}
-/** Compute the hexadecimal SHA-256 digest of canonical writer DATA. */
-export function digest(value: string): string {
-  return createHash('sha256').update(value).digest('hex');
-}
-function request(raw: unknown): WriteRequest {
-  need(raw && typeof raw === 'object' && !Array.isArray(raw), 'Writer request required');
-  const row = raw as Record<string, unknown>;
-  need(typeof row.operationId === 'string' && UUID.test(row.operationId), 'Stable UUID required');
-  const keys =
-    row.kind === 'comment'
-      ? ['kind', 'operationId', 'text']
-      : row.kind === 'toggle'
-        ? ['kind', 'operationId', 'checked']
-        : ['kind', 'operationId', 'originalOperationId'];
-  need(
-    Object.keys(row).length === keys.length && Object.keys(row).every((key) => keys.includes(key)),
-    'Closed writer request required'
-  );
-  if (row.kind === 'comment')
-    need(
-      typeof row.text === 'string' && row.text.trim() && Buffer.byteLength(row.text) <= 8192,
-      'Bounded nonempty comment'
-    );
-  else if (row.kind === 'toggle') need(typeof row.checked === 'boolean', 'Checkbox value required');
-  else
-    need(
-      row.kind === 'undo' &&
-        typeof row.originalOperationId === 'string' &&
-        UUID.test(row.originalOperationId),
-      'Original Undo UUID required'
-    );
-  return JSON.parse(JSON.stringify(row)) as WriteRequest;
 }
 async function atomic(path: string, bytes: string, replaced?: () => void): Promise<void> {
   const part = path + '.' + randomUUID() + '.tmp';

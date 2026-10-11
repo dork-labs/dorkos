@@ -113,19 +113,50 @@ export async function createOriginalMergeTestFixture(options: {
       const target = targetFor(authorId);
       if (!active.has(authorId)) {
         original.holdNativeSession(target.sessionId);
+        const nativeAdmissionStartedAt = process.hrtime.bigint();
+        let nativeAdmissionPolls = 0;
         original.subsystem.service.post(original.roomId, {
           authorId: original.operator.id,
           mentions: [authorId],
           text: 'Inspect the original Room working copy.',
         });
-        await vi.waitFor(() => {
-          assert.equal(interactionGate.isOpen(target.sessionId), true);
-          assert.ok(
-            peekProjector(target.sessionId)
-              ?.replayFrom(0)
-              .some((event) => event.type === 'text_delta')
-          );
-        });
+        try {
+          await vi.waitFor(() => {
+            nativeAdmissionPolls += 1;
+            assert.equal(interactionGate.isOpen(target.sessionId), true);
+            assert.ok(
+              peekProjector(target.sessionId)
+                ?.replayFrom(0)
+                .some((event) => event.type === 'text_delta')
+            );
+          });
+        } catch (cause) {
+          // Failure-only bounded DATA precedes cleanup; the original assertion cause stays first.
+          try {
+            const events = peekProjector(target.sessionId)?.replayFrom(0) ?? [];
+            console.error(
+              '[room-native-admission-data]',
+              JSON.stringify({
+                scope: 'merge',
+                elapsedMs: Math.min(
+                  600000,
+                  Math.max(
+                    0,
+                    Math.round(Number(process.hrtime.bigint() - nativeAdmissionStartedAt) / 1000000)
+                  )
+                ),
+                polls: Math.min(100000, nativeAdmissionPolls),
+                gateOpen: interactionGate.isOpen(target.sessionId),
+                placed: original.readBoundPlacedContext(target.sessionId) !== undefined,
+                prepared: original.readBoundPreparedContext(target.sessionId) !== undefined,
+                projectedError: events.some((event) => event.type === 'error'),
+              }).slice(0, 512)
+            );
+          } catch {
+            // Observation cannot replace the original native admission failure.
+          }
+          throw cause;
+        }
         const prepared = original.readBoundPreparedContext(target.sessionId);
         assert.ok(prepared?.files);
         active.add(authorId);

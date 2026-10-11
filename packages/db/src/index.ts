@@ -8,10 +8,14 @@
  * @module db
  */
 import { migrate } from 'drizzle-orm/better-sqlite3/migrator';
+import { readMigrationFiles } from 'drizzle-orm/migrator';
+import { sql as migrationSql } from 'drizzle-orm';
 import { constructDatabase } from './database-construction.js';
 export { DatabaseOpenError } from './database-construction.js';
 import { migrationsFolder } from './migrations-folder.js';
 import { bridgeLegacyDocMigrationHistory } from './doc-migration-history.js';
+import { readPublishedConnectorRecoveryPlan } from './connector-retirement-recovery-data.js';
+import { verifyCanonicalSchema } from './doc-migration-schema.js';
 
 /**
  * Thrown when the database at a path exists but will not open.
@@ -55,8 +59,57 @@ export function createDb(dbPath: string) {
  */
 export function runMigrations(db: ReturnType<typeof createDb>): void {
   const folder = migrationsFolder();
-  bridgeLegacyDocMigrationHistory(db, folder);
-  migrate(db, { migrationsFolder: folder });
+  const retiredMembership = db.$client
+    .prepare(
+      "SELECT count(*) AS count FROM sqlite_master WHERE type='table' AND name IN ('agent_connector_attachments','connected_accounts','connector_legacy_agent_revocations','session_connector_attachments')"
+    )
+    .get() as { count: number };
+  const hasLedger = db.$client
+    .prepare(
+      "SELECT name FROM sqlite_master WHERE type='table' AND name='connector_application_migrations'"
+    )
+    .get();
+  if (!hasLedger || retiredMembership.count === 4) {
+    bridgeLegacyDocMigrationHistory(db, folder);
+    migrate(db, { migrationsFolder: folder });
+    return;
+  }
+  // Read, authenticate and repair under the same writer transaction. The original
+  // entry owns the writer; no supplied context or exported recovery issuer exists.
+  db.$client.transaction(() => {
+    const recovery = readPublishedConnectorRecoveryPlan(db, folder);
+    if (!recovery) throw new Error('Published connector retirement changed during recovery.');
+    for (const sql of recovery.sql) db.$client.exec(sql);
+    bridgeLegacyDocMigrationHistory(db, folder);
+    applyRecoveryMigrations(db, folder);
+    verifyCanonicalSchema(db, folder, undefined, [], recovery.referenceEnd);
+  })();
+}
+
+/**
+ * Applies the installed SQLiteSyncDialect migration algorithm within the recovery
+ * transaction already owned by this entry. Ordinary startup still uses migrate.
+ * The official reader supplies statement boundaries, hashes and timestamps; only
+ * the dialect's redundant BEGIN/COMMIT/ROLLBACK are owned by the outer transaction.
+ */
+function applyRecoveryMigrations(db: ReturnType<typeof createDb>, folder: string): void {
+  const migrations = readMigrationFiles({ migrationsFolder: folder });
+  db.run(migrationSql`CREATE TABLE IF NOT EXISTS ${migrationSql.identifier('__drizzle_migrations')} (
+    id SERIAL PRIMARY KEY,
+    hash text NOT NULL,
+    created_at numeric
+  )`);
+  const lastDbMigration = db.values<[number, string, number]>(
+    migrationSql`SELECT id, hash, created_at FROM ${migrationSql.identifier('__drizzle_migrations')} ORDER BY created_at DESC LIMIT 1`
+  )[0];
+  for (const migration of migrations) {
+    if (!lastDbMigration || Number(lastDbMigration[2]) < migration.folderMillis) {
+      for (const statement of migration.sql) db.run(migrationSql.raw(statement));
+      db.run(
+        migrationSql`INSERT INTO ${migrationSql.identifier('__drizzle_migrations')} ("hash", "created_at") VALUES(${migration.hash}, ${migration.folderMillis})`
+      );
+    }
+  }
 }
 
 /** The Drizzle DB instance type. Use as the parameter type for all stores. */

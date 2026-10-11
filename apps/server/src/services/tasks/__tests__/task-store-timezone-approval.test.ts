@@ -17,7 +17,7 @@ import { createTestDb } from '@dorkos/test-utils/db';
 import { pulseSchedules, type Db } from '@dorkos/db';
 import { SKILL_FILENAME } from '@dorkos/skills/constants';
 import { TaskStore } from '../task-store.js';
-import type { TaskFileSync } from '../../../services/tasks/sync/task-file-sync.js';
+import type { TaskFileSync } from '../sync/task-file-sync.js';
 import { scheduleContentKey, upgradeLegacyContentKey } from '../schedule-permission-clamp.js';
 
 /** The fixture's settings, which are part of every approval key (DOR-2323). */

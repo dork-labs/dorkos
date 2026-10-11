@@ -1,49 +1,46 @@
+import {
+  accessOriginalCheckboxRows,
+  checkOriginalCheckboxRows,
+  requireOriginalCheckboxEditor,
+  requireOriginalCheckboxGrantDescriptor,
+} from './authority/authority-sql-current.js';
+import {
+  prepareOriginalCheckboxAuthority,
+  prepareOriginalCheckboxRecovery,
+  refreshOriginalCheckboxAuthority,
+  refreshOriginalCheckboxRecovery,
+  requireOriginalCheckboxAuthorityCurrent,
+  requireOriginalCheckboxRecoveryCurrent,
+} from './authority/authority-current-operations.js';
+import type { OriginalCheckboxAuthorityOperationView } from './authority/authority-current-context.js';
 /** Original operator-approved checkbox authority; filesystem observations precede pure SQL gates. */
 import {
   captureCheckboxDependencies,
   isCheckboxAuthorityRefusal,
-  requireCheckboxEditor,
-  readCheckboxCurrentRows,
-  readCheckboxPhysicalId,
   readCheckboxPhysicalTitle,
   type CheckboxAuthorityDependencies,
   type CheckboxReservationSubject,
-} from './authority-policy.js';
+} from './authority/authority-policy.js';
 export type {
   CheckboxAuthorityDependencies,
   CheckboxReservationSubject,
-} from './authority-policy.js';
+} from './authority/authority-policy.js';
 import {
   auditCheckboxReservationScope,
   retireCheckboxReservationScope,
 } from './reservations/reservation-bridge.js';
 import { requireDocChannelStoreDatabase } from '../store.js';
 import { AsyncLocalStorage } from 'node:async_hooks';
-import { and, isNull, eq, canvasDocGrants, type DbTransaction } from '@dorkos/db';
-import {
-  CanvasChannelCheckboxRequestSchema,
-  matchesCanvasChannelEvent,
-} from '@dorkos/shared/canvas-channel-schemas';
-import { hashApprovalInput } from '../../../core/approvals/approval-input-hash.js';
+import type { DbTransaction } from '@dorkos/db';
 import type { DocChannelActor } from '../authorization.js';
-import {
-  readDocSourceDescriptor,
-  sameDocOwnerAuthority,
-  docInstallationOwner,
-} from '../current/doc-source-policy.js';
+import { readDocSourceDescriptor } from '../current/doc-source-policy.js';
 import type { DocChannelStore, DocWriteIntentRow } from '../store.js';
 import type { SynchronousResult } from '../storage/store-transaction.js';
-import {
-  VerifiedCheckboxAuthoritySchema,
-  requireSameCheckboxAuthority,
-  validateCheckboxEvidence,
-  type CheckboxRequest,
-  type VerifiedCheckboxAuthority,
-} from './checkbox-evidence.js';
+import { type CheckboxRequest, type VerifiedCheckboxAuthority } from './checkbox-evidence.js';
 import {
   CheckboxAuthorityRefusal,
-  CheckboxAuthorityTransactions,
   requireSameCheckboxActor,
+  CheckboxAuthorityTransactions,
   CheckboxSnapshotRegistry,
   checkboxAuthoritySync,
   checkboxAuthorityClock,
@@ -52,7 +49,21 @@ import {
   readOriginalCheckboxManifestCloseFailure,
   type CheckboxAuthoritySnapshot,
   type CheckboxSourceObservation,
-} from './authority-snapshot.js';
+} from './authority/authority-snapshot.js';
+
+const authorityOperationViews = new WeakMap<object, OriginalCheckboxAuthorityOperationView>();
+const authorityOperationApply = Reflect.apply,
+  authorityOperationGet = WeakMap.prototype.get,
+  authorityOperationSet = WeakMap.prototype.set;
+/** Refuse all public authority/Db/context/proxy values before exposing original mutation ports. */
+export function readOriginalCheckboxAuthorityOperationView(
+  owner: object
+): OriginalCheckboxAuthorityOperationView {
+  const view = authorityOperationApply(authorityOperationGet, authorityOperationViews, [owner]) as
+    OriginalCheckboxAuthorityOperationView | undefined;
+  if (!view) throw new Error('Unknown original checkbox authority operation owner.');
+  return view;
+}
 
 const reservationBindingBrand: unique symbol = Symbol('checkbox-reservation-binding');
 export interface CheckboxReservationBinding {
@@ -160,8 +171,11 @@ export function requireCheckboxReservationScope(
   if (!genuine) throw new Error('Unknown checkbox reservation binding.');
   genuine.requireScope(tx);
 }
+const originalDocPrivateConstructionFreeze = Object.freeze;
+
 /** Fresh-snapshot interface for parent-owned writer migration; old writer ports remain unchanged. */
 export class DocCheckboxAuthority {
+  readonly #operationKey = originalDocPrivateConstructionFreeze({});
   readonly #snapshots = new CheckboxSnapshotRegistry();
   readonly #reservationObservations = new WeakMap<
     DbTransaction,
@@ -191,21 +205,7 @@ export class DocCheckboxAuthority {
       observeGrant: (id) => this.#operation(() => this.#observe(id)),
       manifestCloseFailure: () => this.#manifestCloseFailure,
       requireGrantSource: (id, observation, tx) =>
-        withCheckboxReadOnlyGate(deps.db, () => {
-          if (
-            !deps.db.$client.inTransaction ||
-            JSON.stringify(readDocSourceDescriptor(deps, id, tx)) !==
-              JSON.stringify(observation.descriptor)
-          )
-            throw new CheckboxAuthorityRefusal('SOURCE_DESCRIPTOR_CHANGED');
-          const channel = deps.store.getChannel(id, tx);
-          if (
-            !channel ||
-            channel.closedAt !== null ||
-            channel.manifestHash !== observation.manifestHash
-          )
-            throw new CheckboxAuthorityRefusal('MANIFEST_CHANGED');
-        }),
+        requireOriginalCheckboxGrantDescriptor(this.#operationKey, id, observation, tx),
       bind: (): ReservationBindingOperations => {
         if (deps.db.$client.inTransaction)
           throw new Error('Checkbox reservation binding requires an inactive database.');
@@ -248,6 +248,59 @@ export class DocCheckboxAuthority {
         };
       },
     });
+    const createOriginalView = (
+      owner: DocCheckboxAuthority
+    ): Readonly<OriginalCheckboxAuthorityOperationView> =>
+      originalDocPrivateConstructionFreeze<OriginalCheckboxAuthorityOperationView>({
+        deps: this.#deps,
+        snapshots: this.#snapshots,
+        transactions: this.#transactions,
+        reservationObservations: this.#reservationObservations,
+        get transaction() {
+          const operation = owner.transaction;
+          return <T>(work: (tx: DbTransaction) => T & SynchronousResult<T>): T =>
+            authorityOperationApply(operation, owner, [work]);
+        },
+        get refreshRecoveryCurrent() {
+          const operation = owner.refreshRecoveryCurrent;
+          return (intent: DocWriteIntentRow, approved: VerifiedCheckboxAuthority) =>
+            authorityOperationApply(operation, owner, [intent, approved]);
+        },
+        get requireRecoveryCurrent() {
+          const operation = owner.requireRecoveryCurrent;
+          return (
+            intent: DocWriteIntentRow,
+            approved: VerifiedCheckboxAuthority,
+            snapshot: CheckboxAuthoritySnapshot,
+            tx: DbTransaction
+          ) => authorityOperationApply(operation, owner, [intent, approved, snapshot, tx]);
+        },
+        operation: <T>(run: () => Promise<T>) => this.#operation(run),
+        currentOperation: <T>(run: () => T) => this.#currentOperation(run),
+        access: (id: string, actor: DocChannelActor, tx: DbTransaction) =>
+          this.#access(id, actor, tx),
+        checked: (
+          id: string,
+          grantId: string,
+          revision: number,
+          observation: CheckboxSourceObservation,
+          tx: DbTransaction,
+          actor?: DocChannelActor
+        ) => this.#checked(id, grantId, revision, observation, tx, actor),
+        editor: (
+          id: string,
+          actor: DocChannelActor | undefined,
+          tx: DbTransaction,
+          options?: { grantId?: string; time?: number }
+        ) => this.#editor(id, actor, tx, options),
+        now: () => this.#now(),
+        outside: () => this.#outside(),
+        observe: (id: string) => this.#observe(id),
+      });
+    authorityOperationApply(authorityOperationSet, authorityOperationViews, [
+      this.#operationKey,
+      createOriginalView(this),
+    ]);
   }
   /** Open one authoritative caller transaction; foreign, nested and escaped handles gain no authority. */
   transaction<T>(work: (tx: DbTransaction) => T & SynchronousResult<T>): T {
@@ -296,78 +349,18 @@ export class DocCheckboxAuthority {
     }
   }
   #accessRows(documentId: string, actor: DocChannelActor, tx: DbTransaction): undefined {
-    const time = this.#now().getTime();
-    if (
-      !sameDocOwnerAuthority(
-        actor.principal.claims.owner,
-        docInstallationOwner(this.#deps.installationId)
-      )
-    )
-      throw new CheckboxAuthorityRefusal('ORIGINAL_OWNER_CHANGED');
-    const physical = readCheckboxPhysicalId(tx, documentId);
-    const channel = this.#deps.store.getChannel(documentId, tx);
-    if (!physical || !channel || channel.closedAt !== null)
-      throw new CheckboxAuthorityRefusal('DOCUMENT_CLOSED');
-    checkboxAuthoritySync(this.#deps.authorization.requireCurrent(documentId, actor, true, tx));
-    this.#editor(documentId, actor, tx, { time });
-    return undefined;
+    return accessOriginalCheckboxRows(this.#operationKey, documentId, actor, tx);
   }
   /** Select exactly one actual eligible original consumed operator approval. */
   async prepare(
     request: CheckboxRequest,
     actor: DocChannelActor
   ): Promise<VerifiedCheckboxAuthority> {
-    return this.#operation(async () => {
-      const parsed = CanvasChannelCheckboxRequestSchema.parse(request);
-      const bound = { ...actor };
-      this.#outside();
-      this.transaction((tx) => this.#access(parsed.documentId, bound, tx));
-      await this.#deps.authorization.require(parsed.documentId, bound, true);
-      const observation = await this.#observe(parsed.documentId);
-      requireSameCheckboxActor(actor, bound);
-      return this.transaction((tx) =>
-        withCheckboxReadOnlyGate(this.#deps.db, () => {
-          this.#access(parsed.documentId, actor, tx);
-          const time = this.#now().getTime();
-          const candidates = tx
-            .select()
-            .from(canvasDocGrants)
-            .where(
-              and(
-                eq(canvasDocGrants.documentId, parsed.documentId),
-                isNull(canvasDocGrants.revokedAt)
-              )
-            )
-            .all()
-            .filter(
-              (grant) =>
-                (grant.writeOperation as { operation?: unknown } | null)?.operation ===
-                  'checkbox-toggle' &&
-                grant.allowedTypes.some((type) =>
-                  matchesCanvasChannelEvent(type, 'md.task.toggled')
-                ) &&
-                Date.parse(grant.expiresAt ?? '') > time
-            );
-          if (candidates.length !== 1)
-            throw new CheckboxAuthorityRefusal('ORIGINAL_WRITE_GRANT_AMBIGUOUS');
-          const original = candidates[0]!;
-          return this.#checked(
-            parsed.documentId,
-            original.grantId,
-            original.revision,
-            observation,
-            tx,
-            actor
-          );
-        })
-      );
-    });
+    return prepareOriginalCheckboxAuthority(this.#operationKey, request, actor);
   }
   /** Recovery retains the original immutable evidence and original owner; it never chooses a new grant. */
   async prepareRecovery(intent: DocWriteIntentRow): Promise<VerifiedCheckboxAuthority> {
-    const approved = validateCheckboxEvidence(intent).authority;
-    const snapshot = await this.refreshRecoveryCurrent(intent, approved);
-    return this.transaction((tx) => this.requireRecoveryCurrent(intent, approved, snapshot, tx));
+    return prepareOriginalCheckboxRecovery(this.#operationKey, intent);
   }
   /** Last awaited source/root/manifest observation, explicitly supplied to one later SQL boundary. */
   async refreshCurrent(
@@ -375,72 +368,14 @@ export class DocCheckboxAuthority {
     actor: DocChannelActor,
     approved: VerifiedCheckboxAuthority
   ): Promise<CheckboxAuthoritySnapshot> {
-    return this.#operation(async () => {
-      const parsed = CanvasChannelCheckboxRequestSchema.parse(request);
-      const original = VerifiedCheckboxAuthoritySchema.parse(approved);
-      const bound = { ...actor };
-      this.#outside();
-      this.transaction((tx) => this.#access(parsed.documentId, bound, tx));
-      await this.#deps.authorization.require(parsed.documentId, bound, true);
-      const observation = await this.#observe(parsed.documentId);
-      requireSameCheckboxActor(actor, bound);
-      this.transaction((tx) => {
-        this.#access(parsed.documentId, actor, tx);
-        requireSameCheckboxAuthority(
-          original,
-          this.#checked(
-            parsed.documentId,
-            original.grantId,
-            original.grantRevision,
-            observation,
-            tx,
-            actor
-          )
-        );
-      });
-      return this.#snapshots.issue({
-        subject: hashApprovalInput(parsed),
-        approved: original,
-        actor: actor.principal,
-        surface: actor.surface,
-        observation,
-      });
-    });
+    return refreshOriginalCheckboxAuthority(this.#operationKey, request, actor, approved);
   }
   /** Fresh observation for the recorded original intent; no synthetic live principal. */
   async refreshRecoveryCurrent(
     intent: DocWriteIntentRow,
     approved: VerifiedCheckboxAuthority
   ): Promise<CheckboxAuthoritySnapshot> {
-    return this.#operation(async () => {
-      const evidence = validateCheckboxEvidence(intent);
-      requireSameCheckboxAuthority(
-        evidence.authority,
-        VerifiedCheckboxAuthoritySchema.parse(approved)
-      );
-      this.#outside();
-      const observation = await this.#observe(intent.documentId);
-      this.transaction((tx) =>
-        withCheckboxReadOnlyGate(this.#deps.db, () => {
-          this.#editor(intent.documentId, undefined, tx, { grantId: approved.grantId });
-          requireSameCheckboxAuthority(
-            approved,
-            this.#checked(
-              intent.documentId,
-              approved.grantId,
-              approved.grantRevision,
-              observation,
-              tx
-            )
-          );
-        })
-      );
-      return this.#snapshots.issue({
-        subject: hashApprovalInput(intent),
-        approved: VerifiedCheckboxAuthoritySchema.parse(approved),
-        observation,
-      });
-    });
+    return refreshOriginalCheckboxRecovery(this.#operationKey, intent, approved);
   }
   /** Consume once and repeat current SQL rows/approval/editor policies; zero filesystem operations. */
   requireCurrent(
@@ -459,35 +394,14 @@ export class DocCheckboxAuthority {
     snapshot: CheckboxAuthoritySnapshot,
     tx: DbTransaction
   ): VerifiedCheckboxAuthority {
-    this.#transactions.require(tx);
-    return this.#currentOperation(() => {
-      const data = this.#snapshots.consume(snapshot);
-      if (
-        data.subject !== hashApprovalInput(CanvasChannelCheckboxRequestSchema.parse(request)) ||
-        data.actor !== actor.principal ||
-        data.surface !== actor.surface
-      )
-        throw new CheckboxAuthorityRefusal('SNAPSHOT_SUBJECT_CHANGED');
-      requireSameCheckboxAuthority(data.approved, VerifiedCheckboxAuthoritySchema.parse(approved));
-      this.#access(request.documentId, actor, tx);
-      const result = this.#checked(
-        request.documentId,
-        approved.grantId,
-        approved.grantRevision,
-        data.observation,
-        tx,
-        actor
-      );
-      requireSameCheckboxAuthority(data.approved, result);
-      this.#reservationObservations.set(tx, {
-        approved: result,
-        observation: Object.freeze({
-          manifestHash: data.observation.manifestHash,
-          write: result.binding,
-        }),
-      });
-      return result;
-    });
+    return requireOriginalCheckboxAuthorityCurrent(
+      this.#operationKey,
+      request,
+      actor,
+      approved,
+      snapshot,
+      tx
+    );
   }
   /** Original owner/current rows gate in the host's completion transaction. */
   requireRecoveryCurrent(
@@ -504,31 +418,13 @@ export class DocCheckboxAuthority {
     snapshot: CheckboxAuthoritySnapshot,
     tx: DbTransaction
   ): VerifiedCheckboxAuthority {
-    this.#transactions.require(tx);
-    return this.#currentOperation(() => {
-      const data = this.#snapshots.consume(snapshot);
-      if (data.actor || data.subject !== hashApprovalInput(intent))
-        throw new CheckboxAuthorityRefusal('SNAPSHOT_SUBJECT_CHANGED');
-      requireSameCheckboxAuthority(validateCheckboxEvidence(intent).authority, approved);
-      requireSameCheckboxAuthority(data.approved, approved);
-      this.#editor(intent.documentId, undefined, tx, { grantId: approved.grantId });
-      const result = this.#checked(
-        intent.documentId,
-        approved.grantId,
-        approved.grantRevision,
-        data.observation,
-        tx
-      );
-      requireSameCheckboxAuthority(data.approved, result);
-      this.#reservationObservations.set(tx, {
-        approved: result,
-        observation: Object.freeze({
-          manifestHash: data.observation.manifestHash,
-          write: result.binding,
-        }),
-      });
-      return result;
-    });
+    return requireOriginalCheckboxRecoveryCurrent(
+      this.#operationKey,
+      intent,
+      approved,
+      snapshot,
+      tx
+    );
   }
   #currentOperation<T>(run: () => T): T {
     if (this.#entered.getStore())
@@ -543,20 +439,15 @@ export class DocCheckboxAuthority {
     tx: DbTransaction,
     actor?: DocChannelActor
   ): VerifiedCheckboxAuthority {
-    return withCheckboxReadOnlyGate(this.#deps.db, () => {
-      const time = this.#now().getTime();
-      this.#transactions.captureCheckedTime(tx, new Date(time).toISOString());
-      return readCheckboxCurrentRows(
-        this.#deps,
-        documentId,
-        grantId,
-        revision,
-        observation,
-        tx,
-        actor,
-        time
-      );
-    });
+    return checkOriginalCheckboxRows(
+      this.#operationKey,
+      documentId,
+      grantId,
+      revision,
+      observation,
+      tx,
+      actor
+    );
   }
   #editor(
     documentId: string,
@@ -564,8 +455,7 @@ export class DocCheckboxAuthority {
     tx: DbTransaction,
     options: { grantId?: string; time?: number } = {}
   ): void {
-    const time = options.time ?? this.#now().getTime();
-    requireCheckboxEditor(this.#deps, documentId, actor, tx, { grantId: options.grantId, time });
+    return requireOriginalCheckboxEditor(this.#operationKey, documentId, actor, tx, options);
   }
   #now(): Date {
     return new Date(checkboxAuthorityClock(() => this.#deps.now()));
@@ -594,7 +484,7 @@ export class DocCheckboxAuthority {
     return this.#entered.run(true, run);
   }
 }
-export { checkboxDocumentGeneration } from './authority-snapshot.js';
+export { checkboxDocumentGeneration } from './authority/authority-snapshot.js';
 
 /** Fixed observation uses the original constructor's own dependency set, never a caller source reader. */
 export function observeOriginalCheckboxGrantSource(

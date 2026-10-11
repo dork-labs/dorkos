@@ -43,7 +43,7 @@ import {
   rethrowAsCapabilityError,
   resolveAddedBy,
   serverNameField,
-} from './mcp-capability-deps.js';
+} from './capabilities/mcp-capability-deps.js';
 import { mcpSigninCapabilities } from './mcp-signin-capabilities.js';
 import { mcpBrowserCapabilities } from './mcp-browser-capabilities.js';
 

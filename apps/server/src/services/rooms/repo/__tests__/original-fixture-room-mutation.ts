@@ -24,7 +24,7 @@ import {
   mergeNoFf,
   type GitIdentity,
 } from '../room-repo-git.js';
-import { afterFailedWrite } from '../room-worktree-refresh.js';
+import { afterFailedWrite } from '../worktree/room-worktree-refresh.js';
 
 type Assembly = {
   owner: InstallationFileWrites;

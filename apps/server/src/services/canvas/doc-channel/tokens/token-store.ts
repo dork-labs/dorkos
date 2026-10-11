@@ -12,6 +12,7 @@ import {
 } from '@dorkos/shared/canvas-channel-schemas';
 import { z } from 'zod';
 import { types } from 'node:util';
+import { encodeOriginalScalarArray as encodeTokenScalars } from './token-scalar-encoding.js';
 
 const originalApply = Reflect.apply;
 const scalarJson = JSON.stringify;
@@ -336,19 +337,7 @@ export function readOriginalNativeDocTokenHeaderByHash(
 }
 
 function encodeOriginalScalarArray(values: readonly string[], cap: number): string {
-  let text = '[';
-  for (let index = 0; index < values.length; index++) {
-    const value = values[index];
-    if (typeof value !== 'string') throw new Error('Document token evidence invalid.');
-    // Original engine arrays have frozen own scalar entries; never dispatch array toJSON/iterator/join.
-    text += (index === 0 ? '' : ',') + originalApply(scalarJson, JSON, [value]);
-    if (originalApply(utf8Bytes, Buffer, [text, 'utf8']) > cap)
-      throw new Error('Document token evidence invalid.');
-  }
-  text += ']';
-  if (originalApply(utf8Bytes, Buffer, [text, 'utf8']) > cap)
-    throw new Error('Document token evidence invalid.');
-  return text;
+  return encodeTokenScalars(values, cap, originalApply, scalarJson, utf8Bytes);
 }
 /** Consume one genuine active native issuance stage into its owning store and SQL transaction. */
 export function writeOriginalDocTokenIssuanceInsideCurrent(

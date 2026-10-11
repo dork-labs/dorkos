@@ -34,6 +34,7 @@
     "docs:runtime-capabilities": "tsx scripts/generate-runtime-capabilities.ts",
     "check:banned-words": "bash scripts/check-banned-words.sh",
     "check:boundary": "tsx scripts/check-boundary.ts",
+    "check:max-lines": "node scripts/check-max-lines.ts",
     "check:dead-doc-paths": "bash scripts/check-dead-doc-paths.sh",
     "check:vocab-gate": "tsx scripts/check-vocab-gate.ts",
     "check:copy-length": "tsx scripts/check-copy-length.ts",

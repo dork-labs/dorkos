@@ -2,7 +2,10 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { validateBoundary, BoundaryError } from '../lib/boundary.js';
 import { runtimeRegistry } from '../services/core/runtime-registry.js';
-import { readMcpJsonServers, summarizeMcpJsonServers } from '../services/mesh/mcp-json.js';
+import {
+  readMcpJsonServers,
+  summarizeMcpJsonServers,
+} from '../services/mesh/capabilities/mcp-json.js';
 import { logger } from '../lib/logger.js';
 
 const router = Router();

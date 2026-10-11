@@ -23,7 +23,7 @@ import path from 'path';
 import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
 import type { SDKMessage } from '@anthropic-ai/claude-agent-sdk';
 import { BoundaryError, initBoundary } from '../../../../../lib/boundary.js';
-import type { PumpDispatch } from '../session-pump-contract.js';
+import type { PumpDispatch } from '../warm-process/session-pump-contract.js';
 import { SessionPump } from '../session-pump.js';
 import { SessionTurnWindows, type TurnWindow } from '../session-turn-windows.js';
 import { FakeQuery, initMessage } from './fake-pump-query.js';

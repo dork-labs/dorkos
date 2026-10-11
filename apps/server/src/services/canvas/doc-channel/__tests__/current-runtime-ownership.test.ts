@@ -1317,7 +1317,7 @@ it('projects only freshly approved original Room routing and removes readiness a
 });
 
 import { SessionStateProjector } from '../../../session/session-state-projector.js';
-import { feedProjector } from '../../../session/session-event-normalizer.js';
+import { feedProjector } from '../../../session/projection/session-event-normalizer.js';
 
 it.each(['pending-read', 'between-reads', 'replaced-selection'] as const)(
   'drains only original stopped terminal DATA with retired native authority: %s',

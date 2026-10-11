@@ -5,7 +5,7 @@ import {
   toRawSessionEvent,
   feedProjector,
   TURN_REOPENING_STREAM_EVENT_TYPES,
-} from '../session-event-normalizer.js';
+} from '../projection/session-event-normalizer.js';
 import { mapResultEvent } from '../../runtimes/claude-code/sdk/event-mappers/result-event-mapper.js';
 import { SessionStateProjector, CAPABILITY_HOLD_PAUSE_GRACE_MS } from '../index.js';
 

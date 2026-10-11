@@ -390,10 +390,43 @@ describe('raw MCP durable authentication', () => {
   });
 
   it('reconnects an already-connected raw account with the same stable ID and original label', async () => {
-    const context = boot();
+    let probeClass: 'not-observed' | 'ok' | 'unauthorized' | 'timeout' | 'other-failure' =
+      'not-observed';
+    const context = boot({
+      probe: async (connection) => {
+        // Same real default probe and header normalization; retain only bounded DATA.
+        const outcome = await runProbe({ ...connection, headers: connection.headers ?? {} });
+        probeClass =
+          outcome.kind === 'failed'
+            ? outcome.error.startsWith('MCP server probe timed out after ')
+              ? 'timeout'
+              : 'other-failure'
+            : outcome.kind;
+        return outcome;
+      },
+    });
     const flow = await start(context);
     const connected = await context.service.poll(OWNER, flow.flowId);
-    expect(connected.state).toBe('connected');
+    try {
+      expect(connected.state).toBe('connected');
+    } catch (cause) {
+      try {
+        const data =
+          JSON.stringify({
+            tag: 'raw-mcp-initial-connect-failure',
+            probeClass,
+            initializeObserved: methods.includes('initialize'),
+            initializedObserved: methods.includes('notifications/initialized'),
+            toolsListObserved: methods.includes('tools/list'),
+            publicFailedReasonPresent:
+              connected.state === 'failed' && typeof connected.reason === 'string',
+          }) + '\n';
+        if (Buffer.byteLength(data, 'utf8') <= 512) process.stderr.write(data);
+      } catch {
+        /* Failure DATA must preserve the original assertion cause. */
+      }
+      throw cause;
+    }
     if (connected.state !== 'connected') throw new Error('expected connection');
     const reconnect = await context.service.reconnect(OWNER, connected.connectionId, 'reconnect');
     expect(reconnect.state).toBe('pending');

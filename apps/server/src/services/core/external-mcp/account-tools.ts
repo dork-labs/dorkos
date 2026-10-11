@@ -12,7 +12,7 @@ import { AccountUsageSchema } from '@dorkos/shared/account-usage';
 import type { ToolRegistrar } from '../mcp-tool-gate.js';
 import type { McpToolDeps } from '../../runtimes/claude-code/mcp-tools/types.js';
 import { getAccountTools } from '../../runtimes/claude-code/mcp-tools/account-tools.js';
-import { ToolAnnotationPresets } from '../mcp-tool-metadata.js';
+import { ToolAnnotationPresets } from '../mcp-tools/mcp-tool-metadata.js';
 import { registerFromDefinitions, type ExternalToolConfigs } from './register-from-definitions.js';
 
 /** The external-only additions for each account tool. */

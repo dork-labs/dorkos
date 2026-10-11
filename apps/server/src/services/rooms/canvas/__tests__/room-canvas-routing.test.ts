@@ -30,7 +30,7 @@ import { fileURLToPath } from 'node:url';
 import type { StreamEvent, UiState } from '@dorkos/shared/types';
 import { UiStateReportDocumentSchema, type UiCommand } from '@dorkos/shared/schemas';
 import type { RawSessionEvent } from '../../../session/session-state-projector.js';
-import { toRawSessionEvent } from '../../../session/session-event-normalizer.js';
+import { toRawSessionEvent } from '../../../session/projection/session-event-normalizer.js';
 import { CapabilityToolError } from '../../../core/capabilities/index.js';
 import { controlUi, getUiState } from '../../../session/browser-seat/ui-control.js';
 import { uiTurnFacts } from '../../../session/browser-seat/ui-turn-facts.js';

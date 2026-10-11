@@ -1,3 +1,12 @@
+import {
+  recordOriginalReservationTerminal,
+  transitionOriginalReservationRow,
+  requireOriginalReservationEffect,
+} from './reservation-transition-operations.js';
+import type {
+  OriginalReservationScope as Scope,
+  OriginalReservationTransitionView,
+} from './reservation-transition-context.js';
 /** Fixed owning-row admission and conversion; no transferable credit or append permit. */
 import { sql, canvasDocEvents, canvasDocWriteIntents, type DbTransaction } from '@dorkos/db';
 import { CanvasChannelCheckboxRequestSchema } from '@dorkos/shared/canvas-channel-schemas';
@@ -15,17 +24,14 @@ import {
 } from '../../store.js';
 import { backfillEnvelopeAccounting, type DocIngestLimits } from '../../current/accounting.js';
 import {
-  checkCheckboxTerminal,
   sameCheckboxRow as same,
-  stagedCheckboxRow,
-  replacedCheckboxRow,
   requireCheckboxRow,
   requireCheckboxTerminalAbsentOutbox,
 } from './reservation-terminal.js';
 import type { CheckboxPhysicalIdentity, CheckboxReceipt } from '../checkbox-evidence.js';
 import { requireCheckboxCapacity, checkboxReservationLimits } from './reservation-capacity.js';
 import { auditOriginalCheckboxOutbox } from './reservation-outbox.js';
-import type { DocIngestAccess } from '../../ingest-types.js';
+import type { DocIngestAccess } from '../../ingest-data/ingest-types.js';
 import {
   createCheckboxReservationBinding,
   runCheckboxReservationTransaction,
@@ -36,12 +42,14 @@ import {
   type CheckboxReservationBinding,
   type CheckboxReservationSubject,
 } from '../authority.js';
-import { checkboxAuthoritySync, type CheckboxAuthoritySnapshot } from '../authority-snapshot.js';
+import {
+  checkboxAuthoritySync,
+  type CheckboxAuthoritySnapshot,
+} from '../authority/authority-snapshot.js';
 import {
   freezeCheckboxData,
   validateCheckboxEvidence,
   VerifiedCheckboxAuthoritySchema,
-  CheckboxPhysicalIdentitySchema,
 } from '../checkbox-evidence.js';
 import { projectVerifiedCheckbox, type VerifiedCheckboxProjection } from '../completion.js';
 import {
@@ -50,29 +58,6 @@ import {
   type CheckboxReservationPolicy,
 } from './reservation-policy-census.js';
 
-interface Scope {
-  binding: CheckboxReservationBinding;
-  store?: DocChannelStore;
-  failed: boolean;
-  cause?: unknown;
-  conversionAttempted: boolean;
-  preparedConversion?: OriginalPreparedCheckboxConversion;
-  obligation?: {
-    projection: VerifiedCheckboxProjection;
-    event: DocEventRow;
-    policy: CheckboxReservationPolicy;
-    documentLabel: string;
-    priorBatch: DocBatchRow | null;
-  };
-  outboxStarted?: boolean;
-  rowObligation?: {
-    row: DocWriteIntentRow;
-    terminal: boolean;
-    effect?: boolean;
-    prepared?: boolean;
-  };
-  staged?: { store: DocChannelStore; projection: VerifiedCheckboxProjection; receivedAt: string };
-}
 const preparedConversionBrand: unique symbol = Symbol('original-checkbox-conversion');
 export interface OriginalPreparedCheckboxConversion {
   readonly [preparedConversionBrand]: true;
@@ -158,6 +143,20 @@ export function consumePreparedCheckboxConversion(
     return event;
   });
 }
+const originalReservationTransitionViews = new WeakMap<object, OriginalReservationTransitionView>();
+const reservationViewGet = WeakMap.prototype.get;
+const reservationViewSet = WeakMap.prototype.set;
+const reservationViewApply = Reflect.apply;
+/** Refuse every key except the original bridge-private key before reservation effects. */
+export function readOriginalReservationTransitionView(
+  owner: object
+): OriginalReservationTransitionView {
+  const view = reservationViewApply(reservationViewGet, originalReservationTransitionViews, [
+    owner,
+  ]) as OriginalReservationTransitionView | undefined;
+  if (!view) throw new Error('Unknown original checkbox reservation transition owner.');
+  return view;
+}
 const scopes = new WeakMap<DbTransaction, Scope>();
 function fail(scope: Scope, cause: unknown): never {
   if (!scope.failed) {
@@ -222,120 +221,25 @@ export function createCheckboxReservationBridge(
 ) {
   const binding = createCheckboxReservationBinding(authority, store);
   const caps = checkboxReservationLimits(policyLimits);
+  const operationKey = Object.freeze({});
+  reservationViewApply(reservationViewSet, originalReservationTransitionViews, [
+    operationKey,
+    Object.freeze({ binding, store, guarded, captureSubject }),
+  ]);
   const terminal = (
     kind: 'no_op' | 'conflict',
     input: CheckboxFixedTerminalInput,
     tx: DbTransaction
-  ): CheckboxReceipt =>
-    guarded(binding, tx, (scope) => {
-      if (scope.rowObligation || scope.conversionAttempted)
-        throw new Error('Only one checkbox operation may occur per scope.');
-      const subject = captureSubject(input.liveSubject);
-      const candidate = freezeCheckboxData(structuredClone(input.candidate));
-      if (subject.kind !== 'live')
-        throw new Error('Only a genuine live request can record new terminal evidence.');
-      requireCheckboxSubjectRow(subject, candidate);
-      const receipt = checkCheckboxTerminal(candidate, kind);
-      const census = scanCheckboxReservationPolicies(tx, {
-        documentId: candidate.documentId,
-        eventId: candidate.eventId,
-        routeId: subject.approved.routeId!,
-      });
-      const current = requireCheckboxReservationSubject(binding, subject, input.freshSnapshot, tx);
-      if (census.raw.matchingIntent)
-        throw new Error('Document event UUID is permanently reserved.');
-      requireCheckboxTerminalAbsentOutbox(tx, candidate);
-      const row = freezeCheckboxData({
-        ...candidate,
-        createdAt: current.currentTime,
-        updatedAt: current.currentTime,
-      });
-      scope.store = store;
-      scope.rowObligation = { row, terminal: true };
-      tx.insert(canvasDocWriteIntents).values(row).run();
-      requireCheckboxRow(tx, row);
-      return receipt;
-    });
+  ): CheckboxReceipt => recordOriginalReservationTerminal(operationKey, kind, input, tx);
   const transition = (
     mode: 'staged' | 'replaced',
     input: CheckboxFixedRowInput,
     tx: DbTransaction,
     replacement?: CheckboxPhysicalIdentity
   ): DocWriteIntentRow =>
-    guarded(binding, tx, (scope) => {
-      if (scope.rowObligation || scope.conversionAttempted)
-        throw new Error('Only one checkbox operation may occur per scope.');
-      const subject = captureSubject(input.subject);
-      const original = freezeCheckboxData(structuredClone(input.expected));
-      requireCheckboxSubjectRow(subject, original);
-      requireCheckboxRow(tx, original);
-      const identity =
-        mode === 'staged'
-          ? freezeCheckboxData(CheckboxPhysicalIdentitySchema.parse(replacement))
-          : undefined;
-      readCheckboxReservationPolicy(tx, original);
-      const current = requireCheckboxReservationSubject(binding, subject, input.freshSnapshot, tx);
-      const row =
-        mode === 'replaced'
-          ? replacedCheckboxRow(original, current.currentTime)
-          : stagedCheckboxRow(original, identity!, current.currentTime);
-      requireCheckboxRow(tx, original);
-      readCheckboxReservationPolicy(tx, original);
-      scope.store = store;
-      scope.rowObligation = { row, terminal: false };
-      if (
-        !store.transitionWriteIntent(
-          original.intentId,
-          'prepared',
-          {
-            status: row.status,
-            evidence: row.evidence,
-            errorCode: row.errorCode,
-            updatedAt: row.updatedAt,
-          },
-          tx
-        )
-      )
-        throw new Error('Checkbox original transition raced.');
-      requireCheckboxRow(tx, row);
-      return row;
-    });
-  const requireEffect = (input: CheckboxFixedRowInput, tx: DbTransaction): undefined => {
-    return guarded(binding, tx, (scope) => {
-      if (scope.rowObligation || scope.conversionAttempted)
-        throw new Error('Only one checkbox operation may occur per scope.');
-      const subject = captureSubject(input.subject);
-      const original = freezeCheckboxData(structuredClone(input.expected));
-      const evidence = validateCheckboxEvidence(original);
-      if (
-        subject.kind !== 'live' ||
-        original.status !== 'prepared' ||
-        original.errorCode !== null ||
-        evidence.v !== 2 ||
-        evidence.receipt ||
-        evidence.preEffectRefusal ||
-        !evidence.tempPath ||
-        !evidence.tempIdentity
-      )
-        throw new Error('Checkbox effect requires its original live staged evidence.');
-      requireCheckboxSubjectRow(subject, original);
-      requireCheckboxRow(tx, original);
-      scanCheckboxReservationPolicies(tx, {
-        documentId: original.documentId,
-        eventId: original.eventId,
-        routeId: subject.approved.routeId!,
-      });
-      readCheckboxReservationPolicy(tx, original);
-      requireCheckboxTerminalAbsentOutbox(tx, original);
-      requireCheckboxReservationSubject(binding, subject, input.freshSnapshot, tx);
-      requireCheckboxRow(tx, original);
-      readCheckboxReservationPolicy(tx, original);
-      requireCheckboxTerminalAbsentOutbox(tx, original);
-      scope.store = store;
-      scope.rowObligation = { row: original, terminal: false, effect: true };
-      return undefined;
-    });
-  };
+    transitionOriginalReservationRow(operationKey, mode, input, tx, replacement);
+  const requireEffect = (input: CheckboxFixedRowInput, tx: DbTransaction): undefined =>
+    requireOriginalReservationEffect(operationKey, input, tx);
   const prepareConversion = (
     input: {
       intentId: string;

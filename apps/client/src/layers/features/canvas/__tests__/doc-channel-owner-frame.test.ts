@@ -9,8 +9,8 @@ import {
   readOwnedFrameFacade,
   captureOwnedFrameRetirement,
   consumeOwnedFrameRetirement,
-} from '../model/doc-channel-owner-frame';
-import { DocChannelFrameResources } from '../model/doc-channel-frame-resources';
+} from '../model/doc-owner/doc-channel-owner-frame';
+import { DocChannelFrameResources } from '../model/doc-frame/doc-channel-frame-resources';
 const birth = {
   v: 1 as const,
   documentId: 'doc',

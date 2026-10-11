@@ -1,3 +1,24 @@
+import {
+  cleanupOwned,
+  copyNamespaceEntry,
+  type Commands,
+  type Scope,
+  type HttpNamespaceResult,
+  type OriginalHttpCopyFacet,
+} from './http/http-namespace-copy-facet.js';
+export type { HttpNamespaceResult } from './http/http-namespace-copy-facet.js';
+const originalHttpCopyFacets = new WeakMap<object, Readonly<OriginalHttpCopyFacet>>();
+const copyFacetApply = Reflect.apply,
+  copyFacetGet = WeakMap.prototype.get,
+  copyFacetSet = WeakMap.prototype.set,
+  copyFacetFreeze = Object.freeze;
+/** Only a private constructor key reaches the existing namespace lifetime and checks. */
+export function readOriginalHttpCopyFacet(owner: object): Readonly<OriginalHttpCopyFacet> {
+  const own = copyFacetApply(copyFacetGet, originalHttpCopyFacets, [owner]) as
+    Readonly<OriginalHttpCopyFacet> | undefined;
+  if (!own) throw new Error('File namespace writes are not available.');
+  return own;
+}
 /** Fixed ordinary namespace operations; this provides no document/source permission. */
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { randomBytes } from 'node:crypto';
@@ -6,7 +27,6 @@ import type { FileHandle } from 'node:fs/promises';
 import path from 'node:path';
 import type { Request, Response } from 'express';
 import type { Db } from '@dorkos/db';
-import { z } from 'zod';
 import {
   CreateEntryRequestSchema,
   DeleteEntryQuerySchema,
@@ -28,26 +48,13 @@ import {
   requireInstallationHttpFileWriter,
   requireInstallationFileWriteAssembly,
 } from './installation-file-writes.js';
-import {
-  withRecognizedInstallationMutation,
-  type OwnedMutation,
-} from './installation-mutations.js';
+import { withRecognizedInstallationMutation } from './installation-mutations.js';
 import {
   hasRecognizedCheckboxUnresolved,
   CheckboxWriteFencedError,
   CheckboxFenceUnavailableError,
 } from './checkbox-fence.js';
 
-type Commands = {
-  create: z.infer<typeof CreateEntryRequestSchema>;
-  delete: z.infer<typeof DeleteEntryQuerySchema>;
-  rename: z.infer<typeof RenameEntryRequestSchema>;
-  copy: z.infer<typeof CopyEntryRequestSchema>;
-};
-export type HttpNamespaceResult = Readonly<{
-  status: number;
-  body: Readonly<Record<string, unknown>>;
-}>;
 type Binding = {
   writer: InstallationHttpFileWrites;
   owner: InstallationFileWrites;
@@ -63,12 +70,6 @@ type Binding = {
   stop(): Promise<void>;
 };
 const writers = new WeakMap<object, Binding>();
-type Scope = {
-  caller: object;
-  owned: OwnedMutation;
-  active: boolean;
-  boundaries: Map<string, { cwd: string; target: string; resolved: string; validatedCwd: string }>;
-};
 const schemas = {
   create: CreateEntryRequestSchema,
   delete: DeleteEntryQuerySchema,
@@ -140,6 +141,7 @@ export function stopRecognizedInstallationHttpFileWrites(
 
 /** Own HTTP file mutations for one original installation. */
 export class InstallationHttpFileWrites {
+  readonly #copyFacetOwner = copyFacetFreeze({});
   readonly #owner: InstallationFileWrites;
   readonly #db: Db;
   readonly #store: DocChannelStore;
@@ -166,6 +168,19 @@ export class InstallationHttpFileWrites {
       execute: (kind, req, res, input) => this.#admit(kind, req, res, input),
       stop: () => this.#stop(),
     });
+    copyFacetApply(copyFacetSet, originalHttpCopyFacets, [
+      this.#copyFacetOwner,
+      copyFacetFreeze<OriginalHttpCopyFacet>({
+        check: (scope, cleanup) => this.#check(scope, cleanup),
+        current: (scope, cleanup) => this.#current(scope, cleanup),
+        pair: (scope, input) => this.#pair(scope, input),
+        read: (scope, work) => this.#read(scope, work),
+        missing: (scope, target) => this.#missing(scope, target),
+        effect: (scope, work) => this.#effect(scope, work),
+        ownedEffect: (scope, targets, work) => this.#ownedEffect(scope, targets, work),
+        outside: () => this.#outside(),
+      }),
+    ]);
   }
   #outside(): void {
     requireInstallationFileWritesOwner(this.#owner, this.#db, this.#store);
@@ -343,34 +358,7 @@ export class InstallationHttpFileWrites {
     recursive: boolean,
     children: readonly { path: string; identity: { dev: bigint; ino: bigint } }[] = []
   ): Promise<void> {
-    await this.#check(scope, true);
-    let actual;
-    try {
-      actual = await fs.lstat(target, { bigint: true });
-    } catch (error) {
-      if (code(error) === 'ENOENT') return;
-      throw error;
-    }
-    this.#current(scope, true);
-    if (actual.dev !== identity.dev || actual.ino !== identity.ino)
-      throw new Error('Owned cleanup path was replaced.');
-    for (const child of children) {
-      this.#current(scope, true);
-      const observed = await fs.lstat(child.path, { bigint: true });
-      this.#current(scope, true);
-      if (observed.dev !== child.identity.dev || observed.ino !== child.identity.ino)
-        throw new Error('Owned cleanup child was replaced.');
-    }
-    if (children.length) {
-      // Child observations awaited; repeat the directory proof as the final native observation.
-      const finalRoot = await fs.lstat(target, { bigint: true });
-      this.#current(scope, true);
-      if (finalRoot.dev !== identity.dev || finalRoot.ino !== identity.ino)
-        throw new Error('Owned cleanup root was replaced.');
-    }
-    this.#current(scope, true);
-    await fs.rm(target, { recursive, force: false });
-    await this.#check(scope, true);
+    return cleanupOwned(this.#copyFacetOwner, scope, target, identity, recursive, children);
   }
   async #create(scope: Scope, input: Commands['create']): Promise<HttpNamespaceResult> {
     const { validatedCwd, resolved } = await this.#resolve(scope, input.cwd, input.path);
@@ -464,95 +452,6 @@ export class InstallationHttpFileWrites {
     return { status: 200, body: { ok: true } };
   }
   async #copy(scope: Scope, input: Commands['copy']): Promise<HttpNamespaceResult> {
-    const pair = await this.#pair(scope, input);
-    if (pair.from === pair.cwd || pair.to === pair.cwd)
-      return result(400, 'Refusing to copy over the working-directory root', 'REFUSE_ROOT');
-    const info = await this.#read(scope, () => fs.stat(pair.from));
-    if (!(await this.#missing(scope, pair.to)))
-      return result(409, 'Target already exists', 'CONFLICT');
-    if (info.isDirectory() && (pair.to === pair.from || pair.to.startsWith(pair.from + path.sep)))
-      return result(400, 'Refusing to copy a folder into itself', 'COPY_INTO_SELF');
-    await this.#effect(scope, () => fs.mkdir(path.dirname(pair.to), { recursive: true }));
-    let staging: string | undefined;
-    let stageIdentity: { dev: bigint; ino: bigint } | undefined;
-    let destinationIdentity: { dev: bigint; ino: bigint } | undefined;
-    let stagedIdentity: { dev: bigint; ino: bigint } | undefined;
-    let failed = false;
-    let cause: unknown;
-    try {
-      await this.#check(scope);
-      this.#current(scope);
-      staging = await fs.mkdtemp(`${pair.to}.copy-`);
-      this.#outside();
-      scope.owned.assertActive();
-      stageIdentity = await fs.lstat(staging, { bigint: true });
-      await this.#check(scope);
-      const staged = path.join(staging, 'entry');
-      await this.#ownedEffect(scope, [{ path: staging, identity: stageIdentity }], async () => {
-        await fs.cp(pair.from, staged, { recursive: true, errorOnExist: true, force: false });
-        this.#outside();
-        scope.owned.assertActive();
-        stagedIdentity = await fs.lstat(staged, { bigint: true });
-      });
-      await this.#pair(scope, input);
-      if (info.isDirectory()) {
-        // Exclusive root reservation establishes ownership before any destination copying.
-        await this.#check(scope);
-        this.#current(scope);
-        await fs.mkdir(pair.to);
-        this.#outside();
-        scope.owned.assertActive();
-        destinationIdentity = await fs.lstat(pair.to, { bigint: true });
-        await this.#check(scope);
-        await this.#ownedEffect(
-          scope,
-          [
-            { path: staging, identity: stageIdentity },
-            { path: staged, identity: stagedIdentity! },
-            { path: pair.to, identity: destinationIdentity },
-          ],
-          () => fs.cp(staged, pair.to, { recursive: true, errorOnExist: true, force: false })
-        );
-      } else {
-        await this.#ownedEffect(
-          scope,
-          [
-            { path: staging, identity: stageIdentity },
-            { path: staged, identity: stagedIdentity! },
-          ],
-          () => fs.link(staged, pair.to)
-        );
-      }
-    } catch (error) {
-      failed = true;
-      cause = error;
-    } finally {
-      try {
-        if (failed && destinationIdentity)
-          await this.#cleanupOwned(scope, pair.to, destinationIdentity, true);
-      } catch (error) {
-        if (!failed) {
-          failed = true;
-          cause = error;
-        }
-      }
-      try {
-        if (staging && stageIdentity)
-          await this.#cleanupOwned(
-            scope,
-            staging,
-            stageIdentity,
-            true,
-            stagedIdentity ? [{ path: path.join(staging, 'entry'), identity: stagedIdentity }] : []
-          );
-      } catch (error) {
-        if (!failed) {
-          failed = true;
-          cause = error;
-        }
-      }
-    }
-    if (failed) throw cause;
-    return { status: 200, body: { ok: true } };
+    return copyNamespaceEntry(this.#copyFacetOwner, scope, input);
   }
 }

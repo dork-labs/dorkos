@@ -26,7 +26,7 @@ import {
 } from '../../http-composition.js';
 import { DocChannelGrants } from '../../grants.js';
 import { DocCheckboxAuthority } from '../authority.js';
-import { observeCheckboxSource } from '../authority-snapshot.js';
+import { observeCheckboxSource } from '../authority/authority-snapshot.js';
 import type { CheckboxRequest } from '../checkbox-evidence.js';
 
 /** Explicit portable fixture shape over real production service instances. */
@@ -689,7 +689,8 @@ export async function nativeCommittedCodexRoomFixture(
     const { wakeAuthorizedRoomDue } = await import('../../authorization.js');
     const { docDocumentGeneration } = await import('../../identity/incarnation.js');
     const { canvasDocuments, connectorRuntimeBindings, sql } = await import('@dorkos/db');
-    const { feedProjector } = await import('../../../../session/session-event-normalizer.js');
+    const { feedProjector } =
+      await import('../../../../session/projection/session-event-normalizer.js');
     const { getOrCreateProjector, disposeProjector } =
       await import('../../../../session/session-state-projector.js');
     let closed = false;

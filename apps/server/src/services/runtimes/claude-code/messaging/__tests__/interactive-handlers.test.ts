@@ -14,7 +14,7 @@ import {
   resetAutoModeStops,
 } from '../../../../observability/auto-mode-stops.js';
 import { resolveApprovalDecision } from '../../../opencode/messaging/approvals.js';
-import { toRawSessionEvent } from '../../../../session/session-event-normalizer.js';
+import { toRawSessionEvent } from '../../../../session/projection/session-event-normalizer.js';
 import type { StreamEvent, QuestionItem } from '@dorkos/shared/types';
 import { PermissionModeSchema, type PermissionMode } from '@dorkos/shared/schemas';
 import type { ElicitationRequest, PermissionUpdate } from '@anthropic-ai/claude-agent-sdk';

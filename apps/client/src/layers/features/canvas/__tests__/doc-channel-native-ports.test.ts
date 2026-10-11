@@ -1,7 +1,7 @@
 /** Nonissuing mechanics controls, not production ownership fixtures. UNRUN. */
 import { expect, it, vi } from 'vitest';
 import type { PageEvent } from '@dorkos/shared/canvas-channel-schemas';
-import { createDocChannelNativePorts } from '../model/doc-channel-native-ports';
+import { createDocChannelNativePorts } from '../model/doc-frame/doc-channel-native-ports';
 const event = {
   v: 1 as const,
   id: '00000000-0000-4000-8000-000000000001',

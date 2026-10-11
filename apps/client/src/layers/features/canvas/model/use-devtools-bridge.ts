@@ -1,7 +1,7 @@
 /** Page-reported DevTools bridge. A generation correlates a frame lifetime; it authenticates no script. */
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type RefObject } from 'react';
 import type { DevtoolsActionResult, DevtoolsIngest } from '@dorkos/shared/schemas';
-import type { UploadFile } from '@dorkos/shared/transport';
+import { bytesFile, pngBytes } from './devtools-media-data';
 import {
   CANVAS_BRIDGE_LIMITS as LIMITS,
   parseCanvasBridgeReport,
@@ -64,14 +64,6 @@ export interface DevtoolsBridge {
   resourceErrorCount: number;
   notePersonNavigated: () => void;
   noteFrameLoaded: () => void;
-}
-function bytesFile(name: string, type: string, bytes: Uint8Array): UploadFile {
-  const buffer = bytes.slice().buffer;
-  return { name, type, size: bytes.byteLength, arrayBuffer: async () => buffer };
-}
-function pngBytes(dataUrl: string): Uint8Array {
-  const binary = atob(dataUrl.slice(dataUrl.indexOf(',') + 1));
-  return Uint8Array.from(binary, (c) => c.charCodeAt(0));
 }
 
 const MAX_RECORDING_RESERVATION_MS = 8_000;

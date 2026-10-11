@@ -21,7 +21,10 @@ import { hashApprovalInput } from '../../../../core/approvals/approval-input-has
 import { DocChannelNotFoundError } from '../../authorization.js';
 import { DocChannelStore } from '../../store.js';
 import { rawByteHash } from '../checkbox-bytes.js';
-import { CheckboxAuthorityCallbackError, checkboxAuthoritySync } from '../authority-snapshot.js';
+import {
+  CheckboxAuthorityCallbackError,
+  checkboxAuthoritySync,
+} from '../authority/authority-snapshot.js';
 import type { DocGrantAuthority } from '../../grant-policy.js';
 const cleanups: (() => Promise<void>)[] = [];
 afterEach(async () => {

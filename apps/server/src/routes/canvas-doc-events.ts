@@ -26,7 +26,7 @@ import {
   toggleOriginalCheckboxWriter,
   type DocCheckboxWriteService,
 } from '../services/canvas/doc-channel/writes/checkbox-service.js';
-import { isCheckboxAuthorityRefusal } from '../services/canvas/doc-channel/writes/authority-policy.js';
+import { isCheckboxAuthorityRefusal } from '../services/canvas/doc-channel/writes/authority/authority-policy.js';
 import type {
   DocChannelMetrics,
   DocChannelHttpOutcome,

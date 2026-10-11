@@ -26,7 +26,7 @@ import {
   pathsCollide,
   type RoomWorktreeRefreshDeps,
   type RoomWorktreeRefreshTarget,
-} from '../room-worktree-refresh.js';
+} from '../worktree/room-worktree-refresh.js';
 
 let ROOM_ID: string;
 

@@ -87,7 +87,11 @@ import {
   createDorkOsToolServer,
   handRegisteredInSessionTools,
 } from '../../runtimes/claude-code/mcp-tools/index.js';
-import { MCP_TOOL_TIERS, gatedActionForMcpTool, type McpToolTier } from '../mcp-tool-tiers.js';
+import {
+  MCP_TOOL_TIERS,
+  gatedActionForMcpTool,
+  type McpToolTier,
+} from '../mcp-tools/mcp-tool-tiers.js';
 import { READ_ONLY_MCP_TOOL_NAMES } from '../external-mcp/tool-security.js';
 import { UI_COMMAND_REACH, UiCommandSchema } from '@dorkos/shared/schemas';
 import {

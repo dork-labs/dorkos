@@ -12,7 +12,7 @@ import { describe, it, expect, vi } from 'vitest';
 import { z } from 'zod';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import type { ToolRegistrar, SdkMcpTool } from '../../mcp-tool-gate.js';
-import { ToolAnnotationPresets } from '../../mcp-tool-metadata.js';
+import { ToolAnnotationPresets } from '../../mcp-tools/mcp-tool-metadata.js';
 import { registerFromDefinitions, type ExternalToolConfigs } from '../register-from-definitions.js';
 
 /** A registrar that records what it was asked to register. */

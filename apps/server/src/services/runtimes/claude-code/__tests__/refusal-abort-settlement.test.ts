@@ -49,7 +49,7 @@ import type { StreamEvent } from '@dorkos/shared/types';
 import { mapSdkMessageWithMedia } from '../media-capture.js';
 import { createToolState, stopWasAimedAt } from '../agent-types.js';
 import type { AgentSession } from '../agent-types.js';
-import { feedProjector } from '../../../session/session-event-normalizer.js';
+import { feedProjector } from '../../../session/projection/session-event-normalizer.js';
 import { SessionStateProjector } from '../../../session/session-state-projector.js';
 
 const SESSION_ID = 'sess-refusal';

@@ -28,6 +28,7 @@
  */
 import { lstatSync, readlinkSync, realpathSync } from 'node:fs';
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
+import { extensionSkillPluginsDir } from '../workspace-data.js';
 import { z } from 'zod';
 import { EXTENSION_ID_REGEX } from '@dorkos/shared/extension-id';
 import { PACKAGE_TEXT_MAX_BYTES, readTextFileWithinSync } from '@dorkos/shared/bounded-read';
@@ -56,22 +57,7 @@ export function runningExtensionSkillsPath(dorkHome: string): string {
   return join(dorkHome, 'extensions', RUNNING_EXTENSION_SKILLS_FILE);
 }
 
-/**
- * The folder holding one generated plugin root per running global extension
- * with skills: `{dorkHome}/cache/extensions/skill-plugins`.
- *
- * The server owns it whole. Each `<id>/` inside is a Claude Code plugin root
- * (`.claude-plugin/plugin.json` plus `skills/<name>` links to the extension's
- * validated skill folders) that DorkOS's own Claude Code sessions load, and it
- * is what every global-tier link points through, so removing a root withdraws
- * that extension's skills everywhere at once.
- *
- * @param dorkHome - the DorkOS data directory, absolute.
- * @returns the absolute folder.
- */
-export function extensionSkillPluginsDir(dorkHome: string): string {
-  return join(dorkHome, 'cache', 'extensions', 'skill-plugins');
-}
+export { extensionSkillPluginsDir } from '../workspace-data.js';
 
 /**
  * The generated plugin root for one global extension.

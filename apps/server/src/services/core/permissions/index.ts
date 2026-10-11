@@ -8,7 +8,7 @@ import { isAlwaysAskingExtensionTool } from '../capabilities/extension-contribut
 import type { MeshCore } from '@dorkos/mesh';
 import type { AgentPermissions } from '@dorkos/shared/permissions';
 
-import { MCP_TOOL_TIERS, type McpToolTier } from '../mcp-tool-tiers.js';
+import { MCP_TOOL_TIERS, type McpToolTier } from '../mcp-tools/mcp-tool-tiers.js';
 import type { CapabilityRegistry } from '../capabilities/index.js';
 import type { ConfigManager } from '../config-manager.js';
 import type { ActivityService } from '../../activity/activity-service.js';

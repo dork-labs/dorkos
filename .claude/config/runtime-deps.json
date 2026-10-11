@@ -38,10 +38,10 @@
         }
       ],
       "sdk_surface_map": {
-        "query()": "claude-code-runtime.ts, messaging/message-sender.ts, messaging/runtime-cache.ts, sessions/pump-launch.ts",
-        "SDKMessage": "15 files: media-capture.ts, messaging/{message-sender,phantom-cancellation,process-quiet,turn-liveness}.ts, sdk/sdk-event-mapper.ts, sdk/event-mappers/{message,result,stream,system}-event-mapper.ts, sessions/{persistent-dispatch,pump-turn-stream,session-pump-contract,session-pump,session-turn-windows}.ts",
-        "Query": "10 files: agent-types.ts, claude-code-runtime.ts, messaging/{launch-probes,runtime-cache}.ts, sdk/{context-usage,subscription-usage}.ts, sessions/{persistent-dispatch,pump-launch,session-pump-contract,session-store}.ts",
-        "Options": "messaging/launch-resolver.ts, sessions/launch-fingerprint.ts, sessions/pump-launch.ts",
+        "query()": "claude-code-runtime.ts, messaging/message-sender.ts, messaging/runtime-cache.ts, sessions/warm-process/pump-launch.ts",
+        "SDKMessage": "15 files: media-capture.ts, messaging/message-sender.ts, messaging/phantom-cancellation.ts, messaging/process-quiet.ts, messaging/turn-liveness.ts, sdk/sdk-event-mapper.ts, sdk/event-mappers/message-event-mapper.ts, sdk/event-mappers/result-event-mapper.ts, sdk/event-mappers/stream-event-mapper.ts, sdk/event-mappers/system-event-mapper.ts, sessions/persistent-dispatch.ts, sessions/warm-process/pump-turn-stream.ts, sessions/warm-process/session-pump-contract.ts, sessions/session-pump.ts, sessions/session-turn-windows.ts",
+        "Query": "10 files: agent-types.ts, claude-code-runtime.ts, messaging/launch-probes.ts, messaging/runtime-cache.ts, sdk/context-usage.ts, sdk/subscription-usage.ts, sessions/persistent-dispatch.ts, sessions/warm-process/pump-launch.ts, sessions/warm-process/session-pump-contract.ts, sessions/session-store.ts",
+        "Options": "messaging/launch-resolver.ts, sessions/launch-fingerprint.ts, sessions/warm-process/pump-launch.ts",
         "McpServerConfig": "claude-code-runtime.ts, mcp-server-config.ts, messaging/message-sender-shared.ts, sessions/launch-fingerprint.ts",
         "McpServerStatus": "messaging/launch-probes.ts, messaging/message-sender-shared.ts",
         "PermissionUpdate": "messaging/{always-allow-scope,interaction-wait,interactive-handlers}.ts, sessions/session-store.ts",
