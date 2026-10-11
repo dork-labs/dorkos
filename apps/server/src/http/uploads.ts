@@ -351,7 +351,12 @@ class UploadRead {
         const out: WriteStream = createWriteStream(finalPath);
         file.path = finalPath;
         pipeline(stream, out, (err) => {
-          if (err) return done(err);
+          if (err) {
+            // An abort can delete the path before the asynchronous open
+            // creates it; remove whatever the open left, once it has settled.
+            void fs.rm(finalPath, { force: true }).finally(() => done(err));
+            return;
+          }
           file.destination = disk.directory;
           file.filename = filename;
           file.size = out.bytesWritten;

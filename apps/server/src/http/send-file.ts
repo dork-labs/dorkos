@@ -75,11 +75,18 @@ export function sendFileFromRoot<E extends SendFileEnv>(
         response: new Response(null, { headers: RESPONSE_ALREADY_SENT.headers }),
       });
     };
+    // What `send` sets before it can still refuse: a `412` or a `416` comes
+    // after its `headers` step, so a refusal must not carry the file's
+    // `Content-Length`, `ETag` or `Content-Type` into the route's own answer.
+    const before = new Set(outgoing.getHeaderNames());
     const failed = (error: NodeJS.ErrnoException & { status?: number }) => {
       if (settled) return;
       // Once bytes went out there is nothing left to answer, as with
       // `res.sendFile`, whose callback answered only when no header was sent.
       if (outgoing.headersSent) return sent();
+      for (const name of outgoing.getHeaderNames()) {
+        if (!before.has(name)) outgoing.removeHeader(name);
+      }
       settled = true;
       resolve({ kind: 'failed', error });
     };
@@ -87,9 +94,12 @@ export function sendFileFromRoot<E extends SendFileEnv>(
     send(incoming, encodeURI(resolved))
       .on('directory', () => failed(Object.assign(new Error('EISDIR, read'), { code: 'EISDIR' })))
       .on('error', failed)
-      .on('headers', sent)
+      // Settled when the body starts, not on `headers`: `send` emits `headers`
+      // before its precondition and range checks, and hands a `412` or `416`
+      // to the `error` listener afterwards, which must still be answered.
+      .on('stream', sent)
       .pipe(outgoing);
-    // A `304` and a `HEAD` never reach `headers`; they still finish.
+    // A `304` and a `HEAD` never stream; they still finish.
     outgoing.once('finish', sent);
     outgoing.once('close', sent);
   });
