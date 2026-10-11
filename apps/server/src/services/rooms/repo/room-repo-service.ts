@@ -35,7 +35,7 @@ import type { RoomRepoMutex } from './room-repo-mutex.js';
 import {
   commitAll,
   commitsAheadOfMain,
-  FALLBACK_OPERATOR_GIT_NAME,
+  gitAuthorName,
   GitUnavailableError,
   hasUncommittedChanges,
   initRepo,
@@ -559,7 +559,7 @@ export class RoomRepoService {
       repoDir,
       STRAY_CHANGES_COMMIT_MESSAGE,
       {
-        name: this.deps.operatorGitName() ?? FALLBACK_OPERATOR_GIT_NAME,
+        name: gitAuthorName(this.deps.operatorGitName()),
         email: OPERATOR_GIT_EMAIL,
       },
       ceiling
@@ -807,7 +807,7 @@ export class RoomRepoService {
       repoDir,
       ROOM_MD_SEED_COMMIT_MESSAGE,
       {
-        name: this.deps.operatorGitName() ?? FALLBACK_OPERATOR_GIT_NAME,
+        name: gitAuthorName(this.deps.operatorGitName()),
         email: OPERATOR_GIT_EMAIL,
       },
       ceiling
