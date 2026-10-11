@@ -11,15 +11,23 @@
  *
  * @module routes/mcp-oauth
  */
-import { Router } from 'express';
-import type { Request, Response } from 'express';
+import { Hono } from 'hono';
 import type { AgentMcpOAuthService } from '../services/mesh/agent-mcp-oauth-service.js';
 import { getLocalCockpitOrigin } from '../lib/trusted-origins.js';
 import { isLocalCaller } from '../lib/caller-authority.js';
+import type { ApiEnv } from '../http/api-chain.js';
+import { honoRequestFacts } from '../http/request-facts.js';
+import { readQuery } from '../http/request-query.js';
 
 /** HTTP status for a completed callback vs. any failure (used for the rendered page). */
 const OK = 200;
 const BAD_REQUEST = 400;
+
+/**
+ * The page's type, spelled as Express's `res.send` spelled it for a string
+ * (`c.html` would say `UTF-8`).
+ */
+const HTML = { 'Content-Type': 'text/html; charset=utf-8' };
 
 /** Escape the small set of HTML metacharacters so a query value can't inject markup. */
 function escapeHtml(value: string): string {
@@ -95,26 +103,29 @@ function renderCallbackPage(connected: boolean, serverName?: string, error?: str
 }
 
 /**
- * Build the router serving `GET /callback` (mounted at `/api/agents/mcp-oauth`).
+ * Build the routes serving `GET /callback` (mounted at `/api/agents/mcp-oauth`).
  *
  * @param oauth - The managed-MCP OAuth engine that completes the token exchange.
- * @returns An Express router for the loopback callback.
+ * @returns The routes for the loopback callback.
  */
-export function createMcpOAuthRouter(oauth: AgentMcpOAuthService): Router {
-  const router = Router();
+export function createMcpOAuthRoutes(oauth: AgentMcpOAuthService): Hono<ApiEnv> {
+  const router = new Hono<ApiEnv>();
 
-  router.get('/callback', async (req: Request, res: Response) => {
-    if (!isLocalCaller(req)) {
-      return res.status(403).send('Not available.');
+  router.get('/callback', async (c) => {
+    if (!isLocalCaller(honoRequestFacts(c))) {
+      return c.body('Not available.', 403, HTML);
     }
-    const state = typeof req.query.state === 'string' ? req.query.state : undefined;
-    const code = typeof req.query.code === 'string' ? req.query.code : undefined;
-    const error = typeof req.query.error === 'string' ? req.query.error : undefined;
+    // A repeated key is an array, and reads as absent, as it did on Express.
+    const query = readQuery(c);
+    const state = typeof query.state === 'string' ? query.state : undefined;
+    const code = typeof query.code === 'string' ? query.code : undefined;
+    const error = typeof query.error === 'string' ? query.error : undefined;
     const result = await oauth.handleCallback({ state, code, error });
-    res
-      .status(result.connected ? OK : BAD_REQUEST)
-      .set('Content-Type', 'text/html; charset=utf-8')
-      .send(renderCallbackPage(result.connected, result.serverName, result.error));
+    return c.body(
+      renderCallbackPage(result.connected, result.serverName, result.error),
+      result.connected ? OK : BAD_REQUEST,
+      HTML
+    );
   });
 
   return router;

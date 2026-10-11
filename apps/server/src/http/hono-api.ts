@@ -23,8 +23,11 @@ import type { ActivityService } from '../services/activity/activity-service.js';
 import type { CapabilityRegistry } from '../services/core/capabilities/index.js';
 import type { NotificationService } from '../services/notifications/notification-service.js';
 import type { ApprovalService } from '../services/core/approvals/index.js';
+import type { MeshCore } from '@dorkos/mesh';
+import type { AgentMcpOAuthService } from '../services/mesh/agent-mcp-oauth-service.js';
 import { createActivityRoutes } from '../routes/activity.js';
 import { createAgentPauseRoutes, type AgentPauseRouterDeps } from '../routes/agent-pause.js';
+import { createAgentsRoutes, type AgentsRouterDeps } from '../routes/agents.js';
 import { createApprovalsRoutes, type ApprovalsRouterOptions } from '../routes/approvals.js';
 import { createApiDocsRoutes } from '../routes/api-docs.js';
 import { createAuditRoutes, type AuditRouterDeps } from '../routes/audit.js';
@@ -32,8 +35,14 @@ import capabilitiesRoutes from '../routes/capabilities.js';
 import { createCapabilitiesCatalogRoutes } from '../routes/capabilities-catalog.js';
 import { createCapabilitiesInvokeRoutes } from '../routes/capabilities-invoke.js';
 import commandRoutes from '../routes/commands.js';
+import {
+  createAgentCommitmentsRoutes,
+  createCommitmentsRoutes,
+  type CommitmentRouterDeps,
+} from '../routes/commitments.js';
 import diffRoutes from '../routes/diff.js';
 import directoryRoutes from '../routes/directory.js';
+import { createDiscoveryRoutes } from '../routes/discovery.js';
 import errorRoutes from '../routes/errors.js';
 import {
   createExtensionDecisionsRoutes,
@@ -44,6 +53,8 @@ import gitRoutes from '../routes/git.js';
 import { createHarnessRoutes, type HarnessRouterDeps } from '../routes/harness.js';
 import { createHealthRoutes, type HealthRouteDeps } from '../routes/health.js';
 import keepAwakeRoutes from '../routes/keep-awake.js';
+import { createMcpOAuthRoutes } from '../routes/mcp-oauth.js';
+import { createMeshRoutes, type MeshRouterDeps } from '../routes/mesh.js';
 import modelRoutes from '../routes/models.js';
 import { createNotificationsRoutes } from '../routes/notifications.js';
 import { createPermissionsRoutes, type PermissionsRouterDeps } from '../routes/permissions.js';
@@ -108,6 +119,16 @@ export interface ComposedGroupDeps {
   agentPause?: AgentPauseRouterDeps;
   /** The operator's photo and name (`/api/profile`). */
   profile?: ProfileRouterDeps;
+  /** The agent registry's routes (`/api/mesh`). Only handed over when the mesh started. */
+  mesh?: MeshRouterDeps;
+  /** Agent identity, by folder (`/api/agents`). */
+  agents?: AgentsRouterDeps;
+  /** The discovery scan stream (`/api/discovery`). Only handed over when the mesh started. */
+  discovery?: MeshCore;
+  /** Where a managed MCP server's sign-in lands (`/api/agents/mcp-oauth`). */
+  mcpOAuth?: AgentMcpOAuthService;
+  /** What agents promised (`/api/commitments`, `/api/agents/:id/commitments`). */
+  commitments?: CommitmentRouterDeps;
 }
 
 /** What the moved route groups read from the running server, handed over by `index.ts`. */
@@ -183,6 +204,18 @@ export function createHonoApi(options: HonoApiOptions): Hono<ApiEnv> {
   // nothing else: every other path still reaches its group or the `/api` 404.
   if (deps.permissions) app.route('/api', createPermissionsRoutes(deps.permissions));
   if (deps.agentPause) app.route('/api', createAgentPauseRoutes(deps.agentPause));
+  if (deps.mesh) app.route('/api/mesh', createMeshRoutes(deps.mesh));
+  if (deps.discovery) app.route('/api/discovery', createDiscoveryRoutes(deps.discovery));
+  // Five groups answer under `/api/agents`: the two above, and these three.
+  // Each registers only its own concrete paths, and no two share one: the
+  // agents group's paths are all fixed words (`/current`, `/resolve`,
+  // `/create`), never an `:id`, so no order between them changes an answer.
+  if (deps.mcpOAuth) app.route('/api/agents/mcp-oauth', createMcpOAuthRoutes(deps.mcpOAuth));
+  if (deps.commitments) {
+    app.route('/api/commitments', createCommitmentsRoutes(deps.commitments));
+    app.route('/api/agents/:id/commitments', createAgentCommitmentsRoutes(deps.commitments));
+  }
+  if (deps.agents) app.route('/api/agents', createAgentsRoutes(deps.agents));
   // Three groups share this prefix. The catalog is one segment deeper than the
   // matrix's `/`, and is mounted first so nothing shorter can claim it.
   if (deps.capabilities) {

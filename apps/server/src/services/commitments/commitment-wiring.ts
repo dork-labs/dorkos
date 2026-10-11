@@ -1,19 +1,14 @@
 /**
  * Boot wiring for commitments (spec `heartbeats` §12): the service, its due
- * timers rebuilt from the table, the HTTP routes, and the capability deps, so
+ * timers rebuilt from the table, what the HTTP routes read, and the capability deps, so
  * the server's entry file holds one call instead of the whole assembly.
  *
  * @module services/commitments/commitment-wiring
  */
-import type { Router } from 'express';
 import type { Db } from '@dorkos/db';
 import type { MeshCore } from '@dorkos/mesh';
 import { refuseUnlessAccountOwner } from '../../lib/caller-authority.js';
-import {
-  createAgentCommitmentsRouter,
-  createCommitmentsRouter,
-  type CommitmentRouterDeps,
-} from '../../routes/commitments.js';
+import type { CommitmentRouterDeps } from '../../routes/commitments.js';
 import type { CapabilityDeps } from '../core/capabilities/index.js';
 import { CommitmentService } from './commitment-service.js';
 import { CommitmentStore } from './commitment-store.js';
@@ -33,11 +28,11 @@ export interface CommitmentWiring {
   /** The `commitments` capability domain's deps. */
   capabilityDeps: NonNullable<CapabilityDeps['commitmentDeps']>;
   /**
-   * The two routers, for boot to mount itself: `list` at `/api/commitments`,
-   * `agent` at `/api/agents/:id/commitments` (before the agents router). Boot
-   * keeps the `app.use` lines so the admission census still sees each mount.
+   * What the routes read, for boot to hand the Hono `/api` app
+   * (`http/hono-api.ts`), which serves `/api/commitments` and
+   * `/api/agents/:id/commitments` from it.
    */
-  routers: { list: Router; agent: Router };
+  routeDeps: CommitmentRouterDeps;
   /** Disarm every due timer. */
   stop(): void;
 }
@@ -57,15 +52,12 @@ export function wireCommitments(deps: CommitmentWiringDeps): CommitmentWiring {
     agentIdForPath,
     // The same owner bar the account routes use: a person, never an agent,
     // and with login on, the install's owner.
-    isOwner: (req, res) => refuseUnlessAccountOwner(req, res) === undefined,
+    isOwner: (facts) => refuseUnlessAccountOwner(facts) === undefined,
   };
   return {
     service,
     capabilityDeps: { service, agentIdForPath },
-    routers: {
-      list: createCommitmentsRouter(routerDeps),
-      agent: createAgentCommitmentsRouter(routerDeps),
-    },
+    routeDeps: routerDeps,
     stop: () => service.stop(),
   };
 }

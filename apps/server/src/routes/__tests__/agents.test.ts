@@ -98,8 +98,8 @@ vi.mock('../../services/core/config-manager.js', () => ({
 
 import request from '@dorkos/test-utils/supertest';
 import { listeningServer } from '@dorkos/test-utils/listening-server';
-import express from 'express';
-import { createAgentsRouter } from '../agents.js';
+import { createAgentsRoutes } from '../agents.js';
+import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
 import { runWithAuditActor } from '../../services/audit/audit-context.js';
 import { setOnAgentCreated } from '../../services/core/agent-created-hook.js';
 import { validateBoundary, validateBoundaryOrDorkHome, BoundaryError } from '../../lib/boundary.js';
@@ -117,10 +117,9 @@ beforeEach(() => registerEveryFolderAsHome());
 afterEach(() => clearTestHomes());
 
 // Build a minimal Express app with just the agents router
-const app = express();
-app.use(express.json());
-app.use('/api/agents', createAgentsRouter());
-const testServer = listeningServer(app);
+const testServer = listeningServer(
+  honoGroupListener({ path: '/api/agents', routes: createAgentsRoutes() })
+);
 
 const mockManifest: AgentManifest = {
   id: 'test-agent-id',
@@ -886,16 +885,17 @@ describe('Agents Routes', () => {
 // ---------------------------------------------------------------------------
 
 describe('POST /api/agents records who created it (DOR-2788)', () => {
-  const attributed = express();
-  attributed.use(express.json());
-  // Stands in for the audit-actor middleware: the person at the app.
-  attributed.use((_req, _res, next) =>
-    runWithAuditActor(
-      { actor: { accountId: 'acct-owner', kind: 'person', name: 'Dorian' }, surface: 'app' },
-      next
-    )
+  // Stands in for the audit-actor step: the person at the app.
+  const attributed = honoGroupListener(
+    { path: '/api/agents', routes: createAgentsRoutes() },
+    {
+      before: (_c, next) =>
+        runWithAuditActor(
+          { actor: { accountId: 'acct-owner', kind: 'person', name: 'Dorian' }, surface: 'app' },
+          next
+        ),
+    }
   );
-  attributed.use('/api/agents', createAgentsRouter());
   const attributedServer = listeningServer(attributed);
 
   beforeEach(() => {
@@ -925,10 +925,12 @@ describe('Agents Routes with MeshCore (ADR-0043)', () => {
   const mockSyncFromDisk = vi.fn().mockResolvedValue(true);
   const mockMeshCore = { syncFromDisk: mockSyncFromDisk };
 
-  const appWithMesh = express();
-  appWithMesh.use(express.json());
-  appWithMesh.use('/api/agents', createAgentsRouter(mockMeshCore));
-  const meshTestServer = listeningServer(appWithMesh);
+  const meshTestServer = listeningServer(
+    honoGroupListener({
+      path: '/api/agents',
+      routes: createAgentsRoutes({ meshCore: mockMeshCore }),
+    })
+  );
 
   beforeEach(() => {
     vi.clearAllMocks();

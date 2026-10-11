@@ -210,7 +210,6 @@ import { AgentMcpOAuthService } from './services/mesh/agent-mcp-oauth-service.js
 import { warmMcpOAuthTokens } from './services/mesh/warm-mcp-oauth-tokens.js';
 import { resumeAfterMcpSignin } from './services/mesh/mcp-signin-resume.js';
 import { createMcpRevocationWatch } from './services/mesh/mcp-revocation.js';
-import { createMcpOAuthRouter } from './routes/mcp-oauth.js';
 import type { McpCapabilityDeps } from './services/mesh/mcp-capability-deps.js';
 import {
   relayStartsEnabled,
@@ -222,13 +221,11 @@ import { createAgentSubjectResolver } from './services/relay/initiate-consent.js
 import { TraceStore } from './services/relay/trace-store.js';
 import { NotifyBudget } from './services/relay/notify-budget.js';
 import { MeshCore, type AdoptedAgent } from '@dorkos/mesh';
-import { createMeshRouter } from './routes/mesh.js';
 import { setMeshInitError } from './services/mesh/mesh-state.js';
 import { ensureDorkBot } from './services/mesh/ensure-dorkbot.js';
 import { setAgentPathLookup } from './services/mesh/agent-path-lookup.js';
 import { createA2aRouter } from './routes/a2a.js';
 import { buildA2aRateLimiters } from './middleware/a2a-rate-limit.js';
-import { createAgentsRouter } from './routes/agents.js';
 import { resolveToolVisibilityFor } from './services/runtimes/shared/permission-tool-filter.js';
 import { composeCapabilityRegistryForDocs } from './services/core/self-description/dorkos-registry.js';
 import {
@@ -263,7 +260,6 @@ import {
   SESSION_ATTACHMENT_SWEEP_INTERVAL_MS,
   sweepSessionAttachments,
 } from './services/session/attachments/index.js';
-import { createDiscoveryRouter } from './routes/discovery.js';
 import { createAdminRouter } from './routes/admin.js';
 import { ExtensionManager } from './services/extensions/extension-manager.js';
 import { startExtensionApprovalQueue } from './services/extensions/extension-approval-queue.js';
@@ -4021,11 +4017,15 @@ async function start() {
   // subscribes to nothing.
   for (const runtime of runtimeRegistry.listRuntimes()) subscribeRuntimeTurns(runtime);
 
-  // Mount Mesh routes if MeshCore initialized successfully (always-on, ADR-0062)
+  // `deps` is what the moved Hono routes read (`http/hono-api.ts`), set where
+  // each group used to be mounted on Express.
+  const deps: HonoApiDeps = {};
+
+  // Mesh routes if MeshCore initialized successfully (always-on, ADR-0062)
   // taskStore/relayCore power topology enrichment (relay badges, task counts);
-  // when a subsystem is disabled the router degrades to safe defaults.
+  // when a subsystem is disabled the routes degrade to safe defaults.
   if (meshCore) {
-    app.use('/api/mesh', createMeshRouter({ meshCore, taskStore, relayCore }));
+    deps.mesh = { meshCore, taskStore, relayCore, activity: activityService };
     // Expose the registry to the (statically-mounted) sessions router so
     // GET /api/sessions/recent can resolve agent project paths (DOR-329).
     app.locals.meshCore = meshCore;
@@ -4037,9 +4037,6 @@ async function start() {
   // messaging, integrations, and agents. Handed over as one bag of narrow reads,
   // set after every subsystem above has had its chance to start; whatever is off
   // simply reports its checks skipped. Nothing here runs until a request asks.
-  // `deps` is what the moved Hono routes read (`http/hono-api.ts`): this bag and
-  // the banner's below.
-  const deps: HonoApiDeps = {};
   deps.deepHealth = {
     dorkHome,
     roomSessions: roomStore,
@@ -4239,18 +4236,15 @@ async function start() {
   );
 
   // Managed-MCP OAuth loopback callback (DOR-942) — the `redirect_uri` the
-  // operator's browser lands on after authorizing a server. Mounted BEFORE the
-  // `/api/agents` router so the two-segment `/mcp-oauth/callback` path always
-  // reaches it first; the sign-in itself is driven by the `mcp.signin`/
-  // `mcp.poll_signin` capabilities, not a route.
-  if (agentMcpOAuthService) {
-    app.use('/api/agents/mcp-oauth', createMcpOAuthRouter(agentMcpOAuthService));
-  }
+  // operator's browser lands on after authorizing a server, served by the Hono
+  // app beside the agents group; the sign-in itself is driven by the
+  // `mcp.signin`/`mcp.poll_signin` capabilities, not a route.
+  if (agentMcpOAuthService) deps.mcpOAuth = agentMcpOAuthService;
 
   // Permissions (spec `agent-permissions` D10): the one way in for what agents
-  // may do. Served by the Hono app, which the front door asks before Express,
-  // so `/api/agents/:id/permissions` never reaches the agents router. The
-  // registry is read lazily: it is composed after the routes are mounted.
+  // may do. Served by the Hono app, beside the agents group under
+  // `/api/agents`. The registry is read lazily: it is composed after the
+  // routes are handed over.
   // The one owner of every permission write (spec `agent-permissions` D10):
   // the permissions pages and the request card's Always allow both write here.
   const permissionService = createPermissionService({
@@ -4285,14 +4279,13 @@ async function start() {
   deps.permissions = { permissions: permissionService, activity: activityService };
   mountedRouters.push('permissions');
 
-  // What agents promised (spec `heartbeats` §12). Always mounted; the
-  // per-agent POST is mounted before the agents router so it answers its path.
-  app.use('/api/commitments', commitments.routers.list);
-  app.use('/api/agents/:id/commitments', commitments.routers.agent);
+  // What agents promised (spec `heartbeats` §12). Always mounted, by the Hono
+  // app: the list at `/api/commitments`, a person's new one per agent at
+  // `/api/agents/:id/commitments`.
+  deps.commitments = commitments.routeDeps;
   // Pause an agent everywhere, and lift it (spec `audit-trail` PR5). Served by
-  // the Hono app, which the front door asks before Express, so
-  // `/api/agents/:id/pause` never reaches the agents router; the registry is
-  // read lazily because it is composed after the routes mount.
+  // the Hono app, beside the agents group under `/api/agents`; the registry is
+  // read lazily because it is composed after the routes are handed over.
   deps.agentPause = { registry: () => capabilityRegistry };
   mountedRouters.push('agent-pause');
 
@@ -4301,13 +4294,12 @@ async function start() {
   // The confirmation provider is composed further down this boot, inside the
   // marketplace block; read lazily so an agent's template creation raises a card
   // once it exists and fails closed until then (DOR-2325).
-  app.use(
-    '/api/agents',
-    createAgentsRouter(meshCore, {
-      confirmationProvider: () => templateConfirmationProvider,
-      marketplace: () => agentPackageInstaller,
-    })
-  );
+  deps.agents = {
+    meshCore,
+    activity: activityService,
+    confirmationProvider: () => templateConfirmationProvider,
+    marketplace: () => agentPackageInstaller,
+  };
 
   // The team roster — one READ of every identity on this install (ADR
   // 260806-222535). Always mounted, and mounted even when the mesh did not
@@ -4449,9 +4441,9 @@ async function start() {
     mountedRouters.push('extensions');
   }
 
-  // Mount Discovery routes when MeshCore is available (delegates to meshCore.discover())
+  // Discovery routes when MeshCore is available (delegates to meshCore.discover())
   if (meshCore) {
-    app.use('/api/discovery', createDiscoveryRouter(meshCore));
+    deps.discovery = meshCore;
     mountedRouters.push('discovery');
   }
 
