@@ -179,13 +179,21 @@ async function runReset(): Promise<AdminActionResult> {
     dialog.showErrorBox('DorkOS did not reset', interrupted.message);
     return { ok: false, message: interrupted.message };
   } catch (err) {
+    if (!(err instanceof RestartFailedError)) {
+      // Refused before the deletion could run: a restart already in flight
+      // (RestartBusyError), or the old server would not stop. The data is
+      // untouched and the server is wherever it was, so claim neither
+      // (DOR-2133).
+      log.error('[admin] Resetting did not start; nothing was deleted.', err);
+      return { ok: false, message: `Nothing was deleted. ${reasonOf(err)}` };
+    }
     log.error('[admin] Resetting failed and left no server running.', err);
     // Two independent failures, and the person needs both answers. Whether
     // their data is gone is the question they actually asked; whether a server
     // came back is what they are now looking at. Reporting only the second is
-    // how "was my data deleted?" goes unanswered.
-    const interrupted = err instanceof RestartFailedError ? err.interrupted : null;
-    const deletion = interrupted ? interrupted.message : 'Your data was deleted.';
+    // how "was my data deleted?" goes unanswered. A RestartFailedError means
+    // the deletion ran, so `interrupted` alone says whether it finished.
+    const deletion = err.interrupted ? err.interrupted.message : 'Your data was deleted.';
     return { ok: false, message: `${deletion} ${restartFailureMessage(err)}` };
   }
 }

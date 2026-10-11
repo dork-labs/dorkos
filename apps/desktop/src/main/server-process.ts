@@ -407,6 +407,19 @@ export class RestartFailedError extends Error {
   }
 }
 
+/**
+ * A restart refused because one is already running. Thrown before anything is
+ * stopped or touched, so a caller can say so: "Nothing was deleted" is the
+ * truth for a reset that got this, and the only thing worth saying (DOR-2133).
+ */
+export class RestartBusyError extends Error {
+  /** Refuse with a finished sentence for the person who asked twice. */
+  constructor() {
+    super('DorkOS is already restarting its server. Give it a moment.');
+    this.name = 'RestartBusyError';
+  }
+}
+
 /** What a {@link restartServer} cycle ended with. */
 export interface RestartOutcome {
   /** The port the replacement server is listening on. */
@@ -442,7 +455,7 @@ export interface RestartOutcome {
  * @param whileStopped - Run once the old child is gone and before the new one
  *   is spawned, which is the only moment nothing holds the data directory.
  * @returns The new port, and whatever `whileStopped` threw.
- * @throws A plain `Error` if a restart is already running — nothing was touched,
+ * @throws A {@link RestartBusyError} if a restart is already running — nothing was touched,
  *   and the message is a finished sentence for the person who asked twice. A
  *   {@link RestartFailedError} if the replacement server could not be started
  *   (see {@link startServer} for the ways that happens); it carries what
@@ -454,7 +467,7 @@ export interface RestartOutcome {
  */
 export async function restartServer(whileStopped?: () => Promise<void>): Promise<RestartOutcome> {
   if (restarting) {
-    throw new Error('DorkOS is already restarting its server. Give it a moment.');
+    throw new RestartBusyError();
   }
   restarting = true;
   try {
