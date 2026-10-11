@@ -6,6 +6,7 @@ covers:
   - "fix(community): a session ends in its own transaction's notice, and a removal refreshes kept entries once (DOR-2830)"
   - 'perf(community): a busy channel wakes its streams at most every 100 ms (DOR-2830)'
   - 'perf(community): streams that recheck access in the same moment share one query (DOR-2830)'
+  - 'fix(community): a removal hides kept entries only from streams behind it, and gives up after a run of removals (DOR-2830)'
 ---
 
 ### Changed
