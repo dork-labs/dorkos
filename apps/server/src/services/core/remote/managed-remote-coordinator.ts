@@ -40,7 +40,7 @@
  * ## Withdrawal is local first
  *
  * {@link ManagedRemoteCoordinator.withdraw} does everything local before its
- * first `await`: any setup is cancelled, managed mode goes off, the enrolment
+ * first `await`: the command stream stops, any setup is cancelled, managed mode goes off, the enrolment
  * and credential references are cleared, and every managed listener starts
  * closing at once. The Cloud calls are sent in that same synchronous step with
  * the link captured before anything changed, so an unlink can call it first and
@@ -79,6 +79,7 @@ import {
 } from '../cloud/v1-client.js';
 import { managedAvailability, type ManagedAvailability } from './managed-availability.js';
 import { MANAGED_DRAIN_DEADLINE_MS } from './managed-ingress.js';
+import { managedRemoteCommands, type ManagedCommandService } from './managed-command-service.js';
 import { remoteCredentials, type RemoteCredentials } from './remote-credentials.js';
 import { buildRemoteAccessReport, setupViewOf } from './remote-access-report.js';
 import {
@@ -128,6 +129,8 @@ export interface ManagedRemoteCoordinatorDeps {
   readRemoteState: () => RemoteState;
   updateRemoteState: (subsystem: string, patch: Partial<RemoteState>) => RemoteState;
   remoteCredentials: Pick<RemoteCredentials, 'put' | 'delete'>;
+  /** The command stream: started once setup finishes, stopped on withdrawal. */
+  commands: Pick<ManagedCommandService, 'start' | 'stop'>;
   tunnel: Pick<
     typeof tunnelManager,
     'status' | 'getMode' | 'getManagedPhase' | 'closeManaged' | 'stopOwnTunnel' | 'emit'
@@ -310,6 +313,7 @@ export class ManagedRemoteCoordinator {
     const context = this.deps.captureContext();
     const before = this.deps.readRemoteState();
     const hadSetup = this.setup !== null;
+    this.deps.commands.stop();
     const epoch = this.beginEpoch();
     this.outcome = null;
     this.note = undefined;
@@ -366,6 +370,7 @@ export class ManagedRemoteCoordinator {
    * Cloud calls go out under the old link.
    */
   withdrawOnUnlink(): Promise<CloudCleanup> {
+    this.deps.commands.stop();
     const state = this.deps.readRemoteState();
     const anything =
       this.setup !== null ||
@@ -615,6 +620,8 @@ export class ManagedRemoteCoordinator {
     this.note = undefined;
     this.deps.availability.invalidate();
     this.notify();
+    // Cloud's open, close, rotate and revoke arrive on it; nothing opens here.
+    void this.deps.commands.start();
     logger.info('[RemoteAccess] Managed remote access set up', {
       credentialId: credential.credentialId,
       hosts: credential.hosts?.length ?? 0,
@@ -650,6 +657,7 @@ export const managedRemoteCoordinator = new ManagedRemoteCoordinator({
   readRemoteState,
   updateRemoteState,
   remoteCredentials,
+  commands: managedRemoteCommands,
   tunnel: tunnelManager,
   ownTunnelEnabled: () => configManager.get('tunnel')?.enabled === true,
   sleep: abortableSleep,
