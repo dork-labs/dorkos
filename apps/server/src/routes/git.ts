@@ -1,20 +1,22 @@
-import { Router } from 'express';
+import { Hono } from 'hono';
 import { z } from 'zod';
 import { getGitStatus } from '../services/core/git-status.js';
 import { validateBoundary, BoundaryError } from '../lib/boundary.js';
 import { DEFAULT_CWD } from '../lib/resolve-root.js';
 import { logger } from '../lib/logger.js';
+import type { ApiEnv } from '../http/api-chain.js';
+import { readQuery } from '../http/request-query.js';
 
-const router = Router();
+const router = new Hono<ApiEnv>();
 
 const GitStatusQuerySchema = z.object({
   dir: z.string().optional(),
 });
 
-router.get('/status', async (req, res) => {
-  const parsed = GitStatusQuerySchema.safeParse(req.query);
+router.get('/status', async (c) => {
+  const parsed = GitStatusQuerySchema.safeParse(readQuery(c));
   if (!parsed.success) {
-    return res.status(400).json({ error: 'Invalid query', details: z.treeifyError(parsed.error) });
+    return c.json({ error: 'Invalid query', details: z.treeifyError(parsed.error) }, 400);
   }
   try {
     let validatedDir: string | undefined;
@@ -23,13 +25,13 @@ router.get('/status', async (req, res) => {
     }
     const cwd = validatedDir || DEFAULT_CWD;
     const result = await getGitStatus(cwd);
-    res.json(result);
+    return c.json(result);
   } catch (err) {
     if (err instanceof BoundaryError) {
-      return res.status(403).json({ error: err.message, code: err.code });
+      return c.json({ error: err.message, code: err.code }, 403);
     }
     logger.error('[git] GET /status failed', { err, dir: parsed.data.dir });
-    return res.status(500).json({ error: 'Internal server error' });
+    return c.json({ error: 'Internal server error' }, 500);
   }
 });
 

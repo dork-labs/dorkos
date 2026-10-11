@@ -3,7 +3,7 @@
  *
  * @module server/routes/workspaces
  */
-import { Router } from 'express';
+import { Hono } from 'hono';
 import { z } from 'zod';
 import { EnsureWorkspaceRequestSchema, derivePorts } from '@dorkos/shared/workspace';
 import {
@@ -19,11 +19,14 @@ import {
 } from '../services/workspace/index.js';
 import { trustedCaller } from '../services/core/capabilities/index.js';
 import { readCallerAuthority } from '../lib/caller-authority.js';
-import { getRequestAgentIdentity } from '../middleware/agent-identity.js';
 import { BoundaryError } from '../lib/boundary.js';
 import { logger } from '../lib/logger.js';
+import type { ApiEnv } from '../http/api-chain.js';
+import { readJsonBody } from '../http/request-body.js';
+import { honoRequestFacts } from '../http/request-facts.js';
+import { readQuery } from '../http/request-query.js';
 
-const router = Router();
+const router = new Hono<ApiEnv>();
 
 const ListQuerySchema = z.object({ projectKey: z.string().optional() });
 const ResolveQuerySchema = z.object({ path: z.string().min(1) });
@@ -62,17 +65,17 @@ function shownOf(inspection: WorkspaceInspection) {
 }
 
 /** List workspaces (optionally one project), each with attached sessions. */
-router.get('/', async (req, res) => {
-  const parsed = ListQuerySchema.safeParse(req.query);
+router.get('/', async (c) => {
+  const parsed = ListQuerySchema.safeParse(readQuery(c));
   if (!parsed.success) {
-    return res.status(400).json({ error: 'Invalid query', details: z.flattenError(parsed.error) });
+    return c.json({ error: 'Invalid query', details: z.flattenError(parsed.error) }, 400);
   }
   try {
     const workspaces = await getWorkspaceManager().list({ projectKey: parsed.data.projectKey });
-    res.json({ workspaces });
+    return c.json({ workspaces });
   } catch (err) {
     logger.error('[workspaces] GET / failed', { err });
-    res.status(500).json({ error: 'Internal server error' });
+    return c.json({ error: 'Internal server error' }, 500);
   }
 });
 
@@ -81,27 +84,27 @@ router.get('/', async (req, res) => {
  * root, with the facts git can answer cheaply. Declared before `/:id` so the
  * literal path wins over the parameter.
  */
-router.get('/scan', async (_req, res) => {
+router.get('/scan', async (c) => {
   try {
-    res.json(await scanWorktrees(getWorkspaceRoot()));
+    return c.json(await scanWorktrees(getWorkspaceRoot()));
   } catch (err) {
     logger.error('[workspaces] GET /scan failed', { err });
-    res.status(500).json({ error: 'Internal server error' });
+    return c.json({ error: 'Internal server error' }, 500);
   }
 });
 
 /** Resolve an absolute path (e.g. a session cwd) to its containing workspace. */
-router.get('/resolve', async (req, res) => {
-  const parsed = ResolveQuerySchema.safeParse(req.query);
+router.get('/resolve', async (c) => {
+  const parsed = ResolveQuerySchema.safeParse(readQuery(c));
   if (!parsed.success) {
-    return res.status(400).json({ error: 'Invalid query', details: z.flattenError(parsed.error) });
+    return c.json({ error: 'Invalid query', details: z.flattenError(parsed.error) }, 400);
   }
   try {
     const workspace = await getWorkspaceManager().resolveByPath(parsed.data.path);
-    res.json({ workspace });
+    return c.json({ workspace });
   } catch (err) {
     logger.error('[workspaces] GET /resolve failed', { err });
-    res.status(500).json({ error: 'Internal server error' });
+    return c.json({ error: 'Internal server error' }, 500);
   }
 });
 
@@ -109,20 +112,18 @@ router.get('/resolve', async (req, res) => {
  * Return the allocated port block for the managed workspace containing `path`;
  * 404 when the path is not inside a managed workspace.
  */
-router.post('/ports', async (req, res) => {
-  const parsed = PortsBodySchema.safeParse(req.body);
+router.post('/ports', async (c) => {
+  const parsed = PortsBodySchema.safeParse(readJsonBody(c));
   if (!parsed.success) {
-    return res
-      .status(400)
-      .json({ error: 'Validation failed', details: z.flattenError(parsed.error) });
+    return c.json({ error: 'Validation failed', details: z.flattenError(parsed.error) }, 400);
   }
   try {
     const workspace = await getWorkspaceManager().resolveByPath(parsed.data.path);
-    if (!workspace) return res.status(404).json({ error: 'No managed workspace for path' });
-    res.json(derivePorts(workspace.portBase));
+    if (!workspace) return c.json({ error: 'No managed workspace for path' }, 404);
+    return c.json(derivePorts(workspace.portBase));
   } catch (err) {
     logger.error('[workspaces] POST /ports failed', { err });
-    res.status(500).json({ error: 'Internal server error' });
+    return c.json({ error: 'Internal server error' }, 500);
   }
 });
 
@@ -132,23 +133,19 @@ router.post('/ports', async (req, res) => {
  * and sends back `approvedReviewHash`; an agent gets an approval card (202
  * `requires_confirmation`) and retries with `confirmationToken`.
  */
-router.post('/', async (req, res) => {
-  const parsed = EnsureWorkspaceRequestSchema.safeParse(req.body);
-  const decision = WorkspaceDecisionSchema.safeParse(req.body ?? {});
+router.post('/', async (c) => {
+  const parsed = EnsureWorkspaceRequestSchema.safeParse(readJsonBody(c));
+  const decision = WorkspaceDecisionSchema.safeParse(readJsonBody(c, { emptyAs: {} }));
   if (!parsed.success) {
-    return res
-      .status(400)
-      .json({ error: 'Validation failed', details: z.flattenError(parsed.error) });
+    return c.json({ error: 'Validation failed', details: z.flattenError(parsed.error) }, 400);
   }
   if (!decision.success) {
-    return res
-      .status(400)
-      .json({ error: 'Validation failed', details: z.flattenError(decision.error) });
+    return c.json({ error: 'Validation failed', details: z.flattenError(decision.error) }, 400);
   }
   try {
-    const identity = getRequestAgentIdentity(res);
+    const identity = c.get('agentIdentity');
     const gate = workspaceGateFor({
-      trusted: trustedCaller(readCallerAuthority(req, res)) !== undefined,
+      trusted: trustedCaller(readCallerAuthority(honoRequestFacts(c))) !== undefined,
       name: `${parsed.data.projectKey}/${parsed.data.key}`,
       carriesToken: true,
       ...(identity && { requestedBy: identity.displayName || identity.agentPath }),
@@ -160,59 +157,61 @@ router.post('/', async (req, res) => {
       }),
     });
     const workspace = await getWorkspaceManager().ensure(parsed.data, gate);
-    res.status(201).json(workspace);
+    return c.json(workspace, 201);
   } catch (err) {
     if (err instanceof UnsafeWorkspaceSourceError) {
-      return res.status(400).json({ error: err.message, code: 'UNSAFE_WORKSPACE_SOURCE' });
+      return c.json({ error: err.message, code: 'UNSAFE_WORKSPACE_SOURCE' }, 400);
     }
     if (err instanceof WorkspaceNeedsReviewError) {
-      return res
-        .status(409)
-        .json({ error: err.message, code: err.code, workspace: shownOf(err.inspection) });
+      return c.json(
+        { error: err.message, code: err.code, workspace: shownOf(err.inspection) },
+        409
+      );
     }
     if (err instanceof WorkspaceApprovalPendingError) {
-      return res.status(202).json({
-        status: err.status,
-        confirmationToken: err.token,
-        message: err.message,
-        workspace: shownOf(err.inspection),
-        ...(err.reason ? { reason: err.reason } : {}),
-      });
+      return c.json(
+        {
+          status: err.status,
+          confirmationToken: err.token,
+          message: err.message,
+          workspace: shownOf(err.inspection),
+          ...(err.reason ? { reason: err.reason } : {}),
+        },
+        202
+      );
     }
     if (err instanceof WorkspaceDeclinedError) {
-      return res.status(403).json({ status: 'declined', error: err.message });
+      return c.json({ status: 'declined', error: err.message }, 403);
     }
     logger.error('[workspaces] POST / failed', { err });
-    res.status(500).json({ error: 'Internal server error' });
+    return c.json({ error: 'Internal server error' }, 500);
   }
 });
 
 /** Get one workspace by id. */
-router.get('/:id', async (req, res) => {
+router.get('/:id', async (c) => {
   try {
-    const workspace = await getWorkspaceManager().get(req.params.id);
-    if (!workspace) return res.status(404).json({ error: 'Not found' });
-    res.json(workspace);
+    const workspace = await getWorkspaceManager().get(c.req.param('id'));
+    if (!workspace) return c.json({ error: 'Not found' }, 404);
+    return c.json(workspace);
   } catch (err) {
     logger.error('[workspaces] GET /:id failed', { err });
-    res.status(500).json({ error: 'Internal server error' });
+    return c.json({ error: 'Internal server error' }, 500);
   }
 });
 
 /** Pin or unpin a workspace. */
-router.post('/:id/pin', async (req, res) => {
-  const parsed = PinBodySchema.safeParse(req.body);
+router.post('/:id/pin', async (c) => {
+  const parsed = PinBodySchema.safeParse(readJsonBody(c));
   if (!parsed.success) {
-    return res
-      .status(400)
-      .json({ error: 'Validation failed', details: z.flattenError(parsed.error) });
+    return c.json({ error: 'Validation failed', details: z.flattenError(parsed.error) }, 400);
   }
   try {
-    const workspace = await getWorkspaceManager().setPinned(req.params.id, parsed.data.pinned);
-    res.json(workspace);
+    const workspace = await getWorkspaceManager().setPinned(c.req.param('id'), parsed.data.pinned);
+    return c.json(workspace);
   } catch (err) {
     logger.error('[workspaces] POST /:id/pin failed', { err });
-    res.status(404).json({ error: 'Not found' });
+    return c.json({ error: 'Not found' }, 404);
   }
 });
 
@@ -226,14 +225,14 @@ router.post('/:id/pin', async (req, res) => {
  * `?skipRemoveHooks=true`. Any other caller removes it without running them.
  * Whenever they are left out, the response lists them in `skippedHooks`.
  */
-router.delete('/:id', async (req, res) => {
-  const parsed = RemoveQuerySchema.safeParse(req.query);
+router.delete('/:id', async (c) => {
+  const parsed = RemoveQuerySchema.safeParse(readQuery(c));
   if (!parsed.success) {
-    return res.status(400).json({ error: 'Invalid query', details: z.flattenError(parsed.error) });
+    return c.json({ error: 'Invalid query', details: z.flattenError(parsed.error) }, 400);
   }
   try {
-    const person = trustedCaller(readCallerAuthority(req, res)) !== undefined;
-    const result = await getWorkspaceManager().remove(req.params.id, {
+    const person = trustedCaller(readCallerAuthority(honoRequestFacts(c))) !== undefined;
+    const result = await getWorkspaceManager().remove(c.req.param('id'), {
       force: parsed.data.force ?? false,
       unreviewedHooks: person && !parsed.data.skipRemoveHooks ? 'ask' : 'skip',
       ...(person &&
@@ -242,27 +241,30 @@ router.delete('/:id', async (req, res) => {
         }),
     });
     if (result.blocked === 'hooks') {
-      return res.status(409).json({
-        code: 'remove_hooks_need_review',
-        error:
-          'This workspace was made before DorkOS recorded its removal commands, and its source ' +
-          'now declares some. Look at them, then remove it again with approvedRemoveHooks set to ' +
-          'the review hash to run exactly these, or with skipRemoveHooks=true to remove it without ' +
-          'running them.',
-        ...result.hooks,
-      });
+      return c.json(
+        {
+          code: 'remove_hooks_need_review',
+          error:
+            'This workspace was made before DorkOS recorded its removal commands, and its source ' +
+            'now declares some. Look at them, then remove it again with approvedRemoveHooks set to ' +
+            'the review hash to run exactly these, or with skipRemoveHooks=true to remove it without ' +
+            'running them.',
+          ...result.hooks,
+        },
+        409
+      );
     }
     // 404 only when the workspace genuinely doesn't exist. A dirty refusal is a
     // valid outcome carried in the RemoveResult body (`removed:false, blocked:'dirty'`),
     // so the client can escalate to a force-confirm rather than seeing a generic error.
-    if (!result.removed && !result.blocked) return res.status(404).json({ error: 'Not found' });
-    res.json(result);
+    if (!result.removed && !result.blocked) return c.json({ error: 'Not found' }, 404);
+    return c.json(result);
   } catch (err) {
     if (err instanceof BoundaryError) {
-      return res.status(403).json({ error: err.message, code: err.code });
+      return c.json({ error: err.message, code: err.code }, 403);
     }
     logger.error('[workspaces] DELETE /:id failed', { err });
-    res.status(500).json({ error: 'Internal server error' });
+    return c.json({ error: 'Internal server error' }, 500);
   }
 });
 

@@ -6,10 +6,11 @@ import { execFileSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import express from 'express';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import request from '@dorkos/test-utils/supertest';
 import { listeningServer } from '@dorkos/test-utils/listening-server';
+import { getRequestListener } from '@hono/node-server';
+import { Hono } from 'hono';
 import {
   ProjectListResponseSchema,
   ProjectResolveResponseSchema,
@@ -17,6 +18,8 @@ import {
 
 import { initBoundary } from '../../lib/boundary.js';
 import projectRoutes from '../projects.js';
+import type { ApiEnv } from '../../http/api-chain.js';
+import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
 import { ProjectRegistry } from '../../services/projects/project-registry.js';
 
 const auth = vi.hoisted(() => ({ enabled: false }));
@@ -40,9 +43,18 @@ function git(cwd: string, ...args: string[]): void {
   execFileSync('git', args, { cwd, stdio: 'ignore' });
 }
 
-const app = express();
-app.use('/api/projects', projectRoutes);
-const server = listeningServer(app);
+const server = listeningServer(honoGroupListener({ path: '/api/projects', routes: projectRoutes }));
+/**
+ * The routes with no `/api` chain in front. Two of the route's own bars sit
+ * behind a chain step that refuses first (CORS for a foreign `Origin`, the
+ * session gate for a request with no credential under login), so they are
+ * defense in depth, and this is the only way to show they still hold.
+ */
+const bareServer = listeningServer(
+  getRequestListener(new Hono<ApiEnv>().route('/api/projects', projectRoutes).fetch, {
+    overrideGlobalObjects: false,
+  })
+);
 
 beforeAll(async () => {
   base = realpathSync(mkdtempSync(path.join(tmpdir(), 'projects-route-')));
@@ -129,7 +141,7 @@ describe('GET /api/projects/resolve', () => {
   });
 
   it('refuses a request from another site with 403', async () => {
-    const res = await request(server)
+    const res = await request(bareServer)
       .get('/api/projects/resolve')
       .set('origin', 'https://evil.example')
       .query({ cwd: worktree });
@@ -159,7 +171,7 @@ describe('GET /api/projects/resolve', () => {
   it('refuses a caller without a session cookie while login is on', async () => {
     auth.enabled = true;
     try {
-      const res = await request(server).get('/api/projects/resolve').query({ cwd: worktree });
+      const res = await request(bareServer).get('/api/projects/resolve').query({ cwd: worktree });
       expect(res.status).toBe(403);
       expect(res.body).not.toHaveProperty('project');
     } finally {
