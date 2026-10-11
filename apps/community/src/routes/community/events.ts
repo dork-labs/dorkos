@@ -13,7 +13,12 @@ import {
 import { ApiError, ServiceBusy } from '../../http.js';
 import { LiveStreamLimit, type LiveHub, type LiveStream } from '../../live/hub.js';
 import { ChannelFeeds, nextTick, type FeedItem } from '../../live/feed.js';
-import { ENTRY_COLUMNS, entryProjection, originKeyForPrincipal, type EntryRow } from './entries.js';
+import {
+  ENTRY_COLUMNS,
+  entryProjection,
+  originKeyForPrincipal,
+  type EntryRow,
+} from '../../content/entry-projection.js';
 import { attachmentsForEntries } from './attachments.js';
 import {
   entryFrame,

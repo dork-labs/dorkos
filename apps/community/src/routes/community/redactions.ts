@@ -16,7 +16,11 @@ import {
 } from '../../data.js';
 import { ApiError, json } from '../../http.js';
 import { attachmentsForEntries } from './attachments.js';
-import { entryProjection, loadChannelEntries, originKeyForPrincipal } from './entries.js';
+import {
+  entryProjection,
+  loadChannelEntries,
+  originKeyForPrincipal,
+} from '../../content/entry-projection.js';
 
 /**
  * Register the redaction feed: the entries of one channel that changed after they were posted,
@@ -48,7 +52,7 @@ export function registerRedactionRoutes(
       Object.fromEntries(new URL(c.req.url).searchParams)
     );
     const page = await transaction(pool, async (client) => {
-      const channel = await lockChannel(client, c.req.param('id'), principal, 'read');
+      const channel = await lockChannel(client, c.req.param('id'), principal, 'read', 'shared');
       requireJoined(channel);
       await assertPrincipalCurrentInTransaction(
         client,

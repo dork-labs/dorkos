@@ -176,8 +176,13 @@ export async function assertConnectionGrantCurrent(
   // The account row before the member row, the order a clean-out takes them: a caller that goes
   // on to `requireLiveRole` then finds "user" already checked, never locks it after members.
   await refuseIfClearedSinceStart(client, await memberUserId(client, memberId));
+  // FOR NO KEY UPDATE, not FOR UPDATE: it still queues this owner's own posts and every change
+  // to the row (a mute, a removal, accepting the rules), but not a mention of this owner in
+  // someone else's post. That mention's foreign key takes FOR KEY SHARE on this row while its
+  // post holds the channel's sequence, so FOR UPDATE here could deadlock two posts that
+  // mention each other's owners.
   const owner = await client.query(
-    'SELECT 1 FROM members WHERE id=$1 AND community_id=$2 AND active FOR UPDATE',
+    'SELECT 1 FROM members WHERE id=$1 AND community_id=$2 AND active FOR NO KEY UPDATE',
     [memberId, communityId]
   );
   if (!owner.rowCount) throw new ApiError(403, 'FORBIDDEN', 'Owner membership has ended.');
@@ -365,8 +370,13 @@ export async function lockPrincipalAuthority(
   if (lifecycle !== 'active' && !(isReadOnlyLifecycle(lifecycle) && scope === 'read'))
     throw lifecycleError(lifecycle ?? 'unavailable');
   await refuseIfClearedSinceStart(client, await memberUserId(client, principal.ownerMemberId));
+  // FOR NO KEY UPDATE, not FOR UPDATE: it still queues this owner's own posts and every change
+  // to the row (a mute, a removal, accepting the rules), but not a mention of this owner in
+  // someone else's post. That mention's foreign key takes FOR KEY SHARE on this row while its
+  // post holds the channel's sequence, so FOR UPDATE here could deadlock two posts that
+  // mention each other's owners.
   const owner = await client.query(
-    'SELECT 1 FROM members WHERE id=$1 AND community_id=$2 AND active FOR UPDATE',
+    'SELECT 1 FROM members WHERE id=$1 AND community_id=$2 AND active FOR NO KEY UPDATE',
     [principal.ownerMemberId, principal.community_id]
   );
   if (!owner.rowCount) throw new ApiError(403, 'FORBIDDEN', 'The owner membership has ended.');
@@ -451,12 +461,31 @@ export async function bootstrapGrant(
   return result.rows[0].id;
 }
 
+/**
+ * How a request holds its channel row until it commits.
+ *
+ * - `exclusive` (`FOR UPDATE`): for a change to the channel or who is in it (settings, archive,
+ *   history reset, joining, leaving, invitations). Nothing else holds the channel meanwhile.
+ * - `shared` (`FOR KEY SHARE`): for posts, uploads and reads. They run side by side, and each
+ *   still waits for an `exclusive` holder to commit, so it reads the channel, its archive state
+ *   and its membership as the last change left them. A post's message takes the channel's next
+ *   number as it commits, by an `UPDATE` of the row (migration 0037), which `FOR KEY SHARE`
+ *   allows. `FOR SHARE` would not: two posts would each hold it and wait on the other's update.
+ *
+ * Row locks are not first come, first served: a new `shared` request never queues behind an
+ * `exclusive` one already waiting, so in a busy channel a change could wait forever. Both modes
+ * therefore line up first on an advisory lock for the channel (shared or exclusive to match),
+ * whose queue is in order. The commit-time numbering needs only the row.
+ */
+export type ChannelLockMode = 'exclusive' | 'shared';
+
 /** Lock a channel before a post or membership change and hide unauthorized private rooms. */
 export async function lockChannel(
   client: PoolClient,
   channelId: string,
   member: Member | Principal,
-  scope: 'read' | 'post' = 'post'
+  scope: 'read' | 'post' = 'post',
+  mode: ChannelLockMode = 'exclusive'
 ) {
   if (scope === 'post') {
     await lockActiveCommunity(client, member.community_id);
@@ -477,10 +506,13 @@ export async function lockChannel(
     last_seq: string;
     epoch: number;
     created_at: Date;
-  }>(`SELECT c.* FROM channels c WHERE c.id=$1 AND c.community_id=$2 FOR UPDATE OF c`, [
-    channelId,
-    member.community_id,
-  ]);
+  }>(
+    // The advisory lock is taken before the row's, in the one statement (see ChannelLockMode).
+    mode === 'shared'
+      ? `SELECT c.* FROM channels c CROSS JOIN LATERAL (SELECT pg_advisory_xact_lock_shared(77281507, hashtext($1::uuid::text))) queued WHERE c.id=$1::uuid AND c.community_id=$2 FOR KEY SHARE OF c`
+      : `SELECT c.* FROM channels c CROSS JOIN LATERAL (SELECT pg_advisory_xact_lock(77281507, hashtext($1::uuid::text))) queued WHERE c.id=$1::uuid AND c.community_id=$2 FOR UPDATE OF c`,
+    [channelId, member.community_id]
+  );
   const row = result.rows[0];
   if (!row) throw new ApiError(404, 'NOT_FOUND', 'Channel not found.');
   // Membership must be read in a new statement after any competing channel lock commits.
@@ -554,18 +586,29 @@ export function requireJoined(channel: { joined: boolean }): void {
   if (!channel.joined) throw new ApiError(403, 'FORBIDDEN', 'Join this channel first.');
 }
 
-/** Execute a transaction and release its pooled connection on every path. */
-export async function transaction<T>(
+/**
+ * Execute a transaction and release its pooled connection on every path.
+ *
+ * `commit`, when given, ends the transaction in place of a plain `COMMIT`, and what it returns is
+ * the result. It is for a value the commit itself decides, such as a new message's number
+ * (migration 0037): send `COMMIT` and the read of that value as one message. If it throws after
+ * the commit went through, the transaction stays committed; the caller's retry must find it.
+ */
+export async function transaction<T, R = T>(
   pool: Pool,
-  operation: (client: PoolClient) => Promise<T>
-): Promise<T> {
+  operation: (client: PoolClient) => Promise<T>,
+  commit?: (client: PoolClient, result: T) => Promise<R>
+): Promise<R> {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
     const result = await operation(client);
+    if (commit) return await commit(client, result);
     await client.query('COMMIT');
-    return result;
+    // Without `commit`, R is T.
+    return result as unknown as R;
   } catch (error) {
+    // After a failed or finished COMMIT there is no transaction left, and this only warns.
     await client.query('ROLLBACK');
     throw error;
   } finally {

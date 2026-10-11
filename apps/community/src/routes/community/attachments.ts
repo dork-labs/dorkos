@@ -274,7 +274,7 @@ export function registerAttachmentRoutes(
     );
     if (!landed.rowCount) await assertStorageRoom(pool, principal.community_id, metadata.byteSize);
     const reservation = await transaction(pool, async (client) => {
-      const channel = await lockChannel(client, c.req.param('id'), principal);
+      const channel = await lockChannel(client, c.req.param('id'), principal, 'post', 'shared');
       requireJoined(channel);
       if (channel.archived) throw new ApiError(409, 'STATE_CONFLICT', 'This channel is archived.');
       await lockPrincipalAuthority(client, principal);
@@ -304,7 +304,7 @@ export function registerAttachmentRoutes(
       .digest('hex');
     try {
       const result = await transaction(pool, async (client) => {
-        const channel = await lockChannel(client, c.req.param('id'), principal);
+        const channel = await lockChannel(client, c.req.param('id'), principal, 'post', 'shared');
         requireJoined(channel);
         if (channel.archived)
           throw new ApiError(409, 'STATE_CONFLICT', 'This channel is archived.');
@@ -396,7 +396,7 @@ export function registerAttachmentRoutes(
         throw new ApiError(403, 'FORBIDDEN', 'File access has ended.');
       const client = await pool.connect();
       try {
-        const channel = await lockChannel(client, attachment.channel_id, current, 'read');
+        const channel = await lockChannel(client, attachment.channel_id, current, 'read', 'shared');
         requireJoined(channel);
         await lockPrincipalAuthority(client, current, 'read');
         // A file removed or taken down while it downloads stops at the next chunk: a held file's

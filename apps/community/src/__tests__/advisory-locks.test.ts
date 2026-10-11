@@ -32,6 +32,11 @@ const REGISTRY: Record<string, { purpose: string; files: string[] }> = {
     purpose: 'taking ownership through an owner replacement claim',
     files: ['owner-replacement/claim.ts'],
   },
+  // The two-number form: the second number is the channel's hash, so it never meets a key above.
+  '77281507': {
+    purpose: 'queueing in order for one channel: shared by posts and reads, exclusive by changes',
+    files: ['data.ts'],
+  },
 };
 
 function sources(directory: string): string[] {

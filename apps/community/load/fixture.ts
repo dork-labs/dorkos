@@ -56,3 +56,19 @@ export async function seedLoadFixture(
   }
   return (await response.json()) as LoadFixture;
 }
+
+/**
+ * Part `index` (1-based) of `count` of a split run: an even, contiguous share of the readers and
+ * of the writers, so every principal belongs to exactly one part.
+ */
+export function fixturePart(
+  fixture: LoadFixture,
+  part: { index: number; count: number }
+): LoadFixture {
+  const share = <T>(items: readonly T[]) =>
+    items.slice(
+      Math.floor((items.length * (part.index - 1)) / part.count),
+      Math.floor((items.length * part.index) / part.count)
+    );
+  return { ...fixture, readers: share(fixture.readers), writers: share(fixture.writers) };
+}

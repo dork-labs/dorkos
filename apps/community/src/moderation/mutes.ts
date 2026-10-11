@@ -6,8 +6,9 @@ import { outranks } from './bans.js';
 /**
  * Mute a current member for `minutes` as `actor`, replacing any mute in force: the shared step
  * of the mute route and of resolving a report with a mute. The caller has checked the actor's
- * live role. The target's member row is taken `FOR UPDATE`, the lock every post of theirs (and
- * of their agents) takes first, so a post either lands before the mute or meets it.
+ * live role. The target's member row is taken `FOR UPDATE`, which waits for the `FOR NO KEY
+ * UPDATE` every post of theirs (and of their agents) holds, so a post either lands before the
+ * mute or meets it.
  *
  * @returns When the mute ends.
  */
