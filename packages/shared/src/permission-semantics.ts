@@ -597,12 +597,35 @@ function admits(level: TurnPermissionLevel, mode: PermissionModeDescriptor): boo
  * bounds the other it is returned as is; when neither does (one asks less, the
  * other reaches further — Codex's read-only default against Claude's Default),
  * the two are combined: the more frequent asking and the shorter reach, and
- * Auto only when both are Auto.
+ * Auto only when both are Auto. Either level's outsider mark is kept: the
+ * stricter of two turns' levels is one that read whatever either read.
  *
  * @param a - One level.
  * @param b - The other.
  */
 export function stricterLevel(a: TurnPermissionLevel, b: TurnPermissionLevel): TurnPermissionLevel {
+  const level = stricterPower(a, b);
+  return (a.outsider || b.outsider) && !level.outsider ? { ...level, outsider: true } : level;
+}
+
+/**
+ * Whether a ceiling carries an outsider's words: it holds the runtime-default
+ * bound (a stranger, or a sender DorkOS cannot vouch for), a level recorded
+ * from a turn that read them, or nothing at all (an empty list vouches for no
+ * one).
+ *
+ * @param ceiling - The ceiling a turn was sent with.
+ */
+export function ceilingCarriesOutsider(ceiling: TurnPermissionCeiling): boolean {
+  if (!Array.isArray(ceiling)) {
+    return ceiling === 'runtime-default' || (ceiling as TurnPermissionLevel).outsider === true;
+  }
+  const bounds = ceiling as readonly TurnPermissionBound[];
+  return bounds.length === 0 || bounds.some(ceilingCarriesOutsider);
+}
+
+/** {@link stricterLevel} on asking and reach alone. */
+function stricterPower(a: TurnPermissionLevel, b: TurnPermissionLevel): TurnPermissionLevel {
   const fits = (inner: TurnPermissionLevel, outer: TurnPermissionLevel) =>
     isNoLooserThan(outer, inner) && (!inner.auto || outer.auto === true || outer.asks === 'never');
   if (fits(a, b)) return a;

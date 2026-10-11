@@ -69,6 +69,7 @@ import {
   sessionRunsOnCredits,
 } from '../../../core/cloud/credits-model-gate.js';
 import { runtimeRegistry } from '../../../core/runtime-registry.js';
+import { outsiderBoundOf } from '../../../core/turn-power/turn-levels.js';
 import { nameStartedChat, startedChatTitle } from '../../../session/launch/started-chat-title.js';
 import { checkAccountLaunch } from '../../../core/usage/account-ranking.js';
 import { getAccountUsageStore } from '../../../core/usage/current-usage-store.js';
@@ -288,6 +289,17 @@ function callerOf(
         }
       : null,
   };
+}
+
+/**
+ * The ceiling a started session's first turn carries when its starter's turn
+ * read an outsider's words, as the spread a launch takes; empty otherwise.
+ *
+ * @param caller - Who is starting it: the calling chat, or only the agent.
+ */
+function outsiderStartCeiling(caller: CallerAgent & { chat: CallingChat | null }) {
+  const bound = outsiderBoundOf(caller.chat?.sessionId, caller.agentPath);
+  return bound !== undefined ? { permissionCeiling: bound } : {};
 }
 
 /**
@@ -574,6 +586,10 @@ export function createSessionStartHandler(
           })(),
         },
         clientId: SESSION_START_CLIENT_ID,
+        // A starter whose turn read an outsider's words passes that on: the new
+        // session's turn is recorded as one that read them too (spec
+        // `trusted-by-default-flip` §4.7). Its power is already the granted mode.
+        ...outsiderStartCeiling(caller),
         meshCore: deps.meshCore,
         // A session minted here is in no room.
         roomSessionPlace: undefined,

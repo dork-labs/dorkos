@@ -23,6 +23,10 @@ import { USER_CONFIG_DEFAULTS, type UserConfig } from '@dorkos/shared/config-sch
 import { FakeAgentRuntime } from '@dorkos/test-utils';
 import { CLAUDE_CODE_CAPABILITIES } from '../../runtime-constants.js';
 import { CODEX_CAPABILITIES } from '../../../codex/runtime-constants.js';
+import type { AgentRuntime, MessageOpts } from '@dorkos/shared/agent-runtime';
+import type { StreamEvent } from '@dorkos/shared/types';
+import { recordTurnLevels } from '../../../../core/turn-power/turn-levels.js';
+import { resetLiveOutsiderTurns } from '../../../../core/turn-power/live-outsider-turns.js';
 
 const runtimes = vi.hoisted(() => new Map<string, unknown>());
 /** The folders the mocked boundary lets through. */
@@ -1453,5 +1457,59 @@ describe("session_start runs at the calling chat's level or lower (spec inherite
       expect(result.isError).toBe(true);
       expect(insert).not.toHaveBeenCalled();
     });
+  });
+});
+
+// Red when: `outsiderStartCeiling` is removed from the launch. A session the
+// starter's turn opens is recorded as reading what that turn read, so a
+// stranger's words do not come out of the new session unmarked (spec
+// `trusted-by-default-flip` §4.7).
+describe("session_start passes on an outsider's words (DOR-2781)", () => {
+  /** Run one turn on `sessionId` through the real level-recording seam. */
+  async function turnOn(sessionId: string, opts: MessageOpts) {
+    const recorded = recordTurnLevels(claude as unknown as AgentRuntime, () => 'bypassPermissions');
+    for await (const _event of recorded.sendMessage(sessionId, 'hi', opts)) {
+      // drain
+    }
+  }
+
+  const fromChat = (sessionId: string) =>
+    createSessionStartHandler(makeDeps(), () => ({
+      agentPath: AGENT_HOME,
+      sessionId,
+      runtime: 'claude-code',
+      permissionMode: 'default',
+    }));
+
+  const sentCeiling = () => vi.mocked(dispatchMessage).mock.calls[0]![0].permissionCeiling;
+
+  afterEach(() => resetLiveOutsiderTurns());
+
+  it("carries the starter's level when its turn read an outsider's words", async () => {
+    await turnOn('tainted-parent', { permissionCeiling: 'runtime-default' });
+    await fromChat('tainted-parent')(BASE);
+    expect(sentCeiling()).toMatchObject({ outsider: true });
+  });
+
+  it('carries nothing from a turn the owner started', async () => {
+    await turnOn('owner-parent', {});
+    await fromChat('owner-parent')(BASE);
+    expect(sentCeiling()).toBeUndefined();
+  });
+
+  it("holds an external caller to the runtime default while one of its agent's outsider turns runs", async () => {
+    // A turn of Scout's that a stranger started, still running.
+    claude.sendMessage.mockImplementationOnce(async function* () {
+      yield { type: 'done', data: {} } as StreamEvent;
+    });
+    const running = recordTurnLevels(claude as unknown as AgentRuntime, () => null).sendMessage(
+      'codex-room-turn',
+      'hi',
+      { cwd: AGENT_HOME, permissionCeiling: 'runtime-default' }
+    );
+    await running.next();
+    await asScout()(BASE);
+    expect(sentCeiling()).toBe('runtime-default');
+    await running.return(undefined);
   });
 });

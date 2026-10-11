@@ -65,6 +65,7 @@ export function applyMemoryOp(content: string, op: MemoryWriteOp): string {
       return appendNote(content, op.text, op.provenance);
     case 'replace': {
       const at = findEditable(content, op.oldText);
+      assertStampUntouched(content, at, at + op.oldText.length, op.oldText);
       return normalizeTail(content.slice(0, at) + op.text + content.slice(at + op.oldText.length));
     }
     case 'remove': {
@@ -143,6 +144,46 @@ function findEditable(content: string, needle: string): number {
     throw new MemoryMatchError('protected-header', needle, nearestLines(content, needle));
   }
   return at;
+}
+
+/**
+ * A stamp: `(noted in …, YYYY-MM-DD)` after a space, matched wherever it sits.
+ * Anywhere rather than only at a line's end, so a stamp a hand edit (or text
+ * that merely looks like one) left mid-line is protected too: over-protecting
+ * a note's own words costs a rephrase, under-protecting a stamp costs its
+ * meaning.
+ */
+const STAMP = / \(noted in [^\n]*?, \d{4}-\d{2}-\d{2}\)/g;
+
+/**
+ * Refuse a `replace` whose span reaches into a note's stamp.
+ *
+ * The stamp is the one part of a note the agent cannot choose, and the trust
+ * framing tells every later session so. A `replace` that could edit it could
+ * turn `(noted in #poison, …)` into `(noted in a direct chat, …)`, or drop the
+ * mark saying the note was saved while reading an outsider's words (spec
+ * `trusted-by-default-flip` §4.7). `remove` takes whole lines, stamp and all,
+ * so it needs no such check.
+ *
+ * @param content - The memory as it stands.
+ * @param start - Where the replaced span starts.
+ * @param end - Where it ends, exclusive.
+ * @param needle - The text the caller named, for the refusal.
+ * @throws {MemoryMatchError} When the span overlaps a stamp or crosses a line end.
+ */
+function assertStampUntouched(content: string, start: number, end: number, needle: string): void {
+  // A span across a line end would join two notes, and the line it makes ends
+  // with the second note's stamp, which then speaks for the first's words.
+  if (LINE_BREAK.test(needle)) {
+    throw new MemoryMatchError('protected-stamp', needle, nearestLines(content, needle));
+  }
+  for (const match of content.matchAll(STAMP)) {
+    const stampStart = match.index;
+    const stampEnd = stampStart + match[0].length;
+    if (start < stampEnd && end > stampStart) {
+      throw new MemoryMatchError('protected-stamp', needle, nearestLines(content, needle));
+    }
+  }
 }
 
 /**
