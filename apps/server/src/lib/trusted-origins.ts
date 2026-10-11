@@ -252,31 +252,51 @@ function parseTunnelUrl(): URL | null {
 }
 
 /**
- * Origin of the active ngrok tunnel, resolved at call time, or `null` when no
- * tunnel is connected.
+ * The hostnames managed remote access serves right now, lower case.
+ *
+ * Read defensively: many test files mock the tunnel manager as a bare
+ * `{ status }` object, and a missing getter there means "no managed access",
+ * which is the truth for every one of them.
  */
-export function getTunnelOrigin(): string | null {
-  return parseTunnelUrl()?.origin ?? null;
+function managedTunnelHosts(): readonly string[] {
+  return (tunnelManager as { managedHosts?: readonly string[] }).managedHosts ?? [];
 }
 
 /**
- * Host name (no scheme, no port) of the active ngrok tunnel, or `null` when no
- * tunnel is connected. The `Host` header of a request that arrives through the
- * tunnel carries exactly this name, so the host guard compares against it.
+ * Origins of every live tunnel address, resolved at call time: the person's own
+ * tunnel URL, or every hostname managed remote access serves (always `https`).
+ * Empty when no tunnel is open.
  */
-export function getTunnelHost(): string | null {
-  return parseTunnelUrl()?.hostname.toLowerCase() ?? null;
+export function getTunnelOrigins(): string[] {
+  const origins = new Set<string>();
+  const byo = parseTunnelUrl()?.origin;
+  if (byo) origins.add(byo);
+  for (const host of managedTunnelHosts()) origins.add(`https://${host}`);
+  return [...origins];
 }
 
 /**
- * All origins DorkOS trusts right now: the static loopback dev origins plus the
- * live tunnel origin when a tunnel is connected. Resolved dynamically so a
- * tunnel that starts after boot is trusted without a restart.
+ * Host names (no scheme, no port) of every live tunnel address — the person's
+ * own tunnel, or each hostname managed remote access serves. A request that
+ * arrives through a tunnel carries one of exactly these in `Host`, so the host
+ * guard, the origin policy and the workbench preview compare against the set.
+ * Empty when no tunnel is open.
+ */
+export function getTunnelHosts(): string[] {
+  const hosts = new Set<string>();
+  const byo = parseTunnelUrl()?.hostname.toLowerCase();
+  if (byo) hosts.add(byo);
+  for (const host of managedTunnelHosts()) hosts.add(host.toLowerCase());
+  return [...hosts];
+}
+
+/**
+ * All origins DorkOS trusts right now: the static loopback dev origins plus
+ * every live tunnel origin. Resolved dynamically so a tunnel that starts after
+ * boot is trusted without a restart.
  */
 export function resolveTrustedOrigins(): string[] {
-  const tunnelOrigin = getTunnelOrigin();
-  const origins = getStaticLocalOrigins();
-  return tunnelOrigin ? [...origins, tunnelOrigin] : origins;
+  return [...getStaticLocalOrigins(), ...getTunnelOrigins()];
 }
 
 /**

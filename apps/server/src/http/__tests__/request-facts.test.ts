@@ -77,6 +77,7 @@ describe('both adapters', () => {
       expect(facts.user).toBeUndefined();
       expect(facts.agentIdentity).toBeUndefined();
       expect(facts.connectionEncrypted).toBe(false);
+      expect(facts.managedIngress).toBe(false);
     }
   });
 });

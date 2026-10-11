@@ -513,7 +513,7 @@ export function createCommunityApp({
 
   registerChannelRoutes(communityApi, { pool, auth });
   registerEntryRoutes(communityApi, { pool, auth, config, receiptGate });
-  if (receiptGate) registerCommunityTestControlRoutes(app, receiptGate);
+  if (receiptGate) registerCommunityTestControlRoutes(app, receiptGate, pool);
   registerEventRoutes(communityApi, { pool, auth, config, hub: live, hooks });
   registerInviteRoutes(communityApi, {
     pool,

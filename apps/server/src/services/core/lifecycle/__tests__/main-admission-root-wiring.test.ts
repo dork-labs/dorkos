@@ -97,6 +97,11 @@ function disposeNext(statement: ts.Statement) {
  * `createFrontDoorServer(composeFrontDoor(app, mainRequestAdmission)).listen(...)`:
  * the main listen. The admission is checked too, because the front door also
  * builds the Hono `/api` app, whose chain refuses on it.
+ *
+ * The door may also be a `start()` variable holding that same
+ * `composeFrontDoor(app, mainRequestAdmission)` call, because managed remote
+ * access serves the very same door (DOR-2086). Only a variable declared at the
+ * root of `start()` counts, so the check still reads one door, not any value.
  */
 function isMainListen(node: ts.Node): boolean {
   if (!ts.isCallExpression(node) || !ts.isPropertyAccessExpression(node.expression)) return false;
@@ -104,7 +109,10 @@ function isMainListen(node: ts.Node): boolean {
   const server = node.expression.expression;
   if (!ts.isCallExpression(server) || !ts.isIdentifier(server.expression)) return false;
   if (server.expression.text !== 'createFrontDoorServer') return false;
-  const door = server.arguments[0];
+  let door: ts.Expression | undefined = server.arguments[0];
+  if (door && ts.isIdentifier(door)) {
+    door = rootVariable(door.text, rootFunction('start').body!.statements).initializer;
+  }
   if (!door || !ts.isCallExpression(door) || !ts.isIdentifier(door.expression)) return false;
   const [legacy, admission] = door.arguments;
   return (

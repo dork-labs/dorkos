@@ -23,6 +23,7 @@ import { createRemoteCommunitiesRouter } from './routes/remote-communities.js';
 import { requireSpacesEnabled } from './middleware/spaces-enabled.js';
 import readCursorRoutes from './routes/read-cursors.js';
 import tunnelRoutes from './routes/tunnel.js';
+import { createRemoteAccessRouter } from './routes/remote-access.js';
 import cloudRoutes from './routes/cloud.js';
 import feedbackRoutes, { feedbackJsonParser } from './routes/feedback.js';
 import modelRoutes from './routes/models.js';
@@ -39,6 +40,7 @@ import eventsRouter from './routes/events.js';
 import { generateOpenAPISpec } from './services/core/openapi-registry.js';
 import { errorHandler } from './middleware/error-handler.js';
 import { hostGuard } from './middleware/host-guard.js';
+import { managedHostGuard } from './middleware/managed-host-guard.js';
 import {
   createConnectorSignedIngress,
   type ConnectorSignedIngress,
@@ -88,6 +90,10 @@ export function createApp(options: {
 }) {
   const app = express();
   app.use(terminalAdmission(options.admission));
+  // A managed remote-access hostname is served only through the managed
+  // ingress, which checks the edge proof; on this listener it is refused before
+  // any logger or route sees it.
+  app.use(managedHostGuard);
 
   // Trust one forwarded hop. Today that feeds one thing: `req.ip`, which the
   // rate limiters read (as `forwardedAddress`) only when `DORKOS_TRUST_PROXY`
@@ -213,6 +219,7 @@ export function createApp(options: {
   app.use('/api/communities', requireSpacesEnabled, createRemoteCommunitiesRouter());
   app.use('/api/read-cursors', readCursorRoutes);
   app.use('/api/tunnel', tunnelRoutes);
+  app.use('/api/remote-access', createRemoteAccessRouter());
   app.use('/api/cloud', cloudRoutes);
   app.use('/api/feedback', feedbackRoutes);
   app.use('/api/models', modelRoutes);

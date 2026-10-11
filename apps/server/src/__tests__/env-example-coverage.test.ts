@@ -58,6 +58,8 @@ const UNDOCUMENTED_ON_PURPOSE: Record<string, string> = {
   DORKOS_Q3_DURATION_MS: 'read only by the q3 contention harness (scripts/q3-contention/run.ts)',
   DORKOS_Q3_TICK_MS: 'read only by the q3 contention harness',
   DORKOS_Q3_CANARY_MAP: 'read only by the q3 contention harness',
+  DORKOS_MANAGED_REMOTE:
+    'switches on DorkOS managed remote access (DOR-2086), which stays off until its live supplier acceptance passes; documenting it would offer a feature that does not work yet',
 };
 
 /**

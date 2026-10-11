@@ -205,7 +205,7 @@ describe('parseTrustedHosts', () => {
 });
 
 describe('isHostAllowed', () => {
-  const base = { trustedHosts: [] as readonly string[], tunnelHost: null };
+  const base = { trustedHosts: [] as readonly string[], tunnelHosts: [] as readonly string[] };
 
   it('rejects a missing host name', () => {
     expect(isHostAllowed({ ...base, hostname: null })).toBe(false);
@@ -217,11 +217,18 @@ describe('isHostAllowed', () => {
   });
 
   it('matches the tunnel host exactly', () => {
-    expect(isHostAllowed({ ...base, hostname: 'x.ngrok.app', tunnelHost: 'x.ngrok.app' })).toBe(
+    expect(isHostAllowed({ ...base, hostname: 'x.ngrok.app', tunnelHosts: ['x.ngrok.app'] })).toBe(
       true
     );
-    expect(isHostAllowed({ ...base, hostname: 'y.ngrok.app', tunnelHost: 'x.ngrok.app' })).toBe(
+    expect(isHostAllowed({ ...base, hostname: 'y.ngrok.app', tunnelHosts: ['x.ngrok.app'] })).toBe(
       false
     );
+  });
+
+  it('answers to every managed hostname, and to nothing that is no longer served', () => {
+    const tunnelHosts = ['a.example.dev', 'custom.example.com'];
+    expect(isHostAllowed({ ...base, hostname: 'a.example.dev', tunnelHosts })).toBe(true);
+    expect(isHostAllowed({ ...base, hostname: 'custom.example.com', tunnelHosts })).toBe(true);
+    expect(isHostAllowed({ ...base, hostname: 'b.example.dev', tunnelHosts })).toBe(false);
   });
 });

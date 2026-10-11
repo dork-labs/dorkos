@@ -58,6 +58,7 @@ describe('TunnelManager', () => {
       authEnabled: false,
       tokenConfigured: false,
       domain: null,
+      mode: 'off',
     });
   });
 
