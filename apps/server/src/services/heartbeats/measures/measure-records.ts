@@ -7,7 +7,7 @@
  *
  * @module services/heartbeats/measures/measure-records
  */
-import { and, eq, gte, inArray, isNotNull, lte, notLike, or, sql } from 'drizzle-orm';
+import { and, eq, gte, inArray, isNotNull, lte, notLike, sql } from 'drizzle-orm';
 import {
   auditEvents,
   commitments,
@@ -36,7 +36,7 @@ export type MeasureBeat = Pick<
 /** An outbox row that reached its reader, or is still held for them. */
 export type MeasureDelivery = Pick<
   HeartbeatOutboxRow,
-  'id' | 'beatId' | 'toAccount' | 'rung' | 'key' | 'deliveredEntryId' | 'closedAt' | 'state'
+  'id' | 'beatId' | 'toAccount' | 'rung' | 'key' | 'deliveredEntryId' | 'deliveredAt' | 'state'
 >;
 
 /** What people did with one message a beat delivered into the app. */
@@ -61,12 +61,41 @@ export interface MeasureAuditRow {
   change: Array<{ field: string; before?: unknown; after?: unknown }>;
 }
 
-/** Something an agent did itself, in one of its beat chats: a mutating audit row. */
+/** Something an agent did itself, in one of its beat chats: an audit row that changes something. */
 export interface MeasureAgentAction {
   /** The chat it happened in. */
   sessionId: string;
   /** When (ISO 8601). */
   at: string;
+}
+
+/**
+ * Runtime tools whose use changes something by itself: they write files. Every
+ * other runtime tool is recorded `execute` too (a shell command, a skill, a
+ * todo list, a search for a tool), and none of those says whether anything
+ * changed, so a runtime row counts only for these.
+ */
+export const FILE_WRITING_TOOLS: ReadonlySet<string> = new Set(
+  ['Write', 'Edit', 'MultiEdit', 'NotebookEdit', 'apply_patch', 'applypatch'].map((name) =>
+    name.toLowerCase()
+  )
+);
+
+/**
+ * Whether an agent's audit row is a real action. A runtime tool row (`runtime.tool_used`)
+ * counts only for a file-writing tool, named by the row's own summary ("Used Edit: …");
+ * a started tool or helper is not yet anything. Any other agent row that changes
+ * something (a chat message, an act-tier DorkOS tool) counts.
+ *
+ * @param action - The row's action.
+ * @param summary - The row's summary.
+ */
+export function isRealAction(action: string, summary: string): boolean {
+  if (action === 'runtime.tool_used') {
+    const tool = /^Used (\S+?)(?: \(in a helper\))?(?::|$)/.exec(summary)?.[1];
+    return tool !== undefined && FILE_WRITING_TOOLS.has(tool.toLowerCase());
+  }
+  return !action.startsWith('runtime.');
 }
 
 /** A promise that came due in the window. */
@@ -89,8 +118,13 @@ export interface MeasureRecords {
   answers: Map<string, EntryAnswer>;
   /** Pauses, heartbeat edits and settings changes by people, since the window began. */
   audit: MeasureAuditRow[];
-  /** What the agent itself did in its beat chats: tool calls and actions that change things. */
+  /** What the agent itself did in its beat chats that changes something (see {@link isRealAction}). */
   agentActions: MeasureAgentAction[];
+  /**
+   * Per beat, the raises it handed over that went out as messages (a room post,
+   * a DM, a note, a message to another agent), not lines saved for its report.
+   */
+  spokenRaises: Map<string, number>;
   /** The direct-message rooms the agent is in, for a muted DM. */
   dmRoomIds: string[];
   /** Its promises that came due in the window. */
@@ -201,10 +235,17 @@ function readDmRooms(db: Db, agentPath: string): string[] {
  * @param input.agentPath - Its home folder.
  * @param input.since - Where the window starts (ISO 8601).
  * @param input.now - Where it ends (ISO 8601).
+ * @param input.isAgent - Whether an account id names an agent.
  */
 export function readMeasureRecords(
   db: Db,
-  input: { agentId: string; agentPath: string; since: string; now: string }
+  input: {
+    agentId: string;
+    agentPath: string;
+    since: string;
+    now: string;
+    isAgent(accountId: string): boolean;
+  }
 ): MeasureRecords {
   const { agentId, since, now } = input;
   const beats = db
@@ -237,7 +278,7 @@ export function readMeasureRecords(
     rung: heartbeatOutbox.rung,
     key: heartbeatOutbox.key,
     deliveredEntryId: heartbeatOutbox.deliveredEntryId,
-    closedAt: heartbeatOutbox.closedAt,
+    deliveredAt: heartbeatOutbox.deliveredAt,
     state: heartbeatOutbox.state,
   };
   const delivered = db
@@ -246,12 +287,10 @@ export function readMeasureRecords(
     .where(
       and(
         eq(heartbeatOutbox.agentId, agentId),
-        inArray(heartbeatOutbox.state, ['delivered', 'resolved']),
-        gte(heartbeatOutbox.closedAt, since),
-        // Reached its reader: it landed as an entry, or it is still marked
-        // delivered (a note outside the app has no entry). A row resolved while
-        // held has neither and never reached anybody.
-        or(isNotNull(heartbeatOutbox.deliveredEntryId), eq(heartbeatOutbox.state, 'delivered'))
+        // Reached its reader in the window, whatever became of it after: a
+        // delivered note later resolved still interrupted somebody, and a row
+        // resolved while held (no `delivered_at`) never reached anybody.
+        gte(heartbeatOutbox.deliveredAt, since)
       )
     )
     .all();
@@ -289,7 +328,12 @@ export function readMeasureRecords(
     sessionIds.length === 0
       ? []
       : db
-          .select({ sessionId: auditEvents.sessionId, at: auditEvents.at })
+          .select({
+            sessionId: auditEvents.sessionId,
+            at: auditEvents.at,
+            action: auditEvents.action,
+            summary: auditEvents.summary,
+          })
           .from(auditEvents)
           .where(
             and(
@@ -303,7 +347,34 @@ export function readMeasureRecords(
             )
           )
           .all()
-          .filter((row): row is MeasureAgentAction => row.sessionId !== null);
+          .filter((row) => row.sessionId !== null && isRealAction(row.action, row.summary))
+          .map((row) => ({ sessionId: row.sessionId!, at: row.at }));
+  const spokenRaises = new Map<string, number>();
+  if (beats.length > 0) {
+    const rows = db
+      .select({
+        beatId: heartbeatOutbox.beatId,
+        rung: heartbeatOutbox.rung,
+        to: heartbeatOutbox.toAccount,
+      })
+      .from(heartbeatOutbox)
+      .where(
+        and(
+          inArray(
+            heartbeatOutbox.beatId,
+            beats.map((beat) => beat.id)
+          ),
+          notLike(heartbeatOutbox.key, 'report:%')
+        )
+      )
+      .all();
+    for (const row of rows) {
+      // A `report` row is either a line saved for the next report to a person
+      // (not a message) or a message to another agent, which went out at once.
+      if (row.rung === 'report' && !input.isAgent(row.to)) continue;
+      spokenRaises.set(row.beatId, (spokenRaises.get(row.beatId) ?? 0) + 1);
+    }
+  }
   const due = db
     .select({ state: commitments.state, dueAt: commitments.dueAt, closedAt: commitments.closedAt })
     .from(commitments)
@@ -322,6 +393,7 @@ export function readMeasureRecords(
     answers: readAnswers(db, entryIds),
     audit,
     agentActions,
+    spokenRaises,
     dmRoomIds: readDmRooms(db, input.agentPath),
     commitments: due,
   };

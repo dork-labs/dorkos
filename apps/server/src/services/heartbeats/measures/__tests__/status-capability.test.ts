@@ -28,6 +28,7 @@ const MEASURES = computeMeasures(
     answers: new Map(),
     audit: [],
     agentActions: [],
+    spokenRaises: new Map(),
     dmRoomIds: [],
     commitments: [],
   },

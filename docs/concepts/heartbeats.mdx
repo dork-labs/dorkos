@@ -122,9 +122,12 @@ the agent's own account of itself.
 | **Surprises**                        | Not measured yet                                                                      | 0               |
 | **Mutes and pauses**                 | Times a person paused it, switched its heartbeat off, or muted it                     | Trending to 0   |
 
-A beat counts as doing something real when it sent a message, posted in a room, or changed something
-(ran a command or edited a file, for example). A beat that only looked around is not counted, and
-neither is a report. Today, work counts as undone when a person paused the agent within an hour of it
+A beat counts as doing something real when it sent a message (a direct message, a room post, a
+notification or a message to another agent), edited a file, or took an action through DorkOS, like
+recording a promise. A line saved for its next report is not a message, so it does not count, and the
+beat still counts as quiet. A beat that only looked around or ran commands is not counted, because
+DorkOS cannot yet tell a command that changed something from one that only read. Neither is a
+report. Today, work counts as undone when a person paused the agent within an hour of it
 or reacted 👎 to what it sent. Not measured yet: a person stopping the beat's chat, and reverted code.
 
 These numbers are approximate. Recent work counts as kept until something undoes it, even before its

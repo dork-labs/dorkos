@@ -662,6 +662,16 @@
       ]
     },
     {
+      "doc": "docs/concepts/heartbeats.mdx",
+      "description": "Heartbeats: how agents wake on their own, how they tell people, reports, cheap checks on credits, and the measures",
+      "patterns": [
+        "apps/server/src/services/heartbeats/",
+        "apps/server/src/services/decisions/",
+        "apps/client/src/layers/features/profile/ui/heartbeat/",
+        "packages/operating-skills/src/heartbeat-templates"
+      ]
+    },
+    {
       "doc": "docs/concepts/relay.mdx",
       "description": "Relay messaging concepts",
       "patterns": [

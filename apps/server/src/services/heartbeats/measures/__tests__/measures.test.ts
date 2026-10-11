@@ -72,7 +72,7 @@ function entry(id: string, roomId: string, authorId: string, msAgo: number, pare
     .run();
 }
 
-/** An outbox row. Delivered ones closed at `msAgo`. */
+/** An outbox row. Unless told otherwise it was delivered (and closed) `msAgo`. */
 function outboxRow(
   id: string,
   beatId: string,
@@ -92,6 +92,7 @@ function outboxRow(
       state: 'delivered',
       createdAt: ago(msAgo),
       closedAt: ago(msAgo),
+      deliveredAt: fields.state === 'held' ? null : ago(msAgo),
       ...fields,
     })
     .run();
@@ -125,22 +126,27 @@ function recordBy(
   });
 }
 
-/** Something the agent itself did in a chat: a mutating (or reading) audit row. */
+/** Something the agent itself did in a chat, as the audit trail records it. */
 function agentDid(
   sessionId: string,
   msAgo: number,
-  operation: 'execute' | 'access' = 'execute',
-  action = 'runtime.tool_used'
+  row: { action?: string; operation?: 'execute' | 'access'; summary?: string } = {}
 ): void {
+  const action = row.action ?? 'runtime.tool_used';
   audit.record({
     at: ago(msAgo),
     actor: { accountId: AGENT, kind: 'agent', name: 'Juno' },
     source: { surface: 'runtime-tool', sessionId },
     action,
-    operation,
+    operation: row.operation ?? 'execute',
     outcome: 'ok',
-    summary: action,
+    summary: row.summary ?? 'Used Edit: notes.md',
   });
+}
+
+/** A raise a beat sent as a message: a delivered DM to the owner. */
+function spoke(beatId: string, msAgo: number): void {
+  outboxRow(`o-${beatId}`, beatId, msAgo);
 }
 
 /** The measures now, over the default window unless `days` says otherwise. */
@@ -205,20 +211,34 @@ describe('no beats yet', () => {
 
 describe('kept rate', () => {
   it('counts only beats that left a mark, and undoes them for a pause within an hour or 👎', () => {
-    // Acted: raised something, posted around end_beat, or changed something in its chat.
+    // Acted: sent a message, posted around end_beat, edited a file, or took a DorkOS action.
     beat('b-raised', 3 * HOUR, { outcome: 'worked', turnSessionId: 'chat-a', raises: 1 });
+    spoke('b-raised', 3 * HOUR - 60_000);
     beat('b-bypass', 4 * HOUR, { outcome: 'worked', turnSessionId: 'chat-b', bypass: 1 });
-    beat('b-tool', 5 * HOUR, { outcome: 'worked', turnSessionId: 'chat-c' });
-    agentDid('chat-c', 5 * HOUR - 60_000);
+    beat('b-edit', 5 * HOUR, { outcome: 'worked', turnSessionId: 'chat-c' });
+    agentDid('chat-c', 5 * HOUR - 60_000, { summary: 'Used Edit (in a helper): notes.md' });
+    beat('b-chat', 2 * HOUR, { outcome: 'worked', turnSessionId: 'chat-i' });
+    agentDid('chat-i', 2 * HOUR - 60_000, { action: 'chat.sent', summary: 'Sent a message' });
     beat('b-paused', 6 * HOUR, { outcome: 'worked', turnSessionId: 'chat-d', raises: 1 });
+    spoke('b-paused', 6 * HOUR - 60_000);
     beat('b-disliked', 8 * HOUR, { outcome: 'worked', turnSessionId: 'chat-e', raises: 1 });
     beat('b-late-pause', 30 * HOUR, { outcome: 'worked', turnSessionId: 'chat-f', raises: 1 });
-    // Not acted: a turn that only looked, read-only or bookkeeping rows, work
-    // outside the beat's window, and a report beat.
+    spoke('b-late-pause', 30 * HOUR - 60_000);
+    // Not acted: read-only rows, shell commands, skills and tool searches
+    // (recorded as execute whatever they did), started tools, bookkeeping, work
+    // outside the beat's window, a raise saved for the report, and a report beat.
     beat('b-looked', 9 * HOUR, { outcome: 'worked', turnSessionId: 'chat-g' });
-    agentDid('chat-g', 9 * HOUR - 60_000, 'access');
-    agentDid('chat-g', 9 * HOUR - 60_000, 'execute', 'heartbeat.raised');
+    agentDid('chat-g', 9 * HOUR - 60_000, { operation: 'access', summary: 'Used Read: a.md' });
+    agentDid('chat-g', 9 * HOUR - 60_000, { summary: 'Used Bash: git log' });
+    agentDid('chat-g', 9 * HOUR - 60_000, { summary: 'Used Skill' });
+    agentDid('chat-g', 9 * HOUR - 60_000, { summary: 'Used ToolSearch' });
+    agentDid('chat-g', 9 * HOUR - 60_000, {
+      action: 'runtime.tool_started',
+      summary: 'Started Edit: notes.md',
+    });
+    agentDid('chat-g', 9 * HOUR - 60_000, { action: 'heartbeat.raised', summary: 'Raised' });
     agentDid('chat-g', 8 * HOUR + 30 * 60_000);
+    beat('b-saved', 11 * HOUR, { outcome: 'worked', turnSessionId: 'chat-s', raises: 1 });
     beat('b-report', 10 * HOUR, {
       kind: 'report',
       outcome: 'worked',
@@ -235,10 +255,9 @@ describe('kept rate', () => {
     react('e-disliked', 'room-dm', 'author-person', '👎', 6 * HOUR);
 
     const { keptRate } = measure();
-    expect(keptRate.whole).toBe(6);
-    // b-raised, b-bypass, b-tool and b-late-pause.
-    expect(keptRate.part).toBe(4);
-    expect(keptRate.source).toMatch(/Stops, reverts not seen/);
+    expect(keptRate.whole).toBe(7);
+    // b-raised, b-bypass, b-edit, b-chat and b-late-pause.
+    expect(keptRate.part).toBe(5);
     expect(keptRate.source).not.toMatch(/turns/);
     expect(
       keptRate.source.split(/\s+/).filter((w) => /[\p{L}\d]/u.test(w)).length
@@ -313,7 +332,7 @@ describe('interruptions per useful outcome', () => {
   it('divides messages that reached a person by kept actions plus useful messages', () => {
     beat('b1', 2 * DAY, { outcome: 'worked', turnSessionId: 'chat-1', raises: 3 });
     beat('b2', 1 * DAY, { outcome: 'worked', turnSessionId: 'chat-2' });
-    agentDid('chat-2', DAY - 60_000);
+    agentDid('chat-2', DAY - 60_000, { summary: 'Used Write: report.md' });
     // A turn that did nothing is not a useful outcome.
     beat('b3', 20 * HOUR, { outcome: 'worked', turnSessionId: 'chat-3' });
     // Two raises batched into one DM: one interruption, one message answered.
@@ -329,16 +348,20 @@ describe('interruptions per useful outcome', () => {
     outboxRow('o-resolved-held', 'b2', 20 * HOUR, {
       state: 'resolved',
       deliverAfter: ago(30 * HOUR),
+      deliveredAt: null,
     });
+    // A note that went out, then was resolved (end_beat.resolved or the 14-day
+    // expiry): it still interrupted somebody.
+    outboxRow('o-note-resolved', 'b1', 18 * HOUR, { rung: 'note', state: 'resolved' });
     outboxRow('o-agent', 'b2', 5 * HOUR, { rung: 'report', toAccount: 'agent-otto' });
 
     const { interruptions, usefulRaiseRate, keptRate } = measure();
-    expect(interruptions.messages).toBe(3);
+    expect(interruptions.messages).toBe(4);
     // b1 and b2 kept (b3 did nothing), plus the one answered message.
     expect(keptRate).toMatchObject({ part: 2, whole: 2 });
     expect(usefulRaiseRate.part).toBe(1);
     expect(interruptions.usefulOutcomes).toBe(3);
-    expect(interruptions.value).toBeCloseTo(1);
+    expect(interruptions.value).toBeCloseTo(4 / 3);
     expect(interruptions.target).toBe('1 or less');
   });
 });
@@ -394,6 +417,9 @@ describe('supporting measures', () => {
     });
     beat('b-no-end', 8 * HOUR, { outcome: 'no-end-beat', turnSessionId: 'chat-n' });
     beat('b-bypass', 8 * HOUR + 30 * 60_000, { turnSessionId: 'chat-b', bypass: 1 });
+    // A raise saved for the next report is not a message: still a quiet beat.
+    beat('b-saved', 8 * HOUR + 45 * 60_000, { raises: 1 });
+    spoke('b-worked', 7 * HOUR - 60_000);
     beat('b-skipped', 9 * HOUR, { outcome: 'skipped' });
     outboxRow('o-held', 'b-worked', 0, {
       state: 'held',
@@ -420,9 +446,9 @@ describe('supporting measures', () => {
     promise('not-due-yet', 'open', -DAY, null);
 
     const { supporting } = measure();
-    expect(supporting.beats).toBe(5);
+    expect(supporting.beats).toBe(6);
     // A beat with no end_beat is unknown, and one that posted around it spoke.
-    expect(supporting.quietBeats).toMatchObject({ part: 2, whole: 4 });
+    expect(supporting.quietBeats).toMatchObject({ part: 3, whole: 5 });
     expect(supporting.commitmentsOnTime).toMatchObject({ part: 1, whole: 3 });
     expect(supporting.noEndBeat).toBe(1);
     expect(supporting.triage).toEqual({ checks: 2, tokens: 640 });
@@ -435,6 +461,7 @@ describe('supporting measures', () => {
 describe('the window', () => {
   it('leaves out beats older than the window, and a wider window takes them in', () => {
     beat('b-old', 10 * DAY, { outcome: 'worked', turnSessionId: 'chat-old', raises: 1 });
+    spoke('b-old', 10 * DAY - 60_000);
     beat('b-new', DAY);
     expect(measure().supporting.beats).toBe(1);
     const wide = measure(30);

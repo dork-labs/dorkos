@@ -5,11 +5,13 @@
  * `measure-records.ts` reads. Every number names its source, and each target is
  * canon §6.1's starting bet, shown beside the number and never as a grade.
  *
- * - **Kept rate.** A beat acted only when it left a real mark: it raised
- *   something, posted around `end_beat` (`bypass`), or the agent did something
- *   that changes things in its beat chat during the beat (a mutating audit row:
- *   create, modify, remove, execute). A turn that only looked is not an action,
- *   and report beats are not counted. An action is kept unless a person paused
+ * - **Kept rate.** A beat acted only when it left a real mark: it sent a
+ *   message (a room post, DM, note or message to another agent; a line saved
+ *   for its report is not one), posted around `end_beat` (`bypass`), wrote a
+ *   file, or took a DorkOS action that changes something, in its beat chat
+ *   during the beat (`isRealAction`). A beat that only looked around or ran
+ *   commands is not counted: a shell command is recorded the same whether it
+ *   read or wrote. Report beats are not counted. An action is kept unless a person paused
  *   the agent within an hour of it or reacted 👎 to a message it raised. Not
  *   measured yet: a person stopping the turn (no person row records it) and a
  *   revert of a commit it made (`workspace` records none). Approximate: recent
@@ -21,8 +23,9 @@
  *   under 48 hours ago with no answer yet is left out until its time is up. A
  *   note that left the app has no answer anyone can see, so it is not counted
  *   either way. Reports are not raises.
- * - **Interruptions per useful outcome.** Messages that reached a person,
- *   reports included, with raises batched into one message counted once,
+ * - **Interruptions per useful outcome.** Messages that reached a person
+ *   (`delivered_at` in the window, whatever became of the row after), reports
+ *   included, with raises batched into one message counted once,
  *   divided by kept actions plus useful raises.
  * - **Surprises** need the manager to say so: "not measured yet".
  * - **Mutes and pauses.** A person pausing it, setting its `wake` to `off`, or
@@ -73,12 +76,12 @@ export const MEASURE_TARGETS = {
 
 /** Where each number comes from, in one plain line. */
 export const MEASURE_SOURCES = {
-  kept: 'Real actions only. Undone if paused within an hour or 👎. Stops, reverts not seen.',
+  kept: 'Messages, file edits and DorkOS actions. Undone if paused within an hour or 👎.',
   useful: 'Messages in the app that got a reply or a reaction other than 👎 within 48h.',
   interruptions: 'Messages and reports that reached a person, per kept action or useful message.',
   surprises: 'Not measured yet. It needs the manager to say so.',
   mutes: 'Pauses, heartbeat switched off, and mutes, by a person.',
-  quiet: 'Checks that ended with nothing sent to anyone, and no post around it.',
+  quiet: 'Checks that sent no message. Lines saved for a report still count.',
   commitments: 'Promises due in this window, kept by their date.',
 } as const;
 
@@ -126,7 +129,7 @@ function within(at: number, from: number, span: number): boolean {
  */
 function acted(beat: MeasureBeat, records: MeasureRecords): boolean {
   if (beat.kind === 'report' || beat.outcome !== 'worked') return false;
-  if (beat.raises > 0 || beat.bypass > 0) return true;
+  if ((records.spokenRaises.get(beat.id) ?? 0) > 0 || beat.bypass > 0) return true;
   const started = ms(beat.startedAt);
   const ended = ms(beat.endedAt);
   return records.agentActions.some(
@@ -149,7 +152,7 @@ function keptActions(records: MeasureRecords, agentId: string): { kept: number; 
   const disliked = new Set<string>();
   for (const row of records.deliveries) {
     const answer = row.deliveredEntryId ? records.answers.get(row.deliveredEntryId) : undefined;
-    const sentAt = ms(row.closedAt);
+    const sentAt = ms(row.deliveredAt);
     const thumbsDown = answer?.reactions.some(
       (r) => r.emoji === THUMBS_DOWN && within(ms(r.at), sentAt, UNDO_WINDOW_MS)
     );
@@ -256,7 +259,7 @@ export function computeMeasures(
   );
   // One message per entry: raises batched together were one message to answer.
   const raiseMessages = new Map<string, number>();
-  for (const row of raisesInApp) raiseMessages.set(row.deliveredEntryId!, ms(row.closedAt));
+  for (const row of raisesInApp) raiseMessages.set(row.deliveredEntryId!, ms(row.deliveredAt));
   let useful = 0;
   let judged = 0;
   for (const [entryId, sentAt] of raiseMessages) {
@@ -274,7 +277,7 @@ export function computeMeasures(
   }
   // Raises batched into one message landed as one entry: one interruption.
   const messages = new Set(
-    reached.map((row) => row.deliveredEntryId ?? `${row.rung}|${row.toAccount}|${row.closedAt}`)
+    reached.map((row) => row.deliveredEntryId ?? `${row.rung}|${row.toAccount}|${row.deliveredAt}`)
   ).size;
   const { kept, acted } = keptActions(records, agentId);
   const usefulOutcomes = kept + useful;
@@ -315,9 +318,13 @@ export function computeMeasures(
     supporting: {
       beats: ran.length,
       quietBeats: rate(
-        // A beat with no end_beat is unknown, not quiet; one that posted around it spoke.
+        // A beat with no end_beat is unknown, not quiet; one that posted around it
+        // spoke. A line saved for its report is not a message, so it stays quiet.
         ran.filter(
-          (beat) => beat.outcome !== 'no-end-beat' && beat.raises === 0 && beat.bypass === 0
+          (beat) =>
+            beat.outcome !== 'no-end-beat' &&
+            (records.spokenRaises.get(beat.id) ?? 0) === 0 &&
+            beat.bypass === 0
         ).length,
         ran.filter((beat) => beat.outcome !== 'no-end-beat').length,
         MEASURE_TARGETS.quiet,
@@ -378,6 +385,7 @@ export function measureAgent(
   const windowDays = measureWindowDays(input.days);
   const since = new Date(input.now - windowDays * DAY_MS).toISOString();
   const records = readMeasureRecords(db, {
+    isAgent: input.isAgent,
     agentId: input.agentId,
     agentPath: input.agentPath,
     since,

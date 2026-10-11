@@ -192,6 +192,10 @@ export const GUARDED_READ_ONLY_TOOL_NAMES: ReadonlySet<string> = new Set<string>
   // it is the operator's billing state and the folders their accounts live in,
   // which a tokenless health check has no need of.
   'accounts_usage',
+  // What an agent did on its own: its beats, what it holds and its measures
+  // (spec `heartbeats` §13). Counts and summaries only, but it is the shape of
+  // somebody's work, which a tokenless health check has no need of.
+  'heartbeat_status',
 ]);
 
 export const READ_ONLY_MCP_TOOL_NAMES: ReadonlySet<string> = new Set<string>([

@@ -4,6 +4,8 @@ covers:
   - 'feat(operating-skills): working-on-a-heartbeat teaches agents to end a beat and pick a rung (DOR-2788)'
   - 'docs(heartbeats): a Heartbeats concept page, and the claim gate moves heartbeats to built (DOR-2788)'
   - "test(evals): canon's four seeded beat situations as a quarantined heartbeat suite (DOR-2788)"
+  - 'fix(heartbeats): review round 1 — kept rate counts real actions, honest signals and empty states (DOR-2788)'
+  - 'fix(heartbeats): review round 2 — real actions only, delivered stays delivered, saved lines stay quiet (DOR-2788)'
 ---
 
 ### Added
