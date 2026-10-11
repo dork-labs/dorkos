@@ -37,6 +37,26 @@ export const HEARTBEAT_ENDPOINT = 'https://dorkos.ai/api/telemetry/heartbeat';
 /** Minimum gap between heartbeats: one day in milliseconds. */
 export const HEARTBEAT_INTERVAL_MS = 24 * 60 * 60 * 1000;
 
+/**
+ * The most a daily check is pushed back past {@link HEARTBEAT_INTERVAL_MS}.
+ * Each check waits a day plus a fresh draw between zero and this (full jitter,
+ * capped), so servers started together drift apart instead of reporting
+ * together; the on-disk marker still holds the send to once a day.
+ */
+export const HEARTBEAT_JITTER_MAX_MS = 60 * 60 * 1000;
+
+/**
+ * The wait before the next daily check: a day, plus full jitter up to
+ * {@link HEARTBEAT_JITTER_MAX_MS}.
+ *
+ * @param random - A source of uniform numbers in `[0, 1)`; a value outside is clamped.
+ * @returns The wait in whole milliseconds.
+ */
+export function heartbeatCheckDelay(random: () => number = Math.random): number {
+  const draw = Math.min(1, Math.max(0, random()));
+  return HEARTBEAT_INTERVAL_MS + Math.floor(draw * HEARTBEAT_JITTER_MAX_MS);
+}
+
 /** File (under dorkHome) recording when the last heartbeat was sent (epoch ms as text). */
 export const LAST_SENT_FILENAME = 'heartbeat-last-sent';
 
@@ -243,8 +263,8 @@ export async function maybeSendHeartbeat(options: HeartbeatOptions): Promise<boo
  * switches, and the Tier 1 notice-before-first-send gate at the call site. When
  * consent is on, it sends immediately if one is due (the once-a-day cadence is
  * enforced by the on-disk marker, so a restart storm cannot spam the endpoint)
- * and then re-checks daily. The interval is `unref()`ed so it never keeps the
- * process alive.
+ * and then re-checks daily, each wait jittered ({@link heartbeatCheckDelay}).
+ * The timer is `unref()`ed so it never keeps the process alive.
  *
  * @param options - Consent, identity, and count-collection inputs.
  */
@@ -255,10 +275,14 @@ export function registerHeartbeat(options: HeartbeatOptions): void {
     // Swallowed — never let telemetry crash startup.
   });
 
-  const timer = setInterval(() => {
-    void maybeSendHeartbeat(options).catch(() => {});
-  }, HEARTBEAT_INTERVAL_MS);
-  timer.unref();
+  const arm = () => {
+    setTimeout(() => {
+      void maybeSendHeartbeat(options)
+        .catch(() => {})
+        .finally(arm);
+    }, heartbeatCheckDelay()).unref();
+  };
+  arm();
 
   logger.info('[Telemetry] Daily heartbeat registered');
 }

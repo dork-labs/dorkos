@@ -59,6 +59,7 @@ import type { ManagedStartRefusal } from './managed-forwarding.js';
 import type { TunnelManager } from '../tunnel-manager.js';
 import type { CommandJournal, PendingAck } from './command-journal.js';
 import { CommandSettler } from './command-settle.js';
+import type { OpenedWindow } from './managed-activity.js';
 import { MANAGED_DRAIN_DEADLINE_MS } from './managed-ingress.js';
 import { errorName } from './managed-remote-support.js';
 import type { RemoteCredentials } from './remote-credentials.js';
@@ -85,6 +86,8 @@ export interface CommandDispatcherDeps {
   remoteCredentials: Pick<RemoteCredentials, 'put' | 'delete' | 'resolve'>;
   /** Called after each outcome is recorded, so the acknowledgement goes out. */
   onSettled: () => void;
+  /** Called once an `open` is applied, so its activity window and idle timer start. */
+  onOpened?: (window: OpenedWindow) => void;
   readRemoteState: () => RemoteState;
   /**
    * The `cloud.remote` writer. Called by this exact name, so the gate-bypass
@@ -300,6 +303,12 @@ export class CommandDispatcher {
     const served = new Set(result.hosts);
     if (!hosts.every((host) => served.has(host.toLowerCase()))) return 'failed';
     this.drainDeadlineSeconds = command.drainDeadlineSeconds;
+    this.deps.onOpened?.({
+      instanceId: link.instanceId,
+      wakeId: command.wakeId,
+      idleWindowSeconds: command.idleWindowSeconds,
+      drainDeadlineSeconds: command.drainDeadlineSeconds,
+    });
     return 'applied';
   }
 
@@ -341,7 +350,11 @@ export class CommandDispatcher {
       drainDeadlineMs: drainDeadlineMs ?? MANAGED_DRAIN_DEADLINE_MS,
     });
     try {
-      await this.deps.tunnelManager.closeManaged({ immediate: false, drainDeadlineMs });
+      await this.deps.tunnelManager.closeManaged({
+        immediate: false,
+        drainDeadlineMs,
+        reason: 'closed_by_cloud',
+      });
       return 'applied';
     } catch (error) {
       logger.warn('[RemoteAccess] Managed close failed', { error: errorName(error) });
@@ -478,7 +491,7 @@ export class CommandDispatcher {
     });
     let outcome: RemoteCommandOutcome = 'applied';
     try {
-      await this.deps.tunnelManager.closeManaged({ immediate: true });
+      await this.deps.tunnelManager.closeManaged({ immediate: true, reason: 'revoked' });
     } catch (error) {
       logger.warn('[RemoteAccess] Managed close failed', { error: errorName(error) });
       outcome = 'failed';

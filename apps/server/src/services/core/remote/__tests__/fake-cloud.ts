@@ -10,8 +10,9 @@ import statusClosed from '@dork-labs/cloud-api/fixtures/v1/remote/status-closed.
 
 import type { CloudV1Context } from '../../cloud/v1-client.js';
 
-/** One canned answer: a status and a JSON body, or a thrown network error. */
-export type FakeAnswer = { status: number; body?: unknown } | { networkError: true };
+/** One canned answer: a status and a JSON body, a thrown network error, or no answer until aborted. */
+export type FakeAnswer =
+  { status: number; body?: unknown } | { networkError: true } | { hang: true };
 
 /** One recorded request. */
 export interface FakeCall {
@@ -20,6 +21,8 @@ export interface FakeCall {
   query: URLSearchParams;
   body: unknown;
   authorization: string | undefined;
+  /** Every header sent, lower-case names. */
+  headers: Record<string, string>;
 }
 
 /** A problem envelope in the published shape. */
@@ -82,10 +85,16 @@ export class FakeCloud {
       query: url.searchParams,
       body: typeof init?.body === 'string' ? JSON.parse(init.body) : undefined,
       authorization: headers.authorization,
+      headers: { ...headers },
     });
     const queue = this.answers.get(`${method} ${url.pathname}`);
     const answer = queue ? (queue.length > 1 ? queue.shift()! : queue[0]!) : { status: 404 };
     if ('networkError' in answer) throw new TypeError('fetch failed');
+    if ('hang' in answer) {
+      return new Promise<Response>((_resolve, reject) => {
+        init?.signal?.addEventListener('abort', () => reject(new TypeError('aborted')));
+      });
+    }
     return new Response(answer.body === undefined ? null : JSON.stringify(answer.body), {
       status: answer.status,
       headers: { 'content-type': 'application/json' },
