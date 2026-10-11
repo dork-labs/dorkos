@@ -22,13 +22,17 @@
  *
  * @module routes/read-cursors
  */
-import { Router, type Request, type Response } from 'express';
+import { Hono, type Context } from 'hono';
+import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import {
   ReadCursorParamsSchema,
   SetReadCursorPositionRequestSchema,
   type ReadCursorResponse,
 } from '@dorkos/shared/read-cursor-schemas';
-import { parseBody, sendError } from '../lib/route-utils.js';
+import { errorBody, validationFailureBody } from '../lib/route-utils.js';
+import type { ApiEnv } from '../http/api-chain.js';
+import { readJsonBody } from '../http/request-body.js';
+import { honoRequestFacts } from '../http/request-facts.js';
 import { getReadCursorService } from '../services/core/read-cursor-service.js';
 import {
   getRoomService,
@@ -36,9 +40,9 @@ import {
   type AuthorRecord,
 } from '../services/rooms/index.js';
 import { resolveCaller } from './room-caller.js';
-import { sendRoomError } from './room-error-response.js';
+import { isOwnerCaller, roomErrorReply } from './room-error-response.js';
 
-const router = Router();
+const router = new Hono<ApiEnv>();
 
 /**
  * PUT /:kind/:id — advance the caller's cursor in one thread.
@@ -47,9 +51,9 @@ const router = Router();
  * row nothing will ever read back, since the table's own `CHECK` would take it
  * as a hard failure much later and much further from the caller.
  *
- * Express 5 leaves `req.body` undefined on a bodiless PUT, which the object
- * schema refuses — so an empty request answers 400 rather than throwing on a
- * destructure.
+ * A bodiless PUT reads as no body at all (`readJsonBody`, as Express 5 left
+ * `req.body` undefined), which the object schema refuses — so an empty request
+ * answers 400 rather than throwing on a destructure.
  *
  * **Whether the thread exists, and whether the caller may see it, is the
  * addressed domain's business — and a domain that HAS an answer is asked.**
@@ -78,14 +82,16 @@ const router = Router();
  * to BE keeps holding, while asking how it authenticated quietly stops.
  * {@link personOrRefuse} is where both live.
  */
-router.put('/:kind/:id', (req, res) => {
-  const params = parseBody(ReadCursorParamsSchema, req.params, res);
-  if (!params) return;
-  const body = parseBody(SetReadCursorPositionRequestSchema, req.body, res);
-  if (!body) return;
+router.put('/:kind/:id', (c) => {
+  const parsedParams = ReadCursorParamsSchema.safeParse(c.req.param());
+  if (!parsedParams.success) return c.json(validationFailureBody(parsedParams.error), 400);
+  const params = parsedParams.data;
+  const parsedBody = SetReadCursorPositionRequestSchema.safeParse(readJsonBody(c));
+  if (!parsedBody.success) return c.json(validationFailureBody(parsedBody.error), 400);
+  const body = parsedBody.data;
 
-  const caller = personOrRefuse(req, res);
-  if (!caller) return;
+  const caller = personOrRefuse(c);
+  if (caller instanceof Response) return caller;
 
   // Somebody is at the keyboard, and this request is the proof: a client only
   // marks a thread read because a person is looking at it. Told BEFORE the
@@ -101,8 +107,8 @@ router.put('/:kind/:id', (req, res) => {
       // The rooms domain's own mapping, shared rather than mirrored: a caller
       // who is not in the room gets the 404 the room route gives them, not a
       // 500 from a router that had no opinion.
-      sendRoomError(res, err, 'PUT /read-cursors/room/:id');
-      return;
+      const reply = roomErrorReply(err, 'PUT /read-cursors/room/:id', () => isOwnerCaller(caller));
+      return c.json(reply.body, reply.status as ContentfulStatusCode);
     }
     // Read back rather than returned by the delegation, because the room
     // service answers in the ROOM's vocabulary (a membership) and this route
@@ -110,11 +116,12 @@ router.put('/:kind/:id', (req, res) => {
     // exact row for this exact person — agents were refused several lines up.
     const cursor = getReadCursorService().get(caller.id, 'room', params.id);
     if (!cursor) throw new Error('a room read cursor vanished as it was written');
-    res.json(cursor);
-    return;
+    return c.json(cursor);
   }
 
-  res.json(getReadCursorService().advance(caller.id, params.kind, params.id, body.lastReadSeq));
+  return c.json(
+    getReadCursorService().advance(caller.id, params.kind, params.id, body.lastReadSeq)
+  );
 });
 
 /**
@@ -128,46 +135,46 @@ router.put('/:kind/:id', (req, res) => {
  * Same caller resolution, same refusal for agents, and the same absence of any
  * way to name a user — a cursor is only ever read back by whoever wrote it.
  */
-router.get('/:kind/:id', (req, res) => {
-  const params = parseBody(ReadCursorParamsSchema, req.params, res);
-  if (!params) return;
+router.get('/:kind/:id', (c) => {
+  const parsedParams = ReadCursorParamsSchema.safeParse(c.req.param());
+  if (!parsedParams.success) return c.json(validationFailureBody(parsedParams.error), 400);
+  const params = parsedParams.data;
 
-  const caller = personOrRefuse(req, res);
-  if (!caller) return;
+  const caller = personOrRefuse(c);
+  if (caller instanceof Response) return caller;
 
   const cursor = getReadCursorService().get(caller.id, params.kind, params.id);
   const body: ReadCursorResponse = { cursor };
-  res.json(body);
+  return c.json(body);
 });
 
 /**
- * The person this request is, or `null` after answering the refusal it earns.
+ * The person this request is, or the refusal it earns.
  *
  * Two refusals, and they are different facts about the caller:
  *
  * - **401 `AGENT_IDENTITY_UNVERIFIED`**, thrown by `resolveCaller` when the
  *   caller presented an agent token this machine could not verify. Answered
- *   through `sendRoomError` so it reads identically here and on the room routes
+ *   through `roomErrorReply` so it reads identically here and on the room routes
  *   — a caller that cannot be named is not a caller with no read state, it is a
  *   caller with a credential problem (DOR-1361).
  * - **403 `PEOPLE_ONLY`** for an agent that IS named. A 403 rather than a 404:
  *   there is nothing to hide here, and telling an agent "this is not yours to
  *   write" is more useful than pretending the route does not exist.
  *
- * @param req - The incoming request, for the raw agent header.
- * @param res - The response, for the resolved identity and the refusal.
+ * @param c - The request, for the raw agent header and the resolved identity.
  */
-function personOrRefuse(req: Request, res: Response): AuthorRecord | null {
+function personOrRefuse(c: Context<ApiEnv>): AuthorRecord | Response {
   let caller: AuthorRecord;
   try {
-    caller = resolveCaller(req, res);
+    caller = resolveCaller(honoRequestFacts(c));
   } catch (err) {
-    sendRoomError(res, err, 'read-cursors');
-    return null;
+    // No caller resolved, so nobody is the owner here.
+    const reply = roomErrorReply(err, 'read-cursors', () => false);
+    return c.json(reply.body, reply.status as ContentfulStatusCode);
   }
   if (caller.kind !== 'human') {
-    sendError(res, 403, 'Only people have read state', 'PEOPLE_ONLY');
-    return null;
+    return c.json(errorBody('Only people have read state', 'PEOPLE_ONLY'), 403);
   }
   return caller;
 }

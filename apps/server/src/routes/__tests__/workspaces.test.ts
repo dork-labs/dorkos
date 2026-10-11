@@ -5,14 +5,15 @@
  * generic fetch layer would swallow into a opaque error.
  */
 import { describe, it, expect, vi, beforeAll, afterAll } from 'vitest';
-import express, { type Express } from 'express';
 import request from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
 import { mkdtemp, rm, mkdir, realpath, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
+import type { RequestListener } from 'node:http';
 import workspaceRoutes from '../workspaces.js';
+import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
 import {
   setWorkspaceManager,
   setWorkspaceRoot,
@@ -20,14 +21,17 @@ import {
 } from '../../services/workspace/index.js';
 import type { WorkspaceManager, Workspace } from '@dorkos/shared/workspace';
 
+// The routes are served through the `/api` chain, whose host guard and session
+// gate read the login setting: off, as on a fresh install.
+vi.mock('../../services/core/config-manager.js', () => ({
+  configManager: { get: vi.fn(() => undefined), set: vi.fn() },
+}));
+
 const fixtureTarget = swappableServer();
 
-function mountWith(manager: Partial<WorkspaceManager>): Express {
+function mountWith(manager: Partial<WorkspaceManager>): RequestListener {
   setWorkspaceManager(manager as WorkspaceManager);
-  const app = express();
-  app.use(express.json());
-  app.use('/api/workspaces', workspaceRoutes);
-  return app;
+  return honoGroupListener({ path: '/api/workspaces', routes: workspaceRoutes });
 }
 
 const sampleWorkspace: Workspace = {

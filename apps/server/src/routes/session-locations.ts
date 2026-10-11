@@ -1,12 +1,16 @@
 /** Private, durable launch folders addressed by opaque caller-scoped references. */
 import { randomUUID } from 'node:crypto';
-import { Router } from 'express';
+import { Hono } from 'hono';
+import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import { and, eq, count } from 'drizzle-orm';
 import { sessionLocations, type Db } from '@dorkos/db';
 import { z } from 'zod';
 import { BoundaryError, validateBoundaryOrDorkHome } from '../lib/boundary.js';
-import { readOwnerAccount, type RequestUser } from '../services/core/auth/index.js';
-import { refuseIfNotAPerson, type PersonBarCopy } from './extensions-person-bar.js';
+import { readOwnerAccount } from '../services/core/auth/index.js';
+import type { ApiEnv } from '../http/api-chain.js';
+import { readJsonBody } from '../http/request-body.js';
+import { honoRequestFacts } from '../http/request-facts.js';
+import { assessPerson, type PersonBarCopy } from './extensions-person-bar.js';
 
 const PERSON_BAR: PersonBarCopy = {
   error: 'Only a person can choose a chat folder.',
@@ -21,21 +25,22 @@ const idSchema = z.uuid();
 export const MAX_SESSION_LOCATIONS = 1000;
 
 /** Build the launch-location API against the install's durable database. */
-export function createSessionLocationsRouter(db: Db) {
-  const router = Router();
-  router.use((req, res, next) => {
-    if (req.headers['sec-fetch-site'] === 'cross-site') {
-      res.status(403).json({ error: PERSON_BAR.error, code: PERSON_BAR.code });
-      return;
+export function createSessionLocationsRoutes(db: Db): Hono<ApiEnv> {
+  const router = new Hono<ApiEnv>();
+  // Every path under the mount, routed or not, as the Express `router.use` ran.
+  router.use('*', async (c, next) => {
+    const facts = honoRequestFacts(c);
+    if (facts.headers['sec-fetch-site'] === 'cross-site') {
+      return c.json({ error: PERSON_BAR.error, code: PERSON_BAR.code }, 403);
     }
-    if (refuseIfNotAPerson(req, res, PERSON_BAR)) return;
-    next();
+    const refusal = assessPerson(facts, PERSON_BAR);
+    if (refusal) return c.json(refusal.body, refusal.status as ContentfulStatusCode);
+    await next();
   });
-  router.post('/', async (req, res, next) => {
-    const parsed = bodySchema.safeParse(req.body);
-    if (!parsed.success) return res.status(400).json({ error: 'Choose a valid chat folder.' });
-    const user = res.locals.user as RequestUser | undefined;
-    const ownerId = user?.userId ?? readOwnerAccount()?.id ?? 'local';
+  router.post('/', async (c) => {
+    const parsed = bodySchema.safeParse(readJsonBody(c));
+    if (!parsed.success) return c.json({ error: 'Choose a valid chat folder.' }, 400);
+    const ownerId = c.get('user')?.userId ?? readOwnerAccount()?.id ?? 'local';
     try {
       const cwd = await validateBoundaryOrDorkHome(parsed.data.cwd);
       const match = db
@@ -43,7 +48,7 @@ export function createSessionLocationsRouter(db: Db) {
         .from(sessionLocations)
         .where(and(eq(sessionLocations.ownerId, ownerId), eq(sessionLocations.cwd, cwd)))
         .get();
-      if (match) return res.json({ id: match.id });
+      if (match) return c.json({ id: match.id });
       const size =
         db
           .select({ value: count() })
@@ -51,41 +56,39 @@ export function createSessionLocationsRouter(db: Db) {
           .where(eq(sessionLocations.ownerId, ownerId))
           .get()?.value ?? 0;
       if (size >= MAX_SESSION_LOCATIONS)
-        return res
-          .status(409)
-          .json({ error: 'Too many saved chat folders.', code: 'SESSION_LOCATION_LIMIT' });
+        return c.json(
+          { error: 'Too many saved chat folders.', code: 'SESSION_LOCATION_LIMIT' },
+          409
+        );
       const id = randomUUID();
       db.insert(sessionLocations)
         .values({ id, ownerId, cwd, createdAt: new Date().toISOString() })
         .run();
-      return res.status(201).json({ id });
+      return c.json({ id }, 201);
     } catch (error) {
       if (error instanceof BoundaryError)
-        return res.status(403).json({ error: error.message, code: error.code });
-      return next(error);
+        return c.json({ error: error.message, code: error.code }, 403);
+      throw error;
     }
   });
-  router.get('/:id', async (req, res, next) => {
-    if (!idSchema.safeParse(req.params.id).success)
-      return res.status(404).json({ error: 'Chat folder not found.' });
-    const user = res.locals.user as RequestUser | undefined;
-    const ownerId = user?.userId ?? readOwnerAccount()?.id ?? 'local';
+  router.get('/:id', async (c) => {
+    const id = c.req.param('id');
+    if (!idSchema.safeParse(id).success) return c.json({ error: 'Chat folder not found.' }, 404);
+    const ownerId = c.get('user')?.userId ?? readOwnerAccount()?.id ?? 'local';
     const location = db
       .select()
       .from(sessionLocations)
-      .where(
-        and(eq(sessionLocations.id, req.params.id as string), eq(sessionLocations.ownerId, ownerId))
-      )
+      .where(and(eq(sessionLocations.id, id), eq(sessionLocations.ownerId, ownerId)))
       .get();
-    if (!location) return res.status(404).json({ error: 'Chat folder not found.' });
+    if (!location) return c.json({ error: 'Chat folder not found.' }, 404);
     try {
       // Revalidate on every read: boundary changes and symlink retargets cannot widen access.
       const cwd = await validateBoundaryOrDorkHome(location.cwd);
-      return res.json({ cwd });
+      return c.json({ cwd });
     } catch (error) {
       if (error instanceof BoundaryError)
-        return res.status(403).json({ error: error.message, code: error.code });
-      return next(error);
+        return c.json({ error: error.message, code: error.code }, 403);
+      throw error;
     }
   });
   return router;

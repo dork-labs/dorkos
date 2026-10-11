@@ -18,6 +18,7 @@ import type { MainRequestAdmission } from '../services/core/lifecycle/main-reque
 import { createApiApp, type ApiEnv } from './api-chain.js';
 import { mountBetterAuth } from './better-auth.js';
 import { createFrontDoor, type FrontDoor } from './front-door.js';
+import type { Db } from '@dorkos/db';
 import type { ActivityService } from '../services/activity/activity-service.js';
 import type { CapabilityRegistry } from '../services/core/capabilities/index.js';
 import { createActivityRoutes } from '../routes/activity.js';
@@ -27,14 +28,23 @@ import capabilitiesRoutes from '../routes/capabilities.js';
 import { createCapabilitiesCatalogRoutes } from '../routes/capabilities-catalog.js';
 import { createCapabilitiesInvokeRoutes } from '../routes/capabilities-invoke.js';
 import commandRoutes from '../routes/commands.js';
+import directoryRoutes from '../routes/directory.js';
 import errorRoutes from '../routes/errors.js';
+import gitRoutes from '../routes/git.js';
+import { createHarnessRoutes, type HarnessRouterDeps } from '../routes/harness.js';
 import { createHealthRoutes, type HealthRouteDeps } from '../routes/health.js';
 import keepAwakeRoutes from '../routes/keep-awake.js';
 import modelRoutes from '../routes/models.js';
+import projectRoutes from '../routes/projects.js';
+import readCursorRoutes from '../routes/read-cursors.js';
 import { createSearchRoutes, type SearchRouterDeps } from '../routes/search.js';
+import { createSessionLocationsRoutes } from '../routes/session-locations.js';
+import { createShapesRoutes, type ShapesRouterDeps } from '../routes/shapes.js';
 import subagentRoutes from '../routes/subagents.js';
 import { createSystemRoutes, type SystemRouteDeps } from '../routes/system.js';
 import { createTeamRoutes, type TeamRouterDeps } from '../routes/team.js';
+import { createTemplateRoutes } from '../routes/templates.js';
+import workspaceRoutes from '../routes/workspaces.js';
 
 /**
  * The groups that are only mounted when the server hands over what they read.
@@ -57,6 +67,17 @@ export interface ComposedGroupDeps {
    * (`GET /api/capabilities`) needs none and is always mounted.
    */
   capabilities?: CapabilityRegistry;
+  /** The install's database, behind the saved chat folders (`/api/session-locations`). */
+  sessionLocations?: Db;
+  /** The data directory the user's own templates live in (`/api/templates`). */
+  templates?: { dorkHome: string };
+  /** The agent-file status and Sync now (`/api/harness`). */
+  harness?: HarnessRouterDeps;
+  /**
+   * Installed Shapes, and applying and forking them (`/api/shapes`). Only
+   * handed over when the marketplace started (`startup/marketplace.ts`).
+   */
+  shapes?: ShapesRouterDeps;
 }
 
 /** What the moved route groups read from the running server, handed over by `index.ts`. */
@@ -96,6 +117,17 @@ export function createHonoApi(options: HonoApiOptions): Hono<ApiEnv> {
   app.route('/api/system', createSystemRoutes(deps));
   app.route('/api/keep-awake', keepAwakeRoutes);
   app.route('/api/errors', errorRoutes);
+  app.route('/api/directory', directoryRoutes);
+  app.route('/api/git', gitRoutes);
+  app.route('/api/workspaces', workspaceRoutes);
+  app.route('/api/projects', projectRoutes);
+  app.route('/api/read-cursors', readCursorRoutes);
+  if (deps.sessionLocations) {
+    app.route('/api/session-locations', createSessionLocationsRoutes(deps.sessionLocations));
+  }
+  if (deps.templates) app.route('/api/templates', createTemplateRoutes(deps.templates.dorkHome));
+  if (deps.harness) app.route('/api/harness', createHarnessRoutes(deps.harness));
+  if (deps.shapes) app.route('/api/shapes', createShapesRoutes(deps.shapes));
   if (deps.team) app.route('/api/team', createTeamRoutes(deps.team));
   if (deps.search) app.route('/api/search', createSearchRoutes(deps.search));
   if (deps.activity) app.route('/api/activity', createActivityRoutes(deps.activity));

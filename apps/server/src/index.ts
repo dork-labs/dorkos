@@ -17,7 +17,6 @@ import { randomUUID } from 'node:crypto';
 import { createApp, finalizeApp } from './app.js';
 import { createFrontDoorServer, frontDoorListener } from './http/front-door.js';
 import { composeFrontDoor, type HonoApiDeps } from './http/hono-api.js';
-import { createSessionLocationsRouter } from './routes/session-locations.js';
 import { ManagedConnectorCloudError } from './services/core/auth/cloud-link-client.js';
 import { DoeRuntime } from './services/runtimes/doe/index.js';
 import { registerRuntimes } from './startup/runtimes.js';
@@ -269,8 +268,6 @@ import {
   sweepSessionAttachments,
 } from './services/session/attachments/index.js';
 import { createDiscoveryRouter } from './routes/discovery.js';
-import { createTemplateRouter } from './routes/templates.js';
-import { createHarnessRouter } from './routes/harness.js';
 import { createAdminRouter } from './routes/admin.js';
 import { ExtensionManager } from './services/extensions/extension-manager.js';
 import { startExtensionApprovalQueue } from './services/extensions/extension-approval-queue.js';
@@ -2742,8 +2739,6 @@ async function start() {
     },
   });
 
-  app.use('/api/session-locations', createSessionLocationsRouter(db));
-
   // Build mcpToolDeps and register factory only when ClaudeCodeRuntime is available.
   let mcpToolDeps: Parameters<typeof createExternalMcpServer>[0] | undefined;
   // Marketplace MCP deps are populated later in the marketplace wiring block
@@ -4401,14 +4396,16 @@ async function start() {
   deps.search = { db };
 
   // Template catalog — always available, merges built-in + user templates.
-  app.use('/api/templates', createTemplateRouter(dorkHome));
+  // Served from the Hono `/api` app, like the saved chat folders beside it.
+  deps.templates = { dorkHome };
+  deps.sessionLocations = db;
 
   // Harness Sync — "what does every agent tool do with every agent file in this
   // project", and the Sync now button that acts on it. The GET writes nothing
   // (DOR-678's rule, stated in the route); the POST is person-only and takes
   // the project lock. The approval service is what lets the sync ask about a
   // package's hooks, exactly as the install path does.
-  app.use('/api/harness', createHarnessRouter({ dorkHome, approvals: approvalService }));
+  deps.harness = { dorkHome, approvals: approvalService };
   mountedRouters.push('harness');
 
   // Approvals — always available. The cockpit lists what is waiting on a person
@@ -4603,6 +4600,7 @@ async function start() {
       currentSweptProjects: () => sweptProjects,
       currentCapabilityRegistry: () => capabilityRegistry,
       mountedRouters,
+      honoDeps: deps,
     }));
 
   // Embedded terminal (spec right-panel-workbench, Chunk E). Always mounted:

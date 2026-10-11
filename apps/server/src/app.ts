@@ -5,20 +5,15 @@ import cors from 'cors';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import sessionRoutes from './routes/sessions.js';
-import directoryRoutes from './routes/directory.js';
 import configRoutes from './routes/config.js';
 import fileRoutes from './routes/files.js';
 import diffRoutes from './routes/diff.js';
 import workbenchServeRoutes from './routes/workbench-serve.js';
-import gitRoutes from './routes/git.js';
-import workspaceRoutes from './routes/workspaces.js';
-import projectRoutes from './routes/projects.js';
 import roomRoutes from './routes/rooms.js';
 import canvasDocEventRoutes, { canvasDocJsonParser } from './routes/canvas-doc-events.js';
 import { createCommunityConnectionsRouter } from './routes/community-connections.js';
 import { createRemoteCommunitiesRouter } from './routes/remote-communities.js';
 import { gateCommunityConnections, gateRemoteCommunities } from './middleware/spaces-enabled.js';
-import readCursorRoutes from './routes/read-cursors.js';
 import tunnelRoutes from './routes/tunnel.js';
 import { createRemoteAccessRouter } from './routes/remote-access.js';
 import cloudRoutes from './routes/cloud.js';
@@ -192,14 +187,10 @@ export function createApp(options: {
 
   // API routes
   app.use('/api/sessions', sessionRoutes);
-  app.use('/api/directory', directoryRoutes);
   app.use('/api/config', configRoutes);
   app.use('/api/files', fileRoutes);
   app.use('/api/diff', diffRoutes);
   app.use('/api/workbench', workbenchServeRoutes);
-  app.use('/api/git', gitRoutes);
-  app.use('/api/workspaces', workspaceRoutes);
-  app.use('/api/projects', projectRoutes);
   app.use('/api/rooms', roomRoutes);
   app.use('/api/canvas/docs', canvasDocEventRoutes);
   // Spaces are an experiment, off by default (DOR-2740): both refuse until a
@@ -212,7 +203,6 @@ export function createApp(options: {
     createCommunityConnectionsRouter()
   );
   app.use('/api/communities', gateRemoteCommunities(), createRemoteCommunitiesRouter());
-  app.use('/api/read-cursors', readCursorRoutes);
   app.use('/api/tunnel', tunnelRoutes);
   app.use('/api/remote-access', createRemoteAccessRouter());
   app.use('/api/cloud', cloudRoutes);

@@ -7,7 +7,7 @@
  *
  * @module routes/templates
  */
-import { Router } from 'express';
+import { Hono } from 'hono';
 import { z } from 'zod';
 import fs from 'fs/promises';
 import path from 'path';
@@ -19,6 +19,8 @@ import {
 } from '@dorkos/shared/template-catalog';
 import type { TemplateCatalog, TemplateEntry } from '@dorkos/shared/template-catalog';
 import { logger } from '../lib/logger.js';
+import type { ApiEnv } from '../http/api-chain.js';
+import { readJsonBody } from '../http/request-body.js';
 
 /** Filename for user-defined templates within the dorkHome directory. */
 const USER_CATALOG_FILENAME = 'agent-templates.json';
@@ -76,35 +78,36 @@ async function writeUserTemplates(
 }
 
 /**
- * Create the templates router for template catalog CRUD.
+ * The template catalog routes (CRUD).
  *
  * @param dorkHome - Resolved DorkOS data directory path
- * @returns Express Router with template endpoints
+ * @returns The routes, for `app.route('/api/templates', …)`.
  */
-export function createTemplateRouter(dorkHome: string): Router {
-  const router = Router();
+export function createTemplateRoutes(dorkHome: string): Hono<ApiEnv> {
+  const router = new Hono<ApiEnv>();
   const catalogPath = path.join(dorkHome, USER_CATALOG_FILENAME);
 
   // GET /api/templates — merged catalog (builtin + user)
-  router.get('/', async (_req, res) => {
+  router.get('/', async (c) => {
     try {
       const userTemplates = await readUserTemplates(catalogPath);
       const templates = [...DEFAULT_TEMPLATES, ...userTemplates];
-      return res.json({ version: 1, templates });
+      return c.json({ version: 1, templates });
     } catch (err) {
       logger.error('[templates] GET / failed', { err });
-      return res.status(500).json({ error: 'Internal server error' });
+      return c.json({ error: 'Internal server error' }, 500);
     }
   });
 
   // POST /api/templates — add a user template
-  router.post('/', async (req, res) => {
+  router.post('/', async (c) => {
     try {
-      const result = TemplateEntrySchema.safeParse({ ...req.body, builtin: false });
+      const result = TemplateEntrySchema.safeParse({
+        ...(readJsonBody(c) as Record<string, unknown> | undefined),
+        builtin: false,
+      });
       if (!result.success) {
-        return res
-          .status(400)
-          .json({ error: 'Validation failed', details: z.flattenError(result.error) });
+        return c.json({ error: 'Validation failed', details: z.flattenError(result.error) }, 400);
       }
 
       const entry = result.data;
@@ -112,9 +115,10 @@ export function createTemplateRouter(dorkHome: string): Router {
       // Check for ID conflict with built-in templates
       const builtinConflict = DEFAULT_TEMPLATES.find((t) => t.id === entry.id);
       if (builtinConflict) {
-        return res
-          .status(409)
-          .json({ error: `Template ID '${entry.id}' conflicts with a built-in template` });
+        return c.json(
+          { error: `Template ID '${entry.id}' conflicts with a built-in template` },
+          409
+        );
       }
 
       // Read-modify-write: the conflict check reads the same file the write
@@ -132,25 +136,25 @@ export function createTemplateRouter(dorkHome: string): Router {
       });
 
       if (!added) {
-        return res.status(409).json({ error: `Template ID '${entry.id}' already exists` });
+        return c.json({ error: `Template ID '${entry.id}' already exists` }, 409);
       }
 
-      return res.status(201).json(entry);
+      return c.json(entry, 201);
     } catch (err) {
       logger.error('[templates] POST / failed', { err });
-      return res.status(500).json({ error: 'Internal server error' });
+      return c.json({ error: 'Internal server error' }, 500);
     }
   });
 
   // DELETE /api/templates/:id — remove a user template
-  router.delete('/:id', async (req, res) => {
+  router.delete('/:id', async (c) => {
     try {
-      const { id } = req.params;
+      const id = c.req.param('id');
 
       // Cannot delete built-in templates
       const isBuiltin = DEFAULT_TEMPLATES.some((t) => t.id === id);
       if (isBuiltin) {
-        return res.status(403).json({ error: `Cannot delete built-in template '${id}'` });
+        return c.json({ error: `Cannot delete built-in template '${id}'` }, 403);
       }
 
       // Same read-modify-write shape as POST: lookup and removal must be one
@@ -167,13 +171,13 @@ export function createTemplateRouter(dorkHome: string): Router {
       });
 
       if (!removed) {
-        return res.status(404).json({ error: `Template '${id}' not found` });
+        return c.json({ error: `Template '${id}' not found` }, 404);
       }
 
-      return res.json({ deleted: id });
+      return c.json({ deleted: id });
     } catch (err) {
       logger.error('[templates] DELETE /:id failed', { err });
-      return res.status(500).json({ error: 'Internal server error' });
+      return c.json({ error: 'Internal server error' }, 500);
     }
   });
 

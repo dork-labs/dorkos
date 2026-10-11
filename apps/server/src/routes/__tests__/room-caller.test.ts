@@ -21,18 +21,20 @@
  *
  * Driven through supertest against the real `/api/rooms` router rather than by
  * calling `resolveCaller` directly, because the thing under test is a seam: what
- * `sessionGate` puts on `res.locals` and what the handler then resolves.
+ * the session gate puts on the request and what the handler then resolves.
  */
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import express from 'express';
+import type { RequestListener } from 'node:http';
 import request from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
 import { createDb, runMigrations, user, type Db } from '@dorkos/db';
 import roomRoutes from '../rooms.js';
 import readCursorRoutes from '../read-cursors.js';
+import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
 import { getAuth, initAuth, sessionGate, toNodeHandler } from '../../services/core/auth/index.js';
 import { createRoomSubsystem, setRoomService } from '../../services/rooms/index.js';
 import { setReadCursorService } from '../../services/core/read-cursor-service.js';
@@ -42,18 +44,21 @@ import { env } from '../../env.js';
 const fixtureTarget = swappableServer();
 const fixtureServer = fixtureTarget.server;
 
-/** An app in `app.ts`'s middleware order, mounting only the rooms surface. */
-function buildApp(): express.Express {
-  const app = express();
-  app.all('/api/auth/*splat', toNodeHandler(getAuth()!));
-  app.use(express.json({ limit: '1mb' }));
-  app.use(sessionGate);
-  app.use('/api/rooms', roomRoutes);
+/**
+ * The rooms surface as the server routes it: the rooms router on an Express app
+ * in `app.ts`'s middleware order, behind the front door with the Hono `/api`
+ * chain answering `/api/read-cursors`.
+ */
+function buildApp(): RequestListener {
+  const legacy = express();
+  legacy.all('/api/auth/*splat', toNodeHandler(getAuth()!));
+  legacy.use(express.json({ limit: '1mb' }));
+  legacy.use(sessionGate);
+  legacy.use('/api/rooms', roomRoutes);
   // Mounted because a read cursor is not a room route: `/api/read-cursors` is
   // the one write path onto read state, and this test's whole subject is that
   // the SAME author id carries across it and `/api/rooms` alike.
-  app.use('/api/read-cursors', readCursorRoutes);
-  return app;
+  return honoGroupListener({ path: '/api/read-cursors', routes: readCursorRoutes }, { legacy });
 }
 
 // Emails are assembled from parts so the source never contains a literal address.
@@ -70,7 +75,7 @@ function setAuthEnabled(enabled: boolean): void {
 describe('resolveCaller — one owner, one author id, across every login posture', () => {
   let tmpDir: string;
   let db: Db;
-  let app: express.Express;
+  let app: RequestListener;
 
   beforeAll(() => {
     tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'dorkos-caller-'));

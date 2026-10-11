@@ -10,7 +10,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { mkdir, mkdtemp, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import express from 'express';
 import request from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
 import type { Logger } from '@dorkos/shared/logger';
@@ -25,7 +24,8 @@ import {
 } from '../../services/core/capabilities/index.js';
 import { eventFanOut } from '../../services/core/event-fan-out.js';
 import { composeCapabilityRegistryForDocs } from '../../services/core/self-description/dorkos-registry.js';
-import { APPLY_SHAPE_ACTION, createShapesRouter } from '../shapes.js';
+import { APPLY_SHAPE_ACTION, createShapesRoutes } from '../shapes.js';
+import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
 
 const fixtureTarget = swappableServer();
 const fixtureServer = fixtureTarget.server;
@@ -143,9 +143,10 @@ describe('shapes router', () => {
       getEnabledExtensions: () => ['linear-issues'],
     };
 
-    const app = express();
-    app.use(express.json());
-    app.use('/api/shapes', createShapesRouter({ dorkHome, applyDeps, forkDeps }));
+    const app = honoGroupListener({
+      path: '/api/shapes',
+      routes: createShapesRoutes({ dorkHome, applyDeps, forkDeps }),
+    });
     return { app, dorkHome, setActiveShape, createSchedule };
   }
 
