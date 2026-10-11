@@ -79,6 +79,18 @@ function FirstRunStages({
     waitingWindowRef.current = null;
   }, [stage]);
 
+  // A code still waiting is dropped before any other path is recorded: approved
+  // late in the tab that is still open, it would put the DorkOS engine on
+  // credits underneath the person's own pick. Read through a ref, because the
+  // pick runs after awaits and must see the link as it is then.
+  const linkRef = useRef(link);
+  useEffect(() => {
+    linkRef.current = link;
+  });
+  const dropPendingCode = useCallback(async () => {
+    if (linkRef.current?.state === 'pending') await linkRef.current.cancel();
+  }, []);
+
   const continueWithDorkos = useCallback(() => {
     setWelcomeError(null);
     // Opened now, in the click, or a browser blocks it once a request is in
@@ -90,12 +102,13 @@ function FirstRunStages({
   const continueWithout = useCallback(async () => {
     setWelcomeError(null);
     try {
+      await dropPendingCode();
       await choose.mutateAsync({ path: 'none' });
       goToStage('landing');
     } catch (error) {
       setWelcomeError(firstRunErrorMessage(error));
     }
-  }, [choose, goToStage]);
+  }, [choose, goToStage, dropPendingCode]);
 
   const toLanding = useCallback(() => goToStage('landing'), [goToStage]);
   const toOwnAi = useCallback(() => goToStage('own-ai'), [goToStage]);
@@ -110,11 +123,11 @@ function FirstRunStages({
         onReady={toLanding}
         onCancel={() => {
           // Only a code still waiting is dropped; a link already made stays.
-          if (link.state === 'pending') void link.cancel();
+          void dropPendingCode();
           backToWelcome();
         }}
         onUseOwnAi={() => {
-          if (link.state === 'pending') void link.cancel();
+          void dropPendingCode();
           toOwnAi();
         }}
       />
@@ -128,7 +141,14 @@ function FirstRunStages({
       />
     );
   } else if (stage === 'own-ai') {
-    screen = <OwnAiStep onBack={backToWelcome} onSaved={toLanding} slots={slots} />;
+    screen = (
+      <OwnAiStep
+        onBack={backToWelcome}
+        onSaved={toLanding}
+        beforePick={dropPendingCode}
+        slots={slots}
+      />
+    );
   } else if (stage === 'landing') {
     screen = <LandingStep onComplete={onComplete} />;
   } else {

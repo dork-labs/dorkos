@@ -1,5 +1,6 @@
 import { useId, useState, type FormEvent, type ReactNode } from 'react';
 import { ChevronRight } from 'lucide-react';
+import { toast } from 'sonner';
 import type { SystemRequirements } from '@dorkos/shared/agent-runtime';
 import type { OwnAiChoice, OwnAiKeyService } from '@dorkos/shared/onboarding-schemas';
 import { cn } from '@/layers/shared/lib';
@@ -36,6 +37,12 @@ const KEY_LABEL: Record<OwnAiKeyService, string> = {
 export interface OwnAiListProps {
   /** Called once a choice is saved and the agents can run on it. */
   onSaved: () => void;
+  /**
+   * Settle anything an earlier path left open before this pick is recorded —
+   * the first run's account link, whose late approval must never land on top
+   * of an own-AI pick.
+   */
+  beforePick?: () => Promise<void>;
   /** The connect flows the AI-app and Other-service rows borrow. */
   slots?: Pick<FirstRunSlots, 'renderRuntimeConnect' | 'renderOtherService'>;
   /** The row open at first — Dev Playground only. */
@@ -53,7 +60,13 @@ export interface OwnAiListProps {
  * Names are allowed here because the person asked for them. "Runtime" never
  * appears: the vendor apps are "AI apps".
  */
-export function OwnAiList({ onSaved, slots, initialRow, simulatedApps }: OwnAiListProps) {
+export function OwnAiList({
+  onSaved,
+  beforePick,
+  slots,
+  initialRow,
+  simulatedApps,
+}: OwnAiListProps) {
   const [open, setOpen] = useState<OwnAiRow | null>(initialRow ?? null);
   const choose = useChooseFirstRunPath();
   const [error, setError] = useState<string | null>(null);
@@ -61,7 +74,11 @@ export function OwnAiList({ onSaved, slots, initialRow, simulatedApps }: OwnAiLi
   const save = async (choice: OwnAiChoice): Promise<boolean> => {
     setError(null);
     try {
-      await choose.mutateAsync({ path: 'own', choice });
+      await beforePick?.();
+      const result = await choose.mutateAsync({ path: 'own', choice });
+      // The key works, but the service would not list its models, so DorkOS
+      // starts on its usual one for that service.
+      if (result.modelListed === false) toast('Using a default model. Change it in Settings.');
       return true;
     } catch (err) {
       setError(firstRunErrorMessage(err));

@@ -25,6 +25,9 @@ vi.mock('../model/use-onboarding', () => ({
   useOnboarding: () => ({ startOnboarding: mockStartOnboarding, completeOnboarding: vi.fn() }),
 }));
 
+const { mockToast } = vi.hoisted(() => ({ mockToast: vi.fn() }));
+vi.mock('sonner', () => ({ toast: mockToast }));
+
 // Landing posts the welcome and navigates to Home; its own behaviour is not what
 // this file is about, only that the flow reaches it.
 vi.mock('../ui/LandingStep', () => ({
@@ -281,5 +284,63 @@ describe('OnboardingFlow', () => {
   it('a stale stage value lands on Welcome', async () => {
     const { readStage } = await renderFlow('/?onboarding=power');
     await waitFor(() => expect(readStage()).toBe('welcome'));
+  });
+
+  it('drops a code still waiting before another path is recorded', async () => {
+    const order: string[] = [];
+    fakeCancel.mockImplementation(() => order.push('cancel'));
+    const chooseFirstRunPath = vi.fn(async (request: { path: string }) => {
+      order.push(`first-run ${request.path}`);
+      return { path: request.path, runtime: 'claude-code' };
+    });
+    const { router, readStage } = await renderFlow('/', {
+      chooseFirstRunPath: chooseFirstRunPath as unknown as Transport['chooseFirstRunPath'],
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Continue with DorkOS' }));
+    await screen.findByText(CODE);
+
+    // Browser Back leaves Connecting with the code still out in the open tab.
+    router.history.back();
+    await waitFor(() => expect(readStage()).toBe('welcome'));
+    fireEvent.click(screen.getByRole('button', { name: 'Continue without an account' }));
+    await waitFor(() => expect(readStage()).toBe('landing'));
+
+    expect(order).toEqual(['first-run dorkos', 'cancel', 'first-run none']);
+  });
+
+  it('drops a code still waiting before an own-AI pick is recorded', async () => {
+    const order: string[] = [];
+    fakeCancel.mockImplementation(() => order.push('cancel'));
+    const chooseFirstRunPath = vi.fn(async (request: { path: string }) => {
+      order.push(`first-run ${request.path}`);
+      return { path: request.path, runtime: 'doe' };
+    });
+    const { router, readStage } = await renderFlow('/', {
+      chooseFirstRunPath: chooseFirstRunPath as unknown as Transport['chooseFirstRunPath'],
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Continue with DorkOS' }));
+    await screen.findByText(CODE);
+    router.history.back();
+    await waitFor(() => expect(readStage()).toBe('welcome'));
+
+    fireEvent.click(screen.getByRole('button', { name: 'Use my own AI' }));
+    fireEvent.click(await screen.findByRole('button', { name: /An OpenAI API key/ }));
+    fireEvent.change(screen.getByLabelText('OpenAI API key'), { target: { value: 'sk-1' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(readStage()).toBe('landing'));
+
+    expect(order).toEqual(['first-run dorkos', 'cancel', 'first-run own']);
+  });
+
+  it('says so quietly when DorkOS could not read the service’s model list', async () => {
+    const chooseFirstRunPath = vi
+      .fn()
+      .mockResolvedValue({ path: 'own', runtime: 'doe', modelListed: false });
+    const { readStage } = await renderFlow('/?onboarding=own-ai', { chooseFirstRunPath });
+    fireEvent.click(screen.getByRole('button', { name: /An OpenRouter key/ }));
+    fireEvent.change(screen.getByLabelText('OpenRouter key'), { target: { value: 'sk-or-1' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(readStage()).toBe('landing'));
+    expect(mockToast).toHaveBeenCalledWith('Using a default model. Change it in Settings.');
   });
 });
