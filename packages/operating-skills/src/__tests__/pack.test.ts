@@ -46,7 +46,7 @@ function listedSiblings(body: string): string[] {
 }
 
 describe('OPERATING_SKILLS_PACK', () => {
-  it('ships the nine canonical skills, umbrella first', () => {
+  it('ships the ten canonical skills, umbrella first', () => {
     expect(OPERATING_SKILLS_PACK.map((s) => s.name)).toEqual([
       'operating-dorkos',
       'managing-agents',
@@ -57,6 +57,7 @@ describe('OPERATING_SKILLS_PACK', () => {
       'working-in-room-repos',
       'using-the-agent-browser',
       'working-with-spin-off-chats',
+      'working-on-a-heartbeat',
     ]);
   });
 
@@ -556,5 +557,60 @@ describe('working-with-spin-off-chats', () => {
 
   it('is named in the umbrella sibling list', () => {
     expect(bodyOf('operating-dorkos')).toContain('working-with-spin-off-chats');
+  });
+});
+
+/**
+ * The heartbeat skill (spec `heartbeats` §8, §9, §10 PR 6). Each assertion pins
+ * a fact a wrong word turns into a beat whose findings reach nobody, or a
+ * person woken at night for news that could wait.
+ */
+describe('working-on-a-heartbeat', () => {
+  const beat = bodyOf('working-on-a-heartbeat');
+
+  it('says a beat ends with end_beat, once, and that nothing else reaches anyone', () => {
+    expect(beat).toContain('`end_beat`, once');
+    expect(beat).toMatch(/Nothing else you write in a beat reaches\s+anyone/);
+    expect(beat).toContain('just a summary');
+  });
+
+  it('lists the rungs quietest first, with the summary as the record', () => {
+    const order = ['**The record**', '`report`', '`room`', '`dm`', '`note`'].map((rung) =>
+      beat.indexOf(rung)
+    );
+    expect(order.every((at) => at >= 0)).toBe(true);
+    expect([...order].sort((a, b) => a - b)).toEqual(order);
+  });
+
+  it("states P6's urgent, including that a fixed problem is not urgent", () => {
+    expect(beat).toMatch(/Urgent means a person must act now/);
+    expect(beat).toMatch(/already fixed is not urgent/);
+    expect(beat).toContain('`urgent: true`');
+  });
+
+  it('teaches the four moves, pace, resolved, the report and promises', () => {
+    for (const move of ['**Act**', '**Act, then tell**', '**Ask**', '**Stay quiet**']) {
+      expect(beat).toContain(move);
+    }
+    expect(beat).toMatch(/5 to 60\s+minutes, for at most 12 hours/);
+    expect(beat).toContain('`resolved`');
+    expect(beat).toContain('`report: null`');
+    expect(beat).toContain('`commitment_add`');
+    expect(beat).toContain('Proactive in work, quiet in speech');
+  });
+
+  it('names heartbeat_status for reading other agents, and calls a target a bet, not a grade', () => {
+    expect(beat).toContain('`heartbeat_status`');
+    expect(beat).toContain('not a grade');
+  });
+
+  it('never claims an away manager is stepped past', () => {
+    expect(beat).not.toMatch(/step(s|ped)? up/i);
+    expect(beat).toMatch(/away, messages wait for their return/);
+  });
+
+  it('is named in the umbrella sibling list, and the pack is stamped for it', () => {
+    expect(bodyOf('operating-dorkos')).toContain('working-on-a-heartbeat');
+    expect(OPERATING_SKILLS_VERSION).toBeGreaterThanOrEqual(40);
   });
 });
