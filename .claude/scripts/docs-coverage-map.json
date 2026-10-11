@@ -449,6 +449,15 @@
       ]
     },
     {
+      "guide": "official-community-operations.md",
+      "description": "Official Community Space soft-launch runbook: alerts from `/metrics` and `/health/ready`, daily soft-launch checks, the D14 launch bar, the upgrade freeze around launch, and incident steps",
+      "patterns": [
+        "apps/community/src/live/monitoring.ts",
+        "apps/community/load/",
+        "official-community-operations"
+      ]
+    },
+    {
       "guide": "adding-a-memory-provider.md",
       "description": "Memory backend authoring: MemoryProvider port (seam #5), three-way honest reads, five typed errors + MemoryPathError, memoryConformance, and the quarantine that keeps a fault off a turn",
       "patterns": [
