@@ -47,6 +47,7 @@ import { ROOM_REPO_CAP_DEFAULTS } from './room-repo.js';
 import { RuntimeEnvironmentSchema } from './runtime-environment-schema.js';
 import { CredentialReferenceSchema } from './credential-reference.js';
 import * as remote from './remote-access-settings.js';
+import { CommunityNavigationRefSchema, SpacesSettingsSchema } from './spaces-settings.js';
 // Plain id lists, never the named schemas in `permissions/permission-schemas.ts`:
 // the same SRC-alias reason as `HARNESS_IDS` above.
 import {
@@ -61,10 +62,6 @@ export {
   isReservedRuntimeEnvName,
   RUNTIME_RESERVED_ENV_NAMES,
 } from './runtime-environment-schema.js';
-
-const CommunityNavigationRefSchema = z
-  .string()
-  .regex(/^[0-9A-Za-z][0-9A-Za-z_-]*$/, 'A community ref must be path-safe');
 
 /**
  * Where a copy of an extension came from, when this machine can prove it (spec
@@ -2512,8 +2509,15 @@ export const UserConfigSchema = z.object({
    * turns this on in Settings → Experiments. This machine's own rooms and
    * #team are not spaces and never read it. Read on every request, so a change
    * takes effect at once.
+   *
+   * `official.url` is the one exception (spec `official-community-space` D4):
+   * the public link of the official DorkOS space. Its row shows, and it can be
+   * joined, even with the experiment off. `''` turns the exception off, which
+   * is the shipped default until that space exists. `DORKOS_OFFICIAL_SPACE_URL`
+   * overrides it. Only a person may change it: it decides which outside server
+   * this install talks to with spaces off.
    */
-  spaces: z.object({ enabled: z.boolean().default(false) }).default(() => ({ enabled: false })),
+  spaces: SpacesSettingsSchema,
   /**
    * Letting agents on other systems talk to the agents on this one.
    *

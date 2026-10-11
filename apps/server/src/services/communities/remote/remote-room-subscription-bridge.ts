@@ -4,7 +4,11 @@
  *
  * @module services/communities/remote/remote-room-subscription-bridge
  */
-import { CommunityEntrySchema, type CommunityEntry } from '@dorkos/shared/community-adapter';
+import {
+  CommunityEntrySchema,
+  type CommunityEntry,
+  type CommunityRef,
+} from '@dorkos/shared/community-adapter';
 import { RoomError } from '../../rooms/room-errors.js';
 import type { RoomService } from '../../rooms/room-service.js';
 import type { CommunityAgentEnrollmentStore } from './agent-enrollment-store.js';
@@ -91,13 +95,14 @@ export class RemoteRoomSubscriptionBridge {
     private readonly outbox?: CommunityOutboxStore,
     private readonly outboxAborter?: CommunityOutboxInFlightAborter,
     /**
-     * Whether a space message may start a local agent's turn right now. The
-     * spaces experiment (DOR-2740) answers it: while spaces are off, messages
-     * are still mirrored, so nothing is lost, but no agent here is woken by a
-     * space the person can no longer see or stop. Read per message, so turning
-     * spaces back on resumes without a restart.
+     * Whether a message in this space may start a local agent's turn right
+     * now: `spaceReachable(ref)` (spec `official-community-space` D5). While
+     * spaces are off (DOR-2740) only the official space answers yes; every
+     * other space's messages are still mirrored, so nothing is lost, but no
+     * agent here is woken by a space the person can no longer see or stop.
+     * Read per message, so turning spaces back on resumes without a restart.
      */
-    private readonly dispatchEnabled: () => boolean = () => true
+    private readonly dispatchEnabled: (communityRef: CommunityRef) => boolean = () => true
   ) {}
 
   /**
@@ -215,7 +220,7 @@ export class RemoteRoomSubscriptionBridge {
     if (!this.mirrors.isActivelyAuthorized(target.id, room.ownerAuthorId)) return;
     // Unclaimed on purpose: only a fresh live frame dispatches, so a message
     // that arrived while spaces were off never starts a turn later either.
-    if (!this.dispatchEnabled()) return;
+    if (!this.dispatchEnabled(room.communityRef)) return;
     const dispatchEntry = this.dispatchEntry(target.id, room, saved);
     if (!dispatchEntry.mentions.length) return;
     if (

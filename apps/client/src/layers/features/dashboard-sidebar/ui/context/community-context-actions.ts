@@ -126,8 +126,17 @@ export interface CommunityContextActionsModel {
   onLeave: () => void;
   /** Ask to disconnect this installation from the selected Community. */
   onDisconnect: () => void;
-  /** Ask for a space's address or invitation link: the one Join dialog. */
-  onJoin: () => void;
+  /**
+   * Ask for a space's address or invitation link: the one Join dialog. `null` while the spaces
+   * experiment is off, which hides the whole "Add a space" menu (DOR-2740).
+   */
+  onJoin: (() => void) | null;
+  /**
+   * Open the Join dialog on the official DorkOS space's link, or `null` when there is none or
+   * this install is already connected to it (spec `official-community-space` D5). Offered with
+   * the experiment on or off.
+   */
+  onJoinOfficial: (() => void) | null;
   /** Hosts the person runs, from {@link communityCreationOrigins}; empty offers no creation. */
   creationOrigins: readonly string[];
   /** Open one host's administration page, where a community is created. */
@@ -154,8 +163,9 @@ function hostName(origin: string): string {
 }
 
 /**
- * Build the switcher's lifecycle rows: the selected space's own actions, then
- * "Add a space".
+ * Build the switcher's lifecycle rows: the selected space's own actions, the
+ * way in to the official DorkOS space while there is one to join, then "Add a
+ * space" while the spaces experiment is on.
  *
  * @param model - The selection and its handlers.
  */
@@ -233,6 +243,17 @@ export function buildCommunityContextNodes(model: CommunityContextActionsModel):
       items,
     });
   }
+  if (model.onJoinOfficial)
+    nodes.push({
+      kind: 'action',
+      id: 'join-official-space',
+      label: 'Join the DorkOS community',
+      icon: LogIn,
+      opensInput: true,
+      run: model.onJoinOfficial,
+    });
+  const onJoin = model.onJoin;
+  if (!onJoin) return nodes;
   // Start and Join first: the two things most people come here for. The
   // self-run paths sit behind Advanced, one step away (spec §4).
   const advanced: SidebarMenuNode[] = [
@@ -278,7 +299,7 @@ export function buildCommunityContextNodes(model: CommunityContextActionsModel):
     label: 'Join a space',
     icon: LogIn,
     opensInput: true,
-    run: model.onJoin,
+    run: onJoin,
   });
   if (model.hosting)
     add.push({

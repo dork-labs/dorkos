@@ -13,7 +13,6 @@ import {
   getCommunityRouteEpoch,
   useIsMobile,
 } from '@/layers/shared/model';
-import { useSpacesEnabled } from '@/layers/entities/config';
 import { cn, formatRelativeTime, openExternalLink } from '@/layers/shared/lib';
 import {
   ResponsiveDropdownMenu,
@@ -47,7 +46,13 @@ import {
   communityCreationOrigins,
   COMMUNITY_DEPLOY_GUIDE_URL,
 } from './community-context-actions';
-import { communityRowState, navigationDescriptor } from './community-row-state';
+import {
+  communityRowState,
+  lowerFirst,
+  navigationDescriptor,
+  orderedConnections,
+} from './community-row-state';
+import { useJoinSpaceRequestHandler, useSwitcherSpaces } from './use-switcher-spaces';
 import { DisconnectCommunityDialog } from './CommunityActionDialogs';
 import { ConnectCommunityDialog, type ConnectCommunityRequest } from './ConnectCommunityDialog';
 import { SheetActionsMenu } from './SheetActionsMenu';
@@ -63,26 +68,6 @@ export interface CommunityContextSwitcherProps {
    * in the trigger's accessible name and in the menu it opens.
    */
   compact?: boolean;
-}
-
-function orderedConnections(
-  connections: readonly CommunityConnectionDescriptor[],
-  order: readonly string[]
-): CommunityConnectionDescriptor[] {
-  const rank = new Map(order.map((ref, index) => [ref, index]));
-  return [...connections].sort((left, right) => {
-    const leftRank = rank.get(left.ref) ?? Number.MAX_SAFE_INTEGER;
-    const rightRank = rank.get(right.ref) ?? Number.MAX_SAFE_INTEGER;
-    return (
-      leftRank - rightRank ||
-      left.label.localeCompare(right.label) ||
-      left.ref.localeCompare(right.ref)
-    );
-  });
-}
-
-function lowerFirst(text: string): string {
-  return text.charAt(0).toLowerCase() + text.slice(1);
 }
 
 /**
@@ -104,20 +89,23 @@ export function CommunityContextSwitcher({
 }: CommunityContextSwitcherProps) {
   const isMobile = useIsMobile();
   const navigate = useNavigate();
-  // Spaces are an experiment, off by default (DOR-2740). Off, this is only
-  // the "You" menu: no space rows, no Join or Start, and a `?community=` left
-  // in the address is not a place you can be.
-  const spaces = useSpacesEnabled();
+  // Spaces are an experiment, off by default (DOR-2740). Off, this is the
+  // "You" menu plus the official DorkOS space alone (spec
+  // `official-community-space` D5): no other space row, no Join a space or
+  // Start, and any other `?community=` in the address is not a place you can be.
   const routeRef = useRouterState({
     select: (state) => (state.location.search as { community?: string }).community,
   });
-  const selectedRef = spaces ? routeRef : undefined;
   const navigation = useCommunityNavigation();
   const moveNavigation = useMoveCommunityNavigation();
   const connections = useCommunityConnections();
+  const { spaces, anySpace, selectedRef, visible, joinOfficial } = useSwitcherSpaces(
+    routeRef,
+    connections.data
+  );
   const destinations = useMemo(
-    () => orderedConnections(connections.data ?? [], navigation.data?.order ?? []),
-    [connections.data, navigation.data?.order]
+    () => orderedConnections(visible, navigation.data?.order ?? []),
+    [visible, navigation.data?.order]
   );
   const selected = destinations.find((connection) => connection.ref === selectedRef) ?? null;
   const selectedItem = useRef<HTMLDivElement>(null);
@@ -173,19 +161,22 @@ export function CommunityContextSwitcher({
     onOpenSettings: () => selected && openOnCommunity(selected),
     onLeave: () => selected && openOnCommunity(selected, 'account'),
     onDisconnect: () => setDisconnecting(selected),
-    onJoin: () => setConnectRequest({ ref: null }),
-    creationOrigins: communityCreationOrigins(destinations),
+    onJoin: spaces ? () => setConnectRequest({ ref: null }) : null,
+    onJoinOfficial: joinOfficial,
+    creationOrigins: spaces ? communityCreationOrigins(destinations) : [],
     // The pinned origin again: the only host these connections talked to.
     onCreate: (origin) => openExternalLink(new URL(COMMUNITY_HOST_ADMIN_PATH, origin).toString()),
     onDeploy: () => openExternalLink(COMMUNITY_DEPLOY_GUIDE_URL),
-    hosting: hosting
-      ? {
-          onStart: () => setHostingDialog({ kind: 'start' }),
-          onOpenYourSpaces: () => setHostingDialog({ kind: 'hosted' }),
-        }
-      : null,
+    hosting:
+      spaces && hosting
+        ? {
+            onStart: () => setHostingDialog({ kind: 'start' }),
+            onOpenYourSpaces: () => setHostingDialog({ kind: 'hosted' }),
+          }
+        : null,
   });
-  const contextNodes = spaces ? spaceNodes : [];
+  const contextNodes = anySpace ? spaceNodes : [];
+  useJoinSpaceRequestHandler((url) => setConnectRequest({ ref: null, url }));
   const menu = useHeaderBlockMenu(contextNodes);
   // One guard over both runs of rows, so a row above the destinations and a
   // row below them spend the same one-shot hold.
@@ -321,7 +312,7 @@ export function CommunityContextSwitcher({
               on desktop it heads the destinations, under the identity rows. */}
           {isMobile && (
             <ResponsiveDropdownMenuLabel>
-              {spaces ? 'Switch context' : 'Menu'}
+              {anySpace ? 'Switch context' : 'Menu'}
             </ResponsiveDropdownMenuLabel>
           )}
           {/* You, your DorkOS account and Settings come first (DOR-2628):
@@ -333,11 +324,11 @@ export function CommunityContextSwitcher({
               onSheetClose={() => handleOpenChange(false)}
             />
           </SheetActionsMenu>
-          {spaces && <ResponsiveDropdownMenuSeparator />}
-          {spaces && !isMobile && (
+          {anySpace && <ResponsiveDropdownMenuSeparator />}
+          {anySpace && !isMobile && (
             <ResponsiveDropdownMenuLabel>Switch context</ResponsiveDropdownMenuLabel>
           )}
-          {spaces && isMobile && destinations.length >= 8 && (
+          {anySpace && isMobile && destinations.length >= 8 && (
             <div className="px-4 pb-2">
               <Input
                 type="search"
@@ -348,7 +339,7 @@ export function CommunityContextSwitcher({
               />
             </div>
           )}
-          {spaces && (
+          {anySpace && (
             <ResponsiveDropdownMenuRadioGroup
               value={selectedRef ? `community:${selectedRef}` : 'installation'}
               onValueChange={selectDestination}

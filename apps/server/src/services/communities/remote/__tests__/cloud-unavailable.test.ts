@@ -173,6 +173,13 @@ vi.mock('../../../../lib/caller-authority.js', () => ({
   isLocalCaller: () => true,
   requireOperatorCookieUnderLogin: () => undefined,
 }));
+// The spaces settings the production state reads (spec `official-community-space` D4): spaces
+// on, and no official space, as a person who turned spaces on and named none would have them.
+vi.mock('../../../core/config-manager.js', () => ({
+  configManager: {
+    get: (key: string) => (key === 'spaces' ? { enabled: true, official: { url: '' } } : undefined),
+  },
+}));
 
 import { createCommunityConnectionsRouter } from '../../../../routes/community-connections.js';
 import { createRemoteCommunitiesRouter } from '../../../../routes/remote-communities.js';

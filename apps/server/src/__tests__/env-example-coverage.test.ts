@@ -50,6 +50,8 @@ const UNDOCUMENTED_ON_PURPOSE: Record<string, string> = {
   CLIENT_DIST_PATH: 'set by the CLI and the desktop shell to point at their own bundled client',
   DORKOS_APPROVAL_TTL_MS:
     'shortens the approval window for the eval harness (DOR-498); it can only ever shorten it, and nothing an operator wants is on the other end',
+  DORKOS_OFFICIAL_SPACE_URL:
+    'overrides spaces.official.url, which is documented with it in docs/getting-started/configuration.mdx; the official space has no link to put here yet',
   DORKOS_TEST_RUNTIME: 'e2e only — swaps the real runtime for the fake one',
   DORKOS_TEST_RUNTIME_SECONDARY: 'e2e only — a second fake runtime, for the multi-runtime UI',
   DORKOS_TEST_RUNTIME_CLAUDE_ALIAS: 'e2e only — a third fake runtime under the claude-code name',

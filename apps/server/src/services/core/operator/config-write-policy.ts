@@ -371,6 +371,11 @@ export const CONFIG_WRITE_POLICY = {
   // Another "who can this instance reach" door, so a person opens it, never an
   // agent.
   'spaces.enabled': 'operator-only',
+  // Which space is official (spec `official-community-space` D4): the one
+  // outside server this install shows and talks to while spaces are off, and
+  // whose agents' wake default is narrowed. Choosing it widens who this
+  // instance reaches, so a person sets it, never an agent.
+  'spaces.official.url': 'operator-only',
   // Whether the external A2A surface mounts: an agent card describing the agents
   // here, plus a JSON-RPC address outside clients post work to. That is squarely
   // "who can reach this instance", which is why it sits with `tunnel.enabled` and
@@ -975,6 +980,7 @@ export const OPERATOR_ONLY_STAKES: readonly OperatorOnlyStakeGroup[] = [
       'mcp.enabled',
       'browser.enabled',
       'spaces.enabled',
+      'spaces.official.url',
       'a2a.enabled',
       'mcp.apiKey',
       'mcp.rateLimit.enabled',
@@ -1252,13 +1258,9 @@ export const OPERATOR_ONLY_STAKES: readonly OperatorOnlyStakeGroup[] = [
  * @param patch - The raw patch a caller supplied.
  */
 export function operatorOnlyAreasForPatch(patch: unknown): OperatorOnlyArea[] {
-  const areas = new Set<OperatorOnlyArea>(
-    findOperatorOnlyPaths(patch).map(
-      (path) =>
-        OPERATOR_ONLY_STAKES.find((group) => group.paths.includes(path))?.area ?? 'permissions'
-    )
-  );
-  return [...areas];
+  const areaOf = (path: string): OperatorOnlyArea =>
+    OPERATOR_ONLY_STAKES.find((group) => group.paths.includes(path))?.area ?? 'permissions';
+  return [...new Set(findOperatorOnlyPaths(patch).map(areaOf))];
 }
 
 /** The machine-readable code every operator-only refusal carries. */

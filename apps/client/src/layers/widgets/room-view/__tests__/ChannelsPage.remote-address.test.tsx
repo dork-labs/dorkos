@@ -50,9 +50,6 @@ vi.mock('@/layers/shared/model', () => ({
   useIsMobile: () => false,
   useCommunityAuthority: () => ({ epoch: 1, ownerKey: 'owner' }),
 }));
-vi.mock('@/layers/entities/config', () => ({
-  useSpacesState: () => spaces,
-}));
 const { connections } = vi.hoisted(() => ({
   connections: { data: [] as Array<Record<string, unknown>> },
 }));
@@ -65,6 +62,10 @@ vi.mock('@/layers/entities/community', () => ({
     isError: false,
   }),
   useUnsentCommunityDrafts: () => [],
+  // Whether the space may show: the experiment alone here, since no official space is named
+  // (spec `official-community-space` D5; `use-space-visible.test.tsx` covers that rule).
+  useSpaceVisible: () => ({ visible: spaces.enabled, isLoading: spaces.isLoading }),
+  OfficialSpaceUnreachableNotice: () => null,
 }));
 afterEach(() => {
   cleanup();

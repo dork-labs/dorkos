@@ -21,7 +21,7 @@ import {
 import {
   commitCommunityRouteEpoch,
   getCommunityRouteEpoch,
-  readSpacesEnabled,
+  readAnySpaceReachable,
 } from '@/layers/shared/model';
 import { communityNavigationKeys } from '@/layers/entities/community';
 
@@ -126,12 +126,13 @@ export function createCommunityRouteMemory(
 
   return ({ pathname, search }) => {
     // Both memories are saved through the space routes, which refuse while
-    // the spaces experiment is off (DOR-2740). Off, or not known yet on a cold
-    // load, nothing is sent. The route epoch is this tab's own bookkeeping and
+    // the spaces experiment is off (DOR-2740) for every space but the official
+    // one, which the server judges by its ref. With no space reachable, or not
+    // known yet on a cold load, nothing is sent. The route epoch is this tab's own bookkeeping and
     // is committed either way: the space surfaces read the experiment
     // themselves, and a cold load of a space link must not be fenced off by a
     // config answer that simply had not arrived.
-    const spaces = readSpacesEnabled(queryClient);
+    const spaces = readAnySpaceReachable(queryClient);
     if (pathname !== '/channels') {
       commitCommunityRouteEpoch('installation');
       if (spaces) rememberInstallation(pathname, search);

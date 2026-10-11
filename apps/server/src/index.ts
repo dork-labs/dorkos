@@ -401,9 +401,8 @@ import {
   projectSweepDirs,
   projectsOfAgents,
   recoverInterruptedInstalls,
-  retryInFlightTargetsLater,
-  type InstallSweepSummary,
 } from './services/marketplace/recovery/backup-janitor.js';
+import { installSweepLogger } from './services/marketplace/recovery/install-sweep-log.js';
 import { currentRecordOwner } from './services/marketplace/lib/records/record-owner.js';
 import { createActivityRouter } from './routes/activity.js';
 import { createAuditRouter } from './routes/audit.js';
@@ -468,6 +467,8 @@ import {
   getRemoteConnectionStore,
   getRemotePairingService,
   getRemoteWakePolicy,
+  isConnectionVisible,
+  loadOfficialSpace,
   publishRemoteCommunityDeliveryChanges,
   setRemoteCommunityDb,
   setRemoteCommunityDeliveryProjection,
@@ -554,7 +555,7 @@ import {
   sweepDepartedAgentSeats,
 } from './services/rooms/manage/departed-agents.js';
 import { registerLocalCommunity } from './services/communities/index.js';
-import { spacesEnabled } from './middleware/spaces-enabled.js';
+import { spaceReachable } from './middleware/spaces-enabled.js';
 import { SearchIndexer, selectSearchSources } from './services/search/index.js';
 import { TerminalManager, terminalUpgradeRoute } from './services/terminal/index.js';
 import { attachUpgradeRouter } from './services/core/streams/upgrade-router.js';
@@ -644,10 +645,7 @@ import {
   type CommitmentWiring,
 } from './services/commitments/commitment-wiring.js';
 import * as heartbeats from './services/heartbeats/index.js';
-import {
-  flushRestoredAgents,
-  registerRestoredAgents,
-} from './services/marketplace/restored-agents.js';
+import { flushRestoredAgents } from './services/marketplace/restored-agents.js';
 import { registeredAgentRoots } from './services/mesh/roots/registered-agent-roots.js';
 import {
   SessionStartedByStore,
@@ -763,26 +761,8 @@ let testComposioFixture:
     >
   | undefined;
 
-/**
- * Log what an install-recovery sweep did, when it did anything.
- *
- * @param scope - Which installs were swept, for the log line.
- * @param summary - The sweep's totals.
- */
-function logInstallSweep(scope: string, summary: InstallSweepSummary): void {
-  registerRestoredAgents(summary.restoredAgentRoots, meshCore);
-  const { settled, kept, discarded, inFlightTargets } = summary;
-  if (settled + kept + discarded + inFlightTargets.length > 0) {
-    logger.info(
-      `[Marketplace] Settled interrupted ${scope}: ${settled} settled, ${kept} kept, ${discarded} leftovers removed, ${inFlightTargets.length} left to another running DorkOS`
-    );
-  }
-  // A target left to another process is looked at once more when every record
-  // there has aged past the point where its owner matters.
-  retryInFlightTargetsLater(inFlightTargets, logger, (retry) =>
-    logInstallSweep(`${scope} (retry)`, { ...retry, inFlightTargets: [] })
-  );
-}
+/** Logs what an install-recovery sweep did (see `installSweepLogger`). */
+const logInstallSweep = installSweepLogger(() => meshCore);
 
 /**
  * The project install-recovery sweep, and the projects it read. The legacy
@@ -1768,6 +1748,7 @@ async function start() {
         // Bound below, once the sync exists: it rebuilds search and deletes files for a
         // revoked mirror whose content the store just deleted.
         mirrorPurged: (purge) => remoteRedactionSync?.afterPurge(purge),
+        reachable: spaceReachable,
       });
       return {
         mirrorAccess: remoteCommunityRuntime.mirrorAccess,
@@ -1800,7 +1781,7 @@ async function start() {
     undefined,
     remoteCommunityRuntime.outbox,
     remoteCommunityRuntime,
-    spacesEnabled
+    spaceReachable
   );
   // Who in each space may wake an agent here (spec `official-community-space` D9). It starts
   // loading now, long before the streams start below, and wakes nobody until it has.
@@ -2420,6 +2401,11 @@ async function start() {
     } catch (err) {
       logger.warn('[Permissions] Could not record the ended standing permissions', logError(err));
     }
+    // Which space is official (spec `official-community-space` D5), before any
+    // remote work and before the server listens: until it has loaded no space
+    // is, so with spaces off nothing remote is reachable (fail closed). Loaded
+    // whatever Mesh did, since the official space's routes do not need Mesh.
+    await loadOfficialSpace();
     if (meshStartupReconciled) {
       remoteCommunityRuntime?.start();
       remoteCommunitySubscriptions?.start();
@@ -2648,6 +2634,7 @@ async function start() {
     meshCore,
     configManager,
     communityConnections: getRemoteConnectionStore(),
+    connectionVisible: isConnectionVisible,
     eventFanOut,
   });
 
