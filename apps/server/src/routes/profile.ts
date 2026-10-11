@@ -18,8 +18,9 @@
  *
  * @module routes/profile
  */
-import { Router, type Request, type Response } from 'express';
-import multer from 'multer';
+import { Readable } from 'node:stream';
+import { Hono, type Context } from 'hono';
+import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import type { DisplayNameSource } from '@dorkos/shared/config-schema';
 import {
   ProfileUpdateRequestSchema,
@@ -27,9 +28,14 @@ import {
   type ProfileUpdateResponse,
 } from '@dorkos/shared/team-schemas';
 import { logError, logger } from '../lib/logger.js';
-import { parseBody, sendError, discardStream } from '../lib/route-utils.js';
+import { discardStream, errorBody, validationFailureBody } from '../lib/route-utils.js';
 import type { AuthorRecord, AuthorRegistry } from '../services/rooms/author-registry.js';
-import { sendRoomError } from './room-error-response.js';
+import type { ApiEnv } from '../http/api-chain.js';
+import { readJsonBody } from '../http/request-body.js';
+import { honoRequestFacts, type RequestFacts } from '../http/request-facts.js';
+import { readQuery } from '../http/request-query.js';
+import { parseUploads, UploadLimitError, type UploadedFile } from '../http/uploads.js';
+import { isOwnerCaller, roomErrorReply } from './room-error-response.js';
 import { OPERATOR_SAVE_SOURCE } from '../services/identity/display-name-provenance.js';
 import {
   InvalidAvatarIdError,
@@ -53,7 +59,7 @@ export interface ProfileRouterDeps {
    * route. Still injected rather than imported, because what this router must
    * not reach for is the room SERVICE — resolving a caller mints author rows.
    */
-  caller: (req: Pick<Request, 'headers'>, res: Pick<Response, 'locals'>) => AuthorRecord;
+  caller: (request: Pick<RequestFacts, 'headers' | 'agentIdentity' | 'user'>) => AuthorRecord;
   /**
    * The rooms domain's author registry: the render cache every surface reads,
    * plus the one question that decides whether the account record is this
@@ -90,77 +96,77 @@ export interface ProfileRouterDeps {
 }
 
 /**
- * The multipart parser for exactly one photo.
+ * The multipart parser's options for exactly one photo.
  *
- * **Dedicated rather than reused.** `routes/uploads.ts` builds its multer from
+ * **Dedicated rather than reused.** `routes/uploads.ts` builds its options from
  * the user's upload config and writes into a session's working directory; both
  * are wrong for a photo, which is per-install, permanent, and capped by a rule
  * nobody may raise from `config.json`.
  *
  * Memory storage, because the bytes have to be sniffed before anything decides
  * where they go — and `limits.fileSize` refuses an oversized upload while it is
- * still being read, so nothing over the cap is ever held or written.
+ * still being read, so nothing over the cap is ever held or written. A file of
+ * exactly `MAX_AVATAR_BYTES` fits: `parseUploads` corrects for busboy's own
+ * off-by-one, as multer did, so the cap is exactly the `≤ 2 MB` the spec and
+ * error message both promise.
  */
-const uploadAvatar = multer({
-  storage: multer.memoryStorage(),
-  // No `+ 1` here: multer 2.3 compensates internally for busboy's own
-  // off-by-one (busboy refuses a file that REACHES `fileSize`, not one that
-  // exceeds it), passing busboy `fileSize + 1` under the hood. Adding our own
-  // `+ 1` on top made the effective cap `MAX_AVATAR_BYTES + 2`, so a file one
-  // byte over the configured limit was silently accepted. `fileSize:
-  // MAX_AVATAR_BYTES` is now exactly the `≤ 2 MB` the spec and error message
-  // both promise.
+const AVATAR_UPLOAD = {
+  field: 'avatar',
+  maxCount: 1,
   limits: { fileSize: MAX_AVATAR_BYTES, files: 1 },
-}).single('avatar');
+} as const;
 
 /** The form field the photo arrives in. */
-const AVATAR_FIELD = 'avatar';
+const AVATAR_FIELD = AVATAR_UPLOAD.field;
+
+/** Who is asking, or the answer they get instead. */
+type CallerOrRefusal = { caller: AuthorRecord } | { refusal: Response };
 
 /**
  * Create the profile router.
  *
  * @param deps - The avatar store, the caller resolver, and the four identity
  *   writers: the two the photo lands in and the two the name does.
- * @returns Express Router serving `PATCH /api/profile` and
- *   `POST`/`DELETE`/`GET /api/profile/avatar`.
+ * @returns The Hono routes serving `PATCH /api/profile`,
+ *   `POST`/`DELETE`/`GET /api/profile/avatar` and `/api/profile/identities`.
  */
-export function createProfileRouter(deps: ProfileRouterDeps): Router {
-  const router = Router();
+export function createProfileRouter(deps: ProfileRouterDeps): Hono<ApiEnv> {
+  const router = new Hono<ApiEnv>();
 
   /**
-   * The operator, or `null` after answering the refusal an agent gets.
+   * The operator, or the refusal an agent gets.
    *
    * Two refusals for two different facts: 401 for a caller whose agent token
    * this machine could not verify — a credential problem, and a working token is
    * what would change the answer — and 403 for an agent that IS named, which no
    * credential fixes because a profile is a person's.
    *
-   * @param req - The incoming request, for the raw agent header.
-   * @param res - The response, carrying whatever the caller presented.
+   * @param c - The request, for the raw agent header and whatever the caller
+   *   presented.
    * @param subject - What the agent was trying to change, so the refusal names
    *   the thing it refused rather than the route it arrived at.
    */
-  function operatorOrRefuse(req: Request, res: Response, subject: string): AuthorRecord | null {
+  function operatorOrRefuse(c: Context<ApiEnv>, subject: string): CallerOrRefusal {
     let caller: AuthorRecord;
     try {
-      caller = deps.caller(req, res);
+      caller = deps.caller(honoRequestFacts(c));
     } catch (err) {
       // The rooms domain's own mapping, shared rather than mirrored, exactly as
       // `read-cursors.ts` shares it: a refusal that reads one way on a room
-      // route and another here would be two answers to one question.
-      sendRoomError(res, err, 'profile caller');
-      return null;
+      // route and another here would be two answers to one question. No
+      // caller was resolved, so nobody is the owner asking.
+      const reply = roomErrorReply(err, 'profile caller', () => false);
+      return { refusal: c.json(reply.body, reply.status as ContentfulStatusCode) };
     }
     if (caller.kind !== 'human') {
-      sendError(res, 403, `Only a person can change a profile ${subject}.`, 'OPERATOR_ONLY');
-      return null;
+      const body = errorBody(`Only a person can change a profile ${subject}.`, 'OPERATOR_ONLY');
+      return { refusal: c.json(body, 403) };
     }
-    return caller;
+    return { caller };
   }
 
   /**
-   * The person who OWNS this install, or `null` after answering the refusal
-   * anybody else gets.
+   * The person who OWNS this install, or the refusal anybody else gets.
    *
    * {@link operatorOrRefuse} narrowed by one more question, and the two are not
    * the same one: that one refuses a machine, this one also refuses a second
@@ -169,23 +175,20 @@ export function createProfileRouter(deps: ProfileRouterDeps): Router {
    * handler below checks it, and so does this — an invited person claiming an
    * identity "is me" would be silencing the OWNER'S notifications.
    *
-   * @param req - The incoming request.
-   * @param res - The response.
+   * @param c - The request.
    * @param subject - What they were trying to change, for the refusal.
    */
-  function ownerOrRefuse(req: Request, res: Response, subject: string): AuthorRecord | null {
-    const operator = operatorOrRefuse(req, res, subject);
-    if (!operator) return null;
+  function ownerOrRefuse(c: Context<ApiEnv>, subject: string): CallerOrRefusal {
+    const operator = operatorOrRefuse(c, subject);
+    if ('refusal' in operator) return operator;
     // `null` is a real answer, not a missing one: with no account the `'local'`
     // sentinel IS the owner, which is what keeps the default install working.
-    if (!deps.authors.isOwner(operator.id, deps.ownerAccount()?.id ?? null)) {
-      sendError(
-        res,
-        403,
+    if (!deps.authors.isOwner(operator.caller.id, deps.ownerAccount()?.id ?? null)) {
+      const body = errorBody(
         `Only the person who owns this install can change this ${subject}.`,
         'OPERATOR_ONLY'
       );
-      return null;
+      return { refusal: c.json(body, 403) };
     }
     return operator;
   }
@@ -216,14 +219,17 @@ export function createProfileRouter(deps: ProfileRouterDeps): Router {
    * Idempotent, and no more informative than it has to be: an id that names
    * nothing answers 404 through the rooms domain's own status table.
    */
-  router.post('/identities/:authorId', (req, res) => {
-    const owner = ownerOrRefuse(req, res, 'identity');
-    if (!owner) return;
+  router.post('/identities/:authorId', (c) => {
+    const owner = ownerOrRefuse(c, 'identity');
+    if ('refusal' in owner) return owner.refusal;
     try {
-      deps.authors.linkToOwner(req.params.authorId, deps.ownerAccount()?.id ?? null);
-      return res.status(204).end();
+      deps.authors.linkToOwner(c.req.param('authorId'), deps.ownerAccount()?.id ?? null);
+      return c.body(null, 204);
     } catch (err) {
-      return sendRoomError(res, err, 'POST /identities/:authorId');
+      const reply = roomErrorReply(err, 'POST /identities/:authorId', () =>
+        isOwnerCaller(owner.caller)
+      );
+      return c.json(reply.body, reply.status as ContentfulStatusCode);
     }
   });
 
@@ -234,14 +240,17 @@ export function createProfileRouter(deps: ProfileRouterDeps): Router {
    * never claimed answers 204 too, because "it is not mine" is the state the
    * caller asked for either way.
    */
-  router.delete('/identities/:authorId', (req, res) => {
-    const owner = ownerOrRefuse(req, res, 'identity');
-    if (!owner) return;
+  router.delete('/identities/:authorId', (c) => {
+    const owner = ownerOrRefuse(c, 'identity');
+    if ('refusal' in owner) return owner.refusal;
     try {
-      deps.authors.unlinkFromOwner(req.params.authorId);
-      return res.status(204).end();
+      deps.authors.unlinkFromOwner(c.req.param('authorId'));
+      return c.body(null, 204);
     } catch (err) {
-      return sendRoomError(res, err, 'DELETE /identities/:authorId');
+      const reply = roomErrorReply(err, 'DELETE /identities/:authorId', () =>
+        isOwnerCaller(owner.caller)
+      );
+      return c.json(reply.body, reply.status as ContentfulStatusCode);
     }
   });
 
@@ -302,11 +311,12 @@ export function createProfileRouter(deps: ProfileRouterDeps): Router {
    * `room-caller.ts` checks that invariant anyway rather than assuming it, and
    * so does this.
    */
-  router.patch('/', (req, res) => {
-    const operator = ownerOrRefuse(req, res, 'name');
-    if (!operator) return;
-    const body = parseBody(ProfileUpdateRequestSchema, req.body, res);
-    if (!body) return;
+  router.patch('/', (c) => {
+    const operator = ownerOrRefuse(c, 'name');
+    if ('refusal' in operator) return operator.refusal;
+    const parsed = ProfileUpdateRequestSchema.safeParse(readJsonBody(c));
+    if (!parsed.success) return c.json(validationFailureBody(parsed.error), 400);
+    const body = parsed.data;
 
     const owner = deps.ownerAccount();
     if (owner) deps.setAccountName(owner.id, body.displayName);
@@ -321,64 +331,60 @@ export function createProfileRouter(deps: ProfileRouterDeps): Router {
 
     // Echoed rather than re-resolved: both sources above the author record now
     // hold this string, so the precedence cannot answer with anything else.
-    return res.json({ displayName: body.displayName } satisfies ProfileUpdateResponse);
+    return c.json({ displayName: body.displayName } satisfies ProfileUpdateResponse);
   });
 
   // POST /avatar — replace the operator's photo.
-  router.post('/avatar', (req, res) => {
-    // Resolved BEFORE multer runs: an agent's upload is refused without its
-    // bytes ever being read.
-    const operator = operatorOrRefuse(req, res, 'photo');
-    if (!operator) return;
+  router.post('/avatar', async (c) => {
+    // Resolved BEFORE the body is parsed: an agent's upload is refused without
+    // its bytes ever being read.
+    const operator = operatorOrRefuse(c, 'photo');
+    if ('refusal' in operator) return operator.refusal;
 
-    uploadAvatar(req, res, async (err: unknown) => {
-      if (err) return sendUploadError(res, err);
+    let file: UploadedFile | undefined;
+    try {
+      [file] = await parseUploads(c, AVATAR_UPLOAD);
+    } catch (err) {
+      return uploadRefusal(c, err);
+    }
+    if (!file?.buffer) {
+      const body = errorBody(`Attach the image as the '${AVATAR_FIELD}' field.`, 'AVATAR_MISSING');
+      return c.json(body, 400);
+    }
 
-      const file = req.file;
-      if (!file) {
-        return sendError(
-          res,
-          400,
-          `Attach the image as the '${AVATAR_FIELD}' field.`,
-          'AVATAR_MISSING'
-        );
-      }
+    // The bytes decide, never the filename or the Content-Type the client
+    // claimed — both are written by whoever is uploading. And a photo's
+    // accepted set is narrower than everything the sniffer can name: a GIF is
+    // a room attachment, not an avatar (see `AVATAR_CONTENT_TYPES`).
+    const sniffed = sniffAvatarContentType(file.buffer);
+    const contentType = isAvatarContentType(sniffed) ? sniffed : null;
+    if (!contentType) {
+      const body = errorBody(
+        'That file is not a PNG, JPEG, or WebP image.',
+        'AVATAR_TYPE_UNSUPPORTED'
+      );
+      return c.json(body, 415);
+    }
 
-      // The bytes decide, never the filename or the Content-Type the client
-      // claimed — both are written by whoever is uploading. And a photo's
-      // accepted set is narrower than everything the sniffer can name: a GIF is
-      // a room attachment, not an avatar (see `AVATAR_CONTENT_TYPES`).
-      const sniffed = sniffAvatarContentType(file.buffer);
-      const contentType = isAvatarContentType(sniffed) ? sniffed : null;
-      if (!contentType) {
-        return sendError(
-          res,
-          415,
-          'That file is not a PNG, JPEG, or WebP image.',
-          'AVATAR_TYPE_UNSUPPORTED'
-        );
-      }
-
-      try {
-        const { url } = await deps.avatars.put(operator.id, file.buffer, contentType);
-        writeImageUrl(operator.id, url);
-        return res.json({ imageUrl: url } satisfies ProfileAvatarResponse);
-      } catch (storeErr) {
-        return sendStoreError(res, storeErr, 'POST /avatar');
-      }
-    });
+    try {
+      const { url } = await deps.avatars.put(operator.caller.id, file.buffer, contentType);
+      writeImageUrl(operator.caller.id, url);
+      return c.json({ imageUrl: url } satisfies ProfileAvatarResponse);
+    } catch (storeErr) {
+      return storeRefusal(c, storeErr, 'POST /avatar');
+    }
   });
 
   // DELETE /avatar — remove it from the store and from both records.
-  router.delete('/avatar', async (req, res) => {
-    const operator = operatorOrRefuse(req, res, 'photo');
-    if (!operator) return;
+  router.delete('/avatar', async (c) => {
+    const operator = operatorOrRefuse(c, 'photo');
+    if ('refusal' in operator) return operator.refusal;
     try {
-      await deps.avatars.delete(operator.id);
-      writeImageUrl(operator.id, null);
-      return res.status(204).end();
+      await deps.avatars.delete(operator.caller.id);
+      writeImageUrl(operator.caller.id, null);
+      return c.body(null, 204);
     } catch (err) {
-      return sendStoreError(res, err, 'DELETE /avatar');
+      return storeRefusal(c, err, 'DELETE /avatar');
     }
   });
 
@@ -394,36 +400,38 @@ export function createProfileRouter(deps: ProfileRouterDeps): Router {
   // `/avatar/:id` fetch, or one that outlived a replacement), caching still
   // has to `must-revalidate`, because the path can legitimately start serving
   // different bytes tomorrow.
-  router.get('/avatar/:id', async (req, res) => {
+  router.get('/avatar/:id', async (c) => {
     let stored;
     try {
-      stored = await deps.avatars.get(req.params.id);
+      stored = await deps.avatars.get(c.req.param('id'));
     } catch (err) {
-      return sendStoreError(res, err, 'GET /avatar/:id');
+      return storeRefusal(c, err, 'GET /avatar/:id');
     }
-    if (!stored) return sendError(res, 404, 'No photo for that identity.', 'AVATAR_NOT_FOUND');
+    if (!stored) {
+      return c.json(errorBody('No photo for that identity.', 'AVATAR_NOT_FOUND'), 404);
+    }
 
-    res.setHeader('Content-Type', stored.contentType);
+    c.header('Content-Type', stored.contentType);
     // An image served from a URL a person can influence is exactly where a
     // sniffing browser turns a photo into a document.
-    res.setHeader('X-Content-Type-Options', 'nosniff');
+    c.header('X-Content-Type-Options', 'nosniff');
     // Defense-in-depth alongside `private` above: no origin other than this
     // install's own should be able to embed somebody's photo even if it
     // guessed the id.
-    res.setHeader('Cross-Origin-Resource-Policy', 'same-origin');
-    res.setHeader('Content-Disposition', 'inline');
-    res.setHeader('ETag', stored.etag);
-    const requestedVersion = req.query.v;
+    c.header('Cross-Origin-Resource-Policy', 'same-origin');
+    c.header('Content-Disposition', 'inline');
+    c.header('ETag', stored.etag);
+    const requestedVersion = readQuery(c).v;
     const namesCurrentBytes =
       typeof requestedVersion === 'string' && `"${requestedVersion}"` === stored.etag;
-    res.setHeader(
+    c.header(
       'Cache-Control',
       namesCurrentBytes
         ? 'private, max-age=31536000, immutable'
         : 'private, max-age=0, must-revalidate'
     );
 
-    if (req.headers['if-none-match'] === stored.etag) {
+    if (c.req.header('if-none-match') === stored.etag) {
       // Programmed against the PORT, not against today's one implementation of
       // it: `StoredAvatar.stream` is documented as "a local store opens a file;
       // a remote one opens a response", and a lazily-opened stream abandoned
@@ -431,38 +439,51 @@ export function createProfileRouter(deps: ProfileRouterDeps): Router {
       // request (see `discardStream`). `LocalAvatarStore` happens to hand back
       // bytes already in memory today (DOR-1830), which makes this free.
       discardStream(stored.stream);
-      return res.status(304).end();
+      return c.body(null, 304);
+    }
+    // A HEAD sends no body, so its stream is let go the same way.
+    if (c.req.method === 'HEAD') {
+      discardStream(stored.stream);
+      return c.body(null);
     }
 
-    stored.stream.on('error', (streamErr) => {
-      logger.error('[Profile] avatar stream failed', logError(streamErr));
-      if (!res.headersSent) sendError(res, 500, 'Could not read that photo.', 'AVATAR_READ_FAILED');
-      else res.destroy(streamErr);
-    });
-    stored.stream.pipe(res);
+    return c.body(webStreamOf(stored.stream));
   });
 
   return router;
 }
 
-/** Turn a multer refusal into the answer the person who uploaded should see. */
-function sendUploadError(res: Response, err: unknown): void {
-  if (err instanceof multer.MulterError) {
+/** Turn a parser refusal into the answer the person who uploaded should see. */
+function uploadRefusal(c: Context<ApiEnv>, err: unknown): Response {
+  if (err instanceof UploadLimitError) {
     if (err.code === 'LIMIT_FILE_SIZE') {
       const megabytes = MAX_AVATAR_BYTES / 1024 / 1024;
-      return sendError(res, 413, `That image is larger than ${megabytes} MB.`, 'AVATAR_TOO_LARGE');
+      const body = errorBody(`That image is larger than ${megabytes} MB.`, 'AVATAR_TOO_LARGE');
+      return c.json(body, 413);
     }
-    return sendError(res, 400, `Send one image as '${AVATAR_FIELD}'.`, 'AVATAR_UPLOAD_REJECTED');
+    const body = errorBody(`Send one image as '${AVATAR_FIELD}'.`, 'AVATAR_UPLOAD_REJECTED');
+    return c.json(body, 400);
   }
   logger.error('[Profile] avatar upload failed', logError(err));
-  sendError(res, 400, 'That upload could not be read.', 'AVATAR_UPLOAD_REJECTED');
+  return c.json(errorBody('That upload could not be read.', 'AVATAR_UPLOAD_REJECTED'), 400);
 }
 
 /** Turn a store failure into a status. An unusable id is the caller's fault. */
-function sendStoreError(res: Response, err: unknown, where: string): void {
+function storeRefusal(c: Context<ApiEnv>, err: unknown, where: string): Response {
   if (err instanceof InvalidAvatarIdError) {
-    return sendError(res, 400, 'That is not a usable identity id.', 'AVATAR_ID_INVALID');
+    return c.json(errorBody('That is not a usable identity id.', 'AVATAR_ID_INVALID'), 400);
   }
   logger.error(`[Profile] ${where} failed`, logError(err));
-  sendError(res, 500, 'Could not store that photo.', 'AVATAR_STORE_FAILED');
+  return c.json(errorBody('Could not store that photo.', 'AVATAR_STORE_FAILED'), 500);
+}
+
+/**
+ * A stored photo's bytes as the response body. A read that fails is logged and
+ * ends the response; its headers have gone out by then.
+ */
+function webStreamOf(stream: Readable): ReadableStream<Uint8Array> {
+  stream.on('error', (streamErr) => {
+    logger.error('[Profile] avatar stream failed', logError(streamErr));
+  });
+  return Readable.toWeb(stream) as ReadableStream<Uint8Array>;
 }

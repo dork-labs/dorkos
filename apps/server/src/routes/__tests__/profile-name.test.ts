@@ -11,7 +11,6 @@
  * an implementation that changes nothing a person can see.
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import express from 'express';
 import type { Server } from 'node:http';
 import request from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
@@ -56,26 +55,22 @@ describe('PATCH /api/profile', () => {
    */
   function app(hasAccount = true, overrides: Partial<ProfileRouterDeps> = {}) {
     const account = () => (hasAccount ? { id: OWNER_USER_ID } : null);
-    const server = express();
-    server.use(express.json());
-    server.use(
-      '/api/profile',
-      createProfileRouter({
-        avatars: inertStore,
-        caller: () => ownerAuthor,
-        authors: registry,
-        ownerAccount: account,
-        setAccountImage: () => {},
-        setAccountName: (userId, name) =>
-          db.update(user).set({ name }).where(eq(user.id, userId)).run(),
-        setProfileDisplayName: (displayName, source) => {
-          storedProfileName = displayName;
-          storedNameSource = source;
-        },
-        ...overrides,
-      })
-    );
-    const routes = honoGroupListener(
+    const profile = createProfileRouter({
+      avatars: inertStore,
+      caller: () => ownerAuthor,
+      authors: registry,
+      ownerAccount: account,
+      setAccountImage: () => {},
+      setAccountName: (userId, name) =>
+        db.update(user).set({ name }).where(eq(user.id, userId)).run(),
+      setProfileDisplayName: (displayName, source) => {
+        storedProfileName = displayName;
+        storedNameSource = source;
+      },
+      ...overrides,
+    });
+    const routes = honoGroupListener([
+      { path: '/api/profile', routes: profile },
       {
         path: '/api/team',
         routes: createTeamRoutes({
@@ -94,8 +89,7 @@ describe('PATCH /api/profile', () => {
           defaultAgentName: () => null,
         }),
       },
-      { legacy: server }
-    );
+    ]);
     return target.mount(routes);
   }
 

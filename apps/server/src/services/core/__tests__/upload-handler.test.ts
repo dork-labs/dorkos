@@ -39,25 +39,36 @@ describe('UploadHandler', () => {
     });
   });
 
-  describe('createMulterMiddleware', () => {
+  describe('uploadOptions', () => {
     const config = { maxFileSize: 10 * 1024 * 1024, maxFiles: 10, allowedTypes: ['*/*'] };
+    const file = {
+      fieldname: 'files',
+      originalname: 'a.png',
+      encoding: '7bit',
+      mimetype: 'image/png',
+    };
 
-    it('returns a multer instance', () => {
-      const middleware = uploadHandler.createMulterMiddleware('/tmp/test', config);
-      expect(middleware).toBeDefined();
-      expect(typeof middleware.array).toBe('function');
+    it('reads the files field under the configured size and count limits', () => {
+      const options = uploadHandler.uploadOptions('/tmp/test', config);
+      expect(options.field).toBe('files');
+      expect(options.maxCount).toBe(10);
+      expect(options.limits).toEqual({ fileSize: 10 * 1024 * 1024, files: 10 });
     });
 
-    it('returns a multer instance with restricted types', () => {
-      const restrictedConfig = { ...config, allowedTypes: ['image/png', 'image/jpeg'] };
-      const middleware = uploadHandler.createMulterMiddleware('/tmp/test', restrictedConfig);
-      expect(middleware).toBeDefined();
+    it('stores on disk in the upload dir under a prefixed, sanitized name', () => {
+      const options = uploadHandler.uploadOptions('/tmp/test', config);
+      expect(options.disk?.directory).toBe(path.join('/tmp/test', '.dork', '.temp', 'uploads'));
+      expect(options.disk?.filename('../we ird$.txt')).toMatch(/^[0-9a-f]{8}-we_ird_\.txt$/);
     });
 
-    it('exposes single and fields methods', () => {
-      const middleware = uploadHandler.createMulterMiddleware('/tmp/test', config);
-      expect(typeof middleware.single).toBe('function');
-      expect(typeof middleware.fields).toBe('function');
+    it('accepts any type under */* and refuses one the allowlist leaves out', () => {
+      expect(uploadHandler.uploadOptions('/tmp/test', config).filter?.(file)).toBeUndefined();
+      const restricted = uploadHandler.uploadOptions('/tmp/test', {
+        ...config,
+        allowedTypes: ['image/jpeg'],
+      });
+      expect(restricted.filter?.(file)?.message).toBe('File type not allowed: image/png');
+      expect(restricted.filter?.({ ...file, mimetype: 'image/jpeg' })).toBeUndefined();
     });
   });
 });

@@ -32,12 +32,14 @@ import capabilitiesRoutes from '../routes/capabilities.js';
 import { createCapabilitiesCatalogRoutes } from '../routes/capabilities-catalog.js';
 import { createCapabilitiesInvokeRoutes } from '../routes/capabilities-invoke.js';
 import commandRoutes from '../routes/commands.js';
+import diffRoutes from '../routes/diff.js';
 import directoryRoutes from '../routes/directory.js';
 import errorRoutes from '../routes/errors.js';
 import {
   createExtensionDecisionsRoutes,
   type ExtensionDecisionsRouterDeps,
 } from '../routes/extension-decisions.js';
+import fileRoutes from '../routes/files.js';
 import gitRoutes from '../routes/git.js';
 import { createHarnessRoutes, type HarnessRouterDeps } from '../routes/harness.js';
 import { createHealthRoutes, type HealthRouteDeps } from '../routes/health.js';
@@ -45,6 +47,7 @@ import keepAwakeRoutes from '../routes/keep-awake.js';
 import modelRoutes from '../routes/models.js';
 import { createNotificationsRoutes } from '../routes/notifications.js';
 import { createPermissionsRoutes, type PermissionsRouterDeps } from '../routes/permissions.js';
+import { createProfileRouter, type ProfileRouterDeps } from '../routes/profile.js';
 import projectRoutes from '../routes/projects.js';
 import { createPushRoutes, type PushRouterDeps } from '../routes/push.js';
 import readCursorRoutes from '../routes/read-cursors.js';
@@ -55,6 +58,8 @@ import subagentRoutes from '../routes/subagents.js';
 import { createSystemRoutes, type SystemRouteDeps } from '../routes/system.js';
 import { createTeamRoutes, type TeamRouterDeps } from '../routes/team.js';
 import { createTemplateRoutes } from '../routes/templates.js';
+import uploadRoutes from '../routes/uploads.js';
+import workbenchServeRoutes from '../routes/workbench-serve.js';
 import workspaceRoutes from '../routes/workspaces.js';
 
 /**
@@ -101,6 +106,8 @@ export interface ComposedGroupDeps {
   permissions?: PermissionsRouterDeps;
   /** Pausing an agent everywhere (`/api/agents/pauses`, `/api/agents/:id/{pause,resume}`). */
   agentPause?: AgentPauseRouterDeps;
+  /** The operator's photo and name (`/api/profile`). */
+  profile?: ProfileRouterDeps;
 }
 
 /** What the moved route groups read from the running server, handed over by `index.ts`. */
@@ -145,6 +152,10 @@ export function createHonoApi(options: HonoApiOptions): Hono<ApiEnv> {
   app.route('/api/workspaces', workspaceRoutes);
   app.route('/api/projects', projectRoutes);
   app.route('/api/read-cursors', readCursorRoutes);
+  app.route('/api/files', fileRoutes);
+  app.route('/api/diff', diffRoutes);
+  app.route('/api/workbench', workbenchServeRoutes);
+  app.route('/api/uploads', uploadRoutes);
   if (deps.sessionLocations) {
     app.route('/api/session-locations', createSessionLocationsRoutes(deps.sessionLocations));
   }
@@ -152,6 +163,7 @@ export function createHonoApi(options: HonoApiOptions): Hono<ApiEnv> {
   if (deps.harness) app.route('/api/harness', createHarnessRoutes(deps.harness));
   if (deps.shapes) app.route('/api/shapes', createShapesRoutes(deps.shapes));
   if (deps.team) app.route('/api/team', createTeamRoutes(deps.team));
+  if (deps.profile) app.route('/api/profile', createProfileRouter(deps.profile));
   if (deps.search) app.route('/api/search', createSearchRoutes(deps.search));
   if (deps.activity) app.route('/api/activity', createActivityRoutes(deps.activity));
   if (deps.audit) app.route('/api/audit', createAuditRoutes(deps.audit));

@@ -44,7 +44,7 @@ export function errorHandler(err: Error, req: Request, res: Response, next: Next
   // stream), the headers are sent and we can't write a JSON error body. Express 5
   // auto-forwards async rejections here, so a post-flush rejection would otherwise
   // throw ERR_HTTP_HEADERS_SENT — delegate to Express's default handler, which
-  // closes the socket. (Matches the inline guards in routes/uploads.ts, routes/mcp.ts.)
+  // closes the socket. (Matches the guards in http/send-file.ts, routes/mcp.ts.)
   if (res.headersSent) {
     next(err);
     return;

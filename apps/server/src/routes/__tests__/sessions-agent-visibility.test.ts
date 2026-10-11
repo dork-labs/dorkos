@@ -67,6 +67,7 @@ import request from '@dorkos/test-utils/supertest';
 import { createTestDb } from '@dorkos/test-utils/db';
 import { listeningServer } from '@dorkos/test-utils/listening-server';
 import { createApp, finalizeApp } from '../../app.js';
+import { composedListener } from '../../http/__tests__/composed-listener.js';
 import {
   initSessionVisibility,
   resetSessionVisibility,
@@ -82,9 +83,11 @@ import {
 import { resetMessageDispatcher } from '../../services/session/message-dispatcher.js';
 import { recordDispatchStart } from '../../services/observability/dispatch-buffers.js';
 
-const app = createApp({ admission: new MainRequestAdmission() });
+const admission = new MainRequestAdmission();
+const app = createApp({ admission });
 finalizeApp(app);
-const server = listeningServer(app);
+// Routed as the running server routes: the diff routes answer from Hono.
+const server = listeningServer(composedListener(app, admission));
 
 /** A person's own chat in the app. */
 const PRIVATE = '00000000-0000-4000-8000-0000000000a1';

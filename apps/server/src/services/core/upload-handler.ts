@@ -1,7 +1,7 @@
-import multer from 'multer';
 import path from 'path';
 import { randomUUID } from 'crypto';
 import fs from 'fs/promises';
+import type { ParseUploadsOptions } from '../../http/uploads.js';
 
 /** Sanitize a filename: strip path components, replace unsafe chars, add UUID prefix. */
 function sanitizeFilename(original: string): string {
@@ -16,9 +16,12 @@ interface UploadConfig {
   allowedTypes: string[];
 }
 
+/** The form field `POST /api/uploads` reads files from. */
+const UPLOAD_FIELD = 'files';
+
 /**
- * Manages disk storage, filename sanitization, and multer middleware configuration
- * for file uploads.
+ * Manages disk storage, filename sanitization, and the upload parser's
+ * options for file uploads.
  *
  * Files are stored in `{cwd}/.dork/.temp/uploads/` with sanitized filenames
  * that include a UUID prefix to prevent collisions.
@@ -36,37 +39,24 @@ class UploadHandler {
     return dir;
   }
 
-  /** Create a multer middleware instance with dynamic config. */
-  createMulterMiddleware(cwd: string, config: UploadConfig) {
-    const uploadDir = this.getUploadDir(cwd);
-
-    const storage = multer.diskStorage({
-      destination: (_req, _file, cb) => {
-        fs.mkdir(uploadDir, { recursive: true })
-          .then(() => cb(null, uploadDir))
-          .catch((err) => cb(err, uploadDir));
+  /**
+   * The parser options for one upload into `cwd`, from the user's upload
+   * config: the `files` field, its size and count limits, the type allowlist,
+   * and disk storage under sanitized names. `parseUploads` (`http/uploads.ts`)
+   * reads the body with them.
+   */
+  uploadOptions(cwd: string, config: UploadConfig): ParseUploadsOptions {
+    return {
+      field: UPLOAD_FIELD,
+      maxCount: config.maxFiles,
+      limits: { fileSize: config.maxFileSize, files: config.maxFiles },
+      filter: (file) => {
+        if (config.allowedTypes.includes('*/*')) return undefined;
+        if (config.allowedTypes.includes(file.mimetype)) return undefined;
+        return new Error(`File type not allowed: ${file.mimetype}`);
       },
-      filename: (_req, file, cb) => {
-        cb(null, sanitizeFilename(file.originalname));
-      },
-    });
-
-    return multer({
-      storage,
-      limits: {
-        fileSize: config.maxFileSize,
-        files: config.maxFiles,
-      },
-      fileFilter: (_req, file, cb) => {
-        if (config.allowedTypes.includes('*/*')) {
-          return cb(null, true);
-        }
-        if (config.allowedTypes.includes(file.mimetype)) {
-          return cb(null, true);
-        }
-        cb(new Error(`File type not allowed: ${file.mimetype}`));
-      },
-    });
+      disk: { directory: this.getUploadDir(cwd), filename: sanitizeFilename },
+    };
   }
 }
 

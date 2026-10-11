@@ -256,7 +256,6 @@ import { managedRemoteCoordinator } from './services/core/remote/managed-remote-
 import { managedRemoteCommands } from './services/core/remote/managed-command-service.js';
 import { autostartOwnTunnel, currentRemoteBootPlan } from './services/core/remote/remote-boot.js';
 import { titleForMcpTool } from './services/core/mcp-tool-tiers.js';
-import { createProfileRouter } from './routes/profile.js';
 import { resolveCaller } from './routes/room-caller.js';
 import { LocalAvatarStore } from './services/identity/local-avatar-store.js';
 import { LocalRoomAttachmentStore } from './services/rooms/attachments/local-room-attachment-store.js';
@@ -4355,27 +4354,25 @@ async function start() {
   // The operator's own profile — their photo and their name (spec
   // `identity-consistency` §W3.3, §W3.5). The store is chosen HERE and nowhere
   // else: the router depends on the `AvatarStore` interface, so the day photos
-  // live somewhere other than this machine, this line is what changes.
-  app.use(
-    '/api/profile',
-    createProfileRouter({
-      avatars: new LocalAvatarStore(dorkHome),
-      caller: (req, res) => resolveCaller(req, res),
-      authors: roomAuthors,
-      ownerAccount: () => readOwnerAccount(),
-      setAccountImage: (userId, imageUrl) => setUserImage(userId, imageUrl),
-      setAccountName: (userId, name) => setUserName(userId, name),
-      setProfileDisplayName: (displayName, source) => {
-        const before = configManager.get('profile');
-        // The name and the record of who wrote it go in ONE write, so no reader
-        // can catch the new name still carrying the previous writer's stamp.
-        // `set` rather than two `setDot`s for exactly that reason (DOR-1022);
-        // WHICH source is the route's call, not this line's.
-        configManager.set('profile', { ...before, displayName, displayNameSource: source });
-        logConfigWrite('the profile route', 'profile', before, configManager.get('profile'));
-      },
-    })
-  );
+  // live somewhere other than this machine, this line is what changes. Served
+  // from the Hono `/api` app (`http/hono-api.ts`), which reads this.
+  deps.profile = {
+    avatars: new LocalAvatarStore(dorkHome),
+    caller: (request) => resolveCaller(request),
+    authors: roomAuthors,
+    ownerAccount: () => readOwnerAccount(),
+    setAccountImage: (userId, imageUrl) => setUserImage(userId, imageUrl),
+    setAccountName: (userId, name) => setUserName(userId, name),
+    setProfileDisplayName: (displayName, source) => {
+      const before = configManager.get('profile');
+      // The name and the record of who wrote it go in ONE write, so no reader
+      // can catch the new name still carrying the previous writer's stamp.
+      // `set` rather than two `setDot`s for exactly that reason (DOR-1022);
+      // WHICH source is the route's call, not this line's.
+      configManager.set('profile', { ...before, displayName, displayNameSource: source });
+      logConfigWrite('the profile route', 'profile', before, configManager.get('profile'));
+    },
+  };
 
   // Message search — "where did we talk about X", over the derived index the
   // reconciler above keeps caught up (message-search spec §6, §7). Always

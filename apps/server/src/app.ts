@@ -6,9 +6,6 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import sessionRoutes from './routes/sessions.js';
 import configRoutes from './routes/config.js';
-import fileRoutes from './routes/files.js';
-import diffRoutes from './routes/diff.js';
-import workbenchServeRoutes from './routes/workbench-serve.js';
 import roomRoutes from './routes/rooms.js';
 import canvasDocEventRoutes, { canvasDocJsonParser } from './routes/canvas-doc-events.js';
 import { createCommunityConnectionsRouter } from './routes/community-connections.js';
@@ -20,7 +17,6 @@ import cloudRoutes from './routes/cloud.js';
 import onboardingRoutes from './routes/onboarding.js';
 import feedbackRoutes, { feedbackJsonParser } from './routes/feedback.js';
 import runtimesRoutes from './routes/runtimes.js';
-import uploadRoutes from './routes/uploads.js';
 import mcpConfigRoutes from './routes/mcp-config.js';
 import debugRoutes from './routes/debug.js';
 import eventsRouter from './routes/events.js';
@@ -188,9 +184,6 @@ export function createApp(options: {
   // API routes
   app.use('/api/sessions', sessionRoutes);
   app.use('/api/config', configRoutes);
-  app.use('/api/files', fileRoutes);
-  app.use('/api/diff', diffRoutes);
-  app.use('/api/workbench', workbenchServeRoutes);
   app.use('/api/rooms', roomRoutes);
   app.use('/api/canvas/docs', canvasDocEventRoutes);
   // Spaces are an experiment, off by default (DOR-2740): both refuse until a
@@ -210,7 +203,6 @@ export function createApp(options: {
   app.use('/api/feedback', feedbackRoutes);
   app.use('/api/runtimes', runtimesRoutes);
   app.use('/api/events', eventsRouter);
-  app.use('/api/uploads', uploadRoutes);
   app.use('/api/mcp-config', mcpConfigRoutes);
   // Diagnostic reads (`GET /api/debug/*`). Mounted here rather than in
   // `index.ts` — it needs no singleton the composition root has to hand it, only

@@ -13,8 +13,7 @@
  *
  * @module server/routes/__tests__/profile-identity-link
  */
-import { describe, it, expect, beforeEach } from 'vitest';
-import express from 'express';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import request from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
 import { createTestDb } from '@dorkos/test-utils/db';
@@ -26,6 +25,13 @@ import {
 } from '../../services/rooms/author-registry.js';
 import type { AvatarStore } from '../../services/identity/avatar-store.js';
 import { createProfileRouter, type ProfileRouterDeps } from '../profile.js';
+import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
+
+// The routes are served through the `/api` chain, whose host guard and session
+// gate read the login setting: off, as on a fresh install.
+vi.mock('../../services/core/config-manager.js', () => ({
+  configManager: { get: vi.fn(() => undefined), set: vi.fn() },
+}));
 
 const OWNER_USER_ID = 'user-1';
 
@@ -56,22 +62,17 @@ describe('the operator claiming a platform identity', () => {
    * optional and off (ADR-0320) — where the `'local'` sentinel IS the owner.
    */
   function app(hasAccount = true, overrides: Partial<ProfileRouterDeps> = {}) {
-    const server = express();
-    server.use(express.json());
-    server.use(
-      '/api/profile',
-      createProfileRouter({
-        avatars: inertStore,
-        caller: () => ownerAuthor,
-        authors: registry,
-        ownerAccount: () => (hasAccount ? { id: OWNER_USER_ID } : null),
-        setAccountImage: () => {},
-        setAccountName: () => {},
-        setProfileDisplayName: () => {},
-        ...overrides,
-      })
-    );
-    return target.mount(server);
+    const profile = createProfileRouter({
+      avatars: inertStore,
+      caller: () => ownerAuthor,
+      authors: registry,
+      ownerAccount: () => (hasAccount ? { id: OWNER_USER_ID } : null),
+      setAccountImage: () => {},
+      setAccountName: () => {},
+      setProfileDisplayName: () => {},
+      ...overrides,
+    });
+    return target.mount(honoGroupListener({ path: '/api/profile', routes: profile }));
   }
 
   /** Whether the registry now reads that identity as the operator's own voice. */
