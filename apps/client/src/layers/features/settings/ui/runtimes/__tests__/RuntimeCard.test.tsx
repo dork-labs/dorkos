@@ -237,6 +237,85 @@ describe('RuntimeCard — write paths', () => {
     );
   });
 
+  /** A DorkOS card: its own config section, ready, with a saved setup status. */
+  async function renderDoeCard(status: Record<string, unknown>, model: string | null = null) {
+    const base = await createMockTransport().getCapabilities();
+    const codex = base.capabilities.codex!;
+    const doe = { ...codex, type: 'doe', settings: { ...codex.settings, configSection: 'doe' } };
+    return renderCard(
+      { type: 'doe' },
+      {
+        getConfig: vi.fn().mockResolvedValue(
+          makeConfig({
+            executionDefaults: {
+              runtime: 'claude-code',
+              trustStop: null,
+              perRuntime: [entry('doe', { model })],
+            },
+          })
+        ),
+        getCapabilities: vi
+          .fn()
+          .mockResolvedValue({ ...base, capabilities: { ...base.capabilities, doe } }),
+        checkRequirements: vi.fn().mockResolvedValue({
+          runtimes: { doe: { state: 'ready', dependencies: [] } },
+        }),
+        getDoeInference: vi.fn().mockResolvedValue({ hasKey: false, ...status }),
+        getDoeCreditsModels: vi.fn().mockResolvedValue({
+          endpoint: 'https://credits.example/anthropic',
+          models: [
+            { id: 'm-pick', displayName: 'Pick', contextWindow: 200_000, maxOutputTokens: 16_000 },
+          ],
+        }),
+      }
+    );
+  }
+
+  it('saves a DorkOS pick as a model preference, never as a payer, and clears it', async () => {
+    const { transport, updateConfig } = await renderDoeCard({
+      inference: null,
+      autoProtocol: 'anthropic-messages',
+    });
+    await expand('doe');
+    const select = await screen.findByTestId('runtime-model-select-doe');
+    await waitFor(() => expect(select).toHaveTextContent('Chosen by DorkOS'));
+    await waitFor(() => expect(select).toBeEnabled());
+    await userEvent.click(select);
+    await userEvent.click(await screen.findByRole('option', { name: 'Pick' }));
+    await waitFor(() =>
+      expect(updateConfig).toHaveBeenCalledWith({ runtimes: { doe: { defaultModel: 'm-pick' } } })
+    );
+    expect(transport.setDoeInference).not.toHaveBeenCalled();
+  });
+
+  it('hands a DorkOS pick back with Chosen by DorkOS', async () => {
+    const { transport, updateConfig } = await renderDoeCard(
+      { inference: null, autoProtocol: 'anthropic-messages' },
+      'm-pick'
+    );
+    await expand('doe');
+    const select = await screen.findByTestId('runtime-model-select-doe');
+    await waitFor(() => expect(select).toHaveTextContent('Pick'));
+    await waitFor(() => expect(select).toBeEnabled());
+    await userEvent.click(select);
+    await userEvent.click(await screen.findByRole('option', { name: 'Chosen by DorkOS' }));
+    await waitFor(() =>
+      expect(updateConfig).toHaveBeenCalledWith({ runtimes: { doe: { defaultModel: null } } })
+    );
+    expect(transport.setDoeInference).not.toHaveBeenCalled();
+  });
+
+  it('offers no DorkOS pick while credits are not in use, and says what to do', async () => {
+    await renderDoeCard({ inference: null, autoProtocol: null });
+    await expand('doe');
+    const select = await screen.findByTestId('runtime-model-select-doe');
+    await waitFor(() =>
+      expect(screen.getByText('Connect AI to choose a model.')).toBeInTheDocument()
+    );
+    expect(select).toBeDisabled();
+    expect(select).not.toHaveTextContent('Chosen by DorkOS');
+  });
+
   it('writes an effort into that same declared section', async () => {
     const { updateConfig } = renderCard();
     await expand();

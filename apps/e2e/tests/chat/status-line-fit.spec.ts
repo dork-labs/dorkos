@@ -271,9 +271,11 @@ test.describe('Chat — status line fits its row', () => {
         const statusLine = chatPage.page.locator('[data-testid="status-line"]');
         await expect(statusLine).toBeVisible();
 
-        // The model item always promotes, so it is the signal that the line has
-        // real content rather than an empty row that trivially fits.
-        await expect(chatPage.page.locator('[data-testid="status-item-model"]')).toBeVisible();
+        // The directory always promotes, so it is the signal that the line has
+        // real content rather than an empty row that trivially fits. (The model
+        // item used to be that signal; it shows only when pinned now, ADR
+        // 261010-143211.)
+        await expect(chatPage.page.locator('[data-testid="status-item-cwd"]')).toBeVisible();
         expectNoOverlap(await measureSettledStatusLines(chatPage.page));
 
         // The runtime item resolves from a second query; re-measure once it lands,
@@ -299,11 +301,13 @@ test.describe('Chat — status line fits its row', () => {
       // past any prediction — six more items carrying absurd values — to prove the
       // failure mode is a visible ellipsis and not silently unreachable content.
       const statusLine = chatPage.page.locator('[data-testid="status-line"]');
-      await expect(chatPage.page.locator('[data-testid="status-item-model"]')).toBeVisible();
+      // The runtime item is the right-cluster item a fresh chat promotes (it can
+      // still be chosen); the model item shows only when pinned.
+      await expect(chatPage.page.locator('[data-testid="status-item-runtime"]')).toBeVisible();
 
       const overflowingValues = await statusLine.evaluate((line) => {
         const rightCluster = line.children[1];
-        const template = rightCluster.querySelector('[data-testid="status-item-model"]');
+        const template = rightCluster.querySelector('[data-testid="status-item-runtime"]');
         if (!template) throw new Error('no right-cluster item to clone');
         for (let i = 0; i < 6; i++) {
           const clone = template.cloneNode(true) as HTMLElement;

@@ -298,7 +298,7 @@ export const HEALTHY: StatusScenario = {
     permissionMode: 'default',
     permissionDescriptor: null,
     plan: { active: false },
-    runtime: { isDefault: true, canSelect: false },
+    runtime: { type: 'claude-code', isDefault: true, canSelect: false },
     account: null,
     usage: USAGE_OK,
     subagentsInFlight: 0,
@@ -333,6 +333,21 @@ export const HEALTHY: StatusScenario = {
     waitingOnSubagents: false,
     connectionState: 'connected',
     extensions: NO_EXTENSION_ITEMS,
+  },
+  diagnostics: HEALTHY_DIAGNOSTICS,
+};
+
+/**
+ * A DorkOS chat at rest, before its first message: DorkOS picks the model and
+ * runs it, so neither the model nor Runs on is news (ADR 261010-143211).
+ */
+export const DOE_AT_REST: StatusScenario = {
+  label: 'DorkOS chat — DorkOS picks the model',
+  ctx: { ...HEALTHY.ctx, runtime: { type: 'doe', isDefault: true, canSelect: true } },
+  input: {
+    ...HEALTHY.input,
+    sessionId: 'showcase-doe',
+    runtimeChip: { ...DEFAULT_RUNTIME_CHIP, runtime: 'doe', model: null, canSelect: true },
   },
   diagnostics: HEALTHY_DIAGNOSTICS,
 };
@@ -390,7 +405,7 @@ export const DEGRADED: StatusScenario = {
         'Edits files and runs commands on its own, including outside this project. It will not stop to ask you.',
     },
     plan: null,
-    runtime: { isDefault: false, canSelect: false },
+    runtime: { type: 'codex', isDefault: false, canSelect: false },
     account: null,
     usage: USAGE_WARNING,
     subagentsInFlight: RUNNING_SUBAGENTS.length,
@@ -439,7 +454,7 @@ export const DEGRADED: StatusScenario = {
  */
 export const DEGRADED_ON_DEFAULT: StatusScenario = {
   label: 'Degraded on the default runtime — the longest permission label DorkOS ships',
-  ctx: { ...DEGRADED.ctx, runtime: { isDefault: true, canSelect: false } },
+  ctx: { ...DEGRADED.ctx, runtime: { type: 'claude-code', isDefault: true, canSelect: false } },
   input: {
     ...DEGRADED.input,
     sessionId: 'showcase-degraded-default',
@@ -525,7 +540,7 @@ export const DELEGATING: StatusScenario = {
     permissionMode: 'default',
     permissionDescriptor: null,
     plan: { active: false },
-    runtime: { isDefault: true, canSelect: false },
+    runtime: { type: 'claude-code', isDefault: true, canSelect: false },
     account: null,
     usage: USAGE_OK,
   },
@@ -588,7 +603,7 @@ export const PLANNING: StatusScenario = {
     permissionMode: 'plan',
     permissionDescriptor: PLAN_MODE,
     plan: { active: true },
-    runtime: { isDefault: true, canSelect: false },
+    runtime: { type: 'claude-code', isDefault: true, canSelect: false },
     account: null,
     usage: USAGE_OK,
     subagentsInFlight: 0,

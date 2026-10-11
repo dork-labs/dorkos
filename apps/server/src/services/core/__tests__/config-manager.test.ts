@@ -66,6 +66,7 @@ import {
   seedDisplayNameSourceDefault,
   seedIdentityPromptDismissedDefault,
   seedWorkingHoursDefaults,
+  seedDoeDefaultModel,
   seedFirstRunOnboardingLeaves,
   seedHarnessAutoAdopt,
   seedHarnessGlobal,
@@ -97,7 +98,7 @@ import { execSync } from 'child_process';
  * effortless-runtime-switching T1 credential fields + claude-code-accounts).
  */
 const RUNTIMES_DEFAULTS = {
-  doe: { enabled: true, inference: null, defaultTrustStop: null },
+  doe: { enabled: true, inference: null, defaultModel: null, defaultTrustStop: null },
   environment: { inherit: { claudeCode: [], codex: [], opencode: [], doe: [] } },
   default: 'claude-code',
   defaultTrustStop: null,
@@ -1739,6 +1740,66 @@ describe('seedFirstRunOnboardingLeaves migration (DOR-2783)', () => {
     }
   });
 });
+
+describe('seedDoeDefaultModel migration (DOR-2784)', () => {
+  it('reserves the leaf on a `runtimes.doe` block that predates it', () => {
+    const store = createMockStore({
+      'runtimes.doe': { enabled: true, inference: null, defaultTrustStop: null },
+    });
+    seedDoeDefaultModel(store);
+    expect(store.data['runtimes.doe']).toEqual({
+      enabled: true,
+      inference: null,
+      defaultModel: null,
+      defaultTrustStop: null,
+    });
+  });
+
+  it('keeps a model a person already picked, and writes nothing (idempotent)', () => {
+    const store = createMockStore({ 'runtimes.doe': { enabled: true, defaultModel: 'md-a' } });
+    seedDoeDefaultModel(store);
+    expect(store.writes).toEqual([]);
+    expect(store.data['runtimes.doe']).toEqual({ enabled: true, defaultModel: 'md-a' });
+  });
+
+  it('a real pre-0.109.0 config file gains the leaf on disk (full conf path)', () => {
+    const dir = path.join(os.tmpdir(), 'test-dork-doe-default-model-mig-' + Date.now());
+    const cfgPath = path.join(dir, 'config.json');
+    fs.mkdirSync(dir, { recursive: true });
+    try {
+      fs.writeFileSync(
+        cfgPath,
+        JSON.stringify({
+          version: 1,
+          runtimes: {
+            ...USER_CONFIG_DEFAULTS.runtimes,
+            doe: { enabled: true, inference: null, defaultTrustStop: 'act' },
+          },
+          __internal__: { migrations: { version: '0.108.0' } },
+        }),
+        'utf-8'
+      );
+      new Conf({
+        configName: 'config',
+        cwd: dir,
+        schema: CONF_JSON_SCHEMA as unknown as Schema<Record<string, unknown>>,
+        defaults: USER_CONFIG_DEFAULTS,
+        clearInvalidConfig: false,
+        projectVersion: '0.109.0',
+        migrations: CONFIG_MIGRATIONS,
+      });
+      const onDisk = JSON.parse(fs.readFileSync(cfgPath, 'utf-8')) as {
+        runtimes: { doe: Record<string, unknown> };
+      };
+      expect(onDisk.runtimes.doe).toHaveProperty('defaultModel', null);
+      expect(onDisk.runtimes.doe.defaultTrustStop).toBe('act');
+      expect(() => UserConfigSchema.parse(onDisk)).not.toThrow();
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
 
 describe('seedDisplayNameSourceDefault migration (DOR-1022)', () => {
   it('reserves the leaf on a `profile` block that predates it', () => {
@@ -4217,7 +4278,7 @@ describe('CONFIG_MIGRATIONS append-only pins (DOR-1222 regression guard)', () =>
     // pass this having scanned nothing. The count is the knowable bound; the
     // table is append-only, so raising it is the deliberate act of adding a
     // migration, which is exactly when this check should be re-read.
-    expect(Object.keys(bodies)).toHaveLength(50);
+    expect(Object.keys(bodies)).toHaveLength(51);
 
     const reaching = Object.keys(bodies).filter((key) =>
       reachedDeclarations(bodies[key]!, pool).includes('describeLoadError')

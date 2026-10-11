@@ -794,6 +794,7 @@ export const CONFIG_WRITE_POLICY = {
   'runtimes.codex.defaultModel': 'agent-writable',
   'runtimes.codex.defaultEffort': 'agent-writable',
   'runtimes.doe.enabled': 'agent-writable',
+  'runtimes.doe.defaultModel': 'agent-writable',
   'runtimes.doe.inference.source': 'operator-only',
   'runtimes.doe.inference.provider': 'operator-only',
   'runtimes.doe.inference.protocol': 'operator-only',

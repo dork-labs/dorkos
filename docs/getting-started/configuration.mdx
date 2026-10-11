@@ -808,6 +808,12 @@ With `autonomy`, every new chat starts with the approval prompts turned off, so 
       type: '"ask" | "act" | "autonomy" | null',
       default: 'null',
     },
+    'runtimes.doe.defaultModel': {
+      description:
+        'The model a new DorkOS chat on DorkOS credits starts on, when your credits cover it. When `null`, DorkOS picks. This never changes what pays for a chat.',
+      type: 'string | null',
+      default: 'null',
+    },
     'runtimes.codex.defaultModel': {
       description:
         'The model a new Codex chat starts on. When `null`, Codex picks. Chats you already have are not changed.',

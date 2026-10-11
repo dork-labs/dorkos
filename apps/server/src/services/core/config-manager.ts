@@ -3828,6 +3828,27 @@ export function seedDoeRuntime(store: {
 }
 
 /**
+ * Migration body: seed `runtimes.doe.defaultModel: null` (DOR-2784) — the
+ * model new DorkOS chats prefer on credits; `null` means DorkOS picks.
+ *
+ * **The mechanism, not an anchor**: a nested leaf inside `runtimes.doe`, which
+ * the `'0.101.0'` key already wrote without it, and conf's pre-migration merge
+ * is shallow. Absence is tested with `in`, so a stored `null` or a person's
+ * pick is never rewritten on a corrupt-recovery re-run.
+ *
+ * @internal Exported for testing only.
+ * @param store - The `conf` store instance (provides `get`/`set`).
+ */
+export function seedDoeDefaultModel(store: {
+  get: (key: string) => unknown;
+  set: (key: string, value: unknown) => void;
+}): void {
+  const doe = store.get('runtimes.doe');
+  if (doe == null || typeof doe !== 'object' || 'defaultModel' in doe) return;
+  store.set('runtimes.doe', { ...doe, defaultModel: null });
+}
+
+/**
  * Raise the engaged window from the old shipped defaults to the new ones
  * (DOR-2823): 10 minutes to 60, and 5 messages to 15.
  *
@@ -4858,6 +4879,13 @@ export const CONFIG_MIGRATIONS = {
   // Disjoint from every other key here: it adds three nested leaves under
   // `onboarding`, beside the fields it preserves.
   '0.108.0': seedFirstRunOnboardingLeaves,
+  // v0.103.0 is the newest tag and 0.108.0 has merged (first-run onboarding
+  // above), so this opens 0.109.0. Frozen from merge, for the reason `'0.60.0'`
+  // above states; anything further opens `'0.110.0'`.
+  //
+  // Disjoint from every other key here: it adds one nested leaf under
+  // `runtimes.doe`, beside the fields it preserves.
+  '0.109.0': seedDoeDefaultModel,
 } as const;
 
 /**

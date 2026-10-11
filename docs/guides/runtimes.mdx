@@ -34,7 +34,7 @@ Choose what pays for model requests:
 
 - **Your API key:** choose a service, request format, endpoint and model. Enter your key here; the app stores an encrypted reference. Anthropic subscription tokens are refused.
 - **Local model:** enter your running model server's HTTP loopback address and model name. No key is needed. Ollama and LM Studio can serve compatible models.
-- **DorkOS credits:** link this computer to a DorkOS account, then choose a request format and an available model. A missing link, token, format or model stops the request.
+- **DorkOS credits:** link this computer to a DorkOS account. There is nothing else to set up: DorkOS picks the model for each new chat. To choose one yourself, open the DorkOS card's **Model** row. **Chosen by DorkOS** hands the choice back. If your account has no model DorkOS can use, the chat stops with a message instead of paying some other way.
 
 For a custom or local model, enter its context limit and maximum reply size in tokens.
 The request format must match the service: Anthropic Messages, OpenAI Chat Completions or OpenAI Responses.
@@ -295,7 +295,7 @@ Two more settings apply to every account. **When an account runs out** is either
 Every chat wears its runtime openly:
 
 - **Chat list**: rows carry a small runtime mark next to the title.
-- **Chat status line**: the runtime chip names the active runtime whenever it isn't your usual one, and always before the first message so you can still change it. Otherwise it's one row in the **Chat details** panel behind the `⋯`, where you can pin it to keep it in view.
+- **Chat status line**: the runtime chip names the active runtime whenever it isn't your usual one, and before the first message so you can still change it. A DorkOS chat doesn't show it there. Otherwise it's one row in the **Chat details** panel behind the `⋯`, where you can pin it to keep it in view. The model works the same way: it shows only once you pin it.
 - **Agent profile**: the **Runs on** row names the runtime, and agent cards badge it.
 
 ## Local Models with OpenCode

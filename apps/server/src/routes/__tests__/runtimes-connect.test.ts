@@ -1003,7 +1003,7 @@ describe('DorkOS inference setup', () => {
     vi.mocked(configManager.get).mockImplementation((key) => config[key] as never);
     const response = await request(server).get('/api/runtimes/doe/inference');
     expect(response.status).toBe(200);
-    expect(response.body).toEqual({ inference, hasKey: true });
+    expect(response.body).toEqual({ inference, hasKey: true, autoProtocol: null });
     expect(response.text).not.toContain('PRIVATE_TEST_KEY');
   });
   it('preserves a same-endpoint key on metadata changes and drops it on an endpoint change', async () => {

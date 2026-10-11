@@ -66,6 +66,27 @@ describe('ModelRow', () => {
     expect(screen.getByTestId('runtime-model-select-claude-code')).toHaveTextContent('Automatic');
   });
 
+  it('calls the no-default option by the name its runtime gives it', async () => {
+    const { onChange } = renderRow({
+      runtimeType: 'doe',
+      value: 'haiku',
+      inheritLabel: 'Chosen by DorkOS',
+      description: 'Which model new chats start on.',
+    });
+    expect(screen.getByText('Which model new chats start on.')).toBeInTheDocument();
+    await userEvent.click(screen.getByTestId('runtime-model-select-doe'));
+    await userEvent.click(await screen.findByRole('option', { name: 'Chosen by DorkOS' }));
+    expect(onChange).toHaveBeenCalledWith(null);
+  });
+
+  it('stacks its sentence above the menu, so a phone never squeezes it into a column', () => {
+    renderRow();
+    const field = screen
+      .getByTestId('runtime-model-select-claude-code')
+      .closest('[data-orientation]');
+    expect(field).toHaveAttribute('data-orientation', 'vertical');
+  });
+
   it('reports a catalog pick by its model id', async () => {
     const { onChange } = renderRow();
     await userEvent.click(screen.getByTestId('runtime-model-select-claude-code'));

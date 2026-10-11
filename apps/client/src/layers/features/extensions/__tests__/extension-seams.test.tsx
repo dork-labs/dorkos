@@ -251,7 +251,7 @@ describe('registerStatusBarItem (§6.6)', () => {
     return selectPromotedItems({
       ctx: quietContext(evaluated.promotion),
       pins: [],
-      nodes: { extensions: evaluated.visible.length > 0 ? 'node' : undefined, model: 'm' },
+      nodes: { extensions: evaluated.visible.length > 0 ? 'node' : undefined, agent: 'a' },
     }).map((item) => item.key);
   }
 
@@ -275,7 +275,8 @@ describe('registerStatusBarItem (§6.6)', () => {
       },
     });
 
-    expect(promotedKeys()).toEqual(['model']);
+    // The agent always shows, so the bar is still there.
+    expect(promotedKeys()).toEqual(['agent']);
   });
 
   it('an urgent item wins a contested slot, and a quiet one gives it up', () => {

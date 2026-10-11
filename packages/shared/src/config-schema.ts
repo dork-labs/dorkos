@@ -2296,11 +2296,11 @@ export const DoeRuntimeSettingsSchema = z
   .object({
     enabled: z.boolean().default(true),
     inference: DoeInferenceConfigSchema.nullable().default(null),
+    /** Model new chats prefer on credits, when served; `null` = DorkOS picks. */
+    defaultModel: DefaultModelSchema,
     defaultTrustStop: DefaultTrustStopSchema,
   })
-  .default(() => ({ enabled: true, inference: null, defaultTrustStop: null }));
-/** Parsed DorkOS runtime settings. */
-export type DoeRuntimeSettings = z.infer<typeof DoeRuntimeSettingsSchema>;
+  .default(() => ({ enabled: true, inference: null, defaultModel: null, defaultTrustStop: null }));
 
 export const UserConfigSchema = z.object({
   version: z.literal(1),
@@ -3568,7 +3568,7 @@ export const UserConfigSchema = z.object({
       environment: { inherit: { claudeCode: [], codex: [], opencode: [], doe: [] } },
       default: 'claude-code',
       defaultTrustStop: null,
-      doe: { enabled: true, inference: null, defaultTrustStop: null },
+      doe: { enabled: true, inference: null, defaultModel: null, defaultTrustStop: null },
       claudeCode: {
         defaultAccount: null,
         accounts: [],

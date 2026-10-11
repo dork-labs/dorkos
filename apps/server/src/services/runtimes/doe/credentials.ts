@@ -7,7 +7,11 @@ import { RUNTIME_CREDITS_PROTOCOLS, type RuntimeCapabilities } from '@dorkos/sha
 import { credentialProvider, type CredentialProvider } from '../../core/credential-provider.js';
 import { configManager } from '../../core/config-manager.js';
 import { heldCreditsToken, resolveCreditsLaunch } from '../../core/cloud/credits-inference.js';
-import { creditsModelsFor, peekCreditsModelsFor } from '../../core/cloud/credits-models.js';
+import {
+  baseModelId,
+  creditsModelsFor,
+  peekCreditsModelsFor,
+} from '../../core/cloud/credits-models.js';
 import {
   creditsFormatOf,
   creditsProtocolServed,
@@ -124,11 +128,14 @@ export async function resolveDoeInference(
     deps.credits ??
     ((protocol) => resolveCreditsLaunch(capabilities, 'DorkOS', undefined, protocol));
   const models = await (deps.creditsModels ?? creditsModelsFor)(config.protocol);
-  const model = models.find((candidate) => candidate.id === config.model);
+  // By base id: a `[1m]` variant names the same model, and the request carries
+  // the catalog's own id.
+  const model = models.find((candidate) => baseModelId(candidate.id) === baseModelId(config.model));
   if (!model) throw new CreditsUnavailableError('no-models', 'DorkOS');
   const first = await launch(config.protocol);
   const metadata = {
     ...config,
+    model: model.id,
     endpoint: first.baseUrl,
     contextWindow: model.contextWindow,
     maxOutputTokens: model.maxOutputTokens,
