@@ -67,6 +67,20 @@ function tokens(value: unknown): number {
   return typeof value === 'number' && Number.isFinite(value) ? value : 0;
 }
 
+/**
+ * The checks one beat row's `triage` column records, and their tokens.
+ *
+ * @param raw - The column.
+ */
+export function checksInBeat(raw: string | null): ChecksToday {
+  let tokensUsed = 0;
+  const steps = sentSteps(raw);
+  for (const step of steps) {
+    tokensUsed += tokens(step.usage?.inputTokens) + tokens(step.usage?.outputTokens);
+  }
+  return { checks: steps.length, tokens: tokensUsed };
+}
+
 /** A little over a day back, so every beat of any zone's today is read. */
 const LOOKBACK_MS = 50 * 60 * 60 * 1000;
 
@@ -94,10 +108,9 @@ export function checksToday(db: Db, agentId: string, now: Date, timezone: string
   let used = 0;
   for (const row of rows) {
     if (zonedDay(new Date(row.startedAt), timezone) !== today) continue;
-    for (const step of sentSteps(row.triage)) {
-      checks += 1;
-      used += tokens(step.usage?.inputTokens) + tokens(step.usage?.outputTokens);
-    }
+    const beat = checksInBeat(row.triage);
+    checks += beat.checks;
+    used += beat.tokens;
   }
   return { checks, tokens: used };
 }

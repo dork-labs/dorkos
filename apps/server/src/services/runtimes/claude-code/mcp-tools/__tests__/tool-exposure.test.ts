@@ -482,8 +482,10 @@ describe('in-session tool exposure', () => {
     // emergency stop is a deliberate step a turn can search for.
     // 128 -> 129 for `end_beat` (spec `heartbeats` §8), DEFERRED: only a beat
     // turn calls it, and the beat prompt names it so that turn can search.
-    expect(tools).toHaveLength(129);
-    expect(deferred).toHaveLength(118);
+    // 129 -> 130 for `heartbeat_status` (spec `heartbeats` §10 PR 6), DEFERRED:
+    // reading an agent's heartbeat is a deliberate step a turn can search for.
+    expect(tools).toHaveLength(130);
+    expect(deferred).toHaveLength(119);
     for (const name of [
       'configure_doc_channel',
       'approve_doc_route',

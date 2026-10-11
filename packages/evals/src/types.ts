@@ -272,6 +272,11 @@ export type CostClass = z.infer<typeof CostClassSchema>;
  * its own for the same money reason `rooms` is: `core` is run credentialed by
  * `pnpm evals:local`, and these cases are meant to be pointed at a chosen
  * runtime with `--runtime`, not swept up by a default local run.
+ *
+ * `heartbeat` is canon PROACTIVE-AGENTS §6.3's four seeded beat situations
+ * (DOR-2788): given a real beat prompt, does the agent pick the right move and
+ * the right rung? Credentialed and quarantined, every one, so like `memory` it
+ * spends only when somebody selects it.
  */
 export const EvalTagSchema = z.enum([
   'smoke',
@@ -281,6 +286,7 @@ export const EvalTagSchema = z.enum([
   'rooms',
   'memory',
   'chat',
+  'heartbeat',
 ]);
 
 /** Inferred type for {@link EvalTagSchema}. */

@@ -339,6 +339,86 @@ export const HeartbeatChecksSchema = z
 /** Where an agent's cheap checks run, and what they used today. */
 export type HeartbeatChecks = z.infer<typeof HeartbeatChecksSchema>;
 
+/**
+ * One measured share (spec §13): `part` of `whole`, beside canon §6.1's
+ * starting target. The target is a bet to compare against, never a grade.
+ */
+export const MeasureRateSchema = z
+  .object({
+    /** `part ÷ whole`, from 0 to 1, or null when there was nothing to count. */
+    value: z.number().nullable(),
+    part: z.number().int(),
+    whole: z.number().int(),
+    /** The starting target, in words ("95% or more"). */
+    target: z.string(),
+    /** What it is counted from, in one plain line. */
+    source: z.string(),
+  })
+  .openapi('MeasureRate');
+
+/** One measured share. */
+export type MeasureRate = z.infer<typeof MeasureRateSchema>;
+
+/**
+ * Whether an agent's work on its own helped, over a window (spec §13, canon
+ * §6). Computed on read from the beat record, the outbox, commitments and the
+ * audit trail; nothing comes from the agent's own account of itself.
+ */
+export const HeartbeatMeasuresSchema = z
+  .object({
+    /** How many days back it counts. */
+    windowDays: z.number().int(),
+    /** Where the window starts (ISO 8601). */
+    since: z.string(),
+    /** Beat turns that acted and were not undone within 7 days. */
+    keptRate: MeasureRateSchema,
+    /** Raises to people answered or reacted to (not 👎) within 48 hours. */
+    usefulRaiseRate: MeasureRateSchema,
+    /** Messages that reached people ÷ (kept actions + useful raises). */
+    interruptions: z.object({
+      /** The ratio, or null when there was no useful outcome to divide by. */
+      value: z.number().nullable(),
+      messages: z.number().int(),
+      usefulOutcomes: z.number().int(),
+      target: z.string(),
+      source: z.string(),
+    }),
+    /** Not computed in v1: it needs the manager to say so. */
+    surprises: z.object({ measured: z.literal(false), source: z.string() }),
+    /** Times a person paused it, switched its heartbeat off, or muted it. */
+    mutesAndPauses: z.object({
+      total: z.number().int(),
+      pauses: z.number().int(),
+      wakeOff: z.number().int(),
+      mutes: z.number().int(),
+      target: z.string(),
+      source: z.string(),
+    }),
+    /** Canon §6.2's supporting measures that the record can answer today. */
+    supporting: z.object({
+      /** Beats that ran (not skipped) in the window. */
+      beats: z.number().int(),
+      /** Beats that ended with nothing raised. */
+      quietBeats: MeasureRateSchema,
+      /** Promises that came due in the window and were kept by their date. */
+      commitmentsOnTime: MeasureRateSchema,
+      /** Beat turns that ended without `end_beat`. */
+      noEndBeat: z.number().int(),
+      /** Cheap checks on a decision model, and their tokens. */
+      triage: z.object({ checks: z.number().int(), tokens: z.number().int() }),
+      /** Beat turns, and tokens per turn where the runtime reported them (else null). */
+      turns: z.object({ count: z.number().int(), tokensPerTurn: z.number().nullable() }),
+      /** Room posts and notes its beat turns made around `end_beat`. */
+      bypass: z.number().int(),
+      /** Messages to people still held for their hours. */
+      held: z.number().int(),
+    }),
+  })
+  .openapi('HeartbeatMeasures');
+
+/** Whether an agent's work on its own helped. */
+export type HeartbeatMeasures = z.infer<typeof HeartbeatMeasuresSchema>;
+
 /** The answer to `PUT /api/heartbeats/triage-credits`: a person's answer to the offer. */
 export const TriageCreditsChoiceSchema = z
   .object({
@@ -375,6 +455,8 @@ export const HeartbeatStatusSchema = z
     report: HeartbeatReportStatusSchema,
     /** Where its cheap checks run, and what they used today. */
     checks: HeartbeatChecksSchema,
+    /** Whether its work on its own helped, over the last 7 days (spec §13). */
+    measures: HeartbeatMeasuresSchema,
   })
   .openapi('HeartbeatStatus');
 

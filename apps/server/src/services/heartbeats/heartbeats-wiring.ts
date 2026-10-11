@@ -43,6 +43,8 @@ import { EventWakes, wakeAgent } from './event-wakes.js';
 import { systemClock } from './beat-scheduler.js';
 import { heartbeatStatus } from './heartbeat-status.js';
 import { setRaiseRecipientCheck } from './heartbeat-capabilities.js';
+import { measureAgent } from './measures/measures.js';
+import { setHeartbeatStatusReader } from './measures/status-capability.js';
 import { mountTriage, type TriageMount } from './triage/triage-mount.js';
 import {
   beatChatResolver,
@@ -263,6 +265,7 @@ export function startHeartbeats(deps: HeartbeatsWiringDeps): HeartbeatsHandle {
       stopFollowing();
       triage.stop();
       setRaiseRecipientCheck(undefined);
+      setHeartbeatStatusReader(undefined);
       hub.uninstall();
       outbox.stop();
       runner.stop();
@@ -321,7 +324,8 @@ function follow(
 }
 
 /**
- * Mount the status route and the chat list's "Heartbeat" label.
+ * Mount the status route, the chat list's "Heartbeat" label, and what
+ * `heartbeat_status` reads.
  *
  * @param deps - What the composition root handed over.
  * @param parts - What the status reads.
@@ -339,25 +343,40 @@ function mountStatus(
   }
 ): void {
   deps.app.locals.resolveBeatChats = beatChatResolver(deps.db);
+  const isAgent = (id: string) => deps.meshCore()?.get(id) !== undefined;
+  const status = (agentId: string, viewerIsOwner: boolean, days?: number) =>
+    heartbeatStatus({
+      agent: parts.agents.get(agentId),
+      store: parts.store,
+      raises: parts.raises,
+      managerOf: parts.managerOf,
+      runner: parts.runner,
+      enabled: parts.enabled(),
+      runtimeRegistered: (runtime) => runtimeRegistry.has(runtime),
+      isAgent,
+      viewerIsOwner,
+      checks: (agent, owner) => parts.triage.checks(agent, owner),
+      measures: (agent) =>
+        measureAgent(deps.db, {
+          agentId: agent.id,
+          agentPath: agent.projectPath,
+          isAgent,
+          now: Date.now(),
+          ...(days !== undefined ? { days } : {}),
+        }),
+    });
   deps.app.use(
     '/api/agents/:id/heartbeat',
     createHeartbeatRouter({
       isOwner: (req, res) => refuseUnlessAccountOwner(req, res) === undefined,
-      status: (agentId, viewerIsOwner) =>
-        heartbeatStatus({
-          agent: parts.agents.get(agentId),
-          store: parts.store,
-          raises: parts.raises,
-          managerOf: parts.managerOf,
-          runner: parts.runner,
-          enabled: parts.enabled(),
-          runtimeRegistered: (runtime) => runtimeRegistry.has(runtime),
-          isAgent: (id) => deps.meshCore()?.get(id) !== undefined,
-          viewerIsOwner,
-          checks: (agent, owner) => parts.triage.checks(agent, owner),
-        }),
+      status,
     })
   );
+  // An agent reads what anyone but the owner sees: no held words, no chat ids.
+  setHeartbeatStatusReader({
+    status: (agentId, days) => status(agentId, false, days),
+    agentIdForPath: (agentPath) => deps.meshCore()?.getByPath(agentPath)?.id,
+  });
 }
 
 /** The heartbeats the composition root started, for {@link stopHeartbeats}. */

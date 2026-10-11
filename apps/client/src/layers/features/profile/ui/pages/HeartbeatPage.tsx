@@ -1,6 +1,7 @@
 /**
- * Heartbeat — how this agent wakes on its own, what it watches, and what its
- * last checks found (spec `heartbeats` §7.6).
+ * Heartbeat — how this agent wakes on its own, what it watches, what its
+ * last checks found (spec `heartbeats` §7.6), and whether its work on its own
+ * helped (§13).
  *
  * Anyone may read any agent's heartbeat, so this page is pushed from every
  * agent's profile. On someone else's agent it is facts only: how it wakes, its
@@ -28,6 +29,7 @@ import { useProfileAgent } from '../../model/use-profile-agent';
 import { HeartbeatBeats } from '../heartbeat/HeartbeatBeats';
 import { HeartbeatChecks } from '../heartbeat/HeartbeatChecks';
 import { HeartbeatHeld } from '../heartbeat/HeartbeatHeld';
+import { HeartbeatMeasures } from '../heartbeat/HeartbeatMeasures';
 import { HeartbeatFileEditor } from './ConventionPage';
 import type { ProfilePageContentProps } from './types';
 
@@ -148,6 +150,7 @@ export function HeartbeatPage(props: ProfilePageContentProps) {
       {/* With the space switch off from the start there is nothing to tune. */}
       {yours && fileShown && <FileSection {...props} status={status} />}
       <HeartbeatHeld held={status.held} nameOf={nameOf} now={now} />
+      <HeartbeatMeasures measures={status.measures} />
       <section className="space-y-2" data-slot="heartbeat-beats">
         <h3 className="text-sm font-semibold">Last checks</h3>
         <HeartbeatBeats beats={status.lastBeats} now={now} canOpenChat={status.enabled} />
