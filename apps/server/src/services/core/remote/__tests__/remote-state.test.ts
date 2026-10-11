@@ -11,9 +11,12 @@ import { configManager, initConfigManager } from '../../config-manager.js';
 import { logger } from '../../../../lib/logger.js';
 import {
   RemoteStateWriteError,
+  isEnrolledUnder,
+  isForeignEnrolment,
   isRemoteEnrolmentActive,
   readRemoteState,
   updateRemoteState,
+  withRemoteForNewKey,
   withdrawnRemoteState,
 } from '../remote-state.js';
 
@@ -163,5 +166,39 @@ describe('withdrawnRemoteState', () => {
   it('keeps a BYO choice, which needs no link', () => {
     expect(withdrawnRemoteState({ ...readRemoteState(), mode: 'byo' }).mode).toBe('byo');
     expect(withdrawnRemoteState(undefined).mode).toBe('off');
+  });
+});
+
+describe('an enrolment belongs to the link it was made under', () => {
+  const enrolled = () => ({
+    ...readRemoteState(),
+    mode: 'managed' as const,
+    enrolmentId: 'enr_1',
+    consentVersion: 'c',
+    instanceId: 'inst_1',
+  });
+
+  it('counts only under the same instance, and never when the instance is unknown', () => {
+    expect(isEnrolledUnder(enrolled(), 'inst_1')).toBe(true);
+    expect(isEnrolledUnder(enrolled(), 'inst_2')).toBe(false);
+    expect(isEnrolledUnder(enrolled(), null)).toBe(false);
+  });
+
+  it('is foreign under another instance, and no guess when the instance is unknown', () => {
+    expect(isForeignEnrolment(enrolled(), 'inst_2')).toBe(true);
+    expect(isForeignEnrolment(enrolled(), 'inst_1')).toBe(false);
+    expect(isForeignEnrolment(enrolled(), null)).toBe(false);
+  });
+
+  it('a new key replacing a held one narrows the record; a first link or the same key does not', () => {
+    const cloud = { instanceToken: 'key-a', remote: enrolled() };
+    expect(withRemoteForNewKey(cloud, 'key-b').remote).toMatchObject({
+      mode: 'off',
+      enrolmentId: null,
+      instanceId: null,
+    });
+    expect(withRemoteForNewKey(cloud, 'key-a')).toBe(cloud);
+    const first = { instanceToken: null, remote: enrolled() };
+    expect(withRemoteForNewKey(first, 'key-b')).toBe(first);
   });
 });
