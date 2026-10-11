@@ -35,6 +35,9 @@
  * @module services/notifications/emitters/session-lifecycle
  */
 import { isChatStartedTurn } from '../../session/chat-messages/chat-started-turns.js';
+import { isBeatTurn } from '../../heartbeats/beat-turns.js';
+import { wakeAgent } from '../../heartbeats/event-wakes.js';
+import { turnStartedByOutsider } from '../../session/origin/outsider-turns.js';
 import { createHash } from 'node:crypto';
 import path from 'node:path';
 import type { SessionLifecycle, SessionLimit } from '@dorkos/shared/session-stream';
@@ -268,6 +271,9 @@ export function watchSessionLifecycle(): () => void {
       // other; it only matters to the person if the agent decides so (spec
       // `spin-off-chats` §6, "quiet in speech").
       if (isChatStartedTurn(sessionId)) return;
+      // A beat finishing is not news either: only what the agent raises through
+      // `end_beat` reaches a person (spec `heartbeats` §7.4).
+      if (isBeatTurn(sessionId)) return;
       // Deliberately raised for every finished turn, including one the operator
       // started by typing here. The seam carries no principal — a turn can be
       // started from the composer, a room, a bridge or a schedule, and the
@@ -295,6 +301,17 @@ export function watchSessionLifecycle(): () => void {
     }
 
     if (status.lifecycle === 'error') {
+      // A beat's own failure feeds its health check and the record, never a
+      // person's notifications (spec `heartbeats` §7.4). `account.limited`
+      // above still fires for a beat: an account at its limit is news.
+      if (isBeatTurn(sessionId)) return;
+      // A turn of its own failed outside a beat: its beat looks, once a day
+      // per chat (spec `heartbeats` §3.3).
+      const failedAgentId = resolveAgentIdForPath(cwd);
+      // A stranger's failed turn is not the agent's to chase (§3.3).
+      if (failedAgentId && !turnStartedByOutsider(sessionId)) {
+        wakeAgent(failedAgentId, { type: 'turn-failed', eventId: sessionId, source: sessionId });
+      }
       // A new episode begins, and this is the only place its identity is
       // minted. The early return above means a session already in `error`
       // cannot re-stamp itself.

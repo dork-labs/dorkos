@@ -34,10 +34,10 @@ import {
   type ConfigWriteAuthority,
 } from '../services/core/operator/config-write.js';
 import {
-  describeOperatorOnlyRefusal,
   OPERATOR_ONLY_CONFIG_CODE,
   OPERATOR_ONLY_CONFIG_ERROR,
 } from '../services/core/operator/config-write-policy.js';
+import { describeOperatorOnlyRefusal } from '../services/core/operator/operator-only-refusal.js';
 import { trustedCaller } from '../services/core/capabilities/index.js';
 import {
   isLocalCaller,

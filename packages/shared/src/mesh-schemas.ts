@@ -11,7 +11,13 @@ import { z } from 'zod';
 import { extendZodWithOpenApiOnce } from './zod-openapi.js';
 import { AGENT_NAME_REGEX } from './validation.js';
 import { EFFORT_LEVELS } from './constants.js';
-import { SOUL_MAX_CHARS, NOPE_MAX_CHARS, MEMORY_MAX_CHARS } from './convention-files.js';
+import {
+  SOUL_MAX_CHARS,
+  NOPE_MAX_CHARS,
+  MEMORY_MAX_CHARS,
+  HEARTBEAT_MAX_CHARS,
+} from './convention-files.js';
+import { HeartbeatTemplateIdSchema } from './heartbeat-schemas.js';
 import { WorkspaceProviderTypeSchema } from './workspace.js';
 import {
   AgentPermissionsSchema,
@@ -1012,6 +1018,8 @@ export const UpdateAgentConventionsSchema = z
     soulContent: z.string().max(SOUL_MAX_CHARS).optional(),
     nopeContent: z.string().max(NOPE_MAX_CHARS).optional(),
     memoryContent: z.string().max(MEMORY_MAX_CHARS).optional(),
+    // HEARTBEAT.md (spec `heartbeats` §2): read by beats only, never injected.
+    heartbeatContent: z.string().max(HEARTBEAT_MAX_CHARS).optional(),
     traits: TraitsSchema.optional(),
     conventions: ConventionsSchema.optional(),
   })
@@ -1122,6 +1130,13 @@ export const CreateAgentOptionsSchema = z
      * install flow after copying a package onto disk.
      */
     skipTemplateDownload: z.boolean().optional(),
+    /**
+     * Which `HEARTBEAT.md` template the agent starts with: its type (spec
+     * `heartbeats` §2). Omitted → chosen by runtime: a Doe agent gets `lead`,
+     * every other runtime gets no file and wakes on events only, because a
+     * timed beat on a person's own plan spends that plan.
+     */
+    heartbeatTemplate: HeartbeatTemplateIdSchema.optional(),
   })
   .openapi('CreateAgentOptions');
 

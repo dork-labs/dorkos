@@ -124,6 +124,7 @@
  *
  * @module server/services/rooms/room-trigger
  */
+import { wakeForBudgetRefusal, wakeForRefusedRoomTurn } from '../heartbeats/room-wakes.js';
 import { outsideAuditScope } from '../audit/audit-context.js';
 import { randomUUID } from 'node:crypto';
 import { ROOM_LIVE_BEAT_MS } from '@dorkos/shared/room-schemas';
@@ -138,6 +139,7 @@ import type {
   SkippedTrigger,
 } from '@dorkos/shared/room-schemas';
 import type { SessionActivity } from '@dorkos/shared/session-stream';
+import { sameActivity } from './presence/same-activity.js';
 import type { InterruptReceipt } from '@dorkos/shared/types';
 import { newDispatchId } from '@dorkos/shared/dispatch-id';
 import { logError, logger } from '../../lib/logger.js';
@@ -312,20 +314,6 @@ function withGone(refused: readonly SkippedTrigger[], gone: ReadonlySet<string>)
  * third of the time. {@link ROOM_LIVE_BEAT_MS} is the one place it lives.
  */
 const PRESENCE_REPUBLISH_MS = ROOM_LIVE_BEAT_MS;
-
-/**
- * Whether two readings say the same thing about a turn.
- *
- * The same tool on the same target is not a change, so it is neither worth a
- * frame nor worth restarting anything on screen for.
- *
- * @param a - One reading, or `undefined` for none.
- * @param b - The other.
- */
-function sameActivity(a: SessionActivity | undefined, b: SessionActivity | undefined): boolean {
-  if (a === undefined || b === undefined) return a === b;
-  return a.toolName === b.toolName && a.target === b.target;
-}
 
 /**
  * Runs addressing, the cascade guard, and the turns that survive both.
@@ -932,6 +920,9 @@ export class RoomTriggerDispatcher {
         // the writer itself guessing about why its own message went unanswered,
         // and this answer is private, unduplicated and impossible to spray.
         refused.push({ authorId, reason: decision.reason });
+        // A local author's message to it went unanswered: its beat looks
+        // (spec `heartbeats` §3.3). A stranger's never wakes one.
+        wakeForRefusedRoomTurn(record, reason, entry, decision.reason, this.deps.authors);
         continue;
       }
       // `naturalKey` is the agentPath — the only handle the turn machinery needs
@@ -1604,6 +1595,8 @@ export class RoomTriggerDispatcher {
       // given its id above, so the refusal belongs to a real dispatch that
       // never ran.
       this.notices.reportBudget(room, entry, afford.scope ?? 'room', target.dispatchId);
+      // Its beat looks instead, for a local author's message (spec `heartbeats` §3.3).
+      wakeForBudgetRefusal(agentPath, chosen.held.reason, entry, this.deps.authors);
       this.settleCollection(collection, 'refused');
       return null;
     }

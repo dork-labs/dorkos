@@ -234,6 +234,11 @@ describe('Database Migrations', () => {
       // §7.2, migration 0131).
       'extension_decisions',
       'handle_tombstones',
+      // Heartbeats: each agent's beat facts, one row per beat, and what beats
+      // raised until it reaches its reader (spec heartbeats §11).
+      'heartbeat_beats',
+      'heartbeat_outbox',
+      'heartbeat_state',
       // The project registry (spec flow-multiproject §6.1, migration 0129).
       'known_project_reporters',
       'known_projects',

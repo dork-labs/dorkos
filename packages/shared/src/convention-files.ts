@@ -1,5 +1,6 @@
 /**
- * Convention file constants and pure helpers for SOUL.md, NOPE.md and MEMORY.md.
+ * Convention file constants and pure helpers for SOUL.md, NOPE.md, MEMORY.md and
+ * HEARTBEAT.md.
  *
  * Browser-safe — no Node.js imports. For filesystem operations
  * (read/write convention files), use `@dorkos/shared/convention-files-io`.
@@ -23,6 +24,11 @@ export const CONVENTION_FILES = {
   soul: 'SOUL.md',
   nope: 'NOPE.md',
   memory: 'MEMORY.md',
+  /**
+   * What the agent watches between conversations (spec `heartbeats` §2). Read
+   * only by a beat's prompt, never injected into an ordinary turn.
+   */
+  heartbeat: 'HEARTBEAT.md',
 } as const;
 
 /**
@@ -134,6 +140,13 @@ export const MEMORY_STALENESS_LINE =
 
 export const SOUL_MAX_CHARS = 4000;
 export const NOPE_MAX_CHARS = 2000;
+
+/**
+ * How long `HEARTBEAT.md` may be, in characters. It rides only a beat's prompt,
+ * so it costs nothing on a person's chat, but every beat that reaches a turn
+ * pays for it.
+ */
+export const HEARTBEAT_MAX_CHARS = 8_000;
 
 /**
  * How much memory one agent may keep, in characters (~2K tokens).

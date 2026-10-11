@@ -391,4 +391,15 @@ describe('ensureDorkBot', () => {
       await fs.realpath(path.join(dorkbotDir, '.agents', 'skills', 'operating-dorkos'))
     );
   });
+
+  it('gives DorkBot its starter HEARTBEAT.md once, and never puts it back after it was removed', async () => {
+    await ensureDorkBot(meshCore, tmpDir);
+    const file = path.join(tmpDir, 'agents', 'dorkbot', '.dork', 'HEARTBEAT.md');
+    const text = await fs.readFile(file, 'utf-8');
+    expect(text).toContain('wake: timed');
+    expect(text).toContain('report: off');
+    await fs.rm(file);
+    await ensureDorkBot(meshCore, tmpDir);
+    expect(await fileExists(file)).toBe(false);
+  });
 });

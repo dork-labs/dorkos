@@ -44,6 +44,7 @@
     "GET /.well-known/oauth-protected-resource/*splat",
     "GET /a2a/agents/:id/card",
     "GET /api/activity",
+    "GET /api/agents/:id/heartbeat",
     "GET /api/agents/:id/permissions",
     "GET /api/agents/current",
     "GET /api/agents/mcp-oauth/callback",

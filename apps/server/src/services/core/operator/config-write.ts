@@ -54,11 +54,11 @@ import {
 } from './config-patch.js';
 import { recordAudit } from '../../audit/audit-trail.js';
 import {
-  describeOperatorOnlyRefusal,
   findOperatorOnlyPaths,
   OPERATOR_ONLY_CONFIG_CODE,
   OPERATOR_ONLY_CONFIG_ERROR,
 } from './config-write-policy.js';
+import { describeOperatorOnlyRefusal } from './operator-only-refusal.js';
 
 /**
  * A write this caller may not make, in the one shape all three doors answer

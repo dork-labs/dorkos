@@ -726,7 +726,7 @@ describe('MCP Tool Handlers', () => {
       expect(server.version).toBe('1.0.0');
     });
 
-    it('registers 51 tools including the five document-channel verbs', () => {
+    it('registers 52 tools including the five document-channel verbs', () => {
       // Purpose: regression guard against accidental tool omissions or additions.
       // This count changes intentionally when new MCP tools are added. 32 legacy
       // (4 core + 5 tasks + 8 relay + 1 agent + 2 ui + 3 devtools + 6 browser
@@ -771,8 +771,9 @@ describe('MCP Tool Handlers', () => {
       // 51 -> 52 for `session_start` (spec `claude-account-fleet` D5).
       // 57 -> 51: the six relay send, inbox and endpoint tools retired for the
       // chat tools, which these deps do not compose (spec `spin-off-chats` §7).
+      // 51 -> 52 for `end_beat` (spec `heartbeats` §8), every agent's.
       const server = createDorkOsToolServer(makeMockDeps()) as unknown as MockServer;
-      expect(server.tools).toHaveLength(51);
+      expect(server.tools).toHaveLength(52);
       for (const name of [
         'configure_doc_channel',
         'approve_doc_route',

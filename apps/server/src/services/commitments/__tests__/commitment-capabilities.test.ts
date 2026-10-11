@@ -82,10 +82,9 @@ describe('commitments domain', () => {
     for (const c of commitmentsDomain.capabilities) expect(c.areaNote).toBeTruthy();
   });
 
-  it('never tells an agent it will be woken: nothing wakes it yet (DOR-2788 PR 3)', () => {
+  it('tells an agent it is woken when a promise comes due: its beat does that (DOR-2788 PR 3)', () => {
     const add = commitmentsDomain.capabilities.find((c) => c.id === 'commitments.add')!;
-    expect(add.description.toLowerCase()).not.toContain('wake');
-    expect(add.description.toLowerCase()).not.toContain('woken');
+    expect(add.description).toContain('when it comes due you are woken to deal with it');
   });
 
   describe('commitment_add', () => {
