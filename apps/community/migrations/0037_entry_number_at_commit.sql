@@ -9,6 +9,9 @@
 -- `entries_unnumbered_seq`, and this deferred trigger gives it the real number, and sends its
 -- `entry` notice, inside the COMMIT itself: the row is held for the commit and nothing else.
 --
+-- Setting the number is not a change to what a message shows (the content-change rule in
+-- src/__tests__/content-change-guard.test.ts): nobody can see the row until this commit.
+--
 -- Only an insert with a negative number is renumbered. Imports and restores write the numbers
 -- they carry, and a provisional number is never visible outside its own transaction.
 --

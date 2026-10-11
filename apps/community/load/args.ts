@@ -44,6 +44,26 @@ const MIN_QUIET_MS = 2_000;
  */
 const DEFAULT_POSTS_PER_MEMBER_PER_TEN_MINUTES = 120;
 
+/**
+ * The warning for a run whose writers would each pass the server's default posting limit, or
+ * null. `ratePerSecond` and `writers` are the whole run's (or one part's: the ratio is the same).
+ */
+export function postingLimitWarning(
+  ratePerSecond: number,
+  durationSeconds: number,
+  writers: number
+): string | null {
+  const perWriter = writers
+    ? Math.ceil((ratePerSecond * Math.min(durationSeconds, 600)) / writers)
+    : 0;
+  if (perWriter <= DEFAULT_POSTS_PER_MEMBER_PER_TEN_MINUTES) return null;
+  return (
+    `Each writer posts about ${perWriter} times in ten minutes; the server's default limit is ` +
+    `${DEFAULT_POSTS_PER_MEMBER_PER_TEN_MINUTES} per member, so later posts will be refused (429). ` +
+    'Add --writers, or raise COMMUNITY_POSTS_PER_TEN_MINUTES on the target.'
+  );
+}
+
 /** Raise with a message printed to the user; never a stack trace. */
 export class UsageError extends Error {
   /**
@@ -183,17 +203,11 @@ export function parseLoadArgs(argv: readonly string[]): LoadArgs {
       throw new UsageError(`--start-at must be an ISO 8601 time, got "${values['start-at']}".`);
   }
 
-  const warnings: string[] = [];
-  const perWriter = writers
-    ? Math.ceil((ratePerSecond * Math.min(durationSeconds, 600)) / writers)
-    : 0;
-  if (perWriter > DEFAULT_POSTS_PER_MEMBER_PER_TEN_MINUTES) {
-    warnings.push(
-      `Each writer posts about ${perWriter} times in ten minutes; the server's default limit is ` +
-        `${DEFAULT_POSTS_PER_MEMBER_PER_TEN_MINUTES} per member, so later posts will be refused (429). ` +
-        'Add --writers, or raise COMMUNITY_POSTS_PER_TEN_MINUTES on the target.'
-    );
-  }
+  // With --fixture the writers come from the file; index.ts checks those instead.
+  const limitWarning = values.fixture
+    ? null
+    : postingLimitWarning(ratePerSecond, durationSeconds, writers);
+  const warnings = limitWarning ? [limitWarning] : [];
 
   return {
     url: values.url.replace(/\/+$/, ''),

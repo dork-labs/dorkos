@@ -6,7 +6,7 @@ covers:
 
 ### Changed
 
-- People can post in a busy Community channel at the same time without waiting in line behind each other. Each message still gets its place in the channel in order, so nobody misses one or sees them out of order. In a test on one laptop with 10,000 people watching one channel, messages arrived about three times faster (DOR-2837)
+- People can post in a busy Community channel at the same time without waiting in line behind each other. Each message still gets its place in the channel in order, so nobody misses one or sees them out of order. In a test on one laptop with 10,000 people watching one channel, messages arrived two to three times faster (DOR-2837)
 
 ### Added
 

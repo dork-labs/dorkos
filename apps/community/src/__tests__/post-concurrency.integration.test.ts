@@ -8,6 +8,7 @@
 import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { COMMUNITY_TEST_RUNTIME_ACKNOWLEDGEMENT_PHRASE } from '../config.js';
+import { lockChannel, type Principal } from '../data.js';
 import {
   expectStatus,
   holdingLock,
@@ -146,6 +147,51 @@ describe('posting in one channel', () => {
       numbered.release();
       change.release();
     }
+  });
+
+  it('lets a channel change in while posts and reads keep coming', async () => {
+    // Purpose: fails if a change to a busy channel can wait forever. Row locks let each new
+    // shared holder in past a change already waiting, so without the ordered queue in front of
+    // them a steady stream of overlapping posts and reads kept an archive or a removal out.
+    const writer = writers[3];
+    const principal: Principal = {
+      kind: 'agent',
+      id: writer.agentId,
+      ownerMemberId: writer.ownerMemberId,
+      display_name: 'Load test agent',
+      community_id: communityId,
+    };
+    const hold = async (mode: 'shared' | 'exclusive') => {
+      const client = await h.pool.connect();
+      try {
+        await client.query('BEGIN');
+        await lockChannel(client, channelId, principal, 'post', mode);
+        if (mode === 'shared') {
+          // A post's shape: its checks, then the commit-time update of the channel row.
+          await client.query('SELECT pg_sleep(0.004)');
+          await client.query('UPDATE channels SET last_seq=last_seq WHERE id=$1', [channelId]);
+        }
+        await client.query('COMMIT');
+      } finally {
+        client.release();
+      }
+    };
+    let running = true;
+    // Eight overlapping holders, each back in line as soon as it lets go: never a quiet moment.
+    const busy = Array.from({ length: 8 }, async () => {
+      while (running) await hold('shared');
+    });
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    const started = Date.now();
+    const change = hold('exclusive').then(() => Date.now() - started);
+    const waited = await Promise.race([
+      change,
+      new Promise<number>((resolve) => setTimeout(() => resolve(Infinity), 3_000)),
+    ]);
+    running = false;
+    await Promise.all(busy);
+    await change;
+    expect(waited).toBeLessThan(2_000);
   });
 
   it('numbers posts that land at once without a gap, committing them in order', async () => {

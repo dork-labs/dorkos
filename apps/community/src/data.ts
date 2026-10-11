@@ -472,8 +472,10 @@ export async function bootstrapGrant(
  *   number as it commits, by an `UPDATE` of the row (migration 0037), which `FOR KEY SHARE`
  *   allows. `FOR SHARE` would not: two posts would each hold it and wait on the other's update.
  *
- * Postgres lets a `shared` holder in past an `exclusive` request that is already waiting, so in
- * a channel that is never quiet a change waits for a gap between posts.
+ * Row locks are not first come, first served: a new `shared` request never queues behind an
+ * `exclusive` one already waiting, so in a busy channel a change could wait forever. Both modes
+ * therefore line up first on an advisory lock for the channel (shared or exclusive to match),
+ * whose queue is in order. The commit-time numbering needs only the row.
  */
 export type ChannelLockMode = 'exclusive' | 'shared';
 
@@ -505,7 +507,10 @@ export async function lockChannel(
     epoch: number;
     created_at: Date;
   }>(
-    `SELECT c.* FROM channels c WHERE c.id=$1 AND c.community_id=$2 ${mode === 'shared' ? 'FOR KEY SHARE OF c' : 'FOR UPDATE OF c'}`,
+    // The advisory lock is taken before the row's, in the one statement (see ChannelLockMode).
+    mode === 'shared'
+      ? `SELECT c.* FROM channels c CROSS JOIN LATERAL (SELECT pg_advisory_xact_lock_shared(77281507, hashtext($1::uuid::text))) queued WHERE c.id=$1::uuid AND c.community_id=$2 FOR KEY SHARE OF c`
+      : `SELECT c.* FROM channels c CROSS JOIN LATERAL (SELECT pg_advisory_xact_lock(77281507, hashtext($1::uuid::text))) queued WHERE c.id=$1::uuid AND c.community_id=$2 FOR UPDATE OF c`,
     [channelId, member.community_id]
   );
   const row = result.rows[0];

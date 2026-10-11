@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 import { randomUUID } from 'node:crypto';
-import { readFile, writeFile } from 'node:fs/promises';
+import { chmod, readFile, writeFile } from 'node:fs/promises';
 import { availableParallelism } from 'node:os';
 import { monitorEventLoopDelay } from 'node:perf_hooks';
-import { parseLoadArgs, UsageError } from './args.js';
+import { parseLoadArgs, postingLimitWarning, UsageError } from './args.js';
 import { fixturePart, seedLoadFixture, type LoadFixture } from './fixture.js';
 import { fetchMetrics, type MetricsSnapshot } from './metrics.js';
 import { finishReport, type PeakFigures } from './report.js';
@@ -57,11 +57,26 @@ async function main(): Promise<void> {
   if (args.fixtureOut) {
     // Working credentials for every principal: readable by this account only.
     await writeFile(args.fixtureOut, JSON.stringify(seeded), { mode: 0o600 });
+    // `mode` applies only to a new file; an existing one keeps its own until this.
+    await chmod(args.fixtureOut, 0o600);
     console.log(
       `Wrote ${args.fixtureOut}. Copy it to every load machine, run each part with --fixture, ` +
         'and delete every copy when the run ends.'
     );
     return;
+  }
+  if (args.part.count > Math.max(1, seeded.writers.length))
+    throw new UsageError(
+      `--part ${args.part.index}/${args.part.count} needs at least ${args.part.count} writers in ` +
+        `the fixture, one per part; it has ${seeded.writers.length}.`
+    );
+  if (args.fixture) {
+    const warning = postingLimitWarning(
+      args.ratePerSecond,
+      args.durationSeconds,
+      seeded.writers.length
+    );
+    if (warning) console.warn(`Warning: ${warning}`);
   }
   const fixture = fixturePart(seeded, args.part);
   // Each part posts its share of the combined rate.
