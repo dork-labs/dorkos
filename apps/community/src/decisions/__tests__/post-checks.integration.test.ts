@@ -25,18 +25,17 @@ import {
   CommunityExportAuditEventRowSchema,
   type CommunityWireReport,
 } from '@dorkos/shared/community-wire';
-import { createCommunityApp } from '../app.js';
-import { parseConfig } from '../config.js';
-import { migrate } from '../migrate.js';
-import { eraseMembership } from '../erasure/erasure.js';
-import { hashSecret, randomToken } from '../security.js';
-import { checkNewPosts, type DecisionWorkerOptions } from '../decisions/worker.js';
-import { decisionSettings, type ModelSlot } from '../decisions/settings.js';
+import { createCommunityApp } from '../../app.js';
+import { parseConfig } from '../../config.js';
+import { migrate } from '../../migrate.js';
+import { eraseMembership } from '../../erasure/erasure.js';
+import { checkNewPosts, type DecisionWorkerOptions } from '../worker.js';
+import { decisionSettings, type ModelSlot } from '../settings.js';
 import {
   bootstrapFirstHost,
   responseCookies,
   seedCredentialAccount,
-} from './bootstrap-test-helper.js';
+} from '../../__tests__/bootstrap-test-helper.js';
 
 const adminUrl = process.env.COMMUNITY_TEST_DATABASE_URL;
 if (!adminUrl) throw new Error('COMMUNITY_TEST_DATABASE_URL is required for post check tests');

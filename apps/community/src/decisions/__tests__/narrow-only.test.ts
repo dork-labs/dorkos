@@ -11,7 +11,7 @@
  *    folder, so no verdict can reach a permission.
  *
  * The behaviour these protect is pinned too, end to end, in
- * `src/__tests__/post-checks.integration.test.ts`: a flagged author still posts and reads.
+ * `src/decisions/__tests__/post-checks.integration.test.ts`: a flagged author still posts and reads.
  */
 import { readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
