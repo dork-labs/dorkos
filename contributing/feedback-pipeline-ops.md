@@ -254,7 +254,7 @@ Do this after any change to the intake step:
 
 2. Run `/feedback:triage`. It should list the issue as having no mirror, file an
    FB issue for it, and present a drafted "heard" reply for approval.
-3. Check Linear: the new FB issue is in Triage with the `Bug` label, the title
+3. Check Linear: the new FB issue is in Triage with the `reported/defect` label, the title
    verbatim, and a `Source:` line carrying your issue number. Confirm the stored
    description shows Linear's autolink form, which is the case the matcher has
    to survive.
