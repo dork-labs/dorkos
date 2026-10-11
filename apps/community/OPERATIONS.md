@@ -428,6 +428,18 @@ Delivery time runs from when a post was scheduled to go out to when it arrived o
 
 Seeding uses `POST /api/test/load-fixture`. Like every route under `/api/test/`, it exists only when the server starts with `COMMUNITY_TEST_RUNTIME=true` and `COMMUNITY_TEST_RUNTIME_ACKNOWLEDGEMENT` set to the exact phrase in `src/config.ts`. Anyone who can reach such a server can create members with working tokens and a host key that reads every community on it, so it is never a real host. The script also refuses any `--url` other than `localhost`, `127.0.0.1` or `[::1]` unless you pass `--i-understand-this-is-production`.
 
+**How the server keeps up.** Each new message is read from the database once for its channel and the same copy goes to every open stream there; a stream reads for itself only when it is more than a minute behind. A busy channel wakes its streams at most every 100 ms, so each stream sends what arrived in that time in one write. Each stream checks its access when it opens and again only when a notice says it may have changed (a removal, a ban, a sign-out, a held or archived space, and the rest) or when its fallback interval passes, and the streams that recheck in the same moment share one query. A message posted after a revocation never reaches the revoked stream: Postgres delivers notices in commit order, so the revocation's notice always arrives first.
+
+**Recorded runs** (M4 Pro laptop, Postgres 17 in Docker on the same machine, pool 10, 50 writers, 50 posts a second for 60 seconds; readers and writers on the same laptop as the server):
+
+| Open streams | Before (DOR-2771)                                                                      | Now                                                                                                         |
+| ------------ | -------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| 1,000        | delivery p50 119.6 s, p95 182.2 s; 2.7 million of 3 million deliveries missed the wait | p50 0.27 s, p95 0.61 s, no misses, no failed posts: **meets the target**                                    |
+| 5,000        | not run                                                                                | p95 2.4 s to 4.3 s over two runs, no misses, no failed posts: not yet the target                            |
+| 10,000       | not run                                                                                | p95 over 40 s and a third of posts timed out; the load generator was saturated, so the run was inconclusive |
+
+Above about 5,000 streams on this laptop, posting is what falls behind: each post locks its channel while it commits, and with the readers, the server and the database sharing one laptop's cores those commits fall below 50 a second. The 20,000-stream target has to be checked on production-size hardware with the load machine kept separate, as below; a local run cannot show it.
+
 **Locally**, against a server started that way on a throwaway database, from `apps/community`:
 
 ```bash

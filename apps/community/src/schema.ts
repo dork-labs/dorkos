@@ -991,7 +991,7 @@ export const entries = pgTable(
       .on(table.threadRootEntryId, table.communityId)
       .where(sql`${table.threadRootEntryId} IS NOT NULL`),
     index('entries_community_created_idx').on(table.communityId, table.createdAt.desc()),
-    // The watch-only checks read the last few minutes across every space (0035).
+    // The watch-only checks read the last few minutes across every space (0036).
     index('entries_created_idx').on(table.createdAt),
     foreignKey({
       name: 'entries_channel_tenant_fk',
@@ -1543,7 +1543,7 @@ export const ownerQuotaWindows = pgTable(
     }),
   ]
 );
-// `audit_events` lives in `schema/audit-events.ts`, beside the watch-only checks it records (0035).
+// `audit_events` lives in `schema/audit-events.ts`, beside the watch-only checks it records (0036).
 
 /** Host-set caps for one community. A community without a row has no limit. */
 export const communityLimits = pgTable(

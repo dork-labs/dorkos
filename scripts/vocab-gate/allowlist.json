@@ -416,6 +416,11 @@
       "reason": "The contributor architecture reference names code components by their code names — the Community server (apps/community), CommunityAdapter, /api/v1/communities routes — which DOR-2631 deliberately leaves as \"community\" until DOR-2639 renames identifiers, routes and the contract. A reader here is reading source structure, not product copy."
     },
     {
+      "path": "docs/guides/dorkos-community.mdx",
+      "terms": ["community"],
+      "reason": "\"DorkOS Community Space\" / \"Community Space\" is the one proper name VOICE.md carves out of the \"community\" retirement (meta/VOICE.md's Words We Use table): the official space every new account joins, not a space called by the generic noun."
+    },
+    {
       "path": "apps/site/src/app/(marketing)/marketplace/page.tsx",
       "terms": ["community"],
       "reason": "\"The DorkOS community\" here means the people who build and share marketplace packages (and the dorkos-community GitHub organization), the ordinary English sense — not a space."

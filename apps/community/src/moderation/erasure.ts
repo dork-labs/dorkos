@@ -10,7 +10,7 @@ import type { PoolClient } from 'pg';
  *   wrote about a message by them or by one of their agents.
  * - Their slow-mode clocks are rate state about them, and go.
  * - The watch-only checks' records about their messages keep their codes and timings, which say
- *   nothing of the words, and lose the keyed hash of the exact input (0035).
+ *   nothing of the words, and lose the keyed hash of the exact input (0036).
  *
  * Every statement is idempotent, so a reapplied erasure runs it again safely.
  */

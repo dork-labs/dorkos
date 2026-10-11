@@ -168,7 +168,7 @@ export class V2RowRules {
       case 'auditEvents': {
         const event = value as V2Row['auditEvents'];
         invalid(event.community_id !== this.manifest.community.id);
-        // A check's record belongs on a `decision.*` row about one message, as 0035 requires.
+        // A check's record belongs on a `decision.*` row about one message, as 0036 requires.
         invalid(
           event.decision !== undefined &&
             (!event.action.startsWith('decision.') || event.subject_id === null)

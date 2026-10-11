@@ -14,7 +14,7 @@ import { communities, members, time } from '../schema.js';
 
 /**
  * Security-relevant membership and channel actions, and the `decision.*` rows of the watch-only
- * spam and rule checks (0035), whose record lives in `decision`.
+ * spam and rule checks (0036), whose record lives in `decision`.
  */
 export const auditEvents = pgTable(
   'audit_events',

@@ -4,6 +4,7 @@ import { vi } from 'vitest';
 import { commitmentTransportMocks } from './mock-commitments.js';
 import { roomFileTransportMocks } from './mock-room-files.js';
 import { remoteCommunityTransportMocks } from './mock-remote-community.js';
+import { remoteAccessTransportMocks } from './mock-remote-access.js';
 import type {
   Session,
   StreamEvent,
@@ -1065,8 +1066,7 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
       installMethod: 'brew',
       status: { running: true, models: [] },
     }),
-    startTunnel: vi.fn().mockResolvedValue({ url: 'https://test.ngrok.io' }),
-    stopTunnel: vi.fn().mockResolvedValue(undefined),
+    ...remoteAccessTransportMocks(),
     // Tasks
     listTasks: vi.fn().mockResolvedValue([]),
     createTask: vi.fn(),

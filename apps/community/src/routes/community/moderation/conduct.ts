@@ -14,7 +14,7 @@ import {
   CommunityWireRulesUpdateRequestSchema,
   CommunityWireStandingSchema,
 } from '@dorkos/shared/community-wire';
-import type { CommunityAuth } from '../../auth.js';
+import type { CommunityAuth } from '../../../auth.js';
 import {
   requireLiveRole,
   requireMember,
@@ -22,13 +22,13 @@ import {
   assertPrincipalCurrent,
   transaction,
   type Member,
-} from '../../data.js';
-import { ApiError, json, readJson } from '../../http.js';
-import { muteMember } from '../../moderation/mutes.js';
-import { outranks } from '../../moderation/bans.js';
-import { lockOwnMembership } from '../../moderation/locks.js';
-import { comparableName, isRefusedDisplayName } from '../../moderation/display-names.js';
-import { requirePerson } from '../../moderation/person.js';
+} from '../../../data.js';
+import { ApiError, json, readJson } from '../../../http.js';
+import { muteMember } from '../../../moderation/mutes.js';
+import { outranks } from '../../../moderation/bans.js';
+import { lockOwnMembership } from '../../../moderation/locks.js';
+import { comparableName, isRefusedDisplayName } from '../../../moderation/display-names.js';
+import { requirePerson } from '../../../moderation/person.js';
 
 /**
  * Register a space's standards of conduct: mutes, the caller's own standing, rules and their

@@ -10,6 +10,7 @@ import { createChannel } from '@/layers/shared/lib';
 import { useEventSubscription } from '@/layers/shared/model';
 import { configKeys } from '@/layers/entities/config';
 import { useRemoteAccessReducer } from './use-remote-access';
+import { remoteAccessKeys } from './remote-access-report';
 
 const CHANNEL_NAME = 'dorkos-tunnel';
 
@@ -58,6 +59,7 @@ export function useTunnelSync(): void {
     const channel = createChannel<{ type: string }>(CHANNEL_NAME);
     const unsubscribe = channel.onMessage(() => {
       queryClient.invalidateQueries({ queryKey: configKeys.all });
+      queryClient.invalidateQueries({ queryKey: remoteAccessKeys.all });
     });
 
     return () => {
@@ -67,7 +69,10 @@ export function useTunnelSync(): void {
   }, [queryClient]);
 
   // Cross-device sync via the shared SSE event stream
+  // The remote access report (DOR-2086) rides the same event: a managed tunnel
+  // opening, closing or draining is a tunnel change like any other.
   useEventSubscription('tunnel_status', () => {
     queryClient.invalidateQueries({ queryKey: configKeys.all });
+    queryClient.invalidateQueries({ queryKey: remoteAccessKeys.all });
   });
 }

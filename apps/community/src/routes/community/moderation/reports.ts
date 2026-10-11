@@ -10,16 +10,16 @@ import {
   CommunityWireReportResolveResponseSchema,
   type CommunityWireReport,
 } from '@dorkos/shared/community-wire';
-import type { CommunityAuth } from '../../auth.js';
-import type { CommunityConfig } from '../../config.js';
-import { requireLiveRole, requireMember, transaction, type Member } from '../../data.js';
-import { ApiError, RateLimited, json, readJson } from '../../http.js';
-import { removalAuthority, removeEntry } from '../../content-removal.js';
-import { lockOwnMembership } from '../../moderation/locks.js';
-import { requirePerson } from '../../moderation/person.js';
-import { muteMember } from '../../moderation/mutes.js';
+import type { CommunityAuth } from '../../../auth.js';
+import type { CommunityConfig } from '../../../config.js';
+import { requireLiveRole, requireMember, transaction, type Member } from '../../../data.js';
+import { ApiError, RateLimited, json, readJson } from '../../../http.js';
+import { removalAuthority, removeEntry } from '../../../content-removal.js';
+import { lockOwnMembership } from '../../../moderation/locks.js';
+import { requirePerson } from '../../../moderation/person.js';
+import { muteMember } from '../../../moderation/mutes.js';
 import { banMember, lockCommunityForBan } from './bans.js';
-import { checkHints } from '../../decisions/hints.js';
+import { checkHints } from '../../../decisions/hints.js';
 
 /** How many of one member's reports may wait in the queue at once. */
 export const OPEN_REPORTS_PER_MEMBER = 50;

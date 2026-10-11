@@ -525,7 +525,7 @@ beforeAll(async () => {
       [source.communityId, marked.reply, source.owner.memberId, source.owner.memberId]
     )
   ).rows[0].id;
-  // A watch-only check's record on one message (0035): it travels, keyed to the derived message.
+  // A watch-only check's record on one message (0036): it travels, keyed to the derived message.
   await h.pool.query(
     `INSERT INTO audit_events(community_id,actor_kind,action,subject_id,next_state,decision)
      VALUES($1,'system','decision.rung1',$2,'flagged',$3::jsonb)`,

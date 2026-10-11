@@ -74,7 +74,11 @@ describe('the post checks only narrow', () => {
       .filter((file) => /from\s+['"](?:\.\.?\/)+(?:[a-z-]+\/)*decisions\//.test(read(file)))
       .map(rel)
       .sort();
-    expect(importers).toEqual(['live/monitoring.ts', 'main.ts', 'routes/community/reports.ts']);
+    expect(importers).toEqual([
+      'live/monitoring.ts',
+      'main.ts',
+      'routes/community/moderation/reports.ts',
+    ]);
   });
 
   it.each(PERMISSION_MODULES)('keep %s blind to every verdict', (module) => {
@@ -85,10 +89,10 @@ describe('the post checks only narrow', () => {
   });
 
   it('let the report queue read a verdict only to show it', () => {
-    const queue = read(path.join(src, 'routes/community/reports.ts'));
+    const queue = read(path.join(src, 'routes/community/moderation/reports.ts'));
     // The one import is the read-only hint; nothing from the folder can resolve or act.
-    expect(queue.match(/from '\.\.\/\.\.\/decisions\/[a-z-]+\.js'/g)).toEqual([
-      "from '../../decisions/hints.js'",
+    expect(queue.match(/from '(?:\.\.\/)+decisions\/[a-z-]+\.js'/g)).toEqual([
+      "from '../../../decisions/hints.js'",
     ]);
   });
 });
