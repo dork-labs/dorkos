@@ -1,6 +1,4 @@
-import { useCallback, useState } from 'react';
-import { OwnAiList } from '@/layers/features/onboarding';
-import { DoeInferenceForm, renderRuntimeConnect } from '@/layers/features/runtime-connect';
+import { useCallback } from 'react';
 import {
   newPendingId,
   useComposerFocusStore,
@@ -8,16 +6,7 @@ import {
   useRoomDraftStore,
 } from '@/layers/entities/room';
 import { useSettingsDeepLink } from '@/layers/shared/model';
-import {
-  Button,
-  PromptSuggestionChips,
-  ResponsiveDialog,
-  ResponsiveDialogBody,
-  ResponsiveDialogContent,
-  ResponsiveDialogDescription,
-  ResponsiveDialogHeader,
-  ResponsiveDialogTitle,
-} from '@/layers/shared/ui';
+import { Button, PromptSuggestionChips } from '@/layers/shared/ui';
 import type { FirstRunChipsMode } from '../model/use-first-run-chips';
 
 /** DorkBot's handle, which every chip addresses so the room's lead is never guessed. */
@@ -44,13 +33,14 @@ export interface FirstRunChipsProps {
  * With AI connected, a chip is the person's first message: it posts
  * `@dorkbot <chip>` as them, and DorkBot's reply is the first real turn.
  * "Something else" puts `@dorkbot ` in the composer and the caret after it.
- * With no AI yet, the strip offers the two ways to connect instead: the DorkOS
- * account in Settings, and the Own AI list in a dialog.
+ * With no AI yet, the strip offers the two ways to connect instead. The first
+ * run is finished by then, so neither goes back through it: each opens the
+ * setup Settings always has — the DorkOS account link, and Runtimes for an AI
+ * app, a key or a local model.
  */
 export function FirstRunChips({ roomId, mode }: FirstRunChipsProps) {
   const post = usePostToRoom();
   const settings = useSettingsDeepLink();
-  const [ownAiOpen, setOwnAiOpen] = useState(false);
 
   const press = useCallback(
     (line: string) => {
@@ -85,28 +75,12 @@ export function FirstRunChips({ roomId, mode }: FirstRunChipsProps) {
       <Button size="sm" onClick={() => settings.open('account')}>
         Continue with DorkOS
       </Button>
-      <Button size="sm" variant="outline" onClick={() => setOwnAiOpen(true)}>
+      {/* The first run is over by now, so both open the setup the app always
+          has, in Settings over this room: the account link, and the AI apps
+          and the DorkOS model. Closing Settings lands back here. */}
+      <Button size="sm" variant="outline" onClick={() => settings.open('runtimes')}>
         Use my own AI
       </Button>
-      <ResponsiveDialog open={ownAiOpen} onOpenChange={setOwnAiOpen}>
-        <ResponsiveDialogContent className="sm:max-w-lg">
-          <ResponsiveDialogHeader>
-            <ResponsiveDialogTitle>Use my own AI</ResponsiveDialogTitle>
-            <ResponsiveDialogDescription>
-              Your agents run on a key, a local model or an AI app.
-            </ResponsiveDialogDescription>
-          </ResponsiveDialogHeader>
-          <ResponsiveDialogBody>
-            <OwnAiList
-              onSaved={() => setOwnAiOpen(false)}
-              slots={{
-                renderRuntimeConnect,
-                renderOtherService: ({ onSave }) => <DoeInferenceForm onSave={onSave} />,
-              }}
-            />
-          </ResponsiveDialogBody>
-        </ResponsiveDialogContent>
-      </ResponsiveDialog>
     </div>
   );
 }

@@ -25,7 +25,7 @@ export type { DorkosConnectPhase } from './model/use-dorkos-connect';
 export { OnboardingFlow } from './ui/OnboardingFlow';
 export { WelcomeStep } from './ui/WelcomeStep';
 export { ConnectingStep } from './ui/ConnectingStep';
-export { OwnAiStep, OwnAiList, type OwnAiListProps } from './ui/OwnAiStep';
+export { OwnAiStep } from './ui/OwnAiStep';
 export { ProgressCard } from './ui/ProgressCard';
 export { ProfilePromptCard } from './ui/ProfilePromptCard';
 export type { ProfilePromptCardProps } from './ui/ProfilePromptCard';
