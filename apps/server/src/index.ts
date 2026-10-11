@@ -12,8 +12,6 @@ import { createDocChannelHttpComposition } from './services/canvas/doc-channel/h
 import { startMainListener } from './services/core/lifecycle/main-listener.js';
 import { MainRequestAdmission } from './services/core/lifecycle/main-request-admission.js';
 import path from 'path';
-import { existsSync } from 'node:fs';
-import { HARNESS_MANIFEST_PATH } from '@dorkos/harness';
 import type { PermissionAreaId } from '@dorkos/shared/permissions';
 import { randomUUID } from 'node:crypto';
 import { createApp, finalizeApp } from './app.js';
@@ -23,6 +21,9 @@ import { createSessionLocationsRouter } from './routes/session-locations.js';
 import { ManagedConnectorCloudError } from './services/core/auth/cloud-link-client.js';
 import { DoeRuntime } from './services/runtimes/doe/index.js';
 import { registerRuntimes } from './startup/runtimes.js';
+import { startRelayAdapters } from './startup/relay-adapters.js';
+import { startTasks } from './startup/tasks.js';
+import { startMarketplace } from './startup/marketplace.js';
 import { ClaudeCodeRuntime } from './services/runtimes/claude-code/claude-code-runtime.js';
 import { shutdownSessionPumps } from './services/runtimes/claude-code/sessions/session-pump-registry.js';
 import { reapOrphanedWarmProcesses } from './services/runtimes/claude-code/sessions/warm-process-ledger.js';
@@ -81,9 +82,6 @@ import { warnAboutGitProtection, installedGitProtection } from './lib/git-safety
 import { initLogger, logger, logError } from './lib/logger.js';
 import { createDorkOsToolServer } from './services/runtimes/claude-code/mcp-tools/index.js';
 import { TaskStore } from './services/tasks/task-store.js';
-import { startAgentExecutionWatch } from './services/tasks/approvals/agent-execution-watch.js';
-import { raiseStanding } from './services/notifications/standing-events.js';
-import { broadcastTasksChanged } from './services/tasks/task-sse-events.js';
 import { createNotificationsRouter } from './routes/notifications.js';
 import { createPushRouter } from './routes/push.js';
 import { NotificationStore } from './services/notifications/notification-store.js';
@@ -121,23 +119,12 @@ import type { NotifyDmDeps } from './services/relay/notify-dm.js';
 import type { ConnectorProviderInstanceId } from '@dorkos/shared/connector-schemas';
 import type { RelayChannelDeps } from './services/notifications/channels/relay.js';
 import { createRunTerminalListener } from './services/tasks/run-terminal-broadcaster.js';
-import { createRelayRefusedAskEmitter } from './services/tasks/run-activity.js';
 import { TaskSchedulerService } from './services/tasks/task-scheduler-service.js';
 import { resolveTasksFiring } from './services/tasks/resolve-firing.js';
 import { TaskFileWatcher } from './services/tasks/task-file-watcher.js';
 import { TaskReconciler } from './services/tasks/task-reconciler.js';
-import { ScheduleIdentityRegistry } from './services/tasks/schedule-identity.js';
-import {
-  agentTaskRoots,
-  ensureGlobalSkillsRoot,
-  globalTaskRoots,
-} from './services/tasks/skills-roots.js';
-import { attachAgentRoots, attachTaskRoot } from './services/tasks/attach-task-roots.js';
 import { TaskRegistrar } from './services/tasks/task-registrar.js';
-import { ensureDefaultTemplates } from './services/tasks/task-templates.js';
-import { migrateLegacySchedules } from './services/tasks/legacy-migration.js';
-import { createTasksRouter } from './routes/tasks.js';
-import { setTasksEnabled, setTasksInitError } from './services/tasks/task-state.js';
+import { setTasksInitError } from './services/tasks/task-state.js';
 import { RelayCore, AdapterRegistry, SignalEmitter, type AgentRuntimeLike } from '@dorkos/relay';
 import { createRelayRouter } from './routes/relay.js';
 import { createConnectorProvidersRouter } from './routes/connector-providers.js';
@@ -158,7 +145,6 @@ import { ManagedConnectorEventPullService } from './services/connectors/events/m
 import { ConnectorEventDeliveryService } from './services/connectors/events/delivery-service.js';
 import { ConnectorEventNativeDestination } from './services/connectors/events/channel-destination.js';
 
-import { UnclaimedChatStore } from './services/relay/unclaimed-chat-store.js';
 import { createUnclaimedChatsRouter } from './routes/unclaimed-chats.js';
 import { ConnectorRegistry } from './services/connectors/registry.js';
 import { ConnectorCatalogCache } from './services/connectors/resources/catalog-cache.js';
@@ -235,12 +221,7 @@ import {
   setRelayInitError,
 } from './services/relay/relay-state.js';
 import { AdapterManager } from './services/relay/adapter-manager.js';
-import { RELAY_NOT_BUILT } from './services/relay/task-dispatch/readiness.js';
-import {
-  createInitiateConsentGate,
-  createAgentSubjectResolver,
-} from './services/relay/initiate-consent.js';
-import { makeChatNoticeTargetResolver } from './services/relay/binding-subsystem.js';
+import { createAgentSubjectResolver } from './services/relay/initiate-consent.js';
 import { TraceStore } from './services/relay/trace-store.js';
 import { NotifyBudget } from './services/relay/notify-budget.js';
 import { MeshCore, type AdoptedAgent } from '@dorkos/mesh';
@@ -300,38 +281,12 @@ import { warnRedundantEnabledEntries } from './services/core-extensions/warn-red
 import type { CoreExtensionInfo } from './services/extensions/extension-enable-resolution.js';
 import { createExtensionsRouter, broadcastExtensionReloaded } from './routes/extensions.js';
 import { knownProjectRootsForExtensions } from './services/projects/extension-scan-roots.js';
-import { createAgentWorkspace } from './services/core/agent-creator.js';
-import { gitTreeSource } from './services/marketplace/lib/git/git-tree.js';
-import { MarketplaceSourceManager } from './services/marketplace/sources/marketplace-source-manager.js';
-import { MarketplaceCache } from './services/marketplace/cache/marketplace-cache.js';
-import { PackageCacheRetention } from './services/marketplace/cache/package-cache-retention.js';
-import { PackageResolver } from './services/marketplace/package-resolver.js';
-import { rebuildInstalledFiles } from './services/marketplace/lib/records/legacy-record.js';
-import {
-  legacySweepDirs,
-  rebuildLegacyRecords,
-  removeRecordTempLeftovers,
-  logLegacySweep,
-} from './services/marketplace/lib/integrity/legacy-record-sweep.js';
 import { withIntegrity } from './services/marketplace/lib/integrity/verify-install.js';
 import { scanInstallationsAcrossScopes } from './services/marketplace/installed-scanner.js';
 import { migrateSavedCopies } from './services/marketplace/lib/saved-copies/migrate-saved-copies.js';
 import { withInstallTargetLock } from './services/marketplace/transaction.js';
 import { globalApprovalCarryOver } from './services/marketplace/lib/saved-copies/saved-copies-consent.js';
-import { PackageFetcher } from './services/marketplace/package-fetcher.js';
-import { ConflictDetector } from './services/marketplace/preview/conflict-detector.js';
-import { PermissionPreviewBuilder } from './services/marketplace/preview/permission-preview.js';
-import { PluginInstallFlow } from './services/marketplace/flows/install-plugin.js';
-import { AgentInstallFlow } from './services/marketplace/flows/install-agent.js';
-import { SkillPackInstallFlow } from './services/marketplace/flows/install-skill-pack.js';
-import { AdapterInstallFlow } from './services/marketplace/flows/install-adapter.js';
-import { ShapeInstallFlow } from './services/marketplace/flows/install-shape.js';
-import { createShapesRouter } from './routes/shapes.js';
-import {
-  applyShape,
-  type ApplyShapeDeps,
-  type ShapeScheduleServiceLike,
-} from './services/shapes/apply-shape.js';
+import { type ShapeScheduleServiceLike } from './services/shapes/apply-shape.js';
 import { ShapeScheduleService } from './services/shapes/shape-schedule-service.js';
 import { rebindShapeSchedulesForAgent } from './services/shapes/rebind-schedules.js';
 import {
@@ -339,27 +294,9 @@ import {
   notifyAgentCreated,
   type CreatedAgentInfo,
 } from './services/core/agent-created-hook.js';
-import {
-  clearActiveShape,
-  createFsShapeManifestResolver,
-  createShapeConfigStore,
-  createShapeSecretChecker,
-  getActiveShapeName,
-  getEnabledExtensionIds,
-  listInstalledShapeManifests,
-} from './services/shapes/shape-services.js';
-import { UninstallFlow } from './services/marketplace/flows/uninstall/uninstall.js';
-import {
-  DevLinkService,
-  DevLinkWatcher,
-  devLinkExtensionsOf,
-  hookDecisionConsentStore,
-} from './services/marketplace/dev-links/index.js';
-import { createMeshAgentRegistry } from './services/marketplace/flows/mesh-agent-registry.js';
-import { UpdateFlow } from './services/marketplace/flows/update.js';
+import { listInstalledShapeManifests } from './services/shapes/shape-services.js';
+import { DevLinkWatcher } from './services/marketplace/dev-links/index.js';
 import { MarketplaceInstaller } from './services/marketplace/installer/marketplace-installer.js';
-import { createMarketplaceRouter } from './routes/marketplace.js';
-import { runAutoProjection } from './services/harness/auto-project.js';
 import { backfillAgentWorkspaceSkills } from './services/harness/project-agent-workspace.js';
 import { refreshUntouchedTemplates } from './services/mesh/refresh-untouched-templates.js';
 import { runAgentCreatedProjection } from './services/harness/project-on-agent-created.js';
@@ -383,14 +320,8 @@ import { subscribeRuntimeTurns } from './services/session/runtime-turns/runtime-
 import { wakeChatsCutShort } from './services/session/runtime-turns/wake-cut-short-work.js';
 import { DEFAULT_CWD } from './lib/resolve-root.js';
 import { describeHookProjectionCapability } from './services/harness/hook-approval.js';
-import { globalConsentRecorder } from './services/marketplace/consent/global-plugin-consent.js';
+import { describeGlobalActivationCapability } from './services/marketplace/consent/ask-withheld-global-plugins.js';
 import {
-  askAboutWithheldGlobalPlugins,
-  describeGlobalActivationCapability,
-} from './services/marketplace/consent/ask-withheld-global-plugins.js';
-import { ensurePersonalMarketplace } from './services/marketplace-mcp/personal-marketplace.js';
-import {
-  TokenConfirmationProvider,
   describeTemplateCreationCapability,
   describeWorkspaceCreationCapability,
   type ConfirmationProvider,
@@ -586,7 +517,6 @@ import {
 } from './services/core/telemetry-first-run.js';
 import { eventFanOut } from './services/core/event-fan-out.js';
 import { keepAwakeService } from './services/core/keep-awake/index.js';
-import { operatorAudience } from './services/notifications/notification-entitlement.js';
 import { AccountUsageStore } from './services/core/usage/account-usage-store.js';
 import { setAccountUsageStore } from './services/core/usage/current-usage-store.js';
 import { installSessionStatusHydration } from './services/session/fleet/session-status-hydration.js';
@@ -2654,207 +2584,27 @@ async function start() {
 
   // Phase C: adapter manager — now meshCore is available for CWD resolution.
   // Must run after meshCore init so buildContext() can call meshCore.getProjectPath().
-  //
-  // The relay carries EVERY registered runtime (DOR-1614), keyed by each
-  // runtime's own `type` — never through the deprecated single-`agentManager`
-  // field, whose compat wrap keys everything under `'claude-code'` (a lie in
-  // test mode, and the reason binding routing was silently dead there). An
-  // agent that runs on Codex or OpenCode answers a Telegram or Slack message on
-  // the runtime its manifest names, the same one it answers a room on.
-  //
-  // `relayAgentRuntime`'s entry is written LAST so it wins ITS OWN key, and
-  // that key alone. Two things make the ordering matter rather than be tidy:
-  // `listRuntimes()` hands back trace-WRAPPED runtimes, and on the production
-  // path this key is `claude-code` and the object is `claudeRuntime` — the very
-  // instance `setRelayBindingContext` configures further down. The relay and
-  // that wiring have to hold the same object, and last-write is what makes them.
-  //
-  // Under `DORKOS_TEST_RUNTIME` the key is `test-mode` instead, and
-  // `setRelayBindingContext` is never called (there is no ClaudeCodeRuntime to
-  // call it on). `DORKOS_TEST_RUNTIME_CLAUDE_ALIAS` then registers a SECOND,
-  // separate TestModeRuntime under `claude-code` (DOR-952) which
-  // `relayAgentRuntime` is not — so do not read the rule as "relayAgentRuntime
-  // is whatever answers `claude-code`". Nothing configures that alias and
-  // nothing in test mode needs it configured; it exists so a seeded manifest
-  // naming a real runtime enum resolves.
-  if (relayEnabled && relayCore && adapterRegistry && traceStore && relayAgentRuntime) {
-    try {
-      const adapterConfigPath = path.join(dorkHome, 'relay', 'adapters.json');
-      // Narrowed once, outside the closures below: `relayCore` is a `let`
-      // reassigned elsewhere in this function, so TypeScript cannot carry the
-      // `if` guard's narrowing into an arrow function defined inside this
-      // object literal — the closure sees the widened `RelayCore | undefined`
-      // declared type, not the guard.
-      const relayCoreInstance = relayCore;
-      adapterManager = new AdapterManager(adapterRegistry, adapterConfigPath, {
-        agentRuntimes: new Map<string, AgentRuntimeLike>([
-          ...runtimeRegistry.listRuntimes().map((r): [string, AgentRuntimeLike] => [r.type, r]),
-          // **The relay's default runtime, keyed by its own type but resolved
-          // back through the REGISTRY.** `relayAgentRuntime` is the raw object
-          // this function constructed; the registry holds the WRAPPED one
-          // (tracing, and the DOR-1654 sign-in watch). This entry is appended
-          // last and so wins on key collision, which means spelling the VALUE
-          // `relayAgentRuntime` put the raw runtime in the map — and from there
-          // into `deps.agentManager`, since `adapter-factory.ts`'s
-          // `defaultRuntimeFor` reads this very map, and back over the map again
-          // in `ClaudeCodeAdapter`'s constructor. Every relay turn on claude-code
-          // then ran unwatched, so a Telegram-bridged agent on an expired
-          // sign-in told nobody: the exact gap DOR-1654 exists to close.
-          //
-          // Resolved by TYPE, not by identity, so this entry and `agentManager`
-          // are the SAME proxy instance — `register()` builds the wrapper once
-          // and stores it, so repeated `get()` calls return one reference and
-          // `ClaudeCodeAdapter`'s `r !== this.deps.agentManager` dedupe still
-          // holds. Both paths that assign `relayAgentRuntime` register it first,
-          // so this lookup cannot miss; if it ever did, throwing inside this
-          // `try` costs the relay and says so, which beats seeding an unwatched
-          // runtime in silence.
-          //
-          // `setRelayBindingContext` below deliberately keeps the RAW
-          // `claudeRuntime`, and that is not an oversight: it calls a
-          // ClaudeCodeRuntime-only method that is not part of `AgentRuntime`.
-          // Two consumers, two objects, on purpose.
-          [relayAgentRuntime.type, runtimeRegistry.get(relayAgentRuntime.type)],
-        ]),
-        traceStore,
-        taskStore: taskStore,
-        // A scheduled run that took the relay path is the ordinary case once an
-        // adapter is connected, and until DOR-1580 it was the case where
-        // "could not use that tool, nobody was there to approve it" reached the
-        // run's summary and no further. Built here because this is the only
-        // place that holds the whole `TaskStore` and the activity feed at once.
-        ...(taskStore && {
-          onRefusedAsk: createRelayRefusedAskEmitter({ taskStore, activityService }),
-        }),
-        relayCore,
-        meshCore, // meshCore is now available
-        eventRecorder: traceStore,
-        traceEraser: traceStore,
-        activityService,
-        // The claim feed for unbound inbound chats (connection-scoping spec
-        // §Part 3). Constructed here (rather than up front with the connector
-        // stores) because it belongs to the relay/binding domain, not
-        // connectors — it just happens to share the same `db`.
-        unclaimedChats: new UnclaimedChatStore(db),
-        // The rooms seams the inbound chat bridge writes through
-        // (chats-as-channels §5). Threaded to the binding subsystem, which
-        // builds the bridge where `bindingStore` and `chatNotice` already exist.
-        roomService,
-        roomBridges,
-        // Session adoption at bridge time (chats-as-channels §7.3) probes the
-        // DURABLE claude-code transcript on disk. Backed by the claude-code
-        // runtime's own `TranscriptReader` so the runtime SDK stays confined to
-        // its adapter dir; the reader is captured once (it is stable) and the
-        // probe answers `canProbe` only for claude-code, so codex/opencode
-        // sessions take the fresh-start path. Absent in test mode (no claude
-        // runtime), where every bridge starts fresh.
-        transcriptProbe: (() => {
-          const reader = claudeRuntime?.getTranscriptReader();
-          return reader
-            ? {
-                canProbe: (runtimeType: string) => runtimeType === 'claude-code',
-                hasTranscript: (vaultRoot: string, sessionId: string) =>
-                  reader.hasTranscript(vaultRoot, sessionId),
-              }
-            : undefined;
-        })(),
-        operatorAuthorId: resolveOperatorAuthorId,
-        operatorDisplayName: resolveOperatorDisplayName,
-        // The extra rooms reads outbound delivery needs (chats-as-channels §6):
-        // read an entry by id, resolve an author, and register the inline
-        // delivery hook on the room service.
-        roomStore,
-        roomAuthors,
-        // The three seams the bridged Approve/Deny card needs beyond outbound
-        // delivery's set (spec `ask-entitlement` §5): which room a session
-        // answers for, who is on the other end of the chat, and — supplied by
-        // the manager itself — that adapter's approver allowlist.
-        roomSessionBindings: roomStore.sessionLedger,
-        roomMembers: roomStore,
-        registerEntryCommitListener: (listener) => roomService.setEntryCommitListener(listener),
-        // The bridge's presence forwarder (§6.8): a room's live `progress`
-        // signal becomes a relay signal on the bridged chat's subject, reusing
-        // `RelayCore.signal` — the same ephemeral emit the Telegram adapter's
-        // signal subscription already listens for — rather than the
-        // publish/consent pipeline `relayCore.publish` runs for messages.
-        relaySignal: (subject, signal) => relayCoreInstance.signal(subject, signal),
-        registerSignalListener: (listener) => roomService.setSignalListener(listener),
-        // Build a chat's outbound subject from its bridge row (§6.4). The
-        // platform segment lives on the adapter's own subject prefix, not the
-        // bridge row, so it is resolved from the adapter registry here — keeping
-        // the delivery engine platform-agnostic. The prefix is instance-scoped
-        // in production (`relay.human.telegram.<id>`); the fallback inserts the
-        // adapter id when it is not, so both shapes round-trip through
-        // `parseHumanSubject` to the same binding the consent gate resolves.
-        resolveBridgeSubject: (bridge) => {
-          const adapter = adapterRegistry?.get(bridge.adapterId);
-          if (!adapter) return null;
-          const prefixes = Array.isArray(adapter.subjectPrefix)
-            ? adapter.subjectPrefix
-            : [adapter.subjectPrefix];
-          const prefix = prefixes[0];
-          if (!prefix) return null;
-          const base = prefix.endsWith(`.${bridge.adapterId}`)
-            ? prefix
-            : `${prefix}.${bridge.adapterId}`;
-          const groupSegment = bridge.platformChatType === 'private' ? '' : '.group';
-          return `${base}${groupSegment}.${bridge.chatId}`;
-        },
-      });
-      await adapterManager.initialize();
-      relayCore.setAdapterContextBuilder(adapterManager.buildContext.bind(adapterManager));
-
-      // Provide relay binding context to runtime for <relay_connections> system prompt block
-      const bindingRouter = adapterManager.getBindingRouter();
-      const bindingStore = adapterManager.getBindingStore();
-      if (claudeRuntime && bindingRouter && bindingStore) {
-        claudeRuntime.setRelayBindingContext(bindingRouter, bindingStore, adapterManager);
-      }
-
-      // Enforce the DOR-239 "agent may start conversations" consent at the relay
-      // delivery layer (DOR-277). This is the authoritative gate: every
-      // agent-initiated send to a bound human channel — A2A, an external MCP
-      // publish, or any other publish path — is denied unless the binding is enabled, consents,
-      // and belongs to the sending agent.
-      //
-      // `initialize()` has already SCHEDULED the adapter starts by the time it
-      // resolves, so this line is not protected by ordering. What protects it
-      // is that the relay denies every send to a bound human channel until a
-      // gate is installed: an adapter that connects a moment early cannot
-      // deliver anything ungated, and never reaching this line silences chat
-      // integrations rather than opening them.
-      if (bindingStore) {
-        relayCore.setInitiateConsentGate(
-          createInitiateConsentGate({
-            bindingStore,
-            resolveAgentSubject: createAgentSubjectResolver(meshCore),
-          })
-        );
-        // Same reasoning, same moment: the relay's chat-failure notice speaks on
-        // a subject that came off a failed envelope's `replyTo`, which the
-        // sender chose. Without this lookup it resolves nothing and
-        // stays silent, so a missing wire closes the channel rather than opening
-        // one into a chat nobody bound (DOR-789).
-        relayCore.setChatNoticeTargetResolver(makeChatNoticeTargetResolver(bindingStore));
-      }
-
-      logger.info('[Relay] AdapterManager initialized');
-    } catch (err) {
-      const errInfo = logError(err);
-      logger.error('[Relay] Failed to initialize AdapterManager', errInfo);
-      // Non-fatal: RelayCore and MeshCore remain operational.
-      // Adapters (including ClaudeCodeAdapter) will be unavailable.
-      adapterManager = undefined;
-    }
-  } else if (relayEnabled && relayCore && adapterRegistry && traceStore) {
-    // Reachable only if a future branch registers runtimes without assigning
-    // `relayAgentRuntime`. Silence here would look exactly like a relay that
-    // works: adapters simply never start, and chat platforms go quiet.
-    logger.error(
-      '[Relay] No agent runtime bound for the relay — adapters will not start. ' +
-        'Every runtime-registration branch in start() must assign relayAgentRuntime.'
-    );
-  }
+  // Which runtimes the relay carries, and why its own runtime is written last:
+  // `startup/relay-adapters.ts`.
+  adapterManager = await startRelayAdapters({
+    relayEnabled,
+    relayCore,
+    adapterRegistry,
+    traceStore,
+    relayAgentRuntime,
+    claudeRuntime,
+    dorkHome,
+    db,
+    taskStore,
+    activityService,
+    meshCore,
+    roomService,
+    roomStore,
+    roomAuthors,
+    roomBridges,
+    resolveOperatorAuthorId,
+    resolveOperatorDisplayName,
+  });
 
   // Where a proactive message goes when no external chat integration can carry
   // it: the sending agent's own direct message with the operator (DOR-1209).
@@ -3987,216 +3737,22 @@ async function start() {
   );
   logger.info(`[MCP] External MCP server mounted at /mcp (stateless, ${mcpAuthMode})`);
 
-  // Mount Tasks routes if enabled. The scheduler resolves a runtime PER RUN off
-  // the registry (DOR-1615) — it no longer holds one agent manager bound at
-  // boot, which is what made every scheduled run a Claude Code run whatever the
-  // task or its agent said. A test-mode boot needs nothing special: `test-mode`
-  // is registered and set as the default above, so that is what a task with no
-  // runtime of its own resolves to.
-  if (tasksEnabled && taskStore) {
-    // An agent's runtime, model or effort changed by editing its file rather
-    // than through DorkOS re-asks for the approved schedules that follow it
-    // (DOR-2337). `agent-execution-watch.ts` says when it looks and why.
-    const agentExecutionWatch = startAgentExecutionWatch({
+  // Mount Tasks routes if enabled (`startup/tasks.ts`).
+  ({ schedulerService, taskRegistrar, taskFileWatcher, taskReconciler, attachAgentTaskRoots } =
+    await startTasks({
+      app,
+      tasksEnabled,
+      taskStore,
       dorkHome,
-      store: taskStore,
-      agents: () => meshCore?.listWithPaths() ?? [],
-      onParked: async (tasks) => {
-        for (const parked of tasks) {
-          taskRegistrar?.syncTask(parked.id);
-          raiseStanding('schedule.parked', await resolveScheduleParkPayload(parked));
-        }
-        broadcastTasksChanged();
-      },
-      activity: activityService,
-      logger,
-    });
-
-    schedulerService = new TaskSchedulerService({
-      store: taskStore,
-      runtimes: runtimeRegistry,
-      config: {
-        maxConcurrentRuns: schedulerConfig.maxConcurrentRuns,
-        retentionCount: schedulerConfig.retentionCount,
-        mayFire: firing.mayFire,
-        firingReason: firing.reason,
-      },
-      relay: relayCore,
-      // Whether the bus can actually run a turn on this runtime, asked per run
-      // (DOR-1614) and answered from LIVE adapter state (DOR-1636). Read
-      // through the live `adapterManager` rather than captured at this line.
-      // Phase C runs earlier than this in the current ordering, so capturing
-      // would happen to work today — but the binding is deliberately late for
-      // two reasons that outlive the ordering. Moving either block would
-      // silently freeze a stale value, and Phase C RESETS `adapterManager` to
-      // `undefined` when its init throws (see its catch), which a captured
-      // reference could not see. A relay that never built, or that failed
-      // building, must answer "no" — which is what `?? RELAY_NOT_BUILT` says —
-      // and then every run executes in this process, as it always did with the
-      // relay off.
-      relayHoldsRuntime: (runtimeType, subject) =>
-        adapterManager?.canRunTaskOnBus(runtimeType, subject) ?? RELAY_NOT_BUILT,
       meshCore,
       activityService,
-      dorkHome,
-      beforeScheduledFire: (task) => agentExecutionWatch.beforeScheduledFire(task),
-      // Each run holds the computer awake from placement to its last event.
-      keepAwake: keepAwakeService,
-      // A paused agent's runs are skipped, never started (spec `audit-trail` PR5).
+      relayCore,
+      schedulerConfig,
+      firing,
       agentPauses,
-    });
-    // The ONE registration seam, shared by every writer that can change what a
-    // task's schedule is: these routes, the file watcher, and the reconciler.
-    taskRegistrar = new TaskRegistrar({ store: taskStore, scheduler: schedulerService });
-    app.use(
-      '/api/tasks',
-      createTasksRouter(
-        taskStore,
-        schedulerService,
-        taskRegistrar,
-        dorkHome,
-        meshCore,
-        activityService
-      )
-    );
-    setTasksEnabled(true);
-    mountedRouters.push('tasks');
-
-    // Cascade-pause: when an agent is unregistered from Mesh, pause its linked task schedules.
-    // The callback receives the project path captured before registry removal —
-    // meshCore.getProjectPath(agentId) would already return undefined here.
-    if (meshCore) {
-      meshCore.onUnregister((agentId, projectPath) => {
-        // Forgotten, like its permission record, so a later folder reusing
-        // its id starts fresh (DOR-2337).
-        void agentExecutionWatch.forget(agentId);
-        const pausedCount = taskStore.disableTasksByAgentId(agentId);
-        if (pausedCount > 0) {
-          logger.info(
-            `[Tasks] Paused ${pausedCount} schedule(s) for unregistered agent ${agentId}`
-          );
-        }
-        // Stop watching and reconciling every root that belonged to the agent.
-        for (const root of agentTaskRoots(projectPath, agentId)) {
-          taskFileWatcher?.stopWatching(root.dir).catch(() => {});
-          taskReconciler?.removeDirectory(root.dir);
-        }
-      });
-    }
-
-    // Wire file watcher and reconciler for file-first schedule sync.
-    //
-    // One identity registry shared by both halves: they are two views of one
-    // discovery pass, and a claim on a real SKILL.md only means anything if
-    // both respect it (`services/tasks/schedule-identity.ts`).
-    const scheduleIdentities = new ScheduleIdentityRegistry();
-    taskFileWatcher = new TaskFileWatcher(taskStore, taskRegistrar, scheduleIdentities);
-    // The watcher is also the reconciler's health source: a root whose watch is
-    // deaf (its directory does not exist yet) or dead (chokidar errored on it,
-    // after which it reports nothing at all) is covered every ten seconds
-    // instead of every five minutes, because for that root the reconciler is not
-    // a backstop — it is the only thing looking (DOR-1908).
-    taskReconciler = new TaskReconciler(
-      taskStore,
-      taskRegistrar,
-      scheduleIdentities,
-      taskFileWatcher,
-      () => agentExecutionWatch.checkAll()
-    );
-    const discovery = { watcher: taskFileWatcher, reconciler: taskReconciler };
-
-    // Schedules written in the old shape move to the new one, once, on the boot
-    // that finds them — files rewritten, directories moved, rows re-keyed with
-    // their approvals intact (`legacy-migration.ts`, ADR `260823-200729`).
-    //
-    // FIRST, and the order is load-bearing twice over: before any watcher, so
-    // discovery never races a file being rewritten under it, and before the
-    // grant backfill below, which reads each row's own content and so has to see
-    // the finished migration rather than the middle of it. A no-op in
-    // microseconds once there is nothing left to migrate.
-    await migrateLegacySchedules({
-      dorkHome,
-      store: taskStore,
-      agents: registeredAgentRoots(meshCore),
-    });
-
-    // Every schedule that was already live keeps its approval across this
-    // upgrade. The arm grant is a stored key now, and rows written before that
-    // column existed have none — so without this pass the first sync would park
-    // every schedule an alpha user already approved. Runs BEFORE any watcher
-    // starts, and matches nothing on the second boot.
-    // Approvals recorded in an older key format move onto today's key, extended
-    // with the timezone (DOR-2307) and the settings (DOR-2323) each schedule
-    // already runs with. Before the backfill and before any watcher, for the
-    // same reason as both: a sync that found a stale-shaped key would park an
-    // approved schedule.
-    const upgraded = taskStore.approvals.upgradeLegacyApprovalKeys();
-    if (upgraded > 0) {
-      logger.info(
-        `[Tasks] Carried ${upgraded} approval(s) over to include each schedule's timezone and settings`
-      );
-    }
-
-    const backfilled = taskStore.approvals.backfillApprovalGrants();
-    if (backfilled > 0) {
-      logger.info(`[Tasks] Kept ${backfilled} already-approved schedule(s) approved`);
-    }
-
-    // `~/.dork/skills/` is created rather than merely watched, so that a person
-    // looking for where to put a global schedule finds it already there.
-    await ensureGlobalSkillsRoot(dorkHome);
-    for (const root of globalTaskRoots(dorkHome)) attachTaskRoot(discovery, root);
-
-    if (meshCore) {
-      for (const agent of meshCore.list()) {
-        const projectPath = meshCore.getProjectPath(agent.id);
-        if (projectPath) attachAgentRoots(discovery, projectPath, agent.id);
-      }
-
-      // Agents that register AFTER boot get their roots watched immediately.
-      //
-      // Until DOR-1485 the loop above was the only place roots were ever added,
-      // so a newly registered agent's schedules were invisible until the next
-      // restart — the gap `task-reconciler.ts` documents in its retirement
-      // notes. The agent-created listener further down calls this; that hook is
-      // the one seam every arrival funnels through (create, register,
-      // marketplace install, discovery adoption) and it carries the project
-      // path, so nothing has to be looked up.
-      attachAgentTaskRoots = async (projectPath: string, agentId: string): Promise<void> => {
-        // Migrate BEFORE watching, for the same reason boot does. An agent that
-        // registers after boot brings its own project with it, legacy
-        // `.dork/tasks/` and all — and that directory is no longer watched, so
-        // without this pass its schedules would be neither migrated nor
-        // discovered until the next restart. That is a REGRESSION against the
-        // build before this wave, where the legacy root was attached here and
-        // its schedules started working immediately.
-        //
-        // Safe to call from a hook: it is idempotent, it never throws, and
-        // scoping it to one agent means it reads two directories.
-        await migrateLegacySchedules({
-          dorkHome,
-          store: taskStore,
-          agents: [{ agentId, projectPath }],
-        });
-        attachAgentRoots(discovery, projectPath, agentId);
-        // A baseline from the moment it arrives (DOR-2337).
-        await agentExecutionWatch.checkAgent(projectPath);
-        logger.info(`[Tasks] Watching schedule roots for newly registered agent ${agentId}`);
-      };
-    }
-
-    taskReconciler.start();
-    logger.info('[Tasks] File watcher and reconciler started');
-    // Every registered agent gets a baseline before the first fire, so an edit
-    // made after this boot is compared with something (DOR-2337).
-    await agentExecutionWatch.checkAll();
-
-    // Ensure default templates exist
-    ensureDefaultTemplates(dorkHome).catch((err) => {
-      logger.warn('[Tasks] Failed to seed default templates', logError(err));
-    });
-  }
-
+      currentAdapterManager: () => adapterManager,
+      mountedRouters,
+    }));
   // A skill an agent writes into `.agents/skills` reaches Claude Code within
   // seconds instead of at the next manual sync or the next boot (DOR-1850).
   //
@@ -5040,387 +4596,22 @@ async function start() {
   // but source listing, cache, discovery, agent installs, and skill-pack
   // installs remain fully functional, so we always mount the router rather
   // than gating the entire namespace.
-  if (extensionManager && adapterManager) {
-    const marketplaceSourceManager = new MarketplaceSourceManager(dorkHome);
-    const marketplaceCache = new MarketplaceCache(dorkHome);
-    // Reclaim what no cache entry is read from: trees cached before their
-    // keys were verified (DOR-2248) and temp fetches a crash left behind.
-    // Awaited, before the routes exist, so it can never race a fetch.
-    try {
-      await marketplaceCache.removeLeftovers();
-    } catch (err) {
-      logger.warn('[Marketplace] could not clear leftover package cache files', {
-        error: err instanceof Error ? err.message : String(err),
-      });
-    }
-    const marketplaceFetcher = new PackageFetcher(marketplaceCache, gitTreeSource, logger);
-    // Give packages an older DorkOS installed an exact installed-files record,
-    // in the background once interrupted installs are settled (DOR-2197). It
-    // never blocks startup and writes nothing it cannot prove; what it cannot
-    // rebuild waits for the next boot or the "Check files" action.
-    void projectInstallRecovery
-      .then(() => removeRecordTempLeftovers())
-      .then(() =>
-        rebuildLegacyRecords(
-          legacySweepDirs(dorkHome, sweptProjects),
-          { fetcher: marketplaceFetcher, logger },
-          { signal: legacyRecordSweep.signal }
-        )
-      )
-      .then(logLegacySweep)
-      .catch((err: unknown) => {
-        logger.warn('[Marketplace] Rebuilding records for older installs failed', logError(err));
-      });
-    const marketplaceResolver = new PackageResolver(marketplaceSourceManager, marketplaceCache);
-    const marketplaceConflictDetector = new ConflictDetector(dorkHome, adapterManager);
-    const marketplacePreviewBuilder = new PermissionPreviewBuilder(
-      dorkHome,
-      marketplaceConflictDetector
-    );
-
-    const marketplacePluginFlow = new PluginInstallFlow({
-      dorkHome,
-      extensionCompiler: extensionManager.getCompiler(),
-      extensionManager,
-      logger,
-    });
-    // One agent-registry surface for the flows that take an agent off the team
-    // (DOR-2245): an uninstalled agent package, and an agent a different
-    // package with the same name replaces.
-    const marketplaceAgentRegistry = createMeshAgentRegistry(() => meshCore);
-    const marketplaceAgentFlow = new AgentInstallFlow({
-      dorkHome,
-      agentCreator: { createAgentWorkspace },
-      getMeshCore: () => meshCore,
-      agentRegistry: marketplaceAgentRegistry,
-      logger,
-    });
-    const marketplaceSkillPackFlow = new SkillPackInstallFlow({ dorkHome, logger });
-    const marketplaceAdapterFlow = new AdapterInstallFlow({
-      dorkHome,
-      adapterManager,
-      logger,
-    });
-    const marketplaceShapeFlow = new ShapeInstallFlow({
-      dorkHome,
-      extensionCompiler: extensionManager.getCompiler(),
-      logger,
-    });
-    const marketplaceUninstallFlow = new UninstallFlow({
+  ({ devLinkWatcher, templateConfirmationProvider, agentPackageInstaller, marketplaceMcpDeps } =
+    await startMarketplace({
+      app,
       dorkHome,
       extensionManager,
       adapterManager,
-      // Keep `ui.shapes.active` honest when the active Shape is uninstalled.
-      shapeDeactivator: { getActiveShapeName, clearActiveShape },
-      // Delete the schedules a removed Shape created so its tick stops firing.
-      shapeScheduleTeardown: shapeScheduleService,
-      // An uninstalled agent package's agent leaves the team (DOR-2245): the
-      // full unregister cascade, and back again if the uninstall rolls back.
-      agentRegistry: marketplaceAgentRegistry,
-      // An install made before installed-files records existed gets one rebuilt
-      // from the commit it was installed at (DOR-2245 §9).
-      rebuildLegacy: (installRoot: string) =>
-        rebuildInstalledFiles(installRoot, { fetcher: marketplaceFetcher, logger }),
-      logger,
-    });
-
-    // Shape apply wiring (DOR-355) — constructed here, before the installer,
-    // because the installer's update() path re-applies the active Shape after
-    // an uninstall → reinstall replace. The `/api/shapes` routes mounted below
-    // share these exact deps; `shapeScheduleService` is the hoisted instance
-    // the agent-create re-bind seam also uses (built above the agents router).
-    const shapeApplyDeps: ApplyShapeDeps = {
-      manifestResolver: createFsShapeManifestResolver(dorkHome),
-      extensionManager,
-      secretChecker: createShapeSecretChecker(dorkHome),
-      agentRegistry: { listWithPaths: () => meshCore?.listWithPaths() ?? [] },
-      scheduleService: shapeScheduleService,
-      configStore: createShapeConfigStore(),
-    };
-
-    const marketplaceInstaller = new MarketplaceInstaller({
-      dorkHome,
-      resolver: marketplaceResolver,
-      fetcher: marketplaceFetcher,
-      previewBuilder: marketplacePreviewBuilder,
-      pluginFlow: marketplacePluginFlow,
-      agentFlow: marketplaceAgentFlow,
-      skillPackFlow: marketplaceSkillPackFlow,
-      adapterFlow: marketplaceAdapterFlow,
-      shapeFlow: marketplaceShapeFlow,
-      uninstallFlow: marketplaceUninstallFlow,
-      // Updating the active Shape keeps its pointer through the replace and
-      // re-applies the new version so the cockpit reflects the update.
-      shapeUpdateHooks: {
-        getActiveShapeName,
-        reapplyShape: (name) => applyShape(name, shapeApplyDeps),
-      },
-      logger,
-    });
-
-    // UpdateFlow takes an `InstallerLike` — passing the concrete installer
-    // is safe because `MarketplaceInstaller implements InstallerLike` and
-    // breaks the type cycle between installer and update flow at the type
-    // level (see `marketplace-installer.ts`).
-    const marketplaceUpdateFlow = new UpdateFlow({
-      dorkHome,
-      installer: marketplaceInstaller,
-      sourceManager: marketplaceSourceManager,
-      fetcher: marketplaceFetcher,
-      logger,
-    });
-
-    // Cross-scope installed listing walks every registered agent's
-    // .dork/plugins. Resolved lazily per call so agents registered after
-    // startup are included; display name preferred for the UI. Shared by the
-    // HTTP router and the `marketplace_list_installed` MCP tool so both report
-    // the same one-entry-per-installation truth.
-    const listAgentScopes = () =>
-      (meshCore?.listWithPaths() ?? []).map((a) => ({
-        projectPath: a.projectPath,
-        id: a.id,
-        name: a.displayName ?? a.name,
-      }));
-
-    // The package cache's retention owner (DOR-2249): sweeps after every new
-    // entry and once now, in the background, keeping what installs need.
-    const marketplaceCacheRetention = new PackageCacheRetention({
-      cache: marketplaceCache,
-      dorkHome,
-      // No registry means agent-scoped installs are invisible, so the sweep
-      // must remove nothing rather than read that as "none installed".
-      listAgentScopes: () => (meshCore ? listAgentScopes() : undefined),
-      logger,
-    });
-    marketplaceCacheRetention.start();
-
-    // Ask a person about every global package held back from sessions because
-    // nobody approved what it runs (DOR-2306). Fire-and-forget: a card stays
-    // open for the approval window, and a yes reloads the plugins sessions get.
-    const askAboutWithheldGlobals = (): void => {
-      askAboutWithheldGlobalPlugins({
-        dorkHome,
-        approvals: approvalService,
-        onGranted: () => claudeRuntime?.refreshActivatedPlugins(),
-      }).catch((err) => {
-        logger.warn('[Marketplace] Asking about held-back global packages failed', { err });
-      });
-    };
-    // Once at start: packages installed before this version, or changed on disk
-    // while DorkOS was off, are asked about now rather than at the next install.
-    askAboutWithheldGlobals();
-
-    // The one post-change notifier, handed to BOTH surfaces that mutate installed
-    // packages: the HTTP router below and the marketplace MCP tools
-    // (`marketplaceMcpDeps`). It is required on both deps types, so a surface
-    // cannot be wired without it — an agent's `marketplace_install` used to skip
-    // it entirely and leave the plugin unprojected (DOR-2057).
-    // The runtime half of the post-change notifier, on its own so the dev link
-    // watcher can refresh plugins without also queuing a projection per edit.
-    // Resolves when the refresh is done, and never rejects.
-    const refreshRuntimePlugins = (projectPath: string | undefined): Promise<void> => {
-      // Pass the project path (when the change was project-scoped) so the
-      // runtime drops that cwd's cached command list and re-warms it with
-      // the merged per-cwd plugin set.
-      const refreshed =
-        claudeRuntime?.refreshActivatedPlugins(projectPath).catch((err) => {
-          logger.warn('[Marketplace] Post-install plugin refresh failed', { err });
-        }) ?? Promise.resolve();
-      // A global change can leave a package held back from every session until
-      // a person approves what it runs (DOR-2306): ask now, in the background.
-      if (projectPath === undefined) askAboutWithheldGlobals();
-      return refreshed;
-    };
-
-    const onPluginsChanged: MarketplaceMcpDeps['onPluginsChanged'] = (ctx) => {
-      // Never throws into the caller: it runs after a mutation already succeeded,
-      // and a failed follow-up must not be reported as a failed install.
-      try {
-        void refreshRuntimePlugins(ctx.projectPath);
-        // Harness Sync auto-projection (GAP-4): project the changed plugin's
-        // assets to the project's other harnesses. Fire-and-forget; the
-        // service is internally best-effort and never throws, but we still
-        // catch here to honor the no-floating-promise convention.
-        runAutoProjection(ctx, { dorkHome, approvals: approvalService }).catch((err) => {
-          logger.warn('[Marketplace] Harness auto-projection failed', { err });
-        });
-      } catch (err) {
-        logger.warn('[Marketplace] Post-change notification failed', { err });
-      }
-    };
-
-    // Running extensions' skills (DOR-2685): when the set of extension skills
-    // agents should see changes, project each affected project again (the same
-    // consent seam and `harness.autoSync` gate a plugin install goes through)
-    // and refresh the plugins Claude Code sessions load for global ones. A
-    // project an extension only LEFT and that has no harness manifest has
-    // nothing projected to sweep, so it is not scaffolded one.
-    extensionManager?.attachSkillDelivery({
-      projectChanged: async ({ root, ids, remaining }) => {
-        if (!remaining && !existsSync(path.join(root, HARNESS_MANIFEST_PATH))) return;
-        await runAutoProjection(
-          {
-            projectPath: root,
-            packageName: ids.join(', '),
-            action: remaining ? 'install' : 'uninstall',
-          },
-          { dorkHome, approvals: approvalService }
-        );
-        claudeRuntime?.refreshProjectCommands(root);
-      },
-      globalChanged: () => claudeRuntime?.refreshActivatedPlugins(),
-    });
-
-    // Dev links (DOR-2696): run a plugin or skill pack from a folder. One
-    // service for the routes and the `marketplace_link` capability. A link's
-    // yes for the extensions it carries is written beside every other
-    // extension approval, keeping the rest of that section as it is.
-    const devLinkExtensions = extensionManager;
-    // An edit in a linked folder reaches DorkOS within seconds, through the
-    // seams an install uses (spec §6). It records no approval: a rebuild needs
-    // the extension already approved, and anything new asks on its own card.
-    devLinkWatcher = new DevLinkWatcher({
-      dorkHome,
-      extensions: devLinkExtensionsOf(devLinkExtensions, {
-        config: () => configManager.get('extensions'),
-        announce: (ids) => broadcastExtensionReloaded(ids),
-      }),
-      // Global dev links only: a project package is not an SDK plugin, so a
-      // project dev link's edits reach sessions through the projection alone.
-      refreshPlugins: () => refreshRuntimePlugins(undefined),
-      reproject: (ctx) =>
-        runAutoProjection({ ...ctx, action: 'install' }, { dorkHome, approvals: approvalService }),
-      refreshProjectCommands: (projectPath) => claudeRuntime?.refreshProjectCommands(projectPath),
-      // A person's surface: it names folders and build errors, so it goes
-      // where `config_changed` goes and no agent reads it.
-      broadcast: (event) =>
-        eventFanOut.broadcast('marketplace_dev_link_reloaded', event, operatorAudience),
-    });
-    const devLinkService = new DevLinkService({
-      dorkHome,
-      approvals: {
-        read: () => {
-          const extensions = configManager.get('extensions');
-          return {
-            approvedToRun: extensions.approvedToRun,
-            approvedSources: extensions.approvedSources ?? {},
-            approvedPermissions: extensions.approvedPermissions ?? {},
-          };
-        },
-        write: (next) => {
-          const before = configManager.get('extensions');
-          configManager.set('extensions', { ...before, ...next });
-          logConfigWrite('linking a folder', 'extensions', before, configManager.get('extensions'));
-        },
-      },
-      // The link card's yes for the hooks and programs it showed (task 2.2).
-      consent: hookDecisionConsentStore,
-      onPluginsChanged,
-      refreshExtensions: () => devLinkExtensions.requestRefresh(),
-      reloads: devLinkWatcher,
-    });
-    // Not awaited: boot does not wait on watches opening. It never rejects.
-    void devLinkWatcher.start();
-
-    // Build the confirmation provider that gates marketplace mutations. There is
-    // exactly one, and no way to switch it off: it records an approval the
-    // operator decides from the approval card (`POST /api/approvals/:id/grant|deny`).
-    // Automation answers that approval through the same routes a person uses
-    // rather than skipping it (DOR-501). Shared by the MCP tools and the HTTP
-    // update route, so an agent's update raises the same card on both (DOR-2306).
-    const confirmationProvider: ConfirmationProvider = new TokenConfirmationProvider(
-      approvalService
-    );
-    templateConfirmationProvider = confirmationProvider;
-    agentPackageInstaller = { installer: marketplaceInstaller, dorkHome };
-
-    app.use(
-      '/api/marketplace',
-      createMarketplaceRouter({
-        // Read lazily: the registry is composed further down this same boot, so
-        // a direct reference here would capture `undefined` forever. Until it
-        // exists, the marketplace mutation routes fail closed.
-        capabilityRegistry: () => capabilityRegistry,
-        sourceManager: marketplaceSourceManager,
-        cache: marketplaceCache,
-        cacheRetention: marketplaceCacheRetention,
-        fetcher: marketplaceFetcher,
-        installer: marketplaceInstaller,
-        uninstallFlow: marketplaceUninstallFlow,
-        updateFlow: marketplaceUpdateFlow,
-        dorkHome,
-        listAgentScopes,
-        onPluginsChanged,
-        confirmationProvider,
-        consent: globalConsentRecorder,
-        heldBackCards: {
-          approvals: approvalService,
-          onGranted: () => claudeRuntime?.refreshActivatedPlugins(),
-        },
-        devLinks: devLinkService,
-      })
-    );
-    mountedRouters.push('marketplace');
-
-    // Mount Shape routes (DOR-355). Apply/fork ride the marketplace block
-    // because apply enables extensions (needs `extensionManager`). Schedules
-    // degrade to a no-op when the scheduler is off; extensions, chrome, and
-    // agent offers still apply. (`shapeApplyDeps` is constructed above the
-    // installer so the update path can re-apply the active Shape.)
-    app.use(
-      '/api/shapes',
-      createShapesRouter({
-        dorkHome,
-        applyDeps: shapeApplyDeps,
-        forkDeps: {
-          dorkHome,
-          logger,
-          getEnabledExtensions: getEnabledExtensionIds,
-          getActiveShape: getActiveShapeName,
-        },
-      })
-    );
-    mountedRouters.push('shapes');
-
-    // Personal marketplace bootstrap — runs after the source manager is wired
-    // but before the MCP server fields its first request so the personal
-    // source is registered when external clients call
-    // `marketplace_list_marketplaces`. Failure here is non-fatal: a missing
-    // personal marketplace just means the `marketplace_create_package` tool
-    // has no destination, every other tool keeps working.
-    try {
-      await ensurePersonalMarketplace({
-        dorkHome,
-        sourceManager: marketplaceSourceManager,
-        logger,
-      });
-    } catch (err) {
-      logger.warn('[personal-marketplace] bootstrap failed (non-fatal)', {
-        error: err instanceof Error ? err.message : String(err),
-      });
-    }
-
-    marketplaceMcpDeps = {
-      dorkHome,
-      installer: marketplaceInstaller,
-      sourceManager: marketplaceSourceManager,
-      fetcher: marketplaceFetcher,
-      cache: marketplaceCache,
-      uninstallFlow: marketplaceUninstallFlow,
-      updateFlow: marketplaceUpdateFlow,
-      confirmationProvider,
-      consent: globalConsentRecorder,
-      onPluginsChanged,
-      listAgentScopes,
-      devLinks: devLinkService,
-      logger,
-    };
-    logger.info('[Marketplace] MCP tools wired into external /mcp server');
-  } else {
-    logger.warn(
-      '[Marketplace] Routes skipped — requires extensionManager and adapterManager (relay must be enabled and extensions must have initialized successfully)'
-    );
-  }
+      claudeRuntime,
+      approvalService,
+      shapeScheduleService,
+      projectInstallRecovery,
+      legacyRecordSweep,
+      currentMeshCore: () => meshCore,
+      currentSweptProjects: () => sweptProjects,
+      currentCapabilityRegistry: () => capabilityRegistry,
+      mountedRouters,
+    }));
 
   // Embedded terminal (spec right-panel-workbench, Chunk E). Always mounted:
   // PTYs are boundary-confined to the requested cwd, and a terminal id is an

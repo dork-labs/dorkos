@@ -1,5 +1,5 @@
 import { createHmac } from 'node:crypto';
-import { readFileSync, mkdtempSync, writeFileSync, rmSync } from 'node:fs';
+import { readFileSync, readdirSync, mkdtempSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { Agent, request as httpRequest, type IncomingMessage } from 'node:http';
@@ -123,11 +123,16 @@ function expectTerminal(response: {
 /** Census actual mounts in both composition files, including conditional/later mounts. */
 function mountPaths() {
   const paths = new Set<string>();
-  // Every file that mounts routes: the Express app, the composition root, and
-  // the groups that moved to the Hono `/api` app.
+  // Every file that mounts routes: the Express app, the composition root and
+  // the startup modules split out of it (DOR-2821), and the groups that moved
+  // to the Hono `/api` app.
+  const startupModules = readdirSync(new URL('../startup/', import.meta.url))
+    .filter((name) => name.endsWith('.ts'))
+    .map((name) => `../startup/${name}`);
   for (const filename of [
     '../app.ts',
     '../index.ts',
+    ...startupModules,
     '../http/better-auth.ts',
     '../http/hono-api.ts',
   ]) {

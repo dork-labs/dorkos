@@ -135,6 +135,8 @@ const PROTECTED_EFFECTS: ProtectedEffect[] = [
         'the one general-purpose merge, reached only through applyGuardedConfigWrite — the two entries above are what pin that',
       'index.ts':
         'the first-run telemetry notice and the profile route setter, both at boot or behind the profile route (logConfigWrite: "the first-run telemetry notice" / "the profile route")',
+      'startup/marketplace.ts':
+        'the dev-link approvals writer: records what a person approved on the link card for a linked folder, behind the link flow (logConfigWrite: "linking a folder"). Moved out of index.ts unchanged (DOR-2821)',
       'routes/config.ts':
         'PUT /agents/defaultAgent — a name, not a posture, and the operator-only paths on this router go through the guarded step instead (logConfigWrite: "the default-agent route")',
       'routes/tunnel.ts':
@@ -449,7 +451,7 @@ const PROTECTED_EFFECTS: ProtectedEffect[] = [
     allowed: {
       'routes/shapes.ts':
         'the cockpit REST route — runs the tier gate first, and it is the ONLY entry point an agent can reach (DOR-625)',
-      'index.ts':
+      'startup/marketplace.ts':
         'the marketplace update hook: re-applies the ACTIVE Shape in place after an update replaced it. The name is read from config, never from a caller, and reaching it at all requires already having cleared the install gate',
       'services/shapes/apply-shape.ts': 'the definition itself',
     },
