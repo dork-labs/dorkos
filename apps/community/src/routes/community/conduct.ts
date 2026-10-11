@@ -28,6 +28,7 @@ import { muteMember } from '../../moderation/mutes.js';
 import { outranks } from '../../moderation/bans.js';
 import { lockOwnMembership } from '../../moderation/locks.js';
 import { comparableName, isRefusedDisplayName } from '../../moderation/display-names.js';
+import { requirePerson } from '../../moderation/person.js';
 
 /**
  * Register a space's standards of conduct: mutes, the caller's own standing, rules and their
@@ -108,8 +109,10 @@ export function registerConductRoutes(
     });
   });
 
+  // The person's own reads and writes below also answer their DorkOS install's grant, so the
+  // app can show and change them; an agent's credential is refused (DOR-2770).
   app.get('/me/standing', async (c) => {
-    const actor = await requireMember(c, auth, pool);
+    const { member: actor } = await requirePerson(c, auth, pool, 'read');
     const row = await pool.query<{ muted_until: Date | null }>(
       `SELECT CASE WHEN muted_until>now() AND role<>'owner' THEN muted_until END AS muted_until
        FROM members WHERE id=$1 AND community_id=$2`,
@@ -177,7 +180,7 @@ export function registerConductRoutes(
   });
 
   app.post('/rules/accept', async (c) => {
-    const actor = await requireMember(c, auth, pool);
+    const { member: actor, recheck } = await requirePerson(c, auth, pool, 'post');
     const body = await readJson(c, CommunityWireRulesAcceptRequestSchema);
     const result = await transaction(pool, async (client) => {
       // Share, so an edit (FOR UPDATE) waits: nobody accepts a version as it is being replaced.
@@ -187,6 +190,7 @@ export function registerConductRoutes(
       );
       await lockOwnMembership(client, actor);
       await requireLiveRole(client, actor, ['owner', 'admin', 'member'], { allowHeld: true });
+      await recheck(client);
       const current = rules.rows[0];
       if (!current?.rules_text || current.rules_version !== body.version)
         throw new ApiError(409, 'STATE_CONFLICT', 'The rules changed. Read them again first.');
@@ -244,13 +248,14 @@ export function registerConductRoutes(
   });
 
   app.patch('/me', async (c) => {
-    const actor = await requireMember(c, auth, pool);
+    const { member: actor, recheck } = await requirePerson(c, auth, pool, 'post');
     const { displayName } = await readJson(c, CommunityWireDisplayNameUpdateRequestSchema);
     const member = await transaction(pool, async (client) => {
       // The community's share, so a change to the reserved names (an update) waits for this
       // rename or this rename reads the new list; then the caller's own row, for update.
       await lockOwnMembership(client, actor);
       const role = await requireLiveRole(client, actor, ['owner', 'admin', 'member']);
+      await recheck(client);
       const staff = role === 'owner' || role === 'admin';
       const check = { staff, memberId: actor.id };
       if (await isRefusedDisplayName(client, actor.community_id, displayName, check))

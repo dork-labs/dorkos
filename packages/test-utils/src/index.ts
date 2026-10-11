@@ -17,6 +17,7 @@ export * from './directory-membership-vectors.js';
 export * from './connector-conformance.js';
 export * from './fake-agent-runtime.js';
 export * from './fake-community-adapter.js';
+export * from './fake-community-conduct.js';
 //
 // listeningServer / swappableServer are exported via
 // '@dorkos/test-utils/listening-server' only, for a third reason: WEIGHT. Their

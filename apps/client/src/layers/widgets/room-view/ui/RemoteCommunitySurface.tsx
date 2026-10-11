@@ -28,9 +28,20 @@ import {
   type ConversationTarget,
 } from '@/layers/features/conversation';
 import type { ComposerInputHandle } from '@/layers/features/composer';
-import { RemoteCommunityAgents } from './RemoteCommunityAgents';
 import { useRemoteCommunityDrafts } from '../model/use-remote-community-drafts';
+import {
+  conductHoldReason,
+  useRemoteCommunityConduct,
+} from '../model/use-remote-community-conduct';
 import { RemoteCommunityMessage } from './RemoteCommunityMessage';
+import { RemoteCommunityRoster } from './RemoteCommunityRoster';
+import {
+  RemoteCommunityConductNotice,
+  RemoteCommunityNameDialog,
+  RemoteCommunityRulesDialog,
+} from './conduct/RemoteCommunityConduct';
+import { RemoteCommunityReportDialog } from './conduct/RemoteCommunityReportDialog';
+import { RemoteCommunityPendingRows } from './RemoteCommunityPendingRows';
 import { remoteThreadReplies } from '../lib/remote-thread-replies';
 
 /** What a timeline row in a Community channel stands for. */
@@ -173,6 +184,19 @@ export function RemoteCommunitySurface({
   }, [receipts]);
   const [receiptRevision, setReceiptRevision] = useState(0);
   const [showMembers, setShowMembers] = useState(false);
+  const [dialog, setDialog] = useState<'rules' | 'name' | null>(null);
+  const [reporting, setReporting] = useState<RemoteCommunityEntry | null>(null);
+  const conduct = useRemoteCommunityConduct({
+    community,
+    roomId,
+    enabled: !removed && access.capabilities.read && room?.readable === true,
+    accessFingerprint: access.fingerprint,
+  });
+  // You, and the agents you own here: nobody reports their own message.
+  const self = connection?.connectedHumanMemberId ?? null;
+  const ownedBySelf = (authorId: string) =>
+    authorId === self ||
+    roster.data?.members.some((m) => m.memberId === authorId && m.ownerMemberId === self) === true;
   const [actionState, setActionState] = useState<{
     address: string;
     name: string | null;
@@ -184,7 +208,11 @@ export function RemoteCommunitySurface({
   const composer = useRef<ComposerInputHandle>(null);
   const timeline = useRef<ConversationTimelineHandle>(null);
   const canSend =
-    !removed && access.capabilities.post && stream.status === 'live' && room?.writable === true;
+    !removed &&
+    access.capabilities.post &&
+    stream.status === 'live' &&
+    room?.writable === true &&
+    conduct.hold === null;
   const entries = useMemo(
     () =>
       removed
@@ -249,6 +277,7 @@ export function RemoteCommunitySurface({
     draft: draftAddress,
     ownerKey: ownerAddress || 'unresolved',
     contextKey: contextAddress || 'unresolved',
+    onHold: conduct.noteHold,
   });
   const visible = entries.filter((entry) =>
     threadId ? entry.id === threadId || entry.threadRootEntryId === threadId : entry.depth === 0
@@ -301,13 +330,15 @@ export function RemoteCommunitySurface({
     canSend,
     canSendReason: removed
       ? 'You no longer have access to this channel.'
-      : !access.capabilities.post && access.cacheReadable
-        ? 'This space is read-only.'
-        : room?.archived
-          ? 'This channel is archived.'
-          : !room?.joined
-            ? 'Join this channel to send messages.'
-            : 'Reconnecting. You can send once the space is back.',
+      : conduct.hold
+        ? conductHoldReason(conduct.hold)
+        : !access.capabilities.post && access.cacheReadable
+          ? 'This space is read-only.'
+          : room?.archived
+            ? 'This channel is archived.'
+            : !room?.joined
+              ? 'Join this channel to send messages.'
+              : 'Reconnecting. You can send once the space is back.',
     attachments: drafts.attachments,
     async send() {
       drafts.send(threadId);
@@ -392,6 +423,16 @@ export function RemoteCommunitySurface({
               {showMembers ? 'Hide members' : 'Members'}
             </Button>
           )}
+          {conduct.standing?.rules.text && (
+            <Button variant="ghost" size="sm" onClick={() => setDialog('rules')}>
+              Rules
+            </Button>
+          )}
+          {access.capabilities.post && conduct.standing && (
+            <Button variant="ghost" size="sm" onClick={() => setDialog('name')}>
+              Your name
+            </Button>
+          )}
           {access.capabilities.enrollAgent && (
             <Button
               variant="outline"
@@ -447,50 +488,23 @@ export function RemoteCommunitySurface({
               </p>
             )}
             {showMembers && (
-              <div className="max-h-48 overflow-auto border-b p-3" aria-label="Channel members">
-                {roster.isError && <p role="alert">Couldn’t load members.</p>}
-                {roster.data?.stale && (
-                  <p className="text-muted-foreground text-sm">Saved member list</p>
-                )}
-                {roster.data?.members.map((member) => (
-                  <div
-                    key={member.memberId}
-                    className="flex items-center justify-between gap-2 text-sm"
-                  >
-                    <span>
-                      {member.displayName}
-                      {member.kind === 'agent' ? ' · Agent' : ''}
-                      {member.ownerMemberId &&
-                        ` · owned by ${roster.data.members.find((owner) => owner.memberId === member.ownerMemberId)?.displayName ?? 'a space member'}`}
-                    </span>
-                    {member.handle && (
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        disabled={!canSend}
-                        onClick={() => {
-                          drafts.setText(
-                            `${drafts.text}${drafts.text && !drafts.text.endsWith(' ') ? ' ' : ''}@${member.handle} `
-                          );
-                          composer.current?.focus();
-                        }}
-                      >
-                        Mention @{member.handle}
-                      </Button>
-                    )}
-                  </div>
-                ))}
-                {access.capabilities.enrollAgent && (
-                  <RemoteCommunityAgents
-                    key={contextAddress}
-                    community={community}
-                    roomId={roomId}
-                    online={stream.status === 'live'}
-                    canEnroll
-                    accessFingerprint={access.fingerprint}
-                  />
-                )}
-              </div>
+              <RemoteCommunityRoster
+                roster={roster.data}
+                failed={roster.isError}
+                canMention={canSend}
+                onMention={(handle) => {
+                  drafts.setText(
+                    `${drafts.text}${drafts.text && !drafts.text.endsWith(' ') ? ' ' : ''}@${handle} `
+                  );
+                  composer.current?.focus();
+                }}
+                community={community}
+                roomId={roomId}
+                online={stream.status === 'live'}
+                canEnroll={access.capabilities.enrollAgent}
+                agentsKey={contextAddress}
+                accessFingerprint={access.fingerprint}
+              />
             )}
             {history.isError && (
               <p role="alert" className="p-3 text-sm">
@@ -528,7 +542,19 @@ export function RemoteCommunitySurface({
               renderRow={(_, context) => {
                 const row = hostRows[context.index]!;
                 if (row.kind === 'message')
-                  return <RemoteCommunityMessage entry={row.entry} onThread={onThread} />;
+                  return (
+                    <RemoteCommunityMessage
+                      entry={row.entry}
+                      onThread={onThread}
+                      onReport={
+                        access.capabilities.post &&
+                        conduct.standing &&
+                        !ownedBySelf(row.entry.authorId)
+                          ? () => setReporting(row.entry)
+                          : undefined
+                      }
+                    />
+                  );
                 return (
                   <ThreadReplyRow
                     summary={row.summary}
@@ -538,82 +564,20 @@ export function RemoteCommunitySurface({
                 );
               }}
             />
-            {stream.deliveries
-              .filter(
-                (delivery) =>
-                  delivery.parentEntryId === (threadId ?? null) &&
-                  !entries.some((entry) => entry.originIdempotencyKey === delivery.idempotencyKey)
-              )
-              .map((delivery) => (
-                <div
-                  key={delivery.idempotencyKey}
-                  className="border-t px-4 py-2 text-sm"
-                  role="status"
-                >
-                  <p className="font-medium">{delivery.author.displayName} · Agent</p>
-                  <p className="whitespace-pre-wrap">{delivery.text}</p>
-                  {delivery.attachments.map((file, index) => (
-                    <span key={index} className="mr-2">
-                      {file.name}
-                    </span>
-                  ))}
-                  <p className="text-muted-foreground">
-                    {delivery.state === 'pending'
-                      ? 'Waiting for the space to confirm…'
-                      : delivery.failure === 'expired'
-                        ? 'Not confirmed. Too late to try again.'
-                        : 'Not confirmed. Check the space and the agent’s channel access.'}
-                  </p>
-                  {delivery.state === 'pending' && delivery.retryable && (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      disabled={!canSend || action !== null}
-                      onClick={() =>
-                        void perform(`retry:${delivery.idempotencyKey}`, () =>
-                          transport.retryRemoteCommunityDelivery(
-                            community,
-                            roomId,
-                            delivery.idempotencyKey
-                          )
-                        )
-                      }
-                    >
-                      {action === `retry:${delivery.idempotencyKey}` ? 'Retrying…' : 'Retry now'}
-                    </Button>
-                  )}
-                </div>
-              ))}
-            {drafts.deliveries
-              .filter(
-                (job) =>
-                  job.parentEntryId === threadId &&
-                  !entries.some((entry) => entry.originIdempotencyKey === job.key)
-              )
-              .map((job) => (
-                <div key={job.key} className="border-t px-4 py-2 text-sm" role="status">
-                  <p className="whitespace-pre-wrap">{job.text}</p>
-                  {job.files.map((file) => (
-                    <span key={file.id} className="mr-2">
-                      {file.file.name}
-                    </span>
-                  ))}
-                  <p className="text-muted-foreground">
-                    {job.status === 'sending' ? 'Sending…' : 'Delivery not confirmed.'}
-                  </p>
-                  {job.error && <p>{job.error}</p>}
-                  {job.status === 'failed' && (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      disabled={!canSend}
-                      onClick={() => drafts.retry(job.key)}
-                    >
-                      Retry message
-                    </Button>
-                  )}
-                </div>
-              ))}
+            <RemoteCommunityPendingRows
+              agentDeliveries={stream.deliveries}
+              drafts={drafts.deliveries}
+              entries={entries}
+              threadId={threadId}
+              canSend={canSend}
+              action={action}
+              onRetryAgent={(key) =>
+                void perform(`retry:${key}`, () =>
+                  transport.retryRemoteCommunityDelivery(community, roomId, key)
+                )
+              }
+              onRetryDraft={drafts.retry}
+            />
             {drafts.error && (
               <p role="alert" className="text-destructive px-4 py-2 text-sm">
                 {drafts.error}
@@ -621,6 +585,12 @@ export function RemoteCommunitySurface({
             )}
             <Conversation.Composer
               inputRef={composer}
+              aboveInput={
+                <RemoteCommunityConductNotice
+                  conduct={conduct}
+                  onReadRules={() => setDialog('rules')}
+                />
+              }
               className="m-3"
               value={drafts.text}
               onChange={drafts.setText}
@@ -634,6 +604,19 @@ export function RemoteCommunitySurface({
           </>
         )}
       </section>
+      <RemoteCommunityRulesDialog
+        conduct={conduct}
+        open={dialog === 'rules'}
+        onOpenChange={(open) => setDialog(open ? 'rules' : null)}
+      />
+      <RemoteCommunityNameDialog
+        community={community}
+        accessFingerprint={access.fingerprint}
+        currentName={roster.data?.members.find((m) => m.memberId === self)?.displayName ?? ''}
+        open={dialog === 'name'}
+        onOpenChange={(open) => setDialog(open ? 'name' : null)}
+      />
+      <RemoteCommunityReportDialog entry={reporting} onClose={() => setReporting(null)} />
     </Conversation.Root>
   );
 }
