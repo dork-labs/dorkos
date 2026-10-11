@@ -9,6 +9,7 @@ import type { Principal } from '../../data.js';
 import { ApiError } from '../../http.js';
 import { isReadOnlyLifecycle } from '../../tenant-context.js';
 import { nextTick } from '../../live/feed.js';
+import { readStreamAccessBatched } from './stream-access-batch.js';
 import type { LiveStream } from '../../live/hub.js';
 
 /** A channel as a live stream or read cursor sees it, with the caller's membership and position. */
@@ -116,9 +117,10 @@ export function streamCloseReason(
  * Read a stream's access fresh: its exact credential and its channel in one database snapshot.
  *
  * The opening request already verified the cookie signature or bearer. Revalidating that exact
- * credential and the channel in ONE fresh snapshot avoids calling Better Auth twice per entry,
- * which repeats unrelated account hydration and makes durable catch-up slower than incoming
- * traffic. Returns null for a cookie stream with no opened session.
+ * credential and the channel in ONE fresh snapshot avoids calling Better Auth on every recheck,
+ * which repeats unrelated account hydration. The query is shared with every other stream that
+ * checks in the same moment (`stream-access-batch.ts`). Returns null for a cookie stream with no
+ * opened session, and undefined when the credential no longer sees the channel.
  *
  * @param pool - Database pool.
  * @param principal - The member or agent the stream belongs to.
@@ -131,48 +133,9 @@ export async function readStreamAccess(
   openedSession: OpenedSession,
   channelId: string
 ): Promise<StreamAccess | null | undefined> {
-  const credential =
-    principal.kind === 'agent'
-      ? `EXISTS (SELECT 1 FROM agent_credentials ac WHERE ac.agent_id=a.id
-         AND ac.token_hash=$4 AND ac.revoked_at IS NULL)`
-      : principal.credentialKind === 'grant'
-        ? `EXISTS (SELECT 1 FROM connection_grants g WHERE g.member_id=m.id
-           AND g.token_hash=$4 AND g.revoked_at IS NULL
-           AND g.scopes @> ARRAY['read']::text[] AND NOT g.history_only)`
-        : `EXISTS (SELECT 1 FROM session s WHERE s.id=$4 AND s."userId"=m.user_id
-           AND s."userId"=$5 AND s.token=$6 AND s."expiresAt">now())`;
-  const cookie = !principal.credentialHash;
+  const cookie = principal.kind !== 'agent' && principal.credentialKind !== 'grant';
   if (cookie && !openedSession) return null;
-  const values: unknown[] = [
-    principal.id,
-    channelId,
-    principal.community_id,
-    principal.credentialHash ?? openedSession!.session.id,
-  ];
-  if (cookie) values.push(openedSession!.user.id, openedSession!.session.token);
-  if (principal.kind === 'agent') values.push(principal.ownerMemberId);
-  const expires = cookie
-    ? `(SELECT s."expiresAt" FROM session s WHERE s.id=$4) AS expires_at`
-    : 'NULL::timestamptz AS expires_at';
-  const active = await pool.query<StreamAccess>(
-    principal.kind === 'agent'
-      ? `SELECT (a.active AND owner.active) AS active,(cm.agent_id IS NOT NULL) AS joined,ch.archived,ch.epoch,co.lifecycle,
-         (co.takedown_id IS NOT NULL) AS taken_down,${expires}
-       FROM agents a JOIN members owner ON owner.id=a.owner_member_id
-       JOIN communities co ON co.id=a.community_id
-       JOIN channels ch ON ch.id=$2
-       LEFT JOIN agent_channel_members cm ON cm.channel_id=ch.id AND cm.agent_id=a.id
-       WHERE a.id=$1 AND a.community_id=$3 AND ch.community_id=$3
-         AND a.owner_member_id=$5 AND ${credential}`
-      : `SELECT m.active,(cm.member_id IS NOT NULL) AS joined,ch.archived,ch.epoch,co.lifecycle,
-         (co.takedown_id IS NOT NULL) AS taken_down,${expires}
-       FROM members m JOIN communities co ON co.id=m.community_id
-       JOIN channels ch ON ch.id=$2
-       LEFT JOIN channel_members cm ON cm.channel_id=ch.id AND cm.member_id=m.id
-       WHERE m.id=$1 AND m.community_id=$3 AND ch.community_id=$3 AND ${credential}`,
-    values
-  );
-  return active.rows[0];
+  return readStreamAccessBatched(pool, principal, openedSession, channelId);
 }
 
 /** What one access check found: why the stream must close, or null and how long it may trust. */
