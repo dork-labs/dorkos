@@ -31,11 +31,16 @@ import {
 } from 'drizzle-orm';
 import { remoteCommandJournal, type Db, type RemoteCommandJournalRow } from '@dorkos/db';
 import type { RemoteCommandOutcome } from '@dork-labs/cloud-api';
+import { COMMAND_LEASE_MS } from './command-stream.js';
 
 /** How long a journal row is kept, settled or not: far past any lease. */
 export const JOURNAL_RETENTION_MS = 7 * 24 * 60 * 60_000;
 
-/** How many finished rows (acknowledged, rejected or unconfirmed) are kept at most. */
+/**
+ * How many finished rows (acknowledged, rejected or unconfirmed) are kept
+ * beyond one lease. Rows younger than {@link COMMAND_LEASE_MS} are never cut
+ * for count, however many there are (DOR-2832).
+ */
 export const JOURNAL_MAX_FINISHED_ROWS = 500;
 
 /** The leased command kinds a row can hold. */
@@ -228,12 +233,16 @@ export class CommandJournal {
   /**
    * Keep the journal bounded: drop every row older than
    * {@link JOURNAL_RETENTION_MS}, and every finished row beyond the newest
-   * {@link JOURNAL_MAX_FINISHED_ROWS}.
+   * {@link JOURNAL_MAX_FINISHED_ROWS} that is also older than one command
+   * lease. Cloud can redeliver a command until its lease runs out, and a row
+   * pruned inside that window would let the redelivery run the command again
+   * (DOR-2832), so a burst of more than 500 commands in one lease keeps them all.
    *
    * @returns How many rows were removed.
    */
   prune(): number {
     const cutoff = new Date(this.now() - JOURNAL_RETENTION_MS).toISOString();
+    const leaseCutoff = new Date(this.now() - COMMAND_LEASE_MS).toISOString();
     let removed = this.db
       .delete(remoteCommandJournal)
       .where(lt(remoteCommandJournal.receivedAt, cutoff))
@@ -251,6 +260,7 @@ export class CommandJournal {
       .where(
         and(
           ne(remoteCommandJournal.ackState, 'pending'),
+          lt(remoteCommandJournal.receivedAt, leaseCutoff),
           keep.length > 0 ? notInArray(remoteCommandJournal.commandId, keep) : undefined
         )
       )

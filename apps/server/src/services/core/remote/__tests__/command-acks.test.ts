@@ -12,6 +12,7 @@ import { RemoteCommandAckRequestSchema } from '@dork-labs/cloud-api';
 import { CommandAcks } from '../command-acks.js';
 import type { LeasedCommand } from '../command-dispatcher.js';
 import { JOURNAL_MAX_FINISHED_ROWS, JOURNAL_RETENTION_MS } from '../command-journal.js';
+import { COMMAND_LEASE_MS } from '../command-stream.js';
 import { CommandJournal } from '../command-journal.js';
 import { commandWorld, INSTANCE_ID, type CommandWorld } from './command-harness.js';
 import { problem } from './fake-cloud.js';
@@ -172,7 +173,9 @@ describe('the journal', () => {
     journal.record({ commandId: 'old', leaseToken: 'lt', verb: 'close', instanceId: INSTANCE_ID });
     clock += JOURNAL_RETENTION_MS + 1;
     for (let i = 0; i < JOURNAL_MAX_FINISHED_ROWS + 3; i += 1) {
-      clock += 1;
+      // The three oldest finished rows are a lease older than the rest, so
+      // they are the ones the cap may cut.
+      clock += i === 3 ? COMMAND_LEASE_MS : 1;
       const id = `cmd_${String(i).padStart(4, '0')}`;
       journal.record({ commandId: id, leaseToken: 'lt', verb: 'close', instanceId: INSTANCE_ID });
       journal.settle(id, 'applied');
@@ -182,5 +185,30 @@ describe('the journal', () => {
     expect(journal.prune()).toBe(4);
     expect(journal.read(['old', 'cmd_0000', 'cmd_0002'])).toEqual([]);
     expect(journal.read(['owed', 'cmd_0003'])).toHaveLength(2);
+  });
+
+  it('keeps every finished row inside one lease, past the cap, so a redelivery stays a duplicate', () => {
+    // DOR-2832: 600 commands finished inside one lease window. Pruning by count
+    // alone dropped the oldest 100, and Cloud redelivering one of them ran it
+    // again.
+    let clock = Date.parse('2026-10-01T00:00:00.000Z');
+    const journal = new CommandJournal(w.db, () => clock);
+    for (let i = 0; i < 600; i += 1) {
+      clock += 1;
+      const id = `burst_${String(i).padStart(4, '0')}`;
+      journal.record({ commandId: id, leaseToken: 'lt', verb: 'close', instanceId: INSTANCE_ID });
+      journal.settle(id, 'applied');
+      journal.finish([{ id, leaseToken: 'lt' }], 'acked');
+    }
+
+    expect(journal.prune()).toBe(0);
+    expect(
+      journal.record({
+        commandId: 'burst_0000',
+        leaseToken: 'lt-2',
+        verb: 'close',
+        instanceId: INSTANCE_ID,
+      })
+    ).toEqual({ kind: 'duplicate', outcome: 'applied' });
   });
 });
