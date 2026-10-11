@@ -76,10 +76,15 @@ export interface ChannelFeedsOptions<T> {
 
 /** Entries one read takes at most. */
 const READ_BATCH = 200;
-/** Entries a feed keeps for streams that are a little behind. */
-const KEEP_ITEMS = 256;
-/** How long a feed keeps an entry. A stream further behind than this reads for itself. */
+/**
+ * How long a feed keeps an entry, for streams that are behind. One further behind reads for
+ * itself, and when thousands do at once they queue every post behind their reads: kept for only
+ * a few seconds, a busy moment that put streams that far behind never recovered. Across every
+ * feed this keeps about a minute of the server's posts, so memory follows the post rate.
+ */
 const KEEP_MS = 60_000;
+/** At most this many per feed: a full minute of about 68 posts a second in one channel. */
+const KEEP_ITEMS = 4_096;
 
 /** One channel's feed. */
 export class ChannelFeed<T> {
@@ -102,6 +107,14 @@ export class ChannelFeed<T> {
     private readonly retire: () => void
   ) {
     this.schedulePoll();
+  }
+
+  /**
+   * Changes whenever the feed throws away what it holds: a removal or redaction in the channel, a
+   * channel change, a reconnect. A stream holding entries it read itself drops them when it moves.
+   */
+  get version(): number {
+    return this.generation;
   }
 
   /** What comes after `position`, at most `max` entries. */

@@ -41,6 +41,8 @@ const HEARTBEAT_MS = 15_000;
 const STREAM_RETRY_SECONDS = 15;
 /** Entries one stream reads for itself at once, when it is behind what its feed keeps. */
 const OWN_BATCH = 100;
+/** How many fallback intervals a passing access check is trusted for; see its use. */
+const TRUST_FACTOR = 1.25;
 /** Entries one stream sends in one write. */
 const SEND_BATCH = 50;
 /** The channel feeds each hub's streams share; see `live/feed.ts`. */
@@ -192,6 +194,8 @@ export function registerEventRoutes(
     let lastHeartbeat = Date.now();
     /** Entries this stream read for itself, because it was behind what the feed keeps. */
     let own: FeedItem<StreamEntry>[] = [];
+    /** The feed's version when `own` was read: a removal since means they may be stale. */
+    let ownVersion = -1;
     let seeded = false;
     const currentCursor = () =>
       encodeCursor(
@@ -238,7 +242,11 @@ export function registerEventRoutes(
         channel.epoch,
         state ? null : await communityGoneReason(pool, principal.community_id)
       );
-    const access = new CachedStreamAccess(live, fallbackMs, async () =>
+    // Trusted a little longer than the quiet-time watch below waits (at most 1.2 × the fallback),
+    // so that watch, jittered per stream, refreshes it first. Trusted for exactly the fallback,
+    // every stream that opened in the same moment rechecked in the same moment too: 5,000 at once
+    // queued posts behind them for seconds.
+    const access = new CachedStreamAccess(live, fallbackMs * TRUST_FACTOR, async () =>
       closeReason(await readStreamAccess(pool, principal, openedSession, channel.id))
     );
     const stream = new ReadableStream<Uint8Array>(
@@ -344,6 +352,7 @@ export function registerEventRoutes(
               }
               let items: FeedItem<StreamEntry>[];
               let noticedThrough: number;
+              if (own.length && ownVersion !== feed.version) own = [];
               if (own.length) {
                 items = own.slice(0, SEND_BATCH);
                 // Read without a notice: send only on access checked after the read.
@@ -351,11 +360,13 @@ export function registerEventRoutes(
               } else {
                 const found = feed.after(position, SEND_BATCH);
                 if (!found.covered) {
+                  const version = feed.version;
                   const rows = await readStreamEntries(pool, channel.id, position, null, OWN_BATCH);
                   await hooks?.afterEntryAttachmentLookup?.();
                   if (closed) return;
                   const readAt = nextTick();
                   own = rows.map((value) => ({ seq: Number(value.row.seq), value, readAt }));
+                  ownVersion = version;
                   // Caught up: the feed can carry this stream, and the next ones, from here.
                   if (rows.length < OWN_BATCH) feed.seed(own.at(-1)?.seq ?? position);
                   if (own.length) continue;
