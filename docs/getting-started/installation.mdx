@@ -10,13 +10,13 @@ DorkOS is where you build and run your business with an agent team. It opens in 
 ## Before you start
 
 <Callout type="info">
-  Every install method needs at least one agent signed in. Claude Code is the easiest start: sign in
-  with your Claude account, or use an API key from [Anthropic](https://console.anthropic.com/).
-  Codex and OpenCode work too, once you've signed in to them. Everything except Docker and the
-  desktop app also needs [Node.js](https://nodejs.org/) 22 or later, the JavaScript runtime DorkOS
-  runs on. (The desktop app and Docker bring their own, so you don't have to install anything else.)
-  If your agents use git, use git 2.38 or later: older git can be tricked into running a program
-  when an agent looks inside a folder, and `dorkos doctor` tells you which you have.
+  Nothing to sign in to before you start. DorkOS walks you through connecting AI the first time it
+  opens: a free DorkOS account, your own key, a model on your computer, or an AI app you already
+  use. Everything except Docker and the desktop app also needs [Node.js](https://nodejs.org/) 22 or
+  later, the JavaScript runtime DorkOS runs on. (The desktop app and Docker bring their own, so you
+  don't have to install anything else.) If your agents use git, use git 2.38 or later: older git can
+  be tricked into running a program when an agent looks inside a folder, and `dorkos doctor` tells
+  you which you have.
 </Callout>
 
 ## Try it without installing
@@ -27,14 +27,7 @@ Curious before you commit to anything? If you have Node.js 22.22.3 or newer, you
 npx dorkos@latest
 ```
 
-The first run takes a minute or two: npx downloads DorkOS and compiles a couple of native pieces it depends on. After that, your browser opens to the same app a permanent install gives you.
-
-Already signed in to Claude Code? You're set. Otherwise, set your API key first:
-
-```bash
-export ANTHROPIC_API_KEY="your-key-here"
-npx dorkos@latest
-```
+The first run takes a minute or two: npx downloads DorkOS and compiles a couple of native pieces it depends on. After that, your browser opens, and a short welcome screen asks how your agents should run: a free DorkOS account, your own key, a model on your computer, or an AI app you already use.
 
 Like what you see? Install DorkOS for good with one of the methods below, and skip that first-run wait every time you start it.
 
@@ -62,24 +55,13 @@ This checks for Node.js 22.22.3 or later, installs DorkOS, and asks if you'd lik
 </Step>
 <Step>
 
-### Set your API key
-
-```bash
-export ANTHROPIC_API_KEY="your-key-here"
-```
-
-An environment variable is a value your shell hands to programs when they start, in this case your API key. Add this line to your shell profile (`~/.bashrc`, `~/.zshrc`, or similar) so you don't have to retype it every time you open a terminal.
-
-</Step>
-<Step>
-
 ### Start DorkOS
 
 ```bash
 dorkos
 ```
 
-DorkOS starts on port 4242 (the address your browser uses to reach it) and opens automatically in your browser.
+DorkOS starts on port 4242 (the address your browser uses to reach it) and opens automatically in your browser, where a short welcome screen asks how your agents should run.
 
 </Step>
 </Steps>
@@ -120,17 +102,6 @@ bun add -g dorkos
 </Step>
 <Step>
 
-### Set your API key
-
-```bash
-export ANTHROPIC_API_KEY="your-key-here"
-```
-
-Add this to your shell profile (`~/.bashrc`, `~/.zshrc`, or similar) so it stays set in every new terminal.
-
-</Step>
-<Step>
-
 ### Verify the installation
 
 ```bash
@@ -146,7 +117,7 @@ dorkos --version
 dorkos
 ```
 
-DorkOS starts on port 4242 and opens your browser to the app.
+DorkOS starts on port 4242 and opens your browser to the app, where a short welcome screen asks how your agents should run.
 
 </Step>
 </Steps>
@@ -178,9 +149,9 @@ Download the app from [dorkos.ai/download/mac](https://dorkos.ai/download/mac), 
 </Step>
 <Step>
 
-### Connect your agent
+### Connect AI
 
-On first launch, DorkOS walks you through connecting Claude: sign in to your Claude account, or paste your Anthropic API key. That's it, no environment variables to set.
+On first launch, a short welcome screen asks how your agents should run: a free DorkOS account, your own key, a model on your computer, or an AI app you already use. No environment variables to set.
 
 </Step>
 </Steps>

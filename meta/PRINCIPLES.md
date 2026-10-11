@@ -48,7 +48,7 @@ A founder's agents, tools, files and data stay theirs, wherever they run. That s
 
 ## 5. DorkOS first, ready in under a minute
 
-_Status: decided 2026-10-07, not built yet (DOR-2782, DOR-2783, DOR-2784)._
+_Status: decided 2026-10-07. Built and proven: the own-AI first run (a key or a local model) and DorkOS picking the model, both under a minute with no runtime or model name on the way (DOR-2783, DOR-2784). Still waits on DorkOS Cloud: the DorkOS-account path's real card checkout, because Cloud's approval-and-card page isn't built yet — today that path only runs against a test double._
 
 - **No outside subscription needed.** A new person runs on DorkOS: a DorkOS account, DorkOS Cloud and DorkOS's own AI. DorkOS's own products and services come first everywhere in the app; bringing your own Claude, ChatGPT or OpenRouter sign-in is the second option.
 - **Our own engine.** DorkOS ships its own agent engine before launch. Its developer name is Doe; the app only ever says "Runs on: DorkOS". While getting started, a person never sees a runtime name, a model name or a new concept.
