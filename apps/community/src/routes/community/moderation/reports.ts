@@ -10,15 +10,16 @@ import {
   CommunityWireReportResolveResponseSchema,
   type CommunityWireReport,
 } from '@dorkos/shared/community-wire';
-import type { CommunityAuth } from '../../auth.js';
-import type { CommunityConfig } from '../../config.js';
-import { requireLiveRole, requireMember, transaction, type Member } from '../../data.js';
-import { ApiError, RateLimited, json, readJson } from '../../http.js';
-import { removalAuthority, removeEntry } from '../../content-removal.js';
-import { lockOwnMembership } from '../../moderation/locks.js';
-import { requirePerson } from '../../moderation/person.js';
-import { muteMember } from '../../moderation/mutes.js';
+import type { CommunityAuth } from '../../../auth.js';
+import type { CommunityConfig } from '../../../config.js';
+import { requireLiveRole, requireMember, transaction, type Member } from '../../../data.js';
+import { ApiError, RateLimited, json, readJson } from '../../../http.js';
+import { removalAuthority, removeEntry } from '../../../content-removal.js';
+import { lockOwnMembership } from '../../../moderation/locks.js';
+import { requirePerson } from '../../../moderation/person.js';
+import { muteMember } from '../../../moderation/mutes.js';
 import { banMember, lockCommunityForBan } from './bans.js';
+import { checkHints } from '../../../decisions/hints.js';
 
 /** How many of one member's reports may wait in the queue at once. */
 export const OPEN_REPORTS_PER_MEMBER = 50;
@@ -64,7 +65,7 @@ const REPORT_SELECT = `SELECT r.id,r.entry_id,e.channel_id,r.source,r.check_name
   LEFT JOIN members reporter ON reporter.id=r.reporter_member_id
     AND reporter.community_id=r.community_id`;
 
-function project(row: ReportRow): CommunityWireReport {
+function project(row: ReportRow, checks: CommunityWireReport['checks'] = []): CommunityWireReport {
   return {
     id: row.id,
     entryId: row.entry_id,
@@ -84,6 +85,7 @@ function project(row: ReportRow): CommunityWireReport {
     excerpt: row.readable ? row.text.slice(0, EXCERPT_LENGTH) : null,
     createdAt: row.created_at.toISOString(),
     resolvedAt: row.resolved_at?.toISOString() ?? null,
+    checks,
   };
 }
 
@@ -203,15 +205,22 @@ export function registerReportRoutes(
       Object.fromEntries(new URL(c.req.url).searchParams)
     );
     const open = (query.status ?? 'open') === 'open';
-    const rows = await transaction(pool, async (client) => {
+    const reports = await transaction(pool, async (client) => {
       await requireLiveRole(client, actor, ['owner', 'admin'], { allowHeld: true });
-      return client.query<ReportRow>(
+      const rows = await client.query<ReportRow>(
         `${REPORT_SELECT} WHERE r.community_id=$1 AND ${open ? "r.status='open'" : "r.status<>'open'"}
          ORDER BY ${open ? 'r.created_at,r.id' : 'r.resolved_at DESC,r.id DESC'} LIMIT 200`,
         [actor.community_id, actor.id]
       );
+      // What the watch-only checks made of each message: a hint beside the report, nothing more.
+      const hints = await checkHints(
+        client,
+        actor.community_id,
+        rows.rows.map((row) => row.entry_id)
+      );
+      return rows.rows.map((row) => project(row, hints.get(row.entry_id)));
     });
-    return json(c, CommunityWireReportListResponseSchema, { reports: rows.rows.map(project) });
+    return json(c, CommunityWireReportListResponseSchema, { reports });
   });
 
   app.post('/reports/:id/resolve', async (c) => {

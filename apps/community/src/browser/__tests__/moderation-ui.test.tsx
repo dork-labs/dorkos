@@ -169,6 +169,60 @@ describe('the flagged-message queue', () => {
       minutes: 10,
     });
   });
+
+  it('shows what the automatic checks made of a message, and can list only their flags', async () => {
+    const checked: CommunityWireReport = {
+      ...report,
+      id: '00000000-0000-4000-8000-0000000000c1',
+      source: 'check',
+      checkName: 'jev',
+      reporter: null,
+      note: 'Jev thinks this is spam (82% sure). Nothing was hidden.',
+      excerpt: 'cheap watches',
+      checks: [
+        {
+          check: 'jev',
+          modelId: 'typesafe/jev-1.13',
+          verdict: 'flagged',
+          finding: 'spam',
+          rule: null,
+          confidence: 0.82,
+          at: '2026-10-10T00:00:01.000Z',
+        },
+        {
+          check: 'openai',
+          modelId: 'gpt-test',
+          verdict: 'flagged',
+          finding: 'rule',
+          rule: 2,
+          confidence: 0.74,
+          at: '2026-10-10T00:00:01.000Z',
+        },
+        {
+          check: 'rules',
+          modelId: 'rules',
+          verdict: 'unsure',
+          finding: null,
+          rule: null,
+          confidence: 0,
+          at: '2026-10-10T00:00:00.500Z',
+        },
+      ],
+    };
+    mockFetch({
+      'GET /api/v1/reports': () => ({ status: 200, body: { reports: [report, checked] } }),
+    });
+    render(<ReportQueue busy={false} perform={perform} />);
+    expect(await screen.findByText(/cheap watches/u)).toBeTruthy();
+    expect(screen.getByText(/From an automatic check \(Jev\)/u)).toBeTruthy();
+    expect(screen.getByText('Jev: looks like spam, 82% sure')).toBeTruthy();
+    expect(screen.getByText('gpt-test: may break rule 2, 74% sure')).toBeTruthy();
+    expect(screen.getByText('Built-in rules: no clear answer')).toBeTruthy();
+    expect(screen.getByText(/buy now/u)).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Automatic checks only' }));
+    expect(screen.queryByText(/buy now/u)).toBeNull();
+    expect(screen.getByText(/cheap watches/u)).toBeTruthy();
+  });
 });
 
 describe('slow mode control', () => {

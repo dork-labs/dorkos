@@ -1,7 +1,7 @@
 import type { Hono } from 'hono';
 import type { Pool } from 'pg';
-import type { CommunityAuth } from '../../auth.js';
-import type { CommunityConfig } from '../../config.js';
+import type { CommunityAuth } from '../../../auth.js';
+import type { CommunityConfig } from '../../../config.js';
 import { registerBanRoutes } from './bans.js';
 import { registerConductRoutes } from './conduct.js';
 import { registerReportRoutes } from './reports.js';

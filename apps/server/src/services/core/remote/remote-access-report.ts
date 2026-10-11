@@ -19,6 +19,10 @@
  *   with `cloudStale` rather than repeating an old Cloud answer as current.
  * - **The address is shown only where it works**: while `open`, and while
  *   `asleep`, where it is the address the computer answers at once reopened.
+ * - **A drain names its deadline**: while `draining`, when the rest is cut
+ *   and whether Cloud set that or the bounded local default applies.
+ * - **Reports that cannot get out are flagged**, in managed mode only, as a
+ *   bare `activityReportsDelayed`: never why, never a count.
  * - **`alwaysAvailable` is only ever Cloud's word**, only in managed mode, and
  *   only while that word is fresh.
  * - **An enrolment counts only under the link it was made under.** A record
@@ -38,7 +42,7 @@ import type {
 } from '@dorkos/shared/types';
 
 import type { AvailabilitySnapshot } from './managed-availability.js';
-import type { ManagedPhase } from './managed-forwarding.js';
+import type { ManagedDrain, ManagedPhase } from './managed-forwarding.js';
 import { isEnrolledUnder, type RemoteState } from './remote-state.js';
 
 /** Where a setup started on this computer stands, as the coordinator holds it. */
@@ -74,6 +78,10 @@ export interface RemoteAccessFacts {
   liveMode: RemoteAccessMode;
   /** Where the managed session is, or `null` when none is open. */
   managedPhase: ManagedPhase | null;
+  /** The gentle close under way and who set its deadline, or `null`. */
+  drain?: ManagedDrain | null;
+  /** Whether activity reports have kept failing to reach Cloud. */
+  activityReportsStuck?: boolean;
   /** The saved `cloud.remote` record. */
   remote: RemoteState;
   /** Whether the person's own tunnel is set to open (`tunnel.enabled`). */
@@ -118,6 +126,10 @@ export function buildRemoteAccessReport(facts: RemoteAccessFacts): RemoteAccessR
     cloudStale: facts.availability.cloudStale,
     availability: facts.availability.availability,
     enrolment: enrolmentOf(facts),
+    // Only while draining: when the rest is cut, and whether that is Cloud's word or the local default.
+    ...(state === 'draining' && facts.drain ? { drain: { ...facts.drain } } : {}),
+    // Only a flag: why they fail stays in the log.
+    ...(mode === 'managed' && facts.activityReportsStuck ? { activityReportsDelayed: true } : {}),
   };
 }
 

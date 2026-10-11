@@ -30,6 +30,8 @@ import {
   registerHeartbeat,
   HEARTBEAT_ENDPOINT,
   HEARTBEAT_INTERVAL_MS,
+  HEARTBEAT_JITTER_MAX_MS,
+  heartbeatCheckDelay,
   LAST_SENT_FILENAME,
   type HeartbeatCounts,
   type HeartbeatOptions,
@@ -87,6 +89,37 @@ describe('heartbeat-reporter', () => {
     if (originalFetch) globalThis.fetch = originalFetch;
   });
 
+  describe('daily check', () => {
+    it('waits a day plus full jitter, never less and never past the cap', () => {
+      expect(heartbeatCheckDelay(() => 0)).toBe(HEARTBEAT_INTERVAL_MS);
+      expect(heartbeatCheckDelay(() => 0.5)).toBe(
+        HEARTBEAT_INTERVAL_MS + HEARTBEAT_JITTER_MAX_MS / 2
+      );
+      expect(heartbeatCheckDelay(() => 0.999999)).toBeLessThan(
+        HEARTBEAT_INTERVAL_MS + HEARTBEAT_JITTER_MAX_MS
+      );
+      expect(heartbeatCheckDelay(() => -1)).toBe(HEARTBEAT_INTERVAL_MS);
+      expect(heartbeatCheckDelay(() => 9)).toBe(HEARTBEAT_INTERVAL_MS + HEARTBEAT_JITTER_MAX_MS);
+    });
+
+    it('checks once a day, not hourly', async () => {
+      vi.useFakeTimers();
+      try {
+        registerHeartbeat(makeOptions());
+        await vi.advanceTimersByTimeAsync(0);
+        const startup = fetchSpy.mock.calls.length;
+        mockReadFile.mockClear();
+        await vi.advanceTimersByTimeAsync(23 * 60 * 60 * 1000);
+        expect(mockReadFile).not.toHaveBeenCalled();
+        await vi.advanceTimersByTimeAsync(2 * 60 * 60 * 1000 + 1);
+        expect(mockReadFile).toHaveBeenCalled();
+        expect(fetchSpy.mock.calls.length).toBeGreaterThan(startup);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+  });
+
   describe('consent gate', () => {
     it('maybeSendHeartbeat makes zero fetch/disk calls when consent is false', async () => {
       const sent = await maybeSendHeartbeat(makeOptions({ consent: false }));
@@ -99,6 +132,7 @@ describe('heartbeat-reporter', () => {
 
     it('registerHeartbeat does not fire or schedule anything when consent is false', async () => {
       const setIntervalSpy = vi.spyOn(globalThis, 'setInterval');
+      const setTimeoutSpy = vi.spyOn(globalThis, 'setTimeout');
 
       registerHeartbeat(makeOptions({ consent: false }));
       // Let any (incorrectly) scheduled microtask settle.
@@ -107,7 +141,9 @@ describe('heartbeat-reporter', () => {
       expect(fetchSpy).not.toHaveBeenCalled();
       expect(mockReadFile).not.toHaveBeenCalled();
       expect(setIntervalSpy).not.toHaveBeenCalled();
+      expect(setTimeoutSpy).not.toHaveBeenCalled();
       setIntervalSpy.mockRestore();
+      setTimeoutSpy.mockRestore();
     });
   });
 

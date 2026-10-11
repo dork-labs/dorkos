@@ -757,12 +757,10 @@ if (cliPort) {
 process.env.NODE_ENV = 'production';
 process.env.CLIENT_DIST_PATH = path.join(__dirname, '../client');
 
-// Tunnel: CLI flag > env var > config
-if (values.tunnel) {
-  process.env.TUNNEL_ENABLED = 'true';
-} else if (!process.env.TUNNEL_ENABLED && cfgMgr.getDot('tunnel.enabled')) {
-  process.env.TUNNEL_ENABLED = 'true';
-}
+// Tunnel: CLI flag > env var > config. The saved `tunnel.enabled` is NOT copied
+// into the environment: the server reads it itself, below a saved DorkOS remote
+// access choice, and an env var would wrongly outrank that (DOR-2086).
+if (values.tunnel) process.env.TUNNEL_ENABLED = 'true';
 
 // Tunnel config values as fallback (config < env)
 const tunnelAuthtoken = cfgMgr.getDot('tunnel.authtoken') as string | null;
