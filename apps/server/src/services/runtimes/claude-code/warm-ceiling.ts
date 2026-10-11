@@ -21,13 +21,11 @@
  * @module services/runtimes/claude-code/warm-ceiling
  */
 import type { TurnPermissionCeiling } from '@dorkos/shared/agent-runtime';
-import { clampModeToCeiling } from '@dorkos/shared/permission-semantics';
 import { logger } from '../../../lib/logger.js';
-import { CLAUDE_CODE_CAPABILITIES } from './runtime-constants.js';
 import type { LaunchFingerprint } from './sessions/launch-fingerprint.js';
 import type { LiveChangeOptions } from './sessions/launch-live-settings.js';
 import { decideProcessReuse, type ProcessReuse } from './sessions/pump-launch.js';
-import { bothCeilings } from './turn-permission.js';
+import { bothCeilings, clampClaudeMode } from './turn-permission.js';
 
 /** The two ceilings a live session carries. */
 interface CeilingedSession {
@@ -73,11 +71,7 @@ export function decideCeilingedReuse(
   if (wantedMode === undefined || live.live.permissionMode === wantedMode) return reuse;
   if (pump.quietness().quiet) return reuse;
   // Moving down, or to a mode the carried ceiling still admits, raises nothing.
-  const admitted = clampModeToCeiling(
-    CLAUDE_CODE_CAPABILITIES.permissionModes,
-    wantedMode,
-    carried
-  );
+  const admitted = clampClaudeMode(wantedMode, carried);
   if (admitted === wantedMode) return reuse;
   return {
     action: 'replace',

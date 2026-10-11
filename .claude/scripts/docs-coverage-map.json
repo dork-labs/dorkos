@@ -458,6 +458,16 @@
       ]
     },
     {
+      "guide": "official-community-host.md",
+      "description": "Official Community Space host agent runbook: the staff install's Member seat, enrolling the host agent, its exact tool allowlist, read-only docs, `answerIn` and its wake budget, and what to watch",
+      "patterns": [
+        "communities/remote/wake/answer-in",
+        "routes/community-answer-in",
+        "templates/community-host/",
+        "official-community-host"
+      ]
+    },
+    {
       "guide": "adding-a-memory-provider.md",
       "description": "Memory backend authoring: MemoryProvider port (seam #5), three-way honest reads, five typed errors + MemoryPathError, memoryConformance, and the quarantine that keeps a fault off a turn",
       "patterns": [

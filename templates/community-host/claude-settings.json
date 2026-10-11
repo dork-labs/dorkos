@@ -1,0 +1,34 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(./docs/**)",
+      "Glob",
+      "Grep",
+      "mcp__dorkos__read_room_history",
+      "mcp__dorkos__search_room_history",
+      "mcp__dorkos__post_to_room",
+      "mcp__dorkos__react_to_room_entry"
+    ],
+    "deny": [
+      "Bash",
+      "BashOutput",
+      "KillShell",
+      "Edit",
+      "MultiEdit",
+      "Write",
+      "NotebookEdit",
+      "WebFetch",
+      "WebSearch",
+      "Task",
+      "Agent",
+      "Skill",
+      "SlashCommand",
+      "mcp__dorkos__memory_write",
+      "Read(~/.dork/**)",
+      "Read(~/.claude/**)",
+      "Read(~/.ssh/**)",
+      "Read(~/.config/**)",
+      "Read(./.dork/**)"
+    ]
+  }
+}

@@ -247,6 +247,35 @@ export const CommunityWakeAgentsFromSchema = z.strictObject({
 /** Who in a space may wake this install's agents there. */
 export type CommunityWakeAgentsFrom = z.infer<typeof CommunityWakeAgentsFromSchema>;
 
+/** The most channels one connection may answer in without a mention. */
+export const COMMUNITY_ANSWER_IN_MAX = 20;
+
+/**
+ * One channel name, as a person types it: a leading `#`, surrounding space and letter case are
+ * dropped, so `#Help` and `help` are the same channel.
+ */
+export const CommunityAnswerInChannelSchema = z
+  .string()
+  .trim()
+  .transform((name) => name.replace(/^#/, '').toLowerCase())
+  .pipe(z.string().regex(/^[a-z0-9][a-z0-9_-]{0,79}$/));
+
+/**
+ * The channels where any person's new post wakes this install's agents there without a mention
+ * (spec `official-community-space` D11), read and written by the owner only. Empty, the default,
+ * means a mention is needed everywhere. Wakes here are held to a budget per author and per
+ * channel, so a flood of posts cannot buy unlimited turns.
+ */
+export const CommunityAnswerInSchema = z.strictObject({
+  answerIn: z
+    .array(CommunityAnswerInChannelSchema)
+    .max(COMMUNITY_ANSWER_IN_MAX)
+    .transform((names) => [...new Set(names)]),
+});
+
+/** The channels where this install's agents answer without a mention. */
+export type CommunityAnswerIn = z.infer<typeof CommunityAnswerInSchema>;
+
 /** Inputs for connecting this install to a community. */
 export type CommunityConnectionStartRequest = z.infer<typeof CommunityConnectionStartRequestSchema>;
 /** Public approval URL and the pending local connection. */
