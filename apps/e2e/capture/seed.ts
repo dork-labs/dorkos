@@ -343,7 +343,7 @@ export interface SeededSession {
 }
 
 /**
- * Create completed chat sessions so the cockpit and lists look inhabited. Each
+ * Create completed chat sessions so the app and its lists look inhabited. Each
  * session binds to its agent's directory and runs its assigned scenario to
  * completion before the next starts.
  */

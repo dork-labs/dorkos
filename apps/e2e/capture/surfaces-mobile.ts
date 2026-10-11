@@ -1,24 +1,14 @@
-import path from 'path';
-import { randomUUID } from 'crypto';
 import type { Browser, Page } from '@playwright/test';
-import {
-  FLEET_ROOT,
-  MOBILE_SCALE_FACTOR,
-  MOBILE_VIDEO_SIZE,
-  MOBILE_VIEWPORT,
-  type Theme,
-} from './config.js';
+import { MOBILE_SCALE_FACTOR, MOBILE_VIDEO_SIZE, MOBILE_VIEWPORT, type Theme } from './config.js';
 import type { RunRecorder } from './library.js';
 import {
   attemptShot,
   mintVideoDir,
   newCaptureContext,
   openLiveTurn,
-  post,
   seedThemeOnContext,
   SETTLE_MS,
   sleep,
-  url,
   waitForAppShell,
   WAIT_MS,
 } from './lib.js';
@@ -46,9 +36,6 @@ async function newMobileContext(browser: Browser, options?: { video?: boolean })
   });
 }
 
-/** Pause after a turn is triggered, so the roster can resolve it as that agent's newest. */
-const MOBILE_RESOLVE_MS = 1200;
-
 /** The two agents the phone drive puts to work — the last one opened lands on screen. */
 const MOBILE_FLEET: readonly { agent: string; prompt: string; scenario: string }[] = [
   { agent: 'scout', prompt: 'Rotate the webhook signing secret', scenario: 'demo-approval' },
@@ -67,48 +54,34 @@ const MOBILE_FLEET: readonly { agent: string; prompt: string; scenario: string }
  * by any navigation, so every pass through the drive raises it again.
  *
  * @param page - The phone page.
- * @param tab - Which destination: `home` is Now + Today, `library` is the roster.
+ * @param tab - Which destination: `home` is Now + Today.
  */
-async function openMobileTab(page: Page, tab: 'home' | 'library'): Promise<void> {
+async function openMobileTab(page: Page, tab: 'home'): Promise<void> {
   await page.getByTestId(`mobile-tab-${tab}`).tap({ timeout: WAIT_MS });
   await page.getByTestId(`mobile-tab-panel-${tab}`).waitFor({ state: 'visible', timeout: WAIT_MS });
   await sleep(500); // let the panel finish rising
 }
 
 /**
- * Drive the phone's Home panel: start one agent's turn, open that agent from
- * the Library panel's roster, and repeat — so Home ends up showing Now (what is
- * running, and who stopped to ask) over the two live conversations in Today, one
- * green and one amber.
+ * Drive the phone's Home panel: the person starts a new chat with each agent in
+ * turn, so Home ends up showing Now (what is running, and who stopped to ask)
+ * over the two live conversations in Today, one green and one amber.
  *
  * Same two rules as the desktop fleet drive (`driveMultiSession`), for the same
- * reasons: a conversation only earns a Today row once this person has opened it
- * from the panel, and each turn is triggered just before its agent is opened so
- * both rows are still live when the shutter falls.
+ * reasons: Today lists only the chats this person touched (DOR-2789), so each
+ * one is started through the composer ({@link openLiveTurn}); and each turn
+ * starts just before the next, so both rows are still live when the shutter
+ * falls.
  *
- * The wrinkle the bottom bar adds is that Now/Today and the agent roster are no
- * longer one scroll: Home draws every zone except Library, and Library draws
- * only itself (`HOME_ZONE_IDS`/`LIBRARY_ZONE_IDS`). So each agent is opened from
- * **Library**, and Home is raised at the end for the shot itself — and, because
- * opening a conversation lowers whatever is up, both are raised every pass.
+ * The bottom bar keeps Now/Today and the open chat apart, so Home is raised at
+ * the end for the shot itself.
  */
 async function driveMobileSessions(page: Page): Promise<void> {
-  await page.goto(url('/'));
-  await waitForAppShell(page);
   for (const entry of MOBILE_FLEET) {
-    const id = randomUUID();
-    const cwd = path.join(FLEET_ROOT, entry.agent);
-    await post('/api/test/scenario', { name: entry.scenario, sessionId: id });
-    await post(`/api/sessions/${id}/messages`, { content: entry.prompt, cwd, create: true });
-    await sleep(MOBILE_RESOLVE_MS);
-    await openMobileTab(page, 'library');
-    await page
-      .getByRole('button', { name: `Switch to ${entry.agent}` })
-      .first()
-      .tap({ timeout: WAIT_MS });
-    await page.waitForURL(new RegExp(`session=${id}`), { timeout: WAIT_MS });
+    await openLiveTurn(page, entry.scenario, entry.prompt, entry.agent);
     await sleep(600);
   }
+  await waitForAppShell(page);
   await openMobileTab(page, 'home');
   await page
     .locator('[data-sidebar-zone="today"] [data-sidebar-row]')
