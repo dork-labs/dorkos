@@ -83,6 +83,8 @@ const READ_BATCH = 200;
  * feed this keeps about a minute of the server's posts, so memory follows the post rate.
  */
 const KEEP_MS = 60_000;
+/** The least time between two wakes of one channel's streams; see `wakeSoon`. */
+const WAKE_GAP_MS = 100;
 /** The first pause before a failed read is tried again. */
 const RETRY_FIRST_MS = 250;
 /** At most this many per feed: a full minute of about 68 posts a second in one channel. */
@@ -104,6 +106,8 @@ export class ChannelFeed<T> {
   private pollTimer: ReturnType<typeof setTimeout> | null = null;
   private retryTimer: ReturnType<typeof setTimeout> | null = null;
   private retryMs = RETRY_FIRST_MS;
+  private lastWake = 0;
+  private wakeTimer: ReturnType<typeof setTimeout> | null = null;
   private closed = false;
 
   constructor(
@@ -201,8 +205,10 @@ export class ChannelFeed<T> {
     this.closed = true;
     if (this.pollTimer) clearTimeout(this.pollTimer);
     if (this.retryTimer) clearTimeout(this.retryTimer);
+    if (this.wakeTimer) clearTimeout(this.wakeTimer);
     this.pollTimer = null;
     this.retryTimer = null;
+    this.wakeTimer = null;
     this.items = [];
   }
 
@@ -266,8 +272,30 @@ export class ChannelFeed<T> {
       this.head = rows.length === READ_BATCH || upTo === null ? Math.max(last, from) : upTo;
       if (rows.length === READ_BATCH && poll) this.pollWanted = true;
       this.trim(now);
-      if (rows.length) this.options.wake(this.communityId, this.channelId);
+      if (rows.length) this.wakeSoon();
     }
+  }
+
+  /**
+   * Wake the channel's streams now, or, if they were woken less than {@link WAKE_GAP_MS} ago,
+   * once that gap has passed. The first message after a quiet spell goes out at once; in a busy
+   * channel each stream then sends what arrived in the gap in one write rather than one write per
+   * message, which is most of what a delivery costs.
+   */
+  private wakeSoon(): void {
+    if (this.wakeTimer || this.closed) return;
+    const wait = this.lastWake + WAKE_GAP_MS - Date.now();
+    const wake = () => {
+      this.wakeTimer = null;
+      this.lastWake = Date.now();
+      this.options.wake(this.communityId, this.channelId);
+    };
+    if (wait <= 0) {
+      wake();
+      return;
+    }
+    this.wakeTimer = setTimeout(wake, wait);
+    this.wakeTimer.unref();
   }
 
   /** Read every kept entry again after a removal. False when the read failed. */
@@ -285,7 +313,7 @@ export class ChannelFeed<T> {
     const now = Date.now();
     this.items = rows.map((row) => ({ ...row, readAt, keptAt: keptAt.get(row.seq) ?? now }));
     this.stale = false;
-    this.options.wake(this.communityId, this.channelId);
+    this.wakeSoon();
     return true;
   }
 

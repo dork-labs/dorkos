@@ -218,6 +218,29 @@ describe('ChannelFeeds', () => {
     expect(wakes()).toBe(woken + 1);
   });
 
+  it('wakes a busy channel at most once per 100 ms, the first message at once', async () => {
+    // Purpose: fails if every message wakes every stream for a write of its own: in a busy
+    // channel that is one socket write per stream per message, most of a delivery's cost.
+    const db = channel();
+    const { set, wakes } = feeds(db.read);
+    set.channelOpened(C, CH);
+    const feed = set.feed(C, CH);
+    feed.seed(0);
+    await settle();
+    const before = wakes();
+    set.entry(C, CH, db.commit('first'));
+    await settle();
+    expect(wakes()).toBe(before + 1);
+    set.entry(C, CH, db.commit('second'));
+    set.entry(C, CH, db.commit('third'));
+    await settle();
+    await settle();
+    expect(wakes()).toBe(before + 1);
+    await new Promise((resolve) => setTimeout(resolve, 150));
+    expect(wakes()).toBe(before + 2);
+    expect(feed.after(1, 10).items.map((item) => item.value)).toEqual(['second', 'third']);
+  });
+
   it('closes with its channel', () => {
     const db = channel();
     const { set } = feeds(db.read);
