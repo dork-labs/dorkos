@@ -409,6 +409,22 @@ describe('fan-out', () => {
     expect(seen).toContainEqual({ k: 'content', c: s.communityId, ch: s.channelId });
   });
 
+  it('tells streams of a deleted session from inside the deleting transaction', async () => {
+    // Purpose: fails if a session can end with its notice sent after the commit: a message
+    // posted in that moment would reach a stream whose sign-in had already ended. Here the row
+    // goes with no app code at all, and the next post follows at once.
+    const s = await space();
+    const bob = await member(s, 'Bob');
+    const stream = await open(s, { cookie: bob.cookie });
+    try {
+      await h.pool.query('DELETE FROM session WHERE "userId"=$1', [await userOf(bob.memberId)]);
+      await post(s, s.owner.cookie, 'after the session ended');
+      await expectClosed(stream, 'removed');
+    } finally {
+      await stream.close();
+    }
+  });
+
   it('ends a stream whose session expired with no notice at the fallback recheck', async () => {
     // Purpose: fails if cached access is trusted past the fallback interval: a session that
     // simply runs out announces nothing, and only the recheck catches it.

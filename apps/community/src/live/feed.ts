@@ -83,6 +83,8 @@ const READ_BATCH = 200;
  * feed this keeps about a minute of the server's posts, so memory follows the post rate.
  */
 const KEEP_MS = 60_000;
+/** The first pause before a failed read is tried again. */
+const RETRY_FIRST_MS = 250;
 /** At most this many per feed: a full minute of about 68 posts a second in one channel. */
 const KEEP_ITEMS = 4_096;
 
@@ -97,7 +99,11 @@ export class ChannelFeed<T> {
   private generation = 0;
   private reading = false;
   private pollWanted = false;
+  /** Kept entries may have changed (a removal): hidden until they are read again. */
+  private stale = false;
   private pollTimer: ReturnType<typeof setTimeout> | null = null;
+  private retryTimer: ReturnType<typeof setTimeout> | null = null;
+  private retryMs = RETRY_FIRST_MS;
   private closed = false;
 
   constructor(
@@ -121,6 +127,8 @@ export class ChannelFeed<T> {
   after(position: number, max: number): FeedRead<T> {
     const noticedThrough = this.noticed;
     if (this.head < 0 || position < this.base) return { covered: false, items: [], noticedThrough };
+    // Streams wait for the fresh copies rather than each reading the changed entries itself.
+    if (this.stale) return { covered: true, items: [], noticedThrough };
     let low = 0;
     let high = this.items.length;
     while (low < high) {
@@ -157,13 +165,15 @@ export class ChannelFeed<T> {
   }
 
   /**
-   * An entry's text or files changed (a removal, a redaction, an erasure). Forget every kept entry,
-   * so a stream that is behind reads the changed ones fresh; new entries are read as before.
+   * An entry's text or files changed (a removal, a redaction, an erasure). Hide every kept entry
+   * and read them all again, once, for every stream: a stream that is behind then sends the
+   * changed text. A read under way is thrown away, since it may hold the old text.
    */
   dropKept(): void {
     this.generation += 1;
-    if (this.head >= 0) this.base = this.head;
-    this.items = [];
+    if (this.head < 0) return;
+    this.stale = true;
+    this.pump();
   }
 
   /**
@@ -172,13 +182,14 @@ export class ChannelFeed<T> {
    */
   reset(): void {
     this.generation += 1;
+    this.stale = false;
     this.base = -1;
     this.head = -1;
     this.noticed = 0;
     this.items = [];
   }
 
-  /** The listener reconnected: notices may be lost. Forget kept entries and re-read once now. */
+  /** The listener reconnected: notices may be lost. Read kept entries and new ones again now. */
   reread(): void {
     this.dropKept();
     this.pollWanted = true;
@@ -189,7 +200,9 @@ export class ChannelFeed<T> {
   close(): void {
     this.closed = true;
     if (this.pollTimer) clearTimeout(this.pollTimer);
+    if (this.retryTimer) clearTimeout(this.retryTimer);
     this.pollTimer = null;
+    this.retryTimer = null;
     this.items = [];
   }
 
@@ -212,35 +225,31 @@ export class ChannelFeed<T> {
 
   /** Read until the feed has everything notices announced (and, after a poll, everything). */
   private pump(): void {
-    if (this.reading || this.closed) return;
+    if (this.reading || this.closed || this.retryTimer) return;
     this.reading = true;
     void this.drain().finally(() => {
       this.reading = false;
       // Seeded, or told of more, between the last loop and here: read again.
-      if (!this.closed && this.head >= 0 && (this.pollWanted || this.head < this.noticed))
-        this.pump();
+      if (this.closed || this.head < 0) return;
+      if (this.stale || this.pollWanted || this.head < this.noticed) this.pump();
     });
   }
 
   private async drain(): Promise<void> {
     while (!this.closed && this.head >= 0) {
+      if (this.stale) {
+        if (!(await this.refresh())) return;
+        continue;
+      }
       const poll = this.pollWanted;
       if (!poll && this.head >= this.noticed) return;
       this.pollWanted = false;
       const generation = this.generation;
       const from = this.head;
       const upTo = poll ? null : this.noticed;
-      let rows: Array<{ seq: number; value: T }>;
-      try {
-        rows = await this.options.read(this.communityId, this.channelId, from, upTo, READ_BATCH);
-      } catch (error) {
-        this.options.log?.(
-          'Community live updates could not read new messages',
-          error instanceof Error ? error.message : String(error)
-        );
-        // Streams read for themselves until one seeds the feed again.
-        this.reset();
-        this.options.wake(this.communityId, this.channelId);
+      const rows = await this.tryRead(from, upTo, READ_BATCH);
+      if (!rows) {
+        if (poll) this.pollWanted = true;
         return;
       }
       // Something was thrown away while this read ran: its rows may be stale. Read again.
@@ -258,6 +267,55 @@ export class ChannelFeed<T> {
       if (rows.length === READ_BATCH && poll) this.pollWanted = true;
       this.trim(now);
       if (rows.length) this.options.wake(this.communityId, this.channelId);
+    }
+  }
+
+  /** Read every kept entry again after a removal. False when the read failed. */
+  private async refresh(): Promise<boolean> {
+    const generation = this.generation;
+    const base = this.base;
+    const head = this.head;
+    const kept = this.items;
+    const rows = kept.length ? await this.tryRead(base, head, kept.length) : [];
+    if (!rows) return false;
+    if (this.closed || generation !== this.generation || base !== this.base || head !== this.head)
+      return true;
+    const keptAt = new Map(kept.map((item) => [item.seq, item.keptAt]));
+    const readAt = nextTick();
+    const now = Date.now();
+    this.items = rows.map((row) => ({ ...row, readAt, keptAt: keptAt.get(row.seq) ?? now }));
+    this.stale = false;
+    this.options.wake(this.communityId, this.channelId);
+    return true;
+  }
+
+  /**
+   * One read, or null when it failed. A failed read keeps the feed where it stands and tries again
+   * after a pause that grows to the fallback interval: its streams wait rather than all reading
+   * for themselves at once, against a database that is already struggling.
+   */
+  private async tryRead(
+    after: number,
+    upTo: number | null,
+    limit: number
+  ): Promise<Array<{ seq: number; value: T }> | null> {
+    try {
+      const rows = await this.options.read(this.communityId, this.channelId, after, upTo, limit);
+      this.retryMs = RETRY_FIRST_MS;
+      return rows;
+    } catch (error) {
+      this.options.log?.(
+        'Community live updates could not read new messages',
+        error instanceof Error ? error.message : String(error)
+      );
+      const wait = this.retryMs;
+      this.retryMs = Math.min(this.retryMs * 2, Math.max(RETRY_FIRST_MS, this.options.fallbackMs));
+      this.retryTimer = setTimeout(() => {
+        this.retryTimer = null;
+        this.pump();
+      }, wait);
+      this.retryTimer.unref();
+      return null;
     }
   }
 

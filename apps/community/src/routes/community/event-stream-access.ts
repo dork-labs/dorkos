@@ -81,6 +81,8 @@ export interface StreamAccess {
   lifecycle: string;
   /** The host took the whole community down. */
   taken_down: boolean;
+  /** When the stream's sign-in session runs out; null for a bearer credential. */
+  expires_at: Date | null;
 }
 
 /**
@@ -149,10 +151,13 @@ export async function readStreamAccess(
   ];
   if (cookie) values.push(openedSession!.user.id, openedSession!.session.token);
   if (principal.kind === 'agent') values.push(principal.ownerMemberId);
+  const expires = cookie
+    ? `(SELECT s."expiresAt" FROM session s WHERE s.id=$4) AS expires_at`
+    : 'NULL::timestamptz AS expires_at';
   const active = await pool.query<StreamAccess>(
     principal.kind === 'agent'
       ? `SELECT (a.active AND owner.active) AS active,(cm.agent_id IS NOT NULL) AS joined,ch.archived,ch.epoch,co.lifecycle,
-         (co.takedown_id IS NOT NULL) AS taken_down
+         (co.takedown_id IS NOT NULL) AS taken_down,${expires}
        FROM agents a JOIN members owner ON owner.id=a.owner_member_id
        JOIN communities co ON co.id=a.community_id
        JOIN channels ch ON ch.id=$2
@@ -160,7 +165,7 @@ export async function readStreamAccess(
        WHERE a.id=$1 AND a.community_id=$3 AND ch.community_id=$3
          AND a.owner_member_id=$5 AND ${credential}`
       : `SELECT m.active,(cm.member_id IS NOT NULL) AS joined,ch.archived,ch.epoch,co.lifecycle,
-         (co.takedown_id IS NOT NULL) AS taken_down
+         (co.takedown_id IS NOT NULL) AS taken_down,${expires}
        FROM members m JOIN communities co ON co.id=m.community_id
        JOIN channels ch ON ch.id=$2
        LEFT JOIN channel_members cm ON cm.channel_id=ch.id AND cm.member_id=m.id
@@ -170,18 +175,25 @@ export async function readStreamAccess(
   return active.rows[0];
 }
 
+/** What one access check found: why the stream must close, or null and how long it may trust. */
+export interface StreamAccessVerdict {
+  reason: StreamCloseReason | null;
+  /** The sign-in session runs out at this time (epoch ms): trust nothing after it. */
+  expiresAt?: number;
+}
+
 /**
  * One stream's access, checked fresh and then trusted until something calls it into question.
  *
  * A check is trusted while no notice has asked the stream to recheck since the check began (the
- * hub marks a stream the moment a notice names it) and for at most `maxAgeMs`, after which a
- * session that simply expired is caught. Two loops share it, the stream's quiet-time watch and
+ * hub marks a stream the moment a notice names it), until the stream's sign-in session runs out,
+ * and for at most `maxAgeMs`, which catches whatever else ends with no notice. Two loops share it, the stream's quiet-time watch and
  * its sender, and a check one of them started serves the other.
  */
 export class CachedStreamAccess {
   private trustedRaises = -1;
   private trustedTick = 0;
-  private trustedAt = 0;
+  private trustedUntil = 0;
   private pending: {
     raises: number;
     tick: number;
@@ -191,7 +203,7 @@ export class CachedStreamAccess {
   constructor(
     private readonly live: Pick<LiveStream, 'access'>,
     private readonly maxAgeMs: number,
-    private readonly read: () => Promise<StreamCloseReason | null>
+    private readonly read: () => Promise<StreamAccessVerdict>
   ) {}
 
   /**
@@ -202,7 +214,7 @@ export class CachedStreamAccess {
     return (
       this.trustedRaises === this.live.access.raises &&
       this.trustedTick > after &&
-      Date.now() - this.trustedAt < this.maxAgeMs
+      Date.now() < this.trustedUntil
     );
   }
 
@@ -213,11 +225,11 @@ export class CachedStreamAccess {
       return this.pending.result;
     const tick = nextTick();
     const at = Date.now();
-    const result = this.read().then((reason) => {
+    const result = this.read().then(({ reason, expiresAt }) => {
       if (!reason && tick > this.trustedTick) {
         this.trustedRaises = raises;
         this.trustedTick = tick;
-        this.trustedAt = at;
+        this.trustedUntil = Math.min(at + this.maxAgeMs, expiresAt ?? Infinity);
       }
       return reason;
     });

@@ -138,7 +138,9 @@ describe('ChannelFeeds', () => {
     expect(feed.after(0, 10).items.map((item) => item.value)).toEqual(['removed']);
   });
 
-  it('forgets kept entries on a removal, so a stream behind reads for itself', async () => {
+  it('reads its kept entries again once on a removal, while streams wait', async () => {
+    // Purpose: fails if a removal sends every stream that is behind to the database for itself
+    // (20,000 reads for one removal), or lets any of them send the text it replaced.
     const db = channel();
     const { set } = feeds(db.read);
     set.channelOpened(C, CH);
@@ -146,12 +148,21 @@ describe('ChannelFeeds', () => {
     feed.seed(0);
     await settle();
     set.entry(C, CH, db.commit('one'));
+    set.entry(C, CH, db.commit('two'));
     await settle();
-    expect(feed.after(0, 10).covered).toBe(true);
+    await settle();
+    expect(feed.after(0, 10).items.map((item) => item.value)).toEqual(['one', 'two']);
+    db.reads.length = 0;
+    const release = db.hold();
+    db.committed[0].text = 'removed';
     set.content(C);
-    expect(feed.after(0, 10).covered).toBe(false);
-    // A stream already past it still reads new entries from the feed.
-    expect(feed.after(1, 10)).toMatchObject({ covered: true, items: [] });
+    // Covered, so nobody reads for itself, but nothing to send until the fresh copies are in.
+    expect(feed.after(0, 10)).toMatchObject({ covered: true, items: [] });
+    release();
+    await settle();
+    await settle();
+    expect(feed.after(0, 10).items.map((item) => item.value)).toEqual(['removed', 'two']);
+    expect(db.reads).toEqual([{ after: 0, upTo: 2 }]);
   });
 
   it('starts over when the channel changes, until a stream seeds it again', async () => {
@@ -186,16 +197,25 @@ describe('ChannelFeeds', () => {
     expect(found.noticedThrough).toBe(0);
   });
 
-  it('goes back to reading per stream when a read fails', async () => {
-    const { set, wakes } = feeds(async () => {
-      throw new Error('database down');
+  it('keeps its place and tries again when a read fails, without waking every stream', async () => {
+    // Purpose: fails if one failed read sends every stream on the channel to the database at
+    // once, just when it is struggling.
+    const db = channel();
+    let failures = 1;
+    const { set, wakes } = feeds(async (...args) => {
+      if (failures-- > 0) throw new Error('database down');
+      return db.read(...args);
     });
     set.channelOpened(C, CH);
     const feed = set.feed(C, CH);
+    set.entry(C, CH, db.commit('after the failure'));
     feed.seed(0);
     await settle();
-    expect(feed.after(0, 10).covered).toBe(false);
-    expect(wakes()).toBe(1);
+    expect(feed.after(0, 10)).toMatchObject({ covered: true, items: [] });
+    const woken = wakes();
+    await new Promise((resolve) => setTimeout(resolve, 400));
+    expect(feed.after(0, 10).items.map((item) => item.value)).toEqual(['after the failure']);
+    expect(wakes()).toBe(woken + 1);
   });
 
   it('closes with its channel', () => {
@@ -214,9 +234,10 @@ describe('CachedStreamAccess', () => {
     const access = new LiveSignal();
     let checks = 0;
     let answer: 'removed' | null = null;
+    let expiresAt: number | undefined;
     const cache = new CachedStreamAccess({ access }, maxAgeMs, async () => {
       checks += 1;
-      return answer;
+      return { reason: answer, expiresAt };
     });
     return {
       access,
@@ -224,6 +245,9 @@ describe('CachedStreamAccess', () => {
       checks: () => checks,
       revoke() {
         answer = 'removed';
+      },
+      expireAt(at: number) {
+        expiresAt = at;
       },
     };
   }
@@ -252,6 +276,17 @@ describe('CachedStreamAccess', () => {
     const { cache } = cached(1);
     await cache.check();
     await new Promise((resolve) => setTimeout(resolve, 5));
+    expect(cache.allows()).toBe(false);
+  });
+
+  it('trusts nothing once the sign-in session runs out', async () => {
+    // Purpose: fails if a session that simply expires keeps streaming for the whole trust
+    // interval: it announces nothing, so only its own end time can stop the trust.
+    const { cache, expireAt } = cached();
+    expireAt(Date.now() + 5);
+    await cache.check();
+    expect(cache.allows()).toBe(true);
+    await new Promise((resolve) => setTimeout(resolve, 10));
     expect(cache.allows()).toBe(false);
   });
 

@@ -246,9 +246,10 @@ export function registerEventRoutes(
     // so that watch, jittered per stream, refreshes it first. Trusted for exactly the fallback,
     // every stream that opened in the same moment rechecked in the same moment too: 5,000 at once
     // queued posts behind them for seconds.
-    const access = new CachedStreamAccess(live, fallbackMs * TRUST_FACTOR, async () =>
-      closeReason(await readStreamAccess(pool, principal, openedSession, channel.id))
-    );
+    const access = new CachedStreamAccess(live, fallbackMs * TRUST_FACTOR, async () => {
+      const state = await readStreamAccess(pool, principal, openedSession, channel.id);
+      return { reason: await closeReason(state), expiresAt: state?.expires_at?.getTime() };
+    });
     const stream = new ReadableStream<Uint8Array>(
       {
         start(controller) {

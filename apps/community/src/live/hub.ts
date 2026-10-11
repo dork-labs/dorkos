@@ -36,6 +36,14 @@ export class LiveSignal {
   /** Raise the flag, waking the waiter if there is one. */
   raise(): void {
     this.count += 1;
+    this.rouse();
+  }
+
+  /**
+   * Raise the flag without counting it: for a stream {@link mark} already counted. Counting twice
+   * would make a check run between the two look stale, and the stream check again for nothing.
+   */
+  rouse(): void {
     this.pending = true;
     this.wake?.();
   }
@@ -364,7 +372,7 @@ export class LiveHub {
   private recheck(streams: Iterable<LiveStream>): void {
     const named = [...streams];
     for (const stream of named) stream.access.mark();
-    inBatches(named, (stream) => stream.access.raise());
+    inBatches(named, (stream) => stream.access.rouse());
   }
 
   /**
@@ -376,7 +384,7 @@ export class LiveHub {
     for (const stream of all) stream.access.mark();
     inBatches(all, (stream) => {
       stream.entries.raise();
-      stream.access.raise();
+      stream.access.rouse();
     });
   }
 
