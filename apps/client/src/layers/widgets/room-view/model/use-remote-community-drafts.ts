@@ -10,6 +10,7 @@ import {
 } from '@/layers/entities/community';
 import type { ConversationAttachmentPort } from '@/layers/features/conversation';
 import type { PendingFile } from '@/layers/features/composer';
+import { isConductHold } from './use-remote-community-conduct';
 
 interface Delivery {
   address: string;
@@ -69,6 +70,11 @@ export interface RemoteCommunityDraftOptions {
   ownerKey: string;
   /** Route and access context that deliveries and errors are fenced to. */
   contextKey?: string;
+  /**
+   * Told when the space's moderation held a post (a mute, slow mode, rules not accepted). The
+   * message is back in its draft by then, so the person sends it again once the hold lifts.
+   */
+  onHold?: (cause: unknown) => void;
 }
 
 /** Staged files as the composer's attachment tray expects them. */
@@ -90,6 +96,7 @@ export function useRemoteCommunityDrafts({
   draft: draftAddress,
   ownerKey,
   contextKey = ownerKey,
+  onHold,
 }: RemoteCommunityDraftOptions) {
   const transport = useTransport();
   const address = JSON.stringify([ownerKey, ref, roomId, contextKey]);
@@ -142,12 +149,14 @@ export function useRemoteCommunityDrafts({
   const alive = useRef(true);
   const allowed = useRef(canSend);
   const receipt = useRef(onReceipt);
+  const held = useRef(onHold);
   useLayoutEffect(() => {
     authority.current = address;
     context.current = contextKey;
     allowed.current = canSend;
     receipt.current = onReceipt;
-  }, [address, canSend, contextKey, onReceipt]);
+    held.current = onHold;
+  }, [address, canSend, contextKey, onReceipt, onHold]);
   useEffect(() => {
     alive.current = true;
     return () => {
@@ -218,6 +227,12 @@ export function useRemoteCommunityDrafts({
         jobs.current.delete(job.key);
         return;
       }
+      // Held, not lost: it goes back to its draft, and the hold says when it can go.
+      if (isConductHold(cause) && returnToDraft(job)) {
+        jobs.current.delete(job.key);
+        if (alive.current && job.address === authority.current) held.current?.(cause);
+        return;
+      }
       job.status = 'failed';
       job.error = cause instanceof Error ? cause.message : 'Not confirmed. Try this message again.';
     } finally {
@@ -227,10 +242,10 @@ export function useRemoteCommunityDrafts({
   }
 
   /**
-   * Put a message that can never send back into its composer's draft. Every message returned
-   * this way goes first, oldest sent first, and then whatever was typed since; once the person
-   * has changed that returned part, the next one simply goes in front. Refused (and so `false`)
-   * once its connection has ended, when nothing could read the draft back.
+   * Put a message that can never send, or that the space held, back into its composer's draft.
+   * Every message returned this way goes first, oldest sent first, then whatever was typed
+   * since; once the person has changed that returned part, the next one simply goes in front.
+   * Refused (and so `false`) once its connection has ended, when nothing could read it back.
    */
   function returnToDraft(job: Delivery): boolean {
     const { draft } = job.origin;

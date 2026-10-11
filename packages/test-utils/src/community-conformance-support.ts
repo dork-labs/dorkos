@@ -478,4 +478,28 @@ export const GATED_PROBES: Record<CommunityMethodGatedCapability, GatedProbe> = 
       { method: 'downloadAttachment', run: () => adapter.downloadAttachment(roomId, 'absent') },
     ],
   },
+  conduct: {
+    isOff: (caps) => !caps.conduct,
+    calls: (adapter, { roomId, memberId }) => [
+      { method: 'getStanding', run: () => adapter.getStanding(roomId) },
+      { method: 'acceptRules', run: () => adapter.acceptRules(1) },
+      {
+        method: 'setDisplayName',
+        // The name the person already has, so a backend that renames leaves the store as it was.
+        run: async () => {
+          const self = (await adapter.listMembers(roomId)).find((m) => m.memberId === memberId);
+          return adapter.setDisplayName(self?.displayName ?? 'Conformance Probe');
+        },
+      },
+    ],
+  },
+  reports: {
+    isOff: (caps) => !caps.reports,
+    calls: (adapter, { roomId }) => [
+      {
+        method: 'reportEntry',
+        run: () => adapter.reportEntry(roomId, 'absent-entry', { reason: 'spam' }),
+      },
+    ],
+  },
 };

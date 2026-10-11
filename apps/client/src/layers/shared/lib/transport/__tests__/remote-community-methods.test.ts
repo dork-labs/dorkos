@@ -373,3 +373,52 @@ describe('qualified remote community transport', () => {
     expect(onEvent).toHaveBeenCalledOnce();
   });
 });
+
+describe('a person’s own conduct in a space (DOR-2770)', () => {
+  it('reads standing for one qualified channel and refuses another channel’s', async () => {
+    const standing = {
+      community: 'community-a',
+      roomId: 'same-id',
+      mutedUntil: null,
+      slowModeSeconds: 30,
+      rules: { text: 'Be kind.', version: 2, acceptedVersion: 2 },
+    };
+    const fetch = answer(standing);
+    await expect(methods().getRemoteCommunityStanding('community-a', 'same-id')).resolves.toEqual(
+      standing
+    );
+    expect(fetch.mock.calls[0]![0]).toBe('/api/communities/community-a/rooms/same-id/standing');
+    answer({ ...standing, roomId: 'other' });
+    await expect(methods().getRemoteCommunityStanding('community-a', 'same-id')).rejects.toThrow();
+  });
+
+  it('accepts the rules in one version, renames, and reports through the local server', async () => {
+    let fetch = answer({
+      community: 'community-a',
+      rules: { text: 'Be kind.', version: 2, acceptedVersion: 2 },
+    });
+    await expect(methods().acceptRemoteCommunityRules('community-a', 2)).resolves.toEqual({
+      text: 'Be kind.',
+      version: 2,
+      acceptedVersion: 2,
+    });
+    expect(fetch.mock.calls[0]![0]).toBe('/api/communities/community-a/rules/accept');
+    expect(JSON.parse(fetch.mock.calls[0]![1].body)).toEqual({ version: 2 });
+
+    fetch = answer({ community: 'community-a', displayName: 'Ada' });
+    await expect(methods().setRemoteCommunityDisplayName('community-a', 'Ada')).resolves.toBe(
+      'Ada'
+    );
+    expect(fetch.mock.calls[0]![1].method).toBe('PUT');
+
+    fetch = answer(null, 204);
+    await methods().reportRemoteCommunityEntry('community-a', 'same-id', 'entry/id', {
+      reason: 'spam',
+      note: 'ads',
+    });
+    expect(fetch.mock.calls[0]![0]).toBe(
+      '/api/communities/community-a/rooms/same-id/entries/entry%2Fid/reports'
+    );
+    expect(JSON.parse(fetch.mock.calls[0]![1].body)).toEqual({ reason: 'spam', note: 'ads' });
+  });
+});
