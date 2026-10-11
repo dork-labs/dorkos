@@ -6,8 +6,7 @@
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { act, type ReactNode } from 'react';
-import { render, screen, cleanup, waitFor } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
+import { render, screen, cleanup, waitFor, fireEvent } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import {
@@ -169,6 +168,14 @@ function renderStrip(overrides: Partial<Transport> = {}) {
   return { transport, router };
 }
 
+/*
+ * Chips are clicked with `fireEvent.click`, never `userEvent.click`. Every chip
+ * is a Radix `HoverCard` trigger, and userEvent's `pointerenter` and `focus`
+ * each arm the card's 300ms open timer; Radix orphans the first, unmount cancels
+ * only the second, and the orphan fires after this file's jsdom `window` is gone
+ * as an unhandled "window is not defined" that fails the whole client run
+ * (DOR-2225, the same leak DOR-1116 fixed in `PresenceStrip.test.tsx`).
+ */
 describe('usePresenceStrip', () => {
   beforeEach(() => {
     useRoomPresenceStore.getState().reset();
@@ -227,12 +234,11 @@ describe('usePresenceStrip', () => {
   });
 
   it('follows a working agent into its room without claiming its session', async () => {
-    const user = userEvent.setup();
     const { transport, router } = renderStrip();
     await waitFor(() => expect(transport.listRooms).toHaveBeenCalled());
     useRoomPresenceStore.getState().observe(ROOM_ID, progress('working'));
 
-    await user.click(await screen.findByRole('button', { name: /Watch tangerines/ }));
+    fireEvent.click(await screen.findByRole('button', { name: /Watch tangerines/ }));
 
     await waitFor(() => expect(router.state.location.pathname).toBe('/channels'));
     expect(router.state.location.search).toEqual({ id: ROOM_ID });
@@ -245,7 +251,6 @@ describe('usePresenceStrip', () => {
   });
 
   it('follows a session-only agent into its session, in the directory it runs in', async () => {
-    const user = userEvent.setup();
     const { transport, router } = renderStrip({
       resolveAgents: vi.fn().mockResolvedValue({
         [AGENT_PATH]: {
@@ -263,7 +268,7 @@ describe('usePresenceStrip', () => {
       statusCwds: { 'sess-1': AGENT_PATH },
     });
 
-    await user.click(
+    fireEvent.click(
       await screen.findByRole('button', { name: 'Watch tangerines: working in a chat' })
     );
 
