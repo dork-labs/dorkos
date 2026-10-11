@@ -1,11 +1,7 @@
 ---
 covers:
   - 'feat(doe): DorkOS picks the model on credits (DOR-2784)'
-  - 'fix(doe): a model pick is a preference, never a payer (DOR-2784)'
-  - "fix(config): classify runtimes.doe.defaultModel's shipped default (DOR-2784)"
-  - 'fix(config): move the DorkOS model preference migration to 0.107.0 (DOR-2784)'
-  - 'fix(config): move the DorkOS model preference migration to 0.108.0 (DOR-2784)'
-  - "fix(doe): only DorkOS's own default counts, and a stand-in model says so (DOR-2784)"
+  - 'fix(config): seed the DorkOS model preference under 0.109.0 (DOR-2784)'
 ---
 
 ### Changed
