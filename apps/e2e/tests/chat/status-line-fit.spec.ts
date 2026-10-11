@@ -271,15 +271,11 @@ test.describe('Chat — status line fits its row', () => {
         const statusLine = chatPage.page.locator('[data-testid="status-line"]');
         await expect(statusLine).toBeVisible();
 
-        // The directory always promotes, so it is the signal that the line has
-        // real content rather than an empty row that trivially fits. (The model
-        // item used to be that signal; it shows only when pinned now, ADR
-        // 261010-143211.)
-        await expect(chatPage.page.locator('[data-testid="status-item-cwd"]')).toBeVisible();
-        expectNoOverlap(await measureSettledStatusLines(chatPage.page));
-
-        // The runtime item resolves from a second query; re-measure once it lands,
-        // because two items side by side is exactly what overflowed before.
+        // The runtime item is the signal that the line has real content rather
+        // than an empty row that trivially fits: a fresh chat promotes it (it can
+        // still be chosen). The model item used to be that signal; it shows only
+        // when pinned now (ADR 261010-143211). The directory is no signal either:
+        // it shows only when the chat has a folder, and this one may not.
         await expect(chatPage.page.locator('[data-testid="status-item-runtime"]')).toBeVisible();
         expectNoOverlap(await measureSettledStatusLines(chatPage.page));
 
