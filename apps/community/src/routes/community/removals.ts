@@ -21,7 +21,11 @@ import { ApiError, json } from '../../http.js';
 import { hashSecret } from '../../security.js';
 import { resolveCommunityContext } from '../../tenant-context.js';
 import { attachmentsForEntries } from './attachments.js';
-import { entryProjection, loadEntry, originKeyForPrincipal } from './entries.js';
+import {
+  entryProjection,
+  loadEntry,
+  originKeyForPrincipal,
+} from '../../content/entry-projection.js';
 
 const IdSchema = z.uuid();
 
