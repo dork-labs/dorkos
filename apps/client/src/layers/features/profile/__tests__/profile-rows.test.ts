@@ -137,6 +137,7 @@ describe('an agent you manage', () => {
       'Chats nav',
       'Schedules nav',
       'Commitments nav',
+      'Heartbeat nav',
       'Rooms nav',
       'Notifications nav',
       'Activity nav',
@@ -203,6 +204,7 @@ describe('someone else’s agent', () => {
       'About text',
       'Runs on text',
       'Commitments nav',
+      'Heartbeat nav',
       'Rooms nav',
     ]);
   });
@@ -228,6 +230,42 @@ describe('the Commitments row', () => {
   });
 });
 
+describe('the Heartbeat row', () => {
+  const row = (over: Partial<ProfileRowsContext>) =>
+    flat(build(OTHERS_AGENT, over)).find((r) => r.id === 'heartbeat')!;
+  const status = { enabled: true, wake: 'events' as const, skippedReason: null, nextBeatAt: null };
+
+  it('says how the agent wakes, and when a timed one next checks in', () => {
+    expect(row({ heartbeat: status }).value).toBe('When something happens');
+    expect(row({ heartbeat: status }).meta).toBeUndefined();
+    const timed = row({
+      heartbeat: {
+        ...status,
+        wake: 'timed',
+        nextBeatAt: new Date(Date.now() + 12 * 60_000 - 1_000).toISOString(),
+      },
+    });
+    expect(timed.value).toBe('Every 30 min in working hours');
+    expect(timed.meta).toBe('next in 12 min');
+  });
+
+  it('reads the next check from the moment it is handed, so a ticking caller moves it', () => {
+    const at = Date.parse('2026-10-12T10:30:00Z');
+    const heartbeat = { ...status, wake: 'timed' as const, nextBeatAt: new Date(at).toISOString() };
+    expect(row({ heartbeat, now: at - 20 * 60_000 }).meta).toBe('next in 20 min');
+    expect(row({ heartbeat, now: at - 10 * 60_000 }).meta).toBe('next in 10 min');
+    expect(row({ heartbeat, now: at }).meta).toBe('next any moment');
+  });
+
+  it('says off, off for everyone, and nothing while unknown', () => {
+    expect(
+      row({ heartbeat: { ...status, wake: 'off', skippedReason: 'Heartbeat off.' } }).value
+    ).toBe('Off');
+    expect(row({ heartbeat: { ...status, enabled: false } }).value).toBe('Off for everyone');
+    expect(row({ heartbeat: null }).value).toBeNull();
+  });
+});
+
 describe('DorkBot', () => {
   it('keeps its identity rows visible, locked, and explained', () => {
     expect(shape(build(DORKBOT))).toEqual([
@@ -237,6 +275,7 @@ describe('DorkBot', () => {
       'Chats nav',
       'Schedules nav',
       'Commitments nav',
+      'Heartbeat nav',
       'Rooms nav',
       'Notifications nav',
       'Activity nav',
