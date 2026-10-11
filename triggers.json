@@ -1,7 +1,7 @@
 {
  "schema": 1,
- "date": "2026-10-09",
- "computed_at": "2026-10-10T11:04:06.021Z",
+ "date": "2026-10-10",
+ "computed_at": "2026-10-11T11:21:14.934Z",
  "constraint": "collector-health",
  "canary_since": "2026-09-21T05:17:15Z",
  "open": [
@@ -10,55 +10,77 @@
    "rule": "collector-health",
    "severity": "red",
    "scope": "",
-   "what": "Collector unhealthy 2 of 3 days (2026-10-08, 2026-10-09): The local export from clone clone-71ebf1f648 is 4 days old (last 2026-10-05); local-commit and local-push are going stale. Approve or re-run the ci-local-export scheduled skill on that machine (Schedules page, Full autonomy).",
+   "what": "Collector unhealthy 3 of 3 days (2026-10-08, 2026-10-09, 2026-10-10): The local export from clone clone-71ebf1f648 is 4 days old (last 2026-10-05); local-commit and local-push are going stale. Approve or re-run the ci-local-export scheduled skill on that machine (Schedules page, Full autonomy).",
    "action": "Fix this first. Every other number comes from the same run.",
    "ledger_entry": null,
    "first_fired": "2026-10-08",
-   "last_fired": "2026-10-09"
+   "last_fired": "2026-10-10"
+  },
+  {
+   "id": "main-canary:d44354f8788e",
+   "rule": "main-canary",
+   "severity": "red",
+   "scope": "main-green",
+   "what": "main canary red on d44354f since 2026-10-10 01:35Z: test.yml ×1.",
+   "action": "Fix main first. Everything merging behind it inherits the red, and the queue will eject PRs that did nothing wrong.",
+   "ledger_entry": "260919-175509",
+   "first_fired": "2026-10-10",
+   "last_fired": "2026-10-10"
   },
   {
    "id": "headroom:wf.browser-test.browser-shard",
    "rule": "headroom",
    "severity": "red",
    "scope": "wf.browser-test.browser-shard",
-   "what": "wf.browser-test.browser-shard p95 uses 97.8% of its time limit (n=1755).",
+   "what": "wf.browser-test.browser-shard p95 uses 99.1% of its time limit (n=1905).",
    "action": "Make it faster. Raising the limit hides it; the next green run still gets killed.",
    "ledger_entry": null,
    "first_fired": "2026-09-25",
-   "last_fired": "2026-10-09"
+   "last_fired": "2026-10-10"
   },
   {
    "id": "machine-saturated",
    "rule": "machine-saturated",
    "severity": "red",
    "scope": "",
-   "what": "2 machines running the hooks is saturated — CPU: load 5.13/core p90; RAM: 278 MB free p10; swap: 15393 MB in use p50.",
+   "what": "2 machines running the hooks is saturated — CPU: load 5.3/core p90; RAM: 281 MB free p10; swap: 16083 MB in use p50.",
    "action": "Run fewer suites at once (ci/config.yaml local.heavy_run_slots), or close what is holding the memory. No pipeline change helps.",
    "ledger_entry": null,
    "first_fired": "2026-09-21",
-   "last_fired": "2026-10-09"
+   "last_fired": "2026-10-10"
   },
   {
    "id": "slo-floor:headroom",
    "rule": "slo-floor",
    "severity": "red",
    "scope": "headroom",
-   "what": "headroom under floor: 97.8% (n=19313, 2026-10-03 to 2026-10-09).",
+   "what": "headroom under floor: 99.1% (n=20689, 2026-10-04 to 2026-10-10).",
    "action": "Take its path from ci/slos.yaml.",
    "ledger_entry": null,
    "first_fired": "2026-09-25",
-   "last_fired": "2026-10-09"
+   "last_fired": "2026-10-10"
   },
   {
    "id": "slo-floor:main-green",
    "rule": "slo-floor",
    "severity": "red",
    "scope": "main-green",
-   "what": "main-green under floor: red_episodes 36, restore_p90 148.8 (n=792, 2026-09-12 to 2026-10-09).",
+   "what": "main-green under floor: red_episodes 36, restore_p90 148.8 (n=809, 2026-09-13 to 2026-10-10).",
    "action": "Take its path from ci/slos.yaml.",
    "ledger_entry": "260919-175509",
    "first_fired": "2026-09-20",
-   "last_fired": "2026-10-09"
+   "last_fired": "2026-10-10"
+  },
+  {
+   "id": "slo-floor:queue-green",
+   "rule": "slo-floor",
+   "severity": "red",
+   "scope": "queue-green",
+   "what": "queue-green under floor: 71.7% (n=318, 2026-10-04 to 2026-10-10).",
+   "action": "Take its path from ci/slos.yaml.",
+   "ledger_entry": "260919-175500",
+   "first_fired": "2026-10-10",
+   "last_fired": "2026-10-10"
   },
   {
    "id": "verdict:260923-220553",
@@ -69,7 +91,18 @@
    "action": "Revert it (status: reverted, name the PR), or re-state the hypothesis.",
    "ledger_entry": null,
    "first_fired": "2026-10-08",
-   "last_fired": "2026-10-09"
+   "last_fired": "2026-10-10"
+  },
+  {
+   "id": "main-canary-silent",
+   "rule": "main-canary",
+   "severity": "amber",
+   "scope": "tracked.time-to-detect",
+   "what": "main canary silent over 18h: test.yml.",
+   "action": "Check the schedule still exists and GitHub is still delivering it. A silent canary reads green.",
+   "ledger_entry": null,
+   "first_fired": "2026-10-10",
+   "last_fired": "2026-10-10"
   },
   {
    "id": "main-red:1b7e18ccab8a",
@@ -80,7 +113,7 @@
    "action": "Why did the queue miss it? If nothing did, this one is history.",
    "ledger_entry": "260919-175509",
    "first_fired": "2026-10-04",
-   "last_fired": "2026-10-09"
+   "last_fired": "2026-10-10"
   },
   {
    "id": "main-red:3f45d514fd25",
@@ -91,18 +124,7 @@
    "action": "Why did the queue miss it? If nothing did, this one is history.",
    "ledger_entry": "260919-175509",
    "first_fired": "2026-10-04",
-   "last_fired": "2026-10-09"
-  },
-  {
-   "id": "main-red:4a39710c08cd",
-   "rule": "main-red",
-   "severity": "amber",
-   "scope": "main-green",
-   "what": "main red 48 min (4a39710).",
-   "action": "Why did the queue miss it? If nothing did, this one is history.",
-   "ledger_entry": "260919-175509",
-   "first_fired": "2026-10-03",
-   "last_fired": "2026-10-09"
+   "last_fired": "2026-10-10"
   },
   {
    "id": "main-red:6eb125a95fc2",
@@ -113,7 +135,7 @@
    "action": "Why did the queue miss it? If nothing did, this one is history.",
    "ledger_entry": "260919-175509",
    "first_fired": "2026-10-04",
-   "last_fired": "2026-10-09"
+   "last_fired": "2026-10-10"
   },
   {
    "id": "main-red:75e30d043bea",
@@ -124,7 +146,7 @@
    "action": "Why did the queue miss it? If nothing did, this one is history.",
    "ledger_entry": "260919-175509",
    "first_fired": "2026-10-04",
-   "last_fired": "2026-10-09"
+   "last_fired": "2026-10-10"
   },
   {
    "id": "main-red:8a5b4de3762d",
@@ -135,7 +157,7 @@
    "action": "Why did the queue miss it? If nothing did, this one is history.",
    "ledger_entry": "260919-175509",
    "first_fired": "2026-10-09",
-   "last_fired": "2026-10-09"
+   "last_fired": "2026-10-10"
   },
   {
    "id": "main-red:c02419bb05e8",
@@ -146,18 +168,18 @@
    "action": "Why did the queue miss it? If nothing did, this one is history.",
    "ledger_entry": "260919-175509",
    "first_fired": "2026-10-04",
-   "last_fired": "2026-10-09"
+   "last_fired": "2026-10-10"
   },
   {
    "id": "slo-floor:lead-time",
    "rule": "slo-floor",
    "severity": "amber",
    "scope": "lead-time",
-   "what": "lead-time under floor: p50 52.8, p90 370.5 (n=200, 2026-10-03 to 2026-10-09).",
+   "what": "lead-time under floor: p50 60.6, p90 394.8 (n=207, 2026-10-04 to 2026-10-10).",
    "action": "Take its path from ci/slos.yaml.",
    "ledger_entry": "260919-204500",
    "first_fired": "2026-09-20",
-   "last_fired": "2026-10-09"
+   "last_fired": "2026-10-10"
   },
   {
    "id": "verdict:260919-175501",
@@ -168,7 +190,7 @@
    "action": "Worth another change? If not, close it with a follow-up entry.",
    "ledger_entry": null,
    "first_fired": "2026-09-30",
-   "last_fired": "2026-10-09"
+   "last_fired": "2026-10-10"
   },
   {
    "id": "verdict:260919-175503",
@@ -179,196 +201,196 @@
    "action": "Worth another change? If not, close it with a follow-up entry.",
    "ledger_entry": null,
    "first_fired": "2026-10-04",
-   "last_fired": "2026-10-09"
+   "last_fired": "2026-10-10"
   },
   {
    "id": "gate-failure-spike:wf.browser-test.copy-spec-drift",
    "rule": "gate-failure-spike",
    "severity": "amber",
    "scope": "wf.browser-test.copy-spec-drift",
-   "what": "wf.browser-test.copy-spec-drift failed 3.9%, was 2.1% (1.86x). 7d vs 7d, n=699/1297.",
+   "what": "wf.browser-test.copy-spec-drift failed 5.3%, was 1.7% (3.18x). 7d vs 7d, n=752/1254.",
    "action": "What changed for it in 7 days? Usually one flaky test or one new step.",
    "ledger_entry": null,
    "first_fired": "2026-10-08",
-   "last_fired": "2026-10-09"
+   "last_fired": "2026-10-10"
   },
   {
    "id": "gate-failure-spike:wf.cli-smoke-test.integration-test",
    "rule": "gate-failure-spike",
    "severity": "amber",
    "scope": "wf.cli-smoke-test.integration-test",
-   "what": "wf.cli-smoke-test.integration-test failed 1.2%, was 0.1% (10.01x). 7d vs 7d, n=483/806.",
+   "what": "wf.cli-smoke-test.integration-test failed 1.2%, was 0.1% (9.26x). 7d vs 7d, n=521/804.",
    "action": "What changed for it in 7 days? Usually one flaky test or one new step.",
    "ledger_entry": null,
    "first_fired": "2026-10-09",
-   "last_fired": "2026-10-09"
+   "last_fired": "2026-10-10"
   },
   {
    "id": "gate-failure-spike:wf.cli-smoke-test.smoke-test-docker",
    "rule": "gate-failure-spike",
    "severity": "amber",
    "scope": "wf.cli-smoke-test.smoke-test-docker",
-   "what": "wf.cli-smoke-test.smoke-test-docker failed 1.4%, was 0.1% (11.67x). 7d vs 7d, n=483/805.",
+   "what": "wf.cli-smoke-test.smoke-test-docker failed 1.3%, was 0.1% (10.79x). 7d vs 7d, n=521/803.",
    "action": "What changed for it in 7 days? Usually one flaky test or one new step.",
    "ledger_entry": null,
    "first_fired": "2026-10-07",
-   "last_fired": "2026-10-09"
+   "last_fired": "2026-10-10"
   },
   {
    "id": "gate-failure-spike:wf.docs-openapi-check.openapi-fresh",
    "rule": "gate-failure-spike",
    "severity": "amber",
    "scope": "wf.docs-openapi-check.openapi-fresh",
-   "what": "wf.docs-openapi-check.openapi-fresh failed 0.9%, was 0.4% (2.25x). 7d vs 7d, n=691/1296.",
+   "what": "wf.docs-openapi-check.openapi-fresh failed 0.9%, was 0.5% (1.97x). 7d vs 7d, n=743/1253.",
    "action": "What changed for it in 7 days? Usually one flaky test or one new step.",
    "ledger_entry": null,
    "first_fired": "2026-10-09",
-   "last_fired": "2026-10-09"
+   "last_fired": "2026-10-10"
   },
   {
    "id": "gate-failure-spike:wf.harness-windows.harness-windows",
    "rule": "gate-failure-spike",
    "severity": "amber",
    "scope": "wf.harness-windows.harness-windows",
-   "what": "wf.harness-windows.harness-windows failed 10.8%, was 1.2% (9.15x). 7d vs 7d, n=684/1269.",
+   "what": "wf.harness-windows.harness-windows failed 10%, was 1.2% (8.22x). 7d vs 7d, n=733/1238.",
    "action": "What changed for it in 7 days? Usually one flaky test or one new step.",
    "ledger_entry": "261004-203003",
    "first_fired": "2026-10-04",
-   "last_fired": "2026-10-09"
+   "last_fired": "2026-10-10"
   },
   {
    "id": "gate-failure-spike:wf.scripts-test.fixtures",
    "rule": "gate-failure-spike",
    "severity": "amber",
    "scope": "wf.scripts-test.fixtures",
-   "what": "wf.scripts-test.fixtures failed 0.3%, was 0.1% (5.49x). 7d vs 7d, n=886/1622.",
+   "what": "wf.scripts-test.fixtures failed 0.3%, was 0.1% (5.01x). 7d vs 7d, n=946/1579.",
    "action": "What changed for it in 7 days? Usually one flaky test or one new step.",
    "ledger_entry": null,
    "first_fired": "2026-10-06",
-   "last_fired": "2026-10-09"
+   "last_fired": "2026-10-10"
   },
   {
    "id": "gate-failure-spike:wf.test.community-packaged",
    "rule": "gate-failure-spike",
    "severity": "amber",
    "scope": "wf.test.community-packaged",
-   "what": "wf.test.community-packaged failed 1.7%, was 0.5% (3.13x). 7d vs 7d, n=716/1309.",
+   "what": "wf.test.community-packaged failed 1.7%, was 0.5% (3.51x). 7d vs 7d, n=778/1261.",
    "action": "What changed for it in 7 days? Usually one flaky test or one new step.",
    "ledger_entry": null,
    "first_fired": "2026-10-07",
-   "last_fired": "2026-10-09"
+   "last_fired": "2026-10-10"
   },
   {
    "id": "gate-failure-spike:wf.test.community-pg",
    "rule": "gate-failure-spike",
    "severity": "amber",
    "scope": "wf.test.community-pg",
-   "what": "wf.test.community-pg failed 4.4%, was 1.9% (2.28x). 7d vs 7d, n=684/1245.",
+   "what": "wf.test.community-pg failed 4.6%, was 2.1% (2.24x). 7d vs 7d, n=737/1216.",
    "action": "What changed for it in 7 days? Usually one flaky test or one new step.",
    "ledger_entry": null,
    "first_fired": "2026-10-09",
-   "last_fired": "2026-10-09"
+   "last_fired": "2026-10-10"
   },
   {
    "id": "gate-failure-spike:wf.test.test",
    "rule": "gate-failure-spike",
    "severity": "amber",
    "scope": "wf.test.test",
-   "what": "wf.test.test failed 26.8%, was 17% (1.58x). 7d vs 7d, n=731/1344.",
+   "what": "wf.test.test failed 27.5%, was 15.7% (1.76x). 7d vs 7d, n=792/1297.",
    "action": "What changed for it in 7 days? Usually one flaky test or one new step.",
    "ledger_entry": null,
    "first_fired": "2026-09-23",
-   "last_fired": "2026-10-09"
+   "last_fired": "2026-10-10"
   },
   {
    "id": "gate-failure-spike:wf.test.test-shard",
    "rule": "gate-failure-spike",
    "severity": "amber",
    "scope": "wf.test.test-shard",
-   "what": "wf.test.test-shard failed 4.4%, was 1.8% (2.38x). 7d vs 7d, n=2633/4964.",
+   "what": "wf.test.test-shard failed 4.3%, was 1.8% (2.34x). 7d vs 7d, n=2825/4821.",
    "action": "What changed for it in 7 days? Usually one flaky test or one new step.",
    "ledger_entry": "260921-011949",
    "first_fired": "2026-10-05",
-   "last_fired": "2026-10-09"
+   "last_fired": "2026-10-10"
+  },
+  {
+   "id": "gate-failure-spike:wf.typecheck.typecheck",
+   "rule": "gate-failure-spike",
+   "severity": "amber",
+   "scope": "wf.typecheck.typecheck",
+   "what": "wf.typecheck.typecheck failed 3%, was 1.7% (1.77x). 7d vs 7d, n=728/1227.",
+   "action": "What changed for it in 7 days? Usually one flaky test or one new step.",
+   "ledger_entry": "260919-175502",
+   "first_fired": "2026-10-10",
+   "last_fired": "2026-10-10"
   },
   {
    "id": "repeat-ejection:wf.browser-test.browser-test",
    "rule": "repeat-ejection",
    "severity": "amber",
    "scope": "wf.browser-test.browser-test",
-   "what": "wf.browser-test.browser-test (with wf.browser-test.browser-shard) failed on 21 of 39 queue ejections in 7d; 9 real.",
+   "what": "wf.browser-test.browser-test (with wf.browser-test.browser-shard) failed on 29 of 49 queue ejections in 7d; 13 real.",
    "action": "Quarantine or fix what fails without the code being wrong. The rest are wasted builds.",
    "ledger_entry": null,
    "first_fired": "2026-09-20",
-   "last_fired": "2026-10-09"
+   "last_fired": "2026-10-10"
+  },
+  {
+   "id": "repeat-ejection:wf.browser-test.copy-spec-drift",
+   "rule": "repeat-ejection",
+   "severity": "amber",
+   "scope": "wf.browser-test.copy-spec-drift",
+   "what": "wf.browser-test.copy-spec-drift failed on 4 of 49 queue ejections in 7d; 2 real.",
+   "action": "Quarantine or fix what fails without the code being wrong. The rest are wasted builds.",
+   "ledger_entry": null,
+   "first_fired": "2026-10-10",
+   "last_fired": "2026-10-10"
   },
   {
    "id": "repeat-ejection:wf.test.test",
    "rule": "repeat-ejection",
    "severity": "amber",
    "scope": "wf.test.test",
-   "what": "wf.test.test (with wf.test.community-packaged and wf.test.community-pg and wf.test.test-shard) failed on 19 of 39 queue ejections in 7d; 5 real.",
+   "what": "wf.test.test (with wf.test.community-packaged and wf.test.community-pg and wf.test.test-shard) failed on 22 of 49 queue ejections in 7d; 6 real.",
    "action": "Quarantine or fix what fails without the code being wrong. The rest are wasted builds.",
    "ledger_entry": null,
    "first_fired": "2026-09-20",
-   "last_fired": "2026-10-09"
+   "last_fired": "2026-10-10"
   },
   {
    "id": "gate-cost:wf.harness-windows.harness-windows",
    "rule": "gate-cost",
    "severity": "amber",
    "scope": "wf.harness-windows.harness-windows",
-   "what": "wf.harness-windows.harness-windows p90 7.9 min, was 6.2 (+26.9%). 7d vs 7d.",
+   "what": "wf.harness-windows.harness-windows p90 8 min, was 6.2 (+29.3%). 7d vs 7d.",
    "action": "Find the step that grew. Cheaper now than a timeout raise later.",
    "ledger_entry": "261004-203003",
    "first_fired": "2026-10-09",
-   "last_fired": "2026-10-09"
+   "last_fired": "2026-10-10"
+  },
+  {
+   "id": "gate-cost:wf.typecheck.typecheck",
+   "rule": "gate-cost",
+   "severity": "amber",
+   "scope": "wf.typecheck.typecheck",
+   "what": "wf.typecheck.typecheck p90 7.5 min, was 6 (+25.1%). 7d vs 7d.",
+   "action": "Find the step that grew. Cheaper now than a timeout raise later.",
+   "ledger_entry": "260919-175502",
+   "first_fired": "2026-10-10",
+   "last_fired": "2026-10-10"
   }
  ],
  "cleared": [
   {
-   "id": "main-red:4d7fe3a082ec",
+   "id": "main-red:4a39710c08cd",
    "rule": "main-red",
    "severity": "amber",
    "scope": "main-green",
-   "what": "main red 129 min (4d7fe3a).",
+   "what": "main red 48 min (4a39710).",
    "action": "Why did the queue miss it? If nothing did, this one is history.",
    "ledger_entry": "260919-175509",
-   "first_fired": "2026-10-02",
-   "last_fired": "2026-10-08"
-  },
-  {
-   "id": "main-red:6303271680ca",
-   "rule": "main-red",
-   "severity": "amber",
-   "scope": "main-green",
-   "what": "main red 128 min (6303271).",
-   "action": "Why did the queue miss it? If nothing did, this one is history.",
-   "ledger_entry": "260919-175509",
-   "first_fired": "2026-10-02",
-   "last_fired": "2026-10-08"
-  },
-  {
-   "id": "gate-cost:wf.changelog-fragment-check.no-fragment-under-skip-label",
-   "rule": "gate-cost",
-   "severity": "amber",
-   "scope": "wf.changelog-fragment-check.no-fragment-under-skip-label",
-   "what": "wf.changelog-fragment-check.no-fragment-under-skip-label p90 0.5 min, was 0.4 (+26.3%). 7d vs 7d.",
-   "action": "Find the step that grew. Cheaper now than a timeout raise later.",
-   "ledger_entry": null,
-   "first_fired": "2026-10-07",
-   "last_fired": "2026-10-08"
-  },
-  {
-   "id": "constraint-changed:headroom->collector-health",
-   "rule": "constraint-changed",
-   "severity": "amber",
-   "scope": "collector-health",
-   "what": "Constraint moved: headroom → collector-health.",
-   "action": "Drop headroom unless it is nearly done. Pick up collector-health.",
-   "ledger_entry": null,
-   "first_fired": "2026-10-08",
-   "last_fired": "2026-10-08"
+   "first_fired": "2026-10-03",
+   "last_fired": "2026-10-09"
   }
  ]
 }
