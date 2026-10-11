@@ -538,6 +538,48 @@ describe('chat verbs under a turn ceiling', () => {
   });
 });
 
+// Spec `official-community-space` D10. The CLI asks about a read only when it reaches past the
+// agent's folder, or the web. A stranger's turn must not be waved through on those: any member of
+// a space could otherwise make an agent read the computer and post what it found. Each case fails
+// if the `'stranger'` rule in `isAutoAllowedCall` is removed, or widened to every ceiling.
+describe('read-only tools under a stranger’s ceiling', () => {
+  async function gate(
+    toolName: string,
+    ceilings: {
+      turnPermissionCeiling?: 'runtime-default' | { asks: 'when-risky'; reach: 'workspace' };
+      backgroundPermissionCeiling?: 'runtime-default';
+    }
+  ): Promise<'allowed' | 'asked'> {
+    const session = { ...makeSession('bypassPermissions'), ...ceilings };
+    const canUseTool = createCanUseTool(session, noopLog);
+    return Promise.race([
+      canUseTool(
+        toolName,
+        { file_path: '/etc/hosts', url: 'https://x' },
+        makeContext('read-1')
+      ).then(() => 'allowed' as const),
+      new Promise<'asked'>((resolve) => setTimeout(() => resolve('asked'), 0)),
+    ]);
+  }
+
+  it.each(['Read', 'Grep', 'Glob', 'WebFetch', 'WebSearch'])(
+    'asks for %s on a stranger’s turn',
+    async (tool) => {
+      expect(await gate(tool, { turnPermissionCeiling: 'runtime-default' })).toBe('asked');
+    }
+  );
+
+  it('asks for one from background work a stranger’s turn left running', async () => {
+    expect(await gate('Read', { backgroundPermissionCeiling: 'runtime-default' })).toBe('asked');
+  });
+
+  it('still auto-allows one under another agent’s ceiling, and with no ceiling', async () => {
+    const agentLevel = { asks: 'when-risky', reach: 'workspace' } as const;
+    expect(await gate('Read', { turnPermissionCeiling: agentLevel })).toBe('allowed');
+    expect(await gate('Read', {})).toBe('allowed');
+  });
+});
+
 describe('resolveModeDecision — the gate closes on non-match (DOR-604)', () => {
   /**
    * The whole decision table, written out. Each entry names the mode, the tool,

@@ -9,6 +9,7 @@ import {
   type CommunityEntry,
   type CommunityRef,
 } from '@dorkos/shared/community-adapter';
+import { logger } from '../../../lib/logger.js';
 import { RoomError } from '../../rooms/room-errors.js';
 import type { RoomService } from '../../rooms/room-service.js';
 import type { CommunityAgentEnrollmentStore } from './agent-enrollment-store.js';
@@ -202,13 +203,14 @@ export class RemoteRoomSubscriptionBridge {
     }
     if (event.author.kind !== 'human') return;
     // Before the claim, so a message the owner's setting holds back is never recorded as
-    // dispatched and stays ordinary history (spec `official-community-space` D9).
-    if (
-      this.wakeGate &&
-      !this.wakeGate.wakes(room.communityRef, room.ownerAuthorId, event.author.memberId)
-    ) {
-      return;
-    }
+    // dispatched and stays ordinary history (spec `official-community-space` D9). A channel the
+    // owner answers in (D11) is the one exception, and it pays for each wake from its budget.
+    const wakes =
+      !this.wakeGate ||
+      this.wakeGate.wakes(room.communityRef, room.ownerAuthorId, event.author.memberId);
+    const answering =
+      this.wakeGate?.answersIn?.(room.communityRef, room.ownerAuthorId, room.title) === true;
+    if (!wakes && !answering) return;
     if (
       opts.reconnect &&
       !this.isFreshReconnect(event.serverCreatedAt, opts.wasActiveBeforeDisconnect)
@@ -221,8 +223,16 @@ export class RemoteRoomSubscriptionBridge {
     // Unclaimed on purpose: only a fresh live frame dispatches, so a message
     // that arrived while spaces were off never starts a turn later either.
     if (!this.dispatchEnabled(room.communityRef)) return;
-    const dispatchEntry = this.dispatchEntry(target.id, room, saved);
-    if (!dispatchEntry.mentions.length) return;
+    let dispatchEntry = this.dispatchEntry(target.id, room, saved);
+    // Past here without a mention the setting allows only in an answer-in channel: every other
+    // connection keeps the mention rule exactly as it was. A message removed before it was cached
+    // is stored as it stands now, with nothing to answer.
+    const answerIn = !wakes || !dispatchEntry.mentions.length;
+    if (answerIn) {
+      if (!answering || !saved.body.text.trim()) return;
+      dispatchEntry = this.answerInEntry(target.id, room, dispatchEntry);
+      if (!dispatchEntry.mentions.length) return;
+    }
     if (
       !this.mirrors.claimRemoteDispatch(
         room.communityRef,
@@ -231,6 +241,26 @@ export class RemoteRoomSubscriptionBridge {
         new Date(this.now()).toISOString()
       )
     ) {
+      return;
+    }
+    // Paid for only once the claim is won, so a post that reaches this bridge twice (one stream
+    // per enrolled agent, or a frame repeated after a reconnect) is charged once. A post past the
+    // budget stays claimed: it is handled, with no turn, and never starts one later.
+    if (
+      answerIn &&
+      this.wakeGate?.takeAnswerInWake?.(
+        room.communityRef,
+        room.ownerAuthorId,
+        room.title,
+        event.author.memberId
+      ) !== true
+    ) {
+      // Ids only, never a name or a body: what an operator watching a flood needs.
+      logger.info('[RemoteRoomSubscriptionBridge] answer-in budget spent; post kept as history', {
+        communityRef: room.communityRef,
+        remoteRoomId: room.remoteRoomId,
+        entryId: event.entry.id,
+      });
       return;
     }
     this.service.dispatchImportedRemoteEntry(target.id, dispatchEntry);
@@ -545,6 +575,26 @@ export class RemoteRoomSubscriptionBridge {
         kind: event.author.kind,
       },
     };
+  }
+
+  /**
+   * Address an answer-in post to every agent this owner enrolled that can read the room, on the
+   * short-lived dispatch view only: the stored entry keeps the mentions its author wrote. The
+   * turn it starts is the same one a mention from this author would start, external and held to
+   * the stranger ceiling.
+   */
+  private answerInEntry(
+    localRoomId: string,
+    room: MirrorRoomInput,
+    entry: ReturnType<RemoteMirrorStore['importEntries']>[number]
+  ) {
+    const enrolled = this.enrollments
+      .activeLocalAgentIds(room.communityRef, room.ownerAuthorId)
+      .flatMap((localAgentId) => {
+        const authorId = this.resolveLocalAgentAuthor(localAgentId);
+        return authorId && this.mirrors.canRead(localRoomId, authorId) === true ? [authorId] : [];
+      });
+    return { ...entry, mentions: [...new Set([...entry.mentions, ...enrolled])] };
   }
 
   /** Translate remote mention identities only on the short-lived local dispatch view. */

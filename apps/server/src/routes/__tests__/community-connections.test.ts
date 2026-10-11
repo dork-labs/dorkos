@@ -51,6 +51,8 @@ import {
 import { RemoteConnectionAuthorizationError } from '../../services/communities/remote/connection-store.js';
 import { PinnedHttpError } from '../../services/communities/remote/pinned-origin.js';
 import { RemoteWakePolicy } from '../../services/communities/remote/wake/wake-policy.js';
+import { RemoteAnswerIn } from '../../services/communities/remote/wake/answer-in.js';
+import { AnswerInStore } from '../../services/communities/remote/wake/answer-in-store.js';
 import { UserConfigSchema } from '@dorkos/shared/config-schema';
 import { z } from 'zod';
 import {
@@ -1070,5 +1072,121 @@ describe('who may wake agents in a space is the owner’s call', () => {
   it('is no config key, so no agent’s config_patch can reach it', () => {
     const schema = JSON.stringify(z.toJSONSchema(UserConfigSchema, { unrepresentable: 'any' }));
     expect(schema).not.toContain('wakeAgentsFrom');
+  });
+});
+
+// Spec `official-community-space` D11. Purpose: where any person's post wakes an agent without
+// a mention is the owner's call alone. Each case fails if the route lets an agent's identity,
+// another local person, or a malformed body change it, or if the setting ever becomes a config
+// key an agent's `config_patch` could reach.
+describe('where agents answer without a mention is the owner’s call', () => {
+  let answerDirectory: string;
+  let answerServer: Server;
+  let policy: RemoteWakePolicy;
+  const answerRef = CommunityRefSchema.parse('remote_answer_a');
+
+  beforeAll(async () => {
+    answerDirectory = await mkdtemp(join(tmpdir(), 'community-answer-in-'));
+    const store = new RemoteConnectionStore(answerDirectory);
+    await store.addPending(
+      {
+        ref: answerRef,
+        ownerKey: 'author-a',
+        remoteCommunityId: 'remote-community',
+        label: 'DorkOS',
+        pinnedOrigin: 'https://community.example',
+        pairingId: 'pairing-answer',
+        expiresAt: new Date(Date.now() + 60_000).toISOString(),
+      },
+      'answer-verifier'
+    );
+    await store.complete(answerRef, 'author-a', 'remote-owner', 'token', {
+      state: 'verified',
+      effective: { read: true, post: true, enrollAgent: true, stream: true },
+      lastKnown: {
+        lifecycle: 'active',
+        capabilities: { read: true, post: true, enrollAgent: true, stream: true },
+        verifiedAt: '2026-10-06T00:00:00.000Z',
+      },
+    });
+    const answerIn = new RemoteAnswerIn(new AnswerInStore(answerDirectory, store), store);
+    policy = new RemoteWakePolicy(store, [], undefined, answerIn);
+    const answerApp = express();
+    answerApp.use(express.json());
+    answerApp.use(
+      '/api/community-connections',
+      createCommunityConnectionsRouter(
+        new RemoteCommunityPairingService(store),
+        navigation as never,
+        undefined,
+        undefined,
+        undefined,
+        policy
+      )
+    );
+    answerServer = answerApp.listen(0, '127.0.0.1');
+    await once(answerServer, 'listening');
+  });
+  afterAll(async () => {
+    answerServer.closeAllConnections();
+    await new Promise<void>((resolve) => answerServer.close(() => resolve()));
+    await rm(answerDirectory, { recursive: true, force: true });
+  });
+
+  const path = `/api/community-connections/${answerRef}/answer-in`;
+
+  it('lets the owner read and change it, and the live answer follows at once', async () => {
+    const before = await request(answerServer).get(path).set('x-test-author', 'author-a');
+    expect(before.status).toBe(200);
+    expect(before.body).toEqual({ answerIn: [] });
+
+    const changed = await request(answerServer)
+      .put(path)
+      .set('x-test-author', 'author-a')
+      .send({ answerIn: ['#Welcome', 'help'] });
+    expect(changed.status).toBe(200);
+    expect(changed.body).toEqual({ answerIn: ['welcome', 'help'] });
+    expect(await policy.getAnswerIn(answerRef, 'author-a')).toEqual(['welcome', 'help']);
+    expect(policy.answersIn(answerRef, 'author-a', 'help')).toBe(true);
+  });
+
+  it('refuses an agent, and the list stays where the owner put it', async () => {
+    await policy.setAnswerIn(answerRef, 'author-a', ['help']);
+    const refused = await request(answerServer)
+      .put(path)
+      .set('x-dorkos-agent', 'agent-token')
+      .send({ answerIn: ['help', 'general'] });
+    expect(refused.status).toBe(403);
+    expect(await policy.getAnswerIn(answerRef, 'author-a')).toEqual(['help']);
+    const read = await request(answerServer).get(path).set('x-dorkos-agent', 'agent-token');
+    expect(read.status).toBe(403);
+  });
+
+  it('refuses anyone on this machine who is not the owner', async () => {
+    await policy.setAnswerIn(answerRef, 'author-a', ['help']);
+    const refused = await request(answerServer)
+      .put(path)
+      .set('x-test-author', 'author-b')
+      .send({ answerIn: ['general'] });
+    expect(refused.status).toBe(403);
+    expect(await policy.getAnswerIn(answerRef, 'author-a')).toEqual(['help']);
+  });
+
+  it('refuses a list that is not channel names, and a connection that is not there', async () => {
+    const malformed = await request(answerServer)
+      .put(path)
+      .set('x-test-author', 'author-a')
+      .send({ answerIn: 'help' });
+    expect(malformed.status).toBe(400);
+    const missing = await request(answerServer)
+      .put('/api/community-connections/remote_missing/answer-in')
+      .set('x-test-author', 'author-a')
+      .send({ answerIn: ['help'] });
+    expect(missing.status).toBe(404);
+  });
+
+  it('is no config key, so no agent’s config_patch can reach it', () => {
+    const schema = JSON.stringify(z.toJSONSchema(UserConfigSchema, { unrepresentable: 'any' }));
+    expect(schema).not.toContain('answerIn');
   });
 });

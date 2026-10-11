@@ -47,7 +47,7 @@ import {
 } from '../sessions/tool-result-outcome.js';
 import { randomUUID } from 'node:crypto';
 import { CHAT_SEND_TOOL, CHAT_STOP_TOOL } from '@dorkos/shared/chat-messages';
-import { gatePermissionMode, heldToACeiling, type CeilingedMode } from '../turn-permission.js';
+import { ceilingOn, gatePermissionMode, type CeilingedMode } from '../turn-permission.js';
 
 // ---------------------------------------------------------------------------
 // Auto-approved tool sets (module-level to avoid per-call reconstruction)
@@ -468,22 +468,26 @@ const ASK_USER_QUESTION_TOOL = 'AskUserQuestion';
  * not the default `queue`), ask. A queued `chat_send` and `chat_read` still skip
  * the card: they only add a message to a chat a person can read.
  *
+ * **A stranger's turn cannot read past its folder unasked** (spec `official-community-space`
+ * D10). The CLI asks about a read only when it reaches outside the agent's folder, or the web;
+ * under a stranger's ceiling those go to the mode table too, which asks, as the mode that asks
+ * would. Otherwise any stranger's question could read the computer and post what it found.
+ *
  * @param toolName - The tool the model called.
  * @param input - The raw arguments it called with.
- * @param turnHasCeiling - Whether the current turn carries a permission ceiling.
+ * @param ceiling - What bounds the gate now: nothing, a ceiling, or a stranger's (`ceilingOn`).
  * @returns `true` to skip the card, `false` to hand the call to the mode table.
  */
 function isAutoAllowedCall(
   toolName: string,
   input: Record<string, unknown>,
-  turnHasCeiling: boolean
+  ceiling: ReturnType<typeof ceilingOn>
 ): boolean {
-  if (turnHasCeiling) {
+  if (ceiling !== 'none') {
     if (toolName === CHAT_STOP_QUALIFIED) return false;
-    if (toolName === CHAT_SEND_QUALIFIED) {
-      return input.delivery === undefined || input.delivery === 'queue';
-    }
+    if (toolName === CHAT_SEND_QUALIFIED) return (input.delivery ?? 'queue') === 'queue';
   }
+  if (ceiling === 'stranger' && READ_ONLY_TOOLS.has(toolName)) return false;
   if (toolName !== CONTROL_UI_TOOL) return true;
   const parsed = UiCommandSchema.safeParse(input);
   if (!parsed.success) return false;
@@ -1096,7 +1100,7 @@ export function createCanUseTool(
       // itself `dorkos` presents the same `mcp__dorkos__…` names, and its call
       // falls through to the mode table like any other foreign tool.
       isHostServedOrUnattributed(context.mcpServer) &&
-      isAutoAllowedCall(toolName, input, heldToACeiling(session)) &&
+      isAutoAllowedCall(toolName, input, ceilingOn(session)) &&
       // The owner-facing verbs skip the card only for a session that resolves an
       // agent identity: without one the rooms verbs run as the OWNER — who sees
       // every room on the install and posts as a person — and a proactive note

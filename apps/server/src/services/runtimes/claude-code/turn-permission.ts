@@ -29,11 +29,27 @@ export function turnPermissionMode<M extends string | undefined>(session: {
 }): M | string {
   const ceiling = session.turnPermissionCeiling;
   if (ceiling === undefined || session.permissionMode === undefined) return session.permissionMode;
-  return clampModeToCeiling(
-    CLAUDE_CODE_CAPABILITIES.permissionModes,
-    session.permissionMode,
-    ceiling
-  );
+  return clampClaudeMode(session.permissionMode, ceiling);
+}
+
+/**
+ * One Claude Code mode held to one ceiling, by what each mode declares.
+ *
+ * `dontAsk` is the one mode the SDK takes that DorkOS does not declare, so the generic clamp has
+ * nothing to weigh it by and would fall back to the runtime's default, which ASKS: looser than a
+ * mode that runs only what the agent's own allow rules permit and refuses everything else. So
+ * wherever a ceiling admits the default it admits `dontAsk` too, and a stranger's turn keeps an
+ * agent set to `dontAsk` there (spec `official-community-space` D10, D11). Under a stricter
+ * ceiling, such as another agent's Plan, it is clamped like any other mode.
+ *
+ * @param mode - The mode a person chose for the conversation.
+ * @param ceiling - The ceiling the turn or its background work carries.
+ */
+export function clampClaudeMode(mode: string, ceiling: TurnPermissionCeiling): string {
+  const declared = CLAUDE_CODE_CAPABILITIES.permissionModes;
+  if (mode === 'dontAsk' && clampModeToCeiling(declared, 'default', ceiling) === 'default')
+    return mode;
+  return clampModeToCeiling(declared, mode, ceiling);
 }
 
 /** A session's chosen mode with both ceilings the tool gate reads. */
@@ -65,7 +81,7 @@ export function gatePermissionMode<M extends string | undefined>(
   const mode = turnPermissionMode(session);
   const carried = session.backgroundPermissionCeiling;
   if (carried === undefined || mode === undefined) return mode;
-  return clampModeToCeiling(CLAUDE_CODE_CAPABILITIES.permissionModes, mode, carried);
+  return clampClaudeMode(mode, carried);
 }
 
 /**
@@ -101,4 +117,25 @@ export function bothCeilings(
   // Deduplicated, so a run of ceilinged turns over long-lived work stays one short list.
   const bounds = new Map([...list(a), ...list(b)].map((bound) => [JSON.stringify(bound), bound]));
   return bounds.size === 1 ? [...bounds.values()][0]! : [...bounds.values()];
+}
+
+/**
+ * What bounds the tool gate right now: `'none'`, `'held'` for a ceiling ({@link heldToACeiling}),
+ * or `'stranger'` when this turn's ceiling, or the one background work carries, holds the
+ * `runtime-default` bound only a message from off this machine sets (spec
+ * `official-community-space` D10). Under a stranger's, the read-only tools the CLI asks about
+ * (a file outside the agent's folder, a web page) need a person, as the mode that asks would.
+ *
+ * @param session - This turn's ceiling and the one background work carries.
+ */
+export function ceilingOn(session: {
+  turnPermissionCeiling?: TurnPermissionCeiling;
+  backgroundPermissionCeiling?: TurnPermissionCeiling;
+}): 'none' | 'held' | 'stranger' {
+  const stranger = (ceiling: TurnPermissionCeiling | undefined) =>
+    ceiling !== undefined &&
+    (Array.isArray(ceiling) ? ceiling.includes('runtime-default') : ceiling === 'runtime-default');
+  if (stranger(session.turnPermissionCeiling) || stranger(session.backgroundPermissionCeiling))
+    return 'stranger';
+  return heldToACeiling(session) ? 'held' : 'none';
 }

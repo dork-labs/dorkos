@@ -60,6 +60,7 @@ import { CommunityOwnerNoticeCache } from '../services/communities/remote/commun
 import { CommunityOwnerNoticeAnnouncer } from '../services/notifications/emitters/community-owner-replacement.js';
 import { resolveDorkHome } from '../lib/dork-home.js';
 import { officialOnly, spaceReachable } from '../middleware/spaces-enabled.js';
+import { addAnswerInRoutes } from './community-answer-in.js';
 
 /** Resolve the only local human allowed to use a stored community connection. */
 export function resolveCommunityOwner(req: Request, res: Response): string | null {
@@ -247,7 +248,7 @@ export function createCommunityConnectionsRouter(
   ownerNoticeCache: CommunityOwnerNoticeCache = new CommunityOwnerNoticeCache(),
   announcer: CommunityOwnerNoticeAnnouncer = new CommunityOwnerNoticeAnnouncer(resolveDorkHome()),
   // Looked up per request when not injected, so building the router reads nothing from disk.
-  wakePolicy?: Pick<RemoteWakePolicy, 'get' | 'set'>
+  wakePolicy?: Pick<RemoteWakePolicy, 'get' | 'set' | 'getAnswerIn' | 'setAnswerIn'>
 ): Router {
   const router = Router();
   const caches: ActivityCaches = {
@@ -513,6 +514,8 @@ export function createCommunityConnectionsRouter(
       failure(res, error);
     }
   });
+  // Where any person's post wakes the owner's agents without a mention (D11), owner-only too.
+  addAnswerInRoutes(router, resolveCommunityOwner, () => wakePolicy ?? getRemoteWakePolicy());
   router.delete('/:ref', async (req, res) => {
     const owner = resolveCommunityOwner(req, res);
     if (!owner) return;

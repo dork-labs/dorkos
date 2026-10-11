@@ -16,6 +16,8 @@ import { RemoteConnectionStore } from './connection-store.js';
 import { OfficialSpace } from '../official-space.js';
 import { officialSpaceUrl, spacesEnabled } from '../spaces-config.js';
 import { RemoteWakePolicy } from './wake/wake-policy.js';
+import { RemoteAnswerIn } from './wake/answer-in.js';
+import { AnswerInStore } from './wake/answer-in-store.js';
 import { DEFAULT_WAKE_AGENTS_FROM, OFFICIAL_WAKE_AGENTS_FROM } from './wake/wake-setting.js';
 import { RemoteCommunityPairingService, type RemoteInstallationAgent } from './pairing-service.js';
 import { RemoteCommunityAdapter } from './remote-community-adapter.js';
@@ -142,12 +144,23 @@ export function isConnectionVisible(change: {
  */
 export function getRemoteWakePolicy(): RemoteWakePolicy {
   if (wakePolicy) return wakePolicy;
-  wakePolicy = new RemoteWakePolicy(getRemoteConnectionStore(), undefined, (place) =>
-    getOfficialSpace().isOfficialConnection(place)
-      ? OFFICIAL_WAKE_AGENTS_FROM
-      : DEFAULT_WAKE_AGENTS_FROM
+  const connections = getRemoteConnectionStore();
+  // The channels where any person's post wakes agents (spec D11), read the same way.
+  const answerIn = new RemoteAnswerIn(
+    new AnswerInStore(resolveDorkHome(), connections),
+    connections
+  );
+  wakePolicy = new RemoteWakePolicy(
+    connections,
+    undefined,
+    (place) =>
+      getOfficialSpace().isOfficialConnection(place)
+        ? OFFICIAL_WAKE_AGENTS_FROM
+        : DEFAULT_WAKE_AGENTS_FROM,
+    answerIn
   );
   void wakePolicy.reload();
+  void answerIn.reload();
   return wakePolicy;
 }
 
