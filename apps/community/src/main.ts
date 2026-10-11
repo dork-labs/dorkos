@@ -37,6 +37,8 @@ import { pruneNoticeOutbox } from './mail/outbox.js';
 import { emailLinkComposers } from './email-links/composers.js';
 import { resolveEmailLinkRequests } from './email-links/resolver.js';
 import { pruneEmailLinks } from './email-links/tokens.js';
+import { startDecisionWorker } from './decisions/worker.js';
+import { PAID_DECISIONS_ARMED, decisionSettings } from './decisions/settings.js';
 
 const config = parseConfig(process.env);
 if (config.testRuntime)
@@ -336,6 +338,26 @@ const mail = startMailDelivery({
 });
 // Moves owner replacements through their notice, wait, reminder, claim window, and expiry.
 const ownerReplacements = startOwnerReplacementTimeline({ pool, config });
+// Watch-only spam and rule checks on new posts, after they commit. Paid models run only with
+// COMMUNITY_DECISIONS_PAID=1 beside their key (decisions/settings.ts); the rules are free.
+const decisions = decisionSettings(process.env, {
+  paidArmed: PAID_DECISIONS_ARMED,
+  fetch: (url, init) => fetch(url, init),
+});
+if (decisions.unarmedKeys.length > 0)
+  console.warn(
+    `${decisions.unarmedKeys.join(' and ')} set, but COMMUNITY_DECISIONS_PAID is not 1: post checks use the free built-in rules only.`
+  );
+const postChecks = startDecisionWorker({
+  pool,
+  authSecret: config.authSecret,
+  models: decisions.models,
+  dailyCallCap: decisions.dailyCallCap,
+  onCapReached: (check) =>
+    console.warn(
+      `Community post checks: the daily call cap for ${check} is reached until midnight UTC.`
+    ),
+});
 const onSignal = createSignalHandler(
   createStop({
     server,
@@ -348,6 +370,7 @@ const onSignal = createSignalHandler(
       imports,
       takedownEvidence,
       ownerReplacements,
+      postChecks,
       ...(mail ? [mail] : []),
     ],
   })

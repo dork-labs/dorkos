@@ -15,6 +15,8 @@ const packages = fileURLToPath(new URL('../../packages/', import.meta.url));
  */
 const SERVER_SOURCE_PACKAGES = new Set([
   'a2a-gateway',
+  // The Community's own post checks import it; the job does not build it either.
+  'decisions',
   'extension-api',
   'harness',
   'keep-awake',

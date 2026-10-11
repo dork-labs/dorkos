@@ -147,6 +147,76 @@ export const CommunityWireReportRequestSchema = z.strictObject({
 });
 /** The receipt a reporter gets; it never says what moderators did. */
 export const CommunityWireReportReceiptSchema = z.strictObject({ reported: z.literal(true) });
+/** A check's name: `rules` for the built-in checks, or the decision model's slot (`jev`, `openai`). */
+const checkName = z.string().regex(/^[a-z][a-z0-9_-]{0,31}$/);
+/** What a check made of a message: leaned toward spam or a broken rule, looked fine, or no answer. */
+export const CommunityWireCheckVerdictSchema = z.enum(['flagged', 'fine', 'unsure']);
+
+/**
+ * What one watch-only check made of a reported message (specs/official-community-space D15). A
+ * hint for the moderator and nothing more: no check hides, holds or removes a message, and its
+ * confidence is not yet measured against moderators' own calls.
+ */
+export const CommunityWireReportCheckSchema = z.strictObject({
+  check: checkName,
+  /** The pinned model that answered, or `rules`. */
+  modelId: z.string().min(1).max(200),
+  verdict: CommunityWireCheckVerdictSchema,
+  /** What it flagged; null unless `verdict` is `flagged`. */
+  finding: z.enum(['spam', 'promotion', 'rule']).nullable(),
+  /** The rule's number in the space's rules, when `finding` is `rule`. */
+  rule: z.int().positive().nullable(),
+  /** How sure the check said it was, 0 to 1. */
+  confidence: z.number().min(0).max(1),
+  at: timestamp,
+});
+/** {@link CommunityWireReportCheckSchema}. */
+export type CommunityWireReportCheck = z.infer<typeof CommunityWireReportCheckSchema>;
+
+/** One answer in a check's record: a neutral label code, a level, a yes or no, or none. */
+const DecisionRecordAnswerSchema = z.strictObject({
+  value: z.union([z.string().max(16), z.number(), z.boolean(), z.null()]),
+  confidence: z.number().min(0).max(1),
+  /** Why there is no answer (a timeout, an outage...), when there is none. */
+  failure: z.string().max(32).optional(),
+  /** Which built-in rule fired (`rate`, `links`, `repeat`); never a model's own words. */
+  reason: z.string().max(32).optional(),
+});
+
+/**
+ * One rung of one watch-only check on one message, as its `decision.*` audit row records it
+ * (research `20261006_decision-models.md` §5e). It names the message by the row's subject, holds
+ * a keyed hash of the exact input rather than a copy, and keeps no text a model wrote, so a
+ * hostile post cannot put words into the record.
+ */
+export const CommunityDecisionRecordSchema = z.strictObject({
+  v: z.literal(1),
+  useCase: z.string().regex(/^[a-z][a-z0-9_.-]{0,63}$/),
+  rung: z.union([z.literal(0), z.literal(1), z.literal(2)]),
+  check: checkName,
+  modelId: z.string().min(1).max(200),
+  /** A hash of the rules and questions asked. */
+  policyVersion: z.string().regex(/^[a-f0-9]{16}$/),
+  /** HMAC-SHA256 of the exact request, keyed by the server's secret; gone once its author is erased. */
+  inputHash: z
+    .string()
+    .regex(/^[a-f0-9]{64}$/)
+    .optional(),
+  answers: z
+    .record(z.string().regex(/^[a-z][a-z0-9_]{0,15}$/), DecisionRecordAnswerSchema)
+    .refine((answers) => Object.keys(answers).length <= 4, { message: 'At most 4 answers' }),
+  /** The least confident answer's confidence. */
+  confidence: z.number().min(0).max(1),
+  latencyMs: z.number().min(0),
+  /** Millionths of a US dollar, when the model's price is configured. */
+  costMicroUsd: z.number().min(0).nullable(),
+  /** Set when the daily call cap was reached, so no model was called. */
+  skipped: z.literal('cap-reached').optional(),
+  verdict: CommunityWireCheckVerdictSchema,
+});
+/** {@link CommunityDecisionRecordSchema}. */
+export type CommunityDecisionRecord = z.infer<typeof CommunityDecisionRecordSchema>;
+
 /** One report, as owners and admins see the queue. */
 export const CommunityWireReportSchema = z.strictObject({
   id,
@@ -172,6 +242,11 @@ export const CommunityWireReportSchema = z.strictObject({
   excerpt: z.string().nullable(),
   createdAt: timestamp,
   resolvedAt: timestamp.nullable(),
+  /**
+   * What each watch-only check made of the message, latest per check. Absent from servers
+   * written before checks existed.
+   */
+  checks: z.array(CommunityWireReportCheckSchema).max(8).optional(),
 });
 /** One report, as owners and admins see the queue. */
 export type CommunityWireReport = z.infer<typeof CommunityWireReportSchema>;
@@ -229,4 +304,39 @@ export const CommunityWireBanResponseSchema = z.strictObject({ ban: CommunityWir
 /** Standing bans, newest first. */
 export const CommunityWireBanListResponseSchema = z.strictObject({
   bans: z.array(CommunityWireBanSchema).max(500),
+});
+
+/** Read the side-by-side comparison of the decision models: the last `days` days, default 30. */
+export const CommunityWireDecisionComparisonQuerySchema = z.strictObject({
+  days: z.coerce.number().int().min(1).max(90).optional(),
+});
+/**
+ * One check's figures over the window. `judged` counts the messages a moderator ruled on (a
+ * report actioned or dismissed, or the message removed); `agreed` those where the check's
+ * verdict matched that ruling. Unsure verdicts are never judged.
+ */
+export const CommunityWireDecisionModelFiguresSchema = z.strictObject({
+  check: checkName,
+  modelId: z.string().min(1).max(200),
+  decisions: z.int().nonnegative(),
+  unsure: z.int().nonnegative(),
+  flagged: z.int().nonnegative(),
+  judged: z.int().nonnegative(),
+  agreed: z.int().nonnegative(),
+  /** `agreed / judged`; null until a moderator has ruled on one of its messages. */
+  agreement: z.number().min(0).max(1).nullable(),
+  /** Millionths of a US dollar in total; null when no call reported a cost. */
+  costMicroUsd: z.number().min(0).nullable(),
+  latencyMsAvg: z.number().min(0).nullable(),
+  latencyMsP95: z.number().min(0).nullable(),
+});
+/** {@link CommunityWireDecisionModelFiguresSchema}. */
+export type CommunityWireDecisionModelFigures = z.infer<
+  typeof CommunityWireDecisionModelFiguresSchema
+>;
+/** The side-by-side comparison, across every space on the host. */
+export const CommunityWireDecisionComparisonSchema = z.strictObject({
+  days: z.int().positive(),
+  since: timestamp,
+  models: z.array(CommunityWireDecisionModelFiguresSchema).max(100),
 });

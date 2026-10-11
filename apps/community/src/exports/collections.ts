@@ -175,7 +175,7 @@ function specs(scope: ExportJobScope): CollectionSpec[] {
       key: 'auditEvents',
       prefix: 'audit-events',
       select: `SELECT ae.id,ae.community_id,ae.actor_member_id,ae.actor_kind,ae.action,ae.subject_id,
-          ae.prior_state,ae.next_state,ae.changed_fields,ae.created_at,
+          ae.prior_state,ae.next_state,ae.changed_fields,ae.created_at,ae.decision,
           ae.created_at::text AS created_at_key
         FROM audit_events ae WHERE ae.community_id=$1
         ${scope === 'evidence' ? '' : 'AND NOT ae.withheld'}`,
@@ -196,6 +196,8 @@ function specs(scope: ExportJobScope): CollectionSpec[] {
           next_state: row.next_state,
           changed_fields: row.changed_fields,
           created_at: iso(row.created_at),
+          // A watch-only check's record: codes, a keyed hash and timings, never the message.
+          ...(row.decision ? { decision: row.decision } : {}),
         }),
     });
   // Bans are the moderators' record, so owner and evidence exports carry them and a personal
