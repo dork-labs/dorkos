@@ -2,6 +2,7 @@
 covers:
   - 'perf(community): live streams read each new message once and share it (DOR-2764)'
   - 'perf(community): a post reads only the part of the roster it could mention (DOR-2830)'
+  - 'perf(community): streams keep a minute of entries and spread their access rechecks (DOR-2830)'
 ---
 
 ### Changed
