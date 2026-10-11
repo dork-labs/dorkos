@@ -349,6 +349,7 @@ export function ChatStatusSection({
       runtimeChip.runtime === null || runtimeCaps === undefined
         ? null
         : {
+            type: runtimeChip.runtime,
             isDefault: runtimeChip.runtime === runtimeCaps.defaultRuntime,
             canSelect: runtimeChip.canSelect,
           },

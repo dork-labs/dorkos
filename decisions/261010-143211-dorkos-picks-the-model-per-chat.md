@@ -22,7 +22,7 @@ Doe could not run until a person typed a model id, endpoint, context window and 
 
 ## Decision
 
-With credits chosen and nothing configured, a chat's first turn freezes the catalog's recommended model for the first request format the held token serves, in a fixed preference order. No match refuses; it never falls to another payer. An explicit per-chat or per-agent model still wins when credits serve it. Own keys and local models use a small preset table plus the service's own model list, so a person enters only a key. The status bar's model item and, for this engine, its Runs on item appear only when pinned.
+With credits chosen and nothing configured, a chat's first turn freezes the catalog's recommended model for the first request format the held token serves, in a fixed preference order. No match refuses; it never falls to another payer. A model the chat already names still wins when credits serve it, in order: the chat's own, its agent's, then the Settings preference `runtimes.doe.defaultModel`. Picking a model in Settings writes only that preference and keeps `runtimes.doe.inference: null`, so a pick never changes the payer. Own keys and local models use a small preset table plus the service's own model list, so a person enters only a key. The status bar's model item and, for this engine, its Runs on item appear only when pinned.
 
 ## Consequences
 

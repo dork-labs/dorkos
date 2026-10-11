@@ -24,7 +24,7 @@
     "apps/client/src/layers/features/dashboard-sidebar/ui/context/ConnectCommunityDialog.tsx": 525,
     "apps/client/src/layers/features/settings/ui/runtimes/sections/ClaudeAccountsSection.tsx": 585,
     "apps/client/src/layers/shared/lib/transport/stream-manager.ts": 533,
-    "apps/client/src/layers/shared/lib/transport/system-methods.ts": 604,
+    "apps/client/src/layers/shared/lib/transport/system-methods.ts": 602,
     "apps/client/src/layers/shared/model/app-store/app-store-canvas.ts": 739,
     "apps/client/src/layers/shared/ui/index.ts": 512,
     "apps/client/src/layers/shared/ui/navigation-layout.tsx": 570,
@@ -75,7 +75,7 @@
     "apps/server/src/services/core/auth/cloud-link-client.ts": 845,
     "apps/server/src/services/core/auth/cloud-link.ts": 908,
     "apps/server/src/services/core/capabilities/tier-enforcement.ts": 597,
-    "apps/server/src/services/core/config-manager.ts": 2145,
+    "apps/server/src/services/core/config-manager.ts": 2129,
     "apps/server/src/services/core/operator/operator-capabilities.ts": 622,
     "apps/server/src/services/core/permissions/permission-service.ts": 838,
     "apps/server/src/services/core/runtime-registry.ts": 660,
@@ -159,7 +159,7 @@
     "packages/test-utils/src/community-conformance-branched.ts": 603,
     "packages/test-utils/src/community-conformance-universal.ts": 672,
     "packages/test-utils/src/fake-community-adapter.ts": 789,
-    "packages/test-utils/src/mock-factories.ts": 1340,
+    "packages/test-utils/src/mock-factories.ts": 1338,
     "packages/test-utils/src/runtime-capability-matrix.ts": 802,
     "packages/test-utils/src/runtime-conformance.ts": 2452
   }

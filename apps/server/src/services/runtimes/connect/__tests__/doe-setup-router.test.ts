@@ -93,16 +93,16 @@ describe('owner authorization before DorkOS model setup effects', () => {
         .set('X-Fixture-User', 'owner-cookie')
         .send(write.body);
       expect(response.status).toBe(200);
-      expect(write.method === 'put' ? configManager.set : storeDoeCredential).toHaveBeenCalledTimes(
-        1
-      );
+      expect(
+        write.method === 'post' ? storeDoeCredential : configManager.set
+      ).toHaveBeenCalledTimes(1);
     });
     it(`${write.method} ${write.path} admits the local operator with login off`, async () => {
       const response = await request(server)[write.method](write.path).send(write.body);
       expect(response.status).toBe(200);
-      expect(write.method === 'put' ? configManager.set : storeDoeCredential).toHaveBeenCalledTimes(
-        1
-      );
+      expect(
+        write.method === 'post' ? storeDoeCredential : configManager.set
+      ).toHaveBeenCalledTimes(1);
     });
   }
   it('audits the inference metadata write with the exact before and after section', async () => {
@@ -114,6 +114,14 @@ describe('owner authorization before DorkOS model setup effects', () => {
       before,
       expect.objectContaining({ doe: expect.objectContaining({ inference }) })
     );
+  });
+});
+
+it('says which format DorkOS would pick in, and null when credits are not in use', async () => {
+  expect((await request(server).get('/doe/inference')).body).toEqual({
+    inference: null,
+    hasKey: false,
+    autoProtocol: null,
   });
 });
 

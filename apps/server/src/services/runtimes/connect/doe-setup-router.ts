@@ -10,6 +10,7 @@ import { configManager } from '../../core/config-manager.js';
 import { logConfigWrite } from '../../core/operator/config-write.js';
 import { storeDoeCredential } from './doe-credentials.js';
 import { ConnectError } from './connect-error.js';
+import { doeCreditsInUse, peekDoeCreditsPick } from '../doe/auto-model.js';
 const router = Router();
 // Preserve the persisted schema's validations while keeping key references server-owned.
 const inferenceMetadataSchema = DoeInferenceConfigSchema.safeExtend({
@@ -62,18 +63,28 @@ router.get('/credits-models', async (req, res) => {
 router.get('/inference', (req, res) => {
   if (rejectNonLoopback(req, res)) return;
   const inference = configManager.get('runtimes').doe.inference;
-  if (!inference) return res.json({ inference: null, hasKey: false });
+  // Which format DorkOS picks a model in when nothing is configured: only while
+  // credits are in use here, and with no request made.
+  const autoProtocol = doeCreditsInUse() ? (peekDoeCreditsPick()?.protocol ?? null) : null;
+  if (!inference) return res.json({ inference: null, hasKey: false, autoProtocol });
   const { credentialRef, credentialEndpoint: _endpoint, ...metadata } = inference;
-  return res.json({ inference: metadata, hasKey: Boolean(credentialRef) });
+  return res.json({ inference: metadata, hasKey: Boolean(credentialRef), autoProtocol });
 });
+
+/** Persist one model setup and audit it. */
+function saveInference(next: DoeInferenceConfig): void {
+  const runtimes = configManager.get('runtimes');
+  const updated = { ...runtimes, doe: { ...runtimes.doe, inference: next } };
+  configManager.set('runtimes', updated);
+  logConfigWrite('the DorkOS model setup', 'runtimes', runtimes, updated);
+}
 
 router.put('/inference', (req, res) => {
   if (rejectNonOwner(req, res)) return;
   const parsed = inferenceMetadataSchema.safeParse(req.body);
   if (!parsed.success)
     return res.status(400).json({ error: 'Check the model, endpoint, and token limits.' });
-  const runtimes = configManager.get('runtimes');
-  const previous = runtimes.doe.inference;
+  const previous = configManager.get('runtimes').doe.inference;
   const next: DoeInferenceConfig = parsed.data;
   if (
     next.source === 'api-key' &&
@@ -84,9 +95,7 @@ router.put('/inference', (req, res) => {
     next.credentialRef = previous.credentialRef;
     next.credentialEndpoint = previous.credentialEndpoint;
   }
-  const updated = { ...runtimes, doe: { ...runtimes.doe, inference: next } };
-  configManager.set('runtimes', updated);
-  logConfigWrite('the DorkOS model setup', 'runtimes', runtimes, updated);
+  saveInference(next);
   return res.json({ ok: true });
 });
 

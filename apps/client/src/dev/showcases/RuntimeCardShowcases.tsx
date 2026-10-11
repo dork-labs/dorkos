@@ -97,10 +97,65 @@ export function RuntimeCardShowcases() {
   return (
     <>
       <StatusBoardSection />
+      <DorkosPicksSection />
       <OpenedSection />
       <SomethingWrongSection />
       <PhoneSection />
     </>
+  );
+}
+
+/** The credits catalog the DorkOS card offers; DorkOS's pick is listed first. */
+const DORKOS_CREDITS_CATALOG: ModelOption[] = [
+  { value: 'md-pick', displayName: 'Balanced', description: '', paidFromCredits: true },
+  { value: 'md-fast', displayName: 'Fast', description: '', paidFromCredits: true },
+  { value: 'md-deep', displayName: 'Deep thinker', description: '', paidFromCredits: true },
+];
+
+/**
+ * DorkOS's own engine on credits: nobody chose a model, so DorkOS picks, and the
+ * Model row says so (spec `one-minute-onboarding` §6.5).
+ */
+function DorkosPicksSection() {
+  return (
+    <PlaygroundSection
+      title="Runtime cards: DorkOS picks the model"
+      description="On DorkOS credits nobody has to choose a model. The DorkOS card's Model row reads Chosen by DorkOS until a person picks one, and Chosen by DorkOS goes back."
+    >
+      <ShowcaseLabel>Nothing chosen: collapsed, then opened</ShowcaseLabel>
+      <ShowcaseDemo>
+        <div className="space-y-3">
+          <LiveRuntimeCard
+            type="doe"
+            isDefault
+            chosenByDorkos
+            model={null}
+            effort={null}
+            models={DORKOS_CREDITS_CATALOG}
+          />
+          <LiveRuntimeCard
+            type="doe"
+            expanded
+            chosenByDorkos
+            model={null}
+            effort={null}
+            models={DORKOS_CREDITS_CATALOG}
+          />
+        </div>
+      </ShowcaseDemo>
+
+      <ShowcaseLabel>A person picked a model from the catalog</ShowcaseLabel>
+      <ShowcaseDemo>
+        <LiveRuntimeCard
+          type="doe"
+          expanded
+          chosenByDorkos
+          model="md-deep"
+          effort={null}
+          models={DORKOS_CREDITS_CATALOG}
+        />
+      </ShowcaseDemo>
+    </PlaygroundSection>
   );
 }
 

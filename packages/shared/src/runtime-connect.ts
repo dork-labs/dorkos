@@ -442,7 +442,17 @@ export interface DoeCreditsCatalog {
   endpoint: string | null;
   models: { id: string; displayName: string; contextWindow: number; maxOutputTokens: number }[];
 }
+/**
+ * What DorkOS calls the model it picks for a chat on credits when nobody chose
+ * one (ADR 261010-143211): the model list's description and the Settings row.
+ */
+export const CHOSEN_BY_DORKOS = 'Chosen by DorkOS';
+
+/** The saved DorkOS model setup, metadata only. */
 export interface DoeInferenceStatus {
+  /** The setup, or `null`: on credits, DorkOS picks the model. */
   inference: DoeInferenceConfig | null;
   hasKey: boolean;
+  /** The format DorkOS picks a credits model in, or `null` when it has nothing to pick. */
+  autoProtocol: DoeInferenceConfig['protocol'] | null;
 }

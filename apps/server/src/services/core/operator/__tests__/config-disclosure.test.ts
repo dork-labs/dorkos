@@ -235,6 +235,7 @@ function fullyPopulatedConfig(): Record<string, unknown> {
       },
       doe: {
         enabled: true,
+        defaultModel: 'md-preferred',
         defaultTrustStop: null,
         inference: {
           source: 'api-key',

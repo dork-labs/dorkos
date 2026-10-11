@@ -190,6 +190,8 @@ export interface AccountPromotionState {
 
 /** The two things about a runtime that can make it news. */
 interface RuntimePromotionState {
+  /** The runtime type id, e.g. `'doe'`. */
+  type: string;
   /** Whether this is the server's default runtime. */
   isDefault: boolean;
   /** Whether the runtime can still be chosen (pre-first-message). */
@@ -404,9 +406,10 @@ function isElevatedPermissionMode(ctx: StatusPromotionContext): boolean {
 /**
  * Every status line item, in render order within its cluster.
  *
- * Promotion rules, per spec composer-status-redesign §4.1: `agent`, `model`, and
- * `cwd` always show (who you are talking to, what answers you get, what it can
- * touch); everything else stays silent until it has something to say.
+ * Promotion rules, per spec composer-status-redesign §4.1: `agent` and `cwd`
+ * always show (who you are talking to, what it can touch); everything else stays
+ * silent until it has something to say. `model` left that list when DorkOS
+ * started picking the model (ADR 261010-143211): it shows only when pinned.
  */
 export const STATUS_BAR_REGISTRY: readonly StatusBarItemConfig[] = [
   {
@@ -446,7 +449,12 @@ export const STATUS_BAR_REGISTRY: readonly StatusBarItemConfig[] = [
     cluster: 'right',
     group: 'session',
     icon: Cpu,
-    promote: (ctx) => ctx.runtime !== null && (!ctx.runtime.isDefault || ctx.runtime.canSelect),
+    // Never on DorkOS's own engine: it picks the model itself, and the Runs on
+    // choice is not news on the one-minute path (ADR 261010-143211).
+    promote: (ctx) =>
+      ctx.runtime !== null &&
+      ctx.runtime.type !== 'doe' &&
+      (!ctx.runtime.isDefault || ctx.runtime.canSelect),
     severity: runtimeSeverity,
   },
   {
@@ -491,7 +499,8 @@ export const STATUS_BAR_REGISTRY: readonly StatusBarItemConfig[] = [
     cluster: 'right',
     group: 'session',
     icon: Bot,
-    promote: () => true,
+    // Hidden by default on every runtime, existing installs too: a pin shows it.
+    promote: () => false,
     severity: () => SEVERITY.MODEL,
   },
   {

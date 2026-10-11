@@ -186,12 +186,18 @@ const RUNTIMES_CONFIG_SECTIONS = ['claudeCode', 'codex', 'opencode', 'doe'] as c
 /** One of the config keys a runtime's execution defaults can live under. */
 type RuntimesConfigSection = (typeof RUNTIMES_CONFIG_SECTIONS)[number];
 
-/** DorkOS keeps the model beside explicit inference; vendor runtimes keep a default model. */
+/**
+ * A runtime's default model. DorkOS's explicit inference names its model; with
+ * none, its `defaultModel` is a preference that a chat on credits takes only
+ * when credits serve it (DOR-2784). Vendor runtimes keep a default model.
+ */
 function configuredModelDefault(
   configured: UserConfig['runtimes'][RuntimesConfigSection] | undefined
 ): string | null | undefined {
   if (!configured) return undefined;
-  return 'inference' in configured ? configured.inference?.model : configured.defaultModel;
+  return (
+    ('inference' in configured ? configured.inference?.model : undefined) ?? configured.defaultModel
+  );
 }
 
 /**
