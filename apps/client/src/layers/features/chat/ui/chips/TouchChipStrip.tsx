@@ -103,13 +103,9 @@ function SummaryGroup({
       <span className="tabular-nums">{count}</span>
       {(additions !== undefined || deletions !== undefined) && (
         <span className="tabular-nums">
-          {additions !== undefined && (
-            <span className="text-emerald-600 dark:text-emerald-400">+{additions}</span>
-          )}
+          {additions !== undefined && <span className="text-status-success-fg">+{additions}</span>}
           {additions !== undefined && deletions !== undefined && ' '}
-          {deletions !== undefined && (
-            <span className="text-red-600 dark:text-red-400">−{deletions}</span>
-          )}
+          {deletions !== undefined && <span className="text-destructive">−{deletions}</span>}
         </span>
       )}
     </span>

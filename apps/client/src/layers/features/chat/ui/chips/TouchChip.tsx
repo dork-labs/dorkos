@@ -228,13 +228,13 @@ export function TouchChip({
               gained lines and lost none, and `−0` would state a measurement
               nothing ever made. */}
           {chip.additions !== undefined && (
-            <span className="text-emerald-600 dark:text-emerald-400">
+            <span className="text-status-success-fg">
               +<TickingNumber value={chip.additions} live={chip.live} />
             </span>
           )}
           {chip.additions !== undefined && chip.deletions !== undefined && ' '}
           {chip.deletions !== undefined && (
-            <span className="text-red-600 dark:text-red-400">
+            <span className="text-destructive">
               −<TickingNumber value={chip.deletions} live={chip.live} />
             </span>
           )}
