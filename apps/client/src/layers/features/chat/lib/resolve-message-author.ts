@@ -31,6 +31,15 @@ const UNKNOWN_AGENT_NAME = 'Agent';
  */
 const CHAT_SENDER_ID_PREFIX = 'chat-sender:';
 
+/**
+ * Prefix for a room member who posted the message a room turn answered, keeping
+ * each member in a group of their own (DOR-2113).
+ */
+const ROOM_AUTHOR_ID_PREFIX = 'room-author:';
+
+/** Name for a room post whose author the room no longer has. */
+const UNKNOWN_ROOM_AUTHOR_NAME = 'Room member';
+
 /** Prefix for runtime-brand identity keys, keeping them distinct from agent ids. */
 const RUNTIME_AUTHOR_ID_PREFIX = 'runtime:';
 
@@ -122,6 +131,11 @@ export function resolveMessageAuthor(
     };
   }
 
+  // A room post that opened a turn in a room-attached chat (DOR-2113): whoever
+  // the room says posted it. Only the person's own room posts read as theirs.
+  const roomPost = message.role === 'user' ? message.roomMessage : undefined;
+  if (roomPost && !roomPost.author?.you) return roomAuthor(roomPost.author, ctx);
+
   if (message.role === 'user') {
     return {
       kind: 'human',
@@ -146,4 +160,39 @@ export function resolveMessageAuthor(
   }
 
   return { kind: 'agent', id: UNKNOWN_AGENT_ID, displayName: UNKNOWN_AGENT_NAME };
+}
+
+/**
+ * The identity of a room member who posted the message a room turn answered.
+ *
+ * @param author - The room's record of who posted it, or undefined when the
+ *   room no longer has the entry.
+ * @param ctx - Caller-resolved identity, for an agent's face by its Mesh id.
+ */
+function roomAuthor(
+  author: NonNullable<ChatMessage['roomMessage']>['author'],
+  ctx: MessageAuthorContext
+): MessageAuthor {
+  if (!author) {
+    return {
+      kind: 'human',
+      id: `${ROOM_AUTHOR_ID_PREFIX}unknown`,
+      displayName: UNKNOWN_ROOM_AUTHOR_NAME,
+    };
+  }
+  const id = `${ROOM_AUTHOR_ID_PREFIX}${author.id}`;
+  if (author.kind === 'agent') {
+    // Keyed by the agent's Mesh id, as a chat sender's face is, so the agent
+    // wears the face the rest of the app draws it with.
+    const key = author.agentId ?? author.id;
+    const face =
+      ctx.senderAgent?.({ agentId: key, chatId: key }) ??
+      resolveAgentVisual({
+        id: key,
+        ...(author.emoji ? { icon: author.emoji } : {}),
+        ...(author.color ? { color: author.color } : {}),
+      });
+    return { kind: 'agent', id, displayName: author.displayName, ...face };
+  }
+  return { kind: author.kind, id, displayName: author.displayName };
 }

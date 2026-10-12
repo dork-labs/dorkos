@@ -10,6 +10,9 @@
  * typing and stays plain text. One rule, one place, for every runtime: the
  * runtimes store the words; the server owns who sent them.
  *
+ * A room post that opened a turn in a room-attached chat gets its author the
+ * same way, here (`room-message-stamps.ts`, DOR-2113).
+ *
  * @module services/session/chat-messages/chat-message-stamps
  */
 import { chatMessageFenceNonces, type ChatMessageStamp } from '@dorkos/shared/chat-messages';
@@ -17,6 +20,7 @@ import type { HistoryMessage } from '@dorkos/shared/types';
 import type { SessionEvent } from '@dorkos/shared/session-stream';
 import type { ChatMessageRow } from '@dorkos/db';
 import { getChatMessageStore, type ChatMessageStore } from './chat-message-store.js';
+import { completeRoomStamp } from './room-message-stamps.js';
 
 /**
  * The wire stamp for one stored chat message.
@@ -63,26 +67,30 @@ function stampsFor(
 }
 
 /**
- * Stamp every received chat message in a chat's history. Returns the input
- * array (same reference) when nothing in it was sent by another chat.
+ * Stamp every received chat message in a chat's history, and fill in who wrote
+ * each room post it carried. Returns the input array (same reference) when
+ * nothing in it was sent by another chat or a room.
  *
  * @param sessionIds - Every id the chat answers to (the asked-for id and its canonical one).
  * @param messages - The history, in transcript order.
  * @param store - The store; the wired one when omitted.
  */
-export function stampHistory<T extends Pick<HistoryMessage, 'role' | 'content' | 'chatMessages'>>(
+export function stampHistory<
+  T extends Pick<HistoryMessage, 'role' | 'content' | 'chatMessages' | 'roomMessage'>,
+>(
   sessionIds: readonly string[],
   messages: T[],
   store: ChatMessageStore | undefined = getChatMessageStore()
 ): T[] {
-  if (!store) return messages;
   let changed = false;
   const out = messages.map((message) => {
     if (message.role !== 'user') return message;
-    const stamps = stampsFor(store, sessionIds, message.content);
-    if (stamps.length === 0) return message;
-    changed = true;
-    return { ...message, chatMessages: stamps };
+    let next = message;
+    const stamps = store ? stampsFor(store, sessionIds, message.content) : [];
+    if (stamps.length > 0) next = { ...next, chatMessages: stamps };
+    if (next.roomMessage) next = { ...next, roomMessage: completeRoomStamp(next.roomMessage) };
+    if (next !== message) changed = true;
+    return next;
   });
   return changed ? out : messages;
 }
@@ -100,12 +108,15 @@ export function stampEvent(
   event: SessionEvent,
   store: ChatMessageStore | undefined = getChatMessageStore()
 ): SessionEvent {
-  if (!store) return event;
-  if (event.type === 'turn_start' && event.userMessage) {
-    const stamps = stampsFor(store, sessionIds, event.userMessage);
-    return stamps.length > 0 ? { ...event, chatMessages: stamps } : event;
+  if (event.type === 'turn_start') {
+    let next = event;
+    const stamps =
+      store && event.userMessage ? stampsFor(store, sessionIds, event.userMessage) : [];
+    if (stamps.length > 0) next = { ...next, chatMessages: stamps };
+    if (next.roomMessage) next = { ...next, roomMessage: completeRoomStamp(next.roomMessage) };
+    return next;
   }
-  if (event.type === 'turn_input') {
+  if (event.type === 'turn_input' && store) {
     const stamps = stampsFor(store, sessionIds, event.content);
     return stamps.length > 0 ? { ...event, chatMessages: stamps } : event;
   }

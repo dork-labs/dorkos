@@ -331,7 +331,13 @@ export function reconstructHistoryFromEvents(events: SessionEvent[]): HistoryMes
           receipts: new Map(),
         };
         if (event.userMessage !== undefined) {
-          messages.push({ id: `user-${event.seq}`, role: 'user', content: event.userMessage });
+          messages.push({
+            id: `user-${event.seq}`,
+            role: 'user',
+            content: event.userMessage,
+            // The room post a room turn answered, so a reload shows its author (DOR-2113).
+            ...(event.roomMessage ? { roomMessage: event.roomMessage } : {}),
+          });
         }
         break;
       case 'turn_input':
