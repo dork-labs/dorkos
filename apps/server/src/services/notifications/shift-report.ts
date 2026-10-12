@@ -62,7 +62,9 @@ export const SHIFT_REPORT_WINDOW_MS = 24 * 60 * 60 * 1000;
  * `overnight-boundary.ts`'s `overnightBoundary` exactly. Used ONLY for the
  * dedupe date key and day-roll detection (`emitters/shift-report.ts`) — the
  * report's own counting window is {@link SHIFT_REPORT_WINDOW_MS}, trailing
- * from composition time, not from this boundary.
+ * from composition time, not from this boundary. It also decides whether
+ * there is a report at all: one needs something from before it (see
+ * {@link composeShiftReport}).
  *
  * @param now - The instant to reason from, epoch ms.
  */
@@ -134,6 +136,14 @@ function emptyCounts(): ShiftReportCounts {
  * reports nothing is a product inventing an event to have a moment about —
  * the same rule the sidebar digest states at `build-digest-row.ts`.
  *
+ * It is also `null` when every counted row is from today, after the local
+ * day's 4am boundary ({@link shiftReportBoundary}). Those rows still count
+ * once a report is due, but they cannot make one due on their own: a person
+ * who set DorkOS up a minute ago has not been away from anything, and the
+ * turn DorkBot ran during setup is not news to them (DOR-2845). The
+ * sidebar digest has the same gate, "this device has seen you before"
+ * (`use-digest-facts.ts`).
+ *
  * Splits `run.completed` by reading its stored TIER rather than parsing its
  * payload: the registry already spells "this one did not work" as `notable`
  * and "this one did" as `quiet` (`notification-registry.ts`), and re-deriving
@@ -163,7 +173,22 @@ export function composeShiftReport(
   store: NotificationStore,
   now: number
 ): ShiftReportCounts | null {
-  const since = now - SHIFT_REPORT_WINDOW_MS;
+  const counts = countActivity(store, now - SHIFT_REPORT_WINDOW_MS);
+  if (totalOf(counts) === 0) return null;
+  // Everything in the window happened today, so nobody was away for it: a
+  // brand-new install's setup turn is the case this exists for (DOR-2845).
+  const today = countActivity(store, shiftReportBoundary(now));
+  if (totalOf(counts) === totalOf(today)) return null;
+  return counts;
+}
+
+/**
+ * Fold every counted row raised at or after `since` into the six counts.
+ *
+ * @param store - Where the rows live.
+ * @param since - The instant to count from (inclusive), epoch ms.
+ */
+function countActivity(store: NotificationStore, since: number): ShiftReportCounts {
   const rows = store.countActivitySince(new Date(since).toISOString());
   const counts = emptyCounts();
 
@@ -194,15 +219,19 @@ export function composeShiftReport(
         break;
     }
   }
+  return counts;
+}
 
-  const total =
+/** Every fact the report counts, added up. */
+function totalOf(counts: ShiftReportCounts): number {
+  return (
     counts.turnsCompleted +
     counts.runsSucceeded +
     counts.runsFailed +
     counts.asksAnswered +
     counts.asksExpired +
-    counts.messages;
-  return total > 0 ? counts : null;
+    counts.messages
+  );
 }
 
 /** One fact the report can mention, already agreeing with its own count. */

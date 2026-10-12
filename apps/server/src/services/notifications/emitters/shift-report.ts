@@ -12,6 +12,11 @@
  * adding a server-wide interval: the FIRST notification of a new local day
  * is what turns the report over, whatever kind it is.
  *
+ * That first notification only makes a report due when the window holds
+ * something from before today began; {@link composeShiftReport} says `null`
+ * otherwise, so a brand-new install's setup turn is never "while you were
+ * away" (DOR-2845), and the check simply runs again on the next one.
+ *
  * **What the 4am boundary decides here, and what it does not.** It decides
  * only two things: the dedupe date key a report is raised under, and when a
  * NEW attempt is allowed at all (once a report has already been raised for
