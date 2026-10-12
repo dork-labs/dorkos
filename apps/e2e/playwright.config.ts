@@ -800,9 +800,6 @@ export default defineConfig({
       testIgnore: [
         '**/chat-mock.spec.ts',
         '**/connections/**',
-        // Needs a never-onboarded home and its own flags, so it boots its own
-        // server: `playwright.first-run.config.ts`.
-        '**/onboarding/first-run.spec.ts',
         // Runs against the test-mode leg in `chromium-team-room` below. It must
         // NEVER run here: posting in #team on this leg starts a real
         // claude-code turn on DorkBot's `always` seat and bills the machine's

@@ -142,7 +142,7 @@ describe('useClearOnboardingStageWhenDone', () => {
     expect(harness.readStage()).toBe('landing');
     expect(result.current).toBe('landing');
 
-    // Overlay closes (first-message dissolve or Skip all setup) → param is stripped.
+    // Overlay closes (first-message dissolve or a finished first run) → param is stripped.
     rerender({ overlayVisible: false });
     await waitFor(() => expect(harness.readStage()).toBeUndefined());
   });

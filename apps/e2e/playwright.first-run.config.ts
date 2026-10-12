@@ -75,7 +75,7 @@ function apiCommand(leg: Leg): string {
 }
 
 export default defineConfig({
-  testDir: './tests/onboarding',
+  testDir: './first-run',
   testMatch: 'first-run.spec.ts',
   reporter: [['list']],
   workers: 1,
