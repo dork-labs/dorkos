@@ -126,7 +126,7 @@ Nothing that reaches `main` reaches it with less checking. The queue runs the fu
 **Split by what each is good at.** GitHub Actions splits by cost (2026-08-23/24, the CI-saturation fix):
 
 - On PRs, `test` runs **affected-only** and `browser-test` reports an instant pass-through.
-- The **full monorepo `test` sweep and the Playwright shards run only on `merge_group`**, as required merge-queue checks. The queue's combined-tree build decides every merge.
+- The **full monorepo `test` sweep and the Playwright shards run only on `merge_group`**, as required merge-queue checks. The queue's combined-tree build decides every merge. So does the one-minute first run (`browser-test.yml`'s `first-run` job, `pnpm --filter @dorkos/e2e e2e:first-run`): it boots two never-onboarded servers and the `browser-test` fan-in fails unless it passed.
 - The PR legs exist because GitHub requires a required check to succeed **on the PR** before the PR may enter the queue at all. A `merge_group`-only required check deadlocks every PR out of the queue (measured on PR #1246).
 - Push-to-main no longer re-runs the suites: the queue already tested the exact tree content (squash rewrites the SHA, not the content).
 
