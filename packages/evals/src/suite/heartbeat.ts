@@ -29,6 +29,7 @@ import type { SseFrame } from '@dorkos/test-utils/sse-test-helpers';
 import { buildBeatPrompt } from '@dorkos/server/services/heartbeats/beat-prompt';
 import type { EvalCase, EvalSandbox, Oracle } from '../types.js';
 import { toolNameMatches } from '../oracles/stream.js';
+import { seenToolCalls, type SeenToolCall } from '../oracles/tool-calls.js';
 
 /** The tool a beat ends with. */
 export const END_BEAT = 'end_beat';
@@ -46,56 +47,6 @@ export interface SeenRaise {
   text?: unknown;
 }
 
-/** The parsed arguments of one tool call. */
-interface SeenCall {
-  /** The tool name as the stream carried it. */
-  toolName: string;
-  /** Its arguments, or null when they did not parse. */
-  input: Record<string, unknown> | null;
-}
-
-/**
- * Every tool call on the stream, in order of first appearance, with its
- * arguments parsed. A call the stream carried more than once (its arguments
- * still streaming, then complete) is kept once, with the last arguments that
- * parse: the complete call, never a partial one.
- *
- * @param frames - The session's frames.
- */
-function toolCalls(frames: SseFrame[]): SeenCall[] {
-  const calls: SeenCall[] = [];
-  const byId = new Map<string, SeenCall>();
-  for (const frame of frames) {
-    const data = frame.data as {
-      type?: string;
-      toolName?: string;
-      toolCallId?: string;
-      input?: unknown;
-    };
-    const type = data?.type ?? frame.event;
-    if (type !== 'tool_call' || typeof data.toolName !== 'string') continue;
-    const id = data.toolCallId ?? `${calls.length}`;
-    let input: Record<string, unknown> | null = null;
-    if (typeof data.input === 'string') {
-      try {
-        const parsed: unknown = JSON.parse(data.input);
-        if (parsed && typeof parsed === 'object') input = parsed as Record<string, unknown>;
-      } catch {
-        // Still streaming, or not JSON: no arguments this oracle can read.
-      }
-    }
-    const known = byId.get(id);
-    if (known) {
-      if (input !== null) known.input = input;
-      continue;
-    }
-    const call = { toolName: data.toolName, input };
-    byId.set(id, call);
-    calls.push(call);
-  }
-  return calls;
-}
-
 /**
  * The first `end_beat` call and the calls before it, or null when the model
  * never ended the beat.
@@ -104,8 +55,8 @@ function toolCalls(frames: SseFrame[]): SeenCall[] {
  */
 export function firstEndBeat(
   frames: SseFrame[]
-): { raises: SeenRaise[]; summary: unknown; before: SeenCall[] } | null {
-  const calls = toolCalls(frames);
+): { raises: SeenRaise[]; summary: unknown; before: SeenToolCall[] } | null {
+  const calls = seenToolCalls(frames);
   const at = calls.findIndex(
     (call) => toolNameMatches(call.toolName, END_BEAT) && call.input !== null
   );

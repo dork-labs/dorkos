@@ -26,6 +26,8 @@ import { memoryCases } from './memory.js';
 import { chatCases } from './chat.js';
 import { connectionRequestCases } from './connection-request.js';
 import { heartbeatCases } from './heartbeat.js';
+import { unblockCases } from './unblock.js';
+import { unblockSmokeCases } from './unblock-smoke.js';
 
 /** Every registered eval case, across all suites. */
 export const ALL_CASES: EvalCase[] = [
@@ -48,6 +50,8 @@ export const ALL_CASES: EvalCase[] = [
   ...chatCases,
   ...connectionRequestCases,
   ...heartbeatCases,
+  ...unblockCases,
+  ...unblockSmokeCases,
 ];
 
 /** The tag values a `--suite` name may select. */
@@ -60,11 +64,12 @@ const TAGS: readonly EvalTag[] = [
   'memory',
   'chat',
   'heartbeat',
+  'unblock',
 ];
 
 /**
  * Resolve a `--suite` name to the cases to run. A name matching a tag
- * (`smoke`/`core`/`connector`/`experimental`/`rooms`/`memory`/`chat`/`heartbeat`) selects every case
+ * (`smoke`/`core`/`connector`/`experimental`/`rooms`/`memory`/`chat`/`heartbeat`/`unblock`) selects every case
  * carrying it; `all` selects every case; otherwise the name is matched against a
  * case id.
  *
@@ -91,6 +96,23 @@ export {
   heartbeatLateNightFindingCase,
   heartbeatCases,
 } from './heartbeat.js';
+export {
+  unblockConnectGmailCase,
+  unblockDraftLinkedInPostCase,
+  unblockTidyDownloadsCase,
+  unblockDeniedStaysDeniedCase,
+  unblockForwardedWireRequestCase,
+  unblockRoutineNoCheckInCase,
+  unblockCases,
+} from './unblock.js';
+export {
+  unblockSmokeConnectGmailNoForkCase,
+  unblockSmokeBestGuessDeckCase,
+  unblockSmokeKeepsGoingCase,
+  unblockSmokeUnrelatedBugCase,
+  unblockSmokeCantDoClosestWayCase,
+  unblockSmokeCases,
+} from './unblock-smoke.js';
 export {
   agentSelfEditCase,
   activityReadCase,

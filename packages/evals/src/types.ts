@@ -277,6 +277,11 @@ export type CostClass = z.infer<typeof CostClassSchema>;
  * (DOR-2788): given a real beat prompt, does the agent pick the right move and
  * the right rung? Credentialed and quarantined, every one, so like `memory` it
  * spends only when somebody selects it.
+ *
+ * `unblock` is the "act, offer, or wait" working rules' scenario table: does an
+ * agent act on routine work, ask DorkOS for what only the person can unblock,
+ * and wait where a yes is needed? Credentialed and quarantined, every one, and
+ * its judge rows never gate even after a green streak (`suite/unblock-smoke.ts`).
  */
 export const EvalTagSchema = z.enum([
   'smoke',
@@ -287,6 +292,7 @@ export const EvalTagSchema = z.enum([
   'memory',
   'chat',
   'heartbeat',
+  'unblock',
 ]);
 
 /** Inferred type for {@link EvalTagSchema}. */

@@ -14,6 +14,7 @@ export * from './approvals.js';
 export * from './filesystem.js';
 export * from './api.js';
 export * from './stream.js';
+export * from './tool-calls.js';
 export * from './transcript.js';
 export * from './rooms.js';
 export * from './judge.js';
