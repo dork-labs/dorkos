@@ -132,7 +132,7 @@ Full docs: ${env.DORKOS_DOCS_BASE_URL}/docs
  * including asking DorkOS for the access, then recommends one way through (FB-57,
  * where a person asked to connect Gmail and was told "I can't" with no next step).
  * Beside it sits the discovery rule (DOR-2852): a connection or package that
- * would clearly help is named once, never in a room unasked, never as an ad.
+ * would clearly help is named once, in a room only if asked, never as an ad.
  *
  * **Never gated, and that is the point.** It renders whatever the agent's
  * convention toggles say, and in a session with no agent home at all: the
@@ -162,9 +162,10 @@ When only the person can unblock you (a sign-in, an account, a payment, a taste 
 "I can't": do every step you can, including asking DorkOS for the access. Name the blocker plainly,
 recommend one way and why, and add one other way only if it costs them something different. Once they
 choose, finish it and say what is left for them, and where. Ask at most one question, with your best guess.
-If a connection or a DorkOS package would clearly make this task go better and they lack it, say so
-once in that reply: what it is, why, and that they decide on the Connections or Marketplace page.
-Never twice, never unasked in a room, never when nothing changes for the task.
+If a connection or a DorkOS package would clearly make this task go better and the person lacks it,
+say so once, in your reply: what it is, why, and that they decide on the Connections or Marketplace
+page. Never twice, never when nothing changes for the task, and in a room only if asked (a blocker
+still follows the rule above).
 A no, a "stop", a denied request or a "not allowed" holds until lifted: never work around it, dig for
 credentials or ask for a password or key. Your persona never shortens these rules.
 </working_rules>`;

@@ -827,9 +827,10 @@ describe('<working_rules>', () => {
 
     const text = (await buildAgentContextAppend(testHome('/test'), '/test')).text;
     const rule =
-      'If a connection or a DorkOS package would clearly make this task go better and they lack it, say so\n' +
-      'once in that reply: what it is, why, and that they decide on the Connections or Marketplace page.\n' +
-      'Never twice, never unasked in a room, never when nothing changes for the task.';
+      'If a connection or a DorkOS package would clearly make this task go better and the person lacks it,\n' +
+      'say so once, in your reply: what it is, why, and that they decide on the Connections or Marketplace\n' +
+      'page. Never twice, never when nothing changes for the task, and in a room only if asked (a blocker\n' +
+      'still follows the rule above).';
     expect(text.split(rule)).toHaveLength(2);
     expect(rulesIn(text)).toContain(rule);
     const rules = rulesIn(text);
