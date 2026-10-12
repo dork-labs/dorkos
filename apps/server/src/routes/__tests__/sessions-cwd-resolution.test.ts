@@ -24,7 +24,7 @@ import { MainRequestAdmission } from '../../services/core/lifecycle/main-request
  * `services/workspace/__tests__/resolve-session-cwd.subagent.test.ts`, whose
  * header explains why the invariant needs both.
  */
-import { describe, it, expect, beforeAll, beforeEach, afterAll, vi } from 'vitest';
+import { describe, it, expect, beforeAll, beforeEach, afterAll, afterEach, vi } from 'vitest';
 import type { MessageOpts } from '@dorkos/shared/agent-runtime';
 import type { AgentManifest, AgentWorkspaceBinding } from '@dorkos/shared/mesh-schemas';
 import type { StreamEvent } from '@dorkos/shared/types';
@@ -163,6 +163,7 @@ import type { RoomWorktreeManager } from '../../services/rooms/repo/room-worktre
 import { RoomError } from '../../services/rooms/room-errors.js';
 import { roomSessionPlace } from '../../services/rooms/repo/room-turn-place.js';
 import { workspaceGateFor } from '../../services/workspace/index.js';
+import { setAgentHomeRegistry } from '../../services/core/agent-identity/index.js';
 
 const admission = new MainRequestAdmission();
 /** What the session routes read; the tests change it between requests. */
@@ -537,6 +538,51 @@ describe('POST /:id/messages — a room-bound session', () => {
 
     expect(opts?.cwd).toBe(AGENT);
     expect(opts).not.toHaveProperty('additionalDirectories');
+    expect(opts).not.toHaveProperty('forAgent');
+  });
+});
+
+/**
+ * A chat an agent started, standing in a folder no agent owns (DOR-2863).
+ *
+ * `session_start` binds the chat to its agent and lets it stand in any folder
+ * that is not another agent's. That folder names nobody, so the chat's turns
+ * used to carry no agent and its tools acted as nobody, and its room posts were
+ * stored as the person. The recorded agent is the server's own binding.
+ */
+describe('POST /:id/messages — a chat whose folder belongs to no agent', () => {
+  beforeEach(() => {
+    setAgentHomeRegistry({
+      isRegisteredHome: (p) => p === AGENT,
+      listRegisteredHomes: () => [AGENT],
+      managedWorkspaceOwner: () => null,
+      roomsDir: null,
+    });
+  });
+  afterEach(() => setAgentHomeRegistry(undefined));
+
+  it('runs as the agent the chat was recorded for', async () => {
+    sessionAgentPath = AGENT;
+
+    const opts = await sendAndCapture({ cwd: '/mock/home/marketing' });
+
+    expect(opts?.cwd).toBe('/mock/home/marketing');
+    expect(opts?.forAgent).toBe(AGENT);
+  });
+
+  it('names no agent when the recorded one is no longer registered', async () => {
+    sessionAgentPath = '/mock/home/agents/gone';
+
+    const opts = await sendAndCapture({ cwd: '/mock/home/marketing' });
+
+    expect(opts).not.toHaveProperty('forAgent');
+  });
+
+  it('leaves a chat standing in its own agent folder to that folder', async () => {
+    sessionAgentPath = AGENT;
+
+    const opts = await sendAndCapture({ cwd: AGENT });
+
     expect(opts).not.toHaveProperty('forAgent');
   });
 });

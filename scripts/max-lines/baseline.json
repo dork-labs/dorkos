@@ -91,7 +91,7 @@
     "apps/server/src/services/rooms/repo/room-file-editor.ts": 611,
     "apps/server/src/services/rooms/repo/room-repo-git.ts": 563,
     "apps/server/src/services/rooms/repo/room-worktree-manager.ts": 578,
-    "apps/server/src/services/rooms/room-capabilities.ts": 1213,
+    "apps/server/src/services/rooms/room-capabilities.ts": 1182,
     "apps/server/src/services/rooms/room-store.ts": 950,
     "apps/server/src/services/rooms/room-trigger.ts": 1579,
     "apps/server/src/services/rooms/room-turn-runner.ts": 540,

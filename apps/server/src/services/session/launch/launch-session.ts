@@ -27,6 +27,7 @@ import { newDispatchId } from '@dorkos/shared/dispatch-id';
 import { sanitizeWorkspaceKey } from '@dorkos/shared/workspace';
 import { runtimeRegistry } from '../../core/runtime-registry.js';
 import {
+  chatAgentOf,
   homeOf,
   isInsideRoomsDir,
   readHomeManifest,
@@ -520,13 +521,20 @@ async function launchSessionMessage(
     };
   }
 
+  // A chat whose folder belongs to no agent still runs as the agent it was
+  // started for, so its tools act as that agent and never as the person
+  // (DOR-2863). A room's own answer, when there is one, stands.
+  const recordedAgent =
+    verifiedAgentPath ?? (existing?.bound ? await recordedAgentOf(sessionId) : null);
+  const forAgent = roomPlace.forAgent ?? chatAgentOf(recordedAgent, effectiveCwd ?? DEFAULT_CWD);
+
   // **A paused agent starts no turn** (spec `audit-trail` PR5). Asked of the
   // same folder and agent the turn itself would carry, the way the hold at the
   // runtime seam asks, and before anything is bound or queued: a refused
   // message is not kept to run later.
   const paused = agentPause()?.pausedAgentOfTurn({
     cwd: effectiveCwd,
-    ...(roomPlace.forAgent !== undefined ? { forAgent: roomPlace.forAgent } : {}),
+    ...(forAgent !== undefined ? { forAgent } : {}),
   });
   if (paused) {
     agentPause()?.recordHeld(paused, {
@@ -680,7 +688,7 @@ async function launchSessionMessage(
       // A room-bound session resumed here is its room's agent, standing at home
       // with the room's folders granted — never refreshed (§6.1): that is a
       // room turn's own launch step.
-      ...(roomPlace.forAgent !== undefined ? { forAgent: roomPlace.forAgent } : {}),
+      ...(forAgent !== undefined ? { forAgent } : {}),
       ...(roomPlace.additionalDirectories !== undefined
         ? { additionalDirectories: roomPlace.additionalDirectories }
         : {}),
@@ -727,3 +735,18 @@ async function launchSessionMessage(
 
 /** @internal Exported for testing only. */
 export { resolveRuntimeTypeForNewSession as _resolveRuntimeTypeForNewSession };
+
+/**
+ * The agent recorded for a chat when it was first bound, or null when it has
+ * none or the record cannot be read. An unreadable record names no agent; it
+ * is never a reason to fail the turn, as in the cwd chain.
+ *
+ * @param sessionId - The chat.
+ */
+async function recordedAgentOf(sessionId: string): Promise<string | null> {
+  try {
+    return await runtimeRegistry.getSessionAgentPath(sessionId);
+  } catch {
+    return null;
+  }
+}
