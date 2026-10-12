@@ -177,6 +177,23 @@ describe('the room context a trigger derives', () => {
       );
     });
 
+    it('marks an agent nobody answers for any more as retired (DOR-2364)', async () => {
+      // An agent whose directory no longer resolves stays a member of a direct
+      // message, drawn as retired in the app. Fails if the agent-facing roster
+      // lists it as an ordinary member the agent might wait on.
+      open({ agentPaths: ['/agents/ana'] });
+      const gone = authors.resolveAgent('/agents/gone', 'Gone').id;
+      service.addMember(room.id, human, { authorId: gone });
+      await say('is the build green?');
+
+      const members = contextFor(ana).members;
+      const row = members.find((member) => member.displayName === 'Gone');
+      expect(row).toMatchObject({ handle: null, isPerson: false, retired: true });
+      expect(members.find((member) => member.handle === 'ana')).not.toHaveProperty('retired');
+      const block = formatRoomContext(contextFor(ana), { nonce: FENCE_NONCE });
+      expect(block).toContain('Gone (agent, retired, will not reply, cannot be mentioned)');
+    });
+
     it('still knows a member who left the room was a person', async () => {
       // `records` used to be built from the CURRENT roster alone, so anyone
       // removed since became `isPerson: false` — the field whose whole purpose
