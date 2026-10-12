@@ -475,6 +475,10 @@ vi.mock('@/layers/entities/session', async (importOriginal) => ({
   // against a stub that cannot be wrong.
   useStartNewSession: (await importOriginal<typeof import('@/layers/entities/session')>())
     .useStartNewSession,
+  // Real: it is where the open chat's agent comes from (DOR-2845), and it is a
+  // plain store with nothing to stub.
+  useSessionRouteContext: (await importOriginal<typeof import('@/layers/entities/session')>())
+    .useSessionRouteContext,
   useAgentSessions: () => ({ sessions: [], activeSessionId: null, isLoading: false }),
   useAgentHottestStatus: () => ({ kind: 'idle', color: 'x', pulse: false, label: 'Idle' }),
   useAgentsAggregateStatus: () => false,
