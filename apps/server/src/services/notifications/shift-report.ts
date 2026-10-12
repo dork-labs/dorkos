@@ -19,11 +19,14 @@
  * window has no such edge: whatever happened in the day before "now" is what
  * "now" reports, whatever hour the operator happens to open Home.
  *
- * **The 4am boundary still exists, but its job shrank to two things, both
- * owned by the emitter** (`emitters/shift-report.ts`), never by
- * {@link composeShiftReport}: the date key a report's dedupe key is scoped
- * to, and the signal that a new local day has started (so the emitter knows
- * when to let a fresh attempt through after a day already reported). Mirrored,
+ * **The 4am boundary still exists, and does three things.** Two are owned by
+ * the emitter (`emitters/shift-report.ts`): the date key a report's dedupe key
+ * is scoped to, and the signal that a new local day has started (so the
+ * emitter knows when to let a fresh attempt through after a day already
+ * reported). The third is {@link composeShiftReport}'s install-age gate: no
+ * report on a day that started before this install was settled — see
+ * {@link SHIFT_REPORT_SETTLE_MS}. None of the three bounds what is COUNTED;
+ * the trailing 24h window above does that. Mirrored,
  * not shared, from the sidebar digest's own 4am definition
  * (`apps/client/src/layers/shared/lib/overnight-boundary.ts`,
  * `apps/client/src/layers/features/dashboard-sidebar/model/rules/build-digest-row.ts`)
@@ -55,6 +58,30 @@ const SHIFT_REPORT_BOUNDARY_HOUR = 4;
 export const SHIFT_REPORT_WINDOW_MS = 24 * 60 * 60 * 1000;
 
 /**
+ * How long before the day's 4am boundary this install has to have existed for
+ * that day to get a report: four hours, so the install has to predate the
+ * local midnight before it (DOR-2845).
+ *
+ * A person who sets DorkOS up at 16:00, or at 03:40 and chats on past 04:00,
+ * has not been away from anything that day; the turns DorkBot ran during
+ * setup are not news to them. Their first report is the next morning's. Four
+ * hours rather than "before the boundary" because the boundary is 04:00: an
+ * install at 03:40 belongs to the same night the boundary closes, and the
+ * person is still at the keyboard.
+ */
+export const SHIFT_REPORT_SETTLE_MS = 4 * 60 * 60 * 1000;
+
+/**
+ * The first-run timestamps the install-age gate reads, as config stores them
+ * (`onboarding.*`, ISO strings or `null`).
+ */
+export interface ShiftReportOnboarding {
+  startedAt?: string | null;
+  completedAt?: string | null;
+  dismissedAt?: string | null;
+}
+
+/**
  * The most recent local 04:00 that has already passed, epoch ms.
  *
  * Local rather than UTC, and computed from `now` rather than read from a
@@ -62,9 +89,8 @@ export const SHIFT_REPORT_WINDOW_MS = 24 * 60 * 60 * 1000;
  * `overnight-boundary.ts`'s `overnightBoundary` exactly. Used ONLY for the
  * dedupe date key and day-roll detection (`emitters/shift-report.ts`) — the
  * report's own counting window is {@link SHIFT_REPORT_WINDOW_MS}, trailing
- * from composition time, not from this boundary. It also decides whether
- * there is a report at all: one needs something from before it (see
- * {@link composeShiftReport}).
+ * from composition time, not from this boundary. It also anchors the
+ * install-age gate ({@link SHIFT_REPORT_SETTLE_MS}).
  *
  * @param now - The instant to reason from, epoch ms.
  */
@@ -136,13 +162,13 @@ function emptyCounts(): ShiftReportCounts {
  * reports nothing is a product inventing an event to have a moment about —
  * the same rule the sidebar digest states at `build-digest-row.ts`.
  *
- * It is also `null` when every counted row is from today, after the local
- * day's 4am boundary ({@link shiftReportBoundary}). Those rows still count
- * once a report is due, but they cannot make one due on their own: a person
- * who set DorkOS up a minute ago has not been away from anything, and the
- * turn DorkBot ran during setup is not news to them (DOR-2845). The
- * sidebar digest has the same gate, "this device has seen you before"
- * (`use-digest-facts.ts`).
+ * It is also `null` on a day this install is too new for: unless it existed
+ * {@link SHIFT_REPORT_SETTLE_MS} before the day's 4am boundary, nobody has
+ * been away from it yet (DOR-2845). The sidebar digest has the same gate,
+ * "this device has seen you before" (`use-digest-facts.ts`). The gate asks
+ * how old the INSTALL is, never how old the counted rows are, so a lone daily
+ * 05:30 task still gets its report although yesterday's run has aged out of
+ * the window.
  *
  * Splits `run.completed` by reading its stored TIER rather than parsing its
  * payload: the registry already spells "this one did not work" as `notable`
@@ -168,18 +194,55 @@ function emptyCounts(): ShiftReportCounts {
  * @param store - Where the last day's rows already live.
  * @param now - The instant to compose from, epoch ms. The window is the
  *   {@link SHIFT_REPORT_WINDOW_MS} before it, inclusive.
+ * @param onboarding - The first-run timestamps from config, one of the two
+ *   witnesses to how old this install is (see {@link installSettledBy}).
  */
 export function composeShiftReport(
   store: NotificationStore,
-  now: number
+  now: number,
+  onboarding?: ShiftReportOnboarding | null
 ): ShiftReportCounts | null {
   const counts = countActivity(store, now - SHIFT_REPORT_WINDOW_MS);
   if (totalOf(counts) === 0) return null;
-  // Everything in the window happened today, so nobody was away for it: a
-  // brand-new install's setup turn is the case this exists for (DOR-2845).
-  const today = countActivity(store, shiftReportBoundary(now));
-  if (totalOf(counts) === totalOf(today)) return null;
-  return counts;
+  const settleBy = shiftReportBoundary(now) - SHIFT_REPORT_SETTLE_MS;
+  return installSettledBy(store, onboarding, settleBy) ? counts : null;
+}
+
+/**
+ * Whether this install provably existed before `cutoff`.
+ *
+ * Two witnesses, and either one is enough, because each can be wrong in only
+ * one direction — too young, never too old:
+ *
+ * - **First-run timestamps** in config. Absent on a headless install nobody
+ *   onboarded, reset by "Replay setup", and backfilled to the upgrade moment
+ *   for installs older than the field.
+ * - **Any notification row older than the cutoff**, of any kind. Absent once
+ *   pruning has trimmed a very busy table to recent rows.
+ *
+ * Counted with the store's one grouped read, from the epoch and from the
+ * cutoff, rather than a new store query: the table is capped at 1000 rows, so
+ * both reads are cheap, and the store file stays the size it is.
+ *
+ * @param store - The notifications table.
+ * @param onboarding - The first-run timestamps, if config has them.
+ * @param cutoff - The instant the install must predate, epoch ms.
+ */
+function installSettledBy(
+  store: NotificationStore,
+  onboarding: ShiftReportOnboarding | null | undefined,
+  cutoff: number
+): boolean {
+  const stamps = [onboarding?.startedAt, onboarding?.completedAt, onboarding?.dismissedAt];
+  if (stamps.some((stamp) => stamp && Date.parse(stamp) < cutoff)) return true;
+  return rowsSince(store, 0) > rowsSince(store, cutoff);
+}
+
+/** How many rows of any kind were raised at or after `since`, epoch ms. */
+function rowsSince(store: NotificationStore, since: number): number {
+  return store
+    .countActivitySince(new Date(since).toISOString())
+    .reduce((sum, row) => sum + row.count, 0);
 }
 
 /**

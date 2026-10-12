@@ -1310,7 +1310,7 @@ async function start() {
   // repository; say so once, in plain words (DOR-2326).
   void warnAboutGitProtection();
   // "While you were away" — composed once the day's first activity arrives.
-  watchShiftReport(notificationStore);
+  watchShiftReport(notificationStore, () => configManager.get('onboarding'));
 
   // Settle marketplace installs a crash interrupted (DOR-2273): restore the
   // previous version of a package whose reinstall never finished, remove a

@@ -16,8 +16,15 @@ import {
   shiftReportDateKey,
   SHIFT_REPORT_WINDOW_MS,
   type ShiftReportCounts,
+  type ShiftReportOnboarding,
 } from '../shift-report.js';
 import { watchShiftReport } from '../emitters/shift-report.js';
+
+/**
+ * An install that finished setup long ago, so the install-age gate is open and
+ * a case is about what it is named after. The gate's own cases are below.
+ */
+const SETTLED: ShiftReportOnboarding = { startedAt: '2026-01-01T09:00:00.000Z' };
 
 /** Let a fire-and-forget async chain (the shift-report's own `notify()` call) settle. */
 async function flush(): Promise<void> {
@@ -104,13 +111,12 @@ describe('composeShiftReport', () => {
     // read nothing at all. `runsFailed` is a shade broader than its name now;
     // that is the right side of the line to be imprecise on.
     vi.useFakeTimers();
-    vi.setSystemTime(new Date(2026, 7, 20, 2, 0, 0));
+    vi.setSystemTime(new Date(2026, 7, 20, 9, 0, 0));
     try {
       await service.notify('run.completed', run('r1'));
       await service.notify('run.completed', run('r2', 'blocked'));
 
-      vi.setSystemTime(new Date(2026, 7, 20, 9, 0, 0));
-      expect(composeShiftReport(store, Date.now())).toMatchObject({
+      expect(composeShiftReport(store, Date.now(), SETTLED)).toMatchObject({
         runsSucceeded: 1,
         runsFailed: 1,
       });
@@ -120,38 +126,12 @@ describe('composeShiftReport', () => {
   });
 
   it('reports null on an empty window — nothing to invent a moment about', () => {
-    expect(composeShiftReport(store, Date.now())).toBeNull();
-  });
-
-  it('reports null when everything happened today — nobody was away for it (DOR-2845)', async () => {
-    // A brand-new install: DorkBot's setup turn finishes seconds after the
-    // person finished setting up. That is not news from while they were away.
-    vi.useFakeTimers();
-    vi.setSystemTime(new Date(2026, 7, 20, 16, 0, 0));
-    await service.notify('turn.completed', turn('onboarding'));
-    await service.notify('dm.received', dm('room-1', 1));
-
-    vi.setSystemTime(new Date(2026, 7, 20, 16, 1, 0));
-    expect(composeShiftReport(store, Date.now())).toBeNull();
-  });
-
-  it('counts today’s activity too once something from before the day is in the window', async () => {
-    vi.useFakeTimers();
-    vi.setSystemTime(new Date(2026, 7, 19, 22, 0, 0));
-    await service.notify('turn.completed', turn('last-night'));
-
-    vi.setSystemTime(new Date(2026, 7, 20, 9, 0, 0));
-    await service.notify('turn.completed', turn('this-morning'));
-
-    expect(composeShiftReport(store, Date.now())).toEqual(
-      expect.objectContaining({ turnsCompleted: 2 })
-    );
+    expect(composeShiftReport(store, Date.now(), SETTLED)).toBeNull();
   });
 
   it('counts turns, runs by outcome, asks by outcome, and messages', async () => {
     vi.useFakeTimers();
-    // Overnight, before the day's 4am boundary, read at 9am.
-    vi.setSystemTime(new Date(2026, 7, 20, 2, 0, 0));
+    vi.setSystemTime(new Date(2026, 7, 20, 9, 0, 0));
 
     await service.notify('turn.completed', turn('s1'));
     await service.notify('turn.completed', turn('s2'));
@@ -170,8 +150,7 @@ describe('composeShiftReport', () => {
     await service.notify('dm.received', dm('room-1', 1));
     await service.notify('mention.received', mention('room-2', 1));
 
-    vi.setSystemTime(new Date(2026, 7, 20, 9, 0, 0));
-    expect(composeShiftReport(store, Date.now())).toEqual({
+    expect(composeShiftReport(store, Date.now(), SETTLED)).toEqual({
       turnsCompleted: 2,
       runsSucceeded: 1,
       runsFailed: 1,
@@ -187,14 +166,13 @@ describe('composeShiftReport', () => {
     await service.notify('turn.completed', turn('too-old'));
 
     // Exactly at the edge: one millisecond older than the window is out.
-    const readAt = new Date(2026, 7, 19, 9, 0, 0).getTime() + SHIFT_REPORT_WINDOW_MS + 1;
-    vi.setSystemTime(readAt);
-    expect(composeShiftReport(store, Date.now())).toBeNull();
+    vi.setSystemTime(
+      new Date(new Date(2026, 7, 19, 9, 0, 0).getTime() + SHIFT_REPORT_WINDOW_MS + 1)
+    );
+    expect(composeShiftReport(store, Date.now(), SETTLED)).toBeNull();
 
-    vi.setSystemTime(new Date(2026, 7, 20, 3, 0, 0));
     await service.notify('turn.completed', turn('fresh'));
-    vi.setSystemTime(readAt);
-    expect(composeShiftReport(store, Date.now())).toEqual(
+    expect(composeShiftReport(store, Date.now(), SETTLED)).toEqual(
       expect.objectContaining({ turnsCompleted: 1 })
     );
   });
@@ -213,7 +191,7 @@ describe('composeShiftReport', () => {
     await service.notify('dm.received', dm('room-1', 1));
 
     vi.setSystemTime(new Date(2026, 7, 20, 9, 0, 0));
-    expect(composeShiftReport(store, Date.now())).toEqual({
+    expect(composeShiftReport(store, Date.now(), SETTLED)).toEqual({
       turnsCompleted: 0,
       runsSucceeded: 0,
       runsFailed: 0,
@@ -253,7 +231,7 @@ describe('composeShiftReport', () => {
         // 09:00 Aug 20 — the operator opens Home, which is what triggers the
         // check. The window has to reach back through all of the above.
         vi.setSystemTime(new Date(2026, 7, 20, 9, 0, 0));
-        const counts = composeShiftReport(store, Date.now());
+        const counts = composeShiftReport(store, Date.now(), SETTLED);
 
         expect(counts).toEqual({
           turnsCompleted: 4,
@@ -276,13 +254,13 @@ describe('composeShiftReport', () => {
         await service.notify('turn.completed', turn('day1-b'));
 
         vi.setSystemTime(new Date(2026, 7, 20, 9, 0, 0));
-        const day1 = composeShiftReport(store, Date.now());
+        const day1 = composeShiftReport(store, Date.now(), SETTLED);
 
         vi.setSystemTime(new Date(2026, 7, 20, 10, 0, 0));
         await service.notify('turn.completed', turn('day2-a'));
 
         vi.setSystemTime(new Date(2026, 7, 21, 9, 0, 0));
-        const day2 = composeShiftReport(store, Date.now());
+        const day2 = composeShiftReport(store, Date.now(), SETTLED);
 
         expect(day1).toEqual(expect.objectContaining({ turnsCompleted: 2 }));
         expect(day2).toEqual(expect.objectContaining({ turnsCompleted: 1 }));
@@ -291,6 +269,121 @@ describe('composeShiftReport', () => {
         vi.useRealTimers();
       }
     });
+  });
+});
+
+describe('the install-age gate (DOR-2845)', () => {
+  let db: Db;
+  let store: NotificationStore;
+  let service: NotificationService;
+  let unsubscribe: (() => void) | undefined;
+
+  beforeEach(() => {
+    db = createDb(':memory:');
+    runMigrations(db);
+    store = new NotificationStore(db);
+    service = new NotificationService(store);
+    setNotificationService(service);
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    unsubscribe?.();
+    unsubscribe = undefined;
+    setNotificationService(null);
+    vi.useRealTimers();
+  });
+
+  /** Every stored `report.daily` row. */
+  function reports() {
+    return service.list({ limit: 25, unread: false, kind: ['report.daily'] }).notifications;
+  }
+
+  /** First-run timestamps for a setup started at `at`. */
+  function setUpAt(at: Date): ShiftReportOnboarding {
+    return { startedAt: at.toISOString(), completedAt: at.toISOString(), dismissedAt: null };
+  }
+
+  it('raises nothing on a fresh install’s setup turn, then reports the next morning', async () => {
+    const onboarding = setUpAt(new Date(2026, 7, 20, 16, 0, 0));
+    vi.setSystemTime(new Date(2026, 7, 20, 16, 1, 0));
+    unsubscribe = watchShiftReport(store, () => onboarding);
+
+    await service.notify('turn.completed', turn('onboarding'));
+    await flush();
+    await service.notify('turn.completed', turn('first-chat'));
+    await flush();
+    expect(reports()).toHaveLength(0);
+
+    vi.setSystemTime(new Date(2026, 7, 21, 9, 0, 0));
+    await service.notify('turn.completed', turn('next-morning'));
+    await flush();
+    expect(reports()).toHaveLength(1);
+  });
+
+  it('raises nothing all day for a night owl who set up at 03:40 and chatted past 04:00', async () => {
+    const onboarding = setUpAt(new Date(2026, 7, 20, 3, 40, 0));
+    vi.setSystemTime(new Date(2026, 7, 20, 3, 41, 0));
+    unsubscribe = watchShiftReport(store, () => onboarding);
+    await service.notify('turn.completed', turn('setup'));
+    await flush();
+
+    for (const hour of [4, 9, 16, 23]) {
+      vi.setSystemTime(new Date(2026, 7, 20, hour, 30, 0));
+      await service.notify('turn.completed', turn(`chat-${hour}`));
+      await flush();
+    }
+    expect(reports()).toHaveLength(0);
+
+    vi.setSystemTime(new Date(2026, 7, 21, 9, 0, 0));
+    await service.notify('turn.completed', turn('next-morning'));
+    await flush();
+    expect(reports()).toHaveLength(1);
+  });
+
+  it('reports a lone daily 05:30 task, though yesterday’s run is older than the window', async () => {
+    // Headless: nobody onboarded, so the only witness is yesterday's own row.
+    // Finished a minute earlier yesterday, so it is just outside today's window.
+    vi.setSystemTime(new Date(2026, 7, 19, 5, 29, 0));
+    await service.notify('run.completed', run('yesterday'));
+
+    vi.setSystemTime(new Date(2026, 7, 20, 5, 30, 0));
+    unsubscribe = watchShiftReport(store, () => null);
+    await service.notify('run.completed', run('today'));
+    await flush();
+
+    expect(reports()).toHaveLength(1);
+    expect(reports()[0].title).toContain('1 run finished');
+  });
+
+  it('still reports an overnight shift on an install with no first-run record', async () => {
+    vi.setSystemTime(new Date(2026, 7, 19, 21, 0, 0));
+    await service.notify('turn.completed', turn('evening'));
+    vi.setSystemTime(new Date(2026, 7, 20, 2, 0, 0));
+    await service.notify('run.completed', run('overnight', 'failed'));
+
+    vi.setSystemTime(new Date(2026, 7, 20, 9, 0, 0));
+    expect(composeShiftReport(store, Date.now(), null)).toMatchObject({
+      turnsCompleted: 1,
+      runsFailed: 1,
+    });
+  });
+
+  it('trusts an old first-run record when pruning left only recent rows', async () => {
+    vi.setSystemTime(new Date(2026, 7, 20, 9, 0, 0));
+    await service.notify('turn.completed', turn('only-row'));
+    expect(composeShiftReport(store, Date.now(), null)).toBeNull();
+    expect(composeShiftReport(store, Date.now(), SETTLED)).toMatchObject({ turnsCompleted: 1 });
+  });
+
+  it('trusts an old row when the first-run record is newer than the install (a replayed setup)', async () => {
+    vi.setSystemTime(new Date(2026, 7, 18, 12, 0, 0));
+    await service.notify('agent.unreachable', { agentId: 'a1', agentName: 'Ana' });
+    vi.setSystemTime(new Date(2026, 7, 20, 9, 0, 0));
+    await service.notify('turn.completed', turn('today'));
+
+    const replayed = setUpAt(new Date(2026, 7, 20, 8, 0, 0));
+    expect(composeShiftReport(store, Date.now(), replayed)).toMatchObject({ turnsCompleted: 1 });
   });
 });
 
@@ -379,17 +472,14 @@ describe('watchShiftReport', () => {
 
   it('raises the report on the day’s first activity, and not again the same day', async () => {
     vi.useFakeTimers();
-    vi.setSystemTime(new Date(2026, 7, 19, 22, 0, 0));
-    await service.notify('turn.completed', turn('last-night'));
-
     vi.setSystemTime(new Date(2026, 7, 20, 9, 0, 0));
-    unsubscribe = watchShiftReport(store);
+    unsubscribe = watchShiftReport(store, () => SETTLED);
 
     await service.notify('turn.completed', turn('s1'));
     await flush();
 
     expect(reports()).toHaveLength(1);
-    expect(reports()[0].title).toContain('2 turns finished');
+    expect(reports()[0].title).toContain('turn finished');
 
     // More activity later the same day must not add a second row.
     await service.notify('turn.completed', turn('s2'));
@@ -398,11 +488,12 @@ describe('watchShiftReport', () => {
   });
 
   it('keeps trying within the same day until there is something to say', async () => {
-    // The naive "checked once, done for today" design would never raise a
-    // report once an empty first check had spent the day's one attempt.
+    // The first broadcast this test fires is `report.daily` itself — nothing
+    // else has happened yet — so the naive "checked once, done for today"
+    // design would never raise a report even once real activity arrives.
     vi.useFakeTimers();
     vi.setSystemTime(new Date(2026, 7, 20, 9, 0, 0));
-    unsubscribe = watchShiftReport(store);
+    unsubscribe = watchShiftReport(store, () => SETTLED);
 
     // Kinds this report does not count still trigger a check, and must not
     // burn the day's one attempt on an empty result.
@@ -410,42 +501,15 @@ describe('watchShiftReport', () => {
     await flush();
     expect(reports()).toHaveLength(0);
 
-    // A row from before today's boundary (written with the clock wound back,
-    // the only way a test can put one there after the first check).
-    vi.setSystemTime(new Date(2026, 7, 20, 2, 0, 0));
-    await service.notify('turn.completed', turn('overnight'));
-    await flush();
-    vi.setSystemTime(new Date(2026, 7, 20, 9, 0, 0));
-
     await service.notify('turn.completed', turn('s1'));
-    await flush();
-    expect(reports()).toHaveLength(1);
-  });
-
-  it('raises nothing on a brand-new install’s setup turn, then reports it the next day (DOR-2845)', async () => {
-    vi.useFakeTimers();
-    vi.setSystemTime(new Date(2026, 7, 20, 16, 0, 0));
-    unsubscribe = watchShiftReport(store);
-
-    await service.notify('turn.completed', turn('onboarding'));
-    await flush();
-    await service.notify('turn.completed', turn('first-chat'));
-    await flush();
-    expect(reports()).toHaveLength(0);
-
-    vi.setSystemTime(new Date(2026, 7, 21, 9, 0, 0));
-    await service.notify('turn.completed', turn('next-morning'));
     await flush();
     expect(reports()).toHaveLength(1);
   });
 
   it('raises a second report once the next local day starts', async () => {
     vi.useFakeTimers();
-    vi.setSystemTime(new Date(2026, 7, 19, 22, 0, 0));
-    await service.notify('turn.completed', turn('last-night'));
-
     vi.setSystemTime(new Date(2026, 7, 20, 9, 0, 0));
-    unsubscribe = watchShiftReport(store);
+    unsubscribe = watchShiftReport(store, () => SETTLED);
     await service.notify('turn.completed', turn('s1'));
     await flush();
     expect(reports()).toHaveLength(1);
@@ -458,9 +522,6 @@ describe('watchShiftReport', () => {
 
   it('latches "reported today" on a dedupe hit too, so a restart stops rescanning', async () => {
     vi.useFakeTimers();
-    vi.setSystemTime(new Date(2026, 7, 19, 22, 0, 0));
-    await service.notify('turn.completed', turn('last-night'));
-
     vi.setSystemTime(new Date(2026, 7, 20, 9, 0, 0));
 
     // The row already exists — as if an earlier process raised it and then
@@ -472,22 +533,20 @@ describe('watchShiftReport', () => {
     });
     expect(reports()).toHaveLength(1);
 
-    unsubscribe = watchShiftReport(store);
+    unsubscribe = watchShiftReport(store, () => SETTLED);
     const scanSpy = vi.spyOn(store, 'countActivitySince');
 
     await service.notify('turn.completed', turn('s1'));
     await flush();
-    const firstCheckScans = scanSpy.mock.calls.length;
     await service.notify('turn.completed', turn('s2'));
     await flush();
     await service.notify('turn.completed', turn('s3'));
     await flush();
 
-    // Only the first notification's check scanned: it found today's row
+    // Exactly one scan: the first notification's check found today's row
     // already there (deduped) and latched `reportedFor`, so the second and
     // third notifications never asked the store anything at all.
-    expect(firstCheckScans).toBeGreaterThan(0);
-    expect(scanSpy).toHaveBeenCalledTimes(firstCheckScans);
+    expect(scanSpy).toHaveBeenCalledTimes(1);
     expect(reports()).toHaveLength(1);
   });
 });

@@ -7,6 +7,6 @@ covers:
 
 ### Fixed
 
-- A brand-new install no longer says "While you were away" a few seconds after setup. The daily summary now waits until there is something from an earlier day to report.
-- On your first day, the sidebar shows one "Getting started" list instead of two. The card at the bottom waits until the list at the top is done.
+- A brand-new install no longer says "While you were away" a few seconds after setup. Your first daily summary arrives the morning after you set DorkOS up.
+- On your first day, the sidebar shows one "Getting started" list instead of two. The card at the bottom waits until the list at the top is done, and the questions about your name and your work still get asked meanwhile.
 - Your first chat with DorkBot is listed under DorkBot's name, not "Session". A chat with no known agent now says "Chat".
