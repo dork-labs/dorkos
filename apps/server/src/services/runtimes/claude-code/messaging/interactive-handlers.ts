@@ -235,9 +235,10 @@ export const DORKOS_AGENT_TOOLS = new Set(
  *
  * **That bound only exists for an AGENT caller**, which is the whole reason this
  * set is separate. Who the caller IS comes from `callerAuthor`
- * (`services/rooms/room-capabilities.ts`): with no identity in the invocation
- * context and no login on this install, it falls back to the person who OWNS the
- * install. The owner is exempt from the membership check by design —
+ * (`services/rooms/service/room-caller-author.ts`). From inside a chat with no
+ * identity it now refuses (DOR-2863), but it used to fall back to the person who
+ * OWNS the install, and every other surface with no identity and no login still
+ * does. The owner is exempt from the membership check by design —
  * `seesEveryRoom` short-circuits `canSee`, so every room on the machine is
  * readable, the owner's own DMs with agents included — and an owner-attributed
  * post lands as a human message at cascade depth zero, which triggers every

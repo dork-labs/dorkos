@@ -524,8 +524,9 @@ async function launchSessionMessage(
   // A chat whose folder belongs to no agent still runs as the agent it was
   // started for, so its tools act as that agent and never as the person
   // (DOR-2863). A room's own answer, when there is one, stands.
-  const recordedAgent =
-    verifiedAgentPath ?? (existing?.bound ? await recordedAgentOf(sessionId) : null);
+  // A bound chat's agent is its record, never a later message's claim: a
+  // per-message `agentPath` names the owner only on the send that binds it.
+  const recordedAgent = existing?.bound ? await recordedAgentOf(sessionId) : verifiedAgentPath;
   const forAgent = roomPlace.forAgent ?? chatAgentOf(recordedAgent, effectiveCwd ?? DEFAULT_CWD);
 
   // **A paused agent starts no turn** (spec `audit-trail` PR5). Asked of the
@@ -746,7 +747,11 @@ export { resolveRuntimeTypeForNewSession as _resolveRuntimeTypeForNewSession };
 async function recordedAgentOf(sessionId: string): Promise<string | null> {
   try {
     return await runtimeRegistry.getSessionAgentPath(sessionId);
-  } catch {
+  } catch (err) {
+    logger.debug('[launch] could not read the chat’s recorded agent', {
+      sessionId,
+      error: err instanceof Error ? err.message : String(err),
+    });
     return null;
   }
 }

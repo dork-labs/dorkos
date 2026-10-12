@@ -294,7 +294,9 @@ export type RoomErrorCode =
    * came to read the owner's direct messages. There is no honest default on an
    * install that requires a login, so there is no default.
    *
-   * With login off it is reached only by a CHAT with no agent identity: a chat
+   * With login off it is reached only by a CHAT with no agent identity (the
+   * in-session tool server is the one surface that names its chat, as
+   * `sessionId`; a surface that starts naming one opts into this refusal): a chat
    * speaks for its agent, never for the person, so it never takes the operator
    * fallback that other unattributable callers get there (the documented
    * DOR-505 residual, DOR-2863).

@@ -578,6 +578,36 @@ describe('POST /:id/messages — a chat whose folder belongs to no agent', () =>
     expect(opts).not.toHaveProperty('forAgent');
   });
 
+  it('runs a new chat as the agent its first message names (the session_start path)', async () => {
+    sessionBound = false;
+
+    const opts = await sendAndCapture({
+      cwd: '/mock/home/marketing',
+      agentPath: AGENT,
+      create: true,
+    });
+
+    expect(opts?.forAgent).toBe(AGENT);
+  });
+
+  it('keeps a bound chat as its recorded agent when a later message names another', async () => {
+    const OTHER = '/mock/home/agents/other-bot';
+    sessionLocals.meshCore = {
+      listWithPaths: () => [{ projectPath: AGENT }, { projectPath: OTHER }],
+    };
+    setAgentHomeRegistry({
+      isRegisteredHome: (p) => p === AGENT || p === OTHER,
+      listRegisteredHomes: () => [AGENT, OTHER],
+      managedWorkspaceOwner: () => null,
+      roomsDir: null,
+    });
+    sessionAgentPath = AGENT;
+
+    const opts = await sendAndCapture({ cwd: '/mock/home/marketing', agentPath: OTHER });
+
+    expect(opts?.forAgent).toBe(AGENT);
+  });
+
   it('leaves a chat standing in its own agent folder to that folder', async () => {
     sessionAgentPath = AGENT;
 

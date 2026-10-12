@@ -354,6 +354,9 @@ describe('a room turn, standing at home', () => {
   describe.each([
     ['ON', true],
     ['OFF', false],
+    // The launch half (a chat's turns name its recorded agent) is
+    // `sessions-cwd-resolution.test.ts`; this is the half after it: given
+    // that, the room stores Ana, in a folder that names nobody.
   ])('a chat Ana started, standing in a folder no agent owns (DOR-2863), login %s', (_l, on) => {
     beforeEach(() => {
       installState.loginEnabled = on;
