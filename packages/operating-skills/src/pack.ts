@@ -327,8 +327,14 @@ export interface OperatingSkill {
  *   reports (DOR-2736), replacing "the control layer a person uses to run many
  *   AI agents". An agent seeded at 36 would describe itself as a tool a person
  *   runs rather than a member of the team.
+ * - 38: agents are trusted by default (ADR 261006-225605, DOR-2739).
+ *   `scheduling-tasks` says a task an agent makes in a session is live at once
+ *   and the person is told, that it waits only on Careful or when made without
+ *   the agent's token, and that an edit re-asks only for a file or package task
+ *   or on Careful. An agent seeded at 37 would tell a person a live schedule is
+ *   waiting on them.
  */
-export const OPERATING_SKILLS_VERSION = 37;
+export const OPERATING_SKILLS_VERSION = 38;
 
 /**
  * The canonical pack, umbrella skill first. Every entry is validated against the

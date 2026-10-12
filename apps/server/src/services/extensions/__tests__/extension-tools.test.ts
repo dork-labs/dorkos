@@ -11,6 +11,7 @@ import {
 } from '../../runtimes/claude-code/mcp-tools/extension-tools.js';
 import type { ExtensionRecordPublic, ExtensionManifest } from '@dorkos/extension-api';
 import type { ExtensionManager } from '../extension-manager.js';
+import type { ActivityService } from '../../activity/activity-service.js';
 
 // --- Helpers ---
 
@@ -452,6 +453,9 @@ describe('create_extension handler', () => {
       description: undefined,
       template: 'dashboard-card',
       scope: 'global',
+      // No session behind the call (the external `/mcp` server), so nothing it
+      // creates is approved without a person.
+      approveIfTrusted: false,
     });
   });
 
@@ -471,7 +475,59 @@ describe('create_extension handler', () => {
       description: 'My custom extension',
       template: 'command',
       scope: 'local',
+      approveIfTrusted: false,
     });
+  });
+
+  it('asks for approval on a Trusted install only in a session, and records the one it got', async () => {
+    // Purpose: our agent's door (ADR 261006-225605). The approval is recorded
+    // as `extension.auto_approved` with who, which copy and what it covers.
+    const permissions = { runtime: 'in-process', net: [], run: [], agents: false };
+    const manager = createMockManager({
+      createExtension: vi.fn(async () => ({
+        id: 'new-ext',
+        path: '/fake/extensions/new-ext',
+        scope: 'global' as const,
+        template: 'dashboard-card',
+        status: 'compiled' as const,
+        bundleReady: true,
+        files: ['extension.json', 'index.ts'],
+        autoApproved: permissions,
+      })),
+    } as Partial<ExtensionManager>);
+    const emit = vi.fn();
+    const handler = createCreateExtensionHandler(
+      { ...createDeps(manager), activityService: { emit } as unknown as ActivityService },
+      () => ({ agentPath: '/tmp/agents/nb' })
+    );
+
+    await handler({ name: 'new-ext' });
+
+    expect(manager.createExtension).toHaveBeenCalledWith(
+      expect.objectContaining({ approveIfTrusted: true })
+    );
+    expect(emit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        actorType: 'agent',
+        actorId: '/tmp/agents/nb',
+        eventType: 'extension.auto_approved',
+        resourceId: 'new-ext',
+        metadata: { path: '/fake/extensions/new-ext', permissions },
+      })
+    );
+  });
+
+  it('records nothing when the new extension was not approved', async () => {
+    const manager = createMockManager();
+    const emit = vi.fn();
+    const handler = createCreateExtensionHandler(
+      { ...createDeps(manager), activityService: { emit } as unknown as ActivityService },
+      () => ({ agentPath: '/tmp/agents/nb' })
+    );
+
+    await handler({ name: 'new-ext' });
+
+    expect(emit).not.toHaveBeenCalled();
   });
 
   it('supports settings-panel template', async () => {

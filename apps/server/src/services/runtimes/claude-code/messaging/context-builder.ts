@@ -319,7 +319,7 @@ DorkOS Tasks lets you create and manage scheduled agent runs.
 
 Available tools:
   ${T}tasks_list() -- list all configured schedules
-  ${T}tasks_create(name, cron, prompt, ...) -- create a new schedule (enters pending_approval)
+  ${T}tasks_create(name, cron, prompt, ...) -- create a new schedule (live at once, or pending_approval when DorkOS asks first)
   ${T}tasks_update(id, ...) -- modify schedule settings
   ${T}tasks_delete(id) -- remove a schedule
   ${T}tasks_get_run_history(scheduleId) -- view past run results

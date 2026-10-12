@@ -91,6 +91,22 @@ export interface NotificationPayloads {
     proposedBy: string;
   };
   /**
+   * One of our agents made a schedule that runs without asking, because the
+   * install is Trusted (ADR 261006-225605). Told so the person knows it exists
+   * and can pause it; nothing waits on them.
+   */
+  'schedule.armed_by_agent': {
+    taskId: string;
+    taskName: string;
+    agentId?: string;
+    /** The session the agent made it from, when there was one. */
+    proposedBySessionId?: string;
+    /** What to call the agent that made it. */
+    armedBy: string;
+    /** When it runs, as the end of "Runs …", e.g. `every day at 9:00 AM`. */
+    cadence: string;
+  };
+  /**
    * An agent asked to do something irreversible and is waiting on a yes.
    *
    * The `approvals` table's own pending row is the state; this describes it to
@@ -802,6 +818,16 @@ const SCHEDULE_ACTIONS: NotificationActionDTO[] = [
   { id: 'reject', label: 'Reject', style: 'danger' },
 ];
 
+/**
+ * What a schedule an agent armed offers: stop it, or go and look at it. Pause
+ * switches it off through the ordinary task update (`enabled: false`), the same
+ * write a person's own switch makes.
+ */
+const ARMED_SCHEDULE_ACTIONS: NotificationActionDTO[] = [
+  { id: 'pause', label: 'Pause', style: 'neutral' },
+  { id: 'open', label: 'Open', style: 'primary' },
+];
+
 /** The single "take me there" action a standing condition offers. */
 const OPEN_ACTION: NotificationActionDTO[] = [{ id: 'open', label: 'Open', style: 'primary' }];
 
@@ -844,6 +870,24 @@ const ENTRIES: NotificationRegistryMap = {
     body: (p) => `${p.taskName} will not run until you approve it.`,
     actions: () => SCHEDULE_ACTIONS,
     dedupeKey: (p) => `schedule:${p.taskId}`,
+    relay: 'never',
+  },
+
+  'schedule.armed_by_agent': {
+    kind: 'schedule.armed_by_agent',
+    // `notable`, not `blocking`: nothing is stopped and nobody is waiting. The
+    // person is told so the schedule never runs unseen, and Pause is one tap.
+    tier: 'notable',
+    storage: 'event',
+    subjectType: 'task',
+    locate: (p) => ({ subjectId: p.taskId, agentId: p.agentId, sessionId: p.proposedBySessionId }),
+    title: (p) => `${p.armedBy} scheduled ${p.taskName}`,
+    body: (p) => `Runs ${p.cadence}. Pause it any time.`,
+    actions: () => ARMED_SCHEDULE_ACTIONS,
+    // Not `schedule:` — that is the parked condition's key, and dedupe and the
+    // escalation ledger are keyed across kinds, so sharing it would let this
+    // row swallow a later park of the same schedule.
+    dedupeKey: (p) => `schedule-armed:${p.taskId}`,
     relay: 'never',
   },
 
@@ -1420,10 +1464,15 @@ export const NOTIFICATION_REGISTRY_KINDS: readonly NotificationKind[] = NOTIFICA
  *
  * `community.owner-replacement` joined them in DOR-2543. It is raised from the owner's
  * connection list by `emitters/community-owner-replacement.ts`.
+ *
+ * `schedule.armed_by_agent` joined them in DOR-2739. It is raised by
+ * `services/tasks/lifecycle/create-task.ts` when one of our agents makes a
+ * schedule on a Trusted install — see `emitters/schedule-armed.ts`.
  */
 export const WIRED_NOTIFICATION_KINDS: readonly NotificationKind[] = [
   'ask.pending',
   'schedule.parked',
+  'schedule.armed_by_agent',
   'approval.pending',
   'session.error',
   'turn.completed',

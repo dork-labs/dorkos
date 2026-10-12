@@ -1096,7 +1096,7 @@ that name must stay under `relay.system.`, because `POST /api/relay/messages`
 rejects exactly the principals `isConsentExemptPrincipal` covers, and that is
 what stops an HTTP caller asserting it.
 
-Agent-created schedules enter `pending_approval` state and require human approval before activation.
+A schedule one of our agents creates (an in-session `tasks_*` call, or `POST /api/tasks` with a verified agent token) is armed at once on a Trusted install and announced as `schedule.armed_by_agent` with Pause; on Careful, and from any caller the server cannot identify as ours, it enters `pending_approval` and waits for a person (ADR 261006-225605, `services/tasks/approvals/agent-trust.ts`). Schedules made from a file, a Shape or a package always park.
 
 ### Cascade Disable on Agent Unregister
 

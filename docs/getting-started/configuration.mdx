@@ -603,7 +603,7 @@ Right after you turn on an extension, the inbox may ask once more: "Next time, t
 
 Extensions that ship with DorkOS never ask. You already installed DorkOS. DorkOS tells its own extensions apart by where their files sit, not by the name inside them, so a folder in your project cannot claim to be one.
 
-Your answer lives in `extensions.approvedToRun`, and the copy it applies to lives in `extensions.approvedSources`. Your agents can read the first but cannot write either, which is the point: an agent that could add its own extension to that list would be approving its own code. See [Settings your agents cannot change](/docs/guides/action-approvals#settings-your-agents-cannot-change).
+Your answer lives in `extensions.approvedToRun`, and the copy it applies to lives in `extensions.approvedSources`. Your agents can read the first but cannot write either, which is the point: an agent that could add an extension to that list could approve any code at all. DorkOS writes one entry itself: for an extension one of your agents builds with `create_extension`, unless you chose Careful. That entry names the new folder and the permissions it asks for today, so a copy from somewhere else, or a later version that asks for more, still waits for you. See [Settings your agents cannot change](/docs/guides/action-approvals#settings-your-agents-cannot-change).
 
 <Callout type="warn">
   Adding a ships-on extension's id to `enabled` does nothing, since it's already on. To disable it,

@@ -16,7 +16,12 @@
  */
 import path from 'path';
 import type { Router } from 'express';
-import type { ExtensionRecord, ExtensionRecordPublic } from '@dorkos/extension-api';
+import {
+  ExtensionManifestSchema,
+  type ExtensionRecord,
+  type ExtensionRecordPublic,
+} from '@dorkos/extension-api';
+import { trustPosture } from '@dorkos/shared/permissions';
 import type { ApprovedPermissionSet, ExtensionApprovedSource } from '@dorkos/shared/config-schema';
 import { isEnabled, setEnabled, type CoreExtensionInfo } from './extension-enable-resolution.js';
 import { ExtensionDiscovery } from './extension-discovery.js';
@@ -784,24 +789,99 @@ export class ExtensionManager {
     return testServerCompilation(record, this.compiler);
   }
 
-  /** Scaffold a new extension directory with manifest and starter code. */
+  /**
+   * Scaffold a new extension directory with manifest and starter code, then
+   * compile and enable it.
+   *
+   * The door is `create_extension`, which our own agents call. On a Trusted
+   * install (ADR 261006-225605, item 5) the new copy is approved to run as it is
+   * created: see {@link approveNewScaffold}. Callers must not reach this for
+   * code that came from anywhere else.
+   *
+   * @param options - What to create, and where.
+   * @param options.approveIfTrusted - Whether the caller is one of our agents,
+   *   whose new extension a Trusted install approves at once. A caller that
+   *   cannot be told from an outsider leaves it off, and the copy waits.
+   */
   async createExtension(options: {
     name: string;
     description?: string;
     template: ExtensionTemplate;
     scope: 'global' | 'local';
+    approveIfTrusted?: boolean;
   }): Promise<CreateExtensionResult> {
+    const { approveIfTrusted, ...scaffoldOptions } = options;
+    // Throws when the name is spoken for in either root (the squat refusal),
+    // so nothing below ever approves a folder this call did not just create.
     const scaffoldResult = await scaffoldExtension({
-      ...options,
+      ...scaffoldOptions,
       dorkHome: this.dorkHome,
       currentCwd: this.currentCwd,
     });
+    const autoApproved =
+      approveIfTrusted === true ? this.approveNewScaffold(options.name, scaffoldResult) : null;
 
     await this.reload();
     await this.enable(options.name);
 
     const record = this.extensions.get(options.name);
-    return buildCreateResult(scaffoldResult, options, record);
+    return {
+      ...buildCreateResult(scaffoldResult, options, record),
+      ...(autoApproved && { autoApproved }),
+    };
+  }
+
+  /**
+   * Approve a copy one of our agents just scaffolded, when the install is
+   * Trusted (ADR 261006-225605, item 5; spec `trusted-by-default-flip` §5.5).
+   *
+   * Written through the same three fields {@link approveToRun} writes, so the
+   * approval is exactly as narrow as a person's: bound to this folder
+   * (`approvedSources`) and to the permission set the manifest declares now
+   * (`approvedPermissions`). A marketplace or hand-copied extension with the
+   * same id at another path, or a later version that asks for more, still
+   * waits for a person.
+   *
+   * Written BEFORE the scan that first sees the copy, so the copy is never
+   * counted as waiting: the approval inbox does not raise a row for it and then
+   * retire it a moment later.
+   *
+   * Skipped on Careful, and for an id the person said "Not now" to: that answer
+   * stands until they turn the extension on themselves.
+   *
+   * @param id - The new extension's id.
+   * @param scaffold - The folder and manifest the scaffolder just wrote.
+   * @returns The approved permission set, or `null` when nothing was approved.
+   */
+  private approveNewScaffold(
+    id: string,
+    scaffold: { targetDir: string; manifest: object }
+  ): ApprovedPermissionSet | null {
+    if (trustPosture(configManager.get('permissions')?.preset) !== 'trusted') return null;
+    const before = configManager.get('extensions');
+    if (before.dismissedApprovals?.[id]) return null;
+    const manifest = ExtensionManifestSchema.safeParse(scaffold.manifest);
+    // A manifest the host cannot read would not run anyway; it waits like any other.
+    if (!manifest.success) return null;
+    const permissions = declaredSet(manifest.data);
+    configManager.set('extensions', {
+      ...before,
+      approvedToRun: before.approvedToRun.includes(id)
+        ? before.approvedToRun
+        : [...before.approvedToRun, id],
+      approvedSources: {
+        ...(before.approvedSources ?? {}),
+        [id]: approvedSourceOf({ id, origin: 'user', path: scaffold.targetDir }),
+      },
+      approvedPermissions: { ...(before.approvedPermissions ?? {}), [id]: permissions },
+    });
+    logConfigWrite(
+      'approving an extension an agent created',
+      'extensions',
+      before,
+      configManager.get('extensions')
+    );
+    return permissions;
   }
 
   /** Get all extensions as public records (for API responses). */

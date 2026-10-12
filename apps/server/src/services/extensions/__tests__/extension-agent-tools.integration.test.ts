@@ -20,10 +20,18 @@ vi.mock('../../../lib/logger.js', () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
 }));
 
-const stored = vi.hoisted(() => ({ value: {} as ExtensionsConfig }));
+const stored = vi.hoisted(() => ({
+  value: {} as ExtensionsConfig,
+  preset: 'trusted' as 'trusted' | 'careful',
+}));
 vi.mock('../../core/config-manager.js', () => ({
   configManager: {
-    get: (key: string) => (key === 'extensions' ? stored.value : undefined),
+    get: (key: string) =>
+      key === 'extensions'
+        ? stored.value
+        : key === 'permissions'
+          ? { preset: stored.preset }
+          : undefined,
     set: (key: string, value: unknown) => {
       if (key === 'extensions') stored.value = value as ExtensionsConfig;
     },
@@ -35,6 +43,7 @@ import { composeRegistry, type CapabilityRegistry } from '../../core/capabilitie
 import { CapabilityToolError } from '../../core/capabilities/mcp-envelope.js';
 import { extensionDeclarationDigest } from '../agent-tools/declaration-digest.js';
 import { ExtensionManifestSchema } from '@dorkos/extension-api';
+import { mayRunExtensionCode } from '../extension-load-policy.js';
 
 const FIXTURE = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
@@ -351,6 +360,125 @@ describe('extension agent tools through the real lifecycle', () => {
     await manager.forgetRunApproval(ID, dorkHome);
     expect(registered()).toEqual([]);
     expect(forget).toHaveBeenCalledWith(ID, 'Agent Tools Fixture');
+  }, 30_000);
+});
+
+describe('create_extension on a Trusted install (ADR 261006-225605)', () => {
+  const NEW_ID = 'made-by-agent';
+  let created: ExtensionManager | undefined;
+
+  beforeEach(() => {
+    stored.preset = 'trusted';
+    stored.value = { enabled: [], disabled: [], approvedToRun: [], approvedSources: {} };
+  });
+
+  afterEach(async () => {
+    await created?.shutdownServer(NEW_ID);
+    await created?.whenSkillsSettled();
+    created = undefined;
+  });
+
+  /** Boot a manager and create the extension the way `create_extension` does. */
+  async function createIt(
+    options: { approveIfTrusted?: boolean; template?: 'command' | 'data-provider' } = {}
+  ) {
+    created = new ExtensionManager(dorkHome, []);
+    await created.initialize(null);
+    return created.createExtension({
+      name: NEW_ID,
+      template: options.template ?? 'command',
+      scope: 'global',
+      approveIfTrusted: options.approveIfTrusted ?? true,
+    });
+  }
+
+  /** Whether the public record says its code may run. */
+  const runs = () => created!.listPublic().find((r) => r.id === NEW_ID)?.approvedToRun;
+
+  it('approves the copy it created, for that folder and its declared permissions', async () => {
+    const result = await createIt();
+
+    const declared = { runtime: 'in-process', net: [], run: [], agents: false };
+    expect(result.autoApproved).toEqual(declared);
+    expect(runs()).toBe(true);
+    expect(stored.value.approvedToRun).toEqual([NEW_ID]);
+    expect(stored.value.approvedSources?.[NEW_ID]).toEqual({
+      path: path.join(dorkHome, 'extensions', NEW_ID),
+    });
+    expect(stored.value.approvedPermissions?.[NEW_ID]).toEqual(declared);
+  }, 30_000);
+
+  it('leaves a copy of the same id at another path waiting', async () => {
+    // Purpose: the approval names this folder, so a marketplace or hand-copied
+    // extension under the same id is still a person's call.
+    await createIt();
+    const record = created!.listRecords().find((r) => r.id === NEW_ID)!;
+
+    expect(mayRunExtensionCode(record, stored.value)).toBe(true);
+    expect(
+      mayRunExtensionCode(
+        {
+          ...record,
+          path: path.join(dorkHome, 'plugins', 'acme', 'extensions', NEW_ID),
+          sourcePlugin: 'acme',
+        },
+        stored.value
+      )
+    ).toBe(false);
+  }, 30_000);
+
+  it('asks again when a later manifest reaches further than the one approved', async () => {
+    // Purpose: the approval covers the permissions declared now, as a
+    // person's does (DOR-2686): moving to its own process narrows it to what
+    // it declares, and then adding a host waits for a person.
+    await createIt({ template: 'data-provider' });
+    const file = path.join(dorkHome, 'extensions', NEW_ID, 'extension.json');
+    const declare = async (net: string[]) => {
+      const manifest = JSON.parse(await fs.readFile(file, 'utf-8')) as {
+        serverCapabilities: Record<string, unknown>;
+      };
+      manifest.serverCapabilities = {
+        ...manifest.serverCapabilities,
+        runtime: 'subprocess',
+        allow: { net },
+      };
+      await fs.writeFile(file, JSON.stringify(manifest, null, 2));
+      await created!.reload();
+    };
+
+    await declare(['api.example.com']);
+    expect(runs()).toBe(true);
+    await declare(['api.example.com', 'other.example.com']);
+    expect(runs()).toBe(false);
+  }, 60_000);
+
+  it('waits for a person on Careful', async () => {
+    stored.preset = 'careful';
+    const result = await createIt();
+
+    expect(result.autoApproved).toBeUndefined();
+    expect(runs()).toBe(false);
+    expect(stored.value.approvedToRun).toEqual([]);
+  }, 30_000);
+
+  it('waits when the caller cannot be told from an outsider', async () => {
+    const result = await createIt({ approveIfTrusted: false });
+
+    expect(result.autoApproved).toBeUndefined();
+    expect(runs()).toBe(false);
+  }, 30_000);
+
+  it('waits when the person said Not now to that id', async () => {
+    stored.value = {
+      ...stored.value,
+      dismissedApprovals: {
+        [NEW_ID]: { path: '/elsewhere', version: '0.1.0', dismissedAt: '2026-10-01T00:00:00.000Z' },
+      },
+    };
+    const result = await createIt();
+
+    expect(result.autoApproved).toBeUndefined();
+    expect(runs()).toBe(false);
   }, 30_000);
 });
 
