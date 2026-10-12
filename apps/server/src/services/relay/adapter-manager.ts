@@ -372,10 +372,11 @@ export class AdapterManager {
    * Call it in the same tick as the edit it saves ({@link AdapterConfigWrites.track}).
    */
   private persistConfigs(): Promise<void> {
-    const { configPath, configs, secretsCtx, unparsedConfigEntries } = this;
-    return this.configWrites.track(
-      persistAdapterConfigs(configPath, configs, secretsCtx, unparsedConfigEntries)
-    );
+    // Read at write time, not now: a save writes the configs as they are when it runs.
+    return this.configWrites.track(() => {
+      const { configPath, configs, secretsCtx, unparsedConfigEntries } = this;
+      return persistAdapterConfigs(configPath, configs, secretsCtx, unparsedConfigEntries);
+    });
   }
 
   /** Load config, start enabled adapters, begin watching for changes. */
@@ -499,9 +500,7 @@ export class AdapterManager {
     // Migrate any cleartext token a user hand-added to adapters.json into the
     // encrypted store, so every load path — not just initialize() and the API
     // persist funnel — leaves references at rest (DOR-280).
-    if (await materializeAdapterSecrets(this.configs, this.secretsCtx)) {
-      await saveAdapterConfig(this.configPath, this.configs, this.unparsedConfigEntries);
-    }
+    if (await materializeAdapterSecrets(this.configs, this.secretsCtx)) await this.persistConfigs();
 
     // Stop adapters that are no longer in config or are now disabled
     for (const id of oldConfigIds) {
@@ -1123,6 +1122,12 @@ export class AdapterManager {
 
     // Capture name before config removal for the disconnected event
     const adapterName = this.resolveAdapterName(id);
+    // Dropped and its save queued in this tick, before the stop is queued: a
+    // reload queued behind the stop then reads a file without it and cannot
+    // start it again, and a queued start re-checks the config and skips it.
+    this.configs = this.configs.filter((c) => c.id !== id);
+    // Awaited once the adapter is stopped; track() already handles a rejection.
+    const saved = this.persistConfigs();
 
     // Serialized: an in-flight start pass may be registering this adapter
     // right now; queueing the unregister behind it guarantees the removal
@@ -1145,10 +1150,10 @@ export class AdapterManager {
     });
 
     await this.emitAdapterLifecycle(id, 'disconnected', adapterName);
-    // By id: a reload while the adapter stopped may have replaced the list.
-    this.configs = this.configs.filter((c) => c.id !== id);
-    await this.persistConfigs();
+    await saved;
     // Best-effort cleanup of the removed adapter's stored secrets (DOR-280).
+    // `config` is the current entry: it was dropped in the same tick it was
+    // found, and every save before ours, which moves secrets into it, is done.
     await deleteAdapterSecrets(config, this.secretsCtx);
     if (options.forgetHistory) await this.deleteConnectionHistory(id);
 
