@@ -242,10 +242,10 @@ export const TRAIT_PREVIEWS: Record<TraitName, Record<number, string>> = {
     5: "Cannot stop talking. You didn't ask for this.",
   },
   autonomy: {
-    1: 'Asks permission for everything.',
+    1: 'Checks in before every change.',
     2: 'Checks in before big moves.',
     3: 'Acts independently on routine tasks.',
-    4: 'Highly autonomous — asks only when stuck.',
+    4: 'Makes its own calls. Asks only what needs a yes.',
     5: 'Starts the next step before you ask.',
   },
   chaos: {
