@@ -65,6 +65,7 @@ bill, so it is worth knowing which is which:
 | `experimental` | cases kept out of `core` by a known harness gap                 | yes, credentialed                   |
 | `chat`         | the same six chat cases, on whichever runtime you point them at | yes, and NOT on a Claude plan       |
 | `heartbeat`    | four seeded beat situations: the right move and the right rung  | yes, credentialed                   |
+| `discovery`    | names a connection or package once when it helps, quiet if not  | yes, credentialed                   |
 | `all`          | everything registered                                           | yes                                 |
 
 ### The `chat` suite, and runs that pay somebody else

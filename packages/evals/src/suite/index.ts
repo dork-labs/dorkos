@@ -26,6 +26,7 @@ import { memoryCases } from './memory.js';
 import { chatCases } from './chat.js';
 import { connectionRequestCases } from './connection-request.js';
 import { heartbeatCases } from './heartbeat.js';
+import { discoveryCases } from './discovery.js';
 
 /** Every registered eval case, across all suites. */
 export const ALL_CASES: EvalCase[] = [
@@ -48,6 +49,7 @@ export const ALL_CASES: EvalCase[] = [
   ...chatCases,
   ...connectionRequestCases,
   ...heartbeatCases,
+  ...discoveryCases,
 ];
 
 /** The tag values a `--suite` name may select. */
@@ -60,11 +62,12 @@ const TAGS: readonly EvalTag[] = [
   'memory',
   'chat',
   'heartbeat',
+  'discovery',
 ];
 
 /**
  * Resolve a `--suite` name to the cases to run. A name matching a tag
- * (`smoke`/`core`/`connector`/`experimental`/`rooms`/`memory`/`chat`/`heartbeat`) selects every case
+ * (`smoke`/`core`/`connector`/`experimental`/`rooms`/`memory`/`chat`/`heartbeat`/`discovery`) selects every case
  * carrying it; `all` selects every case; otherwise the name is matched against a
  * case id.
  *
@@ -91,6 +94,17 @@ export {
   heartbeatLateNightFindingCase,
   heartbeatCases,
 } from './heartbeat.js';
+export {
+  discoverySuggestsConnectionCase,
+  discoverySuggestsPackageCase,
+  discoverySuggestsOnceCase,
+  discoveryNoTechnicalMenuCase,
+  discoverySilentWhenNothingHelpsCase,
+  discoverySilentWhenInstalledCase,
+  discoverySilentInRoomCase,
+  discoverySilentOnUnrelatedCase,
+  discoveryCases,
+} from './discovery.js';
 export {
   agentSelfEditCase,
   activityReadCase,

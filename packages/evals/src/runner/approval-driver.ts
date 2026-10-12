@@ -88,6 +88,11 @@ import type { SessionEvent } from '@dorkos/shared/session-stream';
 import type { PendingApproval } from '@dorkos/shared/approval-schemas';
 import { toolNameMatches } from '../oracles/stream.js';
 import { emptyApprovalLog, type ApprovalDriverLog, type ApprovalPolicy } from '../types.js';
+import {
+  answerQuestionCard,
+  denyPendingConnectionRequests,
+  questionCards,
+} from './interaction-answers.js';
 
 /** How often the driver re-reads `GET /api/approvals/pending` while a turn runs. */
 const DEFAULT_POLL_INTERVAL_MS = 300;
@@ -190,6 +195,12 @@ export class ApprovalDriver {
   /** Capability approvals already seen, decided or deliberately ignored. */
   private readonly seenApprovals = new Set<string>();
 
+  /** Connection requests already answered (`runner/interaction-answers.ts`). */
+  private readonly answeredRequests = new Set<string>();
+
+  /** Question cards already answered, so a re-parsed frame is not re-answered. */
+  private readonly answeredQuestions = new Set<string>();
+
   /** In-flight work `stop()` must await, so a decision is never abandoned mid-POST. */
   private readonly inFlight = new Set<Promise<void>>();
 
@@ -228,7 +239,8 @@ export class ApprovalDriver {
   start(): void {
     if (this.running) return;
     this.running = true;
-    if (this.options.policy.capability) this.schedulePoll();
+    const { capability, connectionRequests } = this.options.policy;
+    if (capability || connectionRequests) this.schedulePoll();
   }
 
   /**
@@ -272,6 +284,25 @@ export class ApprovalDriver {
       const rawToolName = data?.[FRAME_K.toolName];
       const toolName = typeof rawToolName === 'string' ? rawToolName : '';
       this.track(this.answerToolPermission(sessionId, toolCallId, toolName));
+    }
+    this.answerQuestions(frames, sessionId);
+  }
+
+  /** Answer any NEW question card, when the policy says to (see `interaction-answers.ts`). */
+  private answerQuestions(frames: SseFrame[], sessionId: string): void {
+    const text = this.options.policy.answerQuestions;
+    if (text === undefined) return;
+    for (const card of questionCards(frames)) {
+      if (this.answeredQuestions.has(card.toolCallId)) continue;
+      this.answeredQuestions.add(card.toolCallId);
+      this.track(
+        answerQuestionCard(this.options.baseUrl, sessionId, card, text).then(
+          ({ record, error }) => {
+            if (record) this.entries.questions.push(record);
+            if (error) this.entries.errors.push(error);
+          }
+        )
+      );
     }
   }
 
@@ -323,7 +354,11 @@ export class ApprovalDriver {
   private schedulePoll(): void {
     if (!this.running) return;
     this.pollTimer = setTimeout(() => {
-      this.track(this.pollPendingApprovals().then(() => this.schedulePoll()));
+      this.track(
+        Promise.all([this.pollPendingApprovals(), this.pollConnectionRequests()]).then(() =>
+          this.schedulePoll()
+        )
+      );
     }, this.options.pollIntervalMs ?? DEFAULT_POLL_INTERVAL_MS);
   }
 
@@ -365,6 +400,17 @@ export class ApprovalDriver {
       const tier = approval[PENDING_K.tier];
       await this.decide(approvalId, capabilityId, String(tier ?? ''), target.decision);
     }
+  }
+
+  /** Deny every held connection request once, when the policy says to. */
+  private async pollConnectionRequests(): Promise<void> {
+    if (this.options.policy.connectionRequests !== 'deny' || !this.running) return;
+    const { records, errors } = await denyPendingConnectionRequests(
+      this.options.baseUrl,
+      this.answeredRequests
+    );
+    this.entries.connectionRequests.push(...records);
+    this.entries.errors.push(...errors);
   }
 
   /**
