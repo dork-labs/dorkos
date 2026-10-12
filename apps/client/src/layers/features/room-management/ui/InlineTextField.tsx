@@ -3,7 +3,14 @@
  *
  * @module features/room-management/ui/InlineTextField
  */
-import { useEffect, useRef, useState, type KeyboardEvent, type RefObject } from 'react';
+import {
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type KeyboardEvent,
+  type RefObject,
+} from 'react';
 import { Pencil } from 'lucide-react';
 import { cn } from '@/layers/shared/lib';
 
@@ -57,6 +64,11 @@ export interface InlineTextFieldProps {
    * unbroken token (a pasted link) is broken wherever it has to be rather than
    * pushing the panel sideways (DOR-2117). A name stays on one line: it is a
    * label, and the full text is one press away.
+   *
+   * It edits the same way: in a box that grows to show the whole text, where a
+   * one-line input showed a few words of a 500-character topic (DOR-2358).
+   * Enter still saves, with or without Shift, because a topic is one paragraph
+   * and has no line breaks to type. `inputRef` is not handed this box.
    */
   wrap?: boolean;
   /** Applied to the line AND the editor, so the text does not resize mid-edit. */
@@ -116,6 +128,7 @@ export function InlineTextField({
   const draft = typed ?? value;
   const ownRef = useRef<HTMLInputElement>(null);
   const fieldRef = inputRef ?? ownRef;
+  const areaRef = useRef<HTMLTextAreaElement>(null);
   const lineRef = useRef<HTMLButtonElement>(null);
   /** Whether this edit has already been decided. First Enter or Escape wins. */
   const committedRef = useRef(false);
@@ -140,12 +153,20 @@ export function InlineTextField({
    */
   useEffect(() => {
     if (!isEditing) return;
-    const field = fieldRef.current;
+    const field = wrap ? areaRef.current : fieldRef.current;
     requestAnimationFrame(() => {
       field?.focus();
       field?.select();
     });
-  }, [isEditing, fieldRef]);
+  }, [isEditing, fieldRef, wrap]);
+
+  /** Grow the wrapping editor to its text, so none of it scrolls out of sight. */
+  useLayoutEffect(() => {
+    const area = areaRef.current;
+    if (!isEditing || !area) return;
+    area.style.height = 'auto';
+    area.style.height = `${area.scrollHeight}px`;
+  }, [isEditing, draft]);
 
   const beginEditing = () => {
     // Nothing typed yet, so this edit starts on whatever is stored now — see
@@ -180,7 +201,7 @@ export function InlineTextField({
     endEditing();
   };
 
-  const handleKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
+  const handleKeyDown = (event: KeyboardEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     if (event.key === 'Enter') {
       event.preventDefault();
       commit();
@@ -189,6 +210,25 @@ export function InlineTextField({
       cancel();
     }
   };
+
+  if (isEditing && wrap) {
+    return (
+      <textarea
+        ref={areaRef}
+        rows={1}
+        value={draft}
+        maxLength={maxLength}
+        aria-label={label}
+        onChange={(event) => setTyped(event.target.value)}
+        onKeyDown={handleKeyDown}
+        onBlur={commit}
+        className={cn(
+          'bg-background text-foreground focus-visible:ring-ring block w-full min-w-0 resize-none overflow-hidden rounded border px-1.5 py-0.5 outline-hidden focus-visible:ring-1',
+          className
+        )}
+      />
+    );
+  }
 
   if (isEditing) {
     return (
