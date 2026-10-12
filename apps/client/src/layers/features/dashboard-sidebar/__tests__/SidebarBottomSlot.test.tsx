@@ -82,6 +82,10 @@ vi.mock('../ui/bottom-slot/UpdatePill', () => ({
 }));
 
 import { SidebarBottomSlot } from '../ui/bottom-slot/SidebarBottomSlot';
+import type { SidebarModel } from '../model/build-sidebar-model';
+
+/** A panel whose own Getting started zone has nothing left to suggest. */
+const EMPTY_MODEL: SidebarModel = { zones: [] };
 
 /** Every card the slot can draw, in the priority order under test. */
 const RUNGS = ['getting-started', 'update', 'identity-prompt', 'profile-prompt', 'promo'] as const;
@@ -108,43 +112,57 @@ afterEach(() => cleanup());
 describe('SidebarBottomSlot priority', () => {
   it('gives the slot to getting started when every card qualifies', () => {
     gettingStarted = updateReady = identityVisible = profileVisible = promoQualifies = true;
-    render(<SidebarBottomSlot />);
+    render(<SidebarBottomSlot model={EMPTY_MODEL} />);
     expect(drawn()).toBe('getting-started');
+  });
+
+  it('steps the card aside while the panel lists its own Getting started (DOR-2845)', () => {
+    // Two "Getting started" lists at once was the bug: the zone at the top of
+    // the panel and this card at the bottom, side by side on day one.
+    gettingStarted = updateReady = true;
+    render(<SidebarBottomSlot model={{ zones: [], gettingStartedPending: true }} />);
+    expect(drawn()).toBe('update');
+  });
+
+  it('draws no getting-started card at all while the zone still has suggestions', () => {
+    gettingStarted = true;
+    render(<SidebarBottomSlot model={{ zones: [], gettingStartedPending: true }} />);
+    expect(drawn()).toBeNull();
   });
 
   it('falls to the update pill once getting started is done', () => {
     updateReady = profileVisible = promoQualifies = true;
-    render(<SidebarBottomSlot />);
+    render(<SidebarBottomSlot model={EMPTY_MODEL} />);
     expect(drawn()).toBe('update');
   });
 
   it('gives the slot to a failed desktop install, exactly as to a waiting update', () => {
     updateKind = 'desktop-install-failed';
     updateReady = profileVisible = promoQualifies = true;
-    render(<SidebarBottomSlot />);
+    render(<SidebarBottomSlot model={EMPTY_MODEL} />);
     expect(drawn()).toBe('update');
   });
 
   it('asks who you are before what you do (DOR-677)', () => {
     identityVisible = profileVisible = promoQualifies = true;
-    render(<SidebarBottomSlot />);
+    render(<SidebarBottomSlot model={EMPTY_MODEL} />);
     expect(drawn()).toBe('identity-prompt');
   });
 
   it('falls to the profile prompt once there is no update waiting', () => {
     profileVisible = promoQualifies = true;
-    render(<SidebarBottomSlot />);
+    render(<SidebarBottomSlot model={EMPTY_MODEL} />);
     expect(drawn()).toBe('profile-prompt');
   });
 
   it('offers a promo only when nothing above it wants the slot', () => {
     promoQualifies = true;
-    render(<SidebarBottomSlot />);
+    render(<SidebarBottomSlot model={EMPTY_MODEL} />);
     expect(drawn()).toBe('promo');
   });
 
   it('draws nothing when no card qualifies', () => {
-    render(<SidebarBottomSlot />);
+    render(<SidebarBottomSlot model={EMPTY_MODEL} />);
     expect(drawn()).toBeNull();
   });
 
@@ -160,7 +178,7 @@ describe('SidebarBottomSlot priority', () => {
       identityVisible = peeled <= 2;
       profileVisible = peeled <= 3;
       promoQualifies = true;
-      render(<SidebarBottomSlot />);
+      render(<SidebarBottomSlot model={EMPTY_MODEL} />);
       winners.push(drawn());
       cleanup();
     }

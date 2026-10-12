@@ -430,6 +430,13 @@ export interface SidebarZoneModel {
 export interface SidebarModel {
   /** The zones, in the fixed order `getting-started|now`, `today`, `library`. */
   zones: SidebarZoneModel[];
+  /**
+   * Set while Getting started still has a suggestion to make, whether or not
+   * Heads up holds the slot this build (BC-4). The bottom slot reads it to keep
+   * its own getting-started card out of the way, so a person never sees two
+   * "Getting started" lists at once (DOR-2845). Absent means none left.
+   */
+  gettingStartedPending?: true;
 }
 
 /**
@@ -529,6 +536,7 @@ function bodyZone(
  */
 export function buildSidebarModel(state: SidebarState): SidebarModel {
   const zones: SidebarZoneModel[] = [];
+  const suggestions = buildGettingStarted(state);
 
   // Heads up and Getting started share one slot: real signals always win, and the
   // day-one zone is what fills the space until there are any (BC-4).
@@ -585,7 +593,6 @@ export function buildSidebarModel(state: SidebarState): SidebarModel {
     // stopped, and BC-4's rule is the opposite: real signals always win. So a
     // covered queue yields NEITHER zone, and the cards the renderer draws in
     // Heads up's place are the whole of what that zone says.
-    const suggestions = buildGettingStarted(state);
     const zone = bodyZone('getting-started', suggestions, 'zone:getting-started', state);
     if (zone) zones.push(zone);
   }
@@ -625,5 +632,5 @@ export function buildSidebarModel(state: SidebarState): SidebarModel {
     });
   }
 
-  return { zones };
+  return { zones, ...(suggestions.length > 0 ? { gettingStartedPending: true as const } : {}) };
 }

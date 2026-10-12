@@ -259,7 +259,7 @@ export function MobileTabsLayout({ takeover }: MobileTabsLayoutProps) {
                 the cockpit offers — getting started, an update, the profile
                 prompt, a promo — was desktop-only (spec D4). Home is where it
                 belongs: it is this cockpit's first screen. */}
-            <SidebarBottomSlot />
+            <SidebarBottomSlot model={model} />
           </PageContainer>
         </MobileTabPanel>
 
