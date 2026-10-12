@@ -9,7 +9,6 @@ import fs from 'fs/promises';
 import os from 'os';
 import path from 'path';
 import { execFileSync } from 'child_process';
-import express from 'express';
 import request from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
 
@@ -18,6 +17,12 @@ import { swappableServer } from '@dorkos/test-utils/listening-server';
 vi.mock('../../services/core/config-manager.js', () => ({
   configManager: { get: vi.fn(() => undefined), set: vi.fn(), getAll: vi.fn() },
 }));
+
+// The real session gate, so a test can stand in for a browser session with login on.
+vi.mock('../../services/core/auth/session-gate.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../services/core/auth/session-gate.js')>();
+  return { ...actual, decideSessionGate: vi.fn(actual.decideSessionGate) };
+});
 
 // The account that owns this install, for the credits-consent owner bar (DOR-2652).
 vi.mock('../../services/core/auth/index.js', async (importOriginal) => ({
@@ -72,7 +77,10 @@ vi.mock('../../services/mesh/orphaned-installs.js', () => ({
 }));
 
 import { ManifestUnreadableError } from '@dorkos/mesh';
-import { createMeshRouter } from '../mesh.js';
+import { createMeshRoutes } from '../mesh.js';
+import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
+import { decideSessionGate } from '../../services/core/auth/session-gate.js';
+import type { ActivityService } from '../../services/activity/activity-service.js';
 import type { MeshCore } from '@dorkos/mesh';
 import { validateBoundary, validateBoundaryOrDorkHome, BoundaryError } from '../../lib/boundary.js';
 import { removeDorkDirectory } from '@dorkos/shared/manifest';
@@ -126,8 +134,16 @@ const MOCK_MANIFEST = {
 };
 
 describe('Mesh routes', () => {
-  let app: express.Application;
   let meshCore: ReturnType<typeof createMockMeshCore>;
+  /** Serve the mesh routes behind the `/api` chain, recording into `activity` if given. */
+  function mountMesh(activity?: ActivityService): void {
+    fixtureTarget.mount(
+      honoGroupListener({
+        path: '/api/mesh',
+        routes: createMeshRoutes({ meshCore: meshCore as unknown as MeshCore, activity }),
+      })
+    );
+  }
   /** Real directories a test made on disk, removed after it. */
   const tempDirs: string[] = [];
 
@@ -143,16 +159,7 @@ describe('Mesh routes', () => {
     vi.mocked(validateBoundary).mockImplementation(async (p: string) => p);
 
     meshCore = createMockMeshCore();
-    app = express();
-    app.use(express.json());
-    app.use('/api/mesh', createMeshRouter({ meshCore: meshCore as unknown as MeshCore }));
-    app.use(
-      (err: Error, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
-        res.status(500).json({ error: err.message });
-      }
-    );
-
-    fixtureTarget.mount(app);
+    mountMesh();
   });
 
   // --- POST /discover ---
@@ -656,9 +663,9 @@ describe('Mesh routes', () => {
       const listener = vi.fn().mockResolvedValue(undefined);
       setOnAgentCreated(listener);
       meshCore.registerByPath.mockResolvedValue(MOCK_MANIFEST);
-      app.locals.activityService = {
+      mountMesh({
         emit: vi.fn().mockRejectedValue(new Error('activity store is down')),
-      };
+      } as unknown as ActivityService);
 
       const res = await request(fixtureServer)
         .post('/api/mesh/agents')
@@ -1066,19 +1073,16 @@ describe('Mesh routes', () => {
     });
 
     describe('with login on', () => {
-      /** Serve the mesh router as `user` signed in with a browser session. */
+      /** Ask the mesh routes as `user`, signed in with a browser session. */
       async function patchAs(userId: string) {
         const { configManager } = await import('../../services/core/config-manager.js');
         vi.mocked(configManager.get).mockImplementation(((key: string) =>
           key === 'auth' ? { enabled: true } : undefined) as typeof configManager.get);
-        const signedIn = express();
-        signedIn.use(express.json());
-        signedIn.use((_req, res, next) => {
-          res.locals.user = { userId, credential: 'cookie' };
-          next();
+        // Stands in for a browser session the gate proved.
+        vi.mocked(decideSessionGate).mockResolvedValueOnce({
+          allowed: true,
+          user: { userId, credential: 'cookie' },
         });
-        signedIn.use('/api/mesh', createMeshRouter({ meshCore: meshCore as unknown as MeshCore }));
-        fixtureTarget.mount(signedIn);
         meshCore.update.mockReturnValue({ ...MOCK_MANIFEST, account: 'dorkos-credits' });
         vi.mocked(setCreditsAllowedForAgent).mockClear();
         return request(fixtureServer)

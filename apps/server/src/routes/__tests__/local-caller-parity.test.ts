@@ -52,8 +52,9 @@ vi.mock('../../lib/boundary.js', () => ({
 import express from 'express';
 import request from '@dorkos/test-utils/supertest';
 import { listeningServer } from '@dorkos/test-utils/listening-server';
-import runtimesRouter from '../runtimes.js';
+import { createRuntimesRoutes } from '../runtimes.js';
 import configRouter from '../config.js';
+import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
 
 /** The TCP peer the app reports for the current request. */
 let currentPeer = '127.0.0.1';
@@ -65,14 +66,19 @@ const app = express();
 // the two are always equal, and swapping the raw header for `req.hostname` (the
 // DOR-532 bug, re-introduced) would keep every row here green.
 app.set('trust proxy', 1);
-app.use((req, _res, next) => {
-  Object.defineProperty(req.socket, 'remoteAddress', { value: currentPeer, configurable: true });
-  next();
-});
 app.use(express.json());
-app.use('/api/runtimes', runtimesRouter);
 app.use('/api/config', configRouter);
-const server = listeningServer(app);
+// The runtimes routes answer from the Hono `/api` app, in front of the config
+// router still on Express, as the running server routes them. The peer is
+// rewritten before either chain sees the request.
+const routes = honoGroupListener(
+  { path: '/api/runtimes', routes: createRuntimesRoutes() },
+  { legacy: app }
+);
+const server = listeningServer((req, res) => {
+  Object.defineProperty(req.socket, 'remoteAddress', { value: currentPeer, configurable: true });
+  routes(req, res);
+});
 
 beforeEach(() => {
   currentPeer = '127.0.0.1';

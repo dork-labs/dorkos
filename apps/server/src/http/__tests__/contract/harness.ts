@@ -101,6 +101,9 @@ function serverEnv(
     DORKOS_TASKS_ENABLED: 'true',
     DORKOS_A2A_ENABLED: 'true',
     DORKOS_SEARCH_NO_EXTERNAL_HISTORY: 'true',
+    // No contract server reaches out: telemetry, install counts and the update
+    // check all honour this switch.
+    DORKOS_TELEMETRY_DISABLED: '1',
     ...extra,
   };
 }
@@ -146,7 +149,10 @@ export async function bootComposedServer(
 ): Promise<ComposedServer> {
   const port = await freePort();
   const dorkHome = await mkdtemp(path.join(tmpdir(), 'dorkos-contract-'));
-  const version = `0.0.0-contract.${randomUUID().slice(0, 8)}`;
+  // The `r` keeps the tag alphanumeric: eight hex digits that happen to be all
+  // numbers with a leading zero are not a valid semver prerelease, and the
+  // config store refuses to start on that version.
+  const version = `0.0.0-contract.r${randomUUID().slice(0, 8)}`;
   const child = spawn(process.execPath, [TSX_CLI, '--import', RECORD_MOUNT_PATHS, 'src/index.ts'], {
     cwd: SERVER_DIR,
     env: serverEnv(port, dorkHome, version, extra),

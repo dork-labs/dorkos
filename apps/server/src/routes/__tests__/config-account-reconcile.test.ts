@@ -57,16 +57,30 @@ async function mountApp(): Promise<Mods> {
   const configManager = configModule.configManager;
   const { setAccountUsageStore } = await import('../../services/core/usage/current-usage-store.js');
   const configRouter = (await import('../config.js')).default;
-  const runtimesRouter = (await import('../runtimes.js')).default;
+  const { createRuntimesRoutes } = await import('../runtimes.js');
+  const { honoGroupListener } = await import('../../http/__tests__/hono-group-listener.js');
+  const user = { userId: 'user_cockpit', credential: 'cookie' } as const;
   const app = express();
   app.use(express.json());
   app.use((_req, res, next) => {
-    res.locals.user = { userId: 'user_cockpit', credential: 'cookie' };
+    res.locals.user = user;
     next();
   });
   app.use('/api/config', configRouter);
-  app.use('/api/runtimes', runtimesRouter);
-  target.mount(app);
+  // The runtimes routes answer from the Hono `/api` app, in front of the config
+  // router still on Express, as the running server routes them.
+  target.mount(
+    honoGroupListener(
+      { path: '/api/runtimes', routes: createRuntimesRoutes() },
+      {
+        legacy: app,
+        before: (c, next) => {
+          c.set('user', user);
+          return next();
+        },
+      }
+    )
+  );
   return { configManager, setAccountUsageStore };
 }
 

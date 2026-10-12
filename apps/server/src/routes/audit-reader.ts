@@ -19,7 +19,7 @@ import { auditTrail } from '../services/audit/audit-trail.js';
 import { OWNER_READER, type AuditReader } from '../services/audit/visibility.js';
 import { readableSessionIds } from '../services/audit/session-visibility.js';
 import { getRequestAgentIdentity, presentsAgentIdentity } from '../middleware/agent-identity.js';
-import { sendError } from '../lib/route-utils.js';
+import { errorBody } from '../lib/route-utils.js';
 import type { RequestFacts } from '../http/request-facts.js';
 
 /** What {@link readerOfRequest} reads: the raw agent header and the resolved identity. */
@@ -71,6 +71,21 @@ function readerOf(
 }
 
 /**
+ * Whether this caller may read the session. A Hono route that may not answers
+ * `c.json(SESSION_NOT_FOUND_BODY, 404)`, which is what
+ * {@link refuseUnreadableSession} writes on Express.
+ *
+ * @param request - The request's facts (`http/request-facts.ts`).
+ * @param sessionId - The session asked for.
+ */
+export function canReadSession(request: ReaderFacts, sessionId: string): boolean {
+  return readableSessionIds(readerOfRequest(request), [sessionId]).has(sessionId);
+}
+
+/** The 404 a caller gets for a session it may not read. */
+export const SESSION_NOT_FOUND_BODY = errorBody('Session not found', 'SESSION_NOT_FOUND');
+
+/**
  * Answer 404 when this caller may not read the session, and say so.
  *
  * @param req - The request.
@@ -85,7 +100,7 @@ export function refuseUnreadableSession(
 ): boolean {
   const reader = readerOfRequest(req, res);
   if (readableSessionIds(reader, [sessionId]).has(sessionId)) return false;
-  sendError(res, 404, 'Session not found', 'SESSION_NOT_FOUND');
+  res.status(404).json(SESSION_NOT_FOUND_BODY);
   return true;
 }
 

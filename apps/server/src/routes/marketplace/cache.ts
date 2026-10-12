@@ -9,10 +9,10 @@ import { logger } from '../../lib/logger.js';
 import type { MarketplaceCache } from '../../services/marketplace/cache/marketplace-cache.js';
 import { UnreadableInstallsError } from '../../services/marketplace/cache/package-cache-retention.js';
 import { directorySize } from '../../services/marketplace/lib/directory-size.js';
-import type { MarketplaceRouteDeps } from '../marketplace.js';
+import type { MarketplaceRouteDeps, MarketplaceRoutes } from '../marketplace.js';
 import type { MarketplaceRouteContext } from './context.js';
-import { safeReaddir } from './shared.js';
-import type { Router } from 'express';
+import { readJsonBody } from '../../http/request-body.js';
+import { safeReaddir, validationFailed } from './shared.js';
 
 /**
  * Body schema for `POST /api/marketplace/cache/prune`: no options. Strict, so
@@ -54,12 +54,12 @@ async function sumPackageSizes(packages: { path: string }[]): Promise<number> {
 /**
  * Register the `/cache` routes on the marketplace router.
  *
- * @param router - The marketplace router.
+ * @param app - The marketplace routes.
  * @param deps - The router's injected dependencies.
  * @param _ctx - The helpers every route group shares.
  */
 export function mountCacheRoutes(
-  router: Router,
+  app: MarketplaceRoutes,
   deps: MarketplaceRouteDeps,
   _ctx: MarketplaceRouteContext
 ): void {
@@ -67,40 +67,36 @@ export function mountCacheRoutes(
 
   // GET /cache -- cache status (marketplace count, package count, total bytes,
   // and whether automatic cleanup is paused)
-  router.get('/cache', async (_req, res) => {
+  app.get('/cache', async (c) => {
     try {
       const status = await computeCacheStatus(cache);
-      res.json({ ...status, cleanup: cacheRetention.status() });
+      return c.json({ ...status, cleanup: cacheRetention.status() });
     } catch (err) {
       logger.error('[Marketplace] Failed to read cache status', err);
-      res.status(500).json({ error: 'Failed to read cache status' });
+      return c.json({ error: 'Failed to read cache status' }, 500);
     }
   });
 
   // DELETE /cache -- wipe the marketplace cache
-  router.delete('/cache', async (_req, res) => {
+  app.delete('/cache', async (c) => {
     try {
       await cache.clear();
-      res.status(204).send();
+      return c.body(null, 204);
     } catch (err) {
       logger.error('[Marketplace] Failed to clear cache', err);
-      res.status(500).json({ error: 'Failed to clear marketplace cache' });
+      return c.json({ error: 'Failed to clear marketplace cache' }, 500);
     }
   });
 
   // POST /cache/prune -- remove cached packages no install needs (the same
   // sweep that runs after every fetch; see package-cache-retention.ts)
-  router.post('/cache/prune', async (req, res) => {
-    const parsed = PruneCacheBodySchema.safeParse(req.body ?? {});
-    if (!parsed.success) {
-      return res
-        .status(400)
-        .json({ error: 'Validation failed', details: z.flattenError(parsed.error) });
-    }
+  app.post('/cache/prune', async (c) => {
+    const parsed = PruneCacheBodySchema.safeParse(readJsonBody(c, { emptyAs: {} }));
+    if (!parsed.success) return validationFailed(c, parsed.error);
 
     try {
       const { removed, freedBytes } = await cacheRetention.sweep();
-      return res.json({
+      return c.json({
         removed: removed.map((pkg) => ({
           packageName: pkg.packageName,
           commitSha: pkg.commitSha,
@@ -115,13 +111,16 @@ export function mountCacheRoutes(
         logger.warn('[Marketplace] cache prune stopped: could not read every install', {
           error: err.message,
         });
-        return res.status(503).json({
-          error:
-            "Couldn't check every installed package, so nothing was removed. The server log names the folder it couldn't read.",
-        });
+        return c.json(
+          {
+            error:
+              "Couldn't check every installed package, so nothing was removed. The server log names the folder it couldn't read.",
+          },
+          503
+        );
       }
       logger.error('[Marketplace] Failed to prune cache', err);
-      return res.status(500).json({ error: 'Failed to prune marketplace cache' });
+      return c.json({ error: 'Failed to prune marketplace cache' }, 500);
     }
   });
 }

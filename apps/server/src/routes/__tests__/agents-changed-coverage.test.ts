@@ -44,7 +44,6 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import express from 'express';
 import request from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
 
@@ -79,8 +78,16 @@ import { createTestDb } from '@dorkos/test-utils/db';
 import type { Db } from '@dorkos/db';
 import { readManifest, writeManifest } from '@dorkos/shared/manifest';
 import { AGENT_MANIFEST_PATH, UNINSTALLED_AGENT_PATH } from '@dorkos/marketplace';
-import { createMeshRouter } from '../mesh.js';
-import { createAgentsRouter } from '../agents.js';
+import type { RequestListener } from 'node:http';
+import { createMeshRoutes } from '../mesh.js';
+import { createAgentsRoutes } from '../agents.js';
+import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
+
+// The `/api` chain reads config (login, the host allowlist); nothing is set.
+vi.mock('../../services/core/config-manager.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../services/core/config-manager.js')>()),
+  configManager: { get: vi.fn().mockReturnValue(null), set: vi.fn() },
+}));
 import { eventFanOut } from '../../services/core/event-fan-out.js';
 import { setOnAgentCreated } from '../../services/core/agent-created-hook.js';
 import { wireLiveChangeBroadcasts } from '../../services/core/streams/live-change-broadcasts.js';
@@ -113,7 +120,7 @@ async function makeTempDir(prefix: string): Promise<string> {
 let db: Db;
 let relay: RelayCore;
 let mesh: MeshCore;
-let app: express.Application;
+let app: RequestListener;
 let base: string;
 let agentsHome: string;
 /** Every `agents_changed` payload the fan-out carried during a case. */
@@ -146,10 +153,10 @@ beforeEach(async () => {
   // needs it, and leaving another suite's listener attached would run it.
   setOnAgentCreated(null);
 
-  app = express();
-  app.use(express.json());
-  app.use('/api/mesh', createMeshRouter({ meshCore: mesh }));
-  app.use('/api/agents', createAgentsRouter(mesh));
+  app = honoGroupListener([
+    { path: '/api/mesh', routes: createMeshRoutes({ meshCore: mesh }) },
+    { path: '/api/agents', routes: createAgentsRoutes({ meshCore: mesh }) },
+  ]);
   fixtureTarget.mount(app);
 });
 

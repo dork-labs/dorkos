@@ -24,7 +24,6 @@
  * @module routes/__tests__/tasks-file-write
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import express from 'express';
 import request from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
 import fs from 'node:fs/promises';
@@ -63,7 +62,8 @@ vi.mock('@dorkos/skills/writer', async (importOriginal) => {
 import { parseSkillFile, readRawFrontmatter } from '@dorkos/skills/parser';
 import { SkillFrontmatterSchema } from '@dorkos/skills/schema';
 import { SKILL_FILENAME } from '@dorkos/skills/constants';
-import { createTasksRouter } from '../tasks.js';
+import { createTasksRoutes } from '../tasks.js';
+import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
 import { TaskRegistrar } from '../../services/tasks/task-registrar.js';
 import { TaskReconciler } from '../../services/tasks/task-reconciler.js';
 import { ScheduleIdentityRegistry } from '../../services/tasks/schedule-identity.js';
@@ -88,7 +88,6 @@ function createMockScheduler(): TaskSchedulerService {
 }
 
 describe('PATCH /api/tasks/:id and the file on disk', () => {
-  let app: express.Application;
   let store: TaskStore;
   let db: Db;
   let dorkHome: string;
@@ -136,14 +135,17 @@ describe('PATCH /api/tasks/:id and the file on disk', () => {
     store = new TaskStore(db);
     dorkHome = await fs.mkdtemp(path.join(os.tmpdir(), 'dork-tasks-file-write-'));
 
-    app = express();
-    app.use(express.json());
-    app.use(
-      '/api/tasks',
-      createTasksRouter(store, scheduler, new TaskRegistrar({ store, scheduler }), dorkHome)
+    fixtureTarget.mount(
+      honoGroupListener({
+        path: '/api/tasks',
+        routes: createTasksRoutes({
+          store,
+          scheduler,
+          registrar: new TaskRegistrar({ store, scheduler }),
+          dorkHome,
+        }),
+      })
     );
-
-    fixtureTarget.mount(app);
   });
 
   afterEach(async () => {
@@ -421,7 +423,6 @@ describe('PATCH /api/tasks/:id and the file on disk', () => {
  * Approve, which changes nothing in the file at all.
  */
 describe('PATCH /api/tasks/:id and a schedule-block file', () => {
-  let app: express.Application;
   let store: TaskStore;
   let db: Db;
   let dorkHome: string;
@@ -461,14 +462,17 @@ describe('PATCH /api/tasks/:id and a schedule-block file', () => {
     store = new TaskStore(db);
     dorkHome = await fs.mkdtemp(path.join(os.tmpdir(), 'dork-tasks-block-'));
 
-    app = express();
-    app.use(express.json());
-    app.use(
-      '/api/tasks',
-      createTasksRouter(store, scheduler, new TaskRegistrar({ store, scheduler }), dorkHome)
+    fixtureTarget.mount(
+      honoGroupListener({
+        path: '/api/tasks',
+        routes: createTasksRoutes({
+          store,
+          scheduler,
+          registrar: new TaskRegistrar({ store, scheduler }),
+          dorkHome,
+        }),
+      })
     );
-
-    fixtureTarget.mount(app);
   });
 
   afterEach(async () => {
@@ -659,7 +663,6 @@ describe('PATCH /api/tasks/:id and a schedule-block file', () => {
  * still send it back for a look.
  */
 describe('PATCH /api/tasks/:id and a live schedule’s approval', () => {
-  let app: express.Application;
   let store: TaskStore;
   let db: Db;
   let dorkHome: string;
@@ -678,11 +681,12 @@ describe('PATCH /api/tasks/:id and a live schedule’s approval', () => {
     await fs.mkdir(path.join(dorkHome, 'skills'), { recursive: true });
     reconciler.addRoot(skillsRoot(path.join(dorkHome, 'skills'), 'global'));
 
-    app = express();
-    app.use(express.json());
-    app.use('/api/tasks', createTasksRouter(store, scheduler, registrar, dorkHome));
-
-    fixtureTarget.mount(app);
+    fixtureTarget.mount(
+      honoGroupListener({
+        path: '/api/tasks',
+        routes: createTasksRoutes({ store, scheduler, registrar, dorkHome }),
+      })
+    );
   });
 
   afterEach(async () => {

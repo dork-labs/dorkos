@@ -9,7 +9,6 @@
  *
  * @module startup/marketplace
  */
-import type { Express } from 'express';
 import path from 'path';
 import { existsSync } from 'node:fs';
 import { HARNESS_MANIFEST_PATH } from '@dorkos/harness';
@@ -66,7 +65,6 @@ import {
 import { createMeshAgentRegistry } from '../services/marketplace/flows/mesh-agent-registry.js';
 import { UpdateFlow } from '../services/marketplace/flows/update.js';
 import { MarketplaceInstaller } from '../services/marketplace/installer/marketplace-installer.js';
-import { createMarketplaceRouter } from '../routes/marketplace.js';
 import { runAutoProjection } from '../services/harness/auto-project.js';
 import { globalConsentRecorder } from '../services/marketplace/consent/global-plugin-consent.js';
 import { askAboutWithheldGlobalPlugins } from '../services/marketplace/consent/ask-withheld-global-plugins.js';
@@ -83,8 +81,6 @@ import { operatorAudience } from '../services/notifications/notification-entitle
 
 /** What starting the marketplace needs from the startup that came before it. */
 export interface MarketplaceStartupDeps {
-  /** The Express app the routes mount on. */
-  app: Express;
   /** The resolved DorkOS data directory. */
   dorkHome: string;
   /** The extension manager, when extensions initialized. */
@@ -109,7 +105,10 @@ export interface MarketplaceStartupDeps {
   currentCapabilityRegistry: () => CapabilityRegistry | undefined;
   /** The names of the routers mounted so far, for the boot log line. */
   mountedRouters: string[];
-  /** What the Hono `/api` app reads; this sets `shapes` when the marketplace starts. */
+  /**
+   * What the Hono `/api` app reads; this sets `marketplace` and `shapes` when
+   * the marketplace starts.
+   */
   honoDeps: HonoApiDeps;
 }
 
@@ -134,7 +133,6 @@ export interface StartedMarketplace {
  */
 export async function startMarketplace(deps: MarketplaceStartupDeps): Promise<StartedMarketplace> {
   const {
-    app,
     dorkHome,
     extensionManager,
     adapterManager,
@@ -446,32 +444,32 @@ export async function startMarketplace(deps: MarketplaceStartupDeps): Promise<St
     templateConfirmationProvider = confirmationProvider;
     agentPackageInstaller = { installer: marketplaceInstaller, dorkHome };
 
-    app.use(
-      '/api/marketplace',
-      createMarketplaceRouter({
-        // Read lazily: the registry is composed further down this same boot, so
-        // a direct reference here would capture `undefined` forever. Until it
-        // exists, the marketplace mutation routes fail closed.
-        capabilityRegistry: currentCapabilityRegistry,
-        sourceManager: marketplaceSourceManager,
-        cache: marketplaceCache,
-        cacheRetention: marketplaceCacheRetention,
-        fetcher: marketplaceFetcher,
-        installer: marketplaceInstaller,
-        uninstallFlow: marketplaceUninstallFlow,
-        updateFlow: marketplaceUpdateFlow,
-        dorkHome,
-        listAgentScopes,
-        onPluginsChanged,
-        confirmationProvider,
-        consent: globalConsentRecorder,
-        heldBackCards: {
-          approvals: approvalService,
-          onGranted: () => claudeRuntime?.refreshActivatedPlugins(),
-        },
-        devLinks: devLinkService,
-      })
-    );
+    // The marketplace routes (`/api/marketplace`), served from the Hono `/api`
+    // app with what this sets on `honoDeps`; never mounted when the marketplace
+    // did not start.
+    deps.honoDeps.marketplace = {
+      // Read lazily: the registry is composed further down this same boot, so
+      // a direct reference here would capture `undefined` forever. Until it
+      // exists, the marketplace mutation routes fail closed.
+      capabilityRegistry: currentCapabilityRegistry,
+      sourceManager: marketplaceSourceManager,
+      cache: marketplaceCache,
+      cacheRetention: marketplaceCacheRetention,
+      fetcher: marketplaceFetcher,
+      installer: marketplaceInstaller,
+      uninstallFlow: marketplaceUninstallFlow,
+      updateFlow: marketplaceUpdateFlow,
+      dorkHome,
+      listAgentScopes,
+      onPluginsChanged,
+      confirmationProvider,
+      consent: globalConsentRecorder,
+      heldBackCards: {
+        approvals: approvalService,
+        onGranted: () => claudeRuntime?.refreshActivatedPlugins(),
+      },
+      devLinks: devLinkService,
+    };
     mountedRouters.push('marketplace');
 
     // Shape routes (DOR-355), served from the Hono `/api` app with what this

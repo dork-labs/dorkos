@@ -19,7 +19,6 @@
  * @module routes/__tests__/tasks-agent-edit-park
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import express from 'express';
 import request from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
 import fs from 'node:fs/promises';
@@ -33,7 +32,8 @@ import { parseSkillFile } from '@dorkos/skills/parser';
 import { SkillFrontmatterSchema } from '@dorkos/skills/schema';
 import { hasSchedule } from '@dorkos/skills';
 import type { Task } from '@dorkos/shared/types';
-import { createTasksRouter } from '../tasks.js';
+import { createTasksRoutes } from '../tasks.js';
+import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
 import { TaskRegistrar } from '../../services/tasks/task-registrar.js';
 import { TaskStore } from '../../services/tasks/task-store.js';
 import type { TaskSchedulerService } from '../../services/tasks/task-scheduler-service.js';
@@ -113,13 +113,17 @@ describe('PATCH /api/tasks/:id — an agent edits a file-backed schedule (DOR-23
     filePath = path.join(dir, 'SKILL.md');
     await fs.writeFile(filePath, SKILL, 'utf-8');
 
-    const app = express();
-    app.use(express.json());
-    app.use(
-      '/api/tasks',
-      createTasksRouter(store, scheduler, new TaskRegistrar({ store, scheduler }), dorkHome)
+    fixtureTarget.mount(
+      honoGroupListener({
+        path: '/api/tasks',
+        routes: createTasksRoutes({
+          store,
+          scheduler,
+          registrar: new TaskRegistrar({ store, scheduler }),
+          dorkHome,
+        }),
+      })
     );
-    fixtureTarget.mount(app);
   });
 
   afterEach(async () => {

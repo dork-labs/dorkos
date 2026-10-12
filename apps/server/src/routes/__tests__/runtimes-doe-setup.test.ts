@@ -1,40 +1,52 @@
 /** @vitest-environment node */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import express from 'express';
 import { UserConfigSchema } from '@dorkos/shared/config-schema';
 import request from '@dorkos/test-utils/supertest';
 import { listeningServer } from '@dorkos/test-utils/listening-server';
-import type { RequestUser } from '../../../core/auth/session-gate.js';
-vi.mock('../../../core/config-manager.js', () => ({
+import type { RequestUser } from '../../services/core/auth/session-gate.js';
+vi.mock('../../services/core/config-manager.js', () => ({
   configManager: { get: vi.fn(), set: vi.fn() },
 }));
-vi.mock('../../../core/auth/index.js', async (original) => ({
-  ...(await original<typeof import('../../../core/auth/index.js')>()),
+vi.mock('../../services/core/auth/index.js', async (original) => ({
+  ...(await original<typeof import('../../services/core/auth/index.js')>()),
   readOwnerAccount: () => ({ id: 'owner' }),
 }));
-vi.mock('../../../core/operator/config-write.js', async (original) => ({
-  ...(await original<typeof import('../../../core/operator/config-write.js')>()),
+// The session gate lets every request through: the cases are about the
+// routes' own bars, and the fixture header below stands in for the user the
+// gate would have proved.
+vi.mock('../../services/core/auth/session-gate.js', async (original) => ({
+  ...(await original<typeof import('../../services/core/auth/session-gate.js')>()),
+  decideSessionGate: vi.fn(async () => ({ allowed: true })),
+}));
+vi.mock('../../services/core/operator/config-write.js', async (original) => ({
+  ...(await original<typeof import('../../services/core/operator/config-write.js')>()),
   logConfigWrite: vi.fn(),
 }));
-vi.mock('../doe-credentials.js', () => ({ storeDoeCredential: vi.fn() }));
-import { configManager } from '../../../core/config-manager.js';
-import { logConfigWrite } from '../../../core/operator/config-write.js';
-import { storeDoeCredential } from '../doe-credentials.js';
-import doeSetupRouter from '../doe-setup-router.js';
+vi.mock('../../services/runtimes/connect/doe-credentials.js', () => ({
+  storeDoeCredential: vi.fn(),
+}));
+import { configManager } from '../../services/core/config-manager.js';
+import { logConfigWrite } from '../../services/core/operator/config-write.js';
+import { storeDoeCredential } from '../../services/runtimes/connect/doe-credentials.js';
+import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
+import { createDoeSetupRoutes } from '../runtimes-doe-setup.js';
 
-const app = express();
-app.use(express.json());
-app.use((req, res, next) => {
-  const kind = req.headers['x-fixture-user'];
-  if (kind)
-    res.locals.user = {
-      userId: kind === 'member-cookie' ? 'member' : 'owner',
-      credential: kind === 'owner-api-key' ? 'api-key' : 'cookie',
-    } satisfies RequestUser;
-  next();
-});
-app.use('/doe', doeSetupRouter);
-const server = listeningServer(app);
+const server = listeningServer(
+  honoGroupListener(
+    { path: '/api/runtimes/doe', routes: createDoeSetupRoutes() },
+    {
+      before: (c, next) => {
+        const kind = c.req.header('x-fixture-user');
+        if (kind)
+          c.set('user', {
+            userId: kind === 'member-cookie' ? 'member' : 'owner',
+            credential: kind === 'owner-api-key' ? 'api-key' : 'cookie',
+          } satisfies RequestUser);
+        return next();
+      },
+    }
+  )
+);
 const inference = {
   source: 'api-key' as const,
   provider: 'fixture',
@@ -52,10 +64,10 @@ beforeEach(() => {
   vi.mocked(storeDoeCredential).mockResolvedValue(inference);
 });
 const writes = [
-  { method: 'put' as const, path: '/doe/inference', body: inference },
+  { method: 'put' as const, path: '/api/runtimes/doe/inference', body: inference },
   {
     method: 'post' as const,
-    path: '/doe/credential',
+    path: '/api/runtimes/doe/credential',
     body: { inference, secret: 'offline-fixture-secret' },
   },
 ];
@@ -107,7 +119,9 @@ describe('owner authorization before DorkOS model setup effects', () => {
   }
   it('audits the inference metadata write with the exact before and after section', async () => {
     const before = config.runtimes;
-    expect((await request(server).put('/doe/inference').send(inference)).status).toBe(200);
+    expect((await request(server).put('/api/runtimes/doe/inference').send(inference)).status).toBe(
+      200
+    );
     expect(logConfigWrite).toHaveBeenCalledWith(
       'the DorkOS model setup',
       'runtimes',
@@ -118,7 +132,7 @@ describe('owner authorization before DorkOS model setup effects', () => {
 });
 
 it('says which format DorkOS would pick in, and null when credits are not in use', async () => {
-  expect((await request(server).get('/doe/inference')).body).toEqual({
+  expect((await request(server).get('/api/runtimes/doe/inference')).body).toEqual({
     inference: null,
     hasKey: false,
     autoProtocol: null,
@@ -132,7 +146,7 @@ for (const injected of [
 ]) {
   it(`rejects client-owned credential metadata ${Object.keys(injected).join(', ')} before mutation`, async () => {
     const response = await request(server)
-      .put('/doe/inference')
+      .put('/api/runtimes/doe/inference')
       .send({ ...inference, ...injected });
     expect(response.status).toBe(400);
     expect(configManager.set).not.toHaveBeenCalled();
@@ -149,7 +163,7 @@ it('keeps the server-owned reference only when metadata retains its original end
   expect(
     (
       await request(server)
-        .put('/doe/inference')
+        .put('/api/runtimes/doe/inference')
         .send({ ...inference, model: 'new-model' })
     ).status
   ).toBe(200);
@@ -165,7 +179,7 @@ it('keeps the server-owned reference only when metadata retains its original end
   expect(
     (
       await request(server)
-        .put('/doe/inference')
+        .put('/api/runtimes/doe/inference')
         .send({ ...inference, endpoint: 'http://127.0.0.1:5555/v1' })
     ).status
   ).toBe(200);
@@ -179,7 +193,9 @@ for (const invalid of [
   { ...inference, maxOutputTokens: inference.contextWindow + 1 },
 ]) {
   it(`retains ${invalid.source === 'local' ? 'local endpoint' : 'output token'} validation on metadata input`, async () => {
-    expect((await request(server).put('/doe/inference').send(invalid)).status).toBe(400);
+    expect((await request(server).put('/api/runtimes/doe/inference').send(invalid)).status).toBe(
+      400
+    );
     expect(configManager.set).not.toHaveBeenCalled();
     expect(logConfigWrite).not.toHaveBeenCalled();
   });

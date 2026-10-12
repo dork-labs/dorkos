@@ -1,15 +1,21 @@
 import { describe, it, expect, afterEach, vi } from 'vitest';
-import express from 'express';
+
+// The `/api` chain reads config (login, the host allowlist); nothing is set.
+vi.mock('../../services/core/config-manager.js', () => ({
+  configManager: { get: vi.fn().mockReturnValue(null), set: vi.fn() },
+}));
+
 import request from '@dorkos/test-utils/supertest';
 import { listeningServer } from '@dorkos/test-utils/listening-server';
 import type { AccountUsage } from '@dorkos/shared/account-usage';
-import runtimesRouter from '../runtimes.js';
+import { createRuntimesRoutes } from '../runtimes.js';
+import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
 import type { AccountUsageStore } from '../../services/core/usage/account-usage-store.js';
 import { setAccountUsageStore } from '../../services/core/usage/current-usage-store.js';
 
-const app = express();
-app.use('/api/runtimes', runtimesRouter);
-const server = listeningServer(app);
+const server = listeningServer(
+  honoGroupListener({ path: '/api/runtimes', routes: createRuntimesRoutes() })
+);
 
 const usage = { runtime: 'codex', accountId: 'default' } as AccountUsage;
 

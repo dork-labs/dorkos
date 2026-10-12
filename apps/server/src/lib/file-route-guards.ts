@@ -1,6 +1,6 @@
 /**
  * Shared path-safety guards for the workbench file routes (`routes/files.ts`,
- * `routes/diff.ts`).
+ * `routes/diff.ts`, `routes/session-recording.ts`).
  *
  * Every route that resolves a caller-supplied path inside a session's working
  * directory MUST go through {@link resolveWithinCwd} — it double-validates
@@ -144,6 +144,36 @@ export async function resolveWithinCwd(
   return { validatedCwd, resolved };
 }
 
+/** The answer {@link pathErrorReply} gives a path the guards refused. */
+export interface PathErrorReply {
+  /** `400` for a NUL byte or an unusable path, `403` for one outside the boundary. */
+  status: 400 | 403;
+  /** The body. */
+  body: { error: string; code: string };
+}
+
+/**
+ * Map a boundary/path-resolution error to an HTTP answer, or `null` for an
+ * unexpected error the caller should treat as a 500. A Hono route returns
+ * `c.json(reply.body, reply.status)`; {@link sendPathError} writes it on
+ * Express.
+ *
+ * @param err - The thrown error to classify.
+ */
+export function pathErrorReply(err: unknown): PathErrorReply | null {
+  if (err instanceof BoundaryError) {
+    return {
+      status: err.code === 'NULL_BYTE' ? 400 : 403,
+      body: { error: err.message, code: err.code },
+    };
+  }
+  const code = (err as NodeJS.ErrnoException).code;
+  if (code === 'ELOOP' || code === 'ENOTDIR' || code === 'ENAMETOOLONG') {
+    return { status: 400, body: { error: 'Invalid path', code } };
+  }
+  return null;
+}
+
 /**
  * Map a boundary/path-resolution error to an HTTP response. Returns `true` when
  * it handled the error (caller should stop); `false` for an unexpected error the
@@ -153,15 +183,8 @@ export async function resolveWithinCwd(
  * @param err - The thrown error to classify.
  */
 export function sendPathError(res: Response, err: unknown): boolean {
-  if (err instanceof BoundaryError) {
-    const status = err.code === 'NULL_BYTE' ? 400 : 403;
-    res.status(status).json({ error: err.message, code: err.code });
-    return true;
-  }
-  const code = (err as NodeJS.ErrnoException).code;
-  if (code === 'ELOOP' || code === 'ENOTDIR' || code === 'ENAMETOOLONG') {
-    res.status(400).json({ error: 'Invalid path', code });
-    return true;
-  }
-  return false;
+  const reply = pathErrorReply(err);
+  if (!reply) return false;
+  res.status(reply.status).json(reply.body);
+  return true;
 }

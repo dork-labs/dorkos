@@ -44,7 +44,6 @@ vi.mock('../../services/tasks/lifecycle/schedule-credits-model.js', () => ({
   ),
 }));
 
-import express from 'express';
 import request from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
 import fs from 'node:fs/promises';
@@ -52,7 +51,8 @@ import os from 'node:os';
 import path from 'node:path';
 import { createTestDb } from '@dorkos/test-utils/db';
 import type { Task } from '@dorkos/shared/types';
-import { createTasksRouter } from '../tasks.js';
+import { createTasksRoutes } from '../tasks.js';
+import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
 import { TaskRegistrar } from '../../services/tasks/task-registrar.js';
 import { TaskStore } from '../../services/tasks/task-store.js';
 import type { TaskSchedulerService } from '../../services/tasks/task-scheduler-service.js';
@@ -93,20 +93,18 @@ beforeEach(async () => {
   store = new TaskStore(createTestDb());
   dorkHome = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'dork-task-acct-')));
   emit = vi.fn(async () => undefined);
-  const app = express();
-  app.use(express.json());
-  app.use(
-    '/api/tasks',
-    createTasksRouter(
-      store,
-      scheduler,
-      new TaskRegistrar({ store, scheduler }),
-      dorkHome,
-      undefined,
-      { emit } as unknown as ActivityService
-    )
+  fixtureTarget.mount(
+    honoGroupListener({
+      path: '/api/tasks',
+      routes: createTasksRoutes({
+        store,
+        scheduler,
+        registrar: new TaskRegistrar({ store, scheduler }),
+        dorkHome,
+        activity: { emit } as unknown as ActivityService,
+      }),
+    })
   );
-  fixtureTarget.mount(app);
 });
 
 afterEach(async () => {

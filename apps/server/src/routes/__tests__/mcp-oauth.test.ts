@@ -4,14 +4,21 @@
  *
  * @vitest-environment node
  */
+import type { RequestListener } from 'node:http';
 import { describe, it, expect, vi } from 'vitest';
-import express from 'express';
 import request from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
 
-import { createMcpOAuthRouter } from '../mcp-oauth.js';
+import { createMcpOAuthRoutes } from '../mcp-oauth.js';
+import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
 import { getLocalCockpitOrigin } from '../../lib/trusted-origins.js';
+import { markManagedIngress } from '../../services/core/remote/ingress-mark.js';
 import type { AgentMcpOAuthService } from '../../services/mesh/agent-mcp-oauth-service.js';
+
+// The `/api` chain reads config (login, the host allowlist); nothing is set.
+vi.mock('../../services/core/config-manager.js', () => ({
+  configManager: { get: vi.fn().mockReturnValue(null), set: vi.fn() },
+}));
 
 const fixtureTarget = swappableServer();
 
@@ -28,10 +35,8 @@ function stubOAuth(
   } as unknown as AgentMcpOAuthService;
 }
 
-function appWith(oauth: AgentMcpOAuthService): express.Express {
-  const app = express();
-  app.use('/api/agents/mcp-oauth', createMcpOAuthRouter(oauth));
-  return app;
+function appWith(oauth: AgentMcpOAuthService): RequestListener {
+  return honoGroupListener({ path: '/api/agents/mcp-oauth', routes: createMcpOAuthRoutes(oauth) });
 }
 
 describe('GET /api/agents/mcp-oauth/callback', () => {
@@ -92,6 +97,24 @@ describe('GET /api/agents/mcp-oauth/callback', () => {
       .set('Host', 'evil.example.com');
 
     expect(res.status).toBe(403);
+    expect(spy).not.toHaveBeenCalled();
+  });
+
+  it('refuses managed remote access even with a local Host, on the route itself', async () => {
+    // The Host above is refused by the `/api` chain's host guard before the
+    // route runs. This request clears every chain step (a loopback peer and a
+    // local Host) and is only marked as having come through the managed
+    // ingress, so the 403 can come from nowhere but the route's own check.
+    const spy = vi.fn();
+    const listener = appWith(stubOAuth({ connected: true }, spy));
+    const server = fixtureTarget.mount((req, res) => {
+      markManagedIngress(req);
+      listener(req, res);
+    });
+    const res = await request(server).get('/api/agents/mcp-oauth/callback?state=s1&code=c1');
+
+    expect(res.status).toBe(403);
+    expect(res.text).toBe('Not available.');
     expect(spy).not.toHaveBeenCalled();
   });
 });

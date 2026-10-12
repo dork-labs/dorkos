@@ -3,7 +3,8 @@
  *
  * @module routes/marketplace/shared
  */
-import type { Request, Response } from 'express';
+import type { Context } from 'hono';
+import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import { readdir } from 'node:fs/promises';
 import { z } from 'zod';
 import {
@@ -37,6 +38,8 @@ import {
 import { BoundaryError } from '../../lib/boundary.js';
 import { DevLinkError } from '../../services/marketplace/dev-links/errors.js';
 import { AdapterError } from '../../services/relay/adapter-error.js';
+import { readQuery } from '../../http/request-query.js';
+import { validationFailureBody } from '../../lib/route-utils.js';
 
 /** Machine-readable code on the 403 for a batch that would need approval per install. */
 export const BATCH_UPDATE_NEEDS_APPROVAL_CODE = 'batch_update_needs_approval';
@@ -74,12 +77,36 @@ const DISCLOSURE_CHANGED_CODE = 'disclosure_changed';
 
 /**
  * Whether a list request asked for each install's integrity (`?verify=true`,
- * DOR-2197). Opt-in, because verifying hashes every shipped file.
+ * DOR-2197). Opt-in, because verifying hashes every shipped file. A repeated
+ * `verify` reads as an array, which is not a yes.
  *
- * @param req - The request.
+ * @param c - The request.
  */
-export function wantsVerify(req: Request): boolean {
-  return req.query.verify === 'true';
+export function wantsVerify(c: Context): boolean {
+  return readQuery(c).verify === 'true';
+}
+
+/**
+ * Answer with the status and body {@link mapErrorToStatus} chose.
+ *
+ * @param c - The request to answer.
+ * @param err - What was thrown.
+ * @returns The sent response.
+ */
+export function errorResponse(c: Context, err: unknown): Response {
+  const mapped = mapErrorToStatus(err);
+  return c.json(mapped.body, mapped.status as ContentfulStatusCode);
+}
+
+/**
+ * The `400` a body that does not fit its schema gets.
+ *
+ * @param c - The request to answer.
+ * @param error - The schema's error.
+ * @returns The sent response.
+ */
+export function validationFailed(c: Context, error: z.ZodError): Response {
+  return c.json(validationFailureBody(error), 400);
 }
 
 /**
@@ -206,14 +233,17 @@ export function fromOutdatedClient(body: unknown): boolean {
  * says what to do, instead of a schema error (DOR-2306): updates now show what
  * each new version runs before anything is applied, which an old client cannot.
  */
-export function outdatedClientResponse(res: Response): Response {
-  return res.status(400).json({
-    error:
-      'This dorkos CLI is older than the DorkOS it is talking to, so nothing was updated. ' +
-      'Update the CLI (npm install -g dorkos), then run the update again: it now shows what ' +
-      'each new version runs before it installs anything.',
-    code: OUTDATED_CLIENT_CODE,
-  });
+export function outdatedClientResponse(c: Context): Response {
+  return c.json(
+    {
+      error:
+        'This dorkos CLI is older than the DorkOS it is talking to, so nothing was updated. ' +
+        'Update the CLI (npm install -g dorkos), then run the update again: it now shows what ' +
+        'each new version runs before it installs anything.',
+      code: OUTDATED_CLIENT_CODE,
+    },
+    400
+  );
 }
 
 /** Why `POST /updates` ran nothing, as its gate decided. */
@@ -230,32 +260,38 @@ export type UpdateRefusal =
  * shown, 202 while a person decides, 403 when they said no. Nothing was
  * reinstalled in any of them.
  *
- * @param res - The response to answer on.
+ * @param c - The request to answer.
  * @param refusal - Why the apply ran nothing.
  * @returns The sent response.
  */
-export function updateRefusalResponse(res: Response, refusal: UpdateRefusal): Response {
+export function updateRefusalResponse(c: Context, refusal: UpdateRefusal): Response {
   switch (refusal.kind) {
     case 'changed':
-      return res.status(409).json({
-        error:
-          'What an update would install is not what was shown: a newer version arrived, or the ' +
-          'new version now runs something else. Nothing was changed. Check again and review it.',
-        code: DISCLOSURE_CHANGED_CODE,
-        changed: refusal.changed,
-      });
+      return c.json(
+        {
+          error:
+            'What an update would install is not what was shown: a newer version arrived, or the ' +
+            'new version now runs something else. Nothing was changed. Check again and review it.',
+          code: DISCLOSURE_CHANGED_CODE,
+          changed: refusal.changed,
+        },
+        409
+      );
     case 'pending':
-      return res.status(202).json({
-        status: 'requires_confirmation',
-        confirmationToken: refusal.token,
-        updates: refusal.updates,
-        message:
-          `${refusal.reason ? `${refusal.reason} ` : ''}A person must approve these updates in ` +
-          'DorkOS before anything is reinstalled. Send the same request again with this ' +
-          'confirmationToken once they have.',
-      });
+      return c.json(
+        {
+          status: 'requires_confirmation',
+          confirmationToken: refusal.token,
+          updates: refusal.updates,
+          message:
+            `${refusal.reason ? `${refusal.reason} ` : ''}A person must approve these updates in ` +
+            'DorkOS before anything is reinstalled. Send the same request again with this ' +
+            'confirmationToken once they have.',
+        },
+        202
+      );
     case 'declined':
-      return res.status(403).json({ status: 'declined', reason: refusal.reason });
+      return c.json({ status: 'declined', reason: refusal.reason }, 403);
   }
 }
 

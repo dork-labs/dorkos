@@ -9,7 +9,7 @@
  *
  * Driven through the real router and the REAL identity middleware, with only the
  * token→agent lookup faked, because the subject is that seam: what the middleware
- * leaves on `res.locals`, and what the route then writes into the feed. The digest
+ * leaves for the route, and what the route then writes into the feed. The digest
  * helper stays real so the "no token in the feed" probes exercise the production
  * path that logs an unresolvable token.
  *
@@ -86,11 +86,17 @@ vi.mock('../../lib/logger.js', () => ({
   logger: { error: vi.fn(), warn: vi.fn(), info: vi.fn(), debug: vi.fn() },
 }));
 
+// The `/api` chain reads config (login, the host allowlist); nothing is set.
+vi.mock('../../services/core/config-manager.js', () => ({
+  configManager: { get: vi.fn().mockReturnValue(null), set: vi.fn() },
+}));
+
 import request from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
-import express from 'express';
-import { createAgentsRouter } from '../agents.js';
-import { resolveAgentIdentity } from '../../middleware/agent-identity.js';
+import type { RequestListener } from 'node:http';
+import { createAgentsRoutes } from '../agents.js';
+import type { ActivityService } from '../../services/activity/activity-service.js';
+import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
 
 const fixtureTarget = swappableServer();
 const fixtureServer = fixtureTarget.server;
@@ -105,18 +111,14 @@ interface EmittedActor {
 
 let emitted: EmittedActor[];
 
-/** The app in `app.ts`'s middleware order: identity resolution, then the router. */
-function buildApp(): express.Express {
-  const app = express();
-  app.use(express.json());
-  app.use(resolveAgentIdentity);
-  app.locals.activityService = {
+/** The routes behind the real `/api` chain: identity resolution, then the group. */
+function buildApp(): RequestListener {
+  const activity = {
     emit: vi.fn(async (event: EmittedActor) => {
       emitted.push(event);
     }),
-  };
-  app.use('/api/agents', createAgentsRouter());
-  return app;
+  } as unknown as ActivityService;
+  return honoGroupListener({ path: '/api/agents', routes: createAgentsRoutes({ activity }) });
 }
 
 /** One write on this router, driven with whatever identity headers a test wants. */

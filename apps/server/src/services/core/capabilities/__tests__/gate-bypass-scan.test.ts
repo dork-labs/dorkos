@@ -143,8 +143,8 @@ const PROTECTED_EFFECTS: ProtectedEffect[] = [
         'start/stop — `tunnel.*` IS operator-only, so start runs the cookie bar then the agent bar before reaching here; stop runs neither on purpose, because stopping only narrows exposure (DOR-1738)',
       'routes/remote-access.ts':
         '`POST /api/remote-access/mode` with `off` writes `tunnel.enabled: false`, exactly as `POST /api/tunnel/stop` does, and only after the cookie, trusted-caller and local-caller bars; it only ever narrows (logConfigWrite: "turning remote access off")',
-      'services/runtimes/connect/doe-setup-router.ts':
-        'PUT /doe/inference writes only the fixed DorkOS inference metadata leaf after the loopback and refuseUnlessAccountOwner bars: identified agents and approval-token requesters are refused in every posture; under login an install-owner cookie is required. logConfigWrite records the before/after runtimes section as the DorkOS model setup',
+      'routes/runtimes-doe-setup.ts':
+        'PUT /api/runtimes/doe/inference writes only the fixed DorkOS inference metadata leaf after the loopback and refuseUnlessAccountOwner bars: identified agents and approval-token requesters are refused in every posture; under login an install-owner cookie is required. logConfigWrite records the before/after runtimes section as the DorkOS model setup. Moved with its routes from services/runtimes/connect/doe-setup-router.ts when they left Express (DOR-2802); the bars run on the request facts the Hono chain resolved, the same ones the Express pair carried',
       'services/core/agent-creator.ts':
         'records the agent it just created as the default (logConfigWrite: "the agent creator")',
       'services/core/auth/cloud-link.ts':
@@ -169,8 +169,8 @@ const PROTECTED_EFFECTS: ProtectedEffect[] = [
     what: 'stores an encrypted endpoint-bound DorkOS API key and updates its providers/runtimes config references',
     call: 'storeDoeCredential(',
     allowed: {
-      'services/runtimes/connect/doe-setup-router.ts':
-        'POST /doe/credential runs the same loopback and refuseUnlessAccountOwner bars before the encrypted store is touched; the helper audits both changed config sections without logging the plaintext key',
+      'routes/runtimes-doe-setup.ts':
+        'POST /api/runtimes/doe/credential runs the same loopback and refuseUnlessAccountOwner bars before the encrypted store is touched; the helper audits both changed config sections without logging the plaintext key. Moved with its routes from services/runtimes/connect/doe-setup-router.ts (DOR-2802)',
       'services/runtimes/connect/doe-credentials.ts': 'the definition itself',
       'routes/onboarding.ts':
         'POST /api/onboarding/first-run saves the key a person typed in the Own AI list, after the same loopback and refuseUnlessAccountOwner bars as POST /doe/credential, and only once the key passed `validateDoeSecret` and the service listed models with it. Its other writes (the default runtime, the DorkOS model setup, the credits record, the onboarding record, whose `firstRunPath`, `priorRuntime`, `welcomeEntryId`, `completedAt` and `dismissedAt` are operator-only) go through `services/core/onboarding/first-run.ts`, one call at a time, each leaving a logConfigWrite line (spec `one-minute-onboarding` §4.1)',

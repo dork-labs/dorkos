@@ -16,10 +16,11 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from 'vitest';
-import express from 'express';
+import { Hono } from 'hono';
 import request from '@dorkos/test-utils/supertest';
 import { listeningServer } from '@dorkos/test-utils/listening-server';
 import { logger } from '../../lib/logger.js';
+import type { ApiEnv } from '../../http/api-chain.js';
 import listFixture from '@dork-labs/cloud-api/fixtures/v1/communities/list.json' with { type: 'json' };
 import movesFixture from '@dork-labs/cloud-api/fixtures/v1/communities/moves.json' with { type: 'json' };
 import startFixture from '@dork-labs/cloud-api/fixtures/v1/communities/start.json' with { type: 'json' };
@@ -63,8 +64,9 @@ vi.mock('node:fs/promises', async (importOriginal) => {
   };
 });
 
-const { createCloudCommunitiesRouter } = await import('../cloud-communities.js');
+const { createCloudCommunitiesRoutes } = await import('../cloud-communities.js');
 const { gateCloudCommunities } = await import('../../middleware/spaces-enabled.js');
+const { honoGroupListener } = await import('../../http/__tests__/hono-group-listener.js');
 const { CommunityMoveUploads, initMoveStaging, moveStagingRoot, MOVE_STAGING_HEADROOM_BYTES } =
   await import('../../services/core/cloud/community-move-upload.js');
 
@@ -280,12 +282,14 @@ const fake = listeningServer(async (req, res) => {
 });
 
 let uploads: InstanceType<typeof CommunityMoveUploads>;
-const app = express();
-app.use(express.json());
-app.use('/api/cloud/communities', (req, res, next) =>
-  createCloudCommunitiesRouter(uploads)(req, res, next)
+// Built per request, over the upload registry the running test made, behind
+// the real `/api` chain.
+const server = listeningServer((req, res) =>
+  honoGroupListener({
+    path: '/api/cloud/communities',
+    routes: createCloudCommunitiesRoutes(uploads),
+  })(req, res)
 );
-const server = listeningServer(app);
 
 /**
  * The same router behind the spaces gate, with spaces off (this file's config has no `spaces`
@@ -293,18 +297,19 @@ const server = listeningServer(app);
  * D5); `null` is no official space.
  */
 const gated = vi.hoisted(() => ({ officialOrigin: null as string | null }));
-const gatedApp = express();
-gatedApp.use(express.json());
-gatedApp.use(
-  '/api/cloud/communities',
-  gateCloudCommunities(() => ({
-    reachable: () => false,
-    isOfficialLink: () => false,
-    origin: () => gated.officialOrigin,
-  })),
-  (req, res, next) => createCloudCommunitiesRouter(uploads)(req, res, next)
-);
-const gatedServer = listeningServer(gatedApp);
+const gatedServer = listeningServer((req, res) => {
+  const routes = new Hono<ApiEnv>();
+  routes.use(
+    '*',
+    gateCloudCommunities(() => ({
+      reachable: () => false,
+      isOfficialLink: () => false,
+      origin: () => gated.officialOrigin,
+    }))
+  );
+  routes.route('/', createCloudCommunitiesRoutes(uploads));
+  return honoGroupListener({ path: '/api/cloud/communities', routes })(req, res);
+});
 
 /** The loopback origin the fake listens on. */
 function fakeOrigin() {

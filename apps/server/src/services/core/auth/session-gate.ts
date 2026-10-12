@@ -292,8 +292,9 @@ export async function decideSessionGate(
  * cookie or a per-user API key when `config.auth.enabled` is `true`
  * ({@link decideSessionGate}).
  *
- * Registered app-wide (before the API routes) so it also covers the `/mcp` mount
- * added later on the same app. On success the resolved identity is attached to
+ * Registered app-wide (before the API routes) so it also covers the mounts
+ * added later on the same app; the Hono chain asks the same
+ * {@link decideSessionGate} for the routes it serves, `/mcp` among them. On success the resolved identity is attached to
  * `res.locals.user`; on failure it responds `401` with the repo's error shape.
  *
  * @param req - The incoming request.

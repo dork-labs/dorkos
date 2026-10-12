@@ -78,12 +78,18 @@ vi.mock('../../lib/logger.js', () => ({
   logger: { error: vi.fn(), warn: vi.fn(), info: vi.fn(), debug: vi.fn() },
 }));
 
+// The `/api` chain reads config (login, the host allowlist); nothing is set.
+vi.mock('../../services/core/config-manager.js', () => ({
+  configManager: { get: vi.fn().mockReturnValue(null), set: vi.fn() },
+}));
+
 import request from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
-import express from 'express';
+import type { RequestListener } from 'node:http';
 import type { MeshCore } from '@dorkos/mesh';
-import { createMeshRouter } from '../mesh.js';
-import { resolveAgentIdentity } from '../../middleware/agent-identity.js';
+import { createMeshRoutes } from '../mesh.js';
+import type { ActivityService } from '../../services/activity/activity-service.js';
+import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
 
 const fixtureTarget = swappableServer();
 const fixtureServer = fixtureTarget.server;
@@ -105,17 +111,17 @@ const REGISTERED = {
   isSystem: false,
 };
 
-/** The app in `app.ts`'s middleware order: identity resolution, then the router. */
-function buildApp(): express.Express {
-  const app = express();
-  app.use(express.json());
-  app.use(resolveAgentIdentity);
-  app.locals.activityService = {
+/** The activity feed, recording what each write emitted. */
+function recordingActivity(): ActivityService {
+  return {
     emit: vi.fn(async (event: EmittedActor) => {
       emitted.push(event);
     }),
-  };
+  } as unknown as ActivityService;
+}
 
+/** The routes behind the real `/api` chain: identity resolution, then the group. */
+function buildApp(): RequestListener {
   const meshCore = {
     registerByPath: vi.fn(async () => REGISTERED),
     unregister: vi.fn(async () => ({ manifestKept: false })),
@@ -123,8 +129,13 @@ function buildApp(): express.Express {
     getProjectPath: vi.fn(() => '/tmp/projects/agent-1'),
   };
 
-  app.use('/api/mesh', createMeshRouter({ meshCore: meshCore as unknown as MeshCore }));
-  return app;
+  return honoGroupListener({
+    path: '/api/mesh',
+    routes: createMeshRoutes({
+      meshCore: meshCore as unknown as MeshCore,
+      activity: recordingActivity(),
+    }),
+  });
 }
 
 /** One write on this router, driven with whatever identity headers a test wants. */
@@ -210,14 +221,6 @@ describe('who the Activity feed says registered or removed an agent', () => {
   // The heartbeat route is the one emit here that must NOT follow the caller:
   // nobody asked for it, DorkOS noticed the transition and is reporting it.
   it('still records a health transition as the system, even for an identified agent', async () => {
-    const app = express();
-    app.use(express.json());
-    app.use(resolveAgentIdentity);
-    app.locals.activityService = {
-      emit: vi.fn(async (event: EmittedActor) => {
-        emitted.push(event);
-      }),
-    };
     const health = { status: 'active', name: 'Test Agent' };
     const meshCore = {
       getAgentHealth: vi
@@ -226,8 +229,15 @@ describe('who the Activity feed says registered or removed an agent', () => {
         .mockReturnValue(health),
       updateLastSeen: vi.fn(),
     };
-    app.use('/api/mesh', createMeshRouter({ meshCore: meshCore as unknown as MeshCore }));
-    fixtureTarget.mount(app);
+    fixtureTarget.mount(
+      honoGroupListener({
+        path: '/api/mesh',
+        routes: createMeshRoutes({
+          meshCore: meshCore as unknown as MeshCore,
+          activity: recordingActivity(),
+        }),
+      })
+    );
 
     const res = await request(fixtureServer)
       .post('/api/mesh/agents/agent-1/heartbeat')

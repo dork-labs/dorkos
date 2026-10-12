@@ -3,16 +3,21 @@
  * one for an agent, and only the promising agent or a person changes one.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import express from 'express';
 import request from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
 import { createTestDb } from '@dorkos/test-utils/db';
-import { createAgentCommitmentsRouter, createCommitmentsRouter } from '../commitments.js';
+import { createAgentCommitmentsRoutes, createCommitmentsRoutes } from '../commitments.js';
+import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
 import { CommitmentService, CommitmentStore } from '../../services/commitments/index.js';
 import { AGENT_IDENTITY_HEADER } from '../../middleware/agent-identity.js';
 
 vi.mock('../../lib/logger.js', () => ({
   logger: { warn: vi.fn(), debug: vi.fn(), info: vi.fn(), error: vi.fn() },
+}));
+
+// The `/api` chain reads config (login, the host allowlist); nothing is set.
+vi.mock('../../services/core/config-manager.js', () => ({
+  configManager: { get: vi.fn().mockReturnValue(null), set: vi.fn() },
 }));
 
 const fixtureTarget = swappableServer();
@@ -34,19 +39,23 @@ describe('commitment routes', () => {
       agentExists: (id: string) => Object.values(AGENTS).includes(id),
       agentIdForPath: (agentPath: string) => AGENTS[agentPath],
     };
-    const app = express();
-    app.use(express.json());
-    // Stand in for the agent-identity middleware: the header names a home
-    // folder, and an unknown one resolves to nothing (a token that did not verify).
-    app.use((req, res, next) => {
-      const home = req.headers[AGENT_IDENTITY_HEADER];
-      if (typeof home === 'string' && AGENTS[home]) {
-        res.locals.agentIdentity = { agentPath: home, displayName: home, createdAt: '' };
+    const app = honoGroupListener(
+      [
+        { path: '/api/commitments', routes: createCommitmentsRoutes(deps) },
+        { path: '/api/agents/:id/commitments', routes: createAgentCommitmentsRoutes(deps) },
+      ],
+      {
+        // Stand in for the agent-identity step: the header names a home folder,
+        // and an unknown one resolves to nothing (a token that did not verify).
+        before: (c, next) => {
+          const home = c.req.header(AGENT_IDENTITY_HEADER);
+          if (home && AGENTS[home]) {
+            c.set('agentIdentity', { agentPath: home, displayName: home, createdAt: '' });
+          }
+          return next();
+        },
       }
-      next();
-    });
-    app.use('/api/commitments', createCommitmentsRouter(deps));
-    app.use('/api/agents/:id/commitments', createAgentCommitmentsRouter(deps));
+    );
     fixtureTarget.mount(app);
   });
 

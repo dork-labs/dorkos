@@ -8,10 +8,10 @@
  * stopped the whole server from starting on the next restart.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import express from 'express';
 import request from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
-import { createTasksRouter } from '../tasks.js';
+import { createTasksRoutes } from '../tasks.js';
+import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
 import { TaskStore, type CreateTaskStoreInput } from '../../services/tasks/task-store.js';
 import { TaskRegistrar } from '../../services/tasks/task-registrar.js';
 import type { TaskSchedulerService } from '../../services/tasks/task-scheduler-service.js';
@@ -120,7 +120,6 @@ function createBody(overrides: Record<string, unknown> = {}): Record<string, unk
 }
 
 describe('Tasks routes — a schedule nothing can read is refused at the door', () => {
-  let app: express.Application;
   let store: TaskStore;
   let scheduler: ReturnType<typeof createMockScheduler>;
   let db: Db;
@@ -129,19 +128,18 @@ describe('Tasks routes — a schedule nothing can read is refused at the door', 
     db = createTestDb();
     store = new TaskStore(db);
     scheduler = createMockScheduler();
-    app = express();
-    app.use(express.json());
-    app.use(
-      '/api/tasks',
-      createTasksRouter(store, scheduler, new TaskRegistrar({ store, scheduler }), DORK_HOME)
-    );
-    app.use(
-      (err: Error, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
-        res.status(500).json({ error: err.message });
-      }
-    );
 
-    fixtureTarget.mount(app);
+    fixtureTarget.mount(
+      honoGroupListener({
+        path: '/api/tasks',
+        routes: createTasksRoutes({
+          store,
+          scheduler,
+          registrar: new TaskRegistrar({ store, scheduler }),
+          dorkHome: DORK_HOME,
+        }),
+      })
+    );
   });
 
   afterEach(() => {

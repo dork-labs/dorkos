@@ -124,12 +124,9 @@ import { TaskRegistrar } from './services/tasks/task-registrar.js';
 import { setTasksInitError } from './services/tasks/task-state.js';
 import { RelayCore, AdapterRegistry, SignalEmitter, type AgentRuntimeLike } from '@dorkos/relay';
 import { createRelayRouter } from './routes/relay.js';
-import { createConnectorProvidersRouter } from './routes/connector-providers.js';
-import { createConnectorExecutionRouter } from './routes/connector-execution.js';
 import { ConnectorEventAccessQueryService } from './services/connectors/events/access-query-service.js';
-import { createConnectorResourcesRouter } from './routes/connector-resources.js';
-import { createConnectorManagementRouter } from './routes/connector-management.js';
-import { createConnectorEventsRouter } from './routes/connector-events.js';
+import type { ConnectorRoutesDeps } from './routes/connectors.js';
+import type { ConnectorSignedIngress } from './services/connectors/events/signed-ingress.js';
 import { ConnectorEventInboxStore } from './services/connectors/event-inbox-store.js';
 import { ConnectorSubscriptionStore } from './services/connectors/events/subscription-store.js';
 import { ConnectorSubscriptionService } from './services/connectors/events/subscription-service.js';
@@ -210,7 +207,6 @@ import { AgentMcpOAuthService } from './services/mesh/agent-mcp-oauth-service.js
 import { warmMcpOAuthTokens } from './services/mesh/warm-mcp-oauth-tokens.js';
 import { resumeAfterMcpSignin } from './services/mesh/mcp-signin-resume.js';
 import { createMcpRevocationWatch } from './services/mesh/mcp-revocation.js';
-import { createMcpOAuthRouter } from './routes/mcp-oauth.js';
 import type { McpCapabilityDeps } from './services/mesh/mcp-capability-deps.js';
 import {
   relayStartsEnabled,
@@ -222,13 +218,11 @@ import { createAgentSubjectResolver } from './services/relay/initiate-consent.js
 import { TraceStore } from './services/relay/trace-store.js';
 import { NotifyBudget } from './services/relay/notify-budget.js';
 import { MeshCore, type AdoptedAgent } from '@dorkos/mesh';
-import { createMeshRouter } from './routes/mesh.js';
 import { setMeshInitError } from './services/mesh/mesh-state.js';
 import { ensureDorkBot } from './services/mesh/ensure-dorkbot.js';
 import { setAgentPathLookup } from './services/mesh/agent-path-lookup.js';
 import { createA2aRouter } from './routes/a2a.js';
 import { buildA2aRateLimiters } from './middleware/a2a-rate-limit.js';
-import { createAgentsRouter } from './routes/agents.js';
 import { resolveToolVisibilityFor } from './services/runtimes/shared/permission-tool-filter.js';
 import { composeCapabilityRegistryForDocs } from './services/core/self-description/dorkos-registry.js';
 import {
@@ -256,7 +250,6 @@ import { managedRemoteCoordinator } from './services/core/remote/managed-remote-
 import { managedRemoteCommands } from './services/core/remote/managed-command-service.js';
 import { autostartOwnTunnel, currentRemoteBootPlan } from './services/core/remote/remote-boot.js';
 import { titleForMcpTool } from './services/core/mcp-tool-tiers.js';
-import { createProfileRouter } from './routes/profile.js';
 import { resolveCaller } from './routes/room-caller.js';
 import { LocalAvatarStore } from './services/identity/local-avatar-store.js';
 import { LocalRoomAttachmentStore } from './services/rooms/attachments/local-room-attachment-store.js';
@@ -264,7 +257,6 @@ import {
   SESSION_ATTACHMENT_SWEEP_INTERVAL_MS,
   sweepSessionAttachments,
 } from './services/session/attachments/index.js';
-import { createDiscoveryRouter } from './routes/discovery.js';
 import { createAdminRouter } from './routes/admin.js';
 import { ExtensionManager } from './services/extensions/extension-manager.js';
 import { startExtensionApprovalQueue } from './services/extensions/extension-approval-queue.js';
@@ -363,12 +355,9 @@ import {
   startApprovalExpirySweep,
   startApprovalVerdictDelivery,
 } from './services/core/approvals/index.js';
-import { createMcpRouter } from './routes/mcp.js';
+import type { McpServerFactory } from './routes/mcp.js';
 import { setRemoteCommunitySubscriptionProbe } from './routes/test-control.js';
 import { createMcpAuth } from './middleware/mcp-auth.js';
-import { validateMcpOrigin } from './middleware/mcp-origin.js';
-import { requireMcpEnabled } from './middleware/mcp-enabled.js';
-import { buildMcpRateLimiter } from './middleware/mcp-rate-limit.js';
 import {
   createDb,
   runMigrations,
@@ -2720,18 +2709,18 @@ async function start() {
       logger.warn('[Connections] Notification delivery deferred');
     }
   };
-  const app = createApp({
-    admission: mainRequestAdmission,
-    connectorEventIngress: {
-      verifier: (id) =>
-        connectorRegistry.resolveProviderInstance(id as ConnectorProviderInstanceId)?.events,
-      accept: (id, event) => {
-        const accepted = connectorEventIngress.accept(id, event);
-        void recoverConnectorEventDelivery();
-        return accepted;
-      },
+  // The signed webhook ingress, served from the Hono `/api` app before any
+  // body is parsed (`services/connectors/events/signed-ingress.ts`).
+  const connectorSignedIngress: ConnectorSignedIngress = {
+    verifier: (id) =>
+      connectorRegistry.resolveProviderInstance(id as ConnectorProviderInstanceId)?.events,
+    accept: (id, event) => {
+      const accepted = connectorEventIngress.accept(id, event);
+      void recoverConnectorEventDelivery();
+      return accepted;
     },
-  });
+  };
+  const app = createApp({ admission: mainRequestAdmission });
 
   // Build mcpToolDeps and register factory only when ClaudeCodeRuntime is available.
   let mcpToolDeps: Parameters<typeof createExternalMcpServer>[0] | undefined;
@@ -3674,56 +3663,57 @@ async function start() {
     );
   }
 
-  // Always mount /mcp — requireMcpEnabled handles the disabled case with a clean 503.
-  const mcpRateLimiter = buildMcpRateLimiter();
-  // Auth is resolved per request by createMcpAuth (env override → per-user Better
-  // Auth key / session → legacy compat key → per-instance local token, with the
-  // read-only carve-out in login-off mode). This is only a startup log hint.
+  // `/mcp` is always served — `requireMcpEnabled` answers the disabled case with
+  // a clean 503. The routes, their gates and the transport are on the Hono
+  // chain (`routes/mcp.ts`); this is the tool server behind them, built per
+  // request. Auth is resolved per request by `decideMcpAuth` (env override →
+  // per-user Better Auth key / session → legacy compat key → per-instance local
+  // token, with the read-only carve-out in login-off mode). This is only a
+  // startup log hint.
   const mcpAuthMode = env.MCP_API_KEY?.trim()
     ? 'auth: MCP_API_KEY override'
     : configManager.get('auth')?.enabled
       ? 'auth: login gate + per-user keys'
       : 'auth: local token (read-only tools tokenless)';
-
-  app.use(
-    '/mcp',
-    validateMcpOrigin,
-    requireMcpEnabled,
-    createMcpAuth({ surface: 'mcp' }),
-    mcpRateLimiter,
-    createMcpRouter(async (caller) => {
-      if (!claudeRuntime || !mcpToolDeps) {
-        throw new Error(
-          'ClaudeCodeRuntime not available — external MCP server cannot handle requests'
-        );
-      }
-      // The server is rebuilt per request, so who is calling — the agent that
-      // presented a token, the person the auth middleware verified, or neither
-      // — is captured by the capability tool handlers it registers.
-      //
-      // What a Blocked permission hides from this caller (spec
-      // `agent-permissions` D15): its own settings when it identified itself,
-      // the install's defaults when it did not.
-      const visibility = await resolveToolVisibilityFor(caller.identity?.agentPath, {
-        inactive: Boolean(caller.identity?.inactive),
-      });
-      return createExternalMcpServer(
-        mcpToolDeps,
-        marketplaceMcpDeps,
-        capabilityRegistry,
-        caller.identity,
-        caller.userId,
-        caller.agentIdentityPresented,
-        visibility.hiddenToolNames
+  const mcpServerFactory: McpServerFactory = async (caller) => {
+    if (!claudeRuntime || !mcpToolDeps) {
+      throw new Error(
+        'ClaudeCodeRuntime not available — external MCP server cannot handle requests'
       );
-    })
-  );
+    }
+    // The server is rebuilt per request, so who is calling — the agent that
+    // presented a token, the person the auth middleware verified, or neither
+    // — is captured by the capability tool handlers it registers.
+    //
+    // What a Blocked permission hides from this caller (spec
+    // `agent-permissions` D15): its own settings when it identified itself,
+    // the install's defaults when it did not.
+    const visibility = await resolveToolVisibilityFor(caller.identity?.agentPath, {
+      inactive: Boolean(caller.identity?.inactive),
+    });
+    return createExternalMcpServer(
+      mcpToolDeps,
+      marketplaceMcpDeps,
+      capabilityRegistry,
+      caller.identity,
+      caller.userId,
+      caller.agentIdentityPresented,
+      visibility.hiddenToolNames
+    );
+  };
   logger.info(`[MCP] External MCP server mounted at /mcp (stateless, ${mcpAuthMode})`);
 
-  // Mount Tasks routes if enabled (`startup/tasks.ts`).
+  // `deps` is what the moved Hono routes read (`http/hono-api.ts`), set where
+  // each group used to be mounted on Express.
+  const deps: HonoApiDeps = {
+    connectorEventIngress: connectorSignedIngress,
+    mcp: mcpServerFactory,
+  };
+
+  // Hand the Tasks routes their deps if enabled (`startup/tasks.ts`).
   ({ schedulerService, taskRegistrar, taskFileWatcher, taskReconciler, attachAgentTaskRoots } =
     await startTasks({
-      app,
+      honoDeps: deps,
       tasksEnabled,
       taskStore,
       dorkHome,
@@ -3799,47 +3789,32 @@ async function start() {
       });
   }
 
-  // Mount connector routes (connector-gateway spec, DOR-371). The registry
-  // starts empty — provider backends (raw-MCP, Composio) register in later
-  // phases — but the routing surface is already live: `recommend` reads the
-  // relay adapter catalog (relay-adapter-first), and the aggregate endpoints
-  // return empty until a provider is registered. `adapterManager` satisfies the
-  // routing catalog structurally via its public `getManifest` accessor.
-  // Provider credential + status routes, mounted BEFORE the generic connectors
-  // router: saving a vendor key here reloads its provider live (no restart).
-  app.use(
-    '/api/connectors/providers',
-    createConnectorProvidersRouter({
-      bootstrapper: connectorBootstrapper,
-      credentialStore,
-    })
-  );
-  app.use(
-    '/api/connectors',
-    createConnectorEventsRouter({
+  // Every `/api/connectors` group, served from the Hono `/api` app in the
+  // order `routes/connectors.ts` explains. Saving a vendor key reloads its
+  // provider live (no restart). Program execution joins once the capability
+  // registry is composed, further down.
+  const connectorOwnerBoundary = {
+    resolveOwner: () => connectorOwner,
+    loginEnabled: () => configManager.get('auth').enabled,
+  };
+  const connectorRoutes: ConnectorRoutesDeps = {
+    providers: { bootstrapper: connectorBootstrapper, credentialStore },
+    events: {
       store: connectorEventSubscriptions,
       subscriptions: connectorEventService,
       grants: connectorEventGrants,
       settings: connectorEventSettings,
       managed: managedEventConsent,
-      resolveOwner: () => connectorOwner,
-      loginEnabled: () => configManager.get('auth').enabled,
-    })
-  );
-  app.use(
-    '/api/connectors',
-    createConnectorManagementRouter({
+      ...connectorOwnerBoundary,
+    },
+    management: {
       registry: connectorRegistry,
       reviews: connectorManagementReviews,
       reconciliation: connectorReconciliation,
-      resolveOwner: () => connectorOwner,
-      loginEnabled: () => configManager.get('auth').enabled,
+      ...connectorOwnerBoundary,
       ...(connectorAgentRequests && { agentRequests: connectorAgentRequests }),
-    })
-  );
-  app.use(
-    '/api/connectors',
-    createConnectorResourcesRouter({
+    },
+    resources: {
       query: connectorOperatorQueries,
       logos: catalogLogos,
       authentication: connectorAuthenticationFlows,
@@ -3851,10 +3826,10 @@ async function start() {
         query: connectorOperatorQueries,
         overrides: sessionConnectorAttachmentStore,
       }),
-      resolveOwner: () => connectorOwner,
-      loginEnabled: () => configManager.get('auth').enabled,
-    })
-  );
+      ...connectorOwnerBoundary,
+    },
+  };
+  deps.connectors = connectorRoutes;
   mountedRouters.push('connectors');
 
   // Mount Relay routes if enabled
@@ -4022,11 +3997,11 @@ async function start() {
   // subscribes to nothing.
   for (const runtime of runtimeRegistry.listRuntimes()) subscribeRuntimeTurns(runtime);
 
-  // Mount Mesh routes if MeshCore initialized successfully (always-on, ADR-0062)
+  // Mesh routes if MeshCore initialized successfully (always-on, ADR-0062)
   // taskStore/relayCore power topology enrichment (relay badges, task counts);
-  // when a subsystem is disabled the router degrades to safe defaults.
+  // when a subsystem is disabled the routes degrade to safe defaults.
   if (meshCore) {
-    app.use('/api/mesh', createMeshRouter({ meshCore, taskStore, relayCore }));
+    deps.mesh = { meshCore, taskStore, relayCore, activity: activityService };
     // Expose the registry to the (statically-mounted) sessions router so
     // GET /api/sessions/recent can resolve agent project paths (DOR-329).
     app.locals.meshCore = meshCore;
@@ -4038,9 +4013,6 @@ async function start() {
   // messaging, integrations, and agents. Handed over as one bag of narrow reads,
   // set after every subsystem above has had its chance to start; whatever is off
   // simply reports its checks skipped. Nothing here runs until a request asks.
-  // `deps` is what the moved Hono routes read (`http/hono-api.ts`): this bag and
-  // the banner's below.
-  const deps: HonoApiDeps = {};
   deps.deepHealth = {
     dorkHome,
     roomSessions: roomStore,
@@ -4240,18 +4212,15 @@ async function start() {
   );
 
   // Managed-MCP OAuth loopback callback (DOR-942) — the `redirect_uri` the
-  // operator's browser lands on after authorizing a server. Mounted BEFORE the
-  // `/api/agents` router so the two-segment `/mcp-oauth/callback` path always
-  // reaches it first; the sign-in itself is driven by the `mcp.signin`/
-  // `mcp.poll_signin` capabilities, not a route.
-  if (agentMcpOAuthService) {
-    app.use('/api/agents/mcp-oauth', createMcpOAuthRouter(agentMcpOAuthService));
-  }
+  // operator's browser lands on after authorizing a server, served by the Hono
+  // app beside the agents group; the sign-in itself is driven by the
+  // `mcp.signin`/`mcp.poll_signin` capabilities, not a route.
+  if (agentMcpOAuthService) deps.mcpOAuth = agentMcpOAuthService;
 
   // Permissions (spec `agent-permissions` D10): the one way in for what agents
-  // may do. Served by the Hono app, which the front door asks before Express,
-  // so `/api/agents/:id/permissions` never reaches the agents router. The
-  // registry is read lazily: it is composed after the routes are mounted.
+  // may do. Served by the Hono app, beside the agents group under
+  // `/api/agents`. The registry is read lazily: it is composed after the
+  // routes are handed over.
   // The one owner of every permission write (spec `agent-permissions` D10):
   // the permissions pages and the request card's Always allow both write here.
   const permissionService = createPermissionService({
@@ -4286,14 +4255,13 @@ async function start() {
   deps.permissions = { permissions: permissionService, activity: activityService };
   mountedRouters.push('permissions');
 
-  // What agents promised (spec `heartbeats` §12). Always mounted; the
-  // per-agent POST is mounted before the agents router so it answers its path.
-  app.use('/api/commitments', commitments.routers.list);
-  app.use('/api/agents/:id/commitments', commitments.routers.agent);
+  // What agents promised (spec `heartbeats` §12). Always mounted, by the Hono
+  // app: the list at `/api/commitments`, a person's new one per agent at
+  // `/api/agents/:id/commitments`.
+  deps.commitments = commitments.routeDeps;
   // Pause an agent everywhere, and lift it (spec `audit-trail` PR5). Served by
-  // the Hono app, which the front door asks before Express, so
-  // `/api/agents/:id/pause` never reaches the agents router; the registry is
-  // read lazily because it is composed after the routes mount.
+  // the Hono app, beside the agents group under `/api/agents`; the registry is
+  // read lazily because it is composed after the routes are handed over.
   deps.agentPause = { registry: () => capabilityRegistry };
   mountedRouters.push('agent-pause');
 
@@ -4302,13 +4270,12 @@ async function start() {
   // The confirmation provider is composed further down this boot, inside the
   // marketplace block; read lazily so an agent's template creation raises a card
   // once it exists and fails closed until then (DOR-2325).
-  app.use(
-    '/api/agents',
-    createAgentsRouter(meshCore, {
-      confirmationProvider: () => templateConfirmationProvider,
-      marketplace: () => agentPackageInstaller,
-    })
-  );
+  deps.agents = {
+    meshCore,
+    activity: activityService,
+    confirmationProvider: () => templateConfirmationProvider,
+    marketplace: () => agentPackageInstaller,
+  };
 
   // The team roster — one READ of every identity on this install (ADR
   // 260806-222535). Always mounted, and mounted even when the mesh did not
@@ -4355,27 +4322,25 @@ async function start() {
   // The operator's own profile — their photo and their name (spec
   // `identity-consistency` §W3.3, §W3.5). The store is chosen HERE and nowhere
   // else: the router depends on the `AvatarStore` interface, so the day photos
-  // live somewhere other than this machine, this line is what changes.
-  app.use(
-    '/api/profile',
-    createProfileRouter({
-      avatars: new LocalAvatarStore(dorkHome),
-      caller: (req, res) => resolveCaller(req, res),
-      authors: roomAuthors,
-      ownerAccount: () => readOwnerAccount(),
-      setAccountImage: (userId, imageUrl) => setUserImage(userId, imageUrl),
-      setAccountName: (userId, name) => setUserName(userId, name),
-      setProfileDisplayName: (displayName, source) => {
-        const before = configManager.get('profile');
-        // The name and the record of who wrote it go in ONE write, so no reader
-        // can catch the new name still carrying the previous writer's stamp.
-        // `set` rather than two `setDot`s for exactly that reason (DOR-1022);
-        // WHICH source is the route's call, not this line's.
-        configManager.set('profile', { ...before, displayName, displayNameSource: source });
-        logConfigWrite('the profile route', 'profile', before, configManager.get('profile'));
-      },
-    })
-  );
+  // live somewhere other than this machine, this line is what changes. Served
+  // from the Hono `/api` app (`http/hono-api.ts`), which reads this.
+  deps.profile = {
+    avatars: new LocalAvatarStore(dorkHome),
+    caller: (request) => resolveCaller(request),
+    authors: roomAuthors,
+    ownerAccount: () => readOwnerAccount(),
+    setAccountImage: (userId, imageUrl) => setUserImage(userId, imageUrl),
+    setAccountName: (userId, name) => setUserName(userId, name),
+    setProfileDisplayName: (displayName, source) => {
+      const before = configManager.get('profile');
+      // The name and the record of who wrote it go in ONE write, so no reader
+      // can catch the new name still carrying the previous writer's stamp.
+      // `set` rather than two `setDot`s for exactly that reason (DOR-1022);
+      // WHICH source is the route's call, not this line's.
+      configManager.set('profile', { ...before, displayName, displayNameSource: source });
+      logConfigWrite('the profile route', 'profile', before, configManager.get('profile'));
+    },
+  };
 
   // Message search — "where did we talk about X", over the derived index the
   // reconciler above keeps caught up (message-search spec §6, §7). Always
@@ -4452,9 +4417,9 @@ async function start() {
     mountedRouters.push('extensions');
   }
 
-  // Mount Discovery routes when MeshCore is available (delegates to meshCore.discover())
+  // Discovery routes when MeshCore is available (delegates to meshCore.discover())
   if (meshCore) {
-    app.use('/api/discovery', createDiscoveryRouter(meshCore));
+    deps.discovery = meshCore;
     mountedRouters.push('discovery');
   }
 
@@ -4573,7 +4538,6 @@ async function start() {
   // than gating the entire namespace.
   ({ devLinkWatcher, templateConfirmationProvider, agentPackageInstaller, marketplaceMcpDeps } =
     await startMarketplace({
-      app,
       dorkHome,
       extensionManager,
       adapterManager,
@@ -4914,24 +4878,20 @@ async function start() {
     }
     logger.info('[Connectors] Runtime execution listener initialized');
   }
-  app.use(
-    '/api/connectors',
-    createConnectorExecutionRouter({
-      connectorRegistry,
-      capabilities: capabilityRegistry,
-      authorization: connectorAuthorization,
-      access: connectorAccess,
-      programPrincipals: connectorProgramPrincipals,
-      eventAccess: new ConnectorEventAccessQueryService(
-        connectorEventSubscriptions,
-        { ownsAgent: connectorOwnsAgent },
-        connectorProgramPrincipals,
-        managedEventConsent
-      ),
-      resolveOwner: () => connectorOwner,
-      loginEnabled: () => configManager.get('auth').enabled,
-    })
-  );
+  connectorRoutes.execution = {
+    connectorRegistry,
+    capabilities: capabilityRegistry,
+    authorization: connectorAuthorization,
+    access: connectorAccess,
+    programPrincipals: connectorProgramPrincipals,
+    eventAccess: new ConnectorEventAccessQueryService(
+      connectorEventSubscriptions,
+      { ownsAgent: connectorOwnsAgent },
+      connectorProgramPrincipals,
+      managedEventConsent
+    ),
+    ...connectorOwnerBoundary,
+  };
   // GET /api/capabilities/catalog — the self-description catalog. (The bare
   // `/api/capabilities` path already serves the per-runtime capability matrix, a
   // different, client-facing contract; the registry catalog lives one segment

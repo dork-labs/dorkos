@@ -158,6 +158,7 @@ export function createApiApp(options: ApiChainOptions): Hono<ApiEnv> {
     await next();
   });
   warnOnWildcardCorsOrigin();
+  app.use(keepEachVaryFieldOnce);
   app.use(
     cors({
       credentials: true,
@@ -239,6 +240,32 @@ function carryHeadersToNodeResponse(c: Context<ApiEnv>): void {
   c.res.headers.forEach((value, name) => outgoing.setHeader(name, value));
   outgoing.setHeader('Vary', 'Origin');
 }
+
+/**
+ * Keep each `Vary` field once, in the order it was first written.
+ *
+ * Express writes `Vary` through the `vary` package, which adds a field only
+ * when it is not there yet: CORS varies every answer on `Origin` before the
+ * route runs, and a route that varies on more adds after it. `hono/cors`
+ * appends `Origin` after the route instead, so a route that wrote
+ * `Origin, X` would otherwise answer `Origin, X, Origin`.
+ */
+const keepEachVaryFieldOnce: MiddlewareHandler<ApiEnv> = async (c, next) => {
+  await next();
+  const vary = c.res.headers.get('Vary');
+  if (!vary) return;
+  const seen = new Set<string>();
+  const fields = vary
+    .split(',')
+    .map((field) => field.trim())
+    .filter((field) => {
+      const key = field.toLowerCase();
+      if (field === '' || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  c.res.headers.set('Vary', fields.join(', '));
+};
 
 /** Answer `503` once the server has started stopping; admit everything else. */
 function admit(admission: MainRequestAdmission): MiddlewareHandler<ApiEnv> {

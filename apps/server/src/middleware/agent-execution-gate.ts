@@ -9,30 +9,26 @@
  *
  * @module middleware/agent-execution-gate
  */
-import type { Request, Response, NextFunction } from 'express';
+import type { MiddlewareHandler } from 'hono';
+import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import { refuseAgentExecutionWrite } from '../services/core/operator/agent-execution.js';
 import { clearsTheAgentBar } from '../lib/caller-authority.js';
+import type { ApiEnv } from '../http/api-chain.js';
+import { readJsonBody } from '../http/request-body.js';
+import { honoRequestFacts } from '../http/request-facts.js';
 
 /**
  * Refuse a request that names `runtime`, `model` or `effort` unless its caller
- * is a person; every other request passes through untouched.
+ * is a person, with `403 NEEDS_APPROVAL`; every other request passes through
+ * untouched.
  *
- * Generic over the route's params so mounting it ahead of a handler leaves
- * Express's inference of `req.params` for that handler intact.
- *
- * @param req - The request.
- * @param res - The response, answered with `403 NEEDS_APPROVAL` on a refusal.
- * @param next - Called when the request may go on.
+ * @param c - The Hono context.
+ * @param next - The route's handler.
  */
-export function refuseAgentExecutionWrites<P>(
-  req: Request<P>,
-  res: Response,
-  next: NextFunction
-): void {
-  const refusal = refuseAgentExecutionWrite(req.body, () => clearsTheAgentBar(req as Request, res));
-  if (refusal) {
-    res.status(refusal.status).json(refusal.body);
-    return;
-  }
-  next();
-}
+export const refuseAgentExecutionWrites: MiddlewareHandler<ApiEnv> = async (c, next) => {
+  const refusal = refuseAgentExecutionWrite(readJsonBody(c), () =>
+    clearsTheAgentBar(honoRequestFacts(c))
+  );
+  if (refusal) return c.json(refusal.body, refusal.status as ContentfulStatusCode);
+  await next();
+};

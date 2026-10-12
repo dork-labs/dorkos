@@ -23,11 +23,11 @@ vi.mock('../../lib/logger.js', () => ({
 
 import request from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
-import express from 'express';
 import { writeManifest } from '@dorkos/shared/manifest';
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
 import { initBoundary } from '../../lib/boundary.js';
-import { createAgentsRouter } from '../agents.js';
+import { createAgentsRoutes } from '../agents.js';
+import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
 import { initConfigManager } from '../../services/core/config-manager.js';
 import { buildInstallerForTests } from '../../services/marketplace/__tests__/installer-harness.js';
 import { disclosedEffectsOf } from '../../services/marketplace/preview/disclosed-effects.js';
@@ -98,17 +98,19 @@ beforeEach(async () => {
     await writeManifest(opts.directory, manifest);
     return { manifest, path: opts.directory };
   });
-  const app = express();
-  app.use(express.json());
-  app.use((req, _res, next) => {
-    if (agentHeader) req.headers['x-dorkos-agent'] = agentHeader;
-    next();
-  });
-  app.use(
-    '/api/agents',
-    createAgentsRouter(undefined, {
-      marketplace: () => ({ installer: harness.installer, dorkHome }),
-    })
+  const app = honoGroupListener(
+    {
+      path: '/api/agents',
+      routes: createAgentsRoutes({
+        marketplace: () => ({ installer: harness.installer, dorkHome }),
+      }),
+    },
+    {
+      before: (c, next) => {
+        if (agentHeader) c.env.incoming.headers['x-dorkos-agent'] = agentHeader;
+        return next();
+      },
+    }
   );
   testServer.mount(app);
 });

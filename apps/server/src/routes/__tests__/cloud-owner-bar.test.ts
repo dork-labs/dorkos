@@ -10,9 +10,16 @@
  * covered, and the reads below pin that the bar did not spread to them.
  */
 import { describe, it, expect, vi, beforeEach, type Mock } from 'vitest';
-import express from 'express';
 import request from '@dorkos/test-utils/supertest';
 import { listeningServer } from '@dorkos/test-utils/listening-server';
+
+// The session gate lets every request through: these cases are about the
+// routes' own bars, and each one sets the user the gate would have proved
+// (`before` below), as the Express version stubbed `res.locals.user`.
+vi.mock('../../services/core/auth/session-gate.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../services/core/auth/session-gate.js')>()),
+  decideSessionGate: vi.fn(async () => ({ allowed: true })),
+}));
 
 const manager = vi.hoisted(() => ({
   startLink: vi.fn(async () => ({})),
@@ -138,18 +145,24 @@ vi.mock('../../services/core/auth/index.js', async (importOriginal) => ({
 }));
 
 import cloudRouter from '../cloud.js';
+// After the route: the chain imports the auth module, which must load after
+// the mocks above have replaced who owns this install.
+import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
 
 /** Who `sessionGate` resolved, as a test sets it; nobody by default (login off). */
 let signedInUser: { userId: string; credential: 'cookie' | 'api-key' } | undefined;
 
-const app = express();
-app.use(express.json());
-app.use((_req, res, next) => {
-  if (signedInUser) res.locals.user = signedInUser;
-  next();
-});
-app.use('/api/cloud', cloudRouter);
-const server = listeningServer(app);
+const server = listeningServer(
+  honoGroupListener(
+    { path: '/api/cloud', routes: cloudRouter },
+    {
+      before: async (c, next) => {
+        if (signedInUser) c.set('user', signedInUser);
+        await next();
+      },
+    }
+  )
+);
 
 /** One account write: how to call it, and the spy it reaches when allowed. */
 interface Write {

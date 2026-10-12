@@ -18,14 +18,15 @@
  *
  * @module services/runtimes/opencode/providers/ollama
  */
+import { env } from '../../../../env.js';
 import type {
   OllamaPullProgress,
   OllamaPullResult,
   OllamaStatus,
 } from '@dorkos/shared/runtime-connect';
 
-/** Local Ollama base origin (loopback only — never a remote host). */
-const OLLAMA_BASE_URL = 'http://127.0.0.1:11434';
+/** Local Ollama base origin (loopback only — never a remote host; see `env.ts`). */
+const OLLAMA_BASE_URL = env.DORKOS_OLLAMA_URL.replace(/\/$/, '');
 
 /** Local Ollama tags endpoint. */
 const OLLAMA_TAGS_URL = `${OLLAMA_BASE_URL}/api/tags`;

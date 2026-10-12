@@ -10,7 +10,6 @@
  * That block is what makes "sync-ready" a fact rather than a claim.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import express from 'express';
 import request from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
 import { mkdtemp, rm, readdir } from 'fs/promises';
@@ -66,25 +65,22 @@ describe('/api/profile/avatar', () => {
   let ownerAuthor: AuthorRecord;
 
   function app(overrides: Partial<ProfileRouterDeps> = {}) {
-    const server = express();
-    server.use(
-      '/api/profile',
-      createProfileRouter({
-        avatars: store,
-        caller: () => ownerAuthor,
-        authors: registry,
-        ownerAccount: () => ({ id: OWNER_USER_ID }),
-        setAccountImage: (userId, imageUrl) =>
-          db.update(user).set({ image: imageUrl }).where(eq(user.id, userId)).run(),
-        // The name half of the router, which this file does not exercise —
-        // `profile-name.test.ts` owns it.
-        setAccountName: (userId, name) =>
-          db.update(user).set({ name }).where(eq(user.id, userId)).run(),
-        setProfileDisplayName: () => {},
-        ...overrides,
-      })
-    );
-    const routes = honoGroupListener(
+    const profile = createProfileRouter({
+      avatars: store,
+      caller: () => ownerAuthor,
+      authors: registry,
+      ownerAccount: () => ({ id: OWNER_USER_ID }),
+      setAccountImage: (userId, imageUrl) =>
+        db.update(user).set({ image: imageUrl }).where(eq(user.id, userId)).run(),
+      // The name half of the router, which this file does not exercise —
+      // `profile-name.test.ts` owns it.
+      setAccountName: (userId, name) =>
+        db.update(user).set({ name }).where(eq(user.id, userId)).run(),
+      setProfileDisplayName: () => {},
+      ...overrides,
+    });
+    const routes = honoGroupListener([
+      { path: '/api/profile', routes: profile },
       {
         path: '/api/team',
         routes: createTeamRoutes({
@@ -102,8 +98,7 @@ describe('/api/profile/avatar', () => {
           defaultAgentName: () => null,
         }),
       },
-      { legacy: server }
-    );
+    ]);
     return routes;
   }
 
