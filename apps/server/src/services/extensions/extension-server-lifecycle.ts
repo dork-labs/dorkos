@@ -478,8 +478,7 @@ export class ExtensionServerLifecycle {
         logger.warn(`[Extensions] Server init timed out for ${id} after ${seconds}s`);
         return { ok: false, error: message };
       }
-      const result = outcome.value;
-      const cleanup = typeof result === 'function' ? result : null;
+      const cleanup = typeof outcome.value === 'function' ? outcome.value : null;
 
       // register() finished: no more handlers. Only an instance that started
       // has tools, and only the declared tools it handled (DOR-2685).
@@ -519,6 +518,10 @@ export class ExtensionServerLifecycle {
         cleanup,
         scheduledCleanups: getScheduledCleanups(),
         releaseListeners,
+        // The list above is a copy taken now. Disposing at stop also cancels a
+        // timer scheduled after `register()` returned, and makes a late
+        // `ctx.schedule` from this instance start nothing (DOR-2462).
+        disposeCtx: dispose,
         sourceKey,
         agentTools,
       });
