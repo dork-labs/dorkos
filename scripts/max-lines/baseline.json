@@ -86,7 +86,7 @@
     "apps/server/src/services/marketplace/dev-links/dev-link-service.ts": 768,
     "apps/server/src/services/notifications/notification-registry.ts": 622,
     "apps/server/src/services/notifications/notification-store.ts": 534,
-    "apps/server/src/services/relay/adapter-manager.ts": 894,
+    "apps/server/src/services/relay/adapter-manager.ts": 893,
     "apps/server/src/services/relay/binding-router.ts": 651,
     "apps/server/src/services/rooms/author-registry.ts": 580,
     "apps/server/src/services/rooms/canvas/room-canvas-service.ts": 588,

@@ -2507,6 +2507,77 @@ describe('AdapterManager', () => {
       expect(manager.getAdapter('tg-second')!.config.enabled).toBe(false);
     });
 
+    /**
+     * Park the next config read (the one a hot-reload makes) until released,
+     * handing back `contents` — what the file held when the read began.
+     */
+    function gateNextRead(contents: string): { release: () => void } {
+      const gate = deferred();
+      vi.mocked(readFile).mockImplementationOnce(async () => {
+        await gate.promise;
+        return contents;
+      });
+      return { release: gate.resolve };
+    }
+
+    /** From here on, a read of the file returns the last save, as the real file would. */
+    function readsSeeSaves(initial: string): void {
+      vi.mocked(readFile).mockImplementation(async () => {
+        const saved = vi.mocked(writeFile).mock.calls.at(-1)?.[1];
+        return typeof saved === 'string' ? saved : initial;
+      });
+    }
+
+    const NEW_HOOK = {
+      inbound: { subject: 'relay.webhook.racing', secret: 'secret-16-chars!!' },
+      outbound: { url: 'https://example.com', secret: 'secret-16-chars!!' },
+    };
+
+    // The server's own save sets off the file watcher, so a hot-reload can be
+    // mid-read of the file when a person adds the next connection. The reload
+    // used to assign what it read (the file from before the add) over the
+    // in-memory list, so the connection the API had just accepted vanished
+    // until the next reload, and a delete in between answered 404.
+    it('addAdapter() while a hot-reload is reading the file keeps the new connection', async () => {
+      vi.mocked(readFile).mockResolvedValue(VALID_CONFIG);
+      await initAndStart(manager);
+      readsSeeSaves(VALID_CONFIG);
+
+      const { release } = gateNextRead(VALID_CONFIG);
+      const reloading = manager.reload();
+      await flushMicrotasks(); // the reload is parked inside its read
+      const adding = manager.addAdapter('webhook', 'wh-racing', NEW_HOOK);
+      await flushMicrotasks(); // an unserialized add has pushed and saved by now
+      release();
+      await Promise.all([reloading, adding]);
+
+      expect(manager.getAdapter('wh-racing')).toBeDefined();
+      expect(registry.get('wh-racing')).toBeDefined();
+      await expect(manager.removeAdapter('wh-racing')).resolves.toBeUndefined();
+    });
+
+    it('removeAdapter() across a hot-reload removes the connection it was asked to', async () => {
+      vi.mocked(readFile).mockResolvedValue(VALID_CONFIG);
+      await initAndStart(manager);
+      readsSeeSaves(VALID_CONFIG);
+      // The file on disk now lists wh-github first: the same connections in a
+      // different order, so an index taken before the reload names another one.
+      const reordered = JSON.stringify({
+        adapters: [...JSON.parse(VALID_CONFIG).adapters].reverse(),
+      });
+
+      const { release } = gateNextRead(reordered);
+      const reloading = manager.reload();
+      await flushMicrotasks();
+      const removing = manager.removeAdapter('tg-main');
+      await flushMicrotasks();
+      release();
+      await Promise.all([reloading, removing]);
+
+      expect(manager.getAdapter('tg-main')).toBeUndefined();
+      expect(manager.getAdapter('wh-github')).toBeDefined();
+    });
+
     it('shutdown() mid-pass stops the pass from registering further adapters', async () => {
       vi.mocked(readFile).mockResolvedValue(TWO_ENABLED_CONFIG);
       const { reached, release } = gateRegister('tg-first');

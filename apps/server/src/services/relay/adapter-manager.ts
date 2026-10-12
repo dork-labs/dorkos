@@ -48,6 +48,7 @@ import {
   unparsedEntryId,
   ensureDefaultAdapterConfig,
   watchAdapterConfig,
+  AdapterConfigWrites,
   maskSensitiveFields,
   mergeWithPasswordPreservation,
   parseAdapterConfigForPersist,
@@ -301,6 +302,8 @@ export class AdapterManager {
   private bindingSubsystem?: BindingSubsystem;
   /** Serialized adapter-start passes — see {@link queueStartEnabledAdapters}. */
   private startChain: Promise<void> = Promise.resolve();
+  /** Saves of `adapters.json` in flight, so a reload never reads one stale. */
+  private readonly configWrites = new AdapterConfigWrites();
   /** Set by {@link shutdown}; stops any in-flight start pass from registering more adapters. */
   private stopped = false;
   /** Normalized runtime-type → agent-runtime map (always populated post-construction). */
@@ -366,13 +369,12 @@ export class AdapterManager {
    * Persist `this.configs`, materializing secrets into credential references
    * first — the single funnel to disk, so a cleartext bot token is never
    * written to `adapters.json` (DOR-280). Rewrites `this.configs` in place.
+   * Call it in the same tick as the edit it saves ({@link AdapterConfigWrites.track}).
    */
   private persistConfigs(): Promise<void> {
-    return persistAdapterConfigs(
-      this.configPath,
-      this.configs,
-      this.secretsCtx,
-      this.unparsedConfigEntries
+    const { configPath, configs, secretsCtx, unparsedConfigEntries } = this;
+    return this.configWrites.track(
+      persistAdapterConfigs(configPath, configs, secretsCtx, unparsedConfigEntries)
     );
   }
 
@@ -490,9 +492,9 @@ export class AdapterManager {
     const oldConfigIds = new Set(this.configs.map((c) => c.id));
     // Capture names before reloading config (entries may be removed)
     const oldNames = new Map([...oldConfigIds].map((id) => [id, this.resolveAdapterName(id)]));
-    ({ adapters: this.configs, unparsed: this.unparsedConfigEntries } = await loadAdapterConfig(
-      this.configPath
-    ));
+    await this.configWrites.reloadInto(this.configPath, (loaded) => {
+      ({ adapters: this.configs, unparsed: this.unparsedConfigEntries } = loaded);
+    });
 
     // Migrate any cleartext token a user hand-added to adapters.json into the
     // encrypted store, so every load path — not just initialize() and the API
@@ -1096,8 +1098,8 @@ export class AdapterManager {
    * @param options - Pass `forgetHistory` only when a person removed it.
    */
   async removeAdapter(id: string, options: RemoveAdapterOptions = {}): Promise<void> {
-    const index = this.configs.findIndex((c) => c.id === id);
-    if (index === -1) {
+    const config = this.configs.find((c) => c.id === id);
+    if (!config) {
       // Not a running integration — but it may be one whose saved settings
       // could not be read. Those are held aside rather than started, and
       // without this they were undeletable from every surface: invisible to
@@ -1111,8 +1113,6 @@ export class AdapterManager {
       }
       throw new AdapterError(`Adapter '${id}' not found`, 'NOT_FOUND');
     }
-
-    const config = this.configs[index];
 
     if (config.type === 'claude-code' && config.builtin) {
       throw new AdapterError(
@@ -1145,7 +1145,8 @@ export class AdapterManager {
     });
 
     await this.emitAdapterLifecycle(id, 'disconnected', adapterName);
-    this.configs.splice(index, 1);
+    // By id: a reload while the adapter stopped may have replaced the list.
+    this.configs = this.configs.filter((c) => c.id !== id);
     await this.persistConfigs();
     // Best-effort cleanup of the removed adapter's stored secrets (DOR-280).
     await deleteAdapterSecrets(config, this.secretsCtx);

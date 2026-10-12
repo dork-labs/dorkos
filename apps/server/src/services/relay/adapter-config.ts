@@ -755,3 +755,53 @@ export function setNestedValue(
   }
   current[parts.at(-1)!] = value;
 }
+
+/**
+ * The saves of `adapters.json` this process has started, so a hot-reload never
+ * replaces the in-memory configs with a read of the file older than them.
+ *
+ * The server's own saves set off {@link watchAdapterConfig}, so a reload's read
+ * routinely runs alongside an API edit: add a connection, then delete it at
+ * once. A read that began before the add's save finished returns the file
+ * without the connection, and assigning it dropped the connection until the
+ * next reload, so the delete answered 404.
+ */
+export class AdapterConfigWrites {
+  private settled: Promise<void> = Promise.resolve();
+
+  /**
+   * Record a save. Every edit of the in-memory configs must start its save in
+   * the same tick as the edit, with no `await` between them: a save that
+   * started during a read is how {@link reloadInto} knows the read is stale.
+   *
+   * @param write - The save, as returned by `persistAdapterConfigs` (adapter-secrets).
+   * @returns The same save, for the caller to await.
+   */
+  track(write: Promise<void>): Promise<void> {
+    this.settled = Promise.all([this.settled, write]).then(
+      () => undefined,
+      () => undefined
+    );
+    return write;
+  }
+
+  /**
+   * Read the file once no save is in flight, read it again if a save started
+   * meanwhile, then hand the result to `apply` in the same tick as the last
+   * check, so no edit can land between the check and the assignment.
+   *
+   * @param configPath - Absolute path to adapters.json
+   * @param apply - Replaces the in-memory configs with what was read.
+   */
+  async reloadInto(
+    configPath: string,
+    apply: (loaded: LoadedAdapterConfigs) => void
+  ): Promise<void> {
+    for (;;) {
+      await this.settled;
+      const before = this.settled;
+      const loaded = await loadAdapterConfig(configPath);
+      if (before === this.settled) return apply(loaded);
+    }
+  }
+}
