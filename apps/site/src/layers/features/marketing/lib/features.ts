@@ -834,7 +834,6 @@ export const features: Feature[] = [
     benefits: [
       'Agents can message you, or message each other',
       'If an agent is offline, the message waits and delivers later',
-      'Cap how often your agents may ping you, so it stays quiet',
       'See every message that was sent, and every one that failed',
       'Point specific agents at specific chats',
     ],

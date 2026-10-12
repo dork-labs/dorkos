@@ -144,10 +144,7 @@ function makeMockDeps(overrides: Partial<McpToolDeps> = {}): McpToolDeps {
 /**
  * Build the handler under test.
  *
- * The hourly allowance rides on `deps` and is therefore shared by every handler
- * built from the same deps — which is the production property (one budget per
- * install, handed to every session) and the one a test has to be able to drive
- * both ways.
+ * Every handler built from the same deps shares them, as in production.
  *
  * @param deps - The tool dependencies under test.
  * @param identity - Who is calling; the registered agent unless a test says otherwise.
