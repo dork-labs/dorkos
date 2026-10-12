@@ -276,22 +276,71 @@ export async function attemptShot(
 }
 
 /**
- * Open a fresh session page, then trigger a scenario turn via the API so the
- * already-subscribed page receives the live stream (required for transient
- * events like `ui_command`). Returns once the message is accepted.
+ * Open a new chat with `agent` and send `prompt` through the real composer, with
+ * `scenario` bound to that chat, the way a person starts one. Returns the
+ * chat's session id once the message is in the transcript.
+ *
+ * **The page is on the chat before the turn starts, and has to be.** A
+ * scenario's `ui_command` (the canvas opening, for one) is forwarded live and
+ * never replayed, so a page that joined after it would never see it. Since
+ * DOR-2712 a session id the server has never seen is a 404, so the chat is
+ * opened as an explicit draft (`draft=1` plus a reserved launch location), the
+ * same new-chat link the app builds. A bare `/session?dir=…` is not that: it
+ * resumes the agent's last chat when there is one, which put a drive into a
+ * chat an earlier shot had left mid-edit or parked on an approval.
+ *
+ * The scenario is bound before the page opens; it is read only when the turn
+ * starts, which is strictly later. Opening the chat also records it as one this
+ * person touched (DOR-2789), so the sidebar's Today and agent clicks treat it
+ * as theirs.
+ *
+ * @param page - The page to drive.
+ * @param scenario - The test-mode scenario the turn runs.
+ * @param prompt - What the person types.
+ * @param agent - The fleet agent's directory name.
  */
 export async function openLiveTurn(
   page: Page,
   scenario: string,
   prompt: string,
   agent: string
-): Promise<void> {
+): Promise<string> {
   const sessionId = randomUUID();
   const cwd = path.join(FLEET_ROOT, agent);
-  await post('/api/test/scenario', { name: scenario, sessionId });
-  await page.goto(url(`/session?session=${sessionId}&dir=${encodeURIComponent(cwd)}`));
+  const bound = await post('/api/test/scenario', { name: scenario, sessionId });
+  if (!bound.ok)
+    throw new Error(`Binding ${scenario} answered ${bound.status}: ${await bound.text()}`);
+  const location = await post('/api/session-locations', { cwd });
+  if (!location.ok) {
+    throw new Error(
+      `Reserving ${agent}'s folder answered ${location.status}: ${await location.text()}`
+    );
+  }
+  const { id: launchRef } = (await location.json()) as { id: string };
+  await page.goto(
+    url(`/session?${new URLSearchParams({ session: sessionId, draft: '1', launchRef })}`)
+  );
   await page.waitForSelector('[data-testid="chat-panel"]', { timeout: WAIT_MS });
-  await post(`/api/sessions/${sessionId}/messages`, { content: prompt, cwd, create: true });
+
+  // The composer is a controlled field: until the chat and its agent have
+  // resolved, a fill can be reverted by the next render. The send button only
+  // appears once the field holds the draft, so it is the proof the fill stuck.
+  const input = page.getByRole('combobox', { name: /^(message |send a message)/i });
+  await input.waitFor({ timeout: WAIT_MS });
+  await input.fill(prompt);
+  await page.getByRole('button', { name: /send message/i }).click({ timeout: WAIT_MS });
+  await page
+    .locator('[data-testid="message-item"][data-role="user"]')
+    .filter({ hasText: prompt })
+    .first()
+    .waitFor({ timeout: WAIT_MS });
+  // The chat must still be the one the scenario was bound to: a route that
+  // re-minted after the send would run the turn on the default scenario.
+  const landed = new URL(page.url()).searchParams.get('session');
+  if (landed !== sessionId) {
+    throw new Error(`The chat moved from ${sessionId} to ${landed} while sending`);
+  }
+  return sessionId;
 }
 
 /**

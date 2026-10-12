@@ -150,6 +150,7 @@ const PAYLOADS: { [K in NotificationKind]: NotificationPayloads[K] } = {
     claimable: false,
     claimableAfter: '2026-10-04T10:00:00.000Z',
   },
+  'heartbeat.credits-offer': {},
 };
 
 /** The tier every kind is declared at, from the spec's own table. */
@@ -181,6 +182,8 @@ const EXPECTED_TIERS: Record<NotificationKind, string> = {
   // Nothing is stuck and the wait is at least a week: it badges the bell and never reaches a
   // phone (DOR-2543).
   'community.owner-replacement': 'notable',
+  // An offer, raised once per computer: never an alarm (spec heartbeats §6.3).
+  'heartbeat.credits-offer': 'quiet',
 };
 
 /**
@@ -268,6 +271,7 @@ describe('notification registry', () => {
       'dm.received',
       'extension.approval',
       'extension.decision',
+      'heartbeat.credits-offer',
       'mention.received',
       'report.daily',
       'run.completed',

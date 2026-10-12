@@ -1,4 +1,4 @@
-/** Canonical157 migration structure preserves the archived published152 Doc/Room schema. */
+/** Canonical159 migration structure preserves the archived published152 Doc/Room schema. */
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { expect, it } from 'vitest';
@@ -25,7 +25,7 @@ type Table = {
 };
 const snapshot = JSON.parse(
   readFileSync(
-    fileURLToPath(new URL('../../drizzle/meta/20261011065204_snapshot.json', import.meta.url)),
+    fileURLToPath(new URL('../../drizzle/meta/20261011184508_snapshot.json', import.meta.url)),
     'utf8'
   )
 ) as { id: string; prevId: string; tables: Record<string, Table> };
@@ -37,13 +37,14 @@ const publishedSnapshot = JSON.parse(
     'utf8'
   )
 ) as { id: string; prevId: string; tables: Record<string, Table> };
-const main156Snapshot = JSON.parse(
+const main158Snapshot = JSON.parse(
   readFileSync(
-    fileURLToPath(new URL('../../drizzle/meta/20261011031406_snapshot.json', import.meta.url)),
+    fileURLToPath(new URL('../../drizzle/meta/20261011063041_snapshot.json', import.meta.url)),
     'utf8'
   )
 ) as { tables: Record<string, Table> };
 const incomingTables = [
+  'heartbeat_report_items',
   'heartbeat_beats',
   'heartbeat_outbox',
   'heartbeat_state',
@@ -117,11 +118,11 @@ function storedChecks(sql: string): string[] {
   return result.sort();
 }
 
-it('migrates canonical157 including Main156 while preserving the published152 Doc/Room and Chat snapshot structures', () => {
+it('migrates canonical159 including Main158 while preserving the published152 Doc/Room and Chat snapshot structures', () => {
   expect(publishedSnapshot.prevId).toBe('ae4719be-7fef-48ec-b6d0-7dc6ab4f3c07');
   expect(publishedSnapshot.id).not.toBe(publishedSnapshot.prevId);
-  expect(snapshot.prevId).toBe('da1990cc-b3e2-496f-bd56-821b709e7ce4');
-  expect(snapshot.id).toBe('c2e429ab-c20d-4ce5-b3c5-fc21a4f19e5e');
+  expect(snapshot.prevId).toBe('7bf85660-9990-453b-87cf-29bf2f5a2f3d');
+  expect(snapshot.id).toBe('71a4819c-e113-4834-bad9-c9bbac8c7f96');
   expect(snapshot.id).not.toBe(snapshot.prevId);
   const db = createDb(':memory:');
   try {
@@ -131,7 +132,7 @@ it('migrates canonical157 including Main156 while preserving the published152 Do
       const expected = snapshot.tables[name]!;
       expect(expected, name).toBeDefined();
       if (incomingTables.includes(name))
-        expect(expected, `preserved Main156 ${name}`).toEqual(main156Snapshot.tables[name]);
+        expect(expected, `preserved Main158 ${name}`).toEqual(main158Snapshot.tables[name]);
       else if (name !== 'commitments' && name !== 'agent_pauses')
         expect(expected, `preserved published152 ${name}`).toEqual(publishedSnapshot.tables[name]);
       const primary =

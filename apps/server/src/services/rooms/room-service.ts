@@ -578,6 +578,21 @@ export class RoomService {
   ): RoomEntry {
     return this.parts.systemPosts.postMoment(roomId, input);
   }
+  /** Post an agent's scripted greeting, waking nobody. See {@link RoomSystemPosts.postAgentGreeting}. */
+  postAgentGreeting(
+    roomId: string,
+    input: { authorId: string; text: string; greeting: 'first-run' }
+  ): RoomEntry {
+    return this.parts.systemPosts.postAgentGreeting(roomId, input);
+  }
+  /** Whether one entry is in one room's log. */
+  hasEntry(roomId: string, entryId: string): boolean {
+    return this.parts.core.store.getEntryById(roomId, entryId) !== null;
+  }
+  /** The room holding a well-known key (`'team'`), archived or not, or `null`. */
+  findWellKnownRoom(key: string): Room | null {
+    return this.parts.core.store.findByWellKnown(key);
+  }
   /** Announce merged work. See {@link RoomSystemPosts.postMergeEvent}. */
   postMergeEvent(
     roomId: string,

@@ -4,7 +4,7 @@
  *
  * @module shared/transport-heartbeats
  */
-import type { HeartbeatStatus } from './heartbeat-schemas.js';
+import type { HeartbeatStatus, TriageCreditsChoice } from './heartbeat-schemas.js';
 
 /** What the app asks the server about an agent's heartbeat. */
 export interface HeartbeatTransport {
@@ -15,4 +15,11 @@ export interface HeartbeatTransport {
    * @param agentId - The agent's Mesh id.
    */
   getAgentHeartbeat(agentId: string): Promise<HeartbeatStatus>;
+  /**
+   * Answer the one-time offer to run cheap checks on DorkOS credits (spec
+   * `heartbeats` §6.3). Owner only; nothing is spent until the answer is yes.
+   *
+   * @param useCredits - `true` is **Use credits**; `false` is **Not now**.
+   */
+  chooseTriageCredits(useCredits: boolean): Promise<TriageCreditsChoice>;
 }

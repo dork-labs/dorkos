@@ -25,7 +25,7 @@ afterEach(async () => {
 /** Write a minimal published set (manifest + asset files) into the fixture dir. */
 async function publishFixture(): Promise<void> {
   const assets = [
-    { file: 'cockpit-light.png', surface: 'cockpit', bytes: 3 },
+    { file: 'team-room-light.png', surface: 'team-room', bytes: 3 },
     { file: 'topology-light.png', surface: 'topology', bytes: 3 },
     { file: 'topology-dark.webm', surface: 'topology', bytes: 3 },
   ];
@@ -37,7 +37,7 @@ async function publishFixture(): Promise<void> {
       generatedAt: '2026-07-09T00:00:00.000Z',
       runId: 'run-1',
       shots: [
-        { id: 'cockpit', kind: 'still', frame: 'desktop', consumers: ['marketing'] },
+        { id: 'team-room', kind: 'still', frame: 'desktop', consumers: ['marketing'] },
         { id: 'topology', kind: 'loop', frame: 'desktop', consumers: ['marketing'] },
       ],
       assets,
@@ -82,8 +82,8 @@ describe('runArchive', () => {
     const dest = path.join(outputDir, 'archive', 'v1');
     const files = (await fs.readdir(dest)).sort();
     expect(files).toEqual([
-      'cockpit-light.png',
       'manifest.json',
+      'team-room-light.png',
       'topology-dark.webm',
       'topology-light.png',
     ]);
@@ -95,7 +95,10 @@ describe('runArchive', () => {
       generatedAt: '2026-07-09T00:00:00.000Z',
       runId: 'run-1',
     });
-    expect(manifest.shots.map((s: { id: string }) => s.id).sort()).toEqual(['cockpit', 'topology']);
+    expect(manifest.shots.map((s: { id: string }) => s.id).sort()).toEqual([
+      'team-room',
+      'topology',
+    ]);
   });
 
   it('archives only the requested shots with --shots', async () => {

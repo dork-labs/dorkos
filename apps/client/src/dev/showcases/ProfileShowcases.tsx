@@ -2,6 +2,7 @@ import { useMemo, useState, type ReactNode } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { TeamMember } from '@dorkos/shared/team-schemas';
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
+import type { HeartbeatStatus } from '@dorkos/shared/heartbeat-schemas';
 import type { Transport } from '@dorkos/shared/transport';
 import { Button } from '@/layers/shared/ui';
 import { TransportProvider } from '@/layers/shared/model';
@@ -55,6 +56,7 @@ const STATES: { id: string; label: string; page?: ProfilePageId }[] = [
   { id: 'agent-warden', label: 'Pushed page: Sessions', page: 'sessions' },
   { id: 'agent-warden', label: 'Pushed page: Instructions', page: 'instructions' },
   { id: 'agent-warden', label: 'Pushed page: Memory', page: 'memory' },
+  { id: 'agent-warden', label: 'Pushed page: Heartbeat', page: 'heartbeat' },
 ];
 
 /**
@@ -80,7 +82,72 @@ const FIXTURE_MANIFEST = {
   nopeContent: 'Never force-push to a shared branch.',
   memoryContent:
     '- The build is deployed on Tuesdays. (noted in #product, 2026-08-24)\n- Dorian prefers the failure before the fix. (noted in a direct chat, 2026-08-24)',
+  heartbeatContent:
+    '---\nname: heartbeat\nwake: timed\nreport: daily\n---\n\n- A red build on main comes first.\n- Never retry a deploy unasked.',
 } as unknown as AgentManifest;
+
+/**
+ * What the Heartbeat page reads: a timed agent with a check due soon, three
+ * past checks that ended three different ways, and one message held overnight.
+ */
+function fixtureHeartbeat(): HeartbeatStatus {
+  const minutesFromNow = (minutes: number) => new Date(Date.now() + minutes * 60_000).toISOString();
+  return {
+    enabled: true,
+    wake: 'timed',
+    nextBeatAt: minutesFromNow(12),
+    skippedReason: null,
+    fileError: null,
+    lastBeats: [
+      {
+        id: 'beat-3',
+        startedAt: minutesFromNow(-18),
+        endedAt: minutesFromNow(-17),
+        kind: 'pulse',
+        wake: 'event:run.failed',
+        outcome: 'worked',
+        summary: 'Main went red on a flaky test. Reran it; green again.',
+        raises: 1,
+        sessionId: 'beat-chat-today',
+      },
+      {
+        id: 'beat-2',
+        startedAt: minutesFromNow(-48),
+        endedAt: minutesFromNow(-48),
+        kind: 'pulse',
+        wake: 'timer',
+        outcome: 'quiet',
+        summary: 'Checked 4 things. Nothing new.',
+        raises: 0,
+        sessionId: null,
+      },
+      {
+        id: 'beat-1',
+        startedAt: minutesFromNow(-200),
+        endedAt: minutesFromNow(-195),
+        kind: 'pulse',
+        wake: 'timer',
+        outcome: 'no-end-beat',
+        summary: '',
+        raises: 0,
+        sessionId: 'beat-chat-today',
+      },
+    ],
+    held: [
+      {
+        id: 'held-1',
+        to: 'owner',
+        rung: 'dm',
+        text: 'Main was red for 20 minutes this afternoon. A rerun fixed it.',
+        deliverAfter: minutesFromNow(15 * 60),
+        createdAt: minutesFromNow(-17),
+      },
+    ],
+    report: { cadence: 'daily', to: 'owner', nextReportAt: minutesFromNow(15 * 60), items: 3 },
+    // The credits offer stands, so the showcase draws its card.
+    checks: { runsOn: 'runtime', runtime: 'claude-code', today: 0, tokens: 0, offer: true },
+  };
+}
 
 /**
  * The playground's transport, with one answer filled in.
@@ -92,8 +159,11 @@ function useFixtureTransport(): Transport {
   return useMemo(() => {
     const base = createPlaygroundTransport();
     return new Proxy(base, {
-      get: (target, prop) =>
-        prop === 'getAgentByPath' ? async () => FIXTURE_MANIFEST : Reflect.get(target, prop),
+      get: (target, prop) => {
+        if (prop === 'getAgentByPath') return async () => FIXTURE_MANIFEST;
+        if (prop === 'getAgentHeartbeat') return async () => fixtureHeartbeat();
+        return Reflect.get(target, prop);
+      },
     });
   }, []);
 }
@@ -122,9 +192,9 @@ export function ProfileShowcases() {
   return (
     <PlaygroundSection
       title="Profile"
-      description="One panel for any identity, in the six shapes it takes: your own row, another person, somebody bridged in over Telegram, an agent you manage, an agent somebody else manages, and DorkBot. What changes between them is which facts are true — the status line, who is above the button, whether the button exists at all, and which rows have arrows. Two things this fixture invents: a second local person, so the 'another person' rows have somebody to be about, and one agent manifest, so the pushed pages have a file and a description to draw. Nothing else is answered, which is why the Sessions and Tasks pages show their empty states. The Instructions and Memory pages carry the injected-prompt preview: open it to read what the agent is actually handed — identity, personality, both convention files, and the agent's own saved notes inside the fence a turn puts them in, assembled the way the server assembles them and following the draft rather than the file on disk."
+      description="One panel for any identity, in the six shapes it takes: your own row, another person, somebody bridged in over Telegram, an agent you manage, an agent somebody else manages, and DorkBot. What changes between them is which facts are true — the status line, who is above the button, whether the button exists at all, and which rows have arrows. Two things this fixture invents: a second local person, so the 'another person' rows have somebody to be about, and one agent manifest, so the pushed pages have a file and a description to draw. Little else is answered, which is why the Sessions and Tasks pages show their empty states. The Instructions and Memory pages carry the injected-prompt preview: open it to read what the agent is actually handed — identity, personality, both convention files, and the agent's own saved notes inside the fence a turn puts them in, assembled the way the server assembles them and following the draft rather than the file on disk. The Heartbeat page is answered too: a timed agent, three past checks that ended three ways, one message held for the morning, and a report with three items so far."
     >
-      <ShowcaseLabel>The six relationships, and four pushed pages</ShowcaseLabel>
+      <ShowcaseLabel>The six relationships, and five pushed pages</ShowcaseLabel>
       <ShowcaseDemo>
         <div className="flex flex-wrap gap-2">
           {STATES.map((state) => (

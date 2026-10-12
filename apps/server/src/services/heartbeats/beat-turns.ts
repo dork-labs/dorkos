@@ -20,7 +20,7 @@
  *
  * @module services/heartbeats/beat-turns
  */
-import type { EndBeatInput } from '@dorkos/shared/heartbeat-schemas';
+import type { BeatKind, EndBeatInput } from '@dorkos/shared/heartbeat-schemas';
 import { primaryOf } from '../session/resolution/session-key-registry.js';
 
 /** How long a settled beat turn is remembered, for the status change racing its settle. */
@@ -34,6 +34,8 @@ export interface BeatTurn {
   beatId: string;
   /** The message the beat dispatched; a turn started by another message is not this beat. */
   messageId: string;
+  /** What kind of beat: only a `report` beat may hand over a report. */
+  kind: BeatKind;
   /** What `end_beat` handed over, once called. */
   ended: EndBeatInput | null;
   /** Room posts and notes the turn sent directly, skipping `end_beat`. */
@@ -55,10 +57,11 @@ const turns = new Map<string, BeatTurn>();
  */
 export function registerBeatTurn(
   sessionId: string,
-  turn: Pick<BeatTurn, 'agentId' | 'beatId' | 'messageId'>
+  turn: Pick<BeatTurn, 'agentId' | 'beatId' | 'messageId'> & { kind?: BeatKind }
 ): void {
   turns.set(primaryOf(sessionId), {
     ...turn,
+    kind: turn.kind ?? 'pulse',
     ended: null,
     bypass: 0,
     chatSends: 0,
@@ -89,7 +92,7 @@ export function liveBeatTurn(sessionId: string | undefined): BeatTurn | undefine
 }
 
 /** Why `end_beat` was refused. */
-export type EndBeatRefusal = 'NOT_A_BEAT' | 'ALREADY_ENDED';
+export type EndBeatRefusal = 'NOT_A_BEAT' | 'ALREADY_ENDED' | 'NOT_A_REPORT_BEAT';
 
 /**
  * Hand a beat's ending to the runner. The first call wins; the turn may finish
@@ -106,6 +109,10 @@ export function endBeatTurn(
   const turn = liveBeatTurn(sessionId);
   if (!turn) return { ok: false, code: 'NOT_A_BEAT' };
   if (turn.ended) return { ok: false, code: 'ALREADY_ENDED' };
+  // A report is written on a report beat only (§3.4); `null` (skip) is harmless anywhere.
+  if (typeof input.report === 'string' && turn.kind !== 'report') {
+    return { ok: false, code: 'NOT_A_REPORT_BEAT' };
+  }
   turn.ended = input;
   return { ok: true, turn };
 }

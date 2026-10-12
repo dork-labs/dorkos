@@ -33,7 +33,7 @@ import { FAILURE_STORM_AT, type BeatClock } from './beat-scheduler.js';
 import { resolveBeatChat } from './beat-chat.js';
 import type { BeatTurnLauncher } from './beat-launch.js';
 import type { BeatPlan } from './beat-plan.js';
-import { buildBeatPrompt } from './beat-prompt.js';
+import { buildBeatPrompt, type ReportMaterial } from './beat-prompt.js';
 import { registerBeatTurn, settleBeatTurn, type BeatTurn } from './beat-turns.js';
 import type { HeartbeatStore } from './heartbeat-store.js';
 import {
@@ -44,13 +44,14 @@ import {
 } from './gatherers/index.js';
 import { recordBeat } from './record.js';
 import { standingKey, triageByRules } from './triage-rules.js';
+import { decideBeat, type BeatTriagePort } from './triage/beat-triage.js';
 import type { BeatAgent, BeatOutboxPort, BeatWake, FinishedBeat } from './beat-runner.js';
 
 /** The longest a failing gatherer holds `gathered_through` back. */
 export const GATHER_HOLD_MAX_MS = 24 * 60 * 60_000;
 
 /** Outcomes after which what the beat gathered counts as dealt with. */
-const DEALT_WITH: ReadonlySet<BeatOutcome> = new Set(['quiet', 'worked', 'no-end-beat']);
+const DEALT_WITH: ReadonlySet<BeatOutcome> = new Set(['quiet', 'queued', 'worked', 'no-end-beat']);
 
 /** What one beat reaches. */
 export interface BeatCycleDeps {
@@ -74,6 +75,8 @@ export interface BeatCycleDeps {
   mintId?(): string;
   /** Hears every finished beat. */
   onFinished(beat: FinishedBeat): void;
+  /** Triage on a decision model (§6.2); absent, the rules decide alone. */
+  triage?: BeatTriagePort;
 }
 
 /** What this beat opened, for the runner to close if anything throws. */
@@ -84,6 +87,8 @@ export interface BeatTrack {
   chatSessionId?: string;
   /** Set once the turn's registry entry was settled. */
   settled?: boolean;
+  /** Fires when the runner stops, so a check in flight stops asking. */
+  signal?: AbortSignal;
 }
 
 /** How a beat ended, for the runner's retries. */
@@ -95,7 +100,7 @@ export interface BeatResult {
 }
 
 /** One finished beat's fields. */
-interface BeatEnd {
+export interface BeatEnd {
   outcome: BeatOutcome;
   summary: string;
   reason?: string;
@@ -106,13 +111,21 @@ interface BeatEnd {
 }
 
 /** What closing a beat reads. */
-type FinishContext = Pick<
+export type FinishContext = Pick<
   BeatContext,
   'agent' | 'wake' | 'beatId' | 'startedAt' | 'counts' | 'triage'
 > & { changeKeys?: string; gatheredThrough?: string };
 
+/** What a report beat adds to its context (`report-beat.ts`). */
+export interface ReportTurn {
+  /** What the prompt carries. */
+  material: ReportMaterial;
+  /** Deliver (or carry over) what `end_beat.report` handed over; returns a record note. */
+  settle(sessionId: string, ended: EndBeatInput): Promise<string | null>;
+}
+
 /** The facts one beat runs on, gathered and triaged. */
-interface BeatContext {
+export interface BeatContext {
   agent: BeatAgent;
   plan: BeatPlan<BeatAgent>;
   wake: BeatWake;
@@ -122,10 +135,12 @@ interface BeatContext {
   changes: Change[];
   counts: string;
   triage: string;
-  /** The keys this beat saw, kept once it deals with them. */
-  changeKeys: string;
+  /** The keys this beat saw, kept once it deals with them; absent when it gathered nothing. */
+  changeKeys?: string;
   /** How far the next beat gathers from, once this one deals with what it saw. */
-  gatheredThrough: string;
+  gatheredThrough?: string;
+  /** On a report beat: the report's material and how it is delivered. */
+  report?: ReportTurn;
 }
 
 /**
@@ -143,7 +158,7 @@ export async function runBeat(
   track: BeatTrack
 ): Promise<BeatResult> {
   const ctx = await openAndTriage(deps, plan, wake, track);
-  if (ctx === 'quiet') return { outcome: 'quiet' };
+  if (ctx === 'quiet' || ctx === 'queued' || ctx === 'skipped') return { outcome: ctx };
   return runTurn(deps, ctx, track);
 }
 
@@ -153,7 +168,7 @@ async function openAndTriage(
   plan: BeatPlan<BeatAgent>,
   wake: BeatWake,
   track: BeatTrack
-): Promise<BeatContext | 'quiet'> {
+): Promise<BeatContext | 'quiet' | 'queued' | 'skipped'> {
   const { agent } = plan;
   const now = new Date(deps.clock.now());
   const startedAt = now.toISOString();
@@ -180,6 +195,17 @@ async function openAndTriage(
     seenStanding,
   });
   if (triage.considered.length > 0) deps.store.patchState(agent.id, { lastChangeAt: startedAt });
+  const decided = await decideBeat(deps.triage, {
+    kind,
+    verdict: triage.verdict,
+    considered: triage.considered,
+    agentName: agent.name,
+    checklist: plan.checklist,
+    ...(track.signal ? { signal: track.signal } : {}),
+  });
+  // Saved at once: a turn that throws or a restart still leaves what the check
+  // spent, and the daily fuse is seeded from these rows.
+  deps.store.finishBeat(beatId, { triage: decided.record });
   const ctx: BeatContext = {
     agent,
     plan,
@@ -189,12 +215,25 @@ async function openAndTriage(
     kind,
     changes: triage.considered,
     counts: JSON.stringify(gathered.counts),
-    triage: JSON.stringify({ rung: 'rules', verdict: triage.verdict }),
+    triage: decided.record,
     changeKeys: JSON.stringify(gathered.changes.map(standingKey)),
     gatheredThrough: nextGatheredThrough(state?.gatheredThrough ?? null, startedAt, gathered),
   };
-  if (kind === 'sweep' || triage.verdict !== 'quiet') return ctx;
+  if (track.signal?.aborted) {
+    // Heartbeats were stopped mid-check: no turn, and nothing counts as seen.
+    finish(deps, ctx, { outcome: 'skipped', summary: 'Stopped before its check finished.' });
+    return 'skipped';
+  }
+  if (decided.decision === 'turn') return ctx;
   const checked = plan.settings.watch.length;
+  if (decided.decision === 'queue') {
+    deps.triage?.queue({ agentId: agent.id, beatId, changes: triage.considered, at: startedAt });
+    finish(deps, ctx, {
+      outcome: 'queued',
+      summary: `Checked ${checked} things. Saved for its next report.`,
+    });
+    return 'queued';
+  }
   finish(deps, ctx, {
     outcome: 'quiet',
     summary:
@@ -246,8 +285,14 @@ function parseKeys(raw: string | null | undefined): string[] {
   }
 }
 
-/** The part of a beat that runs the agent's runtime. */
-async function runTurn(
+/**
+ * The part of a beat that runs the agent's runtime, in its beat chat.
+ *
+ * @param deps - What it reaches.
+ * @param ctx - The beat.
+ * @param track - Filled in as the turn starts.
+ */
+export async function runTurn(
   deps: BeatCycleDeps,
   ctx: BeatContext,
   track: BeatTrack
@@ -270,10 +315,16 @@ async function runTurn(
     openRaises: deps.outbox.openRaises(agent.id),
     checklist: ctx.plan.checklist,
     newManager: state?.newManager === 1,
+    ...(ctx.report ? { report: ctx.report.material } : {}),
   });
   // Checked again just before the turn starts: a person may have started typing.
   if (!chat.isNew && deps.launcher.isBusy(chat.sessionId)) return busy(deps, ctx);
-  registerBeatTurn(chat.sessionId, { agentId: agent.id, beatId: ctx.beatId, messageId });
+  registerBeatTurn(chat.sessionId, {
+    agentId: agent.id,
+    beatId: ctx.beatId,
+    messageId,
+    kind: ctx.kind,
+  });
   track.chatSessionId = chat.sessionId;
   let settle: (outcome: 'ok' | 'failed') => void = () => undefined;
   const settled = new Promise<'ok' | 'failed'>((resolve) => {
@@ -372,7 +423,14 @@ async function afterTurn(
     return { outcome: 'no-end-beat' };
   }
   const raises = await handOver(deps, ctx, sessionId, ended);
-  finish(deps, ctx, { ...base, outcome: 'worked', summary: ended.summary, raises });
+  const note = (await ctx.report?.settle(sessionId, ended)) ?? null;
+  finish(deps, ctx, {
+    ...base,
+    outcome: 'worked',
+    summary: ended.summary,
+    raises,
+    ...(note ? { reason: note } : {}),
+  });
   return { outcome: 'worked' };
 }
 
@@ -402,13 +460,13 @@ async function handOver(
 
 /**
  * Close a beat: its row, its record line, its observers, and — when it dealt
- * with what it saw — how far the next beat gathers from.
+ * with what it gathered — how far the next beat gathers from.
  *
  * @param deps - What it reaches.
  * @param ctx - The beat.
  * @param end - How it ended.
  */
-function finish(deps: BeatCycleDeps, ctx: FinishContext, end: BeatEnd): void {
+export function finish(deps: BeatCycleDeps, ctx: FinishContext, end: BeatEnd): void {
   const { agent, wake } = ctx;
   const audit = recordBeat({
     agent,
@@ -429,10 +487,11 @@ function finish(deps: BeatCycleDeps, ctx: FinishContext, end: BeatEnd): void {
     ...(end.sessionId ? { turnSessionId: end.sessionId } : {}),
     ...(audit ? { auditSeq: audit.seq } : {}),
   });
-  if (DEALT_WITH.has(end.outcome)) {
+  // A beat that gathered nothing (a report beat, one that threw) moves nothing.
+  if (DEALT_WITH.has(end.outcome) && ctx.changeKeys !== undefined) {
     deps.store.patchState(agent.id, {
       gatheredThrough: ctx.gatheredThrough ?? ctx.startedAt,
-      ...(ctx.changeKeys !== undefined ? { lastChangeKeys: ctx.changeKeys } : {}),
+      lastChangeKeys: ctx.changeKeys,
     });
   }
   deps.onFinished({

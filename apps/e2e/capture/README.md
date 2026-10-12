@@ -9,7 +9,7 @@ with hand-captured media that wins.
 ## The shot registry
 
 `shots.ts` is the single source of truth. A **shot** is one logical surface (the
-cockpit, the topology graph, a streaming chat) with an `id`, a `kind`
+#team room, the topology graph, a streaming chat) with an `id`, a `kind`
 (`still` or `loop`), a `frame` (`desktop`/`mobile`), and its `consumers`
 (`marketing`, `docs`, `changelog`). The process phase writes a snapshot of the
 registry into `manifest.json` (`shots`), so the site and docs stay consistent
@@ -232,7 +232,7 @@ the same webm + poster.
 
 | Surface           | Stills | Loop | Notes                                             |
 | ----------------- | ------ | ---- | ------------------------------------------------- |
-| `cockpit`         | light  | —    | Home: the composer, its tabs, the sidebar roster  |
+| `team-room`       | light  | —    | Home: #team, a person and three agents talking    |
 | `agents`          | light  | —    | Fleet list with identities/runtimes, Active rows  |
 | `topology`        | light  | dark | Mesh graph, 6 agents across namespaces            |
 | `tasks`           | light  | —    | Schedules + expanded green run history            |
@@ -272,7 +272,7 @@ Nothing rendered depends on `Date.now()`.
 - `library.ts` — the media library: run recorder (raw sink + `run.json` provenance), `latest` symlink, retention pruning, run loading.
 - `overrides.ts` — human-override discovery, validation, and application (manual media beats the automated capture).
 - `lib.ts` — shared Playwright plumbing (theme init-script, live-turn opener, raw loop recorder + head-trim marker, the `attemptShot` skip guard).
-- `surfaces-desktop.ts` / `surfaces-mobile.ts` — the per-surface drives, plus two desktop siblings kept out of line: `surfaces-desktop-power.ts` (Control Center, Settings → Room limits, the full-power door) and `surfaces-desktop-fleet.ts` (the four-agent `multi-session` drive).
+- `surfaces-desktop.ts` / `surfaces-mobile.ts` — the per-surface drives, plus desktop siblings kept out of line: `surfaces-desktop-team.ts` (the `team-room` conversation in #team, answered by real room turns), `surfaces-desktop-power.ts` (Control Center, Settings → Room limits, the full-power door), `surfaces-desktop-fleet.ts` (the four-agent `multi-session` drive), `surfaces-desktop-rooms.ts` (the `room-files` channel) and `surfaces-desktop-tasks.ts` (the `task-runtime-picker` form).
 - `optimize.ts` — the editing stage: PNG recompression + aspect-validated scaling (sharp), loop editing (ffmpeg-static: head-trim, end-seam crossfade, two-pass VP9, poster extraction), and the v2 manifest writer.
 - `overrides/` — committed human-override sources (see `overrides/README.md`).
 - `__tests__/` — unit tests for the registry, aspect validation, and override discovery (`pnpm --filter @dorkos/e2e test`).

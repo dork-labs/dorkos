@@ -28,7 +28,6 @@
  */
 import { runtimeDisplayName } from '@dorkos/shared/agent-runtime';
 import { extensionApprovalSubjectId } from '@dorkos/shared/extension-approval-schemas';
-import { windowLabel } from '@dorkos/shared/account-usage';
 import {
   NOTIFICATION_KINDS,
   type NotificationActionDTO,
@@ -36,6 +35,7 @@ import {
   type NotificationSubjectType,
   type NotificationTier,
 } from '@dorkos/shared/notification-schemas';
+import { formatResetTime, limitWindowPhrase, ownerReplacementWhen } from './notification-copy.js';
 
 /**
  * How a run finished, as `run.completed` reports it.
@@ -374,6 +374,8 @@ export interface NotificationPayloads {
       }
     | { phase: 'completed'; newOwnerDisplayName: string }
   );
+  /** The one-time offer to run cheap checks on DorkOS credits (spec `heartbeats` §6.3). */
+  'heartbeat.credits-offer': Record<string, never>;
   /** The daily digest. */
   'report.daily': {
     /** The day it covers, `YYYY-MM-DD` (the boundary's own date — see
@@ -666,43 +668,6 @@ const CREDITS_REFUSED_DEDUPE_WINDOW_MS = 60 * 60 * 1000;
  * which is the Community's longest wait (180 days) plus its 14-day claim window.
  */
 const OWNER_REPLACEMENT_DEDUPE_WINDOW_MS = 210 * 24 * 60 * 60 * 1000;
-
-const OWNER_REPLACEMENT_DATE = new Intl.DateTimeFormat('en-US', {
-  weekday: 'long',
-  day: 'numeric',
-  month: 'long',
-  year: 'numeric',
-  timeZone: 'UTC',
-});
-
-/**
- * When an open owner replacement could happen, as the end of a sentence. In UTC, named, because
- * a notification is written once on the server and read wherever the person is.
- */
-function ownerReplacementWhen(
-  p: Extract<NotificationPayload<'community.owner-replacement'>, { phase: 'open' }>
-): string {
-  if (p.claimable) return 'at any time now';
-  if (p.claimableAfter)
-    return `on or after ${OWNER_REPLACEMENT_DATE.format(new Date(p.claimableAfter))} (UTC)`;
-  return 'after a waiting period of at least 7 days';
-}
-
-/** A reset time in the server's local zone, short, e.g. `9/27/26, 8:00 PM`. */
-function formatResetTime(iso: string): string {
-  const date = new Date(iso);
-  if (Number.isNaN(date.getTime())) return iso;
-  return new Intl.DateTimeFormat(undefined, { dateStyle: 'short', timeStyle: 'short' }).format(
-    date
-  );
-}
-
-/** A window's name inside a sentence: `weekly`, `5-hour window`, or `usage` when unknown. */
-function limitWindowPhrase(window: string): string {
-  if (window === 'unknown') return 'usage';
-  const label = windowLabel(window);
-  return label.charAt(0).toLowerCase() + label.slice(1);
-}
 
 /**
  * Where an `extension.approval` row files itself: the exact copy.
@@ -1334,6 +1299,20 @@ const ENTRIES: NotificationRegistryMap = {
     relay: 'never',
   },
 
+  'heartbeat.credits-offer': {
+    // Raised once per computer by `heartbeats/triage/triage-checks.ts`, while
+    // nobody has answered. `quiet`: an offer is never an alarm.
+    kind: 'heartbeat.credits-offer',
+    tier: 'quiet',
+    storage: 'event',
+    subjectType: 'system',
+    locate: () => ({ subjectId: 'heartbeat-credits-offer' }),
+    title: () => 'Run cheap checks on DorkOS credits?',
+    body: () => 'Answer on any agent’s Heartbeat page. Nothing is spent until you say yes.',
+    dedupeKey: () => 'heartbeat-credits-offer',
+    relay: 'never',
+  },
+
   'report.daily': {
     // The one kind whose title AND body are already fully written when they
     // arrive — `shift-report.ts` composes both from the day's actual counts,
@@ -1442,6 +1421,7 @@ export const WIRED_NOTIFICATION_KINDS: readonly NotificationKind[] = [
   'extension.approval',
   'extension.decision',
   'community.owner-replacement',
+  'heartbeat.credits-offer',
 ];
 
 /**

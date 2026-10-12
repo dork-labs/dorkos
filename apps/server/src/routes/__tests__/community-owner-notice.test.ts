@@ -39,6 +39,7 @@ const adapters = vi.hoisted(() => ({
 vi.mock('../../services/communities/remote/state.js', () => ({
   getRemoteCommunityAdapter: (ref: string, owner: string) => adapters.make!(ref, owner),
   getRemotePairingService: vi.fn(),
+  getRemoteWakePolicy: () => ({ get: vi.fn(), set: vi.fn() }),
 }));
 
 import { createCommunityConnectionsRouter } from '../community-connections.js';

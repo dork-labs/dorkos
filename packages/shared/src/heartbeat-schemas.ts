@@ -296,6 +296,60 @@ export const HeldRaiseSchema = z
 /** One raise held for a person's hours. */
 export type HeldRaise = z.infer<typeof HeldRaiseSchema>;
 
+/** An agent's next report (spec §3.4, §9.3). */
+export const HeartbeatReportStatusSchema = z
+  .object({
+    /** How often it reports, from its `HEARTBEAT.md`. */
+    cadence: HeartbeatReportSchema,
+    /** Who reads it: a person's account id or an agent's mesh id. */
+    to: z.string(),
+    /** When its next report beat runs, or null when none is scheduled. */
+    nextReportAt: z.string().nullable(),
+    /** What the next report covers so far: queued lines plus beat turns since the last one. */
+    items: z.number().int(),
+  })
+  .openapi('HeartbeatReportStatus');
+
+/** An agent's next report. */
+export type HeartbeatReportStatus = z.infer<typeof HeartbeatReportStatusSchema>;
+
+/**
+ * Where an agent's cheap checks run, live, and what they used today (spec §6.3,
+ * §7.6). Never the configured choice alone: credits that dropped out read as
+ * the runtime.
+ */
+export const HeartbeatChecksSchema = z
+  .object({
+    /** Where the next check runs: on DorkOS credits, or on the agent's own runtime. */
+    runsOn: z.enum(['credits', 'runtime']),
+    /** The agent's runtime type, for "Checks run on {runtime}." */
+    runtime: z.string(),
+    /** Checks this agent ran on credits today, in its chain person's day. */
+    today: z.number().int(),
+    /** The tokens those checks used. */
+    tokens: z.number().int(),
+    /**
+     * Whether to show the one-time "Run cheap checks on DorkOS credits?" card:
+     * linked, nobody has answered, and the viewer owns this install.
+     */
+    offer: z.boolean(),
+  })
+  .openapi('HeartbeatChecks');
+
+/** Where an agent's cheap checks run, and what they used today. */
+export type HeartbeatChecks = z.infer<typeof HeartbeatChecksSchema>;
+
+/** The answer to `PUT /api/heartbeats/triage-credits`: a person's answer to the offer. */
+export const TriageCreditsChoiceSchema = z
+  .object({
+    /** `true` is **Use credits**; `false` is **Not now**. */
+    useCredits: z.boolean(),
+  })
+  .openapi('TriageCreditsChoice');
+
+/** A person's answer to the offer. */
+export type TriageCreditsChoice = z.infer<typeof TriageCreditsChoiceSchema>;
+
 /** The answer to GET /api/agents/:id/heartbeat. */
 export const HeartbeatStatusSchema = z
   .object({
@@ -317,6 +371,10 @@ export const HeartbeatStatusSchema = z
     lastBeats: z.array(BeatSummarySchema),
     /** Raises to people still held for their hours. */
     held: z.array(HeldRaiseSchema),
+    /** Its next report. */
+    report: HeartbeatReportStatusSchema,
+    /** Where its cheap checks run, and what they used today. */
+    checks: HeartbeatChecksSchema,
   })
   .openapi('HeartbeatStatus');
 

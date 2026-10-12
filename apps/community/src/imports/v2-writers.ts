@@ -414,13 +414,13 @@ const writeAuditEvents: BatchWriter<'auditEvents'> = async (client, rows, scope)
     await insertRows(
       client,
       `INSERT INTO audit_events(id,community_id,actor_member_id,actor_kind,action,subject_id,
-         prior_state,next_state,changed_fields,created_at,origin)
+         prior_state,next_state,changed_fields,created_at,origin,decision)
        SELECT r.id,$2,r.actor_member_id,r.actor_kind,r.action,r.subject_id,r.prior_state,
          r.next_state,ARRAY(SELECT jsonb_array_elements_text(r.changed_fields)),r.created_at,
-         'imported'
+         'imported',r.decision
        FROM jsonb_to_recordset($1::jsonb) AS r(id uuid,actor_member_id uuid,actor_kind text,
          action text,subject_id text,prior_state text,next_state text,changed_fields jsonb,
-         created_at timestamptz)
+         created_at timestamptz,decision jsonb)
        ON CONFLICT DO NOTHING`,
       rows.map((event) => ({
         id: scope.derive(event.id),
@@ -435,6 +435,7 @@ const writeAuditEvents: BatchWriter<'auditEvents'> = async (client, rows, scope)
         next_state: event.next_state,
         changed_fields: event.changed_fields,
         created_at: event.created_at,
+        decision: event.decision ?? null,
       })),
       scope.communityId
     ),

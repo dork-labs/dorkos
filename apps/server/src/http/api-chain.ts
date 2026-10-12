@@ -12,17 +12,18 @@
  * | # | Express (`app.ts`)                      | Here                                          |
  * | - | --------------------------------------- | --------------------------------------------- |
  * | 1 | `terminalAdmission`                     | `503` once the server is stopping             |
- * | 2 | first-API-request log line              | the same, through `http/first-contact.ts`     |
- * | 3 | `cors` (delegate form)                  | `hono/cors` over `http/cors-policy.ts`        |
- * | 4 | `X-Content-Type-Options: nosniff`       | the same, also carried onto the raw response  |
- * | 5 | `hostGuard` on `/api`                   | `refuseUntrustedHost`                         |
- * | 6 | Better Auth, signed webhook ingress     | {@link ApiChainOptions.beforeBodyParsing}     |
- * | 7 | per-path parsers, then `express.json`   | `parseRequestBody` (`http/request-body.ts`)   |
- * | 8 | `requestLogger`                         | `logRequest`                                  |
- * | 9 | `sessionGate`                           | `decideSessionGate`, onto `c.var.user`        |
- * | 10| `resolveAgentIdentity`                  | the same resolver, onto `c.var.agentIdentity` |
- * | 11| `auditActor`                            | `auditActorForRequest`, scope entered         |
- * | 12| `auditRequestFallback`                  | `auditFallbackFor`                            |
+ * | 2 | `managedHostGuard`                      | `bypassesManagedIngress`, a `403`             |
+ * | 3 | first-API-request log line              | the same, through `http/first-contact.ts`     |
+ * | 4 | `cors` (delegate form)                  | `hono/cors` over `http/cors-policy.ts`        |
+ * | 5 | `X-Content-Type-Options: nosniff`       | the same, also carried onto the raw response  |
+ * | 6 | `hostGuard` on `/api`                   | `refuseUntrustedHost`                         |
+ * | 7 | Better Auth, signed webhook ingress     | {@link ApiChainOptions.beforeBodyParsing}     |
+ * | 8 | per-path parsers, then `express.json`   | `parseRequestBody` (`http/request-body.ts`)   |
+ * | 9 | `requestLogger`                         | `logRequest`                                  |
+ * | 10| `sessionGate`                           | `decideSessionGate`, onto `c.var.user`        |
+ * | 11| `resolveAgentIdentity`                  | the same resolver, onto `c.var.agentIdentity` |
+ * | 12| `auditActor`                            | `auditActorForRequest`, scope entered         |
+ * | 13| `auditRequestFallback`                  | `auditFallbackFor`                            |
  * | - | `/api` 404 and `errorHandler`           | `notFound` and `onError`                      |
  *
  * `__tests__/api-chain-parity.test.ts` drives both chains through the same
@@ -49,11 +50,16 @@ import type { MainRequestAdmission } from '../services/core/lifecycle/main-reque
 import type { AuditActorContext } from '../services/audit/audit-context.js';
 import { runWithAuditActor } from '../services/audit/audit-context.js';
 import { decideSessionGate, AUTH_REQUIRED_BODY } from '../services/core/auth/session-gate.js';
+import { noteGateAdmitted } from '../services/core/remote/ingress-mark.js';
 import { resolveAgentIdentityFromHeaders } from '../middleware/agent-identity.js';
 import { auditActorForRequest } from '../middleware/audit-actor.js';
 import { auditFallbackFor } from '../middleware/audit-request-fallback.js';
 import { errorReply, logRequestError } from '../middleware/error-handler.js';
 import { refuseUntrustedHost } from '../middleware/host-guard.js';
+import {
+  bypassesManagedIngress,
+  MANAGED_HOST_REFUSAL_BODY,
+} from '../middleware/managed-host-guard.js';
 import { logRequest } from '../middleware/request-logger.js';
 import { SERVER_STOPPING_BODY, SERVER_STOPPING_HEADERS } from '../middleware/terminal-admission.js';
 import { corsAllowsOrigin, corsRefusal, warnOnWildcardCorsOrigin } from './cors-policy.js';
@@ -139,6 +145,13 @@ export function createApiApp(options: ApiChainOptions): Hono<ApiEnv> {
     }
   });
   app.use(admit(options.admission));
+  // A managed remote-access hostname is served only through the managed
+  // ingress, which checks the edge proof; on this listener it is refused before
+  // any logger or route sees it, as `managedHostGuard` does on Express.
+  app.use(async (c, next) => {
+    if (bypassesManagedIngress(c.env.incoming)) return c.json(MANAGED_HOST_REFUSAL_BODY, 403);
+    await next();
+  });
   const noteFirstApiRequest = createFirstContactMarker('[Client] first API request');
   app.use(async (c, next) => {
     if (underMount(c.req.path, '/api')) noteFirstApiRequest();
@@ -185,6 +198,7 @@ export function createApiApp(options: ApiChainOptions): Hono<ApiEnv> {
     const decision = await decideSessionGate(c.req.method, c.req.path, honoRequestFacts(c));
     if (!decision.allowed) return c.json(AUTH_REQUIRED_BODY, 401);
     if (decision.user) c.set('user', decision.user);
+    noteGateAdmitted(c.env.incoming, c.env.outgoing);
     await next();
   });
   app.use(async (c, next) => {

@@ -210,6 +210,7 @@ import {
   CLOUD_REMOTE_REACH_PATHS,
   CLOUD_REMOTE_WRITE_POLICY,
 } from '../remote/remote-config-policy.js';
+import { ONBOARDING_CREDENTIAL_PATHS, ONBOARDING_WRITE_POLICY } from './onboarding-write-policy.js';
 
 /**
  * Whether an agent may write one config leaf through `config_patch`.
@@ -371,6 +372,11 @@ export const CONFIG_WRITE_POLICY = {
   // Another "who can this instance reach" door, so a person opens it, never an
   // agent.
   'spaces.enabled': 'operator-only',
+  // Which space is official (spec `official-community-space` D4): the one
+  // outside server this install shows and talks to while spaces are off, and
+  // whose agents' wake default is narrowed. Choosing it widens who this
+  // instance reaches, so a person sets it, never an agent.
+  'spaces.official.url': 'operator-only',
   // Whether the external A2A surface mounts: an agent card describing the agents
   // here, plus a JSON-RPC address outside clients post work to. That is squarely
   // "who can reach this instance", which is why it sits with `tunnel.enabled` and
@@ -402,6 +408,9 @@ export const CONFIG_WRITE_POLICY = {
   // whether an agent acts unbidden at all, which is the person's call; an agent
   // asked to stop its beats can set its own HEARTBEAT.md to `wake: off`.
   'heartbeats.enabled': 'operator-only',
+  // Whether cheap checks spend DorkOS credits (spec `heartbeats` §6.3). Only a
+  // person's **Use credits** may say yes: it spends the account owner's money.
+  'heartbeats.triageOnCredits': 'operator-only',
 
   // How long the Activity feed keeps the history people review (spec
   // `audit-trail` §3.5). Shortening it deletes rows a person may not have read
@@ -526,15 +535,8 @@ export const CONFIG_WRITE_POLICY = {
   'welcomeBack.maxPosts': 'operator-only',
   'welcomeBack.offersEnabled': 'operator-only',
 
-  'onboarding.completedSteps': 'agent-writable',
-  'onboarding.skippedSteps': 'agent-writable',
-  'onboarding.startedAt': 'agent-writable',
-  'onboarding.dismissedAt': 'agent-writable',
-  'onboarding.completedAt': 'agent-writable',
-  // A timestamp saying the first-run flow already picked a default runtime. It
-  // grants nothing and guards nothing; an agent rewriting it can at most let
-  // first-run setup ask the question again on a machine that is past it.
-  'onboarding.runtimeDefaultSetAt': 'agent-writable',
+  // The first-run section, in its own module (`onboarding-write-policy.ts`).
+  ...ONBOARDING_WRITE_POLICY,
 
   'tours.seen': 'agent-writable',
   'tours.declined': 'agent-writable',
@@ -975,6 +977,7 @@ export const OPERATOR_ONLY_STAKES: readonly OperatorOnlyStakeGroup[] = [
       'mcp.enabled',
       'browser.enabled',
       'spaces.enabled',
+      'spaces.official.url',
       'a2a.enabled',
       'mcp.apiKey',
       'mcp.rateLimit.enabled',
@@ -1023,6 +1026,8 @@ export const OPERATOR_ONLY_STAKES: readonly OperatorOnlyStakeGroup[] = [
       'cloud.credits.agents',
       'cloud.credits.linkedTo',
       ...CLOUD_REMOTE_CREDENTIAL_PATHS,
+      ...ONBOARDING_CREDENTIAL_PATHS,
+      'heartbeats.triageOnCredits',
       'runtimes.codex.credentialRef',
       'runtimes.environment.inherit.claudeCode',
       'runtimes.environment.inherit.codex',
@@ -1222,6 +1227,8 @@ export const OPERATOR_ONLY_STAKES: readonly OperatorOnlyStakeGroup[] = [
       'ui.communityNavigation.owners[].ownerKey',
       'ui.communityNavigation.owners[].installationDestination.path',
       'ui.communityNavigation.owners[].installationDestination.search',
+      // Which #team entry the app shows as DorkBot's first-run welcome.
+      'onboarding.welcomeEntryId',
     ],
   },
   {
@@ -1252,13 +1259,9 @@ export const OPERATOR_ONLY_STAKES: readonly OperatorOnlyStakeGroup[] = [
  * @param patch - The raw patch a caller supplied.
  */
 export function operatorOnlyAreasForPatch(patch: unknown): OperatorOnlyArea[] {
-  const areas = new Set<OperatorOnlyArea>(
-    findOperatorOnlyPaths(patch).map(
-      (path) =>
-        OPERATOR_ONLY_STAKES.find((group) => group.paths.includes(path))?.area ?? 'permissions'
-    )
-  );
-  return [...areas];
+  const areaOf = (path: string): OperatorOnlyArea =>
+    OPERATOR_ONLY_STAKES.find((group) => group.paths.includes(path))?.area ?? 'permissions';
+  return [...new Set(findOperatorOnlyPaths(patch).map(areaOf))];
 }
 
 /** The machine-readable code every operator-only refusal carries. */

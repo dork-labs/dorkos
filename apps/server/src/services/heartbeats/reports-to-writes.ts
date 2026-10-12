@@ -98,7 +98,7 @@ export function recordReportsToChange(
 ): void {
   if (before === after) return;
   // Its next beat opens with how it reports, for the new manager (§4.2).
-  wakeAgent(agent.id, { type: 'reports-to-changed' });
+  wakeAgent(agent.id, { type: 'reports-to-changed', managerChange: { before, after } });
   recordAudit({
     action: 'agent.reports_to_changed',
     operation: 'modify',

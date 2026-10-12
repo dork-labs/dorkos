@@ -15,7 +15,7 @@
 import type { Listener as NgrokListener, Session as NgrokSession } from '@ngrok/ngrok';
 import { RemoteEdgeProofSchema, type RemoteEdgeProof } from '@dork-labs/cloud-api';
 import type { TunnelStatus } from '@dorkos/shared/types';
-import type { ManagedIngress } from './managed-ingress.js';
+import { MANAGED_DRAIN_DEADLINE_MS, type ManagedIngress } from './managed-ingress.js';
 import { logger } from '../../../lib/logger.js';
 
 /** What `TunnelManager.startManaged` opens managed access with. */
@@ -70,6 +70,39 @@ export interface ManagedHostsResult {
 /** Where a managed session is in its life. */
 export type ManagedPhase = 'opening' | 'open' | 'draining';
 
+/** A gentle close under way: when what is left is cut, and who set that deadline. */
+export interface ManagedDrain {
+  /** When requests still running are cut (ISO 8601). */
+  until: string;
+  /** `cloud` when the close named its deadline, `local` when the bounded local default applies. */
+  deadline: 'cloud' | 'local';
+}
+
+/** A managed session that ended, as `TunnelManager` announces it (`managed_closed`). */
+export interface ManagedClosedEvent {
+  /** The generation of the session that ended. */
+  generation: number;
+  /** Why, as the closer named it; `closed` when it named nothing. */
+  reason: string;
+  /** When it ended (ISO 8601). */
+  at: string;
+}
+
+/** What closing managed access asks for. See `TunnelManager.closeManaged`. */
+export interface ManagedCloseOptions {
+  /** `true` for withdrawal, revocation and shutdown: cut everything now. */
+  immediate: boolean;
+  /** For a gentle close, how long admitted requests may run; omitted, the local default. */
+  drainDeadlineMs?: number;
+  /**
+   * Who set `drainDeadlineMs`, for the report. Defaults to `cloud` when one is
+   * given and `local` when not; a local cap (shutdown) passes `local`.
+   */
+  deadlineFrom?: 'cloud' | 'local';
+  /** Why, for the close report Cloud is sent (`idle`, `withdrawn`, ...). */
+  reason?: string;
+}
+
 /** The managed session's live state. One object per open; replaced, never reused. */
 interface ManagedState {
   value: string;
@@ -84,6 +117,12 @@ interface ManagedState {
   hosts: Set<string>;
   connected: boolean;
   startedAt: string;
+  /** Set once a gentle close names when the rest is cut. */
+  drain: ManagedDrain | null;
+  /** Why it is closing, once a close began. */
+  closeReason: string | null;
+  /** Whether {@link closeReason} came from a close that cut everything at once. */
+  closeReasonForced: boolean;
 }
 
 /** What managed forwarding needs from the `TunnelManager` that owns it. */
@@ -96,6 +135,8 @@ export interface ManagedForwardingOwner {
   closeOwnTunnel(): Promise<void>;
   /** Tell listeners the combined tunnel status changed. */
   emitStatus(): void;
+  /** Tell listeners a managed session ended, and why. */
+  managedClosed(event: ManagedClosedEvent): void;
 }
 
 /** Lower-case, trimmed, de-duplicated, order kept; the first is the primary address. */
@@ -136,6 +177,11 @@ export class ManagedForwarding {
   /** The generation of the open managed session, or `null`. */
   get generation(): number | null {
     return this.managed?.generation ?? null;
+  }
+
+  /** The gentle close under way, or `null` when none named a deadline. */
+  get drain(): ManagedDrain | null {
+    return this.managed?.drain ?? null;
   }
 
   /** Every hostname served or being opened right now, lower case. */
@@ -260,7 +306,7 @@ export class ManagedForwarding {
       // (a draining ingress must not carry over into a new open). That close
       // is this open's own; any other one that lands meanwhile still wins.
       closesExpected = this.managedCloses + 1;
-      await this.close({ immediate: true }).catch(() => undefined);
+      await this.close({ immediate: true, reason: 'reopened' }).catch(() => undefined);
       if (closedSince()) return supersededRefusal();
     }
 
@@ -274,6 +320,9 @@ export class ManagedForwarding {
       hosts: new Set(hosts),
       connected: false,
       startedAt: new Date().toISOString(),
+      drain: null,
+      closeReason: null,
+      closeReasonForced: false,
     };
     this.managed = state;
     this.owner.emitStatus();
@@ -513,18 +562,14 @@ export class ManagedForwarding {
    * Close managed access; see `TunnelManager.closeManaged` for the contract.
    * The local state is reset even when ngrok fails to close.
    *
-   * @param options - Whether to cut admitted requests rather than let them finish.
-   * @param options.immediate - `true` for withdrawal and shutdown.
-   * @param options.drainDeadlineMs - For a gentle close, how long admitted
-   *   requests may run; omitted, the ingress's bounded local default applies.
+   * @param options - Whether to cut admitted requests, the deadline and the reason.
    */
   async close({
     immediate,
     drainDeadlineMs,
-  }: {
-    immediate: boolean;
-    drainDeadlineMs?: number;
-  }): Promise<void> {
+    deadlineFrom,
+    reason,
+  }: ManagedCloseOptions): Promise<void> {
     this.managedEpoch += 1;
     this.managedCloses += 1;
     const state = this.managed;
@@ -533,7 +578,21 @@ export class ManagedForwarding {
       await ingress?.close({ immediate, drainDeadlineMs });
       return;
     }
-    if (state.phase !== 'draining') {
+    // The close that actually ended it names the reason: a forced close
+    // (withdrawal, revocation) overrides a gentle one already under way (idle,
+    // shutdown); otherwise the first closer's reason stands.
+    if (state.closeReason === null || (immediate && !state.closeReasonForced)) {
+      state.closeReason = reason ?? 'closed';
+      state.closeReasonForced = immediate;
+    }
+    if (!immediate && state.drain === null) {
+      const ms = Math.max(0, drainDeadlineMs ?? MANAGED_DRAIN_DEADLINE_MS);
+      state.drain = {
+        until: new Date(Date.now() + ms).toISOString(),
+        deadline: deadlineFrom ?? (drainDeadlineMs === undefined ? 'local' : 'cloud'),
+      };
+    }
+    if (state.phase !== 'draining' || !immediate) {
       state.phase = 'draining';
       ingress?.beginDrain();
       this.owner.emitStatus();
@@ -551,6 +610,11 @@ export class ManagedForwarding {
       if (this.managed === state) {
         this.managed = null;
         this.owner.emitStatus();
+        this.owner.managedClosed({
+          generation: state.generation,
+          reason: state.closeReason ?? 'closed',
+          at: new Date().toISOString(),
+        });
       }
     }
   }

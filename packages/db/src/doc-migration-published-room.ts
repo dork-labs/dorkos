@@ -13,6 +13,9 @@ import {
   agentPauses,
   heartbeats,
   remoteCommandJournal,
+  heartbeatReportItems,
+  remoteEventRefusals,
+  previousConsolidatedDoc,
   reviewedPublishedSql,
   agentReports,
   reviewedSql,
@@ -44,6 +47,8 @@ export function bridgePublishedRoomMigration(ownerKey: object): boolean {
     agentPauses,
     heartbeats,
     remoteCommandJournal,
+    heartbeatReportItems,
+    remoteEventRefusals,
   ];
   const canonical = new Map(
     journal.entries.slice(150).map((entry) => [
@@ -53,6 +58,7 @@ export function bridgePublishedRoomMigration(ownerKey: object): boolean {
       entry.when,
     ])
   );
+  canonical.set(previousConsolidatedDoc.hash, previousConsolidatedDoc.when);
   if (!oldRows.length) {
     if (
       rows.some(
@@ -103,6 +109,7 @@ export function bridgePublishedRoomMigration(ownerKey: object): boolean {
       ])
     );
     for (const doc of docs) known.set(doc.hash, doc.when);
+    known.set(previousConsolidatedDoc.hash, previousConsolidatedDoc.when);
     if (
       rows.some(
         (row) =>
@@ -160,8 +167,8 @@ export function bridgePublishedRoomMigration(ownerKey: object): boolean {
     (entry) => entry.hash === original.hash && entry.when === original.created_at
   )!;
   if (
-    consolidatedDoc.idx !== remoteCommandJournal.idx + 1 ||
-    consolidatedDoc.when <= remoteCommandJournal.when ||
+    consolidatedDoc.idx !== remoteEventRefusals.idx + 1 ||
+    consolidatedDoc.when <= remoteEventRefusals.when ||
     consolidatedDoc.when <= publishedRoom152.when
   )
     refuse('new Doc migration does not follow all shipped Main and published Room watermarks');
@@ -206,6 +213,7 @@ export function bridgePublishedRoomMigration(ownerKey: object): boolean {
     refuse('published Room historical Doc prefix differs');
   for (const doc of docs) allow(doc.hash, doc.when);
   allow(legacy.hash, legacy.when);
+  allow(previousConsolidatedDoc.hash, previousConsolidatedDoc.when);
   for (const entry of journal.entries.slice(150)) {
     const hash = createHash('sha256')
       .update(readFileSync(join(folder, `${entry.tag}.sql`)))
@@ -321,6 +329,164 @@ export function bridgePublishedRoomMigration(ownerKey: object): boolean {
     verifyCanonicalSchema(db, folder);
     // The published SQL hash and row remain truthful; the structurally covered new step
     // receives its own reviewed canonical hash only after exact schema convergence.
+    db.$client
+      .prepare('INSERT INTO __drizzle_migrations (hash, created_at) VALUES (?, ?)')
+      .run(consolidatedDoc.hash, consolidatedDoc.when);
+  })();
+  return true;
+}
+
+/** Preserve genuine Doc157 completion while atomically installing only missing Main157/158. */
+export function bridgePreviousConsolidatedDoc(ownerKey: object): boolean {
+  const { db, folder, rows } = requirePublishedMigrationOwner(ownerKey);
+  const old = rows.filter((row) => row.hash === previousConsolidatedDoc.hash);
+  if (!old.length) return false;
+  if (old.length !== 1 || old[0]!.created_at !== previousConsolidatedDoc.when)
+    refuse('previous consolidated Doc157 identity differs');
+  const original = old[0]!;
+  const archived = reviewedPublishedSql(folder, previousConsolidatedDoc);
+  if (createHash('sha256').update(archived).digest('hex') !== previousConsolidatedDoc.hash)
+    refuse('previous consolidated Doc157 SQL differs');
+  const journal = JSON.parse(readFileSync(join(folder, 'meta/_journal.json'), 'utf8')) as {
+    entries: MigrationEntry[];
+  };
+  const known = new Map<string, Set<number>>();
+  const allow = (hash: string, stamp: number) => {
+    const stamps = known.get(hash) ?? new Set<number>();
+    stamps.add(stamp);
+    known.set(hash, stamps);
+  };
+  let prefixIdentity = 0;
+  for (const entry of journal.entries.slice(0, previousConsolidatedDoc.idx)) {
+    const hash = createHash('sha256')
+      .update(readFileSync(join(folder, `${entry.tag}.sql`)))
+      .digest('hex');
+    const matching = rows.filter((row) => row.hash === hash);
+    if (
+      matching.length !== 1 ||
+      matching[0]!.created_at !== entry.when ||
+      matching[0]!.rowIdentity <= prefixIdentity ||
+      matching[0]!.rowIdentity >= original.rowIdentity
+    )
+      refuse('previous consolidated Doc157 lacks exact Main156 prefix');
+    prefixIdentity = matching[0]!.rowIdentity;
+    allow(hash, entry.when);
+  }
+  const historical = docs.map((doc) => rows.filter((row) => row.hash === doc.hash));
+  const main148 = rows.find((row) => row.created_at === journal.entries[148]!.when)!;
+  const chat149 = rows.find((row) => row.created_at === journal.entries[149]!.when)!;
+  if (
+    historical.some((matching) => matching.length) &&
+    historical.some(
+      (matching, i) =>
+        matching.length !== 1 ||
+        matching[0]!.created_at !== docs[i]!.when ||
+        matching[0]!.rowIdentity <= main148.rowIdentity ||
+        matching[0]!.rowIdentity >= chat149.rowIdentity ||
+        (i > 0 && matching[0]!.rowIdentity <= historical[i - 1]![0]!.rowIdentity)
+    )
+  )
+    refuse('previous consolidated Doc157 historical Doc prefix differs');
+  for (const doc of docs) allow(doc.hash, doc.when);
+  const published = [publishedRoom, publishedRoom151, publishedRoom152];
+  const publishedRows = rows.filter((row) => row.hash === publishedRoom.hash);
+  if (
+    publishedRows.length > 1 ||
+    publishedRows.some(
+      (row) =>
+        !published.some((entry) => entry.when === row.created_at) ||
+        row.rowIdentity <= chat149.rowIdentity ||
+        row.rowIdentity >= original.rowIdentity
+    )
+  )
+    refuse('previous consolidated Doc157 published Room history differs');
+  if (publishedRows[0]) {
+    const legacy = published.find((entry) => entry.when === publishedRows[0]!.created_at)!;
+    for (const entry of journal.entries.slice(legacy.idx, 157)) {
+      const hash = createHash('sha256')
+        .update(readFileSync(join(folder, `${entry.tag}.sql`)))
+        .digest('hex');
+      if (rows.find((row) => row.hash === hash)!.rowIdentity <= publishedRows[0].rowIdentity)
+        refuse('previous consolidated Doc157 published Main order differs');
+    }
+  }
+  for (const entry of published) allow(entry.hash, entry.when);
+  allow(previousConsolidatedDoc.hash, previousConsolidatedDoc.when);
+  const missingMain = [heartbeatReportItems, remoteEventRefusals];
+  const sql = missingMain.map((entry) => reviewedSql(folder, entry));
+  reviewedSql(folder, consolidatedDoc);
+  if (consolidatedDoc.idx !== 159 || consolidatedDoc.when <= previousConsolidatedDoc.when)
+    refuse('new consolidated Doc159 identity does not follow original Doc157');
+  const matches = missingMain.map((entry) => rows.filter((row) => row.hash === entry.hash));
+  let gap = false,
+    precedingIdentity = original.rowIdentity;
+  for (const [i, matching] of matches.entries()) {
+    allow(missingMain[i]!.hash, missingMain[i]!.when);
+    if (!matching.length) {
+      gap = true;
+      continue;
+    }
+    if (
+      gap ||
+      matching.length !== 1 ||
+      matching[0]!.created_at !== missingMain[i]!.when ||
+      matching[0]!.rowIdentity <= precedingIdentity
+    )
+      refuse('previous consolidated Doc157 incoming Main history has a gap');
+    precedingIdentity = matching[0]!.rowIdentity;
+  }
+  for (const entry of journal.entries.slice(consolidatedDoc.idx)) {
+    const hash = createHash('sha256')
+      .update(readFileSync(join(folder, `${entry.tag}.sql`)))
+      .digest('hex');
+    allow(hash, entry.when);
+  }
+  if (
+    rows.some(
+      (row) =>
+        !known.get(row.hash)?.has(row.created_at) ||
+        rows.filter((other) => other.hash === row.hash).length !== 1
+    )
+  )
+    refuse('previous consolidated Doc157 history has unknown or duplicate rows');
+  const completed = rows.filter((row) => row.hash === consolidatedDoc.hash);
+  if (completed.length) {
+    if (
+      completed.length !== 1 ||
+      completed[0]!.created_at !== consolidatedDoc.when ||
+      matches.some((matching) => matching.length !== 1) ||
+      completed[0]!.rowIdentity <= precedingIdentity
+    )
+      refuse('previous consolidated Doc157 has forged Doc159 completion');
+    return false; // Existing canonical/future-prefix validation still owns every reopen.
+  }
+  const futureHashes = journal.entries.slice(consolidatedDoc.idx + 1).map((entry) =>
+    createHash('sha256')
+      .update(readFileSync(join(folder, `${entry.tag}.sql`)))
+      .digest('hex')
+  );
+  if (
+    rows.some(
+      (row) => row.created_at > previousConsolidatedDoc.when || futureHashes.includes(row.hash)
+    )
+  )
+    refuse('future migration precedes Doc159 completion');
+  db.$client.transaction(() => {
+    verifyCanonicalSchema(
+      db,
+      folder,
+      previousConsolidatedDoc,
+      missingMain.filter((_, i) => matches[i]!.length > 0)
+    );
+    for (const [i, entry] of missingMain.entries()) {
+      if (matches[i]!.length) continue;
+      for (const statement of sql[i]!.toString('utf8').split('--> statement-breakpoint'))
+        if (statement.trim()) db.$client.exec(statement);
+      db.$client
+        .prepare('INSERT INTO __drizzle_migrations (hash, created_at) VALUES (?, ?)')
+        .run(entry.hash, entry.when);
+    }
+    verifyCanonicalSchema(db, folder);
     db.$client
       .prepare('INSERT INTO __drizzle_migrations (hash, created_at) VALUES (?, ?)')
       .run(consolidatedDoc.hash, consolidatedDoc.when);

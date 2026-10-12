@@ -38,6 +38,8 @@ export type ProfileAgentManifest = AgentManifest & {
   nopeContent?: string | null;
   /** MEMORY.md as it is on disk, or `null` when the file does not exist. */
   memoryContent?: string | null;
+  /** HEARTBEAT.md as it is on disk, or `null` when the file does not exist. */
+  heartbeatContent?: string | null;
 };
 
 /**

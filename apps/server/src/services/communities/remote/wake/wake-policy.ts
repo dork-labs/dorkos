@@ -13,7 +13,13 @@
 import type { CommunityRef } from '@dorkos/shared/community-adapter';
 import { logger } from '../../../../lib/logger.js';
 import type { RemoteConnectionStore } from '../connection-store.js';
-import { readWakeAgentsFrom, type WakeAgentsFrom } from './wake-setting.js';
+import type { RemoteAnswerIn } from './answer-in.js';
+import {
+  DEFAULT_WAKE_AGENTS_FROM,
+  readWakeAgentsFrom,
+  type ConnectionWakeSetting,
+  type WakeAgentsFrom,
+} from './wake-setting.js';
 
 /** The question the live stream bridge asks before a space message may start a turn. */
 export interface RemoteWakeGate {
@@ -25,10 +31,38 @@ export interface RemoteWakeGate {
    * @param authorMemberId - The message author's member id in the space.
    */
   wakes(communityRef: CommunityRef, ownerAuthorId: string, authorMemberId: string): boolean;
+  /**
+   * Whether every person's post in this channel wakes this owner's agents there, mention or not
+   * (spec `official-community-space` D11). Absent answers no, everywhere.
+   *
+   * @param communityRef - The local connection ref.
+   * @param ownerAuthorId - The local owner the connection belongs to.
+   * @param channelName - The channel's name in the space.
+   */
+  answersIn?(communityRef: CommunityRef, ownerAuthorId: string, channelName: string): boolean;
+  /**
+   * Spend one wake of the answer-in budget for this author in this channel, or refuse once the
+   * author's or the channel's share is spent. Absent refuses every one.
+   *
+   * @param communityRef - The local connection ref.
+   * @param ownerAuthorId - The local owner the connection belongs to.
+   * @param channelName - The channel's name in the space.
+   * @param authorMemberId - The post's author, by member id in the space.
+   */
+  takeAnswerInWake?(
+    communityRef: CommunityRef,
+    ownerAuthorId: string,
+    channelName: string,
+    authorMemberId: string
+  ): boolean;
 }
 
-interface Entry {
-  from: WakeAgentsFrom;
+/** Where a connection points, which decides its default: the official space's is narrower. */
+export type WakePlace = Pick<ConnectionWakeSetting, 'pinnedOrigin' | 'remoteCommunityId'>;
+
+interface Entry extends WakePlace {
+  /** The owner's choice, or `null` when the default applies. */
+  chosen: WakeAgentsFrom | null;
   ownerMemberId: string | null;
 }
 
@@ -46,10 +80,19 @@ export class RemoteWakePolicy implements RemoteWakeGate {
    * @param retryDelaysMs - How long to wait before each further attempt when a read fails and
    *   the gate has no answer yet. Bounded: past the last one the gate keeps waking nobody until
    *   the next connection change reads again.
+   * @param defaultFor - Who may wake agents on a connection whose owner never chose, asked on
+   *   every message with the place the connection points at, so a change of the official space's
+   *   link applies at once and nothing hangs on another in-memory answer having loaded (narrower
+   *   for the official space, spec `official-community-space` D9).
+   * @param answerIn - The channels where any person's post wakes agents, with their budget
+   *   (spec `official-community-space` D11). Without it, no channel does.
    */
   constructor(
     private readonly store: RemoteConnectionStore,
-    private readonly retryDelaysMs: readonly number[] = [250, 1_000, 5_000]
+    private readonly retryDelaysMs: readonly number[] = [250, 1_000, 5_000],
+    private readonly defaultFor: (place: WakePlace) => WakeAgentsFrom = () =>
+      DEFAULT_WAKE_AGENTS_FROM,
+    private readonly answerIn?: RemoteAnswerIn
   ) {
     store.onChange(() => {
       void this.reload();
@@ -73,7 +116,12 @@ export class RemoteWakePolicy implements RemoteWakeGate {
           this.entries = new Map(
             settings.map((setting) => [
               key(setting.ref, setting.ownerKey),
-              { from: setting.wakeAgentsFrom, ownerMemberId: setting.connectedHumanMemberId },
+              {
+                chosen: setting.chosen,
+                ownerMemberId: setting.connectedHumanMemberId,
+                pinnedOrigin: setting.pinnedOrigin,
+                remoteCommunityId: setting.remoteCommunityId,
+              },
             ])
           );
         }
@@ -119,16 +167,59 @@ export class RemoteWakePolicy implements RemoteWakeGate {
       // And newer than every read already in flight, so none that started before
       // this write can land afterwards and put the old answer back.
       this.applied = ++this.started;
-      this.entries = new Map(this.entries).set(key(ref, ownerKey), { ...current, from: value });
+      this.entries = new Map(this.entries).set(key(ref, ownerKey), { ...current, chosen: value });
     }
     await this.reload();
+  }
+
+  /**
+   * The channels where any person's post wakes the owner's agents on one connection.
+   *
+   * @param ref - The local connection ref.
+   * @param ownerKey - The local owner the connection belongs to.
+   */
+  async getAnswerIn(ref: CommunityRef, ownerKey: string): Promise<string[]> {
+    if (this.answerIn) return this.answerIn.get(ref, ownerKey);
+    await this.store.get(ref, ownerKey);
+    return [];
+  }
+
+  /**
+   * Change those channels and apply them before returning.
+   *
+   * @param ref - The local connection ref.
+   * @param ownerKey - The local owner the connection belongs to.
+   * @param channels - Channel names, already normalised by `CommunityAnswerInSchema`.
+   */
+  async setAnswerIn(
+    ref: CommunityRef,
+    ownerKey: string,
+    channels: readonly string[]
+  ): Promise<void> {
+    if (!this.answerIn) throw new Error('Answering without a mention is not available here');
+    await this.answerIn.set(ref, ownerKey, channels);
+  }
+
+  /** @inheritdoc */
+  answersIn(communityRef: CommunityRef, ownerAuthorId: string, channelName: string): boolean {
+    return this.answerIn?.covers(communityRef, ownerAuthorId, channelName) ?? false;
+  }
+
+  /** @inheritdoc */
+  takeAnswerInWake(
+    communityRef: CommunityRef,
+    ownerAuthorId: string,
+    channelName: string,
+    authorMemberId: string
+  ): boolean {
+    return this.answerIn?.take(communityRef, ownerAuthorId, channelName, authorMemberId) ?? false;
   }
 
   /** @inheritdoc */
   wakes(communityRef: CommunityRef, ownerAuthorId: string, authorMemberId: string): boolean {
     const entry = this.entries?.get(key(communityRef, ownerAuthorId));
     if (!entry) return false;
-    if (entry.from === 'members') return true;
+    if ((entry.chosen ?? this.defaultFor(entry)) === 'members') return true;
     return entry.ownerMemberId !== null && entry.ownerMemberId === authorMemberId;
   }
 }

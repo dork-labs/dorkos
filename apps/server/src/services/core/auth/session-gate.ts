@@ -38,6 +38,8 @@ import { logger } from '../../../lib/logger.js';
 // the auth barrel (which re-exports this module) is a safe function-level cycle.
 import { getAuth, captureOriginalRequestAuthReader, type Auth } from './index.js';
 import type { RequestFacts } from '../../../http/request-facts.js';
+import { noteGateAdmitted } from '../remote/ingress-mark.js';
+import { isSessionGatedPath } from './gated-paths.js';
 
 /** The identity resolved from a request's credentials, attached to `res.locals.user`. */
 export interface RequestUser {
@@ -159,11 +161,6 @@ export async function recheckAdmittedRequestAuth(
   } catch {
     return false;
   }
-}
-
-/** Paths the gate protects: the API surface and the external MCP endpoint. */
-function isGatedPath(path: string): boolean {
-  return path.startsWith('/api/') || path === '/mcp' || path.startsWith('/mcp/');
 }
 
 /**
@@ -404,14 +401,14 @@ export async function decideSessionGate(
   // Express matches routes case-insensitively by default ('case sensitive
   // routing' is off), so `/API/sessions` resolves to the same handler as
   // `/api/sessions`. Normalize case before the gate checks — otherwise an
-  // uppercased prefix would slip past `isGatedPath` yet still reach the gated
+  // uppercased prefix would slip past `isSessionGatedPath` yet still reach the gated
   // route, bypassing auth entirely.
   const lowered = path.toLowerCase();
 
   // Only the API surface and the MCP endpoint are gated; SPA assets pass so the
   // login screen can load. The Better Auth endpoints and the health probe are
   // always reachable.
-  if (!isGatedPath(lowered) || isExemptPath(lowered)) return { allowed: true };
+  if (!isSessionGatedPath(lowered) || isExemptPath(lowered)) return { allowed: true };
 
   // A signed cache may outlive a revoked session. Writes must observe the current
   // server row; GET/HEAD/OPTIONS keep the existing cache behavior for stream reads.
@@ -443,5 +440,7 @@ export async function sessionGate(req: Request, res: Response, next: NextFunctio
     return;
   }
   if (decision.user) res.locals.user = decision.user;
+  // Managed remote access counts a request only once this gate let it through.
+  noteGateAdmitted(req, res);
   next();
 }

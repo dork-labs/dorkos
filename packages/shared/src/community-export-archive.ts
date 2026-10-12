@@ -8,7 +8,10 @@
 import { z } from 'zod';
 import { CommunityAdminAdmissionPolicySchema } from './community-admin-wire.js';
 import { HANDLE_PATTERN } from './handle.js';
-import { CommunityWireDisplayNameSchema } from './community-moderation-wire.js';
+import {
+  CommunityDecisionRecordSchema,
+  CommunityWireDisplayNameSchema,
+} from './community-moderation-wire.js';
 
 const id = z.string().min(1);
 const timestamp = z.iso.datetime();
@@ -133,6 +136,8 @@ export const CommunityExportAuditEventRowSchema = z.strictObject({
   next_state: z.string().nullable(),
   changed_fields: z.array(z.string()),
   created_at: timestamp,
+  /** A watch-only check's record, on `decision.*` rows only; absent from older archives. */
+  decision: CommunityDecisionRecordSchema.optional(),
 });
 /**
  * One `entries/NNNNNN.ndjson` line: a message. `removal` says who removed it (`author`,

@@ -96,6 +96,7 @@ export const NOTIFICATION_ICONS: Record<NotificationKind, LucideIcon> = {
   'extension.decision': MessageCircleQuestion,
   // Someone asked to take over a community this person owns (DOR-2543).
   'community.owner-replacement': TriangleAlert,
+  'heartbeat.credits-offer': Sparkles,
 };
 
 /** How loudly a notification draws. */
@@ -300,6 +301,11 @@ export function notificationLink(notification: NotificationDTO): NotificationLin
     // the same place its phone-free arrival deep-links to
     // (`standingDeepLink` in the server's `escalation-service.ts`).
     return { ...appRoutes.home(), search: { settings: EXTENSIONS_SETTINGS_TAB } };
+  }
+  if (kind === 'heartbeat.credits-offer') {
+    // The offer's card is on every agent's Heartbeat page; the team is where
+    // those agents are.
+    return { ...appRoutes.team(), search: {} };
   }
   if (kind === 'community.owner-replacement') {
     // The subject is the owner's connection ref: the community's own page, where the banner

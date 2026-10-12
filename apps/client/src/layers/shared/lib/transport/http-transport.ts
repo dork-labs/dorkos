@@ -17,6 +17,7 @@ import { createMeshMethods } from './mesh-methods';
 import { createSessionMethods } from './session-methods';
 import { createSessionStreamMethods } from './session-stream-methods';
 import { createSystemMethods } from './system-methods';
+import { createRemoteAccessMethods } from './remote-access-methods';
 import { createMarketplaceMethods } from './marketplace-methods';
 import { createHarnessMethods } from './harness-methods';
 import { createShapeMethods } from './shape-methods';
@@ -41,6 +42,7 @@ import { createConnectorMethods } from './connector-methods';
 import { createMcpMethods } from './mcp-methods';
 import { createTeamMethods } from './team-methods';
 import { createProfileMethods } from './profile-methods';
+import { createOnboardingMethods } from './onboarding-methods';
 import { createSearchMethods } from './search-methods';
 import { createAccountMethods } from './account-methods';
 import { createAuditMethods } from './audit-methods';
@@ -64,6 +66,7 @@ export interface HttpTransport
     ReturnType<typeof createSessionMethods>,
     ReturnType<typeof createSessionStreamMethods>,
     ReturnType<typeof createSystemMethods>,
+    ReturnType<typeof createRemoteAccessMethods>,
     ReturnType<typeof createMarketplaceMethods>,
     ReturnType<typeof createHarnessMethods>,
     ReturnType<typeof createShapeMethods>,
@@ -88,6 +91,7 @@ export interface HttpTransport
     ReturnType<typeof createMcpMethods>,
     ReturnType<typeof createTeamMethods>,
     ReturnType<typeof createProfileMethods>,
+    ReturnType<typeof createOnboardingMethods>,
     ReturnType<typeof createSearchMethods>,
     ReturnType<typeof createAccountMethods>,
     ReturnType<typeof createAuditMethods> {}
@@ -114,6 +118,7 @@ export class HttpTransport implements Transport {
       createSessionMethods(baseUrl, () => this.clientId, this.etagCache, this.messageCache),
       createSessionStreamMethods(baseUrl, this),
       createSystemMethods(baseUrl),
+      createRemoteAccessMethods(baseUrl),
       createMarketplaceMethods(baseUrl),
       createHarnessMethods(baseUrl),
       createShapeMethods(baseUrl),
@@ -138,6 +143,7 @@ export class HttpTransport implements Transport {
       createMcpMethods(baseUrl),
       createTeamMethods(baseUrl),
       createProfileMethods(baseUrl),
+      createOnboardingMethods(baseUrl),
       createSearchMethods(baseUrl),
       createAccountMethods(baseUrl),
       createAuditMethods(baseUrl)

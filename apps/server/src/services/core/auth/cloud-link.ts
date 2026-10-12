@@ -68,6 +68,10 @@ import { logConfigWrite } from '../operator/config-write.js';
 import { withRemoteForNewKey, withdrawnRemoteState } from '../remote/remote-state.js';
 import { logger, logError } from '../../../lib/logger.js';
 import {
+  scheduleJittered,
+  type JitteredSchedule,
+} from '../../../lib/lifecycle/jittered-schedule.js';
+import {
   buildInstanceDescriptor,
   linkProofForKey,
   executeManagedConnectorOperation,
@@ -96,8 +100,10 @@ import {
   type InstanceDescriptor,
 } from './cloud-link-client.js';
 import { resolveConfiguredLinkTelemetryInstanceId } from './link-telemetry-config.js';
+import { startLinkResultFrom } from './link-codes.js';
+import type { StartLinkResult } from '@dorkos/shared/cloud-schemas';
 
-/** How often a linked instance heartbeats the cloud. */
+/** How often, on average, a linked instance heartbeats the cloud (jittered: `lib/lifecycle/jittered-schedule.ts`). */
 const HEARTBEAT_INTERVAL_MS = 15 * 60 * 1000;
 /** Upper bound on a confirming heartbeat, which the refused call waits for. */
 const KEY_CHECK_TIMEOUT_MS = 10_000;
@@ -162,11 +168,7 @@ export interface CloudLinkSummary {
 }
 
 /** The `POST /api/cloud/link/start` shape (codes for the human to enter). */
-export interface StartLinkResult {
-  userCode: string;
-  verificationUri: string;
-  expiresAt: string;
-}
+export type { StartLinkResult };
 
 /** Config read/write seam over the `cloud.*` section, injectable for tests. */
 export interface CloudConfigPort {
@@ -249,6 +251,8 @@ export interface CloudLinkManagerOptions {
   now?: () => number;
   config?: CloudConfigPort;
   heartbeatIntervalMs?: number;
+  /** The heartbeat's jitter source, uniform in `[0, 1)`; `0.5` waits exactly the interval. */
+  random?: () => number;
   /**
    * Resolve the anonymous telemetry instance id to carry in the link descriptor
    * (the analytics-merge opt-in). Injectable so tests drive the opt-in without
@@ -286,7 +290,7 @@ export class CloudLinkManager {
   /** The code whose approval made the current link. */
   private approvedCode: string | undefined;
   private lastHeartbeatAt: string | undefined;
-  private heartbeatTimer: ReturnType<typeof setInterval> | undefined;
+  private heartbeatTimer: JitteredSchedule | undefined;
   private pollController: AbortController | undefined;
   private pollTask: Promise<void> | undefined;
   /** True once {@link stop} ran: nothing starts for a key saved afterwards. */
@@ -372,11 +376,7 @@ export class CloudLinkManager {
       throw new Error('Cloud link request was superseded');
     }
 
-    const result: StartLinkResult = {
-      userCode: codes.user_code,
-      verificationUri: codes.verification_uri,
-      expiresAt: new Date(this.now() + codes.expires_in * 1000).toISOString(),
-    };
+    const result = startLinkResultFrom(codes, this.now());
     this.pendingCodes = result;
     this.setState('pending');
     const controller = new AbortController();
@@ -1219,11 +1219,10 @@ export class CloudLinkManager {
   private startHeartbeatSchedule(): void {
     this.stopHeartbeatSchedule();
     if (this.stopped) return;
-    this.heartbeatTimer = setInterval(() => {
-      void this.heartbeatTick();
-    }, this.heartbeatIntervalMs);
-    // Don't keep the process alive on the heartbeat timer alone.
-    this.heartbeatTimer.unref?.();
+    // Jittered, never overlapping a tick still in flight, and never keeps the
+    // process alive on its own.
+    const beat = () => this.heartbeatTick();
+    this.heartbeatTimer = scheduleJittered(beat, this.heartbeatIntervalMs, this.options);
   }
 
   private async heartbeatTick(): Promise<void> {
@@ -1237,10 +1236,8 @@ export class CloudLinkManager {
   }
 
   private stopHeartbeatSchedule(): void {
-    if (this.heartbeatTimer) {
-      clearInterval(this.heartbeatTimer);
-      this.heartbeatTimer = undefined;
-    }
+    this.heartbeatTimer?.stop();
+    this.heartbeatTimer = undefined;
   }
 
   private cancelPoll(): void {

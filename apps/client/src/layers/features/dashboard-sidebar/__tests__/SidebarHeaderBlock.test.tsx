@@ -119,6 +119,7 @@ let mockConfig: {
   latestVersion?: string | null;
   isDevMode?: boolean;
   experiments?: ReturnType<typeof spacesExperiment>;
+  officialSpace?: { url: string } | null;
 } = {
   version: '0.58.0',
   latestVersion: null,
@@ -147,6 +148,8 @@ vi.mock('@/layers/shared/model', async (importOriginal) => {
       getCloudPlan: mockGetCloudPlan,
       listHostedCommunities: mockListHostedCommunities,
       getCommunityAccountSignIn: mockGetCommunityAccountSignIn,
+      // The official-space reads list connections over the real hook.
+      listCommunityConnections: () => Promise.resolve(mockConnections),
     }),
     useSettingsDeepLink: () => ({ open: mockOpenSettings }),
     useProfileDeepLink: () => ({ open: mockOpenProfile }),
@@ -202,6 +205,15 @@ vi.mock('@/layers/entities/community', async (importOriginal) => ({
   useCommunityAccountSignIn: (await importOriginal<typeof import('@/layers/entities/community')>())
     .useCommunityAccountSignIn,
   useShowCommunityApproval: () => {},
+  // The official-space rules (spec `official-community-space` D5), real, over the config above.
+  isSpaceVisible: (await importOriginal<typeof import('@/layers/entities/community')>())
+    .isSpaceVisible,
+  useSpaceVisible: (await importOriginal<typeof import('@/layers/entities/community')>())
+    .useSpaceVisible,
+  useOfficialSpaceOffer: (await importOriginal<typeof import('@/layers/entities/community')>())
+    .useOfficialSpaceOffer,
+  useJoinSpaceRequest: (await importOriginal<typeof import('@/layers/entities/community')>())
+    .useJoinSpaceRequest,
   useEndCommunityConnection: () => ({
     mutate: mockEndConnection,
     reset: () => {},
@@ -2199,5 +2211,94 @@ describe('the switcher while the spaces experiment is off (DOR-2740)', () => {
     expect(await screen.findByText('Alpha')).toBeInTheDocument();
     // On desktop "Add a space" is a submenu, so its trigger is a menu item.
     expect(screen.getByRole('menuitem', { name: 'Add a space' })).toBeInTheDocument();
+  });
+});
+
+// Purpose: the official DorkOS space is the one exception to the switch (spec
+// `official-community-space` D5). With the experiment off and an official link
+// named, its row shows and opens, and nothing else does: no other space, no
+// Add a space, no Start. Fails if another space leaks through, or if the
+// official one is hidden with the others.
+describe('the official DorkOS space while the spaces experiment is off', () => {
+  const OFFICIAL_LINK = 'https://space.example.test/c/11111111-1111-4111-8111-111111111111';
+  const base = {
+    connectedHumanMemberId: 'person',
+    status: 'connected' as const,
+    expiresAt: null,
+  };
+  const official = {
+    ...base,
+    ref: 'o',
+    remoteCommunityId: '11111111-1111-4111-8111-111111111111',
+    label: 'DorkOS',
+    pinnedOrigin: 'https://space.example.test',
+    official: true,
+  };
+  const alpha = {
+    ...base,
+    ref: 'a',
+    remoteCommunityId: 'remote-a',
+    label: 'Alpha',
+    pinnedOrigin: 'https://a.example.com',
+  };
+
+  beforeEach(() => {
+    mockConfig = {
+      ...mockConfig,
+      experiments: spacesExperiment(false),
+      officialSpace: { url: OFFICIAL_LINK },
+    };
+    mockCloudLinked = true;
+  });
+
+  it('shows the official row alone, with no way to add or start any other space', async () => {
+    mockConnections = [official, alpha];
+    renderBlock();
+    await configAnswered();
+    fireEvent.pointerDown(screen.getByTestId('sidebar-header-block'));
+    expect(await screen.findByText('DorkOS')).toBeInTheDocument();
+    expect(screen.queryByText('Alpha')).not.toBeInTheDocument();
+    expect(screen.queryByRole('menuitem', { name: 'Add a space' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('menuitem', { name: /Start a space/ })).not.toBeInTheDocument();
+    // Already connected, so there is nothing to join.
+    expect(
+      screen.queryByRole('menuitem', { name: /Join the DorkOS community/ })
+    ).not.toBeInTheDocument();
+    expect(mockListHostedCommunities).not.toHaveBeenCalled();
+  });
+
+  it('opens the official space from its address, and no other', async () => {
+    mockConnections = [official, alpha];
+    mockSearch = { community: 'o' };
+    const { unmount } = renderBlock();
+    await configAnswered();
+    expect(await screen.findByRole('button', { name: 'DorkOS menu' })).toBeInTheDocument();
+    unmount();
+    mockSearch = { community: 'a' };
+    renderBlock();
+    await configAnswered();
+    expect(screen.getByRole('button', { name: 'Dorian’s team menu' })).toBeInTheDocument();
+  });
+
+  it('offers to join it while it is not connected, and opens Join on its link', async () => {
+    mockConnections = [alpha];
+    renderBlock();
+    await configAnswered();
+    fireEvent.pointerDown(screen.getByTestId('sidebar-header-block'));
+    fireEvent.click(await screen.findByRole('menuitem', { name: /Join the DorkOS community/ }));
+    expect(await screen.findByLabelText('Space address or invitation link')).toHaveValue(
+      OFFICIAL_LINK
+    );
+  });
+
+  it('shows no space at all once the official link is cleared (the control)', async () => {
+    mockConfig = { ...mockConfig, officialSpace: null };
+    mockConnections = [official, alpha];
+    renderBlock();
+    await configAnswered();
+    fireEvent.pointerDown(screen.getByTestId('sidebar-header-block'));
+    expect(await screen.findByRole('menuitem', { name: /Settings/ })).toBeInTheDocument();
+    expect(screen.queryByText('DorkOS')).not.toBeInTheDocument();
+    expect(screen.queryByRole('menuitem', { name: /Join the DorkOS/ })).not.toBeInTheDocument();
   });
 });

@@ -44,9 +44,9 @@ export const docs = Object.freeze([
   }),
 ] as const);
 
-// Actual generated157 identity; the FK-safe additive SQL is a reviewed source correction.
+/** Immutable previously published consolidated Doc157 identity; never retime or replay its SQL. */
 // Published Room watermark rows remain separate from the canonical completion.
-export const consolidatedDoc: MigrationEntry & { hash: string } = Object.freeze({
+export const previousConsolidatedDoc: MigrationEntry & { hash: string } = Object.freeze({
   idx: 157,
   version: '6',
   when: 1791701524866,
@@ -54,6 +54,33 @@ export const consolidatedDoc: MigrationEntry & { hash: string } = Object.freeze(
   breakpoints: true,
   hash: 'b7390d7499448a3021402bd70f04c0d35096d0015e40305788e6b30fc3ce93c4',
 });
+/** Genuine generated Doc159 tuple with independently reviewed FK-safe SQL identity. */
+export const consolidatedDoc: MigrationEntry & { hash: string } = Object.freeze({
+  idx: 159,
+  version: '6',
+  when: 1791744308484,
+  tag: '20261011184508_tearful_killer_shrike',
+  breakpoints: true,
+  hash: '69956ae9c1dba6ca55938b0afa75c67d350a5bd13006aab73aad5812dc5c9ab2',
+});
+/** Immutable incoming Main157 identity. */
+export const heartbeatReportItems = Object.freeze({
+  idx: 157,
+  version: '6',
+  when: 1791696091995,
+  tag: '20261011052131_heartbeat_report_items',
+  breakpoints: true,
+  hash: '60c7d8bf230c9cc28c95a7a9fbc25b667087d817974c6743c87ad10a95c9daa9',
+} as const);
+/** Immutable incoming Main158 identity. */
+export const remoteEventRefusals = Object.freeze({
+  idx: 158,
+  version: '6',
+  when: 1791700241252,
+  tag: '20261011063041_remote_event_refusals',
+  breakpoints: true,
+  hash: '8d26bd1a3cde75b7a863c562219e60640070a70554a98e1406efa6803766478e',
+} as const);
 export const reportBack = Object.freeze({
   idx: 150,
   version: '6',
@@ -180,6 +207,10 @@ export function reviewedPublishedSql(
   folder: string,
   expected: MigrationEntry & { hash: string }
 ): Buffer {
+  if (
+    ![publishedRoom, publishedRoom151, publishedRoom152, previousConsolidatedDoc].includes(expected)
+  )
+    refuse('unknown immutable published migration identity');
   const location = expected === publishedRoom152 ? folder : path.join(folder, 'legacy-doc');
   const bytes = readFileSync(path.join(location, `${expected.tag}.sql`));
   if (createHash('sha256').update(bytes).digest('hex') !== expected.hash)

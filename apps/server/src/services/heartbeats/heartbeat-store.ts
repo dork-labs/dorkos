@@ -30,6 +30,7 @@ import {
   type HeartbeatOutboxRow,
   type HeartbeatStateRow,
 } from '@dorkos/db';
+import { REPORT_KEY_PREFIX } from './raises/raise-store.js';
 
 /** A patch to one agent's state row. */
 export type HeartbeatStatePatch = Partial<Omit<HeartbeatStateRow, 'agentId'>>;
@@ -341,37 +342,6 @@ export class HeartbeatStore {
   }
 
   /**
-   * One agent's open raises to people: delivered since a moment and not
-   * resolved, newest first, one per key. Reports to other agents are left out.
-   *
-   * @param agentId - The agent.
-   * @param sinceIso - Raises delivered before this have aged out.
-   * @param limit - At most this many.
-   */
-  openRaises(
-    agentId: string,
-    sinceIso: string,
-    limit: number
-  ): Array<{ key: string; text: string }> {
-    const rows = this.db
-      .select({ key: heartbeatOutbox.key, text: heartbeatOutbox.text })
-      .from(heartbeatOutbox)
-      .where(
-        and(
-          eq(heartbeatOutbox.agentId, agentId),
-          eq(heartbeatOutbox.state, 'delivered'),
-          // A report to another agent is that agent's to act on, not a person's.
-          ne(heartbeatOutbox.rung, 'report'),
-          gt(heartbeatOutbox.closedAt, sinceIso)
-        )
-      )
-      .orderBy(desc(heartbeatOutbox.closedAt))
-      .all();
-    const seen = new Set<string>();
-    return rows.filter((row) => !seen.has(row.key) && seen.add(row.key)).slice(0, limit);
-  }
-
-  /**
    * Settle an agent's raises by key: a held one closes unsent, and a delivered
    * one stops being open while keeping the moment it was delivered.
    *
@@ -380,8 +350,10 @@ export class HeartbeatStore {
    * @param at - When (ISO 8601).
    */
   resolveRaises(agentId: string, keys: readonly string[], at: string): void {
-    if (keys.length === 0) return;
-    const mine = and(eq(heartbeatOutbox.agentId, agentId), inArray(heartbeatOutbox.key, [...keys]));
+    // A report's own row is never a raise an agent can close (its lines would be stranded).
+    const raiseKeys = keys.filter((key) => !key.startsWith(REPORT_KEY_PREFIX));
+    if (raiseKeys.length === 0) return;
+    const mine = and(eq(heartbeatOutbox.agentId, agentId), inArray(heartbeatOutbox.key, raiseKeys));
     this.db
       .update(heartbeatOutbox)
       .set({ state: 'resolved', closedAt: at })

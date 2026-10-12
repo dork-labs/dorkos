@@ -343,7 +343,7 @@ export const RUNS: readonly DemoRun[] = [
   },
 ];
 
-/** A pre-seeded, completed chat session that populates the cockpit and lists. */
+/** A pre-seeded, completed chat session that populates the app and its lists. */
 export interface DemoSession {
   /** Owning agent slug (session cwd binds to this agent's dir). */
   readonly agent: string;
@@ -354,8 +354,8 @@ export interface DemoSession {
 }
 
 /**
- * Completed sessions seeded before capture so the cockpit, session list, and
- * Home look inhabited. Two run the rich coding scenario; the rest are
+ * Completed sessions seeded before capture so the session list and Home look
+ * inhabited. Two run the rich coding scenario; the rest are
  * quick so seeding stays fast.
  */
 export const SESSIONS: readonly DemoSession[] = [

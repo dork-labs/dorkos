@@ -135,6 +135,8 @@ const PROTECTED_EFFECTS: ProtectedEffect[] = [
         'the one general-purpose merge, reached only through applyGuardedConfigWrite — the two entries above are what pin that',
       'index.ts':
         'the first-run telemetry notice and the profile route setter, both at boot or behind the profile route (logConfigWrite: "the first-run telemetry notice" / "the profile route")',
+      'startup/marketplace.ts':
+        'the dev-link approvals writer: records what a person approved on the link card for a linked folder, behind the link flow (logConfigWrite: "linking a folder"). Moved out of index.ts unchanged (DOR-2821)',
       'routes/config.ts':
         'PUT /agents/defaultAgent — a name, not a posture, and the operator-only paths on this router go through the guarded step instead (logConfigWrite: "the default-agent route")',
       'routes/tunnel.ts':
@@ -153,6 +155,8 @@ const PROTECTED_EFFECTS: ProtectedEffect[] = [
         'the one writer of `cloud.remote` (DOR-2086), behind `updateRemoteState(`, whose callers are pinned in their own entry below. It spreads the stored `cloud` section and replaces only `remote`, validates the whole record (a raw secret fails the reference pattern; `managed` needs an active enrolment), and never reads or writes `tunnel` (logConfigWrite: the caller-named subsystem)',
       'services/shapes/shape-services.ts':
         'records which Shape is active, reachable only through applyShape, which is itself on this list and tier-gated at routes/shapes.ts (DOR-625)',
+      'services/heartbeats/triage/triage-mount.ts':
+        'records what a PERSON answered to the one-time "Run cheap checks on DorkOS credits?" offer (spec `heartbeats` §6.3): `heartbeats.triageOnCredits` is operator-only and reached only from `PUT /api/heartbeats/triage-credits` in `routes/heartbeat-triage.ts`, behind refuseErrorUnlessOwner, so no agent can say yes; every answer leaves a `heartbeat.config_changed` audit row',
       'services/harness/hook-consent.ts':
         'records what a PERSON decided about a package hook — a yes from the approval card or from `dorkos harness sync --fix --allow-hooks`, a no from the card, and a revoke from `dorkos harness hooks --revoke`. Both leaves (`harness.approvedHooks`, `harness.refusedHooks`) are operator-only, and the approval route is the gate in front of the card (DOR-522, DOR-1849)',
       'services/harness/global-scope.ts':
@@ -168,6 +172,8 @@ const PROTECTED_EFFECTS: ProtectedEffect[] = [
       'services/runtimes/connect/doe-setup-router.ts':
         'POST /doe/credential runs the same loopback and refuseUnlessAccountOwner bars before the encrypted store is touched; the helper audits both changed config sections without logging the plaintext key',
       'services/runtimes/connect/doe-credentials.ts': 'the definition itself',
+      'routes/onboarding.ts':
+        'POST /api/onboarding/first-run saves the key a person typed in the Own AI list, after the same loopback and refuseUnlessAccountOwner bars as POST /doe/credential, and only once the key passed `validateDoeSecret` and the service listed models with it. Its other writes (the default runtime, the DorkOS model setup, the credits record, the onboarding record, whose `firstRunPath`, `priorRuntime`, `welcomeEntryId`, `completedAt` and `dismissedAt` are operator-only) go through `services/core/onboarding/first-run.ts`, one call at a time, each leaving a logConfigWrite line (spec `one-minute-onboarding` §4.1)',
     },
   },
   {
@@ -447,7 +453,7 @@ const PROTECTED_EFFECTS: ProtectedEffect[] = [
     allowed: {
       'routes/shapes.ts':
         'the cockpit REST route — runs the tier gate first, and it is the ONLY entry point an agent can reach (DOR-625)',
-      'index.ts':
+      'startup/marketplace.ts':
         'the marketplace update hook: re-applies the ACTIVE Shape in place after an update replaced it. The name is read from config, never from a caller, and reaching it at all requires already having cleared the install gate',
       'services/shapes/apply-shape.ts': 'the definition itself',
     },
@@ -578,6 +584,51 @@ const PROTECTED_EFFECTS: ProtectedEffect[] = [
         'a person selecting a mode (`selectMode(`) or finishing enrolment (`startEnrolment(`) on this computer, both pinned below to the setup route and its cookie, trusted-caller and local-caller bars, with a real login for anything managed; withdrawal (`POST /api/remote-access/withdraw`, behind the cookie, trusted-caller and local-caller bars but never the login bar, so it works with login or Cloud down; and the unlink step the server runs itself): mode off, enrolment and references cleared; and narrowing an enrolment recorded under another link (`withdrawnRemoteState`), which only narrows',
       'services/core/remote/command-dispatcher.ts':
         'a Cloud `rotate` or `revoke` command recording the credential it switched to or forgot, holding a `CloudAuthority` it re-checks immediately before; it writes only the credential fields, never the mode or the enrolment',
+    },
+  },
+  {
+    // DOR-2086 S5. Reconnecting Cloud's command stream at boot: once it runs,
+    // Cloud's `open` commands can publish this computer (each still behind its
+    // own `CloudAuthority` and `canExpose()`). Boot is the one automatic door,
+    // and the boot rule decides whether it may.
+    what: "reconnects DorkOS Cloud's command stream at boot, through which Cloud may later open managed access",
+    call: 'managedRemoteCommands.boot(',
+    allowed: {
+      'index.ts':
+        "the server's own start, with the boot rule's answer (`currentRemoteBootPlan`: an explicit TUNNEL_ENABLED holds it down, a saved managed choice under an active enrolment lets it reconnect); the stream still checks the flag, availability, the enrolment under the current link, a stored credential and `canExpose()` before connecting, and opens nothing itself",
+    },
+  },
+  {
+    // A second command service would be a second stream and dispatcher the
+    // shutdown and withdrawal paths never stop.
+    what: "builds another holder of DorkOS Cloud's command stream",
+    call: 'new ManagedCommandService(',
+    allowed: {
+      'services/core/remote/managed-command-service.ts':
+        'the module singleton, `managedRemoteCommands`',
+    },
+  },
+  {
+    // DOR-2086 S5. Opening the person's own tunnel with nobody asking, at boot.
+    what: "opens the person's own ngrok tunnel at boot, publishing this computer",
+    call: 'autostartOwnTunnel(',
+    allowed: {
+      'services/core/remote/remote-boot.ts':
+        'the definition itself: it opens only when the boot rule says so and `canExpose()` allows it',
+      'index.ts':
+        "the server's own start, with the boot rule's answer (`currentRemoteBootPlan`), never from a request",
+    },
+  },
+  {
+    // DOR-2086 S5. Who hears every managed request the session gate admitted.
+    // It reads nothing secret (the ingress already stripped the edge proof), but
+    // it drives the idle close, so a second listener is not allowed in silently.
+    what: 'hears every managed request the session gate admitted, which drives the activity count and the idle close',
+    call: 'setManagedAdmissionListener(',
+    allowed: {
+      'services/core/remote/ingress-mark.ts': 'the definition itself',
+      'services/core/remote/managed-command-service.ts':
+        'the one activity window, `managedActivity`, which only counts and closes managed access gently when idle; closing only narrows',
     },
   },
   {
@@ -734,6 +785,8 @@ const PROTECTED_EFFECTS: ProtectedEffect[] = [
       'services/core/operator/operator-tool-handlers.ts':
         '`update_agent` refuses the three outright; `update_agent_boundaries` writes only the NOPE fields; `update_agent_execution` is tier `destructive`, so a person approved the call before it gets here',
       'services/core/operator/agent-updater.ts': 'the definition itself',
+      'routes/onboarding.ts':
+        "`POST /api/onboarding/first-run` writes DorkBot's `runtime` and nothing else, to the runtime the person picked on the Welcome screen or back to the one before it, after the loopback and refuseUnlessAccountOwner bars, which refuse an agent in every posture (spec `one-minute-onboarding` §4.1)",
     },
   },
   // `meshCore.update(` and its spellings. A mesh handle is named `mesh` or

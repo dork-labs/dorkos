@@ -184,6 +184,13 @@ export const NO_RISK_DEFAULTS: readonly string[] = [
   'onboarding.dismissedAt',
   'onboarding.completedAt',
   'onboarding.runtimeDefaultSetAt',
+  // The first-run path, the welcome entry and the runtime to undo to (spec
+  // `one-minute-onboarding` §7). Each defaults to `null`, which picks nothing,
+  // posts nothing and arms nothing: credits are recorded only after a person
+  // picked the DorkOS path AND a new link was approved.
+  'onboarding.firstRunPath',
+  'onboarding.welcomeEntryId',
+  'onboarding.priorRuntime',
   'tours.seen',
   'tours.declined',
   // The user profile (spec user-profile-onboarding): empty/null defaults send
@@ -321,6 +328,9 @@ export const SAFE_DEFAULTS: Readonly<Record<string, unknown>> = {
   'browser.enabled': false,
   // Spaces stay hidden until a person opts in (DOR-2740).
   'spaces.enabled': false,
+  // No official space until a release or a person names one (spec
+  // `official-community-space` D4).
+  'spaces.official.url': '',
   // The external A2A surface starts unmounted, so no agent outside DorkOS can
   // reach the ones inside it until a person opens that door (DOR-1304).
   'a2a.enabled': false,
@@ -493,6 +503,8 @@ export const SAFE_DEFAULTS: Readonly<Record<string, unknown>> = {
   'cloud.credits.offer': 'none',
   // No agent allowed onto credits, and no account the choices belong to yet.
   'cloud.credits.agents': [],
+  // No beat's cheap check runs on credits until a person answers the offer (spec `heartbeats` §6.3).
+  'heartbeats.triageOnCredits': null,
   'cloud.credits.linkedTo': null,
   // Managed remote access starts off, with no consent, link or credential (DOR-2086).
   ...CLOUD_REMOTE_SAFE_DEFAULTS,

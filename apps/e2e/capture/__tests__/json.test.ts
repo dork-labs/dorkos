@@ -54,10 +54,10 @@ async function prettierWould(text: string, filePath: string): Promise<string> {
 const FIXTURE = {
   schemaVersion: 2,
   shots: [
-    { id: 'cockpit', kind: 'still', frame: 'desktop', consumers: ['marketing', 'docs'] },
+    { id: 'team-room', kind: 'still', frame: 'desktop', consumers: ['marketing', 'docs'] },
     { id: 'topology', kind: 'loop', frame: 'desktop', consumers: ['marketing'] },
   ],
-  assets: [{ file: 'cockpit-light.png', surface: 'cockpit', bytes: 3 }],
+  assets: [{ file: 'team-room-light.png', surface: 'team-room', bytes: 3 }],
   // Collapses to a 94-column line: inside this repo's `printWidth: 100`, past
   // Prettier's built-in default of 80. Every other array here collapses under
   // BOTH widths, so this entry is the only thing that can tell the two configs
@@ -128,8 +128,8 @@ describe('writeManifest', () => {
     await writeManifest(
       [
         {
-          file: 'cockpit-light.png',
-          surface: 'cockpit',
+          file: 'team-room-light.png',
+          surface: 'team-room',
           theme: 'light',
           kind: 'still',
           width: 2560,
@@ -152,13 +152,13 @@ describe('writeManifest', () => {
 
 describe('runArchive', () => {
   it('writes an archive manifest Prettier would leave untouched', async () => {
-    await fs.writeFile(path.join(tmpDir, 'cockpit-light.png'), 'x');
+    await fs.writeFile(path.join(tmpDir, 'team-room-light.png'), 'x');
     await writeJsonFile(path.join(tmpDir, 'manifest.json'), {
       schemaVersion: 2,
       generatedAt: '2026-08-24T00:00:00.000Z',
       runId: 'run-1',
       shots: FIXTURE.shots,
-      assets: [{ file: 'cockpit-light.png', surface: 'cockpit', bytes: 3 }],
+      assets: [{ file: 'team-room-light.png', surface: 'team-room', bytes: 3 }],
     });
 
     await runArchive({ label: 'vTEST' }, tmpDir);

@@ -14,7 +14,7 @@
  *
  * @module services/core/remote/ingress-mark
  */
-import type { IncomingMessage } from 'node:http';
+import type { IncomingMessage, ServerResponse } from 'node:http';
 
 const managedRequests = new WeakSet<IncomingMessage>();
 
@@ -34,4 +34,70 @@ export function markManagedIngress(req: IncomingMessage): void {
  */
 export function isManagedIngress(req: IncomingMessage): boolean {
   return managedRequests.has(req);
+}
+
+/** Hears each managed request the session gate let through. See {@link noteGateAdmitted}. */
+export type ManagedAdmissionListener = (req: IncomingMessage, res: ServerResponse) => void;
+
+let admissionListener: ManagedAdmissionListener | null = null;
+const admittedRequests = new WeakSet<IncomingMessage>();
+
+/**
+ * Set who hears managed requests the session gate admitted: the activity
+ * count (`managed-activity.ts`). One listener; `null` removes it.
+ *
+ * @param listener - The listener, or `null`.
+ */
+export function setManagedAdmissionListener(listener: ManagedAdmissionListener | null): void {
+  admissionListener = listener;
+}
+
+/**
+ * Called by the session gate (Express and Hono alike) once it has let a request
+ * through, and by the managed ingress for a path the gate never decides on (a
+ * page or asset). A managed request is passed on to the activity count, once;
+ * any other request is ignored. So a request counts only after the edge proof
+ * (the ingress never marks a refused one) AND, where it applies, the local
+ * login gate admitted it.
+ *
+ * @param req - The admitted request.
+ * @param res - Its response, whose `close` ends the request.
+ */
+export function noteGateAdmitted(req: IncomingMessage, res: ServerResponse): void {
+  if (admissionListener === null || !isManagedIngress(req) || admittedRequests.has(req)) return;
+  admittedRequests.add(req);
+  admissionListener(req, res);
+}
+
+/** The client side of an accepted WebSocket, as far as the activity count reads it. */
+export interface AdmittedSocket {
+  on(event: 'message', listener: () => void): unknown;
+}
+
+/** Hears each managed upgrade the upgrade router accepted. See {@link noteUpgradeAdmitted}. */
+export type ManagedUpgradeListener = (req: IncomingMessage, socket: AdmittedSocket) => void;
+
+let upgradeListener: ManagedUpgradeListener | null = null;
+
+/**
+ * Set who hears managed upgrades the upgrade router accepted: the activity
+ * count (`managed-activity.ts`). One listener; `null` removes it.
+ *
+ * @param listener - The listener, or `null`.
+ */
+export function setManagedUpgradeListener(listener: ManagedUpgradeListener | null): void {
+  upgradeListener = listener;
+}
+
+/**
+ * Called by the upgrade router once a WebSocket was accepted, after its origin,
+ * credential and route checks. A managed one is passed on to the activity
+ * count; any other is ignored.
+ *
+ * @param req - The upgrade request.
+ * @param socket - The accepted socket, whose client messages are activity.
+ */
+export function noteUpgradeAdmitted(req: IncomingMessage, socket: AdmittedSocket): void {
+  if (upgradeListener === null || !isManagedIngress(req)) return;
+  upgradeListener(req, socket);
 }

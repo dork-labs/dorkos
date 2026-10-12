@@ -449,6 +449,25 @@
       ]
     },
     {
+      "guide": "official-community-operations.md",
+      "description": "Official Community Space soft-launch runbook: alerts from `/metrics` and `/health/ready`, daily soft-launch checks, the D14 launch bar, the upgrade freeze around launch, and incident steps",
+      "patterns": [
+        "apps/community/src/live/monitoring.ts",
+        "apps/community/load/",
+        "official-community-operations"
+      ]
+    },
+    {
+      "guide": "official-community-host.md",
+      "description": "Official Community Space host agent runbook: the staff install's Member seat, enrolling the host agent, its exact tool allowlist, read-only docs, `answerIn` and its wake budget, and what to watch",
+      "patterns": [
+        "communities/remote/wake/answer-in",
+        "routes/community-answer-in",
+        "templates/community-host/",
+        "official-community-host"
+      ]
+    },
+    {
       "guide": "adding-a-memory-provider.md",
       "description": "Memory backend authoring: MemoryProvider port (seam #5), three-way honest reads, five typed errors + MemoryPathError, memoryConformance, and the quarantine that keeps a fault off a turn",
       "patterns": [

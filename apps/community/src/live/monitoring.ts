@@ -2,6 +2,7 @@ import type { Hono } from 'hono';
 import { Client, type Pool } from 'pg';
 import type { HostAuthority } from '../host/authority.js';
 import type { LiveHub } from './hub.js';
+import { comparisonMetrics, registerDecisionComparisonRoute } from '../decisions/comparison.js';
 
 /** How long the readiness probe waits for its database round trip. */
 const READY_DATABASE_MS = 2_000;
@@ -123,7 +124,8 @@ async function databaseAnswers(hub: LiveHub, databaseUrl: string): Promise<boole
 }
 
 /**
- * Register `/health/ready` and `/metrics`. `/health` stays a pure liveness probe elsewhere.
+ * Register `/health/ready`, `/metrics` and the decision models' comparison
+ * (`decisions/comparison.ts`). `/health` stays a pure liveness probe elsewhere.
  *
  * Readiness needs a database round trip and, once the server pinned it at boot, a listening
  * live-notice connection. Metrics need host authority with `communities:read`: they name
@@ -148,8 +150,10 @@ export function registerMonitoringRoutes(
   app.get('/metrics', async (c) => {
     await authority.require(c, 'communities:read');
     c.header('Cache-Control', 'no-store');
-    return c.body(renderMetrics(hub, pool), 200, {
+    const decisions = await comparisonMetrics(pool);
+    return c.body(renderMetrics(hub, pool) + decisions, 200, {
       'content-type': 'text/plain; version=0.0.4; charset=utf-8',
     });
   });
+  registerDecisionComparisonRoute(app, { pool, authority });
 }

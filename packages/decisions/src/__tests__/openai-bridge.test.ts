@@ -129,6 +129,9 @@ describe('createOpenAiCompatibleModel', () => {
     expect(stub.calls).toHaveLength(1);
     expect(result.answers.spam!.value).toBe('m2');
     expect(result.answers.spam!.confidence).toBeCloseTo(0.9, 6);
+    // The chosen label's own probability, so a caller can tell a measured
+    // answer from an ask-twice guess.
+    expect(result.answers.spam!.probabilities).toEqual({ m2: expect.closeTo(0.9, 6) });
     expect(result.answers.harm!.value).toBe(false);
     expect(result.answers.harm!.confidence).toBeCloseTo(0.6, 6);
     expect(result.answers.harm!.probabilities).toEqual({
@@ -152,6 +155,63 @@ describe('createOpenAiCompatibleModel', () => {
     expect(result.answers.spam).toEqual({ value: 'm2', confidence: 0.4 });
     expect(result.answers.harm).toEqual({ value: false, confidence: 0.8 });
     expect(result.costMicroUsd).toBe(220);
+    // Both asks' tokens, summed.
+    expect(result.usage).toEqual({ inputTokens: 200, outputTokens: 20 });
+  });
+
+  it('sends max_tokens only when asked to', async () => {
+    const stub = stubFetch(() => completion('{"spam":"m2","harm":false}', () => 0));
+    const limited = createOpenAiCompatibleModel({
+      baseUrl: 'http://x/v1',
+      model: 'm',
+      fetch: stub.fetch,
+      maxTokens: 64,
+    });
+    await limited.decide(REQ, new AbortController().signal);
+    expect(stub.calls[0]!.body.max_tokens).toBe(64);
+
+    const open = createOpenAiCompatibleModel({
+      baseUrl: 'http://x/v1',
+      model: 'm',
+      fetch: stub.fetch,
+    });
+    await open.decide(REQ, new AbortController().signal);
+    expect(stub.calls[1]!.body).not.toHaveProperty('max_tokens');
+  });
+
+  it('reads a key function on every request, so a replaced key is used at once', async () => {
+    let key = 'first-key';
+    const stub = stubFetch(() => completion('{"spam":"m2","harm":false}', () => 0));
+    const model = createOpenAiCompatibleModel({
+      baseUrl: 'http://x/v1',
+      model: 'm',
+      fetch: stub.fetch,
+      apiKey: () => key,
+    });
+    await model.decide(REQ, new AbortController().signal);
+    key = 'second-key';
+    await model.decide(REQ, new AbortController().signal);
+    expect(stub.calls.map((c) => c.headers.authorization)).toEqual([
+      'Bearer first-key',
+      'Bearer second-key',
+    ]);
+  });
+
+  it('makes an ask an outage, sending nothing, when the key function throws', async () => {
+    const stub = stubFetch(() => completion('{"spam":"m2","harm":false}', () => 0));
+    const model = createOpenAiCompatibleModel({
+      baseUrl: 'http://x/v1',
+      model: 'm',
+      fetch: stub.fetch,
+      circuitBreaker: false,
+      apiKey: () => {
+        throw new Error('secret-in-message');
+      },
+    });
+    const result = await model.decide(REQ, new AbortController().signal);
+    expect(stub.calls).toHaveLength(0);
+    expect(result.answers.spam).toEqual({ value: null, confidence: 0, failure: 'outage' });
+    expect(JSON.stringify(result)).not.toContain('secret-in-message');
   });
 
   it('makes every answer unsure when the second ask fails, is refused or times out', async () => {

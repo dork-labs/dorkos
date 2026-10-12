@@ -1959,6 +1959,12 @@
             "items": {
               "$ref": "#/components/schemas/HeldRaise"
             }
+          },
+          "report": {
+            "$ref": "#/components/schemas/HeartbeatReportStatus"
+          },
+          "checks": {
+            "$ref": "#/components/schemas/HeartbeatChecks"
           }
         },
         "required": [
@@ -1968,7 +1974,9 @@
           "skippedReason",
           "fileError",
           "lastBeats",
-          "held"
+          "held",
+          "report",
+          "checks"
         ]
       },
       "HeartbeatWake": {
@@ -2089,6 +2097,82 @@
           "room",
           "dm",
           "note"
+        ]
+      },
+      "HeartbeatReportStatus": {
+        "type": "object",
+        "properties": {
+          "cadence": {
+            "$ref": "#/components/schemas/HeartbeatReport"
+          },
+          "to": {
+            "type": "string"
+          },
+          "nextReportAt": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "items": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "cadence",
+          "to",
+          "nextReportAt",
+          "items"
+        ]
+      },
+      "HeartbeatReport": {
+        "type": "string",
+        "enum": [
+          "daily",
+          "weekly",
+          "off"
+        ]
+      },
+      "HeartbeatChecks": {
+        "type": "object",
+        "properties": {
+          "runsOn": {
+            "type": "string",
+            "enum": [
+              "credits",
+              "runtime"
+            ]
+          },
+          "runtime": {
+            "type": "string"
+          },
+          "today": {
+            "type": "integer"
+          },
+          "tokens": {
+            "type": "integer"
+          },
+          "offer": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "runsOn",
+          "runtime",
+          "today",
+          "tokens",
+          "offer"
+        ]
+      },
+      "TriageCreditsChoice": {
+        "type": "object",
+        "properties": {
+          "useCredits": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "useCredits"
         ]
       },
       "HealthResponse": {
@@ -14414,6 +14498,13 @@
           "waitingKind": {
             "$ref": "#/components/schemas/RoomWaitingKind"
           },
+          "greeting": {
+            "type": "string",
+            "enum": [
+              "first-run"
+            ],
+            "description": "Set on an agent's scripted greeting DorkOS wrote for it, such as DorkBot's first-run welcome in #team. It woke nobody, and it stays in the app: a chat bridge never delivers it."
+          },
           "answersEntryId": {
             "type": "string",
             "description": "The entry this post answers, set on every agent-authored post the room writes for a turn. Chat posts in arrival order whatever a message is responding to, and an agent whose message waited behind work in another conversation answers out of order often rather than rarely — so the pointer is what a reader follows back to the question."
@@ -16933,7 +17024,8 @@
           "credits.refused",
           "extension.approval",
           "extension.decision",
-          "community.owner-replacement"
+          "community.owner-replacement",
+          "heartbeat.credits-offer"
         ]
       },
       "NotificationTier": {
@@ -28799,6 +28891,316 @@
           },
           "404": {
             "description": "No agent with that id"
+          }
+        }
+      }
+    },
+    "/api/heartbeats/triage-credits": {
+      "put": {
+        "tags": [
+          "Heartbeats"
+        ],
+        "summary": "Choose whether cheap checks run on DorkOS credits",
+        "description": "A person’s answer to the one-time offer: `true` is Use credits, `false` is Not now. Owner only, and never an agent. Nothing is spent while the answer is not `true`.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TriageCreditsChoice"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The answer, stored",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TriageCreditsChoice"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The body is not an answer"
+          },
+          "403": {
+            "description": "Only the owner of this DorkOS can answer"
+          }
+        }
+      }
+    },
+    "/api/onboarding/first-run": {
+      "post": {
+        "tags": [
+          "Onboarding"
+        ],
+        "summary": "Record and set up the path picked on the Welcome screen",
+        "description": "Calls run one at a time. Checks the key and reads the service model list with it first, and writes nothing when the key is refused (by DorkOS, or a 401 or 403 from the service). Any other failed read keeps the key and starts on the service usual model (`modelListed: false`). Then undoes what an earlier pick set up (a credits record goes back to the own sign-in, the default runtime and DorkBot go back to what they were) and applies this one: DorkOS moves the default runtime and DorkBot to DorkOS, clears the model setup so DorkOS picks the model, and leaves credits to the new link; Own AI saves the key (or finds the local model) with the model DorkOS picked from the service's list and turns credits off for DorkOS; no account records the path only. This computer and its owner only.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "path": {
+                    "type": "string",
+                    "enum": [
+                      "dorkos",
+                      "own",
+                      "none"
+                    ]
+                  },
+                  "choice": {
+                    "type": "object",
+                    "properties": {
+                      "kind": {
+                        "type": "string",
+                        "enum": [
+                          "openai",
+                          "anthropic",
+                          "openrouter",
+                          "local",
+                          "custom",
+                          "agent-app"
+                        ]
+                      },
+                      "apiKey": {
+                        "type": "string"
+                      },
+                      "inference": {
+                        "type": "object",
+                        "additionalProperties": {},
+                        "description": "For `custom`: source, provider, protocol, endpoint, model and limits"
+                      }
+                    },
+                    "required": [
+                      "kind"
+                    ],
+                    "description": "For `own`: what was picked in the Own AI list"
+                  }
+                },
+                "required": [
+                  "path"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "What the pick set up",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "path": {
+                      "type": "string",
+                      "enum": [
+                        "dorkos",
+                        "own",
+                        "none"
+                      ]
+                    },
+                    "runtime": {
+                      "type": "string"
+                    },
+                    "model": {
+                      "type": "string"
+                    },
+                    "modelListed": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "path",
+                    "runtime"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Not a known path, or the key or setup was refused (`invalid_key`, `invalid_setup`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not this computer, or not the owner",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The first run is finished or dismissed (`onboarding_complete`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "A model on this computer did not answer; nothing was saved",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/onboarding/welcome": {
+      "post": {
+        "tags": [
+          "Onboarding"
+        ],
+        "summary": "Post DorkBot's first-run welcome into #team, once",
+        "description": "Posts the welcome as DorkBot without starting any agent turn or notification (and never to a chat bridge), keeps its entry id in `onboarding.welcomeEntryId`, and answers with it. A later call answers with the same entry while #team still holds it, and posts nothing.",
+        "responses": {
+          "200": {
+            "description": "The welcome entry",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "roomId": {
+                      "type": "string"
+                    },
+                    "entryId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "roomId",
+                    "entryId"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not the owner",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The first run finished or was dismissed without a welcome (`onboarding_complete`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "#team, or DorkBot in it, is not ready yet (`team_unavailable`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
           }
         }
       }
@@ -43236,6 +43638,10 @@
                       "type": "string",
                       "description": "Where the human goes to approve the link."
                     },
+                    "verificationUriComplete": {
+                      "type": "string",
+                      "description": "The approval page with the code already filled in, when the service sent one."
+                    },
                     "expiresAt": {
                       "type": "string",
                       "description": "ISO timestamp after which the code is dead."
@@ -43324,6 +43730,10 @@
                           "type": "string",
                           "description": "Where the human goes to approve the link."
                         },
+                        "verificationUriComplete": {
+                          "type": "string",
+                          "description": "The approval page with the code already filled in, when the service sent one."
+                        },
                         "expiresAt": {
                           "type": "string",
                           "description": "ISO timestamp after which the code is dead."
@@ -43402,6 +43812,10 @@
                         "verificationUri": {
                           "type": "string",
                           "description": "Where the human goes to approve the link."
+                        },
+                        "verificationUriComplete": {
+                          "type": "string",
+                          "description": "The approval page with the code already filled in, when the service sent one."
                         },
                         "expiresAt": {
                           "type": "string",

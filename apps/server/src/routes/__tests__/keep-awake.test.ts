@@ -19,10 +19,13 @@ import { listeningServer } from '@dorkos/test-utils/listening-server';
 import { KeepAwakeStatusSchema } from '@dorkos/shared/schemas';
 import { MainRequestAdmission } from '../../services/core/lifecycle/main-request-admission.js';
 import { createApp } from '../../app.js';
+import { composedListener } from '../../http/__tests__/composed-listener.js';
 import { keepAwakeService } from '../../services/core/keep-awake/index.js';
 
-const app = createApp({ admission: new MainRequestAdmission() });
-const testServer = listeningServer(app);
+const admission = new MainRequestAdmission();
+const app = createApp({ admission });
+// Routed as the running server routes: the moved groups answer from Hono.
+const testServer = listeningServer(composedListener(app, admission));
 
 describe('GET /api/keep-awake', () => {
   it('answers the status, valid against its schema', async () => {

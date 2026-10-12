@@ -6,7 +6,7 @@
  * @module routes/community-connections
  */
 import { Router, type Request, type Response } from 'express';
-import { CommunityRefSchema } from '@dorkos/shared/community-adapter';
+import { CommunityRefSchema, type CommunityRef } from '@dorkos/shared/community-adapter';
 import {
   CommunityConnectionStartRequestSchema,
   CommunityConnectionStartResponseSchema,
@@ -59,6 +59,8 @@ import { CommunityAttentionCache } from '../services/communities/remote/communit
 import { CommunityOwnerNoticeCache } from '../services/communities/remote/community-owner-notice-cache.js';
 import { CommunityOwnerNoticeAnnouncer } from '../services/notifications/emitters/community-owner-replacement.js';
 import { resolveDorkHome } from '../lib/dork-home.js';
+import { officialOnly, spaceReachable } from '../middleware/spaces-enabled.js';
+import { addAnswerInRoutes } from './community-answer-in.js';
 
 /** Resolve the only local human allowed to use a stored community connection. */
 export function resolveCommunityOwner(req: Request, res: Response): string | null {
@@ -246,7 +248,7 @@ export function createCommunityConnectionsRouter(
   ownerNoticeCache: CommunityOwnerNoticeCache = new CommunityOwnerNoticeCache(),
   announcer: CommunityOwnerNoticeAnnouncer = new CommunityOwnerNoticeAnnouncer(resolveDorkHome()),
   // Looked up per request when not injected, so building the router reads nothing from disk.
-  wakePolicy?: Pick<RemoteWakePolicy, 'get' | 'set'>
+  wakePolicy?: Pick<RemoteWakePolicy, 'get' | 'set' | 'getAnswerIn' | 'setAnswerIn'>
 ): Router {
   const router = Router();
   const caches: ActivityCaches = {
@@ -258,7 +260,12 @@ export function createCommunityConnectionsRouter(
     const owner = resolveCommunityOwner(req, res);
     if (!owner) return;
     try {
-      const connections = await connectionService.list(owner);
+      // With spaces off the gate let this list through for the official space alone, so the
+      // official row is the only one it carries (spec `official-community-space` D5).
+      const listed = await connectionService.list(owner);
+      const connections = officialOnly(res)
+        ? listed.filter((connection) => connection.official === true)
+        : listed;
       const readable = connections
         .filter((connection) => attentionAccess(connection) !== 'none')
         .map((connection) => connection.ref);
@@ -299,7 +306,21 @@ export function createCommunityConnectionsRouter(
     const owner = resolveCommunityOwner(req, res);
     if (!owner) return;
     try {
-      res.json(CommunityNavigationStateSchema.parse(await navigationService.get(owner)));
+      const state = await navigationService.get(owner);
+      // With spaces off this answers for the official space alone, so the saved order and
+      // destinations name no other space (spec `official-community-space` D5).
+      const reachable = (ref: string) => spaceReachable(ref as CommunityRef);
+      res.json(
+        CommunityNavigationStateSchema.parse(
+          officialOnly(res)
+            ? {
+                ...state,
+                order: state.order.filter(reachable),
+                destinations: state.destinations.filter((item) => reachable(item.ref)),
+              }
+            : state
+        )
+      );
     } catch (error) {
       failure(res, error);
     }
@@ -493,6 +514,8 @@ export function createCommunityConnectionsRouter(
       failure(res, error);
     }
   });
+  // Where any person's post wakes the owner's agents without a mention (D11), owner-only too.
+  addAnswerInRoutes(router, resolveCommunityOwner, () => wakePolicy ?? getRemoteWakePolicy());
   router.delete('/:ref', async (req, res) => {
     const owner = resolveCommunityOwner(req, res);
     if (!owner) return;

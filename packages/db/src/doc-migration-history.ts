@@ -35,12 +35,17 @@ import {
   agentPauses,
   heartbeats,
   remoteCommandJournal,
+  heartbeatReportItems,
+  remoteEventRefusals,
   reviewedSql,
   refuse,
   type MigrationEntry,
   type MigrationRow,
 } from './doc-migration-identities.js';
-import { bridgePublishedRoomMigration } from './doc-migration-published-room.js';
+import {
+  bridgePublishedRoomMigration,
+  bridgePreviousConsolidatedDoc,
+} from './doc-migration-published-room.js';
 import { verifyCanonicalSchema } from './doc-migration-schema.js';
 
 /**
@@ -71,6 +76,7 @@ export function bridgeLegacyDocMigrationHistory(db: Db, folder: string): void {
     { db, folder, rows },
   ]);
   try {
+    if (bridgePreviousConsolidatedDoc(publishedOwnerKey)) return;
     if (bridgePublishedRoomMigration(publishedOwnerKey)) return;
   } finally {
     migrationOwnerApply(migrationOwnerDelete, publishedMigrationOwners, [publishedOwnerKey]);
@@ -174,6 +180,8 @@ export function bridgeLegacyDocMigrationHistory(db: Db, folder: string): void {
     agentPauses,
     heartbeats,
     remoteCommandJournal,
+    heartbeatReportItems,
+    remoteEventRefusals,
   ];
   const shippedSql = shipped.map((entry) => reviewedSql(folder, entry));
   reviewedSql(folder, consolidatedDoc);
@@ -191,6 +199,8 @@ export function bridgeLegacyDocMigrationHistory(db: Db, folder: string): void {
     [shippedRows[4]!, agentPauses],
     [shippedRows[5]!, heartbeats],
     [shippedRows[6]!, remoteCommandJournal],
+    [shippedRows[7]!, heartbeatReportItems],
+    [shippedRows[8]!, remoteEventRefusals],
     [finalRows, consolidated],
   ] as const) {
     if (matching.length > 1 || (matching[0] && matching[0].created_at !== entry.when))

@@ -81,7 +81,7 @@ export async function isBanned(
  * unconfirmed one is not evidence of who the person is, and the account itself is checked.
  *
  * Call it after locking the member row the admission will write: a ban takes the community row
- * for update (`routes/community/bans.ts`), and every admission holds that row for share, so a
+ * for update (`routes/community/moderation/bans.ts`), and every admission holds that row for share, so a
  * ban either commits before this read or waits for the admission to commit and then removes it.
  *
  * @throws {ApiError} 403 when a standing ban names the account or its confirmed email.

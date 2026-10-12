@@ -49,37 +49,17 @@ import {
   spaceAddressFromInvitation,
   startErrorMessage,
 } from './join-space-copy';
+import type {
+  ConnectCommunityDialogProps,
+  ConnectCommunityRequest,
+  OwnedValue,
+  Started,
+} from './connect-community-types';
 
-/** What the connect dialog was opened for. */
-export interface ConnectCommunityRequest {
-  /** A connection that is not connected yet (pending or needing reconnection), or `null` for the form. */
-  ref: string | null;
-}
-
-/** Props for {@link ConnectCommunityDialog}. */
-export interface ConnectCommunityDialogProps {
-  /** What to show, or `null` while the dialog is closed. */
-  request: ConnectCommunityRequest | null;
-  onOpenChange: (open: boolean) => void;
-  /** This installation's name, offered as the name the Community will know it by. */
-  installName: string;
-  /** Runs once the connection on screen is approved, with its ref, after the dialog closes. */
-  onConnected: (ref: string) => void;
-}
-
-/** A value that belongs to one confirmed owner, so a switch of owner hides it. */
-interface OwnedValue<T> {
-  address: string;
-  value: T;
-}
-
-/** The connection a start returned, and whether the list has answered since. */
-interface Started {
-  address: string;
-  connection: CommunityConnectionDescriptor;
-  /** The list has been re-read after the start, so it is the truth from here on. */
-  settled: boolean;
-}
+export type {
+  ConnectCommunityDialogProps,
+  ConnectCommunityRequest,
+} from './connect-community-types';
 
 /**
  * Join a space: connect this installation to it, in place, from the switcher.
@@ -233,6 +213,7 @@ export function ConnectCommunityDialog({
           }
           notice={notice?.address === address ? notice.value : ''}
           installName={installName}
+          initialUrl={openedFor?.url}
           onStarted={(result) => {
             rememberLink(address, result.connection.ref, result.approvalUrl);
             setStarted({ address, connection: result.connection, settled: false });
@@ -270,6 +251,7 @@ interface ConnectCommunityBodyProps {
   approvalUrl: string | undefined;
   notice: string;
   installName: string;
+  initialUrl: string | undefined;
   onStarted: (result: CommunityConnectionStartResponse) => void;
   /** The list has been re-read since that start. */
   onStartSettled: (ref: string) => void;
@@ -291,6 +273,7 @@ function ConnectCommunityBody({
   approvalUrl,
   notice,
   installName: defaultInstallName,
+  initialUrl,
   onStarted,
   onStartSettled,
   onEnded,
@@ -301,7 +284,7 @@ function ConnectCommunityBody({
   const client = useQueryClient();
   const accountSignIn = useCommunityAccountSignIn();
   const id = useId();
-  const [url, setUrl] = useState('');
+  const [url, setUrl] = useState(initialUrl ?? '');
   // Set once an invitation was opened: where it opened, and whether the person
   // joins there with their DorkOS account, so the form can say what happens
   // next while they join.

@@ -33,6 +33,20 @@ describe('RemoteAccessReportSchema', () => {
     expect(RemoteAccessStateSchema.options).toHaveLength(7);
   });
 
+  it('takes the delayed-reports flag only as true, and leaves it optional', () => {
+    expect(RemoteAccessReportSchema.safeParse(base).success).toBe(true);
+    expect(
+      RemoteAccessReportSchema.safeParse({ ...base, activityReportsDelayed: true }).success
+    ).toBe(true);
+    expect(
+      RemoteAccessReportSchema.safeParse({ ...base, activityReportsDelayed: false }).success
+    ).toBe(false);
+    expect(
+      RemoteAccessReportSchema.safeParse({ ...base, activityReportsDelayed: 'cloud said 500' })
+        .success
+    ).toBe(false);
+  });
+
   it('refuses a state it does not know, including one that claims the computer is asleep', () => {
     expect(RemoteAccessReportSchema.safeParse({ ...base, state: 'sleeping' }).success).toBe(false);
     expect(RemoteAccessReportSchema.safeParse({ ...base, state: 'awake' }).success).toBe(false);
@@ -99,6 +113,31 @@ describe('RemoteAccessReportSchema', () => {
       false
     );
     expect(RemoteAccessReportSchema.safeParse({ ...base, mode: 'both' }).success).toBe(false);
+  });
+
+  it('carries a drain deadline and who set it, and refuses a deadline nobody can read', () => {
+    const draining = { ...base, state: 'draining' } as const;
+    for (const deadline of ['cloud', 'local']) {
+      expect(
+        RemoteAccessReportSchema.safeParse({
+          ...draining,
+          drain: { until: '2026-10-10T12:00:30.000Z', deadline },
+        }).success
+      ).toBe(true);
+    }
+    expect(RemoteAccessReportSchema.safeParse(draining).success).toBe(true);
+    expect(
+      RemoteAccessReportSchema.safeParse({
+        ...draining,
+        drain: { until: 'in thirty seconds', deadline: 'local' },
+      }).success
+    ).toBe(false);
+    expect(
+      RemoteAccessReportSchema.safeParse({
+        ...draining,
+        drain: { until: '2026-10-10T12:00:30.000Z', deadline: 'guessed' },
+      }).success
+    ).toBe(false);
   });
 
   it('requires the Cloud-reported flags rather than defaulting them', () => {

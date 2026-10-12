@@ -447,7 +447,9 @@ export class RemoteRoomSubscriptionRuntime {
             const key = `${subscriptionKey(input)}:${member.localAgentId}`;
             desired.set(key, {
               key,
-              signature: `${key}:${member.remoteMemberId}`,
+              // The title too: answer-in channels are matched by name (spec
+              // `official-community-space` D11), so a rename restarts the stream.
+              signature: `${key}:${member.remoteMemberId}:${input.title}`,
               localAgentId: member.localAgentId,
               adapter,
               room: input,

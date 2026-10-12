@@ -549,6 +549,10 @@ export class ChatBridgeDelivery {
       }
     } else if (entry.kind !== 'post') {
       return 'skipped';
+    } else if (entry.body.greeting !== undefined) {
+      // A scripted greeting DorkOS wrote for an agent (DorkBot's first-run
+      // welcome) belongs to the app, never to a chat on another platform.
+      return 'skipped';
     }
 
     // Eligibility criterion 4 (spec §6.1, §6.6 step 2, A6.5): a delivered POST

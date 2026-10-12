@@ -293,6 +293,9 @@ describe('useOnboarding', () => {
         dismissedAt: null,
         completedAt: null,
         runtimeDefaultSetAt: null,
+        firstRunPath: null,
+        welcomeEntryId: null,
+        priorRuntime: null,
       });
       expect(result.current.shouldShowOnboarding).toBe(true);
     });

@@ -36,7 +36,7 @@ export const URGENT_DEFINITION =
   'still open, a customer being harmed, or a hard deadline that will be missed without them. ' +
   'A problem you already fixed is not urgent, however serious it was; it goes in your next report.';
 
-/** An open raise the agent is waiting on (PR 4 fills these). */
+/** An open raise the agent is waiting on: delivered, not yet resolved. */
 export interface OpenRaise {
   /** Its key. */
   key: string;
@@ -60,6 +60,36 @@ export interface BeatPromptInput {
   checklist: string | null;
   /** Whether its manager changed since its last beat. */
   newManager: boolean;
+  /** On a report beat: what the report covers and who reads it. */
+  report?: ReportMaterial;
+}
+
+/** What a report beat's prompt carries (§9.3). */
+export interface ReportMaterial {
+  /** Who reads it, by name ("Dorian", "Ana"). */
+  readerName: string;
+  /** Its queued lines: raises saved for it, still-open raises, reports-to changes. */
+  lines: readonly string[];
+  /** The record lines of its beat turns since its last report. */
+  turns: readonly string[];
+}
+
+/**
+ * The report beat's section of the prompt.
+ *
+ * @param report - What the report covers.
+ */
+function reportSection(report: ReportMaterial): string {
+  return [
+    `This is your report beat. Write one short report for ${report.readerName}.`,
+    `Saved for this report:\n${list(report.lines)}`,
+    '',
+    `What your beats did since your last report:\n${list(report.turns)}`,
+    '',
+    'Say what they have not already seen: finished, in progress, at risk, needed, one line ' +
+      'each, unless your checklist sets another shape. Pass it as `report` in your end_beat ' +
+      'call. If nothing is worth their time, pass `report: null` and it all waits for the next one.',
+  ].join('\n');
 }
 
 /**
@@ -91,13 +121,15 @@ export function buildBeatPrompt(input: BeatPromptInput): string {
   const sections = [
     'This is a heartbeat, not a message from a person. Nobody is waiting on a reply.',
     '',
-    input.kind === 'sweep'
-      ? 'This is a sweep: look around fully, even where nothing below changed.'
-      : `Here is what changed since your last beat:\n${list(changes)}`,
+    input.kind === 'report' && input.report
+      ? reportSection(input.report)
+      : input.kind === 'sweep'
+        ? 'This is a sweep: look around fully, even where nothing below changed.'
+        : `Here is what changed since your last beat:\n${list(changes)}`,
     '',
     `Your open commitments:\n${list(commitments)}`,
     '',
-    `Raises you are still waiting on:\n${list(raises)}`,
+    `Raises you are still waiting on (do not raise these again; list a key in \`resolved\` once it is settled):\n${list(raises)}`,
     '',
     `Your checklist:\n${checklist}`,
   ];

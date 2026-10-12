@@ -423,10 +423,12 @@ jobs:
       # `!cancelled()` so an earlier gate's failure still reports every type
       # error in the same run, for the same reason the step below passes
       # `--continue`.
+      #
+      # The server's tsc needs about 4.4 GB, past Node's default heap of about
+      # 4 GB, so it ran out of memory on some pull requests and not others. The
+      # runner has 16 GB; the same ceiling the test job uses.
       - name: Typecheck every package that declares a typecheck script
         if: ${{ !cancelled() }}
-        # Server test-inclusive tsc exceeds Node's default ~4 GiB heap. The
-        # public Linux runner has 16 GB RAM; retain full scope and task scheduling.
         env:
           NODE_OPTIONS: --max-old-space-size=8192
         run: pnpm exec turbo typecheck --continue

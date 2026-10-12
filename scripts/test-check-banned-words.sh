@@ -255,12 +255,14 @@ run_case 'archived changelog keeps its history' 0 'docs/changelog-archive.mdx' \
 run_case "GitHub's real product name is allowed when marked" 0 'docs/guides/compare.mdx' \
   'What is GitHub Mission Control? <!-- vocab-allow: GitHub ships a product by that name -->'
 
-# Carve-out 3: the media key, in both forms a prose file spells it. Renaming it
-# would orphan the archived per-version manifests.
-run_case 'generated media filename is allowed' 0 'blog/dorkos-0-58-0.mdx' \
+# Carve-out 3: the archived media file name. Frozen archives keep the name the
+# shot had when they were cut, and old release posts link to it.
+run_case 'archived media filename is allowed' 0 'blog/dorkos-0-58-0.mdx' \
   '![The DorkOS app](/product/archive/v0.58.0/cockpit-light.png)'
 
-run_case 'ProductShot registry key is allowed' 0 'docs/index.mdx' \
+# The live shot is `team-room` now (DOR-2762), so the old key is no longer
+# exempt: a docs embed that names it again is the retired word again.
+run_case 'the retired ProductShot key is flagged' 1 'docs/index.mdx' \
   '  id="cockpit"'
 
 # The point of the whole design: prose files only. A word inside code is not a

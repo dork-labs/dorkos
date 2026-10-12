@@ -66,6 +66,7 @@ import {
   seedDisplayNameSourceDefault,
   seedIdentityPromptDismissedDefault,
   seedWorkingHoursDefaults,
+  seedFirstRunOnboardingLeaves,
   seedHarnessAutoAdopt,
   seedHarnessGlobal,
   seedHarnessRefusedHooks,
@@ -77,6 +78,7 @@ import {
   seedCodexTransport,
   raiseEngagedWindowDefaults,
   seedCloudRemoteAccess,
+  seedSpacesOfficial,
 } from '../config-manager.js';
 import { applyConfigPatch } from '../operator/config-patch.js';
 import { checkMigrationSafety, extractMigrationBodies } from './migration-safety.js';
@@ -356,8 +358,27 @@ describe('ConfigManager', () => {
     const configManager = initConfigManager(testDir);
 
     const onDisk = JSON.parse(fs.readFileSync(configPath, 'utf-8')) as { heartbeats?: unknown };
-    expect(onDisk.heartbeats).toEqual({ enabled: true });
+    expect(onDisk.heartbeats).toEqual({ enabled: true, triageOnCredits: null });
     expect(configManager.get('heartbeats').enabled).toBe(true);
+  });
+
+  it('reads a stored heartbeats section without triageOnCredits as not chosen', () => {
+    // Spec `heartbeats` §6.3: the leaf has no migration because its absence
+    // already says "nobody answered the offer". Pinned so a later default that
+    // is not `null` breaks here instead of spending credits nobody chose.
+    fs.mkdirSync(testDir, { recursive: true });
+    fs.writeFileSync(
+      configPath,
+      JSON.stringify({
+        version: 1,
+        heartbeats: { enabled: true },
+        __internal__: { migrations: { version: '0.105.0' } },
+      })
+    );
+
+    const configManager = initConfigManager(testDir);
+
+    expect(configManager.get('heartbeats').triageOnCredits ?? null).toBeNull();
   });
 
   it('lands memory.provider on disk for a config written before memory existed', () => {
@@ -1623,6 +1644,95 @@ describe('seedWorkingHoursDefaults migration (DOR-2788)', () => {
       // Everything the person had set is untouched.
       expect(onDisk.profile.displayName).toBe('Dorian');
       expect(onDisk.profile.identityPromptDismissedAt).toBe('2026-09-01T00:00:00.000Z');
+      expect(() => UserConfigSchema.parse(onDisk)).not.toThrow();
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('seedFirstRunOnboardingLeaves migration (DOR-2783)', () => {
+  it('reserves the three first-run leaves on an `onboarding` block that predates them', () => {
+    // conf's pre-migration merge is shallow, so a stored `onboarding` never gains
+    // a member on its own. Drop the body and these read `undefined`.
+    const store = createMockStore({
+      onboarding: { completedSteps: ['meet-dorkbot'], completedAt: '2026-07-01T00:00:00.000Z' },
+    });
+    seedFirstRunOnboardingLeaves(store);
+    expect(store.data.onboarding).toEqual({
+      completedSteps: ['meet-dorkbot'],
+      completedAt: '2026-07-01T00:00:00.000Z',
+      firstRunPath: null,
+      welcomeEntryId: null,
+      priorRuntime: null,
+    });
+  });
+
+  it('keeps a leaf already set and fills only the missing ones', () => {
+    const store = createMockStore({ onboarding: { firstRunPath: 'own' } });
+    seedFirstRunOnboardingLeaves(store);
+    expect(store.data.onboarding).toEqual({
+      firstRunPath: 'own',
+      welcomeEntryId: null,
+      priorRuntime: null,
+    });
+  });
+
+  it('leaves a block that already has all three alone (idempotent, by identity)', () => {
+    const onboarding = { firstRunPath: null, welcomeEntryId: null, priorRuntime: null };
+    const store = createMockStore({ onboarding });
+    seedFirstRunOnboardingLeaves(store);
+    expect(store.data.onboarding).toBe(onboarding);
+  });
+
+  it('does nothing when there is no `onboarding` block to extend', () => {
+    const store = createMockStore({ server: { port: 4242 } });
+    seedFirstRunOnboardingLeaves(store);
+    expect(store.data.onboarding).toBeUndefined();
+  });
+
+  it('a real pre-0.108.0 config file gains the leaves on disk (full conf path)', () => {
+    // Read from the FILE: Ajv's `useDefaults` answers `null` from a discarded
+    // copy, so a `getDot` assertion would pass with the body deleted (DOR-1496).
+    const dir = path.join(os.tmpdir(), 'test-dork-first-run-mig-' + Date.now());
+    const cfgPath = path.join(dir, 'config.json');
+    fs.mkdirSync(dir, { recursive: true });
+    try {
+      fs.writeFileSync(
+        cfgPath,
+        JSON.stringify({
+          version: 1,
+          onboarding: {
+            completedSteps: [],
+            skippedSteps: [],
+            startedAt: null,
+            dismissedAt: null,
+            completedAt: '2026-09-01T00:00:00.000Z',
+            runtimeDefaultSetAt: '2026-09-01T00:00:00.000Z',
+          },
+          __internal__: { migrations: { version: '0.107.0' } },
+        }),
+        'utf-8'
+      );
+
+      new Conf({
+        configName: 'config',
+        cwd: dir,
+        schema: CONF_JSON_SCHEMA as unknown as Schema<Record<string, unknown>>,
+        defaults: USER_CONFIG_DEFAULTS,
+        clearInvalidConfig: false,
+        projectVersion: '0.108.0',
+        migrations: CONFIG_MIGRATIONS,
+      });
+
+      const onDisk = JSON.parse(fs.readFileSync(cfgPath, 'utf-8')) as {
+        onboarding: Record<string, unknown>;
+      };
+      expect(onDisk.onboarding).toHaveProperty('firstRunPath', null);
+      expect(onDisk.onboarding).toHaveProperty('welcomeEntryId', null);
+      expect(onDisk.onboarding).toHaveProperty('priorRuntime', null);
+      // Everything the install already had is untouched.
+      expect(onDisk.onboarding.completedAt).toBe('2026-09-01T00:00:00.000Z');
       expect(() => UserConfigSchema.parse(onDisk)).not.toThrow();
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
@@ -4107,7 +4217,7 @@ describe('CONFIG_MIGRATIONS append-only pins (DOR-1222 regression guard)', () =>
     // pass this having scanned nothing. The count is the knowable bound; the
     // table is append-only, so raising it is the deliberate act of adding a
     // migration, which is exactly when this check should be re-read.
-    expect(Object.keys(bodies)).toHaveLength(48);
+    expect(Object.keys(bodies)).toHaveLength(50);
 
     const reaching = Object.keys(bodies).filter((key) =>
       reachedDeclarations(bodies[key]!, pool).includes('describeLoadError')
@@ -6748,5 +6858,65 @@ describe('seedCloudRemoteAccess migration (DOR-2086)', () => {
     seedCloudRemoteAccess(empty);
     expect(empty.data.cloud).toBeUndefined();
     expect(empty.data.tunnel).toBe(tunnel);
+  });
+});
+
+describe('seedSpacesOfficial migration (spec official-community-space D4)', () => {
+  /** Run the real upgrade to `'0.107.0'` over a file last written at 0.106.0. */
+  function upgrade(spaces: Record<string, unknown>): {
+    spaces: { enabled: unknown; official?: { url: unknown } };
+  } {
+    const dir = path.join(os.tmpdir(), 'test-dork-spaces-official-' + Date.now() + Math.random());
+    const cfgPath = path.join(dir, 'config.json');
+    fs.mkdirSync(dir, { recursive: true });
+    try {
+      fs.writeFileSync(
+        cfgPath,
+        JSON.stringify({
+          version: 1,
+          spaces,
+          __internal__: { migrations: { version: '0.106.0' } },
+        }),
+        'utf-8'
+      );
+      new Conf({
+        configName: 'config',
+        cwd: dir,
+        schema: CONF_JSON_SCHEMA as unknown as Schema<Record<string, unknown>>,
+        defaults: USER_CONFIG_DEFAULTS,
+        clearInvalidConfig: false,
+        projectVersion: '0.107.0',
+        migrations: CONFIG_MIGRATIONS,
+      });
+      return JSON.parse(fs.readFileSync(cfgPath, 'utf-8')) as {
+        spaces: { enabled: unknown; official?: { url: unknown } };
+      };
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  }
+
+  it('writes an empty link into a stored spaces block that predates it', () => {
+    // READ THE FILE: `spaces` is a section a stored config already has, so
+    // conf's shallow default merge never adds this leaf. Suppress the body and
+    // this goes red.
+    const onDisk = upgrade({ enabled: true });
+    expect(onDisk.spaces.official).toEqual({ url: '' });
+    expect(onDisk.spaces.enabled).toBe(true);
+  });
+
+  it('keeps a link a person already set', () => {
+    const onDisk = upgrade({ enabled: false, official: { url: 'https://space.example/c/x' } });
+    expect(onDisk.spaces.official).toEqual({ url: 'https://space.example/c/x' });
+  });
+
+  it('is idempotent and skips a config with no spaces block', () => {
+    const store = createMockStore({ spaces: { enabled: false } });
+    seedSpacesOfficial(store);
+    seedSpacesOfficial(store);
+    expect(store.data.spaces).toEqual({ enabled: false, official: { url: '' } });
+    const none = createMockStore({ server: { port: 4242 } });
+    seedSpacesOfficial(none);
+    expect(none.data.spaces).toBeUndefined();
   });
 });

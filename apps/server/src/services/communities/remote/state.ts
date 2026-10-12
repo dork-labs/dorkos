@@ -11,8 +11,14 @@ import {
   type CommunityDeliverySnapshot,
 } from '@dorkos/shared/community-deliveries';
 import { resolveDorkHome } from '../../../lib/dork-home.js';
+import { logger, logError } from '../../../lib/logger.js';
 import { RemoteConnectionStore } from './connection-store.js';
+import { OfficialSpace } from '../official-space.js';
+import { officialSpaceUrl, spacesEnabled } from '../spaces-config.js';
 import { RemoteWakePolicy } from './wake/wake-policy.js';
+import { RemoteAnswerIn } from './wake/answer-in.js';
+import { AnswerInStore } from './wake/answer-in-store.js';
+import { DEFAULT_WAKE_AGENTS_FROM, OFFICIAL_WAKE_AGENTS_FROM } from './wake/wake-setting.js';
 import { RemoteCommunityPairingService, type RemoteInstallationAgent } from './pairing-service.js';
 import { RemoteCommunityAdapter } from './remote-community-adapter.js';
 import { CommunityAgentEnrollmentStore } from './agent-enrollment-store.js';
@@ -24,6 +30,7 @@ import type {
 } from './community-outbox-worker.js';
 
 let store: RemoteConnectionStore | undefined;
+let officialSpace: OfficialSpace | undefined;
 let wakePolicy: RemoteWakePolicy | undefined;
 let pairing: RemoteCommunityPairingService | undefined;
 let db: Db | undefined;
@@ -86,7 +93,48 @@ export interface RemoteCommunityLifecycle {
 
 /** The encrypted credential and owner-scoped metadata store for remote communities. */
 export function getRemoteConnectionStore(): RemoteConnectionStore {
-  return (store ??= new RemoteConnectionStore(resolveDorkHome()));
+  return (store ??= new RemoteConnectionStore(resolveDorkHome(), undefined, (place) =>
+    getOfficialSpace().isOfficialConnection(place)
+  ));
+}
+
+/**
+ * Which space is official, and whether a space may be reached right now (spec
+ * `official-community-space` D4, D5). Follows every committed connection change; load it with
+ * `load()` before anything remote starts, since until then no space is official.
+ */
+export function getOfficialSpace(): OfficialSpace {
+  if (officialSpace) return officialSpace;
+  const created = new OfficialSpace(resolveDorkHome(), officialSpaceUrl, spacesEnabled);
+  officialSpace = created;
+  getRemoteConnectionStore().onChange((changes) => created.follow(changes));
+  return created;
+}
+
+/**
+ * Load which space is official (spec `official-community-space` D5), before any remote work and
+ * before the server listens. Until it has loaded no space is, so with spaces off nothing remote
+ * is reachable (fail closed). A failed read is logged, never thrown: boot goes on without it.
+ */
+export async function loadOfficialSpace(): Promise<void> {
+  try {
+    await getOfficialSpace().load(() => getRemoteConnectionStore().places());
+  } catch (err) {
+    logger.warn('[Communities] Could not read which space is official', logError(err));
+  }
+}
+
+/**
+ * Whether a committed connection change may reach the app's windows: every change with spaces
+ * on, and only the official space's with them off.
+ *
+ * @param change - The connection's place.
+ */
+export function isConnectionVisible(change: {
+  pinnedOrigin: string;
+  remoteCommunityId: string;
+}): boolean {
+  return spacesEnabled() || getOfficialSpace().isOfficialConnection(change);
 }
 
 /**
@@ -96,8 +144,23 @@ export function getRemoteConnectionStore(): RemoteConnectionStore {
  */
 export function getRemoteWakePolicy(): RemoteWakePolicy {
   if (wakePolicy) return wakePolicy;
-  wakePolicy = new RemoteWakePolicy(getRemoteConnectionStore());
+  const connections = getRemoteConnectionStore();
+  // The channels where any person's post wakes agents (spec D11), read the same way.
+  const answerIn = new RemoteAnswerIn(
+    new AnswerInStore(resolveDorkHome(), connections),
+    connections
+  );
+  wakePolicy = new RemoteWakePolicy(
+    connections,
+    undefined,
+    (place) =>
+      getOfficialSpace().isOfficialConnection(place)
+        ? OFFICIAL_WAKE_AGENTS_FROM
+        : DEFAULT_WAKE_AGENTS_FROM,
+    answerIn
+  );
   void wakePolicy.reload();
+  void answerIn.reload();
   return wakePolicy;
 }
 
@@ -113,7 +176,8 @@ export function getRemotePairingService(): RemoteCommunityPairingService {
     // database yet means no outbox yet, so nothing can be waiting.
     (communityRef, ownerKey) =>
       db ? new CommunityOutboxStore(db).undeliveredCount(communityRef, ownerKey) : 0,
-    readRemoteInstallationAgents
+    readRemoteInstallationAgents,
+    (url, origin, communityId) => getOfficialSpace().noteDiscovery(url, origin, communityId)
   ));
 }
 

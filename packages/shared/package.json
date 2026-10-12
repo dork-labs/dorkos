@@ -57,6 +57,10 @@
       "types": "./src/transport-heartbeats.ts",
       "default": "./dist/transport-heartbeats.js"
     },
+    "./transport-onboarding": {
+      "types": "./src/transport-onboarding.ts",
+      "default": "./dist/transport-onboarding.js"
+    },
     "./types": {
       "types": "./src/types.ts",
       "default": "./dist/types.js"
@@ -340,6 +344,10 @@
     "./cloud-schemas": {
       "types": "./src/cloud-schemas.ts",
       "default": "./dist/cloud-schemas.js"
+    },
+    "./onboarding-schemas": {
+      "types": "./src/onboarding-schemas.ts",
+      "default": "./dist/onboarding-schemas.js"
     },
     "./session-stream": {
       "types": "./src/session-stream.ts",

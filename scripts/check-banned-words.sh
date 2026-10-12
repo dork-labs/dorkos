@@ -131,13 +131,11 @@
 #   - docs/changelog.mdx and docs/changelog-archive.mdx are COMPILED from
 #     CHANGELOG.md, which AGENTS.md forbids editing by hand. They record what
 #     was said at the time and keep their historical wording.
-#   - The media key `cockpit`, in both the forms prose files spell it:
-#     `cockpit-light.png` (the generated file) and `<ProductShot id="cockpit">`
-#     (the registry key that resolves it). It keys the live
-#     apps/site/public/product/manifest.json and every archived per-version
-#     manifest back to v0.46.0; renaming it orphans that media, and no visitor
-#     ever reads a word of it. The registry entry is apps/e2e/capture/shots.ts,
-#     where the same decision is recorded in a comment.
+#   - `cockpit-light.png`, the file name of the retired `cockpit` shot. The
+#     live shot was renamed `team-room` (DOR-2762), but the archived
+#     per-version media under apps/site/public/product/archive/ is frozen and
+#     keeps the old name, and the release posts that embed it link to it by
+#     that name. No visitor reads a word of it.
 #   - GitHub ships a product literally named "Mission Control", so a genuine
 #     reference to it is allowed. Mark such a line with `vocab-allow` in a
 #     comment or HTML comment on the same line, with a reason.
@@ -223,8 +221,7 @@ SOURCE_LINK_DIRS=(
 
 # A line matching any of these is exempt. Keep each one justified in the header.
 ALLOW_PATTERNS=(
-  'cockpit-light\.png'  # generated media filename; renaming orphans archived manifests
-  'id="cockpit"'        # the same media key, as a ProductShot registry reference
+  'cockpit-light\.png'  # archived media filename; frozen archives keep their names
   'vocab-allow'         # explicit inline marker, e.g. GitHub's real product name
 )
 

@@ -281,14 +281,24 @@ describe('Database Migrations', () => {
         },
         {
           idx: 157,
-          tag: '20261011065204_lonely_sentinel',
-          when: 1791701524866,
+          tag: '20261011052131_heartbeat_report_items',
+          when: 1791696091995,
+        },
+        {
+          idx: 158,
+          tag: '20261011063041_remote_event_refusals',
+          when: 1791700241252,
+        },
+        {
+          idx: 159,
+          tag: '20261011184508_tearful_killer_shrike',
+          when: 1791744308484,
         },
       ]);
       expect(db.$client.prepare('SELECT * FROM audit_events ORDER BY seq').all()).toEqual(
         publishedAudit
       );
-      // The shipped Main148..156 prefix precedes canonical Doc157; each immutable
+      // The shipped Main148..158 prefix precedes canonical Doc159; each immutable
       // SQL identity is recorded once at its authentic journal timestamp.
       for (const entry of journal.entries.slice(148)) {
         const hash = createHash('sha256')
@@ -299,8 +309,8 @@ describe('Database Migrations', () => {
         expect(appliedRows[0]).toMatchObject({ hash, created_at: entry.when });
       }
       expect(history.at(-1)).toMatchObject({
-        hash: 'b7390d7499448a3021402bd70f04c0d35096d0015e40305788e6b30fc3ce93c4',
-        created_at: 1791701524866,
+        hash: '69956ae9c1dba6ca55938b0afa75c67d350a5bd13006aab73aad5812dc5c9ab2',
+        created_at: 1791744308484,
       });
       const schema = db.$client
         .prepare('SELECT type, name, tbl_name, sql FROM sqlite_master ORDER BY type, name')
@@ -458,9 +468,11 @@ describe('Database Migrations', () => {
       'extension_decisions',
       'handle_tombstones',
       // Heartbeats: each agent's beat facts, one row per beat, and what beats
-      // raised until it reaches its reader (spec heartbeats §11).
+      // raised until it reaches its reader (spec heartbeats §11), and what
+      // waits for each agent's next report (§9.3).
       'heartbeat_beats',
       'heartbeat_outbox',
+      'heartbeat_report_items',
       'heartbeat_state',
       // The project registry (spec flow-multiproject §6.1, migration 0129).
       'known_project_reporters',

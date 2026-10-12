@@ -160,6 +160,11 @@ export const serverEnvSchema = z.object({
   DORKOS_APPROVAL_TTL_MS: z.coerce.number().int().min(1000).optional(),
   // Feature flags (boolean after transform)
   DORKOS_A2A_ENABLED: boolFlag,
+  // The official DorkOS space's public link (spec `official-community-space`
+  // D4). When set, even to '', it overrules `spaces.official.url` in config;
+  // '' turns the exception off. Read through
+  // services/communities/remote/official-space.ts, never compared directly.
+  DORKOS_OFFICIAL_SPACE_URL: z.string().max(2048).optional(),
   // A2A gateway — public base URL advertised on agent cards. Defaults to
   // http://{DORKOS_HOST}:{DORKOS_PORT}, which is non-routable when the host
   // is 0.0.0.0; set this when DorkOS sits behind a proxy/tunnel

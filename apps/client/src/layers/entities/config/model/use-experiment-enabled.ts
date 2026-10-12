@@ -1,4 +1,4 @@
-import { SPACES_EXPERIMENT, isExperimentEnabled } from '@/layers/shared/model';
+import { SPACES_EXPERIMENT, isExperimentEnabled, officialSpaceLink } from '@/layers/shared/model';
 import { useConfig } from './use-config';
 
 /** Whether an experiment is on, and whether that answer can be believed yet. */
@@ -39,4 +39,29 @@ export function useSpacesState(): ExperimentEnabledState {
  */
 export function useSpacesEnabled(): boolean {
   return useSpacesState().enabled;
+}
+
+/** The spaces experiment beside the one space that ignores it. */
+export interface SpacesAccessState extends ExperimentEnabledState {
+  /**
+   * The official DorkOS space's link, or `null` when the server names none (spec
+   * `official-community-space` D4). With it set, that one space shows and can be joined even
+   * while {@link ExperimentEnabledState.enabled} is false.
+   */
+  officialLink: string | null;
+  /** Whether any space can be reached: the experiment is on, or an official space is named. */
+  anySpace: boolean;
+}
+
+/**
+ * The spaces experiment and the official-space exception together (spec
+ * `official-community-space` D5). A surface that lists or opens spaces reads this, then asks
+ * `useSpaceVisible` about one space; Start, hosting and joining other spaces keep reading
+ * {@link useSpacesEnabled} alone.
+ */
+export function useSpacesAccess(): SpacesAccessState {
+  const { data, isLoading } = useConfig();
+  const enabled = isExperimentEnabled(data, SPACES_EXPERIMENT);
+  const officialLink = officialSpaceLink(data);
+  return { enabled, isLoading, officialLink, anySpace: enabled || officialLink !== null };
 }

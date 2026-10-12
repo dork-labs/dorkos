@@ -10,6 +10,8 @@
 !packages
 !packages/shared
 !packages/shared/**
+!packages/decisions
+!packages/decisions/**
 !packages/ui
 !packages/ui/**
 !packages/icons

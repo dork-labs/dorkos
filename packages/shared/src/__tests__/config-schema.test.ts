@@ -62,7 +62,7 @@ describe('UserConfigSchema', () => {
       version: 1,
       server: { port: 4242, cwd: null, boundary: null, open: true },
       browser: { enabled: false },
-      spaces: { enabled: false },
+      spaces: { enabled: false, official: { url: '' } },
       tunnel: {
         enabled: false,
         domain: null,
@@ -112,7 +112,7 @@ describe('UserConfigSchema', () => {
       a2a: { enabled: false },
       scheduler: { enabled: true, maxConcurrentRuns: 4, retentionCount: 100 },
       keepAwake: { whileAgentsWork: true, wakeForScheduledTasks: false },
-      heartbeats: { enabled: true },
+      heartbeats: { enabled: true, triageOnCredits: null },
       activity: { retentionDays: 365 },
       mesh: { scanRoots: [] },
       rooms: {
@@ -153,6 +153,9 @@ describe('UserConfigSchema', () => {
         dismissedAt: null,
         completedAt: null,
         runtimeDefaultSetAt: null,
+        firstRunPath: null,
+        welcomeEntryId: null,
+        priorRuntime: null,
       },
       tours: { seen: [], declined: [] },
       profile: {
@@ -475,7 +478,7 @@ describe('USER_CONFIG_DEFAULTS', () => {
       version: 1,
       server: { port: 4242, cwd: null, boundary: null, open: true },
       browser: { enabled: false },
-      spaces: { enabled: false },
+      spaces: { enabled: false, official: { url: '' } },
       tunnel: {
         enabled: false,
         domain: null,
@@ -525,7 +528,7 @@ describe('USER_CONFIG_DEFAULTS', () => {
       a2a: { enabled: false },
       scheduler: { enabled: true, maxConcurrentRuns: 4, retentionCount: 100 },
       keepAwake: { whileAgentsWork: true, wakeForScheduledTasks: false },
-      heartbeats: { enabled: true },
+      heartbeats: { enabled: true, triageOnCredits: null },
       activity: { retentionDays: 365 },
       mesh: { scanRoots: [] },
       rooms: {
@@ -566,6 +569,9 @@ describe('USER_CONFIG_DEFAULTS', () => {
         dismissedAt: null,
         completedAt: null,
         runtimeDefaultSetAt: null,
+        firstRunPath: null,
+        welcomeEntryId: null,
+        priorRuntime: null,
       },
       tours: { seen: [], declined: [] },
       profile: {
@@ -876,9 +882,9 @@ describe('per-field and section-literal defaults agree', () => {
     expect(fromFields.keepAwake).toEqual({ whileAgentsWork: true, wakeForScheduledTasks: false });
   });
 
-  it('heartbeats are on either way', () => {
-    expect(fromFactory.heartbeats).toEqual({ enabled: true });
-    expect(fromFields.heartbeats).toEqual({ enabled: true });
+  it('heartbeats are on, and nobody has chosen credits for checks, either way', () => {
+    expect(fromFactory.heartbeats).toEqual({ enabled: true, triageOnCredits: null });
+    expect(fromFields.heartbeats).toEqual({ enabled: true, triageOnCredits: null });
   });
 
   it('activity keeps a year either way', () => {

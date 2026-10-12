@@ -39,6 +39,7 @@ export const COMMUNITY_MIGRATIONS = [
   [33, '0033_open_admission_and_bans.sql'],
   [34, '0034_moderation.sql'],
   [35, '0035_session_live_notice.sql'],
+  [36, '0036_decision_checks.sql'],
 ] as const;
 
 /**

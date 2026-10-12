@@ -51,3 +51,34 @@ export function communityRowState(connection: CommunityConnectionDescriptor): st
   if (descriptor.availability !== 'online') return descriptor.availability;
   return undefined;
 }
+
+/**
+ * The connections in the owner's saved order; anything the order does not name follows, by name.
+ *
+ * @param connections - The connections to order.
+ * @param order - The owner's saved order of refs.
+ */
+export function orderedConnections(
+  connections: readonly CommunityConnectionDescriptor[],
+  order: readonly string[]
+): CommunityConnectionDescriptor[] {
+  const rank = new Map(order.map((ref, index) => [ref, index]));
+  return [...connections].sort((left, right) => {
+    const leftRank = rank.get(left.ref) ?? Number.MAX_SAFE_INTEGER;
+    const rightRank = rank.get(right.ref) ?? Number.MAX_SAFE_INTEGER;
+    return (
+      leftRank - rightRank ||
+      left.label.localeCompare(right.label) ||
+      left.ref.localeCompare(right.ref)
+    );
+  });
+}
+
+/**
+ * The text with its first letter lower-cased, to sit mid-sentence.
+ *
+ * @param text - The text to lower.
+ */
+export function lowerFirst(text: string): string {
+  return text.charAt(0).toLowerCase() + text.slice(1);
+}

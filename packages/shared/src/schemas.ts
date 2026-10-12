@@ -4390,6 +4390,25 @@ export const RemoteAccessReportSchema = z
     availability: RemoteAccessAvailabilitySchema,
     /** Where the managed enrolment stands. See {@link RemoteAccessEnrolmentSchema}. */
     enrolment: RemoteAccessEnrolmentSchema,
+    /**
+     * While `draining`: requests already running may finish until `until`,
+     * then whatever is left is cut. `deadline` says who set it: `cloud` when
+     * DorkOS Cloud named the deadline, `local` when it named none and this
+     * computer's bounded default applies. Absent in every other state, and
+     * while draining with no deadline named yet.
+     */
+    drain: z
+      .object({
+        until: z.string().datetime({ offset: true }),
+        deadline: z.enum(['cloud', 'local']),
+      })
+      .optional(),
+    /**
+     * Present, and `true`, only in managed mode when this computer's activity
+     * reports have kept failing to reach DorkOS Cloud. They are kept here and
+     * retried; nothing is lost. Carries no detail of why.
+     */
+    activityReportsDelayed: z.literal(true).optional(),
   })
   .openapi('RemoteAccessReport');
 
@@ -4798,6 +4817,17 @@ export const ServerConfigSchema = z
           description:
             'ISO timestamp when first-run setup decided the default runtime. Non-null means that decision is closed and is never made again.',
         }),
+        firstRunPath: z.enum(['dorkos', 'own', 'none']).nullable().openapi({
+          description:
+            'The first-run path the person picked: their DorkOS account, their own AI, or no account yet. Null until they pick.',
+        }),
+        welcomeEntryId: z.string().nullable().openapi({
+          description: "The #team entry DorkBot's first-run welcome was posted as, or null.",
+        }),
+        priorRuntime: z.string().nullable().openapi({
+          description:
+            'The default runtime before the first-run path was picked, kept so another pick can undo it.',
+        }),
       })
       .optional()
       .openapi({ description: 'First-time user onboarding state' }),
@@ -5039,6 +5069,10 @@ export const ServerConfigSchema = z
       })
       .optional()
       .openapi({ description: 'Cockpit UI preferences surfaced to the client' }),
+    officialSpace: z.object({ url: z.string() }).nullable().optional().openapi({
+      description:
+        'The official DorkOS space this install offers to join, even with the spaces experiment off (spec official-community-space D4). Null while no usable link is configured, which hides every official-space prompt',
+    }),
     experiments: z.array(ExperimentStateSchema).optional().openapi({
       description:
         'The staged opt-ins Settings → Experiments offers, already resolved, in the order to show them. An EMPTY array is a normal answer — it means every experiment has graduated or been withdrawn. A server that omits the block has no Experiments section at all',

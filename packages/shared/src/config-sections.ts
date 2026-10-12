@@ -43,8 +43,19 @@ export const HeartbeatsConfigSchema = z
   .object({
     /** Agents wake on their own. Off stops the beat runner for every agent. */
     enabled: z.boolean().default(true),
+    /**
+     * Whether a beat's cheap check may run on DorkOS credits (spec `heartbeats`
+     * §6.3, ADR 261001-000811 as amended by 261010-092116). `null` until a
+     * person answers the one-time offer: only **Use credits** sets `true`, and
+     * **Not now** sets `false`. Nothing is spent while it is `null` or `false`.
+     *
+     * No migration, on purpose: a stored `heartbeats` section without this leaf
+     * reads as `null`, which is exactly "not chosen", so there is no value a
+     * migration could seed that the absence does not already say. Operator-only.
+     */
+    triageOnCredits: z.boolean().nullable().default(null),
   })
-  .default(() => ({ enabled: true }));
+  .default(() => ({ enabled: true, triageOnCredits: null }));
 /**
  * The Activity feed (spec `audit-trail` §3.5). A whole top-level section on
  * purpose, like `keepAwake`: conf writes a new section into every stored

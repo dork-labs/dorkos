@@ -18,6 +18,9 @@ import {
   fixtureOperations,
 } from './data.js';
 
+/** The test-only fixture instance returned by its canonical factory. */
+export type TestComposioFixture = Awaited<ReturnType<typeof startTestComposioFixture>>;
+
 const accountInput = z
   .object({
     auth_config: z.object({ id: z.literal('ac_offline_gmail') }).strict(),

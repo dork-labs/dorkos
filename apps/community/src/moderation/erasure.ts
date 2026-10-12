@@ -9,6 +9,8 @@ import type { PoolClient } from 'pg';
  *   record, but lose every note that is the person's: the notes they wrote, and the notes others
  *   wrote about a message by them or by one of their agents.
  * - Their slow-mode clocks are rate state about them, and go.
+ * - The watch-only checks' records about their messages keep their codes and timings, which say
+ *   nothing of the words, and lose the keyed hash of the exact input (0036).
  *
  * Every statement is idempotent, so a reapplied erasure runs it again safely.
  */
@@ -27,6 +29,14 @@ export async function huskModerationRecords(
          SELECT 1 FROM entries e LEFT JOIN agents a ON a.id=e.author_agent_id
          WHERE e.id=r.entry_id AND e.community_id=$1
            AND (e.author_member_id=$2 OR a.owner_member_id=$2)))`,
+    [communityId, memberId]
+  );
+  await client.query(
+    `UPDATE audit_events SET decision=decision - 'inputHash'
+     WHERE community_id=$1 AND action LIKE 'decision.%' AND decision ? 'inputHash'
+       AND subject_id IN (SELECT e.id::text FROM entries e
+         LEFT JOIN agents a ON a.id=e.author_agent_id
+         WHERE e.community_id=$1 AND (e.author_member_id=$2 OR a.owner_member_id=$2))`,
     [communityId, memberId]
   );
   await client.query('DELETE FROM channel_post_clocks WHERE community_id=$1 AND member_id=$2', [

@@ -1,10 +1,10 @@
 import { useSafeSearch } from '@/layers/shared/model';
-import { useSpacesEnabled } from '@/layers/entities/config';
 import { PageHeading } from '@/layers/shared/ui';
 import {
   communityAccessState,
   useRemoteCommunityRoom,
   useCommunityConnections,
+  useSpaceVisible,
 } from '@/layers/entities/community';
 import {
   BridgeVisibilityBadge,
@@ -106,9 +106,10 @@ function RoomIdentity({ room }: { room: RoomWithRoster }) {
  */
 export function ChannelsBar() {
   const search = useSafeSearch() as { community?: string; id?: string };
-  // A space's bar only while spaces are on (DOR-2740); the page redirects.
-  const spaces = useSpacesEnabled();
-  if (spaces && search.community && search.id)
+  // A space's bar only while that space is reachable: every space with spaces
+  // on, the official one alone with them off (DOR-2740); the page redirects.
+  const space = useSpaceVisible(search.community);
+  if (space.visible && search.community && search.id)
     return <RemoteChannelsBar community={search.community} roomId={search.id} />;
   return <LocalChannelsBar />;
 }
