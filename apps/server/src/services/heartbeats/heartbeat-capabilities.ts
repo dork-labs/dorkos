@@ -1,6 +1,7 @@
 /**
  * The `heartbeat` capability domain (spec `heartbeats` §8): `end_beat`, the one
- * way a beat's words reach a person.
+ * way a beat's words reach a person, and `heartbeat_status` (§10 PR 6,
+ * `measures/status-capability.ts`), which any agent may read for any agent.
  *
  * ## Only a beat may call it
  *
@@ -34,6 +35,7 @@ import {
 } from '../core/capabilities/index.js';
 import { EndBeatInputSchema, type EndBeatInput } from '@dorkos/shared/heartbeat-schemas';
 import { endBeatTurn, liveBeatTurn, noteBeatBypass, noteBeatChatSend } from './beat-turns.js';
+import { heartbeatStatusCapability } from './measures/status-capability.js';
 
 /** The MCP tool name, exported so prose that names it reads it from here. */
 export const END_BEAT_TOOL = 'end_beat';
@@ -140,6 +142,7 @@ export const heartbeatDomain: CapabilityDomain = {
         return { ok: true as const, raises: input.raises?.length ?? 0 };
       },
     }),
+    heartbeatStatusCapability,
   ],
 };
 

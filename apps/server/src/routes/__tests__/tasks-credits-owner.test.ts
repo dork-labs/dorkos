@@ -6,11 +6,18 @@
  * @module routes/__tests__/tasks-credits-owner
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import express from 'express';
 import request from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
 import { createTestDb } from '@dorkos/test-utils/db';
 import type { Task } from '@dorkos/shared/schemas';
+
+// The session gate lets every request through: these cases are about the
+// route's own bars, and each one sets the user the gate would have proved
+// (`before` below), as the Express version stubbed `res.locals.user`.
+vi.mock('../../services/core/auth/session-gate.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../services/core/auth/session-gate.js')>()),
+  decideSessionGate: vi.fn(async () => ({ allowed: true })),
+}));
 
 const state = vi.hoisted(() => ({ authEnabled: false }));
 vi.mock('../../services/core/config-manager.js', () => ({
@@ -28,7 +35,8 @@ vi.mock('../../services/core/auth/index.js', async (importOriginal) => ({
   readOwnerAccount: () => ({ id: OWNER_ID, name: 'Owner' }),
 }));
 
-import { createTasksRouter } from '../tasks.js';
+import { createTasksRoutes } from '../tasks.js';
+import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
 import { TaskRegistrar } from '../../services/tasks/task-registrar.js';
 import { TaskStore } from '../../services/tasks/task-store.js';
 import type { TaskSchedulerService } from '../../services/tasks/task-scheduler-service.js';
@@ -69,17 +77,26 @@ describe('schedules on DorkOS credits are the owner’s alone', () => {
       account: 'dorkos-credits',
     });
 
-    const app = express();
-    app.use(express.json());
-    app.use((_req, res, next) => {
-      if (signedInUser) res.locals.user = signedInUser;
-      next();
-    });
-    app.use(
-      '/api/tasks',
-      createTasksRouter(store, scheduler, new TaskRegistrar({ store, scheduler }), '/tmp/dork-test')
+    target.mount(
+      honoGroupListener(
+        {
+          path: '/api/tasks',
+          routes: createTasksRoutes({
+            store,
+            scheduler,
+            registrar: new TaskRegistrar({ store, scheduler }),
+            dorkHome: '/tmp/dork-test',
+          }),
+        },
+        {
+          // Stands in for what the session gate and the agent-identity step resolved.
+          before: (c, next) => {
+            if (signedInUser) c.set('user', signedInUser);
+            return next();
+          },
+        }
+      )
     );
-    target.mount(app);
   });
 
   afterEach(() => store.close());

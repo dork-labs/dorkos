@@ -1,0 +1,175 @@
+---
+title: Heartbeats
+description: Your agents wake up on their own, check what changed, do the work that is theirs, and tell you at a decent hour
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+
+# Heartbeats
+
+An agent with a job should not wait for you to ask. A heartbeat lets it wake up on its own, look at
+what changed, and do the next useful thing inside its job. Most of what it does shows up as finished
+work and one line in the record, not as messages you have to read.
+
+Each time an agent wakes up is called a **beat**. In the app, a beat shows up as a **check**.
+
+## How an agent wakes up
+
+An agent wakes in two ways:
+
+- **On a timer.** About every 30 minutes during working hours, and every 2 hours outside them. It
+  checks more often while something it promised is due today, and less often when nothing has
+  changed for a day.
+- **When something happens.** Someone on your team names it in a room and it could not answer, a
+  promise it made comes due, one of its scheduled tasks fails, one of its own chats fails, or one of
+  its connections stops working.
+
+Messages from people outside your team (someone on a bridged Telegram or Slack chat, for example)
+never wake an agent. Several things happening within a minute become one beat, not five.
+
+Each agent's `HEARTBEAT.md` file decides which of these it uses. You can open it on the agent's
+**Heartbeat** page. The setting at the top, `wake`, takes one of three values:
+
+| `wake`   | What happens                                      |
+| -------- | ------------------------------------------------- |
+| `timed`  | It wakes on the timer and when something happens. |
+| `events` | It wakes only when something happens.             |
+| `off`    | It never wakes on its own.                        |
+
+An agent with no `HEARTBEAT.md` wakes only when something happens. Agents that run on your own
+Claude Code, Codex or OpenCode plan start that way too, because a beat every 30 minutes would spend
+that plan.
+
+## What a beat does
+
+Most beats cost nothing. DorkOS first looks at what changed without running any AI model at all. If
+nothing changed, the beat ends there and leaves one line in the record, like "Checked 4 things.
+Nothing new."
+
+When something did change, a cheap check decides whether the agent needs to look. Only then does the
+agent itself run, in that day's heartbeat chat. That chat is a normal chat you can open and type in.
+
+Inside a beat the agent picks one of four moves for each thing it found: act, act and then tell
+someone, ask, or stay quiet. It acts on what is inside its job. It asks only when the call belongs to
+someone else. A beat where it says nothing at all is a good beat.
+
+## How it tells you
+
+When an agent has something to say, it picks the quietest way that still works:
+
+1. A line in the record.
+2. A line in its next report.
+3. A post in a room.
+4. A direct message to you.
+5. A notification outside the app.
+
+DorkOS then handles the manners for it:
+
+- **Your hours.** A message to you waits until your working hours start, unless it is urgent. Set
+  your hours and time zone with **Your hours** on your own profile.
+- **Urgent means you must act now.** Money or data still at risk, a security problem still open, a
+  customer being harmed, or a deadline that will be missed without you. A problem the agent already
+  fixed is not urgent. It goes in the next report.
+- **One message, not five.** Several messages from one agent that are due at the same time arrive as
+  one.
+- **Said once.** An agent does not raise the same thing twice. If it tries, the repeat goes into its
+  next report instead.
+- **No duplicates.** When two agents raise the same thing, you get it once.
+- **Away.** When you mark yourself away, routine messages wait for your return. Urgent ones still
+  arrive.
+
+You can see what is waiting for your hours on each agent's **Heartbeat** page.
+
+## Reports
+
+Every agent reports to someone: you, or another agent. Set it with **Reports to** on the agent's
+profile. Leave it blank and the agent reports to whoever created it.
+
+Once a day by default, at the start of its manager's working day, the agent writes one short report:
+what it finished, what is in progress, what is at risk, and what it needs. When nothing happened
+worth your time, it skips the report. You can change the rhythm to `weekly` or `off` with `report` in
+its `HEARTBEAT.md`.
+
+An agent's promises live on its **Commitments** page, where anyone on the team can read them. When a
+promise comes due, the agent wakes up to deal with it.
+
+## Cheap checks on DorkOS credits
+
+When your computer is linked to a DorkOS account, the agent's **Heartbeat** page asks once: **Run
+cheap checks on DorkOS credits?** A cheap check is a small, fast model that decides whether a change
+needs the agent at all. It lets most beats end without a full run.
+
+<Callout type="info">
+  Nothing is spent on credits until you choose **Use credits**. Choose **Not now** and nothing
+  changes.
+</Callout>
+
+Until you say yes, a free rule-based check still filters out the obvious, and anything else runs on
+the agent's own model. The page always says where checks run right now, for example "Checks run on
+DorkOS credits. 41 today."
+
+## Is it helping?
+
+The **Measures** section of the **Heartbeat** page shows whether an agent's work on its own helped
+over the last 7 days, and what it cost your attention. Every number comes from the record, never from
+the agent's own account of itself.
+
+| Measure                              | What it counts                                                                        | Starting target |
+| ------------------------------------ | ------------------------------------------------------------------------------------- | --------------- |
+| **Work that stuck**                  | Beats where it did something real, and nobody undid it within 7 days                  | 95% or more     |
+| **Useful messages**                  | Its messages to people that got a reply, or a reaction other than 👎, within 48 hours | 60% or more     |
+| **Interruptions per useful outcome** | Messages that reached a person, divided by work that stuck plus useful messages       | 1 or less       |
+| **Surprises**                        | Not measured yet                                                                      | 0               |
+| **Mutes and pauses**                 | Times a person paused it, switched its heartbeat off, or muted it                     | Trending to 0   |
+
+A beat counts as doing something real when it sent a message (a direct message, a room post, a
+notification or a message to another agent), edited a file, or took an action through DorkOS, like
+recording a promise. A line saved for its next report is not a message, so it does not count, and the
+beat still counts as quiet. A beat that only looked around or ran commands is not counted, because
+DorkOS cannot yet tell a command that changed something from one that only read. Neither is a
+report. Today, work counts as undone when a person paused the agent within an hour of it
+or reacted 👎 to what it sent. Not measured yet: a person stopping the beat's chat, and reverted code.
+
+These numbers are approximate. Recent work counts as kept until something undoes it, even before its
+7 days are up. A message sent in the last 48 hours with no answer yet is left out until its time is
+up. A reply in a direct message counts for the agent's latest message only. A target is a starting
+point to compare against, not a grade. Under **Supporting measures** you can also see how many beats
+were quiet, how many promises were kept on time, and what the cheap checks used.
+
+Agents can read these measures too, for themselves or for any other agent.
+
+## Stopping a heartbeat
+
+- **One agent:** set `wake: off` in its `HEARTBEAT.md`, or pause the agent. A paused agent does not
+  beat until you resume it.
+- **Every agent:** run `dorkos config set heartbeats.enabled false`. Messages already waiting are
+  kept, and go out when you turn heartbeats back on.
+
+## Reference: HEARTBEAT.md
+
+This part is for people who want to edit the file by hand. The settings sit at the top, between two
+`---` lines. Everything below them is plain notes for the agent: what to watch, how to judge, what
+never to do without asking, and the shape of its report.
+
+```markdown
+---
+name: heartbeat
+description: What Juno watches between conversations.
+wake: timed
+report: daily
+---
+
+- Invoices: anything unpaid past 14 days gets the second reminder.
+- Never touch pricing; ask Dorian.
+- Report shape: finished, in progress, at risk, needed. One line each.
+```
+
+| Setting  | Values                                                                 | When left out                 |
+| -------- | ---------------------------------------------------------------------- | ----------------------------- |
+| `wake`   | `timed`, `events` or `off`                                             | `events`                      |
+| `watch`  | Any of `addressed`, `commitments`, `schedules`, `health`, `workspace`  | Everything except `workspace` |
+| `report` | `daily`, `weekly` or `off`                                             | `daily`                       |
+| `sweep`  | How often, at most, to take a full look around in working hours (`4h`) | Never                         |
+
+Edits apply on the agent's next beat. If the settings at the top stop making sense, the last good
+ones stay in force and the **Heartbeat** page says what is wrong.

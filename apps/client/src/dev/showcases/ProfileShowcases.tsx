@@ -2,7 +2,7 @@ import { useMemo, useState, type ReactNode } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { TeamMember } from '@dorkos/shared/team-schemas';
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
-import type { HeartbeatStatus } from '@dorkos/shared/heartbeat-schemas';
+import type { HeartbeatMeasures, HeartbeatStatus } from '@dorkos/shared/heartbeat-schemas';
 import type { Transport } from '@dorkos/shared/transport';
 import { Button } from '@/layers/shared/ui';
 import { TransportProvider } from '@/layers/shared/model';
@@ -146,6 +146,64 @@ function fixtureHeartbeat(): HeartbeatStatus {
     report: { cadence: 'daily', to: 'owner', nextReportAt: minutesFromNow(15 * 60), items: 3 },
     // The credits offer stands, so the showcase draws its card.
     checks: { runsOn: 'runtime', runtime: 'claude-code', today: 0, tokens: 0, offer: true },
+    measures: fixtureMeasures(minutesFromNow(-7 * 24 * 60)),
+  };
+}
+
+/**
+ * A week of measures: most work stuck, most messages were answered, one pause.
+ *
+ * @param since - Where the week starts.
+ */
+function fixtureMeasures(since: string): HeartbeatMeasures {
+  const rate = (part: number, whole: number, target: string, source: string) => ({
+    value: part / whole,
+    part,
+    whole,
+    target,
+    source,
+  });
+  return {
+    windowDays: 7,
+    since,
+    keptRate: rate(
+      11,
+      12,
+      '95% or more',
+      'Stopped turns, pauses within an hour and 👎 count as undone.'
+    ),
+    usefulRaiseRate: rate(
+      3,
+      4,
+      '60% or more',
+      'Messages that got a reply or a reaction within 48h.'
+    ),
+    interruptions: {
+      value: 0.4,
+      messages: 6,
+      usefulOutcomes: 14,
+      target: '1 or less',
+      source: 'Messages and reports that reached a person, per useful outcome.',
+    },
+    surprises: { measured: false, source: 'Not measured yet. It needs the manager to say so.' },
+    mutesAndPauses: {
+      total: 1,
+      pauses: 1,
+      wakeOff: 0,
+      mutes: 0,
+      target: 'Trending to 0',
+      source: 'Pauses, heartbeat switched off, and mutes, by a person.',
+    },
+    supporting: {
+      beats: 140,
+      quietBeats: rate(128, 140, '80% or more', 'Checks that ended with nothing sent.'),
+      commitmentsOnTime: rate(2, 2, '90% or more', 'Promises due this week, kept by their date.'),
+      noEndBeat: 1,
+      triage: { checks: 41, tokens: 18_400 },
+      turns: { count: 12, tokensPerTurn: null },
+      bypass: 0,
+      held: 1,
+    },
   };
 }
 
@@ -192,7 +250,7 @@ export function ProfileShowcases() {
   return (
     <PlaygroundSection
       title="Profile"
-      description="One panel for any identity, in the six shapes it takes: your own row, another person, somebody bridged in over Telegram, an agent you manage, an agent somebody else manages, and DorkBot. What changes between them is which facts are true — the status line, who is above the button, whether the button exists at all, and which rows have arrows. Two things this fixture invents: a second local person, so the 'another person' rows have somebody to be about, and one agent manifest, so the pushed pages have a file and a description to draw. Little else is answered, which is why the Sessions and Tasks pages show their empty states. The Instructions and Memory pages carry the injected-prompt preview: open it to read what the agent is actually handed — identity, personality, both convention files, and the agent's own saved notes inside the fence a turn puts them in, assembled the way the server assembles them and following the draft rather than the file on disk. The Heartbeat page is answered too: a timed agent, three past checks that ended three ways, one message held for the morning, and a report with three items so far."
+      description="One panel for any identity, in the six shapes it takes: your own row, another person, somebody bridged in over Telegram, an agent you manage, an agent somebody else manages, and DorkBot. What changes between them is which facts are true — the status line, who is above the button, whether the button exists at all, and which rows have arrows. Two things this fixture invents: a second local person, so the 'another person' rows have somebody to be about, and one agent manifest, so the pushed pages have a file and a description to draw. Little else is answered, which is why the Sessions and Tasks pages show their empty states. The Instructions and Memory pages carry the injected-prompt preview: open it to read what the agent is actually handed — identity, personality, both convention files, and the agent's own saved notes inside the fence a turn puts them in, assembled the way the server assembles them and following the draft rather than the file on disk. The Heartbeat page is answered too: a timed agent, three past checks that ended three ways, one message held for the morning, a report with three items so far, and a week of measures."
     >
       <ShowcaseLabel>The six relationships, and five pushed pages</ShowcaseLabel>
       <ShowcaseDemo>

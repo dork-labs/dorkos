@@ -64,6 +64,8 @@ export interface RuntimeCardSummaryInput {
   settings?: RuntimeSettingsCapability | undefined;
   /** This runtime's configured default model id; null/undefined means inherit. */
   model?: string | null | undefined;
+  /** What an inherited model reads as; `Automatic` unless DorkOS picks (`Chosen by DorkOS`). */
+  inheritModelLabel?: string | undefined;
   /**
    * The runtime's model catalog as fetched, or undefined while it loads. An
    * EMPTY catalog is the same absence as a missing one — it resolves nothing, and
@@ -165,7 +167,11 @@ export function buildRuntimeCardSummary(input: RuntimeCardSummaryInput): Runtime
     const known = input.models?.find((option) => option.value === configured);
     segments.push({ kind: 'model', label: known?.displayName ?? configured, inherited: false });
   } else {
-    segments.push({ kind: 'model', label: INHERIT_MODEL_LABEL, inherited: true });
+    segments.push({
+      kind: 'model',
+      label: input.inheritModelLabel ?? INHERIT_MODEL_LABEL,
+      inherited: true,
+    });
   }
 
   // Only when the runtime declares that it takes an effort at all AND the chosen

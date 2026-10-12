@@ -1,4 +1,3 @@
-import express from 'express';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import request from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
@@ -18,7 +17,15 @@ import { ConnectionIdSchema } from '@dorkos/shared/connector-schemas';
 import { ConnectorProgramPrincipalService } from '../../services/connectors/principal/program-principal-service.js';
 import { ConnectorSubscriptionStore } from '../../services/connectors/events/subscription-store.js';
 import { ConnectorEventAccessQueryService } from '../../services/connectors/events/access-query-service.js';
-import { createConnectorExecutionRouter } from '../connector-execution.js';
+import { createConnectorExecutionRoutes } from '../connector-execution.js';
+import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
+
+// The routes are served through the `/api` chain, whose host guard and session
+// gate read the login setting: off, as on a fresh install. The routes' own
+// login lookup is injected.
+vi.mock('../../services/core/config-manager.js', () => ({
+  configManager: { get: vi.fn(() => undefined), set: vi.fn() },
+}));
 
 const target = swappableServer();
 const now = '2026-09-07T12:00:00.000Z';
@@ -129,35 +136,35 @@ function fixture() {
       .run(selection.subscriptionId);
     return { ...selection, connectionId };
   }
-  const app = express();
-  app.use(
-    '/api/connectors',
-    createConnectorExecutionRouter({
-      connectorRegistry: { migrationHealth: () => ({ status: 'ready', migrated: false }) },
-      capabilities: { invoke: vi.fn() },
-      authorization: { capabilityIdForTarget: vi.fn() },
-      access: {
-        listConnections: vi.fn(),
-        listOperations: vi.fn(),
-        listAgentUsage: vi.fn(),
-        listOperatorUsage: vi.fn(),
-      },
-      eventAccess: access,
-      programPrincipals: programs,
-      resolveOwner: (user) => (user ? { kind: 'user', userId: user.userId } : undefined),
-      loginEnabled: () => true,
-      trustedOrigins: () => ['http://localhost:4242'],
-      verifyUser: async (req) =>
-        req.headers.authorization === 'Bearer good'
-          ? { userId: 'owner-a', credential: 'api-key', credentialId: 'key-a' }
-          : req.headers.authorization === 'Bearer other'
-            ? { userId: 'owner-b', credential: 'api-key', credentialId: 'key-b' }
-            : req.headers.authorization === 'Bearer cookie'
-              ? { userId: 'owner-a', credential: 'cookie' }
-              : null,
+  target.mount(
+    honoGroupListener({
+      path: '/api/connectors',
+      routes: createConnectorExecutionRoutes({
+        connectorRegistry: { migrationHealth: () => ({ status: 'ready', migrated: false }) },
+        capabilities: { invoke: vi.fn() },
+        authorization: { capabilityIdForTarget: vi.fn() },
+        access: {
+          listConnections: vi.fn(),
+          listOperations: vi.fn(),
+          listAgentUsage: vi.fn(),
+          listOperatorUsage: vi.fn(),
+        },
+        eventAccess: access,
+        programPrincipals: programs,
+        resolveOwner: (user) => (user ? { kind: 'user', userId: user.userId } : undefined),
+        loginEnabled: () => true,
+        trustedOrigins: () => ['http://localhost:4242'],
+        verifyUser: async (req) =>
+          req.headers.authorization === 'Bearer good'
+            ? { userId: 'owner-a', credential: 'api-key', credentialId: 'key-a' }
+            : req.headers.authorization === 'Bearer other'
+              ? { userId: 'owner-b', credential: 'api-key', credentialId: 'key-b' }
+              : req.headers.authorization === 'Bearer cookie'
+                ? { userId: 'owner-a', credential: 'cookie' }
+                : null,
+      }),
     })
   );
-  target.mount(app);
   const get = (query: Record<string, string | number> = { agentId: 'agent-a' }) =>
     request(target.server)
       .get('/api/connectors/accessible/subscriptions')

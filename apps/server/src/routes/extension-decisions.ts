@@ -22,7 +22,8 @@
  *
  * @module routes/extension-decisions
  */
-import { Router, type Request, type Response } from 'express';
+import { Hono, type Context } from 'hono';
+import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import {
   DecisionActionRequestSchema,
   DecisionOfferRequestSchema,
@@ -31,8 +32,12 @@ import {
 import type { ActivityService } from '../services/activity/activity-service.js';
 import { readActivityActor } from '../services/activity/activity-actor.js';
 import { getExtensionInbox } from '../services/extensions/inbox/extension-inbox.js';
+import type { ApiEnv } from '../http/api-chain.js';
+import { readJsonBody } from '../http/request-body.js';
+import { honoRequestFacts, type RequestFacts } from '../http/request-facts.js';
+import { readQuery } from '../http/request-query.js';
 import { logger } from '../lib/logger.js';
-import { refuseIfNotAPerson, type PersonBarCopy } from './extensions-person-bar.js';
+import { assessPerson, type PersonBarCopy } from './extensions-person-bar.js';
 
 /** Core's id for a decision: a ULID. */
 const DECISION_ID = /^[0-9A-HJKMNP-TV-Z]{26}$/;
@@ -48,30 +53,25 @@ export const DECISION_BAR: PersonBarCopy = {
   agent: 'DorkOS changed nothing. Only a person can answer this. Ask them to answer it in DorkOS.',
 };
 
-/** Answer "the inbox is not up" in one place. */
-function inboxOr503(res: Response) {
-  const inbox = getExtensionInbox();
-  if (!inbox) res.status(503).json({ error: 'The inbox is not available yet.' });
-  return inbox;
-}
+/** The answer for "the inbox is not up". */
+const INBOX_NOT_READY = { error: 'The inbox is not available yet.' };
 
 /**
  * Record that a person's "Yes" changed an extension's per-project settings.
  *
- * @param req - The request (for who acted).
- * @param res - The response (for who acted).
+ * @param activity - The Activity feed, when the server has one.
+ * @param caller - The request's facts, for who acted.
  * @param changed - What was changed.
  */
 export async function recordSettingsChange(
-  req: Request,
-  res: Response,
+  activity: Pick<ActivityService, 'emit'> | undefined,
+  caller: Pick<RequestFacts, 'headers' | 'agentIdentity'>,
   changed: { extensionId: string; extensionName: string; projectName: string }
 ): Promise<void> {
-  const activityService = req.app.locals.activityService as ActivityService | undefined;
-  if (!activityService) return;
+  if (!activity) return;
   try {
-    await activityService.emit({
-      ...readActivityActor(req, res),
+    await activity.emit({
+      ...readActivityActor(caller),
       category: 'config',
       eventType: 'config.extension_project_settings_updated',
       resourceType: 'extension',
@@ -84,18 +84,37 @@ export async function recordSettingsChange(
   }
 }
 
-/** Build the `/api/extension-decisions` router. */
-export function createExtensionDecisionsRouter(): Router {
-  const router = Router();
+/** What the `/api/extension-decisions` routes read. */
+export interface ExtensionDecisionsRouterDeps {
+  /** The Activity feed a settings change is recorded in, when the server has one. */
+  activity?: Pick<ActivityService, 'emit'>;
+}
+
+/** The person bar's refusal, written, or `undefined` when a person is asking. */
+function refusedNotAPerson(c: Context<ApiEnv>): Response | undefined {
+  const refusal = assessPerson(honoRequestFacts(c), DECISION_BAR);
+  return refusal ? c.json(refusal.body, refusal.status as ContentfulStatusCode) : undefined;
+}
+
+/**
+ * The `/api/extension-decisions` routes.
+ *
+ * @param deps - See {@link ExtensionDecisionsRouterDeps}.
+ * @returns The routes, for `app.route('/api/extension-decisions', …)`.
+ */
+export function createExtensionDecisionsRoutes(
+  deps: ExtensionDecisionsRouterDeps = {}
+): Hono<ApiEnv> {
+  const router = new Hono<ApiEnv>();
 
   // GET /api/extension-decisions -- Open decisions of running extensions, and
   // follow-up offers a person has not answered yet.
-  router.get('/', (req, res) => {
-    const query = ListExtensionDecisionsQuerySchema.safeParse(req.query);
-    if (!query.success) return res.status(400).json({ error: 'Invalid query' });
-    const inbox = inboxOr503(res);
-    if (!inbox) return undefined;
-    return res.json({
+  router.get('/', (c) => {
+    const query = ListExtensionDecisionsQuerySchema.safeParse(readQuery(c));
+    if (!query.success) return c.json({ error: 'Invalid query' }, 400);
+    const inbox = getExtensionInbox();
+    if (!inbox) return c.json(INBOX_NOT_READY, 503);
+    return c.json({
       decisions: inbox.listOpen(query.data.extensionId),
       offers: inbox.pendingOffers(),
     });
@@ -103,48 +122,58 @@ export function createExtensionDecisionsRouter(): Router {
 
   // POST /api/extension-decisions/:id/action -- A person answers in the bell or
   // the inbox. Calls the extension's handler, then resolves or keeps it open.
-  router.post('/:id/action', async (req, res) => {
+  router.post('/:id/action', async (c) => {
     try {
-      if (!DECISION_ID.test(req.params.id)) return res.status(404).json({ error: 'Not found' });
-      if (refuseIfNotAPerson(req, res, DECISION_BAR)) return undefined;
-      const body = DecisionActionRequestSchema.safeParse(req.body ?? {});
+      const id = c.req.param('id');
+      if (!DECISION_ID.test(id)) return c.json({ error: 'Not found' }, 404);
+      const refused = refusedNotAPerson(c);
+      if (refused) return refused;
+      const body = DecisionActionRequestSchema.safeParse(readJsonBody(c, { emptyAs: {} }));
       if (!body.success) {
-        return res
-          .status(400)
-          .json({ error: 'Send an action, and keep notes under 2000 characters.' });
+        return c.json({ error: 'Send an action, and keep notes under 2000 characters.' }, 400);
       }
-      const inbox = inboxOr503(res);
-      if (!inbox) return undefined;
-      const outcome = await inbox.answer(req.params.id, body.data, { kind: 'person' });
+      const inbox = getExtensionInbox();
+      if (!inbox) return c.json(INBOX_NOT_READY, 503);
+      const outcome = await inbox.answer(id, body.data, { kind: 'person' });
       if (!outcome.ok) {
-        return res.status(outcome.status).json({ error: outcome.message, code: outcome.code });
+        return c.json(
+          { error: outcome.message, code: outcome.code },
+          outcome.status as ContentfulStatusCode
+        );
       }
-      return res.json(outcome.response);
+      return c.json(outcome.response);
     } catch (err) {
       logger.error('[Extensions] Failed to answer a decision', err);
-      return res.status(500).json({ error: 'Failed to answer the decision' });
+      return c.json({ error: 'Failed to answer the decision' }, 500);
     }
   });
 
   // POST /api/extension-decisions/:id/offer -- "Yes" or a quiet dismiss on the
   // one-time "next time, on its own?" line. Either way it is used up.
-  router.post('/:id/offer', async (req, res) => {
+  router.post('/:id/offer', async (c) => {
     try {
-      if (!DECISION_ID.test(req.params.id)) return res.status(404).json({ error: 'Not found' });
-      if (refuseIfNotAPerson(req, res, DECISION_BAR)) return undefined;
-      const body = DecisionOfferRequestSchema.safeParse(req.body ?? {});
-      if (!body.success) return res.status(400).json({ error: 'Send { accept: true | false }.' });
-      const inbox = inboxOr503(res);
-      if (!inbox) return undefined;
-      const outcome = await inbox.answerOffer(req.params.id, body.data.accept);
+      const id = c.req.param('id');
+      if (!DECISION_ID.test(id)) return c.json({ error: 'Not found' }, 404);
+      const refused = refusedNotAPerson(c);
+      if (refused) return refused;
+      const body = DecisionOfferRequestSchema.safeParse(readJsonBody(c, { emptyAs: {} }));
+      if (!body.success) return c.json({ error: 'Send { accept: true | false }.' }, 400);
+      const inbox = getExtensionInbox();
+      if (!inbox) return c.json(INBOX_NOT_READY, 503);
+      const outcome = await inbox.answerOffer(id, body.data.accept);
       if (!outcome.ok) {
-        return res.status(outcome.status).json({ error: outcome.message, code: outcome.code });
+        return c.json(
+          { error: outcome.message, code: outcome.code },
+          outcome.status as ContentfulStatusCode
+        );
       }
-      if (outcome.settingsChanged) await recordSettingsChange(req, res, outcome.settingsChanged);
-      return res.json({ message: outcome.message });
+      if (outcome.settingsChanged) {
+        await recordSettingsChange(deps.activity, honoRequestFacts(c), outcome.settingsChanged);
+      }
+      return c.json({ message: outcome.message });
     } catch (err) {
       logger.error('[Extensions] Failed to answer an offer', err);
-      return res.status(500).json({ error: 'Failed to answer the offer' });
+      return c.json({ error: 'Failed to answer the offer' }, 500);
     }
   });
 

@@ -1,6 +1,7 @@
 /**
- * `GET /api/agents/:id/heartbeat` (spec `heartbeats` §7.6): what the Heartbeat
- * page reads, over a real heartbeat store and a real HEARTBEAT.md on disk.
+ * `GET /api/agents/:id/heartbeat` (spec `heartbeats` §7.6, §13): what the
+ * Heartbeat page reads, over a real heartbeat store, real measures and a real
+ * HEARTBEAT.md on disk.
  */
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import express from 'express';
@@ -15,6 +16,8 @@ import { createHeartbeatRouter } from '../heartbeats.js';
 import { HeartbeatStore } from '../../services/heartbeats/heartbeat-store.js';
 import { heartbeatStatus } from '../../services/heartbeats/heartbeat-status.js';
 import { RaiseStore } from '../../services/heartbeats/raises/raise-store.js';
+import { measureAgent } from '../../services/heartbeats/measures/measures.js';
+import type { Db } from '@dorkos/db';
 
 const target = swappableServer();
 let root: string;
@@ -22,11 +25,12 @@ let store: HeartbeatStore;
 let raises: RaiseStore;
 let enabled: boolean;
 let owner: boolean;
+let db: Db;
 
 beforeEach(async () => {
   root = await mkdtemp(join(tmpdir(), 'heartbeat-route-'));
   await mkdir(join(root, '.dork'), { recursive: true });
-  const db = createTestDb();
+  db = createTestDb();
   store = new HeartbeatStore(db);
   raises = new RaiseStore(db);
   enabled = true;
@@ -37,7 +41,7 @@ beforeEach(async () => {
     '/api/agents/:id/heartbeat',
     createHeartbeatRouter({
       isOwner: () => owner,
-      status: (agentId, viewerIsOwner) =>
+      status: (agentId, viewerIsOwner, days) =>
         heartbeatStatus({
           viewerIsOwner,
           agent: agentId === agent.id ? agent : undefined,
@@ -58,6 +62,14 @@ beforeEach(async () => {
             tokens: 0,
             offer: viewer,
           }),
+          measures: (a) =>
+            measureAgent(db, {
+              agentId: a.id,
+              agentPath: a.projectPath,
+              isAgent: (id) => id.startsWith('agent-'),
+              now: Date.parse('2026-10-12T16:00:00Z'),
+              ...(days !== undefined ? { days } : {}),
+            }),
         }),
     })
   );
@@ -162,5 +174,46 @@ describe('GET /api/agents/:id/heartbeat', () => {
   it('answers 404 for an agent that does not exist', async () => {
     const res = await request(target.server).get('/api/agents/nobody/heartbeat');
     expect(res.status).toBe(404);
+  });
+
+  it('lists the last 50 beats and the measures over the default 7 days', async () => {
+    for (let i = 0; i < 55; i += 1) {
+      const startedAt = new Date(Date.parse('2026-10-12T14:00:00Z') - i * 60_000).toISOString();
+      store.insertBeat({
+        id: `b${i}`,
+        agentId: 'agent-juno',
+        startedAt,
+        kind: 'pulse',
+        wake: 'timer',
+      });
+      store.finishBeat(`b${i}`, { endedAt: startedAt, outcome: 'quiet', summary: 'Nothing new.' });
+    }
+    const res = await request(target.server).get('/api/agents/agent-juno/heartbeat');
+    expect(res.status).toBe(200);
+    const body = HeartbeatStatusSchema.parse(res.body);
+    expect(body.lastBeats).toHaveLength(50);
+    expect(body.measures.windowDays).toBe(7);
+    expect(body.measures.supporting.beats).toBe(55);
+    expect(body.measures.supporting.quietBeats).toMatchObject({ part: 55, whole: 55 });
+  });
+
+  it('widens the measures with ?days= and refuses a window it cannot read', async () => {
+    store.insertBeat({
+      id: 'old',
+      agentId: 'agent-juno',
+      startedAt: '2026-09-30T14:00:00Z',
+      kind: 'pulse',
+      wake: 'timer',
+    });
+    store.finishBeat('old', { endedAt: '2026-09-30T14:01:00Z', outcome: 'quiet' });
+    const week = await request(target.server).get('/api/agents/agent-juno/heartbeat');
+    expect(week.body.measures.supporting.beats).toBe(0);
+    const month = await request(target.server).get('/api/agents/agent-juno/heartbeat?days=30');
+    expect(month.body.measures).toMatchObject({ windowDays: 30, supporting: { beats: 1 } });
+    for (const days of ['0', '91', 'soon']) {
+      const res = await request(target.server).get(`/api/agents/agent-juno/heartbeat?days=${days}`);
+      expect(res.status, days).toBe(400);
+      expect(res.body.code).toBe('INVALID_DAYS');
+    }
   });
 });

@@ -4,9 +4,9 @@
  * Pure data plus one pure function; no I/O, no ML. A lookup table anyone can
  * read and correct: given the roles a person saved in `config.profile.roles`,
  * it suggests which connector services and marketplace searches fit their work.
- * Consumers: the onboarding suggestion line (`dorkbotProfileSuggestionLine` in
- * `@dorkos/shared/dorkbot-templates`) and the Connections page + marketplace
- * surface (spec `connector-completion`, which ranks its list with this data).
+ * Consumers: the role picker (`ROLE_CANON`, `normalizeRole`) and the
+ * Connections page + marketplace surface (spec `connector-completion`, which
+ * ranks its list with this data).
  *
  * The mapping deliberately says nothing about whether a connector is currently
  * installable — the consuming surface filters against what it can actually

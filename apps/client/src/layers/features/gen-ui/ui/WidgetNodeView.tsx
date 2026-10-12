@@ -137,7 +137,9 @@ function StackNode({ node }: { node: NodeOf<'stack'> }) {
     <div
       className={cn(
         'flex',
-        node.direction === 'horizontal' ? 'flex-row items-start' : 'flex-col',
+        // Wrap, so a third button on a 390px phone moves to a new line instead of
+        // clipping at the screen edge (DOR-2003).
+        node.direction === 'horizontal' ? 'flex-row flex-wrap items-start' : 'flex-col',
         GAP_CLASS[node.gap ?? 'md']
       )}
     >

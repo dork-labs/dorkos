@@ -4,6 +4,7 @@
  * @module routes/marketplace/package-actions
  */
 import { z } from 'zod';
+import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import type { PackageType } from '@dorkos/marketplace';
 import { logger } from '../../lib/logger.js';
 import {
@@ -32,10 +33,17 @@ import {
   describeStrictRebuild,
   rebuildRecordStrict,
 } from '../../services/marketplace/lib/integrity/strict-record.js';
-import type { MarketplaceRouteDeps } from '../marketplace.js';
+import type { MarketplaceRouteDeps, MarketplaceRoutes } from '../marketplace.js';
 import type { MarketplaceRouteContext } from './context.js';
-import { InstallRequestBodySchema, mapErrorToStatus, outdatedClientResponse } from './shared.js';
-import type { Router } from 'express';
+import { readJsonBody } from '../../http/request-body.js';
+import { honoRequestFacts } from '../../http/request-facts.js';
+import {
+  errorResponse,
+  InstallRequestBodySchema,
+  mapErrorToStatus,
+  outdatedClientResponse,
+  validationFailed,
+} from './shared.js';
 
 /** Body schema for `POST /api/marketplace/packages/:name/uninstall`. */
 const UninstallRequestBodySchema = z.object({
@@ -83,12 +91,12 @@ const KeepFilesRequestBodySchema = z
  * Register the `/packages/:name/{preview,install,check-files,keep-files,uninstall,update}` routes on
  * the marketplace router.
  *
- * @param router - The marketplace router.
+ * @param app - The marketplace routes.
  * @param deps - The router's injected dependencies.
  * @param ctx - The helpers every route group shares.
  */
 export function mountPackageActionRoutes(
-  router: Router,
+  app: MarketplaceRoutes,
   deps: MarketplaceRouteDeps,
   ctx: MarketplaceRouteContext
 ): void {
@@ -106,13 +114,10 @@ export function mountPackageActionRoutes(
   const { authorize, gateResponse, confineProjectPath, askAboutAgentInstall } = ctx;
 
   // POST /packages/:name/preview -- build a PermissionPreview without installing
-  router.post('/packages/:name/preview', async (req, res) => {
-    const parsed = InstallRequestBodySchema.safeParse(req.body);
-    if (!parsed.success) {
-      return res
-        .status(400)
-        .json({ error: 'Validation failed', details: z.flattenError(parsed.error) });
-    }
+  app.post('/packages/:name/preview', async (c) => {
+    const name = c.req.param('name');
+    const parsed = InstallRequestBodySchema.safeParse(readJsonBody(c));
+    if (!parsed.success) return validationFailed(c, parsed.error);
 
     try {
       // The same confinement the three sibling mutation routes apply, and the
@@ -122,17 +127,17 @@ export function mountPackageActionRoutes(
       // so an unbounded preview answers "does this directory exist, and what is
       // in it" for any absolute path on the machine, with no approval card in
       // the way.
-      const confined = await confineProjectPath(res, parsed.data.projectPath);
+      const confined = await confineProjectPath(c, parsed.data.projectPath);
       if (confined.refused) return confined.refused;
       const { preview, manifest, packagePath } = await installer.preview({
-        name: req.params.name,
+        name,
         ...parsed.data,
         ...(confined.projectPath !== undefined && { projectPath: confined.projectPath }),
       });
       // `disclosed` is what an install is held to and `contentHash` the files
       // it binds: the caller shows them and sends them back as
       // `approvedDisclosure` and `approvedContentHash` (DOR-2306).
-      return res.json({
+      return c.json({
         preview,
         manifest,
         packagePath,
@@ -140,9 +145,8 @@ export function mountPackageActionRoutes(
         contentHash: await packageContentHash(packagePath),
       });
     } catch (err) {
-      logger.error(`[Marketplace] Failed to preview package ${req.params.name}`, err);
-      const mapped = mapErrorToStatus(err);
-      return res.status(mapped.status).json(mapped.body);
+      logger.error(`[Marketplace] Failed to preview package ${name}`, err);
+      return errorResponse(c, err);
     }
   });
 
@@ -152,27 +156,24 @@ export function mountPackageActionRoutes(
   // The spec mentions optional streaming for clone progress; we ship the
   // unary JSON response first and will wire a dedicated `/install/stream`
   // variant in a follow-up rather than ship a half-implemented SSE here.
-  router.post('/packages/:name/install', async (req, res) => {
-    const parsed = InstallRequestBodySchema.safeParse(req.body);
-    if (!parsed.success) {
-      return res
-        .status(400)
-        .json({ error: 'Validation failed', details: z.flattenError(parsed.error) });
-    }
+  app.post('/packages/:name/install', async (c) => {
+    const name = c.req.param('name');
+    const parsed = InstallRequestBodySchema.safeParse(readJsonBody(c));
+    if (!parsed.success) return validationFailed(c, parsed.error);
 
     try {
-      const confined = await confineProjectPath(res, parsed.data.projectPath);
+      const confined = await confineProjectPath(c, parsed.data.projectPath);
       if (confined.refused) return confined.refused;
       // `marketplace.install` is tier `act`, so this passes for every caller
       // today and no approval card appears for a person clicking Install. It is
       // gated anyway so the route answers to the capability's declared tier
       // rather than to nothing: raise that tier and this route follows.
-      const decision = await authorize(req, res, 'marketplace.install', {
-        name: req.params.name,
+      const decision = await authorize(c, 'marketplace.install', {
+        name,
         ...(parsed.data.marketplace !== undefined && { marketplace: parsed.data.marketplace }),
         ...(parsed.data.projectPath !== undefined && { projectPath: parsed.data.projectPath }),
       });
-      if (decision.outcome !== 'allowed') return gateResponse(res, decision);
+      if (decision.outcome !== 'allowed') return gateResponse(c, decision);
       const { approvedDisclosure, approvedContentHash, confirmationToken, ...request } =
         parsed.data;
       const global = confined.projectPath === undefined;
@@ -180,7 +181,7 @@ export function mountPackageActionRoutes(
       let heldTo = approvedDisclosure;
       let heldToFiles: string | undefined;
       let heldToType: PackageType | undefined;
-      if (trustedCaller(readCallerAuthority(req, res))) {
+      if (trustedCaller(readCallerAuthority(honoRequestFacts(c)))) {
         // The person saw what it runs and which files: the installer holds the
         // install to the disclosure, and consent records it only when the
         // installed copy hashes the same (DOR-2306).
@@ -192,8 +193,7 @@ export function mountPackageActionRoutes(
         // package lands in a folder whose sessions run its skills, wherever
         // the call was scoped: both wait on a card (DOR-2306, DOR-2325).
         const asked = await askAboutAgentInstall(
-          req,
-          res,
+          c,
           {
             ...request,
             ...(confined.projectPath !== undefined && { projectPath: confined.projectPath }),
@@ -215,7 +215,7 @@ export function mountPackageActionRoutes(
         }
       }
       const result = await installer.install({
-        name: req.params.name,
+        name,
         ...request,
         ...(heldTo !== undefined && { approvedDisclosure: heldTo }),
         ...(heldToFiles !== undefined && { approvedContentHash: heldToFiles }),
@@ -236,11 +236,10 @@ export function mountPackageActionRoutes(
         packageName: result.packageName,
         action: 'install',
       });
-      return res.json(result);
+      return c.json(result);
     } catch (err) {
-      logger.error(`[Marketplace] Failed to install package ${req.params.name}`, err);
-      const mapped = mapErrorToStatus(err);
-      return res.status(mapped.status).json(mapped.body);
+      logger.error(`[Marketplace] Failed to install package ${name}`, err);
+      return errorResponse(c, err);
     }
   });
 
@@ -251,41 +250,37 @@ export function mountPackageActionRoutes(
   // that must match the live files byte for byte, so it cannot change what
   // runs or claim any file that is not the package's; like refreshing a
   // source, it only brings DorkOS's own bookkeeping up to date.
-  router.post('/packages/:name/check-files', async (req, res) => {
-    const parsed = CheckFilesRequestBodySchema.safeParse(req.body ?? {});
-    if (!parsed.success) {
-      return res
-        .status(400)
-        .json({ error: 'Validation failed', details: z.flattenError(parsed.error) });
-    }
+  app.post('/packages/:name/check-files', async (c) => {
+    const name = c.req.param('name');
+    const parsed = CheckFilesRequestBodySchema.safeParse(readJsonBody(c, { emptyAs: {} }));
+    if (!parsed.success) return validationFailed(c, parsed.error);
     try {
-      assertPackageName(req.params.name);
+      assertPackageName(name);
     } catch (err) {
-      const mapped = mapErrorToStatus(err);
-      return res.status(mapped.status).json(mapped.body);
+      return errorResponse(c, err);
     }
     try {
-      const confined = await confineProjectPath(res, parsed.data.projectPath);
+      const confined = await confineProjectPath(c, parsed.data.projectPath);
       if (confined.refused) return confined.refused;
       const root = await locateInstallRoot({
         dorkHome,
-        name: req.params.name,
+        name,
         ...(confined.projectPath !== undefined && { projectPath: confined.projectPath }),
         ...(parsed.data.installRoot !== undefined && { installRoot: parsed.data.installRoot }),
       });
-      if (root === null) throw new PackageNotInstalledError(req.params.name);
+      if (root === null) throw new PackageNotInstalledError(name);
       // A person's Check files also sorts what an update kept unproven (DOR-2322).
       const result = await rebuildRecordStrict(root, { fetcher, logger }, { sortUnproven: true });
-      return res.json({
+      return c.json({
         outcome: result.outcome,
-        message: describeStrictRebuild(req.params.name, result),
+        message: describeStrictRebuild(name, result),
       });
     } catch (err) {
       const mapped = mapErrorToStatus(err);
       if (mapped.status >= 500) {
-        logger.error(`[Marketplace] Failed to check the files of ${req.params.name}`, err);
+        logger.error(`[Marketplace] Failed to check the files of ${name}`, err);
       }
-      return res.status(mapped.status).json(mapped.body);
+      return c.json(mapped.body, mapped.status as ContentfulStatusCode);
     }
   });
 
@@ -294,85 +289,81 @@ export function mountPackageActionRoutes(
   // deciding a held-back package: claiming files decides what every later
   // update keeps, so an agent cannot, and under login only a signed-in session
   // can. Moves and deletes nothing; see `services/marketplace/lib/integrity/keep-files.ts`.
-  router.post('/packages/:name/keep-files', async (req, res) => {
-    const authority = readCallerAuthority(req, res);
+  app.post('/packages/:name/keep-files', async (c) => {
+    const name = c.req.param('name');
+    const authority = readCallerAuthority(honoRequestFacts(c));
     if (!trustedCaller(authority)) {
       if (!resolveDecisionAuthority(authority).allowed) {
-        return res.status(403).json({
-          error: 'Only you can keep these files as yours, not an agent.',
-          code: 'operator_only',
-        });
+        return c.json(
+          { error: 'Only you can keep these files as yours, not an agent.', code: 'operator_only' },
+          403
+        );
       }
-      return res.status(403).json({
-        error:
-          'DorkOS requires sign-in, so a person signed in to the app has to do this. Open ' +
-          'DorkOS, go to Marketplace, then Installed, and press Keep these as mine on the package.',
-        code: OPERATOR_COOKIE_REQUIRED_CODE,
-      });
+      return c.json(
+        {
+          error:
+            'DorkOS requires sign-in, so a person signed in to the app has to do this. Open ' +
+            'DorkOS, go to Marketplace, then Installed, and press Keep these as mine on the package.',
+          code: OPERATOR_COOKIE_REQUIRED_CODE,
+        },
+        403
+      );
     }
-    const parsed = KeepFilesRequestBodySchema.safeParse(req.body ?? {});
-    if (!parsed.success) {
-      return res
-        .status(400)
-        .json({ error: 'Validation failed', details: z.flattenError(parsed.error) });
-    }
+    const parsed = KeepFilesRequestBodySchema.safeParse(readJsonBody(c, { emptyAs: {} }));
+    if (!parsed.success) return validationFailed(c, parsed.error);
     try {
-      assertPackageName(req.params.name);
-      const confined = await confineProjectPath(res, parsed.data.projectPath);
+      assertPackageName(name);
+      const confined = await confineProjectPath(c, parsed.data.projectPath);
       if (confined.refused) return confined.refused;
       const root = await locateInstallRoot({
         dorkHome,
-        name: req.params.name,
+        name,
         ...(confined.projectPath !== undefined && { projectPath: confined.projectPath }),
         ...(parsed.data.installRoot !== undefined && { installRoot: parsed.data.installRoot }),
       });
-      if (root === null) throw new PackageNotInstalledError(req.params.name);
+      if (root === null) throw new PackageNotInstalledError(name);
       const global = confined.projectPath === undefined;
       const result = await keepPackageFiles({
         dorkHome,
         root,
-        name: req.params.name,
+        name,
         global,
         keepKey: parsed.data.keepKey,
         ...(global && parsed.data.review && { review: parsed.data.review }),
       });
       if (result.approved) await heldBackCards.onGranted();
-      return res.json(result);
+      return c.json(result);
     } catch (err) {
       if (err instanceof KeptFilesChangedError) {
-        return res.status(409).json({ error: err.message, code: 'kept_files_changed' });
+        return c.json({ error: err.message, code: 'kept_files_changed' }, 409);
       }
       const mapped = mapErrorToStatus(err);
       if (mapped.status >= 500) {
-        logger.error(`[Marketplace] Failed to keep the files of ${req.params.name}`, err);
+        logger.error(`[Marketplace] Failed to keep the files of ${name}`, err);
       }
-      return res.status(mapped.status).json(mapped.body);
+      return c.json(mapped.body, mapped.status as ContentfulStatusCode);
     }
   });
 
-  router.post('/packages/:name/uninstall', async (req, res) => {
-    const parsed = UninstallRequestBodySchema.safeParse(req.body);
-    if (!parsed.success) {
-      return res
-        .status(400)
-        .json({ error: 'Validation failed', details: z.flattenError(parsed.error) });
-    }
+  app.post('/packages/:name/uninstall', async (c) => {
+    const name = c.req.param('name');
+    const parsed = UninstallRequestBodySchema.safeParse(readJsonBody(c));
+    if (!parsed.success) return validationFailed(c, parsed.error);
 
     // Ahead of the tier gate on purpose. Unlike every other route here, this
     // one's `:name` is not an install identifier to be resolved — it is joined
-    // straight into `dorkHome` by the flow, and Express decodes params after
+    // straight into `dorkHome` by the flow, and the router decodes params after
     // routing, so `..%2F..%2Fvictim` arrives as a working climb. Refusing it
     // here also means no approval card is ever raised for an uninstall that
     // could not name a real package.
     try {
-      assertPackageName(req.params.name);
+      assertPackageName(name);
     } catch (err) {
-      const mapped = mapErrorToStatus(err);
-      return res.status(mapped.status).json(mapped.body);
+      return errorResponse(c, err);
     }
 
     try {
-      const confined = await confineProjectPath(res, parsed.data.projectPath);
+      const confined = await confineProjectPath(c, parsed.data.projectPath);
       if (confined.refused) return confined.refused;
       // The door DOR-467 closed. `marketplace.uninstall` is the one `destructive`
       // capability, and this route used to remove a package with no tier check,
@@ -383,13 +374,13 @@ export function mountPackageActionRoutes(
       // approval a person grants here binds to the same hash `dorkos call
       // marketplace.uninstall` would produce: a token minted on one surface is
       // honored on the other, and neither can be replayed for a different action.
-      const decision = await authorize(req, res, 'marketplace.uninstall', {
-        name: req.params.name,
+      const decision = await authorize(c, 'marketplace.uninstall', {
+        name,
         ...parsed.data,
       });
-      if (decision.outcome !== 'allowed') return gateResponse(res, decision);
+      if (decision.outcome !== 'allowed') return gateResponse(c, decision);
       const result = await uninstallFlow.uninstall({
-        name: req.params.name,
+        name,
         ...parsed.data,
         ...(confined.projectPath !== undefined && { projectPath: confined.projectPath }),
       });
@@ -402,11 +393,10 @@ export function mountPackageActionRoutes(
         packageName: result.packageName,
         action: 'uninstall',
       });
-      return res.json(result);
+      return c.json(result);
     } catch (err) {
-      logger.error(`[Marketplace] Failed to uninstall package ${req.params.name}`, err);
-      const mapped = mapErrorToStatus(err);
-      return res.status(mapped.status).json(mapped.body);
+      logger.error(`[Marketplace] Failed to uninstall package ${name}`, err);
+      return errorResponse(c, err);
     }
   });
 
@@ -416,21 +406,16 @@ export function mountPackageActionRoutes(
   // carries what the person was shown each new version runs (DOR-2306); this
   // body schema is strict, so a retired `apply: true` is a 400, never a check
   // that a caller mistakes for an update.
-  router.post('/packages/:name/update', async (req, res) => {
-    if ((req.body as { apply?: unknown } | undefined)?.apply === true) {
-      return outdatedClientResponse(res);
-    }
-    const parsed = UpdateRequestBodySchema.safeParse(req.body ?? {});
-    if (!parsed.success) {
-      return res
-        .status(400)
-        .json({ error: 'Validation failed', details: z.flattenError(parsed.error) });
-    }
+  app.post('/packages/:name/update', async (c) => {
+    const name = c.req.param('name');
+    const body = readJsonBody(c) as { apply?: unknown } | undefined;
+    if (body?.apply === true) return outdatedClientResponse(c);
+    const parsed = UpdateRequestBodySchema.safeParse(readJsonBody(c, { emptyAs: {} }));
+    if (!parsed.success) return validationFailed(c, parsed.error);
 
     try {
-      const confined = await confineProjectPath(res, parsed.data.projectPath);
+      const confined = await confineProjectPath(c, parsed.data.projectPath);
       if (confined.refused) return confined.refused;
-      const name = req.params.name;
       // The flow checks one installation in this request's scope, so it cannot
       // tell "installed in another scope" (a scoped `unknown` result) from
       // "installed nowhere". The route can see every scope, so it answers the
@@ -445,13 +430,10 @@ export function mountPackageActionRoutes(
       if (![...everywhere, ...inScope].some((r) => installationUpdateName(r) === name)) {
         throw new PackageNotInstalledForUpdateError(name);
       }
-      return res.json(
-        await updateFlow.run({ name, installation: pickInstallation(inScope, name) })
-      );
+      return c.json(await updateFlow.run({ name, installation: pickInstallation(inScope, name) }));
     } catch (err) {
-      logger.error(`[Marketplace] Failed to check package ${req.params.name} for updates`, err);
-      const mapped = mapErrorToStatus(err);
-      return res.status(mapped.status).json(mapped.body);
+      logger.error(`[Marketplace] Failed to check package ${name} for updates`, err);
+      return errorResponse(c, err);
     }
   });
 }

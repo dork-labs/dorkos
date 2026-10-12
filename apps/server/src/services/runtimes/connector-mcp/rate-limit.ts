@@ -1,6 +1,7 @@
 /** Independent rate limiter for the connector-only runtime MCP listener. */
-import { expressRateLimit } from '../../../http/rate-limiter.js';
-import type { RequestHandler } from 'express';
+import type { MiddlewareHandler } from 'hono';
+import { honoRateLimit } from '../../../http/rate-limiter.js';
+import type { RequestFactsEnv } from '../../../http/request-facts.js';
 
 /** Listener-owned rate limit settings. */
 export interface ConnectorRuntimeRateLimitOptions {
@@ -14,12 +15,12 @@ export interface ConnectorRuntimeRateLimitOptions {
  * Build a limiter independent of the external MCP configuration.
  *
  * @param options - Optional test or deployment overrides.
- * @returns Express rate-limit middleware.
+ * @returns Hono rate-limit middleware.
  */
 export function buildConnectorRuntimeRateLimiter(
   options: ConnectorRuntimeRateLimitOptions = {}
-): RequestHandler {
-  return expressRateLimit({
+): MiddlewareHandler<RequestFactsEnv> {
+  return honoRateLimit({
     windowMs: options.windowMs ?? 60_000,
     limit: options.maxPerWindow ?? 120,
     headers: 'standard',

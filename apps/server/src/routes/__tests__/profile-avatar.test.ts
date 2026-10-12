@@ -9,8 +9,7 @@
  * asserts the roster serves exactly that, with no route, schema or client change.
  * That block is what makes "sync-ready" a fact rather than a claim.
  */
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import express from 'express';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import request from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
 import { mkdtemp, rm, readdir } from 'fs/promises';
@@ -23,7 +22,14 @@ import { RoomError } from '../../services/rooms/room-errors.js';
 import { LocalAvatarStore } from '../../services/identity/local-avatar-store.js';
 import type { AvatarStore } from '../../services/identity/avatar-store.js';
 import { createProfileRouter, type ProfileRouterDeps } from '../profile.js';
-import { createTeamRouter } from '../team.js';
+import { createTeamRoutes } from '../team.js';
+import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
+
+// The routes are served through the `/api` chain, whose host guard and session
+// gate read the login setting: off, as on a fresh install.
+vi.mock('../../services/core/config-manager.js', () => ({
+  configManager: { get: vi.fn(() => undefined), set: vi.fn() },
+}));
 
 const fixtureTarget = swappableServer();
 const fixtureServer = fixtureTarget.server;
@@ -59,42 +65,41 @@ describe('/api/profile/avatar', () => {
   let ownerAuthor: AuthorRecord;
 
   function app(overrides: Partial<ProfileRouterDeps> = {}) {
-    const server = express();
-    server.use(
-      '/api/profile',
-      createProfileRouter({
-        avatars: store,
-        caller: () => ownerAuthor,
-        authors: registry,
-        ownerAccount: () => ({ id: OWNER_USER_ID }),
-        setAccountImage: (userId, imageUrl) =>
-          db.update(user).set({ image: imageUrl }).where(eq(user.id, userId)).run(),
-        // The name half of the router, which this file does not exercise —
-        // `profile-name.test.ts` owns it.
-        setAccountName: (userId, name) =>
-          db.update(user).set({ name }).where(eq(user.id, userId)).run(),
-        setProfileDisplayName: () => {},
-        ...overrides,
-      })
-    );
-    server.use(
-      '/api/team',
-      createTeamRouter({
-        authors: registry,
-        // The roster is what these tests read back; the rooms reader is a
-        // required dependency of the router and answers nothing here.
-        rooms: { listRoomsForMember: () => [], listMembersForRooms: () => [] },
-        activeClaims: () => [],
-        listRooms: () => [],
-        sessionActivity: () => Promise.resolve({}),
-        ownerAccount: () => ({ id: OWNER_USER_ID, name: 'Dorian' }),
-        ownerEmail: () => 'dorian@dorkos.ai',
-        configDisplayName: () => null,
-        configDisplayNameSource: () => null,
-        defaultAgentName: () => null,
-      })
-    );
-    return server;
+    const profile = createProfileRouter({
+      avatars: store,
+      caller: () => ownerAuthor,
+      authors: registry,
+      ownerAccount: () => ({ id: OWNER_USER_ID }),
+      setAccountImage: (userId, imageUrl) =>
+        db.update(user).set({ image: imageUrl }).where(eq(user.id, userId)).run(),
+      // The name half of the router, which this file does not exercise —
+      // `profile-name.test.ts` owns it.
+      setAccountName: (userId, name) =>
+        db.update(user).set({ name }).where(eq(user.id, userId)).run(),
+      setProfileDisplayName: () => {},
+      ...overrides,
+    });
+    const routes = honoGroupListener([
+      { path: '/api/profile', routes: profile },
+      {
+        path: '/api/team',
+        routes: createTeamRoutes({
+          authors: registry,
+          // The roster is what these tests read back; the rooms reader is a
+          // required dependency of the router and answers nothing here.
+          rooms: { listRoomsForMember: () => [], listMembersForRooms: () => [] },
+          activeClaims: () => [],
+          listRooms: () => [],
+          sessionActivity: () => Promise.resolve({}),
+          ownerAccount: () => ({ id: OWNER_USER_ID, name: 'Dorian' }),
+          ownerEmail: () => 'dorian@dorkos.ai',
+          configDisplayName: () => null,
+          configDisplayNameSource: () => null,
+          defaultAgentName: () => null,
+        }),
+      },
+    ]);
+    return routes;
   }
 
   function storedAccountImage(): string | null | undefined {

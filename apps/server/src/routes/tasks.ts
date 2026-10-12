@@ -25,9 +25,10 @@
  *
  * @module routes/tasks
  */
-import { Router, type Request, type Response } from 'express';
+import { Hono } from 'hono';
+import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import { UpdateTaskRequestSchema, ListTaskRunsQuerySchema } from '@dorkos/shared/schemas';
-import type { PermissionMode, Task } from '@dorkos/shared/schemas';
+import type { CreateTaskInput, PermissionMode, Task } from '@dorkos/shared/schemas';
 import type { MeshCore } from '@dorkos/mesh';
 import type { TaskStore } from '../services/tasks/task-store.js';
 import type { TaskSchedulerService } from '../services/tasks/task-scheduler-service.js';
@@ -40,7 +41,7 @@ import { conflictingTimingRequest } from '../services/tasks/timing/effective-tim
 import type { ActivityService } from '../services/activity/activity-service.js';
 import { readActivityActor } from '../services/activity/activity-actor.js';
 import { loadTemplates } from '../services/tasks/task-templates.js';
-import { parseBody } from '../lib/route-utils.js';
+import { validationFailureBody } from '../lib/route-utils.js';
 import { broadcastTasksChanged } from '../services/tasks/task-sse-events.js';
 import {
   clearsTheAgentBar,
@@ -48,9 +49,12 @@ import {
   requireOperatorCookieUnderLogin,
 } from '../lib/caller-authority.js';
 import { CREDITS_ACCOUNT_ID } from '@dorkos/shared/account-usage';
-import { refuseErrorUnlessOwner } from './cloud-owner-bar.js';
+import { errorRefusalUnlessOwner } from './cloud-owner-bar.js';
 import { readCallerPrincipal } from '../lib/caller-principal.js';
-import { getRequestAgentIdentity } from '../middleware/agent-identity.js';
+import type { ApiEnv } from '../http/api-chain.js';
+import { readJsonBody } from '../http/request-body.js';
+import { honoRequestFacts } from '../http/request-facts.js';
+import { readQuery } from '../http/request-query.js';
 import { resolveStanding } from '../services/notifications/notification-service.js';
 import { raiseStanding } from '../services/notifications/standing-events.js';
 import { resolveScheduleParkPayload } from '../services/notifications/emitters/schedule-park.js';
@@ -79,8 +83,8 @@ import {
 } from '../services/tasks/task-write-policy.js';
 
 /**
- * Refuse a task write that reaches for a field only a person may set (DOR-504),
- * answering on `res` when it does.
+ * Refuse a task write that reaches for a field only a person may set (DOR-504):
+ * the 403 body to answer with, or `null` when the write may go on.
  *
  * ## Why this route needs a caller check when the MCP twin does not
  *
@@ -100,7 +104,7 @@ import {
  *
  * ## Read the RAW body, and refuse it whole
  *
- * The check runs before `parseBody` for two reasons. It has to see what the
+ * The check runs before the schema parse for two reasons. It has to see what the
  * CALLER sent rather than what the route resolved: an omitted `permissionMode`
  * is filled in from the operator's own trust stop a few lines later
  * (`resolveScheduledRunPermissionMode`), and a guard reading the resolved value
@@ -110,25 +114,23 @@ import {
  * anything is parsed or written is what makes the refusal whole: a caller is
  * never told a change landed when only part of it did.
  *
- * @param req - The incoming request, whose raw body is inspected.
- * @param res - The response, answered with 403 when a field is refused.
+ * @param body - The raw request body, as the caller sent it.
  * @param trusted - Whether the caller cleared {@link clearsTheAgentBar}. Passed in
  *   rather than resolved here because `POST /` needs the same answer a second
  *   time — it decides whether the new task parks at `pending_approval`
  *   (`createScheduledTask`) — and asking twice would let the two uses disagree.
- * @returns True when the request was refused and the route must stop.
+ * @returns The refusal, answered with 403 by the route, or `null`.
  */
-function refusedOperatorOnlyTaskWrite(req: Request, res: Response, trusted: boolean): boolean {
-  if (trusted) return false;
-  const operatorOnly = findOperatorOnlyTaskFields(req.body);
-  if (operatorOnly.length === 0) return false;
-  res.status(403).json({
+function operatorOnlyTaskRefusal(body: unknown, trusted: boolean) {
+  if (trusted) return null;
+  const operatorOnly = findOperatorOnlyTaskFields(body);
+  if (operatorOnly.length === 0) return null;
+  return {
     error: OPERATOR_ONLY_TASK_ERROR,
     code: OPERATOR_ONLY_TASK_CODE,
     fields: operatorOnly,
     message: describeOperatorOnlyTaskRefusal(operatorOnly),
-  });
-  return true;
+  };
 }
 
 /**
@@ -228,26 +230,34 @@ function namesCredits(body: unknown): boolean {
   );
 }
 
+/** What the Tasks routes read, handed over by `startup/tasks.ts` when Tasks started. */
+export interface TasksRouterDeps {
+  /** TaskStore for data persistence. */
+  store: TaskStore;
+  /** TaskSchedulerService for dispatch and run-time queries. */
+  scheduler: TaskSchedulerService;
+  /**
+   * The one seam that turns a row into a live cron job, shared with the file
+   * watcher and the reconciler so all four writers agree.
+   */
+  registrar: TaskRegistrar;
+  /** Resolved data directory path. */
+  dorkHome: string;
+  /** Resolves agent project paths; absent when Mesh is disabled. */
+  meshCore?: MeshCore;
+  /** Where task writes are recorded; absent in a test that does not watch it. */
+  activity?: ActivityService;
+}
+
 /**
- * Create the Tasks router with schedule and run management endpoints.
+ * Create the Tasks routes with schedule and run management endpoints.
  *
- * @param store - TaskStore for data persistence
- * @param scheduler - TaskSchedulerService for dispatch and run-time queries
- * @param registrar - The one seam that turns a row into a live cron job, shared
- *   with the file watcher and the reconciler so all four writers agree
- * @param dorkHome - Resolved data directory path
- * @param meshCore - Optional MeshCore for resolving agent project paths
- * @param activityService - Optional ActivityService for emitting activity events
+ * @param deps - See {@link TasksRouterDeps}.
+ * @returns The routes, to mount at `/api/tasks`.
  */
-export function createTasksRouter(
-  store: TaskStore,
-  scheduler: TaskSchedulerService,
-  registrar: TaskRegistrar,
-  dorkHome: string,
-  meshCore?: MeshCore,
-  activityService?: ActivityService
-): Router {
-  const router = Router();
+export function createTasksRoutes(deps: TasksRouterDeps): Hono<ApiEnv> {
+  const { store, scheduler, registrar, dorkHome, meshCore, activity: activityService } = deps;
+  const router = new Hono<ApiEnv>();
 
   /**
    * Describe when a task will run, for one task on its way out of this router.
@@ -311,21 +321,25 @@ export function createTasksRouter(
 
   // === Template endpoints ===
 
-  router.get('/templates', async (_req, res) => {
+  router.get('/templates', async (c) => {
     const templates = await loadTemplates(dorkHome);
-    return res.json(templates);
+    return c.json(templates);
   });
 
   // === Schedule endpoints ===
 
-  router.get('/', async (_req, res) => {
-    res.json(await presentAll(store.getTasks()));
-  });
+  router.get('/', async (c) => c.json(await presentAll(store.getTasks())));
 
-  router.post('/', async (req, res) => {
-    const trusted = clearsTheAgentBar(req, res);
-    if (refusedOperatorOnlyTaskWrite(req, res, trusted)) return;
-    if (namesCredits(req.body) && refuseErrorUnlessOwner(req, res, TASK_ON_CREDITS)) return;
+  router.post('/', async (c) => {
+    const caller = honoRequestFacts(c);
+    const body = readJsonBody(c);
+    const trusted = clearsTheAgentBar(caller);
+    const operatorOnly = operatorOnlyTaskRefusal(body, trusted);
+    if (operatorOnly) return c.json(operatorOnly, 403);
+    const creditsRefusal = namesCredits(body)
+      ? errorRefusalUnlessOwner(caller, TASK_ON_CREDITS)
+      : undefined;
+    if (creditsRefusal) return c.json(creditsRefusal, 403);
 
     // Everything from "is this a valid request" to "the cron job is running" lives
     // in `createScheduledTask`, because `tasks_create` on both MCP servers has to
@@ -335,30 +349,33 @@ export function createTasksRouter(
     const outcome = await createScheduledTask(
       { store, registrar, dorkHome, ...(meshCore && { meshCore }) },
       {
-        input: req.body,
+        input: body as CreateTaskInput,
         trusted,
         // Stamped from the RESOLVED credential, never from the body:
         // `getRequestAgentIdentity` answers only for a caller that presented a
         // live token, so an unidentified one leaves this null and the approval
         // card honestly says it does not know who asked.
-        proposal: { agentPath: getRequestAgentIdentity(res)?.agentPath ?? null },
+        proposal: { agentPath: caller.agentIdentity?.agentPath ?? null },
       }
     );
 
     if (!outcome.ok) {
-      return res.status(outcome.status).json({
-        error: outcome.error,
-        ...(outcome.code !== undefined && { code: outcome.code }),
-        ...(outcome.ownedBy !== undefined && { ownedBy: outcome.ownedBy }),
-        ...(outcome.details !== undefined && { details: outcome.details }),
-      });
+      return c.json(
+        {
+          error: outcome.error,
+          ...(outcome.code !== undefined && { code: outcome.code }),
+          ...(outcome.ownedBy !== undefined && { ownedBy: outcome.ownedBy }),
+          ...(outcome.details !== undefined && { details: outcome.details }),
+        },
+        outcome.status
+      );
     }
     const schedule = outcome.task;
 
     activityService?.emit({
       // An untrusted caller reaches here too — its schedule is parked and clamped,
       // not refused — so the proposer is named rather than assumed (DOR-1829).
-      ...readActivityActor(req, res),
+      ...readActivityActor(caller),
       category: 'tasks',
       eventType: 'tasks.task_created',
       resourceType: 'schedule',
@@ -372,66 +389,64 @@ export function createTasksRouter(
     // so they must be attached here the same way the list endpoint does —
     // otherwise a freshly created task reports none of them until the next list
     // fetch.
-    return res.status(201).json(await present(schedule));
+    return c.json(await present(schedule), 201);
   });
 
-  router.patch('/:id', async (req, res) => {
-    const trusted = clearsTheAgentBar(req, res);
-    if (refusedOperatorOnlyTaskWrite(req, res, trusted)) return;
+  router.patch('/:id', async (c) => {
+    const caller = honoRequestFacts(c);
+    const id = c.req.param('id');
+    const body = readJsonBody(c);
+    const trusted = clearsTheAgentBar(caller);
+    const operatorOnly = operatorOnlyTaskRefusal(body, trusted);
+    if (operatorOnly) return c.json(operatorOnly, 403);
 
-    // Before `parseBody`, which is a non-strict `z.object` and therefore drops
+    // Before the schema parse, which is a non-strict `z.object` and therefore drops
     // anything it does not recognise WITHOUT saying so. A caller that sent
     // `agentId` was answered 200 with an unchanged task, which is a lie about its
     // own request (DOR-1568). Applied to every caller, operator included: a typo
     // in a field name should be loud on the cockpit's own edits too, and the
     // client only ever sends `UpdateTaskRequest` fields.
-    const unknownFields = refuseUnknownTaskUpdateFields(req.body);
-    if (unknownFields) return res.status(400).json(unknownFields);
+    const unknownFields = refuseUnknownTaskUpdateFields(body);
+    if (unknownFields) return c.json(unknownFields, 400);
 
-    const data = parseBody(UpdateTaskRequestSchema, req.body, res);
-    if (!data) return;
+    const parsed = UpdateTaskRequestSchema.safeParse(body);
+    if (!parsed.success) return c.json(validationFailureBody(parsed.error), 400);
+    const data = parsed.data;
 
-    const existing = store.getTask(req.params.id);
+    const existing = store.getTask(id);
     if (!existing) {
-      return res.status(404).json({ error: 'Scheduled task not found' });
+      return c.json({ error: 'Scheduled task not found' }, 404);
     }
 
     // Naming DorkOS credits, or approving a schedule that runs on them, spends
     // the DorkOS account's money: the owner's call alone (DOR-2652).
     const runsOnCredits =
       (data.account !== undefined ? data.account : existing.account) === CREDITS_ACCOUNT_ID;
-    if (
-      (namesCredits(req.body) || (data.status === 'active' && runsOnCredits)) &&
-      refuseErrorUnlessOwner(req, res, TASK_ON_CREDITS)
-    ) {
-      return;
-    }
     // Switching a credits schedule back on starts it spending again, so it is
     // the owner's call too, whoever asks (DOR-2678).
-    if (
-      runsOnCredits &&
-      data.enabled === true &&
-      !existing.enabled &&
-      refuseErrorUnlessOwner(req, res, TASK_ON_CREDITS)
-    ) {
-      return;
-    }
+    const creditsRefusal =
+      namesCredits(body) ||
+      (data.status === 'active' && runsOnCredits) ||
+      (runsOnCredits && data.enabled === true && !existing.enabled)
+        ? errorRefusalUnlessOwner(caller, TASK_ON_CREDITS)
+        : undefined;
+    if (creditsRefusal) return c.json(creditsRefusal, 403);
     // Whether this caller's edit keeps a live schedule approved (re-arms it)
     // rather than parking it for a person to look at. A person's does — but
     // for a schedule on DorkOS credits only the owner's (DOR-2678): another
     // signed-in account's edit parks it for the owner to approve, the way an
     // agent's does.
-    const rearms = trusted && (!runsOnCredits || refuseUnlessAccountOwner(req, res) === undefined);
+    const rearms = trusted && (!runsOnCredits || refuseUnlessAccountOwner(caller) === undefined);
 
     // A new timing and the package's own timing are two different answers to
     // one question; the request has to pick (DOR-2302).
     const timingConflict = conflictingTimingRequest(data);
-    if (timingConflict) return res.status(400).json({ error: timingConflict });
+    if (timingConflict) return c.json({ error: timingConflict }, 400);
 
     // A sticky schedule's conversation cannot move to another account once it
     // has started (DOR-2384). Refused before the file is touched.
     const accountLocked = refuseStickyAccountChange(store, existing, data);
-    if (accountLocked) return res.status(400).json(accountLocked);
+    if (accountLocked) return c.json(accountLocked, 400);
 
     // The account rule (spec `flow-multiproject` §8.4, D7): nobody, a person
     // included, points a schedule at an account that may not work where its
@@ -447,7 +462,7 @@ export function createTasksRouter(
           })
         : null;
     if (accountRefusal) {
-      return res.status(409).json(accountRefusal.toBody());
+      return c.json(accountRefusal.toBody(), 409);
     }
     // A schedule whose runs go on DorkOS credits names a model credits serve
     // (DOR-2636). Asked when the request moves the model, the account or the
@@ -462,7 +477,7 @@ export function createTasksRouter(
         ),
       });
       if (modelRefusal) {
-        return res.status(400).json({ error: modelRefusal, code: 'UNSUPPORTED_MODEL' });
+        return c.json({ error: modelRefusal, code: 'UNSUPPORTED_MODEL' }, 400);
       }
     }
 
@@ -478,13 +493,13 @@ export function createTasksRouter(
         data.timezone !== undefined ? data.timezone : existing.timezone
       );
       if (problem) {
-        return res.status(400).json({ error: problem });
+        return c.json({ error: problem }, 400);
       }
     }
 
     // A caller that cannot NAME `bypassPermissions` must not be able to KEEP one
     // by rewriting what the approved run does (security re-review). `permissionMode`
-    // is operator-only, so `refusedOperatorOnlyTaskWrite` has already 403'd any
+    // is operator-only, so `operatorOnlyTaskRefusal` has already 403'd any
     // non-trusted caller that tried to set the mode — but `prompt`, `cron`, and
     // `name` are agent-writable, and this route writes the file and the row
     // TOGETHER: it keeps the file's `permissions: bypassPermissions` and updates
@@ -535,11 +550,14 @@ export function createTasksRouter(
       { existing, data, clampTo }
     );
     if (!fileOutcome.ok) {
-      return res.status(fileOutcome.status).json({
-        error: fileOutcome.error,
-        ...(fileOutcome.code !== undefined && { code: fileOutcome.code }),
-        ...(fileOutcome.ownedBy !== undefined && { ownedBy: fileOutcome.ownedBy }),
-      });
+      return c.json(
+        {
+          error: fileOutcome.error,
+          ...(fileOutcome.code !== undefined && { code: fileOutcome.code }),
+          ...(fileOutcome.ownedBy !== undefined && { ownedBy: fileOutcome.ownedBy }),
+        },
+        fileOutcome.status
+      );
     }
     const { changesFile, timingLandsOn } = fileOutcome;
     // What would run before this write, as it RUNS, and the status it had: what
@@ -548,9 +566,9 @@ export function createTasksRouter(
 
     const rowData =
       fileOutcome.clampApplied && clampTo ? { ...data, permissionMode: clampTo } : data;
-    let updated = store.updateTask(req.params.id, rowData, { timingLandsOn });
+    let updated = store.updateTask(id, rowData, { timingLandsOn });
     if (!updated) {
-      return res.status(404).json({ error: 'Scheduled task not found' });
+      return c.json({ error: 'Scheduled task not found' }, 404);
     }
 
     // **Re-assert the status the caller asked for.** The file is written before
@@ -576,7 +594,7 @@ export function createTasksRouter(
       ? (data.status ?? (changesFile && existing.status === 'active' ? 'active' : undefined))
       : undefined;
     if (intendedStatus !== undefined && updated.status !== intendedStatus) {
-      updated = store.updateTask(req.params.id, { status: intendedStatus }) ?? updated;
+      updated = store.updateTask(id, { status: intendedStatus }) ?? updated;
     }
 
     // **A person editing their own live schedule re-approves it.**
@@ -620,11 +638,11 @@ export function createTasksRouter(
     if (data.enabled === false && activityService) {
       activityService.emit({
         // `enabled` is agent-writable, so an agent can pause somebody's schedule.
-        ...readActivityActor(req, res),
+        ...readActivityActor(caller),
         category: 'tasks',
         eventType: 'tasks.task_paused',
         resourceType: 'schedule',
-        resourceId: req.params.id,
+        resourceId: id,
         resourceLabel: updated.displayName ?? updated.name,
         summary: `Paused scheduled task ${updated.displayName ?? updated.name}`,
         linkPath: '/',
@@ -644,11 +662,11 @@ export function createTasksRouter(
       activityService
     ) {
       activityService.emit({
-        ...readActivityActor(req, res),
+        ...readActivityActor(caller),
         category: 'tasks',
         eventType: 'tasks.task_resumed',
         resourceType: 'schedule',
-        resourceId: req.params.id,
+        resourceId: id,
         resourceLabel: updated.displayName ?? updated.name,
         summary: `Switched on scheduled task ${updated.displayName ?? updated.name}`,
         linkPath: '/',
@@ -663,7 +681,7 @@ export function createTasksRouter(
     // A proposal an agent made is clamped on the way in and cannot name its own
     // power (`createScheduledTask`, DOR-504/607/823); the person approving it
     // can, because `permissionMode` is operator-only and
-    // `refusedOperatorOnlyTaskWrite` has already 403'd anyone who did not clear
+    // `operatorOnlyTaskRefusal` has already 403'd anyone who did not clear
     // the agent bar. Nothing extra is needed to let that through — `updateTask`
     // writes the field and `applyTaskFileUpdate` puts it in the SKILL.md, so the
     // grant survives the next sync the same way a person's own edit does. What
@@ -673,7 +691,7 @@ export function createTasksRouter(
     // raised or not, because "approved at the level it asked for" is the fact
     // that makes a raise legible as a raise.
     if (existing.status === 'pending_approval' && updated.status === 'active') {
-      const actorPrincipal = readCallerPrincipal(req, res);
+      const actorPrincipal = readCallerPrincipal(caller);
       const raised = updated.permissionMode !== existing.permissionMode;
       // Resolved before the call rather than inside its argument: it reads the
       // agent's manifest off disk, and an await buried in a template literal
@@ -683,11 +701,11 @@ export function createTasksRouter(
         // Read, never assumed: only a caller that cleared the agent bar reaches
         // this line, but that bar is a no-op under the shipped login-off posture
         // (the documented DOR-505 residual), so the feed says who actually asked.
-        ...readActivityActor(req, res),
+        ...readActivityActor(caller),
         category: 'tasks',
         eventType: 'tasks.task_approved',
         resourceType: 'schedule',
-        resourceId: req.params.id,
+        resourceId: id,
         resourceLabel: updated.displayName ?? updated.name,
         summary:
           `Approved scheduled task ${updated.displayName ?? updated.name}, ` +
@@ -714,7 +732,7 @@ export function createTasksRouter(
     //
     // Unlike the create path above there is NO reason gate here, and that is a
     // fact about who can reach this line rather than an omission. `status` is
-    // operator-only (`task-write-policy.ts`), so `refusedOperatorOnlyTaskWrite`
+    // operator-only (`task-write-policy.ts`), so `operatorOnlyTaskRefusal`
     // has already 403'd any caller that did not clear the agent bar — a schedule
     // can only be PATCHed into `pending_approval` by the operator, and an
     // operator parking their own task owes nobody an explanation. A `reason` sent
@@ -726,17 +744,18 @@ export function createTasksRouter(
       // saying so, and an agent's `reason` must not be written over it.
       const parkReason = data.status === 'pending_approval' ? data.reason?.trim() : undefined;
       if (parkReason) {
-        updated = store.recordProposal(req.params.id, { reason: parkReason }) ?? updated;
+        updated = store.recordProposal(id, { reason: parkReason }) ?? updated;
       }
       raiseStanding('schedule.parked', await resolveScheduleParkPayload(updated));
     }
 
     broadcastTasksChanged();
 
-    return res.json(await present(updated));
+    return c.json(await present(updated));
   });
 
-  router.delete('/:id', async (req, res) => {
+  router.delete('/:id', async (c) => {
+    const caller = honoRequestFacts(c);
     // Deleting a schedule is never a power-grant, so this is nuisance/DoS
     // protection, not the operator bar the create/update path runs: under
     // login-on a caller holding a per-user API key but no session cookie must
@@ -746,18 +765,21 @@ export function createTasksRouter(
     // DOR-505 residual, where a credential-free loopback request is
     // indistinguishable from the cockpit — exactly as it is everywhere
     // `requireOperatorCookieUnderLogin` runs.
-    const cookieRefusal = requireOperatorCookieUnderLogin(res, 'delete a scheduled task');
+    const cookieRefusal = requireOperatorCookieUnderLogin(caller, 'delete a scheduled task');
     if (cookieRefusal) {
-      return res.status(cookieRefusal.status).json({
-        error: 'Only a person signed in to DorkOS can delete a scheduled task',
-        code: cookieRefusal.code,
-      });
+      return c.json(
+        {
+          error: 'Only a person signed in to DorkOS can delete a scheduled task',
+          code: cookieRefusal.code,
+        },
+        cookieRefusal.status as ContentfulStatusCode
+      );
     }
 
-    const { id } = req.params;
+    const id = c.req.param('id');
     const schedule = store.getTask(id);
     if (!schedule) {
-      return res.status(404).json({ error: 'Scheduled task not found' });
+      return c.json({ error: 'Scheduled task not found' }, 404);
     }
 
     // The file goes first, through the seam `tasks_delete` shares: a row deleted
@@ -772,7 +794,7 @@ export function createTasksRouter(
     activityService?.emit({
       // The cookie bar above allows everything in the shipped login-off posture,
       // so this is not always the person.
-      ...readActivityActor(req, res),
+      ...readActivityActor(caller),
       category: 'tasks',
       eventType: 'tasks.task_deleted',
       resourceType: 'schedule',
@@ -785,7 +807,7 @@ export function createTasksRouter(
     // is this endpoint. Only a schedule that was actually waiting counts: a
     // person tidying up a task they never had to approve is not a rejection.
     if (schedule.status === 'pending_approval') {
-      const actorPrincipal = readCallerPrincipal(req, res);
+      const actorPrincipal = readCallerPrincipal(caller);
       void resolveScheduleParkPayload(schedule).then((payload) =>
         resolveStanding('schedule.parked', payload, { outcome: 'rejected', actorPrincipal })
       );
@@ -793,10 +815,12 @@ export function createTasksRouter(
 
     broadcastTasksChanged();
 
-    return res.json({ success: true });
+    return c.json({ success: true });
   });
 
-  router.post('/:id/trigger', async (req, res) => {
+  router.post('/:id/trigger', async (c) => {
+    const caller = honoRequestFacts(c);
+    const id = c.req.param('id');
     // The door that skips every other door (DOR-1481). This was the only write
     // endpoint on the router that asked nothing at all, and it undid the
     // approval the other two exist to protect: an agent creates a schedule,
@@ -812,38 +836,41 @@ export function createTasksRouter(
     // the approval card and the only way to find out what a proposal actually
     // does short of approving it
     // (`services/tasks/__tests__/trigger-pending-schedule.test.ts`).
-    if (!clearsTheAgentBar(req, res)) {
-      return res.status(403).json({
-        error: OPERATOR_ONLY_TASK_ERROR,
-        code: OPERATOR_ONLY_TASK_CODE,
-        // Empty on purpose, and present on purpose: the other two refusal sites
-        // on this router always send `fields`, so a caller that reads it should
-        // not have to handle the key being missing here. Nothing was refused
-        // FIELD-by-field — the whole action was — and an empty list says that.
-        fields: [],
-        message: OPERATOR_ONLY_TRIGGER_REFUSAL,
-      });
+    if (!clearsTheAgentBar(caller)) {
+      return c.json(
+        {
+          error: OPERATOR_ONLY_TASK_ERROR,
+          code: OPERATOR_ONLY_TASK_CODE,
+          // Empty on purpose, and present on purpose: the other two refusal sites
+          // on this router always send `fields`, so a caller that reads it should
+          // not have to handle the key being missing here. Nothing was refused
+          // FIELD-by-field — the whole action was — and an empty list says that.
+          fields: [],
+          message: OPERATOR_ONLY_TRIGGER_REFUSAL,
+        },
+        403
+      );
     }
 
-    if (
-      store.getTask(req.params.id)?.account === CREDITS_ACCOUNT_ID &&
-      refuseErrorUnlessOwner(req, res, TASK_ON_CREDITS)
-    ) {
-      return;
-    }
+    const creditsRefusal =
+      store.getTask(id)?.account === CREDITS_ACCOUNT_ID
+        ? errorRefusalUnlessOwner(caller, TASK_ON_CREDITS)
+        : undefined;
+    if (creditsRefusal) return c.json(creditsRefusal, 403);
 
-    const run = await scheduler.triggerManualRun(req.params.id);
+    const run = await scheduler.triggerManualRun(id);
     if (!run) {
-      return res.status(404).json({ error: 'Scheduled task not found' });
+      return c.json({ error: 'Scheduled task not found' }, 404);
     }
-    return res.status(201).json({ runId: run.id });
+    return c.json({ runId: run.id }, 201);
   });
 
   // === Run endpoints ===
 
-  router.get('/runs', (req, res) => {
-    const data = parseBody(ListTaskRunsQuerySchema, req.query, res);
-    if (!data) return;
+  router.get('/runs', (c) => {
+    const parsed = ListTaskRunsQuerySchema.safeParse(readQuery(c));
+    if (!parsed.success) return c.json(validationFailureBody(parsed.error), 400);
+    const data = parsed.data;
 
     const runs = store.listRuns({
       taskId: data.scheduleId,
@@ -851,52 +878,57 @@ export function createTasksRouter(
       limit: data.limit,
       offset: data.offset,
     });
-    return res.json(runs);
+    return c.json(runs);
   });
 
-  router.get('/runs/:id', (req, res) => {
-    const run = store.getRun(req.params.id);
+  router.get('/runs/:id', (c) => {
+    const run = store.getRun(c.req.param('id'));
     if (!run) {
-      return res.status(404).json({ error: 'Run not found' });
+      return c.json({ error: 'Run not found' }, 404);
     }
-    res.json(run);
+    return c.json(run);
   });
 
-  router.post('/runs/:id/cancel', async (req, res) => {
+  router.post('/runs/:id/cancel', async (c) => {
+    const caller = honoRequestFacts(c);
+    const id = c.req.param('id');
     // Cancelling a run is never a power-grant either, so — like DELETE above —
     // this is nuisance/DoS protection: under login-on a caller with an API key
     // but no session cookie must not be able to stop a person's run for them.
     // Asked before the run is looked up. A no-op under login-off (the DOR-505
     // residual), so the shipped default posture is unchanged.
-    const cookieRefusal = requireOperatorCookieUnderLogin(res, 'cancel a scheduled run');
+    const cookieRefusal = requireOperatorCookieUnderLogin(caller, 'cancel a scheduled run');
     if (cookieRefusal) {
-      return res.status(cookieRefusal.status).json({
-        error: 'Only a person signed in to DorkOS can cancel a scheduled run',
-        code: cookieRefusal.code,
-      });
+      return c.json(
+        {
+          error: 'Only a person signed in to DorkOS can cancel a scheduled run',
+          code: cookieRefusal.code,
+        },
+        cookieRefusal.status as ContentfulStatusCode
+      );
     }
 
-    const run = store.getRun(req.params.id);
-    const outcome = await scheduler.cancelRun(req.params.id);
+    const run = store.getRun(id);
+    const outcome = await scheduler.cancelRun(id);
 
     if (outcome.state === 'not_found') {
-      return res.status(404).json({ error: 'Run not found' });
+      return c.json({ error: 'Run not found' }, 404);
     }
     if (outcome.state === 'unconfirmed') {
       // 502: the request left this server and nothing answered for it. Saying
       // "cancelled" here would be a claim about a run we cannot see.
-      return res.status(502).json({ error: outcome.reason });
+      return c.json({ error: outcome.reason }, 502);
     }
     // Nothing was stopped, so nothing happened worth telling the activity feed.
     if (outcome.state === 'already_finished') {
-      return res.json({ success: true, state: 'already_finished' });
+      return c.json({ success: true, state: 'already_finished' });
     }
 
     if (activityService && run) {
       const schedule = store.getTask(run.scheduleId);
       activityService.emit({
         // Same login-off residual as DELETE above.
-        ...readActivityActor(req, res),
+        ...readActivityActor(caller),
         category: 'tasks',
         eventType: 'tasks.run_cancelled',
         resourceType: 'schedule',
@@ -907,7 +939,7 @@ export function createTasksRouter(
       });
     }
 
-    return res.json({ success: true, state: 'stopping' });
+    return c.json({ success: true, state: 'stopping' });
   });
 
   return router;

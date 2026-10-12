@@ -57,16 +57,30 @@ async function mountApp(): Promise<Mods> {
   const configManager = configModule.configManager;
   const { setAccountUsageStore } = await import('../../services/core/usage/current-usage-store.js');
   const configRouter = (await import('../config.js')).default;
-  const runtimesRouter = (await import('../runtimes.js')).default;
+  const { createRuntimesRoutes } = await import('../runtimes.js');
+  const { honoGroupListener } = await import('../../http/__tests__/hono-group-listener.js');
+  const user = { userId: 'user_cockpit', credential: 'cookie' } as const;
   const app = express();
   app.use(express.json());
   app.use((_req, res, next) => {
-    res.locals.user = { userId: 'user_cockpit', credential: 'cookie' };
+    res.locals.user = user;
     next();
   });
   app.use('/api/config', configRouter);
-  app.use('/api/runtimes', runtimesRouter);
-  target.mount(app);
+  // The runtimes routes answer from the Hono `/api` app, in front of the config
+  // router still on Express, as the running server routes them.
+  target.mount(
+    honoGroupListener(
+      { path: '/api/runtimes', routes: createRuntimesRoutes() },
+      {
+        legacy: app,
+        before: (c, next) => {
+          c.set('user', user);
+          return next();
+        },
+      }
+    )
+  );
   return { configManager, setAccountUsageStore };
 }
 
@@ -150,6 +164,10 @@ describe('PATCH /api/config: account usage catches up before the answer', () => 
     };
   }
 
+  // The first test in this file pays for loading the config and runtimes routers cold (about
+  // 1.2 s idle, against about 0.1 s for every later test), and under heavy load that alone passed
+  // vitest's 5 s default (DOR-2550). The scan itself waits on `hold()` signals, not the clock, so
+  // the timeout at the end is generous rather than tuned, as in DOR-2478.
   it('lists no standalone `default` once a save registers its folder, even with a scan in flight', async () => {
     const mods = await mountApp();
     const main = accountFolder('.claude');
@@ -188,7 +206,7 @@ describe('PATCH /api/config: account usage catches up before the answer', () => 
     const ids = after.body.accounts.map((a: { accountId: string }) => a.accountId);
     expect(ids).not.toContain('default');
     expect(ids).toContain('claude');
-  });
+  }, 30_000);
 
   it('does not loop when the reconcile writes config itself', async () => {
     const mods = await mountApp();

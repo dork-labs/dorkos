@@ -5,38 +5,20 @@ import cors from 'cors';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import sessionRoutes from './routes/sessions.js';
-import directoryRoutes from './routes/directory.js';
 import configRoutes from './routes/config.js';
-import fileRoutes from './routes/files.js';
-import diffRoutes from './routes/diff.js';
-import capabilitiesRoutes from './routes/capabilities.js';
-import workbenchServeRoutes from './routes/workbench-serve.js';
-import gitRoutes from './routes/git.js';
-import workspaceRoutes from './routes/workspaces.js';
-import projectRoutes from './routes/projects.js';
 import roomRoutes from './routes/rooms.js';
 import canvasDocEventRoutes, { canvasDocJsonParser } from './routes/canvas-doc-events.js';
 import { createCommunityConnectionsRouter } from './routes/community-connections.js';
 import { createRemoteCommunitiesRouter } from './routes/remote-communities.js';
 import { gateCommunityConnections, gateRemoteCommunities } from './middleware/spaces-enabled.js';
-import readCursorRoutes from './routes/read-cursors.js';
-import tunnelRoutes from './routes/tunnel.js';
-import { createRemoteAccessRouter } from './routes/remote-access.js';
-import cloudRoutes from './routes/cloud.js';
 import onboardingRoutes from './routes/onboarding.js';
 import feedbackRoutes, { feedbackJsonParser } from './routes/feedback.js';
-import runtimesRoutes from './routes/runtimes.js';
-import uploadRoutes from './routes/uploads.js';
 import mcpConfigRoutes from './routes/mcp-config.js';
 import debugRoutes from './routes/debug.js';
 import eventsRouter from './routes/events.js';
 import { errorHandler } from './middleware/error-handler.js';
 import { hostGuard } from './middleware/host-guard.js';
 import { managedHostGuard } from './middleware/managed-host-guard.js';
-import {
-  createConnectorSignedIngress,
-  type ConnectorSignedIngress,
-} from './services/connectors/events/signed-ingress.js';
 import { requestLogger } from './middleware/request-logger.js';
 import { resolveAgentIdentity } from './middleware/agent-identity.js';
 import { auditActor } from './middleware/audit-actor.js';
@@ -76,10 +58,7 @@ function buildCors(): express.RequestHandler {
 }
 
 /** Create and configure the Express application with middleware and routes. */
-export function createApp(options: {
-  admission: MainRequestAdmission;
-  connectorEventIngress?: ConnectorSignedIngress;
-}) {
+export function createApp(options: { admission: MainRequestAdmission }) {
   const app = express();
   app.use(terminalAdmission(options.admission));
   // A managed remote-access hostname is served only through the managed
@@ -142,18 +121,13 @@ export function createApp(options: {
   // 127.0.0.1 is same-origin to the browser, so it sends no preflight and
   // satisfies both the no-Origin and the same-origin branches above. The `Host`
   // header still says `evil.com`, and this rejects it. Mounted before
-  // `express.json` so a rejected body is never parsed. (Better Auth now answers
-  // from the Hono chain, behind that chain's copy of this guard:
-  // `http/better-auth.ts`.) Inert when login is on (auth
+  // `express.json` so a rejected body is never parsed. (Better Auth and the
+  // signed connector webhook now answer from the Hono chain, behind that
+  // chain's copy of this guard: `http/better-auth.ts`,
+  // `services/connectors/events/signed-ingress.ts`.) Inert when login is on (auth
   // cookies are origin-scoped) or when the container escape hatch is set — see
   // `middleware/host-guard.ts`.
   app.use('/api', hostGuard);
-  if (options.connectorEventIngress) {
-    app.post(
-      '/api/connectors/webhooks/:providerInstanceId',
-      ...createConnectorSignedIngress(options.connectorEventIngress)
-    );
-  }
 
   // Feedback submissions carry an opt-in screenshot inline as a `data:` URL, so
   // this one path parses with a larger ceiling than the app-wide limit below.
@@ -174,15 +148,16 @@ export function createApp(options: {
   // Session gate — when `config.auth.enabled` is true, require a Better Auth
   // session cookie or a per-user API key on `/api/*` and `/mcp` (exemptions for
   // SPA assets, `/api/auth/*`, and `/api/health`). Mounted app-wide before the
-  // API routes so it also covers the `/mcp` mount added later on this same app
-  // in `index.ts`. Zero-overhead pass-through when login is disabled.
+  // API routes so it also covers the mounts `index.ts` adds later on this same
+  // app. (`/mcp` itself answers from the Hono chain, which runs the same gate.)
+  // Zero-overhead pass-through when login is disabled.
   app.use(sessionGate);
 
   // Agent identity — resolves an `X-DorkOS-Agent` token onto
   // `res.locals.agentIdentity` so capability invocations can be attributed to
   // the agent that made them. Mounted AFTER `sessionGate` (which owns the
-  // auth decision) and before the routes, app-wide so it also covers the `/mcp`
-  // mount added later in `index.ts`. Never rejects: a request without a token
+  // auth decision) and before the routes, app-wide so it also covers the mounts
+  // added later in `index.ts`. Never rejects: a request without a token
   // behaves exactly as it does today.
   app.use(resolveAgentIdentity);
   // Who is acting, for the audit log (spec `audit-trail`). After both gates,
@@ -193,14 +168,7 @@ export function createApp(options: {
 
   // API routes
   app.use('/api/sessions', sessionRoutes);
-  app.use('/api/directory', directoryRoutes);
   app.use('/api/config', configRoutes);
-  app.use('/api/files', fileRoutes);
-  app.use('/api/diff', diffRoutes);
-  app.use('/api/workbench', workbenchServeRoutes);
-  app.use('/api/git', gitRoutes);
-  app.use('/api/workspaces', workspaceRoutes);
-  app.use('/api/projects', projectRoutes);
   app.use('/api/rooms', roomRoutes);
   app.use('/api/canvas/docs', canvasDocEventRoutes);
   // Spaces are an experiment, off by default (DOR-2740): both refuse until a
@@ -213,16 +181,9 @@ export function createApp(options: {
     createCommunityConnectionsRouter()
   );
   app.use('/api/communities', gateRemoteCommunities(), createRemoteCommunitiesRouter());
-  app.use('/api/read-cursors', readCursorRoutes);
-  app.use('/api/tunnel', tunnelRoutes);
-  app.use('/api/remote-access', createRemoteAccessRouter());
-  app.use('/api/cloud', cloudRoutes);
   app.use('/api/onboarding', onboardingRoutes);
   app.use('/api/feedback', feedbackRoutes);
-  app.use('/api/capabilities', capabilitiesRoutes);
-  app.use('/api/runtimes', runtimesRoutes);
   app.use('/api/events', eventsRouter);
-  app.use('/api/uploads', uploadRoutes);
   app.use('/api/mcp-config', mcpConfigRoutes);
   // Diagnostic reads (`GET /api/debug/*`). Mounted here rather than in
   // `index.ts` — it needs no singleton the composition root has to hand it, only

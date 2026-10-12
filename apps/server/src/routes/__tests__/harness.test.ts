@@ -41,7 +41,6 @@
  * @module routes/__tests__/harness
  */
 import { describe, expect, it, afterEach, beforeAll, afterAll, vi } from 'vitest';
-import express from 'express';
 import {
   existsSync,
   lstatSync,
@@ -53,6 +52,7 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
+import type { RequestListener } from 'node:http';
 import { dirname, join } from 'node:path';
 import request from '@dorkos/test-utils/supertest';
 import { listeningServer } from '@dorkos/test-utils/listening-server';
@@ -77,7 +77,8 @@ import {
   scanHookRequests,
   withProjectLock,
 } from '../../services/harness/project-with-consent.js';
-import { createHarnessRouter } from '../harness.js';
+import { createHarnessRoutes } from '../harness.js';
+import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
 
 /** Nobody has decided anything — the shape every case here runs under. */
 const NO_DECISIONS: HookDecisions = { approved: [], refused: [] };
@@ -106,6 +107,15 @@ let loginEnabled = false;
 
 /** Stands in for `sessionGate`'s resolved user, when a case signs one in. */
 let signedInUser: { userId: string; credential: 'cookie' | 'api-key' } | undefined;
+
+// Stands in for the session gate on the `/api` chain, which is what puts the
+// resolved user on the request in the real server. Without it there is no way
+// to ask what a signed-in operator gets, and the login-on cases would only
+// ever see the gate's own 401 rather than the route's answer.
+vi.mock('../../services/core/auth/session-gate.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../services/core/auth/session-gate.js')>()),
+  decideSessionGate: async () => ({ allowed: true, user: signedInUser }),
+}));
 
 vi.mock('../../services/core/config-manager.js', () => ({
   configManager: {
@@ -166,19 +176,9 @@ let emptyClaudeRoot: string;
 /** Temp directories to remove when the suite ends. */
 const staged: string[] = [];
 
-const app = express();
-// The POST takes a JSON body, and Express parses none by default. The GET never
-// needed this; without it `req.body` is undefined and every sync answers 400.
-app.use(express.json());
-// Stands in for `sessionGate`, which is what puts the resolved user on
-// `res.locals` in the real server. Without it there is no way to ask what a
-// signed-in operator gets, and the login-on cases would only ever see the
-// nobody-is-signed-in answer.
-app.use((_req, res, next) => {
-  if (signedInUser !== undefined) res.locals.user = signedInUser;
-  next();
-});
-const testServer = listeningServer(app);
+/** The routes behind the `/api` chain, built once `dorkHome` exists. */
+let app: RequestListener;
+const testServer = listeningServer((req, res) => app(req, res));
 
 /**
  * The message a broken dependency carries, with a path in it on purpose.
@@ -200,8 +200,8 @@ const READ_FAILURE = new Error('config store unreadable at /Users/someone/privat
  * dependency: both take the real module. They are the same two lines of `catch`,
  * so one case is what there is to have.
  */
-const failingApp = express();
-const failingServer = listeningServer(failingApp);
+let failingApp: RequestListener;
+const failingServer = listeningServer((req, res) => failingApp(req, res));
 
 beforeAll(async () => {
   boundaryRoot = realpathSync(mkdtempSync(join(tmpdir(), 'harness-route-boundary-')));
@@ -214,9 +214,9 @@ beforeAll(async () => {
   vi.stubEnv('DORK_HOME', dorkHome);
   emptyClaudeRoot = join(outside, 'claude-root-that-is-not-there');
   pinEmptyClaudeRoot();
-  // ONE mount, and it has to stay one: Express serves the FIRST router matching
-  // a path, so a second `app.use('/api/harness', …)` beside this one is dead
-  // code that silently takes over every request. A merge left two here — one
+  // ONE mount, and it has to stay one: the FIRST group matching a path serves
+  // it, so a second `/api/harness` group beside this one is dead code that
+  // silently takes over every request. A merge left two here — one
   // with the fixed `NO_DECISIONS` reader and no gateway, one with both — and the
   // first won: the sync suite's package hooks were withheld on every run (six
   // swept paths instead of nine), `HK-11` found no conflict because nothing
@@ -224,9 +224,9 @@ beforeAll(async () => {
   // had no gateway to ask through. `hookDecisions` starts as `NO_DECISIONS` and
   // `afterEach` puts it back, so the cases that want nobody to have decided
   // anything get exactly that from this one mount.
-  app.use(
-    '/api/harness',
-    createHarnessRouter({
+  app = honoGroupListener({
+    path: '/api/harness',
+    routes: createHarnessRoutes({
       dorkHome,
       readHookDecisions: () => hookDecisions,
       approvals: gateway,
@@ -234,18 +234,18 @@ beforeAll(async () => {
       // the first: this suite opens no config store at all, and the shipped
       // default reaches the running server's (DOR-1901).
       dorkosHarness: () => 'claude-code',
-    })
-  );
-  failingApp.use(
-    '/api/harness',
-    createHarnessRouter({
+    }),
+  });
+  failingApp = honoGroupListener({
+    path: '/api/harness',
+    routes: createHarnessRoutes({
       dorkHome,
       readHookDecisions: () => {
         throw READ_FAILURE;
       },
       dorkosHarness: () => 'claude-code',
-    })
-  );
+    }),
+  });
 });
 
 afterAll(() => {

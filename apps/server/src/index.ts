@@ -17,7 +17,6 @@ import { randomUUID } from 'node:crypto';
 import { createApp, finalizeApp } from './app.js';
 import { createFrontDoorServer, frontDoorListener } from './http/front-door.js';
 import { composeFrontDoor, type HonoApiDeps } from './http/hono-api.js';
-import { createSessionLocationsRouter } from './routes/session-locations.js';
 import { ManagedConnectorCloudError } from './services/core/auth/cloud-link-client.js';
 import { DoeRuntime } from './services/runtimes/doe/index.js';
 import { registerRuntimes } from './startup/runtimes.js';
@@ -82,8 +81,6 @@ import { warnAboutGitProtection, installedGitProtection } from './lib/git-safety
 import { initLogger, logger, logError } from './lib/logger.js';
 import { createDorkOsToolServer } from './services/runtimes/claude-code/mcp-tools/index.js';
 import { TaskStore } from './services/tasks/task-store.js';
-import { createNotificationsRouter } from './routes/notifications.js';
-import { createPushRouter } from './routes/push.js';
 import { NotificationStore } from './services/notifications/notification-store.js';
 import {
   connectorAgentRequestsChangedAnnouncer,
@@ -127,12 +124,9 @@ import { TaskRegistrar } from './services/tasks/task-registrar.js';
 import { setTasksInitError } from './services/tasks/task-state.js';
 import { RelayCore, AdapterRegistry, SignalEmitter, type AgentRuntimeLike } from '@dorkos/relay';
 import { createRelayRouter } from './routes/relay.js';
-import { createConnectorProvidersRouter } from './routes/connector-providers.js';
-import { createConnectorExecutionRouter } from './routes/connector-execution.js';
 import { ConnectorEventAccessQueryService } from './services/connectors/events/access-query-service.js';
-import { createConnectorResourcesRouter } from './routes/connector-resources.js';
-import { createConnectorManagementRouter } from './routes/connector-management.js';
-import { createConnectorEventsRouter } from './routes/connector-events.js';
+import type { ConnectorRoutesDeps } from './routes/connectors.js';
+import type { ConnectorSignedIngress } from './services/connectors/events/signed-ingress.js';
 import { ConnectorEventInboxStore } from './services/connectors/event-inbox-store.js';
 import { ConnectorSubscriptionStore } from './services/connectors/events/subscription-store.js';
 import { ConnectorSubscriptionService } from './services/connectors/events/subscription-service.js';
@@ -213,7 +207,6 @@ import { AgentMcpOAuthService } from './services/mesh/agent-mcp-oauth-service.js
 import { warmMcpOAuthTokens } from './services/mesh/warm-mcp-oauth-tokens.js';
 import { resumeAfterMcpSignin } from './services/mesh/mcp-signin-resume.js';
 import { createMcpRevocationWatch } from './services/mesh/mcp-revocation.js';
-import { createMcpOAuthRouter } from './routes/mcp-oauth.js';
 import type { McpCapabilityDeps } from './services/mesh/mcp-capability-deps.js';
 import {
   relayStartsEnabled,
@@ -225,14 +218,11 @@ import { createAgentSubjectResolver } from './services/relay/initiate-consent.js
 import { TraceStore } from './services/relay/trace-store.js';
 import { NotifyBudget } from './services/relay/notify-budget.js';
 import { MeshCore, type AdoptedAgent } from '@dorkos/mesh';
-import { createMeshRouter } from './routes/mesh.js';
 import { setMeshInitError } from './services/mesh/mesh-state.js';
 import { ensureDorkBot } from './services/mesh/ensure-dorkbot.js';
 import { setAgentPathLookup } from './services/mesh/agent-path-lookup.js';
 import { createA2aRouter } from './routes/a2a.js';
 import { buildA2aRateLimiters } from './middleware/a2a-rate-limit.js';
-import { createAgentsRouter } from './routes/agents.js';
-import { createPermissionsRouter } from './routes/permissions.js';
 import { resolveToolVisibilityFor } from './services/runtimes/shared/permission-tool-filter.js';
 import { composeCapabilityRegistryForDocs } from './services/core/self-description/dorkos-registry.js';
 import {
@@ -260,9 +250,6 @@ import { managedRemoteCoordinator } from './services/core/remote/managed-remote-
 import { managedRemoteCommands } from './services/core/remote/managed-command-service.js';
 import { autostartOwnTunnel, currentRemoteBootPlan } from './services/core/remote/remote-boot.js';
 import { titleForMcpTool } from './services/core/mcp-tool-tiers.js';
-import { createTeamRouter } from './routes/team.js';
-import { createProfileRouter } from './routes/profile.js';
-import { createSearchRouter } from './routes/search.js';
 import { resolveCaller } from './routes/room-caller.js';
 import { LocalAvatarStore } from './services/identity/local-avatar-store.js';
 import { LocalRoomAttachmentStore } from './services/rooms/attachments/local-room-attachment-store.js';
@@ -270,9 +257,6 @@ import {
   SESSION_ATTACHMENT_SWEEP_INTERVAL_MS,
   sweepSessionAttachments,
 } from './services/session/attachments/index.js';
-import { createDiscoveryRouter } from './routes/discovery.js';
-import { createTemplateRouter } from './routes/templates.js';
-import { createHarnessRouter } from './routes/harness.js';
 import { createAdminRouter } from './routes/admin.js';
 import { ExtensionManager } from './services/extensions/extension-manager.js';
 import { startExtensionApprovalQueue } from './services/extensions/extension-approval-queue.js';
@@ -337,9 +321,6 @@ import {
 } from './services/marketplace/recovery/backup-janitor.js';
 import { installSweepLogger } from './services/marketplace/recovery/install-sweep-log.js';
 import { currentRecordOwner } from './services/marketplace/lib/records/record-owner.js';
-import { createActivityRouter } from './routes/activity.js';
-import { createAuditRouter } from './routes/audit.js';
-import { createAgentPauseRouter } from './routes/agent-pause.js';
 import { wireAgentPause } from './services/mesh/pause/index.js';
 import {
   auditCapabilityDeps,
@@ -362,10 +343,7 @@ import {
   createAgentIdentityUnregisterCascade,
 } from './services/core/agent-identity/index.js';
 import { ApprovalService, resolveApprovalTtlMs } from './services/core/approvals/index.js';
-import { createApprovalsRouter } from './routes/approvals.js';
 import type { DebugDeps } from './routes/debug.js';
-import { createCapabilitiesCatalogRouter } from './routes/capabilities-catalog.js';
-import { createCapabilitiesInvokeRouter } from './routes/capabilities-invoke.js';
 import {
   initCapabilityTierGate,
   initPermissionGate,
@@ -377,12 +355,9 @@ import {
   startApprovalExpirySweep,
   startApprovalVerdictDelivery,
 } from './services/core/approvals/index.js';
-import { createMcpRouter } from './routes/mcp.js';
+import type { McpServerFactory } from './routes/mcp.js';
 import { setRemoteCommunitySubscriptionProbe } from './routes/test-control.js';
 import { createMcpAuth } from './middleware/mcp-auth.js';
-import { validateMcpOrigin } from './middleware/mcp-origin.js';
-import { requireMcpEnabled } from './middleware/mcp-enabled.js';
-import { buildMcpRateLimiter } from './middleware/mcp-rate-limit.js';
 import {
   createDb,
   runMigrations,
@@ -556,7 +531,6 @@ import {
   getExtensionInbox,
   setExtensionInbox,
 } from './services/extensions/inbox/extension-inbox.js';
-import { createExtensionDecisionsRouter } from './routes/extension-decisions.js';
 import {
   StartWorkService,
   getStartWorkService,
@@ -2735,20 +2709,18 @@ async function start() {
       logger.warn('[Connections] Notification delivery deferred');
     }
   };
-  const app = createApp({
-    admission: mainRequestAdmission,
-    connectorEventIngress: {
-      verifier: (id) =>
-        connectorRegistry.resolveProviderInstance(id as ConnectorProviderInstanceId)?.events,
-      accept: (id, event) => {
-        const accepted = connectorEventIngress.accept(id, event);
-        void recoverConnectorEventDelivery();
-        return accepted;
-      },
+  // The signed webhook ingress, served from the Hono `/api` app before any
+  // body is parsed (`services/connectors/events/signed-ingress.ts`).
+  const connectorSignedIngress: ConnectorSignedIngress = {
+    verifier: (id) =>
+      connectorRegistry.resolveProviderInstance(id as ConnectorProviderInstanceId)?.events,
+    accept: (id, event) => {
+      const accepted = connectorEventIngress.accept(id, event);
+      void recoverConnectorEventDelivery();
+      return accepted;
     },
-  });
-
-  app.use('/api/session-locations', createSessionLocationsRouter(db));
+  };
+  const app = createApp({ admission: mainRequestAdmission });
 
   // Build mcpToolDeps and register factory only when ClaudeCodeRuntime is available.
   let mcpToolDeps: Parameters<typeof createExternalMcpServer>[0] | undefined;
@@ -3691,56 +3663,57 @@ async function start() {
     );
   }
 
-  // Always mount /mcp — requireMcpEnabled handles the disabled case with a clean 503.
-  const mcpRateLimiter = buildMcpRateLimiter();
-  // Auth is resolved per request by createMcpAuth (env override → per-user Better
-  // Auth key / session → legacy compat key → per-instance local token, with the
-  // read-only carve-out in login-off mode). This is only a startup log hint.
+  // `/mcp` is always served — `requireMcpEnabled` answers the disabled case with
+  // a clean 503. The routes, their gates and the transport are on the Hono
+  // chain (`routes/mcp.ts`); this is the tool server behind them, built per
+  // request. Auth is resolved per request by `decideMcpAuth` (env override →
+  // per-user Better Auth key / session → legacy compat key → per-instance local
+  // token, with the read-only carve-out in login-off mode). This is only a
+  // startup log hint.
   const mcpAuthMode = env.MCP_API_KEY?.trim()
     ? 'auth: MCP_API_KEY override'
     : configManager.get('auth')?.enabled
       ? 'auth: login gate + per-user keys'
       : 'auth: local token (read-only tools tokenless)';
-
-  app.use(
-    '/mcp',
-    validateMcpOrigin,
-    requireMcpEnabled,
-    createMcpAuth({ surface: 'mcp' }),
-    mcpRateLimiter,
-    createMcpRouter(async (caller) => {
-      if (!claudeRuntime || !mcpToolDeps) {
-        throw new Error(
-          'ClaudeCodeRuntime not available — external MCP server cannot handle requests'
-        );
-      }
-      // The server is rebuilt per request, so who is calling — the agent that
-      // presented a token, the person the auth middleware verified, or neither
-      // — is captured by the capability tool handlers it registers.
-      //
-      // What a Blocked permission hides from this caller (spec
-      // `agent-permissions` D15): its own settings when it identified itself,
-      // the install's defaults when it did not.
-      const visibility = await resolveToolVisibilityFor(caller.identity?.agentPath, {
-        inactive: Boolean(caller.identity?.inactive),
-      });
-      return createExternalMcpServer(
-        mcpToolDeps,
-        marketplaceMcpDeps,
-        capabilityRegistry,
-        caller.identity,
-        caller.userId,
-        caller.agentIdentityPresented,
-        visibility.hiddenToolNames
+  const mcpServerFactory: McpServerFactory = async (caller) => {
+    if (!claudeRuntime || !mcpToolDeps) {
+      throw new Error(
+        'ClaudeCodeRuntime not available — external MCP server cannot handle requests'
       );
-    })
-  );
+    }
+    // The server is rebuilt per request, so who is calling — the agent that
+    // presented a token, the person the auth middleware verified, or neither
+    // — is captured by the capability tool handlers it registers.
+    //
+    // What a Blocked permission hides from this caller (spec
+    // `agent-permissions` D15): its own settings when it identified itself,
+    // the install's defaults when it did not.
+    const visibility = await resolveToolVisibilityFor(caller.identity?.agentPath, {
+      inactive: Boolean(caller.identity?.inactive),
+    });
+    return createExternalMcpServer(
+      mcpToolDeps,
+      marketplaceMcpDeps,
+      capabilityRegistry,
+      caller.identity,
+      caller.userId,
+      caller.agentIdentityPresented,
+      visibility.hiddenToolNames
+    );
+  };
   logger.info(`[MCP] External MCP server mounted at /mcp (stateless, ${mcpAuthMode})`);
 
-  // Mount Tasks routes if enabled (`startup/tasks.ts`).
+  // `deps` is what the moved Hono routes read (`http/hono-api.ts`), set where
+  // each group used to be mounted on Express.
+  const deps: HonoApiDeps = {
+    connectorEventIngress: connectorSignedIngress,
+    mcp: mcpServerFactory,
+  };
+
+  // Hand the Tasks routes their deps if enabled (`startup/tasks.ts`).
   ({ schedulerService, taskRegistrar, taskFileWatcher, taskReconciler, attachAgentTaskRoots } =
     await startTasks({
-      app,
+      honoDeps: deps,
       tasksEnabled,
       taskStore,
       dorkHome,
@@ -3816,47 +3789,32 @@ async function start() {
       });
   }
 
-  // Mount connector routes (connector-gateway spec, DOR-371). The registry
-  // starts empty — provider backends (raw-MCP, Composio) register in later
-  // phases — but the routing surface is already live: `recommend` reads the
-  // relay adapter catalog (relay-adapter-first), and the aggregate endpoints
-  // return empty until a provider is registered. `adapterManager` satisfies the
-  // routing catalog structurally via its public `getManifest` accessor.
-  // Provider credential + status routes, mounted BEFORE the generic connectors
-  // router: saving a vendor key here reloads its provider live (no restart).
-  app.use(
-    '/api/connectors/providers',
-    createConnectorProvidersRouter({
-      bootstrapper: connectorBootstrapper,
-      credentialStore,
-    })
-  );
-  app.use(
-    '/api/connectors',
-    createConnectorEventsRouter({
+  // Every `/api/connectors` group, served from the Hono `/api` app in the
+  // order `routes/connectors.ts` explains. Saving a vendor key reloads its
+  // provider live (no restart). Program execution joins once the capability
+  // registry is composed, further down.
+  const connectorOwnerBoundary = {
+    resolveOwner: () => connectorOwner,
+    loginEnabled: () => configManager.get('auth').enabled,
+  };
+  const connectorRoutes: ConnectorRoutesDeps = {
+    providers: { bootstrapper: connectorBootstrapper, credentialStore },
+    events: {
       store: connectorEventSubscriptions,
       subscriptions: connectorEventService,
       grants: connectorEventGrants,
       settings: connectorEventSettings,
       managed: managedEventConsent,
-      resolveOwner: () => connectorOwner,
-      loginEnabled: () => configManager.get('auth').enabled,
-    })
-  );
-  app.use(
-    '/api/connectors',
-    createConnectorManagementRouter({
+      ...connectorOwnerBoundary,
+    },
+    management: {
       registry: connectorRegistry,
       reviews: connectorManagementReviews,
       reconciliation: connectorReconciliation,
-      resolveOwner: () => connectorOwner,
-      loginEnabled: () => configManager.get('auth').enabled,
+      ...connectorOwnerBoundary,
       ...(connectorAgentRequests && { agentRequests: connectorAgentRequests }),
-    })
-  );
-  app.use(
-    '/api/connectors',
-    createConnectorResourcesRouter({
+    },
+    resources: {
       query: connectorOperatorQueries,
       logos: catalogLogos,
       authentication: connectorAuthenticationFlows,
@@ -3868,10 +3826,10 @@ async function start() {
         query: connectorOperatorQueries,
         overrides: sessionConnectorAttachmentStore,
       }),
-      resolveOwner: () => connectorOwner,
-      loginEnabled: () => configManager.get('auth').enabled,
-    })
-  );
+      ...connectorOwnerBoundary,
+    },
+  };
+  deps.connectors = connectorRoutes;
   mountedRouters.push('connectors');
 
   // Mount Relay routes if enabled
@@ -4039,11 +3997,11 @@ async function start() {
   // subscribes to nothing.
   for (const runtime of runtimeRegistry.listRuntimes()) subscribeRuntimeTurns(runtime);
 
-  // Mount Mesh routes if MeshCore initialized successfully (always-on, ADR-0062)
+  // Mesh routes if MeshCore initialized successfully (always-on, ADR-0062)
   // taskStore/relayCore power topology enrichment (relay badges, task counts);
-  // when a subsystem is disabled the router degrades to safe defaults.
+  // when a subsystem is disabled the routes degrade to safe defaults.
   if (meshCore) {
-    app.use('/api/mesh', createMeshRouter({ meshCore, taskStore, relayCore }));
+    deps.mesh = { meshCore, taskStore, relayCore, activity: activityService };
     // Expose the registry to the (statically-mounted) sessions router so
     // GET /api/sessions/recent can resolve agent project paths (DOR-329).
     app.locals.meshCore = meshCore;
@@ -4055,9 +4013,6 @@ async function start() {
   // messaging, integrations, and agents. Handed over as one bag of narrow reads,
   // set after every subsystem above has had its chance to start; whatever is off
   // simply reports its checks skipped. Nothing here runs until a request asks.
-  // `deps` is what the moved Hono routes read (`http/hono-api.ts`): this bag and
-  // the banner's below.
-  const deps: HonoApiDeps = {};
   deps.deepHealth = {
     dorkHome,
     roomSessions: roomStore,
@@ -4257,18 +4212,15 @@ async function start() {
   );
 
   // Managed-MCP OAuth loopback callback (DOR-942) — the `redirect_uri` the
-  // operator's browser lands on after authorizing a server. Mounted BEFORE the
-  // `/api/agents` router so the two-segment `/mcp-oauth/callback` path always
-  // reaches it first; the sign-in itself is driven by the `mcp.signin`/
-  // `mcp.poll_signin` capabilities, not a route.
-  if (agentMcpOAuthService) {
-    app.use('/api/agents/mcp-oauth', createMcpOAuthRouter(agentMcpOAuthService));
-  }
+  // operator's browser lands on after authorizing a server, served by the Hono
+  // app beside the agents group; the sign-in itself is driven by the
+  // `mcp.signin`/`mcp.poll_signin` capabilities, not a route.
+  if (agentMcpOAuthService) deps.mcpOAuth = agentMcpOAuthService;
 
   // Permissions (spec `agent-permissions` D10): the one way in for what agents
-  // may do. Mounted at `/api` BEFORE the agents router so
-  // `/api/agents/:id/permissions` reaches it first. The registry is read lazily:
-  // it is composed after the routes are mounted.
+  // may do. Served by the Hono app, beside the agents group under
+  // `/api/agents`. The registry is read lazily: it is composed after the
+  // routes are handed over.
   // The one owner of every permission write (spec `agent-permissions` D10):
   // the permissions pages and the request card's Always allow both write here.
   const permissionService = createPermissionService({
@@ -4300,23 +4252,17 @@ async function start() {
     arrivalRecord.clear(agentId);
     void permissionObserver.forget(agentId);
   });
-  app.use(
-    '/api',
-    createPermissionsRouter({
-      permissions: permissionService,
-      activity: activityService,
-    })
-  );
+  deps.permissions = { permissions: permissionService, activity: activityService };
   mountedRouters.push('permissions');
 
-  // What agents promised (spec `heartbeats` §12). Always mounted; the
-  // per-agent POST is mounted before the agents router so it answers its path.
-  app.use('/api/commitments', commitments.routers.list);
-  app.use('/api/agents/:id/commitments', commitments.routers.agent);
-  // Pause an agent everywhere, and lift it (spec `audit-trail` PR5). Mounted
-  // before the agents router so `/api/agents/:id/pause` reaches it first; the
-  // registry is read lazily because it is composed after the routes mount.
-  app.use('/api', createAgentPauseRouter({ registry: () => capabilityRegistry }));
+  // What agents promised (spec `heartbeats` §12). Always mounted, by the Hono
+  // app: the list at `/api/commitments`, a person's new one per agent at
+  // `/api/agents/:id/commitments`.
+  deps.commitments = commitments.routeDeps;
+  // Pause an agent everywhere, and lift it (spec `audit-trail` PR5). Served by
+  // the Hono app, beside the agents group under `/api/agents`; the registry is
+  // read lazily because it is composed after the routes are handed over.
+  deps.agentPause = { registry: () => capabilityRegistry };
   mountedRouters.push('agent-pause');
 
   // Always mounted — not behind any feature flag.
@@ -4324,99 +4270,96 @@ async function start() {
   // The confirmation provider is composed further down this boot, inside the
   // marketplace block; read lazily so an agent's template creation raises a card
   // once it exists and fails closed until then (DOR-2325).
-  app.use(
-    '/api/agents',
-    createAgentsRouter(meshCore, {
-      confirmationProvider: () => templateConfirmationProvider,
-      marketplace: () => agentPackageInstaller,
-    })
-  );
+  deps.agents = {
+    meshCore,
+    activity: activityService,
+    confirmationProvider: () => templateConfirmationProvider,
+    marketplace: () => agentPackageInstaller,
+  };
 
   // The team roster — one READ of every identity on this install (ADR
   // 260806-222535). Always mounted, and mounted even when the mesh did not
   // start: the person reading the page is on the roster, so a missing agent
-  // registry is a `warnings[]` entry rather than a dead route.
-  app.use(
-    '/api/team',
-    createTeamRouter({
-      authors: roomAuthors,
-      // `GET /api/team/:memberId/rooms` — where one member can be found (spec
-      // `profile-unification` §3.2). The store rather than `RoomService`: this
-      // is two membership reads and no room behaviour.
-      rooms: roomStore,
-      ...(meshCore && { meshCore }),
-      // What is working RIGHT NOW, from the one map that knows: the room
-      // dispatcher's claims. Nothing else on this install can answer it.
-      activeClaims: () => roomService.listActiveClaims(),
-      // Archived included on purpose — a room can be archived while an agent is
-      // still mid-turn in it, and the status sentence should still name it.
-      listRooms: () =>
-        roomStore
-          .listRooms({ includeArchived: true })
-          .map((room) => ({ id: room.id, name: room.title })),
-      // When each agent last ran, for the agents mesh health cannot speak for
-      // (it is stamped by the claude-code turn paths only). `limit: 1` because
-      // only the `agentActivity` map is wanted here — it is computed across
-      // every session before that trim, so the map is complete either way.
-      sessionActivity: async () => {
-        const { agentActivity } = await listRecentSessions({
-          runtimes: runtimeRegistry.listRuntimes(),
-          agentPaths: meshCore ? meshCore.listWithPaths().map((a) => a.projectPath) : [],
-          limit: 1,
-        });
-        return agentActivity;
-      },
-      ownerAccount: () => readOwnerAccount(),
-      ownerEmail: (userId) => getUserById(userId)?.email ?? null,
-      // `config.profile.displayName` is what the user likes to be called — the
-      // second rung of the operator-name precedence, under the account name.
-      configDisplayName: () => configManager.getAll().profile.displayName,
-      configDisplayNameSource: () => configManager.getAll().profile.displayNameSource,
-      defaultAgentName: () => configManager.getAll().agents.defaultAgent,
-    })
-  );
+  // registry is a `warnings[]` entry rather than a dead route. Served from the
+  // Hono `/api` app (`http/hono-api.ts`), which reads this.
+  deps.team = {
+    authors: roomAuthors,
+    // `GET /api/team/:memberId/rooms` — where one member can be found (spec
+    // `profile-unification` §3.2). The store rather than `RoomService`: this
+    // is two membership reads and no room behaviour.
+    rooms: roomStore,
+    ...(meshCore && { meshCore }),
+    // What is working RIGHT NOW, from the one map that knows: the room
+    // dispatcher's claims. Nothing else on this install can answer it.
+    activeClaims: () => roomService.listActiveClaims(),
+    // Archived included on purpose — a room can be archived while an agent is
+    // still mid-turn in it, and the status sentence should still name it.
+    listRooms: () =>
+      roomStore
+        .listRooms({ includeArchived: true })
+        .map((room) => ({ id: room.id, name: room.title })),
+    // When each agent last ran, for the agents mesh health cannot speak for
+    // (it is stamped by the claude-code turn paths only). `limit: 1` because
+    // only the `agentActivity` map is wanted here — it is computed across
+    // every session before that trim, so the map is complete either way.
+    sessionActivity: async () => {
+      const { agentActivity } = await listRecentSessions({
+        runtimes: runtimeRegistry.listRuntimes(),
+        agentPaths: meshCore ? meshCore.listWithPaths().map((a) => a.projectPath) : [],
+        limit: 1,
+      });
+      return agentActivity;
+    },
+    ownerAccount: () => readOwnerAccount(),
+    ownerEmail: (userId) => getUserById(userId)?.email ?? null,
+    // `config.profile.displayName` is what the user likes to be called — the
+    // second rung of the operator-name precedence, under the account name.
+    configDisplayName: () => configManager.getAll().profile.displayName,
+    configDisplayNameSource: () => configManager.getAll().profile.displayNameSource,
+    defaultAgentName: () => configManager.getAll().agents.defaultAgent,
+  };
 
   // The operator's own profile — their photo and their name (spec
   // `identity-consistency` §W3.3, §W3.5). The store is chosen HERE and nowhere
   // else: the router depends on the `AvatarStore` interface, so the day photos
-  // live somewhere other than this machine, this line is what changes.
-  app.use(
-    '/api/profile',
-    createProfileRouter({
-      avatars: new LocalAvatarStore(dorkHome),
-      caller: (req, res) => resolveCaller(req, res),
-      authors: roomAuthors,
-      ownerAccount: () => readOwnerAccount(),
-      setAccountImage: (userId, imageUrl) => setUserImage(userId, imageUrl),
-      setAccountName: (userId, name) => setUserName(userId, name),
-      setProfileDisplayName: (displayName, source) => {
-        const before = configManager.get('profile');
-        // The name and the record of who wrote it go in ONE write, so no reader
-        // can catch the new name still carrying the previous writer's stamp.
-        // `set` rather than two `setDot`s for exactly that reason (DOR-1022);
-        // WHICH source is the route's call, not this line's.
-        configManager.set('profile', { ...before, displayName, displayNameSource: source });
-        logConfigWrite('the profile route', 'profile', before, configManager.get('profile'));
-      },
-    })
-  );
+  // live somewhere other than this machine, this line is what changes. Served
+  // from the Hono `/api` app (`http/hono-api.ts`), which reads this.
+  deps.profile = {
+    avatars: new LocalAvatarStore(dorkHome),
+    caller: (request) => resolveCaller(request),
+    authors: roomAuthors,
+    ownerAccount: () => readOwnerAccount(),
+    setAccountImage: (userId, imageUrl) => setUserImage(userId, imageUrl),
+    setAccountName: (userId, name) => setUserName(userId, name),
+    setProfileDisplayName: (displayName, source) => {
+      const before = configManager.get('profile');
+      // The name and the record of who wrote it go in ONE write, so no reader
+      // can catch the new name still carrying the previous writer's stamp.
+      // `set` rather than two `setDot`s for exactly that reason (DOR-1022);
+      // WHICH source is the route's call, not this line's.
+      configManager.set('profile', { ...before, displayName, displayNameSource: source });
+      logConfigWrite('the profile route', 'profile', before, configManager.get('profile'));
+    },
+  };
 
   // Message search — "where did we talk about X", over the derived index the
   // reconciler above keeps caught up (message-search spec §6, §7). Always
   // mounted and read-only. An install whose index is empty answers `[]`, which is
   // the honest answer and needs no flag; who may see what is resolved per request
   // through the rooms domain, never from this line.
-  app.use('/api/search', createSearchRouter({ db }));
+  deps.search = { db };
 
   // Template catalog — always available, merges built-in + user templates.
-  app.use('/api/templates', createTemplateRouter(dorkHome));
+  // Served from the Hono `/api` app, like the saved chat folders beside it.
+  deps.templates = { dorkHome };
+  deps.sessionLocations = db;
 
   // Harness Sync — "what does every agent tool do with every agent file in this
   // project", and the Sync now button that acts on it. The GET writes nothing
   // (DOR-678's rule, stated in the route); the POST is person-only and takes
   // the project lock. The approval service is what lets the sync ask about a
   // package's hooks, exactly as the install path does.
-  app.use('/api/harness', createHarnessRouter({ dorkHome, approvals: approvalService }));
+  deps.harness = { dorkHome, approvals: approvalService };
   mountedRouters.push('harness');
 
   // Approvals — always available. The cockpit lists what is waiting on a person
@@ -4424,9 +4367,9 @@ async function start() {
   // The test-only seam that seeds a request card reads it from here; production
   // mounts no test router, so nothing else does.
   app.locals.approvalService = approvalService;
-  app.use(
-    '/api/approvals',
-    createApprovalsRouter(approvalService, {
+  deps.approvals = {
+    service: approvalService,
+    options: {
       activity: activityService,
       // An "Always allow" writes through the one permission write owner, like
       // Settings does (spec `agent-permissions` D7).
@@ -4434,34 +4377,31 @@ async function start() {
       // Names the action for the answer's audit line. Read lazily: the registry
       // is composed later in boot.
       describeCapability: (capabilityId) => capabilityRegistry?.get(capabilityId),
-    })
-  );
+    },
+  };
 
   // Activity feed — always available, not behind a feature flag.
-  app.use('/api/activity', createActivityRouter(activityService));
-  app.use('/api/audit', createAuditRouter({ log: auditLog, accounts: auditAccounts }));
+  deps.activity = activityService;
+  deps.audit = { log: auditLog, accounts: auditAccounts };
   app.locals.activityService = activityService;
   mountedRouters.push('activity');
 
   // The Inbox — always available for the same reason: the history is written
   // whether or not any channel could carry it.
-  app.use('/api/notifications', createNotificationsRouter(notificationService));
+  deps.notifications = notificationService;
   mountedRouters.push('notifications');
 
   // Web push — how the escalation ladder reaches a browser DorkOS is not open
   // in. Always mounted: a person can subscribe a device before anything has ever
   // needed to escalate, and the routes are what tell the Settings tab whether
   // this install can push at all.
-  app.use(
-    '/api/push',
-    createPushRouter({ subscriptions: pushSubscriptions, channel: webPushChannel })
-  );
+  deps.push = { subscriptions: pushSubscriptions, channel: webPushChannel };
   mountedRouters.push('push');
 
   // The bell and the Activity inbox answer extension decisions here (spec
   // `flow-multiproject` §7.3). Always mounted: with no extension system it
   // simply lists nothing.
-  app.use('/api/extension-decisions', createExtensionDecisionsRouter());
+  deps.extensionDecisions = { activity: activityService };
   mountedRouters.push('extension-decisions');
 
   // Mount Extensions routes if extension system initialized successfully.
@@ -4477,9 +4417,9 @@ async function start() {
     mountedRouters.push('extensions');
   }
 
-  // Mount Discovery routes when MeshCore is available (delegates to meshCore.discover())
+  // Discovery routes when MeshCore is available (delegates to meshCore.discover())
   if (meshCore) {
-    app.use('/api/discovery', createDiscoveryRouter(meshCore));
+    deps.discovery = meshCore;
     mountedRouters.push('discovery');
   }
 
@@ -4598,7 +4538,6 @@ async function start() {
   // than gating the entire namespace.
   ({ devLinkWatcher, templateConfirmationProvider, agentPackageInstaller, marketplaceMcpDeps } =
     await startMarketplace({
-      app,
       dorkHome,
       extensionManager,
       adapterManager,
@@ -4611,6 +4550,7 @@ async function start() {
       currentSweptProjects: () => sweptProjects,
       currentCapabilityRegistry: () => capabilityRegistry,
       mountedRouters,
+      honoDeps: deps,
     }));
 
   // Embedded terminal (spec right-panel-workbench, Chunk E). Always mounted:
@@ -4938,38 +4878,33 @@ async function start() {
     }
     logger.info('[Connectors] Runtime execution listener initialized');
   }
-  app.use(
-    '/api/connectors',
-    createConnectorExecutionRouter({
-      connectorRegistry,
-      capabilities: capabilityRegistry,
-      authorization: connectorAuthorization,
-      access: connectorAccess,
-      programPrincipals: connectorProgramPrincipals,
-      eventAccess: new ConnectorEventAccessQueryService(
-        connectorEventSubscriptions,
-        { ownsAgent: connectorOwnsAgent },
-        connectorProgramPrincipals,
-        managedEventConsent
-      ),
-      resolveOwner: () => connectorOwner,
-      loginEnabled: () => configManager.get('auth').enabled,
-    })
-  );
+  connectorRoutes.execution = {
+    connectorRegistry,
+    capabilities: capabilityRegistry,
+    authorization: connectorAuthorization,
+    access: connectorAccess,
+    programPrincipals: connectorProgramPrincipals,
+    eventAccess: new ConnectorEventAccessQueryService(
+      connectorEventSubscriptions,
+      { ownsAgent: connectorOwnsAgent },
+      connectorProgramPrincipals,
+      managedEventConsent
+    ),
+    ...connectorOwnerBoundary,
+  };
   // GET /api/capabilities/catalog — the self-description catalog. (The bare
   // `/api/capabilities` path already serves the per-runtime capability matrix, a
   // different, client-facing contract; the registry catalog lives one segment
   // deeper.) Declared as the `capabilities.list` capability's `http` surface so it
   // projects into OpenAPI (task 2.5).
-  app.use('/api/capabilities/catalog', createCapabilitiesCatalogRouter(capabilityRegistry));
+  //
   // POST /api/capabilities/:id/invoke — the generic capability dispatch endpoint
   // (task 2.4). Dispatches through the same composed registry, so every
-  // capability is reachable by id; it rides the app-wide sessionGate (mounted in
-  // `app.ts` before the routes), giving it the standard `/api/*` auth posture —
-  // not the tokenless `/mcp` read-only carve-out — so mutating capabilities are
-  // never reachable tokenlessly. Mounted at the `/api/capabilities` prefix, which
-  // the catalog (`/catalog`) and matrix (`/`) routes do not claim for `POST /:id/invoke`.
-  app.use('/api/capabilities', createCapabilitiesInvokeRouter(capabilityRegistry));
+  // capability is reachable by id; it rides the `/api` chain's session gate,
+  // giving it the standard `/api/*` auth posture — not the tokenless `/mcp`
+  // read-only carve-out — so mutating capabilities are never reachable
+  // tokenlessly. Both are served from the Hono `/api` app (`http/hono-api.ts`).
+  deps.capabilities = capabilityRegistry;
   logger.info(
     `[Capabilities] Registry composed (${capabilityRegistry.capabilities.length} capabilities); catalog at GET /api/capabilities/catalog, invoke at POST /api/capabilities/:id/invoke`
   );

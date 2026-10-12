@@ -10,26 +10,29 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 vi.mock('../../lib/logger.js', () => ({
   logger: { error: vi.fn(), warn: vi.fn(), info: vi.fn(), debug: vi.fn() },
 }));
+// The routes are served through the `/api` chain, whose host guard and session
+// gate read the login setting: off, as on a fresh install.
+vi.mock('../../services/core/config-manager.js', () => ({
+  configManager: { get: vi.fn(() => undefined), set: vi.fn() },
+}));
 
 import request from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
-import express from 'express';
+import type { RequestListener } from 'node:http';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import type { TemplateEntry } from '@dorkos/shared/template-catalog';
-import { createTemplateRouter } from '../templates.js';
+import { createTemplateRoutes } from '../templates.js';
+import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
 
 const fixtureTarget = swappableServer();
 const fixtureServer = fixtureTarget.server;
 
 let DORK_HOME: string;
 
-function createApp(): express.Express {
-  const app = express();
-  app.use(express.json());
-  app.use('/api/templates', createTemplateRouter(DORK_HOME));
-  return app;
+function createApp(): RequestListener {
+  return honoGroupListener({ path: '/api/templates', routes: createTemplateRoutes(DORK_HOME) });
 }
 
 function catalogPath(): string {
@@ -59,7 +62,7 @@ const USER_TEMPLATE: Omit<TemplateEntry, 'id'> = {
 };
 
 describe('Template Routes', () => {
-  let app: express.Express;
+  let app: RequestListener;
 
   beforeEach(async () => {
     vi.clearAllMocks();

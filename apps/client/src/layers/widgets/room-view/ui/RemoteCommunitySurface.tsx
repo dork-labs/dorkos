@@ -100,7 +100,9 @@ export function RemoteCommunitySurface({
   const rememberedAnchor = remembered?.scrollAnchorEntryId ?? null;
   const noteTopRow = useCallback(
     (entryId: string | undefined) => {
-      if (!authority) return;
+      // The saved row is the CHANNEL's: a thread reply is not in the channel feed,
+      // so a thread view neither saves nor clears it (DOR-2676).
+      if (!authority || threadId) return;
       if (anchorTimer.current) clearTimeout(anchorTimer.current);
       anchorTimer.current = null;
       const anchor = entryId ?? null;
@@ -530,7 +532,7 @@ export function RemoteCommunitySurface({
               rows={rows}
               label={threadId ? 'Space thread' : 'Space messages'}
               busy={history.isFetching}
-              resumeRow={() => remembered?.scrollAnchorEntryId ?? undefined}
+              resumeRow={() => (threadId ? undefined : (rememberedAnchor ?? undefined))}
               onTopRow={noteTopRow}
               onReachedBottom={markRead}
               onOpenThread={onThread}

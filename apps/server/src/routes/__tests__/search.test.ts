@@ -8,8 +8,7 @@
  * on `res.locals`, who `resolveCaller` makes of that, and what the rooms domain
  * then says that caller may see.
  */
-import { describe, it, expect, beforeEach } from 'vitest';
-import express from 'express';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import request from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
 import { createTestDb } from '@dorkos/test-utils/db';
@@ -27,7 +26,14 @@ import {
 } from '../../services/rooms/index.js';
 import { SearchIndexer } from '../../services/search/index.js';
 import { roomsSource } from '../../services/search/registry.js';
-import { createSearchRouter } from '../search.js';
+import { createSearchRoutes } from '../search.js';
+import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
+
+// The routes are served through the `/api` chain, whose host guard and session
+// gate read the login setting: off, as on a fresh install.
+vi.mock('../../services/core/config-manager.js', () => ({
+  configManager: { get: vi.fn(() => undefined), set: vi.fn() },
+}));
 
 const fixtureTarget = swappableServer();
 
@@ -43,8 +49,8 @@ let ownerId: string;
 let agentId: string;
 
 /**
- * An app in `app.ts`'s middleware order, with the identity the middleware would
- * have resolved already on `res.locals`.
+ * The route behind the `/api` chain, with the identity the chain would have
+ * resolved already set.
  *
  * @param identity - The agent this request resolved to, if any.
  * @param presentsHeader - Whether the raw `X-DorkOS-Agent` header is there at
@@ -52,17 +58,19 @@ let agentId: string;
  *   still says a machine is calling.
  */
 function buildApp(identity?: AgentIdentity, presentsHeader = identity !== undefined) {
-  const app = express();
-  app.use(express.json());
-  app.use((req, res, next) => {
-    if (identity) res.locals.agentIdentity = identity;
-    if (presentsHeader && req.headers['x-dorkos-agent'] === undefined) {
-      req.headers['x-dorkos-agent'] = 'token-for-ana';
+  return honoGroupListener(
+    { path: '/api/search', routes: createSearchRoutes({ db }) },
+    {
+      before: async (c, next) => {
+        if (identity) c.set('agentIdentity', identity);
+        const { headers } = c.env.incoming;
+        if (presentsHeader && headers['x-dorkos-agent'] === undefined) {
+          headers['x-dorkos-agent'] = 'token-for-ana';
+        }
+        await next();
+      },
     }
-    next();
-  });
-  app.use('/api/search', createSearchRouter({ db }));
-  return app;
+  );
 }
 
 function seedRoom(id: string): void {

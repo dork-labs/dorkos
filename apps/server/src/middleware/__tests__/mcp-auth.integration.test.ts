@@ -2,8 +2,8 @@
  * @vitest-environment node
  *
  * End-to-end MCP auth over a real Better Auth instance, exercising the full
- * `/mcp` chain the way `index.ts` wires it: `express.json()`, the app-wide
- * session gate (task 1.2), then `createMcpAuth({ surface: 'mcp' })`. Covers both
+ * `/mcp` chain the way `http/hono-api.ts` wires it: the Hono chain's body parse
+ * and session gate (task 1.2), then `honoMcpAuth('mcp')`. Covers both
  * `config.auth.enabled` modes, the login-off read-only carve-out, the helpful
  * 401 body, and every credential acceptor (env override, per-user key, revoked
  * key, legacy compat key, and the per-instance local token).
@@ -16,8 +16,8 @@ import { describe, it, expect, vi, beforeAll, afterAll, afterEach } from 'vitest
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import type { Server } from 'node:http';
-import express from 'express';
+import type { RequestListener, Server } from 'node:http';
+import { Hono } from 'hono';
 import request, { type Test } from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
 import { createDb, runMigrations, user, apikey, eq, type Db } from '@dorkos/db';
@@ -36,8 +36,12 @@ vi.mock('../../services/core/auth/mcp-local-token.js', () => ({
   rotateMcpLocalToken: vi.fn(),
 }));
 
-import { getAuth, initAuth, sessionGate, toNodeHandler } from '../../services/core/auth/index.js';
-import { createMcpAuth } from '../mcp-auth.js';
+import { getAuth, initAuth } from '../../services/core/auth/index.js';
+import { honoMcpAuth } from '../mcp-auth.js';
+import type { ApiEnv } from '../../http/api-chain.js';
+import { mountBetterAuth } from '../../http/better-auth.js';
+import { readJsonBody } from '../../http/request-body.js';
+import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
 import { configManager, initConfigManager } from '../../services/core/config-manager.js';
 import { logger } from '../../lib/logger.js';
 import { env } from '../../env.js';
@@ -67,24 +71,25 @@ const RESOURCES_READ = {
 
 /**
  * App mirroring the real `/mcp` chain: the Better Auth handler (mounted before
- * the JSON body parser, as in production), then `express.json()`, then the
- * app-wide session gate, then a `/mcp` route guarded by the real `createMcpAuth`
- * middleware — so `req.body` peeking behaves exactly as production. The stub
- * handler returns `{ ok: true }` only when the middleware calls `next()`.
+ * the body is parsed, as in production), then the chain's body parse and
+ * session gate, then a `/mcp` route guarded by the real `honoMcpAuth`
+ * middleware — so the parsed-body peeking behaves exactly as production. The
+ * stub handler returns `{ ok: true }` only when the middleware calls `next()`.
  * `config_get` additionally uses the real operator handler and stored config projection.
  */
-function buildApp(): express.Express {
-  const app = express();
-  app.all('/api/auth/*splat', toNodeHandler(getAuth()!));
-  app.use(express.json({ limit: '1mb' }));
-  app.use(sessionGate);
-  app.post('/mcp', createMcpAuth({ surface: 'mcp' }), async (req, res) => {
-    if (req.body?.method === 'tools/call' && req.body.params?.name === 'config_get') {
-      return res.json(await createConfigGetHandler()());
+function buildApp(): RequestListener {
+  const routes = new Hono<ApiEnv>();
+  routes.post('/', honoMcpAuth('mcp'), async (c) => {
+    const body = readJsonBody(c) as { method?: string; params?: { name?: string } } | undefined;
+    if (body?.method === 'tools/call' && body.params?.name === 'config_get') {
+      return c.json(await createConfigGetHandler()());
     }
-    return res.json({ ok: true });
+    return c.json({ ok: true });
   });
-  return app;
+  return honoGroupListener(
+    { path: '/mcp', routes },
+    { beforeBodyParsing: (early) => mountBetterAuth(early, { auth: getAuth()! }) }
+  );
 }
 
 /** Start a POST /mcp request, optionally with a Bearer token or session cookie. */
@@ -107,7 +112,7 @@ function setLegacyKey(value: string | null): void {
   });
 }
 
-describe('createMcpAuth — /mcp end-to-end (integration)', () => {
+describe('honoMcpAuth — /mcp end-to-end (integration)', () => {
   const target = swappableServer();
   const server = target.server;
   let tmpDir: string;

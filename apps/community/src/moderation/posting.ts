@@ -7,9 +7,10 @@ import { ApiError, Muted, RateLimited } from '../http.js';
  * accepted the current rules cannot post through an agent either, and slow mode counts the
  * owner's posts and their agents' together.
  *
- * Call it inside the post's transaction after the channel lock and `lockPrincipalAuthority`, which holds the owner's
- * member row `FOR UPDATE`: a mute, a rules acceptance and this person's other posts all take
- * that row, so they cannot interleave with this check. Owners and admins post through slow mode.
+ * Call it inside the post's transaction after the channel lock and `lockPrincipalAuthority`, which
+ * holds the owner's member row `FOR NO KEY UPDATE`: a mute, a rules acceptance and this person's
+ * other posts all lock or write that row, so they cannot interleave with this check. Owners and
+ * admins post through slow mode.
  *
  * @throws {Muted} `403 COMMUNITY_MUTED`, with when the mute ends.
  * @throws {ApiError} `403 COMMUNITY_RULES_NOT_ACCEPTED` before the current rules are accepted.

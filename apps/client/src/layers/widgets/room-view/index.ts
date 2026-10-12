@@ -83,3 +83,9 @@ export { ChannelComposer } from './ui/ChannelComposer';
  */
 export { NoAgentHint } from './ui/NoAgentHint';
 export { useRoomTarget } from './model/room-target';
+/**
+ * The strip under DorkBot's first-run welcome in #team, and whether it is owed
+ * (spec `one-minute-onboarding` §2.4). Home composes it above the composer.
+ */
+export { FirstRunChips, type FirstRunChipsProps } from './ui/FirstRunChips';
+export { useFirstRunChips, type FirstRunChipsMode } from './model/use-first-run-chips';

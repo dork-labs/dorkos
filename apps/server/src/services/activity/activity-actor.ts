@@ -47,6 +47,7 @@ import type { Request, Response } from 'express';
 import type { ActorType } from '@dorkos/shared/activity-schemas';
 import type { AgentIdentity } from '../core/agent-identity/agent-identity-service.js';
 import { getRequestAgentIdentity, presentsAgentIdentity } from '../../middleware/agent-identity.js';
+import type { RequestFacts } from '../../http/request-facts.js';
 
 /** What the feed says about a caller DorkOS cannot name. */
 export const UNIDENTIFIED_ACTOR_LABEL = 'Unidentified caller';
@@ -86,16 +87,31 @@ export function activityActorForIdentity(identity: AgentIdentity | undefined): A
 /**
  * Read the actor an HTTP request should be recorded under.
  *
- * @param req - The incoming request, read for the raw agent header.
- * @param res - The response carrying whatever the identity middleware resolved.
+ * Takes a request's facts (`http/request-facts.ts`), which is how a Hono
+ * route asks, or an Express request-and-response pair.
+ *
+ * @param req - The request's facts, or the incoming request, read for the raw
+ *   agent header.
+ * @param res - With an Express request: the response carrying whatever the
+ *   identity middleware resolved.
  * @returns The actor fields to spread into an `ActivityService.emit()` call.
  */
 export function readActivityActor(
+  request: Pick<RequestFacts, 'headers' | 'agentIdentity'>
+): ActivityActor;
+export function readActivityActor(
   req: Pick<Request, 'headers'>,
   res: Pick<Response, 'locals'>
+): ActivityActor;
+export function readActivityActor(
+  req: Pick<Request, 'headers'> | Pick<RequestFacts, 'headers' | 'agentIdentity'>,
+  res?: Pick<Response, 'locals'>
 ): ActivityActor {
-  if (!presentsAgentIdentity(req, res)) {
+  const caller: Pick<RequestFacts, 'headers' | 'agentIdentity'> = res
+    ? { headers: req.headers, agentIdentity: getRequestAgentIdentity(res) }
+    : (req as Pick<RequestFacts, 'headers' | 'agentIdentity'>);
+  if (!presentsAgentIdentity(caller)) {
     return { actorType: 'user', actorLabel: OPERATOR_ACTOR_LABEL };
   }
-  return activityActorForIdentity(getRequestAgentIdentity(res));
+  return activityActorForIdentity(caller.agentIdentity);
 }

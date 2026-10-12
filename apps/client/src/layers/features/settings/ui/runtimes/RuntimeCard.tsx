@@ -66,6 +66,7 @@ import { describePowerSource, renderRuntimeConnect } from '@/layers/features/run
 import { RuntimeCardView } from './RuntimeCardView';
 import { buildRuntimeCardSummary } from './RuntimeCardSummary';
 import { renderRuntimeSettingsSection } from './section-registry';
+import { DOE_PICKS_SUMMARY, doeModelRowCopy, useDoeModelRow } from '../../model/use-doe-model-row';
 
 /** What the tab tells one card, and the two things the card asks it to do. */
 export interface RuntimeCardProps {
@@ -195,16 +196,15 @@ export function RuntimeCard({
   const ready = readiness.state === 'ready';
 
   const localCaller = useLocalCaller();
-  const { data: doeSettings } = useQuery({
-    queryKey: ['doe-inference'],
-    queryFn: () => transport.getDoeInference(),
-    enabled: type === 'doe' && localCaller,
-  });
+  // DorkOS's own engine: on credits its Model row is the catalog, "Chosen by
+  // DorkOS" until a person picks (spec `one-minute-onboarding` §6.5).
+  const doe = useDoeModelRow(type === 'doe' && localCaller);
+  // DorkOS picks the model only while credits are in use and the runtime is ready.
+  const doePicks = doe.state === 'credits' && ready;
   const descriptor = getRuntimeDescriptor(type);
   const settings = settingsForRuntime(capabilityMap, type);
   const defaults = config?.executionDefaults?.perRuntime.find((e) => e.runtime === type);
-  const configuredModel =
-    defaults?.model ?? (type === 'doe' ? doeSettings?.inference?.model : null) ?? null;
+  const configuredModel = defaults?.model ?? null;
   const requirementsEntry = requirements?.runtimes[type];
   // Null nearly always: only a credential that reports a real deadline, close
   // enough to act on, says anything here.
@@ -310,7 +310,8 @@ export function RuntimeCard({
     ready,
     settings,
     model: configuredModel,
-    models,
+    models: doePicks ? doe.models : models,
+    ...(doePicks ? { inheritModelLabel: DOE_PICKS_SUMMARY } : {}),
     effort: defaults?.effort,
     modelTakesEffort: selectedModel ? (selectedModel.supportsEffort ?? false) : undefined,
     trustStop: effectiveStop,
@@ -426,10 +427,13 @@ export function RuntimeCard({
           : {})}
         reconnectPanel={reconnectPanel}
         model={{
-          models,
+          // On DorkOS a pick is a model preference (`runtimes.doe.defaultModel`),
+          // never a payer; it is offered only while credits are actually in use.
+          models: doePicks ? doe.models : models,
           value: configuredModel,
           onChange: (value) => writeForRuntime({ defaultModel: value }),
-          disabled: writesPending || type === 'doe',
+          disabled: writesPending || (type === 'doe' && !doePicks),
+          ...doeModelRowCopy(doe.state === 'credits' && !ready ? 'none' : doe.state),
         }}
         effort={{
           // Both answers the row needs, from the two places that hold them: the

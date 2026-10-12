@@ -187,4 +187,18 @@ describe('DorkOS inference credential boundaries', () => {
       expect(credits).toHaveBeenLastCalledWith(protocol);
     }
   });
+  it('resolves a variant id by its base model and sends the catalog id', async () => {
+    const credits = vi.fn(async (protocol: DoeInferenceConfig['protocol']) => ({
+      protocol,
+      baseUrl: 'https://credits.example/v1',
+      token: 'test-token',
+      tokenId: 'one',
+      expiresAt: '2099-01-01T00:00:00Z',
+    }));
+    const descriptor = await resolveDoeInference(
+      { ...inference, source: 'dorkos-credits', model: 'test-model[1m]' },
+      { credits, creditsModels: async () => [model] }
+    );
+    expect(descriptor.id).toBe('test-model');
+  });
 });

@@ -504,7 +504,9 @@ describe('the claude-code prompt names tools the way the runtime exposes them', 
     // deferred and unprefixed.
     // 128 -> 129 for `end_beat` (spec `heartbeats` §8): only the beat prompt
     // names it, as a searchable ending, so it stays deferred and unprefixed.
-    expect(advertised.size).toBe(129);
+    // 129 -> 130 for `heartbeat_status` (spec `heartbeats` §10 PR 6): no prompt
+    // block names it, so it stays deferred and unprefixed.
+    expect(advertised.size).toBe(130);
     for (const name of [
       'configure_doc_channel',
       'approve_doc_route',
@@ -1012,6 +1014,7 @@ describe('the claude-code prompt names tools the way the runtime exposes them', 
       'using-the-agent-browser',
       'using-the-marketplace',
       'working-in-room-repos',
+      'working-on-a-heartbeat',
       'working-with-spin-off-chats',
     ]);
 

@@ -1866,6 +1866,9 @@
           },
           "checks": {
             "$ref": "#/components/schemas/HeartbeatChecks"
+          },
+          "measures": {
+            "$ref": "#/components/schemas/HeartbeatMeasures"
           }
         },
         "required": [
@@ -1877,7 +1880,8 @@
           "lastBeats",
           "held",
           "report",
-          "checks"
+          "checks",
+          "measures"
         ]
       },
       "HeartbeatWake": {
@@ -2063,6 +2067,208 @@
           "today",
           "tokens",
           "offer"
+        ]
+      },
+      "HeartbeatMeasures": {
+        "type": "object",
+        "properties": {
+          "windowDays": {
+            "type": "integer"
+          },
+          "since": {
+            "type": "string"
+          },
+          "keptRate": {
+            "$ref": "#/components/schemas/MeasureRate"
+          },
+          "usefulRaiseRate": {
+            "$ref": "#/components/schemas/MeasureRate"
+          },
+          "interruptions": {
+            "type": "object",
+            "properties": {
+              "value": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "messages": {
+                "type": "integer"
+              },
+              "usefulOutcomes": {
+                "type": "integer"
+              },
+              "target": {
+                "type": "string"
+              },
+              "source": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "value",
+              "messages",
+              "usefulOutcomes",
+              "target",
+              "source"
+            ]
+          },
+          "surprises": {
+            "type": "object",
+            "properties": {
+              "measured": {
+                "type": "boolean",
+                "enum": [
+                  false
+                ]
+              },
+              "source": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "measured",
+              "source"
+            ]
+          },
+          "mutesAndPauses": {
+            "type": "object",
+            "properties": {
+              "total": {
+                "type": "integer"
+              },
+              "pauses": {
+                "type": "integer"
+              },
+              "wakeOff": {
+                "type": "integer"
+              },
+              "mutes": {
+                "type": "integer"
+              },
+              "target": {
+                "type": "string"
+              },
+              "source": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "total",
+              "pauses",
+              "wakeOff",
+              "mutes",
+              "target",
+              "source"
+            ]
+          },
+          "supporting": {
+            "type": "object",
+            "properties": {
+              "beats": {
+                "type": "integer"
+              },
+              "quietBeats": {
+                "$ref": "#/components/schemas/MeasureRate"
+              },
+              "commitmentsOnTime": {
+                "$ref": "#/components/schemas/MeasureRate"
+              },
+              "noEndBeat": {
+                "type": "integer"
+              },
+              "triage": {
+                "type": "object",
+                "properties": {
+                  "checks": {
+                    "type": "integer"
+                  },
+                  "tokens": {
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "checks",
+                  "tokens"
+                ]
+              },
+              "turns": {
+                "type": "object",
+                "properties": {
+                  "count": {
+                    "type": "integer"
+                  },
+                  "tokensPerTurn": {
+                    "type": [
+                      "number",
+                      "null"
+                    ]
+                  }
+                },
+                "required": [
+                  "count",
+                  "tokensPerTurn"
+                ]
+              },
+              "bypass": {
+                "type": "integer"
+              },
+              "held": {
+                "type": "integer"
+              }
+            },
+            "required": [
+              "beats",
+              "quietBeats",
+              "commitmentsOnTime",
+              "noEndBeat",
+              "triage",
+              "turns",
+              "bypass",
+              "held"
+            ]
+          }
+        },
+        "required": [
+          "windowDays",
+          "since",
+          "keptRate",
+          "usefulRaiseRate",
+          "interruptions",
+          "surprises",
+          "mutesAndPauses",
+          "supporting"
+        ]
+      },
+      "MeasureRate": {
+        "type": "object",
+        "properties": {
+          "value": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "part": {
+            "type": "integer"
+          },
+          "whole": {
+            "type": "integer"
+          },
+          "target": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "value",
+          "part",
+          "whole",
+          "target",
+          "source"
         ]
       },
       "TriageCreditsChoice": {
@@ -20638,7 +20844,7 @@
           "Heartbeats"
         ],
         "summary": "An agent's heartbeat",
-        "description": "How the agent wakes on its own, when its next timed beat is due, its last 20 beats from the record, and the messages to people still held for their working hours.",
+        "description": "How the agent wakes on its own, when its next timed beat is due, its last 50 beats from the record, the messages to people still held for their working hours, and its measures: whether its work on its own helped, each with its source and starting target.",
         "parameters": [
           {
             "schema": {
@@ -20647,6 +20853,18 @@
             "required": true,
             "name": "id",
             "in": "path"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 90,
+              "description": "How many days the measures cover. Defaults to 7."
+            },
+            "required": false,
+            "description": "How many days the measures cover. Defaults to 7.",
+            "name": "days",
+            "in": "query"
           }
         ],
         "responses": {
@@ -20659,6 +20877,9 @@
                 }
               }
             }
+          },
+          "400": {
+            "description": "`days` is not a whole number from 1 to 90"
           },
           "404": {
             "description": "No agent with that id"

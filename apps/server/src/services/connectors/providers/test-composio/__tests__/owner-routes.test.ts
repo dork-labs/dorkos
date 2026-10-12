@@ -1,5 +1,5 @@
 import express from 'express';
-import { createServer } from 'node:http';
+import { createServer, type RequestListener } from 'node:http';
 import { randomUUID } from 'node:crypto';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -7,7 +7,7 @@ import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 // Login off, read by the key-change owner bar on the providers router
-// (DOR-2678); nothing else here reads the config store.
+// (DOR-2678) and by the `/api` chain's host guard and session gate.
 vi.mock('../../../../core/config-manager.js', () => ({
   configManager: {
     get: (key: string) => (key === 'auth' ? { enabled: false } : undefined),
@@ -34,10 +34,11 @@ import { ConnectorSubscriptionService } from '../../../events/subscription-servi
 import { ConnectorEventGrantService } from '../../../events/grant-service.js';
 import { ConnectorEventInboxStore } from '../../../event-inbox-store.js';
 import { ConnectorEventIngressService } from '../../../events/ingress-service.js';
-import { createConnectorSignedIngress } from '../../../events/signed-ingress.js';
-import { createConnectorEventsRouter } from '../../../../../routes/connector-events.js';
-import { createConnectorResourcesRouter } from '../../../../../routes/connector-resources.js';
-import { createConnectorProvidersRouter } from '../../../../../routes/connector-providers.js';
+import { mountConnectorSignedIngress } from '../../../events/signed-ingress.js';
+import { createConnectorEventsRoutes } from '../../../../../routes/connector-events.js';
+import { createConnectorResourcesRoutes } from '../../../../../routes/connector-resources.js';
+import { createConnectorProvidersRoutes } from '../../../../../routes/connector-providers.js';
+import { honoGroupListener } from '../../../../../http/__tests__/hono-group-listener.js';
 
 const owner = { kind: 'local_install', installationId: 'offline-owner' } as const;
 const providerId = legacyDefaultProviderInstanceId('composio');
@@ -67,8 +68,13 @@ async function fixture() {
     db,
     configuredOwner: { ownerKind: owner.kind, ownerId: owner.installationId },
   });
+  // Every connector route answers from the Hono `/api` chain, the signed
+  // ingress before any body is parsed; the offline service's own control
+  // routes stay on Express behind the front door, as the test runtime serves
+  // them.
   const app = express();
-  const server = createServer(app);
+  let listener: RequestListener = app;
+  const server = createServer((req, res) => listener(req, res));
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
   disposers.push(async () => {
     server.closeAllConnections();
@@ -119,35 +125,52 @@ async function fixture() {
   const grants = new ConnectorEventGrantService(store, subscriptions, destinations, managed);
   const inbox = new ConnectorEventInboxStore({ db });
   const ingress = new ConnectorEventIngressService(store, inbox, settings);
-  app.post(
-    '/api/connectors/webhooks/:providerInstanceId',
-    ...createConnectorSignedIngress({
-      verifier: (id) => registry.resolveProviderInstance(id as never)?.events,
-      accept: (id, event) => ingress.accept(id, event),
-    })
-  );
   app.use(express.json());
   app.use('/api/test/composio', upstream.router);
-  app.use(
-    '/api/connectors/providers',
-    createConnectorProvidersRouter({ bootstrapper: bootstrap, credentialStore: secrets })
-  );
-  app.use(
-    '/api/connectors',
-    createConnectorResourcesRouter({
-      ...boundary,
-      authentication,
-      query,
-      lifecycle,
-      actions: new ConnectorAppActionsService({ db, registry, dorkHome: dir }),
-      logos: { get: () => Promise.resolve(undefined) },
-      signIns: { refreshOnDemand: () => Promise.resolve() },
-      sessionAccess: { setAccess: () => Promise.reject(new Error('Not used by these routes.')) },
-    })
-  );
-  app.use(
-    '/api/connectors',
-    createConnectorEventsRouter({ ...boundary, store, subscriptions, grants, settings, managed })
+  listener = honoGroupListener(
+    [
+      {
+        path: '/api/connectors/providers',
+        routes: createConnectorProvidersRoutes({
+          bootstrapper: bootstrap,
+          credentialStore: secrets,
+        }),
+      },
+      {
+        path: '/api/connectors',
+        routes: createConnectorResourcesRoutes({
+          ...boundary,
+          authentication,
+          query,
+          lifecycle,
+          actions: new ConnectorAppActionsService({ db, registry, dorkHome: dir }),
+          logos: { get: () => Promise.resolve(undefined) },
+          signIns: { refreshOnDemand: () => Promise.resolve() },
+          sessionAccess: {
+            setAccess: () => Promise.reject(new Error('Not used by these routes.')),
+          },
+        }),
+      },
+      {
+        path: '/api/connectors',
+        routes: createConnectorEventsRoutes({
+          ...boundary,
+          store,
+          subscriptions,
+          grants,
+          settings,
+          managed,
+        }),
+      },
+    ],
+    {
+      legacy: app,
+      beforeBodyParsing: (early) =>
+        mountConnectorSignedIngress(early, {
+          verifier: (id) => registry.resolveProviderInstance(id as never)?.events,
+          accept: (id, event) => ingress.accept(id, event),
+        }),
+    }
   );
   const call = (path: string, method = 'GET', body?: unknown, headers = {}) =>
     fetch(`${origin}${path}`, {

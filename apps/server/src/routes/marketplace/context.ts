@@ -3,7 +3,7 @@
  *
  * @module routes/marketplace/context
  */
-import type { Request, Response } from 'express';
+import type { Context } from 'hono';
 import { z } from 'zod';
 import type { PackageType } from '@dorkos/marketplace';
 import { disclosedEffectsOf } from '../../services/marketplace/preview/disclosed-effects.js';
@@ -29,8 +29,10 @@ import {
   type TierEnforcementDecision,
 } from '../../services/core/capabilities/index.js';
 import { resolveDecisionAuthority } from '../../services/core/approvals/index.js';
-import { getRequestAgentIdentity } from '../../middleware/agent-identity.js';
 import { readCallerAuthority } from '../../lib/caller-authority.js';
+import type { ApiEnv } from '../../http/api-chain.js';
+import { honoRequestFacts } from '../../http/request-facts.js';
+import { readQuery } from '../../http/request-query.js';
 import {
   OPERATOR_ONLY_MARKETPLACE_SOURCE_CODE,
   describeMarketplaceSourceRefusal,
@@ -39,6 +41,9 @@ import {
 } from '../../services/marketplace/sources/source-write-policy.js';
 import type { MarketplaceRouteDeps } from '../marketplace.js';
 import { InstallRequestBodySchema, type UpdateRefusal } from './shared.js';
+
+/** The request context every marketplace route answers on. */
+export type MarketplaceContext = Context<ApiEnv>;
 
 /**
  * Build the helpers every marketplace route group shares, on the router's
@@ -74,8 +79,7 @@ export function createRouteContext(deps: MarketplaceRouteDeps) {
    * carries `DORKOS_AGENT_TOKEN`, so `dorkos uninstall` from inside a session
    * presents an identity and is gated, which is the door this ticket closes.
    *
-   * @param req - The incoming request.
-   * @param res - The response, for `sessionGate`'s resolved user.
+   * @param c - The request, for the caller's identity and approval token.
    * @param id - The capability id whose tier governs this effect.
    * @param input - The effect's arguments, parsed against that capability's schema.
    * @param change - For a capability that binds its approval to a described
@@ -83,8 +87,7 @@ export function createRouteContext(deps: MarketplaceRouteDeps) {
    * @returns What the gate decided. Proceed only on `allowed`.
    */
   const authorize = async (
-    req: Request,
-    res: Response,
+    c: MarketplaceContext,
     id: string,
     input: unknown,
     change?: string
@@ -108,10 +111,11 @@ export function createRouteContext(deps: MarketplaceRouteDeps) {
         },
       };
     }
-    const identity = getRequestAgentIdentity(res);
-    const header = req.headers[APPROVAL_TOKEN_HEADER];
+    const facts = honoRequestFacts(c);
+    const identity = facts.agentIdentity;
+    const header = facts.headers[APPROVAL_TOKEN_HEADER];
     const approvalToken = (Array.isArray(header) ? header[0] : header)?.trim();
-    const trusted = trustedCaller(readCallerAuthority(req, res));
+    const trusted = trustedCaller(readCallerAuthority(facts));
     return authorizeCapability(
       registry,
       id,
@@ -132,10 +136,9 @@ export function createRouteContext(deps: MarketplaceRouteDeps) {
    * when no retry can change the answer.
    */
   const gateResponse = (
-    res: Response,
+    c: MarketplaceContext,
     decision: Exclude<TierEnforcementDecision, { outcome: 'allowed' }>
-  ): Response =>
-    res.status(decision.outcome === 'approval_required' ? 202 : 403).json(decision.payload);
+  ): Response => c.json(decision.payload, decision.outcome === 'approval_required' ? 202 : 403);
 
   /**
    * Confine a body-supplied `projectPath` to the directory boundary, answering
@@ -176,14 +179,14 @@ export function createRouteContext(deps: MarketplaceRouteDeps) {
    * lock key from the filesystem, so it holds however the caller spelled the
    * path.
    *
-   * @param res - The response to answer on.
+   * @param c - The request to answer.
    * @param projectPath - The body's `projectPath`, when it sent one.
    * @returns `{ refused }` carrying the sent `403`, or `{ projectPath }` with
    *   the canonical path (or `undefined` when the body sent none). Callers must
    *   `return` the refusal so the effect below never runs.
    */
   const confineProjectPath = async (
-    res: Response,
+    c: MarketplaceContext,
     projectPath: string | undefined
   ): Promise<{ refused: Response } | { refused?: undefined; projectPath?: string }> => {
     if (!projectPath) return {};
@@ -192,7 +195,7 @@ export function createRouteContext(deps: MarketplaceRouteDeps) {
     } catch (err) {
       if (err instanceof BoundaryError) {
         return {
-          refused: res.status(403).json({ error: 'Access denied: projectPath outside boundary' }),
+          refused: c.json({ error: 'Access denied: projectPath outside boundary' }, 403),
         };
       }
       throw err;
@@ -208,21 +211,20 @@ export function createRouteContext(deps: MarketplaceRouteDeps) {
   };
 
   /**
-   * Read `?projectPath` as at most one string. Express parses a repeated key as
-   * an array, which used to be dropped silently and answer for every scope;
-   * that is a 400 now.
+   * Read `?projectPath` as at most one string. A repeated key reads as an
+   * array (`readQuery`), which used to be dropped silently and answer for every
+   * scope; that is a 400 now.
    *
    * @returns `{ refused }` carrying the sent 400, or `{ projectPath }`.
    */
   const readProjectPathQuery = (
-    req: Request,
-    res: Response
+    c: MarketplaceContext
   ): { refused: Response } | { refused?: undefined; projectPath?: string } => {
-    const value = req.query.projectPath;
+    const value = readQuery(c).projectPath;
     if (value === undefined || typeof value === 'string') {
       return value ? { projectPath: value } : {};
     }
-    return { refused: res.status(400).json({ error: 'projectPath may be given only once' }) };
+    return { refused: c.json({ error: 'projectPath may be given only once' }, 400) };
   };
 
   /**
@@ -231,10 +233,10 @@ export function createRouteContext(deps: MarketplaceRouteDeps) {
    * that could need one is refused before any gate runs — calling the gate would
    * raise an approval request nobody could ever redeem.
    */
-  const batchNeedsApproval = (req: Request, res: Response): boolean => {
+  const batchNeedsApproval = (c: MarketplaceContext): boolean => {
     const tier = capabilityRegistry()?.get('marketplace.install')?.tier;
     if (tier === undefined || tier === 'observe' || tier === 'act') return false;
-    return !trustedCaller(readCallerAuthority(req, res));
+    return !trustedCaller(readCallerAuthority(honoRequestFacts(c)));
   };
 
   /**
@@ -260,23 +262,26 @@ export function createRouteContext(deps: MarketplaceRouteDeps) {
    * a hardening (DOR-502). Reading `resolveDecisionAuthority` says exactly that,
    * and cannot silently inherit a tightening aimed at a different question.
    *
-   * @param req - The incoming request.
-   * @param res - The response, for `sessionGate`'s resolved user.
+   * @param c - The request, for the caller's facts and the answer.
    * @param action - Which write was attempted, for the refusal wording.
    * @returns The sent `403` response when refused, otherwise `undefined`. Callers
    *   must `return` a truthy result so the effect below never runs.
    */
   const refuseUntrustedSourceWrite = (
-    req: Request,
-    res: Response,
+    c: MarketplaceContext,
     action: MarketplaceSourceAction
   ): Response | undefined => {
-    if (resolveDecisionAuthority(readCallerAuthority(req, res)).allowed) return undefined;
-    return res.status(403).json({
-      error: marketplaceSourceRefusalError(action),
-      code: OPERATOR_ONLY_MARKETPLACE_SOURCE_CODE,
-      message: describeMarketplaceSourceRefusal(action),
-    });
+    if (resolveDecisionAuthority(readCallerAuthority(honoRequestFacts(c))).allowed) {
+      return undefined;
+    }
+    return c.json(
+      {
+        error: marketplaceSourceRefusalError(action),
+        code: OPERATOR_ONLY_MARKETPLACE_SOURCE_CODE,
+        message: describeMarketplaceSourceRefusal(action),
+      },
+      403
+    );
   };
 
   /**
@@ -300,8 +305,7 @@ export function createRouteContext(deps: MarketplaceRouteDeps) {
    *   ends the request unrun.
    */
   const askAboutAgentInstall = async (
-    req: Request,
-    res: Response,
+    c: MarketplaceContext,
     request: z.infer<typeof InstallRequestBodySchema>,
     token: string | undefined,
     global: boolean
@@ -311,7 +315,7 @@ export function createRouteContext(deps: MarketplaceRouteDeps) {
         { unasked: true } | { previewed: DisclosedEffects | undefined; approved?: ApprovedPackage }
       ))
   > => {
-    const name = String(req.params.name);
+    const name = c.req.param('name') ?? '';
     const staged = await installer.preview({ name, ...request });
     const previewed = disclosedEffectsOf(staged.preview) ?? undefined;
     // What the install is held to, asked about or not (DOR-2325).
@@ -326,7 +330,7 @@ export function createRouteContext(deps: MarketplaceRouteDeps) {
       if (!activated || (!replaces && !runs)) return { previewed, contentHash, packageType };
     }
 
-    const identity = getRequestAgentIdentity(res);
+    const identity = c.get('agentIdentity');
     const confirmation: ConfirmationRequest = {
       packageName: name,
       ...(request.marketplace !== undefined && { marketplace: request.marketplace }),
@@ -352,25 +356,29 @@ export function createRouteContext(deps: MarketplaceRouteDeps) {
       : await confirmationProvider.requestInstallConfirmation(confirmation);
     if (answer.status === 'pending') {
       return {
-        refused: res.status(202).json({
-          status: 'requires_confirmation',
-          confirmationToken: answer.token,
-          preview: staged.preview,
-          message:
-            `${answer.reason ? `${answer.reason} ` : ''}A person must approve this install in ` +
-            'DorkOS first: ' +
-            (agentPackage
-              ? 'it adds an agent whose sessions run what the package brings. '
-              : 'it runs things on its own in every session, or replaces a package that does. ') +
-            'Send the same request again with this confirmationToken once they have.',
-        }),
+        refused: c.json(
+          {
+            status: 'requires_confirmation',
+            confirmationToken: answer.token,
+            preview: staged.preview,
+            message:
+              `${answer.reason ? `${answer.reason} ` : ''}A person must approve this install in ` +
+              'DorkOS first: ' +
+              (agentPackage
+                ? 'it adds an agent whose sessions run what the package brings. '
+                : 'it runs things on its own in every session, or replaces a package that does. ') +
+              'Send the same request again with this confirmationToken once they have.',
+          },
+          202
+        ),
       };
     }
     if (answer.status === 'declined') {
       return {
-        refused: res
-          .status(403)
-          .json({ status: 'declined', reason: answer.reason ?? 'The install was not approved.' }),
+        refused: c.json(
+          { status: 'declined', reason: answer.reason ?? 'The install was not approved.' },
+          403
+        ),
       };
     }
     return {

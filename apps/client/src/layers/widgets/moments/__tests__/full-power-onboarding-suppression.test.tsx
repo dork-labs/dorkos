@@ -87,7 +87,7 @@ function renderHost(onboardingOverlayVisible: boolean) {
 describe('full-power moment — suppressed under the onboarding overlay', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    useAppStore.setState({ momentShownThisLaunch: false });
+    useAppStore.setState({ momentShownThisLaunch: false, onboardingHiddenForSession: false });
     setEligibleConfig();
   });
 
@@ -107,5 +107,15 @@ describe('full-power moment — suppressed under the onboarding overlay', () => 
     renderHost(false);
 
     expect(await screen.findByTestId('full-power-door')).toBeInTheDocument();
+  });
+
+  it('waits for the next launch when the first run ended in this one', () => {
+    // #team is on screen with DorkBot's welcome and its chips; a door over
+    // them would stand between a new person and their first job.
+    useAppStore.setState({ onboardingHiddenForSession: true });
+    renderHost(false);
+
+    expect(screen.queryByTestId('full-power-door')).not.toBeInTheDocument();
+    expect(useAppStore.getState().momentShownThisLaunch).toBe(false);
   });
 });

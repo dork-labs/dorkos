@@ -6,10 +6,9 @@
  *
  * @module startup/tasks
  */
-import type { Express } from 'express';
 import type { MeshCore } from '@dorkos/mesh';
+import type { HonoApiDeps } from '../http/hono-api.js';
 import { logger, logError } from '../lib/logger.js';
-import { createTasksRouter } from '../routes/tasks.js';
 import type { ActivityService } from '../services/activity/activity-service.js';
 import { keepAwakeService } from '../services/core/keep-awake/index.js';
 import { runtimeRegistry } from '../services/core/runtime-registry.js';
@@ -41,8 +40,8 @@ import { ensureDefaultTemplates } from '../services/tasks/task-templates.js';
 
 /** What starting Tasks needs from the startup that came before it. */
 export interface TasksStartupDeps {
-  /** The Express app the tasks routes mount on. */
-  app: Express;
+  /** What the moved Hono routes read; the tasks routes are handed theirs here. */
+  honoDeps: HonoApiDeps;
   /** Whether Tasks is on for this boot. */
   tasksEnabled: boolean;
   /** The task store, when it opened. */
@@ -113,7 +112,7 @@ function registeredAgentRoots(
  */
 export async function startTasks(deps: TasksStartupDeps): Promise<StartedTasks> {
   const {
-    app,
+    honoDeps,
     tasksEnabled,
     taskStore,
     dorkHome,
@@ -192,17 +191,14 @@ export async function startTasks(deps: TasksStartupDeps): Promise<StartedTasks> 
     // The ONE registration seam, shared by every writer that can change what a
     // task's schedule is: these routes, the file watcher, and the reconciler.
     taskRegistrar = new TaskRegistrar({ store: taskStore, scheduler: schedulerService });
-    app.use(
-      '/api/tasks',
-      createTasksRouter(
-        taskStore,
-        schedulerService,
-        taskRegistrar,
-        dorkHome,
-        meshCore,
-        activityService
-      )
-    );
+    honoDeps.tasks = {
+      store: taskStore,
+      scheduler: schedulerService,
+      registrar: taskRegistrar,
+      dorkHome,
+      ...(meshCore && { meshCore }),
+      activity: activityService,
+    };
     setTasksEnabled(true);
     mountedRouters.push('tasks');
 

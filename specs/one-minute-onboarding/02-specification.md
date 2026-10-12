@@ -119,13 +119,13 @@ The client polls it every 2.5 s while Connecting is on screen. `StartLinkResult`
 
 ### 6.1 Doe on credits with nothing chosen
 
-`runtimes.doe.inference: null` means "chosen by DorkOS". At a chat's first turn (`execute-turn.ts`, today the "Choose a model in DorkOS runtime settings." refusal), when `agentRunsOnCredits` says yes for the chat's agent (one rule, not restated here), the runtime builds the chat's inference from the catalog: for each format in the preference order `anthropic-messages`, `openai-responses`, `openai-chat-completions` that the held token serves, take the model whose `recommendedOn` names it. First match wins. The frozen record is `{ source: 'dorkos-credits', provider: 'dorkos', protocol, endpoint: <token endpoint>, model, contextWindow, maxOutputTokens }` from the catalog entry. No match refuses with `CreditsUnavailableError('no-models')`, never another payer. A person's per-chat or per-agent model choice wins when credits serve it (today's `resolveCreditsLaunchModel` rule).
+`runtimes.doe.inference: null` means "chosen by DorkOS". At a chat's first turn (`execute-turn.ts`, today the "Choose a model in DorkOS runtime settings." refusal), when `agentRunsOnCredits` says yes for the chat's agent (one rule, not restated here), the runtime builds the chat's inference from the catalog: for each format in the preference order `anthropic-messages`, `openai-responses`, `openai-chat-completions` that the held token serves, take the model whose `recommendedOn` names it. First match wins. The frozen record is `{ source: 'dorkos-credits', provider: 'dorkos', protocol, endpoint: <token endpoint>, model, contextWindow, maxOutputTokens }` from the catalog entry. No match refuses with `CreditsUnavailableError('no-models')`, never another payer. The models a chat already names are tried first, in order: the chat's own model, its agent's, then `runtimes.doe.defaultModel` (the Settings preference, §6.5), each only when credits serve it (today's `resolveCreditsLaunchModel` rule). When one stands in for the chat's own model, the chat gets the `model_substituted` notice.
 
 Credits not chosen and nothing configured keeps today's refusal, reworded: "Connect AI to use this agent." with the Own AI action.
 
 ### 6.2 The model list
 
-`getSupportedModels` for Doe on credits returns the catalog's models for the served formats, the auto-picked one first with `isDefault: true` and the description "Chosen by DorkOS". With an explicit inference it returns that one model, as today. Model names show only where a person goes looking (the model popover, Settings).
+`getSupportedModels` for Doe on credits returns the catalog's models in the format DorkOS picks in, the auto-picked one first with `isDefault: true` and the description "Chosen by DorkOS". With an explicit inference it returns that one model, as today. Model names show only where a person goes looking (the model popover, Settings).
 
 ### 6.3 Own key and local presets
 
@@ -139,7 +139,7 @@ A table in `apps/server/src/services/runtimes/doe/presets.ts`: per service, prot
 
 ### 6.5 Settings
 
-The DorkOS runtime card in Settings gets a **Model** row: "Chosen by DorkOS" by default, a menu of the catalog's models (or the own-key service's), and "Chosen by DorkOS" to go back (writes `inference: null` on credits; on own key, re-runs the preset pick). The agent dialog's model row reads the same way for agents on Doe.
+The DorkOS runtime card in Settings gets a **Model** row: "Chosen by DorkOS" by default, a menu of the catalog's models (or the own-key service's), and "Chosen by DorkOS" to go back. On credits a pick writes the model preference `runtimes.doe.defaultModel` (nullable, default `null`) and leaves `inference: null`, so a pick never chooses the payer, which stays with `agentRunsOnCredits`; "Chosen by DorkOS" writes `defaultModel: null`. The row offers this only while credits are DorkOS's default and ready; otherwise it is disabled with "Connect AI to choose a model." On own key, it re-runs the preset pick. The agent dialog's model row reads "Chosen by DorkOS" for agents on Doe with no agent model and no preference.
 
 ## 7. Config
 
@@ -161,7 +161,7 @@ Migration key `0.106.0` (above `0.105.0`, the highest today; `0.104.0` is held b
 
   Nothing leaves the machine; no money-path flag is involved.
 
-- **Browser:** `apps/e2e/tests/onboarding/first-run.spec.ts` runs the DorkOS path (the fake approves on page open) and the own-AI path (a fake local endpoint), and stops the clock at **DorkBot's first real reply to a chip**, not at the scripted welcome. It asserts under 60 seconds from Welcome, and that no runtime, model or vendor name is visible on the DorkOS path. Old specs that pin removed copy are updated or deleted: `onboarding-power.spec.ts` moves its door assertions to `full-power-door.spec.ts`.
+- **Browser:** `apps/e2e/first-run/first-run.journey.ts` runs the DorkOS path (the fake approves on page open) and the own-AI path (a fake local endpoint), and stops the clock at **DorkBot's first real reply to a chip**, not at the scripted welcome. It asserts under 60 seconds from Welcome, and that no runtime, model or vendor name is visible on the DorkOS path. Old specs that pin removed copy are updated or deleted: `onboarding-power.spec.ts` moves its door assertions to `full-power-door.spec.ts`.
 - **Live dogfood:** a fresh data directory on an own dev port, stopwatched, on both paths: the DorkOS path with the test-mode Cloud, and the own-AI path with a local model.
 
 ## 9. Build PRs

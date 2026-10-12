@@ -1,6 +1,7 @@
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { request as httpRequest } from 'node:http';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type {
   ConnectorRuntimePrincipalPort,
@@ -365,6 +366,159 @@ describe('connector runtime MCP listener', () => {
       jsonrpc: '2.0',
       error: { code: -32603, message: 'Internal error' },
       id: null,
+    });
+  });
+
+  describe('answers outside the MCP exchange itself', () => {
+    const REFUSED = {
+      jsonrpc: '2.0',
+      error: { code: -32001, message: 'Connections access ended. Start a new turn to continue.' },
+      id: null,
+    };
+    const PARSE_ERROR = {
+      jsonrpc: '2.0',
+      error: { code: -32700, message: 'Parse error' },
+      id: null,
+    };
+
+    async function started(maxRequestsPerMinute?: number) {
+      const listener = await startConnectorRuntimeMcpListener({
+        principals: port({ status: 'resolved', principal }),
+        serverFactory: () => new McpServer({ name: 'dorkos-connections-test', version: '1.0.0' }),
+        ...(maxRequestsPerMinute !== undefined && { maxRequestsPerMinute }),
+      });
+      listeners.push(listener);
+      return listener;
+    }
+
+    /** The runtime's own headers, which every request below carries. */
+    const RUNTIME_HEADERS = {
+      authorization: 'Bearer turn-secret',
+      [CONNECTOR_RUNTIME_KIND_HEADER]: 'codex',
+      [CONNECTOR_RUNTIME_CWD_HEADER]: encodeURIComponent('/repo'),
+    };
+
+    it('refuses a bearer it cannot resolve with one JSON-RPC shape', async () => {
+      const listener = await startConnectorRuntimeMcpListener({
+        principals: port({ status: 'refused', reason: 'invalid' }),
+        serverFactory: () => new McpServer({ name: 'dorkos-connections-test', version: '1.0.0' }),
+      });
+      listeners.push(listener);
+      const response = await request(listener.url);
+      expect(response.status).toBe(401);
+      expect(response.headers.get('content-type')).toMatch(/^application\/json\b/);
+      expect(response.headers.get('x-powered-by')).toBeNull();
+      expect(await response.json()).toEqual(REFUSED);
+    });
+
+    it('counts every request against the listener’s own limit, in the standard headers', async () => {
+      const listener = await started(2);
+      const first = await request(listener.url);
+      expect(first.headers.get('ratelimit-limit')).toBe('2');
+      expect(first.headers.get('ratelimit-remaining')).toBe('1');
+      await request(listener.url);
+      const refused = await request(listener.url);
+      expect(refused.status).toBe(429);
+      expect(refused.headers.get('retry-after')).toMatch(/^\d+$/);
+      expect(await refused.json()).toEqual({
+        jsonrpc: '2.0',
+        error: { code: -32029, message: 'Rate limit exceeded. Try again shortly.' },
+        id: null,
+      });
+    });
+
+    it('answers any method but POST with method-not-allowed, after authentication', async () => {
+      const listener = await started();
+      for (const url of [listener.url, listener.agentUrl]) {
+        const response = await fetch(url, { method: 'GET', headers: RUNTIME_HEADERS });
+        expect(response.status).toBe(405);
+        expect(await response.json()).toEqual({
+          jsonrpc: '2.0',
+          error: { code: -32000, message: 'Method not allowed' },
+          id: null,
+        });
+      }
+      const unauthenticated = await fetch(listener.url, { method: 'GET' });
+      expect(unauthenticated.status).toBe(401);
+    });
+
+    it('answers a body it cannot parse with a JSON-RPC parse error', async () => {
+      const listener = await started();
+      const malformed = await fetch(listener.url, {
+        method: 'POST',
+        headers: { ...RUNTIME_HEADERS, 'content-type': 'application/json' },
+        body: '{not json',
+      });
+      expect(malformed.status).toBe(400);
+      expect(await malformed.json()).toEqual(PARSE_ERROR);
+      const oversized = await fetch(listener.url, {
+        method: 'POST',
+        headers: { ...RUNTIME_HEADERS, 'content-type': 'application/json' },
+        body: JSON.stringify({ padding: 'x'.repeat(1024 * 1024) }),
+      });
+      expect(oversized.status).toBe(400);
+      expect(await oversized.json()).toEqual(PARSE_ERROR);
+    });
+
+    it('answers 404 on any other path, after authentication', async () => {
+      const listener = await started();
+      const base = new URL(listener.url);
+      for (const path of ['/', '/mcp/extra', '/other']) {
+        const response = await fetch(new URL(path, base), {
+          method: 'POST',
+          headers: { ...RUNTIME_HEADERS, 'content-type': 'application/json' },
+          body: '{}',
+        });
+        expect(response.status).toBe(404);
+      }
+    });
+
+    it('serves the MCP routes with a trailing slash too', async () => {
+      const listener = await started();
+      const response = await request(`${listener.url}/`);
+      expect(response.status).toBe(200);
+    });
+
+    it('refuses a Host that does not name loopback before anything else', async () => {
+      const listener = await started();
+      const url = new URL(listener.url);
+      const answer = await new Promise<{ status: number; body: string }>((resolve, reject) => {
+        const req = httpRequest(
+          {
+            host: '127.0.0.1',
+            port: url.port,
+            path: url.pathname,
+            method: 'POST',
+            headers: {
+              ...RUNTIME_HEADERS,
+              host: 'evil.example',
+              'content-type': 'application/json',
+            },
+          },
+          (res) => {
+            let body = '';
+            res.setEncoding('utf8');
+            res.on('data', (chunk: string) => (body += chunk));
+            res.on('end', () => resolve({ status: res.statusCode ?? 0, body }));
+          }
+        );
+        req.on('error', reject);
+        req.end('{}');
+      });
+      expect(answer.status).toBe(403);
+      expect(JSON.parse(answer.body)).toEqual({
+        jsonrpc: '2.0',
+        error: { code: -32002, message: 'Loopback origin required' },
+        id: null,
+      });
+    });
+
+    it('lets a browser on the listener’s own origin through, and refuses a malformed one', async () => {
+      const listener = await started();
+      const own = await request(listener.url, { origin: new URL(listener.url).origin });
+      expect(own.status).toBe(200);
+      const malformed = await request(listener.url, { origin: 'not a url' });
+      expect(malformed.status).toBe(403);
     });
   });
 });

@@ -8,11 +8,17 @@ vi.mock('../../services/core/config-manager.js', () => ({
     onChange: () => () => {},
   },
 }));
+// With login on, the real session gate would refuse these requests before the
+// route's own bars, and each one sets the user the gate would have proved
+// (`before` below), as the Express version stubbed `res.locals.user`.
+vi.mock('../../services/core/auth/session-gate.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../services/core/auth/session-gate.js')>()),
+  decideSessionGate: vi.fn(async () => ({ allowed: true })),
+}));
 vi.mock('../../services/core/auth/index.js', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../services/core/auth/index.js')>()),
   readOwnerAccount: () => ({ id: 'user_owner', name: 'Owner' }),
 }));
-import express from 'express';
 import request from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
 import { agents, createDb, runMigrations, type Db } from '@dorkos/db';
@@ -28,7 +34,8 @@ import {
 } from '../../services/connectors/bootstrap.js';
 import type { ComposioHttpClient } from '../../services/connectors/providers/composio-client.js';
 import type { NangoHttpClient } from '../../services/connectors/providers/nango-client.js';
-import { createConnectorProvidersRouter } from '../connector-providers.js';
+import { createConnectorProvidersRoutes } from '../connector-providers.js';
+import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
 
 const fixtureTarget = swappableServer();
 const fixtureServer = fixtureTarget.server;
@@ -113,17 +120,18 @@ describe('connector-providers router', () => {
       ...hermeticClients,
       ...(opts?.testConnector && { testConnector: { create: async () => null } }),
     });
-    const app = express();
-    app.use(express.json());
-    app.use((_req, res, next) => {
-      if (opts?.signedInAs) res.locals.user = { userId: opts.signedInAs, credential: 'cookie' };
-      next();
-    });
-    app.use(
-      '/api/connectors/providers',
-      createConnectorProvidersRouter({ bootstrapper, credentialStore: store })
+    return honoGroupListener(
+      {
+        path: '/api/connectors/providers',
+        routes: createConnectorProvidersRoutes({ bootstrapper, credentialStore: store }),
+      },
+      {
+        before: async (c, next) => {
+          if (opts?.signedInAs) c.set('user', { userId: opts.signedInAs, credential: 'cookie' });
+          await next();
+        },
+      }
     );
-    return app;
   }
 
   it('GET / lists both credential-gated providers, unconfigured on a bare install', async () => {

@@ -11,6 +11,8 @@
  * @module features/runtime-connect
  */
 export { RuntimeConnectFlow, renderRuntimeConnect } from './ui/RuntimeConnectFlow';
+// The first run's "Other service" row draws the DorkOS model form on its own.
+export { DoeInferenceForm } from './ui/DoeInferenceForm';
 export { LoginConnect } from './ui/LoginConnect';
 export { OpenCodeProviderPicker } from './ui/OpenCodeProviderPicker';
 // The runtimes settings tab names the connected source too ("Power source"), and

@@ -16,7 +16,12 @@ describe('DorkOS inference configuration', () => {
   it('adds an unconfigured runtime and preserves the existing default', () => {
     const settings = UserConfigSchema.parse({ version: 1 }).runtimes;
     expect(settings.default).toBe('claude-code');
-    expect(settings.doe).toEqual({ enabled: true, inference: null, defaultTrustStop: null });
+    expect(settings.doe).toEqual({
+      enabled: true,
+      inference: null,
+      defaultModel: null,
+      defaultTrustStop: null,
+    });
     expect(runtimeDisplayName('doe')).toBe('DorkOS');
     expect(runtimeAuthConnectKind('doe')).toBe('provider-picker');
     expect(harnessForRuntime('doe')).toBeUndefined();

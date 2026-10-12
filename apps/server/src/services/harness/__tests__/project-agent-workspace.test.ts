@@ -58,9 +58,12 @@ import { logger } from '../../../lib/logger.js';
  *
  * 8 → 9 for `working-with-spin-off-chats` (DOR-2790), which teaches an agent
  * when to start a spin-off chat and how to brief, check on and message one.
+ *
+ * 9 → 10 for `working-on-a-heartbeat` (DOR-2788), which teaches an agent how
+ * to end a beat with `end_beat` and how loudly to say what it found.
  */
 const PACK_NAMES = OPERATING_SKILLS_PACK.map((skill) => skill.name).sort();
-const PACK_SIZE = 9;
+const PACK_SIZE = 10;
 
 let tmpRoot: string;
 

@@ -3,14 +3,17 @@
  * package listing, plus package discovery/preview/install/uninstall/update
  * and the all-packages update check under `/api/marketplace/*`.
  *
- * The router is constructed via a factory that injects its dependencies
+ * The routes are built by a factory that injects their dependencies
  * (source manager, cache, fetcher, installer, uninstall flow, update flow,
- * dorkHome) so the same factory can be exercised under supertest without
- * touching the real filesystem.
+ * dorkHome), so a test can serve them behind the `/api` chain without touching
+ * the real filesystem. They are served from the Hono `/api` app
+ * (`http/hono-api.ts`), and only when the marketplace started
+ * (`startup/marketplace.ts`).
  *
  * @module routes/marketplace
  */
-import { Router } from 'express';
+import { Hono } from 'hono';
+import type { ApiEnv } from '../http/api-chain.js';
 import type { MarketplaceCache } from '../services/marketplace/cache/marketplace-cache.js';
 import type { PackageCacheRetention } from '../services/marketplace/cache/package-cache-retention.js';
 import type { MarketplaceSourceManager } from '../services/marketplace/sources/marketplace-source-manager.js';
@@ -35,7 +38,7 @@ import { mountPackageRoutes } from './marketplace/packages.js';
 import { mountSourceRoutes } from './marketplace/sources.js';
 import { mountUpdateRoutes } from './marketplace/updates.js';
 
-/** Dependencies injected into {@link createMarketplaceRouter}. */
+/** Dependencies injected into {@link createMarketplaceRoutes}. */
 export interface MarketplaceRouteDeps {
   /** Source manager for marketplaces.json CRUD. */
   sourceManager: MarketplaceSourceManager;
@@ -55,14 +58,14 @@ export interface MarketplaceRouteDeps {
   dorkHome: string;
   /**
    * The composed capability registry, read lazily because it is built AFTER this
-   * router (`index.ts`) — the same late-bound read the approval service uses.
+   * routes (`index.ts`) — the same late-bound read the approval service uses.
    *
    * These routes perform marketplace mutations directly rather than through
    * `registry.invoke`, because they own a response contract the cockpit and the
    * CLI already depend on. They therefore have to reach the tier gate explicitly,
    * through `authorizeCapability`. Returning `undefined` here means the registry
    * is not composed yet, which FAILS CLOSED for a destructive route rather than
-   * waving it through — see {@link createMarketplaceRouter}.
+   * waving it through — see {@link createMarketplaceRoutes}.
    */
   capabilityRegistry: () => CapabilityRegistry | undefined;
   /**
@@ -110,8 +113,11 @@ export interface MarketplaceRouteDeps {
 
 export type { AggregatedPackage } from '@dorkos/shared/marketplace-schemas';
 
+/** The marketplace routes, which each route group registers its paths on. */
+export type MarketplaceRoutes = Hono<ApiEnv>;
+
 /**
- * Create the marketplace management router.
+ * Create the marketplace management routes.
  *
  * Registers the following endpoints under the caller-chosen mount point
  * (typically `/api/marketplace`):
@@ -140,17 +146,18 @@ export type { AggregatedPackage } from '@dorkos/shared/marketplace-schemas';
  * @param deps - Injected dependencies (source manager, cache, fetcher,
  *   installer, uninstall flow, update flow, dorkHome).
  */
-export function createMarketplaceRouter(deps: MarketplaceRouteDeps): Router {
-  const router = Router();
+export function createMarketplaceRoutes(deps: MarketplaceRouteDeps): MarketplaceRoutes {
+  const app: MarketplaceRoutes = new Hono<ApiEnv>();
   const ctx = createRouteContext(deps);
-  // Registered in this order, which is the order Express matches them in.
-  mountSourceRoutes(router, deps, ctx);
-  mountInstalledRoutes(router, deps, ctx);
-  mountCacheRoutes(router, deps, ctx);
-  mountPackageRoutes(router, deps, ctx);
-  mountPackageActionRoutes(router, deps, ctx);
-  mountUpdateRoutes(router, deps, ctx);
-  mountHeldBackRoutes(router, deps, ctx);
-  mountDevLinkRoutes(router, deps, ctx);
-  return router;
+  // Registered in this order. No two groups share a path, so the order changes
+  // no answer.
+  mountSourceRoutes(app, deps, ctx);
+  mountInstalledRoutes(app, deps, ctx);
+  mountCacheRoutes(app, deps, ctx);
+  mountPackageRoutes(app, deps, ctx);
+  mountPackageActionRoutes(app, deps, ctx);
+  mountUpdateRoutes(app, deps, ctx);
+  mountHeldBackRoutes(app, deps, ctx);
+  mountDevLinkRoutes(app, deps, ctx);
+  return app;
 }

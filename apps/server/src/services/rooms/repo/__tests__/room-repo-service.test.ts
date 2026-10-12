@@ -223,6 +223,15 @@ describe('RoomRepoService', () => {
       expect(await git(['log', '--format=%an'], store.repoPath(ROOM_ID))).toBe('DorkOS operator');
     });
 
+    it('falls back to a plain name when git would refuse the operator’s name', async () => {
+      // DOR-2454: a name of only `<>` or `"` is one git refuses, so the enable
+      // commit failed. It now goes through the same gitAuthorName people's
+      // saves use.
+      operatorName = '<"">';
+      await service.enable(ROOM_ID, OPERATOR);
+      expect(await git(['log', '--format=%an'], store.repoPath(ROOM_ID))).toBe('DorkOS operator');
+    });
+
     it('is idempotent: the second call changes nothing and answers the binding it found', async () => {
       const first = await service.enable(ROOM_ID, OPERATOR);
       const head = await git(['rev-parse', 'HEAD'], store.repoPath(ROOM_ID));
@@ -558,6 +567,17 @@ describe('RoomRepoService', () => {
       expect(await git(['show', '--name-only', '--format=', 'HEAD'], repoDir)).toContain(
         'notes.md'
       );
+    });
+
+    it('keeps stray changes under a plain name when git would refuse the operator’s', async () => {
+      const repoDir = await withFiles();
+      operatorName = '<"">';
+      await writeFile(path.join(repoDir, 'notes.md'), 'jotted down\n', 'utf-8');
+
+      const result = await service.repairMainCheckout(ROOM_ID, OPERATOR, { action: 'commit' });
+
+      expect(result).toMatchObject({ action: 'commit', paths: 1, clean: true });
+      expect(await git(['log', '--format=%an', '-n', '1'], repoDir)).toBe('DorkOS operator');
     });
 
     it('discards exactly the files it was handed, and nothing else', async () => {

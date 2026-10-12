@@ -56,7 +56,7 @@ export function isAvatarContentType(
 /**
  * The most a photo may weigh, in bytes.
  *
- * Enforced by multer's `limits` at the route, which refuses the request while it
+ * Enforced by the upload parser's `limits` at the route, which refuses the request while it
  * is still being read — a cap applied after the write is a disk-fill bug rather
  * than a cap. Nothing re-encodes or resizes (that needs `sharp`, and this
  * feature adds no dependency), so this number plus a `max-w` on the render is

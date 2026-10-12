@@ -1,11 +1,12 @@
-import express from 'express';
+import type { RequestListener } from 'node:http';
 import request from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
-  createConnectorResourcesRouter,
+  createConnectorResourcesRoutes,
   type ConnectorResourcesRouterDeps,
 } from '../connector-resources.js';
+import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
 import { ConnectorAuthenticationFlowError } from '../../services/connectors/resources/authentication-flow-service.js';
 import { ConnectorAppActionsError } from '../../services/connectors/resources/app-actions-service.js';
 import { ConnectorOperatorQueryError } from '../../services/connectors/resources/operator-query-service.js';
@@ -13,12 +14,19 @@ import { ConnectorSessionAccessError } from '../../services/connectors/resources
 import { ManagedConnectorCloudError } from '../../services/core/auth/cloud-link-client.js';
 import { logger } from '../../lib/logger.js';
 
+// The routes are served through the `/api` chain, whose host guard and session
+// gate read the login setting: off, as on a fresh install. The routes' own
+// login lookup is injected per case.
+vi.mock('../../services/core/config-manager.js', () => ({
+  configManager: { get: vi.fn(() => undefined), set: vi.fn() },
+}));
+
 const OWNER = { kind: 'local_install', installationId: 'install-a' } as const;
 const fixtureTarget = swappableServer();
 
 describe('connector resource routes', () => {
   let deps: ConnectorResourcesRouterDeps;
-  let app: express.Express;
+  let app: RequestListener;
 
   beforeEach(() => {
     deps = {
@@ -59,9 +67,10 @@ describe('connector resource routes', () => {
           .mockResolvedValue({ sessionId: 'session-a', agentId: 'agent-a', connections: [] }),
       },
     } as unknown as ConnectorResourcesRouterDeps;
-    app = express();
-    app.use(express.json());
-    app.use('/api/connectors', createConnectorResourcesRouter(deps));
+    app = honoGroupListener({
+      path: '/api/connectors',
+      routes: createConnectorResourcesRoutes(deps),
+    });
   });
 
   function api() {
@@ -73,19 +82,21 @@ describe('connector resource routes', () => {
   // alone (DOR-2678).
   describe('with login on, the owner of this DorkOS alone', () => {
     function signedInAs(userId: string) {
-      const signedIn = express();
-      signedIn.use(express.json());
-      signedIn.use((_req, res, next) => {
-        res.locals.user = { userId, credential: 'cookie' };
-        next();
-      });
-      signedIn.use(
-        '/api/connectors',
-        createConnectorResourcesRouter({
-          ...deps,
-          loginEnabled: () => true,
-          isAccountOwner: (user) => user?.userId === 'user-owner',
-        })
+      const signedIn = honoGroupListener(
+        {
+          path: '/api/connectors',
+          routes: createConnectorResourcesRoutes({
+            ...deps,
+            loginEnabled: () => true,
+            isAccountOwner: (user) => user?.userId === 'user-owner',
+          }),
+        },
+        {
+          before: async (c, next) => {
+            c.set('user', { userId, credential: 'cookie' });
+            await next();
+          },
+        }
       );
       return request(fixtureTarget.mount(signedIn));
     }
@@ -131,8 +142,10 @@ describe('connector resource routes', () => {
 
   it('answers 404 for an app with no logo, without asking an owner', async () => {
     const resolveOwner = vi.fn(() => OWNER);
-    const ownerless = express();
-    ownerless.use('/api/connectors', createConnectorResourcesRouter({ ...deps, resolveOwner }));
+    const ownerless = honoGroupListener({
+      path: '/api/connectors',
+      routes: createConnectorResourcesRoutes({ ...deps, resolveOwner }),
+    });
 
     const response = await request(fixtureTarget.mount(ownerless))
       .get('/api/connectors/catalog/logos/unknown-app')
@@ -338,12 +351,10 @@ describe('connector resource routes', () => {
     };
 
     function withOrigins(origins: string[]) {
-      const served = express();
-      served.use(express.json());
-      served.use(
-        '/api/connectors',
-        createConnectorResourcesRouter({ ...deps, servedOrigins: () => origins })
-      );
+      const served = honoGroupListener({
+        path: '/api/connectors',
+        routes: createConnectorResourcesRoutes({ ...deps, servedOrigins: () => origins }),
+      });
       return request(fixtureTarget.mount(served));
     }
 

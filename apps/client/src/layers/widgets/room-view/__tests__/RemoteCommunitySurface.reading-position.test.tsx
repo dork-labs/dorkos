@@ -16,6 +16,7 @@ import { RemoteCommunitySurface } from '../ui/RemoteCommunitySurface';
  */
 const timeline = vi.hoisted(() => ({
   onTopRow: undefined as ((rowId: string | undefined) => void) | undefined,
+  resumeRow: undefined as (() => string | undefined) | undefined,
 }));
 vi.mock('@/layers/features/conversation', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/layers/features/conversation')>();
@@ -23,8 +24,12 @@ vi.mock('@/layers/features/conversation', async (importOriginal) => {
     ...actual,
     Conversation: {
       ...actual.Conversation,
-      Timeline: (props: { onTopRow?: (rowId: string | undefined) => void }) => {
+      Timeline: (props: {
+        onTopRow?: (rowId: string | undefined) => void;
+        resumeRow?: () => string | undefined;
+      }) => {
         timeline.onTopRow = props.onTopRow;
+        timeline.resumeRow = props.resumeRow;
         return null;
       },
     },
@@ -34,6 +39,7 @@ vi.mock('@/layers/features/conversation', async (importOriginal) => {
 afterEach(() => {
   cleanup();
   timeline.onTopRow = undefined;
+  timeline.resumeRow = undefined;
 });
 
 const access = {
@@ -67,7 +73,7 @@ const room = RemoteCommunityRoomSchema.parse({
   access,
 });
 
-async function mount(storedAnchor: string | null) {
+async function mount(storedAnchor: string | null, threadId?: string) {
   const transport = withSpacesExperiment(createMockTransport());
   vi.mocked(transport.listCommunityConnections).mockResolvedValue([
     {
@@ -118,7 +124,12 @@ async function mount(storedAnchor: string | null) {
     <QueryClientProvider client={queries}>
       <TransportProvider transport={transport}>
         <TooltipProvider>
-          <RemoteCommunitySurface community="a" roomId="same" onThread={vi.fn()} />
+          <RemoteCommunitySurface
+            community="a"
+            roomId="same"
+            threadId={threadId}
+            onThread={vi.fn()}
+          />
         </TooltipProvider>
       </TransportProvider>
     </QueryClientProvider>
@@ -183,5 +194,27 @@ describe('remote community reading position', () => {
     act(() => timeline.onTopRow!(undefined));
     await settle();
     expect(anchorsSaved(transport)).toEqual([]);
+  });
+
+  // Purpose: the saved row is the channel's. Scrolling inside a thread, or reaching its
+  // bottom, used to overwrite it with a reply id (or clear it), so the channel reopened
+  // at its newest message with landing reporting `end-row-gone` (DOR-2676). Fails if a
+  // thread view saves or clears anything.
+  it('neither saves nor clears the channel’s row from inside a thread', async () => {
+    const transport = await mount('channel-row', 'root-1');
+    act(() => timeline.onTopRow!('reply-row'));
+    await settle();
+    act(() => timeline.onTopRow!(undefined));
+    await settle();
+    expect(anchorsSaved(transport)).toEqual([]);
+  });
+
+  // Purpose: a thread does not try to land on the channel's row, which is not in its feed.
+  it('resumes the channel on its saved row, and a thread on none', async () => {
+    await mount('channel-row');
+    expect(timeline.resumeRow!()).toBe('channel-row');
+    cleanup();
+    await mount('channel-row', 'root-1');
+    expect(timeline.resumeRow!()).toBeUndefined();
   });
 });

@@ -15,7 +15,6 @@ import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import express from 'express';
 import type { Server } from 'node:http';
 import request from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
@@ -26,7 +25,14 @@ import { TokenConfirmationProvider } from '../../services/marketplace-mcp/confir
 import { createInstallHandler } from '../../services/marketplace-mcp/tool-install.js';
 import type { InstallerLike } from '../../services/marketplace/installer/marketplace-installer.js';
 import type { MarketplaceMcpDeps } from '../../services/marketplace-mcp/marketplace-mcp-tools.js';
-import { createApprovalsRouter } from '../approvals.js';
+import { createApprovalsRoutes } from '../approvals.js';
+import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
+
+// The routes are served through the `/api` chain, whose host guard and session
+// gate read the login setting: off, as on a fresh install.
+vi.mock('../../services/core/config-manager.js', () => ({
+  configManager: { get: vi.fn(() => undefined), set: vi.fn() },
+}));
 
 /** An empty permission preview — this test is about the gate, not the effects. */
 const EMPTY_PREVIEW = {
@@ -60,7 +66,6 @@ describe('marketplace install → cockpit approval → retry', () => {
   let approvals: ApprovalService;
   let installer: InstallerLike;
   let handler: ReturnType<typeof createInstallHandler>;
-  let app: express.Express;
   let server: Server;
 
   beforeEach(() => {
@@ -90,12 +95,14 @@ describe('marketplace install → cockpit approval → retry', () => {
       consent: { settle: vi.fn(async () => {}), removed: vi.fn() },
     } as unknown as MarketplaceMcpDeps);
 
-    app = express();
-    app.use(express.json());
     // Local login off: the DEFAULT posture, and therefore the one this flow has to
     // work in. Who may decide is `resolveDecisionAuthority`; see its module TSDoc.
-    app.use('/api/approvals', createApprovalsRouter(approvals, { isLoginEnabled: () => false }));
-    server = target.mount(app);
+    server = target.mount(
+      honoGroupListener({
+        path: '/api/approvals',
+        routes: createApprovalsRoutes(approvals, { isLoginEnabled: () => false }),
+      })
+    );
   });
 
   afterEach(() => {
@@ -178,21 +185,24 @@ describe('marketplace install → cockpit approval → retry', () => {
   it('refuses to let the requesting agent grant its own approval', async () => {
     // Same app, but every request now carries a resolved agent identity — what
     // the `X-DorkOS-Agent` middleware attaches for an agent-originated call.
-    const agentApp = express();
-    agentApp.use(express.json());
-    agentApp.use((_req, res, next) => {
-      res.locals.agentIdentity = {
-        agentPath: '/Users/dev/agents/dorkbot',
-        displayName: 'DorkBot',
-        createdAt: new Date().toISOString(),
-      };
-      next();
-    });
-    agentApp.use(
-      '/api/approvals',
-      createApprovalsRouter(approvals, { isLoginEnabled: () => false })
+    const agentServer = target.mount(
+      honoGroupListener(
+        {
+          path: '/api/approvals',
+          routes: createApprovalsRoutes(approvals, { isLoginEnabled: () => false }),
+        },
+        {
+          before: async (c, next) => {
+            c.set('agentIdentity', {
+              agentPath: '/Users/dev/agents/dorkbot',
+              displayName: 'DorkBot',
+              createdAt: new Date().toISOString(),
+            });
+            await next();
+          },
+        }
+      )
     );
-    const agentServer = target.mount(agentApp);
 
     const first = await handler({ name: 'sentry-monitor', marketplace: 'community' });
     const { confirmationToken } = parsePayload<{ confirmationToken: string }>(first);

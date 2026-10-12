@@ -2,11 +2,11 @@ import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import express from 'express';
 import request from '@dorkos/test-utils/supertest';
 import { listeningServer } from '@dorkos/test-utils/listening-server';
 import type { AccountUsage } from '@dorkos/shared/account-usage';
-import runtimesRouter from '../runtimes.js';
+import { createRuntimesRoutes } from '../runtimes.js';
+import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
 import { initConfigManager } from '../../services/core/config-manager.js';
 import type { AccountUsageStore } from '../../services/core/usage/account-usage-store.js';
 import { setAccountUsageStore } from '../../services/core/usage/current-usage-store.js';
@@ -14,9 +14,9 @@ import type { RuntimeAccount } from '../../services/core/usage/runtime-accounts.
 import { resetAccountProbeState } from '../../services/runtimes/claude-code/accounts/account-probe.js';
 import { AGENT_IDENTITY_HEADER } from '../../middleware/agent-identity.js';
 
-const app = express();
-app.use('/api/runtimes', runtimesRouter);
-const server = listeningServer(app);
+const server = listeningServer(
+  honoGroupListener({ path: '/api/runtimes', routes: createRuntimesRoutes() })
+);
 
 const usage = { runtime: 'claude-code', accountId: 'work', state: 'unknown' } as AccountUsage;
 

@@ -8,7 +8,7 @@ export function OnboardingPage() {
   return (
     <PlaygroundPageLayout
       title="Onboarding"
-      description="Full interactive onboarding flow, individual step previews, and supporting components."
+      description="The first run, each of its screens and states, and the #team chips it lands on."
       sections={ONBOARDING_SECTIONS}
     >
       <OnboardingFlowShowcases />

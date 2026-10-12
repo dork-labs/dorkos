@@ -48,14 +48,6 @@ const ALLOWED: Record<string, { count: number; reason: string }> = {
     count: 1,
     reason: `${NOT_STATUS}: the "can initiate messages" capability mark`,
   },
-  'layers/features/chat/ui/chips/TouchChip.tsx': {
-    count: 4,
-    reason: `${NOT_STATUS}: diff +/- counts`,
-  },
-  'layers/features/chat/ui/chips/TouchChipStrip.tsx': {
-    count: 4,
-    reason: `${NOT_STATUS}: diff +/- counts`,
-  },
   'layers/features/chat/ui/message/OutputRenderer.tsx': {
     count: 1,
     reason: `${NOT_STATUS}: JSON syntax highlighting`,

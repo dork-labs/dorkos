@@ -522,8 +522,8 @@ describe('RoomMessage — the action surface', () => {
 
   it('indents a list the same way the session transcript does (DOR-2074)', () => {
     // `render-room-body.tsx` puts `msg-prose` on the body's `MarkdownContent`
-    // — the same typography hook `StreamingText` (session) and `NarrationMessage`
-    // (onboarding) put on theirs, `index.css`'s `.msg-prose ol/ul` rule being
+    // — the same typography hook `StreamingText` (session) puts on its own,
+    // `index.css`'s `.msg-prose ol/ul` rule being
     // what gives a list its left padding and outside marker position. Without
     // it, Streamdown's own bare default (`list-style-position: inside`, no
     // padding) draws a list flush with the text column instead of indented from

@@ -649,6 +649,25 @@ describe('createDataProviderContext', () => {
       }
     });
 
+    it('also cancels a timer started after the cleanups list was copied (DOR-2462)', () => {
+      vi.useFakeTimers();
+      try {
+        const { ctx, dispose, getScheduledCleanups } = buildCtx();
+        // What the lifecycle stores when register() returns: a copy.
+        const copied = getScheduledCleanups();
+        const later = vi.fn(async () => undefined);
+        ctx.schedule(60, later);
+        for (const cancel of copied) cancel();
+        dispose();
+        vi.advanceTimersByTime(10 * 60_000);
+
+        expect(copied).toHaveLength(0);
+        expect(later).not.toHaveBeenCalled();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
     it('sends no agent message once disposed, and listens to nothing (DOR-2683)', async () => {
       const send = vi.fn();
       const subscribe = vi.fn(() => () => undefined);

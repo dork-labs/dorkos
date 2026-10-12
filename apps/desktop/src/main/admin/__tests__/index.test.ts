@@ -189,9 +189,8 @@ describe('Restart Server', () => {
     // "DorkOS couldn't restart its server. DorkOS is already restarting its
     // server." — two sentences that contradict each other, from one click.
     const { restartServer } = await import('../../server-process');
-    vi.mocked(restartServer).mockRejectedValue(
-      new Error('DorkOS is already restarting its server. Give it a moment.')
-    );
+    const { RestartBusyError } = await import('../../server-process');
+    vi.mocked(restartServer).mockRejectedValue(new RestartBusyError());
     const invoke = await armHandlers();
 
     expect(await invoke('admin:restart-server')).toEqual({
@@ -314,6 +313,31 @@ describe('Reset All Data', () => {
     // The page was not reloaded, so it can say this itself; a dialog too would
     // be the same failure told twice.
     expect(dialog.showErrorBox).not.toHaveBeenCalled();
+  });
+
+  it('says nothing was deleted when a restart was already running (DOR-2133)', async () => {
+    // Refused before the deletion could run. "Your data was deleted" here told
+    // the person their data was gone when it was untouched.
+    const { restartServer, RestartBusyError } = await import('../../server-process');
+    const { pointWindowsAtServer } = await import('../../server-crash-recovery');
+    vi.mocked(restartServer).mockRejectedValue(new RestartBusyError());
+    const invoke = await armHandlers();
+
+    expect(await invoke('admin:reset-all-data')).toEqual({
+      ok: false,
+      message: 'Nothing was deleted. DorkOS is already restarting its server. Give it a moment.',
+    });
+    expect(pointWindowsAtServer).not.toHaveBeenCalled();
+  });
+
+  it('says nothing was deleted for a failure it cannot place', async () => {
+    const { restartServer } = await import('../../server-process');
+    vi.mocked(restartServer).mockRejectedValue(new Error('The old server would not stop.'));
+    const invoke = await armHandlers();
+
+    const result = await invoke('admin:reset-all-data');
+    expect(result).toMatchObject({ ok: false });
+    expect(result.ok ? '' : result.message).toMatch(/^Nothing was deleted\./);
   });
 
   it('answers "was my data deleted?" when the restart failed too', async () => {

@@ -42,7 +42,6 @@
  * @module routes/__tests__/tasks-permission-escalation
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import express from 'express';
 import request from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
 import fs from 'node:fs';
@@ -85,7 +84,8 @@ vi.mock('../../lib/boundary.js', () => ({
   isWithinBoundary: vi.fn().mockResolvedValue(true),
 }));
 
-import { createTasksRouter } from '../tasks.js';
+import { createTasksRoutes } from '../tasks.js';
+import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
 import { TaskRegistrar } from '../../services/tasks/task-registrar.js';
 import { TaskStore } from '../../services/tasks/task-store.js';
 import type { TaskSchedulerService } from '../../services/tasks/task-scheduler-service.js';
@@ -113,7 +113,6 @@ function createMockScheduler(): TaskSchedulerService {
 }
 
 describe('an agent cannot escalate a schedule to bypassPermissions', () => {
-  let app: express.Application;
   let store: TaskStore;
   let db: Db;
   let dorkHome: string;
@@ -124,15 +123,19 @@ describe('an agent cannot escalate a schedule to bypassPermissions', () => {
     db = createTestDb();
     store = new TaskStore(db);
 
-    app = express();
-    app.use(express.json());
     const scheduler = createMockScheduler();
-    app.use(
-      '/api/tasks',
-      createTasksRouter(store, scheduler, new TaskRegistrar({ store, scheduler }), dorkHome)
-    );
 
-    fixtureTarget.mount(app);
+    fixtureTarget.mount(
+      honoGroupListener({
+        path: '/api/tasks',
+        routes: createTasksRoutes({
+          store,
+          scheduler,
+          registrar: new TaskRegistrar({ store, scheduler }),
+          dorkHome,
+        }),
+      })
+    );
   });
 
   afterEach(() => {

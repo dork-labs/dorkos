@@ -61,18 +61,17 @@ vi.mock('../../services/tasks/lifecycle/update-task-file.js', () => ({
   applyTaskFileUpdate: vi.fn(async () => ({ ok: true, changesFile: false })),
 }));
 
-import express from 'express';
 import request from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
 import { createTestDb } from '@dorkos/test-utils/db';
 import type { Db } from '@dorkos/db';
 import type { Task } from '@dorkos/shared/schemas';
-import { createTasksRouter } from '../tasks.js';
+import { createTasksRoutes } from '../tasks.js';
+import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
 import { TaskRegistrar } from '../../services/tasks/task-registrar.js';
 import { TaskStore } from '../../services/tasks/task-store.js';
 import type { TaskSchedulerService } from '../../services/tasks/task-scheduler-service.js';
 import type { ActivityService } from '../../services/activity/activity-service.js';
-import { resolveAgentIdentity } from '../../middleware/agent-identity.js';
 import { createScheduledTask } from '../../services/tasks/lifecycle/create-task.js';
 
 vi.mock('../../services/tasks/lifecycle/create-task.js', () => ({
@@ -192,21 +191,19 @@ describe('who the Activity feed says changed a scheduled task', () => {
     } as unknown as ActivityService;
 
     const scheduler = createMockScheduler();
-    const app = express();
-    app.use(express.json());
-    app.use(resolveAgentIdentity);
-    app.use(
-      '/api/tasks',
-      createTasksRouter(
-        store,
-        scheduler,
-        new TaskRegistrar({ store, scheduler }),
-        '/tmp/dork-test',
-        undefined,
-        activityService
-      )
+    // The `/api` chain resolves the agent identity, as `app.ts` did.
+    fixtureTarget.mount(
+      honoGroupListener({
+        path: '/api/tasks',
+        routes: createTasksRoutes({
+          store,
+          scheduler,
+          registrar: new TaskRegistrar({ store, scheduler }),
+          dorkHome: '/tmp/dork-test',
+          activity: activityService,
+        }),
+      })
     );
-    fixtureTarget.mount(app);
   });
 
   afterEach(() => {

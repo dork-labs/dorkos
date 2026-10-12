@@ -356,6 +356,33 @@ describe('ConnectorOperatorQueryService', () => {
     expect(misses.reachProblem).toBe('app_not_reached');
   });
 
+  it('finds an app by its service id as well as its name (DOR-2237)', async () => {
+    // "zoho crm" does not contain "zohocrm": only the id can match. Fails if the search
+    // reads display names alone, which is what an agent searching by id ran into.
+    const ids = new ConnectorRegistry({
+      db,
+      configuredOwner: { ownerKind: OWNER.kind, ownerId: OWNER.installationId },
+    });
+    ids.register(
+      new FakeConnectorProvider({
+        instanceId: ConnectorProviderInstanceIdSchema.parse('provider-ids'),
+        type: 'fake',
+        custody: 'managed',
+        toolkits: [{ slug: 'zohocrm', displayName: 'Zoho CRM', authKind: 'oauth2' }],
+      }),
+      'material-ids'
+    );
+    const byId = new ConnectorOperatorQueryService({
+      db,
+      registry: ids,
+      sessions: { resolveSessionAgent: () => undefined },
+      agentOwnership: { ownsAgent: () => false },
+    });
+
+    const page = await byId.catalog({ query: 'zohocrm', signal: new AbortController().signal });
+    expect(page.services.map((entry) => entry.serviceSlug)).toEqual(['zohocrm']);
+  });
+
   it('gives each app a same-origin logo path and one line, never the service’s logo URL', async () => {
     const logoRegistry = new ConnectorRegistry({
       db,

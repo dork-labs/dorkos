@@ -89,7 +89,7 @@ export function registerReadCursorRoutes(
       throw new ApiError(401, 'UNAUTHENTICATED', 'This sign-in is no longer valid.');
     const body = await readJson(c, CommunityWireReadCursorRequestSchema);
     const { channel, current } = await transaction(pool, async (client) => {
-      const channel = await lockChannel(client, c.req.param('id'), member, 'read');
+      const channel = await lockChannel(client, c.req.param('id'), member, 'read', 'shared');
       requireJoined(channel);
       await assertPrincipalCurrentInTransaction(client, member, 'read', openedSession?.session.id);
       const seq = decodeCursor(

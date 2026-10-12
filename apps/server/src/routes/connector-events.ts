@@ -1,6 +1,6 @@
 /** Owner-only notification discovery, explicit receive consent and write-only signing setup. */
 import { createHash } from 'node:crypto';
-import { Router } from 'express';
+import { Hono, type Context, type MiddlewareHandler } from 'hono';
 import { z } from 'zod';
 import { stableStringify } from '@dorkos/shared/capabilities';
 import {
@@ -11,6 +11,9 @@ import {
   ConnectionEventSubscriptionSchema,
   CreateConnectionEventSubscriptionSchema,
 } from '@dorkos/shared/connector-event-schemas';
+import type { ApiEnv } from '../http/api-chain.js';
+import { readJsonBody } from '../http/request-body.js';
+import { readQuery } from '../http/request-query.js';
 import {
   ConnectorSubscriptionError,
   type ConnectorSubscriptionStore,
@@ -21,11 +24,11 @@ import type {
   ManagedEventConsentAuthority,
 } from '../services/connectors/events/grant-port.js';
 import type { ConnectorEventSettingsService } from '../services/connectors/events/settings-service.js';
-import { sendManagedCloudError } from './managed-cloud-error.js';
+import { managedCloudErrorResponse } from './managed-cloud-error.js';
 import {
   resolveConnectorOperator,
   type ConnectorOwnerBoundaryDeps,
-} from './connector-management.js';
+} from './connector-owner-boundary.js';
 
 /** Existing owner boundary plus exact event domain services; no provider identity comes from a caller. */
 export interface ConnectorEventsRouterDeps extends ConnectorOwnerBoundaryDeps {
@@ -37,39 +40,48 @@ export interface ConnectorEventsRouterDeps extends ConnectorOwnerBoundaryDeps {
 }
 const CursorSchema = z.object({ cursor: z.string().min(1).max(512).optional() }).strict();
 
-/** Expose owner notification actions separately from signed machine ingress and agent proposals. */
-export function createConnectorEventsRouter(deps: ConnectorEventsRouterDeps): Router {
-  const router = Router();
+/**
+ * Expose owner notification actions separately from signed machine ingress and agent proposals.
+ *
+ * Every error a route here throws is answered by {@link answerEventsError}:
+ * the notification routes have always had their own error answers, which no
+ * other connector route shares.
+ *
+ * @param deps - The owner boundary and the notification services.
+ * @returns The routes, mounted at `/api/connectors`.
+ */
+export function createConnectorEventsRoutes(deps: ConnectorEventsRouterDeps): Hono<ApiEnv> {
+  const router = new Hono<ApiEnv>();
+  router.onError(answerEventsError);
   const prefix = '/connections/:connectionId/events';
-  router.use(prefix, (req, res, next) => {
-    const owner = resolveConnectorOperator(req, res, deps);
-    if (!owner) return;
-    res.locals.eventOwner = owner;
-    next();
-  });
-  router.get(`${prefix}/definitions`, async (req, res) => {
-    const query = CursorSchema.parse(req.query);
+  router.get(`${prefix}/definitions`, async (c) => {
+    const owner = resolveConnectorOperator(c, deps);
+    if (owner instanceof Response) return owner;
+    const query = CursorSchema.parse(readQuery(c));
     const page = await deps.subscriptions.discover(
-      res.locals.eventOwner,
-      String(req.params.connectionId),
+      owner,
+      c.req.param('connectionId'),
       query.cursor,
       AbortSignal.timeout(30_000)
     );
-    res.json(ConnectionEventDefinitionPageSchema.parse(page));
+    return c.json(ConnectionEventDefinitionPageSchema.parse(page));
   });
-  router.get(`${prefix}/subscriptions`, (req, res) => {
-    const query = CursorSchema.parse(req.query);
-    res.json(
+  router.get(`${prefix}/subscriptions`, (c) => {
+    const owner = resolveConnectorOperator(c, deps);
+    if (owner instanceof Response) return owner;
+    const query = CursorSchema.parse(readQuery(c));
+    return c.json(
       ConnectionEventSubscriptionPageSchema.parse(
-        deps.store.list(res.locals.eventOwner, String(req.params.connectionId), query.cursor)
+        deps.store.list(owner, c.req.param('connectionId'), query.cursor)
       )
     );
   });
-  router.post(`${prefix}/subscriptions`, async (req, res) => {
+  router.post(`${prefix}/subscriptions`, async (c) => {
+    const owner = resolveConnectorOperator(c, deps);
+    if (owner instanceof Response) return owner;
     const { requestId, manageExistingTrigger, ...scope } =
-      CreateConnectionEventSubscriptionSchema.parse(req.body);
-    const owner = res.locals.eventOwner;
-    const connectionId = String(req.params.connectionId);
+      CreateConnectionEventSubscriptionSchema.parse(readJsonBody(c));
+    const connectionId = c.req.param('connectionId');
     const reviewId = `owner-event:${createHash('sha256').update(stableStringify(owner)).digest('hex')}:${requestId}`;
     const result = await deps.grants.approve(
       owner,
@@ -83,14 +95,16 @@ export function createConnectorEventsRouter(deps: ConnectorEventsRouterDeps): Ro
     if (result.state === 'unavailable' || result.selections.length !== 1)
       throw new ConnectorSubscriptionError('definition_changed');
     const subscription = deps.store.get(owner, connectionId, result.selections[0]!.subscriptionId);
-    res
-      .status(subscription.state === 'active' ? 201 : 202)
-      .json(ConnectionEventSubscriptionSchema.parse(subscription));
+    return c.json(
+      ConnectionEventSubscriptionSchema.parse(subscription),
+      subscription.state === 'active' ? 201 : 202
+    );
   });
-  router.delete(`${prefix}/subscriptions/:subscriptionId`, async (req, res) => {
-    const owner = res.locals.eventOwner;
-    const connectionId = String(req.params.connectionId);
-    const subscriptionId = String(req.params.subscriptionId);
+  router.delete(`${prefix}/subscriptions/:subscriptionId`, async (c) => {
+    const owner = resolveConnectorOperator(c, deps);
+    if (owner instanceof Response) return owner;
+    const connectionId = c.req.param('connectionId');
+    const subscriptionId = c.req.param('subscriptionId');
     deps.store.get(owner, connectionId, subscriptionId);
     const connection = deps.store.connection(owner, connectionId, false);
     const signal = AbortSignal.timeout(30_000);
@@ -102,69 +116,80 @@ export function createConnectorEventsRouter(deps: ConnectorEventsRouterDeps): Ro
       // existing outbox's job, which keeps retrying if this first try fails.
       await deps.managed.reconcile(subscriptionId, revoked.scopeVersion, signal).catch(() => false);
     }
-    res.status(204).end();
+    return c.body(null, 204);
   });
-  router.get(`${prefix}/source`, (req, res) => {
-    const owner = res.locals.eventOwner;
-    const connection = deps.store.connection(owner, String(req.params.connectionId), false);
-    res.json(
+  router.get(`${prefix}/source`, (c) => {
+    const owner = resolveConnectorOperator(c, deps);
+    if (owner instanceof Response) return owner;
+    const connection = deps.store.connection(owner, c.req.param('connectionId'), false);
+    return c.json(
       ConnectionEventSourceStatusSchema.parse(
         deps.settings.describe(owner, connection.providerInstanceId)
       )
     );
   });
-  router.put(`${prefix}/source`, async (req, res) => {
-    const owner = res.locals.eventOwner;
-    const input = ConfigureConnectionEventSourceSchema.parse(req.body);
-    const connection = deps.store.connection(owner, String(req.params.connectionId));
-    req.body = undefined;
-    res.json(
+  router.put(`${prefix}/source`, async (c) => {
+    const owner = resolveConnectorOperator(c, deps);
+    if (owner instanceof Response) return owner;
+    const input = ConfigureConnectionEventSourceSchema.parse(readJsonBody(c));
+    const connection = deps.store.connection(owner, c.req.param('connectionId'));
+    // Drop the signing secret from the request before anything else can read it.
+    c.set('body', undefined);
+    (c.env.incoming as { body?: unknown }).body = undefined;
+    return c.json(
       ConnectionEventSourceStatusSchema.parse(
         await deps.settings.configure(owner, connection.providerInstanceId, input)
       )
     );
   });
-  router.use(
-    (
-      error: unknown,
-      _req: import('express').Request,
-      res: import('express').Response,
-      _next: import('express').NextFunction
-    ) => {
-      if (error instanceof z.ZodError) {
-        res.status(400).json({
-          code: 'invalid_event_request',
-          error: 'Check the notification settings and try again.',
-        });
-        return;
-      }
-      // A DorkOS account refusal says which one, before the generic outage.
-      if (sendManagedCloudError(res, error)) return;
-      if (!(error instanceof ConnectorSubscriptionError)) {
-        res.status(503).json({
-          code: 'events_unavailable',
-          error: 'Notifications are temporarily unavailable.',
-        });
-        return;
-      }
-      const status =
-        error.code === 'not_found'
-          ? 404
-          : error.code === 'invalid_filter'
-            ? 400
-            : error.code === 'events_unavailable'
-              ? 503
-              : error.code === 'destination_unavailable'
-                ? 403
-                : 409;
-      res.status(status).json({
-        code: error.code,
-        error:
-          status === 409
-            ? 'These notification settings changed. Review them again.'
-            : 'This notification action is unavailable.',
-      });
-    }
-  );
+  // Any other path under one connection's notifications still asks for the
+  // owner first, as the Express prefix guard did, before the `/api` 404.
+  // Registered after the routes, so a route answers before this runs.
+  const guardPrefix: MiddlewareHandler<ApiEnv> = async (c, next) => {
+    const owner = resolveConnectorOperator(c, deps);
+    if (owner instanceof Response) return owner;
+    await next();
+  };
+  router.use(prefix, guardPrefix);
+  router.use(`${prefix}/*`, guardPrefix);
   return router;
+}
+
+/** The one answer for every error a notification route throws. */
+function answerEventsError(error: Error, c: Context<ApiEnv>): Response {
+  if (error instanceof z.ZodError) {
+    return c.json(
+      { code: 'invalid_event_request', error: 'Check the notification settings and try again.' },
+      400
+    );
+  }
+  // A DorkOS account refusal says which one, before the generic outage.
+  const managed = managedCloudErrorResponse(c, error);
+  if (managed) return managed;
+  if (!(error instanceof ConnectorSubscriptionError)) {
+    return c.json(
+      { code: 'events_unavailable', error: 'Notifications are temporarily unavailable.' },
+      503
+    );
+  }
+  const status =
+    error.code === 'not_found'
+      ? 404
+      : error.code === 'invalid_filter'
+        ? 400
+        : error.code === 'events_unavailable'
+          ? 503
+          : error.code === 'destination_unavailable'
+            ? 403
+            : 409;
+  return c.json(
+    {
+      code: error.code,
+      error:
+        status === 409
+          ? 'These notification settings changed. Review them again.'
+          : 'This notification action is unavailable.',
+    },
+    status
+  );
 }

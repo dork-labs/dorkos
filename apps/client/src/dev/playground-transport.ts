@@ -366,6 +366,11 @@ export function createPlaygroundTransport(): Transport {
         return async () => ({ project: null, allow: null, accounts: [] });
       }
       if (prop === 'setAccountOnlyProjects') return async () => ({ onlyProjects: null });
+      // The DorkOS model form (the first run's "Other service" row) reads what
+      // is saved before it draws; nothing saved and no credits is the honest
+      // answer, and `null` is neither.
+      if (prop === 'getDoeInference') return async () => ({ inference: null, hasKey: false });
+      if (prop === 'getDoeCreditsModels') return async () => ({ endpoint: null, models: [] });
       // Resolve with null — safe for hooks expecting arrays, objects, or primitives
       return async () => null;
     },

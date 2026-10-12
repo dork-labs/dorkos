@@ -829,6 +829,7 @@ function memberLine(member: RoomContextMember): string {
   const note = addressNote(member);
   if (member.isSelf) return `${who} (you${note})`;
   if (member.isPerson) return `${who} (${personKind(member.origin)}${note})`;
+  if (member.retired) return `${who} (agent, retired, will not reply${note})`;
   if (!member.responseMode) return `${who} (the room itself${note})`;
   return member.responseMode === 'silent'
     ? `${who} (agent, set not to reply here${note})`

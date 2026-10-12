@@ -25,10 +25,21 @@ const uuidSchema = z.string().uuid();
 export function parseBody<T>(schema: ZodSchema<T>, data: unknown, res: Response): T | null {
   const result = schema.safeParse(data);
   if (!result.success) {
-    res.status(400).json({ error: 'Validation failed', details: z.flattenError(result.error) });
+    res.status(400).json(validationFailureBody(result.error));
     return null;
   }
   return result.data;
+}
+
+/**
+ * The 400 body {@link parseBody} answers with, for a route that answers it
+ * itself: a Hono route returns `c.json(validationFailureBody(error), 400)`.
+ *
+ * @param error - Why the data failed its schema.
+ * @returns The body.
+ */
+export function validationFailureBody(error: z.ZodError) {
+  return { error: 'Validation failed', details: z.flattenError(error) };
 }
 
 /**
@@ -64,7 +75,19 @@ export function parseSessionId(id: unknown): string | null {
  * @param code - Machine-readable error code
  */
 export function sendError(res: Response, status: number, message: string, code: string): void {
-  res.status(status).json({ error: message, code });
+  res.status(status).json(errorBody(message, code));
+}
+
+/**
+ * The body {@link sendError} answers with, for a route that answers it itself:
+ * a Hono route returns `c.json(errorBody(message, code), status)`.
+ *
+ * @param message - Human-readable error message
+ * @param code - Machine-readable error code
+ * @returns The body.
+ */
+export function errorBody(message: string, code: string): { error: string; code: string } {
+  return { error: message, code };
 }
 
 /**

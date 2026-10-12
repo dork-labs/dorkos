@@ -430,15 +430,17 @@ Seeding uses `POST /api/test/load-fixture`. Like every route under `/api/test/`,
 
 **How the server keeps up.** Each new message is read from the database once for its channel and the same copy goes to every open stream there; a stream reads for itself only when it is more than a minute behind. A busy channel wakes its streams at most every 100 ms, so each stream sends what arrived in that time in one write. Each stream checks its access when it opens and again only when a notice says it may have changed (a removal, a ban, a sign-out, a held or archived space, and the rest) or when its fallback interval passes, and the streams that recheck in the same moment share one query. A message posted after a revocation never reaches the revoked stream: Postgres delivers notices in commit order, so the revocation's notice always arrives first.
 
-**Recorded runs** (M4 Pro laptop, Postgres 17 in Docker on the same machine, pool 10, 50 writers, 50 posts a second for 60 seconds; readers and writers on the same laptop as the server):
+**How posting keeps up.** Posts to one channel run side by side. Each one checks membership, the archive, mute, rules, slow mode, the posting limit and its mentions while holding the channel in a shared way, which a change to the channel (archiving it, a member leaving) still waits for. Posts, reads and changes line up for a channel in the order they arrive, so a change is never kept out by a steady stream of posts. The message then gets the channel's next number inside its own commit, which is the only moment one post waits for another. Numbers therefore commit in order, so history has no gaps and live notices arrive in number order, and no post holds the number while the app is busy. Until DOR-2837 each post locked its channel for its whole transaction, so in a busy channel every post queued behind the one before it.
 
-| Open streams | Before (DOR-2771)                                                                      | Now                                                                                                         |
-| ------------ | -------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
-| 1,000        | delivery p50 119.6 s, p95 182.2 s; 2.7 million of 3 million deliveries missed the wait | p50 0.27 s, p95 0.61 s, no misses, no failed posts: **meets the target**                                    |
-| 5,000        | not run                                                                                | p95 2.4 s to 4.3 s over two runs, no misses, no failed posts: not yet the target                            |
-| 10,000       | not run                                                                                | p95 over 40 s and a third of posts timed out; the load generator was saturated, so the run was inconclusive |
+**Recorded runs** (M4 Pro laptop, Postgres 17 in Docker on the same machine, pool 10, 50 writers, 50 posts a second for 60 seconds; readers and writers on the same laptop as the server, which was also running other work, so repeat runs differ). The last two columns were run the same day, each on a fresh database. The lock figures count samples of the database's active queries, taken five times a second while posts went out, that were waiting on a lock.
 
-Above about 5,000 streams on this laptop, posting is what falls behind: each post locks its channel while it commits, and with the readers, the server and the database sharing one laptop's cores those commits fall below 50 a second. The 20,000-stream target has to be checked on production-size hardware with the load machine kept separate, as below; a local run cannot show it.
+| Open streams | Before (DOR-2771)                                                                      | Posts locked their channel (DOR-2830)                                                                                              | Now (DOR-2837)                                                                                                                                            |
+| ------------ | -------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1,000        | delivery p50 119.6 s, p95 182.2 s; 2.7 million of 3 million deliveries missed the wait | p95 0.13 s, no misses, no failed posts: **meets the target**                                                                       | p95 0.13 s, no misses, no failed posts: **meets the target**                                                                                              |
+| 5,000        | not run                                                                                | p95 2.8 s, no failed posts; 2,141 of 2,602 samples waiting on a lock. A run on a busier laptop: p95 49.7 s and 676 posts timed out | p95 0.80 s (**meets the target**), 1.6 s and 2.1 s over three runs, no misses, no failed posts; 7 to 27 samples waiting on a lock                         |
+| 10,000       | not run                                                                                | p95 19.6 s, no failed posts; 1,816 of 2,365 samples waiting on a lock; the load generator was saturated, so inconclusive           | p95 5.5 s, and 10.5 s on a busier laptop, no misses, no failed posts; 3 to 5 samples waiting on a lock; the load generator was saturated, so inconclusive |
+
+Posting no longer falls behind on this laptop. What limits it above 5,000 streams is the server's own processor time, most of it spent writing to streams, and requests waiting for a database connection (`community_db_pool_waiting` peaked at 218 at 10,000 streams). A pool of 30 halved the typical delivery time at 5,000 streams but not the slowest five percent, so the processor, not the pool, sets the limit here. The 20,000-stream target has to be checked on production-size hardware with the load machines kept separate, as below; a local run cannot show it.
 
 **Locally**, against a server started that way on a throwaway database, from `apps/community`:
 
@@ -458,3 +460,22 @@ pnpm load -- --url https://<throwaway-deployment-host> \
 ```
 
 One load machine opens all 20,000 connections to one address, so it needs 20,000 free local ports and file descriptors: Linux's default port range (32768 to 60999) is enough with `ulimit -n` raised, while macOS's (49152 to 65535) tops out near 16,000. All 20,000 streams are in the one throwaway community, exactly at the default `COMMUNITY_STREAMS_PER_COMMUNITY`, so nothing else may stream into it during the run. Delete the throwaway deployment and its database as soon as the run ends. A result below target is a capacity problem to fix before launch (pool size, stream caps, machine size), not a reason to lower the target.
+
+**When one load machine is not enough** (its report says `SATURATED`, or it runs out of ports), split the run across several. Seed once, then run one part on each machine against the same community, all starting to post at the same moment:
+
+```bash
+# Once, from any one of them: seeds the community and writes every credential to a file.
+pnpm load -- --url https://<throwaway-deployment-host> --readers 20000 --writers 50 \
+  --i-understand-this-is-production --fixture-out load-fixture.json
+
+# Copy load-fixture.json to every load machine, pick a start time a few minutes ahead, then
+# on machine k of n (here 2 of 4):
+ulimit -n 65536
+pnpm load -- --url https://<throwaway-deployment-host> --fixture load-fixture.json \
+  --part 2/4 --rate 50 --duration 60 --start-at <start-time, e.g. 2026-11-02T15:00:00Z> \
+  --i-understand-this-is-production --out load-production-2.json
+```
+
+Each part opens its share of the streams and posts its share of the rate (`--rate` is the whole run's, divided by the number of parts), and checks that every one of its own posts reaches every one of its own streams, timed on its own clock, so the machines' clocks only need to agree closely enough to start together. The server still carries every stream and every post at once. A part does not check the other parts' posts, so each post is checked only on the streams of the machine that sent it. Count the run as meeting the target only when every part's report does. If a part's streams are not all open by `--start-at`, it says so and starts late, which shortens the overlap; leave enough time. `load-fixture.json` holds working credentials for every member of the throwaway community: keep it private and delete every copy with the deployment.
+
+While the run goes, watch the server's `/metrics`. `community_db_pool_waiting` well above zero means requests are queuing for a database connection: try again with a larger `COMMUNITY_DATABASE_POOL_SIZE`. If you can query the throwaway database, samples of `pg_stat_activity` show where posts wait; a post should only rarely be waiting on a lock.

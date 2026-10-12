@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { Request, Response, NextFunction } from 'express';
+import { Hono } from 'hono';
 
 // Mock env before importing the middleware.
 vi.mock('../../env.js', () => ({
@@ -28,7 +29,7 @@ vi.mock('../../services/core/auth/mcp-local-token.js', () => ({
   getMcpLocalTokenPath: vi.fn(),
 }));
 
-import { createMcpAuth } from '../mcp-auth.js';
+import { createMcpAuth, honoMcpAuth, type McpAuthEnv } from '../mcp-auth.js';
 import { env } from '../../env.js';
 import { configManager } from '../../services/core/config-manager.js';
 import { verifyRequestAuth } from '../../services/core/auth/index.js';
@@ -706,5 +707,80 @@ describe('createMcpAuth — login ON (both surfaces)', () => {
       next
     );
     expect(next).toHaveBeenCalled();
+  });
+});
+
+/**
+ * The Hono adapter `/mcp` runs behind (`routes/mcp.ts`). The policy is the one
+ * the cases above drive; these pin what the adapter adds: it reads the body the
+ * chain parsed, answers the same 401, and records the caller on `c.var`.
+ */
+describe('honoMcpAuth — the Hono adapter', () => {
+  /** A request through the adapter, with `body` as the chain parsed it. */
+  async function through(
+    body: unknown,
+    authorization?: string
+  ): Promise<{ status: number; json: unknown; seen?: Record<string, unknown> }> {
+    let seen: Record<string, unknown> | undefined;
+    const app = new Hono<McpAuthEnv>();
+    app.use(async (c, next) => {
+      if (body !== undefined) c.set('body', body);
+      await next();
+    });
+    app.post('/mcp', honoMcpAuth('mcp'), (c) => {
+      seen = { user: c.get('user'), mcpLocalToken: c.get('mcpLocalToken') };
+      return c.json({ ok: true });
+    });
+    const res = await app.request(
+      '/mcp',
+      { method: 'POST', headers: authorization ? { authorization } : {} },
+      { incoming: { headers: authorization ? { authorization } : {} } }
+    );
+    return { status: res.status, json: await res.json(), seen };
+  }
+
+  it('lets a tokenless discovery call through on the parsed body', async () => {
+    mockConfig({ authEnabled: false });
+    const res = await through(rpc('tools/list'));
+    expect(res.status).toBe(200);
+    expect(res.seen).toEqual({ user: undefined, mcpLocalToken: undefined });
+  });
+
+  it('answers a tokenless mutating call with the same 401 as the Express adapter', async () => {
+    mockConfig({ authEnabled: false });
+    const res = await through(rpc('tools/call', 'create_extension'));
+    const expressRes = createMockRes();
+    await mcpAuth(
+      createMockReq({ body: rpc('tools/call', 'create_extension') }) as Request,
+      expressRes as Response,
+      vi.fn()
+    );
+    expect(res.status).toBe(401);
+    expect(res.json).toEqual(expressRes.body);
+    expect(res.seen).toBeUndefined();
+  });
+
+  it('refuses an unparsed body: no body is never a discovery call', async () => {
+    mockConfig({ authEnabled: false });
+    const res = await through(undefined);
+    expect(res.status).toBe(401);
+  });
+
+  it('names the local-token caller for the audit log', async () => {
+    mockConfig({ authEnabled: false });
+    const res = await through(rpc('tools/call', 'create_extension'), `Bearer ${LOCAL_TOKEN}`);
+    expect(res.status).toBe(200);
+    expect(res.seen).toEqual({ user: undefined, mcpLocalToken: true });
+  });
+
+  it('records the person a credential proved', async () => {
+    vi.mocked(verifyRequestAuth).mockResolvedValue({ userId: 'owner-1', credential: 'api-key' });
+    mockConfig({ authEnabled: true });
+    const res = await through(rpc('tools/call', 'create_extension'), 'Bearer some-user-key');
+    expect(res.status).toBe(200);
+    expect(res.seen).toEqual({
+      user: { userId: 'owner-1', credential: 'api-key' },
+      mcpLocalToken: undefined,
+    });
   });
 });

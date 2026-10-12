@@ -5,7 +5,8 @@
  * hash they saw.
  *
  * Real git repositories, the real workspace service and the real approval
- * primitive; only the agent-identity middleware is stood in for.
+ * primitive behind the real `/api` chain; only the agent's header is set by
+ * hand, after the chain's identity step, as an unverifiable agent would send it.
  *
  * @vitest-environment node
  */
@@ -14,11 +15,11 @@ import { execFileSync } from 'node:child_process';
 import { lstat, mkdir, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import express from 'express';
 import request from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
 import { createTestDb } from '@dorkos/test-utils/db';
 import workspaceRoutes from '../workspaces.js';
+import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
 import {
   createWorkspaceSubsystem,
   setWorkspaceApprovals,
@@ -85,15 +86,19 @@ beforeEach(async () => {
   const provider = new TokenConfirmationProvider(approvals);
   setWorkspaceApprovals(() => provider);
   agentHeader = undefined;
-  const app = express();
-  app.use(express.json());
-  app.use((req, _res, next) => {
-    // Stands in for the agent-identity middleware.
-    if (agentHeader) req.headers['x-dorkos-agent'] = agentHeader;
-    next();
-  });
-  app.use('/api/workspaces', workspaceRoutes);
-  testServer.mount(app);
+  testServer.mount(
+    honoGroupListener(
+      { path: '/api/workspaces', routes: workspaceRoutes },
+      {
+        before: async (c, next) => {
+          // The header an agent sends. Set after the chain's identity step, so it
+          // reads as an agent this machine cannot verify, as it did before.
+          if (agentHeader) c.env.incoming.headers['x-dorkos-agent'] = agentHeader;
+          await next();
+        },
+      }
+    )
+  );
 });
 
 afterEach(async () => {

@@ -32,6 +32,13 @@ export const SETTINGS_SECTIONS: PlaygroundSection[] = [
     ],
   },
   {
+    id: 'runtime-cards-dorkos-picks-the-model',
+    title: 'Runtime cards: DorkOS picks the model',
+    page: 'settings',
+    category: 'Runtimes',
+    keywords: ['dorkos', 'doe', 'model', 'credits', 'chosen by dorkos', 'catalog', 'automatic'],
+  },
+  {
     id: 'runtime-cards-opened',
     title: 'Runtime cards: opened',
     page: 'settings',
