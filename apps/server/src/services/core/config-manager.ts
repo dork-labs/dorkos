@@ -126,9 +126,11 @@ import {
 import { preserveUnknownKeys, schemaNodeAt, tolerateUnknownKeys } from './config/version-skew.js';
 import {
   describeWidenedLeaf,
+  findUnreadableLeaves,
   preserveWidenedLeaves,
   relaxWidenedLeaves,
   repairWidenedLeaves,
+  unreadableSettingsWarning,
 } from './config/widened-leaves.js';
 import type { WidenedLeaf, WidenedLeafPolicy } from './config/widened-leaves.js';
 
@@ -957,12 +959,9 @@ export function dropSchedulerTimezone(store: {
  * is touched.
  *
  * @internal Exported for testing only.
- * @param store - The `conf` store instance (provides `has`/`delete`).
+ * @param store - The `conf` store instance.
  */
-export function dropAgentTurnCaps(store: {
-  has: (key: string) => boolean;
-  delete: (key: string) => void;
-}): void {
+export function dropAgentTurnCaps(store: Pick<Conf, 'has' | 'delete'>): void {
   for (const key of ['rooms.maxPostsPerTurn', 'rooms.maxCanvasOpsPerTurn']) {
     if (store.has(key)) store.delete(key);
   }
@@ -4868,12 +4867,10 @@ export const CONFIG_MIGRATIONS = {
   //
   // Disjoint from every other key here: it deletes two leaves under `rooms`
   // and touches nothing beside them.
-  '0.112.0': (store: { has: (key: string) => boolean; delete: (key: string) => void }) => {
-    // `rooms.maxPostsPerTurn` and `rooms.maxCanvasOpsPerTurn` — the per-turn
-    // caps on our own agents, retired (ADR 261006-225605, DOR-2739). See
-    // `dropAgentTurnCaps`.
-    dropAgentTurnCaps(store);
-  },
+  //
+  // `rooms.maxPostsPerTurn` and `rooms.maxCanvasOpsPerTurn` — the per-turn caps
+  // on our own agents, retired (ADR 261006-225605, DOR-2739).
+  '0.112.0': dropAgentTurnCaps,
 } as const;
 
 /**
@@ -5324,11 +5321,7 @@ export class ConfigManager {
    * server, and a stale "all clear" is the wrong way for this to be wrong.
    */
   unreadableSettings(): readonly WidenedLeaf[] {
-    const found: WidenedLeaf[] = [];
-    for (const [key, value] of Object.entries(this.store.store)) {
-      found.push(...repairWidenedLeaves(key, value, WIDENED_LEAF_POLICY).skewed);
-    }
-    return found;
+    return findUnreadableLeaves(this.store.store, WIDENED_LEAF_POLICY);
   }
 
   /**
@@ -5351,14 +5344,8 @@ export class ConfigManager {
    * same list on demand.
    */
   private announceUnreadableSettings(): void {
-    const unreadable = this.unreadableSettings();
-    if (unreadable.length === 0) return;
-    const what = unreadable.length === 1 ? 'setting holds a value' : 'settings hold values';
-    logger.warn(
-      `[Config] ${unreadable.length} ${what} this build cannot read, so it is running on ` +
-        `the defaults and leaving your values in ${this.store.path}: ` +
-        unreadable.map(describeWidenedLeaf).join(', ')
-    );
+    const warning = unreadableSettingsWarning(this.unreadableSettings(), this.store.path);
+    if (warning) logger.warn(warning);
   }
 
   /**
