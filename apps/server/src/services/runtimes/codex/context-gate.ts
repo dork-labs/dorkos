@@ -24,7 +24,8 @@
  * removed: the deduplicated content is byte-identical repetition of one string,
  * so whatever it tokenizes to, it tokenizes to the same thing every time.
  *
- * On that basis the stable half is 3,961 B and the memory block 1,997 B. (DOR-477
+ * On that basis the stable half was 3,961 B and the memory block 1,997 B, measured
+ * before `<working_rules>` added about 1.5 KB to every stable half. (DOR-477
  * estimated the block at ~2.2 KB from file sizes alone; the real figure is higher
  * because `<session_model>`, `<user_profile>` and `<env>` are in it too.) Across a
  * 20-turn thread the cumulative injected prefix falls from 1,251,600 B to

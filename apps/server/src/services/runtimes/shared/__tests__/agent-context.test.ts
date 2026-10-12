@@ -758,7 +758,7 @@ describe('<working_rules>', () => {
 
   // Red when: the block moves into `buildAgentBlock` only. A session with no
   // agent home is still a person who can get stuck.
-  it('renders in a session with no agent home, and in a folder with no manifest', async () => {
+  it('renders once with no agent home, no manifest, or a manifest read that throws', async () => {
     vi.mocked(readManifest).mockResolvedValue(null);
 
     const noHome = await buildAgentContextAppend(undefined, '/test');
@@ -766,6 +766,9 @@ describe('<working_rules>', () => {
     expect(noHome.stable).toContain('<working_rules>');
     const noManifest = (await buildAgentContextAppend(testHome('/test'), '/test')).text;
     expect(noManifest.match(/^<working_rules>$/gm)).toHaveLength(1);
+    vi.mocked(readManifest).mockRejectedValue(new Error('manifest unreadable'));
+    const failedRead = (await buildAgentContextAppend(testHome('/test'), '/test')).text;
+    expect(failedRead.match(/^<working_rules>$/gm)).toHaveLength(1);
   });
 
   // Red when: the block renders once per assembly path. An agent session must
