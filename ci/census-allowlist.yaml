@@ -151,7 +151,7 @@ entries:
     job: first-run
     step: Upload the first-run traces
     kind: step-if
-    reason: Uploads the traces only when the journey failed; it asserts nothing, and the failing step has already failed the job.
+    reason: Uploads the traces only when the journey failed or the job was cancelled at its timeout; it asserts nothing, and the failing step has already failed the job.
   - workflow: browser-test.yml
     job: browser-test
     step: actions/checkout

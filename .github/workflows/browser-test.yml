@@ -384,7 +384,7 @@ jobs:
       # queue build (the same 127 that killed a required check on 2026-07-29,
       # which is why "Prove the browser suite actually executed" carries a
       # `[ -f ]` guard). First, so a misdirected dispatch costs seconds rather
-      # than 150 job minutes. Byte-identical in all eight canary jobs and
+      # than 150 job minutes. Byte-identical in every canary job and
       # pinned that way by packages/ci-steward/src/__tests__/canary-ref-guard.test.ts, which
       # extracts this very block and runs it.
       #
@@ -719,6 +719,8 @@ jobs:
     if: ${{ github.event_name != 'pull_request' }}
     runs-on: ubuntu-latest
     timeout-minutes: 25
+    env:
+      NODE_ENV: development
     steps:
       # The setup mirrors browser-shard's steps one for one; the reasons for each are written there.
       - name: A canary run is against main
@@ -775,11 +777,23 @@ jobs:
           exit 1
       - name: Build what the webServer legs boot from
         run: pnpm exec turbo run build --filter=@dorkos/server --filter=@dorkos/client
+      # Both paths must have reached DorkBot's reply. Each leg is picked by a
+      # title `grep`, so a renamed test would silently drop its leg and the
+      # other would still pass; the journey prints one timing line per path,
+      # and a missing line fails the step.
       - name: Run the first-run journey
         timeout-minutes: 15
-        run: pnpm --filter @dorkos/e2e run e2e:first-run
+        run: |
+          set -o pipefail
+          pnpm --filter @dorkos/e2e run e2e:first-run 2>&1 | tee "$RUNNER_TEMP/first-run.log"
+          for path in 'DorkOS path' 'Own AI path'; do
+            if ! grep -q "\[first-run\] $path: [0-9]* ms" "$RUNNER_TEMP/first-run.log"; then
+              echo "::error::the first-run journey never timed the $path. Its test was skipped or renamed out of its project's grep."
+              exit 1
+            fi
+          done
       - name: Upload the first-run traces
-        if: ${{ failure() }}
+        if: ${{ failure() || cancelled() }}
         uses: actions/upload-artifact@v7
         with:
           name: first-run-results
@@ -835,7 +849,7 @@ jobs:
       # queue build (the same 127 that killed a required check on 2026-07-29,
       # which is why "Prove the browser suite actually executed" carries a
       # `[ -f ]` guard). First, so a misdirected dispatch costs seconds rather
-      # than 150 job minutes. Byte-identical in all eight canary jobs and
+      # than 150 job minutes. Byte-identical in every canary job and
       # pinned that way by packages/ci-steward/src/__tests__/canary-ref-guard.test.ts, which
       # extracts this very block and runs it.
       #

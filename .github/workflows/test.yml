@@ -339,7 +339,7 @@ jobs:
       # queue build (the same 127 that killed a required check on 2026-07-29,
       # which is why "Prove the browser suite actually executed" carries a
       # `[ -f ]` guard). First, so a misdirected dispatch costs seconds rather
-      # than 150 job minutes. Byte-identical in all eight canary jobs and
+      # than 150 job minutes. Byte-identical in every canary job and
       # pinned that way by packages/ci-steward/src/__tests__/canary-ref-guard.test.ts, which
       # extracts this very block and runs it.
       #
@@ -422,7 +422,7 @@ jobs:
       # queue build (the same 127 that killed a required check on 2026-07-29,
       # which is why "Prove the browser suite actually executed" carries a
       # `[ -f ]` guard). First, so a misdirected dispatch costs seconds rather
-      # than 150 job minutes. Byte-identical in all eight canary jobs and
+      # than 150 job minutes. Byte-identical in every canary job and
       # pinned that way by packages/ci-steward/src/__tests__/canary-ref-guard.test.ts, which
       # extracts this very block and runs it.
       #
@@ -568,7 +568,7 @@ jobs:
       # queue build (the same 127 that killed a required check on 2026-07-29,
       # which is why "Prove the browser suite actually executed" carries a
       # `[ -f ]` guard). First, so a misdirected dispatch costs seconds rather
-      # than 150 job minutes. Byte-identical in all eight canary jobs and
+      # than 150 job minutes. Byte-identical in every canary job and
       # pinned that way by packages/ci-steward/src/__tests__/canary-ref-guard.test.ts, which
       # extracts this very block and runs it.
       #
@@ -1024,7 +1024,7 @@ jobs:
       # queue build (the same 127 that killed a required check on 2026-07-29,
       # which is why "Prove the browser suite actually executed" carries a
       # `[ -f ]` guard). First, so a misdirected dispatch costs seconds rather
-      # than 150 job minutes. Byte-identical in all eight canary jobs and
+      # than 150 job minutes. Byte-identical in every canary job and
       # pinned that way by packages/ci-steward/src/__tests__/canary-ref-guard.test.ts, which
       # extracts this very block and runs it.
       #
