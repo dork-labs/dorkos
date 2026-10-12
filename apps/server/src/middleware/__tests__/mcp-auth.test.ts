@@ -1,5 +1,4 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import type { Request, Response, NextFunction } from 'express';
 import { Hono } from 'hono';
 
 // Mock env before importing the middleware.
@@ -29,7 +28,8 @@ vi.mock('../../services/core/auth/mcp-local-token.js', () => ({
   getMcpLocalTokenPath: vi.fn(),
 }));
 
-import { createMcpAuth, honoMcpAuth, type McpAuthEnv } from '../mcp-auth.js';
+import { honoMcpAuth, type McpAuthEnv, type McpAuthSurface } from '../mcp-auth.js';
+import type { RequestUser } from '../../services/core/auth/session-gate.js';
 import { env } from '../../env.js';
 import { configManager } from '../../services/core/config-manager.js';
 import { verifyRequestAuth } from '../../services/core/auth/index.js';
@@ -43,12 +43,66 @@ const LOCAL_TOKEN = `dork_mcp_local_${'a'.repeat(64)}`;
 /** The resolved token file path the 401 body must name (never the value). */
 const TOKEN_PATH = '/tmp/dork/mcp-local-token';
 
-const mcpAuth = createMcpAuth({ surface: 'mcp' });
-const a2aAuth = createMcpAuth({ surface: 'a2a' });
+/** The request facts a case sends through the credential check. */
+interface Request {
+  headers: Record<string, string>;
+  body?: unknown;
+  method: string;
+}
+
+/** What the check decided, as a case reads it. */
+interface Response {
+  statusCode?: number;
+  body?: unknown;
+  /**
+   * Who the check recorded. Not decoration: the middleware records the person it
+   * verified so a capability can act as THEM rather than as the install owner
+   * (`CapabilityInvocationContext.userId`).
+   */
+  locals: { user?: RequestUser; mcpLocalToken?: boolean };
+}
+
+/** Called when the check lets the request on. */
+type NextFunction = () => void;
+
+/**
+ * Drive one request through {@link honoMcpAuth} on a bare Hono app, with the
+ * body as the chain parsed it, and report the decision in the shape the cases
+ * read: `next` called and `locals` filled when it let the request on, the
+ * status and body when it refused.
+ */
+function authFor(surface: McpAuthSurface) {
+  return async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    const app = new Hono<McpAuthEnv>();
+    app.use(async (c, onward) => {
+      if (req.body !== undefined) c.set('body', req.body);
+      await onward();
+    });
+    app.all('/', honoMcpAuth(surface), (c) => {
+      const user = c.get('user');
+      if (user) res.locals.user = user;
+      if (c.get('mcpLocalToken')) res.locals.mcpLocalToken = true;
+      next();
+      return c.body(null, 204);
+    });
+    const answer = await app.request(
+      '/',
+      { method: req.method, headers: req.headers },
+      { incoming: { headers: req.headers } }
+    );
+    if (answer.status !== 204) {
+      res.statusCode = answer.status;
+      res.body = await answer.json();
+    }
+  };
+}
+
+const mcpAuth = authFor('mcp');
+const a2aAuth = authFor('a2a');
 
 function createMockReq(
   opts: { authHeader?: string; body?: unknown; method?: string } = {}
-): Partial<Request> {
+): Request {
   return {
     headers: opts.authHeader ? { authorization: opts.authHeader } : {},
     body: opts.body,
@@ -56,23 +110,8 @@ function createMockReq(
   };
 }
 
-function createMockRes(): Partial<Response> & { statusCode?: number; body?: unknown } {
-  // `locals` is not decoration: Express always provides it, and the middleware
-  // records the person it verified there so a capability can act as THEM rather
-  // than as the install owner (`CapabilityInvocationContext.userId`). A fake
-  // without it is a fake of a response that cannot exist.
-  const res: Partial<Response> & { statusCode?: number; body?: unknown } = {
-    locals: {} as Response['locals'],
-  };
-  res.status = vi.fn().mockImplementation((code: number) => {
-    res.statusCode = code;
-    return res;
-  }) as unknown as Response['status'];
-  res.json = vi.fn().mockImplementation((data: unknown) => {
-    res.body = data;
-    return res;
-  }) as unknown as Response['json'];
-  return res;
+function createMockRes(): Response {
+  return { locals: {} };
 }
 
 /** Mock configManager.get keyed by the two keys the middleware reads. */
@@ -101,7 +140,7 @@ beforeEach(() => {
   vi.mocked(getMcpLocalTokenPath).mockReturnValue(TOKEN_PATH);
 });
 
-describe('createMcpAuth — surface "mcp", login off', () => {
+describe('honoMcpAuth — surface "mcp", login off', () => {
   const DISCOVERY = [
     'initialize',
     'ping',
@@ -292,7 +331,7 @@ describe('createMcpAuth — surface "mcp", login off', () => {
   });
 });
 
-describe('createMcpAuth — surface "mcp", login off, each acceptor authorizes a mutating call', () => {
+describe('honoMcpAuth — surface "mcp", login off, each acceptor authorizes a mutating call', () => {
   it('accepts the env MCP_API_KEY on a mutating call', async () => {
     // Acceptor 1: static env override.
     (env as { MCP_API_KEY: string | undefined }).MCP_API_KEY = 'env-key';
@@ -417,7 +456,7 @@ describe('createMcpAuth — surface "mcp", login off, each acceptor authorizes a
   });
 });
 
-describe('createMcpAuth — the API-key lookup is skipped only for the local token', () => {
+describe('honoMcpAuth — the API-key lookup is skipped only for the local token', () => {
   // Acceptor 2 runs before acceptors 3 and 4, and stays there: it is the only
   // place `/mcp` learns WHO is calling. What changed is that when the bearer is
   // this instance's own local token — minted into a 0600 file, never written to
@@ -541,7 +580,7 @@ describe('createMcpAuth — the API-key lookup is skipped only for the local tok
   });
 });
 
-describe('createMcpAuth — helpful 401 body', () => {
+describe('honoMcpAuth — helpful 401 body', () => {
   it('names the token file path and the Authorization: Bearer header, never the token value', async () => {
     // The 401 must be a dead-end that helps, without leaking the secret.
     mockConfig({ authEnabled: false });
@@ -571,7 +610,7 @@ describe('createMcpAuth — helpful 401 body', () => {
   });
 });
 
-describe('createMcpAuth — surface "a2a", login off', () => {
+describe('honoMcpAuth — surface "a2a", login off', () => {
   it('allows an agent-card GET tokenless', async () => {
     // Card discovery is rate-limited public metadata, the tools/list analogue.
     mockConfig({ authEnabled: false });
@@ -613,7 +652,7 @@ describe('createMcpAuth — surface "a2a", login off', () => {
   });
 });
 
-describe('createMcpAuth — login ON (both surfaces)', () => {
+describe('honoMcpAuth — login ON (both surfaces)', () => {
   beforeEach(() => {
     // Login on: the local token is inactive (not resolved), so no path either.
     vi.mocked(getMcpLocalToken).mockReturnValue(null);
@@ -746,17 +785,11 @@ describe('honoMcpAuth — the Hono adapter', () => {
     expect(res.seen).toEqual({ user: undefined, mcpLocalToken: undefined });
   });
 
-  it('answers a tokenless mutating call with the same 401 as the Express adapter', async () => {
+  it('answers a tokenless mutating call with the helpful 401 and records nobody', async () => {
     mockConfig({ authEnabled: false });
     const res = await through(rpc('tools/call', 'create_extension'));
-    const expressRes = createMockRes();
-    await mcpAuth(
-      createMockReq({ body: rpc('tools/call', 'create_extension') }) as Request,
-      expressRes as Response,
-      vi.fn()
-    );
     expect(res.status).toBe(401);
-    expect(res.json).toEqual(expressRes.body);
+    expect(res.json).toMatchObject({ jsonrpc: '2.0', error: { code: -32001 }, id: null });
     expect(res.seen).toBeUndefined();
   });
 

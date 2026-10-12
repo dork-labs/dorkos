@@ -29,6 +29,7 @@ import {
   mountConnectorSignedIngress,
   type ConnectorSignedIngress,
 } from '../services/connectors/events/signed-ingress.js';
+import { createA2aRoutes, type A2aRouteDeps } from '../routes/a2a.js';
 import { createActivityRoutes } from '../routes/activity.js';
 import { createAdminRoutes, type AdminDeps } from '../routes/admin.js';
 import { createAgentPauseRoutes, type AgentPauseRouterDeps } from '../routes/agent-pause.js';
@@ -192,6 +193,13 @@ export interface ComposedGroupDeps {
    * harness's boot is.
    */
   testControl?: TestControlDeps;
+  /**
+   * The A2A gateway: the agent cards (`/.well-known/agent-card.json`, its
+   * legacy alias, `/a2a/agents/:id/card`) and the JSON-RPC endpoints under
+   * `/a2a`. Not under `/api`, but behind the same chain. Only handed over when
+   * A2A is on, Relay and the mesh started, and the exposure guard allowed it.
+   */
+  a2a?: A2aRouteDeps;
 }
 
 /** What the moved route groups read from the running server, handed over by `index.ts`. */
@@ -335,6 +343,8 @@ export function createHonoApi(options: HonoApiOptions): Hono<ApiEnv> {
   }
   app.route('/api', createApiDocsRoutes());
   if (deps.mcp) app.route('/mcp', createMcpRoutes(deps.mcp));
+  // Its routes carry their whole paths, two of them outside `/a2a`.
+  if (deps.a2a) app.route('/', createA2aRoutes(deps.a2a));
   return app;
 }
 

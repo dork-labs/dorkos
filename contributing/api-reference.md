@@ -1510,7 +1510,7 @@ The server operates in **stateless mode** — each POST request creates a fresh 
 
 ### Authentication
 
-`/mcp` is **fail-closed**, with or without `MCP_API_KEY`. `createMcpAuth({ surface: 'mcp' })` (`middleware/mcp-auth.ts`) tries four credentials in order and allows on the first match: the `MCP_API_KEY` env override, a per-user Better Auth API key or session cookie via `verifyRequestAuth`, the not-yet-seeded legacy `config.mcp.apiKey`, and — only while login is off — this instance's per-instance local MCP token. Each is sent the same way:
+`/mcp` is **fail-closed**, with or without `MCP_API_KEY`. `honoMcpAuth('mcp')` (`middleware/mcp-auth.ts`) tries four credentials in order and allows on the first match: the `MCP_API_KEY` env override, a per-user Better Auth API key or session cookie via `verifyRequestAuth`, the not-yet-seeded legacy `config.mcp.apiKey`, and — only while login is off — this instance's per-instance local MCP token. Each is sent the same way:
 
 ```
 Authorization: Bearer <token>
@@ -1535,11 +1535,11 @@ Requests to `/mcp` pass through this middleware chain in order:
 
 1. `validateMcpOrigin` — DNS rebinding protection (checks `Origin` header)
 2. `requireMcpEnabled` — clean `503` when the MCP surface is switched off
-3. `createMcpAuth({ surface: 'mcp' })` — credential resolution + the login-off carve-out (checks `Authorization` header, then the parsed body)
+3. `honoMcpAuth('mcp')` — credential resolution + the login-off carve-out (checks `Authorization` header, then the parsed body)
 4. `mcpRateLimiter` — per-connection rate limiting
 5. `createMcpRouter(...)` — Streamable HTTP transport handler
 
-The app-wide `sessionGate` sits ahead of all five (mounted in `app.ts`), which is why it, not `createMcpAuth`, answers an uncredentialed request once login is on.
+The app-wide `sessionGate` sits ahead of all five (mounted in `app.ts`), which is why it, not `honoMcpAuth`, answers an uncredentialed request once login is on.
 
 ### Available Tools
 
@@ -1567,7 +1567,7 @@ Item templates (`{id}`/`{name}`) are not enumerated into `resources/list` — th
 
 Neither server pushes `notifications/resources/list_changed`: the external one is stateless (a fresh `McpServer` per request, see above) and so cannot outlive the response it was created for, and the in-session one registers a fixed set that never changes during a query. Both `initialize` responses accordingly advertise `resources: { listChanged: false }`, which `registerDorkOsResources` sets explicitly because the MCP SDK's `registerResource()` otherwise advertises `true` with no opt-out. Resource _subscriptions_ (`resources/subscribe`) are not implemented at all, so that capability is never advertised either.
 
-On `/mcp`, session and agent data flows through the same auth middleware chain as every tool (`validateMcpOrigin` → `requireMcpEnabled` → `createMcpAuth` → `mcpRateLimiter` → the MCP router), so a resource read is authorized by that one chain — there is no separate resource-level auth gate. The login-off carve-out does not reach it: `resources/read` requires a credential even though a read-only `tools/call` does not. `dorkos://sessions` and `dorkos://sessions/{id}` include each session's `cwd`, matching what `GET /api/sessions` already returns to the same authenticated caller — not a new exposure, but called out here since it's the one field in these resources that names a filesystem path. Agent manifests (`dorkos://agents`, `dorkos://agents/{id}`) never include a filesystem path (`AgentManifest` has no `projectPath` field), matching `mesh_list`/`mesh_inspect`. The in-session surface is deliberately not gated further: those tools run in-process inside a session the user started, there is no HTTP hop to carry a token, and every payload is data the same agent can already reach through `mesh_list`, `GET /api/sessions`, or its own filesystem.
+On `/mcp`, session and agent data flows through the same auth middleware chain as every tool (`validateMcpOrigin` → `requireMcpEnabled` → `honoMcpAuth` → `mcpRateLimiter` → the MCP router), so a resource read is authorized by that one chain — there is no separate resource-level auth gate. The login-off carve-out does not reach it: `resources/read` requires a credential even though a read-only `tools/call` does not. `dorkos://sessions` and `dorkos://sessions/{id}` include each session's `cwd`, matching what `GET /api/sessions` already returns to the same authenticated caller — not a new exposure, but called out here since it's the one field in these resources that names a filesystem path. Agent manifests (`dorkos://agents`, `dorkos://agents/{id}`) never include a filesystem path (`AgentManifest` has no `projectPath` field), matching `mesh_list`/`mesh_inspect`. The in-session surface is deliberately not gated further: those tools run in-process inside a session the user started, there is no HTTP hop to carry a token, and every payload is data the same agent can already reach through `mesh_list`, `GET /api/sessions`, or its own filesystem.
 
 ### Extension MCP Tools
 
@@ -1696,7 +1696,7 @@ Like the MCP endpoint, A2A is a protocol endpoint — it speaks JSON-RPC, not RE
 
 ### Authentication
 
-A2A rides the same middleware as `/mcp` — `createMcpAuth({ surface: 'a2a' })` — so the four credential acceptors are identical (the `MCP_API_KEY` override, a per-user Better Auth key or session, the legacy compat key, and the per-instance local token while login is off), all sent as `Authorization: Bearer <token>`. Only the no-match fallback differs, because A2A has no read/write annotation to carve on:
+A2A rides the same middleware as `/mcp` — `honoMcpAuth('a2a')` — so the four credential acceptors are identical (the `MCP_API_KEY` override, a per-user Better Auth key or session, the legacy compat key, and the per-instance local token while login is off), all sent as `Authorization: Bearer <token>`. Only the no-match fallback differs, because A2A has no read/write annotation to carve on:
 
 - **Login off:** an Agent Card `GET` passes tokenless — public discovery metadata, the `tools/list` analogue. Every JSON-RPC `POST` is `401` without a credential; **execution is always gated**, and has been since DOR-278 (`middleware/__tests__/mcp-auth.test.ts`).
 - **Login on:** both are `401` without a credential — card discovery closes too. Unlike `/mcp`, `/a2a` is not an `isGatedPath` prefix, so `sessionGate` never runs on it and the `MCP_API_KEY` override does reach this surface.

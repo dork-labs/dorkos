@@ -272,8 +272,11 @@ describe('main HTTP admission through the real app', () => {
     expect(mounts).toContain('/api/connectors');
     // 70 -> 71: the mock OAuth MCP server is one `/` mount on Hono
     // (`http/hono-api.ts`), where it used to be a path-less Express `use`.
+    // 71 -> 68: the A2A gateway's two card paths and its `/a2a` mount join that
+    // same `/` mount on Hono (`routes/a2a.ts`, DOR-2809), so they are asked for
+    // by hand below.
     expect(mounts).toContain('/');
-    expect(mounts).toHaveLength(71);
+    expect(mounts).toHaveLength(68);
     const byHand = [
       '/',
       '/x/fixture',
@@ -281,6 +284,9 @@ describe('main HTTP admission through the real app', () => {
       '/api/openapi.json',
       '/api/docs',
       '/api/connectors/providers',
+      '/.well-known/agent-card.json',
+      '/.well-known/agent.json',
+      '/a2a',
     ];
     for (const mount of [...mounts, ...byHand, '/unknown']) {
       expectTerminal(

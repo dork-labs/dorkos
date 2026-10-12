@@ -819,33 +819,34 @@ The A2A gateway (`packages/a2a-gateway/src/`) exposes DorkOS agents to external 
 
 ### Key Modules
 
-| Module                    | Purpose                                                      |
-| ------------------------- | ------------------------------------------------------------ |
-| `agent-card-generator.ts` | Generates A2A Agent Cards from Mesh agent manifests          |
-| `schema-translator.ts`    | Translates between A2A protocol types and DorkOS Relay types |
-| `task-store.ts`           | SQLite-backed task state persistence for A2A task lifecycle  |
-| `dorkos-executor.ts`      | Bridges A2A task execution to Relay publish/subscribe        |
-| `express-handlers.ts`     | Express request handlers for the three A2A endpoints         |
+| Module                    | Purpose                                                                                                                 |
+| ------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| `agent-card-generator.ts` | Generates A2A Agent Cards from Mesh agent manifests                                                                     |
+| `schema-translator.ts`    | Translates between A2A protocol types and DorkOS Relay types                                                            |
+| `task-store.ts`           | SQLite-backed task state persistence for A2A task lifecycle                                                             |
+| `dorkos-executor.ts`      | Bridges A2A task execution to Relay publish/subscribe                                                                   |
+| `http-handlers.ts`        | Fetch-style handlers (web `Request` in, `Response` out) for the A2A endpoints, over the SDK's `JsonRpcTransportHandler` |
 
 ### Data Flow
 
 ```
 External A2A Client → POST /a2a (JSON-RPC)
-  → express-handlers → schema-translator → relayCore.publish() → Agent
+  → http-handlers → schema-translator → relayCore.publish() → Agent
 Agent response → Relay subscription → schema-translator → A2A TaskStatusUpdate → SSE to client
 ```
 
 ### Auth
 
-Guarded by `createMcpAuth({ surface: 'a2a' })` — the same credential acceptors the MCP endpoint uses (`MCP_API_KEY` override → per-user key or session → legacy compat key → the local token while login is off). The surfaces differ only in what happens when none matches. **Login off:** A2A leaves `GET` agent-card discovery open and `401`s every JSON-RPC `POST`, where `/mcp` applies its read-only tool carve-out instead. **Login on:** A2A `401`s both, card discovery included, and `/mcp` has no tokenless path either — but `sessionGate` covers only `/api/*` and `/mcp`, so it never runs on `/a2a` and the `MCP_API_KEY` override still reaches this surface.
+Guarded by `honoMcpAuth('a2a')` — the same credential acceptors the MCP endpoint uses (`MCP_API_KEY` override → per-user key or session → legacy compat key → the local token while login is off). The surfaces differ only in what happens when none matches. **Login off:** A2A leaves `GET` agent-card discovery open and `401`s every JSON-RPC `POST`, where `/mcp` applies its read-only tool carve-out instead. **Login on:** A2A `401`s both, card discovery included, and `/mcp` has no tokenless path either — but `sessionGate` covers only `/api/*` and `/mcp`, so it never runs on `/a2a` and the `MCP_API_KEY` override still reaches this surface.
 
 ### Server Integration
 
-Routes are mounted in `apps/server/src/routes/a2a.ts`:
+Routes are mounted on the Hono chain by `apps/server/src/routes/a2a.ts` (registered in `http/hono-api.ts` when A2A is on); the gateway itself imports no web framework:
 
 - `GET /.well-known/agent-card.json` — Fleet Agent Card (mounted at app root; the legacy `/.well-known/agent.json` path is kept as an alias)
 - `GET /a2a/agents/:id/card` — Per-agent Agent Card
-- `POST /a2a` — JSON-RPC 2.0 endpoint
+- `POST /a2a/agents/:id` — Per-agent JSON-RPC 2.0 endpoint (the `url` on each per-agent card)
+- `POST /a2a` — Fleet JSON-RPC 2.0 endpoint (needs `metadata.agentId`)
 
 ## Relay
 

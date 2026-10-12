@@ -221,8 +221,6 @@ import { MeshCore, type AdoptedAgent } from '@dorkos/mesh';
 import { setMeshInitError } from './services/mesh/mesh-state.js';
 import { ensureDorkBot } from './services/mesh/ensure-dorkbot.js';
 import { setAgentPathLookup } from './services/mesh/agent-path-lookup.js';
-import { createA2aRouter } from './routes/a2a.js';
-import { buildA2aRateLimiters } from './middleware/a2a-rate-limit.js';
 import { resolveToolVisibilityFor } from './services/runtimes/shared/permission-tool-filter.js';
 import { composeCapabilityRegistryForDocs } from './services/core/self-description/dorkos-registry.js';
 import {
@@ -356,7 +354,6 @@ import {
 } from './services/core/approvals/index.js';
 import type { McpServerFactory } from './routes/mcp.js';
 import { setRemoteCommunitySubscriptionProbe } from './routes/test-control.js';
-import { createMcpAuth } from './middleware/mcp-auth.js';
 import {
   createDb,
   runMigrations,
@@ -4434,7 +4431,7 @@ async function start() {
       ? env.DORKOS_A2A_ENABLED
       : (configManager.get('a2a')?.enabled ?? false);
   if (a2aEnabled && relayCore && meshCore) {
-    // The A2A surface is guarded by createMcpAuth({ surface: 'a2a' }). In
+    // The A2A surface is guarded by decideMcpAuth for the 'a2a' surface. In
     // login-off mode the per-instance local token gates JSON-RPC execution, but
     // that token is a loopback-trust mechanism (a 0600 file only a local operator
     // can read) — it does not make the surface safe on a non-loopback bind. So the
@@ -4474,33 +4471,17 @@ async function start() {
         /\/+$/,
         ''
       );
-      const version = env.DORKOS_VERSION_OVERRIDE ?? '0.0.0';
-      const { rpc: rpcRateLimiter, card: cardRateLimiter } = buildA2aRateLimiters({
-        rpcMaxPerMinute: env.DORKOS_A2A_RPC_RATE_LIMIT,
-        cardMaxPerMinute: env.DORKOS_A2A_CARD_RATE_LIMIT,
-      });
-
-      const { router: a2aRouter, fleetCardHandler } = createA2aRouter({
+      // The cards, the JSON-RPC endpoints and their own gates (the credential
+      // check and the two limiters) answer from the Hono chain: `routes/a2a.ts`.
+      deps.a2a = {
         meshCore,
         relay: relayCore,
         db,
         baseUrl,
-        version,
-        rpcRateLimiter,
-        cardRateLimiter,
-      });
-
-      // Fleet Agent Card at the spec well-known path (AGENT_CARD_PATH in the
-      // A2A SDK — standard clients discover the card here). The legacy
-      // /.well-known/agent.json path is kept during the transition. Cards get
-      // the lighter discovery limiter, applied before auth so unauthenticated
-      // scraping is throttled too.
-      const a2aAuth = createMcpAuth({ surface: 'a2a' });
-      app.get('/.well-known/agent-card.json', cardRateLimiter, a2aAuth, fleetCardHandler);
-      app.get('/.well-known/agent.json', cardRateLimiter, a2aAuth, fleetCardHandler);
-
-      // Per-agent cards and JSON-RPC under /a2a (per-route limiters live in the router)
-      app.use('/a2a', a2aAuth, a2aRouter);
+        version: env.DORKOS_VERSION_OVERRIDE ?? '0.0.0',
+        rpcMaxPerMinute: env.DORKOS_A2A_RPC_RATE_LIMIT,
+        cardMaxPerMinute: env.DORKOS_A2A_CARD_RATE_LIMIT,
+      };
 
       // Names the credential a caller must send. "none" was never true here —
       // execution is gated in every posture; only WHICH credential changes.

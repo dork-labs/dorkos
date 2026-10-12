@@ -10,35 +10,36 @@ This package is the protocol bridge only. It owns no agents and no transport —
 
 Single `.` barrel:
 
-| Export                                                                                      | Purpose                                                                                  |
-| ------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
-| `createA2aHandlers`                                                                         | Express handlers (fleet card, per-agent card, JSON-RPC) wiring the gateway into a server |
-| `DorkOSAgentExecutor`                                                                       | `AgentExecutor` bridging one A2A request to a Relay publish + reply stream               |
-| `SqliteTaskStore`                                                                           | `TaskStore` implementation persisting A2A task lifecycle state via Drizzle               |
-| `generateAgentCard`, `generateFleetCard`                                                    | Build A2A Agent Cards from Mesh `AgentManifest`s                                         |
-| `a2aMessageToRelayPayload`                                                                  | Translate an inbound A2A Message into a Relay `StandardPayload`                          |
-| `AgentRegistryLike`, `CardGeneratorConfig`, `ExecutorDeps`, `A2aHandlerDeps`, `A2aHandlers` | Supporting types                                                                         |
+| Export                                                                                                      | Purpose                                                                                      |
+| ----------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| `createA2aGateway`                                                                                          | Fetch-style handlers (fleet card, per-agent card, both JSON-RPC endpoints), no web framework |
+| `DorkOSAgentExecutor`                                                                                       | `AgentExecutor` bridging one A2A request to a Relay publish + reply stream                   |
+| `SqliteTaskStore`                                                                                           | `TaskStore` implementation persisting A2A task lifecycle state via Drizzle                   |
+| `generateAgentCard`, `generateFleetCard`                                                                    | Build A2A Agent Cards from Mesh `AgentManifest`s                                             |
+| `a2aMessageToRelayPayload`                                                                                  | Translate an inbound A2A Message into a Relay `StandardPayload`                              |
+| `AgentRegistryLike`, `CardGeneratorConfig`, `ExecutorDeps`, `A2aGateway`, `A2aGatewayDeps`, `A2aRpcOptions` | Supporting types                                                                             |
 
 ## Usage
 
-Consumed by the server's A2A route (`apps/server/src/routes/a2a.ts`):
+Consumed by the server's A2A routes (`apps/server/src/routes/a2a.ts`), which mount it on Hono. Each handler takes a web `Request` and returns a web `Response`, so any router that speaks fetch can host it:
 
 ```ts
-import { createA2aHandlers } from '@dorkos/a2a-gateway';
+import { createA2aGateway } from '@dorkos/a2a-gateway';
 
-const handlers = createA2aHandlers({
+const gateway = createA2aGateway({
   agentRegistry: meshCore, // MeshCore, or anything AgentRegistryLike
   relay: relayCore,
   db,
   config: { baseUrl: 'http://localhost:4242', version: '0.0.0' },
 });
 
-app.get('/.well-known/agent-card.json', handlers.fleetCard); // A2A spec discovery path
-app.get('/a2a/agents/:id/card', handlers.agentCard); // per-agent cards
-app.use('/a2a', handlers.jsonRpc); // JSON-RPC 2.0 (message/send, message/stream, tasks/*)
+app.get('/.well-known/agent-card.json', () => gateway.fleetCard()); // A2A spec discovery path
+app.get('/a2a/agents/:id/card', (c) => gateway.agentCard(c.req.param('id'))); // per-agent cards
+app.post('/a2a/agents/:id', (c) => gateway.agentJsonRpc(c.req.param('id'), c.req.raw)); // one agent
+app.post('/a2a', (c) => gateway.jsonRpc(c.req.raw)); // the fleet: needs metadata.agentId
 ```
 
-`handlers.jsonRpc` is an Express router with an internal `POST /` route — mount it with `app.use()` (or as a handler on a router whose own path has already been stripped), not `app.post('/a2a', ...)`.
+A host that already parsed the JSON body passes it as `{ parsedBody }`, and the gateway never reads the request stream. Streaming methods answer with an SSE `Response` whose body is read as the agent replies.
 
 ## How a request flows
 
