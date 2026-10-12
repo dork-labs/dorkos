@@ -4,7 +4,7 @@
 
 Our own agent hosts the DorkOS Community Space (D11 in `specs/official-community-space/02-specification.md`): it greets people in `#welcome`, answers questions in `#help` from the docs, and never promises anything that is not shipped. This guide is how to set it up and keep it safe: the staff install that runs it, the host agent and its exact tool allowlist, the read-only docs it answers from, the `answerIn` setting that lets a person's post wake it without a mention, and what to watch once it runs.
 
-Every post the host answers is a stranger's. Nothing a member writes can give it more power than the stranger ceiling (D10): the turn runs at the runtime's default ("Ask first") or stricter, a new conversation is seeded with no operator level, and a read outside the agent's folder or of a web page asks a person rather than running. The deny list below is what keeps everything else from even asking. Both hold only together with a dedicated computer: check them with the test in "Check it before it answers anyone".
+Every post the host answers is a stranger's. Nothing a member writes can give it more power than the stranger ceiling (D10): the turn runs at the runtime's default ("Ask first") or stricter, a new conversation is seeded with no operator level, and a read outside the agent's folder or of a web page asks a person rather than running. The host's chats run in "Never ask" (`dontAsk`, D11), so what would ask is refused instead and no card reaches the staff install; the deny list below is a second wall behind it. All of it holds only together with a dedicated computer: check it with the test in "Check it before it answers anyone".
 
 No part of this guide claims the Community Space is live. The official space stays off (`spaces.official.url` empty) until Dorian sets its link. The day-to-day running of the space itself is `contributing/official-community-operations.md`.
 
@@ -17,9 +17,9 @@ No part of this guide claims the Community Space is live. The official space sta
 | `answerIn` storage, live answer and wake budget     | `apps/server/src/services/communities/remote/wake/answer-in-store.ts`, `wake/answer-in.ts`                                            |
 | Where an `answerIn` post gets past the mention rule | `importLive` in `apps/server/src/services/communities/remote/remote-room-subscription-bridge.ts`                                      |
 | Who may wake agents in a space (`wakeAgentsFrom`)   | `apps/server/src/services/communities/remote/wake/wake-policy.ts`                                                                     |
-| The stranger ceiling and `dontAsk`                  | `apps/server/src/services/runtimes/claude-code/turn-permission.ts` (`clampClaudeMode`)                                                |
+| The stranger ceiling and "Never ask" (`dontAsk`)    | `apps/server/src/services/runtimes/claude-code/turn-permission.ts` (`clampClaudeMode`, `resolveModeDecision`), `runtime-constants.ts` |
 | Wire schema                                         | `CommunityAnswerInSchema` in `packages/shared/src/community-connections.ts`                                                           |
-| Tests that pin all of the above                     | `communities/remote/__tests__/answer-in.test.ts`, `answer-in-wakes.test.ts`, `claude-code/__tests__/turn-permission-dont-ask.test.ts` |
+| Tests that pin all of the above                     | `communities/remote/__tests__/answer-in.test.ts`, `answer-in-wakes.test.ts`, `claude-code/__tests__/never-ask-mode.test.ts`           |
 
 ## When to Use What
 
@@ -65,11 +65,22 @@ Denied outright, so they never even ask:
 - **Reads anywhere but `./docs`:** the home folder (`~/**`), the system folders (`//etc`, `//proc`, `//sys`, `//dev`, `//var`, `//tmp`, `//private`, `//opt`, `//usr`, `//root`, `//home`, `//Users`, `//Library`, `//Volumes`, `//mnt`), and the agent's own `.dork` and `.claude` folders. Absolute paths start with `//`; a single `/` is read relative to the settings file and protects nothing.
 - **Every DorkOS tool it could call without a card** other than the four it needs: the other room tools (`list_member_rooms`, `search_member_rooms`, `get_room`, `find_room`, `read_canvas`, `create_room`, `add_room_members`, `remove_room_members`, `update_room`, `leave_room`, `archive_room`), `request_permission`, `relay_notify_user`, `relay_list_endpoints`, the chat tools (`chat_send`, `chat_read`, `chat_stop`), the agent directory (`mesh_*`, `get_agent`), `memory_write`, `compact_my_session`, `control_ui` and `get_ui_state`. Each is named `mcp__dorkos__<tool>` in the file.
 
-Anything outside both lists asks the staff install's owner, since a stranger's turn runs at "Ask first", and so does a read outside the agent's folder. **Never approve a card raised by a turn in the space.** Deny it, then add that tool or path to the deny list. Keep the agent's folder holding nothing but `docs/`, `.dork/` and `.claude/`: the host can read anything inside it that is not denied.
+Anything outside both lists is refused once the host's chats run in "Never ask" (next section). Until then it asks the staff install's owner, since a stranger's turn runs at "Ask first", and so does a read outside the agent's folder. **Never approve a card raised by a turn in the space.** Deny it, then add that tool or path to the deny list. Keep the agent's folder holding nothing but `docs/`, `.dork/` and `.claude/`: the host can read anything inside it that is not denied.
 
-### `dontAsk`
+### Run its chats in "Never ask"
 
-The spec has the host run `dontAsk`: allowed tools run, everything else is refused without asking. A Claude Code conversation in `dontAsk` keeps it on a stranger's turn (`clampClaudeMode`, pinned by `turn-permission-dont-ask.test.ts`), but DorkOS does not offer `dontAsk` as a choice today: the session picker and `PATCH /api/sessions/:id` refuse it on Claude Code, and only a conversation started in the `claude` command line carries it. So the host runs at "Ask first", and the deny list is what refuses actions. Keep it complete until `dontAsk` can be chosen.
+The spec has the host run `dontAsk`, which DorkOS calls **Never ask**: the tools the allowlist names run, and everything else is refused without asking anyone. It is a switch under **Ask first** on the chat's trust dial, on Claude Code only, and only a person can turn it on: no DorkOS tool lets an agent pick it for itself or for a chat it starts, and a chat in it can only start chats that cannot ask either.
+
+Claude Code also reads `allow` rules from the agent's `.claude/settings.local.json` and from the staff user's own `~/.claude/settings.json`, and Never ask runs those too. Keep both free of `allow` rules, so the allowlist above is the whole list.
+
+It belongs to each chat, not to the agent. The host has one chat per channel, made by the first post it answers there, and a new chat starts at **Ask first**. So:
+
+1. Post one message in `#welcome` and one in `#help` from another account, and deny any card they raise.
+2. Open each of the host's two chats on the staff install, choose **Ask first**, and turn on **Never ask** beneath it.
+3. Run the check below. Nothing it posts should raise a card from then on.
+4. If a card ever appears, a chat is not in Never ask (a new one was made, say). Deny the card and turn Never ask on in that chat.
+
+What it keeps on a stranger's turn: the chat stays in Never ask (`clampClaudeMode`), DorkOS's own tool gate refuses rather than asks (`resolveModeDecision`), and an MCP server's request for input is declined. It never runs anything "Ask first" would have asked about, and every rule that weighs a level ranks it exactly as "Ask first" (`never-ask-mode.test.ts`). DorkOS's own permission areas are a separate setting: a tool in an area set to **Ask** still raises a card in DorkOS's inbox, which is why every area but Rooms stays **Blocked**.
 
 ### Check it before it answers anyone
 
@@ -118,7 +129,7 @@ Every `answerIn` wake is paid for from a budget: **3 per person and 20 per chann
 ## What to watch
 
 - **The server log on the staff computer.** `answer-in budget spent; post kept as history` means a person or a channel hit the budget. A few a day is normal. Many in a row from one channel is a flood: check the space's report queue and let moderators act.
-- **Approval cards on the staff install.** There should be none. Each one means a tool is missing from the deny list. Deny it and add it.
+- **Approval cards on the staff install.** There should be none. Each one means a chat is not in Never ask, or a DorkOS area is set to Ask. Deny it, then fix the chat or the area.
 - **What the host says.** Read `#help` daily during the soft launch. Anything that promises a date, a price or a feature the docs do not describe is a `SOUL.md` or docs fix.
 - **Its access level in the space.** Member, every time you look.
 - **To stop it at once,** choose **Stop my agents** in the channel, or send `{"answerIn":[]}`, or remove the agent from the channel under **Members**.

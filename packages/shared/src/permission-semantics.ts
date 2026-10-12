@@ -332,8 +332,9 @@ export interface TrustStop {
   mode: PermissionModeDescriptor;
   /**
    * Further modes the runtime declares at the same position — settings INSIDE
-   * the stop rather than stops of their own. Claude's `auto` is the only one
-   * today: it sits where "act" sits and changes how the agent decides, not how
+   * the stop rather than stops of their own. Claude has two: `auto` sits where
+   * "act" sits and changes how the agent decides, and `dontAsk` ("Never ask")
+   * sits where "ask" sits and refuses instead of asking. Neither changes how
    * far the person has let it go.
    */
   refinements: PermissionModeDescriptor[];

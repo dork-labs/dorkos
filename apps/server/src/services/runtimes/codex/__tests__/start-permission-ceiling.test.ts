@@ -40,6 +40,9 @@ describe('a Claude Code chat starting a Codex chat (DOR-2714 ceiling)', () => {
       )
     ).toEqual({
       default: ['default'],
+      // By level alone, as Default. `session_start` holds a chat in Never ask
+      // further, to modes that cannot ask (`session-start-never-ask.test.ts`).
+      dontAsk: ['default'],
       acceptEdits: ['default'],
       plan: [],
       bypassPermissions: ['default', 'acceptEdits', 'bypassPermissions'],

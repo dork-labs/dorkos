@@ -1114,12 +1114,32 @@ describe("session_start runs at the calling chat's level or lower (spec inherite
   });
 
   it('refuses a mode the target runtime does not declare', async () => {
-    // `dontAsk` is a name the input schema knows and Claude Code no longer offers.
+    // `plan` is a name the input schema knows and Codex does not offer.
+    const body = await expectRefused(fromChatAt('bypassPermissions'), {
+      ...BASE,
+      runtime: 'codex',
+      permissionMode: 'plan',
+    });
+    expect(body).toMatchObject({ code: 'UNKNOWN_PERMISSION_MODE' });
+  });
+
+  it('holds a chat SET to Never ask whose turn runs at Plan to chats that cannot ask', async () => {
+    const handler = createSessionStartHandler(makeDeps(), () => ({
+      agentPath: AGENT_HOME,
+      sessionId: 'parent-chat',
+      runtime: 'claude-code',
+      permissionMode: 'plan',
+      neverAsks: true,
+    }));
+    await expectRefused(handler, { ...BASE, permissionMode: 'plan' });
+  });
+
+  it('refuses Never ask by name: only a person picks it (DOR-2838)', async () => {
     const body = await expectRefused(fromChatAt('bypassPermissions'), {
       ...BASE,
       permissionMode: 'dontAsk',
     });
-    expect(body).toMatchObject({ code: 'UNKNOWN_PERMISSION_MODE' });
+    expect(body).toMatchObject({ code: 'PERSON_ONLY_MODE' });
   });
 
   describe('the ceiling', () => {

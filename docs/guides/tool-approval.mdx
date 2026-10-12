@@ -193,6 +193,14 @@ A chat an agent starts with the `session_start` tool runs at the same setting as
   or Schedules. It stays until you change the setting.
 </Callout>
 
+### Never ask
+
+**Never ask** is a switch inside the **Ask first** stop, for Claude Code chats. With it on, the agent runs only the tools your Claude Code settings already allow (the `allow` rules in the project's `.claude/settings.json` and `.claude/settings.local.json`, and in your own Claude Code user settings), and refuses everything else. It never stops to ask you, and it never gets to do more than Ask first lets it.
+
+Use it for an agent that answers people on its own, where nobody is there to approve anything. A refused tool shows up in the chat as a blocked step. DorkOS's own tools count too: in this mode even the ones Ask first approves on its own are refused unless your settings allow them.
+
+Only you can turn it on: no DorkOS tool lets an agent switch a chat to Never ask, and a chat in Never ask can only start chats that cannot ask you either. Codex and OpenCode chats don't offer it.
+
 ### Auto mode
 
 <Callout type="info">

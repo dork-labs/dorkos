@@ -12,11 +12,12 @@ import { describe, it, expect } from 'vitest';
 import { CLAUDE_CODE_CAPABILITIES, narrowToClaudeCodeMode } from '../runtime-constants.js';
 
 describe('CLAUDE_CODE_CAPABILITIES', () => {
-  it('exposes the five Claude SDK permission modes DorkOS surfaces', () => {
+  it('exposes all six Claude SDK permission modes', () => {
     expect(CLAUDE_CODE_CAPABILITIES.permissionModes.supported).toBe(true);
-    expect(CLAUDE_CODE_CAPABILITIES.permissionModes.values).toHaveLength(5);
+    expect(CLAUDE_CODE_CAPABILITIES.permissionModes.values).toHaveLength(6);
     expect(CLAUDE_CODE_CAPABILITIES.permissionModes.values.map((v) => v.id)).toEqual([
       'default',
+      'dontAsk',
       'acceptEdits',
       'plan',
       'bypassPermissions',
