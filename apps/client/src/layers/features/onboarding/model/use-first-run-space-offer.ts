@@ -16,9 +16,18 @@
 import { useOfficialSpaceOffer } from '@/layers/entities/community';
 import { useOnboarding } from './use-onboarding';
 
+/** Where the first run's community offer stands. */
+export interface FirstRunSpaceOffer {
+  /** The offer should be on screen somewhere. */
+  due: boolean;
+  /** It may become due once the connection list answers; see `OfficialSpaceOffer.pending`. */
+  pending: boolean;
+}
+
 /** Whether the first run's community offer should be on screen somewhere. */
-export function useFirstRunSpaceOffer(): boolean {
+export function useFirstRunSpaceOffer(): FirstRunSpaceOffer {
   const { firstRunPath } = useOnboarding().state;
-  const { offered } = useOfficialSpaceOffer();
-  return (firstRunPath === 'dorkos' || firstRunPath === 'own') && offered;
+  const { offered, pending } = useOfficialSpaceOffer();
+  const aiChosen = firstRunPath === 'dorkos' || firstRunPath === 'own';
+  return { due: aiChosen && offered, pending: aiChosen && pending };
 }

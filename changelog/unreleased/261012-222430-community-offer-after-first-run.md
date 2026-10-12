@@ -2,6 +2,7 @@
 covers:
   - 'feat(onboarding): offer the DorkOS community on the first landing (DOR-2873)'
   - 'feat(sidebar): the DorkOS community offer takes its own turn in the bottom card (DOR-2873)'
+  - 'fix(onboarding): the community offer sits after personal setup and never swaps in late (DOR-2873)'
 ---
 
 ### Added

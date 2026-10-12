@@ -365,6 +365,11 @@ describe('ProgressCard', () => {
     const offer = () => screen.queryByTestId('official-space-offer');
     const withSpace = (overrides: ConfigOverrides = {}) =>
       renderCard(vi.fn(), {}, [], { officialSpaceUrl: OFFICIAL_LINK, ...overrides });
+    /**
+     * A positive sign the config this case states has arrived and been read: the role row
+     * shows only once it says no roles are saved. An absent offer before this proves nothing.
+     */
+    const configArrived = () => screen.findByText('Tell DorkBot about your work');
 
     it.each(['dorkos', 'own'] as const)(
       'shows once a first run on the %s path set up an AI',
@@ -377,24 +382,43 @@ describe('ProgressCard', () => {
 
     it('draws nothing while no official space is configured', async () => {
       await renderCard(vi.fn(), {}, [], { firstRunPath: 'dorkos', officialSpaceUrl: null });
-      expect(screen.getByText('Getting started')).toBeTruthy();
+      await configArrived();
       expect(offer()).toBeNull();
     });
 
     it('waits for Settings after a first run with no AI', async () => {
       await withSpace({ firstRunPath: 'none' });
+      await configArrived();
       expect(offer()).toBeNull();
     });
 
     it('stays away once the space is joined', async () => {
       mockConnections = [{ ref: 'official', official: true }];
       await withSpace({ firstRunPath: 'own' });
+      await configArrived();
       expect(offer()).toBeNull();
     });
 
     it('stays away once Not now was chosen anywhere', async () => {
       await withSpace({ firstRunPath: 'own', dismissedPromoIds: [OFFICIAL_SPACE_OFFER_ID] });
+      await configArrived();
       expect(offer()).toBeNull();
+    });
+
+    it('sits after every row, personal setup included, as a section of the card', async () => {
+      await withSpace({ firstRunPath: 'dorkos' });
+      const section = await screen.findByTestId('official-space-offer');
+      const lastRow = screen.getByText('Connect a service');
+      const roleRow = screen.getByText('Tell DorkBot about your work');
+      for (const row of [lastRow, roleRow]) {
+        expect(
+          row.compareDocumentPosition(section) & Node.DOCUMENT_POSITION_FOLLOWING
+        ).toBeTruthy();
+      }
+      // Its heading sits one level under the card's own "Getting started".
+      expect(
+        screen.getByRole('heading', { level: 4, name: 'Join the DorkOS community' })
+      ).toBeTruthy();
     });
 
     it('Not now records the skip and takes the offer away', async () => {

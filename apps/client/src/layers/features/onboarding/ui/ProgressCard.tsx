@@ -77,7 +77,7 @@ type ProfileRowPhase = 'closed' | 'open' | 'saving' | 'error';
  * row links to the Connections page (`/connections`).
  *
  * After a first run that set up an AI (either path), the one-time offer to join
- * the official DorkOS space sits above the rows (spec `official-community-space`
+ * the official DorkOS space sits below the rows (spec `official-community-space`
  * item 5, DOR-2873); while this card is held back, the sidebar's bottom slot
  * offers it on its own. Either way it lands after the first run, never adding a
  * step to it, and draws nothing without an official space, once joined, or
@@ -93,7 +93,7 @@ export function ProgressCard({ onDismiss }: ProgressCardProps) {
   const { roles, rolePromptDismissedAt, isLoading, saveRoles, dismissIdentityPrompt } =
     useProfile();
   const identityQuestion = useIdentityQuestion();
-  const offerOfficialSpace = useFirstRunSpaceOffer();
+  const offerOfficialSpace = useFirstRunSpaceOffer().due;
 
   const [identityPhase, setIdentityPhase] = useState<IdentityRowPhase>('closed');
   const [profilePhase, setProfilePhase] = useState<ProfileRowPhase>('closed');
@@ -210,8 +210,6 @@ export function ProgressCard({ onDismiss }: ProgressCardProps) {
 
       <h3 className="mb-2 text-xs font-medium">Getting started</h3>
 
-      {offerOfficialSpace && <OfficialSpaceOfferCard className="mb-2" />}
-
       <ul className="space-y-0.5">
         {items.map(({ icon: Icon, label, onClick, expanded }) => (
           <li key={label}>
@@ -249,6 +247,12 @@ export function ProgressCard({ onDismiss }: ProgressCardProps) {
           </li>
         ))}
       </ul>
+
+      {/* After every row, personal setup included: the community comes next,
+          and an offer that arrives late never shifts a row under the pointer. */}
+      {offerOfficialSpace && (
+        <OfficialSpaceOfferCard compact className="border-border mt-2 border-t px-1.5 pt-2" />
+      )}
     </motion.div>
   );
 }

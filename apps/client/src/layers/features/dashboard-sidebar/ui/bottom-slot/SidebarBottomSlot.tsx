@@ -18,7 +18,7 @@
  * Getting started zone still has a suggestion, the card here steps aside and
  * the next one in line takes the slot, the name and role prompts included. The
  * card comes back once the zone has nothing left to suggest.
-
+ *
  * **The DorkOS community comes after personal setup** (DOR-2873). After a first
  * run that set up an AI, the offer to join the official space rides inside the
  * Getting started card. While that card is held back, the offer takes its own
@@ -89,10 +89,12 @@ export function SidebarBottomSlot({ model }: { model: SidebarModel }) {
     {
       // Inside the card while it shows; here only while it is held back.
       id: 'official-space-offer',
-      show: spaceOffer && !gettingStartedCardShown,
+      show: spaceOffer.due && !gettingStartedCardShown,
       render: () => <OfficialSpaceOfferCard className="bg-secondary/60 rounded-lg" />,
     },
-    promo,
+    // A promo waits while the offer's connection list is still loading, so the
+    // slot never shows a promo and then swaps it for the offer a beat later.
+    { ...promo, show: promo.show && !spaceOffer.pending },
   ];
 
   // **The same fact the panel above paints on** (spec D6). Every candidate here

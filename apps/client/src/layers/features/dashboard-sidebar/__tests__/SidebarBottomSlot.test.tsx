@@ -27,6 +27,8 @@ let profileVisible = false;
 let promoQualifies = false;
 /** The first run's offer to join the official DorkOS space is due (DOR-2873). */
 let spaceOffer = false;
+/** Its connection list is still loading, so it may yet become due. */
+let spaceOfferPending = false;
 /** What the slot told the two prompts about the getting-started card. */
 let promptOptions: Array<{ gettingStartedCardShown?: boolean } | undefined> = [];
 
@@ -54,7 +56,7 @@ vi.mock('@/layers/features/onboarding', () => ({
   ProgressCard: () => <div data-testid="card-getting-started" />,
   IdentityPromptCard: () => <div data-testid="card-identity-prompt" />,
   ProfilePromptCard: () => <div data-testid="card-profile-prompt" />,
-  useFirstRunSpaceOffer: () => spaceOffer,
+  useFirstRunSpaceOffer: () => ({ due: spaceOffer, pending: spaceOfferPending }),
 }));
 
 vi.mock('@/layers/entities/community', () => ({
@@ -129,6 +131,7 @@ beforeEach(() => {
   profileVisible = false;
   promoQualifies = false;
   spaceOffer = false;
+  spaceOfferPending = false;
   promptOptions = [];
 });
 
@@ -259,6 +262,18 @@ describe('SidebarBottomSlot priority', () => {
       spaceOffer = promoQualifies = true;
       render(<SidebarBottomSlot model={EMPTY_MODEL} />);
       expect(drawn()).toBe('official-space-offer');
+    });
+
+    it('holds a promo back while the offer may still arrive, so the two never swap', () => {
+      promoQualifies = spaceOfferPending = true;
+      render(<SidebarBottomSlot model={EMPTY_MODEL} />);
+      expect(drawn()).toBeNull();
+      cleanup();
+
+      // The list answered: joined or skipped elsewhere, so the promo has its turn.
+      spaceOfferPending = false;
+      render(<SidebarBottomSlot model={EMPTY_MODEL} />);
+      expect(drawn()).toBe('promo');
     });
 
     it('stays dormant while the offer is not due (no official space, joined or skipped)', () => {
