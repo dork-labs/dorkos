@@ -179,7 +179,12 @@ export async function parseUploads<E extends UploadEnv>(
   c: Context<E>,
   options: ParseUploadsOptions
 ): Promise<UploadedFile[]> {
-  return (await parseUploadForm(c, options))?.files ?? [];
+  const req = c.env.incoming;
+  if (!typeis(req, ['multipart'])) return [];
+  const form = await new Promise<UploadForm>((resolve, reject) =>
+    new UploadRead(req, options, false, resolve, reject).start()
+  );
+  return form.files;
 }
 
 /**
@@ -202,7 +207,9 @@ export function parseUploadForm<E extends UploadEnv>(
   // `type-is` is multer's own test: a body (a length or chunked encoding) of
   // any `multipart/*` type.
   if (!typeis(req, ['multipart'])) return Promise.resolve(undefined);
-  return new Promise((resolve, reject) => new UploadRead(req, options, resolve, reject).start());
+  return new Promise((resolve, reject) =>
+    new UploadRead(req, options, true, resolve, reject).start()
+  );
 }
 
 /** A file slot, held from the moment a file is accepted, so order survives storage. */
@@ -229,6 +236,9 @@ class UploadRead {
   constructor(
     private readonly req: IncomingMessage,
     private readonly options: ParseUploadsOptions,
+    // Only a caller that reads the text fields keeps them; the rest drop each
+    // one as it arrives, so a body of text fields holds no memory.
+    private readonly keepFields: boolean,
     private readonly resolve: (form: UploadForm) => void,
     private readonly reject: (error: unknown) => void
   ) {
@@ -280,6 +290,7 @@ class UploadRead {
     if (info.valueTruncated) {
       return this.abort(new UploadLimitError('LIMIT_FIELD_VALUE', fieldname));
     }
+    if (!this.keepFields) return;
     try {
       appendFormField(this.fields, fieldname, value);
     } catch {
