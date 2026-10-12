@@ -30,8 +30,10 @@ const WEBHOOK_PATH = /^\/api\/relay\/webhooks\/[^/]+\/?$/i;
  * The receiver's body: the raw bytes, of any content type, up to 1 MB, read
  * INSTEAD of the app-wide JSON parser. Only `POST /api/relay/webhooks/:adapterId`;
  * every neighbouring path and method is parsed as JSON as before. It applies
- * whether or not Relay is on, as the Express parser did. An oversized body is
- * thrown to the chain's error handler, the same `413` it was.
+ * only while the receiver is mounted (Relay on, with adapters): with Relay off
+ * nothing on Hono claims the path, and Express answers it as any unknown `/api`
+ * path. An oversized body is thrown to the chain's error handler, the same
+ * `413` it was.
  */
 export const relayWebhookBodyRule: BodyRule = {
   matches: (method, path) => method === 'POST' && WEBHOOK_PATH.test(path),
