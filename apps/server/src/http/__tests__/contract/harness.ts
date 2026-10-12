@@ -101,6 +101,9 @@ function serverEnv(
     DORKOS_TASKS_ENABLED: 'true',
     DORKOS_A2A_ENABLED: 'true',
     DORKOS_SEARCH_NO_EXTERNAL_HISTORY: 'true',
+    // No contract server reaches out: telemetry, install counts and the update
+    // check all honour this switch.
+    DORKOS_TELEMETRY_DISABLED: '1',
     ...extra,
   };
 }
