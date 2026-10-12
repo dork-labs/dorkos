@@ -86,7 +86,7 @@ describe('auditRequestFallback', () => {
     const roomId = '01J9Z3K8M2Q4R6S7T8V9W0X1Y2';
     await request(server)
       .post(`/api/rooms/${roomId}/pins?secret=shh`)
-      .send({ text: 'pin me', token: 'abc' });
+      .send({ text: 'pin me', token: 'zz-secret-qq' });
 
     const [row] = await rows();
     expect(row).toMatchObject({
@@ -97,7 +97,7 @@ describe('auditRequestFallback', () => {
       outcome: 'ok',
       actorId: 'install:inst-1',
     });
-    expect(JSON.stringify(row)).not.toMatch(/pin me|abc|shh|01J9Z3K8/);
+    expect(JSON.stringify(row)).not.toMatch(/pin me|zz-secret-qq|shh|01J9Z3K8/);
   });
 
   it('records a refused write as refused', async () => {
