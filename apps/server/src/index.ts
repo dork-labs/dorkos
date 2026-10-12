@@ -461,11 +461,8 @@ import { managedIngressFor } from './services/core/remote/managed-ingress.js';
 import { durableStreamRoutes } from './routes/stream-sockets.js';
 import { registerDorkosCommunityTelemetry } from './services/marketplace/telemetry/telemetry-reporter.js';
 import { registerHeartbeat, type HeartbeatCounts } from './services/core/heartbeat-reporter.js';
-import {
-  registerUsageReporter,
-  reportUsageEvent,
-  shutdownUsageReporter,
-} from './services/core/usage-reporter.js';
+import { registerUsageReporter, shutdownUsageReporter } from './services/core/usage-reporter.js';
+import { startInstallFunnel } from './services/core/telemetry/install-funnel.js';
 import {
   registerServerErrorReporting,
   flushServerError,
@@ -1428,19 +1425,15 @@ async function start() {
     dorkosVersion: SERVER_VERSION,
   });
   if (usageConsent) {
-    // Emit `app_started` once at boot: coarse platform-arch + how many runtimes
-    // are configured (a count, never their names or anything identifying).
-    const startupRuntimes = configManager.get('runtimes');
-    const runtimesConfiguredCount =
-      1 + (startupRuntimes.codex.enabled ? 1 : 0) + (startupRuntimes.opencode.enabled ? 1 : 0);
-    reportUsageEvent({
-      event: 'app_started',
-      properties: {
-        os: `${process.platform}-${process.arch}`,
-        runtimesConfigured: runtimesConfiguredCount,
-      },
+    // `app_started` now, `first_run_completed` once per install (with the
+    // dorkos.ai install ref, if any) and `instance_active` once a day (DOR-2862).
+    startInstallFunnel({
+      dorkHome,
+      runtimes: configManager.get('runtimes'),
+      isOnboardingComplete: () => configManager.get('onboarding').completedAt !== null,
+      onSettingsChange: (listener) => configManager.onChange((change) => listener(change.sections)),
     });
-    logger.info('[Telemetry] Usage reporter active (consent: opt-out, notice-gated)');
+    logger.info('[Telemetry] Usage reporter active (consent: opt-in, notice-gated)');
   }
 
   // Opt-in error reporting (DOR-293, consolidated in DOR-318). A SEPARATE

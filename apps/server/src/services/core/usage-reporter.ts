@@ -7,7 +7,7 @@
  * supported clients use (Transport → server → owned ingest).
  *
  * Consent, exactly like the heartbeat and install channels:
- *   - `config.telemetry.usage` must be on (defaults `true`, Tier 1), AND
+ *   - `config.telemetry.usage` must be on (defaults `false`, opt-in), AND
  *   - no env kill switch is set (`resolveTelemetryConsent` folds in
  *     `DO_NOT_TRACK` / `DORKOS_TELEMETRY_DISABLED`), AND
  *   - the Tier 1 notice gate captured at boot is open (`decideTier1Boot`'s
@@ -147,7 +147,16 @@ export function registerUsageReporter(options: UsageReporterOptions): void {
   state.timer = setTimeout(tick, intervalMs);
   state.timer.unref();
 
-  logger.info('[Telemetry] Usage reporter registered (consent: opt-out, notice-gated)');
+  logger.info('[Telemetry] Usage reporter registered (consent: opt-in, notice-gated)');
+}
+
+/**
+ * Whether the reporter is registered with consent on, so an event reported now
+ * can actually leave. Lets a producer that records "already sent" locally (the
+ * install funnel) avoid marking an event sent that a disabled reporter dropped.
+ */
+export function isUsageReporterActive(): boolean {
+  return state !== null;
 }
 
 /**
