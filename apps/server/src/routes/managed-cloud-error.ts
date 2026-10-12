@@ -2,13 +2,14 @@
  * One honest HTTP answer for every refused managed-cloud call.
  *
  * Every route that can reach DorkOS's managed cloud maps a
- * {@link ManagedConnectorCloudError} through {@link sendManagedCloudError}
+ * {@link ManagedConnectorCloudError} through {@link managedCloudErrorResponse}
  * before its own catch-all, so a refusal never becomes a generic 500 and the
  * client can branch on one stable `code`.
  *
  * @module routes/managed-cloud-error
  */
-import type { Response } from 'express';
+import type { Context } from 'hono';
+import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import {
   ManagedConnectorCloudError,
   type ManagedConnectorCloudErrorCode,
@@ -19,7 +20,7 @@ export type ManagedCloudRouteCode =
   'cloud_link_required' | 'cloud_link_needs_update' | 'cloud_unavailable' | 'cloud_refused';
 
 interface ManagedCloudAnswer {
-  status: number;
+  status: ContentfulStatusCode;
   code: ManagedCloudRouteCode;
   error: string;
 }
@@ -60,19 +61,18 @@ const ANSWERS: Record<ManagedConnectorCloudErrorCode, ManagedCloudAnswer> = {
 };
 
 /**
- * Answer an Express response for a refused managed-cloud call, honestly.
+ * The answer for a refused managed-cloud call, honestly.
  *
  * The cloud's own reason never reaches the response body; it is already in
  * the one log line the refusal wrote.
  *
- * @param res - The response to answer.
+ * @param c - The Hono context to answer.
  * @param error - Whatever the route caught.
- * @returns `true` when `error` was a `ManagedConnectorCloudError` and the response was answered;
- *   `false` when the caller must keep mapping its own error types.
+ * @returns The response when `error` was a `ManagedConnectorCloudError`;
+ *   `undefined` when the caller must keep mapping its own error types.
  */
-export function sendManagedCloudError(res: Response, error: unknown): boolean {
-  if (!(error instanceof ManagedConnectorCloudError)) return false;
+export function managedCloudErrorResponse(c: Context, error: unknown): Response | undefined {
+  if (!(error instanceof ManagedConnectorCloudError)) return undefined;
   const answer = ANSWERS[error.code];
-  res.status(answer.status).json({ error: answer.error, code: answer.code });
-  return true;
+  return c.json({ error: answer.error, code: answer.code }, answer.status);
 }

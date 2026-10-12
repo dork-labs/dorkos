@@ -22,10 +22,6 @@ import eventsRouter from './routes/events.js';
 import { errorHandler } from './middleware/error-handler.js';
 import { hostGuard } from './middleware/host-guard.js';
 import { managedHostGuard } from './middleware/managed-host-guard.js';
-import {
-  createConnectorSignedIngress,
-  type ConnectorSignedIngress,
-} from './services/connectors/events/signed-ingress.js';
 import { requestLogger } from './middleware/request-logger.js';
 import { resolveAgentIdentity } from './middleware/agent-identity.js';
 import { auditActor } from './middleware/audit-actor.js';
@@ -65,10 +61,7 @@ function buildCors(): express.RequestHandler {
 }
 
 /** Create and configure the Express application with middleware and routes. */
-export function createApp(options: {
-  admission: MainRequestAdmission;
-  connectorEventIngress?: ConnectorSignedIngress;
-}) {
+export function createApp(options: { admission: MainRequestAdmission }) {
   const app = express();
   app.use(terminalAdmission(options.admission));
   // A managed remote-access hostname is served only through the managed
@@ -131,18 +124,13 @@ export function createApp(options: {
   // 127.0.0.1 is same-origin to the browser, so it sends no preflight and
   // satisfies both the no-Origin and the same-origin branches above. The `Host`
   // header still says `evil.com`, and this rejects it. Mounted before
-  // `express.json` so a rejected body is never parsed. (Better Auth now answers
-  // from the Hono chain, behind that chain's copy of this guard:
-  // `http/better-auth.ts`.) Inert when login is on (auth
+  // `express.json` so a rejected body is never parsed. (Better Auth and the
+  // signed connector webhook now answer from the Hono chain, behind that
+  // chain's copy of this guard: `http/better-auth.ts`,
+  // `services/connectors/events/signed-ingress.ts`.) Inert when login is on (auth
   // cookies are origin-scoped) or when the container escape hatch is set — see
   // `middleware/host-guard.ts`.
   app.use('/api', hostGuard);
-  if (options.connectorEventIngress) {
-    app.post(
-      '/api/connectors/webhooks/:providerInstanceId',
-      ...createConnectorSignedIngress(options.connectorEventIngress)
-    );
-  }
 
   // Feedback submissions carry an opt-in screenshot inline as a `data:` URL, so
   // this one path parses with a larger ceiling than the app-wide limit below.

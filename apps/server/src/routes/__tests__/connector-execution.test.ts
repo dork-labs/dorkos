@@ -1,12 +1,21 @@
 /** Public program execution, access, and usage authority tests. */
-import express from 'express';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import request from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
 import type { RequestUser } from '../../services/core/auth/session-gate.js';
 import { createServerPrincipal } from '../../services/connectors/principal/server-principal.js';
-import { createConnectorExecutionRouter } from '../connector-execution.js';
+import { createConnectorExecutionRoutes } from '../connector-execution.js';
+import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
 import { ManagedConnectorCloudError } from '../../services/core/auth/cloud-link-client.js';
+
+// The routes are served through the `/api` chain, whose host guard and session
+// gate read the login setting: off, as on a fresh install. The routes' own
+// login lookup is injected per case, and each case sets the user the gate
+// would have proved (`before` below), as the Express version stubbed
+// `res.locals.user`.
+vi.mock('../../services/core/config-manager.js', () => ({
+  configManager: { get: vi.fn(() => undefined), set: vi.fn() },
+}));
 
 const OWNER = { kind: 'local_install', installationId: 'install-a' } as const;
 const fixtureTarget = swappableServer();
@@ -40,45 +49,46 @@ describe('connector execution routes', () => {
       migrationFailed?: boolean;
     } = {}
   ) {
-    const app = express();
-    app.use(express.json());
-    app.use((_req, res, next) => {
-      if (options.user) res.locals.user = options.user;
-      next();
-    });
-    app.use(
-      '/api/connectors',
-      createConnectorExecutionRouter({
-        connectorRegistry: {
-          migrationHealth: () =>
-            options.migrationFailed
-              ? { status: 'migration_failed', error: 'connector migration failed' }
-              : { status: 'ready', migrated: false },
+    return honoGroupListener(
+      {
+        path: '/api/connectors',
+        routes: createConnectorExecutionRoutes({
+          connectorRegistry: {
+            migrationHealth: () =>
+              options.migrationFailed
+                ? { status: 'migration_failed', error: 'connector migration failed' }
+                : { status: 'ready', migrated: false },
+          },
+          capabilities: { invoke },
+          authorization: { capabilityIdForTarget },
+          access: { listConnections, listOperations, listAgentUsage, listOperatorUsage },
+          eventAccess: {
+            listSubscriptions: vi.fn().mockResolvedValue({ agentId: 'agent-a', subscriptions: [] }),
+          },
+          programPrincipals: {
+            mint: (user, owner) =>
+              user.credentialId
+                ? createServerPrincipal({
+                    kind: 'program',
+                    owner,
+                    credentialId: user.credentialId,
+                  })
+                : undefined,
+          },
+          resolveOwner: () => OWNER,
+          loginEnabled: () => Boolean(options.user),
+          isAccountOwner: (user) => user?.userId === 'user-a',
+          verifyUser: async () => options.verifyUser ?? null,
+          trustedOrigins: () => ['http://localhost:4242'],
+        }),
+      },
+      {
+        before: async (c, next) => {
+          if (options.user) c.set('user', options.user);
+          await next();
         },
-        capabilities: { invoke },
-        authorization: { capabilityIdForTarget },
-        access: { listConnections, listOperations, listAgentUsage, listOperatorUsage },
-        eventAccess: {
-          listSubscriptions: vi.fn().mockResolvedValue({ agentId: 'agent-a', subscriptions: [] }),
-        },
-        programPrincipals: {
-          mint: (user, owner) =>
-            user.credentialId
-              ? createServerPrincipal({
-                  kind: 'program',
-                  owner,
-                  credentialId: user.credentialId,
-                })
-              : undefined,
-        },
-        resolveOwner: () => OWNER,
-        loginEnabled: () => Boolean(options.user),
-        isAccountOwner: (user) => user?.userId === 'user-a',
-        verifyUser: async () => options.verifyUser ?? null,
-        trustedOrigins: () => ['http://localhost:4242'],
-      })
+      }
     );
-    return app;
   }
 
   const PROGRAM_USER = {

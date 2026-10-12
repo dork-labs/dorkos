@@ -31,6 +31,11 @@ export interface HonoGroupListenerOptions {
   before?: MiddlewareHandler<ApiEnv>;
   /** An Express app answering whatever the groups do not, behind the front door. */
   legacy?: RequestListener;
+  /**
+   * Routes registered before the body is parsed and before the session gate,
+   * as `http/hono-api.ts` registers Better Auth and the signed webhook ingress.
+   */
+  beforeBodyParsing?: (app: Hono<ApiEnv>) => void;
 }
 
 /**
@@ -44,7 +49,10 @@ export function honoGroupListener(
   groups: MountedGroup | readonly MountedGroup[],
   options: HonoGroupListenerOptions = {}
 ): RequestListener {
-  const app = createApiApp({ admission: new MainRequestAdmission() });
+  const app = createApiApp({
+    admission: new MainRequestAdmission(),
+    beforeBodyParsing: options.beforeBodyParsing,
+  });
   if (options.before) app.use(options.before);
   const list: readonly MountedGroup[] = 'path' in groups ? [groups] : groups;
   for (const group of list) app.route(group.path, group.routes);

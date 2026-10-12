@@ -1,5 +1,5 @@
 /** Provider-neutral Connections catalog, owner resources, and durable authentication routes. */
-import { Router, type Request, type Response } from 'express';
+import { Hono, type Context } from 'hono';
 import { z, ZodError } from 'zod';
 import {
   CONNECTOR_AUTH_SETUP_HEADER,
@@ -13,11 +13,15 @@ import {
   ConnectorReconnectRequestSchema,
   ConnectorSessionAccessUpdateSchema,
 } from '@dorkos/shared/connector-resource-schemas';
-import { parseBody } from '../lib/route-utils.js';
+import type { ApiEnv } from '../http/api-chain.js';
+import { readJsonBody } from '../http/request-body.js';
+import { readQuery } from '../http/request-query.js';
+import { validationFailureBody } from '../lib/route-utils.js';
 import {
+  requestAbortSignal,
   resolveConnectorOperator,
   type ConnectorOwnerBoundaryDeps,
-} from './connector-management.js';
+} from './connector-owner-boundary.js';
 import {
   ConnectorAppActionsError,
   type ConnectorAppActionsService,
@@ -43,7 +47,7 @@ import type { SignInRefresher } from '../services/connectors/resources/sign-in-r
 import { resolveConnectReturnTo } from '../services/connectors/resources/connect-return-to.js';
 import { resolveTrustedOrigins } from '../lib/trusted-origins.js';
 import { logError, logger } from '../lib/logger.js';
-import { sendManagedCloudError } from './managed-cloud-error.js';
+import { managedCloudErrorResponse } from './managed-cloud-error.js';
 
 const CatalogQuerySchema = z
   .object({
@@ -91,27 +95,19 @@ export interface ConnectorResourcesRouterDeps extends ConnectorOwnerBoundaryDeps
   readonly servedOrigins?: () => readonly string[];
 }
 
-function owner(req: Request, res: Response, deps: ConnectorResourcesRouterDeps) {
-  return resolveConnectorOperator(req, res, deps);
-}
-
-function requestSignal(req: Request): { signal: AbortSignal; dispose: () => void } {
-  const controller = new AbortController();
-  const abort = () => controller.abort();
-  req.once('aborted', abort);
-  return {
-    signal: controller.signal,
-    dispose: () => req.off('aborted', abort),
-  };
-}
-
-function sendResourceError(res: Response, error: unknown): void {
+/**
+ * The answer for an error a resource route caught. Anything it does not know
+ * is logged and answered with a generic 500, never thrown on.
+ */
+function resourceErrorResponse(c: Context<ApiEnv>, error: unknown): Response {
   if (error instanceof ZodError) {
-    res.status(400).json({
-      error: 'This connection request is invalid. Check the request and try again.',
-      details: error.issues,
-    });
-    return;
+    return c.json(
+      {
+        error: 'This connection request is invalid. Check the request and try again.',
+        details: error.issues,
+      },
+      400
+    );
   }
   if (error instanceof ConnectorAuthenticationFlowError) {
     const status =
@@ -122,35 +118,41 @@ function sendResourceError(res: Response, error: unknown): void {
         : error.code === 'idempotency_conflict'
           ? 409
           : 422;
-    res.status(status).json({ error: error.message, code: error.code });
-    return;
+    return c.json({ error: error.message, code: error.code }, status);
   }
   if (error instanceof ConnectorAppActionsError) {
     // A listing that failed because the managed cloud refused says which
     // refusal; a genuine provider outage keeps its own 502.
-    if (error.code === 'actions_unavailable' && sendManagedCloudError(res, error.cause)) return;
-    res
-      .status(error.code === 'provider_not_found' ? 404 : 502)
-      .json({ error: error.message, code: error.code });
-    return;
+    if (error.code === 'actions_unavailable') {
+      const managed = managedCloudErrorResponse(c, error.cause);
+      if (managed) return managed;
+    }
+    return c.json(
+      { error: error.message, code: error.code },
+      error.code === 'provider_not_found' ? 404 : 502
+    );
   }
   if (error instanceof ConnectorSessionAccessError) {
-    res.status(409).json({ error: error.message, code: error.code });
-    return;
+    return c.json({ error: error.message, code: error.code }, 409);
   }
   if (error instanceof ConnectorLifecycleError || error instanceof ConnectorOperatorQueryError) {
-    res
-      .status(error.code === 'connection_not_disconnected' ? 409 : 404)
-      .json({ error: error.message, code: error.code });
-    return;
+    return c.json(
+      { error: error.message, code: error.code },
+      error.code === 'connection_not_disconnected' ? 409 : 404
+    );
   }
-  if (sendManagedCloudError(res, error)) return;
+  const managed = managedCloudErrorResponse(c, error);
+  if (managed) return managed;
   logger.error('[Connectors] Connection request failed', logError(error));
-  res.status(500).json({ error: 'DorkOS could not complete this connection request. Try again.' });
+  return c.json({ error: 'DorkOS could not complete this connection request. Try again.' }, 500);
 }
 
-async function withSignal<T>(req: Request, run: (signal: AbortSignal) => Promise<T>): Promise<T> {
-  const active = requestSignal(req);
+/** Run `run` with a signal that fires if the client goes away first. */
+async function withSignal<T>(
+  c: Context<ApiEnv>,
+  run: (signal: AbortSignal) => Promise<T>
+): Promise<T> {
+  const active = requestAbortSignal(c);
   try {
     return await run(active.signal);
   } finally {
@@ -158,23 +160,31 @@ async function withSignal<T>(req: Request, run: (signal: AbortSignal) => Promise
   }
 }
 
-/** Create the provider-neutral owner Connections resource router. */
-export function createConnectorResourcesRouter(deps: ConnectorResourcesRouterDeps): Router {
-  const router = Router();
+/**
+ * Create the provider-neutral owner Connections resource routes.
+ *
+ * @param deps - The resource services and the owner boundary.
+ * @returns The routes, mounted at `/api/connectors`.
+ */
+export function createConnectorResourcesRoutes(deps: ConnectorResourcesRouterDeps): Hono<ApiEnv> {
+  const router = new Hono<ApiEnv>();
   const servedOrigins = deps.servedOrigins ?? resolveTrustedOrigins;
   /** The client's way back into the app, kept only when it leads here (never refused). */
   const returnTo = (raw: string | undefined) => resolveConnectReturnTo(raw, servedOrigins());
+  const owner = (c: Context<ApiEnv>) => resolveConnectorOperator(c, deps);
 
-  router.get('/catalog', async (req, res) => {
+  router.get('/catalog', async (c) => {
     try {
-      const query = CatalogQuerySchema.parse(req.query);
-      res.vary(CONNECTOR_AUTH_SETUP_HEADER);
-      res.set('Cache-Control', 'private, no-store');
-      res.json(
-        await withSignal(req, (signal) =>
+      const query = CatalogQuerySchema.parse(readQuery(c));
+      // Set before the catalog is read, so a failed read answers with them too.
+      // `Origin` first: the chain varies every answer on it (`http/api-chain.ts`).
+      c.header('Vary', `Origin, ${CONNECTOR_AUTH_SETUP_HEADER}`);
+      c.header('Cache-Control', 'private, no-store');
+      return c.json(
+        await withSignal(c, (signal) =>
           deps.query.catalog({
             includeAuthenticationSetup:
-              req.get(CONNECTOR_AUTH_SETUP_HEADER) === CONNECTOR_AUTH_SETUP_VERSION,
+              c.req.header(CONNECTOR_AUTH_SETUP_HEADER) === CONNECTOR_AUTH_SETUP_VERSION,
             ...(query.q !== undefined && { query: query.q }),
             ...(query.cursor !== undefined && { cursor: query.cursor }),
             ...(query.limit !== undefined && { limit: query.limit }),
@@ -183,241 +193,244 @@ export function createConnectorResourcesRouter(deps: ConnectorResourcesRouterDep
         )
       );
     } catch (error) {
-      sendResourceError(res, error);
+      return resourceErrorResponse(c, error);
     }
   });
 
-  router.get('/apps/:toolkit/actions', async (req, res) => {
-    const operator = owner(req, res, deps);
-    if (!operator) return;
+  router.get('/apps/:toolkit/actions', async (c) => {
+    const operator = owner(c);
+    if (operator instanceof Response) return operator;
     try {
-      const toolkit = ToolkitParamSchema.parse(req.params.toolkit);
-      const query = ConnectorAppActionsQuerySchema.parse(req.query);
-      res.set('Cache-Control', 'private, no-store');
-      res.json(
+      const toolkit = ToolkitParamSchema.parse(c.req.param('toolkit'));
+      const query = ConnectorAppActionsQuerySchema.parse(readQuery(c));
+      c.header('Cache-Control', 'private, no-store');
+      return c.json(
         await deps.actions.list(operator, {
           providerInstanceId: query.providerInstanceId,
           toolkit,
         })
       );
     } catch (error) {
-      sendResourceError(res, error);
+      return resourceErrorResponse(c, error);
     }
   });
 
   // Same account-free posture as the catalog it belongs to: a logo says only
   // which apps exist. The bytes come from the service's own logo host, so they
   // are served as inert images: never sniffed, and an SVG can run no script.
-  router.get('/catalog/logos/:serviceSlug', async (req, res) => {
+  router.get('/catalog/logos/:serviceSlug', async (c) => {
     try {
-      const logo = await deps.logos.get(req.params.serviceSlug);
+      const logo = await deps.logos.get(c.req.param('serviceSlug'));
       if (!logo) {
         // Briefly cacheable: the server itself waits before trying a failed logo again.
-        res.set('Cache-Control', 'private, max-age=300');
-        res.status(404).json({ error: 'This app has no logo.' });
-        return;
+        return c.json({ error: 'This app has no logo.' }, 404, {
+          'Cache-Control': 'private, max-age=300',
+        });
       }
-      res.set({
+      return c.body(new Uint8Array(logo.bytes), 200, {
         'Content-Type': logo.contentType,
         'Content-Length': String(logo.bytes.byteLength),
         'X-Content-Type-Options': 'nosniff',
         'Content-Security-Policy': "default-src 'none'; style-src 'unsafe-inline'; sandbox",
         'Cache-Control': 'private, max-age=86400',
       });
-      res.end(logo.bytes);
     } catch (error) {
-      sendResourceError(res, error);
+      return resourceErrorResponse(c, error);
     }
   });
 
-  router.get('/connections', async (req, res) => {
-    const operator = owner(req, res, deps);
-    if (!operator) return;
+  router.get('/connections', async (c) => {
+    const operator = owner(c);
+    if (operator instanceof Response) return operator;
     try {
       await deps.signIns.refreshOnDemand();
-      res.json({
-        connections: await withSignal(req, (signal) =>
-          deps.query.listConnections(operator, signal)
-        ),
+      return c.json({
+        connections: await withSignal(c, (signal) => deps.query.listConnections(operator, signal)),
       });
     } catch (error) {
-      sendResourceError(res, error);
+      return resourceErrorResponse(c, error);
     }
   });
 
-  router.post('/connections', async (req, res) => {
-    const operator = owner(req, res, deps);
-    if (!operator) return;
-    const body = parseBody(ConnectorAuthenticationFlowCreateRequestSchema, req.body ?? {}, res);
-    if (!body) return;
-    const { returnTo: requestedReturnTo, ...request } = body;
+  router.post('/connections', async (c) => {
+    const operator = owner(c);
+    if (operator instanceof Response) return operator;
+    const body = ConnectorAuthenticationFlowCreateRequestSchema.safeParse(
+      readJsonBody(c, { emptyAs: {} })
+    );
+    if (!body.success) return c.json(validationFailureBody(body.error), 400);
+    const { returnTo: requestedReturnTo, ...request } = body.data;
     const kept = returnTo(requestedReturnTo);
     try {
-      res
-        .status(201)
-        .json(
-          await deps.authentication.start(operator, { ...request, ...(kept && { returnTo: kept }) })
-        );
-    } catch (error) {
-      sendResourceError(res, error);
-    }
-  });
-
-  router.get('/authentication-flows/:flowId', async (req, res) => {
-    const operator = owner(req, res, deps);
-    if (!operator) return;
-    try {
-      res.json(await deps.authentication.poll(operator, req.params.flowId));
-    } catch (error) {
-      sendResourceError(res, error);
-    }
-  });
-
-  router.get('/connections/:connectionId/disconnect-impact', (req, res) => {
-    const operator = owner(req, res, deps);
-    if (!operator) return;
-    try {
-      res.json(deps.query.disconnectImpact(operator, req.params.connectionId));
-    } catch (error) {
-      sendResourceError(res, error);
-    }
-  });
-
-  router.post('/connections/:connectionId/reconnect', async (req, res) => {
-    const operator = owner(req, res, deps);
-    if (!operator) return;
-    const body = parseBody(ConnectorReconnectRequestSchema, req.body ?? {}, res);
-    if (!body) return;
-    try {
-      const connectionId = ConnectionIdSchema.parse(req.params.connectionId);
-      const kept = returnTo(body.returnTo);
-      res.status(201).json(
-        await deps.authentication.reconnect(operator, connectionId, body.idempotencyKey, {
-          ...(kept && { returnTo: kept }),
-        })
+      return c.json(
+        await deps.authentication.start(operator, { ...request, ...(kept && { returnTo: kept }) }),
+        201
       );
     } catch (error) {
-      sendResourceError(res, error);
+      return resourceErrorResponse(c, error);
+    }
+  });
+
+  router.get('/authentication-flows/:flowId', async (c) => {
+    const operator = owner(c);
+    if (operator instanceof Response) return operator;
+    try {
+      return c.json(await deps.authentication.poll(operator, c.req.param('flowId')));
+    } catch (error) {
+      return resourceErrorResponse(c, error);
+    }
+  });
+
+  router.get('/connections/:connectionId/disconnect-impact', (c) => {
+    const operator = owner(c);
+    if (operator instanceof Response) return operator;
+    try {
+      return c.json(deps.query.disconnectImpact(operator, c.req.param('connectionId')));
+    } catch (error) {
+      return resourceErrorResponse(c, error);
+    }
+  });
+
+  router.post('/connections/:connectionId/reconnect', async (c) => {
+    const operator = owner(c);
+    if (operator instanceof Response) return operator;
+    const body = ConnectorReconnectRequestSchema.safeParse(readJsonBody(c, { emptyAs: {} }));
+    if (!body.success) return c.json(validationFailureBody(body.error), 400);
+    try {
+      const connectionId = ConnectionIdSchema.parse(c.req.param('connectionId'));
+      const kept = returnTo(body.data.returnTo);
+      return c.json(
+        await deps.authentication.reconnect(operator, connectionId, body.data.idempotencyKey, {
+          ...(kept && { returnTo: kept }),
+        }),
+        201
+      );
+    } catch (error) {
+      return resourceErrorResponse(c, error);
     }
   });
 
   for (const action of ['pause', 'resume'] as const) {
-    router.post(`/connections/:connectionId/${action}`, async (req, res) => {
-      const operator = owner(req, res, deps);
-      if (!operator) return;
+    router.post(`/connections/:connectionId/${action}`, async (c) => {
+      const operator = owner(c);
+      if (operator instanceof Response) return operator;
       try {
-        res.json(
-          await withSignal(req, (signal) =>
-            deps.lifecycle[action](operator, req.params.connectionId, signal)
+        return c.json(
+          await withSignal(c, (signal) =>
+            deps.lifecycle[action](operator, c.req.param('connectionId'), signal)
           )
         );
       } catch (error) {
-        sendResourceError(res, error);
+        return resourceErrorResponse(c, error);
       }
     });
   }
 
-  router.patch('/connections/:connectionId', (req, res) => {
-    const operator = owner(req, res, deps);
-    if (!operator) return;
-    const body = parseBody(ConnectorConnectionPatchSchema, req.body ?? {}, res);
-    if (!body) return;
+  router.patch('/connections/:connectionId', (c) => {
+    const operator = owner(c);
+    if (operator instanceof Response) return operator;
+    const body = ConnectorConnectionPatchSchema.safeParse(readJsonBody(c, { emptyAs: {} }));
+    if (!body.success) return c.json(validationFailureBody(body.error), 400);
     try {
-      res.json(deps.lifecycle.rename(operator, req.params.connectionId, body.label));
+      return c.json(deps.lifecycle.rename(operator, c.req.param('connectionId'), body.data.label));
     } catch (error) {
-      sendResourceError(res, error);
+      return resourceErrorResponse(c, error);
     }
   });
 
-  router.post('/connections/:connectionId/remove', (req, res) => {
-    const operator = owner(req, res, deps);
-    if (!operator) return;
-    if (!parseBody(z.object({}).strict(), req.body ?? {}, res)) return;
+  router.post('/connections/:connectionId/remove', (c) => {
+    const operator = owner(c);
+    if (operator instanceof Response) return operator;
+    const body = z
+      .object({})
+      .strict()
+      .safeParse(readJsonBody(c, { emptyAs: {} }));
+    if (!body.success) return c.json(validationFailureBody(body.error), 400);
     try {
-      deps.lifecycle.remove(operator, req.params.connectionId);
-      res.status(204).end();
+      deps.lifecycle.remove(operator, c.req.param('connectionId'));
+      return c.body(null, 204);
     } catch (error) {
-      sendResourceError(res, error);
+      return resourceErrorResponse(c, error);
     }
   });
 
-  router.delete('/connections/:connectionId', async (req, res) => {
-    const operator = owner(req, res, deps);
-    if (!operator) return;
+  router.delete('/connections/:connectionId', async (c) => {
+    const operator = owner(c);
+    if (operator instanceof Response) return operator;
     try {
-      res.json(
-        await withSignal(req, (signal) =>
-          deps.lifecycle.disconnect(operator, req.params.connectionId, signal)
+      return c.json(
+        await withSignal(c, (signal) =>
+          deps.lifecycle.disconnect(operator, c.req.param('connectionId'), signal)
         )
       );
     } catch (error) {
-      sendResourceError(res, error);
+      return resourceErrorResponse(c, error);
     }
   });
 
-  router.get('/connections/:connectionId', async (req, res) => {
-    const operator = owner(req, res, deps);
-    if (!operator) return;
+  router.get('/connections/:connectionId', async (c) => {
+    const operator = owner(c);
+    if (operator instanceof Response) return operator;
     try {
       await deps.signIns.refreshOnDemand();
-      res.json(
-        await withSignal(req, (signal) =>
-          deps.query.getConnection(operator, req.params.connectionId, signal)
+      return c.json(
+        await withSignal(c, (signal) =>
+          deps.query.getConnection(operator, c.req.param('connectionId'), signal)
         )
       );
     } catch (error) {
-      sendResourceError(res, error);
+      return resourceErrorResponse(c, error);
     }
   });
 
-  router.get('/every-agent-grants', (req, res) => {
-    const operator = owner(req, res, deps);
-    if (!operator) return;
+  router.get('/every-agent-grants', (c) => {
+    const operator = owner(c);
+    if (operator instanceof Response) return operator;
     try {
-      res.json(deps.query.everyAgentGrants(operator));
+      return c.json(deps.query.everyAgentGrants(operator));
     } catch (error) {
-      sendResourceError(res, error);
+      return resourceErrorResponse(c, error);
     }
   });
 
-  router.get('/agents/:agentId/connections', async (req, res) => {
-    const operator = owner(req, res, deps);
-    if (!operator) return;
+  router.get('/agents/:agentId/connections', async (c) => {
+    const operator = owner(c);
+    if (operator instanceof Response) return operator;
     try {
-      res.json(await deps.query.agentConnections(operator, req.params.agentId));
+      return c.json(await deps.query.agentConnections(operator, c.req.param('agentId')));
     } catch (error) {
-      sendResourceError(res, error);
+      return resourceErrorResponse(c, error);
     }
   });
 
-  router.get('/sessions/:sessionId/connections', async (req, res) => {
-    const operator = owner(req, res, deps);
-    if (!operator) return;
+  router.get('/sessions/:sessionId/connections', async (c) => {
+    const operator = owner(c);
+    if (operator instanceof Response) return operator;
     try {
-      res.json(await deps.query.sessionConnections(operator, req.params.sessionId));
+      return c.json(await deps.query.sessionConnections(operator, c.req.param('sessionId')));
     } catch (error) {
-      sendResourceError(res, error);
+      return resourceErrorResponse(c, error);
     }
   });
 
   // The owner turns one app on or off for one chat's agent. Behind the same
   // owner boundary as every other account decision, so no agent can call it.
-  router.put('/sessions/:sessionId/connections/:connectionId', async (req, res) => {
-    const operator = owner(req, res, deps);
-    if (!operator) return;
-    const body = parseBody(ConnectorSessionAccessUpdateSchema, req.body ?? {}, res);
-    if (!body) return;
+  router.put('/sessions/:sessionId/connections/:connectionId', async (c) => {
+    const operator = owner(c);
+    if (operator instanceof Response) return operator;
+    const body = ConnectorSessionAccessUpdateSchema.safeParse(readJsonBody(c, { emptyAs: {} }));
+    if (!body.success) return c.json(validationFailureBody(body.error), 400);
     try {
-      res.json(
+      return c.json(
         await deps.sessionAccess.setAccess(
           operator,
-          req.params.sessionId,
-          req.params.connectionId,
-          body
+          c.req.param('sessionId'),
+          c.req.param('connectionId'),
+          body.data
         )
       );
     } catch (error) {
-      sendResourceError(res, error);
+      return resourceErrorResponse(c, error);
     }
   });
 

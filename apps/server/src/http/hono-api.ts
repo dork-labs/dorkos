@@ -25,11 +25,16 @@ import type { NotificationService } from '../services/notifications/notification
 import type { ApprovalService } from '../services/core/approvals/index.js';
 import type { MeshCore } from '@dorkos/mesh';
 import type { AgentMcpOAuthService } from '../services/mesh/agent-mcp-oauth-service.js';
+import {
+  mountConnectorSignedIngress,
+  type ConnectorSignedIngress,
+} from '../services/connectors/events/signed-ingress.js';
 import { createActivityRoutes } from '../routes/activity.js';
 import { createAgentPauseRoutes, type AgentPauseRouterDeps } from '../routes/agent-pause.js';
 import { createAgentsRoutes, type AgentsRouterDeps } from '../routes/agents.js';
 import { createApprovalsRoutes, type ApprovalsRouterOptions } from '../routes/approvals.js';
 import { createApiDocsRoutes } from '../routes/api-docs.js';
+import { createConnectorRoutes, type ConnectorRoutesDeps } from '../routes/connectors.js';
 import { createAuditRoutes, type AuditRouterDeps } from '../routes/audit.js';
 import capabilitiesRoutes from '../routes/capabilities.js';
 import { createCapabilitiesCatalogRoutes } from '../routes/capabilities-catalog.js';
@@ -143,6 +148,14 @@ export interface ComposedGroupDeps {
    * started (`startup/tasks.ts`).
    */
   tasks?: TasksRouterDeps;
+  /** Every `/api/connectors` group (`routes/connectors.ts`). */
+  connectors?: ConnectorRoutesDeps;
+  /**
+   * The signed webhook ingress (`POST /api/connectors/webhooks/:id`), which
+   * answers to its signature before the body is parsed and before the session
+   * gate.
+   */
+  connectorEventIngress?: ConnectorSignedIngress;
 }
 
 /** What the moved route groups read from the running server, handed over by `index.ts`. */
@@ -173,6 +186,9 @@ export function createHonoApi(options: HonoApiOptions): Hono<ApiEnv> {
     admission: options.admission,
     beforeBodyParsing: (early) => {
       if (auth) mountBetterAuth(early, { auth, maxAttempts: env.DORKOS_AUTH_SIGNIN_RATE_LIMIT });
+      if (deps.connectorEventIngress) {
+        mountConnectorSignedIngress(early, deps.connectorEventIngress);
+      }
     },
   });
   app.route('/api/health', createHealthRoutes(deps));
@@ -209,6 +225,7 @@ export function createHonoApi(options: HonoApiOptions): Hono<ApiEnv> {
   if (deps.activity) app.route('/api/activity', createActivityRoutes(deps.activity));
   if (deps.audit) app.route('/api/audit', createAuditRoutes(deps.audit));
   if (deps.tasks) app.route('/api/tasks', createTasksRoutes(deps.tasks));
+  if (deps.connectors) app.route('/api/connectors', createConnectorRoutes(deps.connectors));
   if (deps.notifications) {
     app.route('/api/notifications', createNotificationsRoutes(deps.notifications));
   }

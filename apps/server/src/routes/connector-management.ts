@@ -1,6 +1,6 @@
 /** Owner review and exact permission-reconciliation HTTP boundary for connectors. */
-import type { Request, Response } from 'express';
-import { Router } from 'express';
+import type { IncomingHttpHeaders } from 'node:http';
+import { Hono, type Context } from 'hono';
 import { z } from 'zod';
 import {
   ConnectorAgentRequestAuthenticationInputSchema,
@@ -13,11 +13,10 @@ import {
   ConnectorReconciliationApplyRequestSchema,
   ConnectorReconciliationPreviewRequestSchema,
 } from '@dorkos/shared/connector-schemas';
-import { APPROVAL_TOKEN_HEADER } from '../services/core/capabilities/index.js';
-import { presentsAgentIdentity } from '../middleware/agent-identity.js';
-import { parseBody } from '../lib/route-utils.js';
-import { isInstallOwner } from '../services/core/auth/install-owner.js';
-import { resolveTrustedOrigins } from '../lib/trusted-origins.js';
+import type { ApiEnv } from '../http/api-chain.js';
+import { readJsonBody } from '../http/request-body.js';
+import { readQuery } from '../http/request-query.js';
+import { validationFailureBody } from '../lib/route-utils.js';
 import { verifyRequestAuth, type RequestUser } from '../services/core/auth/session-gate.js';
 import {
   ConnectorManagementReviewError,
@@ -35,7 +34,17 @@ import {
   type ConnectorAgentRequestService,
 } from '../services/connectors/agent-request-service.js';
 import { ConnectorSubscriptionError } from '../services/connectors/events/subscription-store.js';
-import { sendManagedCloudError } from './managed-cloud-error.js';
+import { managedCloudErrorResponse } from './managed-cloud-error.js';
+import {
+  migrationHealthGate,
+  ownerRefusal,
+  presentsMachineSignal,
+  requestAbortSignal,
+  requestUser,
+  resolveConnectorOperator,
+  untrustedOriginRefusal,
+  type ConnectorOwnerBoundaryDeps,
+} from './connector-owner-boundary.js';
 
 const ReviewListQuerySchema = z
   .object({ state: z.enum(['pending', 'resolved']).optional() })
@@ -48,21 +57,6 @@ const AgentRequestListQuerySchema = z
     sessionId: z.string().min(1).optional(),
   })
   .strict();
-
-/** Dependencies for the connector owner-management HTTP boundary. */
-export interface ConnectorOwnerBoundaryDeps {
-  /** Resolve the current deployment's owner from verified server state. */
-  readonly resolveOwner: (user: RequestUser | undefined) => ConnectorOwnerAuthority | undefined;
-  /** Read the live login posture; injected for deterministic route evidence. */
-  readonly loginEnabled: () => boolean;
-  /** Exact DorkOS browser origins; defaults to the server-owned static set. */
-  readonly trustedOrigins?: () => readonly string[];
-  /**
-   * Whether a signed-in account owns this install; defaults to the shared
-   * `isInstallOwner`. Injected for deterministic route evidence.
-   */
-  readonly isAccountOwner?: (user: RequestUser | undefined) => boolean;
-}
 
 /** Dependencies for the connector owner-management HTTP boundary. */
 export interface ConnectorManagementRouterDeps extends ConnectorOwnerBoundaryDeps {
@@ -84,147 +78,64 @@ export interface ConnectorManagementRouterDeps extends ConnectorOwnerBoundaryDep
     'listForOwner' | 'getForOwner' | 'resolve' | 'startAuthentication' | 'pollAuthentication'
   >;
   /** Request verifier used when login-off middleware did not populate an API-key user. */
-  readonly verifyUser?: (req: Pick<Request, 'headers'>) => Promise<RequestUser | null>;
+  readonly verifyUser?: (req: { headers: IncomingHttpHeaders }) => Promise<RequestUser | null>;
 }
 
-function requestUser(res: Response): RequestUser | undefined {
-  return res.locals.user as RequestUser | undefined;
-}
-
-function sendOwnerRefusal(res: Response, code: string, message: string): void {
-  res.status(403).json({ error: message, code, message });
-}
-
-function refuseCommonMachineSignals(
-  req: Request,
-  res: Response,
-  deps: ConnectorOwnerBoundaryDeps
-): boolean {
-  const origin = req.headers.origin;
-  const trustedOrigins = deps.trustedOrigins?.() ?? resolveTrustedOrigins();
-  if (origin && !trustedOrigins.includes(origin)) {
-    sendOwnerRefusal(
-      res,
-      'connector_owner_origin_required',
-      'Open this account action from the DorkOS app.'
-    );
-    return true;
-  }
-  if (presentsAgentIdentity(req, res) || req.headers[APPROVAL_TOKEN_HEADER] !== undefined) {
-    sendOwnerRefusal(
-      res,
-      'connector_owner_required',
-      'An agent or approval token cannot make account decisions.'
-    );
-    return true;
-  }
-  return false;
+/** The 401 for a program that did not prove a verified API key. */
+function programKeyRequired(c: Context<ApiEnv>): Response {
+  return c.json(
+    {
+      error: 'This program needs a verified API key to request an account change.',
+      code: 'connector_program_credential_required',
+    },
+    401
+  );
 }
 
 /**
- * Resolve a browser/local operator while refusing program, agent, and approval-token callers,
- * and, with login on, any signed-in account that does not own this install.
+ * Who is asking for a review: a program proving an API key, or the operator
+ * at the app. Agents and approval-token holders are neither.
  *
- * @param req - Incoming request containing only server-verified identity signals.
- * @param res - Response carrying the session gate's verified user.
- * @param deps - Deployment owner and login/origin policy.
- * @returns The server-owned connector owner, or `undefined` after answering a refusal.
+ * @returns The requester, or the refusal to answer with.
  */
-export function resolveConnectorOperator(
-  req: Request,
-  res: Response,
-  deps: ConnectorOwnerBoundaryDeps
-): ConnectorOwnerAuthority | undefined {
-  const origin = req.headers.origin;
-  const trustedOrigins = deps.trustedOrigins?.() ?? resolveTrustedOrigins();
-  if (origin && !trustedOrigins.includes(origin)) {
-    sendOwnerRefusal(
-      res,
-      'connector_owner_origin_required',
-      'Open this account action from the DorkOS app.'
-    );
-    return undefined;
-  }
-  if (
-    presentsAgentIdentity(req, res) ||
-    req.headers[APPROVAL_TOKEN_HEADER] !== undefined ||
-    req.headers.authorization !== undefined
-  ) {
-    sendOwnerRefusal(
-      res,
-      'connector_owner_required',
-      'Programs and agents cannot make account decisions.'
-    );
-    return undefined;
-  }
-  const user = requestUser(res);
-  if (deps.loginEnabled() && user?.credential !== 'cookie') {
-    sendOwnerRefusal(
-      res,
-      'operator_cookie_required',
-      'Sign in to the DorkOS app to make this account decision.'
-    );
-    return undefined;
-  }
-  // Connections reach their apps through this computer's DorkOS account, so
-  // with login on they are the owner's alone, never another signed-in
-  // account's (DOR-2678) — the same owner `/api/cloud/*` asks for.
-  if (deps.loginEnabled() && !(deps.isAccountOwner ?? isInstallOwner)(user)) {
-    sendOwnerRefusal(
-      res,
-      'owner_only',
-      'Only the owner of this DorkOS can manage the connections on its DorkOS account.'
-    );
-    return undefined;
-  }
-  const owner = deps.resolveOwner(user);
-  if (!owner) {
-    res.status(401).json({ error: 'DorkOS could not verify who owns this account.' });
-    return undefined;
-  }
-  return owner;
-}
-
 async function resolveReviewRequester(
-  req: Request,
-  res: Response,
+  c: Context<ApiEnv>,
   deps: ConnectorManagementRouterDeps
-): Promise<ConnectorManagementReviewRequester | undefined> {
-  if (refuseCommonMachineSignals(req, res, deps)) return undefined;
-  const existing = requestUser(res);
-  if (req.headers.authorization !== undefined) {
+): Promise<ConnectorManagementReviewRequester | Response> {
+  const originRefusal = untrustedOriginRefusal(c, deps);
+  if (originRefusal) return originRefusal;
+  if (presentsMachineSignal(c)) {
+    return ownerRefusal(
+      c,
+      'connector_owner_required',
+      'An agent or approval token cannot make account decisions.'
+    );
+  }
+  const existing = requestUser(c);
+  const { headers } = c.env.incoming;
+  if (headers.authorization !== undefined) {
     const verifier = deps.verifyUser ?? verifyRequestAuth;
-    const user = existing?.credential === 'api-key' ? existing : await verifier(req);
-    if (user?.credential !== 'api-key' || !user.credentialId) {
-      res.status(401).json({
-        error: 'This program needs a verified API key to request an account change.',
-        code: 'connector_program_credential_required',
-      });
-      return undefined;
-    }
+    const user = existing?.credential === 'api-key' ? existing : await verifier({ headers });
+    if (user?.credential !== 'api-key' || !user.credentialId) return programKeyRequired(c);
     const owner = deps.resolveOwner(user);
-    if (!owner) {
-      res.status(401).json({ error: 'DorkOS could not verify who owns this account.' });
-      return undefined;
-    }
+    if (!owner) return c.json({ error: 'DorkOS could not verify who owns this account.' }, 401);
     return { kind: 'program', requesterId: user.credentialId, owner };
   }
-  if (existing?.credential === 'api-key') {
-    res.status(401).json({
-      error: 'This program needs a verified API key to request an account change.',
-      code: 'connector_program_credential_required',
-    });
-    return undefined;
-  }
-  const owner = resolveConnectorOperator(req, res, deps);
-  return owner ? { kind: 'operator', requesterId: ownerId(owner), owner } : undefined;
+  if (existing?.credential === 'api-key') return programKeyRequired(c);
+  const owner = resolveConnectorOperator(c, deps);
+  if (owner instanceof Response) return owner;
+  return { kind: 'operator', requesterId: ownerId(owner), owner };
 }
 
 function ownerId(owner: ConnectorOwnerAuthority): string {
   return owner.kind === 'user' ? owner.userId : owner.installationId;
 }
 
-function sendManagementError(res: Response, error: unknown): void {
+/**
+ * The answer for an error a management route caught; anything it does not
+ * know is thrown on, to the chain's error handler.
+ */
+function managementErrorResponse(c: Context<ApiEnv>, error: unknown): Response {
   if (error instanceof ConnectorAgentRequestError) {
     const status =
       error.code === 'request_not_found'
@@ -234,8 +145,7 @@ function sendManagementError(res: Response, error: unknown): void {
           : error.code === 'event_selection_unavailable'
             ? 422
             : 409;
-    res.status(status).json({ error: error.message, code: error.code });
-    return;
+    return c.json({ error: error.message, code: error.code }, status);
   }
   // An update choice refused at the consent boundary. The agent-request
   // service turns these into `event_selection_unavailable` itself; this keeps
@@ -251,22 +161,23 @@ function sendManagementError(res: Response, error: unknown): void {
             : error.code === 'destination_unavailable'
               ? 422
               : 409;
-    res.status(status).json({
-      code: error.code,
-      error:
-        error.code === 'review_conflict'
-          ? 'Those updates changed while you were choosing them. Pick them again.'
-          : error.code === 'events_unavailable'
-            ? 'Updates can’t be set up right now. Try again later, or answer without updates.'
-            : 'Those updates can’t be set up. Pick them again, or answer without updates.',
-    });
-    return;
+    return c.json(
+      {
+        code: error.code,
+        error:
+          error.code === 'review_conflict'
+            ? 'Those updates changed while you were choosing them. Pick them again.'
+            : error.code === 'events_unavailable'
+              ? 'Updates can’t be set up right now. Try again later, or answer without updates.'
+              : 'Those updates can’t be set up. Pick them again, or answer without updates.',
+      },
+      status
+    );
   }
   if (error instanceof ConnectorManagementReviewError) {
     const status =
       error.code === 'review_not_found' || error.code === 'target_not_found' ? 404 : 409;
-    res.status(status).json({ error: error.message, code: error.code });
-    return;
+    return c.json({ error: error.message, code: error.code }, status);
   }
   if (error instanceof ConnectorReconciliationError) {
     const status =
@@ -275,225 +186,230 @@ function sendManagementError(res: Response, error: unknown): void {
         : error.code === 'operations_unsupported' || error.code === 'every_agent_unavailable'
           ? 422
           : 409;
-    res.status(status).json({ error: error.message, code: error.code });
-    return;
+    return c.json({ error: error.message, code: error.code }, status);
   }
-  if (sendManagedCloudError(res, error)) return;
+  const managed = managedCloudErrorResponse(c, error);
+  if (managed) return managed;
   throw error;
 }
 
 /**
- * Create the connector owner-management router mounted at `/api/connectors`.
+ * Create the connector owner-management routes mounted at `/api/connectors`.
  *
  * @param deps - Durable services and server-owned identity resolvers.
- * @returns The strict review and reconciliation router.
+ * @returns The strict review and reconciliation routes.
  */
-export function createConnectorManagementRouter(deps: ConnectorManagementRouterDeps): Router {
-  const router = Router();
-  const requireAgentRequests = (res: Response) => {
-    if (deps.agentRequests) return deps.agentRequests;
-    res.status(503).json({
-      error: 'Agent service requests are unavailable while agent identity is offline.',
-      code: 'agent_requests_unavailable',
-    });
-    return undefined;
-  };
+export function createConnectorManagementRoutes(deps: ConnectorManagementRouterDeps): Hono<ApiEnv> {
+  const router = new Hono<ApiEnv>();
+  const requireAgentRequests = (c: Context<ApiEnv>) =>
+    deps.agentRequests ??
+    c.json(
+      {
+        error: 'Agent service requests are unavailable while agent identity is offline.',
+        code: 'agent_requests_unavailable',
+      },
+      503
+    );
 
-  router.use((_req, res, next) => {
-    const health = deps.registry.migrationHealth();
-    if (health.status === 'migration_failed') {
-      res.status(503).json({ status: health.status, error: health.error });
-      return;
-    }
-    next();
-  });
+  // Path-less, like the Express router it replaces: every `/api/connectors`
+  // request that reaches this group, its routes or the groups after it, is
+  // refused while the connector migration has failed.
+  router.use(migrationHealthGate(deps.registry));
 
-  router.post('/reviews', async (req, res) => {
-    const requester = await resolveReviewRequester(req, res, deps);
-    if (!requester) return;
-    const input = parseBody(ConnectorManagementReviewCreateRequestSchema, req.body ?? {}, res);
-    if (!input) return;
+  router.post('/reviews', async (c) => {
+    const requester = await resolveReviewRequester(c, deps);
+    if (requester instanceof Response) return requester;
+    const input = ConnectorManagementReviewCreateRequestSchema.safeParse(
+      readJsonBody(c, { emptyAs: {} })
+    );
+    if (!input.success) return c.json(validationFailureBody(input.error), 400);
     try {
-      const review = deps.reviews.create(requester, input);
-      res
-        .status(201)
-        .json(
-          requester.kind === 'program'
-            ? deps.reviews.getProgramStatus(requester, review.reviewRequestId)
-            : review
-        );
+      const review = deps.reviews.create(requester, input.data);
+      return c.json(
+        requester.kind === 'program'
+          ? deps.reviews.getProgramStatus(requester, review.reviewRequestId)
+          : review,
+        201
+      );
     } catch (error) {
-      sendManagementError(res, error);
+      return managementErrorResponse(c, error);
     }
   });
 
-  router.get('/program/reviews/:reviewRequestId', async (req, res) => {
-    const requester = await resolveReviewRequester(req, res, deps);
-    if (!requester) return;
-    if (requester.kind !== 'program') {
-      res.status(401).json({
-        error: 'This program needs a verified API key to request an account change.',
-        code: 'connector_program_credential_required',
+  router.get('/program/reviews/:reviewRequestId', async (c) => {
+    const requester = await resolveReviewRequester(c, deps);
+    if (requester instanceof Response) return requester;
+    if (requester.kind !== 'program') return programKeyRequired(c);
+    try {
+      return c.json(deps.reviews.getProgramStatus(requester, c.req.param('reviewRequestId')));
+    } catch (error) {
+      return managementErrorResponse(c, error);
+    }
+  });
+
+  router.get('/reviews', (c) => {
+    const owner = resolveConnectorOperator(c, deps);
+    if (owner instanceof Response) return owner;
+    const query = ReviewListQuerySchema.safeParse(readQuery(c));
+    if (!query.success) return c.json(validationFailureBody(query.error), 400);
+    try {
+      return c.json({ reviews: deps.reviews.list(owner, query.data.state) });
+    } catch (error) {
+      return managementErrorResponse(c, error);
+    }
+  });
+
+  router.get('/reviews/:reviewRequestId', (c) => {
+    const owner = resolveConnectorOperator(c, deps);
+    if (owner instanceof Response) return owner;
+    try {
+      return c.json(deps.reviews.get(owner, c.req.param('reviewRequestId')));
+    } catch (error) {
+      return managementErrorResponse(c, error);
+    }
+  });
+
+  router.post('/reviews/:reviewRequestId/decision', async (c) => {
+    const owner = resolveConnectorOperator(c, deps);
+    if (owner instanceof Response) return owner;
+    const input = ConnectorManagementReviewDecisionSchema.safeParse(
+      readJsonBody(c, { emptyAs: {} })
+    );
+    if (!input.success) return c.json(validationFailureBody(input.error), 400);
+    try {
+      return c.json(await deps.reviews.resolve(owner, c.req.param('reviewRequestId'), input.data));
+    } catch (error) {
+      return managementErrorResponse(c, error);
+    }
+  });
+
+  router.get('/agent-requests', (c) => {
+    const owner = resolveConnectorOperator(c, deps);
+    if (owner instanceof Response) return owner;
+    const requests = requireAgentRequests(c);
+    if (requests instanceof Response) return requests;
+    const query = AgentRequestListQuerySchema.safeParse(readQuery(c));
+    if (!query.success) return c.json(validationFailureBody(query.error), 400);
+    try {
+      return c.json({
+        requests: requests.listForOwner(owner, query.data.state, query.data.sessionId),
       });
-      return;
-    }
-    try {
-      res.json(deps.reviews.getProgramStatus(requester, req.params.reviewRequestId));
     } catch (error) {
-      sendManagementError(res, error);
+      return managementErrorResponse(c, error);
     }
   });
 
-  router.get('/reviews', (req, res) => {
-    const owner = resolveConnectorOperator(req, res, deps);
-    if (!owner) return;
-    const query = parseBody(ReviewListQuerySchema, req.query, res);
-    if (!query) return;
+  router.get('/agent-requests/:requestId', (c) => {
+    const owner = resolveConnectorOperator(c, deps);
+    if (owner instanceof Response) return owner;
+    const requests = requireAgentRequests(c);
+    if (requests instanceof Response) return requests;
     try {
-      res.json({ reviews: deps.reviews.list(owner, query.state) });
+      return c.json(requests.getForOwner(owner, c.req.param('requestId')));
     } catch (error) {
-      sendManagementError(res, error);
+      return managementErrorResponse(c, error);
     }
   });
 
-  router.get('/reviews/:reviewRequestId', (req, res) => {
-    const owner = resolveConnectorOperator(req, res, deps);
-    if (!owner) return;
+  router.post('/agent-requests/:requestId/decision', async (c) => {
+    const owner = resolveConnectorOperator(c, deps);
+    if (owner instanceof Response) return owner;
+    const requests = requireAgentRequests(c);
+    if (requests instanceof Response) return requests;
+    const input = ConnectorAgentRequestDecisionSchema.safeParse(readJsonBody(c, { emptyAs: {} }));
+    if (!input.success) return c.json(validationFailureBody(input.error), 400);
+    const active = requestAbortSignal(c);
     try {
-      res.json(deps.reviews.get(owner, req.params.reviewRequestId));
+      return c.json(
+        await requests.resolve(owner, c.req.param('requestId'), input.data, active.signal)
+      );
     } catch (error) {
-      sendManagementError(res, error);
-    }
-  });
-
-  router.post('/reviews/:reviewRequestId/decision', async (req, res) => {
-    const owner = resolveConnectorOperator(req, res, deps);
-    if (!owner) return;
-    const input = parseBody(ConnectorManagementReviewDecisionSchema, req.body ?? {}, res);
-    if (!input) return;
-    try {
-      res.json(await deps.reviews.resolve(owner, req.params.reviewRequestId, input));
-    } catch (error) {
-      sendManagementError(res, error);
-    }
-  });
-
-  router.get('/agent-requests', (req, res) => {
-    const owner = resolveConnectorOperator(req, res, deps);
-    if (!owner) return;
-    const requests = requireAgentRequests(res);
-    if (!requests) return;
-    const query = parseBody(AgentRequestListQuerySchema, req.query, res);
-    if (!query) return;
-    try {
-      res.json({ requests: requests.listForOwner(owner, query.state, query.sessionId) });
-    } catch (error) {
-      sendManagementError(res, error);
-    }
-  });
-
-  router.get('/agent-requests/:requestId', (req, res) => {
-    const owner = resolveConnectorOperator(req, res, deps);
-    if (!owner) return;
-    const requests = requireAgentRequests(res);
-    if (!requests) return;
-    try {
-      res.json(requests.getForOwner(owner, req.params.requestId));
-    } catch (error) {
-      sendManagementError(res, error);
-    }
-  });
-
-  router.post('/agent-requests/:requestId/decision', async (req, res) => {
-    const owner = resolveConnectorOperator(req, res, deps);
-    if (!owner) return;
-    const requests = requireAgentRequests(res);
-    if (!requests) return;
-    const input = parseBody(ConnectorAgentRequestDecisionSchema, req.body ?? {}, res);
-    if (!input) return;
-    const controller = new AbortController();
-    const abort = () => controller.abort();
-    req.once('aborted', abort);
-    try {
-      res.json(await requests.resolve(owner, req.params.requestId, input, controller.signal));
-    } catch (error) {
-      sendManagementError(res, error);
+      return managementErrorResponse(c, error);
     } finally {
-      req.off('aborted', abort);
+      active.dispose();
     }
   });
 
-  router.post('/agent-requests/:requestId/authentication-flows', async (req, res) => {
-    const owner = resolveConnectorOperator(req, res, deps);
-    if (!owner) return;
-    const requests = requireAgentRequests(res);
-    if (!requests) return;
-    const input = parseBody(ConnectorAgentRequestAuthenticationInputSchema, req.body ?? {}, res);
-    if (!input) return;
+  router.post('/agent-requests/:requestId/authentication-flows', async (c) => {
+    const owner = resolveConnectorOperator(c, deps);
+    if (owner instanceof Response) return owner;
+    const requests = requireAgentRequests(c);
+    if (requests instanceof Response) return requests;
+    const input = ConnectorAgentRequestAuthenticationInputSchema.safeParse(
+      readJsonBody(c, { emptyAs: {} })
+    );
+    if (!input.success) return c.json(validationFailureBody(input.error), 400);
     try {
-      res.status(201).json(await requests.startAuthentication(owner, req.params.requestId, input));
+      return c.json(
+        await requests.startAuthentication(owner, c.req.param('requestId'), input.data),
+        201
+      );
     } catch (error) {
-      sendManagementError(res, error);
+      return managementErrorResponse(c, error);
     }
   });
 
-  router.get('/agent-requests/:requestId/authentication-flows/:flowId', async (req, res) => {
-    const owner = resolveConnectorOperator(req, res, deps);
-    if (!owner) return;
-    const requests = requireAgentRequests(res);
-    if (!requests) return;
+  router.get('/agent-requests/:requestId/authentication-flows/:flowId', async (c) => {
+    const owner = resolveConnectorOperator(c, deps);
+    if (owner instanceof Response) return owner;
+    const requests = requireAgentRequests(c);
+    if (requests instanceof Response) return requests;
     try {
-      res.json(await requests.pollAuthentication(owner, req.params.requestId, req.params.flowId));
+      return c.json(
+        await requests.pollAuthentication(owner, c.req.param('requestId'), c.req.param('flowId'))
+      );
     } catch (error) {
-      sendManagementError(res, error);
+      return managementErrorResponse(c, error);
     }
   });
 
-  router.post('/reconciliation/previews', async (req, res) => {
-    const owner = resolveConnectorOperator(req, res, deps);
-    if (!owner) return;
-    const input = parseBody(ConnectorReconciliationPreviewRequestSchema, req.body ?? {}, res);
-    if (!input) return;
+  router.post('/reconciliation/previews', async (c) => {
+    const owner = resolveConnectorOperator(c, deps);
+    if (owner instanceof Response) return owner;
+    const input = ConnectorReconciliationPreviewRequestSchema.safeParse(
+      readJsonBody(c, { emptyAs: {} })
+    );
+    if (!input.success) return c.json(validationFailureBody(input.error), 400);
     const controller = new AbortController();
-    res.once('close', () => controller.abort());
+    c.env.outgoing.once('close', () => controller.abort());
     try {
-      res.status(201).json(await deps.reconciliation.preview(owner, input, controller.signal));
+      return c.json(await deps.reconciliation.preview(owner, input.data, controller.signal), 201);
     } catch (error) {
-      sendManagementError(res, error);
+      return managementErrorResponse(c, error);
     }
   });
 
   // Stop sharing a connection with every agent. Owner-only like every grant
   // change, but with no preview: taking access away needs no reviewed catalog,
   // so it works while the provider is down (ADR 260926-192625).
-  router.delete('/connections/:connectionId/every-agent', async (req, res) => {
-    const owner = resolveConnectorOperator(req, res, deps);
-    if (!owner) return;
+  router.delete('/connections/:connectionId/every-agent', async (c) => {
+    const owner = resolveConnectorOperator(c, deps);
+    if (owner instanceof Response) return owner;
     try {
-      res.json(
+      return c.json(
         ConnectorEveryAgentRevokeResponseSchema.parse(
-          await deps.reconciliation.revokeEveryAgent(owner, req.params.connectionId)
+          await deps.reconciliation.revokeEveryAgent(owner, c.req.param('connectionId'))
         )
       );
     } catch (error) {
-      sendManagementError(res, error);
+      return managementErrorResponse(c, error);
     }
   });
 
-  router.post('/reconciliation/apply', async (req, res) => {
-    const owner = resolveConnectorOperator(req, res, deps);
-    if (!owner) return;
-    const input = parseBody(ConnectorReconciliationApplyRequestSchema, req.body ?? {}, res);
-    if (!input) return;
-    const controller = new AbortController();
-    const abort = () => controller.abort();
-    req.once('aborted', abort);
+  router.post('/reconciliation/apply', async (c) => {
+    const owner = resolveConnectorOperator(c, deps);
+    if (owner instanceof Response) return owner;
+    const input = ConnectorReconciliationApplyRequestSchema.safeParse(
+      readJsonBody(c, { emptyAs: {} })
+    );
+    if (!input.success) return c.json(validationFailureBody(input.error), 400);
+    const active = requestAbortSignal(c);
     try {
-      res.json(await deps.reconciliation.apply(owner, input, controller.signal));
+      return c.json(await deps.reconciliation.apply(owner, input.data, active.signal));
     } catch (error) {
-      sendManagementError(res, error);
+      return managementErrorResponse(c, error);
     } finally {
-      req.off('aborted', abort);
+      active.dispose();
     }
   });
 

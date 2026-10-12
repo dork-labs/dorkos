@@ -19,6 +19,7 @@ vi.mock('../lib/logger.js', () => ({
   logger: { info: vi.fn(), debug: vi.fn(), warn: vi.fn(), error: vi.fn() },
 }));
 import { createApp } from '../app.js';
+import { composedListener } from '../http/__tests__/composed-listener.js';
 import { logger } from '../lib/logger.js';
 
 const target = swappableServer();
@@ -45,15 +46,19 @@ beforeEach(() => {
   vi.clearAllMocks();
 });
 function mount() {
-  const app = createApp({
-    admission: new MainRequestAdmission(),
-    connectorEventIngress: { verifier: () => verifier, accept },
-  });
+  const admission = new MainRequestAdmission();
+  const app = createApp({ admission });
   app.get('/api/ordinary-event-test', (_req, res) => res.json({ ordinary: true }));
-  target.mount(app);
+  // Routed as the running server routes: the signed webhook answers from the
+  // Hono `/api` app, the ordinary route from Express behind the front door.
+  target.mount(
+    composedListener(app, admission, {
+      connectorEventIngress: { verifier: () => verifier, accept },
+    })
+  );
 }
 
-describe('signed events in the real createApp middleware stack', () => {
+describe('signed events in the real composed middleware stack', () => {
   it.each([true, false])(
     'preserves exact signed bytes with login=%s and keeps ordinary routes gated',
     async (enabled) => {
