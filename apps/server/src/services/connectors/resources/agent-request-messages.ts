@@ -8,7 +8,10 @@
  * @module services/connectors/resources/agent-request-messages
  */
 import type { ConnectorAppSetupReason } from '@dorkos/shared/connector-resource-schemas';
-import { serviceNameFromToolkit } from '@dorkos/shared/connector-schemas';
+import {
+  serviceNameFromToolkit,
+  type ConnectorRequestAccess,
+} from '@dorkos/shared/connector-schemas';
 import type { ConnectorServiceDirectory } from './operator-query-service.js';
 import {
   agentConnectChoices,
@@ -152,5 +155,47 @@ export function setupRequestNote(app: string, reason: ConnectorAppSetupReason): 
     `connect it, they choose how DorkOS reaches apps. ${agentConnectChoices(reason)} The card ` +
     `in this chat offers the same choices. Once they connect ${app}, their answer comes back ` +
     "to this chat, so don't ask again."
+  );
+}
+
+/** What a granted agent can now do in an app, in words. */
+export function grantedVerb(held: ReadonlySet<string>): string {
+  if (held.has('read') && held.has('write')) return 'read and change things in';
+  if (held.has('read')) return 'read';
+  if (held.has('write')) return 'change things in';
+  return 'use';
+}
+
+/**
+ * The refusal for an app the agent already asked for in another chat, saying
+ * only what is true: whether it was answered, and whether that answer (or
+ * ask) covers what this chat needs.
+ */
+export function elsewhereMessage(
+  app: string,
+  wanted: ConnectorRequestAccess,
+  asked: ConnectorRequestAccess,
+  held: ReadonlySet<string> | null
+): string {
+  const needsChange = wanted === 'read-write';
+  if (held) {
+    const covered = !needsChange || held.has('write');
+    return (
+      `The person already allowed you to ${grantedVerb(held)} ${app} when you asked in ` +
+      "another chat. List your accounts again to use it here; don't ask again." +
+      (covered
+        ? ''
+        : ` That doesn't cover changing things there. If this chat needs that, ask for ` +
+          `"read-write" once that answer reaches the other chat.`)
+    );
+  }
+  const covered = !needsChange || asked === 'read-write';
+  return (
+    `You already asked for ${app} in another chat, and the person hasn't answered yet. They ` +
+    'can answer it there, or under Needs you on the Connections page in DorkOS. ' +
+    (covered
+      ? `If they allow it, you can use ${app} in this chat too, so don't ask again here.`
+      : `That request asks only to read ${app}. If this chat needs to change things there, ` +
+        'ask again once the person has answered it.')
   );
 }

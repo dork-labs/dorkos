@@ -61,7 +61,12 @@ import type {
   ConnectorServiceDirectory,
 } from './resources/operator-query-service.js';
 import { isSetupReason } from './app-connection-way.js';
-import { setupRequestNote, unavailableServiceMessage } from './resources/agent-request-messages.js';
+import {
+  elsewhereMessage,
+  grantedVerb,
+  setupRequestNote,
+  unavailableServiceMessage,
+} from './resources/agent-request-messages.js';
 import { dorkosToolNameFor } from '../runtimes/shared/dorkos-tool-names.js';
 import { SERVICE_CATALOG_TOOL_NAME } from './connector-capabilities.js';
 import type { ConnectorAuthenticationFlowService } from './resources/authentication-flow-service.js';
@@ -2165,14 +2170,6 @@ function grantedClasses(db: Db | DbTransaction, request: ConnectorAgentRequest):
   };
 }
 
-/** What a granted agent can now do in an app, in words. */
-function grantedVerb(held: ReadonlySet<string>): string {
-  if (held.has('read') && held.has('write')) return 'read and change things in';
-  if (held.has('read')) return 'read';
-  if (held.has('write')) return 'change things in';
-  return 'use';
-}
-
 /**
  * The plain note every request status carries: what happens next, or what
  * the person must do, in words an agent can pass on as they are. One place
@@ -2231,40 +2228,6 @@ function requestNote(request: ConnectorAgentRequest, answer?: GrantedClasses): s
         'shared.'
       );
   }
-}
-
-/**
- * The refusal for an app the agent already asked for in another chat, saying
- * only what is true: whether it was answered, and whether that answer (or
- * ask) covers what this chat needs.
- */
-function elsewhereMessage(
-  app: string,
-  wanted: ConnectorRequestAccess,
-  asked: ConnectorRequestAccess,
-  held: ReadonlySet<string> | null
-): string {
-  const needsChange = wanted === 'read-write';
-  if (held) {
-    const covered = !needsChange || held.has('write');
-    return (
-      `The person already allowed you to ${grantedVerb(held)} ${app} when you asked in ` +
-      "another chat. List your accounts again to use it here; don't ask again." +
-      (covered
-        ? ''
-        : ` That doesn't cover changing things there. If this chat needs that, ask for ` +
-          `"read-write" once that answer reaches the other chat.`)
-    );
-  }
-  const covered = !needsChange || asked === 'read-write';
-  return (
-    `You already asked for ${app} in another chat, and the person hasn't answered yet. They ` +
-    'can answer it there, or under Needs you on the Connections page in DorkOS. ' +
-    (covered
-      ? `If they allow it, you can use ${app} in this chat too, so don't ask again here.`
-      : `That request asks only to read ${app}. If this chat needs to change things there, ` +
-        'ask again once the person has answered it.')
-  );
 }
 
 /**

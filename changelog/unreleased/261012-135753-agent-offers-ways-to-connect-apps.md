@@ -1,6 +1,7 @@
 ---
 covers:
   - 'fix(server): an agent offers the ways to connect an app DorkOS cannot reach yet (FB-57)'
+  - "fix(server): the owner's answer to an unwaited request reaches the chat at once (FB-57)"
 ---
 
 ### Fixed
