@@ -1,7 +1,10 @@
 import type { Pool, PoolClient } from 'pg';
 import { transaction } from '../data.js';
 import type { BlobStore } from './blob-store.js';
-import { MANAGED_BLOB_RESERVATION_TTL_MS } from './managed-blobs.js';
+import {
+  MANAGED_BLOB_RESERVATION_TTL_MS,
+  MANAGED_BLOB_WRITER_ABANDONED_MS,
+} from './managed-blobs.js';
 
 /**
  * Build a capped database-clock retry delay for a trusted cleanup attempt column.
@@ -127,11 +130,14 @@ export async function sweepPendingBlobDeletions(pool: Pool, blobStore: BlobStore
           state: string;
           lease_expired: boolean;
           committed: boolean;
+          writer_abandoned: boolean;
         }>(
+          // `now()` is this transaction's start, so it is read before the storage delete below.
           `SELECT state,created_at<=now()-($2 * interval '1 millisecond') AS lease_expired,
-                  committed_at IS NOT NULL AS committed
+                  committed_at IS NOT NULL AS committed,
+                  created_at<=now()-($3 * interval '1 millisecond') AS writer_abandoned
            FROM managed_blobs WHERE blob_key=$1 FOR UPDATE`,
-          [candidate.blob_key, MANAGED_BLOB_RESERVATION_TTL_MS]
+          [candidate.blob_key, MANAGED_BLOB_RESERVATION_TTL_MS, MANAGED_BLOB_WRITER_ABANDONED_MS]
         );
         const queue = await client.query<{ blob_key: string; outcome_uncertain: boolean }>(
           `SELECT blob_key,last_error_at IS NULL AS outcome_uncertain
@@ -142,9 +148,13 @@ export async function sweepPendingBlobDeletions(pool: Pool, blobStore: BlobStore
         const managedRow = managed.rows[0];
         // A committed blob's writer finished long ago, so no delayed publish can follow this
         // delete, and its inventory row (which keeps the file's checksum) can go with it. Only
-        // a blob whose writer never reported back stays tombstoned for later sweeps.
+        // a blob whose writer never reported back stays tombstoned for later sweeps, until that
+        // writer is abandoned (`MANAGED_BLOB_WRITER_ABANDONED_MS`): then this delete settles it.
         const outcomeUncertain = Boolean(
-          managedRow && !managedRow.committed && (!queue.rows[0] || queue.rows[0].outcome_uncertain)
+          managedRow &&
+          !managedRow.committed &&
+          !managedRow.writer_abandoned &&
+          (!queue.rows[0] || queue.rows[0].outcome_uncertain)
         );
         const staleReservation =
           managedRow &&

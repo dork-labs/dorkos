@@ -18,7 +18,11 @@ import { sweepExpiredExports } from './exports/sweep.js';
 import { startExportWorker } from './exports/worker.js';
 import { sweepExpiredAdmissions } from './admission/sweep.js';
 import { sweepPendingBlobDeletions } from './storage/pending-deletions.js';
-import { sweepCommunityDeletions, sweepCommunityDeletionTombstones } from './deletion-worker.js';
+import {
+  findOverdueCommunityDeletions,
+  sweepCommunityDeletions,
+  sweepCommunityDeletionTombstones,
+} from './deletion-worker.js';
 import { ERASURE_POLL_MS, pruneErasureRequests, sweepErasures } from './erasure/worker.js';
 import { pruneErasureJournal } from './erasure/journal.js';
 import { sweepExpiredPairings } from './routes/community/pairings.js';
@@ -256,6 +260,23 @@ const cleanup = setInterval(() => {
   });
 }, 60_000);
 cleanup.unref();
+// Nothing else tells a person a space is stuck being deleted, so say it once an hour.
+const overdueDeletions = setInterval(() => {
+  void findOverdueCommunityDeletions(pool)
+    .then((overdue) => {
+      for (const job of overdue)
+        console.warn(
+          `Space ${job.communityId} is ${job.overdueHours} hours past its deletion date and is still not deleted (state ${job.state}, last error ${job.lastErrorClass ?? 'none'}).`
+        );
+    })
+    .catch((error: unknown) => {
+      console.error(
+        'Community deletion check unavailable',
+        error instanceof Error ? error.name : 'unknown'
+      );
+    });
+}, 60 * 60_000);
+overdueDeletions.unref();
 let erasing = false;
 const erasures = setInterval(() => {
   if (erasing) return;
@@ -378,6 +399,7 @@ const onSignal = createSignalHandler(
     live,
     timers: [
       cleanup,
+      overdueDeletions,
       erasures,
       exports,
       imports,
