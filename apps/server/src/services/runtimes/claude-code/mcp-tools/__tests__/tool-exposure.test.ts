@@ -293,6 +293,84 @@ describe('in-session tool exposure', () => {
     await Promise.all([client.close(), server.instance.close()]);
   });
 
+  it('hands connector_recommend the turn principal so connected reads only this agent’s accounts', async () => {
+    const principal = runtimePrincipal('binding-a');
+    const access = vi.fn().mockResolvedValue({
+      connections: [{ connectionId: 'c', toolkit: 'gmail', label: 'Mail', status: 'active' }],
+    });
+    const registry = composeDorkOsCapabilityRegistry({
+      logger: noopLogger,
+      connectorDeps: {
+        registry: {
+          assertAvailable: vi.fn(),
+          providersForToolkit: async () => ({ providers: [], warnings: [] }),
+          listProviders: () => [],
+        } as never,
+        catalog: vi.fn(async () => ({ services: [], warnings: [] })) as never,
+      },
+      connectorExecutionDeps: {
+        authorization: { assertAvailable: vi.fn() } as never,
+        broker: {} as never,
+        access: { listRuntimeConnections: access } as never,
+      },
+    });
+    const call = async (
+      connectorTurn?: object,
+      connectorTools = true,
+      tool: { name: string; arguments: Record<string, unknown> } = {
+        name: 'connector_recommend',
+        arguments: { service: 'gmail' },
+      }
+    ) => {
+      const session = { cwd: '/agents/alpha', ...(connectorTurn && { connectorTurn }) };
+      const server = createDorkOsToolServer(
+        createAgentSessionDeps(),
+        session as unknown as NonNullable<Parameters<typeof createDorkOsToolServer>[1]>,
+        undefined,
+        undefined,
+        registry,
+        new Set(),
+        undefined,
+        connectorTools
+      );
+      const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+      const client = new Client({ name: 'connector-recommend-probe', version: '0.0.0' });
+      await Promise.all([
+        server.instance.connect(serverTransport),
+        client.connect(clientTransport),
+      ]);
+      const result = (await client.callTool(tool)) as { content: Array<{ text: string }> };
+      await Promise.all([client.close(), server.instance.close()]);
+      return JSON.parse(result.content[0]!.text) as { connected?: boolean };
+    };
+    const turn = (resolvePrincipal: () => Promise<unknown>) => ({
+      isConnectorCapabilityId: (id: string) =>
+        CONNECTOR_RUNTIME_CAPABILITY_IDS.some((candidate) => candidate === id),
+      resolvePrincipal,
+    });
+
+    expect((await call(turn(async () => principal))).connected).toBe(true);
+    expect(access).toHaveBeenCalledWith(principal);
+    // No connector access this turn, connector tools not listed, or the turn
+    // could not be bound: the flag is left out, never guessed.
+    const unbound = vi.fn(async () => principal);
+    expect(await call()).not.toHaveProperty('connected');
+    expect(await call(turn(unbound), false)).not.toHaveProperty('connected');
+    expect(unbound).not.toHaveBeenCalled();
+    expect(
+      await call(
+        turn(async () => {
+          throw new Error('turn ended');
+        })
+      )
+    ).not.toHaveProperty('connected');
+    // Only the allowlisted reader gets the principal: an ordinary in-session
+    // tool on the same connector turn never opens or receives it.
+    const notForOthers = vi.fn(async () => principal);
+    await call(turn(notForOthers), true, { name: 'connector_list_toolkits', arguments: {} });
+    expect(notForOthers).not.toHaveBeenCalled();
+  });
+
   it('always-loads exactly the eleven a turn cannot search for first', async () => {
     const tools = await advertisedTools();
     const eager = tools

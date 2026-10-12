@@ -114,3 +114,48 @@ describe('resolveMessageAuthor', () => {
     ).toBe('system');
   });
 });
+
+describe('resolveMessageAuthor — a room post in a room-attached chat (DOR-2113)', () => {
+  const stamp = {
+    roomId: 'room-1',
+    entryId: 'entry-1',
+    roomLabel: '#dorkos',
+    author: {
+      id: 'author-kai',
+      kind: 'agent' as const,
+      displayName: 'Kai',
+      handle: 'kai',
+      agentId: 'agent-kai',
+      you: false,
+    },
+  };
+
+  it('wears the face the app draws the agent with, by its Mesh id', () => {
+    const author = resolveMessageAuthor(msg({ role: 'user', roomMessage: stamp }), {
+      agent,
+      senderAgent: ({ agentId }) =>
+        agentId === 'agent-kai' ? { emoji: '🦊', color: '#f97316' } : null,
+    });
+    expect(author).toEqual({
+      kind: 'agent',
+      id: 'room-author:author-kai',
+      displayName: 'Kai',
+      emoji: '🦊',
+      color: '#f97316',
+    });
+  });
+
+  it('names a person who posted from a bridged chat by their own name', () => {
+    const author = resolveMessageAuthor(
+      msg({
+        role: 'user',
+        roomMessage: {
+          ...stamp,
+          author: { id: 'tg-1', kind: 'human', displayName: 'Sam', handle: null, you: false },
+        },
+      }),
+      { humanName: 'Dorian' }
+    );
+    expect(author).toEqual({ kind: 'human', id: 'room-author:tg-1', displayName: 'Sam' });
+  });
+});

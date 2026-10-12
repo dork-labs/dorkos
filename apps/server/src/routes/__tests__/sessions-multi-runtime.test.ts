@@ -446,7 +446,7 @@ describe('sessions route — multi-runtime routing (real registry + real DB)', (
 
       const refused = await request(testServer)
         .patch(`/api/sessions/${TEST_MODE_SESSION}`)
-        .send({ permissionMode: 'dontAsk' });
+        .send({ permissionMode: 'retired-mode' });
       expect(refused.status).toBe(400);
       expect(refused.body.code).toBe('UNSUPPORTED_PERMISSION_MODE');
 

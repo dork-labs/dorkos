@@ -35,7 +35,7 @@ import { SESSIONS } from '../../../../config/constants.js';
 import { logger } from '../../../../lib/logger.js';
 import { resolveActiveClaudeRoot } from '../claude-config-dir.js';
 import { withClaudeConfigDir } from '../claude-config-env-lock.js';
-import { gatePermissionMode } from '../turn-permission.js';
+import { gatePermissionMode, isPersonOnlyMode } from '../turn-permission.js';
 import type { TranscriptReader } from './transcript-reader.js';
 import type { SessionLockManager } from '../../../session/session-lock.js';
 import {
@@ -141,6 +141,9 @@ function sessionScopedMode(suggestions: PermissionUpdate[]): PermissionMode | un
  * @param mode - The mode an accepted suggestion asks for.
  */
 function isAdoptableMode(mode: PermissionMode): boolean {
+  // Nor "Never ask": a click that allowed one call is not a person choosing a
+  // chat that refuses everything it would ask about (DOR-2838).
+  if (isPersonOnlyMode(mode)) return false;
   const descriptor = CLAUDE_CODE_CAPABILITIES.permissionModes.values.find((d) => d.id === mode);
   return descriptor !== undefined && !actsWithoutAsking(descriptor);
 }

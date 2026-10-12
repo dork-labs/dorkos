@@ -142,6 +142,60 @@ export const ChatMessageStampSchema = z
 export type ChatMessageStamp = z.infer<typeof ChatMessageStampSchema>;
 
 /**
+ * Who wrote a room message, as the room's own author record says (DOR-2113).
+ * Never read from the words the agent was handed.
+ */
+export const RoomMessageAuthorSchema = z
+  .object({
+    /** The room author's id. */
+    id: z.string(),
+    /** A person, an agent, or the room itself. */
+    kind: z.enum(['human', 'agent', 'system']),
+    /** The name the room shows for them. */
+    displayName: z.string(),
+    /** Their `@` handle, or null when they have none. */
+    handle: z.string().nullable(),
+    /** Their emoji face, when they chose one. */
+    emoji: z.string().optional(),
+    /** Their identity colour, when they chose one. */
+    color: z.string().optional(),
+    /** Agents only: the agent's Mesh id, when the room knows it, for its face. */
+    agentId: z.string().optional(),
+    /** True when this is the person who owns this DorkOS: their own words. */
+    you: z.boolean(),
+  })
+  .openapi('RoomMessageAuthor');
+
+/** One of {@link RoomMessageAuthorSchema}. */
+export type RoomMessageAuthor = z.infer<typeof RoomMessageAuthorSchema>;
+
+/**
+ * The room message a user message carried into a room-attached chat (DOR-2113).
+ *
+ * A room turn's prompt is the post, word for word, so nothing in the text can
+ * say who wrote it. The runtime records only WHICH entry the turn answered
+ * (`roomId` and `entryId`); the server fills in the room and the author at the
+ * wire boundary from its own records. A stamp the server could not fill (the
+ * entry is gone) keeps the ids alone, and the app still never draws it as the
+ * person's own.
+ */
+export const RoomMessageStampSchema = z
+  .object({
+    /** The room the message was posted in. */
+    roomId: z.string(),
+    /** The room entry the turn answered. */
+    entryId: z.string(),
+    /** The room's name as people see it (`#general`, or a DM's title). */
+    roomLabel: z.string().optional(),
+    /** Who posted it. Absent when the room no longer has the entry. */
+    author: RoomMessageAuthorSchema.optional(),
+  })
+  .openapi('RoomMessageStamp');
+
+/** One of {@link RoomMessageStampSchema}. */
+export type RoomMessageStamp = z.infer<typeof RoomMessageStampSchema>;
+
+/**
  * A chat message as its SENDER sees it: what the Sent card in the sending chat
  * draws, read by the receipt id a tool call returned.
  */

@@ -13,6 +13,49 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Only /system:release compiles fragments into a version section below.
 -->
 
+## [0.110.0] - 2026-10-12
+
+> DorkOS 0.110.0 gives a new DorkOS a simple start: one screen, a short way to connect your own AI, and a first job from DorkBot in #team. Connecting an app like Gmail now shows both ways in, and messages between chats start the moment a chat is free.
+
+### Added
+
+- Extension authors can now serve an extension's own API with a fetch handler: a function that takes a standard web request and returns a response. Any handler of that shape, such as a Hono app, works as it is. It runs inside DorkOS on Node, so code that needs Bun or Deno's own features does not. The Express router still works, and both can be used together
+- People who run a Community server can now give one of its reserved web addresses, such as `official`, to a new space of their own. It takes a key made for that one job and a written reason, and the server keeps a record of who gave the address out and why. Everyone else is still refused every reserved address, and addresses that are pages of the server can never be given out. See "Giving a reserved web address to a community" in the server's operations guide
+
+### Changed
+
+- Every agent now follows the same rules for when to act and when to ask first. It does routine work and anything you asked for without checking in, and tells you what it did
+- Before an agent sends something people outside your team will see, spends money or deletes things, it asks first unless you asked or it is its job. Promises to customers, signing up for things, spending past its limit and giving someone new access always need a yes from you or the agent's manager
+- When an agent gets stuck on something only you can do, like a sign-in, it no longer just says it can't. It does every step it can, asks DorkOS for the access, suggests one way forward, and finishes once you choose
+- These rules apply even when an agent's DorkOS knowledge setting is off, and in chats that are not tied to an agent
+- A new DorkOS starts with one screen. **Use my own AI** lists every way in, one row each: an OpenAI, Anthropic or OpenRouter key, an AI app you already sign in to, or any other service. Paste a key and DorkOS picks the model. A model on your own computer is listed too, but it can't reach a first reply yet (DOR-2783)
+- **Continue with DorkOS** is on the same screen and signs you in with the code already filled in. Finishing that path with a card still waits on DorkOS Cloud, so for now use **Use my own AI** (DOR-2783)
+- Every path ends in #team, where DorkBot says hello and offers a first job: **Build me a tracker for my customers**, **Make a daily plan board**, or **Something else**. One press, and DorkBot starts on it. Skipped the account? The same spot opens the two ways to connect AI in Settings instead (DOR-2783)
+
+### Removed
+
+- The old first run is gone: the setup scan, the power-level step and the scripted chat with DorkBot. Set your name and the kind of work you do in Settings › Profile. Full power is still offered the first time an agent needs it (DOR-2783)
+
+### Fixed
+
+- The first time you connect an app like Gmail, DorkOS now offers both ways in: use a DorkOS account (sign in or create one), or paste your own Composio key. Before, someone without a DorkOS account saw only the key and could get stuck
+- If your DorkOS account is linked but can't connect apps right now, you can now link it again from that same step, or use your own key instead
+- When you ask an agent to connect an app like Gmail and DorkOS can't reach it yet, the agent now tells you your choices right away: sign in to a DorkOS account (or create one), or use your own Composio key. It asks which you want and helps you do it. Before, it waited quietly while you were left to work it out alone
+- When an agent asks you for access to a service, it now looks up that service's exact name first, so the request names the right app. Agents are also told that signing in to a service's command-line tool gives DorkOS no access (DOR-2236)
+- A message one chat sends another now starts as soon as that chat is free. Before, if the chat had finished its turn but was still wrapping up background work, the message could sit in its queue for up to five minutes after the work ended, even after an interrupt
+- A chat sending a second message to a busy chat now hears "queued" at once. Before, after a long wait, it could be held for up to five minutes before it heard back
+- A chat started from a room conversation is now told to report in the room. Before, it was told to message a chat that cannot take messages, and every try was refused
+- In a direct message that still lists a removed agent, the other agents are now told it is retired and will not reply, so they stop waiting on it. The app already showed it that way
+- A chat that hit an error in its very first moments could send two "stopped on an error" phone pings, or one after it had already recovered. It now sends at most one, and none once the error clears
+- A connection you just added no longer vanishes for a moment if DorkOS reloads its connection settings at the same time. Before, removing or editing it right away said it could not be found
+- A connection you remove stays removed. Before, a reload at the same moment could start it again and leave it answering messages, even though the app no longer listed it
+- Removing a connection can no longer remove a different one when the connection settings reload at the same moment
+- Two changes saved close together are now written in order, so an older save can no longer overwrite a newer one
+- Turning off or reloading an extension now stops every repeating task it started, including ones it started after it finished loading. Before, those kept running, so after a reload the old copy's tasks could run beside the new one's
+- Turning on a room's files, or keeping changes made outside DorkOS, no longer fails when your profile name is made only of symbols git cannot use, such as `<>`. DorkOS signs those saves with a plain name instead (DOR-2454)
+- `dorkos cloud login` now waits and tries again when DorkOS Cloud says it is busy, instead of giving up and making you start over (DOR-2496)
+- A Community server behind a proxy with `COMMUNITY_TRUSTED_PROXY_HEADER` set now counts sign-in attempts per visitor. Before, sign-in limits saw the proxy's address for everyone, so they either limited nobody or everybody together
+
 ## [0.109.0] - 2026-10-11
 
 > DorkOS 0.109.0 gives your agents a heartbeat: they wake up on their own, do the work that is theirs, and send you one short report at the start of your day. Every channel now has a lead agent, desktop tabs say what needs you, and DorkOS picks the model for you.
@@ -557,105 +600,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - An extension only counts as coming from a place when DorkOS installed it from a branch or tag there and its files are still exactly what was installed. If anything in the plugin changes afterwards, for example by a `git pull`, it asks you again before it runs, and Settings → Extensions says why (DOR-2527)
 - An extension you trust through another project runs from a checked copy that DorkOS keeps for itself, so editing the files in the project can't change what runs (DOR-2527)
 
-## [0.92.0] - 2026-09-29
+Older releases (v0.1.0 – v0.92.0) are archived in [changelog/archive/CHANGELOG-v0.1.0-to-v0.92.0.md](changelog/archive/CHANGELOG-v0.1.0-to-v0.92.0.md).
 
-> DorkOS 0.92.0 makes the apps you give your agents honest and useful. Each app shows whether your agents can really use it and the one thing that fixes it, and agents can now act in Gmail and Google Calendar, not just read. When a chat runs out of usage, it tells you which account ran out and when it comes back.
-
-### Added
-
-- If an agent's runtime, model or effort is changed by editing its settings file instead of through DorkOS, the change is recorded in Activity as **Changed outside DorkOS**, with the old and new values. Every approved scheduled task that uses the agent's own setting then waits for you again, and its card shows what changed, for example **Agent's model: claude-sonnet-4 → claude-opus-4**. Changing the setting back doesn't restart the task: the card says it was changed, then changed back, and you approve it. Changes you make in DorkOS don't make anything wait (DOR-2337)
-- Your DorkOS account's usage now lists charges that aren't for agent work, such as extra storage, under **Other charges**. Each one shows its name, how much you used and for which dates, and what it cost. They are listed on their own and are not added to the credits total above them (DOR-2316)
-- Gmail and Google Calendar can now be shared with agents as "Read and write" instead of only "Read". With it, agents can send, create and edit things, like sending an email or adding a calendar event. Agents still can't delete, share your calendar, forward or redirect mail, change who your mail is sent as, change many messages at once, move an event to another calendar, or turn on an automatic reply: you allow those one action at a time. "Read" also now covers reads that used to need your approval one at a time, such as reading a draft or finding free time in your calendar. Other apps connected through Composio keep offering "Read" only for now. No agent's access grows on its own. If you connected an app through your DorkOS account and allowed an agent one of its actions one at a time, you may need to allow it again (DOR-2466)
-- When a chat runs out of usage, a notice above the message box now says which account (or Claude, Codex or OpenCode, with one account) ran out and when it comes back. It shows what you can do: wait for the reset, keep going on another model, or, with two or more Claude accounts, continue on another account. When the work is about to move to another account by itself, it counts down and lets you move now, pick another account, or wait instead. (DOR-2382, DOR-2388)
-- While you wait, the notice counts down to the reset. With a Claude account you can tick "Continue automatically when it resets". Once the reset comes, one click continues the chat where it left off. (DOR-2382)
-- When it's over, a one-line note in the chat says what happened, such as "Acct 4 ran out · moved to Acct 2 at 2:14pm" or "Resumed after reset at 4:02pm". (DOR-2382)
-- You can now turn an app on or off for one chat. Open the chat's details, and each app its agent was given has a switch. Turning an app off there only affects that chat. Turning it back on puts back the access that chat had, and never adds any (DOR-2448)
-- When an agent asks for an app that its chat has turned off, the request card in the chat now offers to turn it back on for that chat and answers the agent in the same step (DOR-2448)
-- When you install a plugin that brings an extension, the Activity inbox now asks once whether to turn it on, and says what it adds. One click turns it on, and its tab appears right away. "Not now" removes nothing. (DOR-2517)
-- A package installed from a folder on your computer, or one whose version no longer exists, used to list the files an update couldn't sort forever, and if one of them still ran, it waited for your Review after every update. Where **Check files** can't sort them, open the note on its row in **Installed** and press **Keep these as mine**, or run `dorkos marketplace keep-files <package>`. DorkOS shows you the files and marks the ones that still run, and asks first. After that they're yours: updates keep them, and nothing is moved or deleted. For a package held back from every session, it also shows everything the package runs, and your yes approves what it discloses now, like a Review. Only you can do this, not an agent (DOR-2341)
-- Extensions can now ask you things in the Activity inbox. Every question says why it is asking, and you can answer it right there. A question can come with the agent's own pick and a time: if you haven't answered by then, the agent goes ahead with its pick, so nothing waits on you. After you answer, an extension can offer once to handle that kind of thing on its own next time. (DOR-2523)
-- When things from two or more projects are waiting, the inbox now groups them under each project's name. (DOR-2523)
-- Decisions an extension made while you were away now fold into one "While you were away" line in Activity, and each one says who decided: you, the agent, or a setting of yours. (DOR-2523)
-- Extensions can now add a full page, an item in the chat status bar, and a dot on their tab in the right panel. Find an extension's pages in the command palette under "Add-ons", or on your phone under "Add-ons" in the You tab. Reloading on an extension's page brings you back to it (DOR-2525)
-
-### Changed
-
-- An agent can now ask you for Gmail, Slack or another popular app even before DorkOS is set up to reach apps. The card in your chat walks you through the one-time setup first, then sign-in, then "Let your agent use Gmail?". Before, the agent was told there was nothing to ask for (DOR-2494)
-- When your DorkOS account isn't linked anymore, or your own key isn't set up or didn't answer, DorkOS now says so plainly. The chat card, the setup step and your agent name the way that stopped working, and the card offers to connect the app again. When a new link can't reach an app, DorkOS shows it as disconnected and adds a note to Activity saying so, so you can connect it again (DOR-2494)
-- When an agent asks to do something in a connected app that can't be undone, like deleting an email in Gmail, the card that asks you now says exactly what it is. It shows the app's logo, which account, the action in plain words ("Delete message"), and the details the agent would send, such as which message. If there's more than fits, "Show everything" opens every detail in full right on the card. It also says plainly that the change can't be undone. Before, the card showed only two long codes, so you had to approve without knowing what you were approving. Details that look like passwords or keys are hidden.
-- Notifications from an app now go to one chat with the agent. Before, every new email or event opened a brand-new chat, so a busy inbox buried your chat list. Each message in that chat starts with the kind of notification it is, like "New email: Invoice from Acme". If you change that chat's permission level for your own messages, the next notification starts a new chat, so a notification never runs with more power than you approved for it. (DOR-2507)
-- You can turn on chat apps (Telegram, Slack and webhooks) from the Connections page. Before, you had to quit DorkOS and start it again from a terminal with a special setting, which the desktop app had no way to do. Now you choose Turn on chat apps, then Restart DorkOS. The terminal setting still works and still wins if you use it. (DOR-2507)
-- Connections now shows an app as ready (the green dot) only when your agents can actually use it. If the way DorkOS reaches it stopped working, or your key can sign in but can't run actions, the app says so instead of looking fine (DOR-2500)
-- Every app that needs something shows one line saying what's wrong and one button that fixes it: Sign in again, Resume, Fix the key, Connect again, or Check who can use it. When there's nothing you can press, it says what DorkOS is doing, or what you can do in the app's own settings, with no button that can't work (DOR-2500)
-- Your agent now learns why it can't use an app you gave it (paused, signed out, turned off for this chat, a change to its access still applying or refused, and more) and tells you the one thing to do, instead of asking you for access again (DOR-2500)
-- A chat's side panel now says, for each connected app, whether its agent can use it here and why not, in the same words as the Connections page (DOR-2500)
-- When your own key or your DorkOS account didn't answer for a reason that may pass, the app now shows that DorkOS is checking it again on its own, instead of asking you to fix a key that may be fine. If it still doesn't answer after a few tries, each a little further apart, DorkOS stops and shows the one fix (DOR-2500, DOR-2502)
-- Signing in to an app again no longer quietly resumes an app you had paused. It stays paused until you resume it (DOR-2500)
-- "Check again" on an app your DorkOS account can't reach now asks DorkOS to try the account again, rather than only re-reading the list (DOR-2500)
-- Settings › Connections no longer says "Working" for a DorkOS account that can't reach apps, or for a Composio key that can't run actions. The key hint now asks for a project key (DOR-2500)
-- Link this computer again with the same DorkOS account and the apps it connected through its earlier link can come back, instead of needing to be connected one by one. This works after you unlink in Settings or run `dorkos cloud logout`. If the earlier link was removed from your DorkOS account, or you link a different account or a different computer, connect those apps again. For this, DorkOS keeps a proof that it held the old key, never the key itself (DOR-2521)
-- An agent now asks for an app at one of the same two levels you answer with, Read or Read and write, instead of guessing the names of things it wants to do. So it's never told "you weren't allowed" right after you allowed exactly what it asked for
-- You answer an agent's request with the same card everywhere: in the chat, in a room, and from Needs you on the Connections page. If the agent also wants to hear when something new happens there, the card asks you which updates it gets, right after you allow it
-- Whatever happens to a request, the agent gets a plain note saying what comes next: still waiting on you, allowed, allowed only to read, turned down, or ran out of time. So it can tell you in its own words instead of guessing
-- Disconnecting an app takes effect at once, and you can always remove a disconnected app from your list. Ending its access at the service is now DorkOS's job: it keeps trying in the background, waiting longer between tries, and shows when it will try next (DOR-2502)
-- When DorkOS can't end an app's access at the service (for example, your DorkOS account is no longer linked), the panel says so plainly, links to the page where you can remove the access yourself for Google apps, GitHub and Dropbox, and offers to remove the app from your list. It no longer offers a "Try disconnecting again" that could never work (DOR-2502)
-- "Check who can use it" now explains why DorkOS is asking, and you can confirm the access as it stands without changing anything. Confirming also settles any change to who can use the app that didn't go through, using exactly the access you were shown (DOR-2502)
-- An app that needs its access checked now says the true reason (how DorkOS reaches it changed), instead of saying its actions changed (DOR-2502)
-- Linking your DorkOS account again keeps the access you gave agents on the apps it still reaches, and sends again the changes the old link turned down, including a disconnect for an app you already removed from your list (DOR-2502)
-
-### Fixed
-
-- Red warning text is easier to read in dark mode. This covers the red number that shows a chat is nearly out of room, the message when a package fails to update, and red actions like Delete in the menu you open by pressing and holding a sidebar row on a phone. While you press one of those red actions, its words turn your normal text colour so they stay readable, and the icon stays as the warning sign (DOR-2493)
-- Settings shows which Claude account new chats use, even when the folder is written differently. Before, if the default account's folder was written with an extra slash at the end, through a shortcut, or with `~`, no account said "in use". When DorkOS was started with its own `CLAUDE_CONFIG_DIR` folder and no default is chosen, Settings now says that new chats use that folder.
-- Keyboard and screen readers can now reach a chat's rename and details buttons directly in the sidebar. Before, those buttons sat inside the chat's own row, so a screen reader could skip past them and it was unclear which one a key press would reach
-- A default account written with ~ now opens the right folder. Setting it to something like `~/.claude2` from the terminal, or by editing the settings file, used to make new chats look in a folder literally named "~". DorkOS now saves and uses the full path to your home folder instead.
-- A usage number in the status bar that is more than an hour old now says "· old" after it, instead of only turning a lighter gray that was hard to read. The amber and red usage numbers, the notes under them when you open or point at usage, the small gray text in the tooltips for context, subagents and session rows, and the green "Ready" on a runtime in Settings, are easier to read too. In Settings, the Codex and OpenCode usage sections now have names a screen reader can tell apart, and the section headings on each runtime no longer skip a level. Amber warning text in light mode is a little darker, so it stays easy to read on the sidebar too.
-- Some warning and status text is easier to read. Yellow warnings, green "done" marks and red error messages in places like settings, the marketplace and the task list were too faint on a light background. They now use the app's own warning, success and error colours, which are dark enough to read in both light and dark mode.
-- Each notification now says how its newest event went: delivered, on its way, being tried again, or what stopped it and what to do next. Before, a notification that failed looked exactly like one that worked. A notification sent to an agent has an Open chat button. (DOR-2507)
-- You can remove any notification, including ones that stopped working. Before, a notification that stopped stayed on the list forever with no way to remove it, and a removed one stayed listed as "revoked". (DOR-2507)
-- Notifications are described in plain words: who they go to, and what they filter on ("Only when Folder is inbox"). Raw codes, ids and filter code no longer show. (DOR-2507)
-- An account that can't send notifications says so once, instead of showing a setup box plus a second error. An account connected through your DorkOS account no longer claims delivery is taken care of before its notifications actually load. (DOR-2507)
-- DorkOS now notices when a sign-in to one of your apps stops working. If a Gmail or Google Calendar sign-in expires or is turned off at the service, the app no longer stays green on the Connections page. DorkOS checks every 15 minutes and whenever you open Connections, and an agent that tries to use it is told you need to sign in again.
-- When the way DorkOS reaches your apps has a short outage, it now comes back by itself. DorkOS checks again after 30 seconds, then waits a little longer each time, so you don't have to save your key again. A key the service refuses still waits for you to fix it.
-- The Deployment guide's Interactive Setup tab now shows up and renders correctly. Before, it was swallowed into the Environment Variables code block next to it.
-- The Connections docs now match what's actually in the app: how to answer an agent's request for an app right from the chat card, that Gmail and Google Calendar are the only apps with a real Read and write level today, what happens to a connected app when your DorkOS account link ends, and the real risk of leaving login off while sharing an app with every agent
-- Revoking a linked instance from your DorkOS account now signs its apps out at the service too. Before, an app you connected through your DorkOS account (your Gmail, say) stayed signed in there after the link ended, with no way left to reach it. If the service can't be reached at that moment, DorkOS keeps trying until the sign-in is gone.
-- Deleting your DorkOS account now signs every app you connected through it out at the service first. If one can't be signed out yet, you land back on your account page with a note that this can take up to a day and to request deletion again from there later, so no sign-in is left behind with no record of it. A deletion is never held up for more than a day: past that, your account is deleted anyway and DorkOS records exactly which sign-in is left so it can be ended by hand.
-- An app that was already disconnected now stays disconnected when DorkOS changes its own connection settings.
-- Turning a DorkOS-account app back on after it was removed at the service now stops with a clear reason instead of retrying every hour forever.
-- An agent can no longer open a new card for the same app just by rewording its reason. It keeps one open request per app, and it can't open requests faster than you could answer them
-- If the updates you pick for an agent can't be set up, you can pick them again, answer without updates, or say no, instead of the request getting stuck. Updates you didn't end up allowing never arrive, and updates you'd already set up yourself are left exactly as they were. A request whose updates never start ends on time, and the agent is told it won't get updates
-- On Codex and OpenCode, an agent waiting for your answer no longer gives up with an error while you’re still deciding
-- Signing in to an app again no longer leaves it paused when the sign-in fails, runs out of time, or is left unfinished. The app goes back to how it was, and a pause you chose yourself stays (DOR-2502)
-- Apps a "Sign in again" left paused before this update are given back (DOR-2502)
-- "Sign in again" or "Resume" on a Connections row now says so on the page when it can't start, instead of failing silently (DOR-2502)
-- An app your DorkOS account no longer has now shows as gone, with one button to connect it again and, for apps like Gmail, a link to check its old access ended, instead of DorkOS retrying a change forever (DOR-2502)
-- DorkOS ends an app's access at the service only through the key the app was connected under. If you changed your key since (or change it before DorkOS finishes), it no longer counts the access as ended just because the new key can't see the app. It says it couldn't confirm the end and shows where to remove the access yourself (DOR-2502)
-- Disconnects from before this update whose removal at the service had already failed now show where to remove the access yourself, instead of retrying with a key that may be the wrong one (DOR-2502)
-- An app whose Resume keeps being refused after you signed in again now shows as gone with one button to connect it again, instead of sending you back and forth between Resume and Sign in again (DOR-2502)
-- Connecting the same account again after DorkOS gave up ending its earlier access now works, instead of being refused (DOR-2502)
-- A refused notification setup no longer marks the whole app as needing attention (DOR-2502)
-- A chat that works on several flow items now shows all of them, not just the newest one. The account popover says "Working on 3 items" when there is more than one, and work a chat started in chats of their own is listed too (DOR-2522)
-- The flow item a chat works on no longer disappears from the chat's account popover when the session list refreshes (DOR-2522)
-- When a Community takes away your access to a room, any of your agents still answering in it now stop right away. Before, DorkOS tried to stop them but couldn't, because the room had already been closed to you, so their replies kept running until they finished on their own. Your copy of the room is still deleted as before.
-- When you open a Community message from search and it is then deleted or erased on the Community, the message now changes to its "deleted" or "erased" note right where it sits, including inside a thread, without reloading. Before, the old words stayed on screen until you closed and reopened it.
-- Setting up your own community with `dorkos community deploy` no longer stops right after it creates the database. Neon labels each database with a number, setup expected text, and so it gave up and asked you to check by hand. Setup also stops failing later on, when it reads your app's public address, and it now recognises the Fly command-line tool on Linux, where the tool reports its name as `flyctl`. And a Neon region with no known location no longer stops setup before it starts (DOR-2536)
-- An open Community channel now updates when a message in it is deleted, removed or erased. Within about 30 seconds the message changes to its "deleted" or "erased" note right where it sits, including in an open thread, and the reply count under it stays. You don't need to reload, and a change made while the channel was reconnecting still arrives. Before, the old words stayed on screen until you left the channel and came back.
-- When an extension asks DorkOS to take you somewhere in the app, it now goes there. Before, the request was quietly ignored (DOR-2525)
-- A link whose address holds a value like `1.10` or `-0` no longer has it changed to `1.1` or `0` when DorkOS opens it (DOR-2525)
-- When a message an agent sent to a Community is deleted, removed or erased there, its files now go too. DorkOS deletes its own copy of those files, stops offering them, and an open room stops showing them. A file taken off a message on its own is removed the same way, and files still on the message stay.
-
-### Security
-
-- A new workspace is now checked before anything runs in it. A clone is read first: its settings files, the links it keeps and what its skills run. Your repository's workspace commands are shown with them. When you make a workspace that brings any of these, you see them first and then decide. When an agent asks for one, a person approves it on a card that shows them. Before, a cloned repository's settings ran in every session there and nobody saw them (DOR-2335)
-- A workspace's cleanup commands are now the ones you saw when it was made. Changing the repository's workspace file afterwards no longer changes what runs when the workspace is removed. For a workspace made before this release, you are shown its cleanup commands before they run, and you can remove it without running them (DOR-2335)
-- When an agent makes a workspace from your repository, your repository's own git hooks and file monitor no longer run inside DorkOS. When you make one yourself, they run as they would for your own git (DOR-2335)
-- Once you allow the workspace commands of your own repository, new workspaces from it no longer ask again until a command changes. `dorkos harness hooks --list` shows these decisions, and `--revoke <folder>` forgets one (DOR-2335)
-- A copy DorkOS saves aside when it updates or removes a package can no longer run. Saved copies used to keep their permission to run as a program, and a saved program in a package's `bin/` folder stayed on your agents' command path. A saved skill or command folder still loaded in your sessions. Now every saved copy loses its permission to run, and a whole folder or a program set aside goes in the package's `.dork/saved/` folder, where nothing runs or loads it. DorkOS fixes copies earlier versions saved from a package's own files the next time it starts, leaves your own folders where they are, and keeps a package you approved approved. A package's list of programs now counts only files that can actually run. (DOR-2340)
-
-Older releases (v0.1.0 – v0.89.0) are archived in [changelog/archive/CHANGELOG-v0.1.0-to-v0.89.0.md](changelog/archive/CHANGELOG-v0.1.0-to-v0.89.0.md).
-
-[Unreleased]: https://github.com/dork-labs/dorkos/compare/v0.109.0...HEAD
+[Unreleased]: https://github.com/dork-labs/dorkos/compare/v0.110.0...HEAD
+[0.110.0]: https://github.com/dork-labs/dorkos/compare/v0.109.0...v0.110.0
 [0.109.0]: https://github.com/dork-labs/dorkos/compare/v0.103.0...v0.109.0
 [0.103.0]: https://github.com/dork-labs/dorkos/compare/v0.101.0...v0.103.0
 [0.101.0]: https://github.com/dork-labs/dorkos/compare/v0.98.0...v0.101.0
@@ -665,4 +613,3 @@ Older releases (v0.1.0 – v0.89.0) are archived in [changelog/archive/CHANGELOG
 [0.95.0]: https://github.com/dork-labs/dorkos/compare/v0.94.0...v0.95.0
 [0.94.0]: https://github.com/dork-labs/dorkos/compare/v0.93.0...v0.94.0
 [0.93.0]: https://github.com/dork-labs/dorkos/compare/v0.92.0...v0.93.0
-[0.92.0]: https://github.com/dork-labs/dorkos/compare/v0.89.0...v0.92.0

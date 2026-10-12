@@ -103,6 +103,19 @@ export interface RecordedModelSubstitution {
 }
 
 /**
+ * One recorded `turn_start`: the words that opened the turn, and the room post
+ * they were when a room opened it (DOR-2113).
+ */
+export interface RecordedTurnStartRow {
+  /** The turn's `seq`. */
+  seq: number;
+  /** The words that opened it, when a caller sent some. */
+  userMessage: string | undefined;
+  /** The room and entry, when a room post opened it. */
+  roomMessage?: Extract<SessionEvent, { type: 'turn_start' }>['roomMessage'];
+}
+
+/**
  * One recorded agent-requested `compact_boundary` row (DOR-2732), with the
  * wall-clock it was written at — its turn's end, a beat after the runtime wrote
  * the compaction into its own transcript.
@@ -356,7 +369,7 @@ export class SessionEventStore {
    *
    * @param sessionId - DorkOS session identifier
    */
-  readTurnStarts(sessionId: string): { seq: number; userMessage: string | undefined }[] {
+  readTurnStarts(sessionId: string): RecordedTurnStartRow[] {
     const rows = this.db
       .select()
       .from(sessionEvents)
@@ -368,11 +381,15 @@ export class SessionEventStore {
       )
       .orderBy(sessionEvents.seq)
       .all();
-    const starts: { seq: number; userMessage: string | undefined }[] = [];
+    const starts: RecordedTurnStartRow[] = [];
     for (const row of rows) {
       const event = parsePayload(row);
       if (event?.type === 'turn_start')
-        starts.push({ seq: event.seq, userMessage: event.userMessage });
+        starts.push({
+          seq: event.seq,
+          userMessage: event.userMessage,
+          ...(event.roomMessage ? { roomMessage: event.roomMessage } : {}),
+        });
     }
     return starts;
   }

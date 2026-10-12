@@ -64,3 +64,24 @@ export const COMMUNITY_RESERVED_SHORT_NAMES: readonly string[] = [
   'official',
   'dorkos',
 ];
+
+/**
+ * The built-in reserved names no page or route of the Community server owns: they are reserved
+ * only so no community can pose as the host. A host operator may still give one to a space,
+ * such as the host's own official space, through the reserved-name creation route; every other
+ * built-in name is a path and can never open a space.
+ */
+export const COMMUNITY_HOST_GRANTABLE_SHORT_NAMES: readonly string[] = [
+  'support',
+  'billing',
+  'official',
+  'dorkos',
+];
+
+/**
+ * The built-in reserved names that are paths: no address under one ever opens a space, so the
+ * server and the browser never read one as a short address.
+ */
+export const COMMUNITY_PATH_SHORT_NAMES: readonly string[] = COMMUNITY_RESERVED_SHORT_NAMES.filter(
+  (name) => !COMMUNITY_HOST_GRANTABLE_SHORT_NAMES.includes(name)
+);

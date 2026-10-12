@@ -80,6 +80,16 @@ export const NO_APPROVAL_SURFACE_DENIAL =
   'Nobody is available to approve this right now. Do what you can without it and say what you skipped.';
 
 /**
+ * What the model is told when it reaches for something in a chat set to "Never
+ * ask" (`dontAsk`) and DorkOS's own gate is the one refusing it. The CLI refuses
+ * such calls itself first; this is the answer should one ever arrive here.
+ * Constant for the reason {@link NO_APPROVAL_SURFACE_DENIAL} is. Read back by
+ * {@link classifyToolResult} as `denied`.
+ */
+export const NEVER_ASK_DENIAL =
+  'This chat is set to never ask, so anything not already allowed is refused. Do what you can without it and say what you skipped.';
+
+/**
  * How long a refusal says it waited, in the unit that reads best: whole hours
  * from an hour up, whole minutes below it.
  *
@@ -203,6 +213,7 @@ export function classifyToolResult(
   if (WITHDRAWN_PREFIXES.some((prefix) => text.startsWith(prefix))) return 'cancelled';
   if (CLI_REFUSAL_PREFIXES.some((prefix) => text.startsWith(prefix))) return 'denied';
   if (text.startsWith(toolDenial())) return 'denied';
+  if (text === NEVER_ASK_DENIAL) return 'denied';
   if (RULE_REFUSAL_PATTERN.test(text)) return 'denied';
 
   return 'errored';

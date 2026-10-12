@@ -18,6 +18,7 @@ import {
   agentSetupReasonLine,
   type AppReachProblem,
 } from '../app-connection-way.js';
+import { splitWords } from '../recommend/intent-match.js';
 
 const MAX_SERVICE_SUGGESTIONS = 5;
 
@@ -30,13 +31,6 @@ const MAX_SERVICE_SUGGESTIONS = 5;
  */
 const ROUTE_WORDS = ['composio', 'nango', 'dorkos', 'mcp'];
 
-function words(value: string): string[] {
-  return value
-    .toLowerCase()
-    .split(/[^a-z0-9]+/)
-    .filter(Boolean);
-}
-
 /**
  * Real service ids that share a word with a guessed one, shortest first.
  *
@@ -46,9 +40,12 @@ function words(value: string): string[] {
  * then points only at the catalog tool rather than at an unrelated service.
  */
 function suggestServices(guess: string, directory: ConnectorServiceDirectory): string[] {
-  const ignored = new Set([...ROUTE_WORDS, ...directory.routeTypes.flatMap(words)]);
+  const ignored = new Set([
+    ...ROUTE_WORDS,
+    ...directory.routeTypes.flatMap((type) => splitWords(type)),
+  ]);
   const guessWords = new Set<string>();
-  for (const word of words(guess)) {
+  for (const word of splitWords(guess)) {
     if (word.length < 3 || ignored.has(word)) continue;
     guessWords.add(word);
     if (word.length > 3 && word.endsWith('s')) guessWords.add(word.slice(0, -1));
@@ -57,9 +54,10 @@ function suggestServices(guess: string, directory: ConnectorServiceDirectory): s
   return directory.services
     .filter((service) => service.requestable)
     .filter((service) => {
-      const serviceWords = [...words(service.serviceSlug), ...words(service.displayName)].filter(
-        (word) => !ignored.has(word)
-      );
+      const serviceWords = [
+        ...splitWords(service.serviceSlug),
+        ...splitWords(service.displayName),
+      ].filter((word) => !ignored.has(word));
       return [...guessWords].some((guessWord) =>
         serviceWords.some((word) => word.includes(guessWord) || guessWord.includes(word))
       );

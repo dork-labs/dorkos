@@ -278,8 +278,15 @@ export const chatDomain: CapabilityDomain = {
           messages: z.array(
             z.object({
               id: z.string(),
-              from: z.enum(['person', 'agent', 'chat']),
+              from: z.enum(['person', 'agent', 'chat', 'room']),
               sender: ChatMessageSenderSchema.optional(),
+              room: z
+                .object({
+                  id: z.string(),
+                  name: z.string().optional(),
+                  author: z.string().optional(),
+                })
+                .optional(),
               kind: ChatMessageKindSchema.optional(),
               at: z.string().optional(),
               text: z.string(),

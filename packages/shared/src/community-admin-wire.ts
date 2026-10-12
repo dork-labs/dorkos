@@ -34,7 +34,11 @@ export const CommunityShortNameSchema = z
   .trim()
   .toLowerCase()
   .regex(COMMUNITY_SHORT_NAME_PATTERN);
-export { COMMUNITY_RESERVED_SHORT_NAMES } from './community-reserved-short-names.js';
+export {
+  COMMUNITY_HOST_GRANTABLE_SHORT_NAMES,
+  COMMUNITY_PATH_SHORT_NAMES,
+  COMMUNITY_RESERVED_SHORT_NAMES,
+} from './community-reserved-short-names.js';
 /** Set, change, or clear (`null`) a community's short name. */
 export const CommunityAdminShortNameUpdateRequestSchema = z.strictObject({
   shortName: CommunityShortNameSchema.nullable(),
@@ -214,6 +218,17 @@ export const CommunityAdminCreateResponseSchema = z.strictObject({
   expiresAt: timestamp,
   replayed: z.boolean(),
 });
+/**
+ * Create an unclaimed community under a reserved short name, one of
+ * `COMMUNITY_HOST_GRANTABLE_SHORT_NAMES` or a name the host added to its own reserved list, for
+ * example the host's own official space. Needs `communities:reserved_names`. Answers with
+ * {@link CommunityAdminCreateResponseSchema}; `reason` is kept with the host's record of it.
+ */
+export const CommunityAdminReservedNameCreateRequestSchema =
+  CommunityAdminCreateRequestSchema.extend({
+    shortName: CommunityShortNameSchema,
+    reason: z.string().trim().min(1).max(200),
+  });
 
 /** Host claim rotation carries no caller-selected tenant or role. */
 export const CommunityAdminClaimMutationRequestSchema = z.strictObject({});
@@ -327,77 +342,15 @@ export const CommunityAdminDeletionStatusSchema = z.strictObject({
   removedByHost: z.boolean().optional(),
 });
 
-/** Host API key scopes. Host authority only; no scope reaches community content. */
-export const CommunityAdminHostApiKeyScopeSchema = z.enum([
-  'communities:read',
-  'communities:write',
-  'communities:lifecycle',
-  'communities:import',
-  /** Place and release a legal hold. `communities:lifecycle` does not imply it. */
-  'communities:legal_hold',
-  'communities:takedown',
-  /**
-   * Request, list, cancel, and reissue an owner replacement. No other scope implies it, and a
-   * key needs it to read a replacement's details.
-   */
-  'communities:ownership',
-  /**
-   * Read the erasure journal: which members and accounts were erased, by id only. No other
-   * scope implies it.
-   */
-  'communities:erasure_journal',
-  /**
-   * Close someone else's account on this host: find it by its single sign-on identity, close it
-   * (the person is signed out and cannot sign in, and the account is erased after the same
-   * waiting period a person's own request has), read the closure, and cancel it during the wait.
-   * No other scope implies it.
-   */
-  'accounts:close',
-]);
-/** A key holds each scope at most once, so it can hold at most every scope there is. */
-const hostApiKeyScopes = z
-  .array(CommunityAdminHostApiKeyScopeSchema)
-  .min(1)
-  .max(CommunityAdminHostApiKeyScopeSchema.options.length);
-
-/** Host API key projection. Never carries the secret or its hash. */
-export const CommunityAdminHostApiKeySchema = z.strictObject({
-  id,
-  label: z.string().trim().min(1).max(80),
-  prefix: z.string().regex(/^dkh_[A-Za-z0-9_-]{6}$/),
-  scopes: hostApiKeyScopes,
-  issuedVia: z.enum(['browser', 'command']),
-  /** The issuing host operator's display name; null for a key issued by the offline command. */
-  issuedByOperator: z.string().min(1).nullable(),
-  createdAt: timestamp,
-  expiresAt: timestamp.nullable(),
-  lastUsedAt: timestamp.nullable(),
-  revokedAt: timestamp.nullable(),
-});
-/** Every host API key, newest first. */
-export const CommunityAdminHostApiKeyListSchema = z.strictObject({
-  keys: z.array(CommunityAdminHostApiKeySchema),
-});
-/** Issue a host API key. Needs a host operator's session and password; a key cannot issue keys. */
-export const CommunityAdminHostApiKeyIssueRequestSchema = z.strictObject({
-  label: z.string().trim().min(1).max(80),
-  scopes: hostApiKeyScopes,
-  expiresInDays: z.int().min(1).max(365).nullable(),
-  password: z.string().min(1),
-});
-/** Rotate a host API key; the old key keeps working for the overlap. */
-export const CommunityAdminHostApiKeyRotateRequestSchema = z.strictObject({
-  overlapMinutes: z.int().min(0).max(1_440),
-  password: z.string().min(1),
-});
-/** One-time secret handoff, served with Cache-Control: no-store. */
-export const CommunityAdminHostApiKeySecretResponseSchema = z.strictObject({
-  key: CommunityAdminHostApiKeySchema,
-  secret: z.string().regex(/^dkh_[A-Za-z0-9_-]{43}$/),
-  previousKeyExpiresAt: timestamp.nullable(),
-});
-/** Revocation takes no input; it cannot be undone. */
-export const CommunityAdminHostApiKeyRevokeRequestSchema = z.strictObject({});
+export {
+  CommunityAdminHostApiKeyIssueRequestSchema,
+  CommunityAdminHostApiKeyListSchema,
+  CommunityAdminHostApiKeyRevokeRequestSchema,
+  CommunityAdminHostApiKeyRotateRequestSchema,
+  CommunityAdminHostApiKeySchema,
+  CommunityAdminHostApiKeyScopeSchema,
+  CommunityAdminHostApiKeySecretResponseSchema,
+} from './community-admin-host-keys.js';
 
 /** Most erasure journal lines one read returns, and how many when `limit` is left out. */
 export const COMMUNITY_ERASURE_JOURNAL_PAGE_MAX = 1_000;
