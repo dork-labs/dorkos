@@ -40,6 +40,7 @@ import {
   useAgentAttentionMap,
   useRecentSessions,
   useSessionListStore,
+  useSessionRouteContext,
 } from '@/layers/entities/session';
 import type { SidebarTarget } from './build-sidebar-model';
 import { useBootState } from './boot/use-boot-state';
@@ -176,7 +177,13 @@ function useActiveTarget(
     thread?: string;
   };
   const sessionId = pathname === '/session' ? (search.session ?? null) : null;
-  const cwd = pathname === '/session' ? (search.dir ?? null) : null;
+  // **Where the open chat lives comes from its route context, not the URL.**
+  // Links no longer carry `?dir=` (`toSession` strips it), so reading the URL
+  // alone left a chat the session list had not caught up with yet — a brand-new
+  // one above all — with no agent, and its row said "Session" (DOR-2845). The
+  // route loader records the directory it resolved for every chat it opens.
+  const routeContext = useSessionRouteContext(sessionId);
+  const cwd = pathname === '/session' ? (routeContext?.cwd ?? search.dir ?? null) : null;
   const roomId = pathname === '/channels' ? (search.id ?? null) : null;
   // **`?thread=` is part of what is open, not decoration.** A thread row now
   // navigates to it, so a reader that ignored it would answer "the room" for a

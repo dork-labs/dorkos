@@ -19,7 +19,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { act, cleanup, renderHook } from '@testing-library/react';
 import type { SessionStatus } from '@dorkos/shared/session-stream';
 import type { Session } from '@dorkos/shared/types';
-import { useSessionListStore } from '@/layers/entities/session';
+import { setSessionRouteContext, useSessionListStore } from '@/layers/entities/session';
 
 const FIXED_NOW = 1_786_000_000_000;
 
@@ -30,11 +30,14 @@ vi.mock('../boot/use-boot-state', () => ({
   useBootState: () => ({ phase: 'settled', settled: true, fleetKnown: true, startedWarm: false }),
 }));
 
+// Where the router is, switchable per test; Home with no search by default.
+const route = { pathname: '/', search: {} as Record<string, string> };
+
 vi.mock('@tanstack/react-router', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@tanstack/react-router')>()),
   useRouterState: ({ select }: { select: (s: { location: { pathname: string } }) => unknown }) =>
-    select({ location: { pathname: '/' } }),
-  useSearch: () => ({}),
+    select({ location: { pathname: route.pathname } }),
+  useSearch: () => route.search,
 }));
 
 vi.mock('@/layers/shared/model', async (importOriginal) => ({
@@ -314,5 +317,31 @@ describe('useSidebarState — the whole recent window (your-activity-first D10)'
     const { result } = renderHook(() => useSidebarState());
     expect(result.current.sessions.map((entry) => entry.id)).toContain('mine');
     expect(result.current.lastTouchedByYouAt).toEqual({ 'session:mine': at });
+  });
+});
+
+describe('useSidebarState — the open chat’s agent (DOR-2845)', () => {
+  afterEach(() => {
+    route.pathname = '/';
+    route.search = {};
+    cleanup();
+  });
+
+  it('places an open chat from its route context, since links no longer carry ?dir=', () => {
+    // A brand-new chat the session list has not caught up with: the only thing
+    // that knows its agent is what the route loader resolved. Without it the
+    // sidebar row named the chat "Session".
+    route.pathname = '/session';
+    route.search = { session: 'ses-brand-new' };
+    setSessionRouteContext('ses-brand-new', { cwd: '/projects/alpha', draft: true });
+
+    const { result } = renderHook(() => useSidebarState());
+
+    expect(result.current.activeTarget).toEqual({
+      kind: 'session',
+      sessionId: 'ses-brand-new',
+      agentPath: '/projects/alpha',
+      cwd: '/projects/alpha',
+    });
   });
 });
