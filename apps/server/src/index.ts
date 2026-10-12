@@ -81,8 +81,6 @@ import { warnAboutGitProtection, installedGitProtection } from './lib/git-safety
 import { initLogger, logger, logError } from './lib/logger.js';
 import { createDorkOsToolServer } from './services/runtimes/claude-code/mcp-tools/index.js';
 import { TaskStore } from './services/tasks/task-store.js';
-import { createNotificationsRouter } from './routes/notifications.js';
-import { createPushRouter } from './routes/push.js';
 import { NotificationStore } from './services/notifications/notification-store.js';
 import {
   connectorAgentRequestsChangedAnnouncer,
@@ -231,7 +229,6 @@ import { setAgentPathLookup } from './services/mesh/agent-path-lookup.js';
 import { createA2aRouter } from './routes/a2a.js';
 import { buildA2aRateLimiters } from './middleware/a2a-rate-limit.js';
 import { createAgentsRouter } from './routes/agents.js';
-import { createPermissionsRouter } from './routes/permissions.js';
 import { resolveToolVisibilityFor } from './services/runtimes/shared/permission-tool-filter.js';
 import { composeCapabilityRegistryForDocs } from './services/core/self-description/dorkos-registry.js';
 import {
@@ -332,7 +329,6 @@ import {
 } from './services/marketplace/recovery/backup-janitor.js';
 import { installSweepLogger } from './services/marketplace/recovery/install-sweep-log.js';
 import { currentRecordOwner } from './services/marketplace/lib/records/record-owner.js';
-import { createAgentPauseRouter } from './routes/agent-pause.js';
 import { wireAgentPause } from './services/mesh/pause/index.js';
 import {
   auditCapabilityDeps,
@@ -355,7 +351,6 @@ import {
   createAgentIdentityUnregisterCascade,
 } from './services/core/agent-identity/index.js';
 import { ApprovalService, resolveApprovalTtlMs } from './services/core/approvals/index.js';
-import { createApprovalsRouter } from './routes/approvals.js';
 import type { DebugDeps } from './routes/debug.js';
 import {
   initCapabilityTierGate,
@@ -547,7 +542,6 @@ import {
   getExtensionInbox,
   setExtensionInbox,
 } from './services/extensions/inbox/extension-inbox.js';
-import { createExtensionDecisionsRouter } from './routes/extension-decisions.js';
 import {
   StartWorkService,
   getStartWorkService,
@@ -4255,9 +4249,9 @@ async function start() {
   }
 
   // Permissions (spec `agent-permissions` D10): the one way in for what agents
-  // may do. Mounted at `/api` BEFORE the agents router so
-  // `/api/agents/:id/permissions` reaches it first. The registry is read lazily:
-  // it is composed after the routes are mounted.
+  // may do. Served by the Hono app, which the front door asks before Express,
+  // so `/api/agents/:id/permissions` never reaches the agents router. The
+  // registry is read lazily: it is composed after the routes are mounted.
   // The one owner of every permission write (spec `agent-permissions` D10):
   // the permissions pages and the request card's Always allow both write here.
   const permissionService = createPermissionService({
@@ -4289,23 +4283,18 @@ async function start() {
     arrivalRecord.clear(agentId);
     void permissionObserver.forget(agentId);
   });
-  app.use(
-    '/api',
-    createPermissionsRouter({
-      permissions: permissionService,
-      activity: activityService,
-    })
-  );
+  deps.permissions = { permissions: permissionService, activity: activityService };
   mountedRouters.push('permissions');
 
   // What agents promised (spec `heartbeats` §12). Always mounted; the
   // per-agent POST is mounted before the agents router so it answers its path.
   app.use('/api/commitments', commitments.routers.list);
   app.use('/api/agents/:id/commitments', commitments.routers.agent);
-  // Pause an agent everywhere, and lift it (spec `audit-trail` PR5). Mounted
-  // before the agents router so `/api/agents/:id/pause` reaches it first; the
-  // registry is read lazily because it is composed after the routes mount.
-  app.use('/api', createAgentPauseRouter({ registry: () => capabilityRegistry }));
+  // Pause an agent everywhere, and lift it (spec `audit-trail` PR5). Served by
+  // the Hono app, which the front door asks before Express, so
+  // `/api/agents/:id/pause` never reaches the agents router; the registry is
+  // read lazily because it is composed after the routes mount.
+  deps.agentPause = { registry: () => capabilityRegistry };
   mountedRouters.push('agent-pause');
 
   // Always mounted — not behind any feature flag.
@@ -4413,9 +4402,9 @@ async function start() {
   // The test-only seam that seeds a request card reads it from here; production
   // mounts no test router, so nothing else does.
   app.locals.approvalService = approvalService;
-  app.use(
-    '/api/approvals',
-    createApprovalsRouter(approvalService, {
+  deps.approvals = {
+    service: approvalService,
+    options: {
       activity: activityService,
       // An "Always allow" writes through the one permission write owner, like
       // Settings does (spec `agent-permissions` D7).
@@ -4423,8 +4412,8 @@ async function start() {
       // Names the action for the answer's audit line. Read lazily: the registry
       // is composed later in boot.
       describeCapability: (capabilityId) => capabilityRegistry?.get(capabilityId),
-    })
-  );
+    },
+  };
 
   // Activity feed — always available, not behind a feature flag.
   deps.activity = activityService;
@@ -4434,23 +4423,20 @@ async function start() {
 
   // The Inbox — always available for the same reason: the history is written
   // whether or not any channel could carry it.
-  app.use('/api/notifications', createNotificationsRouter(notificationService));
+  deps.notifications = notificationService;
   mountedRouters.push('notifications');
 
   // Web push — how the escalation ladder reaches a browser DorkOS is not open
   // in. Always mounted: a person can subscribe a device before anything has ever
   // needed to escalate, and the routes are what tell the Settings tab whether
   // this install can push at all.
-  app.use(
-    '/api/push',
-    createPushRouter({ subscriptions: pushSubscriptions, channel: webPushChannel })
-  );
+  deps.push = { subscriptions: pushSubscriptions, channel: webPushChannel };
   mountedRouters.push('push');
 
   // The bell and the Activity inbox answer extension decisions here (spec
   // `flow-multiproject` §7.3). Always mounted: with no extension system it
   // simply lists nothing.
-  app.use('/api/extension-decisions', createExtensionDecisionsRouter());
+  deps.extensionDecisions = { activity: activityService };
   mountedRouters.push('extension-decisions');
 
   // Mount Extensions routes if extension system initialized successfully.

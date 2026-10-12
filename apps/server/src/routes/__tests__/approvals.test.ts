@@ -12,7 +12,6 @@
  * @vitest-environment node
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import express from 'express';
 import type { Server } from 'node:http';
 import request from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
@@ -26,9 +25,17 @@ import { APPROVAL_TOKEN_HEADER } from '../../services/core/capabilities/index.js
 import { AGENT_IDENTITY_HEADER } from '../../middleware/agent-identity.js';
 import { eventFanOut } from '../../services/core/event-fan-out.js';
 import type { ActivityService } from '../../services/activity/activity-service.js';
-import { createApprovalsRouter } from '../approvals.js';
+import { createApprovalsRoutes } from '../approvals.js';
+import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
 import { createPermissionWorld } from '../../services/core/permissions/__tests__/permission-fixtures.js';
 import { UPGRADE_WRITER } from '../../services/core/permissions/permission-history.js';
+
+// The routes are served through the `/api` chain, whose host guard and session
+// gate read the login setting: off, as on a fresh install. The routes' own
+// login lookup is injected per case.
+vi.mock('../../services/core/config-manager.js', () => ({
+  configManager: { get: vi.fn(() => undefined), set: vi.fn() },
+}));
 
 /** The action every test in this file asks approval for. */
 const BINDING = {
@@ -56,10 +63,10 @@ describe('approvals routes', () => {
   }[];
 
   /**
-   * Build an app around the real router.
+   * Serve the real routes behind the `/api` chain.
    *
    * @param options - Login posture, whether an agent identity is pre-resolved onto
-   *   `res.locals` (what the real middleware does), and whether a signed-in user is.
+   *   `c.var` (what the real middleware does), and whether a signed-in user is.
    */
   function buildApp(
     options: {
@@ -68,13 +75,6 @@ describe('approvals routes', () => {
       user?: { userId: string; credential: 'cookie' | 'api-key' };
     } = {}
   ): Server {
-    const built = express();
-    built.use(express.json());
-    built.use((_req, res, next) => {
-      if (options.agentIdentity) res.locals.agentIdentity = AGENT_IDENTITY;
-      if (options.user) res.locals.user = options.user;
-      next();
-    });
     const activity = {
       emit: async (event: {
         eventType: string;
@@ -90,21 +90,29 @@ describe('approvals routes', () => {
         });
       },
     } as unknown as ActivityService;
-    built.use(
-      '/api/approvals',
-      createApprovalsRouter(approvals, {
-        activity,
-        permissions: world.service,
-        isLoginEnabled: () => options.loginEnabled === true,
-        describeCapability: (id) =>
-          id === 'marketplace.uninstall'
-            ? { title: 'Uninstall a marketplace package' }
-            : id === 'rooms.create'
-              ? { title: 'Open a room' }
-              : undefined,
-      })
+    const routes = createApprovalsRoutes(approvals, {
+      activity,
+      permissions: world.service,
+      isLoginEnabled: () => options.loginEnabled === true,
+      describeCapability: (id) =>
+        id === 'marketplace.uninstall'
+          ? { title: 'Uninstall a marketplace package' }
+          : id === 'rooms.create'
+            ? { title: 'Open a room' }
+            : undefined,
+    });
+    return target.mount(
+      honoGroupListener(
+        { path: '/api/approvals', routes },
+        {
+          before: async (c, next) => {
+            if (options.agentIdentity) c.set('agentIdentity', AGENT_IDENTITY);
+            if (options.user) c.set('user', options.user);
+            await next();
+          },
+        }
+      )
     );
-    return target.mount(built);
   }
 
   beforeEach(() => {

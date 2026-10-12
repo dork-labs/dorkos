@@ -37,7 +37,6 @@ import { describe, it, expect, vi } from 'vitest';
 import { z } from 'zod';
 import os from 'node:os';
 import path from 'node:path';
-import express from 'express';
 import request from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
 import { noopLogger } from '@dorkos/shared/logger';
@@ -357,7 +356,7 @@ const CLI_VERBS = ['agent', 'task', 'activity', 'capabilities', 'call', 'version
 const { createCapabilitiesInvokeRoutes } =
   await import('../../../../routes/capabilities-invoke.js');
 const { honoGroupListener } = await import('../../../../http/__tests__/hono-group-listener.js');
-const { createApprovalsRouter } = await import('../../../../routes/approvals.js');
+const { createApprovalsRoutes } = await import('../../../../routes/approvals.js');
 const { initCapabilityTierGate, APPROVAL_TOKEN_HEADER } = await import('../tier-enforcement.js');
 const { ApprovalService } = await import('../../approvals/index.js');
 
@@ -491,17 +490,14 @@ function externalProbe(identity?: typeof PROBE_IDENTITY) {
  * being switched on.
  */
 const requesterDecideProbe = async () => {
-  const legacy = express();
-  legacy.use(express.json());
-  legacy.use(
-    '/api/approvals',
-    createApprovalsRouter(approvalService, { isLoginEnabled: () => false })
-  );
   requestTarget.mount(
-    honoGroupListener(
+    honoGroupListener([
       { path: '/api/capabilities', routes: createCapabilitiesInvokeRoutes(registry) },
-      { legacy }
-    )
+      {
+        path: '/api/approvals',
+        routes: createApprovalsRoutes(approvalService, { isLoginEnabled: () => false }),
+      },
+    ])
   );
 
   const asked = await request(requestTarget.server)
