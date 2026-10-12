@@ -76,7 +76,11 @@ function apiCommand(leg: Leg): string {
 
 export default defineConfig({
   testDir: './first-run',
-  testMatch: 'first-run.spec.ts',
+  // Not `*.spec.ts` on purpose: the main suite's executed-tests gate
+  // (scripts/assert-browser-tests-executed.sh) counts every `*.spec.ts` as a
+  // main-suite file, and this one runs only here, by `pnpm e2e:first-run`,
+  // until CI runs this config (DOR-2844).
+  testMatch: 'first-run.journey.ts',
   reporter: [['list']],
   workers: 1,
   retries: 0,
