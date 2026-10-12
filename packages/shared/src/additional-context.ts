@@ -195,6 +195,13 @@ export interface RoomContextMember extends RoomContextAuthor {
    * on an answer that is never coming.
    */
   responseMode?: ResponseMode;
+  /**
+   * An agent nobody at its directory answers for any more (DOR-2095), kept as a
+   * member only because a direct message is named by who is in it. Present only
+   * when true, the same rule the app's roster follows, so an agent does not wait
+   * on a reply that cannot come (DOR-2364).
+   */
+  retired?: true;
 }
 
 /** One room entry, flattened for the model. */
