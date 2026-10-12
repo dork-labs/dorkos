@@ -20,9 +20,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - Extension authors can now serve an extension's own API with a fetch handler: a function that takes a standard web request and returns a response. Any handler of that shape, such as a Hono app, works as it is. It runs inside DorkOS on Node, so code that needs Bun or Deno's own features does not. The Express router still works, and both can be used together
+- People who run a Community server can now give one of its reserved web addresses, such as `official`, to a new space of their own. It takes a key made for that one job and a written reason, and the server keeps a record of who gave the address out and why. Everyone else is still refused every reserved address, and addresses that are pages of the server can never be given out. See "Giving a reserved web address to a community" in the server's operations guide
 
 ### Changed
 
+- Every agent now follows the same rules for when to act and when to ask first. It does routine work and anything you asked for without checking in, and tells you what it did
+- Before an agent sends something people outside your team will see, spends money or deletes things, it asks first unless you asked or it is its job. Promises to customers, signing up for things, spending past its limit and giving someone new access always need a yes from you or the agent's manager
+- When an agent gets stuck on something only you can do, like a sign-in, it no longer just says it can't. It does every step it can, asks DorkOS for the access, suggests one way forward, and finishes once you choose
+- These rules apply even when an agent's DorkOS knowledge setting is off, and in chats that are not tied to an agent
 - A new DorkOS starts with one screen. **Use my own AI** lists every way in, one row each: an OpenAI, Anthropic or OpenRouter key, an AI app you already sign in to, or any other service. Paste a key and DorkOS picks the model. A model on your own computer is listed too, but it can't reach a first reply yet (DOR-2783)
 - **Continue with DorkOS** is on the same screen and signs you in with the code already filled in. Finishing that path with a card still waits on DorkOS Cloud, so for now use **Use my own AI** (DOR-2783)
 - Every path ends in #team, where DorkBot says hello and offers a first job: **Build me a tracker for my customers**, **Make a daily plan board**, or **Something else**. One press, and DorkBot starts on it. Skipped the account? The same spot opens the two ways to connect AI in Settings instead (DOR-2783)
