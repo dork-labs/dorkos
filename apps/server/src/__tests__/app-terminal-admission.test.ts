@@ -284,6 +284,9 @@ describe('main HTTP admission through the real app', () => {
     // Hono (`/api/community-connections/*`, `/api/communities/*`), beside the
     // groups' `route` mounts (DOR-2815).
     expect(mounts).toContain('/api/communities/admission-fixture');
+    // 69 stays 69: the extension mounts move to Hono as `/api/extensions` and
+    // `/api/ext` (DOR-2810), two mounts as on Express.
+    expect(mounts).toContain('/api/ext');
     expect(mounts).toHaveLength(69);
     const byHand = [
       '/',

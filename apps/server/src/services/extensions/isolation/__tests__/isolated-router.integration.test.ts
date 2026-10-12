@@ -13,7 +13,7 @@ import http from 'node:http';
 import type { AddressInfo } from 'node:net';
 import path from 'node:path';
 import vm from 'node:vm';
-import express, { Router, type RequestHandler } from 'express';
+import { Router } from 'express';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const state = vi.hoisted(() => ({ authEnabled: false }));
@@ -29,9 +29,23 @@ vi.mock('../../../core/config-manager.js', () => ({
 }));
 vi.mock('../../../../env.js', () => ({ env: { DORKOS_PORT: 7777 } }));
 vi.stubEnv('VITE_PORT', '7779');
+// CORS lets this test origin through, so it reaches the person bar, which
+// judges against the server's static set and not this list.
+vi.stubEnv('DORKOS_CORS_ORIGIN', 'https://evil.example');
+// The session gate lets every request through: the cases here are about the
+// person bar, and a signed-in person is set after the chain (`before` below),
+// as the Express version stubbed `res.locals.user`.
+vi.mock('../../../core/auth/session-gate.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../../core/auth/session-gate.js')>()),
+  decideSessionGate: vi.fn(async () => ({ allowed: true })),
+}));
 
 import { createRequirePerson } from '../../inbox/extension-inbox-context.js';
-import { createIsolatedRouter } from '../isolated-router.js';
+import { createIsolatedHandler } from '../isolated-router.js';
+import { bridgeExpressRouter } from '../../http/express-bridge.js';
+import type { ExtensionHttpHandler } from '../../http/extension-http.js';
+import { createExtensionApiRoutes } from '../../../../routes/extension-api.js';
+import { honoGroupListener } from '../../../../http/__tests__/hono-group-listener.js';
 import { PERSON_VERDICT_HEADER } from '../ipc-protocol.js';
 import type { IsolatedExit } from '../isolated-host.js';
 import { ROUTER_BUNDLE_SOURCE } from './fixtures/router-bundle.js';
@@ -44,10 +58,10 @@ let h: Harness;
 let server: http.Server;
 let base: string;
 let signedIn = false;
-const routers = new Map<string, RequestHandler>();
+const routers = new Map<string, ExtensionHttpHandler>();
 
 /** Load the fixture in this process, as the in-process lifecycle would. */
-function inProcessRouter(): Router {
+function inProcessRouter(): ExtensionHttpHandler {
   const fn = vm.compileFunction(ROUTER_BUNDLE_SOURCE, ['exports', 'require', 'module']);
   const mod: { exports: unknown } = { exports: {} };
   fn(mod.exports, () => ({}), mod);
@@ -55,7 +69,7 @@ function inProcessRouter(): Router {
   (mod.exports as (r: Router, c: unknown) => void)(router, {
     requirePerson: createRequirePerson(NAME),
   });
-  return router;
+  return bridgeExpressRouter(router);
 }
 
 /** Start the fixture in a real child and mount its isolated router as `id`. */
@@ -70,7 +84,7 @@ async function startIsolated(id: string, idleMs?: number) {
     overrides: { displayName: NAME },
   });
   await startOk(host);
-  routers.set(id, createIsolatedRouter({ displayName: NAME, host, idleMs }));
+  routers.set(id, createIsolatedHandler({ displayName: NAME, host, idleMs }));
   return { host, exits };
 }
 
@@ -80,23 +94,23 @@ beforeEach(async () => {
   signedIn = false;
   routers.clear();
   routers.set('inproc', inProcessRouter());
-  // DorkOS's own order: the app-wide JSON parser, the session gate (here: a
-  // signed-in person when the test says so), then the extension mount.
-  const app = express();
-  app.use(express.json({ limit: '1mb' }));
-  app.use((_req, res, next) => {
-    if (signedIn) res.locals.user = { userId: 'u1', credential: 'cookie' };
-    next();
-  });
-  app.use('/api/ext/:id', (req, res, next) => {
-    const router = routers.get(req.params.id as string);
-    if (!router) {
-      res.status(404).json({ error: 'none' });
-      return;
-    }
-    router(req, res, next);
-  });
-  server = http.createServer(app);
+  // DorkOS's own order: the `/api` chain (its JSON parser, the session gate,
+  // here letting everyone through, with a signed-in person when the test
+  // says so), then the extension mount.
+  server = http.createServer(
+    honoGroupListener(
+      {
+        path: '/api/ext',
+        routes: createExtensionApiRoutes({ getServerHandler: (id) => routers.get(id) ?? null }),
+      },
+      {
+        before: async (c, next) => {
+          if (signedIn) c.set('user', { userId: 'u1', credential: 'cookie' } as never);
+          await next();
+        },
+      }
+    )
+  );
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
   base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
 });
@@ -108,7 +122,7 @@ afterEach(async () => {
 });
 
 describe('requests reach the child as real HTTP', () => {
-  // Purpose: a JSON body express.json already consumed still reaches the
+  // Purpose: a JSON body the chain's parser already consumed still reaches the
   // child whole, re-encoded with a fresh content-length.
   it('round-trips a JSON body', async () => {
     await startIsolated('iso');
@@ -244,7 +258,6 @@ describe('the reply header allowlist', () => {
       'refresh',
       'www-authenticate',
       'service-worker-allowed',
-      'access-control-allow-credentials',
       'cross-origin-opener-policy',
       'link',
       'x-dorkos-agent',
@@ -252,6 +265,11 @@ describe('the reply header allowlist', () => {
       expect(res.headers.get(name), name).toBeNull();
     }
     expect(res.headers.get('etag')).toBe('"v1"');
+    // The child's own CORS header is dropped like the rest. What remains is
+    // DorkOS's: the `/api` chain's CORS step answers every request with it,
+    // as the Express chain's did.
+    expect(res.headers.get('access-control-allow-credentials')).toBe('true');
+    expect(res.headers.get('access-control-allow-origin')).toBeNull();
   });
 
   // Purpose: a redirect stays inside the extension's own mount; one to

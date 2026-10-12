@@ -258,7 +258,7 @@ import { startExtensionApprovalQueue } from './services/extensions/extension-app
 import { ensureCoreExtensions } from './services/core-extensions/ensure-core-extensions.js';
 import { warnRedundantEnabledEntries } from './services/core-extensions/warn-redundant-enabled.js';
 import type { CoreExtensionInfo } from './services/extensions/extension-enable-resolution.js';
-import { createExtensionsRouter, broadcastExtensionReloaded } from './routes/extensions.js';
+import { broadcastExtensionReloaded } from './routes/extensions.js';
 import { knownProjectRootsForExtensions } from './services/projects/extension-scan-roots.js';
 import { withIntegrity } from './services/marketplace/lib/integrity/verify-install.js';
 import { scanInstallationsAcrossScopes } from './services/marketplace/installed-scanner.js';
@@ -322,7 +322,6 @@ import {
   wireAuditTrail,
   wireSessionVisibility,
 } from './services/audit/index.js';
-import { createExtensionRoutesMiddleware } from './middleware/extension-routes.js';
 import { createExternalMcpServer } from './services/core/mcp-server.js';
 import { composeDorkOsCapabilityRegistry } from './services/core/self-description/dorkos-registry.js';
 import {
@@ -4375,7 +4374,6 @@ async function start() {
   // Activity feed — always available, not behind a feature flag.
   deps.activity = activityService;
   deps.audit = { log: auditLog, accounts: auditAccounts };
-  app.locals.activityService = activityService;
   mountedRouters.push('activity');
 
   // The Inbox — always available for the same reason: the history is written
@@ -4396,16 +4394,14 @@ async function start() {
   deps.extensionDecisions = { activity: activityService };
   mountedRouters.push('extension-decisions');
 
-  // Mount Extensions routes if extension system initialized successfully.
+  // Extensions — managing them, and each running extension's own API under
+  // `/api/ext/:id/*` — when the extension system initialized successfully.
   if (extensionManager) {
-    app.use(
-      '/api/extensions',
-      createExtensionsRouter(extensionManager, dorkHome, () => env.DORKOS_DEFAULT_CWD ?? null)
-    );
-
-    // Delegate /api/ext/:id/* to extension-registered Express routers
-    app.use('/api/ext/:id', createExtensionRoutesMiddleware(extensionManager));
-
+    deps.extensions = {
+      manager: extensionManager,
+      dorkHome,
+      getCwd: () => env.DORKOS_DEFAULT_CWD ?? null,
+    };
     mountedRouters.push('extensions');
   }
 

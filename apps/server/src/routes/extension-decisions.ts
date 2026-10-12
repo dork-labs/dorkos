@@ -22,7 +22,7 @@
  *
  * @module routes/extension-decisions
  */
-import { Hono, type Context } from 'hono';
+import { Hono } from 'hono';
 import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import {
   DecisionActionRequestSchema,
@@ -37,7 +37,7 @@ import { readJsonBody } from '../http/request-body.js';
 import { honoRequestFacts, type RequestFacts } from '../http/request-facts.js';
 import { readQuery } from '../http/request-query.js';
 import { logger } from '../lib/logger.js';
-import { assessPerson, type PersonBarCopy } from './extensions-person-bar.js';
+import { refusedNotAPerson, type PersonBarCopy } from './extensions-person-bar.js';
 
 /** Core's id for a decision: a ULID. */
 const DECISION_ID = /^[0-9A-HJKMNP-TV-Z]{26}$/;
@@ -90,12 +90,6 @@ export interface ExtensionDecisionsRouterDeps {
   activity?: Pick<ActivityService, 'emit'>;
 }
 
-/** The person bar's refusal, written, or `undefined` when a person is asking. */
-function refusedNotAPerson(c: Context<ApiEnv>): Response | undefined {
-  const refusal = assessPerson(honoRequestFacts(c), DECISION_BAR);
-  return refusal ? c.json(refusal.body, refusal.status as ContentfulStatusCode) : undefined;
-}
-
 /**
  * The `/api/extension-decisions` routes.
  *
@@ -126,7 +120,7 @@ export function createExtensionDecisionsRoutes(
     try {
       const id = c.req.param('id');
       if (!DECISION_ID.test(id)) return c.json({ error: 'Not found' }, 404);
-      const refused = refusedNotAPerson(c);
+      const refused = refusedNotAPerson(c, DECISION_BAR);
       if (refused) return refused;
       const body = DecisionActionRequestSchema.safeParse(readJsonBody(c, { emptyAs: {} }));
       if (!body.success) {
@@ -154,7 +148,7 @@ export function createExtensionDecisionsRoutes(
     try {
       const id = c.req.param('id');
       if (!DECISION_ID.test(id)) return c.json({ error: 'Not found' }, 404);
-      const refused = refusedNotAPerson(c);
+      const refused = refusedNotAPerson(c, DECISION_BAR);
       if (refused) return refused;
       const body = DecisionOfferRequestSchema.safeParse(readJsonBody(c, { emptyAs: {} }));
       if (!body.success) return c.json({ error: 'Send { accept: true | false }.' }, 400);

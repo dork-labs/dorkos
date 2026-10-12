@@ -20,7 +20,9 @@ import { createRequire } from 'node:module';
 import { Router } from 'express';
 import type { ExtensionRecord, ExtensionToolStatus } from '@dorkos/extension-api';
 import type { ExtensionCompiler } from './extension-compiler.js';
-import { createProxyRouter } from './extension-proxy.js';
+import { createProxyHandler } from './http/extension-proxy.js';
+import { bridgeExpressRouter } from './http/express-bridge.js';
+import { firstAnswer, type ExtensionHttpHandler } from './http/extension-http.js';
 import { createDataProviderContext } from './extension-server-api-factory.js';
 import { toRecordError, type ActiveServerExtension } from './extension-manager-types.js';
 import {
@@ -45,7 +47,7 @@ import {
   type IsolatedStartErrorCode,
 } from './isolation/isolated-host.js';
 import { resolveChildEntry } from './isolation/child-entry.js';
-import { createIsolatedRouter } from './isolation/isolated-router.js';
+import { createIsolatedHandler } from './isolation/isolated-router.js';
 import { RestartPolicy, type RestartPolicyOptions } from './isolation/restart-policy.js';
 import { env } from '../../env.js';
 
@@ -148,9 +150,10 @@ export interface ServerLifecycleOptions {
 /**
  * Manages the lifecycle of server-side extensions: compile, load, route, and teardown.
  *
- * Each active extension gets an Express Router mounted at `/api/ext/{id}/*`.
- * Proxy-only extensions (no server.ts) get auto-generated proxy routes.
- * Extensions with server.ts get custom routes + optional proxy alongside.
+ * Each active extension gets one HTTP handler for `/api/ext/{id}/*`
+ * (`extension-http.ts`). Proxy-only extensions (no server.ts) get the proxy;
+ * extensions with server.ts get their router, through the Express bridge,
+ * with the proxy tried after it.
  */
 export class ExtensionServerLifecycle {
   private serverExtensions = new Map<string, ActiveServerExtension>();
@@ -341,20 +344,19 @@ export class ExtensionServerLifecycle {
     if (record.hasDataProxy && !record.hasServerEntry) {
       const sourceKey = buildSourceKey(record, null);
       if (active?.sourceKey === sourceKey) {
-        logger.debug(`[Extensions] Proxy router for ${id} is already running, unchanged`);
+        logger.debug(`[Extensions] Proxy for ${id} is already running, unchanged`);
         return { ok: true };
       }
 
       await this.stop(id);
-      const proxyRouter = createProxyRouter(id, record.manifest.dataProxy!, this.dorkHome);
       this.serverExtensions.set(id, {
         extensionId: id,
-        router: proxyRouter,
+        handler: createProxyHandler(id, record.manifest.dataProxy!, this.dorkHome),
         cleanup: null,
         scheduledCleanups: [],
         sourceKey,
       });
-      logger.info(`[Extensions] Proxy router mounted for ${id}`);
+      logger.info(`[Extensions] Proxy mounted for ${id}`);
       return { ok: true };
     }
 
@@ -484,11 +486,8 @@ export class ExtensionServerLifecycle {
       // has tools, and only the declared tools it handled (DOR-2685).
       const agentTools = sealAgentTools(id, record.manifest.name, toolChecks, tools);
 
-      // Mount proxy routes alongside custom routes for hybrid extensions
-      if (record.hasDataProxy && record.manifest.dataProxy) {
-        const proxyRouter = createProxyRouter(id, record.manifest.dataProxy, this.dorkHome);
-        router.use(proxyRouter);
-      }
+      // A hybrid extension's proxy answers what its own routes pass on.
+      const handler = firstAnswer(bridgeExpressRouter(router), this.proxyFor(id, record));
 
       // Asked again now that register() has run: a turn-off or revoke that
       // arrived meanwhile wins, and this instance is released, not stored.
@@ -514,7 +513,7 @@ export class ExtensionServerLifecycle {
 
       this.serverExtensions.set(id, {
         extensionId: id,
-        router,
+        handler,
         cleanup,
         scheduledCleanups: getScheduledCleanups(),
         releaseListeners,
@@ -745,13 +744,9 @@ export class ExtensionServerLifecycle {
     // bound was bound through the real ctx.tools.handle on the way: seal the
     // host's binding exactly as after an in-process register() (spec §8).
     const agentTools = sealAgentTools(id, name, toolChecks, built.tools);
-    const proxyRouter =
-      record.hasDataProxy && record.manifest.dataProxy
-        ? createProxyRouter(id, record.manifest.dataProxy, this.dorkHome)
-        : null;
     this.serverExtensions.set(id, {
       extensionId: id,
-      router: createIsolatedRouter({ displayName: name, host, proxyRouter }),
+      handler: createIsolatedHandler({ displayName: name, host, proxy: this.proxyFor(id, record) }),
       cleanup: null,
       scheduledCleanups: [],
       releaseListeners: built.releaseListeners,
@@ -909,13 +904,19 @@ export class ExtensionServerLifecycle {
   }
 
   /**
-   * Get the Express router for a server-side extension.
+   * Get the HTTP handler for a server-side extension.
    *
    * @param id - Extension identifier
-   * @returns The extension's router, or null if no server extension is active
+   * @returns The extension's handler, or null if no server extension is active
    */
-  getRouter(id: string): Router | null {
-    return this.serverExtensions.get(id)?.router ?? null;
+  getHandler(id: string): ExtensionHttpHandler | null {
+    return this.serverExtensions.get(id)?.handler ?? null;
+  }
+
+  /** A hybrid extension's `dataProxy`, or null when it declares none. */
+  private proxyFor(id: string, record: ExtensionRecord): ExtensionHttpHandler | null {
+    const config = record.hasDataProxy ? record.manifest.dataProxy : undefined;
+    return config ? createProxyHandler(id, config, this.dorkHome) : null;
   }
 }
 

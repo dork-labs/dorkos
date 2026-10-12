@@ -33,7 +33,12 @@
  */
 import type { NextFunction, Request, RequestHandler, Response as ExpressResponse } from 'express';
 import type { Context, MiddlewareHandler } from 'hono';
-import { expressRequestFacts, honoRequestFacts, type RequestFactsEnv } from './request-facts.js';
+import {
+  expressRequestFacts,
+  honoRequestFacts,
+  type RequestFacts,
+  type RequestFactsEnv,
+} from './request-facts.js';
 import { rateLimitKey } from '../middleware/rate-limit-key.js';
 
 /** How much a limiter allows. */
@@ -278,5 +283,42 @@ export function honoRateLimit(options: HonoRateLimitOptions): MiddlewareHandler<
       if (!c.res.headers.has(name)) c.res.headers.set(name, value);
     }
     if (options.countsWhen && !options.countsWhen(c)) decision.refund();
+  };
+}
+
+/** One request a {@link factsRateLimit} limiter counted, or refused. */
+export interface RateLimitVerdict {
+  /** Whether the request may go on. */
+  readonly allowed: boolean;
+  /** The headers to answer with, `Retry-After` included on a refusal. */
+  readonly headers: Record<string, string>;
+}
+
+/** Options for {@link factsRateLimit}. */
+export interface FactsRateLimitOptions extends RateLimitPolicy {
+  /** Which header family to answer with. */
+  readonly headers: RateLimitHeaders;
+}
+
+/**
+ * The limiter as a plain function of a request's facts, for a handler that
+ * is not middleware (an extension's data proxy, which only counts the
+ * requests it serves). It keys through `rateLimitKey`, as the two adapters
+ * above do; the caller answers a refusal itself.
+ *
+ * @param options - The policy and header family.
+ * @returns Count one request from the caller these facts describe.
+ */
+export function factsRateLimit(
+  options: FactsRateLimitOptions
+): (caller: RequestFacts) => RateLimitVerdict {
+  const limiter = createRateLimiter(options);
+  return (caller) => {
+    const now = Date.now();
+    const decision = limiter.hit(rateLimitKey(caller), now);
+    return {
+      allowed: decision.allowed,
+      headers: rateLimitHeaders(decision, limiter.policy, options.headers, now),
+    };
   };
 }

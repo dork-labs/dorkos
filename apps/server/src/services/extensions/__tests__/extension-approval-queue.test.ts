@@ -56,7 +56,7 @@ vi.mock('../extension-server-lifecycle.js', () => ({
     return {
       initialize: vi.fn().mockResolvedValue({ ok: true }),
       shutdown: vi.fn().mockResolvedValue(undefined),
-      getRouter: vi.fn().mockReturnValue(null),
+      getHandler: vi.fn().mockReturnValue(null),
       toolStatuses: vi.fn().mockReturnValue(undefined),
       supervisedStatus: vi.fn().mockReturnValue({}),
       resetRestarts: vi.fn(),
@@ -64,7 +64,6 @@ vi.mock('../extension-server-lifecycle.js', () => ({
   }),
 }));
 
-import express from 'express';
 import request from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
 import { createTestDb } from '@dorkos/test-utils/db';
@@ -80,7 +79,8 @@ import {
   startExtensionApprovalQueue,
   type ExtensionApprovalQueue,
 } from '../extension-approval-queue.js';
-import { createExtensionsRouter } from '../../../routes/extensions.js';
+import { createExtensionsRoutes } from '../../../routes/extensions.js';
+import { honoGroupListener } from '../../../http/__tests__/hono-group-listener.js';
 import { extensionApprovalSubjectId } from '@dorkos/shared/extension-approval-schemas';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -184,13 +184,12 @@ beforeEach(async () => {
   ({ queue, stop: stopQueue } = startExtensionApprovalQueue(manager));
   await queue.sync();
 
-  const app = express();
-  app.use(express.json());
-  app.use(
-    '/api/extensions',
-    createExtensionsRouter(manager, dorkHome, () => null)
+  target.mount(
+    honoGroupListener({
+      path: '/api/extensions',
+      routes: createExtensionsRoutes({ manager: manager, dorkHome: dorkHome, getCwd: () => null }),
+    })
   );
-  target.mount(app);
 });
 
 afterEach(() => {

@@ -60,6 +60,8 @@ import diffRoutes from '../routes/diff.js';
 import directoryRoutes from '../routes/directory.js';
 import { createDiscoveryRoutes } from '../routes/discovery.js';
 import errorRoutes from '../routes/errors.js';
+import { createExtensionApiRoutes } from '../routes/extension-api.js';
+import { createExtensionsRoutes, type ExtensionsRouterDeps } from '../routes/extensions.js';
 import {
   createExtensionDecisionsRoutes,
   type ExtensionDecisionsRouterDeps,
@@ -157,6 +159,12 @@ export interface ComposedGroupDeps {
   approvals?: { service: ApprovalService; options: ApprovalsRouterOptions };
   /** Answers to extension decisions (`/api/extension-decisions`). */
   extensionDecisions?: ExtensionDecisionsRouterDeps;
+  /**
+   * Managing extensions (`/api/extensions`) and each running extension's own
+   * API (`/api/ext/:id/*`). Only handed over when the extension system
+   * started. The Activity feed is {@link ComposedGroupDeps.activity}.
+   */
+  extensions?: Omit<ExtensionsRouterDeps, 'activity'>;
   /** What agents may do (`/api/permissions*`, `/api/agents/:id/permissions`). */
   permissions?: PermissionsRouterDeps;
   /** Pausing an agent everywhere (`/api/agents/pauses`, `/api/agents/:id/{pause,resume}`). */
@@ -377,6 +385,13 @@ export function createHonoApi(options: HonoApiOptions): Hono<ApiEnv> {
   }
   if (deps.extensionDecisions) {
     app.route('/api/extension-decisions', createExtensionDecisionsRoutes(deps.extensionDecisions));
+  }
+  if (deps.extensions) {
+    app.route(
+      '/api/extensions',
+      createExtensionsRoutes({ ...deps.extensions, activity: deps.activity })
+    );
+    app.route('/api/ext', createExtensionApiRoutes(deps.extensions.manager));
   }
   // These two were Express routers mounted on all of `/api`. Their groups
   // register only their own concrete paths, so mounting them at `/api` claims

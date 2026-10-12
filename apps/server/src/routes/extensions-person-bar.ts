@@ -107,11 +107,18 @@
  *
  * @module routes/extensions-person-bar
  */
-import type { Request, Response } from 'express';
+import type { Request, Response as ExpressResponse } from 'express';
+import type { Context } from 'hono';
+import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import { trustedCaller } from '../services/core/capabilities/index.js';
 import { readCallerAuthority, requireOperatorCookieUnderLogin } from '../lib/caller-authority.js';
 import { resolveTrustedOrigins } from '../lib/trusted-origins.js';
-import { expressRequestFacts, type RequestFacts } from '../http/request-facts.js';
+import {
+  expressRequestFacts,
+  honoRequestFacts,
+  type RequestFacts,
+  type RequestFactsEnv,
+} from '../http/request-facts.js';
 
 /**
  * What one surface calls itself when it refuses, so the reader is told what
@@ -169,16 +176,16 @@ export interface PersonRefusal {
 export function assessPerson(request: RequestFacts, copy: PersonBarCopy): PersonRefusal | null;
 export function assessPerson(
   req: Request,
-  res: Response,
+  res: ExpressResponse,
   copy: PersonBarCopy
 ): PersonRefusal | null;
 export function assessPerson(
   req: RequestFacts | Request,
-  resOrCopy: Response | PersonBarCopy,
+  resOrCopy: ExpressResponse | PersonBarCopy,
   maybeCopy?: PersonBarCopy
 ): PersonRefusal | null {
   const facts = maybeCopy
-    ? expressRequestFacts(req as Request, resOrCopy as Response)
+    ? expressRequestFacts(req as Request, resOrCopy as ExpressResponse)
     : (req as RequestFacts);
   const copy = maybeCopy ?? (resOrCopy as PersonBarCopy);
   const origin = facts.headers.origin;
@@ -205,7 +212,8 @@ export function assessPerson(
 }
 
 /**
- * Run the three bars, answering the request when any of them refuses.
+ * Run the three bars, answering the request when any of them refuses: for an
+ * extension's own Express router (`ctx.requirePerson`).
  *
  * @param req - The request, read for `Origin` and for the agent-identity and
  *   approval-token headers.
@@ -215,9 +223,30 @@ export function assessPerson(
  * @returns `true` when the request was already answered, so the caller must
  *   return immediately without performing its effect.
  */
-export function refuseIfNotAPerson(req: Request, res: Response, copy: PersonBarCopy): boolean {
+export function refuseIfNotAPerson(
+  req: Request,
+  res: ExpressResponse,
+  copy: PersonBarCopy
+): boolean {
   const refusal = assessPerson(req, res, copy);
   if (!refusal) return false;
   res.status(refusal.status).json(refusal.body);
   return true;
+}
+
+/**
+ * Run the three bars for a route on the Hono chain.
+ *
+ * @param c - The request's context: its headers, and the session user and
+ *   agent the chain resolved.
+ * @param copy - What this surface says when it refuses.
+ * @returns The refusal to answer with, or `undefined` when a person is asking
+ *   and the route may go on.
+ */
+export function refusedNotAPerson(
+  c: Context<RequestFactsEnv>,
+  copy: PersonBarCopy
+): Response | undefined {
+  const refusal = assessPerson(honoRequestFacts(c), copy);
+  return refusal ? c.json(refusal.body, refusal.status as ContentfulStatusCode) : undefined;
 }
