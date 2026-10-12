@@ -246,6 +246,7 @@ describe('the words', () => {
       parentTitle: 'Release v1',
       parentAgentName: 'Coordinator',
       reportBack: true,
+      parentTakesMessages: true,
     });
     expect(on).toContain(PARENT);
     expect(on).toContain('Release v1');
@@ -256,7 +257,24 @@ describe('the words', () => {
       parentTitle: null,
       parentAgentName: 'Coordinator',
       reportBack: false,
+      parentTakesMessages: true,
     });
     expect(off).toContain('does not hear from you on its own');
+    expect(off).toContain(`chat_send to ${PARENT}`);
+  });
+
+  it('never points a spin-off of a room chat at chat_send, which that chat refuses', () => {
+    // 2026-10-12: chats started from the room-bound coordinator were told to
+    // "Send what matters with chat_send to <it>", every send was refused, and
+    // they reported "the coordinator doesn't accept direct messages".
+    const roomChild = spinOffBriefing({
+      parentChatId: PARENT,
+      parentTitle: 'Other agents in #dorkos',
+      parentAgentName: 'Coordinator',
+      reportBack: false,
+      parentTakesMessages: false,
+    });
+    expect(roomChild).not.toContain('chat_send');
+    expect(roomChild).toContain('post_to_room');
   });
 });

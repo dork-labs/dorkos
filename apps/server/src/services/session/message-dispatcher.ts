@@ -172,7 +172,6 @@ import {
   onProjectorRekey,
   onProjectorTurnBoundary,
   peekProjector,
-  rekeyProjector,
 } from './session-state-projector.js';
 import {
   forgetSessionAliases,
@@ -185,13 +184,9 @@ import {
 import { onSessionRemoved } from './catalog/session-list-broadcaster.js';
 import { runtimeLockHolder } from './session-lock.js';
 import { getStagedContextStore, holdStagedContext } from './staged-context-store.js';
-import {
-  triggerTurn,
-  type TriggerTurnDeps,
-  type TriggerTurnOpts,
-  type TriggerTurnResult,
-} from './trigger-turn.js';
+import { triggerTurn, type TriggerTurnOpts, type TriggerTurnResult } from './trigger-turn.js';
 import { triggerCommandIntent, type CompactionBoundaryTag } from './trigger-command-intent.js';
+import { turnDeps } from './dispatch-turn-deps.js';
 import {
   clearOwedContextWarning,
   forgetContextWarning,
@@ -267,8 +262,10 @@ interface PendingDispatch {
    * nothing between now and then can change the lock's answer — and a pump that
    * retried immediately would spin: every refusal hands the slot back, which
    * schedules the pump, which launches it again, which is refused again. That
-   * loop exhausted the heap in testing. Only a boundary (or, if none ever
-   * comes, the wait bound) tries again.
+   * loop exhausted the heap in testing. Only a boundary, a dispatched turn
+   * letting go of the lock ({@link rearmLockWaiters}), or failing both the
+   * wait bound, tries again. A refusal itself never re-arms, so the loop stays
+   * closed.
    */
   waitingOnLock: boolean;
   /**
@@ -899,54 +896,6 @@ function announceSteerable(
   projector.ingest(event);
 }
 
-/** Build the runtime-neutral port `triggerTurn` needs from a resolved runtime. */
-function turnDeps(runtime: AgentRuntime): TriggerTurnDeps {
-  const privateMessages = getPrivateSessionMessageAcceptanceService();
-  return {
-    acquireLock: (sid, cid, lifecycle, token) => runtime.acquireLock(sid, cid, lifecycle, token),
-    releaseLock: (sid, cid, token) => runtime.releaseLock(sid, cid, token),
-    sendMessage: (sid, text, opts) => runtime.sendMessage(sid, text, opts),
-    // Omitted rather than stubbed when the runtime cannot strand a turn: the
-    // absence is what `triggerTurn` reads as "nothing to settle", and a stub
-    // answering `false` would only hide which runtimes have the exposure.
-    ...(runtime.settleOpenTurn !== undefined
-      ? { settleOpenTurn: (sid: string) => runtime.settleOpenTurn!(sid) }
-      : {}),
-    interruptQuery: (sid) => runtime.interruptQuery(sid),
-    // Omitted for the same reason as `settleOpenTurn`: a runtime with no
-    // helpers has no answer to give.
-    ...(runtime.isHelperWorking !== undefined
-      ? { isHelperWorking: (sid: string) => runtime.isHelperWorking!(sid) }
-      : {}),
-    getInternalSessionId: (sid) => runtime.getInternalSessionId(sid),
-    rekeyProjector: (oldId, newId) => rekeyProjector(oldId, newId),
-    getCapabilities: () => runtime.getCapabilities(),
-    // Switch now is the marker that a runtime answers the hold handshake.
-    answersDispatchHold: runtime.switchWhenReady !== undefined,
-    ...(privateMessages
-      ? {
-          preparePrivateMessage: (receiptId: string) => privateMessages.prepare(receiptId),
-          claimPrivateMessage: (
-            receiptId: string,
-            prepared: Parameters<typeof privateMessages.claim>[1],
-            sessionId?: string
-          ) =>
-            privateMessages.claim(
-              receiptId,
-              prepared,
-              sessionId ? { sessionId, runtime: runtime.type } : undefined
-            ),
-          cancelPrivateMessage: (receiptId: string, reason: string) =>
-            privateMessages.cancel(receiptId, reason),
-          isPrivatePreclaimRefusal: (receiptId: string, error: unknown) =>
-            privateMessages.isPreclaimRefusal(receiptId, error),
-          markPrivateOutcomeUnknown: (receiptId: string, reason: string) =>
-            privateMessages.markOutcomeUnknown(receiptId, reason),
-        }
-      : {}),
-  };
-}
-
 /** Inputs for {@link dispatchMessage}. */
 export interface DispatchMessageOpts {
   sessionId: string;
@@ -1562,8 +1511,8 @@ function launchDispatchInner(
     : Math.max(0, plan.budgetMs - (Date.now() - plan.startedWaitingAt));
   const token = Symbol('dispatcher-turn');
   const releasesAtStart = releases.get(sessionKey) ?? 0;
-  if (!opts.budgetExhausted)
-    inFlight.set(sessionKey, { clientId, token, startedAt: Date.now(), sawTurnStart: false });
+  const claim: InFlightTurn = { clientId, token, startedAt: Date.now(), sawTurnStart: false };
+  if (!opts.budgetExhausted) inFlight.set(sessionKey, claim);
   // Held from here until this launch is done with the message, whichever way it
   // ends. Every exit below routes through `clearIfOurs` — the sync throw, the
   // rejection, the refusal, and the settle — so there is no path that leaves an
@@ -1627,6 +1576,11 @@ function launchDispatchInner(
         // becomes the authority on whether it is still producing
         // ({@link isStillProducing}). Only for OUR launch: a stale settle must
         // not annotate a newer turn's slot.
+        // A launch the wait bound forced claimed no slot, so it met the lock as
+        // a stranger would. Running now, it IS the session's turn, and claims
+        // the slot: otherwise the next message reads the session as idle and
+        // launches into it, waiting out the lock TTL inside its own dispatch.
+        if (opts.budgetExhausted) inFlight.set(sessionKey, claim);
         const slot = inFlight.get(sessionKey);
         if (slot?.token === token) slot.sawTurnStart = true;
         sweptWhileLaunching.delete(messageId);
@@ -1639,6 +1593,12 @@ function launchDispatchInner(
       messageId,
       onError: turn.onError,
       onSettled: (turnOutcome) => {
+        // This turn has let go of the write-lock, so whatever the lock refused
+        // may try again now. Its boundary is no substitute: a turn that ends and
+        // then drains background work announces `turn_end` long before it lets
+        // go, and a message refused in between would otherwise wait out its
+        // whole wait bound behind a free session.
+        rearmLockWaiters(sessionKey);
         clearIfOurs();
         if (turn.privateReceiptId !== undefined) {
           getPrivateSessionMessageAcceptanceService()?.settle(turn.privateReceiptId, turnOutcome);
@@ -3102,6 +3062,19 @@ export function noteRuntimeTurnClosed(sessionId: string): void {
   // A turn ending is a turn boundary, whoever ran it: it re-arms every message
   // the write-lock refused and gives the queue its chance to move.
   noteTurnBoundary(sessionKey);
+}
+
+/**
+ * Let every message the write-lock refused on this session try again, because
+ * the lock has just been let go. The pump runs them; this only clears the mark
+ * that makes it step over them.
+ *
+ * @param sessionKey - The resolved session id
+ */
+function rearmLockWaiters(sessionKey: string): void {
+  for (const entry of pending.values()) {
+    if (entry.sessionKey === sessionKey) entry.waitingOnLock = false;
+  }
 }
 
 /**
