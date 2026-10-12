@@ -355,12 +355,9 @@ import {
   startApprovalExpirySweep,
   startApprovalVerdictDelivery,
 } from './services/core/approvals/index.js';
-import { createMcpRouter } from './routes/mcp.js';
+import type { McpServerFactory } from './routes/mcp.js';
 import { setRemoteCommunitySubscriptionProbe } from './routes/test-control.js';
 import { createMcpAuth } from './middleware/mcp-auth.js';
-import { validateMcpOrigin } from './middleware/mcp-origin.js';
-import { requireMcpEnabled } from './middleware/mcp-enabled.js';
-import { buildMcpRateLimiter } from './middleware/mcp-rate-limit.js';
 import {
   createDb,
   runMigrations,
@@ -3666,55 +3663,52 @@ async function start() {
     );
   }
 
-  // Always mount /mcp — requireMcpEnabled handles the disabled case with a clean 503.
-  const mcpRateLimiter = buildMcpRateLimiter();
-  // Auth is resolved per request by createMcpAuth (env override → per-user Better
-  // Auth key / session → legacy compat key → per-instance local token, with the
-  // read-only carve-out in login-off mode). This is only a startup log hint.
+  // `/mcp` is always served — `requireMcpEnabled` answers the disabled case with
+  // a clean 503. The routes, their gates and the transport are on the Hono
+  // chain (`routes/mcp.ts`); this is the tool server behind them, built per
+  // request. Auth is resolved per request by `decideMcpAuth` (env override →
+  // per-user Better Auth key / session → legacy compat key → per-instance local
+  // token, with the read-only carve-out in login-off mode). This is only a
+  // startup log hint.
   const mcpAuthMode = env.MCP_API_KEY?.trim()
     ? 'auth: MCP_API_KEY override'
     : configManager.get('auth')?.enabled
       ? 'auth: login gate + per-user keys'
       : 'auth: local token (read-only tools tokenless)';
-
-  app.use(
-    '/mcp',
-    validateMcpOrigin,
-    requireMcpEnabled,
-    createMcpAuth({ surface: 'mcp' }),
-    mcpRateLimiter,
-    createMcpRouter(async (caller) => {
-      if (!claudeRuntime || !mcpToolDeps) {
-        throw new Error(
-          'ClaudeCodeRuntime not available — external MCP server cannot handle requests'
-        );
-      }
-      // The server is rebuilt per request, so who is calling — the agent that
-      // presented a token, the person the auth middleware verified, or neither
-      // — is captured by the capability tool handlers it registers.
-      //
-      // What a Blocked permission hides from this caller (spec
-      // `agent-permissions` D15): its own settings when it identified itself,
-      // the install's defaults when it did not.
-      const visibility = await resolveToolVisibilityFor(caller.identity?.agentPath, {
-        inactive: Boolean(caller.identity?.inactive),
-      });
-      return createExternalMcpServer(
-        mcpToolDeps,
-        marketplaceMcpDeps,
-        capabilityRegistry,
-        caller.identity,
-        caller.userId,
-        caller.agentIdentityPresented,
-        visibility.hiddenToolNames
+  const mcpServerFactory: McpServerFactory = async (caller) => {
+    if (!claudeRuntime || !mcpToolDeps) {
+      throw new Error(
+        'ClaudeCodeRuntime not available — external MCP server cannot handle requests'
       );
-    })
-  );
+    }
+    // The server is rebuilt per request, so who is calling — the agent that
+    // presented a token, the person the auth middleware verified, or neither
+    // — is captured by the capability tool handlers it registers.
+    //
+    // What a Blocked permission hides from this caller (spec
+    // `agent-permissions` D15): its own settings when it identified itself,
+    // the install's defaults when it did not.
+    const visibility = await resolveToolVisibilityFor(caller.identity?.agentPath, {
+      inactive: Boolean(caller.identity?.inactive),
+    });
+    return createExternalMcpServer(
+      mcpToolDeps,
+      marketplaceMcpDeps,
+      capabilityRegistry,
+      caller.identity,
+      caller.userId,
+      caller.agentIdentityPresented,
+      visibility.hiddenToolNames
+    );
+  };
   logger.info(`[MCP] External MCP server mounted at /mcp (stateless, ${mcpAuthMode})`);
 
   // `deps` is what the moved Hono routes read (`http/hono-api.ts`), set where
   // each group used to be mounted on Express.
-  const deps: HonoApiDeps = { connectorEventIngress: connectorSignedIngress };
+  const deps: HonoApiDeps = {
+    connectorEventIngress: connectorSignedIngress,
+    mcp: mcpServerFactory,
+  };
 
   // Hand the Tasks routes their deps if enabled (`startup/tasks.ts`).
   ({ schedulerService, taskRegistrar, taskFileWatcher, taskReconciler, attachAgentTaskRoots } =

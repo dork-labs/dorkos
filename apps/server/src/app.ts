@@ -148,15 +148,16 @@ export function createApp(options: { admission: MainRequestAdmission }) {
   // Session gate — when `config.auth.enabled` is true, require a Better Auth
   // session cookie or a per-user API key on `/api/*` and `/mcp` (exemptions for
   // SPA assets, `/api/auth/*`, and `/api/health`). Mounted app-wide before the
-  // API routes so it also covers the `/mcp` mount added later on this same app
-  // in `index.ts`. Zero-overhead pass-through when login is disabled.
+  // API routes so it also covers the mounts `index.ts` adds later on this same
+  // app. (`/mcp` itself answers from the Hono chain, which runs the same gate.)
+  // Zero-overhead pass-through when login is disabled.
   app.use(sessionGate);
 
   // Agent identity — resolves an `X-DorkOS-Agent` token onto
   // `res.locals.agentIdentity` so capability invocations can be attributed to
   // the agent that made them. Mounted AFTER `sessionGate` (which owns the
-  // auth decision) and before the routes, app-wide so it also covers the `/mcp`
-  // mount added later in `index.ts`. Never rejects: a request without a token
+  // auth decision) and before the routes, app-wide so it also covers the mounts
+  // added later in `index.ts`. Never rejects: a request without a token
   // behaves exactly as it does today.
   app.use(resolveAgentIdentity);
   // Who is acting, for the audit log (spec `audit-trail`). After both gates,

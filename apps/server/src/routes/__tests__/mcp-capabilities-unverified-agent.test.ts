@@ -30,7 +30,7 @@
  *   can no longer add a server at all.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import express from 'express';
+import type { RequestListener } from 'node:http';
 import request, { type Response, type Test } from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
 import { noopLogger } from '@dorkos/shared/logger';
@@ -71,7 +71,6 @@ import type { McpCapabilityDeps } from '../../services/mesh/mcp-capability-deps.
 import { createExternalMcpServer } from '../../services/core/mcp-server.js';
 import type { McpToolDeps } from '../../services/runtimes/claude-code/mcp-tools/types.js';
 import { NotifyBudget } from '../../services/relay/notify-budget.js';
-import { resolveAgentIdentity } from '../../middleware/agent-identity.js';
 import {
   initAgentIdentityService,
   resetAgentIdentityService,
@@ -80,7 +79,7 @@ import {
 import { agentIdentityTokens } from '@dorkos/db';
 import { createCapabilitiesInvokeRoutes } from '../capabilities-invoke.js';
 import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
-import { createMcpRouter } from '../mcp.js';
+import { createMcpEndpoint } from '../mcp.js';
 
 // The routes are served through the `/api` chain, whose host guard and session
 // gate read the login setting: off, as on a fresh install.
@@ -304,14 +303,14 @@ describe('an unverifiable agent token on the mcp.* capability surfaces', () => {
   });
 
   describe('the external /mcp server', () => {
-    /** The real MCP router over the real external server, as `index.ts` wires it. */
-    function app(): express.Express {
-      const server = express();
-      server.use(express.json());
-      server.use(resolveAgentIdentity);
-      server.use(
-        '/mcp',
-        createMcpRouter((caller) =>
+    /**
+     * The real MCP endpoint over the real external server, behind the chain
+     * that resolves the agent header, as `index.ts` wires it.
+     */
+    function app(): RequestListener {
+      return honoGroupListener({
+        path: '/mcp',
+        routes: createMcpEndpoint((caller) =>
           createExternalMcpServer(
             minimalMcpDeps(),
             undefined,
@@ -320,9 +319,8 @@ describe('an unverifiable agent token on the mcp.* capability surfaces', () => {
             caller.userId,
             caller.agentIdentityPresented
           )
-        )
-      );
-      return server;
+        ),
+      });
     }
 
     /**

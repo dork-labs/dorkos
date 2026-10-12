@@ -60,6 +60,7 @@ import { createHarnessRoutes, type HarnessRouterDeps } from '../routes/harness.j
 import { createHealthRoutes, type HealthRouteDeps } from '../routes/health.js';
 import keepAwakeRoutes from '../routes/keep-awake.js';
 import { createMarketplaceRoutes, type MarketplaceRouteDeps } from '../routes/marketplace.js';
+import { createMcpRoutes, type McpServerFactory } from '../routes/mcp.js';
 import { createMcpOAuthRoutes } from '../routes/mcp-oauth.js';
 import { createMeshRoutes, type MeshRouterDeps } from '../routes/mesh.js';
 import modelRoutes from '../routes/models.js';
@@ -159,6 +160,11 @@ export interface ComposedGroupDeps {
    * gate.
    */
   connectorEventIngress?: ConnectorSignedIngress;
+  /**
+   * Builds the tool server behind the external MCP endpoint (`/mcp`), per
+   * request. Not under `/api`, but behind the same chain.
+   */
+  mcp?: McpServerFactory;
 }
 
 /** What the moved route groups read from the running server, handed over by `index.ts`. */
@@ -272,6 +278,7 @@ export function createHonoApi(options: HonoApiOptions): Hono<ApiEnv> {
     app.route('/api/capabilities', createCapabilitiesInvokeRoutes(deps.capabilities));
   }
   app.route('/api', createApiDocsRoutes());
+  if (deps.mcp) app.route('/mcp', createMcpRoutes(deps.mcp));
   return app;
 }
 

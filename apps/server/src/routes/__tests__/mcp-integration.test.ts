@@ -1,7 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
-import express from 'express';
+import { Hono } from 'hono';
 import request, { type Response, type Test } from '@dorkos/test-utils/supertest';
-import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 
 // Mock env for server factory and core-tools handlers
 vi.mock('../../env.js', () => ({
@@ -46,9 +45,11 @@ vi.mock('../../services/core/auth/mcp-local-token.js', () => ({
 }));
 
 import type { Server } from 'node:http';
-import { swappableServer } from '@dorkos/test-utils/listening-server';
+import { honoListener, swappableServer } from '@dorkos/test-utils/listening-server';
 import { createExternalMcpServer } from '../../services/core/mcp-server.js';
-import { createMcpAuth } from '../../middleware/mcp-auth.js';
+import type { ApiEnv } from '../../http/api-chain.js';
+import { parseRequestBody } from '../../http/request-body.js';
+import { createMcpEndpoint, createMcpRoutes } from '../mcp.js';
 import type { McpToolDeps } from '../../services/runtimes/claude-code/mcp-tools/types.js';
 import { NotifyBudget } from '../../services/relay/notify-budget.js';
 
@@ -81,44 +82,27 @@ function createMinimalDeps(): McpToolDeps {
 }
 
 /**
- * Create a test Express app that matches the SDK's official stateless pattern:
- * a new McpServer + transport per POST request. This is the correct stateless
- * architecture per the SDK's `simpleStatelessStreamableHttp.ts` example.
+ * Serve `routes` at `/mcp` behind the one chain step they read: the body the
+ * chain parses once.
  *
- * Each POST creates a fresh McpServer via `createExternalMcpServer` and a fresh
- * `StreamableHTTPServerTransport`, connects them, handles the request, then
- * cleans up on response close.
+ * @returns The shared listening server, now serving this app.
+ */
+function serve(routes: Hono<ApiEnv>): Server {
+  const app = new Hono<ApiEnv>();
+  app.use(parseRequestBody());
+  app.route('/mcp', routes);
+  return target.mount(honoListener(app));
+}
+
+/**
+ * The real `/mcp` endpoint with no gates in front of it, over the real external
+ * server: a new McpServer + web-standard transport per POST, the SDK's
+ * stateless pattern (`simpleStatelessStreamableHttp.ts`).
  *
  * @returns The shared listening server, now serving this app.
  */
 function createStatelessTestApp(): Server {
-  const app = express();
-  app.use(express.json());
-
-  app.post('/mcp', async (req, res) => {
-    try {
-      const server = createExternalMcpServer(createMinimalDeps());
-      const transport = new StreamableHTTPServerTransport({
-        sessionIdGenerator: undefined,
-      });
-      await server.connect(transport);
-      await transport.handleRequest(req, res, req.body);
-      res.on('close', () => {
-        transport.close().catch(() => {});
-        server.close().catch(() => {});
-      });
-    } catch (_err) {
-      if (!res.headersSent) {
-        res.status(500).json({
-          jsonrpc: '2.0',
-          error: { code: -32603, message: 'Internal error' },
-          id: null,
-        });
-      }
-    }
-  });
-
-  return target.mount(app);
+  return serve(createMcpEndpoint(() => createExternalMcpServer(createMinimalDeps())));
 }
 
 /** Standard JSON-RPC initialize request body. */
@@ -269,39 +253,16 @@ describe('MCP Integration', () => {
 });
 
 /**
- * The same stateless /mcp app, but fronted by the real createMcpAuth middleware
- * (login-off surface 'mcp') so the read-only carve-out, the local-token
- * acceptor, and the helpful 401 body are exercised end-to-end against the live
- * MCP server — not just the middleware in isolation.
+ * The same stateless /mcp endpoint, but behind its real gates (`createMcpRoutes`:
+ * origin, switch, the login-off credential check on surface 'mcp', limiter) so
+ * the read-only carve-out, the local-token acceptor, and the helpful 401 body
+ * are exercised end-to-end against the live MCP server — not just the
+ * middleware in isolation.
  *
  * @returns The shared listening server, now serving this app.
  */
 function createAuthedApp(): Server {
-  const app = express();
-  app.use(express.json());
-
-  app.post('/mcp', createMcpAuth({ surface: 'mcp' }), async (req, res) => {
-    try {
-      const server = createExternalMcpServer(createMinimalDeps());
-      const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
-      await server.connect(transport);
-      await transport.handleRequest(req, res, req.body);
-      res.on('close', () => {
-        transport.close().catch(() => {});
-        server.close().catch(() => {});
-      });
-    } catch (_err) {
-      if (!res.headersSent) {
-        res.status(500).json({
-          jsonrpc: '2.0',
-          error: { code: -32603, message: 'Internal error' },
-          id: null,
-        });
-      }
-    }
-  });
-
-  return target.mount(app);
+  return serve(createMcpRoutes(() => createExternalMcpServer(createMinimalDeps())));
 }
 
 /** Start a POST /mcp request against the authed app, optionally with a token. */
