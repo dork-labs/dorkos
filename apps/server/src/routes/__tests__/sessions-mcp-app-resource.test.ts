@@ -43,7 +43,6 @@ vi.mock('../../services/mcp-apps/index.js', async () => {
 
 import request from '@dorkos/test-utils/supertest';
 import { listeningServer } from '@dorkos/test-utils/listening-server';
-import { createApp, finalizeApp } from '../../app.js';
 import { composedListener } from '../../http/__tests__/composed-listener.js';
 import {
   getOrCreateProjector,
@@ -51,9 +50,7 @@ import {
 } from '../../services/session/session-state-projector.js';
 
 const admission = new MainRequestAdmission();
-const app = createApp({ admission });
-finalizeApp(app);
-const testServer = listeningServer(composedListener(app, admission));
+const testServer = listeningServer(composedListener(admission));
 
 const SESSION_ID = '00000000-0000-4000-8000-000000000abc';
 const CONNECTION: McpAppServerConnection = {

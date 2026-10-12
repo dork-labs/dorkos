@@ -6,54 +6,52 @@ import fs from 'node:fs';
 import { eq } from 'drizzle-orm';
 import os from 'node:os';
 import path from 'node:path';
-import express from 'express';
+import type { RequestListener } from 'node:http';
 import request from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
 import { createDb, runMigrations, user, session, type Db } from '@dorkos/db';
-import { getAuth, initAuth, sessionGate, toNodeHandler, verifyRequestAuth } from '../index.js';
+import { getAuth, initAuth, verifyRequestAuth } from '../index.js';
+import { createApiApp } from '../../../../http/api-chain.js';
+import { mountBetterAuth } from '../../../../http/better-auth.js';
+import { frontDoorListener } from '../../../../http/front-door.js';
+import { MainRequestAdmission } from '../../lifecycle/main-request-admission.js';
 import { configManager, initConfigManager } from '../../config-manager.js';
 import { env } from '../../../../env.js';
-import { REQUEST_FACTS_ADAPTERS } from '../../../../http/__tests__/request-facts-adapters.js';
+import { requestFactsFor } from '../../../../http/__tests__/described-request.js';
 
 const fixtureTarget = swappableServer();
 const fixtureServer = fixtureTarget.server;
 
 /**
- * Build an app that mirrors `app.ts`'s middleware order for the gate: the Better
- * Auth handler at `/api/auth/*splat` BEFORE `express.json()`, then the session
- * gate, then a handful of stub routes standing in for the real API surface,
- * `/mcp`, and the SPA. The stub `/api/sessions` route echoes `res.locals.user`
- * so tests can assert the gate attaches the resolved identity.
+ * The real chain (`http/api-chain.ts`) with Better Auth mounted before body
+ * parsing, as `http/hono-api.ts` mounts it, and a handful of stub routes
+ * standing in for the real API surface, `/mcp`, and the app. The stub
+ * `/api/sessions` route echoes the caller's `user` so tests can assert the
+ * gate attaches the resolved identity.
  */
-function buildApp(): express.Express {
-  const app = express();
-  app.all('/api/auth/*splat', toNodeHandler(getAuth()!));
-  app.use(express.json({ limit: '1mb' }));
-  app.use(sessionGate);
+function buildApp(): RequestListener {
+  const app = createApiApp({
+    admission: new MainRequestAdmission(),
+    beforeBodyParsing: (early) => mountBetterAuth(early, { auth: getAuth()!, maxAttempts: 1000 }),
+  });
   // Gated API route (echoes the attached identity).
-  app.get('/api/sessions', (_req, res) => {
-    res.json({ ok: true, user: res.locals.user ?? null });
-  });
-  app.post('/api/sessions', (_req, res) => {
-    res.json({ changed: true, user: res.locals.user ?? null });
-  });
+  app.get('/api/sessions', (c) => c.json({ ok: true, user: c.get('user') ?? null }));
+  app.post('/api/sessions', (c) => c.json({ changed: true, user: c.get('user') ?? null }));
   // Exempt: health probe.
-  app.get('/api/health', (_req, res) => res.json({ status: 'ok' }));
+  app.get('/api/health', (c) => c.json({ status: 'ok' }));
   // Gated despite the /api/health prefix: the deep report is operator-only.
-  // Registered non-strictly and case-insensitively, exactly as the real app
-  // mounts it, so the test can prove the alternate spellings are gated too.
-  app.get('/api/health/deep', (_req, res) => res.json({ checks: [] }));
-  // Gated: stands in for the `/mcp` mount that `index.ts` adds after createApp.
-  app.get('/mcp', (_req, res) => res.json({ ok: true }));
+  app.get('/api/health/deep', (c) => c.json({ checks: [] }));
+  // Gated: stands in for the `/mcp` mount.
+  app.get('/mcp', (c) => c.json({ ok: true }));
   // Gated with no carve-out of its own: the diagnostic read surface is always
   // mounted, so the gate is the only thing standing between it and an
   // unauthenticated caller. It is registered with a trailing wildcard the way a
-  // router mount matches, so the spelling variants that once slipped past the
+  // group mount matches, so the spelling variants that once slipped past the
   // health carve-out can be asked of it too.
-  app.get('/api/debug/{*splat}', (_req, res) => res.json({ claims: [] }));
-  // Non-API path (SPA asset): must never be gated.
-  app.get('/', (_req, res) => res.json({ spa: true }));
-  return app;
+  app.get('/api/debug/*', (c) => c.json({ claims: [] }));
+  // Non-API path (the app): must never be gated.
+  app.get('/', (c) => c.json({ spa: true }));
+  return frontDoorListener(app);
 }
 
 // Emails are assembled from parts so the source never contains a literal address.
@@ -68,10 +66,10 @@ function setAuthEnabled(enabled: boolean): void {
   configManager.set('auth', { enabled });
 }
 
-describe('sessionGate — /api/* and /mcp credential gate (integration)', () => {
+describe('the session gate — /api/* and /mcp credential gate (integration)', () => {
   let tmpDir: string;
   let db: Db;
-  let app: express.Express;
+  let app: RequestListener;
   let ownerId: string;
   let cookies: string[];
   let apiKey: string;
@@ -127,7 +125,7 @@ describe('sessionGate — /api/* and /mcp credential gate (integration)', () => 
       expect((await request(fixtureServer).get('/')).status).toBe(200);
     });
 
-    it('does not attach res.locals.user when disabled', async () => {
+    it('attaches no user when disabled', async () => {
       setAuthEnabled(false);
       const res = await request(fixtureServer).get('/api/sessions');
       expect(res.body.user).toBeNull();
@@ -288,16 +286,16 @@ describe('sessionGate — /api/* and /mcp credential gate (integration)', () => 
     // valid credential, and this is the only place the difference is observable
     // — a per-user API key satisfies the gate exactly as a browser session does
     // (DOR-474), so if these two returned the same shape those writes would have
-    // nothing to branch on. The plain-header cases run once per chain
-    // (DOR-2794): each adapter's facts must prove the same identity.
-    describe.each(REQUEST_FACTS_ADAPTERS)('through the $name adapter', (adapter) => {
+    // nothing to branch on. The plain-header cases read a request's facts as a
+    // route builds them.
+    describe("on a request's facts", () => {
       it('resolves a cookie identity, and says the cookie is what proved it', async () => {
-        const req = await adapter.facts({ headers: { cookie: cookies.join('; ') } });
+        const req = await requestFactsFor({ headers: { cookie: cookies.join('; ') } });
         expect(await verifyRequestAuth(req)).toEqual({ userId: ownerId, credential: 'cookie' });
       });
 
       it('resolves a Bearer API key identity, and says it was NOT a cookie', async () => {
-        const req = await adapter.facts({
+        const req = await requestFactsFor({
           headers: { authorization: `Bearer ${apiKey}` },
         });
         expect(await verifyRequestAuth(req)).toEqual({
@@ -318,7 +316,7 @@ describe('sessionGate — /api/* and /mcp credential gate (integration)', () => 
         // key-bearing request and this identity would come back labelled `cookie`,
         // silently handing a per-user API key the one thing the cookie bar exists
         // to withhold. This test goes red on that day, which is the entire point.
-        const req = await adapter.facts({ headers: { 'x-api-key': apiKey } });
+        const req = await requestFactsFor({ headers: { 'x-api-key': apiKey } });
         const resolved = await verifyRequestAuth(req);
         expect(resolved?.credential).not.toBe('cookie');
         // Today it resolves to nothing at all: `x-api-key` is not the Bearer header
@@ -327,12 +325,12 @@ describe('sessionGate — /api/* and /mcp credential gate (integration)', () => 
       });
 
       it('returns null with no credentials', async () => {
-        const req = await adapter.facts({ headers: {} });
+        const req = await requestFactsFor({ headers: {} });
         expect(await verifyRequestAuth(req)).toBeNull();
       });
 
       it('returns null with an invalid Bearer key', async () => {
-        const req = await adapter.facts({
+        const req = await requestFactsFor({
           headers: { authorization: 'Bearer nope' },
         });
         expect(await verifyRequestAuth(req)).toBeNull();
@@ -352,7 +350,7 @@ describe('sessionGate — /api/* and /mcp credential gate (integration)', () => 
         .map((value) => value.split(';', 1)[0]!)
         .find((value) => value.split('=', 1)[0]!.endsWith('.session_token'));
       expect(signedToken).toEqual(expect.any(String));
-      const req = { headers: { cookie: signedToken! } } as unknown as express.Request;
+      const req = { headers: { cookie: signedToken! } };
       const auth = getAuth()!;
       const original = await auth.api.getSession({
         headers: new Headers({ cookie: signedToken! }),
@@ -409,7 +407,7 @@ describe('sessionGate — /api/* and /mcp credential gate (integration)', () => 
         .send({ email: OWNER_EMAIL, password: OWNER_PASSWORD });
       expect(signIn.status).toBe(200);
       const freshCookies = signIn.headers['set-cookie'] as unknown as string[];
-      const req = { headers: { cookie: freshCookies.join('; ') } } as unknown as express.Request;
+      const req = { headers: { cookie: freshCookies.join('; ') } };
       const original = await getAuth()!.api.getSession({
         headers: new Headers({ cookie: req.headers.cookie! }),
         query: { disableCookieCache: true, disableRefresh: true },

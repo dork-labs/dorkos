@@ -13,9 +13,9 @@
  * **It previews the DRAFT, not the file on disk.** A preview that only moved
  * once you saved would answer the question after you no longer had it.
  *
- * Three things the server adds are deliberately absent: its DorkOS-knowledge
- * block, the `<session_model>` statement that rides every turn unchanged, and
- * the legacy `persona` fallback. None of them is anything an operator writes
+ * Four things the server adds are deliberately absent: its DorkOS-knowledge
+ * block, the `<session_model>` and `<working_rules>` statements that ride every
+ * turn unchanged, and the legacy `persona` fallback. None of them is anything an operator writes
  * here, and a preview padded with boilerplate is a preview nobody opens twice.
  * The memory file is the opposite case and so it is shown: it is the operator's
  * to read and edit, and it is the one block whose contents move on their own.

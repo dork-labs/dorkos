@@ -98,7 +98,6 @@ import { runtimeRegistry } from '../../services/core/runtime-registry.js';
 import request from '@dorkos/test-utils/supertest';
 import { createTestDb } from '@dorkos/test-utils/db';
 import { listeningServer } from '@dorkos/test-utils/listening-server';
-import { createApp, finalizeApp } from '../../app.js';
 import { composedListener } from '../../http/__tests__/composed-listener.js';
 import {
   getOrCreateProjector,
@@ -113,9 +112,7 @@ import { resetMessageDispatcher } from '../../services/session/message-dispatche
 import { attachEventStream } from './helpers/trigger-turn-helpers.js';
 
 const admission = new MainRequestAdmission();
-const app = createApp({ admission });
-finalizeApp(app);
-const server = listeningServer(composedListener(app, admission));
+const server = listeningServer(composedListener(admission));
 
 const SESSION_ID = '00000000-0000-4000-8000-0000000000cd';
 

@@ -2,34 +2,11 @@ import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import express from 'express';
 import request from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
 
-// A per-run throwaway client dist so the SPA fallback has an index.html to
-// serve. vi.hoisted holds a mutable ref (it runs before imports, so it can't
-// build a path from `os`/`path`); the real, collision-free dir is created via
-// mkdtemp in beforeAll and read lazily through the env mock's getter.
-const holder = vi.hoisted(() => ({ dist: '' }));
-
-// Force finalizeApp's production branch on (it is skipped under NODE_ENV=test,
-// which is precisely why the Express 5 SPA-serving regression was invisible to
-// the rest of the suite) and point CLIENT_DIST_PATH at our throwaway dist.
-vi.mock('../env.js', async (importOriginal) => {
-  const actual = (await importOriginal()) as { env: Record<string, unknown> };
-  return {
-    env: {
-      ...actual.env,
-      NODE_ENV: 'production',
-      get CLIENT_DIST_PATH() {
-        return holder.dist;
-      },
-    },
-  };
-});
-
-// Singletons with load/first-use side effects — mock so importing app.js never
-// touches ~/.dork. finalizeApp itself uses neither.
+// Singletons the chain reads per request (the host guard, the session gate):
+// mock them so the test never touches ~/.dork.
 vi.mock('../services/core/config-manager.js', () => ({
   configManager: { get: vi.fn(), set: vi.fn(), getAll: vi.fn().mockReturnValue({}) },
 }));
@@ -37,41 +14,45 @@ vi.mock('../services/core/tunnel-manager.js', () => ({
   tunnelManager: { status: { enabled: false, connected: false, url: null } },
 }));
 
-import { finalizeApp } from '../app.js';
+import { MainRequestAdmission } from '../services/core/lifecycle/main-request-admission.js';
+import { createApiApp } from '../http/api-chain.js';
+import { createClientFiles } from '../http/client-files.js';
+import { frontDoorListener } from '../http/front-door.js';
 
 const fixtureTarget = swappableServer();
 const fixtureServer = fixtureTarget.server;
 
 /**
- * Guards the production SPA serving path (`finalizeApp` under
- * NODE_ENV=production). Regression coverage for the Express 5 migration
- * (DOR-171): path-to-regexp v8 rejects a bare `app.get('*')`, and
- * `res.sendFile` with an absolute path 404s for multi-segment request URLs —
- * both would silently break client-side deep links in a packaged CLI.
+ * Guards serving the built client: what the chain answers outside `/api` when
+ * no route claims a path (`http/unclaimed.ts`, `http/client-files.ts`).
+ * Regression coverage first written for the Express 5 migration (DOR-171), when
+ * a bare `app.get('*')` and `res.sendFile` with an absolute path each silently
+ * broke client-side deep links in a packaged CLI.
  */
-describe('finalizeApp — production SPA fallback (Express 5)', () => {
-  let app: express.Express;
+describe('the client build behind the chain', () => {
+  let dist: string;
 
   /** A bundle named the way Vite names them: content hash in the filename. */
   const HASHED_ASSET = 'index-a1b2c3d4.js';
 
   beforeAll(() => {
-    holder.dist = fs.mkdtempSync(path.join(os.tmpdir(), 'dorkos-spa-fallback-'));
-    fs.writeFileSync(path.join(holder.dist, 'index.html'), '<!doctype html><div id="root"></div>');
+    dist = fs.mkdtempSync(path.join(os.tmpdir(), 'dorkos-spa-fallback-'));
+    fs.writeFileSync(path.join(dist, 'index.html'), '<!doctype html><div id="root"></div>');
     // A Vite-shaped dist: content-hashed bundles under assets/, unhashed
     // static files at the root.
-    fs.mkdirSync(path.join(holder.dist, 'assets'));
-    fs.writeFileSync(path.join(holder.dist, 'assets', HASHED_ASSET), 'console.log(1);');
-    fs.writeFileSync(path.join(holder.dist, 'favicon.ico'), 'icon');
-    app = express();
-    app.get('/api/ping', (_req, res) => res.json({ ok: true }));
-    finalizeApp(app);
-
-    fixtureTarget.mount(app);
+    fs.mkdirSync(path.join(dist, 'assets'));
+    fs.writeFileSync(path.join(dist, 'assets', HASHED_ASSET), 'console.log(1);');
+    fs.writeFileSync(path.join(dist, 'favicon.ico'), 'icon');
+    const app = createApiApp({
+      admission: new MainRequestAdmission(),
+      clientFiles: createClientFiles(dist),
+    });
+    app.get('/api/ping', (c) => c.json({ ok: true }));
+    fixtureTarget.mount(frontDoorListener(app));
   });
 
   afterAll(() => {
-    fs.rmSync(holder.dist, { recursive: true, force: true });
+    fs.rmSync(dist, { recursive: true, force: true });
   });
 
   it('serves index.html for a client-side deep link', async () => {
@@ -86,7 +67,7 @@ describe('finalizeApp — production SPA fallback (Express 5)', () => {
     expect(res.text).toContain('id="root"');
   });
 
-  it('serves a HEAD deep link (Express auto-mapped HEAD->GET on app.get, so the fallback must too)', async () => {
+  it('serves a HEAD deep link, as GET would be served', async () => {
     const res = await request(fixtureServer).head('/agents/deep/route');
     expect(res.status).toBe(200);
   });
@@ -252,8 +233,8 @@ describe('finalizeApp — production SPA fallback (Express 5)', () => {
     });
 
     it('serves the whole policy with the shell behind a deep link', async () => {
-      // A deep link is served by different Express machinery from `/` (the
-      // sendFile fallback, not the static hit), so the header has to be set in
+      // A deep link is served by different machinery from `/` (the `send`
+      // fallback, not the static hit), so the header has to be set in
       // two places and is asserted in both.
       const res = await request(fixtureServer).get('/agents/deep/route');
       expect(res.headers['content-security-policy']).toBe(EXPECTED_CSP);

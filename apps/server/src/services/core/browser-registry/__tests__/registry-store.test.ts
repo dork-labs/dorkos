@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { Request, Response } from 'express';
+import type { RequestFacts } from '../../../../http/request-facts.js';
 import {
   authors,
   rooms,
@@ -35,10 +35,15 @@ let resolver: ReturnType<typeof createBrowserOwnerScopeResolver>;
 let store: ReturnType<typeof createBrowserRegistryStore>;
 function scope(account = 'account-one') {
   state.ownerId = account;
-  return resolver.resolve(
-    { headers: {}, socket: { remoteAddress: '127.0.0.1' } } as Request,
-    { locals: { user: { userId: account, credential: 'cookie' } } } as unknown as Response
-  );
+  return resolver.resolve({
+    headers: {},
+    peerAddress: '127.0.0.1',
+    forwardedAddress: '127.0.0.1',
+    connectionEncrypted: false,
+    managedIngress: false,
+    user: { userId: account, credential: 'cookie' },
+    agentIdentity: undefined,
+  } satisfies RequestFacts);
 }
 beforeEach(() => {
   db = createDb(':memory:');

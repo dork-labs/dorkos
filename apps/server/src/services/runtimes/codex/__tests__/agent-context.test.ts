@@ -206,6 +206,17 @@ describe('what a Codex turn carries', () => {
     expect(prompt).toContain('say so rather than guessing');
   });
 
+  // Same reason as above: asserted on what codex is actually sent, because the
+  // working rules must reach all three runtimes, not only claude-code.
+  it('carries the <working_rules> block into the codex prompt', async () => {
+    const runtime = makeRuntime();
+    await drain(runtime.sendMessage('s1', 'hello', { cwd: agentDir }));
+
+    const prompt = sdkMocks.prompts[0] ?? '';
+    expect(prompt).toContain('<working_rules>');
+    expect(prompt).toContain('including asking DorkOS for the access');
+  });
+
   // The memory block reaches codex through the SAME shared builder, and this is
   // where that can fail: the block is read from a real file in this agent's own
   // directory and asserted on the string the adapter actually sends. A shared

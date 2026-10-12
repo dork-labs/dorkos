@@ -1,26 +1,17 @@
 /**
- * The server's front door: one Hono app every HTTP request enters through.
+ * The server's front door: how a raw Node request reaches the one Hono app
+ * every HTTP request enters through (`http/hono-api.ts`, ADR `261009-192542`).
  *
- * This is the first step of the move from Express to Hono (ADR `261009-192542`,
- * `plans/2026-10-express-to-hono.md`). Today the front door owns no routes of
- * its own. Its single catch-all hands the raw Node request and response to the
- * existing Express app, so Express runs exactly as it did when it was the
- * listener itself: same middleware chain, same body parsing, same bytes on the
- * wire. Route groups move one at a time onto the Hono `/api` app
- * (`http/api-chain.ts`); the front door sends a request there only when one of
- * that app's routes matches its method and path, and the last step deletes the
- * catch-all. A request therefore runs exactly one middleware chain.
+ * Four choices keep the server answering as it did before Hono. Each one a
+ * request can observe is pinned by `__tests__/front-door.test.ts`:
  *
- * Four choices keep "exactly as before" true. `__tests__/front-door.test.ts`
- * pins each one that a request can observe:
- *
- * - **A request Hono cannot read still reaches Express.** The Node adapter
- *   builds a URL from `Host` and answers a bare 400 when it cannot: no `Host`
- *   (HTTP/1.0), a port out of range, `OPTIONS *`. Express decides those today,
- *   through `hostGuard` with its logged 403 or by serving them, so
- *   {@link createFrontDoorServer} gives them to Express untouched. A `Host` in
- *   capitals it would also refuse is lower-cased first, so a moved route
- *   answers it as Express did.
+ * - **A request the adapter cannot read still runs the chain.** The Node
+ *   adapter builds a URL from `Host` and answers a bare 400 when it cannot: no
+ *   `Host` (HTTP/1.0), a port out of range, a `Host` with a path in it,
+ *   `OPTIONS *`. {@link frontDoorListener} builds that request itself on a
+ *   placeholder origin instead, leaving the raw `Host` as it came, so the host
+ *   guard and every route judge it as they judge any other. A `Host` in
+ *   capitals, which the adapter would also refuse, is lower-cased first.
  * - **`overrideGlobalObjects: false`.** By default the adapter swaps the
  *   process-wide `Request` and `Response` for its own lightweight classes.
  *   Better Auth, the MCP SDK and every `fetch` caller in the server build those
@@ -28,11 +19,10 @@
  * - **`autoCleanupIncoming: false`.** By default the adapter reads and throws
  *   away a body the handler never read, and cuts the connection after 500 ms.
  *   Node already discards an unread body itself and keeps the connection, which
- *   is what a route that refuses before reading an upload relies on today.
- * - **The catch-all settles only once the Node response has closed**, so to
- *   Hono a handed-off request lasts as long as its response does. Nothing reads
- *   that lifetime yet; anything later wrapped around the catch-all (timing,
- *   admission) needs it to be the real one.
+ *   is what a route that refuses before reading an upload relies on.
+ * - **A route that writes the Node response itself** (an event stream, a file,
+ *   an extension router) answers with the adapter's already-sent marker, and
+ *   the adapter writes nothing more (`http/raw-node-stream.ts`).
  *
  * WebSocket upgrades never pass through here: Node emits `upgrade` on the
  * server, not as a request, and `attachUpgradeRouter` claims it there.
@@ -48,114 +38,42 @@ import {
   type ServerResponse,
 } from 'node:http';
 import { getRequestListener, RequestError, type HttpBindings } from '@hono/node-server';
-import { RESPONSE_ALREADY_SENT } from '@hono/node-server/utils/response';
-import { Hono } from 'hono';
-import { expressCensus, honoCensus } from './route-census/census.js';
+import type { Hono } from 'hono';
 import type { ApiEnv } from './api-chain.js';
 
-/** The Hono environment of the front door: the raw Node request and response. */
-export type FrontDoorEnv = { Bindings: HttpBindings };
-
-/** A Hono app built by {@link createFrontDoor}, still holding its fallback. */
-export interface FrontDoor {
-  /** The Hono app every request enters. */
-  readonly app: Hono<FrontDoorEnv>;
-  /** Where a request goes when no Hono route claims it, or Hono cannot read it. */
-  readonly legacy: RequestListener;
-}
-
-/** Options for {@link createFrontDoor}. */
-export interface FrontDoorOptions {
-  /**
-   * The Hono `/api` app the moved route groups are mounted on
-   * (`http/hono-api.ts`). Each of its routes is claimed here, ahead of the
-   * catch-all; its chain middleware is not a route and claims nothing.
-   */
-  api?: Hono<ApiEnv>;
-  /**
-   * Serve the route census at `GET /api/test/route-census`
-   * (`route-census/census.ts`). Only a test server turns this on.
-   */
-  census?: boolean;
-}
-
 /**
- * Build the front door, with every request handed to `legacy`.
- *
- * @param legacy - The Express app, or any Node request listener, that answers
- *   every request no Hono route has claimed.
- * @param options - See {@link FrontDoorOptions}.
- * @returns The front door. Serve it with {@link createFrontDoorServer}.
+ * The origin a request the adapter cannot read is given, so it has a URL at
+ * all. `.invalid` is reserved (RFC 2606) and names no host anyone can own. The
+ * request's raw `Host` header is left as it arrived; nothing that decides
+ * trust reads this URL's host.
  */
-export function createFrontDoor(
-  legacy: RequestListener,
-  options: FrontDoorOptions = {}
-): FrontDoor {
-  // Not strict, like the `/api` app and Express: `/api/x/` is `/api/x`.
-  const app = new Hono<FrontDoorEnv>({ strict: false });
-  if (options.census) {
-    app.get('/api/test/route-census', (c) => {
-      const express = 'router' in legacy ? expressCensus(legacy as never) : undefined;
-      if (!express) {
-        return c.json({ error: 'Start the server with route-census/record-mount-paths.ts' }, 409);
-      }
-      return c.json({ hono: honoCensus(app), express });
-    });
-  }
-  if (options.api) claimApiRoutes(app, options.api);
-  app.all('*', (c) => handOff(legacy, c.env.incoming, c.env.outgoing));
-  return { app, legacy };
-}
+const UNREADABLE_ORIGIN = 'http://unreadable-host.invalid';
 
 /**
- * Claim every route of the `/api` app on the front door, each handing its
- * request to that app whole, so it runs the Hono chain and nothing else.
+ * The Node request listener for the server's Hono app.
  *
- * Chain-wide middleware is registered on `*` and serves no request by itself,
- * so it is skipped: a path no moved route matches still reaches Express.
- * ANYTHING registered on a path claims it, middleware included, because Hono
- * records `use(path)` and `all(path)` alike. That is the rule a move follows:
- * a group moves whole, so its middleware's path is its routes' path. A stray
- * claim on a path Express still serves fails the route census
- * (`route-census.test.ts`) and its shadowing check.
- */
-function claimApiRoutes(door: Hono<FrontDoorEnv>, api: Hono<ApiEnv>): void {
-  const claimed = new Set<string>();
-  for (const { method, path } of api.routes) {
-    const key = `${method} ${path}`;
-    if (path === '/*' || claimed.has(key)) continue;
-    claimed.add(key);
-    door.on(method, path, (c) => api.fetch(c.req.raw, c.env));
-  }
-}
-
-/**
- * The Node request listener for a front door: Hono for every request it can
- * read, the legacy listener directly for the rest.
- *
- * @param door - The front door from {@link createFrontDoor}.
+ * @param app - The app every request enters (`composeFrontDoor` in
+ *   `http/hono-api.ts`).
  * @returns A Node request listener.
  */
-export function frontDoorListener(door: FrontDoor): RequestListener {
+export function frontDoorListener(app: Hono<ApiEnv>): RequestListener {
   // The adapter reports an unreadable request to `errorHandler` with only the
   // error, synchronously inside the listener call. This carries the raw pair
-  // to it, so the adapter's own judgement decides and none of it is copied.
+  // to it, so the adapter's own judgement decides what it cannot read.
   const raw = new AsyncLocalStorage<[IncomingMessage, ServerResponse]>();
-  const viaHono = getRequestListener(door.app.fetch, {
+  const viaHono = getRequestListener(app.fetch, {
     overrideGlobalObjects: false,
     autoCleanupIncoming: false,
-    errorHandler: (error) => {
+    errorHandler: async (error) => {
       const pair = raw.getStore();
-      if (error instanceof RequestError && pair) {
-        door.legacy(...pair);
-        return; // Nothing for the adapter to write: Express answers.
-      }
-      return new Response(null, { status: 500 });
+      if (!(error instanceof RequestError) || !pair) return new Response(null, { status: 500 });
+      const [incoming, outgoing] = pair;
+      const bindings: HttpBindings = { incoming, outgoing };
+      return app.fetch(unreadableRequest(incoming), bindings);
     },
   });
   return (incoming, outgoing) => {
-    // Host names ignore case, but the adapter refuses a `Host` in capitals, and
-    // such a request could then reach only Express, never a moved route.
+    // Host names ignore case, but the adapter refuses a `Host` in capitals.
     const host = incoming.headers.host;
     if (host) incoming.headers.host = host.toLowerCase();
     return raw.run([incoming, outgoing], () => viaHono(incoming, outgoing));
@@ -163,32 +81,51 @@ export function frontDoorListener(door: FrontDoor): RequestListener {
 }
 
 /**
- * Create the Node HTTP server for a front door. It does not listen yet; the
- * caller decides the port and host, as `startMainListener` does.
- *
- * @param door - The front door from {@link createFrontDoor}.
- * @returns A Node `http.Server` the upgrade router can attach to.
+ * Build the Fetch request for one the adapter could not read: its path on
+ * {@link UNREADABLE_ORIGIN} (`/` for a target that is not a path, such as
+ * `OPTIONS *`), its method and headers, and a body read only if something
+ * asks for it, so a route that reads the raw Node stream still gets every byte.
  */
-export function createFrontDoorServer(door: FrontDoor): Server {
-  return createServer(frontDoorListener(door));
+function unreadableRequest(incoming: IncomingMessage): Request {
+  const method = incoming.method ?? 'GET';
+  const target = incoming.url?.startsWith('/') ? incoming.url : '/';
+  const headers = new Headers();
+  for (const [name, value] of Object.entries(incoming.headers)) {
+    if (value === undefined || name === 'host') continue;
+    for (const one of Array.isArray(value) ? value : [value]) headers.append(name, one);
+  }
+  const hasBody = method !== 'GET' && method !== 'HEAD';
+  let chunks: AsyncIterator<Buffer> | undefined;
+  const body = hasBody
+    ? new ReadableStream<Uint8Array>(
+        {
+          async pull(controller) {
+            chunks ??= incoming[Symbol.asyncIterator]();
+            const next = await chunks.next();
+            if (next.done) controller.close();
+            else controller.enqueue(new Uint8Array(next.value));
+          },
+        },
+        // Nothing is read until a reader asks: a high-water mark of 0.
+        { highWaterMark: 0 }
+      )
+    : null;
+  // Joined, never resolved: `//x` resolved against the origin would name host `x`.
+  return new Request(`${UNREADABLE_ORIGIN}${target}`, {
+    method,
+    headers,
+    body,
+    ...(body ? { duplex: 'half' } : {}),
+  } as RequestInit);
 }
 
 /**
- * Give one request to a Node request listener and wait until its response has
- * closed, then tell the adapter not to write anything itself.
+ * Create the Node HTTP server for the server's Hono app. It does not listen
+ * yet; the caller decides the port and host, as `startMainListener` does.
+ *
+ * @param app - The app every request enters.
+ * @returns A Node `http.Server` the upgrade router can attach to.
  */
-function handOff(
-  legacy: RequestListener,
-  incoming: IncomingMessage,
-  outgoing: ServerResponse
-): Promise<Response> {
-  return new Promise((resolve) => {
-    // A fresh marker each time: the shared `RESPONSE_ALREADY_SENT` has mutable
-    // headers, and a later middleware that sets one after `next()` would write
-    // it into every request after.
-    outgoing.once('close', () =>
-      resolve(new Response(null, { headers: RESPONSE_ALREADY_SENT.headers }))
-    );
-    legacy(incoming, outgoing);
-  });
+export function createFrontDoorServer(app: Hono<ApiEnv>): Server {
+  return createServer(frontDoorListener(app));
 }

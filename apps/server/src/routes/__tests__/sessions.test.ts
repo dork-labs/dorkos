@@ -96,7 +96,6 @@ vi.mock('@dorkos/shared/manifest', () => ({
 // Dynamically import after mocks are set up
 import { listeningServer } from '@dorkos/test-utils/listening-server';
 import request from '@dorkos/test-utils/supertest';
-import { createApp, finalizeApp } from '../../app.js';
 import { composedListener } from '../../http/__tests__/composed-listener.js';
 import type { SessionRouteDeps } from '../../routes/sessions.js';
 import { validateBoundaryOrDorkHome, BoundaryError } from '../../lib/boundary.js';
@@ -113,15 +112,13 @@ import { configManager } from '../../services/core/config-manager.js';
 import { TEST_MODE_CAPABILITIES } from '../../services/runtimes/test-mode/runtime-constants.js';
 
 const admission = new MainRequestAdmission();
-const app = createApp({ admission });
-finalizeApp(app);
 /** What the session routes read; the tests change it between requests. */
 const sessionLocals: Record<string, unknown> = {};
 
 // Reuse one listener bound to the IPv4 address Supertest dials. An unspecified
 // listener can share its port with another address family on macOS.
 const server = listeningServer(
-  composedListener(app, admission, { sessions: sessionLocals as SessionRouteDeps })
+  composedListener(admission, { sessions: sessionLocals as SessionRouteDeps })
 );
 
 /** Valid UUID for session ID params (routes validate UUID format). */

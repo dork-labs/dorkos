@@ -65,7 +65,6 @@ vi.mock('@dorkos/shared/manifest', () => ({
 
 import request from '@dorkos/test-utils/supertest';
 import { listeningServer } from '@dorkos/test-utils/listening-server';
-import { createApp, finalizeApp } from '../../app.js';
 import { composedListener } from '../../http/__tests__/composed-listener.js';
 import type { SessionRouteDeps } from '../../routes/sessions.js';
 import { createTestDb } from '@dorkos/test-utils/db';
@@ -79,12 +78,10 @@ import type { SessionSnapshot } from '@dorkos/shared/session-stream';
 import { USER_CONFIG_DEFAULTS } from '@dorkos/shared/config-schema';
 
 const admission = new MainRequestAdmission();
-const app = createApp({ admission });
-finalizeApp(app);
 /** What the session routes read; the tests change it between requests. */
 const sessionLocals: Record<string, unknown> = {};
 const testServer = listeningServer(
-  composedListener(app, admission, { sessions: sessionLocals as SessionRouteDeps })
+  composedListener(admission, { sessions: sessionLocals as SessionRouteDeps })
 );
 
 /** Base URL for raw SSE collection through the file-scoped listener. */

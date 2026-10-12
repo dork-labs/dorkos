@@ -72,7 +72,6 @@ vi.mock('@dorkos/shared/manifest', () => ({
 import { createDb, runMigrations, user, type Db } from '@dorkos/db';
 import { initAuth } from '../index.js';
 import { configManager, initConfigManager } from '../../config-manager.js';
-import { createApp, finalizeApp } from '../../../../app.js';
 import { composedListener } from '../../../../http/__tests__/composed-listener.js';
 import { env } from '../../../../env.js';
 
@@ -118,7 +117,6 @@ function setAuthEnabled(enabled: boolean): void {
 describe('sessionGate on GET /api/sessions/:id/events (SSE, integration)', () => {
   let tmpDir: string;
   let db: Db;
-  let app: ReturnType<typeof createApp>;
   let cookies: string[];
 
   beforeAll(async () => {
@@ -128,12 +126,10 @@ describe('sessionGate on GET /api/sessions/:id/events (SSE, integration)', () =>
     runMigrations(db);
     initAuth(db, tmpDir);
     const admission = new MainRequestAdmission();
-    app = createApp({ admission });
-    finalizeApp(app);
 
     // Owner + a real session cookie (auth off during setup so sign-up is clean).
     setAuthEnabled(false);
-    fixtureTarget.mount(composedListener(app, admission));
+    fixtureTarget.mount(composedListener(admission));
     await request(fixtureServer)
       .post('/api/auth/sign-up/email')
       .set('Origin', ORIGIN)

@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { Request, Response } from 'express';
+import type { IncomingHttpHeaders } from 'node:http';
+import type { RequestFacts } from '../../../../http/request-facts.js';
 import { createBrowserOwnerScopeResolver } from '../owner-scope.js';
 
 const state = vi.hoisted(() => ({
@@ -51,21 +52,34 @@ vi.mock('../../../rooms/index.js', () => ({
   }),
 }));
 
-function request(headers: Request['headers'] = {}, peer = '127.0.0.1'): Request {
-  return {
-    headers: { host: 'localhost:4242', ...headers },
-    socket: { remoteAddress: peer },
-  } as Request;
+/** The raw half of a request: its headers and peer, and a body nothing may read. */
+type RawRequest = Pick<RequestFacts, 'headers' | 'peerAddress'> & { body?: unknown };
+/** What the session gate and the identity step resolved. */
+type Resolved = { locals: { user?: unknown; agentIdentity?: unknown } };
+
+function request(headers: IncomingHttpHeaders = {}, peer = '127.0.0.1'): RawRequest {
+  return { headers: { host: 'localhost:4242', ...headers }, peerAddress: peer };
 }
 function response(
   credential: 'cookie' | 'api-key' | null = 'cookie',
   userId = 'account-owner'
-): Response {
-  return { locals: credential ? { user: { userId, credential } } : {} } as Response;
+): Resolved {
+  return { locals: credential ? { user: { userId, credential } } : {} };
+}
+/** The request's facts, as `honoRequestFacts` would build them. */
+function facts(req: RawRequest, res: Resolved): RequestFacts {
+  return {
+    ...req,
+    forwardedAddress: req.peerAddress,
+    connectionEncrypted: false,
+    managedIngress: false,
+    user: res.locals.user,
+    agentIdentity: res.locals.agentIdentity,
+  } as RequestFacts;
 }
 function resolveNamespace(req = request(), res = response()) {
   const resolver = createBrowserOwnerScopeResolver();
-  return resolver.consume(resolver.resolve(req, res));
+  return resolver.consume(resolver.resolve(facts(req, res)));
 }
 
 beforeEach(() => {
@@ -156,7 +170,7 @@ describe('server browser metadata owner scopes', () => {
   it('rejects scope copies, serialization, foreign resolvers and replay', () => {
     const a = createBrowserOwnerScopeResolver(),
       b = createBrowserOwnerScopeResolver();
-    const scope = a.resolve(request(), response());
+    const scope = a.resolve(facts(request(), response()));
     expect(scope).not.toBeNull();
     expect(a.consume({ ...scope })).toBeNull();
     expect(a.consume(JSON.parse(JSON.stringify(scope)))).toBeNull();
@@ -167,11 +181,11 @@ describe('server browser metadata owner scopes', () => {
 
   it('retirement invalidates outstanding scopes and blocks new resolution', () => {
     const resolver = createBrowserOwnerScopeResolver();
-    const scope = resolver.resolve(request(), response());
+    const scope = resolver.resolve(facts(request(), response()));
     expect(scope).not.toBeNull();
     resolver.retire();
     expect(resolver.consume(scope)).toBeNull();
-    expect(resolver.resolve(request(), response())).toBeNull();
+    expect(resolver.resolve(facts(request(), response()))).toBeNull();
   });
 
   it('withholds scope when author resolution changes login, owner, or retires the resolver', () => {
@@ -179,15 +193,15 @@ describe('server browser metadata owner scopes', () => {
     state.onAuthor = () => {
       state.login = false;
     };
-    expect(resolver.resolve(request(), response())).toBeNull();
+    expect(resolver.resolve(facts(request(), response()))).toBeNull();
     state.login = true;
     state.onAuthor = () => {
       state.ownerId = 'replacement-owner';
     };
-    expect(resolver.resolve(request(), response())).toBeNull();
+    expect(resolver.resolve(facts(request(), response()))).toBeNull();
     state.ownerId = 'account-owner';
     state.onAuthor = () => resolver.retire();
-    expect(resolver.resolve(request(), response())).toBeNull();
+    expect(resolver.resolve(facts(request(), response()))).toBeNull();
     state.onAuthor = undefined;
     expect(resolveNamespace()).not.toBeNull();
   });

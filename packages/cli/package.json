@@ -73,7 +73,6 @@
     "@opencode-ai/sdk": "^1.18.30",
     "better-sqlite3": "^12.11.1",
     "conf": "^15.1.0",
-    "cors": "^2.8.6",
     "dotenv": "^17.4.2",
     "esbuild": "^0.28.2",
     "express": "^5.2.1",

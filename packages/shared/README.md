@@ -2,7 +2,7 @@
 
 ## Purpose
 
-The contract layer for DorkOS. Every cross-cutting type, Zod schema, and interface that more than one app or package depends on lives here, so the boundary between the React client, the Express server, the CLI, and the runtimes is defined in exactly one place. This package holds the two seams the whole architecture pivots on — the `Transport` interface (client-to-server communication) and the `AgentRuntime` interface (the backend-agnostic agent contract) — alongside the shared schemas they exchange.
+The contract layer for DorkOS. Every cross-cutting type, Zod schema, and interface that more than one app or package depends on lives here, so the boundary between the React client, the Hono server, the CLI, and the runtimes is defined in exactly one place. This package holds the two seams the whole architecture pivots on — the `Transport` interface (client-to-server communication) and the `AgentRuntime` interface (the backend-agnostic agent contract) — alongside the shared schemas they exchange.
 
 It ships types, schemas, and interfaces only. No HTTP server, no database, no UI.
 

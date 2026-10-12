@@ -1,11 +1,11 @@
 /**
  * One HTTP listener per owning test scope, bound once and never rebound.
  *
- * Handed a non-listening Express app, supertest opens a fresh ephemeral
+ * Handed a callable app that is not listening, supertest opens a fresh ephemeral
  * listener per REQUEST (`if (!addr) this._server = app.listen(0)`) and closes
  * it in the response callback. Under parallel workers that creates avoidable
  * listener teardown and ephemeral-port churn. Aggregate runs have observed
- * requests fail before Express logs them (`socket hang up` and HTTP parse
+ * requests fail before the server logs them (`socket hang up` and HTTP parse
  * errors), plus a registration request receive an impossible 404 from an app
  * that mounts the route which returns 201. Focused reruns pass. Those
  * observations locate the problem at the transport-fixture boundary; they do
@@ -31,9 +31,7 @@ import { beforeAll, afterAll } from 'vitest';
  * constant:
  *
  * ```ts
- * const app = createApp();
- * finalizeApp(app);
- * const server = listeningServer(app);
+ * const server = listeningServer(composedListener(new MainRequestAdmission()));
  *
  * it('...', async () => {
  *   const res = await request(server).get('/api/health');
@@ -123,8 +121,8 @@ export interface FetchApp {
 
 /**
  * Turn a Hono app into a Node request listener, so {@link listeningServer},
- * {@link swappableServer} and `collectDurableEvents` serve it exactly as they
- * serve an Express app:
+ * {@link swappableServer} and `collectDurableEvents` serve it as they serve any
+ * Node request listener:
  *
  * ```ts
  * const server = listeningServer(honoListener(app));

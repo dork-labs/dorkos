@@ -129,7 +129,6 @@ vi.mock('../services/communities/remote/state.js', () => ({
   }),
 }));
 
-import { createApp, finalizeApp } from '../app.js';
 import { composedListener } from '../http/__tests__/composed-listener.js';
 
 const target = swappableServer();
@@ -137,9 +136,7 @@ const target = swappableServer();
 /** A finished app with the production API mounts, routed as the running server routes. */
 function bootApp() {
   const admission = new MainRequestAdmission();
-  const app = createApp({ admission });
-  finalizeApp(app);
-  return target.mount(composedListener(app, admission));
+  return target.mount(composedListener(admission));
 }
 
 describe('Community navigation routes in the booted app', () => {

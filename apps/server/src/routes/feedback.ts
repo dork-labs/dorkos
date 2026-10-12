@@ -152,7 +152,7 @@ router.post('/', async (c) => {
   }
 
   // Identity is resolved from the verified session ONLY — `c.var.user` is
-  // set by `sessionGate` (never by anything in the request body), so a client
+  // set by the session gate (never by anything in the request body), so a client
   // cannot spoof `reporterEmail`/`reporterName` even indirectly. `undefined`
   // when auth is off or no session exists (unchanged pseudonymous behavior), and
   // also when the dialog's "Send anonymously" flag is set — the one path that

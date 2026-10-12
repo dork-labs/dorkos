@@ -701,11 +701,11 @@ Implement in `HttpTransport` (POST to a new route) and update the test mocks.
 
 ```typescript
 // apps/server/src/routes/sessions.ts
-router.post('/:id/my-new-result', async (req, res) => {
-  const { toolCallId, result } = req.body;
-  const ok = runtime.submitMyNewResult(req.params.id, toolCallId, result);
-  if (!ok) return res.status(404).json({ error: 'No pending interaction' });
-  res.json({ ok: true });
+router.post('/:id/my-new-result', async (c) => {
+  const { toolCallId, result } = MyNewResultSchema.parse(readJsonBody(c));
+  const ok = runtime.submitMyNewResult(c.req.param('id'), toolCallId, result);
+  if (!ok) return c.json({ error: 'No pending interaction' }, 404);
+  return c.json({ ok: true });
 });
 ```
 
@@ -1008,7 +1008,7 @@ The snapshot reads the selector `listPendingInteractions(entries, Date.now())` (
 
 `HttpTransport` implements the `Transport` interface, so interactive tool components share one contract across the browser, phone web app, and desktop renderer:
 
-- **HttpTransport** (standalone web): Makes POST requests to Express routes (`/approve`, `/deny`, `/submit-answers`). The route handler calls the runtime methods.
+- **HttpTransport** (standalone web): Makes POST requests to server routes (`/approve`, `/deny`, `/submit-answers`). The route handler calls the runtime methods.
 
 Components use `useTransport()` to get the current transport and never know which adapter is active.
 

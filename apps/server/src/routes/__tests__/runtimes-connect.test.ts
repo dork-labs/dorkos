@@ -73,7 +73,6 @@ import { UserConfigSchema } from '@dorkos/shared/config-schema';
 import request from '@dorkos/test-utils/supertest';
 import type { Server } from 'node:http';
 import { listeningServer } from '@dorkos/test-utils/listening-server';
-import { createApp } from '../../app.js';
 import { composedListener } from '../../http/__tests__/composed-listener.js';
 import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
 import { createRuntimesRoutes } from '../runtimes.js';
@@ -101,7 +100,7 @@ import {
 import type { OllamaPullResult } from '@dorkos/shared/runtime-connect';
 
 const admission = new MainRequestAdmission();
-const app = composedListener(createApp({ admission }), admission);
+const app = composedListener(admission);
 
 /**
  * ONE listener for the whole file (DOR-483). Requests target `server`, never

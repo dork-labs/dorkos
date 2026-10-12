@@ -76,7 +76,6 @@ vi.mock('@dorkos/shared/manifest', () => ({ readManifest: vi.fn(async () => null
 
 import request from '@dorkos/test-utils/supertest';
 import { listeningServer } from '@dorkos/test-utils/listening-server';
-import { createApp, finalizeApp } from '../../app.js';
 import { composedListener } from '../../http/__tests__/composed-listener.js';
 import {
   getOrCreateProjector,
@@ -87,11 +86,9 @@ import { resetMessageDispatcher } from '../../services/session/message-dispatche
 import { attachEventStream } from './helpers/trigger-turn-helpers.js';
 
 const admission = new MainRequestAdmission();
-const app = createApp({ admission });
-finalizeApp(app);
 
 /** One listener for the whole file — see {@link attachEventStream} (DOR-483). */
-const server = listeningServer(composedListener(app, admission));
+const server = listeningServer(composedListener(admission));
 
 /** The id the client sends the first message under, and keeps. */
 const REQUEST_ID = '00000000-0000-4000-8000-0000000012e2';

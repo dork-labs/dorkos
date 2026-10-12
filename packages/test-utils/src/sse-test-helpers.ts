@@ -226,9 +226,9 @@ function collectSseFrames(
  * server ends the stream. Frames capture the `id:` line, so resume tests can
  * assert `<sessionId>-<epoch>-<generation>-<seq>` event ids.
  *
- * @param app - The app to serve, as a Node request listener: an Express app
- *   (from `createApp()` + `finalizeApp()`) as it is, or a Hono app through
- *   `honoListener` from `@dorkos/test-utils/listening-server`.
+ * @param app - The app to serve, as a Node request listener: the server's
+ *   routing (`composedListener`), or a Hono app through `honoListener` from
+ *   `@dorkos/test-utils/listening-server`.
  * @param sessionId - Target session UUID
  * @param opts - Stop condition and resume signals; see {@link CollectDurableEventsOptions}
  * @returns The collected frames, raw text, headers, and status.

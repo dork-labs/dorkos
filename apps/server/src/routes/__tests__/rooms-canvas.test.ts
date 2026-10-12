@@ -59,7 +59,6 @@ vi.mock('../../services/core/config-manager.js', () => ({
   configManager: { get: vi.fn().mockReturnValue(null), set: vi.fn() },
 }));
 
-import { createApp, finalizeApp } from '../../app.js';
 import { composedListener } from '../../http/__tests__/composed-listener.js';
 import type { RoomEvent } from '@dorkos/shared/room-schemas';
 import { createRoomSubsystem, getRoomService, setRoomService } from '../../services/rooms/index.js';
@@ -69,8 +68,6 @@ import {
 } from '../../services/core/agent-identity/agent-identity-service.js';
 
 const admission = new MainRequestAdmission();
-const app = createApp({ admission });
-finalizeApp(app);
 
 const ANA_PATH = '/agents/ana';
 
@@ -91,7 +88,7 @@ function registerAgent(db: Db, name: string, projectPath: string): void {
     .run();
 }
 
-const testServer = listeningServer(composedListener(app, admission));
+const testServer = listeningServer(composedListener(admission));
 
 /** A URL document — content with a natural identity, so opens dedupe. */
 const urlContent = (url: string) => ({ type: 'url' as const, url });

@@ -1,16 +1,26 @@
 /**
- * Auto-generated proxy middleware for extensions using declarative `dataProxy` config.
+ * The proxy DorkOS runs for an extension's declarative `dataProxy`.
  *
  * Forwards requests from /api/ext/{id}/proxy/* to the configured upstream API,
  * injecting auth credentials from the extension's encrypted secret store.
  *
- * @module services/extensions/extension-proxy
+ * Two layers: {@link createProxyForwarder} decides and makes one upstream call
+ * from a framework-free {@link ProxyCall}, and {@link createProxyHandler}
+ * puts it behind the extension's mount on the Hono `/api` chain, with its
+ * rate limit in front.
+ *
+ * @module services/extensions/http/extension-proxy
  */
-import { Router, type Request, type Response } from 'express';
+import type { IncomingHttpHeaders } from 'node:http';
 import type { DataProxyConfig } from '@dorkos/extension-api';
 import { ExtensionSecretStore } from '@dorkos/shared/extension-secrets';
-import { logger } from '../../lib/logger.js';
-import { buildExtensionProxyRateLimiter } from '../../middleware/extension-proxy-rate-limit.js';
+import { logger } from '../../../lib/logger.js';
+import { honoRequestFacts } from '../../../http/request-facts.js';
+import {
+  buildExtensionProxyRateLimiter,
+  EXTENSION_PROXY_RATE_LIMITED_BODY,
+} from '../../../middleware/extension-proxy-rate-limit.js';
+import type { ExtensionHttpHandler } from './extension-http.js';
 
 /**
  * Headers that must not be forwarded to the upstream API.
@@ -42,7 +52,7 @@ export const STRIPPED_HEADERS: ReadonlySet<string> = new Set([
   // A test imports the real constant and asserts it is in this set, so a rename
   // there cannot silently start leaking the token again.
   'x-dorkos-agent',
-  // The body is re-serialized below (`JSON.stringify(req.body ?? {})`), so the
+  // The body is re-serialized below (`JSON.stringify(call.body ?? {})`), so the
   // caller's length describes bytes that are not the ones being sent. undici
   // rejects the mismatch outright ("Request body length does not match
   // content-length header"), which turned every pretty-printed JSON POST into a
@@ -52,9 +62,7 @@ export const STRIPPED_HEADERS: ReadonlySet<string> = new Set([
 ]);
 
 /** Filter request headers, removing hop-by-hop and caller-credential headers. */
-function filterHeaders(
-  headers: Record<string, string | string[] | undefined>
-): Record<string, string> {
+function filterHeaders(headers: IncomingHttpHeaders): Record<string, string> {
   const filtered: Record<string, string> = {};
   for (const [key, value] of Object.entries(headers)) {
     if (!STRIPPED_HEADERS.has(key.toLowerCase()) && value !== undefined) {
@@ -74,8 +82,8 @@ function formatAuthValue(authType: DataProxyConfig['authType'], secret: string):
  *
  * The caller owns the whole sub-path, and dot segments are normalized by the
  * URL parser inside `fetch` — after the credential has been attached. So
- * `/proxy/../../admin` (or `..%2f..%2f`, which Express hands over already
- * decoded, or `%2e%2e`, which the URL parser treats as `..`) reaches endpoints
+ * `/proxy/../../admin` (or `..%2f..%2f`, which {@link proxySegments} hands over
+ * already decoded, or `%2e%2e`, which the URL parser treats as `..`) reaches endpoints
  * ABOVE the configured base path with the extension's secret on them. Comparing
  * the parsed URL against the parsed base is the only reliable check, because it
  * is the same normalization `fetch` will do.
@@ -94,27 +102,75 @@ function staysWithinBase(target: URL, base: URL): boolean {
   return target.pathname === base.pathname || target.pathname.startsWith(prefix);
 }
 
+/** One request for the upstream, as {@link createProxyForwarder} reads it. */
+export interface ProxyCall {
+  /** The request method, forwarded as is. */
+  readonly method: string;
+  /** The path below `/proxy/`, decoded segment by segment ({@link proxySegments}). */
+  readonly segments: readonly string[];
+  /** The request below the extension's mount, as sent: for its query string and the log. */
+  readonly url: string;
+  /** The caller's headers; {@link STRIPPED_HEADERS} never leave. */
+  readonly headers: IncomingHttpHeaders;
+  /** The JSON body the chain parsed, or `undefined` for none. */
+  readonly body: unknown;
+}
+
+/** What the proxy answers one {@link ProxyCall} with. */
+export interface ProxyAnswer {
+  /** The status. */
+  readonly status: number;
+  /** Headers to set. */
+  readonly headers: Readonly<Record<string, string>>;
+  /** A JSON body DorkOS wrote (a refusal or a failure). */
+  readonly json?: unknown;
+  /** The upstream's body, as text. */
+  readonly text?: string;
+}
+
 /**
- * Create a proxy router for an extension's dataProxy configuration.
+ * The path below `/proxy`, one decoded segment each, or `null` when the
+ * request is not for the proxy at all.
  *
- * Routes: ALL /proxy/* -> upstream baseUrl with auth header injected.
- * Returns 400 when the target would leave `baseUrl` (before any secret is
- * read), 429 when this router's per-minute budget is spent, 503 if the required
- * secret is not configured, and 502 on upstream network failure.
+ * Matches the way the Express route `/proxy/{*splat}` did: `/proxy` in any
+ * case, with or without a trailing slash and anything below it, each segment
+ * percent-decoded on its own (so `..%2f..` arrives as one segment holding
+ * separators, which the confinement check then refuses).
+ *
+ * @param subPath - The path below the extension's mount, still percent-encoded.
+ */
+export function proxySegments(subPath: string): string[] | null {
+  const match = /^\/proxy(?:\/(.*))?$/i.exec(subPath);
+  if (!match) return null;
+  const rest = match[1] ?? '';
+  if (rest === '') return [];
+  return rest.split('/').map((segment) => {
+    try {
+      return decodeURIComponent(segment);
+    } catch {
+      return segment;
+    }
+  });
+}
+
+/**
+ * Create the forwarder for an extension's dataProxy configuration.
+ *
+ * Answers 400 when the target would leave `baseUrl` (before any secret is
+ * read), 503 if the required secret is not configured, and 502 on upstream
+ * network failure; otherwise the upstream's own status and body.
  *
  * @param extensionId - Extension identifier for logging and secret lookup
  * @param config - DataProxy configuration from the extension manifest
  * @param dorkHome - Resolved DorkOS data directory for secret store access
- * @returns Express Router handling proxy requests
+ * @returns The forwarder for one call
  */
-export function createProxyRouter(
+export function createProxyForwarder(
   extensionId: string,
   config: DataProxyConfig,
   dorkHome: string
-): Router {
-  const router = Router();
+): (call: ProxyCall) => Promise<ProxyAnswer> {
   const secrets = new ExtensionSecretStore(extensionId, dorkHome);
-  const rateLimiter = buildExtensionProxyRateLimiter();
   // Parsed once: `DataProxySchema.baseUrl` is `z.string().url()`, so a manifest
   // that got this far cannot fail here.
   const base = new URL(config.baseUrl);
@@ -134,20 +190,16 @@ export function createProxyRouter(
   // dropped, so a sub-path can be appended with exactly one separator.
   const baseForJoin = `${base.origin}${base.pathname}`.replace(/\/+$/, '');
 
-  router.all('/proxy/{*splat}', rateLimiter, async (req: Request, res: Response) => {
-    // Express 5 named wildcard: req.params.splat is the matched sub-path as a
-    // segment array (was req.params[0], a single string, on Express 4). The
-    // braces make it optional so proxying the upstream root (/proxy/) still
-    // matches, with splat undefined -> empty targetPath.
-    const targetPath = (req.params.splat as string[] | undefined)?.join('/') ?? '';
-    let targetUrl = `${baseForJoin}/${targetPath}`;
+  return async (call) => {
+    let targetUrl = `${baseForJoin}/${call.segments.join('/')}`;
 
     /**
-     * Refuse a target that is no longer the upstream the manifest named.
+     * The refusal for a target that is no longer the upstream the manifest
+     * named, or `null` when it still is.
      *
      * @param stage - Which build step produced the URL, for the log line.
      */
-    const refuseIfOutsideBase = (stage: 'path' | 'pathRewrite'): boolean => {
+    const outsideBase = (stage: 'path' | 'pathRewrite'): ProxyAnswer | null => {
       let parsed: URL;
       try {
         parsed = new URL(targetUrl);
@@ -156,26 +208,30 @@ export function createProxyRouter(
         // origin, so the comparison below fails the way it should.
         parsed = new URL('about:blank');
       }
-      if (staysWithinBase(parsed, base)) return false;
+      if (staysWithinBase(parsed, base)) return null;
       logger.warn(
-        `[ext:${extensionId}] Refused a proxy target outside ${base.origin}${base.pathname} (after ${stage}): ${req.method} ${req.url}`
+        `[ext:${extensionId}] Refused a proxy target outside ${base.origin}${base.pathname} (after ${stage}): ${call.method} ${call.url}`
       );
-      res.status(400).json({
-        error: 'Proxy path is outside the extension upstream',
-        code: 'PROXY_PATH_NOT_ALLOWED',
-      });
-      return true;
+      return {
+        status: 400,
+        headers: {},
+        json: {
+          error: 'Proxy path is outside the extension upstream',
+          code: 'PROXY_PATH_NOT_ALLOWED',
+        },
+      };
     };
 
     // Confine the caller's sub-path to the upstream the manifest named, BEFORE
     // any credential is read or attached.
-    if (refuseIfOutsideBase('path')) return;
+    const escaped = outsideBase('path');
+    if (escaped) return escaped;
 
     // Apply path rewrites if configured.
     //
     // `from` is a pattern an extension author wrote in their manifest, compiled to
     // a RegExp and run against a caller-supplied path — a catastrophic-backtracking
-    // surface on paper. It stays as-is because of where it sits: this router is
+    // surface on paper. It stays as-is because of where it sits: this proxy is
     // only ever mounted for an extension a person approved to run its code inside
     // DorkOS (`extension-load-policy.ts`), and an extension that may run code in
     // this process can hang it far more directly than by writing a slow regex. A
@@ -194,11 +250,12 @@ export function createProxyRouter(
       // for `fetch` to normalize into `/admin`. An author rule that genuinely
       // needs to leave the base is out of contract: this field rewrites paths,
       // and `baseUrl` is what the approval was given for.
-      if (refuseIfOutsideBase('pathRewrite')) return;
+      const rewritten = outsideBase('pathRewrite');
+      if (rewritten) return rewritten;
     }
 
     // Forward query string if present
-    const queryString = new URL(req.url, 'http://localhost').search;
+    const queryString = new URL(call.url, 'http://localhost').search;
     if (queryString) {
       targetUrl += queryString;
     }
@@ -206,27 +263,30 @@ export function createProxyRouter(
     // Retrieve auth secret
     const secret = await secrets.get(config.authSecret);
     if (!secret) {
-      res.status(503).json({
-        error: `Secret '${config.authSecret}' not configured for extension '${extensionId}'`,
-        hint: `Set the secret via PUT /api/extensions/${extensionId}/secrets/${config.authSecret}`,
-      });
-      return;
+      return {
+        status: 503,
+        headers: {},
+        json: {
+          error: `Secret '${config.authSecret}' not configured for extension '${extensionId}'`,
+          hint: `Set the secret via PUT /api/extensions/${extensionId}/secrets/${config.authSecret}`,
+        },
+      };
     }
 
     const authValue = formatAuthValue(config.authType, secret);
 
     try {
       const upstreamRes = await fetch(targetUrl, {
-        method: req.method,
+        method: call.method,
         headers: {
-          ...filterHeaders(req.headers as Record<string, string | string[] | undefined>),
+          ...filterHeaders(call.headers),
           [config.authHeader]: authValue,
-          'Content-Type': req.headers['content-type'] ?? 'application/json',
+          'Content-Type': call.headers['content-type'] ?? 'application/json',
         },
-        // req.body ?? {}: Express 5 leaves req.body undefined on an empty-body
-        // POST, so forward "{}" (matching the always-JSON Content-Type above and
+        // body ?? {}: a POST with no body is left undefined by the body parser,
+        // so forward "{}" (matching the always-JSON Content-Type above and
         // Express 4 behavior) rather than dropping the body entirely.
-        body: ['GET', 'HEAD'].includes(req.method) ? undefined : JSON.stringify(req.body ?? {}),
+        body: ['GET', 'HEAD'].includes(call.method) ? undefined : JSON.stringify(call.body ?? {}),
         // Hand a redirect back to the caller instead of chasing it. `fetch`
         // follows redirects by default and undici strips only `cookie`,
         // `authorization` and `host` when the hop crosses origins — a custom
@@ -240,28 +300,96 @@ export function createProxyRouter(
         redirect: 'manual',
       });
 
-      // Forward upstream status code
-      res.status(upstreamRes.status);
-
+      const headers: Record<string, string> = {};
       // Forward content-type header
       const contentType = upstreamRes.headers.get('content-type');
-      if (contentType) res.setHeader('Content-Type', contentType);
-
+      if (contentType) headers['Content-Type'] = contentType;
       // Forward `Location` so a caller that got a 3xx above can see where the
       // upstream pointed and decide for itself.
       const location = upstreamRes.headers.get('location');
-      if (location) res.setHeader('Location', location);
+      if (location) headers.Location = location;
 
-      const body = await upstreamRes.text();
-      res.send(body);
+      return { status: upstreamRes.status, headers, text: await upstreamRes.text() };
     } catch (err) {
-      logger.error(`[ext:${extensionId}] Proxy error for ${req.method} ${targetUrl}:`, err);
-      res.status(502).json({
-        error: 'Proxy request failed',
-        details: err instanceof Error ? err.message : String(err),
-      });
+      logger.error(`[ext:${extensionId}] Proxy error for ${call.method} ${targetUrl}:`, err);
+      return {
+        status: 502,
+        headers: {},
+        json: {
+          error: 'Proxy request failed',
+          details: err instanceof Error ? err.message : String(err),
+        },
+      };
     }
-  });
+  };
+}
 
-  return router;
+/** Statuses whose response may not carry a body. */
+const NULL_BODY_STATUSES = new Set([101, 204, 205, 304]);
+
+/**
+ * The response Express's `res.json` and `res.send` wrote for an answer: JSON
+ * as `application/json; charset=utf-8`, and text with `charset=utf-8` set on
+ * whatever type it carries (`text/html` when it carries none).
+ *
+ * @param answer - What the forwarder answered.
+ * @param extra - Headers to add (the rate limit's).
+ */
+export function proxyResponse(answer: ProxyAnswer, extra: Record<string, string> = {}): Response {
+  const headers = new Headers({ ...extra, ...answer.headers });
+  let body: string;
+  if (answer.json !== undefined) {
+    body = JSON.stringify(answer.json);
+    headers.set('Content-Type', 'application/json; charset=utf-8');
+  } else {
+    body = answer.text ?? '';
+    const type = headers.get('Content-Type') ?? 'text/html';
+    headers.set('Content-Type', `${type.replace(/;\s*charset=[^;]*/i, '')}; charset=utf-8`);
+  }
+  if (NULL_BODY_STATUSES.has(answer.status)) {
+    headers.delete('Content-Type');
+    return new Response(null, { status: answer.status, headers });
+  }
+  return new Response(body, { status: answer.status, headers });
+}
+
+/**
+ * The proxy behind an extension's mount: answers `/proxy` and anything below
+ * it (any method), and passes every other path on.
+ *
+ * Each handler has its own per-minute budget
+ * (`middleware/extension-proxy-rate-limit.ts`), checked before anything else,
+ * so a refusal costs no secret read and no upstream request.
+ *
+ * @param extensionId - Extension identifier for logging and secret lookup
+ * @param config - DataProxy configuration from the extension manifest
+ * @param dorkHome - Resolved DorkOS data directory for secret store access
+ */
+export function createProxyHandler(
+  extensionId: string,
+  config: DataProxyConfig,
+  dorkHome: string
+): ExtensionHttpHandler {
+  const forward = createProxyForwarder(extensionId, config, dorkHome);
+  const limit = buildExtensionProxyRateLimiter();
+  return async ({ c, subPath }) => {
+    const segments = proxySegments(subPath);
+    if (!segments) return null;
+    const verdict = limit(honoRequestFacts(c));
+    if (!verdict.allowed) {
+      return proxyResponse(
+        { status: 429, headers: {}, json: EXTENSION_PROXY_RATE_LIMITED_BODY },
+        verdict.headers
+      );
+    }
+    const query = new URL(c.req.url).search;
+    const answer = await forward({
+      method: c.req.method,
+      segments,
+      url: `${subPath}${query}`,
+      headers: c.env.incoming.headers,
+      body: c.get('body'),
+    });
+    return proxyResponse(answer, verdict.headers);
+  };
 }

@@ -233,7 +233,7 @@ describe('an approval covers the permission set it was given for', () => {
     };
     mockDiscover.mockResolvedValue([makeRecord({})]);
     await manager.initialize(null);
-    expect(manager.getServerRouter('mail-app')).not.toBeNull();
+    expect(manager.getServerHandler('mail-app')).not.toBeNull();
     const moved = makeRecord(isolated({ net: ['x.example.com'], run: ['git'], agents: true }));
     expect(mayRunExtensionCode(moved, stored.value)).toBe(true);
   });
@@ -337,7 +337,7 @@ describe('an extension that asks to run separately never runs inside DorkOS', ()
     expect(result.ok).toBe(false);
     expect(manager.get('mail-app')!.serverError?.code).toBe('isolation_unavailable');
     expect((globalThis as { __ranInProcess?: boolean }).__ranInProcess).toBeUndefined();
-    expect(manager.getServerRouter('mail-app')).toBeNull();
+    expect(manager.getServerHandler('mail-app')).toBeNull();
   });
 
   // Purpose: a running in-process extension whose manifest moves to
@@ -347,12 +347,12 @@ describe('an extension that asks to run separately never runs inside DorkOS', ()
   it('stops an in-process instance when the manifest moves to subprocess', async () => {
     mockDiscover.mockResolvedValue([makeRecord({})]);
     await manager.initialize(null);
-    expect(manager.getServerRouter('mail-app')).not.toBeNull();
+    expect(manager.getServerHandler('mail-app')).not.toBeNull();
 
     const record = manager.get('mail-app')!;
     record.manifest = makeRecord(isolated({})).manifest;
     const result = await manager.initializeServer('mail-app');
     expect(result.ok).toBe(false);
-    expect(manager.getServerRouter('mail-app')).toBeNull();
+    expect(manager.getServerHandler('mail-app')).toBeNull();
   });
 });

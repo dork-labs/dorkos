@@ -66,12 +66,11 @@ vi.mock('../../services/core/config-manager.js', () => ({
 
 import request from '@dorkos/test-utils/supertest';
 import { listeningServer } from '@dorkos/test-utils/listening-server';
-import { createApp } from '../../app.js';
 import { composedListener } from '../../http/__tests__/composed-listener.js';
 import { runtimeRegistry } from '../../services/core/runtime-registry.js';
 
 const admission = new MainRequestAdmission();
-const testServer = listeningServer(composedListener(createApp({ admission }), admission));
+const testServer = listeningServer(composedListener(admission));
 
 describe('MCP Config Routes', () => {
   beforeEach(() => {

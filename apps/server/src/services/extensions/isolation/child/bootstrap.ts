@@ -230,9 +230,10 @@ function main(): void {
         StartWorkError: extensionServerApi.StartWorkError as never,
       },
     });
-    // As in-process: `module.exports = register` or `export default register`.
-    const candidate = (exported?.default ?? exported) as unknown;
-    if (typeof candidate !== 'function') {
+    // As in-process: `module.exports = register`, `export default register`,
+    // or a default export that has a `fetch` handler.
+    const candidate = extensionServerApi.serverEntryRegister(exported);
+    if (!candidate) {
       send(
         init.testSeams
           ? { type: 'registered', ok: true, hasCleanup: false, handledTools: [] }
@@ -249,14 +250,18 @@ function main(): void {
     const router = express.Router();
     // Requests reach the router over virtual connections the host opens once
     // `registered` says it is ready (spec §7).
-    virtual = createVirtualServer({ extensionId: init.extensionId, express, router, send });
+    const served = createVirtualServer({ extensionId: init.extensionId, express, router, send });
+    virtual = served;
     const ctx = proxy.ctx;
     const proxied = proxy;
     Promise.resolve()
-      .then(() => (candidate as (r: unknown, c: unknown) => unknown)(router, ctx))
+      .then(() => candidate(router, ctx as never))
+      .then((result) => extensionServerApi.readRegisterResult(result))
       .then(
-        (result) => {
-          cleanup = typeof result === 'function' ? (result as () => unknown) : null;
+        (outcome) => {
+          cleanup = outcome.cleanup;
+          // What the router passes on goes to its fetch handler, as in-process.
+          served.serveFetch(outcome.fetch);
           // register() finished: no more tool handlers, as in-process.
           const handledTools = proxied.sealTools();
           send({ type: 'registered', ok: true, hasCleanup: cleanup !== null, handledTools });

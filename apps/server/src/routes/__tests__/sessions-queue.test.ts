@@ -75,7 +75,6 @@ import request from '@dorkos/test-utils/supertest';
 import { subscribeRuntimeTurns } from '../../services/session/runtime-turns/runtime-turn.js';
 import { createTestDb } from '@dorkos/test-utils/db';
 import { listeningServer } from '@dorkos/test-utils/listening-server';
-import { createApp, finalizeApp } from '../../app.js';
 import { composedListener } from '../../http/__tests__/composed-listener.js';
 import {
   getOrCreateProjector,
@@ -95,9 +94,7 @@ import {
 } from '../../services/audit/session-visibility.js';
 
 const admission = new MainRequestAdmission();
-const app = createApp({ admission });
-finalizeApp(app);
-const server = listeningServer(composedListener(app, admission));
+const server = listeningServer(composedListener(admission));
 
 const SESSION_ID = '00000000-0000-4000-8000-0000000000cc';
 const OTHER_SESSION_ID = '00000000-0000-4000-8000-0000000000cd';

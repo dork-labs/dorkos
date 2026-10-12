@@ -12,7 +12,7 @@
  * ## Auth posture
  *
  * The endpoint is mounted under `/api/*`, so it inherits the app-wide
- * {@link sessionGate}: when login is enabled it requires a session cookie or a
+ * session gate: when login is enabled it requires a session cookie or a
  * per-user API key, exactly like every other `/api/*` route (config, agents,
  * tasks). It deliberately does NOT use the external `/mcp` server's tokenless
  * read-only carve-out — a mutating capability (`operator.update_agent`,
@@ -124,7 +124,7 @@ export function createCapabilitiesInvokeRoutes(registry: CapabilityRegistry): Ho
       // call`), and the product cost of gating it is one Allow click for a person
       // running a destructive capability from a shell, which is what spec
       // `agent-trust` §UX describes anyway.
-      // The signed-in person, when login is on and `sessionGate` verified one.
+      // The signed-in person, when login is on and the session gate verified one.
       // A capability that acts on somebody's own data needs to know WHICH
       // person, and "no agent token" is not the same fact as "the owner" —
       // reading it that way is how an invited user's key reached the owner's

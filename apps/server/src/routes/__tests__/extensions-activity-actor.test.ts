@@ -79,12 +79,17 @@ vi.mock('../../lib/logger.js', () => ({
   logger: { error: vi.fn(), warn: vi.fn(), info: vi.fn(), debug: vi.fn() },
 }));
 
+// Login off: the chain's session gate reads the `auth` section.
+vi.mock('../../services/core/config-manager.js', () => ({
+  configManager: { get: vi.fn().mockReturnValue(null), set: vi.fn() },
+}));
+
 import request from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
-import express from 'express';
+import type { RequestListener } from 'node:http';
 import type { ExtensionRecord, ExtensionRecordPublic } from '@dorkos/extension-api';
-import { createExtensionsRouter } from '../extensions.js';
-import { resolveAgentIdentity } from '../../middleware/agent-identity.js';
+import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
+import { createExtensionsRoutes } from '../extensions.js';
 
 const fixtureTarget = swappableServer();
 const fixtureServer = fixtureTarget.server;
@@ -122,12 +127,8 @@ function stubRecord(): ExtensionRecord {
   } as ExtensionRecord;
 }
 
-/** The app in `app.ts`'s middleware order: identity resolution, then the router. */
-function buildApp(): express.Express {
-  const app = express();
-  app.use(express.json());
-  app.use(resolveAgentIdentity);
-
+/** The routes behind the real `/api` chain, which resolves the agent identity first. */
+function buildApp(): RequestListener {
   const manager = {
     listPublic: vi.fn<() => ExtensionRecordPublic[]>().mockReturnValue([]),
     listShadowedPublic: vi.fn().mockReturnValue([]),
@@ -136,21 +137,19 @@ function buildApp(): express.Express {
     get: vi.fn().mockReturnValue(stubRecord()),
   };
 
-  app.locals.activityService = {
-    emit: vi.fn(async (event: EmittedActor) => {
-      emitted.push(event);
+  return honoGroupListener({
+    path: '/api/extensions',
+    routes: createExtensionsRoutes({
+      manager: manager as unknown as Parameters<typeof createExtensionsRoutes>[0]['manager'],
+      dorkHome: DORK_HOME,
+      getCwd: () => null,
+      activity: {
+        emit: vi.fn(async (event: EmittedActor) => {
+          emitted.push(event);
+        }) as never,
+      },
     }),
-  };
-
-  app.use(
-    '/api/extensions',
-    createExtensionsRouter(
-      manager as unknown as Parameters<typeof createExtensionsRouter>[0],
-      DORK_HOME,
-      () => null
-    )
-  );
-  return app;
+  });
 }
 
 describe('who the Activity feed says changed an extension', () => {

@@ -44,7 +44,7 @@
     "apps/community/src/schema.ts": 1917,
     "apps/desktop/scripts/smoke-packaged.ts": 641,
     "apps/e2e/capture/config.ts": 562,
-    "apps/server/src/index.ts": 3570,
+    "apps/server/src/index.ts": 3565,
     "apps/server/src/routes/relay-adapters.ts": 543,
     "apps/server/src/routes/sessions.ts": 574,
     "apps/server/src/routes/test-control.ts": 699,
@@ -56,7 +56,7 @@
     "apps/server/src/services/communities/remote/pairing-service.ts": 704,
     "apps/server/src/services/communities/remote/remote-community-adapter.ts": 1015,
     "apps/server/src/services/communities/remote/remote-room-subscription-runtime.ts": 579,
-    "apps/server/src/services/connectors/agent-request-service.ts": 2261,
+    "apps/server/src/services/connectors/agent-request-service.ts": 2165,
     "apps/server/src/services/connectors/bootstrap.ts": 704,
     "apps/server/src/services/connectors/connection-store.ts": 821,
     "apps/server/src/services/connectors/events/subscription-store.ts": 560,
@@ -77,7 +77,7 @@
     "apps/server/src/services/core/runtime-registry.ts": 660,
     "apps/server/src/services/core/usage/account-usage-store.ts": 517,
     "apps/server/src/services/extensions/extension-manager.ts": 894,
-    "apps/server/src/services/extensions/extension-server-lifecycle.ts": 550,
+    "apps/server/src/services/extensions/extension-server-lifecycle.ts": 548,
     "apps/server/src/services/extensions/inbox/extension-inbox.ts": 1035,
     "apps/server/src/services/extensions/isolation/isolated-host.ts": 677,
     "apps/server/src/services/harness/status.ts": 520,
@@ -109,7 +109,7 @@
     "apps/server/src/services/runtimes/opencode/opencode-runtime.ts": 892,
     "apps/server/src/services/session/chat-messages/chat-message-service.ts": 712,
     "apps/server/src/services/session/devtools-capture-store.ts": 666,
-    "apps/server/src/services/session/message-dispatcher.ts": 1538,
+    "apps/server/src/services/session/message-dispatcher.ts": 1523,
     "apps/server/src/services/session/private-messages/acceptance.ts": 567,
     "apps/server/src/services/session/session-event-normalizer.ts": 559,
     "apps/server/src/services/session/session-state-projector.ts": 1036,
@@ -157,6 +157,6 @@
     "packages/test-utils/src/fake-community-adapter.ts": 789,
     "packages/test-utils/src/mock-factories.ts": 1338,
     "packages/test-utils/src/runtime-capability-matrix.ts": 802,
-    "packages/test-utils/src/runtime-conformance.ts": 2452
+    "packages/test-utils/src/runtime-conformance.ts": 2432
   }
 }

@@ -30,7 +30,6 @@
  *
  * @module middleware/audit-request-fallback
  */
-import type { NextFunction, Request, Response } from 'express';
 import type { AuditOperation, AuditOutcome } from '@dorkos/shared/audit-schemas';
 import type { AuditActorContext } from '../services/audit/audit-context.js';
 import { recordAudit } from '../services/audit/audit-trail.js';
@@ -101,13 +100,12 @@ function outcomeOf(status: number): AuditOutcome {
  * The fallback row for one request, ready to write once its response has
  * finished, or `undefined` when the request is not one the fallback records.
  *
- * Shared by the Express middleware below and the Hono chain
- * (`http/api-chain.ts`). Each calls the returned function from the Node
+ * The chain (`http/api-chain.ts`) calls the returned function from the Node
  * response's `finish` event with the status that went out.
  *
  * @param method - The request method.
  * @param url - The request URL as sent (path and query).
- * @param scope - The request's audit scope, from `auditActor`.
+ * @param scope - The request's audit scope (`middleware/audit-actor.ts`).
  * @returns A function taking the final status, or `undefined`.
  */
 export function auditFallbackFor(
@@ -146,23 +144,4 @@ export function auditFallbackFor(
       summary: `${method} ${route} (${status})`,
     });
   };
-}
-
-/**
- * Express middleware: record a mutating `/api` request nothing else recorded
- * ({@link auditFallbackFor}). Mounted right after `auditActor`, whose scope it
- * reads.
- *
- * @param req - The request.
- * @param res - The response.
- * @param next - The next handler.
- */
-export function auditRequestFallback(req: Request, res: Response, next: NextFunction): void {
-  const record = auditFallbackFor(
-    req.method,
-    req.originalUrl,
-    res.locals.auditScope as AuditActorContext | undefined
-  );
-  if (record) res.on('finish', () => record(res.statusCode));
-  next();
 }

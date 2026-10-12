@@ -79,7 +79,6 @@ vi.mock('../../services/core/config-manager.js', () => ({
   },
 }));
 
-import { createApp, finalizeApp } from '../../app.js';
 import { composedListener } from '../../http/__tests__/composed-listener.js';
 import {
   createRoomSubsystem,
@@ -96,9 +95,7 @@ import {
 // The server's real routing: `/api/read-cursors` answers from the Hono `/api`
 // app, the rooms routes from Express behind it.
 const admission = new MainRequestAdmission();
-const app = createApp({ admission });
-finalizeApp(app);
-const server = listeningServer(composedListener(app, admission));
+const server = listeningServer(composedListener(admission));
 
 const ANA_PATH = '/agents/ana';
 

@@ -1,43 +1,41 @@
 /**
- * The `/api` middleware chain on Hono: the same steps, in the same order, as
- * the Express chain in `app.ts`, asking the same policy functions.
+ * The middleware chain every HTTP request runs, and the Hono app the server's
+ * routes are mounted on (`http/hono-api.ts`).
  *
- * During the move from Express to Hono (ADR `261009-192542`,
- * `plans/2026-10-express-to-hono.md`) a request runs exactly ONE chain: a
- * moved route group is served by the app {@link createApiApp} builds, and
- * everything else still falls through the front door to Express. Running both
- * would count every request twice in the audit log and the rate limiters, so
- * this chain has to stand on its own, step for step:
+ * The chain was ported step for step from the Express chain the server ran
+ * until the move to Hono finished (ADR `261009-192542`,
+ * `plans/2026-10-express-to-hono.md`), asking the same policy functions, so
+ * every route kept its answers:
  *
- * | # | Express (`app.ts`)                      | Here                                          |
- * | - | --------------------------------------- | --------------------------------------------- |
- * | 1 | `terminalAdmission`                     | `503` once the server is stopping             |
- * | 2 | `managedHostGuard`                      | `bypassesManagedIngress`, a `403`             |
- * | 3 | first-API-request log line              | the same, through `http/first-contact.ts`     |
- * | 4 | `cors` (delegate form)                  | `hono/cors` over `http/cors-policy.ts`        |
- * | 5 | `X-Content-Type-Options: nosniff`       | the same, also carried onto the raw response  |
- * | 6 | `hostGuard` on `/api`                   | `refuseUntrustedHost`                         |
- * | 7 | Better Auth, signed webhook ingress     | {@link ApiChainOptions.beforeBodyParsing}     |
- * | 8 | per-path parsers, then `express.json`   | `parseRequestBody` (`http/request-body.ts`)   |
- * | 9 | `requestLogger`                         | `logRequest`                                  |
- * | 10| `sessionGate`                           | `decideSessionGate`, onto `c.var.user`        |
- * | 11| `resolveAgentIdentity`                  | the same resolver, onto `c.var.agentIdentity` |
- * | 12| `auditActor`                            | `auditActorForRequest`, scope entered         |
- * | 13| `auditRequestFallback`                  | `auditFallbackFor`                            |
- * | - | `/api` 404 and `errorHandler`           | `notFound` and `onError`                      |
+ * | # | Step                                                                     |
+ * | - | ------------------------------------------------------------------------ |
+ * | 1 | `503` once the server is stopping (`terminal-admission.ts`)              |
+ * | 2 | a managed remote-access host that skipped the managed ingress, a `403`   |
+ * | 3 | the first-API-request log line (`http/first-contact.ts`)                 |
+ * | 4 | CORS, `hono/cors` over `http/cors-policy.ts`                             |
+ * | 5 | `X-Content-Type-Options: nosniff`, also carried onto the raw response    |
+ * | 6 | the `Host` allowlist on `/api` (`host-guard.ts`)                         |
+ * | 7 | Better Auth, signed webhook ingress ({@link ApiChainOptions.beforeBodyParsing}) |
+ * | 8 | body parsing (`http/request-body.ts`)                                    |
+ * | 9 | the request log line                                                     |
+ * | 10| the session gate, onto `c.var.user`                                      |
+ * | 11| agent identity, onto `c.var.agentIdentity`                               |
+ * | 12| the audit actor, its scope entered                                       |
+ * | 13| the audit fallback for a mutating request no choke point recorded        |
+ * | - | `notFound` (`http/unclaimed.ts`) and `onError`                           |
  *
- * `__tests__/api-chain-parity.test.ts` drives both chains through the same
- * matrix of login, origin, host, credential and body, and requires the same
- * answer from each in every cell.
+ * Every step runs for every path, not only `/api`: `/mcp`, `/a2a`, the
+ * `/.well-known` documents and the app's own files go through the same chain.
+ * Only the host guard and the first-API-request line look at `/api` alone.
  *
- * Two things Express adds that this chain does not, on purpose: the
+ * Two things Express added that this chain does not, on purpose: the
  * `X-Powered-By: Express` header, and an `ETag` (with `304` answers) on every
- * body `res.send` writes. Nothing reads either; `hono/etag` would also buffer
+ * body `res.send` wrote. Nothing reads either; `hono/etag` would also buffer
  * a whole event stream to hash it.
  *
- * And one Express habit that cannot carry over: Express routes match paths
- * case-insensitively, Hono's do not. `/API/health` reaches nothing here.
- * Trailing slashes still match, through `strict: false`.
+ * Paths match case-sensitively, unlike Express's: `/API/health` reaches no
+ * route, though it still gets the API 404. Trailing slashes still match,
+ * through `strict: false`.
  *
  * @module http/api-chain
  */
@@ -65,11 +63,13 @@ import { SERVER_STOPPING_BODY, SERVER_STOPPING_HEADERS } from '../middleware/ter
 import { corsAllowsOrigin, corsRefusal, warnOnWildcardCorsOrigin } from './cors-policy.js';
 import { createFirstContactMarker } from './first-contact.js';
 import { honoRequestFacts, type RequestFactsVariables } from './request-facts.js';
+import type { ClientFilesHandler } from './client-files.js';
 import { parseRequestBody, underMount, type BodyRule } from './request-body.js';
+import { answerUnclaimed } from './unclaimed.js';
 
-/** What the chain puts on `c.var`, under the names `res.locals` uses on Express. */
+/** What the chain puts on `c.var` for the routes behind it. */
 export interface ApiVariables extends RequestFactsVariables {
-  /** The parsed request body: `req.body` on Express. */
+  /** The parsed request body (`http/request-body.ts`). */
   body?: unknown;
   /** The request's audit scope, entered by the audit-actor step. */
   auditScope?: AuditActorContext;
@@ -90,21 +90,22 @@ export interface ApiChainOptions {
   /**
    * Routes that must answer BEFORE the body is parsed and before the session
    * gate, registered at that point in the chain. Better Auth reads its own
-   * body, and a signed webhook needs the raw bytes; on Express both are
-   * mounted between `hostGuard` and `express.json`, and a route there that
-   * answers ends the chain, exactly as here.
+   * body, and a signed webhook needs the raw bytes; a route there that answers
+   * ends the chain.
    */
   beforeBodyParsing?: (app: Hono<ApiEnv>) => void;
   /** Path-scoped body parsers that replace the app-wide JSON one. */
   bodyRules?: readonly BodyRule[];
+  /**
+   * The client build, answering what no route claims outside `/api`
+   * (`http/unclaimed.ts`). Only a production server serves one.
+   */
+  clientFiles?: ClientFilesHandler;
 }
-
-/** The `/api` 404 body, on both chains. */
-const API_NOT_FOUND_BODY = { error: 'Not found', code: 'API_NOT_FOUND' } as const;
 
 /**
  * The method list a CORS preflight is answered with: the `cors` package's
- * default, which the Express chain sends.
+ * default, which the server answered with while it ran on Express.
  */
 const PREFLIGHT_METHODS = ['GET', 'HEAD', 'PUT', 'PATCH', 'POST', 'DELETE'];
 
@@ -118,13 +119,11 @@ const PREFLIGHT_METHODS = ['GET', 'HEAD', 'PUT', 'PATCH', 'POST', 'DELETE'];
 export function createApiApp(options: ApiChainOptions): Hono<ApiEnv> {
   const app = new Hono<ApiEnv>({ strict: false });
   app.onError(answerError);
-  app.notFound((c) =>
-    underMount(c.req.path, '/api') ? c.json(API_NOT_FOUND_BODY, 404) : c.text('404 Not Found', 404)
-  );
+  app.notFound(answerUnclaimed(options.clientFiles));
 
   // Hono hands only thrown `Error`s to `onError`; anything else escapes as a
-  // bare text 500. Express's handler takes whatever was thrown, and for a
-  // non-Error answers the generic JSON 500, which an empty message reproduces.
+  // bare text 500. Answer a thrown non-Error with the generic JSON 500 instead,
+  // which an empty message produces (`errorReply`).
   app.use(async (_c, next) => {
     try {
       await next();
@@ -135,7 +134,7 @@ export function createApiApp(options: ApiChainOptions): Hono<ApiEnv> {
   app.use(admit(options.admission));
   // A managed remote-access hostname is served only through the managed
   // ingress, which checks the edge proof; on this listener it is refused before
-  // any logger or route sees it, as `managedHostGuard` does on Express.
+  // any logger or route sees it (`middleware/managed-host-guard.ts`).
   app.use(async (c, next) => {
     if (bypassesManagedIngress(c.env.incoming)) return c.json(MANAGED_HOST_REFUSAL_BODY, 403);
     await next();
@@ -175,7 +174,7 @@ export function createApiApp(options: ApiChainOptions): Hono<ApiEnv> {
   app.use(async (c, next) => {
     const start = Date.now();
     const { method } = c.req;
-    // As sent, not as Hono decoded it: the line Express writes.
+    // As sent, not as Hono decoded it.
     const path = rawUrl(c).split('?')[0] ?? c.req.path;
     const { outgoing } = c.env;
     outgoing.once('finish', () =>
@@ -207,14 +206,14 @@ export function createApiApp(options: ApiChainOptions): Hono<ApiEnv> {
   return app;
 }
 
-/** The request URL exactly as sent: Express's `req.originalUrl`. */
+/** The request URL exactly as sent, path and query. */
 function rawUrl(c: Context<ApiEnv>): string {
   return c.env.incoming.url ?? c.req.path;
 }
 
 /**
  * Put the headers the chain has decided so far (CORS, nosniff) on the raw Node
- * response too, as Express does by setting them there before any route runs.
+ * response too, before any route runs.
  *
  * A route that answers through Hono gets them on its `Response` anyway, and
  * those win where both name a header. A route that writes the Node response
@@ -232,11 +231,10 @@ function carryHeadersToNodeResponse(c: Context<ApiEnv>): void {
 /**
  * Keep each `Vary` field once, in the order it was first written.
  *
- * Express writes `Vary` through the `vary` package, which adds a field only
- * when it is not there yet: CORS varies every answer on `Origin` before the
- * route runs, and a route that varies on more adds after it. `hono/cors`
- * appends `Origin` after the route instead, so a route that wrote
- * `Origin, X` would otherwise answer `Origin, X, Origin`.
+ * CORS varies every answer on `Origin` before the route runs (on the raw
+ * response, above), and a route that varies on more adds after it. `hono/cors`
+ * also appends `Origin` after the route, so a route that wrote `Origin, X`
+ * would otherwise answer `Origin, X, Origin`.
  */
 const keepEachVaryFieldOnce: MiddlewareHandler<ApiEnv> = async (c, next) => {
   await next();
@@ -264,13 +262,15 @@ function admit(admission: MainRequestAdmission): MiddlewareHandler<ApiEnv> {
 }
 
 /**
- * Run the rest of the request inside its audit scope, as `auditActor` does.
+ * Run the rest of the request inside its audit scope (`middleware/audit-actor.ts`).
  *
- * The scope reads the caller lazily, through `locals`: a gate that runs after
+ * The scope reads the caller lazily, through getters: a gate that runs after
  * this step (the `/mcp` authorizer) still decides who the actor is.
  */
 const enterAuditScope: MiddlewareHandler<ApiEnv> = async (c, next) => {
-  const locals = {
+  const scope = auditActorForRequest({
+    headers: c.env.incoming.headers,
+    path: c.req.path,
     get user() {
       return c.get('user');
     },
@@ -280,22 +280,17 @@ const enterAuditScope: MiddlewareHandler<ApiEnv> = async (c, next) => {
     get mcpLocalToken() {
       return c.get('mcpLocalToken');
     },
-  };
-  const scope = auditActorForRequest(
-    { headers: c.env.incoming.headers, path: c.req.path },
-    { locals }
-  );
+  });
   if (!scope) return next();
   c.set('auditScope', scope);
   await runWithAuditActor(scope, () => next());
 };
 
 /**
- * The chain's `onError`: the Express error handler's log line and answer.
+ * The chain's `onError`: one log line, and the answer `errorReply` picks.
  *
  * A route that already wrote to the raw Node response cannot be given a JSON
- * body any more; like Express's default handler, close the connection. Unlike
- * it, still leave the log line: Express prints that one to the console.
+ * body any more; close the connection instead, after the log line.
  */
 function answerError(err: Error, c: Context<ApiEnv>): Response {
   logRequestError(err, c.req.method, c.req.path);

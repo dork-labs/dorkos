@@ -54,7 +54,6 @@ vi.mock('../../services/session/launch/launch-session.js', async (importOriginal
 import request from '@dorkos/test-utils/supertest';
 import { listeningServer } from '@dorkos/test-utils/listening-server';
 import { createTestDb } from '@dorkos/test-utils/db';
-import { createApp, finalizeApp } from '../../app.js';
 import { composedListener } from '../../http/__tests__/composed-listener.js';
 import type { SessionRouteDeps } from '../../routes/sessions.js';
 import { runtimeRegistry } from '../../services/core/runtime-registry.js';
@@ -68,12 +67,10 @@ import {
 } from '../../services/audit/session-visibility.js';
 
 const admission = new MainRequestAdmission();
-const app = createApp({ admission });
-finalizeApp(app);
 /** What the session routes read; the tests change it between requests. */
 const sessionLocals: Record<string, unknown> = {};
 const server = listeningServer(
-  composedListener(app, admission, { sessions: sessionLocals as SessionRouteDeps })
+  composedListener(admission, { sessions: sessionLocals as SessionRouteDeps })
 );
 
 const CHAT = '00000000-0000-4000-8000-000000000001';

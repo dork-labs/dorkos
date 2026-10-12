@@ -24,7 +24,6 @@ vi.mock('../../services/core/config-manager.js', () => ({
 
 import request from '@dorkos/test-utils/supertest';
 import { listeningServer } from '@dorkos/test-utils/listening-server';
-import { createApp } from '../../app.js';
 import { composedListener } from '../../http/__tests__/composed-listener.js';
 import { initBoundary } from '../../lib/boundary.js';
 import { WORKBENCH } from '../../config/constants.js';
@@ -38,9 +37,8 @@ import { tunnelManager } from '../../services/core/tunnel-manager.js';
 let root: string;
 let outside: string;
 const admission = new MainRequestAdmission();
-const app = createApp({ admission });
 // Routed as the running server routes: the moved groups answer from Hono.
-const testServer = listeningServer(composedListener(app, admission));
+const testServer = listeningServer(composedListener(admission));
 
 beforeAll(async () => {
   // realpath so the served root matches the canonical boundary (macOS symlinks

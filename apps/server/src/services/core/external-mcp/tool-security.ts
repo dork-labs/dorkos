@@ -129,7 +129,7 @@ const LEGACY_READ_ONLY_TOOL_NAMES: readonly string[] = [
  *
  * The rooms reads (room-participation spec §10.3, agent-memory spec D6) are the
  * only members: they return **other members' messages**, which is the same
- * content the HTTP room routes serve behind `sessionGate`. A `curl` demo that
+ * content the HTTP room routes serve behind the session gate. A `curl` demo that
  * works with no config is worth a health check and a listing; it is not worth
  * somebody's conversations. Membership still gates them on every surface — this
  * decides only whether an unauthenticated local caller may ask at all.

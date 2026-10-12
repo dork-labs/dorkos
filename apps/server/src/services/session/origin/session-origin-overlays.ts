@@ -113,13 +113,14 @@ export function applySessionOriginOverlays(
 }
 
 /**
- * The resolvers the composition root parks on `app.locals`, typed once.
+ * The resolvers the composition root hands the sessions route as deps, typed
+ * once.
  *
  * Every session route reads the same keys and cast them one at a time; the
  * cast is done once here so a route cannot pick up only some of them and
  * quietly apply half the rule.
  *
- * @param locals - `req.app.locals`.
+ * @param locals - The sessions route's deps.
  */
 export function sessionOriginResolvers(locals: {
   resolveRoomOrigins?: unknown;

@@ -1,17 +1,16 @@
 /**
  * Triage on a decision model at server startup (spec `heartbeats` §6.2, §6.3):
- * starts the credits triage, mounts `PUT /api/heartbeats/triage-credits`,
- * builds the Heartbeat page's checks block, and raises the credits offer's one
- * notification when it first stands.
+ * starts the credits triage, hands over what `PUT /api/heartbeats/triage-credits`
+ * reads, builds the Heartbeat page's checks block, and raises the credits
+ * offer's one notification when it first stands.
  *
  * @module services/heartbeats/triage/triage-mount
  */
 import { randomUUID } from 'node:crypto';
-import type { Express } from 'express';
 import type { Db } from '@dorkos/db';
 import type { HeartbeatChecks } from '@dorkos/shared/heartbeat-schemas';
 import { resolveDorkHome } from '../../../lib/dork-home.js';
-import { createHeartbeatTriageRouter } from '../../../routes/heartbeat-triage.js';
+import type { HeartbeatTriageRouterDeps } from '../../../routes/heartbeat-triage.js';
 import { recordAudit } from '../../audit/audit-trail.js';
 import { configManager } from '../../core/config-manager.js';
 import { creditsCanBeHad } from '../../core/cloud/credits-availability.js';
@@ -29,8 +28,8 @@ import {
 
 /** What startup hands over. */
 export interface TriageMountDeps {
-  /** The Express app, for the choice route. */
-  app: Express;
+  /** Where the choice route's reads go (`http/hono-api.ts` mounts it). */
+  routes: { heartbeatTriage?: HeartbeatTriageRouterDeps };
   /** The server's database, for today's checks. */
   db: Db;
   /** The report queue, for what can wait. */
@@ -103,10 +102,7 @@ function recordChoice(before: boolean | null, after: boolean): void {
  */
 export function mountTriage(deps: TriageMountDeps): TriageMount {
   const credits = startHeartbeatTriage({ requestsToday: requestsTodayUtc(deps.db, new Date()) });
-  deps.app.use(
-    '/api/heartbeats/triage-credits',
-    createHeartbeatTriageRouter({ choice, setChoice, record: recordChoice })
-  );
+  deps.routes.heartbeatTriage = { choice, setChoice, record: recordChoice };
   const offer = () =>
     void notifyOfferOnce({
       dorkHome: resolveDorkHome(),

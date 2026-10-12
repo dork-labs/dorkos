@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import express from 'express';
+import type { RequestListener } from 'node:http';
 import request from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
 
@@ -23,31 +23,28 @@ vi.mock('../../lib/logger.js', () => ({
   logger: { warn: vi.fn(), info: vi.fn(), error: vi.fn(), debug: vi.fn() },
 }));
 
-import { hostGuard, isHostAllowed, parseTrustedHosts } from '../host-guard.js';
+import { isHostAllowed, parseTrustedHosts, refuseUntrustedHost } from '../host-guard.js';
+import { createApiApp } from '../../http/api-chain.js';
+import { frontDoorListener } from '../../http/front-door.js';
+import { MainRequestAdmission } from '../../services/core/lifecycle/main-request-admission.js';
 import { logger } from '../../lib/logger.js';
 
 const fixtureTarget = swappableServer();
 const fixtureServer = fixtureTarget.server;
 
 /**
- * An app shaped like the real one: the guard sits in front of `/api`, ahead of
- * the body parser, so a rejected request never has its payload read.
+ * The real chain (`http/api-chain.ts`): the guard sits in front of `/api`,
+ * ahead of the body parser, so a rejected request never has its payload read.
  */
-function createTestApp(): express.Express {
-  const app = express();
-  app.use('/api', hostGuard);
-  app.use(express.json());
-  app.post('/api/sessions/:id/messages', (_req, res) => {
-    res.status(202).json({ accepted: true });
-  });
-  app.get('/api/health', (_req, res) => {
-    res.json({ status: 'ok' });
-  });
-  return app;
+function createTestApp(): RequestListener {
+  const app = createApiApp({ admission: new MainRequestAdmission() });
+  app.post('/api/sessions/:id/messages', (c) => c.json({ accepted: true }, 202));
+  app.get('/api/health', (c) => c.json({ status: 'ok' }));
+  return frontDoorListener(app);
 }
 
-describe('hostGuard', () => {
-  let app: express.Express;
+describe('the host guard in the chain', () => {
+  let app: RequestListener;
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -112,20 +109,10 @@ describe('hostGuard', () => {
     });
 
     it('rejects a request with no Host header (HTTP/1.1 requires one)', async () => {
-      // supertest always sets Host, so drive the middleware directly.
-      const next = vi.fn();
-      const json = vi.fn();
-      const res = { status: vi.fn().mockReturnValue({ json }) };
-      hostGuard(
-        { headers: {}, method: 'GET', originalUrl: '/api/health' } as never,
-        res as never,
-        next
-      );
-      expect(next).not.toHaveBeenCalled();
-      expect(res.status).toHaveBeenCalledWith(403);
-      expect(json).toHaveBeenCalledWith(
-        expect.objectContaining({ code: 'HOST_NOT_ALLOWED' }) as never
-      );
+      // supertest always sets Host, so ask the guard's decision directly.
+      expect(refuseUntrustedHost(undefined, 'GET', '/api/health')).toMatchObject({
+        code: 'HOST_NOT_ALLOWED',
+      });
     });
   });
 

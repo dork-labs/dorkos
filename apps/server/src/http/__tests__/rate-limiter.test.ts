@@ -1,19 +1,16 @@
 /**
- * The one limiter (DOR-2796): its counting, and its answer through each chain.
+ * The one limiter (DOR-2796): its counting, and its answer through the chain.
  *
  * The counting is tested with a clock passed in, because a sliding window is
- * about time. The answers are tested through real servers, once per adapter,
- * against one table: the two chains must refuse alike, with the same headers
- * and body, or a moved route would change what a client sees.
+ * about time. The answers are tested through a real server, against the
+ * headers and body `express-rate-limit` answered with before it was replaced.
  */
 import { describe, expect, it } from 'vitest';
-import express, { type RequestHandler } from 'express';
 import { Hono } from 'hono';
 import request from '@dorkos/test-utils/supertest';
 import { honoListener, swappableServer } from '@dorkos/test-utils/listening-server';
 import {
   createRateLimiter,
-  expressRateLimit,
   honoRateLimit,
   rateLimitHeaders,
   type HonoRateLimitOptions,
@@ -136,7 +133,7 @@ describe('rateLimitHeaders', () => {
   });
 });
 
-/** One app per chain, its only route behind a limiter with these options. */
+/** An app whose only routes sit behind a limiter with these options. */
 type Build = (options: {
   limit: number;
   headers: RateLimitHeaders;
@@ -145,24 +142,6 @@ type Build = (options: {
 }) => Parameters<ReturnType<typeof swappableServer>['mount']>[0];
 
 const MESSAGE = { error: 'Too many requests here.', code: 'LIMITED' };
-
-const buildExpress: Build = ({ limit, headers, skipPath, refundStatus }) => {
-  const app = express();
-  const limiter: RequestHandler = expressRateLimit({
-    windowMs: 60_000,
-    limit,
-    headers,
-    message: MESSAGE,
-    ...(skipPath ? { skip: (req) => req.path === skipPath } : {}),
-    ...(refundStatus ? { countsWhen: (_req, res) => res.statusCode !== refundStatus } : {}),
-  });
-  app.use(limiter);
-  app.get('/ok', (_req, res) => res.send('ok'));
-  app.get('/free', (_req, res) => res.send('free'));
-  app.get('/refused', (_req, res) => res.status(refundStatus ?? 403).send('no'));
-  app.get('/raw', (_req, res) => res.send('raw'));
-  return app;
-};
 
 const buildHono: Build = ({ limit, headers, skipPath, refundStatus }) => {
   const app = new Hono<RequestFactsEnv>();
@@ -185,10 +164,8 @@ const buildHono: Build = ({ limit, headers, skipPath, refundStatus }) => {
 
 const target = swappableServer();
 
-describe.each([
-  ['express', buildExpress],
-  ['hono', buildHono],
-] as const)('through the %s adapter', (_name, build) => {
+describe('through the Hono adapter', () => {
+  const build = buildHono;
   it('answers with the standard headers until the limit, then a 429 with Retry-After', async () => {
     const server = target.mount(build({ limit: 2, headers: 'standard' }));
     const first = await request(server).get('/ok');

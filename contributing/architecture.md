@@ -8,7 +8,7 @@ For the current cross-system boundaries, use [the system architecture guide](sys
 
 Start with [the system architecture map](system-architecture.md) for deployment boundaries, protocols, replaceable interfaces, Community, Cloud, and marketplace delivery. This guide covers local implementation details.
 
-DorkOS uses a hexagonal (ports & adapters) architecture centered on a **Transport** abstraction layer. The React client reaches Express through `HttpTransport`, with durable streams over WebSocket (ADR 260805-041016).
+DorkOS uses a hexagonal (ports & adapters) architecture centered on a **Transport** abstraction layer. The React client reaches the Hono server through `HttpTransport`, with durable streams over WebSocket (ADR 260805-041016).
 
 The browser, phone web app, and desktop renderer share this path. The desktop shell manages its local server. Independent Community has its own browser and Hono service; it is not another Transport implementation for the local app.
 
@@ -156,7 +156,7 @@ Search params use `@tanstack/zod-adapter` with `zodValidator()`. Hooks `useSessi
 
 ### HttpTransport (`apps/client/src/layers/shared/lib/transport/http-transport.ts`)
 
-Communicates with the Express server over HTTP, with the durable streams on WebSockets:
+Communicates with the Hono server over HTTP, with the durable streams on WebSockets:
 
 - Standard `fetch()` for CRUD operations
 - `postMessage` POSTs the trigger and parses the `202 { sessionId }` body

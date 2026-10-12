@@ -10,7 +10,7 @@ The Electron desktop app (`apps/desktop`) is a thin shell around the same server
 
 ## Packaging model
 
-- The main process spawns the Express server as a child (UtilityProcess in prod, `child_process.fork` via tsx in dev). The server bundle is built by `scripts/build-server.ts` (esbuild) into `dist/server/server-entry.mjs` — **it is NOT produced by `electron-vite build` alone**; the desktop `build` script runs both.
+- The main process spawns the server as a child (UtilityProcess in prod, `child_process.fork` via tsx in dev). The server bundle is built by `scripts/build-server.ts` (esbuild) into `dist/server/server-entry.mjs` — **it is NOT produced by `electron-vite build` alone**; the desktop `build` script runs both.
 - **`electron-builder.yml`'s `files` is an explicit allowlist** (`package.json`, `dist/**`, `core-extensions/**`). If you make the runtime read a NEW top-level path, add it there or the packaged app won't have it — that failure packages green and only appears once installed. `node_modules` is intentionally absent (electron-builder derives it from the production dependency tree and reads only negative patterns from `files`).
 - **Never add `extraResources`** to duplicate something already `asarUnpack`ed. Resolution from `app.asar/dist/server/` reaches `app.asar/node_modules/<pkg>` before it could ever see `resources/node_modules/<pkg>`, so the copy is unreachable — and becomes actively harmful the day the two carry different ABIs. Unpack, don't duplicate.
 - In production the window loads `http://localhost:<serverPort>` (the bundled server serves the SPA), **not** `file://` — this avoids the `Origin: null` CORS dead-end. See ADR `260712-005315`.

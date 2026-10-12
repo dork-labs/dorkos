@@ -815,7 +815,12 @@ describe('ConnectorAgentRequestService', () => {
       // The page's Accounts card that linked a DorkOS account is gone; the first
       // connect is where a way to reach apps gets set up.
       expect(message).not.toContain('Accounts');
-      expect(message).toContain('the first app they connect also sets up how DorkOS reaches apps');
+      expect(message).toContain('The first app the person connects');
+      expect(message).toContain('also sets up how DorkOS reaches apps');
+      // The real choices, so the agent can offer them rather than leave the person stuck (FB-57).
+      expect(message).toContain('ask which one they want');
+      expect(message).toContain('sign in to a DorkOS account, or create one');
+      expect(message).toContain('Composio key');
       expect(message).toContain('command-line tool in a shell does not give DorkOS access');
       expect(message).not.toContain('connector_list_toolkits');
     });
@@ -852,8 +857,12 @@ describe('ConnectorAgentRequestService', () => {
 
     it.each([
       ['dorkos_account_unlinked', "isn't linked anymore", 'Settings › DorkOS account'],
-      ['dorkos_account_unavailable', 'is linked but cannot reach apps', 'Try again later'],
-      ['own_key_unavailable', "isn't set up or didn't answer", 'Settings › Connections'],
+      [
+        'dorkos_account_unavailable',
+        'is linked but cannot connect apps',
+        'Settings › DorkOS account',
+      ],
+      ['own_key_unavailable', "didn't work when DorkOS last checked", 'Settings › Connections'],
     ] as const)(
       'names the fix for a way that is set up but down (%s), not "connect an app"',
       async (reachProblem, why, fix) => {
@@ -936,6 +945,75 @@ describe('ConnectorAgentRequestService', () => {
       expect(db.select().from(connectorReviewRequests).all()).toHaveLength(1);
       // Nothing is granted by asking: the owner still decides.
       expect(db.select().from(connectionOperationGrants).all()).toEqual([]);
+    });
+
+    it('answers at once with the choices to offer when no way reaches the app yet (FB-57)', async () => {
+      const requests = service({ services: bareDirectory() });
+
+      const opened = await requests.open(principal(), INPUT);
+      // No silent wait: the person has a choice to make first.
+      expect(opened.waitForOwner).toBe(false);
+      expect(opened.status).toMatchObject({ status: 'awaiting_owner', serviceSlug: 'gmail' });
+      const { note } = opened.status;
+      expect(note).toContain("DorkOS can't reach Gmail yet");
+      expect(note).toContain('ask which one they want, then help them do it');
+      expect(note).toContain(
+        'sign in to a DorkOS account, or create one, in Settings › DorkOS account'
+      );
+      expect(note).toContain('paste their own Composio key in Settings › Connections');
+      expect(note).toContain("don't ask again");
+      // Asking again while it is still unreachable gives the same choices.
+      const again = await requests.open(principal(), INPUT);
+      expect(again.status.requestId).toBe(opened.status.requestId);
+      expect(again.waitForOwner).toBe(false);
+      // Nobody holds the call, so the row must not look held: a live hold
+      // keeps the owner's answer out of the chat until it runs out.
+      expect(
+        db
+          .select()
+          .from(connectorAgentRequests)
+          .where(eq(connectorAgentRequests.id, opened.status.requestId))
+          .get()
+      ).toMatchObject({ liveHoldBootEpoch: null, liveHoldUntil: null });
+    });
+
+    it.each([
+      ['dorkos_account_unlinked', 'link their DorkOS account again'],
+      ['dorkos_account_unavailable', 'link their DorkOS account again'],
+      ['own_key_unavailable', 'check or replace their own key'],
+    ] as const)(
+      'offers the fix that fits when the way in is down (%s)',
+      async (reachProblem, fix) => {
+        const requests = withDirectory({
+          ...directory([]),
+          services: [
+            { serviceSlug: 'gmail', displayName: 'Gmail', requestable: true, reached: false },
+          ],
+          reachProblem,
+        });
+
+        const opened = await requests.open(principal(), INPUT);
+        expect(opened.waitForOwner).toBe(false);
+        expect(opened.status.note).toContain(fix);
+        expect(opened.status.note).toContain('Settings › Connections');
+        expect(opened.status.note).toContain('Settings › DorkOS account');
+      }
+    );
+
+    it('waits for the owner as before when a way reaches the app', async () => {
+      const requests = withDirectory(directory([['gmail', 'Gmail']]));
+
+      const opened = await requests.open(principal(), INPUT);
+      expect(opened.waitForOwner).toBe(true);
+      expect(opened.status.note).toContain("The person hasn't answered yet");
+      // The capability holds this call next, so the hold stays.
+      expect(
+        db
+          .select()
+          .from(connectorAgentRequests)
+          .where(eq(connectorAgentRequests.id, opened.status.requestId))
+          .get()?.liveHoldUntil
+      ).not.toBeNull();
     });
 
     it('still refuses a chat app and an app beyond the popular ones when nothing is set up', async () => {

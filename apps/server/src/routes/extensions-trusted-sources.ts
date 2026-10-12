@@ -14,7 +14,7 @@
  *
  * @module routes/extensions-trusted-sources
  */
-import type { Router } from 'express';
+import type { Hono } from 'hono';
 import { TrustedSourceRequestSchema } from '@dorkos/shared/extension-approval-schemas';
 import type { ExtensionManager } from '../services/extensions/extension-manager.js';
 import type { ActivityService } from '../services/activity/activity-service.js';
@@ -22,7 +22,10 @@ import { readActivityActor } from '../services/activity/activity-actor.js';
 import { normalizeTrustedSource } from '../services/marketplace/lib/trusted-source.js';
 import { logger } from '../lib/logger.js';
 import { configManager } from '../services/core/config-manager.js';
-import { refuseIfNotAPerson, type PersonBarCopy } from './extensions-person-bar.js';
+import type { ApiEnv } from '../http/api-chain.js';
+import { readJsonBody } from '../http/request-body.js';
+import { honoRequestFacts } from '../http/request-facts.js';
+import { refusedNotAPerson, type PersonBarCopy } from './extensions-person-bar.js';
 
 /** The code every refusal to change trusted sources carries. */
 export const TRUSTED_SOURCE_PERSON_ONLY_CODE = 'trusted_source_person_only';
@@ -49,39 +52,43 @@ const TRUST_BAR: PersonBarCopy = {
  * @param extensionManager - The extension manager, which owns the write.
  */
 export function registerTrustedSourceRoutes(
-  router: Router,
-  extensionManager: ExtensionManager
+  router: Hono<ApiEnv>,
+  extensionManager: ExtensionManager,
+  activity?: Pick<ActivityService, 'emit'>
 ): void {
   // GET /api/extensions/trusted-sources -- The sources a person trusts. A read
   // of `owner/repo` names only, so it carries no bar.
-  router.get('/trusted-sources', (_req, res) => {
+  router.get('/trusted-sources', (c) => {
     const sources = configManager.get('extensions').trustedSources ?? [];
-    return res.json({ sources });
+    return c.json({ sources });
   });
 
   // POST /api/extensions/trusted-sources -- "Yes" on "Next time, trust
   // everything from <source>?". Only a source some installed copy provably
   // comes from can be trusted: trust is granted once per PROVEN source.
-  router.post('/trusted-sources', async (req, res) => {
+  router.post('/trusted-sources', async (c) => {
     try {
-      if (refuseIfNotAPerson(req, res, TRUST_BAR)) return undefined;
-      const body = TrustedSourceRequestSchema.safeParse(req.body ?? {});
+      const refused = refusedNotAPerson(c, TRUST_BAR);
+      if (refused) return refused;
+      const body = TrustedSourceRequestSchema.safeParse(readJsonBody(c, { emptyAs: {} }));
       const source = body.success ? normalizeTrustedSource(body.data.source) : null;
       if (!source) {
-        return res.status(400).json({ error: 'Send the source to trust, like owner/repo' });
+        return c.json({ error: 'Send the source to trust, like owner/repo' }, 400);
       }
 
       const result = await extensionManager.trustSource(source);
       if (result === 'unproven') {
-        return res.status(409).json({
-          error: `DorkOS hasn't installed anything from ${source}, so there is nothing to trust yet.`,
-          code: 'unproven_source',
-        });
+        return c.json(
+          {
+            error: `DorkOS hasn't installed anything from ${source}, so there is nothing to trust yet.`,
+            code: 'unproven_source',
+          },
+          409
+        );
       }
       if (result === 'added') {
-        const activityService = req.app.locals.activityService as ActivityService | undefined;
-        await activityService?.emit({
-          ...readActivityActor(req, res),
+        await activity?.emit({
+          ...readActivityActor(honoRequestFacts(c)),
           category: 'config',
           eventType: 'config.extension_updated',
           resourceType: 'extension',
@@ -90,31 +97,31 @@ export function registerTrustedSourceRoutes(
           summary: `Trusted every extension from ${source}`,
         });
       }
-      return res.json({ sources: configManager.get('extensions').trustedSources ?? [] });
+      return c.json({ sources: configManager.get('extensions').trustedSources ?? [] });
     } catch (err) {
       logger.error('[Extensions] Failed to trust a source', err);
-      return res.status(500).json({ error: 'Failed to trust that source' });
+      return c.json({ error: 'Failed to trust that source' }, 500);
     }
   });
 
   // DELETE /api/extensions/trusted-sources -- "Stop trusting". Extensions
   // already turned on stay on; new copies from the source ask again.
-  router.delete('/trusted-sources', async (req, res) => {
+  router.delete('/trusted-sources', async (c) => {
     try {
-      if (refuseIfNotAPerson(req, res, TRUST_BAR)) return undefined;
-      const body = TrustedSourceRequestSchema.safeParse(req.body ?? {});
+      const refused = refusedNotAPerson(c, TRUST_BAR);
+      if (refused) return refused;
+      const body = TrustedSourceRequestSchema.safeParse(readJsonBody(c, { emptyAs: {} }));
       const source = body.success ? normalizeTrustedSource(body.data.source) : null;
       if (!source) {
-        return res.status(400).json({ error: 'Send the source to stop trusting, like owner/repo' });
+        return c.json({ error: 'Send the source to stop trusting, like owner/repo' }, 400);
       }
 
       const removed = await extensionManager.untrustSource(source);
       if (!removed) {
-        return res.status(404).json({ error: `${source} isn't a trusted source` });
+        return c.json({ error: `${source} isn't a trusted source` }, 404);
       }
-      const activityService = req.app.locals.activityService as ActivityService | undefined;
-      await activityService?.emit({
-        ...readActivityActor(req, res),
+      await activity?.emit({
+        ...readActivityActor(honoRequestFacts(c)),
         category: 'config',
         eventType: 'config.extension_updated',
         resourceType: 'extension',
@@ -122,10 +129,10 @@ export function registerTrustedSourceRoutes(
         resourceLabel: source,
         summary: `Stopped trusting every extension from ${source}`,
       });
-      return res.json({ sources: configManager.get('extensions').trustedSources ?? [] });
+      return c.json({ sources: configManager.get('extensions').trustedSources ?? [] });
     } catch (err) {
       logger.error('[Extensions] Failed to stop trusting a source', err);
-      return res.status(500).json({ error: 'Failed to stop trusting that source' });
+      return c.json({ error: 'Failed to stop trusting that source' }, 500);
     }
   });
 }

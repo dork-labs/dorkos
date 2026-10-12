@@ -506,10 +506,9 @@ export function createSessionStartHandler(
     // turn, a scheduled run or a bridged chat cannot, so its spin-offs are
     // never promised one (spec `spin-off-chats` §5).
     const parentChatId = caller.chat?.sessionId ?? null;
-    const reportBack =
-      args.reportBack !== 'off' &&
-      parentChatId !== null &&
-      ((await getChatMessageService()?.canReceive(parentChatId)) ?? false);
+    const parentTakesMessages =
+      parentChatId !== null && ((await getChatMessageService()?.canReceive(parentChatId)) ?? false);
+    const reportBack = args.reportBack !== 'off' && parentTakesMessages;
     const claimed = reserveChatStart(sessionId, parentChatId, args.reason, permission, reportBack);
     if (!claimed.ok) return refuse(claimed.message, 'START_LIMIT');
     const reservation = claimed.reservation;
@@ -574,6 +573,7 @@ export function createSessionStartHandler(
                   parentTitle: rememberedChatTitle(caller.chat.sessionId),
                   parentAgentName: caller.label,
                   reportBack,
+                  parentTakesMessages,
                 })
               : null;
             // The starter's own background is never cut: the briefing gives

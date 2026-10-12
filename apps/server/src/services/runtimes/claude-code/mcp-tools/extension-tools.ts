@@ -333,7 +333,7 @@ export function createListExtensionsHandler(deps: McpToolDeps) {
       bundleReady: ext.bundleReady,
       hasServerEntry: ext.hasServerEntry,
       hasDataProxy: ext.hasDataProxy,
-      serverStatus: manager.getServerRouter(ext.id) ? ('active' as const) : ('inactive' as const),
+      serverStatus: manager.getServerHandler(ext.id) ? ('active' as const) : ('inactive' as const),
       ...(ext.manifest.description && { description: ext.manifest.description }),
       ...(ext.error && { error: ext.error }),
       // What it gives agents, and why a tool is not offered (DOR-2685).

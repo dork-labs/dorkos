@@ -98,11 +98,26 @@ vi.mock('../../env.js', () => ({ env: { DORKOS_PORT: 7777 } }));
  */
 vi.stubEnv('VITE_PORT', '7779');
 
+// CORS lets these test origins through, so each reaches the route's own
+// origin bar, which judges against the server's static set and not this list.
+vi.stubEnv(
+  'DORKOS_CORS_ORIGIN',
+  'https://evil.example,http://evil.example,http://localhost:7777.evil.example,http://127.0.0.1:7,http://127.0.0.1:7778,http://evil.example:7777'
+);
+
+// The session gate lets every request through: these cases are about the
+// routes' own bars, and each one sets the user the gate would have proved
+// (`before` below), as the Express version stubbed `res.locals.user`.
+vi.mock('../../services/core/auth/session-gate.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../services/core/auth/session-gate.js')>()),
+  decideSessionGate: vi.fn(async () => ({ allowed: true })),
+}));
+
 import request from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
-import express from 'express';
 import type { ExtensionRecord, ExtensionRecordPublic } from '@dorkos/extension-api';
-import { createExtensionsRouter } from '../extensions.js';
+import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
+import { createExtensionsRoutes } from '../extensions.js';
 import {
   findOperatorOnlyPaths,
   OPERATOR_ONLY_CONFIG_PATHS,
@@ -152,7 +167,6 @@ function stubPublic(approvedToRun: boolean): ExtensionRecordPublic {
 }
 
 describe('POST /api/extensions/:id/approve', () => {
-  let app: express.Application;
   let manager: {
     get: ReturnType<typeof vi.fn>;
     approveToRun: ReturnType<typeof vi.fn>;
@@ -193,22 +207,24 @@ describe('POST /api/extensions/:id/approve', () => {
       ),
     };
 
-    app = express();
-    app.use(express.json());
-    app.use((_req, res, next) => {
-      if (signedInUser) res.locals.user = signedInUser;
-      next();
-    });
-    app.use(
-      '/api/extensions',
-      createExtensionsRouter(
-        manager as unknown as Parameters<typeof createExtensionsRouter>[0],
-        DORK_HOME,
-        () => null
+    fixtureTarget.mount(
+      honoGroupListener(
+        {
+          path: '/api/extensions',
+          routes: createExtensionsRoutes({
+            manager: manager as unknown as Parameters<typeof createExtensionsRoutes>[0]['manager'],
+            dorkHome: DORK_HOME,
+            getCwd: () => null,
+          }),
+        },
+        {
+          before: async (c, next) => {
+            if (signedInUser) c.set('user', signedInUser as never);
+            await next();
+          },
+        }
       )
     );
-
-    fixtureTarget.mount(app);
   });
 
   describe('an agent that names itself', () => {
@@ -416,13 +432,16 @@ describe('POST /api/extensions/:id/approve', () => {
 
     it('refuses the opaque `null` origin a sandboxed frame sends', async () => {
       // A sandboxed iframe or a `data:` URL sends the literal string `null`. It is
-      // an Origin header, so it is judged, and it is in no allowlist.
+      // an Origin header, so it is judged, and it is in no allowlist: CORS
+      // refuses it before the route's own bar, which would refuse it too.
       const res = await request(fixtureServer)
         .post('/api/extensions/my-ext/approve')
         .set('origin', 'null')
         .send({});
 
-      expect(res.status).toBe(403);
+      expect(res.status).toBe(500);
+      expect(res.body.error).toBe('Origin null not allowed by CORS');
+      expect(manager.approveToRun).not.toHaveBeenCalled();
       expect(state.extensions.approvedToRun).toEqual([]);
     });
 
@@ -608,7 +627,6 @@ describe('GET /api/extensions/:id/bundle', () => {
    * because this route is the only way a bundle reaches a browser; what this test
    * pins is that the route honours it rather than falling back to something else.
    */
-  let app: express.Application;
   let manager: {
     readBundle: ReturnType<typeof vi.fn>;
     listPublic: ReturnType<typeof vi.fn>;
@@ -633,17 +651,16 @@ describe('GET /api/extensions/:id/bundle', () => {
       trustOfferFor: vi.fn().mockReturnValue(null),
     };
 
-    app = express();
-    app.use(
-      '/api/extensions',
-      createExtensionsRouter(
-        manager as unknown as Parameters<typeof createExtensionsRouter>[0],
-        DORK_HOME,
-        () => null
-      )
+    fixtureTarget.mount(
+      honoGroupListener({
+        path: '/api/extensions',
+        routes: createExtensionsRoutes({
+          manager: manager as unknown as Parameters<typeof createExtensionsRoutes>[0]['manager'],
+          dorkHome: DORK_HOME,
+          getCwd: () => null,
+        }),
+      })
     );
-
-    fixtureTarget.mount(app);
   });
 
   it('serves nothing for an extension the person has not approved', async () => {

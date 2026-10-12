@@ -4,7 +4,7 @@ paths: apps/server/src/services/**/*.ts, apps/server/src/routes/**/*.ts
 
 # Server Structure Rules
 
-Express server: flat `routes/`, domain-grouped `services/`.
+Hono server: flat `routes/`, domain-grouped `services/`.
 
 ## Layout
 

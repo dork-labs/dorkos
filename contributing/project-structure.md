@@ -13,7 +13,7 @@ dorkos/
 │   ├── community/        # @dorkos/community — independent Hono/Postgres community service
 │   ├── design-system/    # @dorkos/design-system — standalone shared UI catalog
 │   ├── desktop/          # @dorkos/desktop — Electron shell
-│   ├── server/           # @dorkos/server — Express API (routes + domain-grouped services)
+│   ├── server/           # @dorkos/server — Hono API (routes + domain-grouped services)
 │   ├── site/             # @dorkos/site — Marketing site & docs (Next.js 16, Fumadocs)
 │   └── e2e/              # @dorkos/e2e — Playwright browser tests
 ├── packages/
@@ -336,7 +336,7 @@ The server uses flat routes + domain-grouped services (not FSD layers):
 
 ```
 apps/server/src/
-├── app.ts           # Express app configuration
+├── http/            # Hono app (hono-api.ts), middleware chain (api-chain.ts), front door (front-door.ts)
 ├── index.ts         # Server entry point
 ├── env.ts           # Zod-validated environment config
 ├── harness-boot.ts  # Projects skills/hooks/commands into every agent harness at startup

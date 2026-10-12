@@ -68,7 +68,6 @@ vi.mock('../../services/core/config-manager.js', () => ({
   configManager: { get: vi.fn().mockReturnValue(null), set: vi.fn() },
 }));
 
-import { createApp, finalizeApp } from '../../app.js';
 import { composedListener } from '../../http/__tests__/composed-listener.js';
 import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
 import roomsRouter from '../rooms.js';
@@ -103,9 +102,7 @@ import { AttachmentRowStore } from '../../services/rooms/attachments/attachment-
 const execFileAsync = promisify(execFile);
 
 const admission = new MainRequestAdmission();
-const app = createApp({ admission });
-finalizeApp(app);
-const testServer = listeningServer(composedListener(app, admission));
+const testServer = listeningServer(composedListener(admission));
 
 /**
  * The rooms routes behind a stand-in for the session gate: it sets `user`

@@ -30,12 +30,13 @@ vi.mock('../../services/core/config-manager.js', () => ({
 
 import request from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
-import express from 'express';
+import type { RequestListener } from 'node:http';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import type { ExtensionRecord, ExtensionRecordPublic } from '@dorkos/extension-api';
-import { createExtensionsRouter } from '../extensions.js';
+import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
+import { createExtensionsRoutes } from '../extensions.js';
 
 const fixtureTarget = swappableServer();
 const fixtureServer = fixtureTarget.server;
@@ -121,23 +122,20 @@ function stubRecord(overrides: Partial<ExtensionRecord> = {}): ExtensionRecord {
 function createApp(
   manager: MockManager,
   getCwd: () => string | null = () => TEST_CWD
-): express.Express {
-  const app = express();
-  app.use(express.json());
+): RequestListener {
   // Cast to satisfy the type -- our mock fulfills the interface structurally
-  app.use(
-    '/api/extensions',
-    createExtensionsRouter(
-      manager as unknown as Parameters<typeof createExtensionsRouter>[0],
-      DORK_HOME,
-      getCwd
-    )
-  );
-  return app;
+  return honoGroupListener({
+    path: '/api/extensions',
+    routes: createExtensionsRoutes({
+      manager: manager as unknown as Parameters<typeof createExtensionsRoutes>[0]['manager'],
+      dorkHome: DORK_HOME,
+      getCwd,
+    }),
+  });
 }
 
 describe('Extension Routes', () => {
-  let app: express.Express;
+  let app: RequestListener;
   let manager: MockManager;
 
   beforeEach(async () => {

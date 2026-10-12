@@ -1,6 +1,6 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import { env } from '../../env.js';
-import { REQUEST_FACTS_ADAPTERS } from '../../http/__tests__/request-facts-adapters.js';
+import { requestFactsFor } from '../../http/__tests__/described-request.js';
 import { forwardedForIsTrusted, rateLimitKey } from '../rate-limit-key.js';
 
 /**
@@ -23,10 +23,10 @@ afterEach(() => {
   mutableEnv.DORKOS_TRUST_PROXY = false;
 });
 
-describe.each(REQUEST_FACTS_ADAPTERS)('rateLimitKey, through the $name adapter', (adapter) => {
+describe('rateLimitKey', () => {
   /** The key for a socket peer that forwards `forwarded` as `X-Forwarded-For`. */
   async function key(peer: string | undefined, forwarded = '203.0.113.1'): Promise<string> {
-    const facts = await adapter.facts({
+    const facts = await requestFactsFor({
       peer: peer ?? null,
       headers: { 'X-Forwarded-For': forwarded },
     });

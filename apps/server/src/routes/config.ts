@@ -407,7 +407,7 @@ function requestConfigWriteAuthority(caller: RequestFacts): ConfigWriteAuthority
     // The REST twin of the guard on `operator.config_patch` (DOR-467). PR #469
     // put the operator-only write policy on the capability surface, but this
     // route reaches the SAME write and had no policy check at all — and with
-    // login off `sessionGate` is a documented pass-through, so an agent with a
+    // login off the session gate is a documented pass-through, so an agent with a
     // shell could `curl` straight past the guard whose whole promise is that
     // agents cannot change the settings protecting the instance.
     //
@@ -423,7 +423,7 @@ function requestConfigWriteAuthority(caller: RequestFacts): ConfigWriteAuthority
       //
       // The agent bar is cleared by omitting two headers, which anything
       // with a shell can do; under login-on that included a program holding one of
-      // the person's per-user API keys, which `sessionGate` accepts as the same
+      // the person's per-user API keys, which the session gate accepts as the same
       // identity a browser session proves (DOR-474). It could write `auth.enabled`
       // here — voiding every approval this instance would ever enforce — while the
       // capability surface refused it that same write. Reproduced against a live

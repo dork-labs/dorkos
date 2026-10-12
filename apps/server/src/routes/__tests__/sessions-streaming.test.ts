@@ -69,7 +69,6 @@ vi.mock('@dorkos/shared/manifest', () => ({
 
 import request from '@dorkos/test-utils/supertest';
 import { listeningServer } from '@dorkos/test-utils/listening-server';
-import { createApp, finalizeApp } from '../../app.js';
 import { composedListener } from '../../http/__tests__/composed-listener.js';
 import {
   getOrCreateProjector,
@@ -78,8 +77,6 @@ import {
 import { collectTriggeredTurn } from './helpers/trigger-turn-helpers.js';
 
 const admission = new MainRequestAdmission();
-const app = createApp({ admission });
-finalizeApp(app);
 
 /**
  * ONE listener for the whole file (DOR-483). Requests and `/events` attachments
@@ -88,7 +85,7 @@ finalizeApp(app);
  * same, so a pooled keep-alive socket for a reclaimed port could land on the
  * wrong server. See {@link listeningServer}.
  */
-const server = listeningServer(composedListener(app, admission));
+const server = listeningServer(composedListener(admission));
 
 /** Valid UUID for session ID params (routes validate UUID format). */
 const SESSION_ID = '00000000-0000-4000-8000-000000000001';

@@ -11,7 +11,6 @@
  *
  * @module routes/room-error-response
  */
-import type { Response } from 'express';
 import {
   isOwnerRecord,
   RoomError,
@@ -21,7 +20,6 @@ import {
 } from '../services/rooms/index.js';
 import { readOwnerAccount } from '../services/core/auth/index.js';
 import { logger } from '../lib/logger.js';
-import { ROOM_CALLER_LOCAL } from './room-caller-local.js';
 
 /** HTTP status for each way the room service can refuse. */
 export const STATUS_BY_CODE: Record<RoomErrorCode, number> = {
@@ -207,7 +205,7 @@ export const STATUS_BY_CODE: Record<RoomErrorCode, number> = {
   MERGE_IN_FLIGHT: 429,
 };
 
-/** A room refusal as a status and a body, before either chain writes it. */
+/** A room refusal as a status and a body, before the chain writes it. */
 export interface RoomErrorReply {
   /** The HTTP status. */
   status: number;
@@ -220,7 +218,7 @@ export interface RoomErrorReply {
  * own code; anything else is a bug and gets a generic 500 with the detail in
  * the log, not on the wire.
  *
- * {@link sendRoomError} writes it on Express; a Hono route returns
+ * `sendRoomError` wrote it on Express; a Hono route returns
  * `c.json(reply.body, reply.status)`.
  *
  * @param err - The caught value.
@@ -240,33 +238,6 @@ export function roomErrorReply(
   }
   logger.error(`[rooms] ${context} failed`, { err });
   return { status: 500, body: { error: 'Internal server error' } };
-}
-
-/**
- * Map a thrown value onto a response: {@link roomErrorReply}, written.
- *
- * @param res - The response to write to.
- * @param err - The caught value.
- * @param context - Route label for the log line.
- */
-export function sendRoomError(
-  res: Pick<Response, 'status' | 'locals'>,
-  err: unknown,
-  context: string
-): void {
-  const reply = roomErrorReply(err, context, () => ownerAsking(res));
-  res.status(reply.status).json(reply.body);
-}
-
-/**
- * Whether the caller `resolveCaller` left on `res.locals` is the install's
- * owner. `false` when no caller was resolved, so a route that refused before
- * resolving its caller shows the operator's refusal to nobody (DOR-2457).
- *
- * @param res - The response, carrying the caller `resolveCaller` resolved.
- */
-export function ownerAsking(res: Pick<Response, 'locals'>): boolean {
-  return isOwnerCaller(res.locals[ROOM_CALLER_LOCAL] as AuthorRecord | undefined);
 }
 
 /**

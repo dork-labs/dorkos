@@ -9,10 +9,13 @@
  *
  * @module routes/heartbeat-triage
  */
-import { Router } from 'express';
+import { Hono } from 'hono';
 import { TriageCreditsChoiceSchema } from '@dorkos/shared/heartbeat-schemas';
-import { parseBody } from '../lib/route-utils.js';
-import { refuseErrorUnlessOwner } from './cloud-owner-bar.js';
+import type { ApiEnv } from '../http/api-chain.js';
+import { readJsonBody } from '../http/request-body.js';
+import { honoRequestFacts } from '../http/request-facts.js';
+import { validationFailureBody } from '../lib/route-utils.js';
+import { errorRefusalUnlessOwner } from './cloud-owner-bar.js';
 
 /** What the route reads and writes. */
 export interface HeartbeatTriageRouterDeps {
@@ -25,27 +28,25 @@ export interface HeartbeatTriageRouterDeps {
 }
 
 /**
- * Build the router, mounted at `/api/heartbeats/triage-credits`.
+ * Build the routes, mounted at `/api/heartbeats/triage-credits`.
  *
  * @param deps - Where the choice lives.
  */
-export function createHeartbeatTriageRouter(deps: HeartbeatTriageRouterDeps): Router {
-  const router = Router();
-  router.put('/', (req, res) => {
-    if (
-      refuseErrorUnlessOwner(req, res, {
-        personOnly: 'Only you can choose what pays for checks, from the DorkOS app.',
-        action: 'choose what pays for checks',
-      })
-    ) {
-      return;
-    }
-    const body = parseBody(TriageCreditsChoiceSchema, req.body ?? {}, res);
-    if (!body) return;
+export function createHeartbeatTriageRoutes(deps: HeartbeatTriageRouterDeps): Hono<ApiEnv> {
+  const router = new Hono<ApiEnv>();
+  router.put('/', (c) => {
+    const refusal = errorRefusalUnlessOwner(honoRequestFacts(c), {
+      personOnly: 'Only you can choose what pays for checks, from the DorkOS app.',
+      action: 'choose what pays for checks',
+    });
+    if (refusal) return c.json(refusal, 403);
+    const parsed = TriageCreditsChoiceSchema.safeParse(readJsonBody(c, { emptyAs: {} }));
+    if (!parsed.success) return c.json(validationFailureBody(parsed.error), 400);
+    const { useCredits } = parsed.data;
     const before = deps.choice();
-    deps.setChoice(body.useCredits);
-    if (before !== body.useCredits) deps.record(before, body.useCredits);
-    res.json({ useCredits: body.useCredits });
+    deps.setChoice(useCredits);
+    if (before !== useCredits) deps.record(before, useCredits);
+    return c.json({ useCredits });
   });
   return router;
 }

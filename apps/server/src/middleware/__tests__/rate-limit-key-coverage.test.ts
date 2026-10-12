@@ -86,7 +86,7 @@ describe('every rate limiter keys through the shared rateLimitKey', () => {
   it('builds every limiter through the adapters that key on rateLimitKey', async () => {
     const sources = await readSources();
     const sites = sources.flatMap(({ file, source }) =>
-      sitesOf(file, source, /\b(?:expressRateLimit|honoRateLimit)\s*\(\s*\{/g)
+      sitesOf(file, source, /\b(?:expressRateLimit|honoRateLimit|factsRateLimit)\s*\(\s*\{/g)
     );
     // The scan has to actually find something. A regex that silently matched
     // nothing (after a rename or a formatting change) would pass this file
@@ -119,7 +119,8 @@ describe('every rate limiter keys through the shared rateLimitKey', () => {
     expect(
       describeSites(bare),
       '`createRateLimiter` counts under whatever key it is handed. Build the limiter ' +
-        'with `expressRateLimit` or `honoRateLimit`, which key through `rateLimitKey`.'
+        'with `expressRateLimit`, `honoRateLimit` or `factsRateLimit`, which key through ' +
+        '`rateLimitKey`.'
     ).toEqual([]);
   });
 });

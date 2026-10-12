@@ -26,7 +26,8 @@ import { searchForCaller, type SearchScope } from './search-service.js';
  * @param db - The database holding the index.
  * @param scope - What this caller may see, resolved by whoever knows who they
  *   are. Never derived here.
- * @param raw - The Express query object, parsed rather than trusted.
+ * @param raw - The request's query object (`http/request-query.ts`), parsed
+ *   rather than trusted.
  * @returns The envelope, or the refusal the HTTP route would have sent.
  */
 export function answerSearch(db: Db, scope: SearchScope, raw: unknown): SearchAnswer {

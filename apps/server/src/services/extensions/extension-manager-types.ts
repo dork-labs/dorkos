@@ -10,7 +10,7 @@ import type {
   ExtensionStatus,
   ExtensionToolStatus,
 } from '@dorkos/extension-api';
-import type { Router } from 'express';
+import type { ExtensionHttpHandler } from './http/extension-http.js';
 import { mayRunExtensionCode, type ExtensionApprovals } from './extension-load-policy.js';
 import type { IsolatedExtensionHost } from './isolation/isolated-host.js';
 import type { RunningExtensionTools } from './agent-tools/tool-binding.js';
@@ -18,7 +18,8 @@ import type { RunningExtensionTools } from './agent-tools/tool-binding.js';
 /** Tracks an active server-side extension instance. */
 export interface ActiveServerExtension {
   extensionId: string;
-  router: Router;
+  /** Answers `/api/ext/<id>/*` (`extension-http.ts`). */
+  handler: ExtensionHttpHandler;
   cleanup: (() => void) | null;
   scheduledCleanups: Array<() => void>;
   /**

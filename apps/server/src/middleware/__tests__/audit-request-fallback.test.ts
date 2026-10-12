@@ -4,12 +4,19 @@
  * outcome; never the body, query or ids), and a write a choke point did record
  * adds nothing, including one recorded in a narrower scope inside the request.
  */
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import express from 'express';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import request from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
 import { createTestDb } from '@dorkos/test-utils/db';
 import { auditEvents, type Db } from '@dorkos/db';
+
+vi.mock('../../services/core/config-manager.js', () => ({
+  configManager: { get: vi.fn().mockReturnValue(null), set: vi.fn() },
+}));
+vi.mock('../../services/core/tunnel-manager.js', () => ({
+  tunnelManager: { status: { enabled: false, connected: false, url: null } },
+}));
+
 import { AuditLog } from '../../services/audit/audit-log.js';
 import { AccountIds } from '../../services/audit/account-ids.js';
 import {
@@ -18,15 +25,27 @@ import {
   resetAuditTrail,
   runAsAgent,
 } from '../../services/audit/audit-trail.js';
-import { auditActor } from '../audit-actor.js';
-import { auditRequestFallback, routePatternOf } from '../audit-request-fallback.js';
+import { routePatternOf } from '../audit-request-fallback.js';
+import { createApiApp } from '../../http/api-chain.js';
+import { frontDoorListener } from '../../http/front-door.js';
+import { MainRequestAdmission } from '../../services/core/lifecycle/main-request-admission.js';
 
 const fixtureTarget = swappableServer();
 const server = fixtureTarget.server;
 
-describe('auditRequestFallback', () => {
+/** Conversation: things said, which the fallback never records. */
+const CONVERSATION_PATHS = [
+  '/api/sessions/3f2b8c1e-1d2a-4c9b-9e7f-0a1b2c3d4e5f/messages',
+  '/api/sessions/3f2b8c1e-1d2a-4c9b-9e7f-0a1b2c3d4e5f/queue/q1',
+  '/api/rooms/general/entries',
+  '/api/rooms/general/entries/e1/reactions',
+  '/api/rooms/general/threads',
+  '/api/rooms/general/attachments',
+  '/api/communities/c1/rooms/r1/entries',
+];
+
+describe('the audit fallback, in the chain', () => {
   let db: Db;
-  let app: express.Express;
 
   beforeEach(() => {
     db = createTestDb();
@@ -34,24 +53,18 @@ describe('auditRequestFallback', () => {
       log: new AuditLog(db),
       accounts: new AccountIds({ db, installId: 'inst-1', readOwnerAccount: () => null }),
     });
-    app = express();
-    app.use(express.json());
-    app.use(auditActor);
-    app.use(auditRequestFallback);
+    // The real chain: its audit-actor step, then the fallback.
+    const app = createApiApp({ admission: new MainRequestAdmission() });
     // A route with no choke point behind it.
-    app.post('/api/rooms/:id/pins', (_req, res) => {
-      res.json({ ok: true });
-    });
-    app.delete('/api/rooms/:id', (_req, res) => {
-      res.status(403).json({ error: 'no' });
-    });
+    app.post('/api/rooms/:id/pins', (c) => c.json({ ok: true }));
+    app.delete('/api/rooms/:id', (c) => c.json({ error: 'no' }, 403));
     // A route whose work is recorded by a choke point.
-    app.post('/api/covered', (_req, res) => {
+    app.post('/api/covered', (c) => {
       recordAudit({ action: 'covered.done', operation: 'modify', outcome: 'ok', summary: 'Done' });
-      res.json({ ok: true });
+      return c.json({ ok: true });
     });
     // A route whose work is recorded in a narrower scope (an agent's call).
-    app.post('/api/nested', async (_req, res) => {
+    app.post('/api/nested', async (c) => {
       await runAsAgent(
         { agentPath: '/projects/scout', displayName: 'Scout' },
         undefined,
@@ -64,15 +77,12 @@ describe('auditRequestFallback', () => {
           });
         }
       );
-      res.json({ ok: true });
+      return c.json({ ok: true });
     });
-    app.get('/api/rooms', (_req, res) => {
-      res.json([]);
-    });
-    app.patch('/api/rooms/:id/read', (_req, res) => {
-      res.json({ ok: true });
-    });
-    fixtureTarget.mount(app);
+    app.get('/api/rooms', (c) => c.json([]));
+    app.patch('/api/rooms/:id/read', (c) => c.json({ ok: true }));
+    for (const path of CONVERSATION_PATHS) app.post(path, (c) => c.json({ ok: true }));
+    fixtureTarget.mount(frontDoorListener(app));
   });
   afterEach(() => resetAuditTrail());
 
@@ -122,18 +132,7 @@ describe('auditRequestFallback', () => {
   });
 
   it('records nothing for conversation: chat messages, room posts, reactions, threads', async () => {
-    for (const path of [
-      '/api/sessions/3f2b8c1e-1d2a-4c9b-9e7f-0a1b2c3d4e5f/messages',
-      '/api/sessions/3f2b8c1e-1d2a-4c9b-9e7f-0a1b2c3d4e5f/queue/q1',
-      '/api/rooms/general/entries',
-      '/api/rooms/general/entries/e1/reactions',
-      '/api/rooms/general/threads',
-      '/api/rooms/general/attachments',
-      '/api/communities/c1/rooms/r1/entries',
-    ]) {
-      app.post(path, (_req, res) => {
-        res.json({ ok: true });
-      });
+    for (const path of CONVERSATION_PATHS) {
       await request(server).post(path).send({ text: 'private thoughts' });
     }
     expect(await rows()).toEqual([]);
