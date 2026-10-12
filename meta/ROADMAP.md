@@ -57,7 +57,7 @@ A card is required for DorkOS's own AI; there are no free starter credits. There
 - Agents running on Claude Code, Codex or OpenCode. A docs fact, not a headline.
 - The Activity page, a record of what agents did. Never call it a complete audit trail.
 - DorkOS Cloud today: accounts, remote access and credits. Never name prices or plans.
-- **Getting started with your own AI.** Pick an AI app you already sign in to, give DorkOS a key, or point it at a model running on your computer; DorkOS picks the model for you, and no runtime or model name is on the way. The "under a minute" timing is proven in the browser for the AI-app sign-in; claim it for a key or a local model only once a timed run proves it. Never claim this timing for the DorkOS-account path with a real card; that still depends on DorkOS Cloud.
+- **Getting started with your own AI.** Pick an AI app you already sign in to, give DorkOS a key, or point it at a model running on your computer; DorkOS picks the model for you, and no runtime or model name is on the way. The "under a minute" timing is proven in the browser for the AI-app sign-in; claim it for a key only once a timed run proves it. A model on this computer does not reach a first reply yet (DOR-2843), so never claim it works. Never claim this timing for the DorkOS-account path with a real card; that still depends on DorkOS Cloud.
 
 ### Still unverified: never claim it works
 
