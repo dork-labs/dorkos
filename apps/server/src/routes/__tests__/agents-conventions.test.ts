@@ -82,9 +82,9 @@ vi.mock('../../services/core/config-manager.js', () => ({
 }));
 
 import request from '@dorkos/test-utils/supertest';
-import express from 'express';
 import { listeningServer } from '@dorkos/test-utils/listening-server';
-import { createAgentsRouter } from '../agents.js';
+import { createAgentsRoutes } from '../agents.js';
+import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
 import {
   clearTestHomes,
@@ -96,9 +96,7 @@ import {
 beforeEach(() => registerEveryFolderAsHome());
 afterEach(() => clearTestHomes());
 
-const app = express();
-app.use(express.json());
-app.use('/api/agents', createAgentsRouter());
+const app = honoGroupListener({ path: '/api/agents', routes: createAgentsRoutes() });
 
 /**
  * ONE listener for the whole file (DOR-483). Requests target `server`, never

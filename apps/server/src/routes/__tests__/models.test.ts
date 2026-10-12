@@ -267,6 +267,39 @@ describe('Models Routes', () => {
       }
     );
 
+    it('lets a runtime that picks its own credits model answer its menu, else the shared one', async () => {
+      const picked = [
+        { value: 'md_claude_pick', displayName: 'Pick', description: 'Chosen by DorkOS' },
+      ];
+      const autoCreditsModels = vi.fn(async (): Promise<unknown[] | null> => picked);
+      RUNTIMES.doe = {
+        type: 'doe',
+        getSupportedModels: async () => [],
+        getCapabilities: () => ({
+          type: 'doe',
+          credits: { protocol: 'anthropic-messages', scope: 'conversation' },
+        }),
+        sessionRunsOnCredits: async () => true,
+        autoCreditsModels,
+      } as (typeof RUNTIMES)[string];
+      try {
+        const own = await request(testServer).get('/api/models?runtime=doe&account=dorkos-credits');
+        expect(own.body.models).toEqual(picked);
+        expect(autoCreditsModels).toHaveBeenCalledWith(undefined);
+        expect(service.calls).toBe(0);
+        autoCreditsModels.mockResolvedValueOnce(null);
+        const shared = await request(testServer).get(
+          '/api/models?runtime=doe&account=dorkos-credits'
+        );
+        expect(shared.body.models.map((m: { value: string }) => m.value)).toEqual([
+          'md_claude_pick',
+        ]);
+        expect(shared.body.models[0].description).toBe('Recommended');
+      } finally {
+        delete RUNTIMES.doe;
+      }
+    });
+
     it('lists only what credits serve on the runtime’s protocol for a session on credits', async () => {
       ladder.accountId = 'dorkos-credits';
       const res = await request(testServer).get(`/api/models?sessionId=${CLAUDE_SESSION}`);

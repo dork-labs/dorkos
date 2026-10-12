@@ -24,6 +24,6 @@ export { SqliteTaskStore } from './task-store.js';
 // Agent executor
 export { DorkOSAgentExecutor } from './dorkos-executor.js';
 
-// Express integration
-export { createA2aHandlers } from './express-handlers.js';
-export type { A2aHandlerDeps, A2aHandlers } from './express-handlers.js';
+// The endpoints, as fetch-style handlers
+export { createA2aGateway } from './http-handlers.js';
+export type { A2aGateway, A2aGatewayDeps, A2aRpcOptions } from './http-handlers.js';

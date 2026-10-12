@@ -19,7 +19,8 @@
  */
 import type { Request, Response } from 'express';
 
-import { presentsAgentIdentity } from '../middleware/agent-identity.js';
+import { getRequestAgentIdentity, presentsAgentIdentity } from '../middleware/agent-identity.js';
+import type { RequestFacts } from '../http/request-facts.js';
 import type { RequestUser } from '../services/core/auth/session-gate.js';
 
 /**
@@ -56,19 +57,36 @@ export type CallerPrincipal =
  * server. That member is constructed by the relay path (spec `ask-entitlement`
  * §5) and belongs to the union so that one function answers for both worlds.
  *
- * @param req - The incoming request or upgrade, for the raw headers.
- * @param res - Anything holding the request-scoped locals — an Express
- *   `Response`, or the locals a WebSocket upgrade resolved for itself.
+ * Takes a request's facts (`http/request-facts.ts`), which is how a Hono
+ * route asks, or a request and the locals the gate filled.
+ *
+ * @param req - The request's facts, or the incoming request or upgrade, for
+ *   the raw headers.
+ * @param res - With a request: anything holding the request-scoped locals — an
+ *   Express `Response`, or the locals a WebSocket upgrade resolved for itself.
  * @returns What is calling.
  */
 export function readCallerPrincipal(
+  request: Pick<RequestFacts, 'headers' | 'user' | 'agentIdentity'>
+): CallerPrincipal;
+export function readCallerPrincipal(
   req: Pick<Request, 'headers'>,
   res: Pick<Response, 'locals'>
+): CallerPrincipal;
+export function readCallerPrincipal(
+  req: Pick<Request, 'headers'> | Pick<RequestFacts, 'headers' | 'user' | 'agentIdentity'>,
+  res?: Pick<Response, 'locals'>
 ): CallerPrincipal {
-  if (presentsAgentIdentity(req, res)) return { kind: 'agent' };
+  const caller: Pick<RequestFacts, 'headers' | 'user' | 'agentIdentity'> = res
+    ? {
+        headers: req.headers,
+        user: res.locals.user as RequestUser | undefined,
+        agentIdentity: getRequestAgentIdentity(res),
+      }
+    : (req as Pick<RequestFacts, 'headers' | 'user' | 'agentIdentity'>);
+  if (presentsAgentIdentity(caller)) return { kind: 'agent' };
 
-  const user = res.locals.user as RequestUser | undefined;
-  if (user?.credential === 'api-key') return { kind: 'program', userId: user.userId };
+  if (caller.user?.credential === 'api-key') return { kind: 'program', userId: caller.user.userId };
 
   return { kind: 'operator' };
 }

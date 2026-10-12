@@ -1,6 +1,6 @@
 /**
  * Shared path-safety guards for the workbench file routes (`routes/files.ts`,
- * `routes/diff.ts`).
+ * `routes/diff.ts`, `routes/session-recording.ts`).
  *
  * Every route that resolves a caller-supplied path inside a session's working
  * directory MUST go through {@link resolveWithinCwd} — it double-validates
@@ -11,7 +11,6 @@
  *
  * @module lib/file-route-guards
  */
-import type { Response } from 'express';
 import crypto from 'node:crypto';
 import path from 'node:path';
 import { validateBoundary, BoundaryError } from './boundary.js';
@@ -144,24 +143,31 @@ export async function resolveWithinCwd(
   return { validatedCwd, resolved };
 }
 
+/** The answer {@link pathErrorReply} gives a path the guards refused. */
+export interface PathErrorReply {
+  /** `400` for a NUL byte or an unusable path, `403` for one outside the boundary. */
+  status: 400 | 403;
+  /** The body. */
+  body: { error: string; code: string };
+}
+
 /**
- * Map a boundary/path-resolution error to an HTTP response. Returns `true` when
- * it handled the error (caller should stop); `false` for an unexpected error the
- * caller should treat as a 500.
+ * Map a boundary/path-resolution error to an HTTP answer, or `null` for an
+ * unexpected error the caller should treat as a 500. A route returns
+ * `c.json(reply.body, reply.status)`.
  *
- * @param res - The Express response to write on a handled error.
  * @param err - The thrown error to classify.
  */
-export function sendPathError(res: Response, err: unknown): boolean {
+export function pathErrorReply(err: unknown): PathErrorReply | null {
   if (err instanceof BoundaryError) {
-    const status = err.code === 'NULL_BYTE' ? 400 : 403;
-    res.status(status).json({ error: err.message, code: err.code });
-    return true;
+    return {
+      status: err.code === 'NULL_BYTE' ? 400 : 403,
+      body: { error: err.message, code: err.code },
+    };
   }
   const code = (err as NodeJS.ErrnoException).code;
   if (code === 'ELOOP' || code === 'ENOTDIR' || code === 'ENAMETOOLONG') {
-    res.status(400).json({ error: 'Invalid path', code });
-    return true;
+    return { status: 400, body: { error: 'Invalid path', code } };
   }
-  return false;
+  return null;
 }

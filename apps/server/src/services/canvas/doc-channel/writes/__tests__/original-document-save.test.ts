@@ -1,4 +1,3 @@
-import express from 'express';
 import fs from 'node:fs/promises';
 import { randomUUID, createHash } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
@@ -15,7 +14,7 @@ import {
   PageEventSchema,
   CanvasChannelDownstreamEventTypeSchema,
 } from '@dorkos/shared/canvas-channel-schemas';
-import files from '../../../../../routes/files.js';
+import { originalDocHttpListener } from '../../__tests__/original-doc-http-listener.js';
 import { setRoomService, clearRoomService } from '../../../../rooms/index.js';
 import { docDocumentGeneration } from '../../identity/incarnation.js';
 import { authorityFixture } from './authority-fixtures.js';
@@ -26,11 +25,7 @@ async function ownedSave(agentRoute = false) {
   const h = await authorityFixture(false, false, agentRoute, 'md.*');
   try {
     setRoomService(h.rooms.service);
-    const app = express();
-    app.use(express.json({ limit: '1mb' }));
-    app.locals.docChannelHttp = h.http;
-    app.use('/files', files);
-    const server = target.mount(app);
+    const server = target.mount(originalDocHttpListener(() => h.http, { fileMount: '/files' }));
     const original = await fs.readFile(h.path, 'utf8');
     const physical = h.db
       .select()

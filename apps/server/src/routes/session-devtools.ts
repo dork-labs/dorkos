@@ -18,27 +18,31 @@
  *
  * @module routes/session-devtools
  */
-import type { Request, Response } from 'express';
+import type { Context } from 'hono';
 import { DevtoolsActionResultSchema, DevtoolsIngestSchema } from '@dorkos/shared/schemas';
 import { devtoolsCaptureStore } from '../services/session/index.js';
-import { parseSessionId, sendError } from '../lib/route-utils.js';
+import type { ApiEnv } from '../http/api-chain.js';
+import { readJsonBody } from '../http/request-body.js';
+import { errorBody, parseSessionId } from '../lib/route-utils.js';
+
+const INVALID_SESSION_ID = errorBody('Invalid session ID', 'INVALID_SESSION_ID');
 
 /**
- * Express handler for `POST /api/sessions/:id/devtools/ingest`. Zod-validated and
+ * Handler for `POST /api/sessions/:id/devtools/ingest`. Zod-validated and
  * size-capped: a batch over a per-array entry limit, a console entry over its
  * serialized `args` size cap, or a screenshot data URL over
  * `DEVTOOLS_SCREENSHOT_MAX_CHARS` is a `413` (distinct from a malformed `400`),
  * so an oversized relay is a clear, debuggable outcome. Accepts any well-formed
  * session id without an existence check — see the inline posture note.
  *
- * @param req - The Express request (`:id` route param + `DevtoolsIngest` body).
- * @param res - The Express response (204 sink / 400 / 413).
+ * @param c - The request context (`:id` route param + `DevtoolsIngest` body);
+ *   answers 204 sink / 400 / 413.
  */
-export async function sessionDevtoolsIngestHandler(req: Request, res: Response): Promise<void> {
-  const sessionId = parseSessionId(req.params.id);
-  if (!sessionId) return sendError(res, 400, 'Invalid session ID', 'INVALID_SESSION_ID');
+export function sessionDevtoolsIngestHandler(c: Context<ApiEnv>): Response {
+  const sessionId = parseSessionId(c.req.param('id'));
+  if (!sessionId) return c.json(INVALID_SESSION_ID, 400);
 
-  const parsed = DevtoolsIngestSchema.safeParse(req.body);
+  const parsed = DevtoolsIngestSchema.safeParse(readJsonBody(c));
   if (!parsed.success) {
     const overCap = parsed.error.issues.some(
       (i) =>
@@ -51,9 +55,9 @@ export async function sessionDevtoolsIngestHandler(req: Request, res: Response):
         (i.code === 'custom' && i.path.at(-1) === 'args')
     );
     if (overCap) {
-      return sendError(res, 413, 'DevTools ingest batch too large', 'BATCH_TOO_LARGE');
+      return c.json(errorBody('DevTools ingest batch too large', 'BATCH_TOO_LARGE'), 413);
     }
-    return sendError(res, 400, 'Invalid DevTools ingest batch', 'VALIDATION_ERROR');
+    return c.json(errorBody('Invalid DevTools ingest batch', 'VALIDATION_ERROR'), 400);
   }
 
   // Deliberately NO session-existence check: like the durable event stream
@@ -77,18 +81,14 @@ export async function sessionDevtoolsIngestHandler(req: Request, res: Response):
   // window that really is showing the page — and every driving verb would then
   // address a client that does not exist and time out. A caller with no id
   // still ingests its captures; it simply cannot claim.
-  const clientId = req.headers['x-client-id'];
+  const clientId = c.req.header('x-client-id');
 
-  devtoolsCaptureStore.ingest(
-    sessionId,
-    parsed.data,
-    typeof clientId === 'string' && clientId.length > 0 ? clientId : undefined
-  );
-  res.status(204).end();
+  devtoolsCaptureStore.ingest(sessionId, parsed.data, clientId ? clientId : undefined);
+  return c.body(null, 204);
 }
 
 /**
- * Express handler for `POST /api/sessions/:id/devtools/action` — the sink for
+ * Handler for `POST /api/sessions/:id/devtools/action` — the sink for
  * one driving round trip's result.
  *
  * Zod-validated and capped the same way the ingest route is; a result that
@@ -97,21 +97,21 @@ export async function sessionDevtoolsIngestHandler(req: Request, res: Response):
  * any well-formed session id without an existence check, for the reason the
  * ingest handler states below.
  *
- * @param req - The Express request (`:id` route param + `DevtoolsActionResult` body).
- * @param res - The Express response (204 sink / 400).
+ * @param c - The request context (`:id` route param + `DevtoolsActionResult`
+ *   body); answers 204 sink / 400.
  */
-export async function sessionDevtoolsActionHandler(req: Request, res: Response): Promise<void> {
-  const sessionId = parseSessionId(req.params.id);
-  if (!sessionId) return sendError(res, 400, 'Invalid session ID', 'INVALID_SESSION_ID');
+export function sessionDevtoolsActionHandler(c: Context<ApiEnv>): Response {
+  const sessionId = parseSessionId(c.req.param('id'));
+  if (!sessionId) return c.json(INVALID_SESSION_ID, 400);
 
-  const parsed = DevtoolsActionResultSchema.safeParse(req.body);
+  const parsed = DevtoolsActionResultSchema.safeParse(readJsonBody(c));
   if (!parsed.success) {
-    return sendError(res, 400, 'Invalid DevTools action result', 'VALIDATION_ERROR');
+    return c.json(errorBody('Invalid DevTools action result', 'VALIDATION_ERROR'), 400);
   }
 
   // Keyed by `requestId` alone, never by session id — a first-turn canonical
   // rekey between the request and the answer must not strand the tool call that
   // is awaiting it. `devtools-capture-store.ts` says why at greater length.
-  devtoolsCaptureStore.resolveAction(parsed.data, req.header('X-Client-Id'));
-  res.status(204).end();
+  devtoolsCaptureStore.resolveAction(parsed.data, c.req.header('X-Client-Id'));
+  return c.body(null, 204);
 }

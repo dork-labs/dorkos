@@ -57,9 +57,9 @@
  * bar contributes nothing and does not pretend to. Turning on Require login is
  * what closes it, exactly as `decision-authority.ts` says.
  *
- * Transport auth is the global `sessionGate` mounted in `app.ts` — every `/api/*`
- * path inherits it, so these routes need no gate of their own; the authority check
- * below is a second, independent one.
+ * Transport auth is the session gate on the `/api` chain (`http/api-chain.ts`) —
+ * every `/api/*` path inherits it, so these routes need no gate of their own; the
+ * authority check below is a second, independent one.
  *
  * ## Three answers, and each one is audited (spec `agent-permissions` D7, D14)
  *
@@ -96,7 +96,8 @@
  *
  * @module routes/approvals
  */
-import { Router, type Request, type Response } from 'express';
+import { Hono, type Context } from 'hono';
+import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import { z } from 'zod';
 import {
   DenyApprovalBodySchema,
@@ -138,6 +139,9 @@ import { titleForMcpTool } from '../services/core/mcp-tools/mcp-tool-tiers.js';
 import { writerForPosture } from './permissions.js';
 import { logger } from '../lib/logger.js';
 import { projectsOfFolders } from '../services/projects/project-registry.js';
+import type { ApiEnv } from '../http/api-chain.js';
+import { readJsonBody } from '../http/request-body.js';
+import { honoRequestFacts, type RequestFacts } from '../http/request-facts.js';
 
 /** Optional collaborators the boot wiring supplies; omitted in unit tests. */
 export interface ApprovalsRouterOptions {
@@ -174,18 +178,16 @@ export interface ApprovalsRouterOptions {
  * as a person" cannot mean one thing at the endpoint that DECIDES an approval and
  * something else at the endpoints that act without one.
  *
- * @param req - The incoming request.
- * @param res - The response carrying `sessionGate`'s resolved user.
+ * @param facts - The request's facts, with `sessionGate`'s resolved user.
  * @param isLoginEnabled - Optional login-state lookup for tests.
  * @returns Permission with its posture, or a structured refusal.
  */
 function decisionAuthority(
-  req: Request,
-  res: Response,
+  facts: RequestFacts,
   isLoginEnabled?: LoginEnabledLookup
 ): DecisionAuthorityResult {
   return resolveDecisionAuthority({
-    ...readCallerAuthority(req, res),
+    ...readCallerAuthority(facts),
     ...(isLoginEnabled ? { loginEnabled: isLoginEnabled } : {}),
   });
 }
@@ -215,16 +217,16 @@ const DECIDE_NEEDS_COCKPIT =
  * still hears `AGENT_CANNOT_DECIDE`. That answer is more specific and more useful
  * than "sign in", and an honest agent should be told the thing it did wrong.
  *
- * @param res - The response carrying `sessionGate`'s resolved user.
+ * @param facts - The request's facts, with `sessionGate`'s resolved user.
  * @param isLoginEnabled - Optional login-state lookup for tests.
  * @returns `undefined` when the caller may decide, or the refusal to answer with.
  */
 function requirePersonToDecide(
-  res: Response,
+  facts: RequestFacts,
   isLoginEnabled?: LoginEnabledLookup
 ): OperatorCookieRefusal | undefined {
   const refusal = requireOperatorCookieUnderLogin(
-    res,
+    facts,
     'whether a risky action goes ahead',
     isLoginEnabled
   );
@@ -259,18 +261,21 @@ function decisionFailureResponse(failure: ApprovalDecisionFailure): {
 const ALWAYS_NOT_OFFERED_MESSAGE =
   "Always allow isn't offered for this request. Answer it with Allow or Deny.";
 
+/** The bars' verdict for a caller that cleared them, with who they are. */
+type Person = Extract<DecisionAuthorityResult, { allowed: true }> & { facts: RequestFacts };
+
 /**
- * Create the approvals router.
+ * The `/api/approvals` routes.
  *
  * @param approvals - The approval service that owns the token lifecycle.
  * @param options - Boot collaborators; see {@link ApprovalsRouterOptions}.
- * @returns The configured router, to mount at `/api/approvals`.
+ * @returns The routes, for `app.route('/api/approvals', …)`.
  */
-export function createApprovalsRouter(
+export function createApprovalsRoutes(
   approvals: ApprovalService,
   options: ApprovalsRouterOptions = {}
-): Router {
-  const router = Router();
+): Hono<ApiEnv> {
+  const router = new Hono<ApiEnv>();
 
   /**
    * Name the action an approval is about, the way the card names it: the
@@ -297,11 +302,10 @@ export function createApprovalsRouter(
     approvalId: string,
     scope: ApprovalAnswerScope,
     answer: PermissionAnswer,
-    authority: Extract<DecisionAuthorityResult, { allowed: true }>,
-    res: Response
+    authority: Person
   ): void => {
     if (!options.activity) return;
-    const writer = writerForPosture(authority.posture, res);
+    const writer = writerForPosture(authority.posture, authority.facts.user);
     const agent: PermissionAgentRef | undefined = scope.agentPath
       ? options.permissions?.agentByPath(scope.agentPath)
       : undefined;
@@ -341,27 +345,31 @@ export function createApprovalsRouter(
   };
 
   /**
-   * Clear both person bars, answering the refusal when either fails.
+   * Clear both person bars.
    *
-   * @returns The authority, or `undefined` when a refusal was already sent.
+   * @returns The authority, or the refusal to answer with.
    */
-  const personOrRefuse = (
-    req: Request,
-    res: Response
-  ): Extract<DecisionAuthorityResult, { allowed: true }> | undefined => {
-    const authority = decisionAuthority(req, res, options.isLoginEnabled);
+  const personOrRefuse = (c: Context<ApiEnv>): Person | Response => {
+    const facts = honoRequestFacts(c);
+    const authority = decisionAuthority(facts, options.isLoginEnabled);
     if (!authority.allowed) {
-      res.status(authority.status).json({ error: authority.error, code: authority.code });
-      return undefined;
+      const { status, error, code } = authority;
+      return c.json({ error, code }, status as ContentfulStatusCode);
     }
     // The second bar, before anything is read off the body: under login, an API
     // key is not a person (DOR-474). See the module TSDoc.
-    const notAPerson = requirePersonToDecide(res, options.isLoginEnabled);
+    const notAPerson = requirePersonToDecide(facts, options.isLoginEnabled);
     if (notAPerson) {
-      res.status(notAPerson.status).json({ error: notAPerson.error, code: notAPerson.code });
-      return undefined;
+      const { status, error, code } = notAPerson;
+      return c.json({ error, code }, status as ContentfulStatusCode);
     }
-    return authority;
+    return { ...authority, facts };
+  };
+
+  /** Answer a decision failure with its status and code. */
+  const failed = (c: Context<ApiEnv>, failure: ApprovalDecisionFailure): Response => {
+    const mapped = decisionFailureResponse(failure);
+    return c.json(mapped.body, mapped.status as ContentfulStatusCode);
   };
 
   /**
@@ -429,22 +437,19 @@ export function createApprovalsRouter(
    * Answer yes to one card, once or always, reading the card afresh (a queued
    * Always allow may find it already answered).
    *
+   * @param c - The request the answer is written to.
    * @param approvalId - The card being answered.
-   * @param res - The response the answer is written to.
    * @param authority - The person bars' verdict.
    * @param answer - Once or always.
    */
   const grantAnswer = async (
+    c: Context<ApiEnv>,
     approvalId: string,
-    res: Response,
-    authority: Extract<DecisionAuthorityResult, { allowed: true }>,
+    authority: Person,
     answer: ApprovalAnswer
-  ) => {
+  ): Promise<Response> => {
     const scope = approvals.answerScope(approvalId);
-    if (!scope) {
-      const mapped = decisionFailureResponse('unknown');
-      return res.status(mapped.status).json(mapped.body);
-    }
+    if (!scope) return failed(c, 'unknown');
 
     /** What an Always allow wrote, so a refused yes can put it back. */
     let alwaysWrite: { agentId: string; changes: PermissionChange[] } | undefined;
@@ -454,14 +459,11 @@ export function createApprovalsRouter(
       // told which part failed.
       const agent = scope.agentPath ? options.permissions?.agentByPath(scope.agentPath) : undefined;
       if (!scope.alwaysOffered || !scope.area || !agent || !options.permissions) {
-        return res
-          .status(409)
-          .json({ error: ALWAYS_NOT_OFFERED_MESSAGE, code: 'ALWAYS_NOT_OFFERED' });
+        return c.json({ error: ALWAYS_NOT_OFFERED_MESSAGE, code: 'ALWAYS_NOT_OFFERED' }, 409);
       }
       // A closed or already-answered card must not leave a setting behind.
       if (scope.state !== 'pending' || scope.closed) {
-        const mapped = decisionFailureResponse(scope.closed ? 'expired' : 'not_pending');
-        return res.status(mapped.status).json(mapped.body);
+        return failed(c, scope.closed ? 'expired' : 'not_pending');
       }
       // The setting first, then the yes: granting is what wakes a held call, so
       // the resumed call and the new setting agree (see the module TSDoc).
@@ -473,21 +475,24 @@ export function createApprovalsRouter(
             surface: 'request-card',
             approvalId,
           },
-          writerForPosture(authority.posture, res)
+          writerForPosture(authority.posture, authority.facts.user)
         );
         alwaysWrite = { agentId: agent.id, changes };
       } catch (err) {
         if (err instanceof PermissionError) {
-          return res.status(409).json({ error: err.message, code: err.code });
+          return c.json({ error: err.message, code: err.code }, 409);
         }
         logger.error('[Approvals] Always allow could not be recorded; nothing was granted', {
           approvalId,
           err: err instanceof Error ? err.message : String(err),
         });
-        return res.status(500).json({
-          error: 'DorkOS could not save Always allow, so it allowed nothing. Try again.',
-          code: 'ALWAYS_ALLOW_NOT_RECORDED',
-        });
+        return c.json(
+          {
+            error: 'DorkOS could not save Always allow, so it allowed nothing. Try again.',
+            code: 'ALWAYS_ALLOW_NOT_RECORDED',
+          },
+          500
+        );
       }
     }
 
@@ -505,58 +510,58 @@ export function createApprovalsRouter(
           options.permissions,
           alwaysWrite,
           approvalId,
-          writerForPosture(authority.posture, res)
+          writerForPosture(authority.posture, authority.facts.user)
         );
         if (!undone) {
-          return res.status(500).json({
-            error:
-              'Someone else answered this request first, and DorkOS could not take back the ' +
-              "Always allow it had just saved. Check the agent's Permissions page.",
-            code: 'ALWAYS_ALLOW_NOT_UNDONE',
-          });
+          return c.json(
+            {
+              error:
+                'Someone else answered this request first, and DorkOS could not take back the ' +
+                "Always allow it had just saved. Check the agent's Permissions page.",
+              code: 'ALWAYS_ALLOW_NOT_UNDONE',
+            },
+            500
+          );
         }
       }
-      const mapped = decisionFailureResponse(failure);
-      return res.status(mapped.status).json(mapped.body);
+      return failed(c, failure);
     }
-    auditAnswer(approvalId, scope, answer, authority, res);
-    return res.json({ ok: true, approvalId, outcome: 'granted', answer });
+    auditAnswer(approvalId, scope, answer, authority);
+    return c.json({ ok: true, approvalId, outcome: 'granted', answer });
   };
 
   // GET /pending -- approvals still waiting on a person
-  router.get('/pending', async (_req, res) => {
+  router.get('/pending', async (c) => {
     // Resolve the asking folders' projects first (spec `flow-multiproject`
     // §6.2), so every card this read builds carries its project.
     await projectsOfFolders(approvals.pendingFolders());
-    res.json({ approvals: approvals.listPending() });
+    return c.json({ approvals: approvals.listPending() });
   });
 
   // POST /:id/grant -- allow the requested action, once or from now on
-  router.post('/:id/grant', async (req, res) => {
-    const authority = personOrRefuse(req, res);
-    if (!authority) return;
+  router.post('/:id/grant', async (c) => {
+    const authority = personOrRefuse(c);
+    if (authority instanceof Response) return authority;
 
-    // Express 5 leaves `req.body` undefined on an empty POST, and `answer`
-    // defaults to `once`, so an absent body is a plain one-time yes.
-    const parsed = GrantApprovalBodySchema.safeParse(req.body ?? {});
+    // An empty POST reads as `{}`, as Express 5's undefined `req.body` did, and
+    // `answer` defaults to `once`, so an absent body is a plain one-time yes.
+    const parsed = GrantApprovalBodySchema.safeParse(readJsonBody(c, { emptyAs: {} }));
     if (!parsed.success) {
-      return res.status(400).json({
-        error: 'Validation failed',
-        code: 'INVALID_GRANT_BODY',
-        details: z.flattenError(parsed.error),
-      });
+      const details = z.flattenError(parsed.error);
+      return c.json({ error: 'Validation failed', code: 'INVALID_GRANT_BODY', details }, 400);
     }
     const { answer } = parsed.data;
+    const id = c.req.param('id');
 
     // Two Always allows for the same agent and action run one after the other:
     // run side by side, both would read "not set" before either wrote, and the
     // loser's undo would take back the winner's setting (see the module TSDoc).
-    const first = approvals.answerScope(req.params.id);
+    const first = approvals.answerScope(id);
     const key =
       answer === 'always' && first?.agentPath
         ? `${first.agentPath}\0${first.capabilityId}`
         : undefined;
-    const answerIt = () => grantAnswer(req.params.id, res, authority, answer);
+    const answerIt = () => grantAnswer(c, id, authority, answer);
     return key ? serializedAlways(key, answerIt) : answerIt();
   });
 
@@ -566,29 +571,30 @@ export function createApprovalsRouter(
   // off, and an agent that could would be quieting a question about itself.
   // Recorded as a `permission.suggestion_dismissed` event, which is what the
   // suggestion reads, so it stays off for this agent and action for good.
-  router.post('/:id/dismiss-suggestion', async (req, res) => {
-    const authority = personOrRefuse(req, res);
-    if (!authority) return;
-    const scope = approvals.answerScope(req.params.id);
-    if (!scope) {
-      const mapped = decisionFailureResponse('unknown');
-      return res.status(mapped.status).json(mapped.body);
-    }
+  router.post('/:id/dismiss-suggestion', async (c) => {
+    const authority = personOrRefuse(c);
+    if (authority instanceof Response) return authority;
+    const id = c.req.param('id');
+    const scope = approvals.answerScope(id);
+    if (!scope) return failed(c, 'unknown');
     if (!scope.agentPath || !scope.alwaysOffered) {
-      return res.status(409).json({
-        error: 'This request never suggests Always allow, so there is nothing to turn off.',
-        code: 'SUGGESTION_NOT_OFFERED',
-      });
+      return c.json(
+        {
+          error: 'This request never suggests Always allow, so there is nothing to turn off.',
+          code: 'SUGGESTION_NOT_OFFERED',
+        },
+        409
+      );
     }
     if (options.activity) {
-      const writer = writerForPosture(authority.posture, res);
+      const writer = writerForPosture(authority.posture, authority.facts.user);
       const agent = options.permissions?.agentByPath(scope.agentPath);
       const agentName = agent ? agent.displayName || agent.name : 'this agent';
       const metadata: PermissionSuggestionDismissedMetadata = {
         ...(agent ? { agentId: agent.id } : {}),
         agentPath: scope.agentPath,
         action: scope.capabilityId,
-        approvalId: req.params.id,
+        approvalId: id,
       };
       await options.activity.emit({
         actorType: writer.actorType,
@@ -597,42 +603,37 @@ export function createApprovalsRouter(
         category: 'permissions',
         eventType: PERMISSION_SUGGESTION_DISMISSED_EVENT,
         resourceType: agent ? 'agent' : 'approval',
-        resourceId: agent?.id ?? req.params.id,
+        resourceId: agent?.id ?? id,
         resourceLabel: agentName,
         summary: `Stopped suggesting Always allow for ${agentName} running "${titleFor(scope.capabilityId)}"`,
         linkPath: null,
         metadata: metadata as unknown as Record<string, unknown>,
       });
     }
-    return res.json({ ok: true, approvalId: req.params.id });
+    return c.json({ ok: true, approvalId: id });
   });
 
   // POST /:id/deny -- refuse the requested action
-  router.post('/:id/deny', (req, res) => {
+  router.post('/:id/deny', (c) => {
     // Guarded exactly like grant. Denying is not the safe direction to leave open:
     // an agent that can deny can bury the card a person would have answered.
-    const authority = personOrRefuse(req, res);
-    if (!authority) return;
+    const authority = personOrRefuse(c);
+    if (authority instanceof Response) return authority;
 
-    // Express 5 leaves `req.body` undefined on an empty POST, and a reason is
-    // optional, so an absent body is a valid bare denial.
-    const parsed = DenyApprovalBodySchema.safeParse(req.body ?? {});
+    // An empty POST reads as `{}`, as Express 5's undefined `req.body` did, and
+    // a reason is optional, so an absent body is a valid bare denial.
+    const parsed = DenyApprovalBodySchema.safeParse(readJsonBody(c, { emptyAs: {} }));
     if (!parsed.success) {
-      return res.status(400).json({
-        error: 'Validation failed',
-        code: 'INVALID_DENY_BODY',
-        details: z.flattenError(parsed.error),
-      });
+      const details = z.flattenError(parsed.error);
+      return c.json({ error: 'Validation failed', code: 'INVALID_DENY_BODY', details }, 400);
     }
 
-    const scope = approvals.answerScope(req.params.id);
-    const failure = approvals.deny(req.params.id, parsed.data.reason);
-    if (failure) {
-      const mapped = decisionFailureResponse(failure);
-      return res.status(mapped.status).json(mapped.body);
-    }
-    if (scope) auditAnswer(req.params.id, scope, 'deny', authority, res);
-    return res.json({ ok: true, approvalId: req.params.id, outcome: 'denied' });
+    const id = c.req.param('id');
+    const scope = approvals.answerScope(id);
+    const failure = approvals.deny(id, parsed.data.reason);
+    if (failure) return failed(c, failure);
+    if (scope) auditAnswer(id, scope, 'deny', authority);
+    return c.json({ ok: true, approvalId: id, outcome: 'denied' });
   });
 
   return router;

@@ -19,60 +19,82 @@ import { auditTrail } from '../services/audit/audit-trail.js';
 import { OWNER_READER, type AuditReader } from '../services/audit/visibility.js';
 import { readableSessionIds } from '../services/audit/session-visibility.js';
 import { getRequestAgentIdentity, presentsAgentIdentity } from '../middleware/agent-identity.js';
-import { sendError } from '../lib/route-utils.js';
+import { errorBody } from '../lib/route-utils.js';
+import type { RequestFacts } from '../http/request-facts.js';
+
+/** What {@link readerOfRequest} reads: the raw agent header and the resolved identity. */
+type ReaderFacts = Pick<RequestFacts, 'headers' | 'agentIdentity'>;
 
 /**
  * Who is reading, from the request.
  *
- * @param req - The request, for the raw agent header.
- * @param res - The response carrying the resolved identity.
+ * Takes a request's facts (`http/request-facts.ts`), or the Express request
+ * and response the Express routes still hand it.
+ *
+ * @param request - The request's facts, or the Express request, for the raw agent header.
+ * @param res - With an Express request: the response carrying the resolved identity.
  * @param accounts - Names an agent as a stable account id; defaults to the
  *   process-wide audit trail's.
  */
 export function readerOfRequest(
+  request: ReaderFacts,
+  accounts?: Pick<AccountIds, 'forAgentIdentity'>
+): AuditReader;
+export function readerOfRequest(
   req: Pick<Request, 'headers'>,
   res: Pick<Response, 'locals'>,
-  accounts: Pick<AccountIds, 'forAgentIdentity'> | undefined = auditTrail()?.accounts
+  accounts?: Pick<AccountIds, 'forAgentIdentity'>
+): AuditReader;
+export function readerOfRequest(
+  req: Pick<Request, 'headers'> | ReaderFacts,
+  second?: Pick<Response, 'locals'> | Pick<AccountIds, 'forAgentIdentity'>,
+  third?: Pick<AccountIds, 'forAgentIdentity'>
 ): AuditReader {
-  if (!presentsAgentIdentity(req, res)) return OWNER_READER;
-  const identity = getRequestAgentIdentity(res);
+  const express = second !== undefined && 'locals' in second;
+  const facts: ReaderFacts = express
+    ? { headers: req.headers, agentIdentity: getRequestAgentIdentity(second) }
+    : (req as ReaderFacts);
+  const accounts = (express ? third : second) as Pick<AccountIds, 'forAgentIdentity'> | undefined;
+  return readerOf(facts, accounts ?? auditTrail()?.accounts);
+}
+
+/** {@link readerOfRequest}'s rule, on the request's facts. */
+function readerOf(
+  facts: ReaderFacts,
+  accounts: Pick<AccountIds, 'forAgentIdentity'> | undefined
+): AuditReader {
+  if (!presentsAgentIdentity(facts)) return OWNER_READER;
+  const identity = facts.agentIdentity;
   const accountId =
     identity && accounts ? accounts.forAgentIdentity(identity).accountId : 'unidentified';
   return { kind: 'agent', accountId };
 }
 
 /**
- * Answer 404 when this caller may not read the session, and say so.
+ * Whether this caller may read the session. A route that may not answers
+ * `c.json(SESSION_NOT_FOUND_BODY, 404)`.
  *
- * @param req - The request.
- * @param res - The response; written to on a refusal.
+ * @param request - The request's facts (`http/request-facts.ts`).
  * @param sessionId - The session asked for.
- * @returns `true` when the request was refused and answered.
  */
-export function refuseUnreadableSession(
-  req: Pick<Request, 'headers'>,
-  res: Response,
-  sessionId: string
-): boolean {
-  const reader = readerOfRequest(req, res);
-  if (readableSessionIds(reader, [sessionId]).has(sessionId)) return false;
-  sendError(res, 404, 'Session not found', 'SESSION_NOT_FOUND');
-  return true;
+export function canReadSession(request: ReaderFacts, sessionId: string): boolean {
+  return readableSessionIds(readerOfRequest(request), [sessionId]).has(sessionId);
 }
+
+/** The 404 a caller gets for a session it may not read. */
+export const SESSION_NOT_FOUND_BODY = errorBody('Session not found', 'SESSION_NOT_FOUND');
 
 /**
  * The sessions in a list this caller may read, in order.
  *
- * @param req - The request.
- * @param res - The response carrying the resolved identity.
+ * @param request - The request's facts (`http/request-facts.ts`).
  * @param sessions - The list.
  */
 export function readableSessions<T extends { id: string }>(
-  req: Pick<Request, 'headers'>,
-  res: Pick<Response, 'locals'>,
+  request: ReaderFacts,
   sessions: T[]
 ): T[] {
-  const reader = readerOfRequest(req, res);
+  const reader = readerOfRequest(request);
   if (reader.kind === 'owner') return sessions;
   const readable = readableSessionIds(
     reader,

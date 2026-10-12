@@ -745,6 +745,29 @@ describe('DorkOS declared standing defaults', () => {
       describeExecutionDefaults({ doe: DOE_CAPABILITIES }, config).perRuntime[0]
     ).toMatchObject({ runtime: 'doe', model: 'local-model', trustStop: null });
   });
+
+  it('reads the DorkOS model preference like any other runtime default, and none means DorkOS picks', () => {
+    const config = runtimes({
+      doe: { ...USER_CONFIG_DEFAULTS.runtimes.doe, defaultModel: 'md-preferred' },
+    });
+    const options = {
+      runtimeType: 'doe',
+      configSection: 'doe',
+      runtimes: config,
+      supportsEffort: false,
+      permissionModes: DOE_CAPABILITIES.permissionModes.values,
+    };
+    expect(resolveSessionDefaults(options).model).toBe('md-preferred');
+    // The agent's own model outranks the preference.
+    expect(
+      resolveSessionDefaults({ ...options, agent: { runtime: 'doe', model: 'md-agent' } }).model
+    ).toBe('md-agent');
+    expect(describeExecutionDefaults({ doe: DOE_CAPABILITIES }, config).perRuntime[0]?.model).toBe(
+      'md-preferred'
+    );
+    config.doe.defaultModel = null;
+    expect(resolveSessionDefaults(options).model).toBeUndefined();
+  });
 });
 
 describe('resolveSessionDefaults — the trust stop', () => {

@@ -137,6 +137,13 @@ export const heartbeatOutbox = sqliteTable(
     createdAt: text('created_at').notNull(),
     /** When it left `held` (ISO 8601), or NULL. */
     closedAt: text('closed_at'),
+    /**
+     * When it reached its reader (ISO 8601), or NULL when it never did. Set once
+     * at delivery and never cleared: a delivered row later resolved and a row
+     * resolved while still held both end `resolved`, and only this tells them
+     * apart (the measures count what reached a person, spec `heartbeats` §13).
+     */
+    deliveredAt: text('delivered_at'),
   },
   (table) => [
     index('heartbeat_outbox_due_idx').on(table.toAccount, table.state, table.deliverAfter),

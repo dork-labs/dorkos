@@ -19,14 +19,27 @@ export function registerHeartbeatsOpenApi(registry: OpenAPIRegistry): void {
     tags: ['Heartbeats'],
     summary: "An agent's heartbeat",
     description:
-      'How the agent wakes on its own, when its next timed beat is due, its last 20 beats ' +
-      'from the record, and the messages to people still held for their working hours.',
-    request: { params: z.object({ id: z.string() }) },
+      'How the agent wakes on its own, when its next timed beat is due, its last 50 beats ' +
+      'from the record, the messages to people still held for their working hours, and its ' +
+      'measures: whether its work on its own helped, each with its source and starting target.',
+    request: {
+      params: z.object({ id: z.string() }),
+      query: z.object({
+        days: z.coerce
+          .number()
+          .int()
+          .min(1)
+          .max(90)
+          .optional()
+          .describe('How many days the measures cover. Defaults to 7.'),
+      }),
+    },
     responses: {
       200: {
         description: 'The heartbeat',
         content: { 'application/json': { schema: HeartbeatStatusSchema } },
       },
+      400: { description: '`days` is not a whole number from 1 to 90' },
       404: { description: 'No agent with that id' },
     },
   });

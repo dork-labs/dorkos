@@ -1,3 +1,7 @@
+import {
+  originalDocRequestFacts,
+  originalDocAuthRequest,
+} from '../../../../http/original-doc-request.js';
 import { RoomError } from '../../../rooms/data/room-errors.js';
 import type { Request, Response } from 'express';
 import {
@@ -96,7 +100,7 @@ export function roomCallerOf(
   )
     throw new DocChannelNotFoundError();
   // The fixed Room resolver retains non-owner signed-in humans as genuine members.
-  const caller = resolveCaller(current.req, current.res);
+  const caller = resolveCaller(originalDocRequestFacts(current.req, current.res));
   if (caller.id !== current.attribution.authorId || caller.kind !== 'human')
     throw new DocChannelNotFoundError();
   requireRoomServiceFileWriteCurrent(binding.rooms, binding.db, roomId, caller.id);
@@ -127,14 +131,18 @@ export async function captureDocHttpRoomFileWriteCaller(
   )
     throw new DocChannelNotFoundError();
   requireOriginalRoomFileBinding(httpCustodyOwner, owner, binding);
-  const caller = resolveCaller(req, res);
+  const caller = resolveCaller(originalDocRequestFacts(req, res));
   requireRoomServiceFileWriteCurrent(binding.rooms, binding.db, roomId, caller.id);
   const login = Boolean(configManager.get('auth')?.enabled);
   const suppliedUser = res.locals.user as RequestUser | undefined;
   const user = suppliedUser ? Object.freeze({ ...suppliedUser }) : undefined;
   const headers = Object.freeze({ ...req.headers });
   if (login || user) {
-    if (!login || !user || !(await recheckAdmittedRequestAuth(req, suppliedUser)))
+    if (
+      !login ||
+      !user ||
+      !(await recheckAdmittedRequestAuth(originalDocAuthRequest(req), suppliedUser))
+    )
       throw new RoomFileRequestAuthError();
   }
   requireOriginalRoomFileBinding(httpCustodyOwner, owner, binding);
@@ -174,7 +182,13 @@ export async function checkDocHttpRoomFileWriteCurrent(
 ): Promise<void> {
   readOriginalHttpRequestCustody(httpCustodyOwner);
   const current = roomCallerOf(httpCustodyOwner, owner, roomId, handle);
-  if (current.login && !(await recheckAdmittedRequestAuth(current.req, current.admittedPrincipal)))
+  if (
+    current.login &&
+    !(await recheckAdmittedRequestAuth(
+      originalDocAuthRequest(current.req),
+      current.admittedPrincipal
+    ))
+  )
     throw new RoomFileRequestAuthError();
   roomCallerOf(httpCustodyOwner, owner, roomId, handle);
 }
@@ -203,7 +217,10 @@ export function readDocHttpRoomFileWriteAttribution(
 }
 
 /** Finite disclosure-safe response mapping; unknown/raw failures still propagate unchanged. */
-export function originalHttpRoomSessionPlacementRefusal(httpCustodyOwner: object, cause: unknown) {
+export function originalHttpRoomSessionPlacementRefusal(
+  httpCustodyOwner: object,
+  cause: unknown
+): { status: 401 | 404 | 409; code: string; message: string } | undefined {
   readOriginalHttpRequestCustody(httpCustodyOwner);
   if (cause instanceof RoomFileRequestAuthError)
     return { status: 401, code: 'UNAUTHORIZED', message: 'Unauthorized' };

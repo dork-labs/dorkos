@@ -10,7 +10,7 @@ import type {
   McpClientCredentials,
   McpSigninPollResult,
 } from './transport-mcp.js';
-import type { DoeCreditsCatalog } from './runtime-connect.js';
+import type { DoeCreditsCatalog, DoeInferenceStatus } from './runtime-connect.js';
 import type { DoeInferenceConfig } from './config-schema.js';
 import type { TransportSupplementalPorts } from './transport-supplemental-ports.js';
 import type {
@@ -1611,7 +1611,7 @@ export interface Transport extends TransportSupplementalPorts {
    * @param secret - The raw API key. Sent once; never returned or logged.
    */
   /** Explicit DorkOS inference metadata; never returns the stored secret. */
-  getDoeInference(): Promise<{ inference: DoeInferenceConfig | null; hasKey: boolean }>;
+  getDoeInference(): Promise<DoeInferenceStatus>;
   setDoeInference(inference: DoeInferenceConfig): Promise<{ ok: true }>;
   storeDoeCredential(
     inference: DoeInferenceConfig,

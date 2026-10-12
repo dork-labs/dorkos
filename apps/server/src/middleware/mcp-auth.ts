@@ -1,13 +1,16 @@
 import { timingSafeEqual } from 'node:crypto';
-import type { Request, Response, NextFunction } from 'express';
+import type { IncomingHttpHeaders } from 'node:http';
+import type { MiddlewareHandler } from 'hono';
 import { env } from '../env.js';
 import { configManager } from '../services/core/config-manager.js';
 import { verifyRequestAuth } from '../services/core/auth/index.js';
 import { getMcpLocalToken, getMcpLocalTokenPath } from '../services/core/auth/mcp-local-token.js';
+import type { RequestUser } from '../services/core/auth/session-gate.js';
 import { READ_ONLY_MCP_TOOL_NAMES } from '../services/core/external-mcp/tool-security.js';
+import { readJsonBody, type RequestBodyEnv } from '../http/request-body.js';
 
 /**
- * The surface a {@link createMcpAuth} middleware guards. Both surfaces share the
+ * The surface a {@link honoMcpAuth} middleware guards. Both surfaces share the
  * same credential acceptors; they differ only in the login-off fallback:
  *   - `'mcp'` applies the read-only capability carve-out (discovery + read-only
  *     tools stay tokenless; mutating calls require the token).
@@ -16,9 +19,39 @@ import { READ_ONLY_MCP_TOOL_NAMES } from '../services/core/external-mcp/tool-sec
  */
 export type McpAuthSurface = 'mcp' | 'a2a';
 
+/** A JSON-RPC 2.0 error envelope, the shape of every refusal on both surfaces. */
+export interface McpAuthRefusalBody {
+  readonly jsonrpc: '2.0';
+  readonly error: { readonly code: number; readonly message: string };
+  readonly id: null;
+}
+
+/** What {@link decideMcpAuth} decided about one request. */
+export type McpAuthDecision =
+  | {
+      readonly allowed: true;
+      /** The person a credential proved, when one did (acceptor 2). */
+      readonly user?: RequestUser;
+      /** The caller proved the per-install local token (acceptor 4). */
+      readonly mcpLocalToken?: true;
+    }
+  /** Answer `401` with `body`. */
+  | { readonly allowed: false; readonly body: McpAuthRefusalBody };
+
+/** The request facts {@link decideMcpAuth} reads. */
+export interface McpAuthRequest {
+  /** The request method. */
+  readonly method: string;
+  /** The raw request headers. */
+  readonly headers: IncomingHttpHeaders;
+  /** The parsed JSON body, or `undefined` when none was parsed. */
+  readonly body: unknown;
+}
+
 /**
- * Build the auth middleware for the external `/mcp` endpoint or the `/a2a`
- * gateway (DOR-278).
+ * Decide whether a request to the external `/mcp` endpoint or the `/a2a`
+ * gateway (DOR-278) may go on. {@link honoMcpAuth} asks it for both, and the
+ * policy stays framework-free so it lives in one place.
  *
  * Credential acceptors run first on **both** surfaces and allow on first match:
  *   1. `env.MCP_API_KEY` — a static override for headless deployments (exact,
@@ -51,101 +84,104 @@ export type McpAuthSurface = 'mcp' | 'a2a';
  * whose message names the token file path and the `Authorization: Bearer`
  * header, and never echoes the token value.
  *
- * @param options - The surface this middleware guards.
- * @returns An Express middleware enforcing the surface's auth posture.
+ * @param surface - The surface the request reached.
+ * @param request - Its method, headers and parsed body.
+ * @returns The decision.
  */
-export function createMcpAuth({
-  surface,
-}: {
-  surface: McpAuthSurface;
-}): (req: Request, res: Response, next: NextFunction) => Promise<void> {
-  return async function mcpAuth(req: Request, res: Response, next: NextFunction): Promise<void> {
-    const token = extractBearerToken(req.headers.authorization);
-    // Trim-for-presence: a whitespace-only MCP_API_KEY counts as unset, matching
-    // the boot wiring, the token module, and the config DTO.
-    const envKey = env.MCP_API_KEY?.trim() || null;
-    const legacyKey = configManager.get('mcp')?.apiKey ?? null;
-    const authEnabled = configManager.get('auth')?.enabled === true;
+export async function decideMcpAuth(
+  surface: McpAuthSurface,
+  request: McpAuthRequest
+): Promise<McpAuthDecision> {
+  const token = extractBearerToken(request.headers.authorization);
+  // Trim-for-presence: a whitespace-only MCP_API_KEY counts as unset, matching
+  // the boot wiring, the token module, and the config DTO.
+  const envKey = env.MCP_API_KEY?.trim() || null;
+  const legacyKey = configManager.get('mcp')?.apiKey ?? null;
+  const authEnabled = configManager.get('auth')?.enabled === true;
 
-    // 1. Static env override — exact match, highest priority, un-revocable.
-    if (envKey && token && constantTimeEquals(token, envKey)) {
-      next();
-      return;
-    }
+  // 1. Static env override — exact match, highest priority, un-revocable.
+  if (envKey && token && constantTimeEquals(token, envKey)) return { allowed: true };
 
-    // Acceptor 4's own test, hoisted so acceptor 2 can be told what this bearer
-    // is — same `!authEnabled` gate and same cached read (`getMcpLocalToken()`
-    // returns a value, never touching the filesystem), so it can only be true
-    // where acceptor 4 would itself have matched.
-    const localToken = authEnabled ? null : getMcpLocalToken();
-    const bearerIsLocalToken = !!localToken && !!token && constantTimeEquals(token, localToken);
+  // Acceptor 4's own test, hoisted so acceptor 2 can be told what this bearer
+  // is — same `!authEnabled` gate and same cached read (`getMcpLocalToken()`
+  // returns a value, never touching the filesystem), so it can only be true
+  // where acceptor 4 would itself have matched.
+  const localToken = authEnabled ? null : getMcpLocalToken();
+  const bearerIsLocalToken = !!localToken && !!token && constantTimeEquals(token, localToken);
 
-    // 2. Per-user Better Auth API key or session cookie (shared verifier).
-    //
-    // The local token is minted into a `0600` file and never written to the
-    // `apikey` table, so it provably cannot verify as a per-user Better Auth
-    // key. Saying so skips a lookup that could only fail — and whose failure the
-    // apiKey plugin logs as its own untagged `error` line, roughly four per
-    // agent turn on a runtime that reaches `/mcp` over a wire. The
-    // cookie half of the verifier still runs, so the identity recorded below is
-    // unchanged. The legacy `config.mcp.apiKey` gets no such hint on purpose:
-    // `seedLegacyMcpApiKey` stores that exact value AS a Better Auth key, so
-    // there it is a real per-user credential acceptor 2 must still resolve.
-    const identity = await verifyRequestAuth(req, {
-      ...(bearerIsLocalToken ? { bearerIsNotAnApiKey: true } : {}),
+  // 2. Per-user Better Auth API key or session cookie (shared verifier).
+  //
+  // The local token is minted into a `0600` file and never written to the
+  // `apikey` table, so it provably cannot verify as a per-user Better Auth
+  // key. Saying so skips a lookup that could only fail — and whose failure the
+  // apiKey plugin logs as its own untagged `error` line, roughly four per
+  // agent turn on a runtime that reaches `/mcp` over a wire. The
+  // cookie half of the verifier still runs, so the identity recorded below is
+  // unchanged. The legacy `config.mcp.apiKey` gets no such hint on purpose:
+  // `seedLegacyMcpApiKey` stores that exact value AS a Better Auth key, so
+  // there it is a real per-user credential acceptor 2 must still resolve.
+  const identity = await verifyRequestAuth(request, {
+    ...(bearerIsLocalToken ? { bearerIsNotAnApiKey: true } : {}),
+  });
+  // Recorded, not just accepted. A capability that acts on somebody's own
+  // data has to know WHICH person is asking, and this is the only place on
+  // this surface that ever knows — the same slot the session gate fills, so
+  // downstream readers have one shape to read. Discarding it is how
+  // "authenticated" collapsed into "the owner".
+  if (identity) return { allowed: true, user: identity };
+
+  // 3. Legacy compat window — the not-yet-seeded global config key.
+  if (legacyKey && token && constantTimeEquals(token, legacyKey)) return { allowed: true };
+
+  // 4. Per-instance local token. Its `!authEnabled` gate (ADR-0320: the token
+  //    is inactive once login is on, yielding to per-user keys) lives in
+  //    `localToken` above, which is where acceptor 2 needed the same answer.
+  //    Named for the audit log: this caller proved the per-install local
+  //    token, which is neither a person's key nor an agent's token.
+  if (bearerIsLocalToken) return { allowed: true, mcpLocalToken: true };
+
+  // ── No acceptor matched ──────────────────────────────────────────────────
+  const refused = { allowed: false, body: unauthorizedBody(surface) } as const;
+
+  // Login on: no tokenless path on either surface.
+  if (authEnabled) return refused;
+
+  // Login off, A2A: card discovery (GET) is open; execution (POST) is gated.
+  if (surface === 'a2a') return request.method === 'GET' ? { allowed: true } : refused;
+
+  // Login off, MCP: the read-only capability carve-out on the parsed body.
+  return isAllowedMcpMessage(request.body) ? { allowed: true } : refused;
+}
+
+/** The Hono environment {@link honoMcpAuth} reads and writes. */
+export type McpAuthEnv = RequestBodyEnv & {
+  Variables: {
+    /** Who a credential proved: the session gate's slot, filled here too. */
+    user?: RequestUser;
+    /** Set when the caller proved the local token; the audit actor reads it. */
+    mcpLocalToken?: boolean;
+  };
+};
+
+/**
+ * The credential check as Hono middleware, for `/mcp` and the A2A gateway. It
+ * reads the body the chain already parsed (`readJsonBody`), the one the route
+ * then hands on. See {@link decideMcpAuth}.
+ *
+ * @param surface - The surface this middleware guards.
+ * @returns A Hono middleware enforcing the surface's auth posture.
+ */
+export function honoMcpAuth(surface: McpAuthSurface): MiddlewareHandler<McpAuthEnv> {
+  return async (c, next) => {
+    const decision = await decideMcpAuth(surface, {
+      method: c.req.method,
+      headers: c.env.incoming.headers,
+      body: readJsonBody(c),
     });
-    if (identity) {
-      // Recorded, not just accepted. A capability that acts on somebody's own
-      // data has to know WHICH person is asking, and this is the only place on
-      // this surface that ever knows — the same `res.locals.user` slot
-      // `sessionGate` fills, so downstream readers have one shape to read.
-      // Discarding it is how "authenticated" collapsed into "the owner".
-      res.locals.user = identity;
-      next();
-      return;
-    }
-
-    // 3. Legacy compat window — the not-yet-seeded global config key.
-    if (legacyKey && token && constantTimeEquals(token, legacyKey)) {
-      next();
-      return;
-    }
-
-    // 4. Per-instance local token. Its `!authEnabled` gate (ADR-0320: the token
-    //    is inactive once login is on, yielding to per-user keys) lives in
-    //    `localToken` above, which is where acceptor 2 needed the same answer.
-    if (bearerIsLocalToken) {
-      // Named for the audit log: this caller proved the per-install local
-      // token, which is neither a person's key nor an agent's token.
-      res.locals.mcpLocalToken = true;
-      next();
-      return;
-    }
-
-    // ── No acceptor matched ──────────────────────────────────────────────────
-
-    // Login on: no tokenless path on either surface.
-    if (authEnabled) {
-      respondUnauthorized(res, surface);
-      return;
-    }
-
-    // Login off, A2A: card discovery (GET) is open; execution (POST) is gated.
-    if (surface === 'a2a') {
-      if (req.method === 'GET') {
-        next();
-        return;
-      }
-      respondUnauthorized(res, surface);
-      return;
-    }
-
-    // Login off, MCP: the read-only capability carve-out on the parsed body.
-    if (isAllowedMcpMessage(req.body)) {
-      next();
-      return;
-    }
-    respondUnauthorized(res, surface);
+    if (!decision.allowed) return c.json(decision.body, 401);
+    if (decision.user) c.set('user', decision.user);
+    if (decision.mcpLocalToken) c.set('mcpLocalToken', true);
+    await next();
   };
 }
 
@@ -204,15 +240,15 @@ function isAllowedMcpMessage(body: unknown): boolean {
 }
 
 /**
- * Send a helpful JSON-RPC 401 that names where to find the token and how to send
- * it, without ever echoing the token value.
+ * The helpful JSON-RPC 401 body: it names where to find the token and how to
+ * send it, without ever echoing the token value.
  */
-function respondUnauthorized(res: Response, surface: McpAuthSurface): void {
-  res.status(401).json({
+function unauthorizedBody(surface: McpAuthSurface): McpAuthRefusalBody {
+  return {
     jsonrpc: '2.0',
     error: { code: -32001, message: buildUnauthorizedMessage(surface) },
     id: null,
-  });
+  };
 }
 
 /** Build the surface-shaped, token-path-naming 401 message (never the value). */

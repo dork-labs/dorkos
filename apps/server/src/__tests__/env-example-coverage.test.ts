@@ -48,6 +48,8 @@ const UNDOCUMENTED_ON_PURPOSE: Record<string, string> = {
   NODE_ENV: 'set by the way the server is started, not by a person editing .env',
   GITHUB_TOKEN: 'the standard GitHub convention, already in the environment of anyone who uses gh',
   CLIENT_DIST_PATH: 'set by the CLI and the desktop shell to point at their own bundled client',
+  DORKOS_OLLAMA_URL:
+    'loopback only and defaults to where Ollama always listens; it exists so tests can point the server at a stub Ollama',
   DORKOS_APPROVAL_TTL_MS:
     'shortens the approval window for the eval harness (DOR-498); it can only ever shorten it, and nothing an operator wants is on the other end',
   DORKOS_OFFICIAL_SPACE_URL:

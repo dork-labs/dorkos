@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import express from 'express';
+import type { RequestListener } from 'node:http';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -9,7 +9,14 @@ import { createDb, runMigrations, type Db } from '@dorkos/db';
 import type { RequestUser } from '../../services/core/auth/index.js';
 import { PushSubscriptionStore } from '../../services/notifications/push-subscription-store.js';
 import { WebPushChannel } from '../../services/notifications/channels/web-push.js';
-import { createPushRouter } from '../push.js';
+import { createPushRoutes } from '../push.js';
+import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
+
+// The routes are served through the `/api` chain, whose host guard and session
+// gate read the login setting: off, as on a fresh install.
+vi.mock('../../services/core/config-manager.js', () => ({
+  configManager: { get: vi.fn(() => undefined), set: vi.fn() },
+}));
 
 const fixtureTarget = swappableServer();
 const fixtureServer = fixtureTarget.server;
@@ -25,22 +32,23 @@ function subscribeBody(endpoint = 'https://fcm.googleapis.com/one') {
 }
 
 /**
- * Mount the router behind stand-ins for the two middlewares in front of it.
- * `sessionGate` and the agent-identity resolver both write onto `res.locals`,
- * and a case has to present exactly one credential.
+ * Serve the routes behind the real `/api` chain, with stand-ins for what the
+ * session gate and the agent-identity resolver would put on `c.var`: a case has
+ * to present exactly one credential.
  */
 function buildApp(
   options: { user?: RequestUser; agentIdentity?: { agentId: string } } = {}
-): express.Express {
-  const app = express();
-  app.use(express.json());
-  app.use((_req, res, next) => {
-    if (options.user) res.locals.user = options.user;
-    if (options.agentIdentity) res.locals.agentIdentity = options.agentIdentity;
-    next();
-  });
-  app.use('/api/push', createPushRouter({ subscriptions, channel }));
-  return app;
+): RequestListener {
+  return honoGroupListener(
+    { path: '/api/push', routes: createPushRoutes({ subscriptions, channel }) },
+    {
+      before: async (c, next) => {
+        if (options.user) c.set('user', options.user);
+        if (options.agentIdentity) c.set('agentIdentity', options.agentIdentity as never);
+        await next();
+      },
+    }
+  );
 }
 
 /** An agent principal — the caller every route here must refuse. */

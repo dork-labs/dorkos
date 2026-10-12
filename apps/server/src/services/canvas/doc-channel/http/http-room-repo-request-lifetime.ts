@@ -1,3 +1,7 @@
+import {
+  originalDocRequestFacts,
+  originalDocAuthRequest,
+} from '../../../../http/original-doc-request.js';
 import type { Request, Response } from 'express';
 import { InstallationFileWrites } from '../writes/installation-file-writes.js';
 import { resolveCaller } from '../../../../routes/room-caller.js';
@@ -69,7 +73,7 @@ export function repoCallerOf(httpCustodyOwner: object, handle: object): Original
     (current.user ? !sameRoomCredential(httpCustodyOwner, user, current.user) : user !== undefined)
   )
     throw new DocChannelNotFoundError();
-  const actor = resolveCaller(current.req, current.res);
+  const actor = resolveCaller(originalDocRequestFacts(current.req, current.res));
   if (actor.id !== current.authorId) throw new DocChannelNotFoundError();
   requireRoomServiceRepoWriteCurrent(
     binding.rooms,
@@ -107,14 +111,18 @@ export async function captureDocHttpRoomRepoCaller(
     throw new DocChannelNotFoundError();
   requireOriginalRoomFileBinding(httpCustodyOwner, owner, binding);
   requireOriginalRepoService(httpCustodyOwner, binding, owner, service, operation);
-  const caller = resolveCaller(req, res);
+  const caller = resolveCaller(originalDocRequestFacts(req, res));
   requireRoomServiceRepoWriteCurrent(binding.rooms, binding.db, roomId, caller.id, operation);
   const login = Boolean(configManager.get('auth')?.enabled);
   const supplied = res.locals.user as RequestUser | undefined;
   const user = supplied ? Object.freeze({ ...supplied }) : undefined;
   const headers = Object.freeze({ ...req.headers });
   if (login || user) {
-    if (!login || !user || !(await recheckAdmittedRequestAuth(req, supplied)))
+    if (
+      !login ||
+      !user ||
+      !(await recheckAdmittedRequestAuth(originalDocAuthRequest(req), supplied))
+    )
       throw new RoomFileRequestAuthError();
   }
   requireOriginalRoomFileBinding(httpCustodyOwner, owner, binding);
@@ -154,7 +162,13 @@ export async function checkDocHttpRoomRepoCaller(
 ): Promise<void> {
   readOriginalHttpRequestCustody(httpCustodyOwner);
   const current = repoCallerOf(httpCustodyOwner, handle);
-  if (current.login && !(await recheckAdmittedRequestAuth(current.req, current.admittedPrincipal)))
+  if (
+    current.login &&
+    !(await recheckAdmittedRequestAuth(
+      originalDocAuthRequest(current.req),
+      current.admittedPrincipal
+    ))
+  )
     throw new RoomFileRequestAuthError();
   repoCallerOf(httpCustodyOwner, handle);
 }

@@ -33,10 +33,14 @@
  *
  * @module routes/remote-access
  */
-import { Router, type Request, type Response } from 'express';
+import { Hono, type Context } from 'hono';
+import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import { z } from 'zod';
 import type { RemoteAccessReport } from '@dorkos/shared/types';
 
+import type { ApiEnv } from '../http/api-chain.js';
+import { readJsonBody } from '../http/request-body.js';
+import { honoRequestFacts } from '../http/request-facts.js';
 import {
   requireOperatorCookieUnderLogin,
   isLocalCaller,
@@ -89,86 +93,95 @@ async function stopOwnTunnel(): Promise<void> {
 }
 
 /**
- * The cookie, trusted-caller and local-caller bars, in that order. Answers the
- * refusal itself and returns `true` when it refused.
+ * The cookie, trusted-caller and local-caller bars, in that order: the
+ * refusal to answer with, or `undefined` when the caller may go on.
  */
-function refusePersonBars(req: Request, res: Response): boolean {
-  const cookieRefusal = requireOperatorCookieUnderLogin(res, 'remote access');
+function refusePersonBars(c: Context<ApiEnv>): Response | undefined {
+  const caller = honoRequestFacts(c);
+  const cookieRefusal = requireOperatorCookieUnderLogin(caller, 'remote access');
   if (cookieRefusal) {
-    res.status(cookieRefusal.status).json({ error: cookieRefusal.error, code: cookieRefusal.code });
-    return true;
+    return c.json(
+      { error: cookieRefusal.error, code: cookieRefusal.code },
+      cookieRefusal.status as ContentfulStatusCode
+    );
   }
-  if (!trustedCaller(readCallerAuthority(req, res))) {
+  if (!trustedCaller(readCallerAuthority(caller))) {
     logger.warn('[RemoteAccess] Refused a remote access action from an agent');
-    res.status(403).json({ error: OPERATOR_ONLY_CONFIG_ERROR, code: OPERATOR_ONLY_CONFIG_CODE });
-    return true;
+    return c.json({ error: OPERATOR_ONLY_CONFIG_ERROR, code: OPERATOR_ONLY_CONFIG_CODE }, 403);
   }
-  if (!isLocalCaller(req)) {
-    res.status(403).json({
-      error: 'Remote access can only be changed on the computer DorkOS runs on.',
-      code: REMOTE_SETUP_NEEDS_THIS_COMPUTER,
-    });
-    return true;
+  if (!isLocalCaller(caller)) {
+    return c.json(
+      {
+        error: 'Remote access can only be changed on the computer DorkOS runs on.',
+        code: REMOTE_SETUP_NEEDS_THIS_COMPUTER,
+      },
+      403
+    );
   }
-  return false;
+  return undefined;
 }
 
 /**
- * Build the router mounted at `/api/remote-access`.
+ * Build the routes mounted at `/api/remote-access`.
  *
  * @param deps - Seams for tests; the default uses the live coordinator.
  */
-export function createRemoteAccessRouter(deps: RemoteAccessRouteDeps = defaultDeps()): Router {
-  const router = Router();
+export function createRemoteAccessRoutes(
+  deps: RemoteAccessRouteDeps = defaultDeps()
+): Hono<ApiEnv> {
+  const router = new Hono<ApiEnv>();
 
   /** Answer an action: its refusal, or the full report. */
-  async function answer(res: Response, result: CoordinatorResult | void): Promise<void> {
+  async function answer(c: Context<ApiEnv>, result: CoordinatorResult | void): Promise<Response> {
     if (result && !result.ok) {
-      res.status(result.status).json({ error: result.error, code: result.code });
-      return;
+      return c.json(
+        { error: result.error, code: result.code },
+        result.status as ContentfulStatusCode
+      );
     }
     const report: RemoteAccessReport = await deps.coordinator.report();
-    res.json(report);
+    return c.json(report);
   }
 
-  function refuseWithoutLogin(res: Response): boolean {
-    if (deps.canExpose()) return false;
-    res
-      .status(409)
-      .json({ error: EXPOSURE_REQUIRES_LOGIN_MESSAGE, code: AUTH_REQUIRED_FOR_EXPOSURE });
-    return true;
+  /** The exposure guard's refusal, or `undefined` when a real login is set up. */
+  function refuseWithoutLogin(c: Context<ApiEnv>): Response | undefined {
+    if (deps.canExpose()) return undefined;
+    return c.json(
+      { error: EXPOSURE_REQUIRES_LOGIN_MESSAGE, code: AUTH_REQUIRED_FOR_EXPOSURE },
+      409
+    );
   }
 
   /** GET /api/remote-access/report — where remote access stands. */
-  router.get('/report', async (_req, res) => {
-    await answer(res);
-  });
+  router.get('/report', (c) => answer(c));
 
   /** POST /api/remote-access/enrolment — a person starts managed setup on this computer. */
-  router.post('/enrolment', async (req, res) => {
-    if (refusePersonBars(req, res) || refuseWithoutLogin(res)) return;
-    await answer(res, await deps.coordinator.startEnrolment());
+  router.post('/enrolment', async (c) => {
+    const refusal = refusePersonBars(c) ?? refuseWithoutLogin(c);
+    if (refusal) return refusal;
+    return answer(c, await deps.coordinator.startEnrolment());
   });
 
   /** POST /api/remote-access/mode — a person chooses off, their own tunnel, or managed. */
-  router.post('/mode', async (req, res) => {
-    if (refusePersonBars(req, res)) return;
-    const parsed = ModeRequestSchema.safeParse(req.body);
+  router.post('/mode', async (c) => {
+    const refusal = refusePersonBars(c);
+    if (refusal) return refusal;
+    const parsed = ModeRequestSchema.safeParse(readJsonBody(c));
     if (!parsed.success) {
-      res.status(400).json({ error: 'Choose off, byo or managed.', code: 'INVALID_MODE' });
-      return;
+      return c.json({ error: 'Choose off, byo or managed.', code: 'INVALID_MODE' }, 400);
     }
     const { mode } = parsed.data;
-    if (mode === 'managed' && refuseWithoutLogin(res)) return;
+    const loginRefusal = mode === 'managed' ? refuseWithoutLogin(c) : undefined;
+    if (loginRefusal) return loginRefusal;
     const result = await deps.coordinator.selectMode(mode);
     if (result.ok && mode === 'off') await deps.stopOwnTunnel();
-    await answer(res, result);
+    return answer(c, result);
   });
 
   /** POST /api/remote-access/close — close managed access now. Unguarded: it only narrows. */
-  router.post('/close', async (_req, res) => {
+  router.post('/close', (c) => {
     deps.coordinator.close();
-    await answer(res);
+    return answer(c);
   });
 
   /**
@@ -177,10 +190,11 @@ export function createRemoteAccessRouter(deps: RemoteAccessRouteDeps = defaultDe
    * withdrawal works with login or Cloud down. Answers once the local
    * withdrawal is done; Cloud's answer arrives as a `tunnel_status` event.
    */
-  router.post('/withdraw', async (req, res) => {
-    if (refusePersonBars(req, res)) return;
+  router.post('/withdraw', (c) => {
+    const refusal = refusePersonBars(c);
+    if (refusal) return refusal;
     void deps.coordinator.withdraw();
-    await answer(res);
+    return answer(c);
   });
 
   return router;

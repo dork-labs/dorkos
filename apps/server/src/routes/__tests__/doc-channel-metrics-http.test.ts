@@ -21,6 +21,7 @@ import {
 } from '@dorkos/db';
 import { createApp, finalizeApp } from '../../app.js';
 import { composedListener } from '../../http/__tests__/composed-listener.js';
+import type { HonoApiDeps } from '../../http/hono-api.js';
 import {
   createRoomSubsystem,
   setRoomService,
@@ -55,6 +56,8 @@ const origin = `http://localhost:${env.DORKOS_PORT}`;
 let dir: string;
 let db: Db;
 let app: ReturnType<typeof createApp>;
+/** What the composed routes read; each test hands over its own channel and metrics. */
+const deps: HonoApiDeps = {};
 const fixture = swappableServer();
 const server = fixture.server;
 let cookies: string[];
@@ -154,7 +157,7 @@ beforeEach(async () => {
   const admission = new MainRequestAdmission();
   app = createApp({ admission });
   finalizeApp(app);
-  fixture.mount(composedListener(app, admission));
+  fixture.mount(composedListener(app, admission, deps));
   const signup = await request(server)
     .post('/api/auth/sign-up/email')
     .set('Origin', origin)
@@ -215,8 +218,8 @@ beforeEach(async () => {
     if (failed) throw cause;
   };
   metrics = new DocChannelMetrics(db);
-  app.locals.docChannelHttp = { ...http, metrics };
-  app.locals.debugDeps = { docChannelMetrics: metrics };
+  deps.docChannel = { ...http, metrics };
+  deps.debug = { docChannelMetrics: metrics };
   project = fs.mkdtempSync(path.join(dir, 'source-'));
   fs.writeFileSync(path.join(project, 'tasks.md'), 'Tasks');
   sessionId = randomUUID();
@@ -322,9 +325,9 @@ describe('document metrics through the full app', () => {
     }
   });
   it('returns the same constant 503 for absent instance, native transaction and failed SQL', async () => {
-    delete app.locals.debugDeps;
+    delete deps.debug;
     expect((await debug()).body).toEqual(unavailable);
-    app.locals.debugDeps = { docChannelMetrics: metrics };
+    deps.debug = { docChannelMetrics: metrics };
     db.$client.exec('BEGIN');
     try {
       const res = await debug();
@@ -397,20 +400,27 @@ describe('document metrics through the full app', () => {
       expect(response.body).toEqual({ code: scenario.code, error: scenario.error });
     }
     expect(attempts().rejectedRequestsByClass[scenario.reason]).toBe(2);
-    // The same mounted uppercase route also reaches schema validation for valid JSON.
-    for (const suffix of ['events', 'EVENTS']) {
-      const response = await request(server)
-        .post(`${endpoint()}/${suffix}`)
-        .set('X-DorkOS-Doc-Generation', generation)
-        .set('Cookie', cookies)
-        .send({});
-      expect(response.status).toBe(400);
-      expect(response.body).toEqual({
-        code: 'INVALID_DOC_EVENT',
-        error: 'The document event or query is not valid.',
-      });
-    }
-    expect(attempts().rejectedRequestsByClass.invalid).toBe(scenario.reason === 'invalid' ? 4 : 2);
+    // Valid JSON reaches schema validation on the route itself. Routes match
+    // case-sensitively on the Hono chain (`http/api-chain.ts`), so the uppercase
+    // spelling the body limit still applied to is the `/api` 404, and counts
+    // nothing.
+    const valid = await request(server)
+      .post(`${endpoint()}/events`)
+      .set('X-DorkOS-Doc-Generation', generation)
+      .set('Cookie', cookies)
+      .send({});
+    expect(valid.status).toBe(400);
+    expect(valid.body).toEqual({
+      code: 'INVALID_DOC_EVENT',
+      error: 'The document event or query is not valid.',
+    });
+    const uppercase = await request(server)
+      .post(`${endpoint()}/EVENTS`)
+      .set('Cookie', cookies)
+      .send({});
+    expect(uppercase.status).toBe(404);
+    expect(uppercase.body).toEqual({ error: 'Not found', code: 'API_NOT_FOUND' });
+    expect(attempts().rejectedRequestsByClass.invalid).toBe(scenario.reason === 'invalid' ? 3 : 1);
     expect((await debug().set('Cookie', cookies)).body.requestAttempts).toEqual(attempts());
   });
   it('preserves real duplicate, rate Retry-After, manifest, conflict, storage and authority outcomes', async () => {
@@ -470,7 +480,7 @@ describe('document metrics through the full app', () => {
       url: 'https://example.test/not-composed',
     }).id;
     await captureGeneration();
-    app.locals.docChannelHttp = {
+    deps.docChannel = {
       ...http,
       metrics,
       service: new DocChannelService(rooms.canvasDocuments, http.channels, http.authorization),

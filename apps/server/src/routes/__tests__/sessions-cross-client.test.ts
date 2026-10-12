@@ -104,6 +104,7 @@ import request from '@dorkos/test-utils/supertest';
 import { createTestDb } from '@dorkos/test-utils/db';
 import { listeningServer } from '@dorkos/test-utils/listening-server';
 import { createApp, finalizeApp } from '../../app.js';
+import { composedListener } from '../../http/__tests__/composed-listener.js';
 import {
   getOrCreateProjector,
   peekProjector,
@@ -118,7 +119,8 @@ import { resetMessageDispatcher } from '../../services/session/message-dispatche
 import type { LockActivity } from '../../services/session/session-lock.js';
 import { attachEventStream } from './helpers/trigger-turn-helpers.js';
 
-const app = createApp({ admission: new MainRequestAdmission() });
+const admission = new MainRequestAdmission();
+const app = createApp({ admission });
 finalizeApp(app);
 
 /**
@@ -128,7 +130,7 @@ finalizeApp(app);
  * same, so a pooled keep-alive socket for a reclaimed port could land on the
  * wrong server. See {@link listeningServer}.
  */
-const server = listeningServer(app);
+const server = listeningServer(composedListener(app, admission));
 
 const SESSION_ID = '00000000-0000-4000-8000-0000000000aa';
 

@@ -31,7 +31,10 @@
  *
  * @module routes/cloud-communities
  */
-import { Router, type Request, type Response } from 'express';
+import type { IncomingMessage } from 'node:http';
+import { RESPONSE_ALREADY_SENT } from '@hono/node-server/utils/response';
+import { Hono, type Context } from 'hono';
+import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import { z } from 'zod';
 import { CommunityShortNameSchema, type CommunityMove } from '@dork-labs/cloud-api';
 import type {
@@ -71,8 +74,12 @@ import {
 } from '../services/core/cloud/community-move-upload.js';
 import { isCloudLinked, problemOf } from '../services/core/cloud/v1-client.js';
 import { logger, logError } from '../lib/logger.js';
-import { refuseEnvelopeUnlessOwner, type AccountOwnerWording } from './cloud-owner-bar.js';
-import { officialOnly, officialOnlyOrigin } from '../middleware/spaces-enabled.js';
+import { envelopeRefusalUnlessOwner, type AccountOwnerWording } from './cloud-owner-bar.js';
+import { officialOnlyOrigin } from '../middleware/spaces-enabled.js';
+import type { ApiEnv } from '../http/api-chain.js';
+import { readJsonBody } from '../http/request-body.js';
+import { honoRequestFacts } from '../http/request-facts.js';
+import { readQuery } from '../http/request-query.js';
 
 /** What a person reads when the hosting service could not be reached. */
 const UNREACHABLE = 'Couldn’t reach your DorkOS account. Try again.';
@@ -177,7 +184,7 @@ function describeBytes(bytes: number, round: 'up' | 'down'): string {
  *
  * @param req - The incoming request.
  */
-function declaredLength(req: Request): number | null {
+function declaredLength(req: IncomingMessage): number | null {
   const header = req.headers['content-length'];
   if (header === undefined || !/^\d+$/.test(header)) return null;
   const bytes = Number(header);
@@ -227,14 +234,14 @@ function stagingRefusal(error: StagingError): { status: number; message: string 
  * answered with a server error (5xx), which does not say nothing was made.
  * A refusal it described with a 4xx made nothing.
  *
- * @param res - The response to answer on.
+ * @param c - The request's context.
  * @param error - What the write rejected with.
  * @param what - What was being done, for the log line.
  */
-function writeFailed(res: Response, error: unknown, what: string) {
+function writeFailed(c: Context<ApiEnv>, error: unknown, what: string) {
   const problem = problemOf(error);
   if (problem !== null) {
-    return res.json({
+    return c.json({
       ok: false,
       problem,
       ...(problem.status >= 500 ? { mayExist: true as const } : {}),
@@ -242,7 +249,7 @@ function writeFailed(res: Response, error: unknown, what: string) {
   }
   // A Problem was answered above, so this is a failure with no code to name.
   logger.warn(`[Cloud] Could not ${what}`, logError(error));
-  return res.json({
+  return c.json({
     ok: false,
     message: UNREACHABLE,
     mayExist: true,
@@ -252,18 +259,27 @@ function writeFailed(res: Response, error: unknown, what: string) {
 /**
  * Answer a failed read with a 502 and no body from the service.
  *
- * @param res - The response to answer on.
+ * @param c - The request's context.
  * @param error - What the read rejected with.
  * @param what - What was being read, for the log line.
  */
-function readFailed(res: Response, error: unknown, what: string) {
+function readFailed(c: Context<ApiEnv>, error: unknown, what: string) {
   const problem = problemOf(error);
   logger.warn(`[Cloud] Could not read ${what}`, {
     ...logError(error),
     code: problem?.code,
     status: problem?.status,
   });
-  return res.status(502).json({ error: UNREACHABLE });
+  return c.json({ error: UNREACHABLE }, 502);
+}
+
+/**
+ * What a handler returns when nobody is left to answer (the browser went
+ * away): the marker that tells the Node adapter the response is not Hono's to
+ * send, as an Express handler that never answered.
+ */
+function nobodyToAnswer(): Response {
+  return new Response(null, { headers: RESPONSE_ALREADY_SENT.headers });
 }
 
 /** Whether two origins name the same server, however each is spelled. */
@@ -276,22 +292,24 @@ function sameOrigin(left: string, right: string): boolean {
 }
 
 /**
- * Build the router over one upload registry.
+ * Build the routes over one upload registry. Mount them behind
+ * `gateCloudCommunities` (`middleware/spaces-enabled.ts`), as `routes/cloud.ts`
+ * does.
  *
  * @param uploads - Where moves' uploads run. The process-wide one by default;
  *   a test passes its own.
  */
-export function createCloudCommunitiesRouter(
+export function createCloudCommunitiesRoutes(
   uploads: CommunityMoveUploads = communityMoveUploads
-): Router {
-  const router = Router();
+): Hono<ApiEnv> {
+  const router = new Hono<ApiEnv>();
 
   // Nothing any of these routes answers may be cached by the browser or a
   // proxy: one answer carries a claim link, and the rest describe state that a
-  // reload must read fresh.
-  router.use((_req, res, next) => {
-    res.setHeader('Cache-Control', 'no-store');
-    next();
+  // reload must read fresh. Every path below this mount, the `/api` 404 too.
+  router.use('*', async (c, next) => {
+    c.header('Cache-Control', 'no-store');
+    await next();
   });
 
   /**
@@ -327,40 +345,40 @@ export function createCloudCommunitiesRouter(
   }
 
   /** GET / — this account's hosted communities, its moves, and its allowance. */
-  router.get('/', async (_req, res) => {
+  router.get('/', async (c) => {
     if (!isCloudLinked())
-      return res.json({ available: false } satisfies CloudHostedCommunitiesResponse);
+      return c.json({ available: false } satisfies CloudHostedCommunitiesResponse);
     try {
       const overview = await readHostedCommunities();
       if (overview === null)
-        return res.json({ available: false } satisfies CloudHostedCommunitiesResponse);
+        return c.json({ available: false } satisfies CloudHostedCommunitiesResponse);
       overview.moves.forEach(settleUpload);
-      return res.json({
+      return c.json({
         available: true,
         communities: overview.communities,
         moves: overview.moves.map(withUpload),
         allowance: overview.allowance,
       } satisfies CloudHostedCommunitiesResponse);
     } catch (error) {
-      return readFailed(res, error, 'hosted communities');
+      return readFailed(c, error, 'hosted communities');
     }
   });
 
   /** GET /name-check?name= — whether a web address is free right now. */
-  router.get('/name-check', async (req, res) => {
-    const name = CommunityShortNameSchema.safeParse(req.query.name);
-    if (!name.success) return res.status(400).json({ error: 'That isn’t a web address.' });
+  router.get('/name-check', async (c) => {
+    const name = CommunityShortNameSchema.safeParse(readQuery(c).name);
+    if (!name.success) return c.json({ error: 'That isn’t a web address.' }, 400);
     if (!isCloudLinked())
-      return res.json({ available: false } satisfies CloudCommunityNameCheckResponse);
+      return c.json({ available: false } satisfies CloudCommunityNameCheckResponse);
     try {
       const check = await checkCommunityName(name.data);
-      return res.json(
+      return c.json(
         (check === null
           ? { available: false }
           : { available: true, check }) satisfies CloudCommunityNameCheckResponse
       );
     } catch (error) {
-      return readFailed(res, error, 'a web address');
+      return readFailed(c, error, 'a web address');
     }
   });
 
@@ -369,46 +387,47 @@ export function createCloudCommunitiesRouter(
    * in. Unlinked, or a service that does not serve the route yet, answers
    * `{ available: false }`, and the app keeps today's flow.
    */
-  router.get('/sign-in', async (_req, res) => {
+  router.get('/sign-in', async (c) => {
     if (!isCloudLinked())
-      return res.json({ available: false } satisfies CloudCommunitySignInResponse);
+      return c.json({ available: false } satisfies CloudCommunitySignInResponse);
     try {
       const all = await readAccountSignInOrigins();
       // With spaces off the gate let this through for the official space alone, so the answer
       // names its server or nothing (spec `official-community-space` D5).
-      const official = officialOnlyOrigin(res);
+      const official = officialOnlyOrigin(c);
       const origins =
-        all === null || !officialOnly(res)
+        all === null || official === null
           ? all
-          : all.filter((origin) => official !== null && sameOrigin(origin, official));
-      return res.json(
-        (origins === null || (officialOnly(res) && origins.length === 0)
+          : all.filter((origin) => sameOrigin(origin, official));
+      return c.json(
+        (origins === null || (official !== null && origins.length === 0)
           ? { available: false }
           : { available: true, origins }) satisfies CloudCommunitySignInResponse
       );
     } catch (error) {
-      return readFailed(res, error, 'where the account signs in');
+      return readFailed(c, error, 'where the account signs in');
     }
   });
 
   /** POST / — start a hosted community. The claim link stays on this server. */
-  router.post('/', async (req, res) => {
-    if (refuseEnvelopeUnlessOwner(req, res, OWNER_ONLY.start)) return;
+  router.post('/', async (c) => {
+    const refusal = envelopeRefusalUnlessOwner(honoRequestFacts(c), OWNER_ONLY.start);
+    if (refusal) return c.json(refusal, 403);
     if (!isCloudLinked())
-      return res.json({ ok: false, message: NOT_LINKED } satisfies CloudCommunityRefusal);
-    const body = StartBodySchema.safeParse(req.body);
+      return c.json({ ok: false, message: NOT_LINKED } satisfies CloudCommunityRefusal);
+    const body = StartBodySchema.safeParse(readJsonBody(c));
     if (!body.success) {
-      return res.status(400).json({ ok: false, message: 'Give the space a name.' });
+      return c.json({ ok: false, message: 'Give the space a name.' }, 400);
     }
     try {
       const started = await startCommunity(body.data);
-      return res.json({
+      return c.json({
         ok: true,
         community: started.community,
         claimReady: started.claimReady,
       } satisfies CloudCommunityStartResponse);
     } catch (error) {
-      return writeFailed(res, error, 'start a community');
+      return writeFailed(c, error, 'start a community');
     }
   });
 
@@ -418,21 +437,21 @@ export function createCloudCommunitiesRouter(
    * makes as the file arrives, and like it, nothing is held back: that check
    * runs again. Answers 200 either way, with the same plain refusal.
    */
-  router.get('/moves/room', async (req, res) => {
+  router.get('/moves/room', async (c) => {
     if (!isCloudLinked())
-      return res.json({ ok: false, message: NOT_LINKED } satisfies CloudCommunityRefusal);
-    const query = RoomQuerySchema.safeParse(req.query);
-    if (!query.success) return res.status(400).json({ error: 'That isn’t a file size.' });
+      return c.json({ ok: false, message: NOT_LINKED } satisfies CloudCommunityRefusal);
+    const query = RoomQuerySchema.safeParse(readQuery(c));
+    if (!query.success) return c.json({ error: 'That isn’t a file size.' }, 400);
     try {
       await checkRoom(query.data.bytes);
     } catch (error) {
       if (!(error instanceof StagingError)) throw error;
-      return res.json({
+      return c.json({
         ok: false,
         message: stagingRefusal(error).message,
       } satisfies CloudCommunityRefusal);
     }
-    return res.json({ ok: true } satisfies CloudCommunityMoveRoomResponse);
+    return c.json({ ok: true } satisfies CloudCommunityMoveRoomResponse);
   });
 
   /**
@@ -440,20 +459,23 @@ export function createCloudCommunitiesRouter(
    * export as the body. Answers once the file is here and the move exists; the
    * upload to the Community server then runs on its own.
    */
-  router.post('/moves', async (req: Request, res: Response) => {
-    if (refuseEnvelopeUnlessOwner(req, res, OWNER_ONLY.move)) {
+  router.post('/moves', async (c) => {
+    // The export itself: the chain's JSON parser leaves any other body unread.
+    const { incoming: req, outgoing: res } = c.env;
+    const ownerRefusal = envelopeRefusalUnlessOwner(honoRequestFacts(c), OWNER_ONLY.move);
+    if (ownerRefusal) {
       // Let the export go by unread, so the browser gets this answer.
       req.resume();
-      return;
+      return c.json(ownerRefusal, 403);
     }
     if (!isCloudLinked()) {
       req.resume();
-      return res.json({ ok: false, message: NOT_LINKED } satisfies CloudCommunityRefusal);
+      return c.json({ ok: false, message: NOT_LINKED } satisfies CloudCommunityRefusal);
     }
-    const query = MoveQuerySchema.safeParse(req.query);
+    const query = MoveQuerySchema.safeParse(readQuery(c));
     if (!query.success) {
       req.resume();
-      return res.status(400).json({ ok: false, message: 'Give the space a name.' });
+      return c.json({ ok: false, message: 'Give the space a name.' }, 400);
     }
     // The browser can leave after the last byte arrives but before this
     // answers (a cancel, a stall, a closed tab). A move started for nobody
@@ -473,20 +495,21 @@ export function createCloudCommunitiesRouter(
         // closed the connection, so nobody is left to answer.
         req.resume();
         const refusal = stagingRefusal(error);
-        return res
-          .status(refusal.status)
-          .json({ ok: false, message: refusal.message } satisfies CloudCommunityRefusal);
+        return c.json(
+          { ok: false, message: refusal.message } satisfies CloudCommunityRefusal,
+          refusal.status as ContentfulStatusCode
+        );
       }
       // The browser stopped sending (a cancel, a closed tab). Nobody is left to answer.
       logger.warn('[Cloud] A community export did not arrive', logError(error));
       if (!res.headersSent && !req.destroyed) {
-        return res.status(400).json({ ok: false, message: 'The file didn’t arrive. Try again.' });
+        return c.json({ ok: false, message: 'The file didn’t arrive. Try again.' }, 400);
       }
-      return;
+      return nobodyToAnswer();
     }
     if (browserLeft) {
       await discardStagedArchive(staged);
-      return;
+      return nobodyToAnswer();
     }
     let started;
     try {
@@ -497,7 +520,7 @@ export function createCloudCommunitiesRouter(
       });
     } catch (error) {
       await discardStagedArchive(staged);
-      return writeFailed(res, error, 'start a move');
+      return writeFailed(c, error, 'start a move');
     }
     if (browserLeft) {
       await discardStagedArchive(staged);
@@ -505,7 +528,7 @@ export function createCloudCommunitiesRouter(
       await cancelMove(started.move.moveId).catch((error: unknown) =>
         logger.warn('[Cloud] Could not cancel a move nobody was waiting for', logError(error))
       );
-      return;
+      return nobodyToAnswer();
     }
     if (started.upload !== null && staged.bytes > hostLimitBytes(started.upload)) {
       // The service checks the declared size against the host's limit when the
@@ -522,21 +545,24 @@ export function createCloudCommunitiesRouter(
           return false;
         }
       );
-      return res.status(413).json({
-        ok: false,
-        message: `This export is too large to move. It is ${describeBytes(staged.bytes, 'up')}, and the most DorkOS takes is ${describeBytes(limit, 'down')}.`,
-        ...(cancelled ? {} : { mayExist: true as const }),
-      } satisfies CloudCommunityRefusal);
+      return c.json(
+        {
+          ok: false,
+          message: `This export is too large to move. It is ${describeBytes(staged.bytes, 'up')}, and the most DorkOS takes is ${describeBytes(limit, 'down')}.`,
+          ...(cancelled ? {} : { mayExist: true as const }),
+        } satisfies CloudCommunityRefusal,
+        413
+      );
     }
     if (started.upload === null && started.move.state === 'cancelled') {
       // A replay of a move that was cancelled, most often by the refusal just
       // above on an earlier try. Answering `ok` would show the person a
       // cancelled move in place of a reason, so say what happened.
       await discardStagedArchive(staged);
-      return res.status(409).json({
-        ok: false,
-        message: MOVE_ALREADY_CANCELLED,
-      } satisfies CloudCommunityRefusal);
+      return c.json(
+        { ok: false, message: MOVE_ALREADY_CANCELLED } satisfies CloudCommunityRefusal,
+        409
+      );
     }
     if (started.upload !== null) {
       void uploads.begin(started.move.moveId, staged, started.upload);
@@ -546,64 +572,66 @@ export function createCloudCommunitiesRouter(
       // move stands; this second copy is not needed.
       await discardStagedArchive(staged);
     }
-    return res.json({
+    return c.json({
       ok: true,
       move: withUpload(started.move),
     } satisfies CloudCommunityMoveResponse);
   });
 
   /** GET /moves/:moveId — one move, read from the service every time. */
-  router.get('/moves/:moveId', async (req, res) => {
+  router.get('/moves/:moveId', async (c) => {
     if (!isCloudLinked())
-      return res.json({ available: false } satisfies CloudCommunityMovePollResponse);
+      return c.json({ available: false } satisfies CloudCommunityMovePollResponse);
     try {
-      const move = await readMove(req.params.moveId);
+      const move = await readMove(c.req.param('moveId'));
       if (move === null)
-        return res.json({ available: false } satisfies CloudCommunityMovePollResponse);
+        return c.json({ available: false } satisfies CloudCommunityMovePollResponse);
       settleUpload(move);
-      return res.json({
+      return c.json({
         available: true,
         move: withUpload(move),
       } satisfies CloudCommunityMovePollResponse);
     } catch (error) {
-      return readFailed(res, error, 'a move');
+      return readFailed(c, error, 'a move');
     }
   });
 
   /** POST /moves/:moveId/cancel — cancel a move that is not ready yet. */
-  router.post('/moves/:moveId/cancel', async (req, res) => {
-    if (refuseEnvelopeUnlessOwner(req, res, OWNER_ONLY.move)) return;
+  router.post('/moves/:moveId/cancel', async (c) => {
+    const refusal = envelopeRefusalUnlessOwner(honoRequestFacts(c), OWNER_ONLY.move);
+    if (refusal) return c.json(refusal, 403);
     if (!isCloudLinked())
-      return res.json({ ok: false, message: NOT_LINKED } satisfies CloudCommunityRefusal);
+      return c.json({ ok: false, message: NOT_LINKED } satisfies CloudCommunityRefusal);
     // Stop sending first: whatever the service answers, this process has no
     // further use for the file or the token.
-    uploads.discard(req.params.moveId);
+    uploads.discard(c.req.param('moveId'));
     try {
-      const move = await cancelMove(req.params.moveId);
-      return res.json({ ok: true, move: withUpload(move) } satisfies CloudCommunityMoveResponse);
+      const move = await cancelMove(c.req.param('moveId'));
+      return c.json({ ok: true, move: withUpload(move) } satisfies CloudCommunityMoveResponse);
     } catch (error) {
-      return writeFailed(res, error, 'cancel a move');
+      return writeFailed(c, error, 'cancel a move');
     }
   });
 
   /** POST /moves/:moveId/upload — send the export again from the copy held here. */
-  router.post('/moves/:moveId/upload', async (req, res) => {
-    if (refuseEnvelopeUnlessOwner(req, res, OWNER_ONLY.move)) return;
+  router.post('/moves/:moveId/upload', async (c) => {
+    const refusal = envelopeRefusalUnlessOwner(honoRequestFacts(c), OWNER_ONLY.move);
+    if (refusal) return c.json(refusal, 403);
     if (!isCloudLinked())
-      return res.json({ ok: false, message: NOT_LINKED } satisfies CloudCommunityRefusal);
-    if (!uploads.retry(req.params.moveId)) {
-      return res.json({
+      return c.json({ ok: false, message: NOT_LINKED } satisfies CloudCommunityRefusal);
+    if (!uploads.retry(c.req.param('moveId'))) {
+      return c.json({
         ok: false,
         message: 'This DorkOS no longer has the file. Cancel the move and start again.',
       } satisfies CloudCommunityRefusal);
     }
     try {
-      const move = await readMove(req.params.moveId);
+      const move = await readMove(c.req.param('moveId'));
       if (move === null)
-        return res.json({ ok: false, message: UNREACHABLE } satisfies CloudCommunityRefusal);
-      return res.json({ ok: true, move: withUpload(move) } satisfies CloudCommunityMoveResponse);
+        return c.json({ ok: false, message: UNREACHABLE } satisfies CloudCommunityRefusal);
+      return c.json({ ok: true, move: withUpload(move) } satisfies CloudCommunityMoveResponse);
     } catch (error) {
-      return writeFailed(res, error, 'read a move');
+      return writeFailed(c, error, 'read a move');
     }
   });
 
@@ -611,51 +639,57 @@ export function createCloudCommunitiesRouter(
    * POST /:communityId/claim-link — the owner-claim link, to open at once in
    * the person's own browser. The only answer in this family that carries one.
    */
-  router.post('/:communityId/claim-link', async (req, res) => {
-    if (refuseEnvelopeUnlessOwner(req, res, OWNER_ONLY.claimLink)) return;
+  router.post('/:communityId/claim-link', async (c) => {
+    const refusal = envelopeRefusalUnlessOwner(honoRequestFacts(c), OWNER_ONLY.claimLink);
+    if (refusal) return c.json(refusal, 403);
     if (!isCloudLinked())
-      return res.json({ ok: false, message: NOT_LINKED } satisfies CloudCommunityRefusal);
+      return c.json({ ok: false, message: NOT_LINKED } satisfies CloudCommunityRefusal);
     try {
-      const claim = await takeClaimLink(req.params.communityId);
-      return res.json({
+      const claim = await takeClaimLink(c.req.param('communityId'));
+      return c.json({
         ok: true,
         claimUrl: claim.claimUrl,
         expiresAt: claim.expiresAt,
       } satisfies CloudCommunityClaimLinkResponse);
     } catch (error) {
-      return writeFailed(res, error, 'get an owner-claim link');
+      return writeFailed(c, error, 'get an owner-claim link');
     }
   });
 
   /** POST /:communityId/keep — keep one community open, confirming what it holds. */
-  router.post('/:communityId/keep', async (req, res) => {
-    if (refuseEnvelopeUnlessOwner(req, res, OWNER_ONLY.keep)) return;
+  router.post('/:communityId/keep', async (c) => {
+    const refusal = envelopeRefusalUnlessOwner(honoRequestFacts(c), OWNER_ONLY.keep);
+    if (refusal) return c.json(refusal, 403);
     if (!isCloudLinked())
-      return res.json({ ok: false, message: NOT_LINKED } satisfies CloudCommunityRefusal);
-    const body = KeepBodySchema.safeParse(req.body);
-    if (!body.success) return res.status(400).json({ ok: false, message: 'Nothing to confirm.' });
+      return c.json({ ok: false, message: NOT_LINKED } satisfies CloudCommunityRefusal);
+    const body = KeepBodySchema.safeParse(readJsonBody(c));
+    if (!body.success) return c.json({ ok: false, message: 'Nothing to confirm.' }, 400);
     try {
-      const kept = await keepCommunity(req.params.communityId, body.data.expectedHeldCommunityIds);
-      return res.json({
+      const kept = await keepCommunity(
+        c.req.param('communityId'),
+        body.data.expectedHeldCommunityIds
+      );
+      return c.json({
         ok: true,
         community: kept.community,
         heldCommunityIds: kept.heldCommunityIds,
       } satisfies CloudCommunityKeepResponse);
     } catch (error) {
-      return writeFailed(res, error, 'keep a community');
+      return writeFailed(c, error, 'keep a community');
     }
   });
 
   /** POST /:communityId/restore — reopen a held community. */
-  router.post('/:communityId/restore', async (req, res) => {
-    if (refuseEnvelopeUnlessOwner(req, res, OWNER_ONLY.keep)) return;
+  router.post('/:communityId/restore', async (c) => {
+    const refusal = envelopeRefusalUnlessOwner(honoRequestFacts(c), OWNER_ONLY.keep);
+    if (refusal) return c.json(refusal, 403);
     if (!isCloudLinked())
-      return res.json({ ok: false, message: NOT_LINKED } satisfies CloudCommunityRefusal);
+      return c.json({ ok: false, message: NOT_LINKED } satisfies CloudCommunityRefusal);
     try {
-      const community = await restoreCommunity(req.params.communityId);
-      return res.json({ ok: true, community } satisfies CloudCommunityRestoreResponse);
+      const community = await restoreCommunity(c.req.param('communityId'));
+      return c.json({ ok: true, community } satisfies CloudCommunityRestoreResponse);
     } catch (error) {
-      return writeFailed(res, error, 'reopen a community');
+      return writeFailed(c, error, 'reopen a community');
     }
   });
 

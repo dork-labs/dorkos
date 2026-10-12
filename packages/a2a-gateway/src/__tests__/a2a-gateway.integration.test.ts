@@ -1,6 +1,7 @@
 /**
  * Integration tests driving the REAL A2A protocol stack:
- * Express -> jsonRpcHandler -> DefaultRequestHandler -> SqliteTaskStore ->
+ * HTTP -> createA2aGateway -> JsonRpcTransportHandler -> DefaultRequestHandler ->
+ * SqliteTaskStore ->
  * DorkOSAgentExecutor, with a fake Relay whose subscribed responder streams
  * the exact StreamEvent envelope shapes the Claude Code adapter publishes
  * (see packages/relay/src/adapters/claude-code/agent-handler.ts).
@@ -18,9 +19,6 @@
  * the same stack lives in `a2a-v1-wire.integration.test.ts`.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import express from 'express';
-import type { Server } from 'node:http';
-import type { AddressInfo } from 'node:net';
 import { createTestDb } from '@dorkos/test-utils/db';
 import type { RelayCore } from '@dorkos/relay';
 import type {
@@ -31,7 +29,8 @@ import type {
 import { AGENT_CANCEL_SUBJECT_PREFIX } from '@dorkos/shared/relay-schemas';
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
 import type { Logger } from '@dorkos/shared/logger';
-import { createA2aHandlers } from '../express-handlers.js';
+import { createA2aGateway } from '../http-handlers.js';
+import { serveGateway, type ServedGateway } from './serve-gateway.js';
 import type { AgentRegistryLike } from '../types.js';
 
 // ---------------------------------------------------------------------------
@@ -266,7 +265,7 @@ function gatedResponder(inner: Responder): {
 // ---------------------------------------------------------------------------
 
 let relay: FakeRelay;
-let server: Server;
+let served: ServedGateway;
 let baseUrl: string;
 let rpcId = 0;
 /** The host-supplied logger, wired the way `routes/a2a.ts` wires the real one. */
@@ -276,36 +275,21 @@ beforeEach(async () => {
   relay = new FakeRelay();
   logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() };
   const db = createTestDb();
-  const handlers = createA2aHandlers({
-    agentRegistry: makeRegistry([makeManifest()]),
-    relay: relay as unknown as RelayCore,
-    db,
-    config: { baseUrl: 'http://127.0.0.1:0', version: '0.0.0-test' },
-    logger,
-  });
-
-  const app = express();
-  app.get('/.well-known/agent-card.json', handlers.fleetCard);
-  // Per-agent JSON-RPC endpoint: mounted (before the fleet use() below, which
-  // prefix-matches every path under /a2a) at the nested path so the handler
-  // binds the agent from the URL, mirroring createA2aRouter's POST /agents/:id.
-  app.post('/a2a/agents/:id', handlers.agentJsonRpc);
-  // The jsonRpc handler is an Express router with an internal POST '/'
-  // route — mount it with use() so the path prefix is stripped, mirroring
-  // how apps/server mounts createA2aRouter under '/a2a'.
-  app.use('/a2a', handlers.jsonRpc);
-
-  await new Promise<void>((resolve) => {
-    server = app.listen(0, '127.0.0.1', () => resolve());
-  });
-  const { port } = server.address() as AddressInfo;
-  baseUrl = `http://127.0.0.1:${port}`;
+  served = await serveGateway();
+  served.mount(
+    createA2aGateway({
+      agentRegistry: makeRegistry([makeManifest()]),
+      relay: relay as unknown as RelayCore,
+      db,
+      config: { baseUrl: 'http://127.0.0.1:0', version: '0.0.0-test' },
+      logger,
+    })
+  );
+  baseUrl = served.baseUrl;
 });
 
 afterEach(async () => {
-  await new Promise<void>((resolve, reject) => {
-    server.close((err) => (err ? reject(err) : resolve()));
-  });
+  await served.close();
 });
 
 async function rpc(method: string, params: unknown): Promise<Record<string, unknown>> {
@@ -358,7 +342,7 @@ function legacyMessage(text: string, agentId?: string) {
 // Tests
 // ---------------------------------------------------------------------------
 
-describe('A2A gateway integration (real jsonRpcHandler + DefaultRequestHandler + SqliteTaskStore)', () => {
+describe('A2A gateway integration (real JsonRpcTransportHandler + DefaultRequestHandler + SqliteTaskStore)', () => {
   it('serves the fleet agent card at the spec well-known path', async () => {
     const response = await fetch(`${baseUrl}/.well-known/agent-card.json`);
     expect(response.status).toBe(200);
@@ -549,7 +533,7 @@ describe('A2A gateway integration (real jsonRpcHandler + DefaultRequestHandler +
       expect(cancelResponse.error).toBeDefined();
       expect((cancelResponse.error as { message: string }).message).toContain('not cancelable');
       // The host's logger is the only place this outcome is legible, so the
-      // wiring from createA2aHandlers down to the executor has to be real.
+      // wiring from createA2aGateway down to the executor has to be real.
       expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining('may still be running'));
       const getResponse = await rpc('tasks/get', { id: task.id });
       expect(['submitted', 'working']).toContain((getResponse.result as LegacyTask).status.state);
@@ -613,6 +597,46 @@ describe('A2A gateway integration (real jsonRpcHandler + DefaultRequestHandler +
       await gate.finished;
       const afterRelease = await rpc('tasks/get', { id: task.id });
       expect((afterRelease.result as LegacyTask).status.state).toBe('completed');
+    });
+  });
+
+  describe('bodies the gateway reads itself', () => {
+    // A host that does not pre-parse JSON leaves the body to the gateway,
+    // which reads it the way the SDK's own adapter did.
+    async function post(body: string, contentType?: string): Promise<Response> {
+      return fetch(`${baseUrl}/a2a`, {
+        method: 'POST',
+        headers: contentType ? { 'content-type': contentType } : {},
+        // Bytes, not a string: `fetch` labels a string body `text/plain`.
+        body: new TextEncoder().encode(body),
+      });
+    }
+
+    it('answers malformed JSON with a JSON-RPC parse error', async () => {
+      const response = await post('{"jsonrpc":', 'application/json');
+      expect(response.status).toBe(400);
+      expect(response.headers.get('content-type')).toBe('application/json; charset=utf-8');
+      expect(await response.json()).toEqual({
+        jsonrpc: '2.0',
+        id: null,
+        error: { code: -32700, message: 'Invalid JSON payload.' },
+      });
+    });
+
+    it('refuses a content type other than JSON before reading the body', async () => {
+      const response = await post('{}', 'text/plain');
+      expect(response.status).toBe(400);
+      const body = (await response.json()) as { error: { code: number; message: string } };
+      expect(body.error.code).toBe(-32005);
+      expect(body.error.message).toContain('text/plain');
+    });
+
+    it('treats a body with no content type as no request', async () => {
+      const response = await post(JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tasks/get' }));
+      expect(response.status).toBe(200);
+      const body = (await response.json()) as { id: unknown; error?: { code: number } };
+      expect(body.id).toBeNull();
+      expect(body.error).toBeDefined();
     });
   });
 

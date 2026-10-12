@@ -102,6 +102,8 @@ vi.mock('@dorkos/shared/manifest', () => ({
 import { listeningServer } from '@dorkos/test-utils/listening-server';
 import request from '@dorkos/test-utils/supertest';
 import { createApp, finalizeApp } from '../../app.js';
+import { composedListener } from '../../http/__tests__/composed-listener.js';
+import type { SessionRouteDeps } from '../../routes/sessions.js';
 import { validateBoundaryOrDorkHome, BoundaryError } from '../../lib/boundary.js';
 import {
   runtimeRegistry,
@@ -116,12 +118,17 @@ import { configManager } from '../../services/core/config-manager.js';
 // shared enum — see the DOR-811 block in the PATCH suite.
 import { TEST_MODE_CAPABILITIES } from '../../services/runtimes/test-mode/runtime-constants.js';
 
-const app = createApp({ admission: new MainRequestAdmission() });
+const admission = new MainRequestAdmission();
+const app = createApp({ admission });
 finalizeApp(app);
+/** What the session routes read; the tests change it between requests. */
+const sessionLocals: Record<string, unknown> = {};
 
 // Reuse one listener bound to the IPv4 address Supertest dials. An unspecified
 // listener can share its port with another address family on macOS.
-const server = listeningServer(app);
+const server = listeningServer(
+  composedListener(app, admission, { sessions: sessionLocals as SessionRouteDeps })
+);
 
 /** Valid UUID for session ID params (routes validate UUID format). */
 const S1 = '00000000-0000-4000-8000-000000000001';
@@ -171,7 +178,7 @@ describe('Sessions Routes', () => {
     vi.mocked(runtimeRegistry.has).mockReset().mockReturnValue(true);
     vi.mocked(runtimeRegistry.getDefaultType).mockReset().mockReturnValue('fake');
     mockReadManifest.mockReset().mockResolvedValue(null);
-    delete app.locals.meshCore;
+    delete sessionLocals.meshCore;
   });
 
   afterEach(() => {
@@ -976,7 +983,7 @@ describe('Sessions Routes', () => {
     });
 
     it('passes agentPath to persistSessionRuntime', async () => {
-      app.locals.meshCore = {
+      sessionLocals.meshCore = {
         listWithPaths: () => [{ projectPath: '/projects/my-agent' }],
       };
       await sendMessageOnce(S1, {
@@ -994,7 +1001,7 @@ describe('Sessions Routes', () => {
     });
 
     it('refuses unregistered agent ownership provenance before persisting the session', async () => {
-      app.locals.meshCore = {
+      sessionLocals.meshCore = {
         listWithPaths: () => [{ projectPath: '/projects/registered-agent' }],
       };
 

@@ -1,7 +1,7 @@
 /**
  * The marketplace at startup: its sources, cache and install flows, the
- * routes for packages and shapes, the dev-link watcher, the personal
- * marketplace, and the tools the external `/mcp` server gets for it
+ * package routes and what the shapes routes read, the dev-link watcher, the
+ * personal marketplace, and the tools the external `/mcp` server gets for it
  * (DOR-2821, moved out of `index.ts` unchanged).
  *
  * Needs both the extension manager and the adapter manager; without either it
@@ -9,7 +9,6 @@
  *
  * @module startup/marketplace
  */
-import type { Express } from 'express';
 import path from 'path';
 import { existsSync } from 'node:fs';
 import { HARNESS_MANIFEST_PATH } from '@dorkos/harness';
@@ -42,7 +41,7 @@ import { AgentInstallFlow } from '../services/marketplace/flows/install-agent.js
 import { SkillPackInstallFlow } from '../services/marketplace/flows/install-skill-pack.js';
 import { AdapterInstallFlow } from '../services/marketplace/flows/install-adapter.js';
 import { ShapeInstallFlow } from '../services/marketplace/flows/install-shape.js';
-import { createShapesRouter } from '../routes/shapes.js';
+import type { HonoApiDeps } from '../http/hono-api.js';
 import {
   applyShape,
   type ApplyShapeDeps,
@@ -66,7 +65,6 @@ import {
 import { createMeshAgentRegistry } from '../services/marketplace/flows/mesh-agent-registry.js';
 import { UpdateFlow } from '../services/marketplace/flows/update.js';
 import { MarketplaceInstaller } from '../services/marketplace/installer/marketplace-installer.js';
-import { createMarketplaceRouter } from '../routes/marketplace.js';
 import { runAutoProjection } from '../services/harness/auto-project.js';
 import { globalConsentRecorder } from '../services/marketplace/consent/global-plugin-consent.js';
 import { askAboutWithheldGlobalPlugins } from '../services/marketplace/consent/ask-withheld-global-plugins.js';
@@ -83,8 +81,6 @@ import { operatorAudience } from '../services/notifications/notification-entitle
 
 /** What starting the marketplace needs from the startup that came before it. */
 export interface MarketplaceStartupDeps {
-  /** The Express app the routes mount on. */
-  app: Express;
   /** The resolved DorkOS data directory. */
   dorkHome: string;
   /** The extension manager, when extensions initialized. */
@@ -109,6 +105,11 @@ export interface MarketplaceStartupDeps {
   currentCapabilityRegistry: () => CapabilityRegistry | undefined;
   /** The names of the routers mounted so far, for the boot log line. */
   mountedRouters: string[];
+  /**
+   * What the Hono `/api` app reads; this sets `marketplace` and `shapes` when
+   * the marketplace starts.
+   */
+  honoDeps: HonoApiDeps;
 }
 
 /** What `index.ts` keeps from the marketplace, all absent when it did not start. */
@@ -132,7 +133,6 @@ export interface StartedMarketplace {
  */
 export async function startMarketplace(deps: MarketplaceStartupDeps): Promise<StartedMarketplace> {
   const {
-    app,
     dorkHome,
     extensionManager,
     adapterManager,
@@ -236,7 +236,7 @@ export async function startMarketplace(deps: MarketplaceStartupDeps): Promise<St
 
     // Shape apply wiring (DOR-355) — constructed here, before the installer,
     // because the installer's update() path re-applies the active Shape after
-    // an uninstall → reinstall replace. The `/api/shapes` routes mounted below
+    // an uninstall → reinstall replace. The `/api/shapes` routes set up below
     // share these exact deps; `shapeScheduleService` is the hoisted instance
     // the agent-create re-bind seam also uses (built above the agents router).
     const shapeApplyDeps: ApplyShapeDeps = {
@@ -444,52 +444,50 @@ export async function startMarketplace(deps: MarketplaceStartupDeps): Promise<St
     templateConfirmationProvider = confirmationProvider;
     agentPackageInstaller = { installer: marketplaceInstaller, dorkHome };
 
-    app.use(
-      '/api/marketplace',
-      createMarketplaceRouter({
-        // Read lazily: the registry is composed further down this same boot, so
-        // a direct reference here would capture `undefined` forever. Until it
-        // exists, the marketplace mutation routes fail closed.
-        capabilityRegistry: currentCapabilityRegistry,
-        sourceManager: marketplaceSourceManager,
-        cache: marketplaceCache,
-        cacheRetention: marketplaceCacheRetention,
-        fetcher: marketplaceFetcher,
-        installer: marketplaceInstaller,
-        uninstallFlow: marketplaceUninstallFlow,
-        updateFlow: marketplaceUpdateFlow,
-        dorkHome,
-        listAgentScopes,
-        onPluginsChanged,
-        confirmationProvider,
-        consent: globalConsentRecorder,
-        heldBackCards: {
-          approvals: approvalService,
-          onGranted: () => claudeRuntime?.refreshActivatedPlugins(),
-        },
-        devLinks: devLinkService,
-      })
-    );
+    // The marketplace routes (`/api/marketplace`), served from the Hono `/api`
+    // app with what this sets on `honoDeps`; never mounted when the marketplace
+    // did not start.
+    deps.honoDeps.marketplace = {
+      // Read lazily: the registry is composed further down this same boot, so
+      // a direct reference here would capture `undefined` forever. Until it
+      // exists, the marketplace mutation routes fail closed.
+      capabilityRegistry: currentCapabilityRegistry,
+      sourceManager: marketplaceSourceManager,
+      cache: marketplaceCache,
+      cacheRetention: marketplaceCacheRetention,
+      fetcher: marketplaceFetcher,
+      installer: marketplaceInstaller,
+      uninstallFlow: marketplaceUninstallFlow,
+      updateFlow: marketplaceUpdateFlow,
+      dorkHome,
+      listAgentScopes,
+      onPluginsChanged,
+      confirmationProvider,
+      consent: globalConsentRecorder,
+      heldBackCards: {
+        approvals: approvalService,
+        onGranted: () => claudeRuntime?.refreshActivatedPlugins(),
+      },
+      devLinks: devLinkService,
+    };
     mountedRouters.push('marketplace');
 
-    // Mount Shape routes (DOR-355). Apply/fork ride the marketplace block
-    // because apply enables extensions (needs `extensionManager`). Schedules
-    // degrade to a no-op when the scheduler is off; extensions, chrome, and
-    // agent offers still apply. (`shapeApplyDeps` is constructed above the
-    // installer so the update path can re-apply the active Shape.)
-    app.use(
-      '/api/shapes',
-      createShapesRouter({
+    // Shape routes (DOR-355), served from the Hono `/api` app with what this
+    // sets on `honoDeps`. Apply/fork ride the marketplace block because apply
+    // enables extensions (needs `extensionManager`). Schedules degrade to a
+    // no-op when the scheduler is off; extensions, chrome, and agent offers
+    // still apply. (`shapeApplyDeps` is constructed above the installer so the
+    // update path can re-apply the active Shape.)
+    deps.honoDeps.shapes = {
+      dorkHome,
+      applyDeps: shapeApplyDeps,
+      forkDeps: {
         dorkHome,
-        applyDeps: shapeApplyDeps,
-        forkDeps: {
-          dorkHome,
-          logger,
-          getEnabledExtensions: getEnabledExtensionIds,
-          getActiveShape: getActiveShapeName,
-        },
-      })
-    );
+        logger,
+        getEnabledExtensions: getEnabledExtensionIds,
+        getActiveShape: getActiveShapeName,
+      },
+    };
     mountedRouters.push('shapes');
 
     // Personal marketplace bootstrap — runs after the source manager is wired

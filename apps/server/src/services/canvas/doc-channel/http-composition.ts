@@ -1,3 +1,4 @@
+import { createOriginalHttpGrantTargetResolver } from './http/http-grant-target-resolution.js';
 import {
   readOriginalHttpPrincipalCurrent,
   readOriginalHttpMembership,
@@ -15,17 +16,17 @@ import {
 } from './writes/installation-file-writes.js';
 import { NormalFileSaveService } from './writes/normal-file-save.js';
 import { createHash } from 'node:crypto';
-import { agents, authors, sessionMetadata, and, eq, isNull, type DbTransaction } from '@dorkos/db';
+import { agents, eq, type DbTransaction } from '@dorkos/db';
 import type { DocChannelHttp } from '../../../routes/canvas-doc-events.js';
 import { resolveCaller } from '../../../routes/room-caller.js';
-import { getRequestAgentIdentity } from '../../../middleware/agent-identity.js';
-import type { RequestUser } from '../../core/auth/index.js';
+import type { RequestFacts } from '../../../http/request-facts.js';
+import { originalDocRequestFacts } from '../../../http/original-doc-request.js';
+import type { Request } from 'express';
 import {
   createServerPrincipal,
   type ServerPrincipalProof,
   type ServerPrincipalClaims,
 } from '../../connectors/principal/server-principal.js';
-import { queueKeyOf } from '../../session/resolution/session-key-registry.js';
 import { requireRoomServiceFileWriteOwner } from '../../rooms/room-service.js';
 import { requireRoomFileEditorOwner } from '../../rooms/repo/room-file-editor.js';
 import { requireRoomRepoServiceOwner } from '../../rooms/repo/room-repo-service.js';
@@ -55,7 +56,7 @@ import {
   type OriginalCheckboxGrantPreparation,
 } from './writes/checkbox/checkbox-grant-preparation.js';
 import { DocChannelIngest } from './ingest.js';
-import { DocRouteGrantError, type DocGrantAuthority } from './grant-policy.js';
+import type { DocGrantAuthority } from './grant-policy.js';
 import { docInstallationOwner, sameDocOwnerAuthority } from './current/doc-source-policy.js';
 import { requireRoomRepoReconcilerOwner } from '../../rooms/repo/room-repo-reconciler.js';
 import {
@@ -86,6 +87,38 @@ export {
 export type { DocSourceDescriptor, DocSourceDependencies } from './current/doc-source-policy.js';
 
 const originalHttpFileOwners = new WeakMap<object, OriginalHttpFileOwner>();
+const originalHttpCompositions = new WeakMap<
+  object,
+  {
+    composition: OriginalDocHttpComposition;
+    owner: OriginalHttpFileOwner;
+    actor: DocChannelHttp['actor'];
+  }
+>();
+
+/** Capture only the actor of the exact constructed installation composition, refusing replacement. */
+export function captureOriginalDocHttpActor(http: DocChannelHttp): DocChannelHttp['actor'] {
+  const binding = originalHttpCompositions.get(http);
+  const requireCurrent = () => {
+    if (
+      !binding ||
+      binding.composition !== http ||
+      binding.owner.closed ||
+      originalHttpCompositions.get(http) !== binding ||
+      http.actor !== binding.actor ||
+      binding.composition.service !== binding.owner.service ||
+      originalHttpFileOwners.get(binding.composition.fileWrites) !== binding.owner
+    )
+      throw new DocChannelNotFoundError();
+  };
+  requireCurrent();
+  const captured = binding!;
+  return (caller, res) => {
+    requireCurrent();
+    return Reflect.apply(captured.actor, captured.composition, [caller, res]);
+  };
+}
+
 const originalHttpFileCallers = new WeakMap<
   object,
   {
@@ -237,87 +270,7 @@ export function createDocChannelHttpComposition(
     roomMembership: membership,
     revalidateRuntime: (proof) => deps.revalidateRuntime?.(proof) ?? Promise.resolve(false),
   });
-  const resolveTarget: DocGrantAuthority['resolveTarget'] = (input, tx) => {
-    const scope = deps.documents.lifecycle.resolveScope(input.scope);
-    const parsed = parseScope(scope);
-    if (input.route.to === 'log')
-      return { agentId: null, agentPath: null, sessionId: null, runtime: null, scope };
-    const agentId =
-      input.route.to === 'agent:owner' || input.route.to === 'room:self'
-        ? input.openerAgentId
-        : input.route.to.slice(6);
-    const executor = tx ?? deps.db;
-    const agent = agentId
-      ? executor.select().from(agents).where(eq(agents.id, agentId)).get()
-      : undefined;
-    if (!agent || agent.status !== 'active') throw new DocRouteGrantError('TARGET_UNAVAILABLE');
-    let sessionId: string | null = parsed.kind === 'session' ? parsed.id : null;
-    if (parsed.kind === 'session' && input.route.to !== 'agent:owner') {
-      const candidates = executor
-        .select()
-        .from(sessionMetadata)
-        .where(
-          and(
-            eq(sessionMetadata.agentPath, agent.projectPath),
-            eq(sessionMetadata.runtime, agent.runtime)
-          )
-        )
-        .all();
-      const canonical = new Set(
-        candidates.map((candidate) =>
-          deps.documents.lifecycle
-            .resolveScope(`session:${queueKeyOf(candidate.sessionId)}`)
-            .slice(8)
-        )
-      );
-      if (canonical.size !== 1) throw new DocRouteGrantError('TARGET_UNAVAILABLE');
-      sessionId = [...canonical][0]!;
-    }
-    if (parsed.kind === 'room') {
-      const author = executor
-        .select()
-        .from(authors)
-        .where(
-          and(
-            eq(authors.kind, 'agent'),
-            eq(authors.naturalKey, agent.projectPath),
-            isNull(authors.retiredAt)
-          )
-        )
-        .get();
-      if (
-        !author ||
-        !membership(parsed.id, {
-          kind: 'agent',
-          owner: currentOwner(),
-          agentId: agent.id,
-          agentPath: agent.projectPath,
-        })
-      )
-        throw new DocRouteGrantError('TARGET_UNAVAILABLE');
-      sessionId = deps.roomStore.getRoomSession(parsed.id, author.id);
-    }
-    if (!sessionId) throw new DocRouteGrantError('TARGET_UNAVAILABLE');
-    sessionId = deps.documents.lifecycle.resolveScope(`session:${queueKeyOf(sessionId)}`).slice(8);
-    const session = executor
-      .select()
-      .from(sessionMetadata)
-      .where(eq(sessionMetadata.sessionId, sessionId))
-      .get();
-    if (
-      !session?.runtime ||
-      session.agentPath !== agent.projectPath ||
-      session.runtime !== agent.runtime
-    )
-      throw new DocRouteGrantError('TARGET_UNAVAILABLE');
-    return {
-      agentId: agent.id,
-      agentPath: agent.projectPath,
-      sessionId,
-      runtime: session.runtime,
-      scope,
-    };
-  };
+  const resolveTarget = createOriginalHttpGrantTargetResolver(deps, membership, currentOwner);
   const sourceRoot = (documentId: string, tx?: DbTransaction): string | null =>
     readOriginalHttpSourceRootOrRefuse(principalMembershipKey, documentId, tx);
   const originalCheckboxGrantCapture: { preparation?: OriginalCheckboxGrantPreparation } = {};
@@ -380,9 +333,12 @@ export function createDocChannelHttpComposition(
     resolveScope: (scope) => deps.documents.lifecycle.resolveScope(scope),
     revalidateRuntime: (proof) => deps.revalidateRuntime?.(proof) ?? Promise.resolve(false),
   });
-  const resolveOriginalHttpActor: DocChannelHttp['actor'] = (req, res) => {
-    resolveCaller(req, res); // Refuse unknown/revoked agent headers before minting a principal.
-    const identity = getRequestAgentIdentity(res);
+  const resolveOriginalHttpActor: DocChannelHttp['actor'] = (caller, res) => {
+    const facts = res
+      ? originalDocRequestFacts(caller as Request, res)
+      : (caller as Pick<RequestFacts, 'headers' | 'agentIdentity' | 'user'>);
+    resolveCaller(facts); // Refuse unknown/revoked agent headers before minting a principal.
+    const identity = facts.agentIdentity;
     const owner = currentOwner();
     if (identity) {
       const agent = deps.db
@@ -397,12 +353,12 @@ export function createDocChannelHttpComposition(
         agentId: agent.id,
         agentPath: agent.projectPath,
       });
-      const raw = req.headers['x-dorkos-agent'];
+      const raw = facts.headers['x-dorkos-agent'];
       if (typeof raw !== 'string') throw new DocChannelNotFoundError();
       tokens.set(principal, createHash('sha256').update(raw).digest('hex'));
       return { surface: 'http', principal };
     }
-    const user = res.locals.user as RequestUser | undefined;
+    const user = facts.user;
     if (user && (owner.kind !== 'user' || owner.userId !== user.userId))
       throw new DocChannelNotFoundError();
     return { surface: 'http', principal: createServerPrincipal({ kind: 'operator', owner }) };
@@ -488,7 +444,7 @@ export function createDocChannelHttpComposition(
     grants
   );
   originalCheckboxGrantCapture.preparation = checkboxGrantPreparation;
-  return {
+  const composition: OriginalDocHttpComposition = {
     checkboxWriter,
     grantCheckboxRoute: (raw, actor, approvalToken) =>
       grantOriginalCheckboxRoute(checkboxGrantPreparation, raw, actor, approvalToken),
@@ -508,6 +464,12 @@ export function createDocChannelHttpComposition(
     grantAuthority,
     service,
   };
+  originalHttpCompositions.set(composition, {
+    composition,
+    owner: fileOwner,
+    actor: resolveOriginalHttpActor,
+  });
+  return composition;
 }
 
 /** Original HTTP actor stays inside its captured owner-to-service completion lane. */

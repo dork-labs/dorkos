@@ -1,5 +1,5 @@
 /** Socket, Host, and Origin boundary for the connector-only loopback listener. */
-import type { NextFunction, Request, Response } from 'express';
+import type { IncomingMessage } from 'node:http';
 
 /** Whether a network address is an IPv4 or IPv6 loopback address. */
 function isLoopbackAddress(address: string | undefined): boolean {
@@ -28,43 +28,32 @@ function isLoopbackHost(value: string | undefined): boolean {
   return hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1';
 }
 
-/** Return a JSON-RPC refusal suitable for an MCP client. */
-function refuse(res: Response): void {
-  res.status(403).json({
-    jsonrpc: '2.0',
-    error: { code: -32002, message: 'Loopback origin required' },
-    id: null,
-  });
-}
+/** The JSON-RPC refusal an MCP client is answered with, status 403. */
+export const LOOPBACK_REFUSAL = {
+  jsonrpc: '2.0',
+  error: { code: -32002, message: 'Loopback origin required' },
+  id: null,
+} as const;
 
 /**
- * Enforce loopback TCP peer and Host, plus same-origin browser requests.
+ * Whether a request clears the loopback boundary: a loopback TCP peer and
+ * Host, plus, for a browser, the listener's exact HTTP origin.
  *
  * Native MCP clients normally omit Origin and are accepted after the socket and
  * Host checks. Browsers must present the listener's exact HTTP origin.
+ *
+ * @param req - The raw Node request, read before anything else is.
+ * @returns `true` when the request may go on.
  */
-export function requireConnectorRuntimeLoopback(
-  req: Request,
-  res: Response,
-  next: NextFunction
-): void {
-  if (!isLoopbackAddress(req.socket.remoteAddress) || !isLoopbackHost(req.header('host'))) {
-    refuse(res);
-    return;
+export function clearsConnectorRuntimeLoopback(req: IncomingMessage): boolean {
+  const host = req.headers.host;
+  if (!isLoopbackAddress(req.socket.remoteAddress) || !isLoopbackHost(host)) return false;
+  const origin = req.headers.origin;
+  if (!origin) return true;
+  try {
+    const parsed = new URL(origin);
+    return parsed.protocol === 'http:' && parsed.host === host;
+  } catch {
+    return false;
   }
-
-  const origin = req.header('origin');
-  if (origin) {
-    try {
-      const parsed = new URL(origin);
-      if (parsed.protocol !== 'http:' || parsed.host !== req.header('host')) {
-        refuse(res);
-        return;
-      }
-    } catch {
-      refuse(res);
-      return;
-    }
-  }
-  next();
 }

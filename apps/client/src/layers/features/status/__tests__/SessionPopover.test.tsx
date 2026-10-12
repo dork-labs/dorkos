@@ -40,7 +40,7 @@ function promotionContext(overrides: Partial<StatusPromotionContext> = {}): Stat
     permissionMode: 'plan',
     permissionDescriptor: null,
     plan: null,
-    runtime: { isDefault: true, canSelect: false },
+    runtime: { type: 'claude-code', isDefault: true, canSelect: false },
     account: null,
     usage: { kind: 'pay-as-you-go', costUsd: 0.35 },
     usageStale: false,

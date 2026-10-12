@@ -74,12 +74,14 @@ vi.mock('../../services/core/config-manager.js', () => ({
 
 import { mockInterruptReceipt } from '@dorkos/test-utils';
 import { createApp, finalizeApp } from '../../app.js';
+import { composedListener } from '../../http/__tests__/composed-listener.js';
 import { createRoomSubsystem, getRoomService, setRoomService } from '../../services/rooms/index.js';
 import type { RoomTurnRequest, RoomTurnResult } from '../../services/rooms/room-trigger.js';
 
-const app = createApp({ admission: new MainRequestAdmission() });
+const admission = new MainRequestAdmission();
+const app = createApp({ admission });
 finalizeApp(app);
-const server = listeningServer(app);
+const server = listeningServer(composedListener(app, admission));
 
 /** Register the one agent both rooms share — one directory, one checkout. */
 function registerAna(db: Db): void {

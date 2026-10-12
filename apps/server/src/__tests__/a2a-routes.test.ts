@@ -5,12 +5,19 @@
 // `pnpm --filter @dorkos/a2a-gateway build` first, or a stale/missing dist
 // fails these tests with confusing module-resolution or assertion errors.
 import { describe, it, expect, vi } from 'vitest';
-import express from 'express';
+import { Hono } from 'hono';
 import request from '@dorkos/test-utils/supertest';
-import { swappableServer } from '@dorkos/test-utils/listening-server';
+import { honoListener, swappableServer } from '@dorkos/test-utils/listening-server';
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
-import { createA2aRouter } from '../routes/a2a.js';
-import { buildA2aRateLimiters } from '../middleware/a2a-rate-limit.js';
+import { createA2aRoutes } from '../routes/a2a.js';
+import type { ApiEnv } from '../http/api-chain.js';
+import { parseRequestBody } from '../http/request-body.js';
+
+// The credential check has its own cases (`a2a-card-honesty.test.ts`,
+// `middleware/__tests__/mcp-auth.test.ts`); these drive the gateway behind it.
+vi.mock('../middleware/mcp-auth.js', () => ({
+  honoMcpAuth: () => async (_c: unknown, next: () => Promise<void>) => next(),
+}));
 
 const fixtureTarget = swappableServer();
 const fixtureServer = fixtureTarget.server;
@@ -126,36 +133,31 @@ function buildTestApp(agents: AgentManifest[] = [], options: BuildOptions = {}) 
   const relay = makeMockRelay();
   const db = makeMockDb();
 
-  const { rpc: rpcRateLimiter, card: cardRateLimiter } = buildA2aRateLimiters({
-    rpcMaxPerMinute: options.rpcMaxPerMinute ?? 1000,
-    cardMaxPerMinute: options.cardMaxPerMinute ?? 1000,
-  });
+  const app = new Hono<ApiEnv>();
+  app.use(parseRequestBody());
+  // Mounted as the server mounts them: the spec path (AGENT_CARD_PATH) plus
+  // the legacy alias, and everything under /a2a.
+  app.route(
+    '/',
+    createA2aRoutes({
+      meshCore: meshCore as never,
+      relay: relay as never,
+      db: db as never,
+      baseUrl: BASE_URL,
+      version: VERSION,
+      rpcMaxPerMinute: options.rpcMaxPerMinute ?? 1000,
+      cardMaxPerMinute: options.cardMaxPerMinute ?? 1000,
+    })
+  );
 
-  const { router, fleetCardHandler } = createA2aRouter({
-    meshCore: meshCore as never,
-    relay: relay as never,
-    db: db as never,
-    baseUrl: BASE_URL,
-    version: VERSION,
-    rpcRateLimiter,
-    cardRateLimiter,
-  });
-
-  const app = express();
-  app.use(express.json());
-  // Mirrors index.ts: spec path (AGENT_CARD_PATH) plus the legacy alias
-  app.get('/.well-known/agent-card.json', cardRateLimiter, fleetCardHandler);
-  app.get('/.well-known/agent.json', cardRateLimiter, fleetCardHandler);
-  app.use('/a2a', router);
-
-  return { app, meshCore, relay, db };
+  return { app: honoListener(app), meshCore, relay, db };
 }
 
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
-describe('A2A Express routes', () => {
+describe('A2A routes', () => {
   // -----------------------------------------------------------------------
   // GET /.well-known/agent.json (Fleet Card)
   // -----------------------------------------------------------------------

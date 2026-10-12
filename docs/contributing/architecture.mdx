@@ -352,7 +352,7 @@ The services behind those routes, grouped by domain (also not exhaustive):
     'tunnel-manager.ts': { type: 'core', description: 'Optional ngrok tunnel lifecycle' },
     'upload-handler.ts': {
       type: 'core',
-      description: 'File upload service with multer, MIME validation, and sanitized filenames',
+      description: 'File upload limits, MIME validation, and sanitized filenames',
     },
     'mcp-server.ts': {
       type: 'core',
@@ -466,7 +466,7 @@ SessionComposer → ConversationTarget.send() → useChatSession.submitContent()
   ↓
 transport.postMessage(sessionId, content, cwd) → POST /api/sessions/:id/messages
   ↓
-Express route validates → MessageDispatcher accepts → 202 { sessionId, messageId, outcome, queuePosition }
+Route validates → MessageDispatcher accepts → 202 { sessionId, messageId, outcome, queuePosition }
   ↓
 Dispatcher starts when possible, or persists the message in the session queue
   ↓

@@ -1,54 +1,3 @@
-import { pipeline, Readable } from 'node:stream';
-import { Router } from 'express';
-import multer from 'multer';
-import { ulid } from 'ulidx';
-import {
-  ROOM_EXPORT_CONTENT_TYPE,
-  roomExportFilename,
-  type RoomExportHeader,
-} from '@dorkos/shared/room-export-schemas';
-import {
-  AddRoomMemberRequestSchema,
-  CreateRoomRequestSchema,
-  ListRoomEntriesQuerySchema,
-  ListRoomsQuerySchema,
-  ListThreadsQuerySchema,
-  PostThreadReplyRequestSchema,
-  PostToRoomRequestSchema,
-  SetAuthorHandleRequestSchema,
-  ROOM_ATTACHMENT_NAME_MAX,
-  ToggleReactionRequestSchema,
-  UpdateMembershipRequestSchema,
-  UpdateRoomRequestSchema,
-  type PostToRoomResponse,
-  type RoomAttachment,
-} from '@dorkos/shared/room-schemas';
-import {
-  getAttachmentRowStore,
-  getRoomAttachmentStore,
-  getRoomService,
-  RoomError,
-  toAuthorRef,
-  type PostedEntry,
-} from '../services/rooms/index.js';
-import { listRoomsAcrossCommunities } from '../services/communities/list-rooms-across-communities.js';
-import { InvalidRoomAttachmentIdError } from '../services/rooms/attachments/room-attachment-store.js';
-import { sniffImageContentType } from '../services/identity/image-sniff.js';
-import {
-  sanitizeAttachmentName,
-  storedExtension,
-} from '../services/rooms/attachments/attachment-paths.js';
-import { sweepUnboundAttachments } from '../services/rooms/attachments/unbound-sweep.js';
-import { configManager } from '../services/core/config-manager.js';
-import { parseBody, sendError, discardStream } from '../lib/route-utils.js';
-import { roomEventsHandler } from './room-events-handler.js';
-import { resolveCaller } from './room-caller.js';
-import roomCanvasRouter from './room-canvas.js';
-import roomFollowRouter from './room-follow.js';
-import { sendRoomError } from './room-error-response.js';
-import { logger } from '../lib/logger.js';
-import { installRoomRepositoryRoutes } from './room-repository-routes.js';
-
 /**
  * Room HTTP API (spec `rooms` §4) — thin handlers over the RoomService.
  *
@@ -63,13 +12,56 @@ import { installRoomRepositoryRoutes } from './room-repository-routes.js';
  *   agent presenting a VALID `X-DorkOS-Agent` posts as itself; a caller
  *   presenting one this machine cannot verify is refused 401 outright; anyone
  *   else posts as this install's owner. `resolveCaller` owns that decision and
- *   all of it — every handler here just takes the id it hands back, and a route
- *   added below inherits the refusal without asking for it.
+ *   all of it — every handler here just asks {@link roomRoute} for the caller,
+ *   and a route added below inherits the refusal without asking for it.
+ *
+ * The attachments (`room-attachments.ts`), a room's own files
+ * (`room-files.ts`), the canvas (`room-canvas.ts`) and following
+ * (`room-follow.ts`) are their own groups, mounted at the bottom.
  *
  * @module routes/rooms
  */
+import { pipeline, Readable } from 'node:stream';
+import { Hono } from 'hono';
+import {
+  ROOM_EXPORT_CONTENT_TYPE,
+  roomExportFilename,
+  type RoomExportHeader,
+} from '@dorkos/shared/room-export-schemas';
+import {
+  AddRoomMemberRequestSchema,
+  CreateRoomRequestSchema,
+  ListRoomEntriesQuerySchema,
+  ListRoomsQuerySchema,
+  ListThreadsQuerySchema,
+  PostThreadReplyRequestSchema,
+  PostToRoomRequestSchema,
+  SetAuthorHandleRequestSchema,
+  ToggleReactionRequestSchema,
+  UpdateMembershipRequestSchema,
+  UpdateRoomRequestSchema,
+  type PostToRoomResponse,
+} from '@dorkos/shared/room-schemas';
+import {
+  getRoomService,
+  RoomError,
+  toAuthorRef,
+  type PostedEntry,
+} from '../services/rooms/index.js';
+import { listRoomsAcrossCommunities } from '../services/communities/index.js';
+import type { ApiEnv } from '../http/api-chain.js';
+import { streamToNodeResponse } from '../http/raw-node-stream.js';
+import { readJsonBody } from '../http/request-body.js';
+import { readQuery } from '../http/request-query.js';
+import { logger } from '../lib/logger.js';
+import { roomEventsHandler } from './room-events-handler.js';
+import roomAttachmentRoutes from './room-attachments.js';
+import roomFileRoutes from './room-files.js';
+import roomCanvasRoutes from './room-canvas.js';
+import roomFollowRoutes from './room-follow.js';
+import { parseOrRefuse, roomRoute } from './room-route.js';
 
-const router = Router();
+const router = new Hono<ApiEnv>();
 
 /**
  * GET / — rooms visible to the caller, each with their unread count, plus every
@@ -81,21 +73,18 @@ const router = Router();
  * `warnings` is the other communities' half — empty on every install today.
  * {@link listRoomsAcrossCommunities} argues the split in full.
  */
-router.get('/', async (req, res) => {
-  const query = parseBody(ListRoomsQuerySchema, req.query, res);
-  if (!query) return;
-  try {
-    const caller = resolveCaller(req, res);
-    res.json(
+router.get('/', (c) => {
+  const query = parseOrRefuse(c, ListRoomsQuerySchema, readQuery(c));
+  if (query instanceof Response) return query;
+  return roomRoute(c, 'GET /', async (caller) =>
+    c.json(
       await listRoomsAcrossCommunities({
         service: getRoomService(),
-        callerAuthorId: caller.id,
+        callerAuthorId: caller().id,
         query,
       })
-    );
-  } catch (err) {
-    sendRoomError(res, err, 'GET /');
-  }
+    )
+  );
 });
 
 /**
@@ -108,23 +97,20 @@ router.get('/', async (req, res) => {
  * `RoomWithRosterSchema` and the distinction rides the status line, where an
  * upsert's does.
  */
-router.post('/', (req, res) => {
-  const body = parseBody(CreateRoomRequestSchema, req.body, res);
-  if (!body) return;
-  try {
-    const caller = resolveCaller(req, res);
-    const { created, ...room } = getRoomService().createRoom(body, caller.id);
-    res.status(created ? 201 : 200).json(room);
-  } catch (err) {
-    sendRoomError(res, err, 'POST /');
-  }
+router.post('/', (c) => {
+  const body = parseOrRefuse(c, CreateRoomRequestSchema, readJsonBody(c));
+  if (body instanceof Response) return body;
+  return roomRoute(c, 'POST /', (caller) => {
+    const { created, ...room } = getRoomService().createRoom(body, caller().id);
+    return c.json(room, created ? 201 : 200);
+  });
 });
 
 /**
  * GET /threads — every thread the caller takes part in, across every room,
  * newest activity first.
  *
- * **Declared before `GET /:id`, and it has to be.** Express matches in
+ * **Declared before `GET /:id`, and it has to be.** Routes match in
  * declaration order, so a `/:id` above this one would answer `/threads` with a
  * 404 for a room called "threads". A literal segment goes above its parameter.
  *
@@ -133,27 +119,22 @@ router.post('/', (req, res) => {
  * `/:id` — this one exists because a sidebar cannot ask a question of a room it
  * has not been told about yet.
  */
-router.get('/threads', (req, res) => {
-  const query = parseBody(ListThreadsQuerySchema, req.query, res);
-  if (!query) return;
-  try {
-    const caller = resolveCaller(req, res);
-    res.json({ threads: getRoomService().listThreads(caller.id, query.limit) });
-  } catch (err) {
-    sendRoomError(res, err, 'GET /threads');
-  }
+router.get('/threads', (c) => {
+  const query = parseOrRefuse(c, ListThreadsQuerySchema, readQuery(c));
+  if (query instanceof Response) return query;
+  return roomRoute(c, 'GET /threads', (caller) =>
+    c.json({ threads: getRoomService().listThreads(caller().id, query.limit) })
+  );
 });
 
 /** GET /:id — one room with its roster. 404s unless the caller is a member. */
-router.get('/:id', (req, res) => {
-  try {
-    const room = getRoomService().getRoom(req.params.id, resolveCaller(req, res).id);
-    if (!room) return res.status(404).json({ error: 'No such room', code: 'ROOM_NOT_FOUND' });
-    res.json(room);
-  } catch (err) {
-    sendRoomError(res, err, 'GET /:id');
-  }
-});
+router.get('/:id', (c) =>
+  roomRoute(c, 'GET /:id', (caller) => {
+    const room = getRoomService().getRoom(c.req.param('id'), caller().id);
+    if (!room) return c.json({ error: 'No such room', code: 'ROOM_NOT_FOUND' }, 404);
+    return c.json(room);
+  })
+);
 
 /**
  * PATCH /:id — title, topic, archive, this room's four automatic-reply limits,
@@ -175,14 +156,12 @@ router.get('/:id', (req, res) => {
  * gets the same 404 reading it would. Sending a limit field as `null` clears
  * the room's override; omitting it leaves whatever is stored alone.
  */
-router.patch('/:id', (req, res) => {
-  const body = parseBody(UpdateRoomRequestSchema, req.body, res);
-  if (!body) return;
-  try {
-    res.json(getRoomService().updateRoom(req.params.id, resolveCaller(req, res).id, body));
-  } catch (err) {
-    sendRoomError(res, err, 'PATCH /:id');
-  }
+router.patch('/:id', (c) => {
+  const body = parseOrRefuse(c, UpdateRoomRequestSchema, readJsonBody(c));
+  if (body instanceof Response) return body;
+  return roomRoute(c, 'PATCH /:id', (caller) =>
+    c.json(getRoomService().updateRoom(c.req.param('id'), caller().id, body))
+  );
 });
 
 /**
@@ -212,7 +191,7 @@ router.patch('/:id', (req, res) => {
  *
  * **Visibility is checked first, and the order is deliberate.** `POST
  * /:id/attachments` asks the other way round, for a reason that does not apply
- * here — it refuses an agent before multer reads a byte. With the person gate
+ * here — it refuses an agent before a byte of the upload is read. With the person gate
  * first, an agent probing a room it is not in learns 403 (this room exists) or
  * 404 (it does not) from the SAME request a person gets 404 for, which is a
  * difference in answers where there should be none. Visibility first collapses
@@ -222,28 +201,26 @@ router.patch('/:id', (req, res) => {
  * The body is ids and nothing else — no session content, no cwd, no status. It
  * is the minimum that makes a link, and the narrowness is the security claim.
  *
- * Declared beside `GET /:id` and BELOW it, which is safe: Express 5 matches
- * `/:id` against a single segment, so `/:id/sessions` cannot be swallowed by it
- * and no existing route needed reordering.
+ * Declared beside `GET /:id` and BELOW it, which is safe: `/:id` matches a
+ * single segment, so `/:id/sessions` cannot be swallowed by it and no existing
+ * route needed reordering.
  */
-router.get('/:id/sessions', (req, res) => {
-  try {
-    const caller = resolveCaller(req, res);
+router.get('/:id/sessions', (c) =>
+  roomRoute(c, 'GET /:id/sessions', (caller) => {
+    const viewer = caller();
     // Throws `ROOM_NOT_FOUND` for a room this caller may not see, whoever they
     // are — see the note above on why that comes first.
-    const bindings = getRoomService().listRoomSessions(req.params.id, caller.id);
-    if (caller.kind !== 'human') {
+    const bindings = getRoomService().listRoomSessions(c.req.param('id'), viewer.id);
+    if (viewer.kind !== 'human') {
       // A 403 rather than a 404: the visibility check above already passed for
       // whoever this resolved to, so there is nothing left to hide, and telling
       // an agent "this is not yours to read" is more useful than pretending the
       // route does not exist.
       throw new RoomError('PEOPLE_ONLY', "Only a person can see where a room's work runs.");
     }
-    res.json({ bindings });
-  } catch (err) {
-    sendRoomError(res, err, 'GET /:id/sessions');
-  }
-});
+    return c.json({ bindings });
+  })
+);
 
 /**
  * GET /:id/entries — a page of history, oldest-first, and the thread roots it
@@ -255,14 +232,12 @@ router.get('/:id/sessions', (req, res) => {
  * without the root. `listEntryPage` says why the page carries them rather than
  * the reader fetching them back.
  */
-router.get('/:id/entries', (req, res) => {
-  const query = parseBody(ListRoomEntriesQuerySchema, req.query, res);
-  if (!query) return;
-  try {
-    res.json(getRoomService().listEntryPage(req.params.id, resolveCaller(req, res).id, query));
-  } catch (err) {
-    sendRoomError(res, err, 'GET /:id/entries');
-  }
+router.get('/:id/entries', (c) => {
+  const query = parseOrRefuse(c, ListRoomEntriesQuerySchema, readQuery(c));
+  if (query instanceof Response) return query;
+  return roomRoute(c, 'GET /:id/entries', (caller) =>
+    c.json(getRoomService().listEntryPage(c.req.param('id'), caller().id, query))
+  );
 });
 
 /**
@@ -272,7 +247,7 @@ router.get('/:id/entries', (req, res) => {
  * because it is the one somebody will suggest. A room export exists to be
  * portable, and the thing that already lives on the operator's own machine — the
  * `dorkos` CLI — is what should decide where a file lands. A POST taking a
- * destination would give any HTTP caller a filesystem write through the cockpit,
+ * destination would give any HTTP caller a filesystem write through the app,
  * which is a capability no room route has and none should grow for a read. So
  * this route stays what it is: a read, gated exactly as every other room read,
  * answering bytes. `dorkos room export` writes them down.
@@ -286,12 +261,11 @@ router.get('/:id/entries', (req, res) => {
  *
  * `Content-Disposition: attachment` plus `nosniff` for the same reason the
  * attachment route carries them: this is a file of other people's words, and
- * nothing about it should ever render as a document on the cockpit's own origin.
+ * nothing about it should ever render as a document on the app's own origin.
  */
-router.get('/:id/export', (req, res) => {
-  try {
-    const caller = resolveCaller(req, res);
-    const lines = getRoomService().exportRoom(req.params.id, caller.id);
+router.get('/:id/export', (c) =>
+  roomRoute(c, 'GET /:id/export', (caller) => {
+    const lines = getRoomService().exportRoom(c.req.param('id'), caller().id);
     const first = lines.next();
     // Checked rather than cast. The generator's contract is that its first line
     // is the header, and this route depends on it for the filename — so a future
@@ -302,35 +276,37 @@ router.get('/:id/export', (req, res) => {
     }
     const header: RoomExportHeader = first.value;
 
-    res.setHeader('Content-Type', `${ROOM_EXPORT_CONTENT_TYPE}; charset=utf-8`);
-    res.setHeader(
-      'Content-Disposition',
-      `attachment; filename="${roomExportFilename(header.room, header.exportedAt)}"`
-    );
-    res.setHeader('X-Content-Type-Options', 'nosniff');
-    res.setHeader('Cache-Control', 'no-store');
+    return streamToNodeResponse(c, (res) => {
+      res.setHeader('Content-Type', `${ROOM_EXPORT_CONTENT_TYPE}; charset=utf-8`);
+      res.setHeader(
+        'Content-Disposition',
+        `attachment; filename="${roomExportFilename(header.room, header.exportedAt)}"`
+      );
+      res.setHeader('X-Content-Type-Options', 'nosniff');
+      res.setHeader('Cache-Control', 'no-store');
 
-    const body = Readable.from(
-      (function* serialize() {
-        yield `${JSON.stringify(header)}\n`;
-        for (const line of lines) yield `${JSON.stringify(line)}\n`;
-      })()
-    );
-    // `pipeline` rather than `pipe`, because the reader here is a generator over
-    // a live database cursor: a client that closes the tab mid-download must
-    // tear the source down with it, and `pipe` would leave it producing pages
-    // nobody is reading.
-    pipeline(body, res, (streamErr) => {
-      if (!streamErr) return;
-      logger.error('[rooms] export stream failed', { err: streamErr });
-      // Headers are already out, so there is no status left to send. The
-      // truncated file is the message, and the missing trailing `summary` line
-      // is how a reader tells it apart from a whole one.
+      const body = Readable.from(
+        (function* serialize() {
+          yield `${JSON.stringify(header)}\n`;
+          for (const line of lines) yield `${JSON.stringify(line)}\n`;
+        })()
+      );
+      // `pipeline` rather than `pipe`, because the reader here is a generator
+      // over a live database cursor: a client that closes the tab mid-download
+      // must tear the source down with it, and `pipe` would leave it producing
+      // pages nobody is reading.
+      return new Promise<void>((resolve) => {
+        pipeline(body, res, (streamErr) => {
+          // Headers are already out, so there is no status left to send. The
+          // truncated file is the message, and the missing trailing `summary`
+          // line is how a reader tells it apart from a whole one.
+          if (streamErr) logger.error('[rooms] export stream failed', { err: streamErr });
+          resolve();
+        });
+      });
     });
-  } catch (err) {
-    sendRoomError(res, err, 'GET /:id/export');
-  }
-});
+  })
+);
 
 /**
  * The 202 body for a write: the entry's identity, plus who the write reached.
@@ -360,240 +336,18 @@ function accepted(entry: PostedEntry): PostToRoomResponse {
  * the entry itself rides the SSE stream to every reader including this one. The
  * body also says who it reached — see {@link accepted}.
  */
-router.post('/:id/entries', (req, res) => {
-  const body = parseBody(PostToRoomRequestSchema, req.body, res);
-  if (!body) return;
-  try {
-    const caller = resolveCaller(req, res);
-    const entry = getRoomService().post(req.params.id, {
-      authorId: caller.id,
+router.post('/:id/entries', (c) => {
+  const body = parseOrRefuse(c, PostToRoomRequestSchema, readJsonBody(c));
+  if (body instanceof Response) return body;
+  return roomRoute(c, 'POST /:id/entries', (caller) => {
+    const entry = getRoomService().post(c.req.param('id'), {
+      authorId: caller().id,
       text: body.text,
       sessionId: body.sessionId,
       attachmentIds: body.attachmentIds,
     });
-    res.status(202).json(accepted(entry));
-  } catch (err) {
-    sendRoomError(res, err, 'POST /:id/entries');
-  }
-});
-
-/**
- * The multipart field name both attachment halves agree on.
- *
- * The same name `POST /api/uploads` uses, because a person dragging files into
- * a room and a person dragging them into a session are doing the same thing.
- */
-const ATTACHMENT_FIELD = 'files';
-
-/**
- * POST /:id/attachments — upload files into a room, before the message that
- * carries them.
- *
- * **Two-step on purpose.** The bytes go up first and the message names them by
- * id, which is what lets the composer show a chip while a large file is still
- * moving, and what keeps every field on the stored record server-derived: a
- * one-step multipart post would have to trust a declared size and type on the
- * way back in.
- *
- * **Nothing here trusts the upload about what a file IS.** The bytes are sniffed
- * ({@link sniffImageContentType}) and only a magic-byte match sets `preview`,
- * which is the single field that decides whether the serve route will ever
- * answer `inline`. A room accepts every type by default, so this is what keeps
- * an uploaded `.html` from rendering as a document under the cockpit's own
- * origin.
- */
-router.post('/:id/attachments', (req, res) => {
-  let caller;
-  try {
-    caller = resolveCaller(req, res);
-    // Resolved BEFORE multer runs: an agent's upload is refused without its
-    // bytes ever being read. An agent shares files by writing them into its own
-    // working directory, which it already has.
-    if (caller.kind !== 'human') {
-      throw new RoomError('PEOPLE_ONLY', 'Only a person can attach a file.');
-    }
-    // Also before multer: a non-member gets the same 404 every room read gives,
-    // and an archived room refuses, both without reading a byte.
-    getRoomService().assertCanAttach(req.params.id, caller.id);
-  } catch (err) {
-    return sendRoomError(res, err, 'POST /:id/attachments');
-  }
-
-  // Built per request from the same config chat uses, so one setting governs
-  // every upload in the product.
-  const uploadConfig = configManager.get('uploads');
-  const upload = multer({
-    // Memory, not disk: the bytes must be sniffed before anything decides the
-    // extension, the mime type, or whether the file may ever be served inline.
-    storage: multer.memoryStorage(),
-    // No `+ 1` here: multer 2.3 already compensates internally for busboy's
-    // own off-by-one (busboy refuses a file that REACHES `fileSize` rather
-    // than one that exceeds it), so passing the configured limit as-is is
-    // exactly the cap the config means.
-    limits: { fileSize: uploadConfig.maxFileSize, files: uploadConfig.maxFiles },
-    fileFilter: (_req, file, cb) =>
-      uploadConfig.allowedTypes.includes('*/*') || uploadConfig.allowedTypes.includes(file.mimetype)
-        ? cb(null, true)
-        : cb(new Error(`File type not allowed: ${file.mimetype}`)),
-  }).array(ATTACHMENT_FIELD, uploadConfig.maxFiles);
-
-  upload(req, res, async (err: unknown) => {
-    if (err) {
-      if (err instanceof multer.MulterError) {
-        if (err.code === 'LIMIT_FILE_SIZE') {
-          const megabytes = uploadConfig.maxFileSize / 1024 / 1024;
-          return sendError(res, 413, `File too large (max ${megabytes}MB)`, err.code);
-        }
-        return sendError(res, 400, err.message, err.code);
-      }
-      // The only non-multer refusal this callback sees is the fileFilter's.
-      return sendError(res, 415, (err as Error).message, 'ATTACHMENT_TYPE_NOT_ALLOWED');
-    }
-
-    const files = (req.files as Express.Multer.File[] | undefined) ?? [];
-    if (files.length === 0) {
-      return sendError(
-        res,
-        400,
-        `Attach the files as the '${ATTACHMENT_FIELD}' field.`,
-        'ATTACHMENT_MISSING'
-      );
-    }
-
-    const store = getRoomAttachmentStore();
-    const rows = getAttachmentRowStore();
-    // Everything this request has committed so far, so a failure part-way can
-    // be undone. Without it, a throw on file three left files one and two on
-    // disk with rows nobody would ever reference — the same orphan the TTL
-    // sweep below exists to catch, minted by the happy path's own error handler.
-    const committed: Array<{ id: string; extension: string }> = [];
-
-    try {
-      const stored: RoomAttachment[] = [];
-      for (const file of files) {
-        const name = sanitizeAttachmentName(file.originalname, ROOM_ATTACHMENT_NAME_MAX);
-        const extension = storedExtension(name);
-        // THE safety line. `preview` is set from the BYTES and never from
-        // `file.mimetype`, which is whatever the uploader typed.
-        const sniffed = sniffImageContentType(file.buffer);
-        const id = ulid();
-        const { url } = await store.put(req.params.id, id, extension, file.buffer);
-        committed.push({ id, extension });
-        const row = {
-          roomId: req.params.id,
-          id,
-          authorId: caller.id,
-          name,
-          extension,
-          mimeType: sniffed ?? file.mimetype,
-          size: file.buffer.byteLength,
-          preview: sniffed ? ('image' as const) : null,
-          url,
-        };
-        rows.create(row, new Date().toISOString());
-        stored.push({
-          id,
-          name,
-          mimeType: row.mimeType,
-          size: row.size,
-          preview: row.preview,
-          url,
-        });
-      }
-
-      // Housekeeping on the path that creates the mess: whatever this room
-      // staged a day ago and never sent. Awaited but never fatal — it swallows
-      // its own errors — so an upload cannot fail because a sweep did.
-      void (await sweepUnboundAttachments({ rows, store, roomId: req.params.id }));
-
-      // In request order, so the composer's chips and the message's files agree.
-      return res.json({ attachments: stored });
-    } catch (storeErr) {
-      // All-or-nothing: the caller got no ids, so nothing here may survive to be
-      // referenced later. Best-effort by necessity — a cleanup failure must not
-      // replace the error the caller actually needs to see — and anything that
-      // does survive is unbound, so the TTL sweep collects it within the day.
-      for (const orphan of committed) {
-        try {
-          rows.deleteUnbound(req.params.id, [orphan.id]);
-          await store.delete(req.params.id, orphan.id, orphan.extension);
-        } catch (cleanupErr) {
-          logger.warn('[rooms] could not clean up a half-finished upload', {
-            roomId: req.params.id,
-            attachmentId: orphan.id,
-            error: cleanupErr instanceof Error ? cleanupErr.message : String(cleanupErr),
-          });
-        }
-      }
-      if (storeErr instanceof InvalidRoomAttachmentIdError) {
-        return sendError(res, 400, 'That file could not be stored.', 'ATTACHMENT_ID_INVALID');
-      }
-      return sendRoomError(res, storeErr, 'POST /:id/attachments');
-    }
+    return c.json(accepted(entry), 202);
   });
-});
-
-/**
- * GET /:id/attachments/:attachmentId — stream one back.
- *
- * **`Content-Type` and `Content-Disposition` are decided by the row's `preview`
- * and by nothing else.** A verified image is served as what the bytes were
- * sniffed to be, inline; everything else is `application/octet-stream` as an
- * attachment, whatever it was uploaded as. Together with `nosniff` that is what
- * keeps a file a person uploaded from executing as a document on the cockpit's
- * own origin.
- *
- * Every refusal is a 404 — wrong room, no such id, somebody else's unposted
- * file. Existence is never leaked by a 403.
- */
-router.get('/:id/attachments/:attachmentId', async (req, res) => {
-  try {
-    const caller = resolveCaller(req, res);
-    const row = getAttachmentRowStore().get(req.params.id, req.params.attachmentId);
-    if (!row || !getRoomService().canReadAttachment(req.params.id, caller.id, row)) {
-      return sendError(res, 404, 'No such file.', 'ATTACHMENT_NOT_FOUND');
-    }
-
-    const inline = row.preview === 'image';
-    const stored = await getRoomAttachmentStore().get(
-      req.params.id,
-      row.id,
-      row.extension,
-      // Only a VERIFIED image is served as the type it claims to be.
-      inline ? row.mimeType : 'application/octet-stream'
-    );
-    if (!stored) return sendError(res, 404, 'No such file.', 'ATTACHMENT_NOT_FOUND');
-
-    res.setHeader('Content-Type', stored.contentType);
-    // A file served from a URL a person can influence is exactly where a
-    // sniffing browser turns an upload into a document.
-    res.setHeader('X-Content-Type-Options', 'nosniff');
-    res.setHeader('Content-Disposition', inline ? 'inline' : `attachment; filename="${row.name}"`);
-    res.setHeader('ETag', stored.etag);
-    res.setHeader('Cache-Control', 'private, max-age=0, must-revalidate');
-    res.setHeader('Content-Length', String(stored.size));
-
-    if (req.headers['if-none-match'] === stored.etag) {
-      // Discarded rather than piped, so the file handle does not leak — and
-      // discarded rather than merely destroyed, because destroying does not
-      // defuse the `fs.open` already in flight (see `discardStream`).
-      discardStream(stored.stream);
-      return res.status(304).end();
-    }
-
-    stored.stream.on('error', (streamErr) => {
-      logger.error('[rooms] attachment stream failed', { err: streamErr });
-      if (!res.headersSent) {
-        sendError(res, 500, 'Could not read that file.', 'ATTACHMENT_READ_FAILED');
-      } else res.destroy(streamErr);
-    });
-    stored.stream.pipe(res);
-  } catch (err) {
-    if (err instanceof InvalidRoomAttachmentIdError) {
-      return sendError(res, 400, 'That is not a usable file id.', 'ATTACHMENT_ID_INVALID');
-    }
-    return sendRoomError(res, err, 'GET /:id/attachments/:attachmentId');
-  }
 });
 
 /**
@@ -623,59 +377,45 @@ router.get('/:id/attachments/:attachmentId', async (req, res) => {
  * and your answer, and the frame carries the entry's whole set while this body
  * only says what YOUR click did.
  */
-router.post('/:id/entries/:entryId/reactions', (req, res) => {
-  const body = parseBody(ToggleReactionRequestSchema, req.body, res);
-  if (!body) return;
-  try {
-    const caller = resolveCaller(req, res);
+router.post('/:id/entries/:entryId/reactions', (c) => {
+  const body = parseOrRefuse(c, ToggleReactionRequestSchema, readJsonBody(c));
+  if (body instanceof Response) return body;
+  return roomRoute(c, 'POST /:id/entries/:entryId/reactions', (caller) => {
+    const entryId = c.req.param('entryId');
     const { reacted, frequents } = getRoomService().toggleReaction(
-      req.params.id,
-      req.params.entryId,
-      caller.id,
+      c.req.param('id'),
+      entryId,
+      caller().id,
       body.emoji,
       body.on
     );
-    res.status(202).json({
-      accepted: true,
-      entryId: req.params.entryId,
-      emoji: body.emoji,
-      reacted,
-      frequents,
-    });
-  } catch (err) {
-    sendRoomError(res, err, 'POST /:id/entries/:entryId/reactions');
-  }
+    return c.json({ accepted: true, entryId, emoji: body.emoji, reacted, frequents }, 202);
+  });
 });
 
 /** POST /:id/members — add a member by author id or agent directory. */
-router.post('/:id/members', (req, res) => {
-  const body = parseBody(AddRoomMemberRequestSchema, req.body, res);
-  if (!body) return;
-  try {
-    res
-      .status(201)
-      .json(getRoomService().addMember(req.params.id, resolveCaller(req, res).id, body));
-  } catch (err) {
-    sendRoomError(res, err, 'POST /:id/members');
-  }
+router.post('/:id/members', (c) => {
+  const body = parseOrRefuse(c, AddRoomMemberRequestSchema, readJsonBody(c));
+  if (body instanceof Response) return body;
+  return roomRoute(c, 'POST /:id/members', (caller) =>
+    c.json(getRoomService().addMember(c.req.param('id'), caller().id, body), 201)
+  );
 });
 
 /** PATCH /:id/members/:authorId — change a member's response mode. */
-router.patch('/:id/members/:authorId', (req, res) => {
-  const body = parseBody(UpdateMembershipRequestSchema, req.body, res);
-  if (!body) return;
-  try {
-    res.json(
+router.patch('/:id/members/:authorId', (c) => {
+  const body = parseOrRefuse(c, UpdateMembershipRequestSchema, readJsonBody(c));
+  if (body instanceof Response) return body;
+  return roomRoute(c, 'PATCH /:id/members/:authorId', (caller) =>
+    c.json(
       getRoomService().updateMembership(
-        req.params.id,
-        resolveCaller(req, res).id,
-        req.params.authorId,
+        c.req.param('id'),
+        caller().id,
+        c.req.param('authorId'),
         body.responseMode
       )
-    );
-  } catch (err) {
-    sendRoomError(res, err, 'PATCH /:id/members/:authorId');
-  }
+    )
+  );
 });
 
 /**
@@ -697,33 +437,28 @@ router.patch('/:id/members/:authorId', (req, res) => {
  *
  * Declared before `/:id/…` would be a problem? No — `/authors` cannot be
  * mistaken for a room id, because a room id is a ULID and this path has a second
- * segment Express matches literally.
+ * segment matched literally.
  */
-router.patch('/authors/:authorId/handle', (req, res) => {
-  const body = parseBody(SetAuthorHandleRequestSchema, req.body, res);
-  if (!body) return;
-  try {
-    const caller = resolveCaller(req, res);
-    if (caller.kind !== 'human') {
+router.patch('/authors/:authorId/handle', (c) => {
+  const body = parseOrRefuse(c, SetAuthorHandleRequestSchema, readJsonBody(c));
+  if (body instanceof Response) return body;
+  return roomRoute(c, 'PATCH /authors/:authorId/handle', (caller) => {
+    if (caller().kind !== 'human') {
       throw new RoomError('OPERATOR_ONLY', 'Only a person can change a handle.');
     }
-    res.json(
-      toAuthorRef(getRoomService().authorRegistry.setHandle(req.params.authorId, body.handle))
+    return c.json(
+      toAuthorRef(getRoomService().authorRegistry.setHandle(c.req.param('authorId'), body.handle))
     );
-  } catch (err) {
-    sendRoomError(res, err, 'PATCH /authors/:authorId/handle');
-  }
+  });
 });
 
 /** DELETE /:id/members/:authorId — remove a member. */
-router.delete('/:id/members/:authorId', (req, res) => {
-  try {
-    getRoomService().removeMember(req.params.id, resolveCaller(req, res).id, req.params.authorId);
-    res.status(204).end();
-  } catch (err) {
-    sendRoomError(res, err, 'DELETE /:id/members/:authorId');
-  }
-});
+router.delete('/:id/members/:authorId', (c) =>
+  roomRoute(c, 'DELETE /:id/members/:authorId', (caller) => {
+    getRoomService().removeMember(c.req.param('id'), caller().id, c.req.param('authorId'));
+    return c.body(null, 204);
+  })
+);
 
 /*
  * There is deliberately no `PUT /:id/read-cursor` here. A read cursor is not a
@@ -756,22 +491,19 @@ router.delete('/:id/members/:authorId', (req, res) => {
  * that writing into a thread is a deliberate act with a required target, never
  * an omitted parameter.
  */
-router.post('/:id/threads', (req, res) => {
-  const body = parseBody(PostThreadReplyRequestSchema, req.body, res);
-  if (!body) return;
-  try {
-    const caller = resolveCaller(req, res);
-    const entry = getRoomService().post(req.params.id, {
-      authorId: caller.id,
+router.post('/:id/threads', (c) => {
+  const body = parseOrRefuse(c, PostThreadReplyRequestSchema, readJsonBody(c));
+  if (body instanceof Response) return body;
+  return roomRoute(c, 'POST /:id/threads', (caller) => {
+    const entry = getRoomService().post(c.req.param('id'), {
+      authorId: caller().id,
       text: body.text,
       sessionId: body.sessionId,
       replyTo: body.rootEntryId,
       attachmentIds: body.attachmentIds,
     });
-    res.status(202).json(accepted(entry));
-  } catch (err) {
-    sendRoomError(res, err, 'POST /:id/threads');
-  }
+    return c.json(accepted(entry), 202);
+  });
 });
 
 /**
@@ -783,50 +515,38 @@ router.post('/:id/threads', (req, res) => {
  * types "stop" into the composer has sent a message, and the agents answer it
  * like any other — which is exactly why the button has to exist.
  *
- * Takes no body: there is nothing to say, only a thing to do. Express 5 leaves
- * `req.body` undefined on an empty POST, so asking for one would refuse every
- * honest caller.
+ * Takes no body: there is nothing to say, only a thing to do. An empty POST
+ * reads as no body at all, so asking for one would refuse every honest caller.
  */
-router.post('/:id/halt', (req, res) => {
-  void (async () => {
-    try {
-      const caller = resolveCaller(req, res);
-      const stopped = await getRoomService().haltRoom(req.params.id, caller.id);
-      res.json({ stopped });
-    } catch (err) {
-      sendRoomError(res, err, 'POST /:id/halt');
-    }
-  })();
-});
+router.post('/:id/halt', (c) =>
+  roomRoute(c, 'POST /:id/halt', async (caller) => {
+    const stopped = await getRoomService().haltRoom(c.req.param('id'), caller().id);
+    return c.json({ stopped });
+  })
+);
 
 /**
  * POST /:id/halt/:authorId — stop one agent's turn in this room.
  *
  * A sibling of `POST /:id/halt` rather than a field on it, and the difference is
- * the failure mode. That route takes no body on purpose (Express 5 leaves
- * `req.body` undefined on an empty POST), and an optional `authorId` in one
- * would fail OPEN: a client that forgot to send it would stop the whole room. A
+ * the failure mode. That route takes no body on purpose (an empty POST reads
+ * as no body at all), and an optional `authorId` in one would fail OPEN: a client that forgot to send it would stop the whole room. A
  * path segment cannot be forgotten. `PATCH` and `DELETE /:id/members/:authorId`
  * are the precedent for an author-scoped room sub-path.
  *
  * Same gate as the room-wide stop: only a person, and only in a room they can
  * see. Allowed on an archived room for the same reason.
  */
-router.post('/:id/halt/:authorId', (req, res) => {
-  void (async () => {
-    try {
-      const caller = resolveCaller(req, res);
-      const stopped = await getRoomService().haltAgent(
-        req.params.id,
-        req.params.authorId,
-        caller.id
-      );
-      res.json({ stopped });
-    } catch (err) {
-      sendRoomError(res, err, 'POST /:id/halt/:authorId');
-    }
-  })();
-});
+router.post('/:id/halt/:authorId', (c) =>
+  roomRoute(c, 'POST /:id/halt/:authorId', async (caller) => {
+    const stopped = await getRoomService().haltAgent(
+      c.req.param('id'),
+      c.req.param('authorId'),
+      caller().id
+    );
+    return c.json({ stopped });
+  })
+);
 
 /**
  * POST /:id/holds/:authorId/promote — ask for this room to be answered first.
@@ -842,40 +562,39 @@ router.post('/:id/halt/:authorId', (req, res) => {
  * nothing waiting, which is what a button left over from a wait that already
  * ended looks like. Takes no body.
  */
-router.post('/:id/holds/:authorId/promote', (req, res) => {
-  try {
-    const caller = resolveCaller(req, res);
-    const promoted = getRoomService().promoteHold(req.params.id, req.params.authorId, caller.id);
-    res.json({ promoted });
-  } catch (err) {
-    sendRoomError(res, err, 'POST /:id/holds/:authorId/promote');
-  }
-});
-installRoomRepositoryRoutes(router);
+router.post('/:id/holds/:authorId/promote', (c) =>
+  roomRoute(c, 'POST /:id/holds/:authorId/promote', (caller) => {
+    const promoted = getRoomService().promoteHold(
+      c.req.param('id'),
+      c.req.param('authorId'),
+      caller().id
+    );
+    return c.json({ promoted });
+  })
+);
 
 /**
  * GET /:id/events — the durable room stream (snapshot → replay → live).
  *
  * The same path is also served over a WebSocket (`room-events-socket.ts`),
- * which is what the cockpit connects to; this SSE route stays as the public
+ * which is what the app connects to; this SSE route stays as the public
  * integration contract. Both share their sequencing — see
  * `services/rooms/room-stream-delivery.ts`.
  */
 router.get('/:id/events', roomEventsHandler);
 
 /**
- * `/:id/canvas` — the room's shared canvas, in its own router.
+ * The room's other surfaces, each its own group: the attachments, the room's
+ * own files, the shared canvas and following.
  *
- * Mounted rather than inlined because six more handlers here would push this
- * file past the point where a reader can find anything, and because the canvas
- * is a surface of its own: it has its own service, its own refusal codes and its
- * own rule about who may write. `mergeParams` on that router is what keeps `:id`
- * meaning the room.
- *
- * Registered LAST, after `/:id/events` and every other `/:id/...` route, so no
- * earlier pattern can swallow a canvas path.
+ * The canvas and following are mounted under `/:id/...`, so `:id` is the room
+ * in every handler there. They are registered LAST, after `/:id/events` and
+ * every other `/:id/...` route, so no earlier pattern can swallow one of
+ * their paths.
  */
-router.use('/:id/canvas', roomCanvasRouter);
-router.use('/:id/follow', roomFollowRouter);
+router.route('/', roomAttachmentRoutes);
+router.route('/', roomFileRoutes);
+router.route('/:id/canvas', roomCanvasRoutes);
+router.route('/:id/follow', roomFollowRoutes);
 
 export default router;

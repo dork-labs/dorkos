@@ -9,10 +9,14 @@ import { fileURLToPath } from 'node:url';
 const mockEnv = vi.hoisted(() => ({ DORKOS_TEST_RUNTIME: true }));
 vi.mock('../../../../env.js', () => ({ env: mockEnv }));
 
-import express from 'express';
+// The `/api` chain reads login and the host settings from here; none are set.
+vi.mock('../../../core/config-manager.js', () => ({
+  configManager: { get: vi.fn(), getDot: vi.fn() },
+}));
 import request from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
-import { createFakeCloudApprovalRouter, createFakeCloudLink } from '../fake-cloud-link.js';
+import { createFakeCloudApprovalRoutes, createFakeCloudLink } from '../fake-cloud-link.js';
+import { honoGroupListener } from '../../../../http/__tests__/hono-group-listener.js';
 
 const APPROVAL_URL = 'http://localhost:7242/api/test/fake-cloud/approve';
 const createFakeCloudLinkFetch = () => createFakeCloudLink({ approvalUrl: APPROVAL_URL }).fetch;
@@ -62,7 +66,10 @@ describe('createFakeCloudLink', () => {
 
     it('opening the approval page approves the code: the next poll answers with the credential', async () => {
       const link = createFakeCloudLink({ approvalUrl: APPROVAL_URL });
-      const app = express().use('/api/test/fake-cloud', createFakeCloudApprovalRouter(link));
+      const app = honoGroupListener({
+        path: '/api/test/fake-cloud',
+        routes: createFakeCloudApprovalRoutes(link),
+      });
       await link.fetch('https://dorkos.ai/api/auth/device/code', { method: 'POST' });
       const poll = () =>
         link.fetch('https://dorkos.ai/api/auth/device/token', {
@@ -85,7 +92,10 @@ describe('createFakeCloudLink', () => {
 
     it('the approval page refuses a code that is not waiting, and a fresh code needs approving again', async () => {
       const link = createFakeCloudLink({ approvalUrl: APPROVAL_URL });
-      const app = express().use('/api/test/fake-cloud', createFakeCloudApprovalRouter(link));
+      const app = honoGroupListener({
+        path: '/api/test/fake-cloud',
+        routes: createFakeCloudApprovalRoutes(link),
+      });
       expect(
         (await request(listener.mount(app)).get('/api/test/fake-cloud/approve?code=NOPE')).status
       ).toBe(404);

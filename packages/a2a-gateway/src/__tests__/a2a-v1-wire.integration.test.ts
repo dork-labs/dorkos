@@ -13,9 +13,6 @@
  * `TASK_STATE_COMPLETED`), and `returnImmediately` in place of `blocking`.
  */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import express from 'express';
-import type { Server } from 'node:http';
-import type { AddressInfo } from 'node:net';
 import { createTestDb } from '@dorkos/test-utils/db';
 import {
   ClientFactory,
@@ -26,7 +23,8 @@ import { Role, TaskState, type Task } from '@a2a-js/sdk';
 import type { RelayCore } from '@dorkos/relay';
 import type { RelayEnvelope } from '@dorkos/shared/relay-schemas';
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
-import { createA2aHandlers } from '../express-handlers.js';
+import { createA2aGateway } from '../http-handlers.js';
+import { serveGateway, type ServedGateway } from './serve-gateway.js';
 import { textPart } from '../a2a-model.js';
 import type { AgentRegistryLike } from '../types.js';
 
@@ -173,7 +171,7 @@ function makeRegistry(agents: AgentManifest[]): AgentRegistryLike {
   };
 }
 
-let server: Server;
+let served: ServedGateway;
 let baseUrl: string;
 let relay: ScriptedRelay;
 let rpcId = 0;
@@ -183,32 +181,23 @@ beforeEach(async () => {
 
   // Listen BEFORE mounting, so the cards can advertise the real port. A card's
   // interface URL is what a real client dials, so it has to be absolute and
-  // correct — and Express happily accepts routes added after `listen`, which
-  // avoids binding a port twice and racing another process for it.
-  const app = express();
-  await new Promise<void>((resolve) => {
-    server = app.listen(0, '127.0.0.1', () => resolve());
-  });
-  baseUrl = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
-
-  const handlers = createA2aHandlers({
-    agentRegistry: makeRegistry([makeManifest()]),
-    relay: relay as unknown as RelayCore,
-    db: createTestDb(),
-    config: { baseUrl, version: '0.0.0-test' },
-    logger: { info: () => {}, warn: () => {}, error: () => {}, debug: () => {} },
-  });
-
-  app.get('/.well-known/agent-card.json', handlers.fleetCard);
-  app.get('/a2a/agents/:id/card', handlers.agentCard);
-  app.post('/a2a/agents/:id', handlers.agentJsonRpc);
-  app.use('/a2a', handlers.jsonRpc);
+  // correct — and mounting after `listen` avoids binding a port twice and
+  // racing another process for it.
+  served = await serveGateway();
+  baseUrl = served.baseUrl;
+  served.mount(
+    createA2aGateway({
+      agentRegistry: makeRegistry([makeManifest()]),
+      relay: relay as unknown as RelayCore,
+      db: createTestDb(),
+      config: { baseUrl, version: '0.0.0-test' },
+      logger: { info: () => {}, warn: () => {}, error: () => {}, debug: () => {} },
+    })
+  );
 });
 
 afterEach(async () => {
-  await new Promise<void>((resolve, reject) => {
-    server.close((err) => (err ? reject(err) : resolve()));
-  });
+  await served.close();
 });
 
 async function rpc(method: string, params: unknown): Promise<Record<string, unknown>> {
@@ -385,7 +374,7 @@ describe('A2A gateway over the v1.0 wire', () => {
  * agent every other agent's tasks, full message history included.
  */
 describe('ListTasks scoping', () => {
-  let scopedServer: Server;
+  let scoped: ServedGateway;
   let scopedUrl: string;
 
   /** A `ListTasks` response, as JSON. */
@@ -418,21 +407,20 @@ describe('ListTasks scoping', () => {
     const scopedRelay = new ScriptedRelay();
     scopedRelay.chunks = ['Done.'];
 
-    const app = express();
-    await new Promise<void>((resolve) => {
-      scopedServer = app.listen(0, '127.0.0.1', () => resolve());
-    });
-    scopedUrl = `http://127.0.0.1:${(scopedServer.address() as AddressInfo).port}`;
-
-    const handlers = createA2aHandlers({
-      agentRegistry: makeRegistry([makeManifest('agent-backend'), makeManifest('agent-frontend')]),
-      relay: scopedRelay as unknown as RelayCore,
-      db: createTestDb(),
-      config: { baseUrl: scopedUrl, version: '0.0.0-test' },
-      logger: { info: () => {}, warn: () => {}, error: () => {}, debug: () => {} },
-    });
-    app.post('/a2a/agents/:id', handlers.agentJsonRpc);
-    app.use('/a2a', handlers.jsonRpc);
+    scoped = await serveGateway();
+    scopedUrl = scoped.baseUrl;
+    scoped.mount(
+      createA2aGateway({
+        agentRegistry: makeRegistry([
+          makeManifest('agent-backend'),
+          makeManifest('agent-frontend'),
+        ]),
+        relay: scopedRelay as unknown as RelayCore,
+        db: createTestDb(),
+        config: { baseUrl: scopedUrl, version: '0.0.0-test' },
+        logger: { info: () => {}, warn: () => {}, error: () => {}, debug: () => {} },
+      })
+    );
 
     // One finished task per agent, each on its own endpoint.
     for (const agentId of ['agent-backend', 'agent-frontend']) {
@@ -442,9 +430,7 @@ describe('ListTasks scoping', () => {
   });
 
   afterEach(async () => {
-    await new Promise<void>((resolve, reject) => {
-      scopedServer.close((err) => (err ? reject(err) : resolve()));
-    });
+    await scoped.close();
   });
 
   it('returns only the bound agent’s tasks on the per-agent endpoint', async () => {
@@ -560,7 +546,7 @@ describe('ListTasks scoping', () => {
  */
 describe('a token-gated deployment', () => {
   const TOKEN = 'test-token';
-  let guardedServer: Server;
+  let guarded: ServedGateway;
   let guardedUrl: string;
   let guardedRelay: ScriptedRelay;
 
@@ -575,37 +561,26 @@ describe('a token-gated deployment', () => {
     guardedRelay = new ScriptedRelay();
     guardedRelay.chunks = ['Authenticated.'];
 
-    const app = express();
-    await new Promise<void>((resolve) => {
-      guardedServer = app.listen(0, '127.0.0.1', () => resolve());
-    });
-    guardedUrl = `http://127.0.0.1:${(guardedServer.address() as AddressInfo).port}`;
-
-    const handlers = createA2aHandlers({
-      agentRegistry: makeRegistry([makeManifest()]),
-      relay: guardedRelay as unknown as RelayCore,
-      db: createTestDb(),
-      config: { baseUrl: guardedUrl, version: '0.0.0-test' },
-      logger: { info: () => {}, warn: () => {}, error: () => {}, debug: () => {} },
-    });
-
-    // Guards cards AND calls, which is the posture with login turned on.
-    app.use((req, res, next) => {
-      if (req.headers.authorization !== `Bearer ${TOKEN}`) {
-        res.status(401).json({ error: 'unauthorized' });
-        return;
-      }
-      next();
-    });
-    app.get('/a2a/agents/:id/card', handlers.agentCard);
-    app.post('/a2a/agents/:id', handlers.agentJsonRpc);
-    app.use('/a2a', handlers.jsonRpc);
+    guarded = await serveGateway();
+    guardedUrl = guarded.baseUrl;
+    guarded.mount(
+      createA2aGateway({
+        agentRegistry: makeRegistry([makeManifest()]),
+        relay: guardedRelay as unknown as RelayCore,
+        db: createTestDb(),
+        config: { baseUrl: guardedUrl, version: '0.0.0-test' },
+        logger: { info: () => {}, warn: () => {}, error: () => {}, debug: () => {} },
+      }),
+      // Guards cards AND calls, which is the posture with login turned on.
+      (request) =>
+        request.headers.get('authorization') === `Bearer ${TOKEN}`
+          ? undefined
+          : Response.json({ error: 'unauthorized' }, { status: 401 })
+    );
   });
 
   afterEach(async () => {
-    await new Promise<void>((resolve, reject) => {
-      guardedServer.close((err) => (err ? reject(err) : resolve()));
-    });
+    await guarded.close();
   });
 
   it('rejects card discovery when only the transport is authenticated', async () => {

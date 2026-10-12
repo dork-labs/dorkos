@@ -1,4 +1,8 @@
-import { Router, type Request, type Response } from 'express';
+import { Hono } from 'hono';
+import type { ContentfulStatusCode } from 'hono/utils/http-status';
+import type { ApiEnv } from '../http/api-chain.js';
+import { readJsonBody } from '../http/request-body.js';
+import { honoRequestFacts, type RequestFacts } from '../http/request-facts.js';
 import { tunnelManager } from '../services/core/tunnel-manager.js';
 import { resolveTunnelSettings } from '../services/core/config/tunnel-settings.js';
 import { getLocalCockpitPort } from '../lib/trusted-origins.js';
@@ -60,7 +64,7 @@ import { resolveDorkHome } from '../lib/dork-home.js';
 import { resolveAgentsDirectory } from '../lib/agents-home.js';
 import { getAccountUsageStore } from '../services/core/usage/current-usage-store.js';
 
-const router = Router();
+const router = new Hono<ApiEnv>();
 
 // Re-exported from the shared config-patch service (the SSOT for merge + patch
 // semantics) so existing importers — and the `deepMerge` unit test — keep their
@@ -82,7 +86,7 @@ const TASKS_LOCKED_BY_ENV = 'DORKOS_TASKS_ENABLED' in process.env;
 /** The same question for the Relay message bus and `DORKOS_RELAY_ENABLED`. */
 const RELAY_LOCKED_BY_ENV = env.DORKOS_RELAY_ENABLED !== undefined;
 
-router.get('/', async (req, res) => {
+router.get('/', async (c) => {
   let claudeCliPath: string | null = null;
   try {
     claudeCliPath = resolveClaudeCliPath() ?? null;
@@ -109,9 +113,9 @@ router.get('/', async (req, res) => {
   // hand a phone the answer it computed for a request from the machine itself,
   // which is the one wrong answer that matters: it puts back the Sign in button
   // that can only 403.
-  res.setHeader('Cache-Control', 'no-store');
+  c.header('Cache-Control', 'no-store');
 
-  res.json({
+  return c.json({
     version: SERVER_VERSION,
     latestVersion,
     isDevMode: IS_DEV_BUILD,
@@ -121,7 +125,7 @@ router.get('/', async (req, res) => {
     // Sign in button that could only ever 403 (DOR-1655). Answered by the same
     // reader those endpoints refuse with, so the app is told exactly what they
     // would do rather than a guess of its own.
-    isLocalCaller: isLocalCaller(req),
+    isLocalCaller: isLocalCaller(honoRequestFacts(c)),
     dismissedUpgradeVersions:
       (configManager.get('ui') as { dismissedUpgradeVersions?: string[] } | undefined)
         ?.dismissedUpgradeVersions ?? [],
@@ -394,11 +398,11 @@ router.get('/', async (req, res) => {
  * the moment somebody reorders them, which already happened once and inverted
  * two comments.
  *
- * @param req - The incoming request, for the agent header and approval token.
- * @param res - The response carrying `sessionGate`'s resolved user.
+ * @param caller - The request's facts: the agent and approval headers, and the
+ *   user the session gate resolved.
  * @returns The authority for this caller.
  */
-function requestConfigWriteAuthority(req: Request, res: Response): ConfigWriteAuthority {
+function requestConfigWriteAuthority(caller: RequestFacts): ConfigWriteAuthority {
   return {
     // The REST twin of the guard on `operator.config_patch` (DOR-467). PR #469
     // put the operator-only write policy on the capability surface, but this
@@ -446,7 +450,7 @@ function requestConfigWriteAuthority(req: Request, res: Response): ConfigWriteAu
       // not describe this route as "operator-only enforced" without that
       // qualifier.
       const cookieRefusal = requireOperatorCookieUnderLogin(
-        res,
+        caller,
         'the settings that protect this instance'
       );
       if (cookieRefusal) {
@@ -479,7 +483,7 @@ function requestConfigWriteAuthority(req: Request, res: Response): ConfigWriteAu
       // (`OPERATOR_TOOL_AUTHORITY`). For this one effect the trusted escape
       // grants something the two-step path cannot, which is exactly what the
       // cookie bar takes back in the posture where DorkOS has the evidence to.
-      if (!trustedCaller(readCallerAuthority(req, res))) {
+      if (!trustedCaller(readCallerAuthority(caller))) {
         return {
           status: 403,
           code: OPERATOR_ONLY_CONFIG_CODE,
@@ -499,7 +503,7 @@ function requestConfigWriteAuthority(req: Request, res: Response): ConfigWriteAu
       const cloudPaths = paths.filter(
         (path) => path.startsWith('cloud.') || path === 'heartbeats.triageOnCredits'
       );
-      if (cloudPaths.length > 0 && refuseUnlessAccountOwner(req, res) !== undefined) {
+      if (cloudPaths.length > 0 && refuseUnlessAccountOwner(caller) !== undefined) {
         return {
           status: 403,
           code: 'owner_only',
@@ -573,7 +577,7 @@ async function awaitAccountReconcile(): Promise<void> {
   }
 }
 
-router.patch('/', async (req, res) => {
+router.patch('/', async (c) => {
   try {
     const accountsBefore = claudeAccountFields();
     // The bars, the autonomy consent door, the write, and the audit line — the
@@ -581,8 +585,8 @@ router.patch('/', async (req, res) => {
     // three doors cannot drift into meaning different things. What this route
     // adds is who the caller is and what a refusal looks like over HTTP.
     const result = applyGuardedConfigWrite({
-      patch: req.body,
-      authority: requestConfigWriteAuthority(req, res),
+      patch: readJsonBody(c),
+      authority: requestConfigWriteAuthority(honoRequestFacts(c)),
       source: 'PATCH /api/config',
       // This route cannot say WHO is calling it, and does not pretend to. With
       // local login off — the default — the server cannot tell the app from any
@@ -596,13 +600,13 @@ router.patch('/', async (req, res) => {
 
     if (!result.ok) {
       if (result.kind === 'invalid') {
-        return res.status(400).json({
-          error: result.error,
-          ...(result.details && { details: result.details }),
-        });
+        return c.json(
+          { error: result.error, ...(result.details && { details: result.details }) },
+          400
+        );
       }
       const { status, error, code, paths, message } = result.refusal;
-      return res.status(status).json({ error, code, paths, message });
+      return c.json({ error, code, paths, message }, status as ContentfulStatusCode);
     }
 
     for (const warning of result.warnings) {
@@ -611,7 +615,7 @@ router.patch('/', async (req, res) => {
 
     if (claudeAccountFields() !== accountsBefore) await awaitAccountReconcile();
 
-    return res.json({
+    return c.json({
       success: true,
       // ## The answer is the CURATED snapshot, never the stored file (DOR-1740)
       //
@@ -641,16 +645,16 @@ router.patch('/', async (req, res) => {
     });
   } catch (err) {
     logger.error('[Config] PATCH failed', logError(err));
-    return res.status(500).json({ error: 'Internal server error' });
+    return c.json({ error: 'Internal server error' }, 500);
   }
 });
 
 /** PUT /api/config/agents/defaultAgent — set the default agent by name. */
-router.put('/agents/defaultAgent', (req, res) => {
+router.put('/agents/defaultAgent', (c) => {
   try {
-    const { value } = req.body ?? {};
+    const { value } = readJsonBody(c, { emptyAs: {} }) as { value?: unknown };
     if (typeof value !== 'string' || !value.trim()) {
-      return res.status(400).json({ error: 'Body must include a non-empty "value" string' });
+      return c.json({ error: 'Body must include a non-empty "value" string' }, 400);
     }
 
     // Falls back to the schema's own defaults rather than a second copy of them,
@@ -664,10 +668,10 @@ router.put('/agents/defaultAgent', (req, res) => {
     // install logs at info, so it was never written at all (DOR-1237).
     logConfigWrite('the default-agent route', 'agents', agents, configManager.get('agents'));
 
-    return res.json({ success: true, defaultAgent: value.trim() });
+    return c.json({ success: true, defaultAgent: value.trim() });
   } catch (err) {
     logger.error('[Config] PUT agents/defaultAgent failed', logError(err));
-    return res.status(500).json({ error: 'Internal server error' });
+    return c.json({ error: 'Internal server error' }, 500);
   }
 });
 
@@ -683,27 +687,33 @@ router.put('/agents/defaultAgent', (req, res) => {
  * config DTO read, and returns it so the settings tab can show the new value.
  * Rotating invalidates every previously configured client until it re-pastes.
  */
-router.post('/mcp/rotate-token', (_req, res) => {
+router.post('/mcp/rotate-token', (c) => {
   try {
     if (env.MCP_API_KEY?.trim()) {
-      return res.status(409).json({
-        error:
-          'The local MCP token does not apply while MCP_API_KEY is set — that environment variable is the bearer clients use.',
-      });
+      return c.json(
+        {
+          error:
+            'The local MCP token does not apply while MCP_API_KEY is set — that environment variable is the bearer clients use.',
+        },
+        409
+      );
     }
     if (configManager.get('auth')?.enabled === true) {
-      return res.status(409).json({
-        error:
-          'The local MCP token does not apply while login is on — clients authenticate with their personal API keys.',
-      });
+      return c.json(
+        {
+          error:
+            'The local MCP token does not apply while login is on — clients authenticate with their personal API keys.',
+        },
+        409
+      );
     }
 
     const dorkHome = resolveDorkHome();
     const localToken = rotateMcpLocalToken(dorkHome);
-    return res.json({ localToken });
+    return c.json({ localToken });
   } catch (err) {
     logger.error('[Config] POST mcp/rotate-token failed', logError(err));
-    return res.status(500).json({ error: 'Internal server error' });
+    return c.json({ error: 'Internal server error' }, 500);
   }
 });
 
@@ -724,32 +734,41 @@ router.post('/mcp/rotate-token', (_req, res) => {
  * does not (and cannot) make the token unreadable to local callers; turning on
  * login is the boundary that does.
  */
-router.post('/mcp/reveal-token', (_req, res) => {
+router.post('/mcp/reveal-token', (c) => {
   try {
     if (env.MCP_API_KEY?.trim()) {
-      return res.status(409).json({
-        error:
-          'The local MCP token does not apply while MCP_API_KEY is set — that environment variable is the bearer clients use.',
-      });
+      return c.json(
+        {
+          error:
+            'The local MCP token does not apply while MCP_API_KEY is set — that environment variable is the bearer clients use.',
+        },
+        409
+      );
     }
     if (configManager.get('auth')?.enabled === true) {
-      return res.status(409).json({
-        error:
-          'The local MCP token does not apply while login is on — clients authenticate with their personal API keys.',
-      });
+      return c.json(
+        {
+          error:
+            'The local MCP token does not apply while login is on — clients authenticate with their personal API keys.',
+        },
+        409
+      );
     }
 
     const localToken = getMcpLocalToken();
     if (!localToken) {
-      return res.status(404).json({
-        error:
-          'No local MCP token has been generated for this instance. Restart DorkOS to generate one.',
-      });
+      return c.json(
+        {
+          error:
+            'No local MCP token has been generated for this instance. Restart DorkOS to generate one.',
+        },
+        404
+      );
     }
-    return res.json({ localToken });
+    return c.json({ localToken });
   } catch (err) {
     logger.error('[Config] POST mcp/reveal-token failed', logError(err));
-    return res.status(500).json({ error: 'Internal server error' });
+    return c.json({ error: 'Internal server error' }, 500);
   }
 });
 

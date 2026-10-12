@@ -3,7 +3,7 @@ import fs from 'node:fs/promises';
 import { describe, expect, it } from 'vitest';
 import request from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
-import files from '../../../../../routes/files.js';
+import { originalDocHttpListener } from '../../__tests__/original-doc-http-listener.js';
 import { authorityFixture } from './authority-fixtures.js';
 import { setRoomService, clearRoomService } from '../../../../rooms/index.js';
 import { saveRecognizedNormalFileService } from '../normal-file-save.js';
@@ -17,7 +17,6 @@ describe('original installed ordinary file route', () => {
     setRoomService(h.rooms.service);
     const app = express();
     app.use(express.json());
-    app.locals.docChannelHttp = h.http;
     let directFailure: { cause: unknown } | undefined;
     app.put('/original-save-cause', async (req, res) => {
       try {
@@ -33,8 +32,9 @@ describe('original installed ordinary file route', () => {
         res.status(500).end();
       }
     });
-    app.use('/files', files);
-    const server = target.mount(app);
+    const server = target.mount(
+      originalDocHttpListener(() => h.http, { fileMount: '/files', legacy: app })
+    );
     try {
       h.http.normalFileSave.saveHttp = () => {
         throw new Error('Reflected ordinary save used');

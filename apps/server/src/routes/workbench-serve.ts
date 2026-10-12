@@ -13,7 +13,7 @@
  * - `POST /api/workbench/probe` — report whether a loopback port has a server on
  *   it, so the browser can explain a dead port instead of framing it. Auth-gated
  *   like `/sign`, and loopback-pinned: the body carries a port and nothing else.
- * - `GET /api/workbench/serve/:token/*splat` — statically serve a local file from
+ * - `GET /api/workbench/serve/:token/:splat{.+}` — statically serve a local file from
  *   the token's cwd so relative assets resolve. Authorized by the signed token,
  *   NOT cookie/header auth (the browser frame is opaque-origin, credential-less),
  *   so this path is exempted from the session gate.
@@ -25,11 +25,11 @@
  *
  * @module routes/workbench-serve
  */
-import { Router } from 'express';
-import type { Request, Response } from 'express';
+import { Readable } from 'node:stream';
+import type { TLSSocket } from 'node:tls';
+import { Hono, type Context } from 'hono';
 import { z } from 'zod';
 import fs from 'fs/promises';
-import { createReadStream } from 'fs';
 import path from 'path';
 import { WorkbenchProbeRequestSchema, WorkbenchSignRequestSchema } from '@dorkos/shared/schemas';
 import { validateBoundary, BoundaryError } from '../lib/boundary.js';
@@ -49,8 +49,10 @@ import {
   probeLoopbackPort,
   PREVIEW_BOOTSTRAP_PARAM,
 } from '../services/workbench-serve/index.js';
+import type { ApiEnv } from '../http/api-chain.js';
+import { readJsonBody } from '../http/request-body.js';
 
-const router = Router();
+const router = new Hono<ApiEnv>();
 
 /**
  * Content types for statically served workbench files, by extension. Broad
@@ -86,20 +88,21 @@ const SERVE_CONTENT_TYPES: Record<string, string> = {
   '.webm': 'video/webm',
 };
 
-/** The relative remainder captured by an Express 5 `*splat`, normalized to a POSIX path. */
-function splatToPath(splat: unknown): string {
-  if (Array.isArray(splat)) return splat.join('/');
-  if (typeof splat === 'string') return splat;
-  return '';
-}
-
-/** A single named route param (Express 5 types it as `string | string[]`). */
-function param(value: string | string[] | undefined): string {
-  return Array.isArray(value) ? value[0] : (value ?? '');
+/**
+ * The scheme the caller reached this server on, as Express's `req.protocol`
+ * reads it under `trust proxy: 1` (`app.ts`): the first `X-Forwarded-Proto`
+ * entry when the header is there, else whether the socket is TLS.
+ */
+function requestProtocol(c: Context<ApiEnv>): string {
+  const { incoming } = c.env;
+  const fallback = (incoming.socket as TLSSocket | undefined)?.encrypted ? 'https' : 'http';
+  const header = c.req.header('x-forwarded-proto') || fallback;
+  const comma = header.indexOf(',');
+  return comma !== -1 ? header.substring(0, comma).trim() : header.trim();
 }
 
 /** Map a token-verification failure to its HTTP status (expired vs. forged/malformed). */
-function tokenErrorStatus(err: WorkbenchTokenError): number {
+function tokenErrorStatus(err: WorkbenchTokenError): 401 | 403 {
   return err.code === 'EXPIRED' ? 401 : 403;
 }
 
@@ -110,24 +113,24 @@ function tokenErrorStatus(err: WorkbenchTokenError): number {
  * absolute and built from the host the caller actually reached, so it resolves in
  * dev (cross-origin Vite), in production, and from another device on the network.
  */
-router.post('/sign', async (req, res) => {
-  const parsed = WorkbenchSignRequestSchema.safeParse(req.body);
+router.post('/sign', async (c) => {
+  const parsed = WorkbenchSignRequestSchema.safeParse(readJsonBody(c));
   if (!parsed.success) {
-    return res.status(400).json({ error: 'Invalid body', details: z.flattenError(parsed.error) });
+    return c.json({ error: 'Invalid body', details: z.flattenError(parsed.error) }, 400);
   }
 
   if (parsed.data.kind === 'serve') {
-    const origin = `${req.protocol}://${req.get('host')}`;
+    const origin = `${requestProtocol(c)}://${c.env.incoming.headers.host}`;
     let validatedCwd: string;
     try {
       validatedCwd = await validateBoundary(parsed.data.cwd);
     } catch (err) {
       if (err instanceof BoundaryError) {
         const status = err.code === 'NULL_BYTE' ? 400 : 403;
-        return res.status(status).json({ error: err.message, code: err.code });
+        return c.json({ error: err.message, code: err.code }, status);
       }
       logger.error('[workbench-serve] sign(serve) boundary failed', { err });
-      return res.status(500).json({ error: 'Internal server error' });
+      return c.json({ error: 'Internal server error' }, 500);
     }
     // Normalize the initial path to a clean cwd-relative POSIX path so the URL's
     // splat is unambiguous. Reject a path that escapes the cwd up front (the
@@ -136,18 +139,18 @@ router.post('/sign', async (req, res) => {
     const abs = path.isAbsolute(rawPath) ? path.resolve(rawPath) : path.join(validatedCwd, rawPath);
     const rel = path.relative(validatedCwd, abs);
     if (rel === '' || rel.startsWith('..') || path.isAbsolute(rel)) {
-      return res.status(403).json({
-        error: 'Access denied: path outside directory boundary',
-        code: 'OUTSIDE_BOUNDARY',
-      });
+      return c.json(
+        { error: 'Access denied: path outside directory boundary', code: 'OUTSIDE_BOUNDARY' },
+        403
+      );
     }
     const token = workbenchTokenSigner.mint({ kind: 'serve', cwd: validatedCwd });
     const encoded = rel.split(path.sep).map(encodeURIComponent).join('/');
-    return res.json({ url: `${origin}/api/workbench/serve/${token}/${encoded}` });
+    return c.json({ url: `${origin}/api/workbench/serve/${token}/${encoded}` });
   }
 
   // proxy — the port is range-validated by the schema (1–65535).
-  return signPreview(req, res, parsed.data.port);
+  return signPreview(c, parsed.data.port);
 });
 
 /**
@@ -160,13 +163,13 @@ router.post('/sign', async (req, res) => {
  * The scheme is always `http`, because the listener speaks plain HTTP — telling
  * a caller `https` would name an address that cannot answer.
  */
-async function signPreview(req: Request, res: Response, port: number) {
-  const hostname = parseHostname(req.get('host')) ?? 'localhost';
+async function signPreview(c: Context<ApiEnv>, port: number) {
+  const hostname = parseHostname(c.env.incoming.headers.host) ?? 'localhost';
   if (getTunnelHosts().includes(hostname)) {
     // A tunnel publishes one port, and it is not this one. Say so rather than
     // handing back an address that will quietly fail to load. Every tunnel
     // address counts: each managed hostname forwards that same one port.
-    return res.json({ url: null, unavailable: 'tunnel' as const });
+    return c.json({ url: null, unavailable: 'tunnel' as const });
   }
 
   let listenPort: number;
@@ -174,16 +177,16 @@ async function signPreview(req: Request, res: Response, port: number) {
     ({ listenPort } = await previewListeners.acquire(port));
   } catch (err) {
     if (err instanceof PreviewPortExhaustedError) {
-      return res.json({ url: null, unavailable: 'no-port' as const });
+      return c.json({ url: null, unavailable: 'no-port' as const });
     }
     logger.error('[workbench-serve] preview listener failed to open', { err, port });
-    return res.status(500).json({ error: 'Internal server error' });
+    return c.json({ error: 'Internal server error' }, 500);
   }
 
   const token = workbenchTokenSigner.mint({ kind: 'proxy', port });
   // An IPv6 literal has to be bracketed to sit beside a port in a URL.
   const authority = hostname.includes(':') ? `[${hostname}]` : hostname;
-  return res.json({
+  return c.json({
     url: `http://${authority}:${listenPort}/?${PREVIEW_BOOTSTRAP_PARAM}=${token}`,
   });
 }
@@ -197,13 +200,13 @@ async function signPreview(req: Request, res: Response, port: number) {
  * The embedded browser calls this before framing a dev server, so a port with
  * nothing on it becomes a sentence the user can act on instead of a blank frame.
  */
-router.post('/probe', async (req, res) => {
-  const parsed = WorkbenchProbeRequestSchema.safeParse(req.body);
+router.post('/probe', async (c) => {
+  const parsed = WorkbenchProbeRequestSchema.safeParse(readJsonBody(c));
   if (!parsed.success) {
-    return res.status(400).json({ error: 'Invalid body', details: z.flattenError(parsed.error) });
+    return c.json({ error: 'Invalid body', details: z.flattenError(parsed.error) }, 400);
   }
   const listening = await probeLoopbackPort(parsed.data.port);
-  return res.json({ listening });
+  return c.json({ listening });
 });
 
 /**
@@ -212,34 +215,33 @@ router.post('/probe', async (req, res) => {
  * type is by extension; anything unlisted is an opaque download (never sniffed).
  *
  * Registered for both the bare (`/serve/:token`, the root → index.html) and the
- * splat (`/serve/:token/*splat`) forms — the Express 5 `*splat` param does not
- * match an empty remainder.
+ * remainder (`/serve/:token/:splat{.+}`) forms. The remainder is decoded as one
+ * parameter, so an encoded `/` inside a segment joins the path as Express 5's
+ * `*splat` joined its decoded segments.
  */
-async function handleServe(req: Request, res: Response) {
+async function handleServe(c: Context<ApiEnv>) {
   // Response sandboxing also covers top-level navigation and SVG/documents;
   // the iframe attribute alone only isolates the app's embedded view.
   // The concrete auth-origin list includes Vite, desktop development and the
   // live tunnel. SAMEORIGIN would silently break the desktop's separate origin.
   // 'self' covers this listener (and same-origin reverse-proxy deployments).
-  res.setHeader(
-    'Content-Security-Policy',
-    `sandbox allow-scripts allow-forms allow-popups allow-modals; frame-ancestors 'self' ${resolveAuthTrustedOrigins().join(' ')}`
-  );
+  const policy = `sandbox allow-scripts allow-forms allow-popups allow-modals; frame-ancestors 'self' ${resolveAuthTrustedOrigins().join(' ')}`;
+  c.header('Content-Security-Policy', policy);
   let cwd: string;
   try {
-    const payload = workbenchTokenSigner.verify(param(req.params.token));
+    const payload = workbenchTokenSigner.verify(c.req.param('token') ?? '');
     if (payload.scope.kind !== 'serve') {
-      return res.status(403).json({ error: 'Token is not a serve token', code: 'WRONG_SCOPE' });
+      return c.json({ error: 'Token is not a serve token', code: 'WRONG_SCOPE' }, 403);
     }
     cwd = payload.scope.cwd;
   } catch (err) {
     if (err instanceof WorkbenchTokenError) {
-      return res.status(tokenErrorStatus(err)).json({ error: err.message, code: err.code });
+      return c.json({ error: err.message, code: err.code }, tokenErrorStatus(err));
     }
     throw err;
   }
 
-  const relPath = splatToPath(req.params.splat) || 'index.html';
+  const relPath = c.req.param('splat') || 'index.html';
   let resolved: string;
   try {
     // Re-confine against cwd (which itself was boundary-validated at mint time):
@@ -249,38 +251,36 @@ async function handleServe(req: Request, res: Response) {
   } catch (err) {
     if (err instanceof BoundaryError) {
       const status = err.code === 'NULL_BYTE' ? 400 : 403;
-      return res.status(status).json({ error: err.message, code: err.code });
+      return c.json({ error: err.message, code: err.code }, status);
     }
     const code = (err as NodeJS.ErrnoException).code;
-    if (code === 'ENOENT')
-      return res.status(404).json({ error: 'File not found', code: 'NOT_FOUND' });
+    if (code === 'ENOENT') return c.json({ error: 'File not found', code: 'NOT_FOUND' }, 404);
     if (code === 'ELOOP' || code === 'ENOTDIR') {
-      return res.status(400).json({ error: 'Invalid path', code });
+      return c.json({ error: 'Invalid path', code }, 400);
     }
     logger.error('[workbench-serve] serve resolve failed', { err });
-    return res.status(500).json({ error: 'Internal server error' });
+    return c.json({ error: 'Internal server error' }, 500);
   }
 
   let size: number;
   try {
     const stat = await fs.stat(resolved);
-    if (!stat.isFile()) return res.status(404).json({ error: 'Not a file', code: 'NOT_A_FILE' });
+    if (!stat.isFile()) return c.json({ error: 'Not a file', code: 'NOT_A_FILE' }, 404);
     size = stat.size;
   } catch (err) {
     const code = (err as NodeJS.ErrnoException).code;
-    if (code === 'ENOENT')
-      return res.status(404).json({ error: 'File not found', code: 'NOT_FOUND' });
+    if (code === 'ENOENT') return c.json({ error: 'File not found', code: 'NOT_FOUND' }, 404);
     logger.error('[workbench-serve] serve stat failed', { err, resolved });
-    return res.status(500).json({ error: 'Internal server error' });
+    return c.json({ error: 'Internal server error' }, 500);
   }
 
   const contentType = SERVE_CONTENT_TYPES[path.extname(resolved).toLowerCase()];
-  res.setHeader('Content-Type', contentType ?? 'application/octet-stream');
-  res.setHeader('X-Content-Type-Options', 'nosniff');
-  res.setHeader('Cache-Control', 'private, max-age=0, must-revalidate');
+  c.header('Content-Type', contentType ?? 'application/octet-stream');
+  c.header('X-Content-Type-Options', 'nosniff');
+  c.header('Cache-Control', 'private, max-age=0, must-revalidate');
   // Defense-in-depth: the signed bearer token lives in the URL path, so never
   // let it leak to any onward navigation/subresource via the Referer header.
-  res.setHeader('Referrer-Policy', 'no-referrer');
+  c.header('Referrer-Policy', 'no-referrer');
 
   // Bounded raw bytes: unsupported encoding/markup/CSP is served without SDKs.
   // Never decode an oversized file or let growth after stat cause an unbounded read.
@@ -302,33 +302,39 @@ async function handleServe(req: Request, res: Response) {
         await file.close();
       }
       if (raw.length <= WORKBENCH.PREVIEW_HTML_INJECT_MAX_BYTES) {
-        const enforcingPolicies = Object.entries(res.getHeaders())
-          .filter(([key]) => key.toLowerCase() === 'content-security-policy')
-          .flatMap(([, value]) => (Array.isArray(value) ? value.map(String) : [String(value)]));
-        const decision = injectFrameScripts(raw, { contentType, enforcingPolicies });
-        res.setHeader('Content-Length', decision.bytes.length);
-        res.end(decision.bytes);
-        return;
+        // The one policy this response enforces is the sandbox set above.
+        const decision = injectFrameScripts(raw, { contentType, enforcingPolicies: [policy] });
+        c.header('Content-Length', String(decision.bytes.length));
+        return c.body(new Uint8Array(decision.bytes));
       }
       // A growing file exceeded the cap: stream unchanged without a stale stat length.
       knownLength = false;
     } catch (err) {
       logger.error('[workbench-serve] serve read/inject failed', { err, resolved });
-      return res.status(500).json({ error: 'Internal server error' });
+      return c.json({ error: 'Internal server error' }, 500);
     }
   }
 
-  if (knownLength) res.setHeader('Content-Length', size);
-  const stream = createReadStream(resolved);
-  stream.on('error', (err) => {
+  if (knownLength) c.header('Content-Length', String(size));
+  // A HEAD gets the headers alone: a stream nobody reads would hold its file open.
+  if (c.req.method === 'HEAD') return c.body(null);
+  // Opened before answering, so a file gone since the stat is a JSON 500
+  // rather than file headers with nothing behind them.
+  let file: Awaited<ReturnType<typeof fs.open>>;
+  try {
+    file = await fs.open(resolved, 'r');
+  } catch (err) {
     logger.error('[workbench-serve] serve stream failed', { err, resolved });
-    if (!res.headersSent) res.status(500).json({ error: 'Internal server error' });
-    else res.destroy(err);
-  });
-  stream.pipe(res);
+    return c.json({ error: 'Internal server error' }, 500);
+  }
+  const stream = file.createReadStream();
+  stream.on('error', (err) =>
+    logger.error('[workbench-serve] serve stream failed', { err, resolved })
+  );
+  return c.body(Readable.toWeb(stream) as ReadableStream<Uint8Array>);
 }
 
 router.get('/serve/:token', handleServe);
-router.get('/serve/:token/*splat', handleServe);
+router.get('/serve/:token/:splat{.+}', handleServe);
 
 export default router;

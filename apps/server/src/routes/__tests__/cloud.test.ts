@@ -1,8 +1,16 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import express from 'express';
 import request from '@dorkos/test-utils/supertest';
 import { listeningServer } from '@dorkos/test-utils/listening-server';
 import { logger } from '../../lib/logger.js';
+import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
+
+// The session gate lets every request through: these cases are about the
+// routes' own bars, and the one that turns login on asks what an API key, or
+// nothing at all, is told past the gate.
+vi.mock('../../services/core/auth/session-gate.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../services/core/auth/session-gate.js')>()),
+  decideSessionGate: vi.fn(async () => ({ allowed: true })),
+}));
 
 // Mock the cloud-link manager accessor — the route is thin over it, so the
 // route test only proves wiring + response shapes, not the flow (covered by
@@ -85,14 +93,10 @@ import cloudRouter from '../cloud.js';
 
 const manager = mockManager;
 
-const app = express();
-app.use(express.json());
-app.use('/api/cloud', cloudRouter);
-
 // ONE listener for the whole file, reused by every request — the DOR-458
 // listener-churn pattern, closed here per DOR-545. See listeningServer's own
 // doc for why a per-request listener flakes under a full-suite run.
-const server = listeningServer(app);
+const server = listeningServer(honoGroupListener({ path: '/api/cloud', routes: cloudRouter }));
 
 describe('cloud routes', () => {
   beforeEach(() => {

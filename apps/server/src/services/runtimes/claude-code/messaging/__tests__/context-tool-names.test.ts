@@ -494,9 +494,21 @@ describe('the claude-code prompt names tools the way the runtime exposes them', 
     // 121 -> 124 for `chat_send`, `chat_read` and `chat_stop` (spec
     // `spin-off-chats` §1); 124 -> 118 (§7): the six relay send, inbox and
     // endpoint tools retire. `<chat_tools>` names the three chat tools prefixed.
+    // 118 -> 121 for the three commitment tools (spec `heartbeats` §12): no
+    // prompt block names them, so they stay deferred and unprefixed.
+    // 121 -> 125 for `audit_query`, `audit_get`, `account_timeline` and
+    // `transcript_read` (spec `audit-trail` PR4): no prompt block names them,
+    // so they stay deferred and unprefixed.
+    // 125 -> 128 for `pause_agent`, `resume_agent` and `list_paused_agents`
+    // (spec `audit-trail` PR5): no prompt block names them, so they stay
+    // deferred and unprefixed.
+    // 128 -> 129 for `end_beat` (spec `heartbeats` §8): only the beat prompt
+    // names it, as a searchable ending, so it stays deferred and unprefixed.
+    // 129 -> 130 for `heartbeat_status` (spec `heartbeats` §10 PR 6): no prompt
+    // block names it, so it stays deferred and unprefixed.
     // The full registry includes the imported MCP sign-in capability spread:
     // mcp_signin and mcp_poll_signin remain searchable, alongside end_beat.
-    expect(advertised.size).toBe(134);
+    expect(advertised.size).toBe(135);
     expect(advertised.has('mcp_set_client')).toBe(false);
     for (const name of [
       'mcp_signin',
@@ -513,6 +525,7 @@ describe('the claude-code prompt names tools the way the runtime exposes them', 
       'issue_doc_token',
       'revoke_doc_token',
       'canvas_set_checkbox',
+      'heartbeat_status',
     ])
       expect(advertised.has(name)).toBe(true);
     expect(advertised.has('react_to_room_entry')).toBe(true);
@@ -1014,6 +1027,7 @@ describe('the claude-code prompt names tools the way the runtime exposes them', 
       'using-the-agent-browser',
       'using-the-marketplace',
       'working-in-room-repos',
+      'working-on-a-heartbeat',
       'working-with-spin-off-chats',
     ]);
 

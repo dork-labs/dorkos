@@ -17,6 +17,7 @@ import { useCommunityWatchers } from './app/use-community-watchers';
 import { TitlebarDragStrip } from './app/TitlebarDragStrip';
 import { SidebarBodyErrorBoundary } from './app/SidebarBodyErrorBoundary';
 import { ServerUnreachableScreen } from './app/ServerUnreachableScreen';
+import { FIRST_RUN_SLOTS } from './app/first-run-slots';
 import { ServerErrorScreen } from './app/ServerErrorScreen';
 import { latestFailure, refetchUntilAnsweredThisLaunch } from './app/config-failure-memory';
 import {
@@ -69,7 +70,6 @@ import {
   useClearOnboardingStageWhenDone,
   OnboardingFlow,
 } from '@/layers/features/onboarding';
-import { renderRuntimeConnect } from '@/layers/features/runtime-connect';
 import {
   BarFixedCluster,
   OneBarProvider,
@@ -619,10 +619,7 @@ export function AppShell() {
               transition={{ duration: 0.2 }}
               className="fixed inset-0 z-50"
             >
-              <OnboardingFlow
-                onComplete={handleOnboardingComplete}
-                renderRuntimeConnect={renderRuntimeConnect}
-              />
+              <OnboardingFlow onComplete={handleOnboardingComplete} slots={FIRST_RUN_SLOTS} />
             </motion.div>
           ) : (
             <motion.div

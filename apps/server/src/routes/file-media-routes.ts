@@ -7,7 +7,7 @@ import { RawFileQuerySchema } from '@dorkos/shared/schemas';
 import {
   MEDIA_CONTENT_TYPES,
   resolveWithinCwd,
-  sendPathError,
+  pathErrorReply,
   parseByteRange,
 } from '../lib/file-route-guards.js';
 import { logger } from '../lib/logger.js';
@@ -45,7 +45,11 @@ export function installFileMediaRoutes(router: Router): void {
     try {
       ({ resolved } = await resolveWithinCwd(cwd, relPath));
     } catch (err) {
-      if (sendPathError(res, err)) return;
+      const refusal = pathErrorReply(err);
+      if (refusal) {
+        res.status(refusal.status).json(refusal.body);
+        return;
+      }
       logger.error('[files] GET /raw boundary failed', { err, cwd, path: relPath });
       return res.status(500).json({ error: 'Internal server error' });
     }

@@ -9,13 +9,21 @@
  * graph to assert a `Content-Type` header.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import express from 'express';
 import request from '@dorkos/test-utils/supertest';
 import { listeningServer } from '@dorkos/test-utils/listening-server';
 import { mkdir, mkdtemp, rm, stat, utimes, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { captureUncaughtExceptions } from './uncaught-exceptions.js';
+
+// The `/api` chain the route answers behind reads config (host guard, session
+// gate); nothing here is about either.
+vi.mock('../../services/core/config-manager.js', () => ({
+  configManager: { get: vi.fn().mockReturnValue(null), set: vi.fn() },
+}));
+import { Hono } from 'hono';
+import type { ApiEnv } from '../../http/api-chain.js';
+import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
 import { sessionAttachmentHandler } from '../session-attachments-handler.js';
 import {
   LocalSessionAttachmentStore,
@@ -50,9 +58,8 @@ vi.mock('fs/promises', async (importOriginal) => {
 const SESSION = '11111111-2222-4333-8444-555555555555';
 const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 
-const app = express();
-app.get('/api/sessions/:id/attachments/:file', sessionAttachmentHandler);
-const testServer = listeningServer(app);
+const routes = new Hono<ApiEnv>().get('/:id/attachments/:file', sessionAttachmentHandler);
+const testServer = listeningServer(honoGroupListener({ path: '/api/sessions', routes }));
 
 describe('GET /api/sessions/:id/attachments/:file', () => {
   let dorkHome: string;

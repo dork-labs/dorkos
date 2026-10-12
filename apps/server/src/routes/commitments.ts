@@ -14,14 +14,19 @@
  *
  * @module routes/commitments
  */
-import { Router, type Request, type Response } from 'express';
+import { Hono, type Context } from 'hono';
+import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import {
   CreateCommitmentRequestSchema,
   ListCommitmentsQuerySchema,
   UpdateCommitmentRequestSchema,
 } from '@dorkos/shared/commitment-schemas';
-import { getRequestAgentIdentity, presentsAgentIdentity } from '../middleware/agent-identity.js';
-import { parseBody, sendError } from '../lib/route-utils.js';
+import { presentsAgentIdentity } from '../middleware/agent-identity.js';
+import { errorBody, validationFailureBody } from '../lib/route-utils.js';
+import type { ApiEnv } from '../http/api-chain.js';
+import { readJsonBody } from '../http/request-body.js';
+import { honoRequestFacts, type RequestFacts } from '../http/request-facts.js';
+import { readQuery } from '../http/request-query.js';
 import {
   CommitmentError,
   type CommitmentActor,
@@ -50,14 +55,13 @@ export interface CommitmentRouterDeps {
    * sees which chat a promise was made in (`sourceSessionId`): chats are
    * owner-only everywhere else too.
    *
-   * @param req - The request.
-   * @param res - The response, carrying the resolved caller.
+   * @param facts - The request's facts, carrying the resolved caller.
    */
-  isOwner(req: Request, res: Response): boolean;
+  isOwner(facts: RequestFacts): boolean;
 }
 
 /** The HTTP status for each refusal. */
-const STATUS: Record<CommitmentErrorCode, number> = {
+const STATUS: Record<CommitmentErrorCode, ContentfulStatusCode> = {
   NOT_FOUND: 404,
   NOT_YOURS: 403,
   NOTHING_TO_CHANGE: 400,
@@ -68,9 +72,9 @@ const STATUS: Record<CommitmentErrorCode, number> = {
 };
 
 /** Answer a {@link CommitmentError} with its status, or rethrow. */
-function sendRefusal(res: Response, err: unknown): void {
+function refusal(c: Context<ApiEnv>, err: unknown): Response {
   if (!(err instanceof CommitmentError)) throw err;
-  sendError(res, STATUS[err.code], err.message, err.code);
+  return c.json(errorBody(err.message, err.code), STATUS[err.code]);
 }
 
 /** The refusal for a person who is not this install's owner. */
@@ -81,56 +85,60 @@ const NOT_YOUR_AGENT = 'Only the owner of this agent can change its commitments.
  * person. A machine whose identity did not verify is never read as a person,
  * and a person must own the agent: every agent on this install belongs to its
  * owner (the team roster's `ownerId` rule), so that is the owner bar.
+ *
+ * @returns The actor, or the refusal to answer with.
  */
 function actorOf(
-  req: Request,
-  res: Response,
+  c: Context<ApiEnv>,
   deps: CommitmentRouterDeps
-): CommitmentActor | undefined {
-  const identity = getRequestAgentIdentity(res);
+): { actor: CommitmentActor } | { refused: Response } {
+  const facts = honoRequestFacts(c);
+  const identity = facts.agentIdentity;
   if (identity && !identity.inactive) {
     const agentId = deps.agentIdForPath(identity.agentPath);
-    if (agentId) return { kind: 'agent', agentId };
+    if (agentId) return { actor: { kind: 'agent', agentId } };
   }
-  if (presentsAgentIdentity(req, res)) {
-    sendError(res, 403, 'This agent could not be identified, so nothing changed.', 'NO_AGENT');
-    return undefined;
+  if (presentsAgentIdentity(facts)) {
+    return {
+      refused: c.json(
+        errorBody('This agent could not be identified, so nothing changed.', 'NO_AGENT'),
+        403
+      ),
+    };
   }
-  if (!deps.isOwner(req, res)) {
-    sendError(res, 403, NOT_YOUR_AGENT, 'NOT_YOURS');
-    return undefined;
-  }
-  return { kind: 'person' };
+  if (!deps.isOwner(facts)) return { refused: c.json(errorBody(NOT_YOUR_AGENT, 'NOT_YOURS'), 403) };
+  return { actor: { kind: 'person' } };
 }
 
 /**
- * The router for `/api/commitments`: list and change.
+ * The routes for `/api/commitments`: list and change.
  *
  * @param deps - The service and the Mesh lookups.
+ * @returns The routes, to mount at `/api/commitments`.
  */
-export function createCommitmentsRouter(deps: CommitmentRouterDeps): Router {
-  const router = Router();
+export function createCommitmentsRoutes(deps: CommitmentRouterDeps): Hono<ApiEnv> {
+  const router = new Hono<ApiEnv>();
 
-  router.get('/', (req, res) => {
-    const query = parseBody(ListCommitmentsQuerySchema, req.query, res);
-    if (!query) return;
-    const { limit, ...filter } = query;
+  router.get('/', (c) => {
+    const query = ListCommitmentsQuerySchema.safeParse(readQuery(c));
+    if (!query.success) return c.json(validationFailureBody(query.error), 400);
+    const { limit, ...filter } = query.data;
     const list = deps.service.list(filter, limit);
-    const owner = deps.isOwner(req, res);
-    return res.json({
-      commitments: owner ? list : list.map((c) => ({ ...c, sourceSessionId: null })),
+    const owner = deps.isOwner(honoRequestFacts(c));
+    return c.json({
+      commitments: owner ? list : list.map((item) => ({ ...item, sourceSessionId: null })),
     });
   });
 
-  router.patch('/:id', (req, res) => {
-    const body = parseBody(UpdateCommitmentRequestSchema, req.body ?? {}, res);
-    if (!body) return;
-    const actor = actorOf(req, res, deps);
-    if (!actor) return;
+  router.patch('/:id', (c) => {
+    const body = UpdateCommitmentRequestSchema.safeParse(readJsonBody(c, { emptyAs: {} }));
+    if (!body.success) return c.json(validationFailureBody(body.error), 400);
+    const caller = actorOf(c, deps);
+    if ('refused' in caller) return caller.refused;
     try {
-      return res.json(deps.service.update(actor, req.params.id, body));
+      return c.json(deps.service.update(caller.actor, c.req.param('id'), body.data));
     } catch (err) {
-      return sendRefusal(res, err);
+      return refusal(c, err);
     }
   });
 
@@ -138,34 +146,35 @@ export function createCommitmentsRouter(deps: CommitmentRouterDeps): Router {
 }
 
 /**
- * The router for `/api/agents/:id/commitments`: a person adds a promise for an
- * agent. Mounted before the agents router so this path is answered here.
+ * The routes for `/api/agents/:id/commitments`: a person adds a promise for an
+ * agent. The agents group registers nothing on this path, so it is answered here.
  *
  * @param deps - The service and the Mesh lookups.
+ * @returns The routes, to mount at `/api/agents/:id/commitments`.
  */
-export function createAgentCommitmentsRouter(deps: CommitmentRouterDeps): Router {
-  const router = Router({ mergeParams: true });
+export function createAgentCommitmentsRoutes(deps: CommitmentRouterDeps): Hono<ApiEnv> {
+  const router = new Hono<ApiEnv>();
 
-  router.post('/', (req: Request<{ id: string }>, res) => {
-    if (presentsAgentIdentity(req, res)) {
-      return sendError(
-        res,
-        403,
-        'Agents record their own promises with commitment_add.',
-        'NOT_A_PERSON'
+  router.post('/', (c) => {
+    const facts = honoRequestFacts(c);
+    if (presentsAgentIdentity(facts)) {
+      return c.json(
+        errorBody('Agents record their own promises with commitment_add.', 'NOT_A_PERSON'),
+        403
       );
     }
-    if (!deps.isOwner(req, res)) return sendError(res, 403, NOT_YOUR_AGENT, 'NOT_YOURS');
-    const body = parseBody(CreateCommitmentRequestSchema, req.body ?? {}, res);
-    if (!body) return;
-    const agentId = req.params.id;
+    if (!deps.isOwner(facts)) return c.json(errorBody(NOT_YOUR_AGENT, 'NOT_YOURS'), 403);
+    const body = CreateCommitmentRequestSchema.safeParse(readJsonBody(c, { emptyAs: {} }));
+    if (!body.success) return c.json(validationFailureBody(body.error), 400);
+    // Mounted under `/api/agents/:id/commitments`: the parent path's parameter.
+    const agentId = c.req.param('id') as string;
     if (!deps.agentExists(agentId)) {
-      return sendError(res, 404, 'No agent on the team has that id.', 'UNKNOWN_AGENT');
+      return c.json(errorBody('No agent on the team has that id.', 'UNKNOWN_AGENT'), 404);
     }
     try {
-      return res.status(201).json(deps.service.create(agentId, body));
+      return c.json(deps.service.create(agentId, body.data), 201);
     } catch (err) {
-      return sendRefusal(res, err);
+      return refusal(c, err);
     }
   });
 

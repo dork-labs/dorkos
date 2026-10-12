@@ -310,7 +310,7 @@
     "doe-model-setup": {
       "relatedCode": [
         "apps/client/src/layers/features/runtime-connect/ui/DoeInferenceForm.tsx",
-        "apps/server/src/services/runtimes/connect/doe-setup-router.ts"
+        "apps/server/src/routes/runtimes-doe-setup.ts"
       ],
       "explorationNotes": [
         "Uses the real runtime registry and isolated test home. Saves credential-free loopback metadata without sending a model request.",

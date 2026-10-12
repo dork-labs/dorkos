@@ -64,6 +64,7 @@ bill, so it is worth knowing which is which:
 | `connector`    | connector routing, quarantined                                  | yes, credentialed                   |
 | `experimental` | cases kept out of `core` by a known harness gap                 | yes, credentialed                   |
 | `chat`         | the same six chat cases, on whichever runtime you point them at | yes, and NOT on a Claude plan       |
+| `heartbeat`    | four seeded beat situations: the right move and the right rung  | yes, credentialed                   |
 | `all`          | everything registered                                           | yes                                 |
 
 ### The `chat` suite, and runs that pay somebody else
@@ -244,6 +245,23 @@ stream; `oracles/rooms.ts` answers "was a turn triggered for agent X"; a case
 carries a `roomScript` instead of a prompt. Seed agents by writing their
 manifests into `<DORK_HOME>/agents/<slug>/` (`suite/rooms-setup.ts`) — the same
 seeding works on both tiers, because both servers adopt an agents home at boot.
+
+### The `heartbeat` suite (proactive agents, DOR-2788)
+
+Four credentialed, quarantined cases in `src/suite/heartbeat.ts`, the seeded
+situations from `meta/PROACTIVE-AGENTS.md` §6.3: nothing changed, an overdue
+invoice reminder the agent owns, a question addressed to someone else, and a
+late-night finding that can wait. Each sends the real beat prompt (the server's
+`buildBeatPrompt`) and reads the agent's first `end_beat` call: did it end the
+beat, stay quiet when nothing was its to say, and keep anything it raised
+non-urgent and inside the app? A sandbox turn is not a registered beat, so the
+server refuses that call; the oracles read the call itself and ignore what the
+model does after the refusal. None of them is in `core`, so they spend only when
+you ask for them:
+
+```bash
+pnpm evals -- --suite heartbeat --tier claude-code-cheap
+```
 
 ### The `memory` suite (agent memory, DOR-632)
 

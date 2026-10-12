@@ -73,10 +73,15 @@ function signed() {
   };
 }
 function boot(admission = new MainRequestAdmission()) {
-  const app = createApp({ admission, connectorEventIngress: { verifier: () => verifier, accept } });
-  // Routed as the running server routes: Better Auth answers from the Hono
-  // `/api` app, everything else from Express behind the front door.
-  target.mount(composedListener(app, admission));
+  const app = createApp({ admission });
+  // Routed as the running server routes: Better Auth and the signed connector
+  // webhook answer from the Hono `/api` app, everything else from Express
+  // behind the front door.
+  target.mount(
+    composedListener(app, admission, {
+      connectorEventIngress: { verifier: () => verifier, accept },
+    })
+  );
   return { admission, app };
 }
 function deferred<T>() {
@@ -125,7 +130,7 @@ function mountPaths() {
   const paths = new Set<string>();
   // Every file that mounts routes: the Express app, the composition root and
   // the startup modules split out of it (DOR-2821), and the groups that moved
-  // to the Hono `/api` app.
+  // to the Hono `/api` app, the signed connector webhook among them.
   const startupModules = readdirSync(new URL('../startup/', import.meta.url))
     .filter((name) => name.endsWith('.ts'))
     .map((name) => `../startup/${name}`);
@@ -135,6 +140,7 @@ function mountPaths() {
     ...startupModules,
     '../http/better-auth.ts',
     '../http/hono-api.ts',
+    '../services/connectors/events/signed-ingress.ts',
   ]) {
     const source = ts.createSourceFile(
       filename,
@@ -245,7 +251,7 @@ describe('main HTTP admission through the real app', () => {
     expect(mounts).toContain('/api/projects');
     expect(mounts).toContain('/api/auth/admission-fixture');
     expect(mounts).toContain('/api/connectors/webhooks/admission-fixture');
-    expect(mounts).toContain('/api/relay/webhooks/admission-fixture');
+    expect(mounts).toContain('/api/relay');
     expect(mounts).toContain('/api/canvas/docs');
     expect(mounts).toContain('/api/canvas/token/docs');
     expect(mounts).toContain('/api/audit');
@@ -261,8 +267,37 @@ describe('main HTTP admission through the real app', () => {
     // so their two paths are asked for by hand below too.
     // 70 -> 71: `/api/onboarding`, the first-run routes (spec `one-minute-onboarding` §4).
     expect(mounts).toContain('/api/onboarding');
-    expect(mounts).toHaveLength(71);
-    const byHand = ['/', '/x/fixture', '/assets/fixture.js', '/api/openapi.json', '/api/docs'];
+    // 71 -> 70: the connector groups are one `/api/connectors` mount on Hono
+    // (`routes/connectors.ts`), so `/api/connectors/providers` is asked for by
+    // hand below.
+    expect(mounts).toContain('/api/connectors');
+    // 70 -> 71: the mock OAuth MCP server is one `/` mount on Hono
+    // (`http/hono-api.ts`), where it used to be a path-less Express `use`.
+    // 71 -> 68: the A2A gateway's two card paths and its `/a2a` mount join that
+    // same `/` mount on Hono (`routes/a2a.ts`, DOR-2809), so they are asked for
+    // by hand below.
+    expect(mounts).toContain('/');
+    // 68 -> 67: the signed Relay webhook is no longer its own Express parser
+    // mount; it is a route of the `/api/relay` group on Hono, whose raw bytes
+    // a body rule keeps (`routes/relay-webhooks.ts`), so it is asked for by
+    // hand below.
+    // 67 -> 69: the two space groups' gates are `use` mounts of their own on
+    // Hono (`/api/community-connections/*`, `/api/communities/*`), beside the
+    // groups' `route` mounts (DOR-2815).
+    expect(mounts).toContain('/api/communities/admission-fixture');
+    expect(mounts).toHaveLength(69);
+    const byHand = [
+      '/',
+      '/x/fixture',
+      '/assets/fixture.js',
+      '/api/openapi.json',
+      '/api/docs',
+      '/api/connectors/providers',
+      '/.well-known/agent-card.json',
+      '/.well-known/agent.json',
+      '/a2a',
+      '/api/relay/webhooks/admission-fixture',
+    ];
     for (const mount of [...mounts, ...byHand, '/unknown']) {
       expectTerminal(
         await request(target.server).get(mount).set('Origin', 'https://untrusted.example')

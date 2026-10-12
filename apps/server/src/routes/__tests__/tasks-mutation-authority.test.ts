@@ -17,7 +17,6 @@
  * @module routes/__tests__/tasks-mutation-authority
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import express from 'express';
 import request from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
 import { createTestDb } from '@dorkos/test-utils/db';
@@ -26,6 +25,14 @@ import type { Task } from '@dorkos/shared/schemas';
 
 /** Mutable posture the mocked config manager reports. */
 const state = vi.hoisted(() => ({ authEnabled: false }));
+
+// The session gate lets every request through: these cases are about the
+// route's own bars, and each one sets the user the gate would have proved
+// (`before` below), as the Express version stubbed `res.locals.user`.
+vi.mock('../../services/core/auth/session-gate.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../services/core/auth/session-gate.js')>()),
+  decideSessionGate: vi.fn(async () => ({ allowed: true })),
+}));
 
 vi.mock('../../services/core/config-manager.js', () => ({
   configManager: {
@@ -37,7 +44,8 @@ vi.mock('../../lib/boundary.js', () => ({
   isWithinBoundary: vi.fn().mockResolvedValue(true),
 }));
 
-import { createTasksRouter } from '../tasks.js';
+import { createTasksRoutes } from '../tasks.js';
+import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
 import { TaskRegistrar } from '../../services/tasks/task-registrar.js';
 import { TaskStore } from '../../services/tasks/task-store.js';
 import type { TaskSchedulerService } from '../../services/tasks/task-scheduler-service.js';
@@ -62,7 +70,6 @@ function createMockScheduler(): TaskSchedulerService {
 }
 
 describe('Task mutation authority — DELETE and cancel (DOR-1574)', () => {
-  let app: express.Application;
   let store: TaskStore;
   let db: Db;
   let schedule: Task;
@@ -85,18 +92,26 @@ describe('Task mutation authority — DELETE and cancel (DOR-1574)', () => {
     });
     runId = store.createRun(schedule.id, 'scheduled').id;
 
-    app = express();
-    app.use(express.json());
-    app.use((_req, res, next) => {
-      if (signedInUser) res.locals.user = signedInUser;
-      next();
-    });
-    app.use(
-      '/api/tasks',
-      createTasksRouter(store, scheduler, new TaskRegistrar({ store, scheduler }), '/tmp/dork-test')
+    fixtureTarget.mount(
+      honoGroupListener(
+        {
+          path: '/api/tasks',
+          routes: createTasksRoutes({
+            store,
+            scheduler,
+            registrar: new TaskRegistrar({ store, scheduler }),
+            dorkHome: '/tmp/dork-test',
+          }),
+        },
+        {
+          // Stands in for what the session gate and the agent-identity step resolved.
+          before: (c, next) => {
+            if (signedInUser) c.set('user', signedInUser);
+            return next();
+          },
+        }
+      )
     );
-
-    fixtureTarget.mount(app);
   });
 
   afterEach(() => {

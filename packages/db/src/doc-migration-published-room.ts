@@ -15,6 +15,7 @@ import {
   remoteCommandJournal,
   heartbeatReportItems,
   remoteEventRefusals,
+  heartbeatOutboxDeliveredAt,
   previousConsolidatedDoc,
   reviewedPublishedSql,
   agentReports,
@@ -49,6 +50,7 @@ export function bridgePublishedRoomMigration(ownerKey: object): boolean {
     remoteCommandJournal,
     heartbeatReportItems,
     remoteEventRefusals,
+    heartbeatOutboxDeliveredAt,
   ];
   const canonical = new Map(
     journal.entries.slice(150).map((entry) => [
@@ -167,8 +169,8 @@ export function bridgePublishedRoomMigration(ownerKey: object): boolean {
     (entry) => entry.hash === original.hash && entry.when === original.created_at
   )!;
   if (
-    consolidatedDoc.idx !== remoteEventRefusals.idx + 1 ||
-    consolidatedDoc.when <= remoteEventRefusals.when ||
+    consolidatedDoc.idx !== heartbeatOutboxDeliveredAt.idx + 1 ||
+    consolidatedDoc.when <= heartbeatOutboxDeliveredAt.when ||
     consolidatedDoc.when <= publishedRoom152.when
   )
     refuse('new Doc migration does not follow all shipped Main and published Room watermarks');
@@ -336,7 +338,7 @@ export function bridgePublishedRoomMigration(ownerKey: object): boolean {
   return true;
 }
 
-/** Preserve genuine Doc157 completion while atomically installing only missing Main157/158. */
+/** Preserve genuine Doc157 completion while atomically installing only missing Main157/158/159. */
 export function bridgePreviousConsolidatedDoc(ownerKey: object): boolean {
   const { db, folder, rows } = requirePublishedMigrationOwner(ownerKey);
   const old = rows.filter((row) => row.hash === previousConsolidatedDoc.hash);
@@ -412,11 +414,11 @@ export function bridgePreviousConsolidatedDoc(ownerKey: object): boolean {
   }
   for (const entry of published) allow(entry.hash, entry.when);
   allow(previousConsolidatedDoc.hash, previousConsolidatedDoc.when);
-  const missingMain = [heartbeatReportItems, remoteEventRefusals];
+  const missingMain = [heartbeatReportItems, remoteEventRefusals, heartbeatOutboxDeliveredAt];
   const sql = missingMain.map((entry) => reviewedSql(folder, entry));
   reviewedSql(folder, consolidatedDoc);
-  if (consolidatedDoc.idx !== 159 || consolidatedDoc.when <= previousConsolidatedDoc.when)
-    refuse('new consolidated Doc159 identity does not follow original Doc157');
+  if (consolidatedDoc.idx !== 160 || consolidatedDoc.when <= previousConsolidatedDoc.when)
+    refuse('new consolidated Doc160 identity does not follow original Doc157');
   const matches = missingMain.map((entry) => rows.filter((row) => row.hash === entry.hash));
   let gap = false,
     precedingIdentity = original.rowIdentity;
@@ -457,7 +459,7 @@ export function bridgePreviousConsolidatedDoc(ownerKey: object): boolean {
       matches.some((matching) => matching.length !== 1) ||
       completed[0]!.rowIdentity <= precedingIdentity
     )
-      refuse('previous consolidated Doc157 has forged Doc159 completion');
+      refuse('previous consolidated Doc157 has forged Doc160 completion');
     return false; // Existing canonical/future-prefix validation still owns every reopen.
   }
   const futureHashes = journal.entries.slice(consolidatedDoc.idx + 1).map((entry) =>
@@ -467,10 +469,13 @@ export function bridgePreviousConsolidatedDoc(ownerKey: object): boolean {
   );
   if (
     rows.some(
-      (row) => row.created_at > previousConsolidatedDoc.when || futureHashes.includes(row.hash)
+      (row) =>
+        (row.created_at > previousConsolidatedDoc.when &&
+          !missingMain.some((entry) => row.hash === entry.hash && row.created_at === entry.when)) ||
+        futureHashes.includes(row.hash)
     )
   )
-    refuse('future migration precedes Doc159 completion');
+    refuse('future migration precedes Doc160 completion');
   db.$client.transaction(() => {
     verifyCanonicalSchema(
       db,

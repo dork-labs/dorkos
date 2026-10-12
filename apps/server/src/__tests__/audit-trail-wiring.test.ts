@@ -21,9 +21,8 @@ describe('audit trail startup wiring', () => {
   });
 
   it('serves /api/audit and registers the audit capabilities with the same log', () => {
-    expect(source).toContain(
-      "app.use('/api/audit', createAuditRouter({ log: auditLog, accounts: auditAccounts }));"
-    );
+    // Served from the Hono `/api` app (`http/hono-api.ts`), which reads this.
+    expect(source).toContain('deps.audit = { log: auditLog, accounts: auditAccounts };');
     expect(source).toContain(
       'auditDeps: auditCapabilityDeps(auditLog, auditAccounts, runtimeRegistry),'
     );
@@ -40,7 +39,9 @@ describe('audit trail startup wiring', () => {
     const gate = app.indexOf('app.use(sessionGate);');
     const identity = app.indexOf('app.use(resolveAgentIdentity);');
     const scope = app.indexOf('app.use(auditActor);');
-    const firstRoute = app.indexOf("app.use('/api/sessions'");
+    // Every route group answers from Hono now; what Express still serves after
+    // the scope is the `/api` catch-all, and whatever index.ts mounts later.
+    const firstRoute = app.indexOf("app.use('/api', (_req, res) =>");
     expect(gate).toBeGreaterThan(-1);
     expect(identity).toBeGreaterThan(gate);
     expect(scope).toBeGreaterThan(identity);

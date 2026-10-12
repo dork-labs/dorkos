@@ -11,6 +11,7 @@ import {
   previousConsolidatedDoc,
   heartbeatReportItems,
   remoteEventRefusals,
+  heartbeatOutboxDeliveredAt,
 } from '../doc-migration-identities.js';
 import { createDb, runMigrations } from '../index.js';
 import { bridgeLegacyDocMigrationHistory } from '../doc-migration-history.js';
@@ -19,7 +20,7 @@ const folder = fileURLToPath(new URL('../../drizzle/', import.meta.url));
 const timestamp = '2026-10-09T19:00:00.000Z';
 
 describe('Doc Room upgrade from populated shipped main', () => {
-  it.each([148, 149, 150, 154, 155, 156, 157, 158])(
+  it.each([148, 149, 150, 154, 155, 156, 157, 158, 159])(
     'preserves Main%d rows with foreign keys enforced and no invented custody',
     (idx) => {
       const temporary = mkdtempSync(path.join(os.tmpdir(), 'dorkos-room-upgrade-'));
@@ -29,12 +30,12 @@ describe('Doc Room upgrade from populated shipped main', () => {
         const journal = JSON.parse(readFileSync(path.join(folder, 'meta/_journal.json'), 'utf8'));
         const finalEntry = journal.entries.at(-1);
         expect(finalEntry).toMatchObject({
-          idx: 159,
+          idx: 160,
           when: 1791744308484,
           tag: '20261011184508_tearful_killer_shrike',
         });
         const finalHistoryLength = journal.entries.length;
-        expect(finalHistoryLength).toBe(160);
+        expect(finalHistoryLength).toBe(161);
         journal.entries = journal.entries.filter((entry: { idx: number }) => entry.idx <= idx);
         writeFileSync(path.join(temporary, 'meta/_journal.json'), JSON.stringify(journal));
         for (const entry of journal.entries)
@@ -121,7 +122,20 @@ describe('Doc Room upgrade from populated shipped main', () => {
             updated_at: timestamp,
           });
         if (idx >= 155) seedIncomingMainData(db, idx >= 156 ? 156 : 155);
-        if (idx >= 157) seedIncomingMain158Data(db, idx === 158 ? 158 : 157);
+        if (idx >= 157) seedIncomingMain158Data(db, idx >= 158 ? 158 : 157);
+        if (idx >= 158) {
+          db.$client
+            .prepare(
+              "UPDATE heartbeat_outbox SET state='delivered', closed_at=? WHERE id='kept-heartbeat-outbox'"
+            )
+            .run(timestamp);
+          if (idx === 159)
+            db.$client
+              .prepare(
+                "UPDATE heartbeat_outbox SET delivered_at=? WHERE id='kept-heartbeat-outbox'"
+              )
+              .run(timestamp);
+        }
         const durable = idx >= 155 ? incomingMainData(db, idx >= 156 ? 156 : 155) : [];
         const reports =
           idx >= 157
@@ -144,12 +158,18 @@ describe('Doc Room upgrade from populated shipped main', () => {
           .all();
         runMigrations(db);
         expectIncomingMainDataPreserved(db, durable);
+        if (idx >= 155)
+          expect(
+            db.$client
+              .prepare("SELECT delivered_at FROM heartbeat_outbox WHERE id='kept-heartbeat-outbox'")
+              .get()
+          ).toEqual({ delivered_at: idx >= 158 ? timestamp : null });
         expect(
           db.$client.prepare('SELECT * FROM heartbeat_report_items ORDER BY id').all()
         ).toEqual(reports);
         if (idx >= 156)
           expect(db.$client.prepare('SELECT refusals FROM remote_event_outbox').all()).toEqual([
-            { refusals: idx === 158 ? 7 : 0 },
+            { refusals: idx >= 158 ? 7 : 0 },
           ]);
         for (const { table, rows } of before) {
           const after = db.$client.prepare(`SELECT * FROM ${table}`).all() as Record<
@@ -399,7 +419,7 @@ function expectIncomingMainDataPreserved(
 }
 
 /** Create a real on-disk old Doc157 database from original SQL, with immediate owned cleanup. */
-function original157File(recordedMain: 0 | 1 | 2 = 0) {
+function original157File(recordedMain: 0 | 1 | 2 | 3 = 0) {
   const root = mkdtempSync(path.join(os.tmpdir(), 'dorkos-original157-file-'));
   let db: ReturnType<typeof createDb> | undefined;
   try {
@@ -432,7 +452,11 @@ function original157File(recordedMain: 0 | 1 | 2 = 0) {
     // Real historical bridge partial state: execute only exact authentic incoming SQL
     // and its ledger INSERT in the same native transaction, retaining old157 unchanged.
     db.$client.transaction(() => {
-      for (const entry of [heartbeatReportItems, remoteEventRefusals].slice(0, recordedMain)) {
+      for (const entry of [
+        heartbeatReportItems,
+        remoteEventRefusals,
+        heartbeatOutboxDeliveredAt,
+      ].slice(0, recordedMain)) {
         const sql = readFileSync(path.join(folder, `${entry.tag}.sql`), 'utf8');
         expect(createHash('sha256').update(sql).digest('hex')).toBe(entry.hash);
         for (const statement of sql.split('--> statement-breakpoint'))
@@ -442,7 +466,7 @@ function original157File(recordedMain: 0 | 1 | 2 = 0) {
           .run(entry.hash, entry.when);
       }
     })();
-    if (recordedMain >= 1) seedIncomingMain158Data(db, recordedMain === 2 ? 158 : 157);
+    if (recordedMain >= 1) seedIncomingMain158Data(db, recordedMain >= 2 ? 158 : 157);
     return { root, filename, db };
   } catch (cause) {
     try {
@@ -497,8 +521,8 @@ function seedIncomingMain158Data(db: ReturnType<typeof createDb>, through: 157 |
   if (through === 158) db.$client.prepare('UPDATE remote_event_outbox SET refusals=7').run();
 }
 
-describe('authentic original Doc157 to Doc159 bridge', () => {
-  it.each([1, 2] as const)(
+describe('authentic original Doc157 to Doc160 bridge', () => {
+  it.each([1, 2, 3] as const)(
     'retains authentic partially applied %d Main steps and their populated FILE rows',
     (recorded) => {
       const h = original157File(recorded);
@@ -514,14 +538,9 @@ describe('authentic original Doc157 to Doc159 bridge', () => {
           completedSchema = original157Schema(h.db);
         expect(after.slice(0, before.length)).toEqual(before);
         expect(after.slice(before.length)).toEqual([
-          ...(recorded === 1
-            ? [
-                expect.objectContaining({
-                  hash: remoteEventRefusals.hash,
-                  created_at: remoteEventRefusals.when,
-                }),
-              ]
-            : []),
+          ...[heartbeatReportItems, remoteEventRefusals, heartbeatOutboxDeliveredAt]
+            .slice(recorded)
+            .map((entry) => expect.objectContaining({ hash: entry.hash, created_at: entry.when })),
           expect.objectContaining({ hash: consolidatedDoc.hash, created_at: consolidatedDoc.when }),
         ]);
         expect(
@@ -529,7 +548,7 @@ describe('authentic original Doc157 to Doc159 bridge', () => {
         ).toEqual(reports);
         expectIncomingMainDataPreserved(h.db, data);
         expect(h.db.$client.prepare('SELECT refusals FROM remote_event_outbox').all()).toEqual([
-          { refusals: recorded === 2 ? 7 : 0 },
+          { refusals: recorded >= 2 ? 7 : 0 },
         ]);
         for (let reopen = 0; reopen < 2; reopen++) {
           h.db.$client.close();
@@ -571,6 +590,10 @@ describe('authentic original Doc157 to Doc159 bridge', () => {
           hash: remoteEventRefusals.hash,
           created_at: remoteEventRefusals.when,
         }),
+        expect.objectContaining({
+          hash: heartbeatOutboxDeliveredAt.hash,
+          created_at: heartbeatOutboxDeliveredAt.when,
+        }),
         expect.objectContaining({ hash: consolidatedDoc.hash, created_at: consolidatedDoc.when }),
       ]);
       expectIncomingMainDataPreserved(h.db, data);
@@ -590,7 +613,7 @@ describe('authentic original Doc157 to Doc159 bridge', () => {
     }
   });
 
-  it.each(['first-main', 'second-main', 'completion'] as const)(
+  it.each(['first-main', 'second-main', 'third-main', 'completion'] as const)(
     'rolls back actual missing SQL, ledger and populated data on %s failure, then resumes',
     (stage) => {
       const h = original157File();
@@ -605,7 +628,8 @@ describe('authentic original Doc157 to Doc159 bridge', () => {
         const spy = vi.spyOn(h.db.$client, 'exec').mockImplementation((sql) => {
           if (
             (stage === 'first-main' && sql.includes('CREATE TABLE `heartbeat_report_items`')) ||
-            (stage === 'second-main' && sql.includes('ADD `refusals`'))
+            (stage === 'second-main' && sql.includes('ADD `refusals`')) ||
+            (stage === 'third-main' && sql.includes('ADD `delivered_at`'))
           )
             throw error;
           return execute(sql);
@@ -614,7 +638,7 @@ describe('authentic original Doc157 to Doc159 bridge', () => {
         if (stage === 'completion') {
           const hash = consolidatedDoc.hash.replaceAll("'", "''");
           execute(
-            `CREATE TEMP TRIGGER original159_failure BEFORE INSERT ON __drizzle_migrations WHEN NEW.hash='${hash}' BEGIN SELECT RAISE(ABORT,'original completion failure'); END`
+            `CREATE TEMP TRIGGER original160_failure BEFORE INSERT ON __drizzle_migrations WHEN NEW.hash='${hash}' BEGIN SELECT RAISE(ABORT,'original completion failure'); END`
           );
         }
         expect(() => runMigrations(h.db)).toThrow(
@@ -625,7 +649,7 @@ describe('authentic original Doc157 to Doc159 bridge', () => {
         expectIncomingMainDataPreserved(h.db, data);
         restore();
         restore = undefined;
-        if (stage === 'completion') execute('DROP TRIGGER original159_failure');
+        if (stage === 'completion') execute('DROP TRIGGER original160_failure');
         runMigrations(h.db);
         expect(original157History(h.db).slice(0, before.length)).toEqual(before);
         expectIncomingMainDataPreserved(h.db, data);

@@ -3,8 +3,7 @@
  * things that must never be true of this route: that it writes, and that a
  * failed source turns into a failed request (ADR 260806-222535).
  */
-import { describe, it, expect, beforeEach } from 'vitest';
-import express from 'express';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import request from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
 import { createTestDb } from '@dorkos/test-utils/db';
@@ -12,8 +11,15 @@ import { agents, authors, type Db } from '@dorkos/db';
 import { MemberRoomsResponseSchema, TeamRosterResponseSchema } from '@dorkos/shared/team-schemas';
 import { AuthorRegistry } from '../../services/rooms/author-registry.js';
 import { RoomStore } from '../../services/rooms/room-store.js';
-import { createTeamRouter, type TeamMeshReader, type TeamRouterDeps } from '../team.js';
+import { createTeamRoutes, type TeamMeshReader, type TeamRouterDeps } from '../team.js';
+import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
 import type { TeamAgentSource } from '../../services/identity/aggregate-team.js';
+
+// The routes are served through the `/api` chain, whose host guard and session
+// gate read the login setting: off, as on a fresh install.
+vi.mock('../../services/core/config-manager.js', () => ({
+  configManager: { get: vi.fn(() => undefined), set: vi.fn() },
+}));
 
 const fixtureTarget = swappableServer();
 const fixtureServer = fixtureTarget.server;
@@ -56,10 +62,9 @@ describe('GET /api/team', () => {
       listWithHealth: () => [ANA, DORKBOT],
       listWithPaths: () => [{ id: ANA.id, projectPath: ANA_PATH }],
     };
-    const server = express();
-    server.use(
-      '/api/team',
-      createTeamRouter({
+    return honoGroupListener({
+      path: '/api/team',
+      routes: createTeamRoutes({
         authors: registry,
         rooms,
         meshCore: mesh,
@@ -72,9 +77,8 @@ describe('GET /api/team', () => {
         configDisplayNameSource: () => null,
         defaultAgentName: () => 'ana',
         ...overrides,
-      })
-    );
-    return server;
+      }),
+    });
   }
 
   beforeEach(() => {
@@ -326,10 +330,9 @@ describe('GET /api/team/:memberId/rooms', () => {
       listWithHealth: () => [ANA, DORKBOT],
       listWithPaths: () => [{ id: ANA.id, projectPath: ANA_PATH }],
     };
-    const server = express();
-    server.use(
-      '/api/team',
-      createTeamRouter({
+    return honoGroupListener({
+      path: '/api/team',
+      routes: createTeamRoutes({
         authors: registry,
         rooms,
         meshCore: mesh,
@@ -342,9 +345,8 @@ describe('GET /api/team/:memberId/rooms', () => {
         configDisplayNameSource: () => null,
         defaultAgentName: () => 'ana',
         ...overrides,
-      })
-    );
-    return server;
+      }),
+    });
   }
 
   /** The author row an agent gets the first time it is in a room. */

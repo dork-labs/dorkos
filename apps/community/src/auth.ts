@@ -2,6 +2,7 @@ import { betterAuth } from 'better-auth';
 import { APIError, createAuthMiddleware } from 'better-auth/api';
 import type { Pool } from 'pg';
 import { COMMUNITY_PASSWORD_MIN_LENGTH } from '@dorkos/shared/community-wire';
+import { authAdvancedOptions } from './sign-in/auth-advanced.js';
 import type { CommunityConfig } from './config.js';
 import { signInRefusal } from './erasure/guards.js';
 import {
@@ -206,14 +207,7 @@ export function createCommunityAuth(
       communityEmailLinks({ pool, config, on: emailLinksOn, canSendNotice }),
     ],
     session: { expiresIn: 60 * 60 * 24 * 7, updateAge: 60 * 60 * 24 },
-    advanced: {
-      useSecureCookies: config.publicUrl.startsWith('https:'),
-      defaultCookieAttributes: {
-        httpOnly: true,
-        sameSite: 'lax',
-        secure: config.publicUrl.startsWith('https:'),
-      },
-    },
+    advanced: authAdvancedOptions(config),
     hooks: {
       before: createAuthMiddleware(async (ctx) => {
         // A bare ID token proves only that someone once held one, not that the person is at

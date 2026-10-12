@@ -661,7 +661,10 @@ export function buildRoomContext(
   // `RoomRoster.addressingCandidates`). Not a second rule that happens to agree:
   // the defect this replaced was exactly that, one function returning
   // `agents.name` unfiltered while the picker refused the same string.
-  const handles = addressableHandles(rosterMentionCandidates(members, records, deps.agents).live);
+  const candidates = rosterMentionCandidates(members, records, deps.agents);
+  const handles = addressableHandles(candidates.live);
+  // The same walk the app's roster reads "retired" from (`RoomRoster.list`).
+  const retired = new Set(candidates.unreachable.map((candidate) => candidate.authorId));
 
   const flatten = (entry: RoomEntry): RoomContextEntry => {
     // Native Doc markers carry their own doc_events context, never ordinary message history.
@@ -764,6 +767,7 @@ export function buildRoomContext(
         // the trust bit (§4.3).
         origin: record ? authorOrigin(record.naturalKey) : 'local',
         ...(record?.kind === 'agent' ? { responseMode: member.responseMode } : {}),
+        ...(retired.has(member.authorId) ? { retired: true as const } : {}),
       };
     }),
     working: input.working

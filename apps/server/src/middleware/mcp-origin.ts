@@ -1,6 +1,6 @@
 /**
- * `Origin` validation for the MCP mounts — `/mcp`, `/codex-ui-mcp`, and the
- * Nango proxy at `/api/connectors/nango/mcp`.
+ * `Origin` validation for the external MCP endpoint, `/mcp`, as Hono
+ * middleware (DOR-2808).
  *
  * A thin adapter, and nothing more: the decision itself is
  * `isTrustedBrowserOrigin` in `lib/trusted-origins.ts`, the one origin policy
@@ -33,13 +33,13 @@
  *
  * @module middleware/mcp-origin
  */
-import type { Request, Response, NextFunction } from 'express';
+import type { MiddlewareHandler } from 'hono';
 import { type BrowserOriginPolicy, isTrustedBrowserOrigin } from '../lib/trusted-origins.js';
 import { resolveBrowserOriginFacts } from './browser-origin.js';
-import { expressRequestFacts } from '../http/request-facts.js';
+import { honoRequestFacts, type RequestFactsEnv } from '../http/request-facts.js';
 
 /**
- * What the MCP mounts ask of the origin policy.
+ * What `/mcp` asks of the origin policy.
  *
  * `allowNoOrigin` is the load-bearing one and it is deliberate, not inherited:
  * MCP clients send no `Origin`. The MCP TypeScript SDK's HTTP transport sets
@@ -53,9 +53,8 @@ import { expressRequestFacts } from '../http/request-facts.js';
  * MCP spec asks for validation of connections that carry an `Origin`; an absent
  * header is not a failed one.
  *
- * `pairSameOriginWithHost` is on because nothing else on these mounts checks
- * `Host` — `middleware/host-guard.ts` is mounted at `/api` only, and two of the
- * three MCP mounts are not under `/api` at all.
+ * `pairSameOriginWithHost` is on because nothing else on `/mcp` checks `Host`:
+ * the host guard (`middleware/host-guard.ts`) covers `/api` only.
  */
 const MCP_ORIGIN_POLICY: BrowserOriginPolicy = {
   allowNoOrigin: true,
@@ -63,30 +62,29 @@ const MCP_ORIGIN_POLICY: BrowserOriginPolicy = {
 };
 
 /**
- * Reject a browser `Origin` these mounts do not trust, with the JSON-RPC error
+ * Reject a browser `Origin` `/mcp` does not trust, with the JSON-RPC error
  * body an MCP client can read.
  *
  * The host pairing is never allowed to stand down here (`hostCheckInert: false`),
  * even under login. The exemption exists elsewhere because an origin-scoped auth
- * cookie turns a rebound origin away before anything happens — and `/codex-ui-mcp`
- * deliberately carries no auth middleware at all, so on that mount there would be
- * no cookie doing the work the exemption assumes.
+ * cookie turns a rebound origin away before anything happens, and this check
+ * runs before the credential check, so there is no cookie doing that work yet.
  *
- * @param req - The incoming request; its `Origin` and `Host` headers decide.
- * @param res - The response, written with a JSON-RPC 403 on refusal.
- * @param next - Passes control on when the origin is trusted.
+ * The facts come from the raw `Host` and `Origin` headers and the raw socket,
+ * never from a forwarded header a caller could write (`honoRequestFacts`).
  */
-export function validateMcpOrigin(req: Request, res: Response, next: NextFunction): void {
-  const facts = resolveBrowserOriginFacts(expressRequestFacts(req), { hostCheckInert: false });
-
+export const validateMcpOrigin: MiddlewareHandler<RequestFactsEnv> = async (c, next) => {
+  const facts = resolveBrowserOriginFacts(honoRequestFacts(c), { hostCheckInert: false });
   if (isTrustedBrowserOrigin(facts, MCP_ORIGIN_POLICY)) {
-    next();
+    await next();
     return;
   }
-
-  res.status(403).json({
-    jsonrpc: '2.0',
-    error: { code: -32002, message: `Origin ${facts.origin} not allowed` },
-    id: null,
-  });
-}
+  return c.json(
+    {
+      jsonrpc: '2.0',
+      error: { code: -32002, message: `Origin ${facts.origin} not allowed` },
+      id: null,
+    },
+    403
+  );
+};

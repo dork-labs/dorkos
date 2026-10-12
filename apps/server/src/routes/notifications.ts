@@ -12,10 +12,13 @@
  *
  * @module routes/notifications
  */
-import { Router } from 'express';
+import { Hono } from 'hono';
 import { ListNotificationsQuerySchema } from '@dorkos/shared/notification-schemas';
-import { parseBody, sendError } from '../lib/route-utils.js';
+import { errorBody, validationFailureBody } from '../lib/route-utils.js';
 import { readCallerPrincipal } from '../lib/caller-principal.js';
+import type { ApiEnv } from '../http/api-chain.js';
+import { honoRequestFacts } from '../http/request-facts.js';
+import { readQuery } from '../http/request-query.js';
 import { notificationEntitlement } from '../services/notifications/notification-entitlement.js';
 import type { NotificationService } from '../services/notifications/notification-service.js';
 
@@ -27,38 +30,39 @@ const NOT_THE_OPERATOR =
   'Marking a notification read has to happen inside DorkOS, by the person it was for.';
 
 /**
- * Create the notifications router.
+ * The `/api/notifications` routes.
  *
  * @param service - The notification pipeline, for reads and read state.
+ * @returns The routes, for `app.route('/api/notifications', …)`.
  */
-export function createNotificationsRouter(service: NotificationService): Router {
-  const router = Router();
+export function createNotificationsRoutes(service: NotificationService): Hono<ApiEnv> {
+  const router = new Hono<ApiEnv>();
 
-  router.get('/', (req, res) => {
-    const query = parseBody(ListNotificationsQuerySchema, req.query, res);
-    if (!query) return;
+  router.get('/', (c) => {
+    const query = ListNotificationsQuerySchema.safeParse(readQuery(c));
+    if (!query.success) return c.json(validationFailureBody(query.error), 400);
 
     // An unentitled caller gets `200` with an empty list, never `403`: the
     // response must not tell a machine what it is not allowed to read about.
-    if (notificationEntitlement(readCallerPrincipal(req, res)) === 'none') {
-      return res.json({ notifications: [], nextCursor: null, unreadCount: 0 });
+    if (notificationEntitlement(readCallerPrincipal(honoRequestFacts(c))) === 'none') {
+      return c.json({ notifications: [], nextCursor: null, unreadCount: 0 });
     }
 
-    return res.json(service.list(query));
+    return c.json(service.list(query.data));
   });
 
-  router.patch('/:id/read', (req, res) => {
-    if (notificationEntitlement(readCallerPrincipal(req, res)) !== 'manage') {
-      return sendError(res, 403, NOT_THE_OPERATOR, NOT_THE_OPERATOR_CODE);
+  router.patch('/:id/read', (c) => {
+    if (notificationEntitlement(readCallerPrincipal(honoRequestFacts(c))) !== 'manage') {
+      return c.json(errorBody(NOT_THE_OPERATOR, NOT_THE_OPERATOR_CODE), 403);
     }
-    return res.json(service.markRead(req.params.id));
+    return c.json(service.markRead(c.req.param('id')));
   });
 
-  router.post('/read-all', (req, res) => {
-    if (notificationEntitlement(readCallerPrincipal(req, res)) !== 'manage') {
-      return sendError(res, 403, NOT_THE_OPERATOR, NOT_THE_OPERATOR_CODE);
+  router.post('/read-all', (c) => {
+    if (notificationEntitlement(readCallerPrincipal(honoRequestFacts(c))) !== 'manage') {
+      return c.json(errorBody(NOT_THE_OPERATOR, NOT_THE_OPERATOR_CODE), 403);
     }
-    return res.json(service.markAllRead());
+    return c.json(service.markAllRead());
   });
 
   return router;

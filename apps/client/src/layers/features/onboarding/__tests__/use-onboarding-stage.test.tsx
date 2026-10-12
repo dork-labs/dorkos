@@ -73,7 +73,7 @@ describe('useClearOnboardingStageWhenDone', () => {
   let harness: ReturnType<typeof buildHarness>;
 
   beforeEach(() => {
-    harness = buildHarness('/?onboarding=requirements');
+    harness = buildHarness('/?onboarding=own-ai');
   });
 
   it('leaves the stage param in place while onboarding is not done', async () => {
@@ -83,7 +83,7 @@ describe('useClearOnboardingStageWhenDone', () => {
     await harness.waitForRouterReady();
     // Give any (unwanted) navigation a chance to flush, then assert it stayed.
     await new Promise((r) => setTimeout(r, 0));
-    expect(harness.readStage()).toBe('requirements');
+    expect(harness.readStage()).toBe('own-ai');
   });
 
   it('strips the stage param once onboarding is done and the overlay has closed', async () => {
@@ -105,10 +105,9 @@ describe('useClearOnboardingStageWhenDone', () => {
 
   // ── Mid-flow strip guard (the reproduced regression) ─────────
   //
-  // The conversation writes `completedAt` at its handoff beat (so a dissolve
-  // into the real session is durable), flipping `done` true while the overlay is
-  // deliberately still latched open. Stripping the param then would rewind the
-  // derived stage to `welcome` and destroy the in-progress conversation. These
+  // Landing writes `completedAt` before it hands off to #team, flipping `done`
+  // true while the overlay is deliberately still latched open. Stripping the
+  // param then would rewind the derived stage to `welcome` mid-hand-off. These
   // probe the real derivation + strip together, as the app shell wires them.
 
   /** Drives the derived stage and the strip hook together, mirroring AppShell. */
@@ -118,20 +117,20 @@ describe('useClearOnboardingStageWhenDone', () => {
     return stage;
   }
 
-  it('keeps the param and holds the conversation stage while the overlay is open and done flips true', async () => {
-    harness = buildHarness('/?onboarding=conversation');
+  it('keeps the param and holds the landing stage while the overlay is open and done flips true', async () => {
+    harness = buildHarness('/?onboarding=landing');
     const { result } = renderHook(() => useStageStripProbe({ done: true, overlayVisible: true }), {
       wrapper: harness.Wrapper,
     });
     await harness.waitForRouterReady();
     // Let any (unwanted) strip navigation flush, then assert nothing rewound.
     await new Promise((r) => setTimeout(r, 0));
-    expect(harness.readStage()).toBe('conversation');
-    expect(result.current).toBe('conversation');
+    expect(harness.readStage()).toBe('landing');
+    expect(result.current).toBe('landing');
   });
 
   it('strips the param once the overlay closes (dissolve/skip), after holding it open', async () => {
-    harness = buildHarness('/?onboarding=conversation');
+    harness = buildHarness('/?onboarding=landing');
     const { result, rerender } = renderHook(
       ({ overlayVisible }: { overlayVisible: boolean }) =>
         useStageStripProbe({ done: true, overlayVisible }),
@@ -140,16 +139,16 @@ describe('useClearOnboardingStageWhenDone', () => {
     await harness.waitForRouterReady();
     await new Promise((r) => setTimeout(r, 0));
     // Held open: the param and stage survive the mid-flow `completedAt` write.
-    expect(harness.readStage()).toBe('conversation');
-    expect(result.current).toBe('conversation');
+    expect(harness.readStage()).toBe('landing');
+    expect(result.current).toBe('landing');
 
-    // Overlay closes (first-message dissolve or Skip all setup) → param is stripped.
+    // Overlay closes (first-message dissolve or a finished first run) → param is stripped.
     rerender({ overlayVisible: false });
     await waitFor(() => expect(harness.readStage()).toBeUndefined());
   });
 
   it('strips a deep-linked param for a completed user when the overlay is not showing', async () => {
-    harness = buildHarness('/?onboarding=conversation');
+    harness = buildHarness('/?onboarding=landing');
     renderHook(() => useClearOnboardingStageWhenDone({ done: true, overlayVisible: false }), {
       wrapper: harness.Wrapper,
     });
@@ -168,22 +167,22 @@ describe('useClearOnboardingStageWhenDone', () => {
 
 describe('useOnboardingStage — initial anchor (DOR-1431)', () => {
   it('holds a deep-linked stage instead of rewriting it to welcome', async () => {
-    const harness = buildHarness('/?onboarding=requirements');
+    const harness = buildHarness('/?onboarding=own-ai');
     const { result } = renderHook(() => useOnboardingStage(), { wrapper: harness.Wrapper });
     await harness.waitForRouterReady();
     // Let any (unwanted) anchor navigation flush, then assert nothing rewound.
     await new Promise((r) => setTimeout(r, 0));
-    expect(harness.readStage()).toBe('requirements');
-    expect(result.current.stage).toBe('requirements');
+    expect(harness.readStage()).toBe('own-ai');
+    expect(result.current.stage).toBe('own-ai');
   });
 
-  it('holds the conversation stage on a deep link', async () => {
-    const harness = buildHarness('/?onboarding=conversation');
+  it('holds the landing stage on a deep link', async () => {
+    const harness = buildHarness('/?onboarding=landing');
     const { result } = renderHook(() => useOnboardingStage(), { wrapper: harness.Wrapper });
     await harness.waitForRouterReady();
     await new Promise((r) => setTimeout(r, 0));
-    expect(harness.readStage()).toBe('conversation');
-    expect(result.current.stage).toBe('conversation');
+    expect(harness.readStage()).toBe('landing');
+    expect(result.current.stage).toBe('landing');
   });
 
   it('anchors a bare load to the first stage without adding a history entry', async () => {
@@ -202,8 +201,7 @@ describe('useOnboardingStage — initial anchor (DOR-1431)', () => {
     // A value that is NOT a member of ONBOARDING_STAGES — `.catch(undefined)`
     // drops it to "no stage" and the anchor pins the first stage. Deliberately
     // NOT a real stage name: a valid value correctly HOLDS (the anchor never
-    // fires), so this wait would hang. (`power` became a real stage on main, so
-    // once this branch rebases it must remain a genuinely-unknown value here.)
+    // fires), so this wait would hang.
     const harness = buildHarness('/?onboarding=not-a-real-stage');
     const { result } = renderHook(() => useOnboardingStage(), { wrapper: harness.Wrapper });
     await harness.waitForRouterReady();
@@ -247,11 +245,11 @@ describe('useOnboardingStage — navigation', () => {
     await waitFor(() => expect(harness.readStage()).toBe('welcome'), { timeout: 2000 });
 
     await act(async () => {
-      result.current.goToStage('requirements');
+      result.current.goToStage('own-ai');
     });
     await harness.waitForRouterReady();
-    expect(harness.readStage()).toBe('requirements');
-    expect(result.current.stage).toBe('requirements');
+    expect(harness.readStage()).toBe('own-ai');
+    expect(result.current.stage).toBe('own-ai');
     // A push, so Back can return — the anchor above was a replace (no entry).
     expect(harness.router.history.length).toBe(lengthBefore + 1);
   });
@@ -263,10 +261,10 @@ describe('useOnboardingStage — navigation', () => {
     await waitFor(() => expect(harness.readStage()).toBe('welcome'), { timeout: 2000 });
 
     await act(async () => {
-      result.current.goToStage('requirements');
+      result.current.goToStage('own-ai');
     });
     await harness.waitForRouterReady();
-    expect(harness.readStage()).toBe('requirements');
+    expect(harness.readStage()).toBe('own-ai');
     const lengthAfterForward = harness.router.history.length;
 
     await act(async () => {
@@ -283,17 +281,17 @@ describe('useOnboardingStage — navigation', () => {
   });
 
   it('goBack pushes the fallback on a deep-link landing with nothing to pop', async () => {
-    const harness = buildHarness('/?onboarding=conversation');
+    const harness = buildHarness('/?onboarding=landing');
     const { result } = renderHook(() => useOnboardingStage(), { wrapper: harness.Wrapper });
     await harness.waitForRouterReady();
-    expect(harness.readStage()).toBe('conversation');
+    expect(harness.readStage()).toBe('landing');
 
     await act(async () => {
-      result.current.goBack('requirements');
+      result.current.goBack('own-ai');
     });
     await harness.waitForRouterReady();
-    expect(harness.readStage()).toBe('requirements');
-    expect(result.current.stage).toBe('requirements');
+    expect(harness.readStage()).toBe('own-ai');
+    expect(result.current.stage).toBe('own-ai');
   });
 });
 
@@ -391,29 +389,37 @@ describe('onboarding stage param — config-loading survival race', () => {
   });
 });
 
-// ── The power stage is URL-synced and refresh-safe ───────────
+// ── Every first-run stage is URL-synced and refresh-safe ─────
 //
-// Adding `'power'` to ONBOARDING_STAGES makes it a member of the search enum for
-// free, so `?onboarding=power` validates, derives, and round-trips like every
-// other stage. These pin that so a future schema change cannot silently drop it.
-describe('useOnboardingStage — the power stage', () => {
-  it('derives the power stage from `?onboarding=power` (refresh-safe)', async () => {
-    const harness = buildHarness('/?onboarding=power');
+// A member of ONBOARDING_STAGES is a member of the search enum for free, so
+// `?onboarding=connecting` validates, derives and round-trips like every other
+// stage. These pin that so a future schema change cannot silently drop one.
+describe('useOnboardingStage — the connecting stage', () => {
+  it('derives the connecting stage from `?onboarding=connecting` (refresh-safe)', async () => {
+    const harness = buildHarness('/?onboarding=connecting');
     const { result } = renderHook(() => useOnboardingStage(), { wrapper: harness.Wrapper });
     await harness.waitForRouterReady();
-    expect(result.current.stage).toBe('power');
+    expect(result.current.stage).toBe('connecting');
     // The param is left exactly as the URL carried it — nothing rewrote it.
-    expect(harness.readStage()).toBe('power');
+    expect(harness.readStage()).toBe('connecting');
   });
 
   it('round-trips through the URL when navigated to', async () => {
-    const harness = buildHarness('/?onboarding=requirements');
+    const harness = buildHarness('/?onboarding=own-ai');
     const { result } = renderHook(() => useOnboardingStage(), { wrapper: harness.Wrapper });
     await harness.waitForRouterReady();
 
-    act(() => result.current.goToStage('power'));
+    act(() => result.current.goToStage('connecting'));
 
-    await waitFor(() => expect(harness.readStage()).toBe('power'));
-    expect(result.current.stage).toBe('power');
+    await waitFor(() => expect(harness.readStage()).toBe('connecting'));
+    expect(result.current.stage).toBe('connecting');
+  });
+
+  it('reads a retired stage name as no stage', async () => {
+    const harness = buildHarness('/?onboarding=power');
+    const { result } = renderHook(() => useOnboardingStage(), { wrapper: harness.Wrapper });
+    await harness.waitForRouterReady();
+    await waitFor(() => expect(harness.readStage()).toBe('welcome'));
+    expect(result.current.stage).toBe('welcome');
   });
 });

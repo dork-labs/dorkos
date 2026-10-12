@@ -335,6 +335,37 @@ describe('the one per-account password guess limit', () => {
     expect((await disconnect.call(person.cookie, TENANCY_PASSWORD)).status).toBe(429);
   });
 
+  it('still holds after someone sprays the other limits with more callers than they keep', async () => {
+    // Purpose (DOR-2729): the shared per-caller limiter forgets its oldest entry once it holds
+    // 10,000. Fails if the password budget lives in that shared map, where a flood of made-up
+    // caller addresses on a cheap unauthenticated route pushes the spent budget out.
+    freshWindow();
+    const disconnect = ROUTES.find((entry) => entry.route === 'DELETE /me/grants')!;
+    for (let guess = 0; guess < CEILING; guess++)
+      await expectCode(
+        await disconnect.call(person.cookie, `guess-${guess}`),
+        403,
+        'REAUTH_FAILED'
+      );
+    expect((await disconnect.call(person.cookie, TENANCY_PASSWORD)).status).toBe(429);
+
+    h.config.trustedProxyHeader = 'fly-client-ip';
+    try {
+      const callers = Array.from({ length: 10_050 }, (_, i) => `10.9.${i >> 8}.${i & 255}`);
+      for (let start = 0; start < callers.length; start += 200)
+        await Promise.all(
+          callers.slice(start, start + 200).map((address) =>
+            h.call('/api/v1/community-names/anything', {
+              headers: { 'fly-client-ip': address },
+            })
+          )
+        );
+    } finally {
+      h.config.trustedProxyHeader = undefined;
+    }
+    expect((await disconnect.call(person.cookie, TENANCY_PASSWORD)).status).toBe(429);
+  }, 120_000);
+
   it("keeps the sign-in library's own password change off, so it cannot guess around the budget", async () => {
     freshWindow();
     const change = await h.call('/api/auth/change-password', {

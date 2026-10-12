@@ -1,8 +1,8 @@
+import { wireStartupNotifications } from './startup/notifications.js';
+import { wireStartupTelemetry, wireStartupHeartbeat } from './startup/telemetry.js';
 import type { TestComposioFixture } from './services/connectors/providers/test-composio/fixture.js';
 import { wireTestConnectorProbes } from './startup/test-connector-probes.js';
-import { mountOptionalGateways } from './startup/optional-gateway-composition.js';
 import { connectorRuntimeConsumer, takeDailySnapshot } from './startup/boot-helpers.js';
-import { mountOperatorRoutes } from './startup/operator-route-composition.js';
 import { type ServerDocumentRelayOrigin } from '@dorkos/relay/server-private-document';
 import {
   readOriginalManagerDocumentAdapterOrigin,
@@ -43,7 +43,6 @@ import { randomUUID } from 'node:crypto';
 import { createApp, finalizeApp } from './app.js';
 import { createFrontDoorServer, frontDoorListener } from './http/front-door.js';
 import { composeFrontDoor, type HonoApiDeps } from './http/hono-api.js';
-import { createSessionLocationsRouter } from './routes/session-locations.js';
 import { ManagedConnectorCloudError } from './services/core/auth/cloud-link-client.js';
 import { DoeRuntime } from './services/runtimes/doe/index.js';
 import { registerRuntimes } from './startup/runtimes.js';
@@ -63,8 +62,15 @@ import {
   seedLegacyMcpApiKey,
   resolveMcpLocalToken,
   readOwnerAccount,
+  getUserById,
+  setUserImage,
+  setUserName,
 } from './services/core/auth/index.js';
-import { canExpose, checkBindAllowed } from './services/core/auth/exposure-guard.js';
+import {
+  canExpose,
+  checkBindAllowed,
+  checkA2aExposure,
+} from './services/core/auth/exposure-guard.js';
 import { tunnelManager } from './services/core/tunnel-manager.js';
 import { scheduleJittered, type JitteredSchedule } from './lib/lifecycle/jittered-schedule.js';
 import { createSignalShutdown } from './lib/lifecycle/shutdown-signal.js';
@@ -97,41 +103,25 @@ import {
 } from './services/core/credential-provider.js';
 import { initBoundary } from './lib/boundary.js';
 import { getLocalCockpitPort } from './lib/trusted-origins.js';
-import { warnAboutGitProtection, installedGitProtection } from './lib/git-safety.js';
+import { installedGitProtection } from './lib/git-safety.js';
 import { initLogger, logger, logError } from './lib/logger.js';
 import { createDorkOsToolServer } from './services/runtimes/claude-code/mcp-tools/index.js';
 import { TaskStore } from './services/tasks/task-store.js';
-import { NotificationStore } from './services/notifications/notification-store.js';
 import {
   connectorAgentRequestsChangedAnnouncer,
   wireLiveChangeBroadcasts,
   wireCapabilitiesChangedBroadcast,
 } from './services/core/streams/live-change-broadcasts.js';
-import { NOTIFICATION_PREFS_DEFAULTS } from '@dorkos/shared/config-schema';
-import { PushSubscriptionStore } from './services/notifications/push-subscription-store.js';
-import { WebPushChannel } from './services/notifications/channels/web-push.js';
 import {
-  EscalationService,
   getEscalationService,
-  setEscalationService,
   type StandingCondition,
 } from './services/notifications/escalation-service.js';
 import { resolveScheduleParkPayload } from './services/notifications/emitters/schedule-park.js';
 import { needsScheduleApprovalAttention } from './services/tasks/schedule-permission-clamp.js';
 import { capabilityApprovalPayload } from './services/notifications/emitters/capability-approval.js';
-import {
-  NotificationService,
-  notify,
-  setNotificationService,
-} from './services/notifications/notification-service.js';
-import { watchSessionLifecycle } from './services/notifications/emitters/session-lifecycle.js';
-import { watchAskResolution } from './services/notifications/emitters/ask-resolution.js';
-import { watchRuntimeSigninFailures } from './services/notifications/emitters/runtime-signin.js';
-import { watchCreditsRefusals } from './services/notifications/emitters/credits-refused.js';
+import { notify } from './services/notifications/notification-service.js';
 import { deadLetterPayload } from './services/notifications/emitters/dead-letter.js';
 import { agentLivenessObserver } from './services/notifications/emitters/agent-liveness.js';
-import { announceInstalledVersion } from './services/notifications/emitters/update-installed.js';
-import { watchShiftReport } from './services/notifications/emitters/shift-report.js';
 import type { NotifyDmDeps } from './services/relay/notify-dm.js';
 import type { ConnectorProviderInstanceId } from '@dorkos/shared/connector-schemas';
 import type { RelayChannelDeps } from './services/notifications/channels/relay.js';
@@ -143,13 +133,9 @@ import { TaskReconciler } from './services/tasks/task-reconciler.js';
 import { TaskRegistrar } from './services/tasks/task-registrar.js';
 import { setTasksInitError } from './services/tasks/task-state.js';
 import { RelayCore, AdapterRegistry, SignalEmitter, type AgentRuntimeLike } from '@dorkos/relay';
-import { createRelayRouter } from './routes/relay.js';
-import { createConnectorProvidersRouter } from './routes/connector-providers.js';
-import { createConnectorExecutionRouter } from './routes/connector-execution.js';
 import { ConnectorEventAccessQueryService } from './services/connectors/events/access-query-service.js';
-import { createConnectorResourcesRouter } from './routes/connector-resources.js';
-import { createConnectorManagementRouter } from './routes/connector-management.js';
-import { createConnectorEventsRouter } from './routes/connector-events.js';
+import type { ConnectorRoutesDeps } from './routes/connectors.js';
+import type { ConnectorSignedIngress } from './services/connectors/events/signed-ingress.js';
 import { ConnectorEventInboxStore } from './services/connectors/event-inbox-store.js';
 import { ConnectorSubscriptionStore } from './services/connectors/events/subscription-store.js';
 import { ConnectorSubscriptionService } from './services/connectors/events/subscription-service.js';
@@ -162,7 +148,6 @@ import { ManagedConnectorEventPullService } from './services/connectors/events/m
 import { ConnectorEventDeliveryService } from './services/connectors/events/delivery-service.js';
 import { ConnectorEventNativeDestination } from './services/connectors/events/channel-destination.js';
 
-import { createUnclaimedChatsRouter } from './routes/unclaimed-chats.js';
 import { ConnectorRegistry } from './services/connectors/registry.js';
 import { ConnectorCatalogCache } from './services/connectors/resources/catalog-cache.js';
 import { createRawMcpPendingConnectResolver } from './services/connectors/resources/raw-mcp-pending-connect.js';
@@ -222,7 +207,6 @@ import { AgentMcpOAuthService } from './services/mesh/agent-mcp-oauth-service.js
 import { warmMcpOAuthTokens } from './services/mesh/warm-mcp-oauth-tokens.js';
 import { resumeAfterMcpSignin } from './services/mesh/mcp-signin-resume.js';
 import { createMcpRevocationWatch } from './services/mesh/mcp-revocation.js';
-import { createMcpOAuthRouter } from './routes/mcp-oauth.js';
 import type { McpCapabilityDeps } from './services/mesh/capabilities/mcp-capability-deps.js';
 import {
   relayStartsEnabled,
@@ -231,14 +215,10 @@ import {
 } from './services/relay/relay-state.js';
 import { createAgentSubjectResolver } from './services/relay/initiate-consent.js';
 import { TraceStore } from './services/relay/trace-store.js';
-import { NotifyBudget } from './services/relay/notify-budget.js';
 import { MeshCore, type AdoptedAgent } from '@dorkos/mesh';
-import { createMeshRouter } from './routes/mesh.js';
 import { setMeshInitError } from './services/mesh/mesh-state.js';
 import { ensureDorkBot } from './services/mesh/ensure-dorkbot.js';
 import { setAgentPathLookup } from './services/mesh/agent-path-lookup.js';
-import { createAgentsRouter } from './routes/agents.js';
-import { createPermissionsRouter } from './routes/permissions.js';
 import { resolveToolVisibilityFor } from './services/runtimes/shared/permission-tool-filter.js';
 import { composeCapabilityRegistryForDocs } from './services/core/self-description/dorkos-registry.js';
 import {
@@ -266,18 +246,20 @@ import { managedRemoteCoordinator } from './services/core/remote/managed-remote-
 import { managedRemoteCommands } from './services/core/remote/managed-command-service.js';
 import { autostartOwnTunnel, currentRemoteBootPlan } from './services/core/remote/remote-boot.js';
 import { titleForMcpTool } from './services/core/mcp-tools/mcp-tool-tiers.js';
+import { resolveCaller } from './routes/room-caller.js';
+import { LocalAvatarStore } from './services/identity/local-avatar-store.js';
 import { LocalRoomAttachmentStore } from './services/rooms/attachments/local-room-attachment-store.js';
 import {
   SESSION_ATTACHMENT_SWEEP_INTERVAL_MS,
   sweepSessionAttachments,
 } from './services/session/attachments/index.js';
-import { createAdminRouter } from './routes/admin.js';
 import { ExtensionManager } from './services/extensions/extension-manager.js';
 import { startExtensionApprovalQueue } from './services/extensions/extension-approval-queue.js';
 import { ensureCoreExtensions } from './services/core-extensions/ensure-core-extensions.js';
 import { warnRedundantEnabledEntries } from './services/core-extensions/warn-redundant-enabled.js';
 import type { CoreExtensionInfo } from './services/extensions/extension-enable-resolution.js';
-import { broadcastExtensionReloaded } from './routes/extensions.js';
+import { broadcastExtensionReloaded, createExtensionsRouter } from './routes/extensions.js';
+import { createExtensionRoutesMiddleware } from './middleware/extension-routes.js';
 import { knownProjectRootsForExtensions } from './services/projects/extension-scan-roots.js';
 import { withIntegrity } from './services/marketplace/lib/integrity/verify-install.js';
 import { scanInstallationsAcrossScopes } from './services/marketplace/installed-scanner.js';
@@ -335,7 +317,6 @@ import {
 } from './services/marketplace/recovery/backup-janitor.js';
 import { installSweepLogger } from './services/marketplace/recovery/install-sweep-log.js';
 import { currentRecordOwner } from './services/marketplace/lib/records/record-owner.js';
-import { createAgentPauseRouter } from './routes/agent-pause.js';
 import { wireAgentPause } from './services/mesh/pause/index.js';
 import {
   auditCapabilityDeps,
@@ -359,9 +340,6 @@ import {
 } from './services/core/agent-identity/index.js';
 import { ApprovalService, resolveApprovalTtlMs } from './services/core/approvals/index.js';
 import type { DebugDeps } from './routes/debug.js';
-import { createCapabilitiesCatalogRouter } from './routes/capabilities-catalog.js';
-import { createCanvasDocManagementRouter } from './routes/canvas-doc-management.js';
-import { createCapabilitiesInvokeRouter } from './routes/capabilities-invoke.js';
 import {
   initCapabilityTierGate,
   initPermissionGate,
@@ -373,12 +351,8 @@ import {
   startApprovalExpirySweep,
   startApprovalVerdictDelivery,
 } from './services/core/approvals/index.js';
-import { createMcpRouter } from './routes/mcp.js';
+import type { McpServerFactory } from './routes/mcp.js';
 import { setRemoteCommunitySubscriptionProbe } from './routes/test-control.js';
-import { createMcpAuth } from './middleware/mcp-auth.js';
-import { validateMcpOrigin } from './middleware/mcp-origin.js';
-import { requireMcpEnabled } from './middleware/mcp-enabled.js';
-import { buildMcpRateLimiter } from './middleware/mcp-rate-limit.js';
 import {
   runMigrations,
   databaseHoldsUserData,
@@ -488,28 +462,10 @@ import { attachUpgradeRouter } from './services/core/streams/upgrade-router.js';
 import { managedIngressFor } from './services/core/remote/managed-ingress.js';
 import { durableStreamRoutes } from './routes/stream-sockets.js';
 import { createTerminalRouter } from './routes/terminal.js';
-import { registerDorkosCommunityTelemetry } from './services/marketplace/telemetry/telemetry-reporter.js';
-import { registerHeartbeat, type HeartbeatCounts } from './services/core/heartbeat-reporter.js';
-import {
-  registerUsageReporter,
-  reportUsageEvent,
-  shutdownUsageReporter,
-} from './services/core/usage-reporter.js';
-import {
-  registerServerErrorReporting,
-  flushServerError,
-  captureServerError,
-} from './services/core/error-reporter.js';
-import {
-  registerAiMetadataReporter,
-  shutdownAiMetadataReporter,
-} from './services/core/ai-metadata-reporter.js';
-import { resolveTelemetryConsent, isTelemetryDebugEnabled } from '@dorkos/shared/telemetry-consent';
+import { shutdownUsageReporter } from './services/core/usage-reporter.js';
+import { flushServerError, captureServerError } from './services/core/error-reporter.js';
+import { shutdownAiMetadataReporter } from './services/core/ai-metadata-reporter.js';
 import { sanitizeIdentity } from '@dorkos/shared/untrusted-text';
-import {
-  decideTier1Boot,
-  formatFirstRunTelemetryNotice,
-} from './services/core/telemetry-first-run.js';
 import { eventFanOut } from './services/core/event-fan-out.js';
 import { keepAwakeService } from './services/core/keep-awake/index.js';
 import { AccountUsageStore } from './services/core/usage/account-usage-store.js';
@@ -519,7 +475,6 @@ import { SessionContextStore } from './services/session/fleet/session-context-st
 import { AgentCompactionService } from './services/session/agent-compaction/agent-compaction-service.js';
 import { compactionToolsHiddenFor } from './services/session/agent-compaction/compaction-capabilities.js';
 import { onSessionAccountLaunched } from './services/runtimes/claude-code/accounts/account-usage-feed.js';
-import { probeForReset } from './services/runtimes/claude-code/accounts/account-probe.js';
 import { moveAccountReferences } from './services/core/usage/account-reference-move.js';
 import { renameAccountInProjectAccounts } from './services/core/usage/account-eligibility-writes.js';
 import {
@@ -589,9 +544,6 @@ import {
   setStagedContextStore,
   SessionLimitStore,
   setSessionLimitStore,
-  startLimitPlanning,
-  installContinueService,
-  installResumeService,
   getMessageQueueStore,
   getStagedContextStore,
   reconcileSessionRows,
@@ -604,6 +556,7 @@ import {
   adoptAcceptedPrivateMessages,
   suspendPrivateDispatches,
   getOrCreateProjector,
+  listRecentSessions,
 } from './services/session/index.js';
 import { aggregateSessionList } from './services/session/catalog/aggregate-session-list.js';
 import { peekCanvasService } from './services/canvas/index.js';
@@ -1249,101 +1202,21 @@ async function start() {
     logger.warn('[Activity] Startup prune failed', logError(err));
   }
 
-  // The notification pipeline (spec `notification-system`), built EARLY and
-  // deliberately: the dead-letter hook and the mesh liveness observer both
-  // subscribe further down, and a notification raised between their
-  // subscription and this line would be lost. The only thing it needs now is
-  // the database; its out-of-app leg is read per send from `relayChannelDeps`,
-  // which the relay wiring assigns once the adapters exist.
-  //
-  // Every seam that RAISES a notification calls the module-level `notify`
-  // rather than holding this, so a projector, an MCP tool and a route do not
-  // each grow a dependency on the inbox in order to say one sentence.
-  // eslint-disable-next-line prefer-const -- assigned once, but far below, and read from a closure defined here
+  // The same owners are wired here, before downstream notification subscriptions.
+  // eslint-disable-next-line prefer-const -- assigned once below and read by the original live callback
   let relayChannelDeps: RelayChannelDeps | undefined;
-  const notificationStore = new NotificationStore(db);
-  const notificationService = new NotificationService(notificationStore, {
-    relay: () => relayChannelDeps,
-  });
-  setNotificationService(notificationService);
-
-  // The hourly allowance that bounds how often an agent may interrupt a person.
-  // Built HERE rather than beside the MCP tool deps it used to live in, because
-  // two things spend it now: `relay_notify_user` and the escalation ladder. Two
-  // budgets would be two ceilings, which is one ceiling too many.
-  const notifyBudget = new NotifyBudget();
-
-  // The escalation ladder (spec `notification-system` task 4.3,
-  // ADR 260819-234829): what happens when nobody answers. Built beside the
-  // pipeline for the same boot-order reason — a session that errors during
-  // startup arms a timer through the module-level `armEscalation`, which is a
-  // no-op until this line runs.
-  const pushSubscriptions = new PushSubscriptionStore(db);
-  const webPushChannel = new WebPushChannel({ dorkHome, subscriptions: pushSubscriptions });
-  setEscalationService(
-    new EscalationService({
-      store: notificationStore,
-      push: webPushChannel,
-      relay: () => relayChannelDeps,
-      // Read live, never cached: turning the knob to `never` has to silence a
-      // timer that is already running, not only the next one.
-      readDelay: () =>
-        configManager.get('notifications')?.escalation?.phoneAfterMinutes ??
-        NOTIFICATION_PREFS_DEFAULTS.escalation.phoneAfterMinutes,
-      reserveNote: (agentId) => notifyBudget.tryReserve(agentId),
-    })
-  );
-
-  // A finished turn, and the history row an error leaves when it clears.
-  watchSessionLifecycle();
-  // What happens next when a session's account runs out: its plan and state,
-  // the advisor's claims, and the recorder behind `accounts.markContinued`
-  // (spec claude-account-fleet D9 and §X). After the usage store, which it
-  // watches, and the Activity feed, which records each move.
-  {
-    const stopPlanning = startLimitPlanning();
-    const uninstallContinue = installContinueService({
-      activity: activityService,
-      // Read when an automatic handoff fires, long after boot: the app and its
-      // Mesh and room ports exist by then (the app is created further down).
-      launchDeps: () => ({
-        meshCore: app.locals.meshCore as MeshCore | undefined,
-        roomSessionPlace: app.locals.roomSessionPlace as RoomSessionPlacePort | undefined,
-      }),
+  const { notificationService, notifyBudget, pushSubscriptions, webPushChannel } =
+    wireStartupNotifications({
+      db,
+      dorkHome,
+      readRelayChannelDeps: () => relayChannelDeps,
+      activityService,
+      continueLaunchDeps: () => ({ meshCore, roomSessionPlace: roomSessionPlacePort }),
+      resumeLaunchDeps: () => ({ meshCore, roomSessionPlace: roomSessionPlacePort }),
+      setStopSessionContinuation: (stop) => {
+        stopSessionContinuation = stop;
+      },
     });
-    // Waits for an account's reset, confirms it with a reading and resumes the
-    // session by itself. After the planner, which settles pre-restart `auto`
-    // plans before this re-arms the stored waits.
-    const uninstallResume = installResumeService({
-      launchDeps: () => ({
-        meshCore: app.locals.meshCore as MeshCore | undefined,
-        roomSessionPlace: app.locals.roomSessionPlace as RoomSessionPlacePort | undefined,
-      }),
-      // Task 2.2's idle probe, for an account the store cannot confirm on its
-      // own. An account it cannot probe is still confirmed from store readings.
-      probe: probeForReset,
-    });
-    stopSessionContinuation = () => {
-      uninstallResume();
-      stopPlanning();
-      uninstallContinue();
-    };
-  }
-  // How every Ask ended — including the ones nobody answered.
-  watchAskResolution();
-  // A runtime whose sign-in stopped working, noticed at whichever turn trips
-  // over it first — including the 3am ones nobody is watching (DOR-1654).
-  watchRuntimeSigninFailures();
-  // A turn DorkOS credits refused, told whoever started it, so a refused
-  // scheduled task or room turn is never silent (ADR 261001-000811).
-  watchCreditsRefusals();
-  // Nothing tells the server it was updated, so it compares versions on boot.
-  void announceInstalledVersion(dorkHome);
-  // Git older than 2.38 cannot refuse a folder set up to look like a git
-  // repository; say so once, in plain words (DOR-2326).
-  void warnAboutGitProtection();
-  // "While you were away" — composed once the day's first activity arrives.
-  watchShiftReport(notificationStore);
 
   // Settle marketplace installs a crash interrupted (DOR-2273): restore the
   // previous version of a package whose reinstall never finished, remove a
@@ -1383,130 +1256,7 @@ async function start() {
   const resolvedBoundary = await initBoundary(boundaryConfig);
   logger.info(`[Boundary] Directory boundary: ${resolvedBoundary}`);
 
-  // Env kill switches (DOR-312) fold into every channel's consent: DO_NOT_TRACK
-  // or DORKOS_TELEMETRY_DISABLED force all outbound telemetry off regardless of
-  // config (precedence: env > config). `DORKOS_TELEMETRY_DEBUG` makes the
-  // payload senders print to stderr instead of sending. Parsing lives in the
-  // shared helper so the CLI and server agree. Read from the parsed `env` (the
-  // sole place process.env is touched on the server).
-  const telemetryEnv = {
-    DO_NOT_TRACK: env.DO_NOT_TRACK,
-    DORKOS_TELEMETRY_DISABLED: env.DORKOS_TELEMETRY_DISABLED,
-    DORKOS_TELEMETRY_DEBUG: env.DORKOS_TELEMETRY_DEBUG,
-  };
-  const telemetryDebug = isTelemetryDebugEnabled(telemetryEnv);
-
-  // Anonymous telemetry (ADR 260713-143958, posture revised by 260727-182651).
-  // The heartbeat, install, and feature-usage channels default OFF; on top of
-  // that the Homebrew ordering rule requires a first-run notice before anything
-  // sends, so the gate below is a second lock, not the only one.
-  // `decideTier1Boot` reads the consent snapshot ONCE, here, and captures the
-  // send gate BEFORE the notice writes `lastPromptedVersion` — so nothing sends
-  // on the boot that first shows the notice, and the install reporter (below),
-  // the usage reporter (below), and the heartbeat (registered later, in the
-  // `server.listen` callback) all share this one captured `tier1SendGate`.
-  // Sends begin on the next boot at the earliest.
-  const telemetryConfig = configManager.get('telemetry');
-  const tier1Boot = decideTier1Boot(telemetryConfig, SERVER_VERSION);
-  const tier1SendGate = tier1Boot.sendGate;
-
-  // Register the dorkos.ai marketplace install reporter. No-op unless
-  // `config.telemetry.install` is on (default false), no env kill switch is set,
-  // AND the Tier 1 notice gate is open. The reporter forwards `InstallEvent`s
-  // emitted by the marketplace install pipeline to
-  // https://dorkos.ai/api/telemetry/install with a stable per-machine install ID
-  // stored in dorkHome. Privacy contract: https://dorkos.ai/marketplace/privacy
-  const installConsent =
-    resolveTelemetryConsent(telemetryConfig?.install ?? false, telemetryEnv) && tier1SendGate;
-  registerDorkosCommunityTelemetry(installConsent, dorkHome, SERVER_VERSION, telemetryDebug);
-  if (installConsent) {
-    logger.info('[Telemetry] Marketplace install reporter registered (Tier 1, anonymous)');
-  }
-
-  // First-run notice: print the plain-language disclosure and record
-  // `lastPromptedVersion` so the next boot's gate opens. The gate above was
-  // snapshotted BEFORE this write, guaranteeing this boot sends nothing.
-  if (tier1Boot.showNotice) {
-    logger.info(`[Telemetry] First-run notice\n${formatFirstRunTelemetryNotice()}`);
-    const current = configManager.get('telemetry');
-    configManager.set('telemetry', {
-      ...current,
-      lastPromptedVersion: tier1Boot.lastPromptedVersionToWrite,
-    });
-    logConfigWrite(
-      'the first-run telemetry notice',
-      'telemetry',
-      current,
-      configManager.get('telemetry')
-    );
-  }
-
-  // Register the anonymous feature-usage reporter (DOR-315, ADR 260713-143958
-  // Phase 3). `telemetry.usage` defaults OFF, and sends only when no env
-  // kill switch is set (`resolveTelemetryConsent`) AND the CAPTURED pre-notice
-  // `tier1SendGate` above is open — the same snapshotted gate the install and
-  // heartbeat senders use, never re-read after the notice writes
-  // `lastPromptedVersion`, so a never-prompted install sends nothing this boot.
-  // No-op (no timer, no network) unless all three hold. Curated events flow
-  // through the owned ingest at https://dorkos.ai/api/telemetry/events.
-  // `?? false`, matching the install and heartbeat gates above and below. A
-  // config block that is present but missing this key is not a person saying
-  // yes to it, and absence is never read as consent.
-  const usageConsent =
-    resolveTelemetryConsent(telemetryConfig?.usage ?? false, telemetryEnv) && tier1SendGate;
-  registerUsageReporter({
-    enabled: usageConsent,
-    debug: telemetryDebug,
-    dorkHome,
-    dorkosVersion: SERVER_VERSION,
-  });
-  if (usageConsent) {
-    // Emit `app_started` once at boot: coarse platform-arch + how many runtimes
-    // are configured (a count, never their names or anything identifying).
-    const startupRuntimes = configManager.get('runtimes');
-    const runtimesConfiguredCount =
-      1 + (startupRuntimes.codex.enabled ? 1 : 0) + (startupRuntimes.opencode.enabled ? 1 : 0);
-    reportUsageEvent({
-      event: 'app_started',
-      properties: {
-        os: `${process.platform}-${process.arch}`,
-        runtimesConfigured: runtimesConfiguredCount,
-      },
-    });
-    logger.info('[Telemetry] Usage reporter active (consent: opt-out, notice-gated)');
-  }
-
-  // Opt-in error reporting (DOR-293, consolidated in DOR-318). A SEPARATE
-  // explicit opt-in (Tier 2) from the anonymous-data channels: fires only when
-  // `telemetry.errorReporting` is true AND no kill switch is set. Crash reports
-  // map to a PostHog `$exception` event and POST to the OWNED ingest
-  // (https://dorkos.ai/api/telemetry/events) — no third-party egress, no
-  // `SENTRY_DSN`. Off → the process handlers below (and `POST /api/errors`) send
-  // nothing. Scrubbing + message omission live in the shared error-report core.
-  registerServerErrorReporting({
-    consent: resolveTelemetryConsent(telemetryConfig?.errorReporting ?? false, telemetryEnv),
-    version: SERVER_VERSION,
-    environment: env.NODE_ENV,
-    cwd: process.cwd(),
-    dorkHome,
-    debug: telemetryDebug,
-  });
-
-  // Opt-in AI-run metadata bridge (DOR-319, ADR 260713-143958 Phase 7). A
-  // SEPARATE Tier 2 opt-in from every other channel: fires only when
-  // `telemetry.aiMetadata` is true (default FALSE) AND no kill switch is set. The
-  // notice gate does NOT apply — turning it on IS the explicit consent. When on,
-  // this installs the observability bridge so the runtime-wrap seam (registered
-  // BELOW — hence this must run first) emits one `$ai_generation` metadata event
-  // per completed turn to the owned ingest. Off → the bridge stays uninstalled
-  // and no turn is ever harvested for it. Metadata only: model, tokens, timing,
-  // cost — never prompts, code, paths, or content.
-  registerAiMetadataReporter({
-    enabled: resolveTelemetryConsent(telemetryConfig?.aiMetadata ?? false, telemetryEnv),
-    debug: telemetryDebug,
-    dorkHome,
-    dorkosVersion: SERVER_VERSION,
-  });
+  const telemetryBoot = wireStartupTelemetry(dorkHome, SERVER_VERSION);
 
   // Stage the bundled core extensions on disk before the discovery pipeline
   // runs, and capture their tier metadata (default-on/off, disableability) to
@@ -2803,20 +2553,18 @@ async function start() {
       logger.warn('[Connections] Notification delivery deferred');
     }
   };
-  const app = createApp({
-    admission: mainRequestAdmission,
-    connectorEventIngress: {
-      verifier: (id) =>
-        connectorRegistry.resolveProviderInstance(id as ConnectorProviderInstanceId)?.events,
-      accept: (id, event) => {
-        const accepted = connectorEventIngress.accept(id, event);
-        void recoverConnectorEventDelivery();
-        return accepted;
-      },
+  // The signed webhook ingress, served from the Hono `/api` app before any
+  // body is parsed (`services/connectors/events/signed-ingress.ts`).
+  const connectorSignedIngress: ConnectorSignedIngress = {
+    verifier: (id) =>
+      connectorRegistry.resolveProviderInstance(id as ConnectorProviderInstanceId)?.events,
+    accept: (id, event) => {
+      const accepted = connectorEventIngress.accept(id, event);
+      void recoverConnectorEventDelivery();
+      return accepted;
     },
-  });
-
-  app.use('/api/session-locations', createSessionLocationsRouter(db));
+  };
+  const app = createApp({ admission: mainRequestAdmission });
 
   // Build mcpToolDeps and register factory only when ClaudeCodeRuntime is available.
   let mcpToolDeps: Parameters<typeof createExternalMcpServer>[0] | undefined;
@@ -2906,7 +2654,7 @@ async function start() {
     runtimeRegistry
   );
   stopCurrentRoomDueMaintenance = currentRoomDueScheduler.stop.bind(currentRoomDueScheduler);
-  app.locals.docChannelHttp = { ...docChannelHttp, metrics: docChannelMetrics };
+  app.locals.docChannelHttp = Object.assign(docChannelHttp, { metrics: docChannelMetrics });
   const docStreamAuthority = {
     resolveScope: (scope: string) => canvasDocuments.lifecycle.resolveScope(scope),
     requireScopeCurrent: (
@@ -2942,8 +2690,7 @@ async function start() {
     docStreamAuthority
   );
   setDocScopeNotificationsFactory(
-    (scope, req, res) => (signal) =>
-      docScopes.subscribe(scope, docChannelHttp.actor(req, res), signal)
+    (scope, caller) => (signal) => docScopes.subscribe(scope, docChannelHttp.actor(caller), signal)
   );
 
   // An answer given after the in-session hold gave up has to reach the agent that
@@ -3035,8 +2782,8 @@ async function start() {
     const { startTestComposioFixture } =
       await import('./services/connectors/providers/test-composio/fixture.js');
     testComposioFixture = await startTestComposioFixture({ testRuntime: true, localOrigin });
-    const { testControlRouter } = await import('./routes/test-control.js');
-    testControlRouter.use('/composio', testComposioFixture.router);
+    const { addTestControlGroup } = await import('./routes/test-control.js');
+    addTestControlGroup('/composio', testComposioFixture.routes);
   }
   // Built before the ways register: linking the DorkOS account again (seen as
   // early as boot) sends what the old link refused or never applied again.
@@ -3649,12 +3396,6 @@ async function start() {
       // entries iff this returns a live token — withholds otherwise (needs-auth).
       tokenProvider: agentMcpOAuthService,
     });
-    // Expose the resolver to the test-control probe seam (DOR-952), which dials a
-    // managed server through its INJECTED connection to prove the bearer gate.
-    // Test branch only — the seam route is itself mounted only under the gate.
-    if (env.DORKOS_TEST_RUNTIME) {
-      app.locals.agentMcpServerService = agentMcpServerService;
-    }
     // A managed server that refuses the token DorkOS injected flips its row back
     // to needs-auth and draws the sign-in card in the conversation the person hit
     // it in (DOR-981). Wired only for claude-code, because its per-turn MCP status
@@ -3794,56 +3535,68 @@ async function start() {
     );
   }
 
-  // Always mount /mcp — requireMcpEnabled handles the disabled case with a clean 503.
-  const mcpRateLimiter = buildMcpRateLimiter();
-  // Auth is resolved per request by createMcpAuth (env override → per-user Better
-  // Auth key / session → legacy compat key → per-instance local token, with the
-  // read-only carve-out in login-off mode). This is only a startup log hint.
+  // `/mcp` is always served — `requireMcpEnabled` answers the disabled case with
+  // a clean 503. The routes, their gates and the transport are on the Hono
+  // chain (`routes/mcp.ts`); this is the tool server behind them, built per
+  // request. Auth is resolved per request by `decideMcpAuth` (env override →
+  // per-user Better Auth key / session → legacy compat key → per-instance local
+  // token, with the read-only carve-out in login-off mode). This is only a
+  // startup log hint.
   const mcpAuthMode = env.MCP_API_KEY?.trim()
     ? 'auth: MCP_API_KEY override'
     : configManager.get('auth')?.enabled
       ? 'auth: login gate + per-user keys'
       : 'auth: local token (read-only tools tokenless)';
-
-  app.use(
-    '/mcp',
-    validateMcpOrigin,
-    requireMcpEnabled,
-    createMcpAuth({ surface: 'mcp' }),
-    mcpRateLimiter,
-    createMcpRouter(async (caller) => {
-      if (!claudeRuntime || !mcpToolDeps) {
-        throw new Error(
-          'ClaudeCodeRuntime not available — external MCP server cannot handle requests'
-        );
-      }
-      // The server is rebuilt per request, so who is calling — the agent that
-      // presented a token, the person the auth middleware verified, or neither
-      // — is captured by the capability tool handlers it registers.
-      //
-      // What a Blocked permission hides from this caller (spec
-      // `agent-permissions` D15): its own settings when it identified itself,
-      // the install's defaults when it did not.
-      const visibility = await resolveToolVisibilityFor(caller.identity?.agentPath, {
-        inactive: Boolean(caller.identity?.inactive),
-      });
-      return createExternalMcpServer(
-        mcpToolDeps,
-        marketplaceMcpDeps,
-        capabilityRegistry,
-        caller.identity,
-        caller.userId,
-        caller.agentIdentityPresented,
-        visibility.hiddenToolNames
+  const mcpServerFactory: McpServerFactory = async (caller) => {
+    if (!claudeRuntime || !mcpToolDeps) {
+      throw new Error(
+        'ClaudeCodeRuntime not available — external MCP server cannot handle requests'
       );
-    })
-  );
+    }
+    // The server is rebuilt per request, so who is calling — the agent that
+    // presented a token, the person the auth middleware verified, or neither
+    // — is captured by the capability tool handlers it registers.
+    //
+    // What a Blocked permission hides from this caller (spec
+    // `agent-permissions` D15): its own settings when it identified itself,
+    // the install's defaults when it did not.
+    const visibility = await resolveToolVisibilityFor(caller.identity?.agentPath, {
+      inactive: Boolean(caller.identity?.inactive),
+    });
+    return createExternalMcpServer(
+      mcpToolDeps,
+      marketplaceMcpDeps,
+      capabilityRegistry,
+      caller.identity,
+      caller.userId,
+      caller.agentIdentityPresented,
+      visibility.hiddenToolNames
+    );
+  };
   logger.info(`[MCP] External MCP server mounted at /mcp (stateless, ${mcpAuthMode})`);
 
-  // Mount Tasks routes if enabled (`startup/tasks.ts`).
+  // `deps` is what the moved Hono routes read (`http/hono-api.ts`), set where
+  // each group used to be mounted on Express.
+  const deps: HonoApiDeps = {
+    connectorEventIngress: connectorSignedIngress,
+    mcp: mcpServerFactory,
+    docChannel: docChannelHttp,
+  };
+  // The test-control routes' reads, on a test-mode server only: handing them
+  // over is what mounts the routes. The managed-MCP resolver is what the probe
+  // seam (DOR-952) dials a managed server through, to prove the bearer gate.
+  if (env.DORKOS_TEST_RUNTIME) {
+    deps.testControl = {
+      meshCore: () => meshCore,
+      approvals: () => approvalService,
+      agentMcpServers: () => agentMcpServerService,
+    };
+  }
+
+  // Hand the Tasks routes their deps if enabled (`startup/tasks.ts`).
   ({ schedulerService, taskRegistrar, taskFileWatcher, taskReconciler, attachAgentTaskRoots } =
     await startTasks({
-      app,
+      honoDeps: deps,
       tasksEnabled,
       taskStore,
       dorkHome,
@@ -3919,47 +3672,32 @@ async function start() {
       });
   }
 
-  // Mount connector routes (connector-gateway spec, DOR-371). The registry
-  // starts empty — provider backends (raw-MCP, Composio) register in later
-  // phases — but the routing surface is already live: `recommend` reads the
-  // relay adapter catalog (relay-adapter-first), and the aggregate endpoints
-  // return empty until a provider is registered. `adapterManager` satisfies the
-  // routing catalog structurally via its public `getManifest` accessor.
-  // Provider credential + status routes, mounted BEFORE the generic connectors
-  // router: saving a vendor key here reloads its provider live (no restart).
-  app.use(
-    '/api/connectors/providers',
-    createConnectorProvidersRouter({
-      bootstrapper: connectorBootstrapper,
-      credentialStore,
-    })
-  );
-  app.use(
-    '/api/connectors',
-    createConnectorEventsRouter({
+  // Every `/api/connectors` group, served from the Hono `/api` app in the
+  // order `routes/connectors.ts` explains. Saving a vendor key reloads its
+  // provider live (no restart). Program execution joins once the capability
+  // registry is composed, further down.
+  const connectorOwnerBoundary = {
+    resolveOwner: () => connectorOwner,
+    loginEnabled: () => configManager.get('auth').enabled,
+  };
+  const connectorRoutes: ConnectorRoutesDeps = {
+    providers: { bootstrapper: connectorBootstrapper, credentialStore },
+    events: {
       store: connectorEventSubscriptions,
       subscriptions: connectorEventService,
       grants: connectorEventGrants,
       settings: connectorEventSettings,
       managed: managedEventConsent,
-      resolveOwner: () => connectorOwner,
-      loginEnabled: () => configManager.get('auth').enabled,
-    })
-  );
-  app.use(
-    '/api/connectors',
-    createConnectorManagementRouter({
+      ...connectorOwnerBoundary,
+    },
+    management: {
       registry: connectorRegistry,
       reviews: connectorManagementReviews,
       reconciliation: connectorReconciliation,
-      resolveOwner: () => connectorOwner,
-      loginEnabled: () => configManager.get('auth').enabled,
+      ...connectorOwnerBoundary,
       ...(connectorAgentRequests && { agentRequests: connectorAgentRequests }),
-    })
-  );
-  app.use(
-    '/api/connectors',
-    createConnectorResourcesRouter({
+    },
+    resources: {
       query: connectorOperatorQueries,
       logos: catalogLogos,
       authentication: connectorAuthenticationFlows,
@@ -3971,15 +3709,20 @@ async function start() {
         query: connectorOperatorQueries,
         overrides: sessionConnectorAttachmentStore,
       }),
-      resolveOwner: () => connectorOwner,
-      loginEnabled: () => configManager.get('auth').enabled,
-    })
-  );
+      ...connectorOwnerBoundary,
+    },
+  };
+  deps.connectors = connectorRoutes;
   mountedRouters.push('connectors');
 
-  // Mount Relay routes if enabled
+  // Relay routes, only when Relay is enabled and started.
   if (relayEnabled && relayCore) {
-    app.use('/api/relay', createRelayRouter(relayCore, adapterManager, traceStore));
+    deps.relay = {
+      relayCore,
+      ...(adapterManager && { adapterManager }),
+      ...(traceStore && { traceStore }),
+      activity: activityService,
+    };
     // The claim feed (connection-scoping spec §Part 3) — mounted only when
     // the store was actually wired (relay enabled + binding subsystem up).
     const unclaimedChatsStore = adapterManager?.getUnclaimedChats();
@@ -3996,24 +3739,18 @@ async function start() {
       // needs (and so TS can see the closure below is over a value already
       // known non-null, not the outer optional).
       const leaveChatForClaims = adapterManager;
-      app.use(
-        '/api/relay/unclaimed-chats',
-        createUnclaimedChatsRouter({
-          store: unclaimedChatsStore,
-          bindingStore: bindingStoreForClaims,
-          ...(meshCore && { meshCore }),
-          ...(lifecycleForClaims && { lifecycle: lifecycleForClaims }),
-          ...(leaveChatForClaims && {
-            leaveChat: (adapterId: string, chatId: string) =>
-              leaveChatForClaims.leaveChat(adapterId, chatId),
-          }),
-        })
-      );
+      deps.unclaimedChats = {
+        store: unclaimedChatsStore,
+        bindingStore: bindingStoreForClaims,
+        ...(meshCore && { meshCore }),
+        ...(lifecycleForClaims && { lifecycle: lifecycleForClaims }),
+        ...(leaveChatForClaims && {
+          leaveChat: (adapterId: string, chatId: string) =>
+            leaveChatForClaims.leaveChat(adapterId, chatId),
+        }),
+      };
     }
     setRelayEnabled(true);
-
-    // Store relayCore on app.locals so the sessions router can access it
-    app.locals.relayCore = relayCore;
 
     // Wire relay events to unified SSE stream
     relayCore.subscribe('relay.human.console.>', (envelope) => {
@@ -4041,7 +3778,7 @@ async function start() {
   // store into the session router's imports. A Tasks-disabled install leaves
   // the second unset, which both overlays treat as a safe no-op.
   //
-  // Wired to the session routes via app.locals AND to the global session-list
+  // Wired to the session routes (`deps.sessions`) AND to the global session-list
   // stream below, because both produce client-visible session rows and a room
   // turn must read the same way whichever one a client heard it from (DOR-1141).
   if (taskStore) {
@@ -4100,7 +3837,6 @@ async function start() {
   // mount. Both take the ledger as a PORT — neither the broadcaster nor the
   // session routes may reach into the rooms domain — so this one line is where
   // the rooms half of a fleet-wide prompt is decided.
-  app.locals.roomSessionBindings = roomStore.sessionLedger;
   sessionListBroadcaster.setRoomBindings(roomStore.sessionLedger);
 
   // And where a room conversation RUNS, for the other surface that can start a
@@ -4114,7 +3850,6 @@ async function start() {
     worktrees: () => roomWorktrees,
     sessionRuntime: (sessionId) => runtimeRegistry.resolveForSession(sessionId),
   });
-  app.locals.roomSessionPlace = roomSessionPlacePort;
 
   // Wire global session-list discovery → unified SSE stream (ADR-0265/0266).
   // ALWAYS ON: fans every registered runtime's transition-only session-list
@@ -4142,25 +3877,30 @@ async function start() {
   // subscribes to nothing.
   for (const runtime of runtimeRegistry.listRuntimes()) subscribeRuntimeTurns(runtime);
 
-  // Mount Mesh routes if MeshCore initialized successfully (always-on, ADR-0062)
+  // Mesh routes if MeshCore initialized successfully (always-on, ADR-0062)
   // taskStore/relayCore power topology enrichment (relay badges, task counts);
-  // when a subsystem is disabled the router degrades to safe defaults.
+  // when a subsystem is disabled the routes degrade to safe defaults.
   if (meshCore) {
-    app.use('/api/mesh', createMeshRouter({ meshCore, taskStore, relayCore }));
-    // Expose the registry to the (statically-mounted) sessions router so
-    // GET /api/sessions/recent can resolve agent project paths (DOR-329).
-    app.locals.meshCore = meshCore;
+    deps.mesh = { meshCore, taskStore, relayCore, activity: activityService };
     mountedRouters.push('mesh');
   }
+  // The session routes' reads: the registry `/recent` resolves agent project
+  // paths from (DOR-329), the room ports, and the same origin overlays the
+  // session-list stream carries, so a room turn reads the same either way
+  // (DOR-1141).
+  deps.sessions = {
+    ...sessionOriginResolvers(app.locals),
+    meshCore,
+    roomSessionBindings: roomStore.sessionLedger,
+    roomSessionPlace: roomSessionPlacePort,
+    docChannel: docChannelHttp,
+  };
 
   // Deep health (`GET /api/health/deep`) — the checks `dorkos doctor --deep`
   // cannot run from outside because they need this process's own view of rooms,
   // messaging, integrations, and agents. Handed over as one bag of narrow reads,
   // set after every subsystem above has had its chance to start; whatever is off
   // simply reports its checks skipped. Nothing here runs until a request asks.
-  // `deps` is what the moved Hono routes read (`http/hono-api.ts`): this bag and
-  // the banner's below.
-  const deps: HonoApiDeps = {};
   deps.deepHealth = {
     dorkHome,
     roomSessions: roomStore,
@@ -4200,7 +3940,7 @@ async function start() {
   // broken?"), and this one hands over raw state for a person to read. They
   // overlap today; conflating them would mean a new debug read could only be
   // added by widening the health checks' dependency surface.
-  app.locals.debugDeps = {
+  deps.debug = {
     docChannelMetrics,
     roomSessions: roomStore,
     // The SAME probe object the boot sweep and the deep health check hold, so
@@ -4360,18 +4100,15 @@ async function start() {
   );
 
   // Managed-MCP OAuth loopback callback (DOR-942) — the `redirect_uri` the
-  // operator's browser lands on after authorizing a server. Mounted BEFORE the
-  // `/api/agents` router so the two-segment `/mcp-oauth/callback` path always
-  // reaches it first; the sign-in itself is driven by the `mcp.signin`/
-  // `mcp.poll_signin` capabilities, not a route.
-  if (agentMcpOAuthService) {
-    app.use('/api/agents/mcp-oauth', createMcpOAuthRouter(agentMcpOAuthService));
-  }
+  // operator's browser lands on after authorizing a server, served by the Hono
+  // app beside the agents group; the sign-in itself is driven by the
+  // `mcp.signin`/`mcp.poll_signin` capabilities, not a route.
+  if (agentMcpOAuthService) deps.mcpOAuth = agentMcpOAuthService;
 
   // Permissions (spec `agent-permissions` D10): the one way in for what agents
-  // may do. Mounted at `/api` BEFORE the agents router so
-  // `/api/agents/:id/permissions` reaches it first. The registry is read lazily:
-  // it is composed after the routes are mounted.
+  // may do. Served by the Hono app, beside the agents group under
+  // `/api/agents`. The registry is read lazily: it is composed after the
+  // routes are handed over.
   // The one owner of every permission write (spec `agent-permissions` D10):
   // the permissions pages and the request card's Always allow both write here.
   const permissionService = createPermissionService({
@@ -4403,23 +4140,17 @@ async function start() {
     arrivalRecord.clear(agentId);
     void permissionObserver.forget(agentId);
   });
-  app.use(
-    '/api',
-    createPermissionsRouter({
-      permissions: permissionService,
-      activity: activityService,
-    })
-  );
+  deps.permissions = { permissions: permissionService, activity: activityService };
   mountedRouters.push('permissions');
 
-  // What agents promised (spec `heartbeats` §12). Always mounted; the
-  // per-agent POST is mounted before the agents router so it answers its path.
-  app.use('/api/commitments', commitments.routers.list);
-  app.use('/api/agents/:id/commitments', commitments.routers.agent);
-  // Pause an agent everywhere, and lift it (spec `audit-trail` PR5). Mounted
-  // before the agents router so `/api/agents/:id/pause` reaches it first; the
-  // registry is read lazily because it is composed after the routes mount.
-  app.use('/api', createAgentPauseRouter({ registry: () => capabilityRegistry }));
+  // What agents promised (spec `heartbeats` §12). Always mounted, by the Hono
+  // app: the list at `/api/commitments`, a person's new one per agent at
+  // `/api/agents/:id/commitments`.
+  deps.commitments = commitments.routeDeps;
+  // Pause an agent everywhere, and lift it (spec `audit-trail` PR5). Served by
+  // the Hono app, beside the agents group under `/api/agents`; the registry is
+  // read lazily because it is composed after the routes are handed over.
+  deps.agentPause = { registry: () => capabilityRegistry };
   mountedRouters.push('agent-pause');
 
   // Always mounted — not behind any feature flag.
@@ -4427,58 +4158,237 @@ async function start() {
   // The confirmation provider is composed further down this boot, inside the
   // marketplace block; read lazily so an agent's template creation raises a card
   // once it exists and fails closed until then (DOR-2325).
-  app.use(
-    '/api/agents',
-    createAgentsRouter(meshCore, {
-      confirmationProvider: () => templateConfirmationProvider,
-      marketplace: () => agentPackageInstaller,
-    })
-  );
+  deps.agents = {
+    meshCore,
+    activity: activityService,
+    confirmationProvider: () => templateConfirmationProvider,
+    marketplace: () => agentPackageInstaller,
+  };
 
-  mountOperatorRoutes(app, {
-    dorkHome,
-    roomAuthors,
-    roomStore,
+  // The team roster — one READ of every identity on this install (ADR
+  // 260806-222535). Always mounted, and mounted even when the mesh did not
+  // start: the person reading the page is on the roster, so a missing agent
+  // registry is a `warnings[]` entry rather than a dead route. Served from the
+  // Hono `/api` app (`http/hono-api.ts`), which reads this.
+  deps.team = {
+    authors: roomAuthors,
+    // `GET /api/team/:memberId/rooms` — where one member can be found (spec
+    // `profile-unification` §3.2). The store rather than `RoomService`: this
+    // is two membership reads and no room behaviour.
+    rooms: roomStore,
+    ...(meshCore && { meshCore }),
+    // What is working RIGHT NOW, from the one map that knows: the room
+    // dispatcher's claims. Nothing else on this install can answer it.
     activeClaims: () => roomService.listActiveClaims(),
-    readMeshCore: () => meshCore,
-    approvalService,
-    activityService,
-    permissionService,
-    auditLog,
-    auditAccounts,
-    notificationService,
-    pushSubscriptions,
-    webPushChannel,
-    mountedRouters,
-    readCapabilityRegistry: () => capabilityRegistry,
-    db,
-  });
+    // Archived included on purpose — a room can be archived while an agent is
+    // still mid-turn in it, and the status sentence should still name it.
+    listRooms: () =>
+      roomStore
+        .listRooms({ includeArchived: true })
+        .map((room) => ({ id: room.id, name: room.title })),
+    // When each agent last ran, for the agents mesh health cannot speak for
+    // (it is stamped by the claude-code turn paths only). `limit: 1` because
+    // only the `agentActivity` map is wanted here — it is computed across
+    // every session before that trim, so the map is complete either way.
+    sessionActivity: async () => {
+      const { agentActivity } = await listRecentSessions({
+        runtimes: runtimeRegistry.listRuntimes(),
+        agentPaths: meshCore ? meshCore.listWithPaths().map((a) => a.projectPath) : [],
+        limit: 1,
+      });
+      return agentActivity;
+    },
+    ownerAccount: () => readOwnerAccount(),
+    ownerEmail: (userId) => getUserById(userId)?.email ?? null,
+    // `config.profile.displayName` is what the user likes to be called — the
+    // second rung of the operator-name precedence, under the account name.
+    configDisplayName: () => configManager.getAll().profile.displayName,
+    configDisplayNameSource: () => configManager.getAll().profile.displayNameSource,
+    defaultAgentName: () => configManager.getAll().agents.defaultAgent,
+  };
 
-  mountOptionalGateways(app, {
-    get extensionManager() {
-      return extensionManager;
+  // The operator's own profile — their photo and their name (spec
+  // `identity-consistency` §W3.3, §W3.5). The store is chosen HERE and nowhere
+  // else: the router depends on the `AvatarStore` interface, so the day photos
+  // live somewhere other than this machine, this line is what changes. Served
+  // from the Hono `/api` app (`http/hono-api.ts`), which reads this.
+  deps.profile = {
+    avatars: new LocalAvatarStore(dorkHome),
+    caller: (request) => resolveCaller(request),
+    authors: roomAuthors,
+    ownerAccount: () => readOwnerAccount(),
+    setAccountImage: (userId, imageUrl) => setUserImage(userId, imageUrl),
+    setAccountName: (userId, name) => setUserName(userId, name),
+    setProfileDisplayName: (displayName, source) => {
+      const before = configManager.get('profile');
+      // The name and the record of who wrote it go in ONE write, so no reader
+      // can catch the new name still carrying the previous writer's stamp.
+      // `set` rather than two `setDot`s for exactly that reason (DOR-1022);
+      // WHICH source is the route's call, not this line's.
+      configManager.set('profile', { ...before, displayName, displayNameSource: source });
+      logConfigWrite('the profile route', 'profile', before, configManager.get('profile'));
     },
-    get meshCore() {
-      return meshCore;
-    },
-    get relayCore() {
-      return relayCore;
-    },
-    db,
-    dorkHome,
-    port: PORT,
-    mountedRouters,
-  });
+  };
 
-  // Mount Admin routes (reset, restart)
-  app.use(
-    '/api/admin',
-    createAdminRouter({
-      dorkHome,
-      shutdownServices,
-      closeDb: () => db.$client.close(),
-    })
-  );
+  // Message search — "where did we talk about X", over the derived index the
+  // reconciler above keeps caught up (message-search spec §6, §7). Always
+  // mounted and read-only. An install whose index is empty answers `[]`, which is
+  // the honest answer and needs no flag; who may see what is resolved per request
+  // through the rooms domain, never from this line.
+  deps.search = { db };
+
+  // Template catalog — always available, merges built-in + user templates.
+  // Served from the Hono `/api` app, like the saved chat folders beside it.
+  deps.templates = { dorkHome };
+  deps.sessionLocations = db;
+
+  // Harness Sync — "what does every agent tool do with every agent file in this
+  // project", and the Sync now button that acts on it. The GET writes nothing
+  // (DOR-678's rule, stated in the route); the POST is person-only and takes
+  // the project lock. The approval service is what lets the sync ask about a
+  // package's hooks, exactly as the install path does.
+  deps.harness = { dorkHome, approvals: approvalService };
+  mountedRouters.push('harness');
+
+  // Approvals — always available. The cockpit lists what is waiting on a person
+  // and records their decision (spec `agent-trust` §3.3).
+  deps.approvals = {
+    service: approvalService,
+    options: {
+      activity: activityService,
+      // An "Always allow" writes through the one permission write owner, like
+      // Settings does (spec `agent-permissions` D7).
+      permissions: permissionService,
+      // Names the action for the answer's audit line. Read lazily: the registry
+      // is composed later in boot.
+      describeCapability: (capabilityId) => capabilityRegistry?.get(capabilityId),
+    },
+  };
+
+  // Activity feed — always available, not behind a feature flag.
+  deps.activity = activityService;
+  deps.audit = { log: auditLog, accounts: auditAccounts };
+  app.locals.activityService = activityService;
+  mountedRouters.push('activity');
+
+  // The Inbox — always available for the same reason: the history is written
+  // whether or not any channel could carry it.
+  deps.notifications = notificationService;
+  mountedRouters.push('notifications');
+
+  // Web push — how the escalation ladder reaches a browser DorkOS is not open
+  // in. Always mounted: a person can subscribe a device before anything has ever
+  // needed to escalate, and the routes are what tell the Settings tab whether
+  // this install can push at all.
+  deps.push = { subscriptions: pushSubscriptions, channel: webPushChannel };
+  mountedRouters.push('push');
+
+  // The bell and the Activity inbox answer extension decisions here (spec
+  // `flow-multiproject` §7.3). Always mounted: with no extension system it
+  // simply lists nothing.
+  deps.extensionDecisions = { activity: activityService };
+  mountedRouters.push('extension-decisions');
+
+  // Mount Extensions routes if extension system initialized successfully.
+  if (extensionManager) {
+    app.use(
+      '/api/extensions',
+      createExtensionsRouter(extensionManager, dorkHome, () => env.DORKOS_DEFAULT_CWD ?? null)
+    );
+
+    // Delegate /api/ext/:id/* to extension-registered Express routers
+    app.use('/api/ext/:id', createExtensionRoutesMiddleware(extensionManager));
+
+    mountedRouters.push('extensions');
+  }
+
+  // Discovery routes when MeshCore is available (delegates to meshCore.discover())
+  if (meshCore) {
+    deps.discovery = meshCore;
+    mountedRouters.push('discovery');
+  }
+
+  // Mount A2A gateway if enabled — requires both Relay (message routing) and Mesh (agent registry)
+  //
+  // The gate is `a2a.enabled` in config, with `DORKOS_A2A_ENABLED` winning in
+  // BOTH directions when it is present — the same shape Tasks and Relay use
+  // above, so a headless deployment keeps deciding from its environment and the
+  // Experiments section can honestly report the setting as locked (DOR-1304).
+  const a2aEnabled =
+    // eslint-disable-next-line no-restricted-syntax -- Checking presence, not value: env.ts can't distinguish "unset" from "set to false"
+    'DORKOS_A2A_ENABLED' in process.env
+      ? env.DORKOS_A2A_ENABLED
+      : (configManager.get('a2a')?.enabled ?? false);
+  if (a2aEnabled && relayCore && meshCore) {
+    // The A2A surface is guarded by decideMcpAuth for the 'a2a' surface. In
+    // login-off mode the per-instance local token gates JSON-RPC execution, but
+    // that token is a loopback-trust mechanism (a 0600 file only a local operator
+    // can read) — it does not make the surface safe on a non-loopback bind. So the
+    // exposure guard still keys off a network-reachable credential (an env key,
+    // the legacy compat key, or login) to decide whether A2A may mount off loopback.
+    //
+    // This answers "may A2A face the network?" and nothing else. It is NOT what
+    // Agent Cards advertise: execution is gated in every posture, so cards state
+    // the bearer requirement unconditionally (DOR-1824, agent-card-generator.ts).
+    const authConfigured =
+      !!env.MCP_API_KEY?.trim() ||
+      !!configManager.get('mcp')?.apiKey ||
+      configManager.get('auth')?.enabled === true;
+
+    // Exposure guard: refuse to mount the external A2A surface (JSON-RPC plus
+    // the agent-card discovery endpoints) on a non-loopback host when nothing
+    // gates it — otherwise remote prompt execution against every agent would be
+    // open to the network. Unlike the bind check this is not a hard exit: the
+    // loopback cockpit stays usable; only the A2A surface is withheld.
+    const a2aExposure = checkA2aExposure({
+      host: env.DORKOS_HOST,
+      authConfigured,
+      allowInsecureBind: env.DORKOS_ALLOW_INSECURE_BIND,
+    });
+    if (!a2aExposure.allowed) {
+      logger.error(`[A2A] ${a2aExposure.reason}`);
+      // Also to stderr so an operator starting from a terminal sees why the
+      // surface they enabled did not come up.
+      console.error(`\n${a2aExposure.reason}\n`);
+    } else {
+      if (a2aExposure.warning) logger.warn(`[A2A] ${a2aExposure.warning}`);
+
+      // Advertised card URL: prefer the explicit public URL — behind a proxy or
+      // tunnel the {host}:{port} bind is non-routable (e.g. http://0.0.0.0:PORT).
+      // Trailing slashes are stripped so `${baseUrl}/a2a` stays clean.
+      const baseUrl = (env.DORKOS_PUBLIC_URL ?? `http://${env.DORKOS_HOST}:${PORT}`).replace(
+        /\/+$/,
+        ''
+      );
+      // The cards, the JSON-RPC endpoints and their own gates (the credential
+      // check and the two limiters) answer from the Hono chain: `routes/a2a.ts`.
+      deps.a2a = {
+        meshCore,
+        relay: relayCore,
+        db,
+        baseUrl,
+        version: env.DORKOS_VERSION_OVERRIDE ?? '0.0.0',
+        rpcMaxPerMinute: env.DORKOS_A2A_RPC_RATE_LIMIT,
+        cardMaxPerMinute: env.DORKOS_A2A_CARD_RATE_LIMIT,
+      };
+
+      // Names the credential a caller must send. "none" was never true here —
+      // execution is gated in every posture; only WHICH credential changes.
+      // With login OFF but an env/legacy key set, acceptor 4 in mcp-auth.ts is
+      // gated on `!authEnabled` — not on the key — so the local token still
+      // passes there too. Name every credential that works, or the line trades
+      // one lie for a smaller one.
+      const a2aAuthMode = authConfigured
+        ? 'auth: API key, login, or local MCP token'
+        : 'auth: local MCP token (loopback)';
+      logger.info(
+        `[A2A] Gateway mounted (fleet card: /.well-known/agent-card.json, RPC: POST /a2a, ${a2aAuthMode})`
+      );
+    }
+  }
+
+  // Admin routes (reset, restart)
+  deps.admin = { dorkHome, shutdownServices, closeDb: () => db.$client.close() };
   mountedRouters.push('admin');
 
   // Mount Marketplace routes. The install pipeline has two optional
@@ -4490,7 +4400,6 @@ async function start() {
   // than gating the entire namespace.
   ({ devLinkWatcher, templateConfirmationProvider, agentPackageInstaller, marketplaceMcpDeps } =
     await startMarketplace({
-      app,
       dorkHome,
       extensionManager,
       adapterManager,
@@ -4503,6 +4412,7 @@ async function start() {
       currentSweptProjects: () => sweptProjects,
       currentCapabilityRegistry: () => capabilityRegistry,
       mountedRouters,
+      honoDeps: deps,
     }));
 
   // Embedded terminal (spec right-panel-workbench, Chunk E). Always mounted:
@@ -4776,42 +4686,40 @@ async function start() {
         connectorRuntimePrincipals,
         () => connectorRuntimeMcpListener!.url
       );
+      if (deps.testControl) {
+        deps.testControl.connectorRequestProbe = () => app.locals.connectorRuntimeRequestProbe;
+        deps.testControl.connectorExecutionProbe = () => app.locals.connectorRuntimeExecutionProbe;
+      }
     }
     logger.info('[Connectors] Runtime execution listener initialized');
   }
-  app.use(
-    '/api/connectors',
-    createConnectorExecutionRouter({
-      connectorRegistry,
-      capabilities: capabilityRegistry,
-      authorization: connectorAuthorization,
-      access: connectorAccess,
-      programPrincipals: connectorProgramPrincipals,
-      eventAccess: new ConnectorEventAccessQueryService(
-        connectorEventSubscriptions,
-        { ownsAgent: connectorOwnsAgent },
-        connectorProgramPrincipals,
-        managedEventConsent
-      ),
-      resolveOwner: () => connectorOwner,
-      loginEnabled: () => configManager.get('auth').enabled,
-    })
-  );
+  connectorRoutes.execution = {
+    connectorRegistry,
+    capabilities: capabilityRegistry,
+    authorization: connectorAuthorization,
+    access: connectorAccess,
+    programPrincipals: connectorProgramPrincipals,
+    eventAccess: new ConnectorEventAccessQueryService(
+      connectorEventSubscriptions,
+      { ownsAgent: connectorOwnsAgent },
+      connectorProgramPrincipals,
+      managedEventConsent
+    ),
+    ...connectorOwnerBoundary,
+  };
   // GET /api/capabilities/catalog — the self-description catalog. (The bare
   // `/api/capabilities` path already serves the per-runtime capability matrix, a
   // different, client-facing contract; the registry catalog lives one segment
   // deeper.) Declared as the `capabilities.list` capability's `http` surface so it
   // projects into OpenAPI (task 2.5).
-  app.use('/api/capabilities/catalog', createCapabilitiesCatalogRouter(capabilityRegistry));
+  //
   // POST /api/capabilities/:id/invoke — the generic capability dispatch endpoint
   // (task 2.4). Dispatches through the same composed registry, so every
-  // capability is reachable by id; it rides the app-wide sessionGate (mounted in
-  // `app.ts` before the routes), giving it the standard `/api/*` auth posture —
-  // not the tokenless `/mcp` read-only carve-out — so mutating capabilities are
-  // never reachable tokenlessly. Mounted at the `/api/capabilities` prefix, which
-  // the catalog (`/catalog`) and matrix (`/`) routes do not claim for `POST /:id/invoke`.
-  app.use('/api/capabilities', createCapabilitiesInvokeRouter(capabilityRegistry));
-  app.use('/api/canvas/docs', createCanvasDocManagementRouter(capabilityRegistry, docChannelHttp));
+  // capability is reachable by id; it rides the `/api` chain's session gate,
+  // giving it the standard `/api/*` auth posture — not the tokenless `/mcp`
+  // read-only carve-out — so mutating capabilities are never reachable
+  // tokenlessly. Both are served from the Hono `/api` app (`http/hono-api.ts`).
+  deps.capabilities = capabilityRegistry;
   logger.info(
     `[Capabilities] Registry composed (${capabilityRegistry.capabilities.length} capabilities); catalog at GET /api/capabilities/catalog, invoke at POST /api/capabilities/:id/invoke`
   );
@@ -4893,42 +4801,14 @@ async function start() {
         summary: 'DorkOS started',
       });
 
-      // Register the anonymous daily heartbeat (Tier 1 opt-out; ADR 260713-143958).
-      // `config.telemetry.heartbeat` defaults OFF, and the send folds in the env
-      // kill switch AND the `tier1SendGate` captured at boot (BEFORE the first-run
-      // notice wrote `lastPromptedVersion`), so a first-notice boot sends nothing.
-      // Payload documented at https://dorkos.ai/telemetry (DOR-293).
-      const runtimesConfig = configManager.get('runtimes');
-      const runtimesConfigured = [
-        'claude-code',
-        ...(runtimesConfig.codex.enabled ? ['codex'] : []),
-        ...(runtimesConfig.opencode.enabled ? ['opencode'] : []),
-      ];
-      registerHeartbeat({
-        consent:
-          resolveTelemetryConsent(telemetryConfig?.heartbeat ?? false, telemetryEnv) &&
-          tier1SendGate,
-        debug: telemetryDebug,
+      wireStartupHeartbeat(
+        telemetryBoot,
         dorkHome,
-        dorkosVersion: SERVER_VERSION,
-        runtimesConfigured,
-        tunnelEnabled: configManager.get('tunnel')?.enabled ?? false,
-        cloudLinked: configManager.get('cloud')?.instanceToken != null,
-        collectCounts: (): HeartbeatCounts => {
-          // Best-effort snapshot; any failure just contributes a zero.
-          let agentCount = 0;
-          try {
-            agentCount = db.select().from(agents).all().length;
-          } catch {
-            /* ignore */
-          }
-          return {
-            agents: agentCount,
-            tasks: taskStore?.getTasks().length ?? 0,
-            relayAdapters: adapterManager?.listAdapters().length ?? 0,
-          };
-        },
-      });
+        SERVER_VERSION,
+        db,
+        () => taskStore,
+        () => adapterManager
+      );
     },
   });
   if (!server) return;

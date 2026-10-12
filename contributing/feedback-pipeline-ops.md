@@ -26,8 +26,9 @@ Linear issue status change → webhook POST dorkos.ai/api/webhooks/linear
 | Webhook                     | "DorkOS Feedback Issue Updates" → `https://dorkos.ai/api/webhooks/linear`, **Issue** data-change events, all public teams | created 2026-08-06, secret shared with Vercel                                              |
 | Triage routing              | Linear's Triage feature is ON for the FB team                                                                             | new API-created issues land in Triage automatically                                        |
 
-There is deliberately **no** `LINEAR_FEEDBACK_PROJECT_ID`: issues file at team
-level, and the FB team's Triage is the intake surface.
+`LINEAR_FEEDBACK_PROJECT_ID` exists and is optional (`apps/site/src/env.ts`).
+Production leaves it unset on purpose: issues file at team level, and the FB
+team's Triage is the intake surface.
 
 ## The API key — requirements that are not obvious
 
@@ -253,7 +254,7 @@ Do this after any change to the intake step:
 
 2. Run `/feedback:triage`. It should list the issue as having no mirror, file an
    FB issue for it, and present a drafted "heard" reply for approval.
-3. Check Linear: the new FB issue is in Triage with the `Bug` label, the title
+3. Check Linear: the new FB issue is in Triage with the `reported/defect` label, the title
    verbatim, and a `Source:` line carrying your issue number. Confirm the stored
    description shows Linear's autolink form, which is the case the matcher has
    to survive.

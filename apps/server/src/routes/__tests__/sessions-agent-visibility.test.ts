@@ -63,10 +63,14 @@ vi.mock('../../services/core/config-manager.js', () => ({
 
 vi.mock('@dorkos/shared/manifest', () => ({ readManifest: vi.fn(async () => null) }));
 
+import { Hono } from 'hono';
 import request from '@dorkos/test-utils/supertest';
 import { createTestDb } from '@dorkos/test-utils/db';
 import { listeningServer } from '@dorkos/test-utils/listening-server';
 import { createApp, finalizeApp } from '../../app.js';
+import type { ApiEnv } from '../../http/api-chain.js';
+import { createSessionRoutes } from '../sessions.js';
+import { composedListener } from '../../http/__tests__/composed-listener.js';
 import {
   initSessionVisibility,
   resetSessionVisibility,
@@ -82,9 +86,11 @@ import {
 import { resetMessageDispatcher } from '../../services/session/message-dispatcher.js';
 import { recordDispatchStart } from '../../services/observability/dispatch-buffers.js';
 
-const app = createApp({ admission: new MainRequestAdmission() });
+const admission = new MainRequestAdmission();
+const app = createApp({ admission });
 finalizeApp(app);
-const server = listeningServer(app);
+// Routed as the running server routes: the diff routes answer from Hono.
+const server = listeningServer(composedListener(app, admission));
 
 /** A person's own chat in the app. */
 const PRIVATE = '00000000-0000-4000-8000-0000000000a1';
@@ -320,6 +326,51 @@ describe('the guard in front of every session route', () => {
       .set(AGENT)
       .send({ content: 'hello', create: true });
     expect(reused.status).toBe(404);
+  });
+});
+
+describe('a session route nobody listed', () => {
+  /**
+   * The session routes with one more `:id` route on the end, registered the way
+   * a future route would be: with nothing in front of it.
+   */
+  function probe(sessionId: string, headers: Record<string, string> = {}, tail = '/zz-probe') {
+    const router = createSessionRoutes();
+    router.get('/:id/zz-probe', (c) => c.json({ reached: true }));
+    const app = new Hono<ApiEnv>().route('/api/sessions', router);
+    const incoming = { headers, socket: { remoteAddress: '127.0.0.1' } };
+    return app.request(`/api/sessions/${sessionId}${tail}`, { headers }, { incoming } as never);
+  }
+  const agent = { 'x-dorkos-agent': 'agent-token' };
+
+  it("is guarded: a person's own chat is 404 to an agent, as on every listed route", async () => {
+    const res = await probe(PRIVATE, agent);
+
+    expect(res.status).toBe(404);
+    expect(((await res.json()) as { code: string }).code).toBe('SESSION_NOT_FOUND');
+  });
+
+  it('lets agent work, the owner and an id that is not a session through', async () => {
+    expect((await probe(WORK, agent)).status).toBe(200);
+    expect((await probe(PRIVATE)).status).toBe(200);
+    expect((await probe('not-a-session', agent)).status).toBe(200);
+  });
+
+  it('leaves a path no route answers to the 404 any unknown path gets', async () => {
+    const res = await probe(PRIVATE, agent, '/zz-nothing');
+
+    expect(res.status).toBe(404);
+    expect(await res.text()).not.toContain('SESSION_NOT_FOUND');
+  });
+
+  it('runs the guard once per request', async () => {
+    const lookup = vi.fn(
+      (ids: readonly string[]) => new Map(ids.map((id) => [id, 'space'] as const))
+    );
+    initSessionVisibility(lookup);
+
+    expect((await probe(WORK, agent)).status).toBe(200);
+    expect(lookup).toHaveBeenCalledTimes(1);
   });
 });
 

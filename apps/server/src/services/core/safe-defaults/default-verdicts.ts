@@ -292,6 +292,9 @@ export const NO_RISK_DEFAULTS: readonly string[] = [
   'runtimes.opencode.defaultModel',
   'runtimes.codex.defaultModel',
   'runtimes.codex.defaultEffort',
+  // A model preference, never a payer: the credits ladder still decides who
+  // pays, and `null` lets DorkOS pick (ADR 261010-143211).
+  'runtimes.doe.defaultModel',
   'runtimes.opencode.enabled',
   // Admission alone sends nothing: Doe requires an explicit inference choice.
   'runtimes.doe.enabled',

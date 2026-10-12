@@ -14,7 +14,6 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import express from 'express';
 import request from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
 
@@ -45,7 +44,14 @@ import { RelayCore } from '@dorkos/relay';
 import { createTestDb } from '@dorkos/test-utils/db';
 import { readManifest, writeManifest } from '@dorkos/shared/manifest';
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
-import { createMeshRouter } from '../mesh.js';
+import { createMeshRoutes } from '../mesh.js';
+import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
+
+// The `/api` chain reads config (login, the host allowlist); nothing is set.
+vi.mock('../../services/core/config-manager.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../services/core/config-manager.js')>()),
+  configManager: { get: vi.fn().mockReturnValue(null), set: vi.fn() },
+}));
 import { notifyAgentCreated, setOnAgentCreated } from '../../services/core/agent-created-hook.js';
 import { createMeshRegisterHandler } from '../../services/runtimes/claude-code/mcp-tools/mesh-tools.js';
 import type { McpToolDeps } from '../../services/runtimes/claude-code/mcp-tools/types.js';
@@ -163,10 +169,9 @@ beforeEach(async () => {
   });
   // …and a folder a scan finds reaches that seam the way index.ts routes it.
   mesh.onAgentAdopted((agent) => void notifyAgentCreated({ ...agent, origin: 'registered' }));
-  const app = express();
-  app.use(express.json());
-  app.use('/api/mesh', createMeshRouter({ meshCore: mesh }));
-  target.mount(app);
+  target.mount(
+    honoGroupListener({ path: '/api/mesh', routes: createMeshRoutes({ meshCore: mesh }) })
+  );
 });
 
 afterEach(async () => {

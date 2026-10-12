@@ -14,6 +14,7 @@ import { fetchOpenRouterCatalog, type OpenRouterCatalog } from './providers/open
 import { unwrap } from './sessions/session-mapper.js';
 import { projectModelOptions, projectedProviderIds } from './providers/models.js';
 import { canonicalDirectory } from '@dorkos/shared/canonical-directory';
+import { listOpenCodeSubagents } from './subagent-list.js';
 
 /**
  * @inheritdoc
@@ -117,10 +118,10 @@ export function getConnectedProvider(runtimeOwner: object): string | null {
   return getConnectedOpenCodeProvider();
 }
 
-/** OpenCode agents are prompt-scoped, not a DorkOS-dispatchable subagent registry. */
+/** List Main's named subagent/all agents using this constructor-owned provider. */
 export async function getSupportedSubagents(runtimeOwner: object): Promise<SubagentInfo[]> {
-  readOriginalOpenCodeRuntimeView(runtimeOwner);
-  return [];
+  const facet = readOriginalOpenCodeRuntimeView(runtimeOwner);
+  return listOpenCodeSubagents(facet.provider, DEFAULT_CWD);
 }
 
 /** OpenCode exposes no DorkOS-invocable slash commands. */

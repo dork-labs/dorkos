@@ -2,7 +2,7 @@
   "version": "6",
   "dialect": "sqlite",
   "id": "71a4819c-e113-4834-bad9-c9bbac8c7f96",
-  "prevId": "7bf85660-9990-453b-87cf-29bf2f5a2f3d",
+  "prevId": "13d97925-fb17-495b-86f9-ecc7a6995c44",
   "tables": {
     "a2a_tasks": {
       "name": "a2a_tasks",
@@ -14404,6 +14404,13 @@
         },
         "closed_at": {
           "name": "closed_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "delivered_at": {
+          "name": "delivered_at",
           "type": "text",
           "primaryKey": false,
           "notNull": false,

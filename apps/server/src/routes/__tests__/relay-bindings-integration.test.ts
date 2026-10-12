@@ -6,14 +6,19 @@
  * sequential HTTP requests, verifying end-to-end data integrity.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import express from 'express';
 import type { Server } from 'node:http';
 import request from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
-import { createRelayRouter } from '../relay.js';
+import { relayRoutesListener } from './relay-routes-listener.js';
+import type { TraceStore } from '../../services/relay/trace-store.js';
 import type { RelayCore } from '@dorkos/relay';
 import { AdapterError, type AdapterManager } from '../../services/relay/adapter-manager.js';
 import { eventFanOut } from '../../services/core/event-fan-out.js';
+
+// The `/api` chain reads config (login, the host allowlist); nothing is set.
+vi.mock('../../services/core/config-manager.js', () => ({
+  configManager: { get: vi.fn().mockReturnValue(null), set: vi.fn() },
+}));
 
 const target = swappableServer();
 
@@ -129,22 +134,13 @@ function createMockAdapterManager(overrides?: Partial<AdapterManager>): AdapterM
 }
 
 function createTestApp(adapterManager?: AdapterManager, traceStore?: unknown): Server {
-  const app = express();
-  app.use(express.json());
-  app.use(
-    '/api/relay',
-    createRelayRouter(
-      createMockRelayCore() as unknown as RelayCore,
-      adapterManager as AdapterManager | undefined,
-      traceStore as never
-    )
+  return target.mount(
+    relayRoutesListener({
+      relayCore: createMockRelayCore() as unknown as RelayCore,
+      adapterManager,
+      traceStore: traceStore as TraceStore | undefined,
+    })
   );
-  app.use(
-    (err: Error, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
-      res.status(500).json({ error: err.message });
-    }
-  );
-  return target.mount(app);
 }
 
 // ---------------------------------------------------------------------------

@@ -11,7 +11,12 @@ import {
 import type { CommunityConfig } from '../../config.js';
 import type { FeedReader } from '../../live/feed.js';
 import { attachmentsForEntries } from './attachments.js';
-import { ENTRY_COLUMNS, entryProjection, originKeyForPrincipal, type EntryRow } from './entries.js';
+import {
+  ENTRY_COLUMNS,
+  entryProjection,
+  originKeyForPrincipal,
+  type EntryRow,
+} from '../../content/entry-projection.js';
 
 /** One entry ready to send, with its frames built on first use. */
 export interface StreamEntry {

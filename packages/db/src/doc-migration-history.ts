@@ -37,6 +37,7 @@ import {
   remoteCommandJournal,
   heartbeatReportItems,
   remoteEventRefusals,
+  heartbeatOutboxDeliveredAt,
   reviewedSql,
   refuse,
   type MigrationEntry,
@@ -182,6 +183,7 @@ export function bridgeLegacyDocMigrationHistory(db: Db, folder: string): void {
     remoteCommandJournal,
     heartbeatReportItems,
     remoteEventRefusals,
+    heartbeatOutboxDeliveredAt,
   ];
   const shippedSql = shipped.map((entry) => reviewedSql(folder, entry));
   reviewedSql(folder, consolidatedDoc);
@@ -201,6 +203,7 @@ export function bridgeLegacyDocMigrationHistory(db: Db, folder: string): void {
     [shippedRows[6]!, remoteCommandJournal],
     [shippedRows[7]!, heartbeatReportItems],
     [shippedRows[8]!, remoteEventRefusals],
+    [shippedRows[9]!, heartbeatOutboxDeliveredAt],
     [finalRows, consolidated],
   ] as const) {
     if (matching.length > 1 || (matching[0] && matching[0].created_at !== entry.when))

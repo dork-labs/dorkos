@@ -808,6 +808,12 @@ With `autonomy`, every new chat starts with the approval prompts turned off, so 
       type: '"ask" | "act" | "autonomy" | null',
       default: 'null',
     },
+    'runtimes.doe.defaultModel': {
+      description:
+        'The model a new DorkOS chat on DorkOS credits starts on, when your credits cover it. When `null`, DorkOS picks. This never changes what pays for a chat.',
+      type: 'string | null',
+      default: 'null',
+    },
     'runtimes.codex.defaultModel': {
       description:
         'The model a new Codex chat starts on. When `null`, Codex picks. Chats you already have are not changed.',
@@ -1185,7 +1191,7 @@ Either way the limits below apply to both:
 
 ### Your profile
 
-Tell DorkBot what kind of work you do, and every agent on this machine knows who it works for. DorkBot asks once during setup. Your answer is saved here and shared only with your own agents. It is local-only; never included in any telemetry payload.
+Tell DorkBot what kind of work you do, and every agent on this machine knows who it works for. DorkBot asks once, with a card in the sidebar. Your answer is saved here and shared only with your own agents. It is local-only; never included in any telemetry payload.
 
 <TypeTable
   type={{

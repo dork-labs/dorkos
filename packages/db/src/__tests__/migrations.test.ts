@@ -291,6 +291,11 @@ describe('Database Migrations', () => {
         },
         {
           idx: 159,
+          tag: '20261011080030_heartbeat_outbox_delivered_at',
+          when: 1791705630799,
+        },
+        {
+          idx: 160,
           tag: '20261011184508_tearful_killer_shrike',
           when: 1791744308484,
         },
@@ -298,7 +303,7 @@ describe('Database Migrations', () => {
       expect(db.$client.prepare('SELECT * FROM audit_events ORDER BY seq').all()).toEqual(
         publishedAudit
       );
-      // The shipped Main148..158 prefix precedes canonical Doc159; each immutable
+      // The shipped Main148..159 prefix precedes canonical Doc160; each immutable
       // SQL identity is recorded once at its authentic journal timestamp.
       for (const entry of journal.entries.slice(148)) {
         const hash = createHash('sha256')

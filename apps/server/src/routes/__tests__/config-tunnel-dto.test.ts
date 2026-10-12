@@ -14,7 +14,6 @@
  * @module routes/__tests__/config-tunnel-dto
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import express from 'express';
 import request from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
 
@@ -46,6 +45,7 @@ vi.mock('../../services/core/config-manager.js', () => ({
 
 import { env } from '../../env.js';
 import configRouter from '../config.js';
+import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
 
 const fixtureTarget = swappableServer();
 const fixtureServer = fixtureTarget.server;
@@ -75,18 +75,12 @@ const NOT_RUNNING = {
 };
 
 describe('GET /api/config — the tunnel block', () => {
-  let app: express.Application;
-
   beforeEach(() => {
     Object.assign(mutableEnv, { TUNNEL_AUTH: undefined, NGROK_AUTHTOKEN: undefined });
     Object.assign(tunnelStatus, NOT_RUNNING);
     storedTunnel = undefined;
 
-    app = express();
-    app.use(express.json());
-    app.use('/api/config', configRouter);
-
-    fixtureTarget.mount(app);
+    fixtureTarget.mount(honoGroupListener({ path: '/api/config', routes: configRouter }));
   });
 
   afterEach(() => {

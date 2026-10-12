@@ -263,7 +263,7 @@ export class LocalAvatarStore implements AvatarStore {
    * The path this id's photo lives at, refusing any id that could reach outside
    * the avatar directory.
    *
-   * The containment check is the same shape `routes/uploads.ts` makes: refuse
+   * The containment check is the same shape `http/send-file.ts` makes: refuse
    * the id by its characters, then prove the resolved path is still inside.
    */
   private fileFor(id: string, extension: string): string {

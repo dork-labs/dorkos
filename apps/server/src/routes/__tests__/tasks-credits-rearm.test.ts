@@ -10,7 +10,6 @@
  * @module routes/__tests__/tasks-credits-rearm
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import express from 'express';
 import request from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
 import fs from 'node:fs/promises';
@@ -22,10 +21,19 @@ import { parseSkillFile } from '@dorkos/skills/parser';
 import { SkillFrontmatterSchema } from '@dorkos/skills/schema';
 import { hasSchedule } from '@dorkos/skills';
 import type { Task } from '@dorkos/shared/types';
-import { createTasksRouter } from '../tasks.js';
+import { createTasksRoutes } from '../tasks.js';
+import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
 import { TaskRegistrar } from '../../services/tasks/task-registrar.js';
 import { TaskStore } from '../../services/tasks/task-store.js';
 import type { TaskSchedulerService } from '../../services/tasks/task-scheduler-service.js';
+
+// The session gate lets every request through: these cases are about the
+// route's own bars, and each one sets the user the gate would have proved
+// (`before` below), as the Express version stubbed `res.locals.user`.
+vi.mock('../../services/core/auth/session-gate.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../services/core/auth/session-gate.js')>()),
+  decideSessionGate: vi.fn(async () => ({ allowed: true })),
+}));
 
 const posture = vi.hoisted(() => ({ loginOn: false }));
 vi.mock('../../services/core/config-manager.js', () => ({
@@ -98,17 +106,26 @@ describe('PATCH /api/tasks/:id — a live schedule on DorkOS credits (DOR-2678)'
     filePath = path.join(dir, 'SKILL.md');
     await fs.writeFile(filePath, SKILL, 'utf-8');
 
-    const app = express();
-    app.use(express.json());
-    app.use((_req, res, next) => {
-      if (signedInAs) res.locals.user = { userId: signedInAs, credential: 'cookie' };
-      next();
-    });
-    app.use(
-      '/api/tasks',
-      createTasksRouter(store, scheduler, new TaskRegistrar({ store, scheduler }), dorkHome)
+    target.mount(
+      honoGroupListener(
+        {
+          path: '/api/tasks',
+          routes: createTasksRoutes({
+            store,
+            scheduler,
+            registrar: new TaskRegistrar({ store, scheduler }),
+            dorkHome,
+          }),
+        },
+        {
+          // Stands in for the browser session the session gate proved.
+          before: (c, next) => {
+            if (signedInAs) c.set('user', { userId: signedInAs, credential: 'cookie' });
+            return next();
+          },
+        }
+      )
     );
-    target.mount(app);
   });
 
   afterEach(async () => {

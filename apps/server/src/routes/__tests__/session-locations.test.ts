@@ -1,4 +1,3 @@
-import express from 'express';
 import { randomUUID } from 'node:crypto';
 import { mkdtempSync, mkdirSync, rmSync, realpathSync, symlinkSync, unlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -9,16 +8,18 @@ import { swappableServer } from '@dorkos/test-utils/listening-server';
 import { createTestDb } from '@dorkos/test-utils/db';
 import { sessionLocations } from '@dorkos/db';
 import { initBoundary } from '../../lib/boundary.js';
-import { createSessionLocationsRouter, MAX_SESSION_LOCATIONS } from '../session-locations.js';
+import { createSessionLocationsRoutes, MAX_SESSION_LOCATIONS } from '../session-locations.js';
+import type { RequestFacts } from '../../http/request-facts.js';
+import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
 
 vi.mock('../extensions-person-bar.js', () => ({
-  refuseIfNotAPerson: (req: express.Request, res: express.Response) => {
-    if (req.headers['x-dorkos-agent']) {
-      res.status(403).json({ error: 'Person required' });
-      return true;
-    }
-    return false;
-  },
+  assessPerson: (facts: RequestFacts) =>
+    facts.headers['x-dorkos-agent'] ? { status: 403, body: { error: 'Person required' } } : null,
+}));
+// The routes are served through the `/api` chain, whose host guard and session
+// gate read the login setting: off, as on a fresh install.
+vi.mock('../../services/core/config-manager.js', () => ({
+  configManager: { get: vi.fn(() => undefined), set: vi.fn() },
 }));
 vi.mock('../../services/core/auth/index.js', () => ({ readOwnerAccount: () => null }));
 
@@ -26,13 +27,18 @@ let root: string;
 let db: ReturnType<typeof createTestDb>;
 const listener = swappableServer();
 function app(owner = 'owner-a') {
-  const result = express();
-  result.use(express.json(), (_req, res, next) => {
-    res.locals.user = { userId: owner, credential: 'cookie' };
-    next();
-  });
-  result.use('/api/session-locations', createSessionLocationsRouter(db));
-  return listener.mount(result);
+  return listener.mount(
+    honoGroupListener(
+      { path: '/api/session-locations', routes: createSessionLocationsRoutes(db) },
+      {
+        // The signed-in person the session gate would have resolved.
+        before: async (c, next) => {
+          c.set('user', { userId: owner, credential: 'cookie' });
+          await next();
+        },
+      }
+    )
+  );
 }
 beforeEach(async () => {
   root = mkdtempSync(path.join(tmpdir(), 'session-locations-'));

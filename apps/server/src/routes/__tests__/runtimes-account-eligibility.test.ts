@@ -43,10 +43,11 @@ vi.mock('../../lib/logger.js', () => ({
   logger: { error: vi.fn(), warn: vi.fn(), info: vi.fn(), debug: vi.fn() },
 }));
 
-import express from 'express';
 import request from '@dorkos/test-utils/supertest';
 import { listeningServer } from '@dorkos/test-utils/listening-server';
-import runtimesRouter from '../runtimes.js';
+import { createRuntimesRoutes } from '../runtimes.js';
+import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
+import type { ActivityService } from '../../services/activity/activity-service.js';
 import { initBoundary } from '../../lib/boundary.js';
 import { setAccountUsageStore } from '../../services/core/usage/current-usage-store.js';
 import { runtimeRegistry } from '../../services/core/runtime-registry.js';
@@ -55,11 +56,12 @@ import type { AgentRuntime } from '@dorkos/shared/agent-runtime';
 import type { AccountUsageStore } from '../../services/core/usage/account-usage-store.js';
 
 const emit = vi.fn(async () => undefined);
-const app = express();
-app.use(express.json());
-app.locals.activityService = { emit };
-app.use('/api/runtimes', runtimesRouter);
-const server = listeningServer(app);
+const server = listeningServer(
+  honoGroupListener({
+    path: '/api/runtimes',
+    routes: createRuntimesRoutes({ activity: { emit } as unknown as ActivityService }),
+  })
+);
 
 let tmp: string;
 /** A repository whose folder name contains a dot, as real roots do. */

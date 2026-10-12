@@ -25,6 +25,7 @@ import { roomsCredentialedCases } from './rooms-recall.js';
 import { memoryCases } from './memory.js';
 import { chatCases } from './chat.js';
 import { connectionRequestCases } from './connection-request.js';
+import { heartbeatCases } from './heartbeat.js';
 
 /** Every registered eval case, across all suites. */
 export const ALL_CASES: EvalCase[] = [
@@ -46,6 +47,7 @@ export const ALL_CASES: EvalCase[] = [
   ...memoryCases,
   ...chatCases,
   ...connectionRequestCases,
+  ...heartbeatCases,
 ];
 
 /** The tag values a `--suite` name may select. */
@@ -57,11 +59,12 @@ const TAGS: readonly EvalTag[] = [
   'rooms',
   'memory',
   'chat',
+  'heartbeat',
 ];
 
 /**
  * Resolve a `--suite` name to the cases to run. A name matching a tag
- * (`smoke`/`core`/`connector`/`experimental`/`rooms`/`memory`/`chat`) selects every case
+ * (`smoke`/`core`/`connector`/`experimental`/`rooms`/`memory`/`chat`/`heartbeat`) selects every case
  * carrying it; `all` selects every case; otherwise the name is matched against a
  * case id.
  *
@@ -81,6 +84,13 @@ export { widgetRoundTripCase } from './ui.js';
 export { designYourOwnInterviewCase } from './agents.js';
 export { connectorGmailCase, connectorSlackCase } from './connectors.js';
 export { connectionRequestCases, connectionRequestFromChatCase } from './connection-request.js';
+export {
+  heartbeatNothingChangedCase,
+  heartbeatOverdueInvoiceCase,
+  heartbeatSomeoneElsesQuestionCase,
+  heartbeatLateNightFindingCase,
+  heartbeatCases,
+} from './heartbeat.js';
 export {
   agentSelfEditCase,
   activityReadCase,

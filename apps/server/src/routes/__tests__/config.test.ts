@@ -1,6 +1,7 @@
 import { DEFAULT_ACCOUNT_COLORS } from '@dorkos/shared/account-usage';
 import { describe, it, expect, vi, beforeEach, afterEach, afterAll } from 'vitest';
-import express from 'express';
+import type { Hono } from 'hono';
+import type { ApiEnv } from '../../http/api-chain.js';
 import request from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
 import fs from 'fs';
@@ -13,6 +14,13 @@ import {
 
 /** The account that owns this install, as `readOwnerAccount` answers (DOR-2652). */
 const owner = vi.hoisted(() => ({ account: { id: 'user_cockpit', name: 'Owner' } as unknown }));
+// The session gate lets every request through: with login off it is a
+// pass-through anyway, and the cases that turn login on present the identity it
+// would have proved (`configApp` below) to reach the route's own bars.
+vi.mock('../../services/core/auth/session-gate.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../services/core/auth/session-gate.js')>()),
+  decideSessionGate: vi.fn(async () => ({ allowed: true })),
+}));
 vi.mock('../../services/core/auth/index.js', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../services/core/auth/index.js')>()),
   readOwnerAccount: () => owner.account,
@@ -144,15 +152,28 @@ afterAll(() => {
   if (AMBIENT_A2A_ENABLED !== undefined) process.env.DORKOS_A2A_ENABLED = AMBIENT_A2A_ENABLED;
 });
 
-/** Mount the request-shaping middleware every config-route app needs. */
-function mountCallerFixture(app: express.Express): void {
+/**
+ * The config routes behind the `/api` chain, with the request-shaping step every
+ * config-route app needs: the user the session gate would have resolved, and
+ * the agent header a caller would have sent.
+ *
+ * The listener is imported here, after the test's `vi.resetModules()`, so the
+ * chain reads the same freshly initialised config as the routes.
+ */
+async function configApp(configRouter: Hono<ApiEnv>) {
+  const { honoGroupListener } = await import('../../http/__tests__/hono-group-listener.js');
   signedInUser = { userId: 'user_cockpit', credential: 'cookie' };
   agentHeader = undefined;
-  app.use((req, res, next) => {
-    if (signedInUser) res.locals.user = signedInUser;
-    if (agentHeader) req.headers['x-dorkos-agent'] = agentHeader;
-    next();
-  });
+  return honoGroupListener(
+    { path: '/api/config', routes: configRouter },
+    {
+      before: async (c, next) => {
+        if (signedInUser) c.set('user', signedInUser);
+        if (agentHeader) c.env.incoming.headers['x-dorkos-agent'] = agentHeader;
+        await next();
+      },
+    }
+  );
 }
 
 describe('PATCH /api/config', () => {
@@ -167,11 +188,7 @@ describe('PATCH /api/config', () => {
     initConfigManager(tmpDir);
 
     const configRouter = (await import('../config.js')).default;
-    const app = express();
-    app.use(express.json());
-    mountCallerFixture(app);
-    app.use('/api/config', configRouter);
-    target.mount(app);
+    target.mount(await configApp(configRouter));
   });
 
   afterEach(() => {
@@ -1246,11 +1263,7 @@ describe('GET /api/config', () => {
 
     const configRouter = (await import('../config.js')).default;
     await registerDeclaringRuntimes();
-    const app = express();
-    app.use(express.json());
-    mountCallerFixture(app);
-    app.use('/api/config', configRouter);
-    target.mount(app);
+    target.mount(await configApp(configRouter));
   });
 
   afterEach(() => {
@@ -1375,12 +1388,9 @@ describe('GET /api/config', () => {
       const { initConfigManager } = await import('../../services/core/config-manager.js');
       initConfigManager(legacyDir);
       const legacyRouter = (await import('../config.js')).default;
-      const legacyApp = express();
-      legacyApp.use(express.json());
-      mountCallerFixture(legacyApp);
-      legacyApp.use('/api/config', legacyRouter);
-
-      const res = await request(target.mount(legacyApp)).get('/api/config').expect(200);
+      const res = await request(target.mount(await configApp(legacyRouter)))
+        .get('/api/config')
+        .expect(200);
       expect(res.body.onboarding).toHaveProperty('runtimeDefaultSetAt', null);
       // The values that file DID carry survive the load untouched.
       expect(res.body.onboarding.completedAt).toBe('2026-07-01T00:05:00.000Z');
@@ -1648,11 +1658,7 @@ describe('GET /api/config', () => {
       initConfigManager(tmpDir);
       const configRouter = (await import('../config.js')).default;
       await registerDeclaringRuntimes();
-      const app = express();
-      app.use(express.json());
-      mountCallerFixture(app);
-      app.use('/api/config', configRouter);
-      target.mount(app);
+      target.mount(await configApp(configRouter));
 
       const res = await request(server).get('/api/config').expect(200);
 
@@ -1669,11 +1675,7 @@ describe('GET /api/config', () => {
       initConfigManager(tmpDir);
       const configRouter = (await import('../config.js')).default;
       await registerDeclaringRuntimes();
-      const app = express();
-      app.use(express.json());
-      mountCallerFixture(app);
-      app.use('/api/config', configRouter);
-      target.mount(app);
+      target.mount(await configApp(configRouter));
 
       const res = await request(server).get('/api/config').expect(200);
 
@@ -1700,11 +1702,7 @@ describe('GET /api/config', () => {
       initConfigManager(tmpDir);
       const configRouter = (await import('../config.js')).default;
       await registerDeclaringRuntimes();
-      const app = express();
-      app.use(express.json());
-      mountCallerFixture(app);
-      app.use('/api/config', configRouter);
-      target.mount(app);
+      target.mount(await configApp(configRouter));
 
       const res = await request(server).get('/api/config').expect(200);
 
@@ -2134,11 +2132,7 @@ describe('PUT /api/config/agents/defaultAgent', () => {
     initConfigManager(tmpDir);
 
     const configRouter = (await import('../config.js')).default;
-    const app = express();
-    app.use(express.json());
-    mountCallerFixture(app);
-    app.use('/api/config', configRouter);
-    target.mount(app);
+    target.mount(await configApp(configRouter));
   });
 
   afterEach(() => {

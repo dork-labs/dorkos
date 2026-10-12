@@ -18,7 +18,7 @@ import { swappableServer } from '@dorkos/test-utils/listening-server';
 import { FakeAgentRuntime } from '@dorkos/test-utils';
 import type { SessionEvent, SessionSnapshot } from '@dorkos/shared/session-stream';
 
-// Mock the directory boundary so the /events handler's assertBoundary against
+// Mock the directory boundary so the /events handler's boundaryRefusal against
 // the default cwd doesn't require initBoundary() at startup (mirrors
 // sessions-events.test.ts).
 vi.mock('../../../../lib/boundary.js', () => ({

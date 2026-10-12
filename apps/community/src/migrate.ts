@@ -40,6 +40,7 @@ export const COMMUNITY_MIGRATIONS = [
   [34, '0034_moderation.sql'],
   [35, '0035_session_live_notice.sql'],
   [36, '0036_decision_checks.sql'],
+  [37, '0037_entry_number_at_commit.sql'],
 ] as const;
 
 /**

@@ -1,4 +1,3 @@
-import express from 'express';
 import fs from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -7,7 +6,7 @@ import { describe, expect, it, vi } from 'vitest';
 import request from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
 import { canvasDocEvents, canvasDocBatches, canvasDocuments, eq } from '@dorkos/db';
-import router from '../../../../../routes/canvas-doc-events.js';
+import { originalDocHttpListener } from '../../__tests__/original-doc-http-listener.js';
 import { resolveOperatorAuthor } from '../../../../rooms/index.js';
 import { nativeRoomAuthorityFixture } from './authority-fixtures.js';
 
@@ -17,11 +16,7 @@ async function ownedPresence() {
   const agentPath = await fs.realpath(await fs.mkdtemp(join(tmpdir(), 'presence-agent-')));
   const h = await nativeRoomAuthorityFixture(agentPath, 'claude-code', randomUUID(), randomUUID());
   try {
-    const app = express();
-    app.use(express.json());
-    app.locals.docChannelHttp = { service: h.http.service, actor: () => h.operator };
-    app.use('/docs', router);
-    const server = target.mount(app);
+    const server = target.mount(originalDocHttpListener(() => h.http, { docMount: '/docs' }));
     const rows = () =>
       h.db.select().from(canvasDocEvents).where(eq(canvasDocEvents.documentId, h.documentId)).all();
     return {

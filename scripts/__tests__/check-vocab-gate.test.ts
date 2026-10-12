@@ -1196,15 +1196,12 @@ describe('the shipped banned-terms.json and allowlist.json', () => {
 
   it('checks literal API errors and owner-refusal messages in connector management', () => {
     const repoRoot = join(import.meta.dirname, '../..');
-    const routePath = join(repoRoot, 'apps/server/src/routes/connector-management.ts');
-    const routeSource = readFileSync(routePath, 'utf8');
-    const sourceFile = ts.createSourceFile(
-      routePath,
-      routeSource,
-      ts.ScriptTarget.Latest,
-      true,
-      ts.ScriptKind.TS
-    );
+    // The owner refusals live beside the management routes, in the boundary
+    // every connector group shares (DOR-2804).
+    const routePaths = [
+      join(repoRoot, 'apps/server/src/routes/connector-management.ts'),
+      join(repoRoot, 'apps/server/src/routes/connector-owner-boundary.ts'),
+    ];
     const apiCopy: string[] = [];
 
     function staticText(node: ts.Expression | undefined): string | undefined {
@@ -1215,27 +1212,39 @@ describe('the shipped banned-terms.json and allowlist.json', () => {
       return undefined;
     }
 
-    function visit(node: ts.Node): void {
-      if (ts.isPropertyAssignment(node) && node.name.getText(sourceFile) === 'error') {
-        const text = staticText(node.initializer);
-        if (text !== undefined) apiCopy.push(text);
-      }
-      if (ts.isCallExpression(node) && node.expression.getText(sourceFile) === 'sendOwnerRefusal') {
-        const text = staticText(node.arguments[2]);
-        if (text !== undefined) apiCopy.push(text);
-      }
-      ts.forEachChild(node, visit);
+    for (const routePath of routePaths) {
+      const sourceFile = ts.createSourceFile(
+        routePath,
+        readFileSync(routePath, 'utf8'),
+        ts.ScriptTarget.Latest,
+        true,
+        ts.ScriptKind.TS
+      );
+      const visit = (node: ts.Node): void => {
+        if (ts.isPropertyAssignment(node) && node.name.getText(sourceFile) === 'error') {
+          const text = staticText(node.initializer);
+          if (text !== undefined) apiCopy.push(text);
+        }
+        if (ts.isCallExpression(node) && node.expression.getText(sourceFile) === 'ownerRefusal') {
+          const text = staticText(node.arguments[2]);
+          if (text !== undefined) apiCopy.push(text);
+        }
+        ts.forEachChild(node, visit);
+      };
+      visit(sourceFile);
     }
-    visit(sourceFile);
 
     const copySource = apiCopy
       .map((text, index) => `const apiCopy${index} = { message: ${JSON.stringify(text)} };`)
       .join('\n');
-    expect(apiCopy).toHaveLength(12);
+    // 12 -> 9 with the move to Hono (DOR-2804): the same eight messages, the
+    // ones written out two and three times now written once in a helper.
+    expect(apiCopy).toHaveLength(9);
+    expect(new Set(apiCopy).size).toBe(8);
     expect(apiCopy).toContain(
       'Only the owner of this DorkOS can manage the connections on its DorkOS account.'
     );
-    expect(scanSource(routePath, copySource, loadBannedTerms())).toEqual([]);
+    expect(scanSource(routePaths[0]!, copySource, loadBannedTerms())).toEqual([]);
   });
 
   it('every allowlist entry path resolves to a real file or directory', () => {

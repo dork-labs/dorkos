@@ -29,14 +29,11 @@ import { createApp, finalizeApp } from './app.js';
 import { frontDoorListener } from './http/front-door.js';
 import { composeFrontDoor } from './http/hono-api.js';
 import { MainRequestAdmission } from './services/core/lifecycle/main-request-admission.js';
-import { env } from './env.js';
-import { testControlRouter } from './routes/test-control.js';
 import { initBoundary } from './lib/boundary.js';
 import { logger } from './lib/logger.js';
 import { initConfigManager } from './services/core/config-manager.js';
 import { initAgentIdentityService } from './services/core/agent-identity/index.js';
 import { composeDorkOsCapabilityRegistry } from './services/core/self-description/dorkos-registry.js';
-import { createCapabilitiesInvokeRouter } from './routes/capabilities-invoke.js';
 import { runtimeRegistry } from './services/core/runtime-registry.js';
 import {
   SessionEventStore,
@@ -147,15 +144,13 @@ export async function bootInProcessTestServer(dorkHome: string): Promise<InProce
 
   const admission = new MainRequestAdmission();
   const app = createApp({ admission });
-  // `POST /api/test/seed-agent` reads it; harness cases seed on disk instead,
-  // but a route that answers 500 for a missing local is worse than one wired.
-  app.locals.meshCore = mesh;
 
-  // **The capability invoke route, with the rooms domain on it.** `createApp()`
-  // mounts the catalog but not `POST /api/capabilities/:id/invoke`, which
-  // `start()` wires after composing the registry — so on this boot there was no
-  // way to reach `post_to_room` at all, and a rooms eval about the flip could
-  // only assert what the room did with a turn's TEXT.
+  // **The capability invoke route, with the rooms domain on it.** The Hono
+  // `/api` app mounts `POST /api/capabilities/:id/invoke` (and the catalog)
+  // only when it is handed a registry, which `start()` composes — so without
+  // this there was no way to reach `post_to_room` at all on this boot, and a
+  // rooms eval about the flip could only assert what the room did with a turn's
+  // TEXT.
   //
   // Deliberately the rooms domain and nothing else: every other bag
   // `composeDorkOsCapabilityRegistry` takes is optional, and a harness that
@@ -163,32 +158,37 @@ export async function bootInProcessTestServer(dorkHome: string): Promise<InProce
   // drives. The tier gate is left UNARMED, which is the safe direction — until
   // `initCapabilityTierGate` runs it refuses destructive invocations rather than
   // allowing them, and both rooms writes are `act`.
-  app.use(
-    '/api/capabilities',
-    createCapabilitiesInvokeRouter(
-      composeDorkOsCapabilityRegistry({ logger, roomDeps: { rooms: rooms.service } })
-    )
-  );
+  const capabilities = composeDorkOsCapabilityRegistry({
+    logger,
+    roomDeps: { rooms: rooms.service },
+  });
 
-  // **The test-control routes, mounted here rather than left to `createApp()`.**
-  // `env.ts` validates the environment ONCE at module load, so `createApp()`
-  // reads whatever `DORKOS_TEST_RUNTIME` was when the server's module graph was
-  // first imported — which, in the eval harness, is before the runner sets it
-  // (the CLI loads the suite, and the suite imports `@dorkos/server` subpaths,
-  // at startup). The visible symptom was `/api/test/scenario` answering 404 on a
-  // server that IS running the test-mode runtime, so a rooms case could not hold
-  // a turn open long enough to stop it.
+  // **The test-control routes, mounted by handing them their deps.**
+  // `env.ts` validates the environment ONCE at module load, so a gate on
+  // `DORKOS_TEST_RUNTIME` reads whatever it was when the server's module graph
+  // was first imported — which, in the eval harness, is before the runner sets
+  // it (the CLI loads the suite, and the suite imports `@dorkos/server`
+  // subpaths, at startup). The visible symptom was `/api/test/scenario`
+  // answering 404 on a server that IS running the test-mode runtime, so a rooms
+  // case could not hold a turn open long enough to stop it.
   //
-  // This boot needs no env var to know the answer: it registers `TestModeRuntime`
-  // itself, unconditionally, so these routes belong on it by construction. The
-  // guard is only against mounting the same router twice when the variable
-  // happened to be set early enough for `createApp()` to have done it. It must
-  // stay ABOVE `finalizeApp`, which installs the `/api` catch-all 404.
-  if (!env.DORKOS_TEST_RUNTIME) app.use('/api/test', testControlRouter);
+  // This boot needs no env var to know the answer: it registers
+  // `TestModeRuntime` itself, unconditionally, so these routes belong on it by
+  // construction (`http/hono-api.ts` mounts them once either way).
   finalizeApp(app);
 
   return {
-    listener: frontDoorListener(composeFrontDoor(app, admission)),
+    listener: frontDoorListener(
+      composeFrontDoor(app, admission, {
+        // The session routes read the registry. `POST /api/test/seed-agent`
+        // gets it too; harness cases seed on disk instead, but a route that
+        // answers 500 for a missing registry is worse than one wired.
+        sessions: { meshCore: mesh },
+        capabilities,
+        onboarding: { meshCore: () => mesh },
+        testControl: { meshCore: () => mesh },
+      })
+    ),
     dispose: () => {
       // Close the underlying better-sqlite3 handle so the sandbox teardown can
       // remove the db (and its WAL sidecars) without a lingering open descriptor.

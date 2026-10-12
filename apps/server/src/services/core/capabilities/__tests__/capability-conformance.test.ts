@@ -37,7 +37,6 @@ import { describe, it, expect, vi } from 'vitest';
 import { z } from 'zod';
 import os from 'node:os';
 import path from 'node:path';
-import express from 'express';
 import request from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
 import { noopLogger } from '@dorkos/shared/logger';
@@ -356,9 +355,10 @@ const externalToolNames = Object.keys(
 const CLI_VERBS = ['agent', 'task', 'activity', 'capabilities', 'call', 'version'];
 
 // ── Destructive-gate probes: the three real adapter paths ──────────────────
-const { createCapabilitiesInvokeRouter } =
+const { createCapabilitiesInvokeRoutes } =
   await import('../../../../routes/capabilities-invoke.js');
-const { createApprovalsRouter } = await import('../../../../routes/approvals.js');
+const { honoGroupListener } = await import('../../../../http/__tests__/hono-group-listener.js');
+const { createApprovalsRoutes } = await import('../../../../routes/approvals.js');
 const { initCapabilityTierGate, APPROVAL_TOKEN_HEADER } = await import('../tier-enforcement.js');
 const { ApprovalService } = await import('../../approvals/index.js');
 
@@ -406,21 +406,24 @@ async function probe(run: () => Promise<unknown>): Promise<AdapterProbeResult> {
 }
 
 /**
- * The invoke route with an identity on `res.locals` exactly where the real
- * `resolveAgentIdentity` middleware puts it — or with none at all, which is what
+ * The invoke route with an identity set exactly where the `/api` chain's
+ * identity step puts it — or with none at all, which is what
  * `env -u DORKOS_AGENT_TOKEN dorkos call …` and a bare curl look like from here.
  */
 function routeProbe(identity?: typeof PROBE_IDENTITY) {
   return () =>
     probe(async () => {
-      const app = express();
-      app.use(express.json());
-      app.use((_req, res, next) => {
-        if (identity) res.locals.agentIdentity = identity;
-        next();
-      });
-      app.use('/api/capabilities', createCapabilitiesInvokeRouter(registry));
-      requestTarget.mount(app);
+      requestTarget.mount(
+        honoGroupListener(
+          { path: '/api/capabilities', routes: createCapabilitiesInvokeRoutes(registry) },
+          {
+            before: async (c, next) => {
+              if (identity) c.set('agentIdentity', identity);
+              await next();
+            },
+          }
+        )
+      );
       const res = await request(requestTarget.server)
         .post(`/api/capabilities/${DESTRUCTIVE_ID}/invoke`)
         .send(DESTRUCTIVE_INPUT);
@@ -489,14 +492,15 @@ function externalProbe(identity?: typeof PROBE_IDENTITY) {
  * being switched on.
  */
 const requesterDecideProbe = async () => {
-  const app = express();
-  app.use(express.json());
-  app.use('/api/capabilities', createCapabilitiesInvokeRouter(registry));
-  app.use(
-    '/api/approvals',
-    createApprovalsRouter(approvalService, { isLoginEnabled: () => false })
+  requestTarget.mount(
+    honoGroupListener([
+      { path: '/api/capabilities', routes: createCapabilitiesInvokeRoutes(registry) },
+      {
+        path: '/api/approvals',
+        routes: createApprovalsRoutes(approvalService, { isLoginEnabled: () => false }),
+      },
+    ])
   );
-  requestTarget.mount(app);
 
   const asked = await request(requestTarget.server)
     .post(`/api/capabilities/${DESTRUCTIVE_ID}/invoke`)

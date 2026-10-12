@@ -223,7 +223,7 @@ function printReport(report: LoadReport): void {
   line(
     'Requested',
     `${report.requested.readers} readers, ${report.requested.writers} writers, ` +
-      `${report.requested.ratePerSecond} posts/s for ${report.requested.durationSeconds}s`
+      `${Number(report.requested.ratePerSecond.toFixed(2))} posts/s for ${report.requested.durationSeconds}s`
   );
   line(
     'Reader streams opened',

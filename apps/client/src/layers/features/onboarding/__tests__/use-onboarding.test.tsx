@@ -149,32 +149,6 @@ describe('useOnboarding', () => {
     });
   });
 
-  it('completeStep calls updateConfig with the step added', async () => {
-    const transport = createMockTransport();
-    vi.mocked(transport.getConfig).mockResolvedValue({
-      onboarding: { ...FRESH_ONBOARDING },
-    } as never);
-    vi.mocked(transport.updateConfig).mockResolvedValue(undefined as never);
-
-    const { result } = renderHook(() => useOnboarding(), {
-      wrapper: createWrapper(transport),
-    });
-
-    await waitFor(() => {
-      expect(result.current.shouldShowOnboarding).toBe(true);
-    });
-
-    act(() => {
-      result.current.completeStep('discovery');
-    });
-
-    await waitFor(() => {
-      expect(transport.updateConfig).toHaveBeenCalledWith({
-        onboarding: { completedSteps: ['discovery'] },
-      });
-    });
-  });
-
   it('completeOnboarding persists completedAt (the authoritative finish signal)', async () => {
     const transport = createMockTransport();
     vi.mocked(transport.getConfig).mockResolvedValue({
@@ -197,32 +171,6 @@ describe('useOnboarding', () => {
     await waitFor(() => {
       expect(transport.updateConfig).toHaveBeenCalledWith({
         onboarding: { completedAt: expect.any(String) },
-      });
-    });
-  });
-
-  it('skipStep calls updateConfig with the step added to skippedSteps', async () => {
-    const transport = createMockTransport();
-    vi.mocked(transport.getConfig).mockResolvedValue({
-      onboarding: { ...FRESH_ONBOARDING },
-    } as never);
-    vi.mocked(transport.updateConfig).mockResolvedValue(undefined as never);
-
-    const { result } = renderHook(() => useOnboarding(), {
-      wrapper: createWrapper(transport),
-    });
-
-    await waitFor(() => {
-      expect(result.current.shouldShowOnboarding).toBe(true);
-    });
-
-    act(() => {
-      result.current.skipStep('discovery');
-    });
-
-    await waitFor(() => {
-      expect(transport.updateConfig).toHaveBeenCalledWith({
-        onboarding: { skippedSteps: ['discovery'] },
       });
     });
   });
@@ -298,102 +246,6 @@ describe('useOnboarding', () => {
         priorRuntime: null,
       });
       expect(result.current.shouldShowOnboarding).toBe(true);
-    });
-  });
-
-  // ---------------------------------------------------------------------------
-  // Rapid-burst race condition tests
-  // ---------------------------------------------------------------------------
-
-  it('rapid completeStep calls send superset arrays (no race condition)', async () => {
-    const transport = createMockTransport();
-    vi.mocked(transport.getConfig).mockResolvedValue({
-      onboarding: { ...FRESH_ONBOARDING },
-    } as never);
-    // Resolve immediately — the cache won't refresh within a synchronous act() block,
-    // so this simulates the race where all calls read stale cache state.
-    vi.mocked(transport.updateConfig).mockResolvedValue(undefined as never);
-
-    const { result } = renderHook(() => useOnboarding(), {
-      wrapper: createWrapper(transport),
-    });
-
-    await waitFor(() => {
-      expect(result.current.shouldShowOnboarding).toBe(true);
-    });
-
-    act(() => {
-      result.current.completeStep('meet-dorkbot');
-      result.current.completeStep('discovery');
-    });
-
-    await waitFor(() => {
-      expect(transport.updateConfig).toHaveBeenCalledTimes(2);
-    });
-
-    expect(transport.updateConfig).toHaveBeenNthCalledWith(1, {
-      onboarding: { completedSteps: ['meet-dorkbot'] },
-    });
-    expect(transport.updateConfig).toHaveBeenNthCalledWith(2, {
-      onboarding: { completedSteps: expect.arrayContaining(['meet-dorkbot', 'discovery']) },
-    });
-  });
-
-  it('duplicate completeStep calls are deduplicated', async () => {
-    const transport = createMockTransport();
-    vi.mocked(transport.getConfig).mockResolvedValue({
-      onboarding: { ...FRESH_ONBOARDING },
-    } as never);
-    vi.mocked(transport.updateConfig).mockResolvedValue(undefined as never);
-
-    const { result } = renderHook(() => useOnboarding(), {
-      wrapper: createWrapper(transport),
-    });
-
-    await waitFor(() => {
-      expect(result.current.shouldShowOnboarding).toBe(true);
-    });
-
-    act(() => {
-      result.current.completeStep('discovery');
-      result.current.completeStep('discovery');
-      result.current.completeStep('discovery');
-    });
-
-    await waitFor(() => {
-      expect(transport.updateConfig).toHaveBeenCalledTimes(1);
-    });
-  });
-
-  it('rapid skipStep calls send superset arrays', async () => {
-    const transport = createMockTransport();
-    vi.mocked(transport.getConfig).mockResolvedValue({
-      onboarding: { ...FRESH_ONBOARDING },
-    } as never);
-    vi.mocked(transport.updateConfig).mockResolvedValue(undefined as never);
-
-    const { result } = renderHook(() => useOnboarding(), {
-      wrapper: createWrapper(transport),
-    });
-
-    await waitFor(() => {
-      expect(result.current.shouldShowOnboarding).toBe(true);
-    });
-
-    act(() => {
-      result.current.skipStep('meet-dorkbot');
-      result.current.skipStep('discovery');
-    });
-
-    await waitFor(() => {
-      expect(transport.updateConfig).toHaveBeenCalledTimes(2);
-    });
-
-    expect(transport.updateConfig).toHaveBeenNthCalledWith(1, {
-      onboarding: { skippedSteps: ['meet-dorkbot'] },
-    });
-    expect(transport.updateConfig).toHaveBeenNthCalledWith(2, {
-      onboarding: { skippedSteps: expect.arrayContaining(['meet-dorkbot', 'discovery']) },
     });
   });
 });

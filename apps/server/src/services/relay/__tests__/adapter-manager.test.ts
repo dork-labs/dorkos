@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { createTestDb } from '@dorkos/test-utils/db';
 import { AdapterManager, AdapterError, normalizeAgentRuntimes } from '../adapter-manager.js';
 import { AdapterRegistry, ClaudeCodeAdapter, TRACE_PRUNE_BATCH } from '@dorkos/relay';
@@ -2508,6 +2508,178 @@ describe('AdapterManager', () => {
       // landed after it — the adapter must not survive the disable.
       expect(registry.get('tg-second')).toBeUndefined();
       expect(manager.getAdapter('tg-second')!.config.enabled).toBe(false);
+    });
+
+    /**
+     * Park the next config read (the one a hot-reload makes) until released,
+     * handing back `contents` — what the file held when the read began.
+     */
+    function gateNextRead(contents: string): { release: () => void } {
+      const gate = deferred();
+      vi.mocked(readFile).mockImplementationOnce(async () => {
+        await gate.promise;
+        return contents;
+      });
+      return { release: gate.resolve };
+    }
+
+    /**
+     * From here on the mocked fs behaves like one file: a read returns the last
+     * write that succeeded, and writes can be refused while `refuse` is set.
+     */
+    function useDisk(initial: string): { ids: () => string[]; refuse: { on: boolean } } {
+      // What the last save wrote, if anything did: initialize() moves the
+      // fixture's cleartext secrets out and saves.
+      const saved = vi.mocked(writeFile).mock.calls.at(-1)?.[1];
+      let content = typeof saved === 'string' ? saved : initial;
+      const refuse = { on: false };
+      vi.mocked(readFile).mockImplementation(async () => content);
+      vi.mocked(writeFile).mockImplementation(async (_path, data) => {
+        if (refuse.on) throw new Error('disk full');
+        content = String(data);
+      });
+      const ids = () =>
+        (JSON.parse(content) as { adapters: { id: string }[] }).adapters.map((a) => a.id);
+      return { ids, refuse };
+    }
+
+    afterEach(() => {
+      vi.mocked(writeFile).mockResolvedValue(undefined);
+    });
+
+    /** Park the next secret move into the credential store until released. */
+    function gateNextSecretMove(): { release: () => void } {
+      const gate = deferred();
+      mockCredentialStore.put.mockImplementationOnce(async (name: string, secret: string) => {
+        await gate.promise;
+        secretStore.set(name, secret);
+        return `file:${name}`;
+      });
+      return { release: gate.resolve };
+    }
+
+    const NEW_HOOK = {
+      inbound: { subject: 'relay.webhook.racing', secret: 'secret-16-chars!!' },
+      outbound: { url: 'https://example.com', secret: 'secret-16-chars!!' },
+    };
+
+    // The server's own save sets off the file watcher, so a hot-reload can be
+    // mid-read of the file when a person adds the next connection. The reload
+    // used to assign what it read (the file from before the add) over the
+    // in-memory list, so the connection the API had just accepted vanished
+    // until the next reload, and a delete in between answered 404.
+    it('addAdapter() while a hot-reload is reading the file keeps the new connection', async () => {
+      vi.mocked(readFile).mockResolvedValue(VALID_CONFIG);
+      await initAndStart(manager);
+      useDisk(VALID_CONFIG);
+
+      const { release } = gateNextRead(VALID_CONFIG);
+      const reloading = manager.reload();
+      await flushMicrotasks(); // the reload is parked inside its read
+      const adding = manager.addAdapter('webhook', 'wh-racing', NEW_HOOK);
+      await flushMicrotasks(); // an unserialized add has pushed and saved by now
+      release();
+      await Promise.all([reloading, adding]);
+
+      expect(manager.getAdapter('wh-racing')).toBeDefined();
+      expect(registry.get('wh-racing')).toBeDefined();
+      await expect(manager.removeAdapter('wh-racing')).resolves.toBeUndefined();
+    });
+
+    it('removeAdapter() across a hot-reload removes the connection it was asked to', async () => {
+      vi.mocked(readFile).mockResolvedValue(VALID_CONFIG);
+      await initAndStart(manager);
+      useDisk(VALID_CONFIG);
+      // The file on disk now lists wh-github first: the same connections in a
+      // different order, so an index taken before the reload names another one.
+      const reordered = JSON.stringify({
+        adapters: [...JSON.parse(VALID_CONFIG).adapters].reverse(),
+      });
+
+      const { release } = gateNextRead(reordered);
+      const reloading = manager.reload();
+      await flushMicrotasks();
+      const removing = manager.removeAdapter('tg-main');
+      await flushMicrotasks();
+      release();
+      await Promise.all([reloading, removing]);
+
+      expect(manager.getAdapter('tg-main')).toBeUndefined();
+      expect(manager.getAdapter('wh-github')).toBeDefined();
+    });
+
+    // A save moves secrets into the credential store before it writes, so a
+    // save started earlier could finish later. An add's slow save holding the
+    // old list used to land after a remove's save and put the removed
+    // connection back on disk, where the next reload would start it again.
+    it('a slow earlier save never lands on top of a later one', async () => {
+      vi.mocked(readFile).mockResolvedValue(VALID_CONFIG);
+      await initAndStart(manager);
+      const disk = useDisk(VALID_CONFIG);
+
+      const { release } = gateNextSecretMove();
+      const adding = manager.addAdapter('webhook', 'wh-slow', NEW_HOOK);
+      await flushMicrotasks(); // the add's save is parked moving its secret
+      const removing = manager.removeAdapter('wh-github');
+      await flushMicrotasks(); // an unordered remove has written its save by now
+      release();
+      await Promise.all([adding, removing]);
+
+      expect(disk.ids()).toContain('wh-slow');
+      expect(disk.ids()).not.toContain('wh-github');
+    });
+
+    // removeAdapter stopped the adapter, then announced it, and only then
+    // dropped the config. A reload in that gap read a file that still listed
+    // the connection and started it again, with no config left to stop it by.
+    it('a reload while a removal is finishing never starts the removed connection again', async () => {
+      const disconnected = deferred();
+      // Only the removal's own announcement waits; a reload announces others.
+      const emit = vi.fn(async (event: { eventType: string; resourceId?: string | null }) => {
+        if (event.eventType === 'relay.adapter_disconnected' && event.resourceId === 'tg-main') {
+          await disconnected.promise;
+        }
+      });
+      manager = new AdapterManager(registry, configPath, {
+        ...mockDeps,
+        activityService: { emit },
+      });
+      vi.mocked(readFile).mockResolvedValue(VALID_CONFIG);
+      await initAndStart(manager);
+      useDisk(VALID_CONFIG);
+      expect(registry.get('tg-main')).toBeDefined();
+
+      const removing = manager.removeAdapter('tg-main');
+      await flushMicrotasks(); // stopped, and parked announcing it
+      await manager.reload();
+      disconnected.resolve();
+      await removing;
+
+      expect(manager.getAdapter('tg-main')).toBeUndefined();
+      expect(registry.get('tg-main')).toBeUndefined();
+    });
+
+    // A failed save used to count as finished while an earlier save was still
+    // writing, so a reload read the file from before that earlier save and
+    // dropped the connection it was saving.
+    it('a failed save does not let a reload read past an earlier save still running', async () => {
+      vi.mocked(readFile).mockResolvedValue(VALID_CONFIG);
+      await initAndStart(manager);
+      const disk = useDisk(VALID_CONFIG);
+
+      const { release } = gateNextSecretMove();
+      const adding = manager.addAdapter('webhook', 'wh-slow', NEW_HOOK);
+      await flushMicrotasks(); // the add's save is parked moving its secret
+      disk.refuse.on = true; // a save that runs now fails
+      const relabel = manager.updateAdapterLabel('tg-main', 'renamed').catch(() => undefined);
+      await flushMicrotasks();
+      const reloading = manager.reload();
+      await flushMicrotasks();
+      disk.refuse.on = false;
+      release();
+      await Promise.all([adding, relabel, reloading]);
+
+      expect(manager.getAdapter('wh-slow')).toBeDefined();
     });
 
     it('shutdown() mid-pass stops the pass from registering further adapters', async () => {

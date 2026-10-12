@@ -94,12 +94,12 @@ import type { OpencodeClient, ProviderListResponse } from '@opencode-ai/sdk';
 import type {
   StreamEvent,
   ModelOption,
-  SubagentInfo,
   Session,
   HistoryMessage,
   TaskItem,
   CommandRegistry,
   SessionSettings,
+  SubagentInfo,
   InterruptReceipt,
 } from '@dorkos/shared/types';
 import type {
@@ -1320,7 +1320,7 @@ export class OpenCodeRuntime implements AgentRuntime {
     return openCodeProviderDiscovery.getConnectedProvider(this.#originalMethodOwner);
   }
 
-  /** OpenCode agents are prompt-scoped, not a DorkOS-dispatchable subagent registry. */
+  /** List Main's dispatchable named agents through the original runtime owner. */
   getSupportedSubagents(): Promise<SubagentInfo[]> {
     return openCodeProviderDiscovery.getSupportedSubagents(this.#originalMethodOwner);
   }

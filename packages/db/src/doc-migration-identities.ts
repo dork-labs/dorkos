@@ -54,9 +54,9 @@ export const previousConsolidatedDoc: MigrationEntry & { hash: string } = Object
   breakpoints: true,
   hash: 'b7390d7499448a3021402bd70f04c0d35096d0015e40305788e6b30fc3ce93c4',
 });
-/** Genuine generated Doc159 tuple with independently reviewed FK-safe SQL identity. */
+/** Genuine generated Doc160 tuple with independently reviewed FK-safe SQL identity. */
 export const consolidatedDoc: MigrationEntry & { hash: string } = Object.freeze({
-  idx: 159,
+  idx: 160,
   version: '6',
   when: 1791744308484,
   tag: '20261011184508_tearful_killer_shrike',
@@ -80,6 +80,15 @@ export const remoteEventRefusals = Object.freeze({
   tag: '20261011063041_remote_event_refusals',
   breakpoints: true,
   hash: '8d26bd1a3cde75b7a863c562219e60640070a70554a98e1406efa6803766478e',
+} as const);
+/** Immutable incoming Main159 identity; preserved before canonical Doc160. */
+export const heartbeatOutboxDeliveredAt = Object.freeze({
+  idx: 159,
+  version: '6',
+  when: 1791705630799,
+  tag: '20261011080030_heartbeat_outbox_delivered_at',
+  breakpoints: true,
+  hash: 'b483f6c00b2885dcde254fc5858e976c93e02bcb769370c9b2525d6d68acdbd8',
 } as const);
 export const reportBack = Object.freeze({
   idx: 150,

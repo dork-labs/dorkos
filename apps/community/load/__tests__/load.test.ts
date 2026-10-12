@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { parseLoadArgs, UsageError } from '../args.js';
+import { fixturePart, type LoadFixture } from '../fixture.js';
 import { LatencyHistogram } from '../histogram.js';
 import { parseMetrics } from '../metrics.js';
 import { summarizeReaders, verdictFor } from '../report.js';
@@ -192,6 +193,26 @@ describe('parseLoadArgs', () => {
     );
   });
 
+  it('splits a run only over a shared fixture, with a valid part and start time', () => {
+    const local = ['--url', 'http://localhost:1'];
+    expect(parseLoadArgs(local).part).toEqual({ index: 1, count: 1 });
+    expect(() => parseLoadArgs([...local, '--part', '2/3'])).toThrow(/--fixture/);
+    const split = parseLoadArgs([
+      ...local,
+      ...['--fixture', 'f.json', '--part', '2/3', '--start-at', '2026-10-11T12:00:00Z'],
+    ]);
+    expect(split.part).toEqual({ index: 2, count: 3 });
+    expect(split.startAt).toBe(Date.UTC(2026, 9, 11, 12));
+    for (const part of ['0/2', '3/2', '2', 'a/b'])
+      expect(() => parseLoadArgs([...local, '--fixture', 'f.json', '--part', part])).toThrow(
+        /--part/
+      );
+    expect(() => parseLoadArgs([...local, '--start-at', 'soon'])).toThrow(/--start-at/);
+    expect(() =>
+      parseLoadArgs([...local, '--fixture', 'f.json', '--fixture-out', 'g.json'])
+    ).toThrow(/not both/);
+  });
+
   it('asks for help with exit code 0', () => {
     try {
       parseLoadArgs(['--help']);
@@ -206,5 +227,24 @@ describe('scheduledPostCount', () => {
   it('schedules rate × duration posts', () => {
     expect(scheduledPostCount(50, 60_000)).toBe(3_000);
     expect(scheduledPostCount(0, 60_000)).toBe(0);
+  });
+});
+
+describe('fixturePart', () => {
+  it('gives every reader and writer to exactly one part', () => {
+    // Purpose: fails if a split run would open a stream twice, or leave one out, so the parts
+    // together would not hold the streams the run claims.
+    const principal = (i: number) => ({ agentId: `a${i}`, token: `t${i}` });
+    const fixture: LoadFixture = {
+      communityId: 'c',
+      channelId: 'ch',
+      readers: Array.from({ length: 10 }, (_, i) => principal(i)),
+      writers: Array.from({ length: 5 }, (_, i) => principal(100 + i)),
+      metricsKey: 'k',
+    };
+    const parts = [1, 2, 3].map((index) => fixturePart(fixture, { index, count: 3 }));
+    expect(parts.flatMap((part) => part.readers)).toEqual(fixture.readers);
+    expect(parts.flatMap((part) => part.writers)).toEqual(fixture.writers);
+    expect(parts.map((part) => part.readers.length)).toEqual([3, 3, 4]);
   });
 });

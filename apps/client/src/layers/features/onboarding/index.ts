@@ -1,5 +1,6 @@
 /**
- * Onboarding feature — hooks for first-time user experience state management.
+ * Onboarding feature — the first run (spec `one-minute-onboarding`) and the
+ * first-time prompts that follow it.
  *
  * @module features/onboarding
  */
@@ -12,11 +13,19 @@ export {
   isOnboardingStage,
   type OnboardingStage,
 } from './model/onboarding-stage';
+export type {
+  FirstRunAccountLink,
+  FirstRunAccountLinkSlot,
+  FirstRunPendingCode,
+  FirstRunSlots,
+  OtherServiceSaveProps,
+  OtherServiceSlot,
+} from './model/first-run-slots';
+export type { DorkosConnectPhase } from './model/use-dorkos-connect';
 export { OnboardingFlow } from './ui/OnboardingFlow';
-export { SystemRequirementsStep } from './ui/SystemRequirementsStep';
 export { WelcomeStep } from './ui/WelcomeStep';
-export { OnboardingConversation } from './ui/OnboardingConversation';
-export { OnboardingNavBar } from './ui/OnboardingNavBar';
+export { ConnectingStep } from './ui/ConnectingStep';
+export { OwnAiStep } from './ui/OwnAiStep';
 export { ProgressCard } from './ui/ProgressCard';
 export { ProfilePromptCard } from './ui/ProfilePromptCard';
 export type { ProfilePromptCardProps } from './ui/ProfilePromptCard';

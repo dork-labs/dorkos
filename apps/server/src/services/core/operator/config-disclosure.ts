@@ -478,6 +478,7 @@ export const CONFIG_DISCLOSURE = {
   'runtimes.opencode.baseURL': 'expose',
   'runtimes.doe.enabled': 'expose',
   'runtimes.doe.defaultTrustStop': 'expose',
+  'runtimes.doe.defaultModel': 'expose',
   'runtimes.doe.inference.source': 'expose',
   'runtimes.doe.inference.provider': 'expose',
   'runtimes.doe.inference.protocol': 'expose',

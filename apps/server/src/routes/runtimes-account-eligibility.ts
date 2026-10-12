@@ -15,8 +15,8 @@
  *   credits in this project" answer on a refused credits turn (ADR
  *   261001-000811). A project rule, so Settings shows it and can undo it.
  *
- * **Only a person writes.** Both `PUT`s sit behind the person bar
- * (`refuseIfNotAPerson`), and no extension `ctx` member writes these rules, so
+ * **Only a person writes.** Every write sits behind the person bar
+ * (`assessPerson`), and no extension `ctx` member writes these rules, so
  * an extension's server half and any agent cannot widen where an account may
  * be used (invariant 9). The bar's residuals are the ones every person-bar
  * route has: with Require login off, a local caller that omits its
@@ -30,7 +30,8 @@
  *
  * @module routes/runtimes-account-eligibility
  */
-import type { Request, Response, Router } from 'express';
+import type { Context, Hono } from 'hono';
+import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import { z } from 'zod';
 import { IMPLICIT_ACCOUNT_ID } from '@dorkos/shared/account-usage';
 import {
@@ -69,7 +70,11 @@ import {
 import { checkClaudeLaunchAccount } from '../services/runtimes/claude-code/launch-account-check.js';
 import { projectRegistry } from '../services/projects/project-registry.js';
 import { runtimeRegistry } from '../services/core/runtime-registry.js';
-import { refuseIfNotAPerson, type PersonBarCopy } from './extensions-person-bar.js';
+import type { ApiEnv } from '../http/api-chain.js';
+import { readJsonBody } from '../http/request-body.js';
+import { honoRequestFacts, type RequestFacts } from '../http/request-facts.js';
+import { readQuery } from '../http/request-query.js';
+import { assessPerson, type PersonBarCopy } from './extensions-person-bar.js';
 
 /** What the person bar says when anything but a person tries to change a rule. */
 const ACCOUNT_RULES_BAR: PersonBarCopy = {
@@ -83,6 +88,12 @@ const ACCOUNT_RULES_BAR: PersonBarCopy = {
   agent:
     'DorkOS changed nothing. Which projects a Claude account may work in is a decision ' +
     'only a person makes. Ask them to change it in Settings → Runtimes.',
+};
+
+/** The refusal for a folder outside the directory boundary. */
+const OUTSIDE_BOUNDARY = {
+  error: 'That folder is outside the folders DorkOS may open.',
+  code: 'OUTSIDE_BOUNDARY',
 };
 
 /**
@@ -194,8 +205,13 @@ function knownAccountIds(): Set<string> {
   return new Set([...listedAccounts().map((a) => a.id), IMPLICIT_ACCOUNT_ID]);
 }
 
-function activityOf(req: Request): ActivityService | undefined {
-  return req.app.locals.activityService as ActivityService | undefined;
+/**
+ * The person bar's 403 (or the cookie bar's) for anything but a person, or
+ * `undefined` when a person is asking.
+ */
+function refuseIfNotAPerson(c: Context<ApiEnv>, caller: RequestFacts): Response | undefined {
+  const refusal = assessPerson(caller, ACCOUNT_RULES_BAR);
+  return refusal ? c.json(refusal.body, refusal.status as ContentfulStatusCode) : undefined;
 }
 
 /**
@@ -209,70 +225,73 @@ async function folderOfSession(sessionId: string): Promise<string | null> {
 }
 
 /**
- * Mount the account-rule routes onto the runtimes router.
+ * Mount the account-rule routes onto the runtimes routes.
  *
- * @param router - The `/api/runtimes` router.
+ * @param router - The `/api/runtimes` routes.
+ * @param activity - Where each change is recorded; absent in a test that does not watch it.
  */
-export function mountAccountEligibilityRoutes(router: Router): void {
-  router.get('/claude-code/account-eligibility', async (req: Request, res: Response) => {
-    const parsed = AccountEligibilityQuerySchema.safeParse(req.query);
+export function mountAccountEligibilityRoutes(
+  router: Hono<ApiEnv>,
+  activity: ActivityService | undefined
+): void {
+  router.get('/claude-code/account-eligibility', async (c) => {
+    const parsed = AccountEligibilityQuerySchema.safeParse(readQuery(c));
     if (!parsed.success) {
-      return res
-        .status(400)
-        .json({ error: 'Invalid query', details: z.treeifyError(parsed.error) });
+      return c.json({ error: 'Invalid query', details: z.treeifyError(parsed.error) }, 400);
     }
     try {
       const project = parsed.data.project
         ? await peekProjectOfNamedFolder(parsed.data.project)
         : null;
-      if (project === 'outside') {
-        return res.status(403).json({
-          error: 'That folder is outside the folders DorkOS may open.',
-          code: 'OUTSIDE_BOUNDARY',
-        });
-      }
-      return res.json({
+      if (project === 'outside') return c.json(OUTSIDE_BOUNDARY, 403);
+      return c.json({
         ...eligibilityFor(project),
         launch: await launchFor(parsed.data.project, project),
       });
     } catch (err) {
       logger.error('[Runtimes] could not read account eligibility', { err: String(err) });
-      return res.status(500).json({ error: 'Could not read which accounts may work here.' });
+      return c.json({ error: 'Could not read which accounts may work here.' }, 500);
     }
   });
 
-  router.put('/claude-code/project-accounts', async (req: Request, res: Response) => {
-    if (refuseIfNotAPerson(req, res, ACCOUNT_RULES_BAR)) return;
-    const parsed = ProjectAccountsRequestSchema.safeParse(req.body ?? {});
+  router.put('/claude-code/project-accounts', async (c) => {
+    const caller = honoRequestFacts(c);
+    const refused = refuseIfNotAPerson(c, caller);
+    if (refused) return refused;
+    const parsed = ProjectAccountsRequestSchema.safeParse(readJsonBody(c, { emptyAs: {} }));
     if (!parsed.success) {
-      return res.status(400).json({
-        error: 'Send the project folder as `project` and the account ids as `allow` (or null).',
-        details: z.treeifyError(parsed.error),
-      });
+      return c.json(
+        {
+          error: 'Send the project folder as `project` and the account ids as `allow` (or null).',
+          details: z.treeifyError(parsed.error),
+        },
+        400
+      );
     }
     try {
       const project = await projectOfNamedFolder(parsed.data.project);
-      if (project === 'outside') {
-        return res.status(403).json({
-          error: 'That folder is outside the folders DorkOS may open.',
-          code: 'OUTSIDE_BOUNDARY',
-        });
-      }
+      if (project === 'outside') return c.json(OUTSIDE_BOUNDARY, 403);
       if (project === null) {
-        return res.status(404).json({
-          error: `${parsed.data.project} isn't in a project (a git repository), so it has no account list.`,
-          code: 'not_a_project',
-        });
+        return c.json(
+          {
+            error: `${parsed.data.project} isn't in a project (a git repository), so it has no account list.`,
+            code: 'not_a_project',
+          },
+          404
+        );
       }
       const { allow } = parsed.data;
       if (allow !== null) {
         const known = knownAccountIds();
         const unknown = allow.filter((id) => !known.has(id));
         if (unknown.length > 0) {
-          return res.status(400).json({
-            error: `There is no Claude account named ${joinNames(unknown.map((id) => `"${id}"`))}.`,
-            code: 'unknown_account',
-          });
+          return c.json(
+            {
+              error: `There is no Claude account named ${joinNames(unknown.map((id) => `"${id}"`))}.`,
+              code: 'unknown_account',
+            },
+            400
+          );
         }
       }
       const before = configManager.get('runtimes');
@@ -284,8 +303,8 @@ export function mountAccountEligibilityRoutes(router: Router): void {
         configManager.get('runtimes')
       );
       const names = allow?.map((id) => accountDisplayName(configManager, id)) ?? [];
-      await activityOf(req)?.emit({
-        ...readActivityActor(req, res),
+      await activity?.emit({
+        ...readActivityActor(caller),
         category: 'config',
         eventType: 'config.accounts_updated',
         resourceType: 'project',
@@ -300,99 +319,98 @@ export function mountAccountEligibilityRoutes(router: Router): void {
         linkPath: '/?settings=runtimes',
         metadata: { project: project.root, allow },
       });
-      return res.json(eligibilityFor(project));
+      return c.json(eligibilityFor(project));
     } catch (err) {
       logger.error('[Runtimes] could not save a project account list', { err: String(err) });
-      return res.status(500).json({ error: 'Could not save which accounts this project may use.' });
+      return c.json({ error: 'Could not save which accounts this project may use.' }, 500);
     }
   });
 
-  router.post(
-    '/claude-code/project-accounts/without-credits',
-    async (req: Request, res: Response) => {
-      if (refuseIfNotAPerson(req, res, ACCOUNT_RULES_BAR)) return;
-      const parsed = ProjectWithoutCreditsRequestSchema.safeParse(req.body ?? {});
-      if (!parsed.success) {
-        return res.status(400).json({
-          error: 'Send the session as `sessionId`.',
-          details: z.treeifyError(parsed.error),
-        });
+  router.post('/claude-code/project-accounts/without-credits', async (c) => {
+    const caller = honoRequestFacts(c);
+    const refused = refuseIfNotAPerson(c, caller);
+    if (refused) return refused;
+    const parsed = ProjectWithoutCreditsRequestSchema.safeParse(readJsonBody(c, { emptyAs: {} }));
+    if (!parsed.success) {
+      return c.json(
+        { error: 'Send the session as `sessionId`.', details: z.treeifyError(parsed.error) },
+        400
+      );
+    }
+    try {
+      const folder = await folderOfSession(parsed.data.sessionId);
+      if (folder === null) {
+        return c.json(
+          { error: 'DorkOS couldn’t find that chat’s folder.', code: 'unknown_session' },
+          404
+        );
       }
-      try {
-        const folder = await folderOfSession(parsed.data.sessionId);
-        if (folder === null) {
-          return res.status(404).json({
-            error: 'DorkOS couldn’t find that chat’s folder.',
-            code: 'unknown_session',
-          });
-        }
-        const project = await projectOfNamedFolder(folder);
-        if (project === 'outside') {
-          return res.status(403).json({
-            error: 'That folder is outside the folders DorkOS may open.',
-            code: 'OUTSIDE_BOUNDARY',
-          });
-        }
-        if (project === null) {
-          return res.status(409).json({
+      const project = await projectOfNamedFolder(folder);
+      if (project === 'outside') return c.json(OUTSIDE_BOUNDARY, 403);
+      if (project === null) {
+        return c.json(
+          {
             error:
               'This folder isn’t in a project (a git repository), so there is no project to ' +
               'keep credits out of. Use your own sign-in for this chat instead.',
             code: 'not_a_project',
-          });
-        }
-        // The project's own list, or every account it may use today: credits is
-        // never a listed account, so either list leaves it out, and nothing that
-        // worked here before stops working.
-        const rules = readEligibilityRules(configManager.get('runtimes')?.claudeCode);
-        const allow = [
-          ...(rules.projectAllow.get(project.root) ?? listedAccounts().map((a) => a.id)),
-        ];
-        const before = configManager.get('runtimes');
-        writeProjectAccounts(configManager, project.root, allow);
-        logConfigWrite(
-          'the project-without-credits route',
-          'runtimes',
-          before,
-          configManager.get('runtimes')
+          },
+          409
         );
-        await activityOf(req)?.emit({
-          ...readActivityActor(req, res),
-          category: 'config',
-          eventType: 'config.accounts_updated',
-          resourceType: 'project',
-          resourceId: project.root,
-          resourceLabel: project.name,
-          summary: `${project.name} no longer uses DorkOS credits`,
-          linkPath: '/?settings=runtimes',
-          metadata: { project: project.root, allow },
-        });
-        return res.json({ ...eligibilityFor(project), launch: await launchFor(folder, project) });
-      } catch (err) {
-        logger.error('[Runtimes] could not keep credits out of a project', { err: String(err) });
-        return res
-          .status(500)
-          .json({ error: 'Could not save which accounts this project may use.' });
       }
+      // The project's own list, or every account it may use today: credits is
+      // never a listed account, so either list leaves it out, and nothing that
+      // worked here before stops working.
+      const rules = readEligibilityRules(configManager.get('runtimes')?.claudeCode);
+      const allow = [
+        ...(rules.projectAllow.get(project.root) ?? listedAccounts().map((a) => a.id)),
+      ];
+      const before = configManager.get('runtimes');
+      writeProjectAccounts(configManager, project.root, allow);
+      logConfigWrite(
+        'the project-without-credits route',
+        'runtimes',
+        before,
+        configManager.get('runtimes')
+      );
+      await activity?.emit({
+        ...readActivityActor(caller),
+        category: 'config',
+        eventType: 'config.accounts_updated',
+        resourceType: 'project',
+        resourceId: project.root,
+        resourceLabel: project.name,
+        summary: `${project.name} no longer uses DorkOS credits`,
+        linkPath: '/?settings=runtimes',
+        metadata: { project: project.root, allow },
+      });
+      return c.json({ ...eligibilityFor(project), launch: await launchFor(folder, project) });
+    } catch (err) {
+      logger.error('[Runtimes] could not keep credits out of a project', { err: String(err) });
+      return c.json({ error: 'Could not save which accounts this project may use.' }, 500);
     }
-  );
+  });
 
-  router.put('/claude-code/accounts/:id/only-projects', async (req: Request, res: Response) => {
-    if (refuseIfNotAPerson(req, res, ACCOUNT_RULES_BAR)) return;
-    const parsed = OnlyProjectsRequestSchema.safeParse(req.body ?? {});
+  router.put('/claude-code/accounts/:id/only-projects', async (c) => {
+    const caller = honoRequestFacts(c);
+    const refused = refuseIfNotAPerson(c, caller);
+    if (refused) return refused;
+    const parsed = OnlyProjectsRequestSchema.safeParse(readJsonBody(c, { emptyAs: {} }));
     if (!parsed.success) {
-      return res.status(400).json({
-        error: 'Send the project folders as `projects` (or null for any project).',
-        details: z.treeifyError(parsed.error),
-      });
+      return c.json(
+        {
+          error: 'Send the project folders as `projects` (or null for any project).',
+          details: z.treeifyError(parsed.error),
+        },
+        400
+      );
     }
-    const accountId = String(req.params.id);
-    if (!knownAccountIds().has(accountId)) {
-      return res.status(404).json({
-        error: `There is no Claude account named "${accountId}".`,
-        code: 'unknown_account',
-      });
-    }
+    const accountId = c.req.param('id');
+    const unknownAccount = {
+      error: `There is no Claude account named "${accountId}".`,
+      code: 'unknown_account',
+    };
+    if (!knownAccountIds().has(accountId)) return c.json(unknownAccount, 404);
     try {
       let roots: string[] | null = null;
       if (parsed.data.projects !== null) {
@@ -408,26 +426,24 @@ export function mountAccountEligibilityRoutes(router: Router): void {
           }
           const project = await projectOfNamedFolder(folder);
           if (project === 'outside' || project === null) {
-            return res.status(400).json({
-              error: `${folder} isn't a project DorkOS can use (a git repository inside the folders it may open).`,
-              code: 'not_a_project',
-            });
+            return c.json(
+              {
+                error: `${folder} isn't a project DorkOS can use (a git repository inside the folders it may open).`,
+                code: 'not_a_project',
+              },
+              400
+            );
           }
           roots.push(project.root);
         }
       }
       const before = configManager.get('runtimes');
-      if (!writeOnlyProjects(configManager, accountId, roots)) {
-        return res.status(404).json({
-          error: `There is no Claude account named "${accountId}".`,
-          code: 'unknown_account',
-        });
-      }
+      if (!writeOnlyProjects(configManager, accountId, roots)) return c.json(unknownAccount, 404);
       logConfigWrite('the only-projects route', 'runtimes', before, configManager.get('runtimes'));
       const onlyProjects = onlyProjectsOf(configManager, accountId);
       const name = accountDisplayName(configManager, accountId);
-      await activityOf(req)?.emit({
-        ...readActivityActor(req, res),
+      await activity?.emit({
+        ...readActivityActor(caller),
         category: 'config',
         eventType: 'config.accounts_updated',
         resourceType: 'account',
@@ -442,10 +458,10 @@ export function mountAccountEligibilityRoutes(router: Router): void {
         linkPath: '/?settings=runtimes',
         metadata: { account: accountId, onlyProjects: roots },
       });
-      return res.json({ onlyProjects });
+      return c.json({ onlyProjects });
     } catch (err) {
       logger.error('[Runtimes] could not save an account project list', { err: String(err) });
-      return res.status(500).json({ error: 'Could not save which projects this account may use.' });
+      return c.json({ error: 'Could not save which projects this account may use.' }, 500);
     }
   });
 }

@@ -471,13 +471,26 @@ describe('in-session tool exposure', () => {
     // `spin-off-chats` §1), all three DEFERRED on a plain session.
     // 124 -> 118 (spec `spin-off-chats` §7): the six relay send, inbox and
     // endpoint tools retire. Both counts move by the same amounts.
+    // 118 -> 121 for `commitment_add`, `commitment_update` and
+    // `commitments_list` (spec `heartbeats` §12), all three DEFERRED.
+    // 121 -> 125 for `audit_query`, `audit_get`, `account_timeline` and
+    // `transcript_read` (spec `audit-trail` PR4), all four DEFERRED like
+    // `audit_verify`: reviewing the record or another agent's work is a
+    // deliberate step a turn can search for. Both counts move by the same four.
+    // 125 -> 128 for `pause_agent`, `resume_agent` and `list_paused_agents`
+    // (spec `audit-trail` PR5), DEFERRED: no prompt block names them, and an
+    // emergency stop is a deliberate step a turn can search for.
+    // 128 -> 129 for `end_beat` (spec `heartbeats` §8), DEFERRED: only a beat
+    // turn calls it, and the beat prompt names it so that turn can search.
+    // 129 -> 130 for `heartbeat_status` (spec `heartbeats` §10 PR 6), DEFERRED:
+    // reading an agent's heartbeat is a deliberate step a turn can search for.
     // The full registry includes the imported MCP sign-in capability spread:
     // mcp_signin and mcp_poll_signin are deferred, alongside end_beat.
     // Eleven plain-session eager tools remain unchanged.
-    expect(tools).toHaveLength(134);
-    expect(new Set(tools.map((tool) => tool.name)).size).toBe(134);
+    expect(tools).toHaveLength(135);
+    expect(new Set(tools.map((tool) => tool.name)).size).toBe(135);
     expect(tools.filter((tool) => tool._meta?.[ALWAYS_LOAD_META] === true)).toHaveLength(11);
-    expect(deferred).toHaveLength(123);
+    expect(deferred).toHaveLength(124);
     expect(tools.map((tool) => tool.name)).not.toContain('mcp_set_client');
     for (const name of [
       'mcp_signin',
@@ -494,6 +507,7 @@ describe('in-session tool exposure', () => {
       'issue_doc_token',
       'revoke_doc_token',
       'canvas_set_checkbox',
+      'heartbeat_status',
     ]) {
       expect(deferred.map((tool) => tool.name)).toContain(name);
     }

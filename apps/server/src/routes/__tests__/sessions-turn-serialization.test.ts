@@ -85,6 +85,7 @@ vi.mock('@dorkos/shared/manifest', () => ({ readManifest: vi.fn(async () => null
 import request from '@dorkos/test-utils/supertest';
 import { listeningServer } from '@dorkos/test-utils/listening-server';
 import { createApp, finalizeApp } from '../../app.js';
+import { composedListener } from '../../http/__tests__/composed-listener.js';
 import {
   getOrCreateProjector,
   disposeProjector,
@@ -93,11 +94,12 @@ import { SessionLockManager } from '../../services/session/session-lock.js';
 import { resetMessageDispatcher } from '../../services/session/message-dispatcher.js';
 import { sessionTurnQueue } from '../../services/session/trigger-turn.js';
 
-const app = createApp({ admission: new MainRequestAdmission() });
+const admission = new MainRequestAdmission();
+const app = createApp({ admission });
 finalizeApp(app);
 
 /** ONE listener for the whole file (DOR-483); see the cross-client suite. */
-const server = listeningServer(app);
+const server = listeningServer(composedListener(app, admission));
 
 const SESSION_ID = '00000000-0000-4000-8000-0000000000bb';
 /** The id the runtime assigns to a brand-new session mid-first-turn. */

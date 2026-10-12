@@ -10,7 +10,6 @@ import {
   type OpenCodeRuntimeOptions,
 } from '../../../runtimes/opencode/opencode-runtime.js';
 import { OpenCodeSessionMap } from '../../../runtimes/opencode/sessions/session-map.js';
-import sessionsRouter from '../../../../routes/sessions.js';
 import { runtimeRegistry, readOriginalRegisteredRuntime } from '../../../core/runtime-registry.js';
 import { readTestModeOriginalPlacementOptions } from '../../../runtimes/test-mode/test-mode-runtime.js';
 import { readTestModeOriginalActiveStream } from '../../../runtimes/test-mode/test-mode-runtime.js';
@@ -121,8 +120,6 @@ export async function runOriginalNativeAppResumeControl(
   assert.ok(runtime, 'Original registered native runtime required');
   if (mode === 'app-resume-opencode-copy') assert.ok(runtime instanceof OpenCodeRuntime);
 
-  owning.app.locals.docChannelHttp = owning.http;
-  owning.app.use('/api/sessions', sessionsRouter);
   const send = (cwd?: string) =>
     request(owning.server)
       .post(`/api/sessions/${target.sessionId}/messages`)

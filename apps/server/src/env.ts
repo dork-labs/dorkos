@@ -257,6 +257,16 @@ export const serverEnvSchema = z.object({
   // through a forwarded hop so proxied deployments keep secure cookies. See
   // middleware/rate-limit-key.ts.
   DORKOS_TRUST_PROXY: boolFlag,
+  // Where this computer's Ollama answers. Loopback only: models are never
+  // pulled through another host. Tests point it at a stub, so no run depends
+  // on whether this machine has Ollama running.
+  DORKOS_OLLAMA_URL: z
+    .string()
+    .url()
+    .refine((value) => ['127.0.0.1', 'localhost', '[::1]'].includes(new URL(value).hostname), {
+      message: 'DORKOS_OLLAMA_URL must be a loopback address',
+    })
+    .default('http://127.0.0.1:11434'),
   // Set by a supervising process that owns the server's lifecycle (DOR-532).
   // `desktop` means the Electron shell started this server as a utility process,
   // so the admin restart/reset endpoints refuse (409) rather than exit into a

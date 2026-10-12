@@ -57,7 +57,10 @@ export type BeatFinish = Partial<
 >;
 
 /** A new outbox row. */
-export type NewOutboxRow = Omit<HeartbeatOutboxRow, 'deliveredEntryId' | 'closedAt' | 'attempts'>;
+export type NewOutboxRow = Omit<
+  HeartbeatOutboxRow,
+  'deliveredEntryId' | 'closedAt' | 'attempts' | 'deliveredAt'
+>;
 
 /** What makes two held raises the same raise. */
 export interface HeldMatch {
@@ -294,6 +297,7 @@ export class HeartbeatStore {
         ...row,
         state: 'delivered',
         closedAt: at,
+        deliveredAt: at,
         ...(entryId ? { deliveredEntryId: entryId } : {}),
       })
       .run();
@@ -408,7 +412,13 @@ export class HeartbeatStore {
     if (ids.length === 0) return;
     this.db
       .update(heartbeatOutbox)
-      .set({ state, closedAt: at, ...(entryId ? { deliveredEntryId: entryId } : {}) })
+      .set({
+        state,
+        closedAt: at,
+        // The one moment it reached its reader; a later resolve never clears it.
+        ...(state === 'delivered' ? { deliveredAt: at } : {}),
+        ...(entryId ? { deliveredEntryId: entryId } : {}),
+      })
       .where(inArray(heartbeatOutbox.id, ids))
       .run();
   }

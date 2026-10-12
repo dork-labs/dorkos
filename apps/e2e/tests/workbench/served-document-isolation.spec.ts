@@ -1,7 +1,7 @@
 /* eslint-disable no-restricted-syntax -- The isolated fixture must set its temporary home and origin before importing server singletons. */
 import { test, expect } from '../../fixtures';
 import express from 'express';
-import type { Server } from 'node:http';
+import { createServer, type RequestListener, type Server } from 'node:http';
 import { mkdtemp, realpath, writeFile, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -24,9 +24,9 @@ const environmentKeys = [
 let previousEnvironment: (string | undefined)[];
 
 /** A real listener on an OS-assigned port, never an operator/test-leg port. */
-async function listen(app: express.Express): Promise<Server> {
+async function listen(app: RequestListener): Promise<Server> {
   return new Promise((resolve) => {
-    const listener = app.listen(0, '127.0.0.1', () => resolve(listener));
+    const listener = createServer(app).listen(0, '127.0.0.1', () => resolve(listener));
   });
 }
 
@@ -50,6 +50,10 @@ type ServerModules = {
   'services/core/lifecycle/main-request-admission': { MainRequestAdmission: new () => unknown };
   'services/core/runtime-registry': { runtimeRegistry: { register: (runtime: unknown) => void } };
   'services/runtimes/test-mode/test-mode-runtime': { TestModeRuntime: new () => unknown };
+  'http/hono-api': {
+    composeFrontDoor: (legacy: RequestListener, admission: unknown) => unknown;
+  };
+  'http/front-door': { frontDoorListener: (door: unknown) => RequestListener };
 };
 
 /**
@@ -114,7 +118,8 @@ test.beforeAll(async () => {
     path.join(root, 'blocked.html'),
     `<html><head><meta http-equiv="Content-Security-Policy" content="script-src 'none'"></head><body><h1>CSP blocked document</h1><script>window.originalBlockedScriptRan = true;</script></body></html>`
   );
-  const app = createApp({ admission: new MainRequestAdmission() });
+  const admission = new MainRequestAdmission();
+  const app = createApp({ admission });
   app.get('/isolation-host', (_req, res) =>
     res.send('<body data-operator="private"><h1>App control</h1></body>')
   );
@@ -122,20 +127,25 @@ test.beforeAll(async () => {
     if (req.method === 'POST') writes++;
     res.send('operator-secret');
   });
+  // Route as the running server does: the moved groups (the workbench among
+  // them) answer from Hono, and everything else falls through to Express.
+  const [{ composeFrontDoor }, { frontDoorListener }] = await Promise.all([
+    serverModule('http/hono-api'),
+    serverModule('http/front-door'),
+  ]);
+  const routed = frontDoorListener(composeFrontDoor(app, admission));
   // Count at ingress, before the real application's CORS rejection. A zero
   // endpoint count alone could mean the hostile script never ran.
-  const counted = express();
-  counted.use((req, _res, next) => {
-    if (req.path === '/api/isolation-control')
-      attempts.push({ method: req.method, cookie: req.headers.cookie });
-    next();
-  });
-  counted.use(app);
+  const counted: RequestListener = (req, res) => {
+    if (new URL(req.url ?? '/', 'http://ingress').pathname === '/api/isolation-control')
+      attempts.push({ method: req.method ?? '', cookie: req.headers.cookie });
+    routed(req, res);
+  };
   server = await listen(counted);
   origin = address(server);
   const desktopApp = express();
   desktopApp.get('/', (_req, res) => res.send('<body><h1>Desktop origin control</h1></body>'));
-  desktop = await listen(desktopApp);
+  desktop = await listen(desktopApp as unknown as RequestListener);
   desktopOrigin = address(desktop);
   process.env.DORKOS_CORS_ORIGIN = desktopOrigin;
   const signed = await fetch(`${origin}/api/workbench/sign`, {

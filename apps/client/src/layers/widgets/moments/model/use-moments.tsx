@@ -1,4 +1,5 @@
 import { useConfig } from '@/layers/entities/config';
+import { useAppStore } from '@/layers/shared/model';
 import { TelemetryConsentMoment } from '@/layers/features/telemetry-consent';
 import { FullPowerDoorMoment } from '@/layers/features/full-power-door';
 
@@ -70,5 +71,11 @@ export function useFullPowerMomentDescriptor(): MomentDescriptor | null {
 export function useMoments(): MomentDescriptor[] {
   const fullPower = useFullPowerMomentDescriptor();
   const telemetry = useTelemetryMomentDescriptor();
+  // The first run ended in this launch, so #team and DorkBot's welcome are on
+  // screen with the chips that start the first job (spec
+  // `one-minute-onboarding` §2.4). No moment covers them: each waits for the
+  // next launch, which is when the rail asks an existing user anyway.
+  const firstRunThisLaunch = useAppStore((s) => s.onboardingHiddenForSession);
+  if (firstRunThisLaunch) return [];
   return [fullPower, telemetry].filter((d): d is MomentDescriptor => d !== null);
 }

@@ -1,68 +1,67 @@
 import path from 'path';
-import { Router } from 'express';
-import multer from 'multer';
+import { Hono } from 'hono';
 import { validateBoundary, BoundaryError } from '../lib/boundary.js';
 import { uploadHandler } from '../services/core/upload-handler.js';
 import { configManager } from '../services/core/config-manager.js';
 import { logger } from '../lib/logger.js';
+import type { ApiEnv } from '../http/api-chain.js';
+import { readQuery } from '../http/request-query.js';
+import { sendFileFromRoot } from '../http/send-file.js';
+import { parseUploads, UploadLimitError, type UploadedFile } from '../http/uploads.js';
 
-const router = Router();
+const router = new Hono<ApiEnv>();
 
 /**
  * Upload files to a session's working directory for agent access.
  *
  * Accepts multipart/form-data with field name `files`. The `cwd` query
  * parameter determines the upload directory (`{cwd}/.dork/.temp/uploads/`).
- * Multer config (maxFileSize, maxFiles, allowedTypes) is loaded dynamically
- * from the user config on each request.
+ * The limits (maxFileSize, maxFiles, allowedTypes) are loaded from the user
+ * config on each request.
  */
-router.post('/', async (req, res) => {
+router.post('/', async (c) => {
   try {
-    const cwd = req.query.cwd;
+    const cwd = readQuery(c).cwd;
     if (!cwd || typeof cwd !== 'string') {
-      return res.status(400).json({ error: 'Missing required parameter: cwd' });
+      return c.json({ error: 'Missing required parameter: cwd' }, 400);
     }
 
     const validatedCwd = await validateBoundary(cwd);
     const uploadConfig = configManager.get('uploads');
 
-    // Multer is invoked manually (not as route-level middleware) because
-    // config is loaded dynamically per-request from the config manager.
-    const upload = uploadHandler.createMulterMiddleware(validatedCwd, uploadConfig);
-
-    upload.array('files', uploadConfig.maxFiles)(req, res, (err) => {
-      if (err) {
-        if (err instanceof multer.MulterError) {
-          const message =
-            err.code === 'LIMIT_FILE_SIZE'
-              ? `File too large (max ${uploadConfig.maxFileSize / 1024 / 1024}MB)`
-              : err.message;
-          return res.status(400).json({ error: message, code: err.code });
-        }
-        return res.status(400).json({ error: err.message });
+    let files: UploadedFile[];
+    try {
+      files = await parseUploads(c, uploadHandler.uploadOptions(validatedCwd, uploadConfig));
+    } catch (err) {
+      if (err instanceof UploadLimitError) {
+        const message =
+          err.code === 'LIMIT_FILE_SIZE'
+            ? `File too large (max ${uploadConfig.maxFileSize / 1024 / 1024}MB)`
+            : err.message;
+        return c.json({ error: message, code: err.code }, 400);
       }
+      return c.json({ error: (err as Error).message }, 400);
+    }
 
-      const files = req.files as Express.Multer.File[];
-      if (!files || files.length === 0) {
-        return res.status(400).json({ error: 'No files provided' });
-      }
+    if (files.length === 0) {
+      return c.json({ error: 'No files provided' }, 400);
+    }
 
-      res.json({
-        uploads: files.map((f) => ({
-          originalName: f.originalname,
-          savedPath: f.path,
-          filename: f.filename,
-          size: f.size,
-          mimeType: f.mimetype,
-        })),
-      });
+    return c.json({
+      uploads: files.map((f) => ({
+        originalName: f.originalname,
+        savedPath: f.path,
+        filename: f.filename,
+        size: f.size,
+        mimeType: f.mimetype,
+      })),
     });
   } catch (err) {
     if (err instanceof BoundaryError) {
-      return res.status(403).json({ error: err.message, code: err.code });
+      return c.json({ error: err.message, code: err.code }, 403);
     }
     logger.error('[uploads] POST / failed', { err });
-    return res.status(500).json({ error: 'Internal server error' });
+    return c.json({ error: 'Internal server error' }, 500);
   }
 });
 
@@ -70,41 +69,31 @@ router.post('/', async (req, res) => {
  * Serve an uploaded file by filename.
  *
  * Requires `cwd` query parameter to locate the upload directory.
- * Uses `path.basename()` to prevent directory traversal and validates
- * the resolved path stays within the upload directory.
+ * Uses `path.basename()` to prevent directory traversal, and
+ * `sendFileFromRoot` refuses a name that resolves outside the upload directory.
  */
-router.get('/:filename', async (req, res) => {
+router.get('/:filename', async (c) => {
   try {
-    const cwd = req.query.cwd;
+    const cwd = readQuery(c).cwd;
     if (!cwd || typeof cwd !== 'string') {
-      return res.status(400).json({ error: 'Missing required parameter: cwd' });
+      return c.json({ error: 'Missing required parameter: cwd' }, 400);
     }
 
     const validatedCwd = await validateBoundary(cwd);
-    const filename = path.basename(req.params.filename);
-    const filePath = path.join(uploadHandler.getUploadDir(validatedCwd), filename);
-
-    const resolvedPath = path.resolve(filePath);
-    const uploadDir = path.resolve(uploadHandler.getUploadDir(validatedCwd));
-    if (!resolvedPath.startsWith(uploadDir + path.sep) && resolvedPath !== uploadDir) {
-      return res.status(403).json({ error: 'Access denied' });
-    }
-
-    res.sendFile(resolvedPath, (err) => {
-      if (err && !res.headersSent) {
-        // Express 5's `send` reports not-found via err.status (404). err.code is
-        // only 'ENOENT' when the parent dir exists, so check both to stay robust.
-        const sendErr = err as NodeJS.ErrnoException & { status?: number };
-        const status = sendErr.status === 404 || sendErr.code === 'ENOENT' ? 404 : 500;
-        res.status(status).json({ error: status === 404 ? 'File not found' : 'Internal error' });
-      }
-    });
+    const filename = path.basename(c.req.param('filename'));
+    const sent = await sendFileFromRoot(c, uploadHandler.getUploadDir(validatedCwd), filename);
+    if (sent.kind === 'sent') return sent.response;
+    if (sent.kind === 'outside') return c.json({ error: 'Access denied' }, 403);
+    // `send` reports not-found via err.status (404). err.code is only 'ENOENT'
+    // when the parent dir exists, so check both to stay robust.
+    const status = sent.error.status === 404 || sent.error.code === 'ENOENT' ? 404 : 500;
+    return c.json({ error: status === 404 ? 'File not found' : 'Internal error' }, status);
   } catch (err) {
     if (err instanceof BoundaryError) {
-      return res.status(403).json({ error: err.message, code: err.code });
+      return c.json({ error: err.message, code: err.code }, 403);
     }
     logger.error('[uploads] GET /:filename failed', { err });
-    return res.status(500).json({ error: 'Internal server error' });
+    return c.json({ error: 'Internal server error' }, 500);
   }
 });
 

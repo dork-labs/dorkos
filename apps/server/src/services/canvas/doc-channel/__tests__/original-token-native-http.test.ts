@@ -5,7 +5,9 @@ import { noopLogger } from '@dorkos/shared/logger';
 import { composeRegistry } from '../../../core/capabilities/registry.js';
 import { createDocChannelManagementCapabilities } from '../management/capabilities.js';
 import { createDocChannelGrantCapabilities } from '../grant-capabilities.js';
-import { createCanvasDocManagementRouter } from '../../../../routes/canvas-doc-management.js';
+import { originalDocHttpListener } from './original-doc-http-listener.js';
+import { composedListener } from '../../../../http/__tests__/composed-listener.js';
+import { MainRequestAdmission } from '../../../core/lifecycle/main-request-admission.js';
 import { setRoomService, clearRoomService } from '../../../rooms/index.js';
 import { createServer, request, type IncomingMessage, type ServerResponse } from 'node:http';
 import type { Socket } from 'node:net';
@@ -13,7 +15,6 @@ import fs from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { randomUUID, createHash } from 'node:crypto';
-import ordinaryDocRoutes, { canvasDocJsonParser } from '../../../../routes/canvas-doc-events.js';
 import { standaloneDocTokenReadRouter } from '../../../../routes/canvas-doc-token-events.js';
 import { nativeRoomAuthorityFixture } from '../writes/__tests__/authority-fixtures.js';
 import {
@@ -65,6 +66,7 @@ async function withOriginalHttp(
     requestHost?: string;
   } = { resetFalse: 0, eventFalse: 0, ownedDrainWaits: 0 };
   let app = express();
+  let listener: import('node:http').RequestListener = app;
   // A real socket/response high water mark makes these small frames report actual backpressure.
   const server = createServer({ highWaterMark: 1 }, (req, res) => {
     observed.requestHost = req.headers.host;
@@ -85,7 +87,7 @@ async function withOriginalHttp(
       }
       return accepted;
     }) as typeof res.write;
-    app(req, res);
+    listener(req, res);
   });
   server.on('connection', (socket) => {
     sockets.add(socket);
@@ -98,9 +100,9 @@ async function withOriginalHttp(
     setRoomService(h.rooms.service);
     if (options.fullApp) {
       const { createApp } = await import('../../../../app.js');
-      const { MainRequestAdmission } =
-        await import('../../../core/lifecycle/main-request-admission.js');
-      app = createApp({ admission: new MainRequestAdmission() });
+      const admission = new MainRequestAdmission();
+      app = createApp({ admission });
+      listener = composedListener(app, admission, { docChannel: h.http });
     }
     app.locals.docChannelHttp = h.http;
     if (!options.fullApp) {
@@ -122,12 +124,11 @@ async function withOriginalHttp(
           docChannelGrantDeps: { service: h.http.grants, authorization: h.http.authorization },
         }
       );
-      app.use(
-        '/api/canvas/docs',
-        canvasDocJsonParser,
-        createCanvasDocManagementRouter(registry, h.http),
-        ordinaryDocRoutes
-      );
+      listener = originalDocHttpListener(() => h?.http, {
+        docMount: '/api/canvas/docs',
+        legacy: app,
+        capabilities: registry,
+      });
     }
     if (options.fullApp) {
       const { finalizeApp } = await import('../../../../app.js');

@@ -18,39 +18,36 @@
  *
  * @module routes/session-queue-handler
  */
-import type { Request, Response } from 'express';
+import type { Context } from 'hono';
 import { UpdateQueuedMessageRequestSchema } from '@dorkos/shared/schemas';
+import type { ApiEnv } from '../http/api-chain.js';
+import { readJsonBody } from '../http/request-body.js';
 import {
   cancelQueuedMessage,
   editQueuedMessage,
   listQueuedMessages,
 } from '../services/session/index.js';
-import { parseSessionId, sendError } from '../lib/route-utils.js';
+import { errorBody, parseSessionId } from '../lib/route-utils.js';
 
-/**
- * Read the `messageId` path param.
- *
- * Express 5 widens route params to `string | string[]`; more than one value can
- * only come from a malformed path, so it is rejected rather than guessed at.
- */
-function parseMessageId(raw: unknown): string | undefined {
-  return typeof raw === 'string' && raw.length > 0 ? raw : undefined;
+const INVALID_SESSION_ID = errorBody('Invalid session ID', 'INVALID_SESSION_ID');
+const INVALID_MESSAGE_ID = errorBody('Invalid message ID', 'INVALID_MESSAGE_ID');
+const NOT_QUEUED = errorBody('No such queued message', 'QUEUED_MESSAGE_NOT_FOUND');
+
+/** Read the `messageId` path param: an empty one is refused rather than guessed at. */
+function parseMessageId(raw: string | undefined): string | undefined {
+  return raw ? raw : undefined;
 }
 
 /**
  * `GET /api/sessions/:id/queue` — the messages waiting on this session, head
  * first.
  *
- * @param req - Express request; `:id` is the session
- * @param res - Express response
+ * @param c - The request context; `:id` is the session
  */
-export function sessionQueueListHandler(req: Request, res: Response): void {
-  const sessionId = parseSessionId(req.params.id);
-  if (!sessionId) {
-    sendError(res, 400, 'Invalid session ID', 'INVALID_SESSION_ID');
-    return;
-  }
-  res.json({ queue: listQueuedMessages(sessionId) });
+export function sessionQueueListHandler(c: Context<ApiEnv>): Response {
+  const sessionId = parseSessionId(c.req.param('id'));
+  if (!sessionId) return c.json(INVALID_SESSION_ID, 400);
+  return c.json({ queue: listQueuedMessages(sessionId) });
 }
 
 /**
@@ -61,40 +58,26 @@ export function sessionQueueListHandler(req: Request, res: Response): void {
  * indices mean different things to two windows editing one queue, which is
  * exactly the situation this surface is for.
  *
- * @param req - Express request; `:messageId` is the queued message
- * @param res - Express response
+ * @param c - The request context; `:messageId` is the queued message
  */
-export function sessionQueueUpdateHandler(req: Request, res: Response): void {
-  const sessionId = parseSessionId(req.params.id);
-  if (!sessionId) {
-    sendError(res, 400, 'Invalid session ID', 'INVALID_SESSION_ID');
-    return;
-  }
-  const messageId = parseMessageId(req.params.messageId);
-  if (!messageId) {
-    sendError(res, 400, 'Invalid message ID', 'INVALID_MESSAGE_ID');
-    return;
-  }
-  // Express 5 leaves `req.body` undefined for an empty POST/PATCH body; Zod
-  // answers that with the same 400 as a malformed one rather than throwing.
-  const parsed = UpdateQueuedMessageRequestSchema.safeParse(req.body);
-  if (!parsed.success) {
-    sendError(res, 400, 'Invalid request', 'VALIDATION_ERROR');
-    return;
-  }
+export function sessionQueueUpdateHandler(c: Context<ApiEnv>): Response {
+  const sessionId = parseSessionId(c.req.param('id'));
+  if (!sessionId) return c.json(INVALID_SESSION_ID, 400);
+  const messageId = parseMessageId(c.req.param('messageId'));
+  if (!messageId) return c.json(INVALID_MESSAGE_ID, 400);
+  // An empty body is answered with the same 400 as a malformed one.
+  const parsed = UpdateQueuedMessageRequestSchema.safeParse(readJsonBody(c));
+  if (!parsed.success) return c.json(errorBody('Invalid request', 'VALIDATION_ERROR'), 400);
   const { content, move } = parsed.data;
   const message = editQueuedMessage(sessionId, messageId, {
     ...(content !== undefined ? { content } : {}),
     ...(move !== undefined ? { move } : {}),
   });
-  if (!message) {
-    // Covers both "no such message on this queue" and "the move named an anchor
-    // that is not on it" — from the caller's side those are one thing: an id
-    // this queue does not have.
-    sendError(res, 404, 'No such queued message', 'QUEUED_MESSAGE_NOT_FOUND');
-    return;
-  }
-  res.json({ message, queue: listQueuedMessages(sessionId) });
+  // Covers both "no such message on this queue" and "the move named an anchor
+  // that is not on it" — from the caller's side those are one thing: an id
+  // this queue does not have.
+  if (!message) return c.json(NOT_QUEUED, 404);
+  return c.json({ message, queue: listQueuedMessages(sessionId) });
 }
 
 /**
@@ -102,24 +85,13 @@ export function sessionQueueUpdateHandler(req: Request, res: Response): void {
  * queue. Its pending dispatch goes with it, so a removed message does not run
  * later.
  *
- * @param req - Express request; `:messageId` is the queued message
- * @param res - Express response
+ * @param c - The request context; `:messageId` is the queued message
  */
-export function sessionQueueRemoveHandler(req: Request, res: Response): void {
-  const sessionId = parseSessionId(req.params.id);
-  if (!sessionId) {
-    sendError(res, 400, 'Invalid session ID', 'INVALID_SESSION_ID');
-    return;
-  }
-  const messageId = parseMessageId(req.params.messageId);
-  if (!messageId) {
-    sendError(res, 400, 'Invalid message ID', 'INVALID_MESSAGE_ID');
-    return;
-  }
-  const removed = cancelQueuedMessage(sessionId, messageId);
-  if (!removed) {
-    sendError(res, 404, 'No such queued message', 'QUEUED_MESSAGE_NOT_FOUND');
-    return;
-  }
-  res.json({ queue: listQueuedMessages(sessionId) });
+export function sessionQueueRemoveHandler(c: Context<ApiEnv>): Response {
+  const sessionId = parseSessionId(c.req.param('id'));
+  if (!sessionId) return c.json(INVALID_SESSION_ID, 400);
+  const messageId = parseMessageId(c.req.param('messageId'));
+  if (!messageId) return c.json(INVALID_MESSAGE_ID, 400);
+  if (!cancelQueuedMessage(sessionId, messageId)) return c.json(NOT_QUEUED, 404);
+  return c.json({ queue: listQueuedMessages(sessionId) });
 }

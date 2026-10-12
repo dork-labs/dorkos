@@ -1,5 +1,4 @@
 /** Genuine agent-token HTTP caller retirement while the original operator view survives a queued timer. */
-import express from 'express';
 import fs from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -8,11 +7,8 @@ import { expect, it, vi } from 'vitest';
 import request from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
 import { canvasDocEvents, canvasDocBatches, eq } from '@dorkos/db';
-import router from '../../../../../routes/canvas-doc-events.js';
-import {
-  resolveAgentIdentity,
-  AGENT_IDENTITY_HEADER,
-} from '../../../../../middleware/agent-identity.js';
+import { originalDocHttpListener } from '../../__tests__/original-doc-http-listener.js';
+import { AGENT_IDENTITY_HEADER } from '../../../../../middleware/agent-identity.js';
 import {
   initAgentIdentityService,
   getAgentIdentityService,
@@ -77,7 +73,9 @@ it('uses the committed surviving HTTP operator after an actual revoked agent cal
       if (!(cause instanceof Error) || cause.message !== 'RoomService not initialized') throw cause;
     }
     agentPath = await fs.realpath(await fs.mkdtemp(join(tmpdir(), 'presence-http-survivor-')));
-    h = await nativeRoomAuthorityFixture(agentPath, 'claude-code', randomUUID(), randomUUID());
+    h = await nativeRoomAuthorityFixture(agentPath, 'claude-code', randomUUID(), randomUUID(), {
+      roomServiceBinding: 'caller',
+    });
     const own = h;
     setRoomService(own.rooms.service);
     roomInstalled = true;
@@ -86,14 +84,7 @@ it('uses the committed surviving HTTP operator after an actual revoked agent cal
       agentPath: own.originalTarget.agentPath,
       displayName: 'Original presence agent',
     });
-    const app = express();
-    app.use(express.json());
-    app.use(resolveAgentIdentity);
-    // The actual original actor resolver consumes middleware identity and captures
-    // the same native token digest privately. No supplied principal/actor callback.
-    app.locals.docChannelHttp = own.http;
-    app.use('/docs', router);
-    const server = target.mount(app),
+    const server = target.mount(originalDocHttpListener(() => own.http, { docMount: '/docs' })),
       path = `/docs/${own.documentId}/presence`;
     const rows = () =>
       own.db

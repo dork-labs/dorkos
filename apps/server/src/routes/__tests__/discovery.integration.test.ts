@@ -2,8 +2,8 @@
  * Integration tests for the discovery SSE endpoint.
  *
  * These tests verify the SSE wire format, event sequencing, and error handling
- * of POST /api/discovery/scan by mounting the router in a real Express app
- * and using supertest to make requests.
+ * of POST /api/discovery/scan by serving the routes behind the real `/api`
+ * chain and using supertest to make requests.
  *
  * The scanner is mocked via a fake meshCore.discover() async generator —
  * the focus is on the route/SSE layer, not the filesystem scanning logic.
@@ -30,22 +30,26 @@ vi.mock('../../lib/boundary.js', () => ({
   },
 }));
 
+// The `/api` chain reads config (login, the host allowlist); nothing is set.
+vi.mock('../../services/core/config-manager.js', () => ({
+  configManager: { get: vi.fn().mockReturnValue(null), set: vi.fn() },
+}));
+
 import request from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
-import express from 'express';
-import { createDiscoveryRouter } from '../discovery.js';
+import { createDiscoveryRoutes } from '../discovery.js';
+import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
 
 /** Mock MeshCore with a controllable discover() async generator. */
 const mockDiscover = vi.fn();
 const mockMeshCore = { discover: mockDiscover } as unknown as MeshCore;
 const target = swappableServer();
 
-/** Helper to create a minimal Express app with the discovery router mounted. */
+/** Helper to serve the discovery routes behind the `/api` chain. */
 function createTestApp() {
-  const app = express();
-  app.use(express.json());
-  app.use('/api/discovery', createDiscoveryRouter(mockMeshCore));
-  return target.mount(app);
+  return target.mount(
+    honoGroupListener({ path: '/api/discovery', routes: createDiscoveryRoutes(mockMeshCore) })
+  );
 }
 
 /**

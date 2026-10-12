@@ -126,18 +126,20 @@ vi.mock('fs/promises', async () => {
 
 import request from '@dorkos/test-utils/supertest';
 import { listeningServer } from '@dorkos/test-utils/listening-server';
-import express from 'express';
-import { createAgentsRouter } from '../agents.js';
+import { createAgentsRoutes } from '../agents.js';
+import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
 import { setOnAgentCreated } from '../../services/core/agent-created-hook.js';
 import { validateBoundaryOrDorkHome, BoundaryError } from '../../lib/boundary.js';
 
 const mockSyncFromDisk = vi.fn().mockResolvedValue(true);
 const mockMeshCore = { syncFromDisk: mockSyncFromDisk };
 
-const app = express();
-app.use(express.json());
-app.use('/api/agents', createAgentsRouter(mockMeshCore));
-const testServer = listeningServer(app);
+const testServer = listeningServer(
+  honoGroupListener({
+    path: '/api/agents',
+    routes: createAgentsRoutes({ meshCore: mockMeshCore }),
+  })
+);
 
 describe('POST /api/agents/create', () => {
   beforeEach(() => {

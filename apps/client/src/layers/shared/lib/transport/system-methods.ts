@@ -1,6 +1,6 @@
 import { CanvasDocumentSaveIdentitySchema } from '@dorkos/shared/schemas';
 import { CanvasChannelEventReceiptSchema } from '@dorkos/shared/canvas-channel-schemas';
-import type { DoeCreditsCatalog } from '@dorkos/shared/runtime-connect';
+import type { DoeCreditsCatalog, DoeInferenceStatus } from '@dorkos/shared/runtime-connect';
 import type { DoeInferenceConfig } from '@dorkos/shared/config-schema';
 /**
  * System Transport methods factory — filesystem, config, health, tunnel, admin,
@@ -502,14 +502,12 @@ export function createSystemMethods(baseUrl: string) {
 
     // ── Runtime Connect (terminal-free auth) ──────────────────────────────
 
-    getDoeInference(): Promise<{ inference: DoeInferenceConfig | null; hasKey: boolean }> {
+    getDoeInference(): Promise<DoeInferenceStatus> {
       return fetchJSON(baseUrl, '/runtimes/doe/inference');
     },
     setDoeInference(inference: DoeInferenceConfig): Promise<{ ok: true }> {
-      return fetchJSON(baseUrl, '/runtimes/doe/inference', {
-        method: 'PUT',
-        body: JSON.stringify(inference),
-      });
+      const init = { method: 'PUT', body: JSON.stringify(inference) };
+      return fetchJSON(baseUrl, '/runtimes/doe/inference', init);
     },
     storeDoeCredential(
       inference: DoeInferenceConfig,

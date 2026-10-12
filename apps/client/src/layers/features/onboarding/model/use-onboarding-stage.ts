@@ -1,7 +1,7 @@
 /**
  * Sync the onboarding overlay's active stage to a URL search param.
  *
- * The overlay is not a route, but its four entry screens should still respond
+ * The overlay is not a route, but its first-run screens should still respond
  * to the browser's back/forward and survive a refresh. This hook derives the
  * current stage from `?onboarding=` and returns a navigator that walks it via
  * real history entries (so back/forward move between stages). On mount it
@@ -131,13 +131,11 @@ export interface ClearOnboardingStageInput {
  * Gating on `done` (rather than a config refetch) means a fresh user's param
  * survives config loading and is read back on refresh.
  *
- * The strip is additionally gated on the overlay being closed. The conversation
- * writes `completedAt` mid-flow (so a dissolve into the real session is durable),
- * which flips `done` true while the overlay is deliberately still latched open —
- * stripping then would rewind the derived stage to `welcome` and destroy the
- * in-progress conversation. So the param is cleared only once the overlay has
- * actually closed (first-message dissolve, Skip all setup, or dismiss), via `replace`
- * so it leaves no history entry.
+ * The strip is additionally gated on the overlay being closed. Landing writes
+ * `completedAt` before it hands off to #team, which flips `done` true while the
+ * overlay is deliberately still latched open — stripping then would rewind the
+ * derived stage to `welcome` mid-hand-off. So the param is cleared only once
+ * the overlay has actually closed, via `replace` so it leaves no history entry.
  *
  * @param input - The done signal plus whether the overlay is still showing.
  */

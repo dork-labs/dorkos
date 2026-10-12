@@ -7,7 +7,6 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import express from 'express';
 import request from '@dorkos/test-utils/supertest';
 import { listeningServer } from '@dorkos/test-utils/listening-server';
 
@@ -30,19 +29,25 @@ vi.mock('../../services/runtimes/claude-code/claude-config-dir.js', async (impor
     }),
   };
 });
+// The session gate lets every request through: these cases are about the
+// route's own bars, which run behind it, as the Express version mounted them.
+vi.mock('../../services/core/auth/session-gate.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../services/core/auth/session-gate.js')>()),
+  decideSessionGate: vi.fn(async () => ({ allowed: true })),
+}));
 vi.mock('../../lib/logger.js', () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
   logError: (err: unknown) => ({ err: String(err) }),
 }));
 
 import { configManager, initConfigManager } from '../../services/core/config-manager.js';
-import runtimesRouter from '../runtimes.js';
+import { createRuntimesRoutes } from '../runtimes.js';
+import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
 import { OPERATOR_COOKIE_REQUIRED_CODE } from '../../lib/caller-authority.js';
 
-const app = express();
-app.use(express.json());
-app.use('/api/runtimes', runtimesRouter);
-const server = listeningServer(app);
+const server = listeningServer(
+  honoGroupListener({ path: '/api/runtimes', routes: createRuntimesRoutes() })
+);
 
 let dorkHome: string;
 

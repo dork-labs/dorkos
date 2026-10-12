@@ -478,7 +478,7 @@ describe('RoomWorktreeManager', () => {
       '',
     ].join('\n');
 
-    it('removes what DorkOS wrote, leaves the tree clean, and drops the block when it was the last', async () => {
+    it('TR-05: removes what DorkOS wrote, leaves the tree clean, and drops the block when it was the last', async () => {
       await native.enable();
       const dir = await legacyWorktree('ana');
       // The fixture is real: the tree holds the pack, a link and the projection,

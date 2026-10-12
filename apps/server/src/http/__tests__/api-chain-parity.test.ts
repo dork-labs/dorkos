@@ -25,7 +25,6 @@ import { gzipSync } from 'node:zlib';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { getRequestListener } from '@hono/node-server';
 import { RESPONSE_ALREADY_SENT } from '@hono/node-server/utils/response';
-import bodyParser from 'body-parser';
 import type express from 'express';
 import { createDb, runMigrations, user } from '@dorkos/db';
 
@@ -139,16 +138,6 @@ const RAW_PATH = '/api/chain-probe/raw';
 /** A route that fails after its response has started. */
 const MIDSTREAM_PATH = '/api/chain-probe/midstream';
 
-/**
- * The larger limit feedback screenshots get, as the feedback group will bring
- * it when it moves. On Express it is `feedbackJsonParser`, mounted at
- * `/api/feedback` ahead of `express.json`.
- */
-const FEEDBACK_BODY_RULE = {
-  matches: (_method: string, path: string) => /^\/api\/feedback(?:\/|$)/i.test(path),
-  parse: bodyParser.json({ limit: '2mb' }),
-};
-
 function buildExpress(admission: MainRequestAdmission): express.Express {
   const app = createApp({ admission });
   const probe = (req: express.Request, res: express.Response) =>
@@ -163,7 +152,6 @@ function buildExpress(admission: MainRequestAdmission): express.Express {
   app.all('/api/chain-probe/throw/:kind', (req) => {
     throw THROWABLE[req.params.kind as string]!();
   });
-  app.post('/api/feedback/chain-probe', probe);
   app.get(RAW_PATH, (_req, res) => {
     res.writeHead(200, { 'content-type': 'text/plain' });
     res.end('written to the Node response');
@@ -178,7 +166,7 @@ function buildExpress(admission: MainRequestAdmission): express.Express {
 }
 
 function buildHono(admission: MainRequestAdmission) {
-  const app = createApiApp({ admission, bodyRules: [FEEDBACK_BODY_RULE] });
+  const app = createApiApp({ admission });
   const probe = (c: Context<ApiEnv>) =>
     c.json(probeReport(c.req.method, readJsonBody(c), c.get('user'), c.get('agentIdentity')));
   app.all('/api/chain-probe', probe);
@@ -191,7 +179,6 @@ function buildHono(admission: MainRequestAdmission) {
   app.all('/api/chain-probe/throw/:kind', (c) => {
     throw THROWABLE[c.req.param('kind')]!();
   });
-  app.post('/api/feedback/chain-probe', probe);
   app.get(RAW_PATH, (c) => {
     c.env.outgoing.writeHead(200, { 'content-type': 'text/plain' });
     c.env.outgoing.end('written to the Node response');
@@ -566,12 +553,6 @@ describe('bodies', () => {
       path: '/api/chain-probe',
       headers: { host: HOSTS.loopback, 'content-type': 'application/json; charset=latin1' },
       body: '{"a":1}',
-    },
-    'a body over 1 MB on a path with a larger limit': {
-      method: 'POST',
-      path: '/api/feedback/chain-probe',
-      headers: json,
-      body: JSON.stringify({ pad: 'x'.repeat(1536 * 1024) }),
     },
     'an oversized body from a caller with no credential, login on': {
       method: 'POST',

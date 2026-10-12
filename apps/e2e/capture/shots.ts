@@ -220,12 +220,6 @@ export function shotTargetDimensions(shot: Shot, kind: ShotKind): Dimensions {
  *   the sidebar's zones: the remaining chat surfaces are single-session views,
  *   and `team-room` holds its own #team conversation in whichever stack drives
  *   it.)
- * - `agent-discovery` flips its stack's global onboarding state, which every
- *   other shot in the same stack needs left dismissed — it stays a singleton on
- *   shard 0, where the record phase drives it in the closing pair (discovery,
- *   then the door), after every shot that reads the dismissed state, and
- *   restores that state after. Each shard has its own `DORK_HOME`, so the flip
- *   is already isolated; pinning makes the placement deterministic for any N.
  * - `accounts-pending` and `accounts-linked` come from ONE linear device flow
  *   (link → pending → auto-flip → linked, capture-cloud-link-stub); a
  *   round-robin split would put them on different stacks and break the flow,
@@ -234,15 +228,14 @@ export function shotTargetDimensions(shot: Shot, kind: ShotKind): Dimensions {
  * - `full-power-door` un-answers the stack's power decision so the one-time
  *   consent modal becomes eligible again — a global config flip every other shot
  *   in the same stack needs left settled, or the modal would focus-trap itself
- *   over their frames. Same shape as `agent-discovery`, and the second half of
- *   that closing pair: driven dead last of all, and restored afterwards. Each
+ *   over their frames. It is the only remaining global-state flip, so it stays
+ *   a shard-0 singleton, driven dead last of all and restored afterwards. Each
  *   shard has its own `DORK_HOME`, so the flip is already isolated; pinning
  *   makes the placement deterministic for any N.
  */
 export const SHARD_0_PINNED_SHOTS: readonly string[] = [
   'multi-session',
   'mobile-sessions',
-  'agent-discovery',
   'accounts-pending',
   'accounts-linked',
   'full-power-door',

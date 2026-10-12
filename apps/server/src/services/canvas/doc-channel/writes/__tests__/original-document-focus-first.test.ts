@@ -1,5 +1,4 @@
 /** Approved host focus reaches the original native Room FIRST, separately from its HTTP receipt. */
-import express from 'express';
 import { randomUUID } from 'node:crypto';
 import { performance } from 'node:perf_hooks';
 import fs from 'node:fs/promises';
@@ -9,7 +8,7 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import request from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
 import { and, eq, sql, canvasDocBatches, canvasDocDeliveries, canvasDocEvents } from '@dorkos/db';
-import router from '../../../../../routes/canvas-doc-events.js';
+import { originalDocHttpListener } from '../../__tests__/original-doc-http-listener.js';
 import { nativeRoomAuthorityFixture } from './authority-fixtures.js';
 import {
   currentRoomDueServicePort,
@@ -238,11 +237,9 @@ function runOwnedScenario(bodyAdmission: Promise<void>): Promise<void> {
       registry.setDb(actual.db);
       registry.register(runtime);
       scenarioStore.setForSession(sessionId, 'native-room-partial-ack-reply');
-      const app = express();
-      app.use(express.json());
-      app.locals.docChannelHttp = { service: actual.http.service, actor: () => actual.operator };
-      app.use('/docs', router);
-      const server = target.mount(app),
+      const server = target.mount(
+          originalDocHttpListener(() => actual.http, { docMount: '/docs' })
+        ),
         path = `/docs/${actual.documentId}/presence`;
       phase('runtime-and-http-arrangement:done');
       requireOpenScenario();

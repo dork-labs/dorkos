@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import express from 'express';
+import { Hono } from 'hono';
 import request from '@dorkos/test-utils/supertest';
 
 // Mock the MCP SDK transport — vi.hoisted() ensures variables are initialized
@@ -15,8 +15,8 @@ const { mockHandleRequest, mockTransportConstructor } = vi.hoisted(() => {
   return { mockHandleRequest, mockTransportConstructor };
 });
 
-vi.mock('@modelcontextprotocol/sdk/server/streamableHttp.js', () => ({
-  StreamableHTTPServerTransport: mockTransportConstructor,
+vi.mock('@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js', () => ({
+  WebStandardStreamableHTTPServerTransport: mockTransportConstructor,
 }));
 
 // Mock logger
@@ -29,8 +29,10 @@ vi.mock('../../lib/logger.js', () => ({
 }));
 
 import type { Server } from 'node:http';
-import { swappableServer } from '@dorkos/test-utils/listening-server';
-import { createMcpRouter } from '../mcp.js';
+import { honoListener, swappableServer } from '@dorkos/test-utils/listening-server';
+import type { ApiEnv } from '../../http/api-chain.js';
+import { parseRequestBody } from '../../http/request-body.js';
+import { createMcpEndpoint } from '../mcp.js';
 
 /**
  * ONE listener for the whole file, with the app behind it swapped per test
@@ -42,10 +44,21 @@ import { createMcpRouter } from '../mcp.js';
 const target = swappableServer();
 
 function createTestApp(mockServerFactory: () => unknown): Server {
-  const app = express();
-  app.use(express.json());
-  app.use('/mcp', createMcpRouter(mockServerFactory as Parameters<typeof createMcpRouter>[0]));
-  return target.mount(app);
+  const app = new Hono<ApiEnv>();
+  app.use(parseRequestBody());
+  app.route(
+    '/mcp',
+    createMcpEndpoint(mockServerFactory as Parameters<typeof createMcpEndpoint>[0])
+  );
+  return target.mount(honoListener(app));
+}
+
+/** The transport's answer: a web `Response` the route returns as it is. */
+function jsonResponse(body: unknown): Response {
+  return new Response(JSON.stringify(body), {
+    status: 200,
+    headers: { 'Content-Type': 'application/json' },
+  });
 }
 
 describe('MCP Route Handler', () => {
@@ -97,9 +110,7 @@ describe('MCP Route Handler', () => {
   });
 
   it('POST /mcp creates transport with stateless config', async () => {
-    mockHandleRequest.mockImplementation((_req: unknown, res: express.Response) => {
-      res.json({ jsonrpc: '2.0', result: {}, id: 1 });
-    });
+    mockHandleRequest.mockResolvedValue(jsonResponse({ jsonrpc: '2.0', result: {}, id: 1 }));
     const server = createTestApp(createMockServer);
 
     await request(server).post('/mcp').send({ jsonrpc: '2.0', method: 'initialize', id: 1 });
@@ -110,9 +121,7 @@ describe('MCP Route Handler', () => {
   });
 
   it('POST /mcp connects transport to server', async () => {
-    mockHandleRequest.mockImplementation((_req: unknown, res: express.Response) => {
-      res.json({ jsonrpc: '2.0', result: {}, id: 1 });
-    });
+    mockHandleRequest.mockResolvedValue(jsonResponse({ jsonrpc: '2.0', result: {}, id: 1 }));
     const server = createTestApp(createMockServer);
 
     await request(server).post('/mcp').send({ jsonrpc: '2.0', method: 'initialize', id: 1 });
@@ -122,18 +131,15 @@ describe('MCP Route Handler', () => {
 
   it('POST /mcp passes request body to transport.handleRequest', async () => {
     const body = { jsonrpc: '2.0', method: 'tools/list', id: 2 };
-    mockHandleRequest.mockImplementation((_req: unknown, res: express.Response) => {
-      res.json({ jsonrpc: '2.0', result: { tools: [] }, id: 2 });
-    });
+    mockHandleRequest.mockResolvedValue(
+      jsonResponse({ jsonrpc: '2.0', result: { tools: [] }, id: 2 })
+    );
     const server = createTestApp(createMockServer);
 
     await request(server).post('/mcp').send(body);
 
-    expect(mockHandleRequest).toHaveBeenCalledWith(
-      expect.anything(), // req
-      expect.anything(), // res
-      body // parsed body
-    );
+    // The body the chain parsed once, not a second read of the stream.
+    expect(mockHandleRequest).toHaveBeenCalledWith(expect.any(Request), { parsedBody: body });
   });
 
   it('POST /mcp returns 500 JSON-RPC error when server.connect throws', async () => {

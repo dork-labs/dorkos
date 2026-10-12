@@ -5,7 +5,6 @@
  * lift its own pause on any surface.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import express from 'express';
 import request from '@dorkos/test-utils/supertest';
 import { listeningServer } from '@dorkos/test-utils/listening-server';
 import { createTestDb } from '@dorkos/test-utils/db';
@@ -31,7 +30,14 @@ import { AccountIds } from '../../../audit/account-ids.js';
 import { initAuditTrail, resetAuditTrail } from '../../../audit/audit-trail.js';
 import { AgentPauseService } from '../agent-pause.js';
 import { agentPauseDomain } from '../pause-capabilities.js';
-import { createAgentPauseRouter } from '../../../../routes/agent-pause.js';
+import { createAgentPauseRoutes } from '../../../../routes/agent-pause.js';
+import { honoGroupListener } from '../../../../http/__tests__/hono-group-listener.js';
+
+// The routes are served through the `/api` chain, whose host guard and session
+// gate read the login setting: off, as on a fresh install.
+vi.mock('../../../core/config-manager.js', () => ({
+  configManager: { get: vi.fn(() => undefined), set: vi.fn() },
+}));
 
 const SCOUT = { id: '01SCOUTAGENTULID0000000000', home: '/projects/scout' } as const;
 const ANA = { id: '01ANAAGENTULID00000000000', home: '/projects/ana' } as const;
@@ -173,10 +179,12 @@ describe('agent.pause and agent.resume (spec audit-trail PR5)', () => {
 
   describe('over HTTP', () => {
     // One listening server for the block; the router reads each test's registry.
-    const http = express();
-    http.use(express.json());
-    http.use('/api', createAgentPauseRouter({ registry: () => registry }));
-    const server = listeningServer(http);
+    const server = listeningServer(
+      honoGroupListener({
+        path: '/api',
+        routes: createAgentPauseRoutes({ registry: () => registry }),
+      })
+    );
 
     it('pauses, lists and resumes as the person at the app', async () => {
       await request(server)

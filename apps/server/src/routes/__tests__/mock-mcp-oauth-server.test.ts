@@ -16,7 +16,11 @@
  * @vitest-environment node
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import express from 'express';
+
+// The `/api` chain reads login and the host settings from here; none are set.
+vi.mock('../../services/core/config-manager.js', () => ({
+  configManager: { get: vi.fn(), getDot: vi.fn() },
+}));
 import { createHash, randomBytes } from 'node:crypto';
 import type { AddressInfo } from 'node:net';
 import request from '@dorkos/test-utils/supertest';
@@ -25,20 +29,15 @@ import { listeningServer } from '@dorkos/test-utils/listening-server';
 import {
   MOCK_MCP_OAUTH_BASE,
   MOCK_MCP_OAUTH_MCP_PATH,
-  createMockMcpOAuthRouter,
+  createMockMcpOAuthRoutes,
   resetMockMcpOAuthState,
 } from '../mock-mcp-oauth-server.js';
+import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
 
-/** The mock is mounted at the app root, exactly as `app.ts` mounts it. */
-function buildApp() {
-  const app = express();
-  app.use(express.json());
-  app.use(createMockMcpOAuthRouter());
-  return app;
-}
-
-const app = buildApp();
-const server = listeningServer(app);
+/** The mock is mounted at the app root, exactly as `http/hono-api.ts` mounts it. */
+const server = listeningServer(
+  honoGroupListener({ path: '/', routes: createMockMcpOAuthRoutes() })
+);
 
 /** A loopback callback URL of the shape the DorkOS OAuth client registers. */
 const CALLBACK = 'http://127.0.0.1:4242/api/agents/mcp-oauth/callback';

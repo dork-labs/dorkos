@@ -161,6 +161,8 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import request from '@dorkos/test-utils/supertest';
 import { createApp, finalizeApp } from '../../app.js';
+import { composedListener } from '../../http/__tests__/composed-listener.js';
+import type { SessionRouteDeps } from '../../routes/sessions.js';
 import { disposeProjector } from '../../services/session/session-state-projector.js';
 import { logger } from '../../lib/logger.js';
 import type { AuthorRecord } from '../../services/rooms/author-registry.js';
@@ -169,9 +171,14 @@ import { RoomError } from '../../services/rooms/data/room-errors.js';
 import { roomSessionPlace } from '../../services/rooms/repo/room-turn-place.js';
 import { workspaceGateFor } from '../../services/workspace/index.js';
 
-const app = createApp({ admission: new MainRequestAdmission() });
+const admission = new MainRequestAdmission();
+const app = createApp({ admission });
 finalizeApp(app);
-const server = createServer(app);
+/** What the session routes read; the tests change it between requests. */
+const sessionLocals: Record<string, unknown> = {};
+const server = createServer(
+  composedListener(app, admission, { sessions: sessionLocals as SessionRouteDeps })
+);
 
 const S1 = '00000000-0000-4000-8000-0000000000c1';
 const S2 = '00000000-0000-4000-8000-0000000000c2';
@@ -278,11 +285,11 @@ beforeEach(() => {
   // `agentPath` is durable ownership provenance, so the route accepts it only
   // when Mesh confirms the exact directory. Keep the cwd-resolution fixture on
   // that production validation path instead of bypassing ownership checks.
-  app.locals.meshCore = { listWithPaths: () => [{ projectPath: AGENT }] };
+  sessionLocals.meshCore = { listWithPaths: () => [{ projectPath: AGENT }] };
   // The REAL port, over fake reads — so the lookup, the author-kind guard and
   // the `NOT_A_PROJECT_ROOM` translation are the shipped ones and only the
   // database and git are stood in for.
-  app.locals.roomSessionPlace = roomSessionPlace({
+  sessionLocals.roomSessionPlace = roomSessionPlace({
     bindings: { bindingForSession: () => roomBinding },
     authors: { getById: () => roomAuthor },
     worktrees: () =>

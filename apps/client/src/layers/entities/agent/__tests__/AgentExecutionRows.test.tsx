@@ -38,11 +38,14 @@ beforeAll(() => {
 
 /** When set, the catalog read fails, as an unreadable credits list does. */
 let modelsFail = false;
+/** When set, which runtimes run on credits by default (`GET /api/cloud/credits`). */
+let creditsDefaults: Record<string, { runsOn: 'credits' }> | null = null;
 
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
   modelsFail = false;
+  creditsDefaults = null;
 });
 
 const DEFAULTS: ExecutionDefaults = {
@@ -172,6 +175,13 @@ function renderRows(
         tokenConfigured: false,
       },
     }),
+    ...(creditsDefaults
+      ? {
+          getCloudCredits: vi
+            .fn()
+            .mockResolvedValue({ linked: true, available: true, defaults: creditsDefaults }),
+        }
+      : {}),
     getModels: modelsFail
       ? vi.fn().mockRejectedValue(new Error('The models could not be read'))
       : vi.fn().mockResolvedValue(models),
@@ -699,6 +709,98 @@ describe('AgentExecutionRows — the Account row', () => {
       expect(
         vi.mocked(transport.getModels).mock.calls.every(([opts]) => opts?.account === undefined)
       ).toBe(true);
+    });
+
+    it('reads "Chosen by DorkOS" for an agent on DorkOS with no model chosen', async () => {
+      creditsDefaults = { doe: { runsOn: 'credits' } };
+      const map = capabilityMap(false);
+      const capabilities = {
+        ...map,
+        capabilities: {
+          ...map.capabilities,
+          doe: {
+            ...map.capabilities['claude-code'],
+            type: 'doe',
+            credits: { protocol: 'anthropic-messages' },
+          },
+        },
+      };
+      const picked = CREDIT_MODELS.map((m) =>
+        m.isDefault ? { ...m, description: 'Chosen by DorkOS' } : m
+      );
+      renderRows(manifest({ runtime: 'doe' }), NO_DEFAULT_MODEL, picked, capabilities as never);
+      await waitFor(() =>
+        expect(screen.getByTestId('agent-model-row')).toHaveTextContent('Chosen by DorkOS')
+      );
+      await userEvent.click(screen.getByTestId('agent-model-row'));
+      expect(await screen.findByTestId('agent-model-row-inherit')).toHaveTextContent(
+        'Chosen by DorkOS'
+      );
+    });
+
+    it('names the DorkOS preference instead of "Chosen by DorkOS" once one is set', async () => {
+      creditsDefaults = { doe: { runsOn: 'credits' } };
+      const map = capabilityMap(false);
+      const capabilities = {
+        ...map,
+        capabilities: {
+          ...map.capabilities,
+          doe: {
+            ...map.capabilities['claude-code'],
+            type: 'doe',
+            credits: { protocol: 'anthropic-messages' },
+          },
+        },
+      };
+      const withPreference: ExecutionDefaults = {
+        ...NO_DEFAULT_MODEL,
+        perRuntime: [
+          ...NO_DEFAULT_MODEL.perRuntime,
+          {
+            runtime: 'doe',
+            model: 'md_other',
+            effort: null,
+            supportsEffort: false,
+            trustStop: null,
+          },
+        ],
+      };
+      renderRows(
+        manifest({ runtime: 'doe' }),
+        withPreference,
+        CREDIT_MODELS,
+        capabilities as never
+      );
+      await waitFor(() =>
+        expect(screen.getByTestId('agent-model-row')).toHaveTextContent('Another')
+      );
+      expect(screen.getByTestId('agent-model-row')).not.toHaveTextContent('Chosen by DorkOS');
+    });
+
+    it('names the model an agent on DorkOS was given', async () => {
+      creditsDefaults = { doe: { runsOn: 'credits' } };
+      const map = capabilityMap(false);
+      const capabilities = {
+        ...map,
+        capabilities: {
+          ...map.capabilities,
+          doe: {
+            ...map.capabilities['claude-code'],
+            type: 'doe',
+            credits: { protocol: 'anthropic-messages' },
+          },
+        },
+      };
+      renderRows(
+        manifest({ runtime: 'doe', model: 'md_other' }),
+        NO_DEFAULT_MODEL,
+        CREDIT_MODELS,
+        capabilities as never
+      );
+      await waitFor(() =>
+        expect(screen.getByTestId('agent-model-row')).toHaveTextContent('Another')
+      );
+      expect(screen.getByTestId('agent-model-row')).not.toHaveTextContent('Chosen by DorkOS');
     });
 
     it('says so when the credits list cannot be read, instead of offering another menu', async () => {

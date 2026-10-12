@@ -500,10 +500,10 @@ describe('published consolidated Room150 across shipped report_back150', () => {
     }
   });
 
-  it('rolls back shipped DDL and new history together if canonical159 recording fails, then resumes', () => {
+  it('rolls back shipped DDL and new history together if canonical160 recording fails, then resumes', () => {
     const db = publishedDatabase();
     try {
-      const final = journal.entries[159]!;
+      const final = journal.entries[160]!;
       const finalHash = createHash('sha256')
         .update(readFileSync(path.join(folder, `${final.tag}.sql`)))
         .digest('hex');
@@ -548,7 +548,7 @@ describe('published consolidated Room150 across shipped report_back150', () => {
         else if (invalid === 'unbacked canonical stamp')
           db.$client
             .prepare('UPDATE __drizzle_migrations SET created_at = ? WHERE hash = ?')
-            .run(journal.entries[159]!.when, publishedRoom.hash);
+            .run(journal.entries[160]!.when, publishedRoom.hash);
         else if (invalid === 'duplicate published row')
           db.$client
             .prepare('INSERT INTO __drizzle_migrations (hash, created_at) VALUES (?, ?)')
@@ -625,7 +625,7 @@ for (const variant of ['published150', 'fresh151', 'bridged151'] as const) {
       : variant === 'fresh151'
         ? publishedDatabase(publishedRoom151)
         : previouslyBridged151();
-  describe(`${variant} across shipped Main150 through156 and canonical Room159`, () => {
+  describe(`${variant} across shipped Main150 through156 and canonical Room160`, () => {
     it('preserves populated data and original Room row identity, installs missing Main once and restarts', () => {
       const db = build();
       try {
@@ -671,11 +671,11 @@ for (const variant of ['published150', 'fresh151', 'bridged151'] as const) {
       }
     });
 
-    it('rolls back all missing shipped DDL and history if canonical159 recording aborts', () => {
+    it('rolls back all missing shipped DDL and history if canonical160 recording aborts', () => {
       const db = build();
       try {
         seedPublishedAgent(db);
-        const canonicalRoomHash = migrationHash(journal.entries[159]!);
+        const canonicalRoomHash = migrationHash(journal.entries[160]!);
         db.$client.exec(`CREATE TRIGGER owned_room152_abort
           BEFORE INSERT ON __drizzle_migrations WHEN NEW.hash = '${canonicalRoomHash}'
           BEGIN SELECT RAISE(ABORT, 'owned-room152-abort'); END;`);
@@ -728,7 +728,7 @@ for (const variant of ['published150', 'fresh151', 'bridged151'] as const) {
           else
             db.$client
               .prepare('INSERT INTO __drizzle_migrations (hash, created_at) VALUES (?, ?)')
-              .run('unknown-room157', journal.entries[159]!.when + 1);
+              .run('unknown-room157', journal.entries[160]!.when + 1);
           const before = history(db),
             beforeSchema = schema(db),
             data = rows(db, true),
@@ -844,7 +844,7 @@ it('restarts across exact applied future table and column migrations while pendi
   try {
     runMigrations(db);
     const { isolated, first, second } = futureMigrationFolder();
-    // The later journal prefix is pending: restart must compare only recorded159.
+    // The later journal prefix is pending: restart must compare only recorded160.
     const initial = history(db),
       initialSchema = schema(db);
     bridgeLegacyDocMigrationHistory(db, isolated);
@@ -968,7 +968,7 @@ function alterEmptyFixtureTable(
 }
 
 for (const source of [publishedRoom, publishedRoom151, publishedRoom152]) {
-  describe(`published Room${source.idx} across all shipped Main steps and canonical159`, () => {
+  describe(`published Room${source.idx} across all shipped Main steps and canonical160`, () => {
     it('preserves every original ledger field and linked populated rows through ordered completion and restart', () => {
       const db = publishedDatabase(source);
       try {
@@ -995,7 +995,7 @@ for (const source of [publishedRoom, publishedRoom151, publishedRoom152]) {
         expect(complete.filter((row) => row.hash === source.hash)).toEqual([original]);
         for (const value of data)
           expect(db.$client.prepare(`SELECT * FROM ${value.table}`).all()).toEqual(value.rows);
-        const shipped = journal.entries.slice(150, 159).map((entry) => {
+        const shipped = journal.entries.slice(150, 160).map((entry) => {
           const recorded = complete.filter((row) => row.hash === migrationHash(entry));
           expect(recorded).toHaveLength(1);
           expect(recorded[0]!.created_at).toBe(entry.when);
@@ -1004,7 +1004,7 @@ for (const source of [publishedRoom, publishedRoom151, publishedRoom152]) {
         for (let index = 1; index < shipped.length; index++)
           expect(shipped[index]!.rowIdentity).toBeGreaterThan(shipped[index - 1]!.rowIdentity);
         const canonical = complete.filter(
-          (row) => row.hash === migrationHash(journal.entries[159]!)
+          (row) => row.hash === migrationHash(journal.entries[160]!)
         );
         expect(canonical).toHaveLength(1);
         expect(canonical[0]!.created_at).toBe(1791744308484);
@@ -1025,12 +1025,12 @@ for (const source of [publishedRoom, publishedRoom151, publishedRoom152]) {
       }
     });
 
-    it('refuses forged canonical159 completion before Main154 without any schema, history, or data writes', () => {
+    it('refuses forged canonical160 completion before Main154 without any schema, history, or data writes', () => {
       const db = publishedDatabase(source);
       try {
         db.$client
           .prepare('INSERT INTO __drizzle_migrations (hash, created_at) VALUES (?, ?)')
-          .run(migrationHash(journal.entries[159]!), journal.entries[159]!.when);
+          .run(migrationHash(journal.entries[160]!), journal.entries[160]!.when);
         const before = history(db),
           beforeSchema = schema(db),
           data = rows(db, true);
@@ -1111,11 +1111,11 @@ it.each(['quoted-check-space', 'crossed-composite-foreign-keys'] as const)(
   }
 );
 
-it('rolls back all five missing Main steps and their history if canonical159 recording aborts for published152', () => {
+it('rolls back all missing shipped Main steps and their history if canonical160 recording aborts for published152', () => {
   const db = publishedDatabase(publishedRoom152);
   try {
     seedPublishedAgent(db);
-    const canonicalHash = migrationHash(journal.entries[159]!);
+    const canonicalHash = migrationHash(journal.entries[160]!);
     db.$client.exec(`CREATE TRIGGER owned_published152_completion_abort
       BEFORE INSERT ON __drizzle_migrations WHEN NEW.hash = '${canonicalHash}'
       BEGIN SELECT RAISE(ABORT, 'owned-published152-completion-abort'); END;`);
@@ -1327,7 +1327,7 @@ function expectIncomingMainDataPreserved(
 // Exact shipped SQL is independently pinned to Main7502; rows remain truthful.
 function completeReviewedMainFixturePrefix(
   db: ReturnType<typeof createDb>,
-  through: 154 | 155 | 156
+  through: 154 | 155 | 156 | 158
 ) {
   db.$client.transaction(() => {
     for (const entry of journal.entries.slice(150, through + 1)) {
@@ -1373,7 +1373,7 @@ function registerIncomingPrefixPreservationCases(acceptedCanonical: Entry & { ha
   // Journal tuple is derived from the accepted artifact, not a fabricated identity.
   for (const source of [publishedRoom, publishedRoom151, publishedRoom152]) {
     for (const prefixEnd of [154, 155, 156] as const) {
-      it(`preserves published${source.idx} with authentic Main${prefixEnd} data and completes all nine Main steps`, () => {
+      it(`preserves published${source.idx} with authentic Main${prefixEnd} data and completes all ten Main steps`, () => {
         const db = publishedDatabase(source);
         try {
           seedPublishedAgent(db);
@@ -1391,7 +1391,7 @@ function registerIncomingPrefixPreservationCases(acceptedCanonical: Entry & { ha
           expect(complete.slice(0, before.length)).toEqual(before);
           expect(complete.filter((row) => row.hash === legacy.hash)).toEqual([legacy]);
           expect(rows(db, true)).toEqual(oldData);
-          const seven = journal.entries.slice(150, 159).map((entry) => {
+          const seven = journal.entries.slice(150, 160).map((entry) => {
             const matching = complete.filter((row) => row.hash === migrationHash(entry));
             expect(matching).toHaveLength(1);
             expect(matching[0]!.created_at).toBe(entry.when);
@@ -1402,7 +1402,7 @@ function registerIncomingPrefixPreservationCases(acceptedCanonical: Entry & { ha
           const canonical = complete.filter((row) => row.hash === acceptedCanonical.hash);
           expect(canonical).toHaveLength(1);
           expect(canonical[0]!.created_at).toBe(acceptedCanonical.when);
-          expect(canonical[0]!.rowIdentity).toBeGreaterThan(seven[8]!.rowIdentity);
+          expect(canonical[0]!.rowIdentity).toBeGreaterThan(seven[9]!.rowIdentity);
           expectIncomingMainDataPreserved(db, durable);
           const settledSchema = schema(db);
           runMigrations(db);
@@ -1420,7 +1420,7 @@ function registerIncomingPrefixPreservationCases(acceptedCanonical: Entry & { ha
 }
 
 registerIncomingPrefixPreservationCases({
-  idx: 159,
+  idx: 160,
   version: '6',
   when: 1791744308484,
   tag: '20261011184508_tearful_killer_shrike',
@@ -1428,7 +1428,7 @@ registerIncomingPrefixPreservationCases({
   hash: '69956ae9c1dba6ca55938b0afa75c67d350a5bd13006aab73aad5812dc5c9ab2',
 });
 
-it('refuses a forged canonical159 row when only authentic Main156 is missing without any writes', () => {
+it('refuses a forged canonical160 row when authentic Main156 is missing without any writes', () => {
   const db = publishedDatabase(publishedRoom152);
   try {
     seedPublishedAgent(db);
@@ -1436,7 +1436,7 @@ it('refuses a forged canonical159 row when only authentic Main156 is missing wit
     seedIncomingMainData(db, 155);
     db.$client
       .prepare('INSERT INTO __drizzle_migrations (hash, created_at) VALUES (?, ?)')
-      .run(migrationHash(journal.entries[159]!), journal.entries[159]!.when);
+      .run(migrationHash(journal.entries[160]!), journal.entries[160]!.when);
     const before = history(db),
       beforeSchema = schema(db),
       beforeRows = rows(db, true);
@@ -1457,7 +1457,7 @@ it('refuses a forged canonical159 row when only authentic Main156 is missing wit
 });
 
 for (const source of [publishedRoom, publishedRoom151, publishedRoom152]) {
-  it(`preserves published${source.idx} plus original consolidated157 before new159 without replay`, () => {
+  it(`preserves published${source.idx} plus original consolidated157 before new160 without replay`, () => {
     const db = publishedDatabase(source);
     let failure: { cause: unknown } | undefined;
     try {
@@ -1509,3 +1509,29 @@ for (const source of [publishedRoom, publishedRoom151, publishedRoom152]) {
     if (failure) throw failure.cause;
   });
 }
+
+it('refuses canonical160 when authentic Main159 is missing without changing schema, history or data', () => {
+  const db = publishedDatabase(publishedRoom152);
+  try {
+    seedPublishedAgent(db);
+    completeReviewedMainFixturePrefix(db, 158);
+    seedIncomingMainData(db, 156);
+    db.$client
+      .prepare('INSERT INTO __drizzle_migrations (hash, created_at) VALUES (?, ?)')
+      .run(migrationHash(journal.entries[160]!), journal.entries[160]!.when);
+    const before = history(db),
+      beforeSchema = schema(db),
+      beforeRows = rows(db, true);
+    const durable = incomingMainData(db, 156);
+    expect(() => runMigrations(db)).toThrow();
+    expect(history(db)).toEqual(before);
+    expect(schema(db)).toEqual(beforeSchema);
+    expect(rows(db, true)).toEqual(beforeRows);
+    expectIncomingMainDataPreserved(db, durable);
+    expect(db.$client.prepare("PRAGMA table_info('heartbeat_outbox')").all()).not.toEqual(
+      expect.arrayContaining([expect.objectContaining({ name: 'delivered_at' })])
+    );
+  } finally {
+    db.$client.close();
+  }
+});

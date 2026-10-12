@@ -82,6 +82,7 @@ vi.mock('@dorkos/shared/manifest', () => ({ readManifest: vi.fn(async () => null
 import request from '@dorkos/test-utils/supertest';
 import { listeningServer } from '@dorkos/test-utils/listening-server';
 import { createApp, finalizeApp } from '../../app.js';
+import { composedListener } from '../../http/__tests__/composed-listener.js';
 import {
   getOrCreateProjector,
   peekProjector,
@@ -89,7 +90,8 @@ import {
 } from '../../services/session/session-state-projector.js';
 import { attachEventStream } from './helpers/trigger-turn-helpers.js';
 
-const app = createApp({ admission: new MainRequestAdmission() });
+const admission = new MainRequestAdmission();
+const app = createApp({ admission });
 finalizeApp(app);
 
 /**
@@ -98,7 +100,7 @@ finalizeApp(app);
  * and frees an ephemeral port per request, and a pooled keep-alive socket for a
  * reclaimed port can land on the wrong server. See {@link listeningServer}.
  */
-const server = listeningServer(app);
+const server = listeningServer(composedListener(app, admission));
 
 const SESSION_ID = '00000000-0000-4000-8000-0000000000ac';
 const TOOL_CALL_ID = 'tool-approval-live-1';

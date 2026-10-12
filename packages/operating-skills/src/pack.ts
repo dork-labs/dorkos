@@ -14,6 +14,7 @@ import { answeringDorkosQuestions } from './skills/answering-dorkos-questions.js
 import { workingInRoomRepos } from './skills/working-in-room-repos.js';
 import { usingTheAgentBrowser } from './skills/using-the-agent-browser.js';
 import { workingWithSpinOffChats } from './skills/working-with-spin-off-chats.js';
+import { workingOnAHeartbeat } from './skills/working-on-a-heartbeat.js';
 
 /** One authored skill in the pack: its kebab-case name, discovery description, and body. */
 export interface OperatingSkill {
@@ -338,8 +339,19 @@ export interface OperatingSkill {
  *   `commitment_add` once made, mark it kept with `commitment_update`, and ask
  *   before promising an outsider anything (spec `heartbeats` §12, DOR-2788). An
  *   agent seeded at 38 would keep its promises only in a chat nobody else reads.
+ * - 40: `working-on-a-heartbeat` joins the pack (spec `heartbeats` §10 PR 6,
+ *   DOR-2788). Agents now wake on a beat or an event, and a beat's words reach
+ *   people only through `end_beat`, so an agent with no page on it writes its
+ *   findings into a chat nobody reads. The page teaches the four moves, the
+ *   rungs, what urgent means, pace, resolved, the report and
+ *   `heartbeat_status`. The new skill seeds without a bump; the bump is for the
+ *   sibling lists in `operating-dorkos` and `answering-dorkos-questions`.
+ * - 41: `operating-dorkos` tells an agent to get a service's exact name from
+ *   `connector_list_toolkits` before `request_connection`, and that a shell CLI
+ *   sign-in grants DorkOS nothing (DOR-2236), matching what the refusal, the
+ *   tool description and the per-turn Accounts guidance already say (DOR-2231).
  */
-export const OPERATING_SKILLS_VERSION = 39;
+export const OPERATING_SKILLS_VERSION = 41;
 
 /**
  * The canonical pack, umbrella skill first. Every entry is validated against the
@@ -355,4 +367,5 @@ export const OPERATING_SKILLS_PACK: readonly OperatingSkill[] = [
   workingInRoomRepos,
   usingTheAgentBrowser,
   workingWithSpinOffChats,
+  workingOnAHeartbeat,
 ];

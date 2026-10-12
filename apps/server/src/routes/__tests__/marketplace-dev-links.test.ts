@@ -8,14 +8,14 @@
 import { mkdir, mkdtemp, readlink, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import express from 'express';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import request from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
 import { createTestDb } from '@dorkos/test-utils/db';
 import { noopLogger } from '@dorkos/shared/logger';
 import type { AgentPermissions } from '@dorkos/shared/permissions';
-import { createMarketplaceRouter } from '../marketplace.js';
+import { createMarketplaceRoutes } from '../marketplace.js';
+import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
 import { initBoundary } from '../../lib/boundary.js';
 import { initConfigManager } from '../../services/core/config-manager.js';
 import { ApprovalService } from '../../services/core/approvals/index.js';
@@ -89,22 +89,23 @@ beforeEach(async () => {
     refreshExtensions: () => undefined,
     boundary: () => base,
   });
-  const app = express();
-  app.use(express.json());
-  app.use((req, _res, next) => {
-    if (agentHeader) req.headers['x-dorkos-agent'] = agentHeader;
-    next();
-  });
-  app.use(
-    '/api/marketplace',
-    createMarketplaceRouter({
-      dorkHome: home,
-      capabilityRegistry: () => registry,
-      onPluginsChanged: () => undefined,
-      devLinks,
-    } as unknown as MarketplaceRouteDeps)
+  const routes = createMarketplaceRoutes({
+    dorkHome: home,
+    capabilityRegistry: () => registry,
+    onPluginsChanged: () => undefined,
+    devLinks,
+  } as unknown as MarketplaceRouteDeps);
+  target.mount(
+    honoGroupListener(
+      { path: '/api/marketplace', routes },
+      {
+        before: async (c, next) => {
+          if (agentHeader) c.env.incoming.headers['x-dorkos-agent'] = agentHeader;
+          await next();
+        },
+      }
+    )
   );
-  target.mount(app);
 });
 
 afterEach(async () => {

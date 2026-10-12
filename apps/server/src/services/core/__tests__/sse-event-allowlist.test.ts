@@ -97,7 +97,7 @@ async function productionSources(dir: string): Promise<string[]> {
  *    passed over the wreckage.
  * 2. Fixing the order. The block-comment pass is still blind to STRING LITERALS,
  *    and two files carry a `'*&#47;*'` media type — `services/core/upload-handler.ts`
- *    and `routes/relay-adapters.ts`. Each opens a fake comment at offset 1 that the
+ *    and `routes/relay-webhooks.ts`. Each opens a fake comment at offset 1 that the
  *    next real `*&#47;` closes, masking anything between. Seeding one broadcast behind
  *    each still gave green tests. (A third file, the workbench's path-prefixed
  *    localhost proxy, carried the same literal until DOR-1260 retired it.)

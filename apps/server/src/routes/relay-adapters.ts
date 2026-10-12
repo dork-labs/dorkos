@@ -1,6 +1,6 @@
 /**
- * Relay adapter management routes — CRUD, enable/disable, events, chats,
- * bindings, and webhook ingestion for external channel adapters.
+ * Relay adapter management routes — CRUD, enable/disable, events, chats and
+ * bindings for external channel adapters.
  *
  * Extracted from {@link module:routes/relay} to keep route files under 500 lines.
  *
@@ -21,11 +21,14 @@
  *
  * @module routes/relay-adapters
  */
-import { Router } from 'express';
-import express from 'express';
-import { expressRateLimit } from '../http/rate-limiter.js';
-import { z } from 'zod';
-import type { WebhookAdapter } from '@dorkos/relay';
+import { Hono, type Context } from 'hono';
+import type { ContentfulStatusCode } from 'hono/utils/http-status';
+import { honoRateLimit } from '../http/rate-limiter.js';
+import type { ApiEnv } from '../http/api-chain.js';
+import { readJsonBody } from '../http/request-body.js';
+import { readQuery } from '../http/request-query.js';
+import { honoRequestFacts } from '../http/request-facts.js';
+import { validationFailureBody } from '../lib/route-utils.js';
 import {
   CreateBindingRequestSchema,
   UpdateBindingRequestSchema,
@@ -58,14 +61,14 @@ const ADAPTER_ERROR_STATUS: Record<string, number> = {
 };
 
 /**
- * Handle an AdapterError by mapping its code to an HTTP status via ADAPTER_ERROR_STATUS.
+ * Answer an AdapterError, mapping its code to an HTTP status via ADAPTER_ERROR_STATUS.
  *
- * @param res - Express response object
- * @param err - The AdapterError to handle
+ * @param c - The Hono context
+ * @param err - The AdapterError to answer
  */
-function sendAdapterError(res: express.Response, err: AdapterError): void {
-  const status = ADAPTER_ERROR_STATUS[err.code] ?? 500;
-  res.status(status).json({ error: err.message, code: err.code });
+function sendAdapterError(c: Context<ApiEnv>, err: AdapterError): Response {
+  const status = (ADAPTER_ERROR_STATUS[err.code] ?? 500) as ContentfulStatusCode;
+  return c.json({ error: err.message, code: err.code }, status);
 }
 
 /** Resolve a human-readable name for an adapter, falling back to its ID. */
@@ -167,71 +170,74 @@ const BRIDGE_ROOM_ERROR_STATUS: Record<string, number> = {
   ROOM_ARCHIVED: 409,
 };
 
-/**
- * Create a sub-router containing all adapter management endpoints.
- *
- * Mounts catalog, CRUD, enable/disable, event log, chat history, binding
- * management, and webhook ingestion routes. Intended to be mounted under the
- * relay router when an {@link AdapterManager} is available.
- *
- * @param adapterManager - Adapter lifecycle manager for external channel adapters
- * @param traceStore - Optional trace store for adapter event and chat tracking
- */
-export function createAdapterRouter(
-  adapterManager: AdapterManager,
-  traceStore?: TraceStore
-): Router {
-  const router = Router();
+/** What the connection routes read. */
+export interface AdapterRouteDeps {
+  /** Adapter lifecycle manager for external channel adapters. */
+  adapterManager: AdapterManager;
+  /** Optional trace store for adapter event and chat tracking. */
+  traceStore?: TraceStore;
+  /** Where connection and chat-route changes are recorded. */
+  activity?: ActivityService;
+}
 
-  router.get('/adapters/catalog', (_req, res) => {
+/**
+ * The connection routes: catalog, CRUD, enable/disable, event log, chat
+ * history and chat routes (bindings). Mounted under the Relay routes when an
+ * {@link AdapterManager} is available, beside the webhook receiver
+ * (`routes/relay-webhooks.ts`).
+ *
+ * @param deps - See {@link AdapterRouteDeps}.
+ * @returns The routes.
+ */
+export function createAdapterRoutes(deps: AdapterRouteDeps): Hono<ApiEnv> {
+  const { adapterManager, traceStore, activity } = deps;
+  const router = new Hono<ApiEnv>();
+
+  router.get('/adapters/catalog', (c) => {
     try {
-      res.json(adapterManager.getCatalog());
+      return c.json(adapterManager.getCatalog());
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to retrieve adapter catalog';
-      res.status(500).json({ error: message });
+      return c.json({ error: message }, 500);
     }
   });
 
-  router.post('/adapters/reload', async (_req, res) => {
+  router.post('/adapters/reload', async (c) => {
     try {
       await adapterManager.reload();
-      return res.json({ ok: true });
+      return c.json({ ok: true });
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Reload failed';
-      return res.status(500).json({ error: message });
+      return c.json({ error: message }, 500);
     }
   });
 
-  router.get('/adapters', (_req, res) => res.json(adapterManager.listAdapters()));
+  router.get('/adapters', (c) => c.json(adapterManager.listAdapters()));
 
-  router.get('/adapters/:id', (req, res) => {
-    const adapter = adapterManager.getAdapter(req.params.id);
-    if (!adapter) return res.status(404).json({ error: 'Adapter not found' });
-    return res.json(adapter);
+  router.get('/adapters/:id', (c) => {
+    const adapter = adapterManager.getAdapter(c.req.param('id'));
+    if (!adapter) return c.json({ error: 'Adapter not found' }, 404);
+    return c.json(adapter);
   });
 
-  router.post('/adapters/test', async (req, res) => {
-    const result = AdapterTestRequestSchema.safeParse(req.body);
+  router.post('/adapters/test', async (c) => {
+    const result = AdapterTestRequestSchema.safeParse(readJsonBody(c));
     if (!result.success) {
-      return res
-        .status(400)
-        .json({ error: 'Validation failed', details: z.flattenError(result.error) });
+      return c.json(validationFailureBody(result.error), 400);
     }
     try {
       const testResult = await adapterManager.testConnection(result.data.type, result.data.config);
-      return res.json(testResult);
+      return c.json(testResult);
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Test failed';
-      return res.status(500).json({ error: message });
+      return c.json({ error: message }, 500);
     }
   });
 
-  router.post('/adapters', async (req, res) => {
-    const result = AdapterCreateRequestSchema.safeParse(req.body);
+  router.post('/adapters', async (c) => {
+    const result = AdapterCreateRequestSchema.safeParse(readJsonBody(c));
     if (!result.success) {
-      return res
-        .status(400)
-        .json({ error: 'Validation failed', details: z.flattenError(result.error) });
+      return c.json(validationFailureBody(result.error), 400);
     }
     const { type, id, config, enabled, label: topLabel } = result.data;
     // The client may embed label inside config (Transport interface doesn't have a separate
@@ -240,11 +246,10 @@ export function createAdapterRouter(
     try {
       await adapterManager.addAdapter(type, id, config, enabled, label);
 
-      const activityService = req.app.locals.activityService as ActivityService | undefined;
-      if (activityService) {
+      if (activity) {
         const adapterName = adapterManager.resolveAdapterName(id);
-        await activityService.emit({
-          ...readActivityActor(req, res),
+        await activity.emit({
+          ...readActivityActor(honoRequestFacts(c)),
           category: 'relay',
           eventType: 'relay.adapter_added',
           resourceType: 'adapter',
@@ -255,132 +260,130 @@ export function createAdapterRouter(
         });
       }
 
-      return res.status(201).json({ ok: true, id });
+      return c.json({ ok: true, id }, 201);
     } catch (err) {
-      if (err instanceof AdapterError) return sendAdapterError(res, err);
+      if (err instanceof AdapterError) return sendAdapterError(c, err);
       const message = err instanceof Error ? err.message : 'Create failed';
-      return res.status(500).json({ error: message });
+      return c.json({ error: message }, 500);
     }
   });
 
-  router.delete('/adapters/:id', async (req, res) => {
+  router.delete('/adapters/:id', async (c) => {
     try {
       // Capture name before removal since the config will be deleted
-      const adapterName = adapterManager.resolveAdapterName(req.params.id);
+      const adapterName = adapterManager.resolveAdapterName(c.req.param('id'));
       // A person removed it, so its delivery records and chat names go too
       // (DOR-2604), and so do the chats it recorded for the claim feed
       // (DOR-2608). Internal removals (package update, install rollback) keep them.
-      await adapterManager.removeAdapter(req.params.id, { forgetHistory: true });
+      await adapterManager.removeAdapter(c.req.param('id'), { forgetHistory: true });
 
-      const activityService = req.app.locals.activityService as ActivityService | undefined;
-      if (activityService) {
-        await activityService.emit({
-          ...readActivityActor(req, res),
+      if (activity) {
+        await activity.emit({
+          ...readActivityActor(honoRequestFacts(c)),
           category: 'relay',
           eventType: 'relay.adapter_removed',
           resourceType: 'adapter',
-          resourceId: req.params.id,
+          resourceId: c.req.param('id'),
           resourceLabel: adapterName,
           summary: `Removed ${adapterName} adapter`,
         });
       }
 
-      return res.json({ ok: true });
+      return c.json({ ok: true });
     } catch (err) {
-      if (err instanceof AdapterError) return sendAdapterError(res, err);
+      if (err instanceof AdapterError) return sendAdapterError(c, err);
       const message = err instanceof Error ? err.message : 'Remove failed';
-      return res.status(500).json({ error: message });
+      return c.json({ error: message }, 500);
     }
   });
 
-  router.patch('/adapters/:id/config', async (req, res) => {
-    const result = AdapterConfigUpdateSchema.safeParse(req.body);
+  router.patch('/adapters/:id/config', async (c) => {
+    const result = AdapterConfigUpdateSchema.safeParse(readJsonBody(c));
     if (!result.success) {
-      return res
-        .status(400)
-        .json({ error: 'Validation failed', details: z.flattenError(result.error) });
+      return c.json(validationFailureBody(result.error), 400);
     }
     try {
-      await adapterManager.updateConfig(req.params.id, result.data.config);
-      return res.json({ ok: true });
+      await adapterManager.updateConfig(c.req.param('id'), result.data.config);
+      return c.json({ ok: true });
     } catch (err) {
-      if (err instanceof AdapterError) return sendAdapterError(res, err);
+      if (err instanceof AdapterError) return sendAdapterError(c, err);
       const message = err instanceof Error ? err.message : 'Update failed';
-      return res.status(500).json({ error: message });
+      return c.json({ error: message }, 500);
     }
   });
 
-  router.post('/adapters/:id/enable', async (req, res) => {
+  router.post('/adapters/:id/enable', async (c) => {
     try {
-      await adapterManager.enable(req.params.id);
-      return res.json({ ok: true });
+      await adapterManager.enable(c.req.param('id'));
+      return c.json({ ok: true });
     } catch (err) {
-      return res.status(400).json({ error: err instanceof Error ? err.message : 'Enable failed' });
+      return c.json({ error: err instanceof Error ? err.message : 'Enable failed' }, 400);
     }
   });
 
-  router.post('/adapters/:id/disable', async (req, res) => {
+  router.post('/adapters/:id/disable', async (c) => {
     try {
-      await adapterManager.disable(req.params.id);
-      return res.json({ ok: true });
+      await adapterManager.disable(c.req.param('id'));
+      return c.json({ ok: true });
     } catch (err) {
-      return res.status(400).json({ error: err instanceof Error ? err.message : 'Disable failed' });
+      return c.json({ error: err instanceof Error ? err.message : 'Disable failed' }, 400);
     }
   });
 
   // GET /adapters/:id/events — Get adapter event log
-  router.get('/adapters/:id/events', (_req, res) => {
-    if (!traceStore) return res.status(404).json({ error: 'Tracing not available' });
-    const { id } = _req.params;
-    const limitParam = parseInt(_req.query.limit as string);
+  router.get('/adapters/:id/events', (c) => {
+    if (!traceStore) return c.json({ error: 'Tracing not available' }, 404);
+    const { id } = c.req.param();
+    const limitParam = parseInt(readQuery(c).limit as string);
     // Bounded to what the store keeps per adapter (the Relay sweep drops the rest).
     const limit = Number.isNaN(limitParam)
       ? 100
       : Math.min(Math.max(limitParam, 1), ADAPTER_EVENTS_KEPT);
     const events = traceStore.getAdapterEvents(id, limit);
-    return res.json({ events });
+    return c.json({ events });
   });
 
   // GET /adapters/:id/chats — Observed chats from trace data
-  router.get('/adapters/:id/chats', (_req, res) => {
-    if (!traceStore) return res.status(404).json({ error: 'Tracing not available' });
-    const { id } = _req.params;
-    const limitParam = parseInt(_req.query.limit as string);
+  router.get('/adapters/:id/chats', (c) => {
+    if (!traceStore) return c.json({ error: 'Tracing not available' }, 404);
+    const { id } = c.req.param();
+    const limitParam = parseInt(readQuery(c).limit as string);
     const limit = Number.isNaN(limitParam) ? 100 : Math.min(Math.max(limitParam, 1), 500);
     const chats = traceStore.getObservedChats(id, limit);
-    return res.json({ chats });
+    return c.json({ chats });
   });
 
   // --- Binding Management Routes ---
-  router.get('/bindings', (_req, res) => {
+  router.get('/bindings', (c) => {
     const bindingStore = adapterManager.getBindingStore();
-    if (!bindingStore) return res.status(503).json({ error: 'Binding subsystem not available' });
-    return res.json({ bindings: bindingStore.getAll() });
+    if (!bindingStore) return c.json({ error: 'Binding subsystem not available' }, 503);
+    return c.json({ bindings: bindingStore.getAll() });
   });
 
-  router.get('/bindings/:id', (req, res) => {
+  router.get('/bindings/:id', (c) => {
     const bindingStore = adapterManager.getBindingStore();
-    if (!bindingStore) return res.status(503).json({ error: 'Binding subsystem not available' });
-    const binding = bindingStore.getById(req.params.id);
-    if (!binding) return res.status(404).json({ error: 'Binding not found' });
-    return res.json({ binding });
+    if (!bindingStore) return c.json({ error: 'Binding subsystem not available' }, 503);
+    const binding = bindingStore.getById(c.req.param('id'));
+    if (!binding) return c.json({ error: 'Binding not found' }, 404);
+    return c.json({ binding });
   });
 
-  router.post('/bindings', async (req, res) => {
+  router.post('/bindings', async (c) => {
     const bindingStore = adapterManager.getBindingStore();
-    if (!bindingStore) return res.status(503).json({ error: 'Binding subsystem not available' });
-    const result = CreateBindingRequestSchema.safeParse(req.body);
+    if (!bindingStore) return c.json({ error: 'Binding subsystem not available' }, 503);
+    const result = CreateBindingRequestSchema.safeParse(readJsonBody(c));
     if (!result.success) {
-      return res
-        .status(400)
-        .json({ error: 'Validation failed', details: z.flattenError(result.error) });
+      return c.json(validationFailureBody(result.error), 400);
     }
     // Validate adapter exists
     const adapterExists = adapterManager.getAdapter(result.data.adapterId);
     if (!adapterExists) {
-      return res.status(400).json({
-        error: `Adapter '${result.data.adapterId}' not found`,
-      });
+      return c.json(
+        {
+          error: `Adapter '${result.data.adapterId}' not found`,
+        },
+        400
+      );
     }
 
     // Validate agent exists in mesh registry
@@ -388,9 +391,12 @@ export function createAdapterRouter(
     if (meshCore && result.data.agentId) {
       const projectPath = meshCore.getProjectPath(result.data.agentId);
       if (!projectPath) {
-        return res.status(400).json({
-          error: `Agent '${result.data.agentId}' not found in mesh registry`,
-        });
+        return c.json(
+          {
+            error: `Agent '${result.data.agentId}' not found in mesh registry`,
+          },
+          400
+        );
       }
     }
 
@@ -401,11 +407,10 @@ export function createAdapterRouter(
       broadcastBindingsChanged();
 
       // Fire-and-forget activity event for binding creation
-      const activityService = req.app.locals.activityService as ActivityService | undefined;
-      if (activityService) {
+      if (activity) {
         const adapterName = resolveAdapterName(adapterManager, binding.adapterId);
-        await activityService.emit({
-          ...readActivityActor(req, res),
+        await activity.emit({
+          ...readActivityActor(honoRequestFacts(c)),
           category: 'config',
           eventType: 'config.binding_created',
           resourceType: 'binding',
@@ -416,24 +421,27 @@ export function createAdapterRouter(
         });
       }
 
-      return res.status(201).json({ binding });
+      return c.json({ binding }, 201);
     } catch (err) {
       // "One chat, one agent" (connection-scoping spec §Part 2): a
       // `(adapterId, chatId)` collision is a 409, carrying the conflicting
       // binding so the client can offer a move rather than a bare rejection.
       if (err instanceof BindingConflictError) {
-        return res.status(409).json({
-          error: err.message,
-          code: 'CHAT_ALREADY_BOUND',
-          conflict: {
-            bindingId: err.conflict.id,
-            agentId: err.conflict.agentId,
-            label: err.conflict.label,
+        return c.json(
+          {
+            error: err.message,
+            code: 'CHAT_ALREADY_BOUND',
+            conflict: {
+              bindingId: err.conflict.id,
+              agentId: err.conflict.agentId,
+              label: err.conflict.label,
+            },
           },
-        });
+          409
+        );
       }
       const message = err instanceof Error ? err.message : 'Create failed';
-      return res.status(500).json({ error: message });
+      return c.json({ error: message }, 500);
     }
   });
 
@@ -444,36 +452,36 @@ export function createAdapterRouter(
    * mappings (created under the OLD agent's project) so the next inbound
    * message starts fresh under the new one.
    */
-  router.post('/bindings/:id/move', async (req, res) => {
+  router.post('/bindings/:id/move', async (c) => {
     const bindingStore = adapterManager.getBindingStore();
-    if (!bindingStore) return res.status(503).json({ error: 'Binding subsystem not available' });
-    const result = MoveBindingRequestSchema.safeParse(req.body);
+    if (!bindingStore) return c.json({ error: 'Binding subsystem not available' }, 503);
+    const result = MoveBindingRequestSchema.safeParse(readJsonBody(c));
     if (!result.success) {
-      return res
-        .status(400)
-        .json({ error: 'Validation failed', details: z.flattenError(result.error) });
+      return c.json(validationFailureBody(result.error), 400);
     }
 
     const meshCore = adapterManager.getMeshCore();
     if (meshCore && !meshCore.getProjectPath(result.data.agentId)) {
-      return res.status(400).json({
-        error: `Agent '${result.data.agentId}' not found in mesh registry`,
-      });
+      return c.json(
+        {
+          error: `Agent '${result.data.agentId}' not found in mesh registry`,
+        },
+        400
+      );
     }
 
-    const moved = await bindingStore.moveToAgent(req.params.id, result.data.agentId);
-    if (!moved) return res.status(404).json({ error: 'Binding not found' });
+    const moved = await bindingStore.moveToAgent(c.req.param('id'), result.data.agentId);
+    if (!moved) return c.json({ error: 'Binding not found' }, 404);
 
     const bindingRouter = adapterManager.getBindingRouter();
     if (bindingRouter) await bindingRouter.clearSessionsForBinding(moved.id);
 
     broadcastBindingsChanged();
 
-    const activityService = req.app.locals.activityService as ActivityService | undefined;
-    if (activityService) {
+    if (activity) {
       const adapterName = resolveAdapterName(adapterManager, moved.adapterId);
-      await activityService.emit({
-        ...readActivityActor(req, res),
+      await activity.emit({
+        ...readActivityActor(honoRequestFacts(c)),
         category: 'config',
         eventType: 'config.binding_updated',
         resourceType: 'binding',
@@ -484,20 +492,18 @@ export function createAdapterRouter(
       });
     }
 
-    return res.json({ binding: moved });
+    return c.json({ binding: moved });
   });
 
-  router.patch('/bindings/:id', async (req, res) => {
+  router.patch('/bindings/:id', async (c) => {
     const bindingStore = adapterManager.getBindingStore();
     if (!bindingStore) {
-      return res.status(503).json({ error: 'Binding subsystem not available' });
+      return c.json({ error: 'Binding subsystem not available' }, 503);
     }
 
-    const result = UpdateBindingRequestSchema.safeParse(req.body);
+    const result = UpdateBindingRequestSchema.safeParse(readJsonBody(c));
     if (!result.success) {
-      return res
-        .status(400)
-        .json({ error: 'Validation failed', details: z.flattenError(result.error) });
+      return c.json(validationFailureBody(result.error), 400);
     }
 
     // `bridge: 'room'` requires a `chatId` (spec §3.1), but a PATCH body is
@@ -505,15 +511,18 @@ export function createAdapterRouter(
     // clear `chatId` without touching `bridge`. Checked against the MERGED
     // state, which `AdapterBindingSchema`'s own refinement cannot see because
     // it only ever validates a full object.
-    const existing = bindingStore.getById(req.params.id);
+    const existing = bindingStore.getById(c.req.param('id'));
     if (existing) {
       const mergedBridge = result.data.bridge ?? existing.bridge;
       const mergedChatId = result.data.chatId !== undefined ? result.data.chatId : existing.chatId;
       if (!bridgeAllowsChatId({ bridge: mergedBridge, chatId: mergedChatId })) {
-        return res.status(400).json({
-          error: 'Validation failed',
-          details: { message: BRIDGE_REQUIRES_CHAT_ID_MESSAGE },
-        });
+        return c.json(
+          {
+            error: 'Validation failed',
+            details: { message: BRIDGE_REQUIRES_CHAT_ID_MESSAGE },
+          },
+          400
+        );
       }
     }
 
@@ -560,10 +569,13 @@ export function createAdapterRouter(
       // room half sanitizes it (spec §9.2).
       const chatId = existing.chatId;
       if (!chatId) {
-        return res.status(400).json({
-          error: 'Validation failed',
-          details: { message: BRIDGE_REQUIRES_CHAT_ID_MESSAGE },
-        });
+        return c.json(
+          {
+            error: 'Validation failed',
+            details: { message: BRIDGE_REQUIRES_CHAT_ID_MESSAGE },
+          },
+          400
+        );
       }
       // Resolve what this binding bridges as from its persisted raw platform
       // type (DOR-907): a DM bridges private, a group/supergroup bridges as a
@@ -572,13 +584,16 @@ export function createAdapterRouter(
       // the lifecycle, so a refused binding is left untouched.
       const typed = bridgeChatTypeForBinding(existing.platformChatType, existing.channelType);
       if ('refusal' in typed) {
-        return res.status(400).json({ error: typed.refusal, code: typed.code });
+        return c.json({ error: typed.refusal, code: typed.code }, 400);
       }
       const agentPath = adapterManager.getMeshCore()?.getProjectPath(existing.agentId);
       if (!agentPath) {
-        return res.status(400).json({
-          error: `Agent '${existing.agentId}' not found in mesh registry`,
-        });
+        return c.json(
+          {
+            error: `Agent '${existing.agentId}' not found in mesh registry`,
+          },
+          400
+        );
       }
       try {
         await lifecycle.bridge({
@@ -597,11 +612,11 @@ export function createAdapterRouter(
         });
       } catch (err) {
         if (err instanceof RoomError) {
-          const status = BRIDGE_ROOM_ERROR_STATUS[err.code] ?? 500;
-          return res.status(status).json({ error: err.message, code: err.code });
+          const status = (BRIDGE_ROOM_ERROR_STATUS[err.code] ?? 500) as ContentfulStatusCode;
+          return c.json({ error: err.message, code: err.code }, status);
         }
         const message = err instanceof Error ? err.message : 'Bridge failed';
-        return res.status(500).json({ error: message });
+        return c.json({ error: message }, 500);
       }
       // The lifecycle already flipped `bridge`/`roomId`; apply any other fields
       // the same PATCH carried on top, then read back the fully-updated row.
@@ -617,42 +632,44 @@ export function createAdapterRouter(
       updated = bindingStore.getById(existing.id);
     } else {
       try {
-        updated = await bindingStore.update(req.params.id, updates as BindingUpdate);
+        updated = await bindingStore.update(c.req.param('id'), updates as BindingUpdate);
       } catch (err) {
         // "One chat, one agent": changing `chatId` onto a value another binding
         // already owns is the same 409 the create path gives (see above).
         if (err instanceof BindingConflictError) {
-          return res.status(409).json({
-            error: err.message,
-            code: 'CHAT_ALREADY_BOUND',
-            conflict: {
-              bindingId: err.conflict.id,
-              agentId: err.conflict.agentId,
-              label: err.conflict.label,
+          return c.json(
+            {
+              error: err.message,
+              code: 'CHAT_ALREADY_BOUND',
+              conflict: {
+                bindingId: err.conflict.id,
+                agentId: err.conflict.agentId,
+                label: err.conflict.label,
+              },
             },
-          });
+            409
+          );
         }
         // The store re-validates the MERGED result independently of the
         // pre-check above (any in-process caller can reach `update`, not just
         // this route) — so a drift between the two checks lands here rather
         // than as an unhandled 500.
         const message = err instanceof Error ? err.message : 'Update failed';
-        return res.status(400).json({ error: 'Validation failed', details: { message } });
+        return c.json({ error: 'Validation failed', details: { message } }, 400);
       }
     }
     if (!updated) {
-      return res.status(404).json({ error: 'Binding not found' });
+      return c.json({ error: 'Binding not found' }, 404);
     }
 
     // Push a freshness signal so other clients/tabs re-fetch their binding list.
     broadcastBindingsChanged();
 
     // Fire-and-forget activity event for binding update
-    const activityService = req.app.locals.activityService as ActivityService | undefined;
-    if (activityService) {
+    if (activity) {
       const adapterName = resolveAdapterName(adapterManager, updated.adapterId);
-      await activityService.emit({
-        ...readActivityActor(req, res),
+      await activity.emit({
+        ...readActivityActor(honoRequestFacts(c)),
         category: 'config',
         eventType: 'config.binding_updated',
         resourceType: 'binding',
@@ -663,18 +680,18 @@ export function createAdapterRouter(
       });
     }
 
-    return res.json({ binding: updated });
+    return c.json({ binding: updated });
   });
 
-  router.delete('/bindings/:id', async (req, res) => {
+  router.delete('/bindings/:id', async (c) => {
     const bindingStore = adapterManager.getBindingStore();
-    if (!bindingStore) return res.status(503).json({ error: 'Binding subsystem not available' });
+    if (!bindingStore) return c.json({ error: 'Binding subsystem not available' }, 503);
 
     // Capture binding metadata before deletion for the activity event
-    const binding = bindingStore.getById(req.params.id);
+    const binding = bindingStore.getById(c.req.param('id'));
 
-    const deleted = await bindingStore.delete(req.params.id);
-    if (!deleted) return res.status(404).json({ error: 'Binding not found' });
+    const deleted = await bindingStore.delete(c.req.param('id'));
+    if (!deleted) return c.json({ error: 'Binding not found' }, 404);
     const bindingRouter = adapterManager.getBindingRouter();
     if (bindingRouter) {
       const activeBindingIds = new Set(bindingStore.getAll().map((b) => b.id));
@@ -685,27 +702,26 @@ export function createAdapterRouter(
     broadcastBindingsChanged();
 
     // Fire-and-forget activity event for binding deletion
-    const activityService = req.app.locals.activityService as ActivityService | undefined;
-    if (activityService && binding) {
+    if (activity && binding) {
       const adapterName = resolveAdapterName(adapterManager, binding.adapterId);
-      await activityService.emit({
-        ...readActivityActor(req, res),
+      await activity.emit({
+        ...readActivityActor(honoRequestFacts(c)),
         category: 'config',
         eventType: 'config.binding_deleted',
         resourceType: 'binding',
-        resourceId: req.params.id,
+        resourceId: c.req.param('id'),
         summary: `Deleted binding: ${binding.agentId} \u2192 ${adapterName}`,
       });
     }
 
-    return res.json({ ok: true });
+    return c.json({ ok: true });
   });
 
   // Rate limiter for binding test endpoint — 10 tests per minute per caller.
   // Keys through the shared `rateLimitKey`, like every other limiter here: the
   // TCP peer address, not the spoofable `X-Forwarded-For` that `req.ip` derives
   // from `trust proxy` (DOR-1711).
-  const testRateLimiter = expressRateLimit({
+  const testRateLimiter = honoRateLimit({
     windowMs: 60_000,
     limit: 10,
     headers: 'standard',
@@ -713,82 +729,51 @@ export function createAdapterRouter(
   });
 
   // POST /bindings/:id/test — Synthetic routing test probe
-  router.post(
-    '/bindings/:id/test',
-    testRateLimiter,
-    async (req: express.Request<{ id: string }>, res) => {
-      const bindingStore = adapterManager.getBindingStore();
-      if (!bindingStore) {
-        return res.status(503).json({ error: 'Binding subsystem not available' });
-      }
+  router.post('/bindings/:id/test', testRateLimiter, async (c) => {
+    const bindingStore = adapterManager.getBindingStore();
+    if (!bindingStore) {
+      return c.json({ error: 'Binding subsystem not available' }, 503);
+    }
 
-      const binding = bindingStore.getById(req.params.id);
-      if (!binding) {
-        return res.status(404).json({ error: 'Binding not found' });
-      }
+    const binding = bindingStore.getById(c.req.param('id'));
+    if (!binding) {
+      return c.json({ error: 'Binding not found' }, 404);
+    }
 
-      if (binding.enabled === false) {
-        return res.status(409).json({
+    if (binding.enabled === false) {
+      return c.json(
+        {
           error: 'Binding is paused. Resume to run a test.',
-        });
-      }
-
-      const bindingRouter = adapterManager.getBindingRouter();
-      if (!bindingRouter) {
-        return res.status(503).json({ error: 'Binding router not available' });
-      }
-
-      try {
-        const result = bindingRouter.testBinding(binding.id);
-
-        return res.json({
-          ok: result.ok,
-          resolved: result.resolved,
-          latencyMs: result.latencyMs,
-          wouldDeliverTo: result.wouldDeliverTo,
-          reason: result.reason,
-          details: result.details,
-        });
-      } catch (err) {
-        return res.status(500).json({
-          error: err instanceof Error ? err.message : 'Internal routing error',
-        });
-      }
-    }
-  );
-
-  // POST /webhooks/:adapterId — Inbound webhook receiver
-  router.post(
-    '/webhooks/:adapterId',
-    express.raw({ type: '*/*', limit: '1mb' }),
-    async (req, res) => {
-      const adapterInfo = adapterManager.getAdapter(req.params.adapterId);
-      if (!adapterInfo || adapterInfo.config.type !== 'webhook') {
-        return res.status(404).json({ error: 'Webhook adapter not found' });
-      }
-      const registry = adapterManager.getRegistry();
-      const adapter = registry.get(req.params.adapterId);
-      if (!adapter) return res.status(404).json({ error: 'Adapter not running' });
-      if (
-        !('handleInbound' in adapter) ||
-        typeof (adapter as Record<string, unknown>).handleInbound !== 'function'
-      ) {
-        return res.status(500).json({ error: 'Adapter does not support webhook ingestion' });
-      }
-      // Raw parsing skips requests without a content type. A cast cannot turn
-      // an absent body (or a body consumed by an earlier parser) back into bytes.
-      if (!Buffer.isBuffer(req.body)) {
-        return res.status(400).json({ error: 'Send a request body with a content type.' });
-      }
-      const webhookAdapter = adapter as WebhookAdapter;
-      const result = await webhookAdapter.handleInbound(
-        req.body,
-        req.headers as Record<string, string | string[] | undefined>
+        },
+        409
       );
-      if (result.ok) return res.status(200).json({ ok: true });
-      return res.status(result.status ?? 401).json({ error: result.error });
     }
-  );
+
+    const bindingRouter = adapterManager.getBindingRouter();
+    if (!bindingRouter) {
+      return c.json({ error: 'Binding router not available' }, 503);
+    }
+
+    try {
+      const result = bindingRouter.testBinding(binding.id);
+
+      return c.json({
+        ok: result.ok,
+        resolved: result.resolved,
+        latencyMs: result.latencyMs,
+        wouldDeliverTo: result.wouldDeliverTo,
+        reason: result.reason,
+        details: result.details,
+      });
+    } catch (err) {
+      return c.json(
+        {
+          error: err instanceof Error ? err.message : 'Internal routing error',
+        },
+        500
+      );
+    }
+  });
 
   return router;
 }

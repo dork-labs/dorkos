@@ -2,9 +2,9 @@
  * Resolve an agent identity from the `X-DorkOS-Agent` header onto the request
  * context (spec `agent-trust` §3.1).
  *
- * Mounted app-wide immediately after `sessionGate`, so it covers both the
- * `/api/*` surface and the external `/mcp` mount that `index.ts` adds to the
- * same app. It is purely additive: it reads a header, and on success attaches
+ * Mounted app-wide immediately after `sessionGate` on the Express chain; the
+ * Hono chain (`http/api-chain.ts`, which serves `/mcp`) runs the same
+ * {@link resolveAgentIdentityFromHeaders}. It is purely additive: it reads a header, and on success attaches
  * {@link AgentIdentity} to `res.locals.agentIdentity` (the same place
  * `sessionGate` puts `res.locals.user`).
  *

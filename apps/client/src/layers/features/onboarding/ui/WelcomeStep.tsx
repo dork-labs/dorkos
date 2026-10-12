@@ -1,118 +1,102 @@
-import { motion, useReducedMotion } from 'motion/react';
-import { AppWindow, Radio, Users } from 'lucide-react';
 import { DorkLogo } from '@dorkos/icons/logos';
-import { Button, HoverBorderGradient } from '@/layers/shared/ui';
+import { CloudEligibilityNote } from '@/layers/features/cloud-link';
+import { useSpacesEnabled } from '@/layers/entities/config';
+import { Button, Spinner } from '@/layers/shared/ui';
+import { useFocusOnArrival } from '../model/use-focus-on-arrival';
 
 interface WelcomeStepProps {
-  onGetStarted: () => void;
-  /** Called when the user leaves setup entirely (dismisses the whole flow). */
-  onSkipAll: () => void;
+  /** Continue with DorkOS: the account path. Called from the click itself. */
+  onContinueWithDorkos: () => void;
+  /** Use my own AI: a key, a local model, or an AI app sign-in. */
+  onUseOwnAi: () => void;
+  /** Continue without an account: straight to #team, no AI connected yet. */
+  onContinueWithout: () => void;
+  /** The path being set up right now, so its control can say so. */
+  busy?: 'dorkos' | 'none' | null;
+  /** Why the last pick did not go through, or `null`. */
+  error?: string | null;
 }
 
-const HEADING_WORDS = ['Welcome', 'to', 'DorkOS'];
-
-const PREVIEW_ITEMS = [
-  { icon: Users, label: 'Build your team' },
-  { icon: AppWindow, label: 'Ask for tools' },
-  { icon: Radio, label: 'Connect services' },
-] as const;
-
 /**
- * Welcome screen — Step 0 of onboarding.
+ * The first screen of DorkOS (spec `one-minute-onboarding` §2.1).
  *
- * Sets context before the user enters the FTUE flow with a word-by-word
- * heading animation and a preview of what's coming.
+ * One primary action, the account, with who can buy a plan said under it
+ * before anybody leaves for the browser. Two quiet ways round it. Nothing on
+ * this screen waits on a scan or an animation: the button works the moment it
+ * is drawn, and no runtime, model or vendor is named.
  */
-export function WelcomeStep({ onGetStarted, onSkipAll }: WelcomeStepProps) {
-  const reducedMotion = useReducedMotion();
+export function WelcomeStep({
+  onContinueWithDorkos,
+  onUseOwnAi,
+  onContinueWithout,
+  busy = null,
+  error = null,
+}: WelcomeStepProps) {
+  const spaces = useSpacesEnabled();
+  const headingRef = useFocusOnArrival<HTMLHeadingElement>();
 
   return (
-    <div className="mx-auto flex w-full max-w-md flex-col items-center px-4 text-center">
-      {/* Logo */}
-      <motion.div
-        className="mb-6 opacity-80"
-        initial={reducedMotion ? false : { opacity: 0, scale: 0.8 }}
-        animate={{ opacity: 0.8, scale: 1 }}
-        transition={{ duration: 0.4 }}
-      >
-        <DorkLogo size={150} className="dark:hidden" />
-        <DorkLogo variant="white" size={150} className="hidden dark:block" />
-      </motion.div>
+    <div
+      className="mx-auto flex w-full max-w-md flex-col items-center px-4 text-center"
+      data-testid="onboarding-welcome"
+    >
+      <DorkLogo size={120} className="mb-8 opacity-90 dark:hidden" />
+      <DorkLogo variant="white" size={120} className="mb-8 hidden opacity-90 dark:block" />
 
-      {/* Text Generate Effect heading */}
-      <h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">
-        {reducedMotion ? (
-          HEADING_WORDS.join(' ')
-        ) : (
-          <motion.span
-            initial="hidden"
-            animate="visible"
-            variants={{
-              visible: { transition: { staggerChildren: 0.08 } },
-            }}
-          >
-            {HEADING_WORDS.map((word, i) => (
-              <motion.span
-                key={i}
-                className="inline-block"
-                variants={{
-                  hidden: { opacity: 0, filter: 'blur(4px)' },
-                  visible: { opacity: 1, filter: 'blur(0px)' },
-                }}
-                transition={{ duration: 0.4 }}
-              >
-                {word}
-                {i < HEADING_WORDS.length - 1 ? '\u00A0' : ''}
-              </motion.span>
-            ))}
-          </motion.span>
-        )}
+      <h1
+        ref={headingRef}
+        tabIndex={-1}
+        className="text-3xl font-semibold tracking-tight text-balance outline-none sm:text-4xl"
+      >
+        You, Multiplied.
       </h1>
-
-      <motion.p
-        className="text-muted-foreground mt-4"
-        initial={reducedMotion ? false : { opacity: 0 }}
-        animate={{ opacity: 1 }}
-        transition={{ delay: 0.4, duration: 0.5 }}
-      >
+      <p className="text-muted-foreground mt-3 text-balance">
         Build and run your business with an agent team.
-      </motion.p>
+      </p>
 
-      {/* Preview items */}
-      <motion.div
-        className="mt-10 flex gap-8"
-        initial={reducedMotion ? false : { opacity: 0, y: 8 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.6, duration: 0.4 }}
-      >
-        {PREVIEW_ITEMS.map(({ icon: Icon, label }, i) => (
-          <div key={i} className="flex flex-col items-center gap-2">
-            <div className="bg-muted flex size-10 items-center justify-center rounded-lg">
-              <Icon className="text-muted-foreground size-5" />
-            </div>
-            <span className="text-muted-foreground text-xs">{label}</span>
-          </div>
-        ))}
-      </motion.div>
-
-      {/* CTA */}
-      <motion.div
-        className="mt-12 flex flex-col items-center gap-3"
-        initial={reducedMotion ? false : { opacity: 0 }}
-        animate={{ opacity: 1 }}
-        transition={{ delay: 0.8, duration: 0.4 }}
-      >
-        <HoverBorderGradient className="px-6 py-2" duration={1.2} onClick={onGetStarted}>
-          Get started
-        </HoverBorderGradient>
-        {/* Whole-flow exit, worded AND styled the same here as in the conversation
-            nav bar so "skip" always means the same thing in this flow (DOR-472).
-            A shadcn ghost button rather than a bare one: it keeps the quiet
-            tertiary look and inherits the flow's keyboard focus ring. */}
-        <Button variant="ghost" size="sm" onClick={onSkipAll} className="text-muted-foreground">
-          Skip all setup
+      <div className="mt-10 flex w-full max-w-xs flex-col items-center gap-3">
+        <Button
+          size="lg"
+          className="w-full"
+          onClick={onContinueWithDorkos}
+          disabled={busy !== null}
+          data-testid="onboarding-continue-dorkos"
+        >
+          {busy === 'dorkos' && <Spinner size="xs" />}
+          Continue with DorkOS
         </Button>
-      </motion.div>
+        <CloudEligibilityNote withSpaces={spaces} className="text-balance" />
+        {error && (
+          <p className="text-destructive text-sm" role="alert">
+            {error}
+          </p>
+        )}
+      </div>
+
+      <div className="mt-8 flex flex-col items-center gap-1 sm:flex-row sm:gap-2">
+        <Button
+          variant="ghost"
+          size="sm"
+          className="text-muted-foreground"
+          onClick={onUseOwnAi}
+          disabled={busy !== null}
+        >
+          Use my own AI
+        </Button>
+        <span aria-hidden className="text-muted-foreground/50 hidden sm:inline">
+          ·
+        </span>
+        <Button
+          variant="ghost"
+          size="sm"
+          className="text-muted-foreground"
+          onClick={onContinueWithout}
+          disabled={busy !== null}
+        >
+          {busy === 'none' && <Spinner size="xs" />}
+          Continue without an account
+        </Button>
+      </div>
     </div>
   );
 }

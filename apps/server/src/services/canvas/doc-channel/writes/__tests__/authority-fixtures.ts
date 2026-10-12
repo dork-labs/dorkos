@@ -13,9 +13,15 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { agents, user, authors, eq, sessionMetadata, createDb, runMigrations } from '@dorkos/db';
 import { initAuth, readOwnerAccount } from '../../../../core/auth/index.js';
+import { initConfigManager } from '../../../../core/config-manager.js';
 import { env } from '../../../../../env.js';
 import { ApprovalService } from '../../../../core/approvals/approval-service.js';
-import { createRoomSubsystem, resolveOperatorAuthor } from '../../../../rooms/index.js';
+import {
+  clearRoomService,
+  createRoomSubsystem,
+  resolveOperatorAuthor,
+  setRoomService,
+} from '../../../../rooms/index.js';
 import { RoomTurnBudget } from '../../../../rooms/limits/turn-budget.js';
 import { createTurnBudgetLimits } from '../../../../rooms/limits/room-limits.js';
 import { RoomRepoStore } from '../../../../rooms/repo/room-repo-store.js';
@@ -71,6 +77,7 @@ export async function authorityFixture(
   const file = join(dir, 'db.sqlite');
   const db = createDb(file);
   runMigrations(db);
+  initConfigManager(dir);
   initAuth(db, dir);
   const path = join(dir, 'tasks.md');
   if (!persistence.existing) await fs.writeFile(path, persistence.content ?? '- [ ] actual task\n');
@@ -260,6 +267,7 @@ export async function authorityFixture(
     textHash: 'a'.repeat(64),
     done: true,
   };
+  setRoomService(rooms.service);
   return {
     dir,
     file,
@@ -288,6 +296,7 @@ export async function authorityFixture(
       runtimeLive = value;
     },
     cleanup: async () => {
+      clearRoomService(rooms.service);
       db.$client.close();
       await fs.rm(dir, { recursive: true, force: true });
     },
@@ -403,7 +412,12 @@ export async function nativeRoomAuthorityFixture(
   runtime: 'claude-code' | 'codex' | 'opencode',
   canonicalSessionId: string,
   agentId: string,
-  options: { checkboxFile?: boolean; coalesceWindowMs?: number } = {}
+  options: {
+    checkboxFile?: boolean;
+    coalesceWindowMs?: number;
+    /** The caller may own the real singleton binding and its exact retirement assertion. */
+    roomServiceBinding?: 'fixture' | 'caller';
+  } = {}
 ): Promise<NativeRoomAuthorityFixture> {
   const dir = await fs.realpath(await fs.mkdtemp(join(tmpdir(), 'native-room-authority-')));
   const file = join(dir, 'db.sqlite');
@@ -417,6 +431,7 @@ export async function nativeRoomAuthorityFixture(
     const db = opened.db;
     returnedDb = db;
     runMigrations(db);
+    initConfigManager(dir);
     const auth = initAuth(db, dir);
     // Onboard the actual first account through the original auth handler. The
     // Room pre-effect witness requires its real owner row, not a fixture DTO.
@@ -545,6 +560,7 @@ export async function nativeRoomAuthorityFixture(
       ? await http.grantCheckboxRoute(request, operator, pending.ticket.token)
       : http.grants.grant(request, operator, pending.ticket.token);
     if (granted.kind !== 'granted') throw new Error('Genuine consumed Room approval missing.');
+    if (options.roomServiceBinding !== 'caller') setRoomService(rooms.service);
     return {
       dir,
       file,
@@ -595,6 +611,7 @@ export async function nativeRoomAuthorityFixture(
             .catch(retainDrainFailure),
         ]);
         if (drainFailed) throw firstDrainCause;
+        if (options.roomServiceBinding !== 'caller') clearRoomService(rooms.service);
         let failed = false;
         let first: unknown;
         try {
@@ -1054,6 +1071,7 @@ export async function reopenNativeRoomAuthorityFixture(
     });
     returnedHttp = http;
     let cleanup: Promise<void> | undefined;
+    setRoomService(rooms.service);
     return {
       db,
       rooms,
@@ -1064,6 +1082,7 @@ export async function reopenNativeRoomAuthorityFixture(
         // Retain the memo before any original child drain can reenter.
         cleanup = Promise.resolve().then(async () => {
           await drainOriginalChildren(http, db);
+          clearRoomService(rooms.service);
           if (db.$client.open) db.$client.close();
         });
         return cleanup;

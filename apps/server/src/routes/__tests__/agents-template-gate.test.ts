@@ -49,8 +49,8 @@ vi.mock('../../services/core/agent-templates/template-downloader.js', () => ({
 import request from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
 import { createTestDb } from '@dorkos/test-utils/db';
-import express from 'express';
-import { createAgentsRouter } from '../agents.js';
+import { createAgentsRoutes } from '../agents.js';
+import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
 import { configManager, initConfigManager } from '../../services/core/config-manager.js';
 import { ApprovalService } from '../../services/core/approvals/approval-service.js';
 import { TokenConfirmationProvider } from '../../services/marketplace-mcp/confirmation-provider.js';
@@ -86,14 +86,19 @@ beforeEach(async () => {
   templateFiles.fail = undefined;
   approvals = new ApprovalService(createTestDb());
   provider = new TokenConfirmationProvider(approvals);
-  const app = express();
-  app.use(express.json());
-  app.use((req, _res, next) => {
-    // Stands in for the agent-identity middleware.
-    if (agentHeader) req.headers['x-dorkos-agent'] = agentHeader;
-    next();
-  });
-  app.use('/api/agents', createAgentsRouter(undefined, { confirmationProvider: () => provider }));
+  const app = honoGroupListener(
+    {
+      path: '/api/agents',
+      routes: createAgentsRoutes({ confirmationProvider: () => provider }),
+    },
+    {
+      // Stands in for the agent-identity middleware.
+      before: (c, next) => {
+        if (agentHeader) c.env.incoming.headers['x-dorkos-agent'] = agentHeader;
+        return next();
+      },
+    }
+  );
   testServer.mount(app);
 });
 

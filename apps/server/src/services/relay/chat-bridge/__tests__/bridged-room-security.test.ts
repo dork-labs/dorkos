@@ -43,7 +43,6 @@
  * @module server/services/relay/chat-bridge/__tests__/bridged-room-security
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import express from 'express';
 import request from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
 import { authors as authorRows, rooms as roomRows, roomEntries as roomEntryRows } from '@dorkos/db';
@@ -67,7 +66,7 @@ import {
   isConsentExemptPrincipal,
   createInitiateConsentGate,
 } from '../../initiate-consent.js';
-import { createRelayRouter } from '../../../../routes/relay.js';
+import { relayRoutesListener } from '../../../../routes/__tests__/relay-routes-listener.js';
 import type { CreateBridgedRoomRequest } from '../../../rooms/room-service.js';
 import type { ExternalAuthorIdentity } from '../../../rooms/author-registry.js';
 import {
@@ -78,6 +77,12 @@ import {
   type LifecycleBinding,
   type BridgeCreateInput,
 } from '../index.js';
+
+// The `/api` chain the Relay route runs behind reads config (login, the host
+// allowlist); nothing here sets any, and nothing else in this file reads it.
+vi.mock('../../../core/config-manager.js', () => ({
+  configManager: { get: vi.fn().mockReturnValue(null), set: vi.fn() },
+}));
 
 const fixtureTarget = swappableServer();
 
@@ -681,11 +686,7 @@ describe('bridged-room security suite (chats-as-channels §9)', () => {
       // Independently of the predicate: the real route wired with the real guard
       // must reject a spoofed bridge principal before it reaches the relay.
       const relayCore = makeMockRelayCore();
-      const app = express();
-      app.use(express.json());
-      app.use('/api/relay', createRelayRouter(relayCore));
-
-      const res = await request(fixtureTarget.mount(app))
+      const res = await request(fixtureTarget.mount(relayRoutesListener({ relayCore })))
         .post('/api/relay/messages')
         .send({
           subject: 'relay.human.telegram.tg1.chat-42',

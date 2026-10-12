@@ -70,6 +70,7 @@ import request from '@dorkos/test-utils/supertest';
 import { listeningServer } from '@dorkos/test-utils/listening-server';
 import { createTestDb } from '@dorkos/test-utils/db';
 import { createApp, finalizeApp } from '../../app.js';
+import { composedListener } from '../../http/__tests__/composed-listener.js';
 import { setAccountUsageStore } from '../../services/core/usage/current-usage-store.js';
 import type { AccountUsageStore } from '../../services/core/usage/account-usage-store.js';
 import {
@@ -77,9 +78,10 @@ import {
   setSessionLimitStore,
 } from '../../services/session/fleet/session-limit-store.js';
 
-const app = createApp({ admission: new MainRequestAdmission() });
+const admission = new MainRequestAdmission();
+const app = createApp({ admission });
 finalizeApp(app);
-const server = listeningServer(app);
+const server = listeningServer(composedListener(app, admission));
 
 const LIMITED = '00000000-0000-4000-8000-0000000000b1';
 const QUIET = '00000000-0000-4000-8000-0000000000b2';
