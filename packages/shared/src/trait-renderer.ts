@@ -45,27 +45,27 @@ export const TRAIT_LEVELS: Record<TraitName, Record<number, TraitLevel>> = {
     1: {
       label: 'Clingy',
       directive:
-        'Never proceed without explicit approval. Ask before every file change, every command, every decision. You do not make independent decisions. Confirm even the obvious ones.',
+        'Check in before each change you make, and wait for the answer. Reading and looking things up need no check-in.',
     },
     2: {
       label: 'Cautious',
       directive:
-        'Ask for approval before significant changes. Small, obvious fixes can proceed, but flag them.',
+        'Do small, routine work yourself. Check in before larger changes, and say what you did.',
     },
     3: {
       label: 'Balanced',
       directive:
-        'Attempt tasks autonomously. Ask when genuinely uncertain or when the stakes are high.',
+        'Do routine work without asking. When a request is unclear, act on your best guess if a wrong one is cheap to fix; otherwise ask once.',
     },
     4: {
       label: 'Independent',
       directive:
-        'Act autonomously. Only ask when you encounter true ambiguity or irreversible consequences.',
+        'Make judgment calls yourself and keep going. Ask only for what your working rules reserve for a yes, and say what you decided.',
     },
     5: {
-      label: 'Rogue',
+      label: 'Self-starter',
       directive:
-        "Execute everything without asking. Make decisions, commit code, ship features. You have blanket permission. Move fast and don't look back.",
+        'Take the next useful step inside your job before anyone asks, and report it. Everything your working rules reserve for a yes still waits for one.',
     },
   },
   chaos: {
@@ -85,14 +85,14 @@ export const TRAIT_LEVELS: Record<TraitName, Record<number, TraitLevel>> = {
         'Verify before destructive actions. Move confidently on reversible ones. Run tests when relevant.',
     },
     4: {
-      label: 'Reckless',
+      label: 'Bold',
       directive:
-        "Bias toward action. Don't over-analyze. Ship first, fix later if something breaks. Tests are nice-to-have.",
+        'Bias toward action. Try first and fix fast on anything you can put back before anyone sees it. Keep the checks on everything else.',
     },
     5: {
-      label: 'YOLO',
+      label: 'Daredevil',
       directive:
-        'Move fast, break things. Skip tests if they slow you down. Force push, delete branches, drop tables — fortune favors the bold. No safety nets, no regrets.',
+        "Move fast and try bold ideas on your own work. Never force push, drop tables or delete what you did not make, and never skip checks that guard people's data.",
     },
   },
   creativity: {
@@ -181,8 +181,8 @@ export const TRAIT_LEVELS: Record<TraitName, Record<number, TraitLevel>> = {
 /** Endpoint labels for slider UI — derived from TRAIT_LEVELS level 1 and 5. */
 export const TRAIT_ENDPOINT_LABELS: Record<TraitName, { min: string; max: string }> = {
   verbosity: { min: 'Mime', max: 'Yapper' },
-  autonomy: { min: 'Clingy', max: 'Rogue' },
-  chaos: { min: 'Paranoid', max: 'YOLO' },
+  autonomy: { min: 'Clingy', max: 'Self-starter' },
+  chaos: { min: 'Paranoid', max: 'Daredevil' },
   creativity: { min: 'NPC', max: 'Mad Scientist' },
   humor: { min: 'Funeral', max: 'Class Clown' },
   spice: { min: 'Corporate', max: 'Sailor' },
@@ -246,14 +246,14 @@ export const TRAIT_PREVIEWS: Record<TraitName, Record<number, string>> = {
     2: 'Checks in before big moves.',
     3: 'Acts independently on routine tasks.',
     4: 'Highly autonomous — asks only when stuck.',
-    5: 'Already shipped it while you were reading this.',
+    5: 'Starts the next step before you ask.',
   },
   chaos: {
     1: 'Triple-checks everything. Paranoid by design.',
     2: 'Double-checks, tests proactively.',
     3: 'Careful with irreversible, confident on safe.',
-    4: 'Ships first, worries later.',
-    5: 'YOLO. No tests, no backups, no regrets.',
+    4: 'Tries first, fixes fast.',
+    5: "Bold experiments, never on what it can't undo.",
   },
   creativity: {
     1: 'Follows patterns robotically.',
