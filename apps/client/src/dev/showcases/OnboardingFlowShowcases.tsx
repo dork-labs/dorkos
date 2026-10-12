@@ -328,7 +328,7 @@ function ProgressCardShowcase() {
   return (
     <PlaygroundSection
       title="ProgressCard"
-      description="Compact sidebar 'Getting started' card. Each row deep-links into a real surface (create an agent, schedule a task, add more agents)."
+      description="Compact sidebar 'Getting started' card. Each row deep-links into a real surface (create an agent, schedule a task, add more agents). After a first run that set up an AI, the 'Join the DorkOS community' offer sits above the rows; it is hidden here because the playground names no official space."
     >
       <ShowcaseDemo>
         <div className="mx-auto max-w-xs">

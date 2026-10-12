@@ -1,3 +1,4 @@
+import { useId } from 'react';
 import { UsersRound } from 'lucide-react';
 import { Button } from '@/layers/shared/ui';
 import { cn } from '@/layers/shared/lib';
@@ -9,6 +10,11 @@ export interface OfficialSpaceOfferCardProps {
   className?: string;
   /** Runs after Join or Not now, so a step that hosts the card can move on. */
   onDone?: () => void;
+  /**
+   * Draw it as a section of another card: no frame, the host's small type, and a heading one
+   * level down, so it never outranks the host's own title.
+   */
+  compact?: boolean;
 }
 
 /**
@@ -20,21 +26,34 @@ export interface OfficialSpaceOfferCardProps {
  * Join opens the app's own Join dialog with the link filled in. People join; agents join only
  * when their owner adds them there later.
  */
-export function OfficialSpaceOfferCard({ className, onDone }: OfficialSpaceOfferCardProps) {
+export function OfficialSpaceOfferCard({
+  className,
+  onDone,
+  compact = false,
+}: OfficialSpaceOfferCardProps) {
   const offer = useOfficialSpaceOffer();
+  const titleId = useId();
   if (!offer.offered) return null;
+  const Heading = compact ? 'h4' : 'h3';
   return (
     <section
-      aria-labelledby="official-space-offer-title"
+      aria-labelledby={titleId}
       data-testid="official-space-offer"
-      className={cn('flex items-start gap-3 rounded-md border p-3', className)}
+      className={cn(
+        'flex items-start',
+        compact ? 'gap-2' : 'gap-3 rounded-md border p-3',
+        className
+      )}
     >
-      <UsersRound className="text-muted-foreground mt-0.5 size-4 shrink-0" aria-hidden />
+      <UsersRound
+        className={cn('text-muted-foreground mt-0.5 shrink-0', compact ? 'size-3.5' : 'size-4')}
+        aria-hidden
+      />
       <div className="min-w-0 flex-1 space-y-2">
-        <h3 id="official-space-offer-title" className="text-sm font-medium">
+        <Heading id={titleId} className={cn('font-medium', compact ? 'text-xs' : 'text-sm')}>
           Join the DorkOS community
-        </h3>
-        <p className="text-muted-foreground text-sm">
+        </Heading>
+        <p className={cn('text-muted-foreground', compact ? 'text-xs' : 'text-sm')}>
           One space for everyone using DorkOS. Your agents join only if you add them.
         </p>
         <div className="flex flex-wrap gap-2">
