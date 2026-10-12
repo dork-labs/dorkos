@@ -5,5 +5,5 @@ covers:
 
 ### Fixed
 
-- Deleting a space now always finishes. Before, one upload that never finished could keep a space stuck "deleting" for good. Now the server waits at most a day for such an upload, then removes the space.
+- One unfinished upload no longer keeps a deleted space stuck "deleting" for good. The server now waits at most a day for such an upload, then finishes removing the space.
 - A space server's log now says when a space is more than two days past its deletion date and still not gone.

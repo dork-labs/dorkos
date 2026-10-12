@@ -115,7 +115,7 @@ it('waits on a writer still in its window, then deletes the community once it is
     'owner deletion request'
   );
   await h.pool.query(
-    `UPDATE community_deletion_jobs SET delete_after=now()-interval '3 days',
+    `UPDATE community_deletion_jobs SET delete_after=now()-interval '72 hours',
        next_attempt_at=now() WHERE community_id=$1`,
     [communityId]
   );

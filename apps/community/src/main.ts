@@ -260,8 +260,8 @@ const cleanup = setInterval(() => {
   });
 }, 60_000);
 cleanup.unref();
-// Nothing else tells a person a space is stuck being deleted, so say it once an hour.
-const overdueDeletions = setInterval(() => {
+// Nothing else tells a person a space is stuck being deleted, so say it at start and hourly.
+function reportOverdueDeletions(): void {
   void findOverdueCommunityDeletions(pool)
     .then((overdue) => {
       for (const job of overdue)
@@ -275,7 +275,9 @@ const overdueDeletions = setInterval(() => {
         error instanceof Error ? error.name : 'unknown'
       );
     });
-}, 60 * 60_000);
+}
+reportOverdueDeletions();
+const overdueDeletions = setInterval(reportOverdueDeletions, 60 * 60_000);
 overdueDeletions.unref();
 let erasing = false;
 const erasures = setInterval(() => {

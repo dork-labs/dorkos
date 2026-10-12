@@ -204,6 +204,8 @@ export async function sweepPendingBlobDeletions(pool: Pool, blobStore: BlobStore
             signal: AbortSignal.timeout(BLOB_DELETE_TIMEOUT_MS),
           });
         } catch (error) {
+          // A settled writer (one that reported back, or one abandoned) gets `last_error_at`, so
+          // whoever deletes its file next settles the key.
           await client.query(
             `UPDATE pending_blob_deletions
              SET attempts=attempts+1,
