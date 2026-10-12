@@ -5,5 +5,8 @@ covers:
 
 ### Fixed
 
-- DorkOS credits, your balance and your plan now work on a fresh install. The app was asking the dorkos.ai website for them, which can't answer, so every request failed (DOR-2673)
-- To point only those requests somewhere else, set `DORKOS_CLOUD_API_URL`
+- On a fresh install, requests for DorkOS credits, your balance and your plan now go to the DorkOS Cloud service. They went to the dorkos.ai website, which can't answer them, so every one failed (DOR-2673)
+
+### Added
+
+- A `DORKOS_CLOUD_API_URL` setting, to send only those requests somewhere else

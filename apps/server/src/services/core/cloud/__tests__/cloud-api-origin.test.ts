@@ -39,9 +39,11 @@ describe('resolveCloudApiBaseUrl', () => {
     expect(resolveCloudApiBaseUrl()).toBe('http://localhost:7000');
   });
 
-  it('treats the default website address with a trailing slash as the default', () => {
-    mockEnv.DORKOS_CLOUD_URL = 'https://dorkos.ai/';
-    expect(resolveCloudApiBaseUrl()).toBe('https://cloud.dorkos.ai');
+  it('treats any spelling of the default website address as the default', () => {
+    for (const spelling of ['https://dorkos.ai/', 'https://DorkOS.ai', 'https://dorkos.ai:443']) {
+      mockEnv.DORKOS_CLOUD_URL = spelling;
+      expect(resolveCloudApiBaseUrl(), spelling).toBe('https://cloud.dorkos.ai');
+    }
   });
 
   it('prefers DORKOS_CLOUD_API_URL over a custom DORKOS_CLOUD_URL', () => {

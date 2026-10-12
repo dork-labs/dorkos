@@ -16,6 +16,15 @@ export const DEFAULT_CLOUD_API_URL = 'https://cloud.dorkos.ai';
 
 const trimSlashes = (url: string): string => url.replace(/\/+$/, '');
 
+/** Whether `url` is the default website origin, however it is spelled (case, `:443`, a path). */
+function isDefaultWebsite(url: string): boolean {
+  try {
+    return new URL(url).origin === new URL(DEFAULT_CLOUD_URL).origin;
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Resolve the origin every `/v1` call goes to, trailing slashes stripped.
  *
@@ -27,5 +36,5 @@ const trimSlashes = (url: string): string => url.replace(/\/+$/, '');
 export function resolveCloudApiBaseUrl(): string {
   if (env.DORKOS_CLOUD_API_URL) return trimSlashes(env.DORKOS_CLOUD_API_URL);
   const cloudUrl = trimSlashes(env.DORKOS_CLOUD_URL);
-  return cloudUrl && cloudUrl !== DEFAULT_CLOUD_URL ? cloudUrl : DEFAULT_CLOUD_API_URL;
+  return cloudUrl && !isDefaultWebsite(cloudUrl) ? cloudUrl : DEFAULT_CLOUD_API_URL;
 }

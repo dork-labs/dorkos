@@ -372,7 +372,7 @@ export const serverEnvSchema = z.object({
   DORKOS_CLOUD_URL: z.string().default('https://dorkos.ai'),
   // Origin of the cloud's `/v1` contract (credits, balance, usage, plan,
   // checkout). Unset, it follows a non-default DORKOS_CLOUD_URL, else the
-  // cloud's own origin (`resolveCloudApiBaseUrl` in services/core/cloud/v1-client.ts).
+  // cloud's own origin (`resolveCloudApiBaseUrl` in services/core/cloud/cloud-api-origin.ts).
   DORKOS_CLOUD_API_URL: z.string().optional(),
   // A force-off kill switch for DorkOS credits (ADR 261001-000811). Who pays for
   // a turn is a choice a person makes in a runtime's Runs on list, recorded in
