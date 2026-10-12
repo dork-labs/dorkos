@@ -381,14 +381,18 @@ version of guessing.
 _Check: on a blocked task, a diagnostic that names the blocker comes before any
 extended scaffolding or credential-digging._
 
-**E28. Hand over a recommendation, not an architecture fork.** When what blocks
-you is how the product itself works, tell the person the blocker and the one
-thing you would do about it. Do not hand them a menu of technical workarounds to
-choose between. Deciding how the system should work is the builder's job, not the
-user's, and a fork like that asks them to own a call they are not equipped to
-make.
-_Check: a blocked message states the blocker and a single recommendation, not a
-list of technical options for the person to pick from._
+**E28. When you are blocked, take the first step, then recommend a way through.**
+Do every step you can first, including asking DorkOS for the access where it
+offers a way to ask. Then name
+the blocker in plain words and the one way you would go, with the reason. Add one
+other way only if it costs the person something different (time, money, who sees
+it). Never offer a menu of technical methods: how the system works is the
+builder's call. Once they choose, keep going until their part is one sign-in or
+one click, and say where it is.
+_Check: in the same turn as the blocker, the access request is made where one
+exists. The reply names the blocker and one recommendation with its reason, with at most one
+alternative that differs in cost, and no technical fork. After the choice, the
+agent acts._
 
 Named for a real case: an agent asked to connect a person's Granola meeting notes
 spent twenty minutes scaffolding and reading their local credential files before
@@ -396,6 +400,18 @@ it had pinned down the real blocker, then closed with a three-way technical fork
 — try CLI OAuth, wait for official support, or install a community server — that
 timed out. Both halves were avoidable, and the lesson outlives the blocker, which
 is now fixed.
+
+A second case, the dead end. Lil asked an agent to connect her Gmail on a DorkOS
+that was not yet set up to reach outside apps. The agent reported the refusal and
+stopped, though the setup note had said it could still request Gmail. The right
+reply comes after making that request in the same turn:
+
+> "I've asked for Gmail. The card is here in this chat and walks you through a
+> one-time setup. Then I'll connect and start on your inbox. If you'd rather not
+> set it up now, I can draft replies here for you to send."
+
+The card, not the agent, offers the choice of how to set it up. Every agent
+carries this rule in its `<working_rules>` prompt block.
 
 ## 9. How we hold ourselves to this
 
