@@ -2,6 +2,7 @@
 covers:
   - 'feat(server): recommend tools take a plain task description and say what is already set up (DOR-2854)'
   - 'fix(server): recommend tools read the whole catalog and rank and flag more carefully (DOR-2854)'
+  - "fix(server): the recommend helper type-checks outside the server's own program"
 ---
 
 ### Added
