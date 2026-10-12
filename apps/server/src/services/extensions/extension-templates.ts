@@ -137,20 +137,26 @@ export function generateServerTemplate(name: string, description: string): strin
 //   ctx.extensionDir                — Absolute path to this extension's directory
 //   ctx.filesDir                    — A folder only this extension writes to
 
+// Your API lives at /api/ext/${name}/. Serve it one of two ways:
+//   - Router: add Express routes to \`router\`, as below.
+//   - Fetch handler: return { fetch } from register(). It gets a web-standard
+//     Request and returns a Response, so an app written for Hono, Bun or Deno
+//     works as is. See the commented example at the end of register().
+
 import type { Router } from 'express';
-import type { DataProviderContext } from '@dorkos/extension-api/server';
+import type { DataProviderContext, ServerExtensionRegisterResult } from '@dorkos/extension-api/server';
 
 /**
  * Register server-side routes and background tasks for ${titleName}.
  *
- * @param router - Scoped Express router mounted at /api/extensions/${name}/
+ * @param router - Express router mounted at /api/ext/${name}/
  * @param ctx - Isolated context with secrets, storage, scheduling, and SSE emission
- * @returns Optional cleanup function called on extension shutdown
+ * @returns A cleanup function called on shutdown, or { fetch, cleanup }
  */
-export default function register(router: Router, ctx: DataProviderContext): (() => void) | void {
+export default function register(router: Router, ctx: DataProviderContext): ServerExtensionRegisterResult {
   // --- Routes ---
 
-  // GET /api/extensions/${name}/data — Fetch cached data
+  // GET /api/ext/${name}/data — Fetch cached data
   router.get('/data', async (_req, res) => {
     const data = await ctx.storage.loadData();
     res.json({ data: data ?? [] });
@@ -180,6 +186,22 @@ export default function register(router: Router, ctx: DataProviderContext): (() 
   return () => {
     cancel();
   };
+
+  // --- Or serve the same API with a fetch handler ---
+  // Delete the router route above and return this instead. The request's path
+  // is the part after /api/ext/${name}, so GET /api/ext/${name}/data arrives as /data.
+  //
+  // return {
+  //   fetch: async (request) => {
+  //     const { pathname } = new URL(request.url);
+  //     if (request.method === 'GET' && pathname === '/data') {
+  //       const data = await ctx.storage.loadData();
+  //       return Response.json({ data: data ?? [] });
+  //     }
+  //     return Response.json({ error: 'Not found' }, { status: 404 });
+  //   },
+  //   cleanup: () => cancel(),
+  // };
 }
 `;
 }

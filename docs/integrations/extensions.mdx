@@ -22,6 +22,35 @@ export function activate(api: ExtensionAPI): () => void {
 
 `ExtensionAPI` covers UI contributions (`registerComponent`, `registerCommand`, `registerDialog`, `registerSettingsTab`, full pages at `/x/<your-id>/…` with `registerPage`, and chat status-bar items with `registerStatusBarItem`), UI control (`executeCommand`, `openCanvas`, `navigate`, a dot on your own right-panel tab with `setTabMarker`, and a status or count on your own page's tab with `setPageBadge`, which older DorkOS versions lack, so check `typeof api.setPageBadge === 'function'` first), read-only host state (`getState`, `subscribe`, including `currentProject` and `requireLogin`, the project the selected folder belongs to), scoped storage (`loadData`/`saveData`), notifications (`notify`), your extension's inbox questions and per-project settings (`listDecisions`, `answerDecision`, `projectSettings`), starting work in a new chat from a button (`startWork`), and the event subscription surface this page documents: `api.events`. See `packages/extension-api/src/extension-api.ts` for the full interface; this page focuses on `api.events.subscribe`. An extension with a server half can also ask you things in the Activity inbox (`ctx.inbox`), keep a route to people only (`ctx.requirePerson`), read settings only you can change (`ctx.projectSettings`), start work in a new chat by its own rules (`ctx.sessions`), and send one of your agents a message (`ctx.agent`). A chat started either way says so as its first line, "Started by the My Extension extension: …"; see `contributing/extension-authoring.md`.
 
+## Your extension's own API
+
+An extension with a server half can answer web requests at `/api/ext/<your-id>/`. Its page calls them with `fetch('/api/ext/my-extension/status')`. You can write that API in two ways.
+
+- **With the router.** `register(router, ctx)` gets an Express router. Add routes to it: `router.get('/status', …)` answers `GET /api/ext/my-extension/status`.
+- **With a fetch handler.** Return `{ fetch }` from `register`. `fetch` takes a standard web `Request` and returns a `Response`. A Hono app, or code written for Bun or Deno, works as it is: `return { fetch: app.fetch }`. If your server half needs nothing from `ctx`, export the app itself with `export default app`.
+
+```typescript title="server.ts"
+export default function register(router, ctx) {
+  return {
+    async fetch(request) {
+      const { pathname } = new URL(request.url);
+      if (pathname === '/status') return Response.json(await ctx.storage.loadData());
+      return Response.json({ error: 'Not found' }, { status: 404 });
+    },
+  };
+}
+```
+
+What to know about a fetch handler:
+
+- **It sees the path after your mount.** A request to `/api/ext/my-extension/status?x=1` reaches it as `/status?x=1`.
+- **It answers every request it gets.** Return your own 404 for a path you don't serve. If you also add router routes, the router answers first and the fetch handler gets the rest.
+- **A JSON body is ready to read** with `request.json()`. Any other body arrives as it was sent.
+- **If it throws,** the caller gets an error and DorkOS keeps running.
+- **To keep a route to people only,** put it on the router behind `ctx.requirePerson`.
+
+Nothing in your API runs until you approve the extension, and turning it off stops the API at once.
+
 ## Messaging an agent from the server half
 
 `ctx.agent.send({ to, text, context?, idempotencyKey })` sends one of your agents a message from an extension's server half. `to` is an agent id or a chat id. A message to an agent goes to the one chat that extension keeps with it. A chat id must be one of your own chats, or one that extension started; another extension's chats, rooms, bridged chats and scheduled runs are refused.

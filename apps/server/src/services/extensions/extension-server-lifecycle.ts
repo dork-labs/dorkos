@@ -22,6 +22,7 @@ import type { ExtensionRecord, ExtensionToolStatus } from '@dorkos/extension-api
 import type { ExtensionCompiler } from './extension-compiler.js';
 import { createProxyHandler } from './http/extension-proxy.js';
 import { bridgeExpressRouter } from './http/express-bridge.js';
+import { createFetchHandler } from './http/fetch-handler.js';
 import { firstAnswer, type ExtensionHttpHandler } from './http/extension-http.js';
 import { createDataProviderContext } from './extension-server-api-factory.js';
 import { toRecordError, type ActiveServerExtension } from './extension-manager-types.js';
@@ -36,6 +37,7 @@ import { getAgentSendService } from './agent-send/agent-send.js';
 import { logger } from '../../lib/logger.js';
 import type { CapabilityRegistry } from '../core/capabilities/registry.js';
 import { checkDeclaredTools } from '@dorkos/extension-api/tool-check';
+import { readRegisterResult, serverEntryRegister } from '@dorkos/extension-api/server';
 import { RunningExtensionTools, type ToolBinding } from './agent-tools/tool-binding.js';
 import { extensionDeclarationDigest } from './agent-tools/declaration-digest.js';
 import { isolationKeyOf } from './isolation/isolation-view.js';
@@ -431,9 +433,8 @@ export class ExtensionServerLifecycle {
     let registered: (() => void) | undefined;
     let closeTools: (() => void) | undefined;
     try {
-      const mod = require(tempFile);
-      const registerFn = mod.default ?? mod;
-      if (typeof registerFn !== 'function') {
+      const registerFn = serverEntryRegister(require(tempFile));
+      if (!registerFn) {
         return { ok: false, error: 'Server entry does not export a register function' };
       }
 
@@ -463,12 +464,7 @@ export class ExtensionServerLifecycle {
       if (outcome.timedOut) {
         // It may still finish later. Whatever it hands back then is cleaned up
         // and never mounted: this instance is not active.
-        void outcome.late.then(
-          (late) => {
-            if (typeof late === 'function') (late as () => void)();
-          },
-          () => undefined
-        );
+        void outcome.late.then((late) => readRegisterResult(late).cleanup?.()).catch(() => null);
         // Cancel what it scheduled, release what it registered, and make
         // anything it still tries later a no-op: a retry then starts a fresh
         // instance, and nothing of this one keeps running beside it.
@@ -480,14 +476,18 @@ export class ExtensionServerLifecycle {
         logger.warn(`[Extensions] Server init timed out for ${id} after ${seconds}s`);
         return { ok: false, error: message };
       }
-      const cleanup = typeof outcome.value === 'function' ? outcome.value : null;
+      const { cleanup, fetch } = readRegisterResult(outcome.value);
 
       // register() finished: no more handlers. Only an instance that started
       // has tools, and only the declared tools it handled (DOR-2685).
       const agentTools = sealAgentTools(id, record.manifest.name, toolChecks, tools);
 
-      // A hybrid extension's proxy answers what its own routes pass on.
-      const handler = firstAnswer(bridgeExpressRouter(router), this.proxyFor(id, record));
+      // Its routes first; its proxy and its fetch handler get what they pass on.
+      const handler = firstAnswer(
+        bridgeExpressRouter(router),
+        this.proxyFor(id, record),
+        fetch && createFetchHandler(record.manifest.name, fetch)
+      );
 
       // Asked again now that register() has run: a turn-off or revoke that
       // arrived meanwhile wins, and this instance is released, not stored.

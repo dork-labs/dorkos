@@ -699,6 +699,8 @@ The `register` function receives two arguments:
 - **`router`** — A scoped Express `Router` mounted at `/api/ext/{id}/`. A route registered as `router.get('/data', ...)` is reachable at `GET /api/ext/my-extension/data`.
 - **`ctx`** — A `DataProviderContext` with secrets, settings, storage, scheduling, and event emission (see below).
 
+`register` returns nothing, a cleanup function, or `{ fetch, cleanup }` to serve the API with a fetch handler instead of (or beside) the router; see [Route Conventions](#route-conventions).
+
 Server-side code is compiled to CommonJS (Node.js target) by the host using esbuild. TypeScript is supported out of the box.
 
 ### `DataProviderContext` API Reference
@@ -1117,6 +1119,33 @@ router.get('/status', handler); // GET  /api/ext/my-ext/status
 router.post('/action', handler); // POST /api/ext/my-ext/action
 router.get('/deep/path', handler); // GET  /api/ext/my-ext/deep/path
 ```
+
+#### Serving with a fetch handler
+
+`register` can return `{ fetch, cleanup? }` instead of adding routes (DOR-2687). `fetch` takes a web-standard `Request` and returns a `Response` (or a promise of one), the shape a Hono, Bun or Deno app exposes, so an app written for its own server runs unchanged:
+
+```typescript
+import { Hono } from 'hono';
+import type { ServerExtensionRegister } from '@dorkos/extension-api/server';
+
+const register: ServerExtensionRegister = (_router, ctx) => {
+  const app = new Hono();
+  app.get('/status', async (c) => c.json({ data: await ctx.storage.loadData() }));
+  return { fetch: app.fetch };
+};
+
+export default register;
+```
+
+A server entry that needs nothing from `ctx` can export the handler's owner itself: `export default app`, or `export default { fetch(request) { … } }`.
+
+- **The path is below your mount.** `GET /api/ext/my-ext/status?x=1` reaches `fetch` as `http://<host>/status?x=1`. The mount is always `/api/ext/<id>`.
+- **The request is the caller's.** Headers as sent (in-process; an extension that runs separately gets them stripped, as its router does). A JSON body DorkOS already parsed is sent again as JSON, so `request.json()` works; any other body is the caller's stream. `request.signal` aborts when the caller leaves.
+- **Order.** With a router as well, the router answers first; what it passes on goes to the `dataProxy` (for `/proxy/*`, when declared), then to `fetch`. `fetch` answers everything it is given, so a path it does not serve should return its own 404.
+- **Errors.** A `fetch` that throws, or returns something that is not a `Response`, gets the same `500` a throwing route does, and DorkOS keeps serving.
+- **People only.** `ctx.requirePerson` is Express middleware, so a route that must refuse agents and other sites belongs on the router.
+
+How the host serves each shape: `services/extensions/http/` (`express-bridge.ts` runs a router on its own private Express app; `fetch-handler.ts` builds the `Request`).
 
 From the client-side `index.ts`, call your server routes via `fetch`:
 

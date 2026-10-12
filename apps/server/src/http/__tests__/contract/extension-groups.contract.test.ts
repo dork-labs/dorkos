@@ -16,7 +16,7 @@
  * body DorkOS did not parse still readable as a stream, and what a route that
  * throws answers.
  *
- * Three servers:
+ * Four servers:
  *
  * 1. Login off, nothing installed: shapes, validation answers, 404s and the
  *    refusals a caller earns with headers alone.
@@ -24,7 +24,10 @@
  *    data directory (one with a router, one with only a `dataProxy` to an
  *    upstream this file runs, one that runs in its own process), turned on,
  *    approved, used, turned off.
- * 3. Login on: no credential is refused at the gate; an API key may not do
+ * 3. Login off, extensions that serve with a `fetch` handler (DOR-2687):
+ *    beside a router, as the server entry's only export, and in its own
+ *    process.
+ * 4. Login on: no credential is refused at the gate; an API key may not do
  *    what only a signed-in person does; the owner's cookie may.
  */
 import http from 'node:http';
@@ -1031,6 +1034,205 @@ describe('contract: the extension routes, driven by hand (login off)', () => {
     expect(opened.headers['content-type']).toBe('text/event-stream; charset=utf-8');
     expect(opened.headers['cache-control']).toBe('no-cache');
     expect(opened.first).toBe(':ok\n\n');
+  });
+});
+
+/** An extension that serves with a router and a fetch handler together. */
+const FETCHED = 'contract-fetched';
+/** An extension whose server entry exports nothing but a fetch handler. */
+const FETCH_DEFAULT = 'contract-fetch-default';
+/** An extension in its own process that serves with a fetch handler. */
+const ISOLATED_FETCHED = 'contract-isolated-fetched';
+
+/** A fetch handler that describes the request it was given, or throws on `/boom`. */
+const DESCRIBE_REQUEST = `
+async (request: any) => {
+  const url = new URL(request.url);
+  if (url.pathname === '/boom') throw new Error('the fetch handler broke');
+  return Response.json({
+    method: request.method,
+    path: url.pathname,
+    search: url.search,
+    cookie: request.headers.get('cookie'),
+    body: request.method === 'GET' ? null : await request.text(),
+  });
+}`;
+
+describe('contract: an extension served with a fetch handler (login off)', () => {
+  let server: ComposedServer | undefined;
+  let dorkHome = '';
+
+  beforeAll(async () => {
+    server = await bootComposedServer();
+    const config = await setup(server, 'GET', '/api/config');
+    dorkHome = config.json.dorkHome as string;
+    install(
+      dorkHome,
+      FETCHED,
+      { serverCapabilities: { serverEntry: './server.ts' } },
+      `export default function register(router: any) {
+  router.get('/from-router', (_req: any, res: any) => res.json({ from: 'router' }));
+  return { fetch: ${DESCRIBE_REQUEST}, cleanup() {} };
+}
+`
+    );
+    install(
+      dorkHome,
+      FETCH_DEFAULT,
+      { serverCapabilities: { serverEntry: './server.ts' } },
+      `export default {
+  fetch(request: any) {
+    return new Response('plain:' + new URL(request.url).pathname, {
+      headers: { 'content-type': 'text/plain' },
+    });
+  },
+};
+`
+    );
+    install(
+      dorkHome,
+      ISOLATED_FETCHED,
+      { serverCapabilities: { serverEntry: './server.ts', runtime: 'subprocess' } },
+      `export default function register() {
+  return { fetch: ${DESCRIBE_REQUEST} };
+}
+`
+    );
+    await setup(server, 'POST', '/api/extensions/reload', {});
+    const deadline = Date.now() + 30_000;
+    for (;;) {
+      const listed = await setup(server, 'GET', '/api/extensions');
+      const ids = (listed.json as unknown as { id: string }[]).map((e) => e.id);
+      if ([FETCHED, FETCH_DEFAULT, ISOLATED_FETCHED].every((id) => ids.includes(id))) break;
+      if (Date.now() > deadline) throw new Error(`Never listed: ${ids.join(', ')}`);
+      await new Promise((resolve) => setTimeout(resolve, 250));
+    }
+  }, BOOT_HOOK_TIMEOUT_MS);
+
+  afterAll(async () => {
+    await server?.close();
+    if (dorkHome) rmSync(dorkHome, { recursive: true, force: true });
+  }, 30_000);
+
+  it('serves nothing before a person approves it', async () => {
+    for (const id of [FETCHED, FETCH_DEFAULT, ISOLATED_FETCHED]) {
+      await setup(server, 'POST', `/api/extensions/${id}/enable`, {});
+      await check(server, {
+        path: `/api/ext/${id}/items`,
+        expect: { status: 404, body: NO_ROUTES(id) },
+      });
+    }
+  });
+
+  it('starts each once a person approves it', async () => {
+    for (const id of [FETCHED, FETCH_DEFAULT, ISOLATED_FETCHED]) {
+      await setup(server, 'POST', `/api/extensions/${id}/approve`, {});
+      const started = await call(server, 'POST', `/api/extensions/${id}/init-server`, {});
+      expect(started.status, started.text).toBe(200);
+    }
+  });
+
+  it('hands the fetch handler the path below the mount, with the query', async () => {
+    await check(server, {
+      path: `/api/ext/${FETCHED}/items/7?page=2`,
+      headers: { cookie: 'session=mine' },
+      expect: {
+        status: 200,
+        headers: { ...JSON_TYPE, 'x-content-type-options': 'nosniff' },
+        body: {
+          method: 'GET',
+          path: '/items/7',
+          search: '?page=2',
+          cookie: 'session=mine',
+          body: null,
+        },
+      },
+    });
+  });
+
+  it('hands it a JSON body the chain parsed as JSON again, and any other body as sent', async () => {
+    await check(server, {
+      method: 'POST',
+      path: `/api/ext/${FETCHED}/things`,
+      body: { make: 'one' },
+      expect: {
+        status: 200,
+        body: { method: 'POST', path: '/things', search: '', cookie: null, body: '{"make":"one"}' },
+      },
+    });
+    await check(server, {
+      method: 'POST',
+      path: `/api/ext/${FETCHED}/notes`,
+      headers: { 'content-type': 'text/plain' },
+      body: 'plain words',
+      expect: {
+        status: 200,
+        body: { method: 'POST', path: '/notes', search: '', cookie: null, body: 'plain words' },
+      },
+    });
+  });
+
+  it('asks the router first when an extension has both', async () => {
+    await check(server, {
+      path: `/api/ext/${FETCHED}/from-router`,
+      expect: { status: 200, body: { from: 'router' } },
+    });
+  });
+
+  it('answers a fetch handler that throws with the server’s own error, and keeps serving', async () => {
+    await check(server, {
+      path: `/api/ext/${FETCHED}/boom`,
+      expect: { status: 500, body: { error: 'the fetch handler broke', code: 'INTERNAL_ERROR' } },
+    });
+    await check(server, { path: '/api/health', expect: { status: 200 } });
+  });
+
+  it('serves a server entry that exports only a fetch handler', async () => {
+    await check(server, {
+      path: `/api/ext/${FETCH_DEFAULT}/hello`,
+      expect: { status: 200, headers: { 'content-type': /^text\/plain\b/ }, body: 'plain:/hello' },
+    });
+  });
+
+  it('serves a fetch handler in its own process, without the person’s credentials', async () => {
+    await check(server, {
+      path: `/api/ext/${ISOLATED_FETCHED}/items?q=1`,
+      headers: { cookie: 'session=mine' },
+      expect: {
+        status: 200,
+        headers: { 'content-security-policy': "sandbox; default-src 'none'" },
+        body: { method: 'GET', path: '/items', search: '?q=1', cookie: null, body: null },
+      },
+    });
+    await check(server, {
+      method: 'POST',
+      path: `/api/ext/${ISOLATED_FETCHED}/things`,
+      body: { across: 'the boundary' },
+      expect: {
+        status: 200,
+        body: {
+          method: 'POST',
+          path: '/things',
+          search: '',
+          cookie: null,
+          body: '{"across":"the boundary"}',
+        },
+      },
+    });
+    await check(server, {
+      path: `/api/ext/${ISOLATED_FETCHED}/boom`,
+      expect: { status: 500, body: { error: 'the fetch handler broke' } },
+    });
+  });
+
+  it('serves nothing once it is turned off', async () => {
+    for (const id of [FETCHED, FETCH_DEFAULT, ISOLATED_FETCHED]) {
+      await setup(server, 'POST', `/api/extensions/${id}/disable`, {});
+      await check(server, {
+        path: `/api/ext/${id}/items`,
+        expect: { status: 404, body: NO_ROUTES(id) },
+      });
+    }
   });
 });
 

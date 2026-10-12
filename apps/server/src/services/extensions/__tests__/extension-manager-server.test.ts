@@ -194,6 +194,9 @@ describe('ExtensionManager — server lifecycle', () => {
         'idem-ext',
         'proxy-ext',
         'shutdown-ext',
+        'fetch-ext',
+        'fetch-only',
+        'bad-fetch',
         'router-ext',
         'auto-srv',
         'fail-srv',
@@ -567,6 +570,74 @@ describe('ExtensionManager — server lifecycle', () => {
       // Fails if the context is not disposed too, so a timer the extension
       // scheduled later, or schedules after this, keeps running.
       expect(mockDispose).toHaveBeenCalledTimes(1);
+    });
+
+    it('serves a fetch handler register() returns, and runs its cleanup on shutdown', async () => {
+      const record = makeRecord('fetch-ext', {
+        status: 'compiled',
+        hasServerEntry: true,
+        serverEntryPath: '/fake/extensions/fetch-ext/server.ts',
+      });
+      mockDiscover.mockResolvedValue([record]);
+      mockCompile.mockResolvedValue({ code: 'bundle', sourceHash: 'hash' });
+      mockCompileServer.mockResolvedValue({
+        code: `module.exports = function register() {
+          return {
+            fetch: () => new Response('ok'),
+            cleanup() { globalThis.__fetchExtCleaned = true; },
+          };
+        };`,
+        sourceHash: 'srvhash',
+      });
+
+      await manager.initialize(null);
+      expect(await manager.initializeServer('fetch-ext')).toEqual({ ok: true });
+      expect(manager.getServerHandler('fetch-ext')).not.toBeNull();
+
+      await manager.shutdownServer('fetch-ext');
+
+      expect((globalThis as { __fetchExtCleaned?: boolean }).__fetchExtCleaned).toBe(true);
+      delete (globalThis as { __fetchExtCleaned?: boolean }).__fetchExtCleaned;
+    });
+
+    it('serves a server entry that exports only a fetch handler', async () => {
+      const record = makeRecord('fetch-only', {
+        status: 'compiled',
+        hasServerEntry: true,
+        serverEntryPath: '/fake/extensions/fetch-only/server.ts',
+      });
+      mockDiscover.mockResolvedValue([record]);
+      mockCompile.mockResolvedValue({ code: 'bundle', sourceHash: 'hash' });
+      mockCompileServer.mockResolvedValue({
+        code: `exports.default = { fetch: () => new Response('ok') };`,
+        sourceHash: 'srvhash',
+      });
+
+      await manager.initialize(null);
+
+      expect(await manager.initializeServer('fetch-only')).toEqual({ ok: true });
+      expect(manager.getServerHandler('fetch-only')).not.toBeNull();
+    });
+
+    it('refuses a register() that returns a fetch that is not a function', async () => {
+      const record = makeRecord('bad-fetch', {
+        status: 'compiled',
+        hasServerEntry: true,
+        serverEntryPath: '/fake/extensions/bad-fetch/server.ts',
+      });
+      mockDiscover.mockResolvedValue([record]);
+      mockCompile.mockResolvedValue({ code: 'bundle', sourceHash: 'hash' });
+      mockCompileServer.mockResolvedValue({
+        code: `module.exports = function register() { return { fetch: 'nope' }; };`,
+        sourceHash: 'srvhash',
+      });
+
+      await manager.initialize(null);
+      const result = await manager.initializeServer('bad-fetch');
+
+      expect(result.ok).toBe(false);
+      expect(result.error).toMatch(/fetch/);
+      expect(manager.getServerHandler('bad-fetch')).toBeNull();
     });
 
     it('is a no-op for extensions without an active server', async () => {

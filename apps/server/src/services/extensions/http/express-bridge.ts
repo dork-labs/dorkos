@@ -50,7 +50,10 @@ export function bridgeExpressRouter(router: Router): ExtensionHttpHandler {
   app.set('trust proxy', 1);
   app.use('/api/ext/:id', router);
 
-  return ({ c }) => {
+  return async ({ c }) => {
+    // A router with no routes (an extension that serves with `fetch` only)
+    // has nothing to answer: Express never runs for it.
+    if (router.stack.length === 0) return null;
     const { incoming, outgoing } = c.env;
     // What the Express chain's identity steps put on `res.locals`, which
     // `ctx.requirePerson` and any extension reading the caller expect there.
