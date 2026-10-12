@@ -26,6 +26,9 @@ import type { ConnectorCatalogService } from '@dorkos/shared/connector-resource-
 
 import type { CapabilityDeps, CapabilityHandlerContext } from '../../core/capabilities/index.js';
 import type { ConnectorCapabilityDeps } from '../connector-capabilities.js';
+// Brings in the `connectorExecutionDeps` field it adds to `CapabilityDeps`, so this
+// file type-checks in any program that includes it, not only the server's own.
+import type {} from '../execution/execution-capabilities.js';
 import { matchServicesToIntent, type IntentMatch } from './intent-match.js';
 import { isServerPrincipal } from '../principal/server-principal.js';
 import type { ConnectorWarning } from '../registry.js';
