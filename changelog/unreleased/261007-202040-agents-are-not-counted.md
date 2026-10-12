@@ -1,6 +1,8 @@
 ---
 covers:
+  - '#2833'
   - 'feat(trust): agents work without counts, and the unattended alarm is retired (DOR-2739)'
+  - 'fix(trust): carry the agent-caps change over the Hono server and re-key it to 0.112.0 (DOR-2739)'
 ---
 
 ### Changed
