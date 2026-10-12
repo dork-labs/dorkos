@@ -1004,13 +1004,22 @@ describe('contract: the room routes, driven by hand (login off)', () => {
   });
 
   it('POST /api/rooms/:id/halt and /halt/:authorId stop work; an agent is refused', async () => {
+    // The first halt stops whatever is running, and whether anything is depends
+    // on the clock: the member's answer to the first post here gathers for
+    // `rooms.collectDebounceMs` (500 ms) from that post, then runs for a few
+    // tens of milliseconds. A halt inside the window drops the gathered turn
+    // (0), one during the turn stops it (1), one after it finds it done (0).
+    // Every halt after the first finds the room idle: halting releases each
+    // claim and drops every collection before it answers.
     const halted = await call(server, 'POST', rooms('/halt'));
     expectAnswer(halted, 200);
-    expect(typeof halted.json.stopped).toBe('number');
+    expect([{ stopped: 0 }, { stopped: 1 }]).toContainEqual(halted.json);
+    const again = await call(server, 'POST', rooms('/halt'));
+    expectAnswer(again, 200);
+    expect(again.json).toEqual({ stopped: 0 });
     const one = await call(server, 'POST', rooms(`/halt/${memberAuthorId}`));
     expectAnswer(one, 200);
     expect(one.json).toEqual({ stopped: 0 });
-    expect(halted.json).toEqual({ stopped: 0 });
     expectAnswer(await call(server, 'POST', rooms('/halt'), undefined, member.header), 403, {
       error: 'Only people stop a room',
       code: 'PEOPLE_ONLY',
