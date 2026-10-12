@@ -4,7 +4,6 @@
  * @module services/core/streams/stream-adapter
  */
 import type { ServerResponse } from 'node:http';
-import type { Response } from 'express';
 import type { StreamEvent } from '@dorkos/shared/types';
 
 /** Initialize a response for SSE streaming with appropriate headers. */
@@ -18,7 +17,10 @@ export function initSSEStream(res: Pick<ServerResponse, 'writeHead'>): void {
 }
 
 /** Write a single StreamEvent as an SSE message with backpressure handling. */
-export async function sendSSEEvent(res: Response, event: StreamEvent): Promise<void> {
+export async function sendSSEEvent(
+  res: Pick<ServerResponse, 'write' | 'once'>,
+  event: StreamEvent
+): Promise<void> {
   const payload = `event: ${event.type}\ndata: ${JSON.stringify(event.data)}\n\n`;
   const ok = res.write(payload);
   if (!ok) {
@@ -27,6 +29,6 @@ export async function sendSSEEvent(res: Response, event: StreamEvent): Promise<v
 }
 
 /** End the SSE stream and close the response. */
-export function endSSEStream(res: Response): void {
+export function endSSEStream(res: Pick<ServerResponse, 'end'>): void {
   res.end();
 }

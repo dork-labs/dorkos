@@ -12,22 +12,28 @@
  * same {@link eventFanOut}, so one broadcast reaches every reader on either
  * protocol.
  *
+ * The stream is written straight to the Node response
+ * (`http/raw-node-stream.ts`), so the frames are the same bytes Express wrote.
+ *
  * @module routes/events
  */
-import type { Response } from 'express';
-import { Router } from 'express';
+import type { ServerResponse } from 'node:http';
+import { Hono } from 'hono';
 import { SSE } from '../config/constants.js';
+import type { ApiEnv } from '../http/api-chain.js';
+import { streamToNodeResponse } from '../http/raw-node-stream.js';
+import { honoRequestFacts } from '../http/request-facts.js';
 import { initSSEStream } from '../services/core/streams/stream-adapter.js';
 import { eventFanOut, encodeBroadcast, type FanOutClient } from '../services/core/event-fan-out.js';
 import { readCallerPrincipal } from '../lib/caller-principal.js';
 import { sendSessionStatusSnapshot } from '../services/session/catalog/session-list-broadcaster.js';
 
 /**
- * Adapt an Express response to the fan-out's {@link FanOutClient} port.
+ * Adapt a Node response to the fan-out's {@link FanOutClient} port.
  *
  * @param res - The SSE response to write to.
  */
-function sseFanOutClient(res: Response): FanOutClient {
+function sseFanOutClient(res: ServerResponse): FanOutClient {
   return {
     send: (broadcast) => {
       res.write(broadcast.sse);
@@ -42,58 +48,57 @@ function sseFanOutClient(res: Response): FanOutClient {
   };
 }
 
-const router = Router();
+const router = new Hono<ApiEnv>();
 
 /**
  * GET / — Open a unified SSE stream for all real-time events, opening with the
- * `connected` frame and the fleet's current session lifecycles.
+ * `connected` frame and the fleet's current session lifecycles. Held open until
+ * the client leaves.
  */
-router.get('/', (req, res) => {
+router.get('/', (c) => {
   // Answer BEFORE sending SSE headers, so a server at capacity returns a
   // readable 503 rather than a 200 that immediately fails.
-  if (!eventFanOut.hasCapacity()) {
-    res.status(503).json({ error: 'Too many SSE clients' });
-    return;
-  }
+  if (!eventFanOut.hasCapacity()) return c.json({ error: 'Too many SSE clients' }, 503);
 
-  initSSEStream(res);
-  const client = sseFanOutClient(res);
-  // Registration comes BEFORE the preamble below, and that ordering is the one
-  // that matters: it is what makes it impossible to MISS a transition that
-  // fires while the connect is being served. The reverse — snapshot, then
-  // register — has a window in which a transition reaches nobody.
-  //
-  // The principal comes from the same Express chain that already ran
-  // `sessionGate` and `resolveAgentIdentity`, so an addressed event (today only
-  // `interaction_pending`) can tell this connection apart from an agent's.
-  const principal = readCallerPrincipal(req, res);
-  const unsubscribe = eventFanOut.addClient(client, principal);
+  // The principal comes from the chain that already ran the session gate and
+  // agent identity, so an addressed event (`interaction_pending`,
+  // `config_changed`) can tell this connection apart from an agent's.
+  const principal = readCallerPrincipal(honoRequestFacts(c));
 
-  // Keepalive heartbeat to prevent proxies/browsers from closing the connection
-  const heartbeat = setInterval(() => {
-    if (res.writableEnded) {
-      clearInterval(heartbeat);
-      return;
-    }
+  return streamToNodeResponse(c, async (res, { signal }) => {
+    initSSEStream(res);
+    const client = sseFanOutClient(res);
+    // Registration comes BEFORE the preamble below, and that ordering is the
+    // one that matters: it is what makes it impossible to MISS a transition
+    // that fires while the connect is being served. The reverse — snapshot,
+    // then register — has a window in which a transition reaches nobody.
+    const unsubscribe = eventFanOut.addClient(client, principal);
+
+    // Keepalive heartbeat to prevent proxies/browsers from closing the connection
+    const heartbeat = setInterval(() => {
+      if (res.writableEnded) {
+        clearInterval(heartbeat);
+        return;
+      }
+      try {
+        res.write('event: heartbeat\ndata: \n\n');
+      } catch {
+        clearInterval(heartbeat);
+      }
+    }, SSE.HEARTBEAT_INTERVAL_MS);
+
     try {
-      res.write('event: heartbeat\ndata: \n\n');
-    } catch {
+      // The connect preamble: `connected`, then the fleet's current lifecycles.
+      client.send(encodeBroadcast('connected', { connectedAt: new Date().toISOString() }));
+      sendSessionStatusSnapshot(client, principal);
+      if (!signal.aborted) {
+        await new Promise((resolve) => signal.addEventListener('abort', resolve, { once: true }));
+      }
+    } finally {
       clearInterval(heartbeat);
+      unsubscribe();
     }
-  }, SSE.HEARTBEAT_INTERVAL_MS);
-
-  req.on('close', () => {
-    clearInterval(heartbeat);
-    unsubscribe();
   });
-
-  // The connect preamble: `connected`, then the fleet's current lifecycles.
-  //
-  // Written LAST so the teardown above is already armed: a preamble is the one
-  // place this handler writes more than a single frame, and it should not be
-  // the one stretch with no close handler behind it.
-  client.send(encodeBroadcast('connected', { connectedAt: new Date().toISOString() }));
-  sendSessionStatusSnapshot(client, principal);
 });
 
 export default router;

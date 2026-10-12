@@ -100,6 +100,7 @@ import {
 } from '../routes/unclaimed-chats.js';
 import { createTestControlRoutes, type TestControlDeps } from '../routes/test-control.js';
 import tunnelRoutes from '../routes/tunnel.js';
+import eventsRoutes from '../routes/events.js';
 import uploadRoutes from '../routes/uploads.js';
 import workbenchServeRoutes from '../routes/workbench-serve.js';
 import workspaceRoutes from '../routes/workspaces.js';
@@ -258,6 +259,9 @@ export function createHonoApi(options: HonoApiOptions): Hono<ApiEnv> {
     },
   });
   app.route('/api/health', createHealthRoutes(deps));
+  // The global event stream over SSE. Its WebSocket twin on the same path is an
+  // upgrade, answered before any route (`routes/events-socket.ts`).
+  app.route('/api/events', eventsRoutes);
   app.route('/api/models', modelRoutes);
   app.route('/api/commands', commandRoutes);
   app.route('/api/subagents', subagentRoutes);

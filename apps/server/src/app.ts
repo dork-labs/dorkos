@@ -10,7 +10,6 @@ import { createCommunityConnectionsRouter } from './routes/community-connections
 import { createRemoteCommunitiesRouter } from './routes/remote-communities.js';
 import { gateCommunityConnections, gateRemoteCommunities } from './middleware/spaces-enabled.js';
 import onboardingRoutes from './routes/onboarding.js';
-import eventsRouter from './routes/events.js';
 import { errorHandler } from './middleware/error-handler.js';
 import { hostGuard } from './middleware/host-guard.js';
 import { managedHostGuard } from './middleware/managed-host-guard.js';
@@ -160,7 +159,6 @@ export function createApp(options: { admission: MainRequestAdmission }) {
   );
   app.use('/api/communities', gateRemoteCommunities(), createRemoteCommunitiesRouter());
   app.use('/api/onboarding', onboardingRoutes);
-  app.use('/api/events', eventsRouter);
 
   return app;
 }

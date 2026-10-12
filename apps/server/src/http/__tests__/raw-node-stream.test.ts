@@ -21,6 +21,7 @@ vi.mock('../../lib/logger.js', () => ({
 import type { ApiEnv } from '../api-chain.js';
 import { streamToNodeResponse, type RawNodeStreamControl } from '../raw-node-stream.js';
 import { honoGroupListener } from './hono-group-listener.js';
+import { SseStreamSink } from '../../services/core/streams/durable-stream-sink.js';
 
 type Writer = (res: ServerResponse, control: RawNodeStreamControl) => Promise<void> | void;
 
@@ -178,6 +179,37 @@ describe('streamToNodeResponse', () => {
       res.resume();
     });
     expect(ended).not.toBe('complete');
+  });
+
+  it('carries a durable SSE sink unchanged: its head, its frames, and the reader leaving', async () => {
+    let sinkAborted!: (aborted: boolean) => void;
+    const left = new Promise<boolean>((resolve) => (sinkAborted = resolve));
+    const host = await serve(async (res, { signal }) => {
+      const sink = new SseStreamSink(res);
+      sink.flushHeaders();
+      await sink.send({ id: 'r-1-1-7', event: 'text_delta', data: { a: 1 } });
+      await new Promise((resolve) => signal.addEventListener('abort', resolve, { once: true }));
+      sinkAborted(sink.signal.aborted && sink.closed);
+    });
+
+    const { req, response } = open(host);
+    const res = await response;
+    expect(res.statusCode).toBe(200);
+    expect(res.headers['content-type']).toBe('text/event-stream');
+    expect(res.headers['cache-control']).toBe('no-cache');
+    expect(res.headers['x-accel-buffering']).toBe('no');
+    expect(res.headers['x-content-type-options']).toBe('nosniff');
+    res.setEncoding('utf8');
+    let text = '';
+    await new Promise<void>((resolve) =>
+      res.on('data', (chunk: string) => {
+        text += chunk;
+        if (text.endsWith('}\n\n')) resolve();
+      })
+    );
+    expect(text).toBe(': connected\n\nid: r-1-1-7\nevent: text_delta\ndata: {"a":1}\n\n');
+    req().destroy();
+    expect(await left).toBe(true);
   });
 
   it('answers with a fresh marker, never the shared one', async () => {
