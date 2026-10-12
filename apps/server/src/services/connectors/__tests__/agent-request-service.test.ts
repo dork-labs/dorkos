@@ -966,6 +966,15 @@ describe('ConnectorAgentRequestService', () => {
       const again = await requests.open(principal(), INPUT);
       expect(again.status.requestId).toBe(opened.status.requestId);
       expect(again.waitForOwner).toBe(false);
+      // Nobody holds the call, so the row must not look held: a live hold
+      // keeps the owner's answer out of the chat until it runs out.
+      expect(
+        db
+          .select()
+          .from(connectorAgentRequests)
+          .where(eq(connectorAgentRequests.id, opened.status.requestId))
+          .get()
+      ).toMatchObject({ liveHoldBootEpoch: null, liveHoldUntil: null });
     });
 
     it.each([
@@ -997,6 +1006,14 @@ describe('ConnectorAgentRequestService', () => {
       const opened = await requests.open(principal(), INPUT);
       expect(opened.waitForOwner).toBe(true);
       expect(opened.status.note).toContain("The person hasn't answered yet");
+      // The capability holds this call next, so the hold stays.
+      expect(
+        db
+          .select()
+          .from(connectorAgentRequests)
+          .where(eq(connectorAgentRequests.id, opened.status.requestId))
+          .get()?.liveHoldUntil
+      ).not.toBeNull();
     });
 
     it('still refuses a chat app and an app beyond the popular ones when nothing is set up', async () => {

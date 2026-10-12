@@ -542,6 +542,16 @@ export class ConnectorAgentRequestService {
     if (!setupReason || status.status !== 'awaiting_owner') {
       return { status, waitForOwner: true };
     }
+    // Nobody waits on this call, so it must not look held: a live hold keeps
+    // the owner's answer from reaching the chat until the hold runs out. One
+    // still held by an earlier call keeps its hold; that call clears it.
+    if (!this.activeLiveHolds.has(outcome.requestId)) {
+      this.options.db
+        .update(connectorAgentRequests)
+        .set({ liveHoldBootEpoch: null, liveHoldUntil: null })
+        .where(eq(connectorAgentRequests.id, outcome.requestId))
+        .run();
+    }
     return {
       status: { ...status, note: setupRequestNote(appName, setupReason) },
       waitForOwner: false,

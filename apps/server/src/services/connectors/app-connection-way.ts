@@ -152,7 +152,12 @@ export function agentConnectChoices(reason: ConnectorAppSetupReason): string {
   const account =
     reason === 'nothing_set_up' || reason === 'own_key_unavailable'
       ? `sign in to a DorkOS account, or create one, in ${ACCOUNT_PLACE}`
-      : `link their DorkOS account again in ${ACCOUNT_PLACE}`;
+      : reason === 'dorkos_account_unavailable'
+        ? // Linked already: it may be a short outage, and linking again fixes
+          // a link that needs updating.
+          `try again in a few minutes, and if it keeps failing, link their DorkOS account ` +
+          `again in ${ACCOUNT_PLACE}`
+        : `link their DorkOS account again in ${ACCOUNT_PLACE}`;
   const key =
     reason === 'own_key_unavailable'
       ? `check or replace their own key in ${KEY_PLACE}`

@@ -15,9 +15,9 @@
  * it gates nothing.
  *
  * **What it measures, and what it does not.** The sandbox has no way to reach
- * apps set up, so the request itself may be refused as "nothing can reach
- * Gmail yet". That is fine: the oracles read the CALL the model chose to make,
- * not whether a sign-in could follow. They do not judge the reply's wording.
+ * apps set up, so the request answers at once with the ways in to offer the
+ * person (FB-57). The first two oracles read the CALL the model chose to make;
+ * the third checks the reply names both ways in. None judges the wording.
  *
  * @module evals/suite/connection-request
  */
@@ -83,6 +83,38 @@ export const requestNamesGmail: Oracle = async (ctx) => {
   };
 };
 
+/** Everything the agent said in the turn, joined. */
+function replyText(frames: SseFrame[]): string {
+  let text = '';
+  for (const frame of frames) {
+    const data = frame.data as { type?: string; text?: unknown };
+    const type = data?.type ?? frame.event;
+    if (type === 'text_delta' && typeof data.text === 'string') text += data.text;
+  }
+  return text;
+}
+
+/**
+ * Oracle (FB-57): with no way set up to reach Gmail, the agent's reply offers
+ * the person both ways in — a DorkOS account, or their own Composio key —
+ * rather than leaving them to work it out. It reads only whether both are
+ * named, not the wording around them.
+ */
+export const replyOffersBothWays: Oracle = async (ctx) => {
+  const text = replyText(ctx.frames);
+  const account = /dorkos account/i.test(text);
+  const key = /composio/i.test(text);
+  return {
+    label: 'the reply offers a DorkOS account and an own Composio key',
+    passed: account && key,
+    evidence: { namesAccount: account, namesKey: key },
+    detail:
+      account && key
+        ? undefined
+        : 'the reply did not name both ways in: a DorkOS account and a Composio key',
+  };
+};
+
 /**
  * `connection-request-from-chat`: an ordinary request that needs Gmail, with
  * no word about connecting anything, and the agent asks the owner for it.
@@ -103,6 +135,7 @@ export const connectionRequestFromChatCase: EvalCase = {
       'the agent asked the owner for the app without being told to'
     ),
     requestNamesGmail,
+    replyOffersBothWays,
   ],
 };
 
