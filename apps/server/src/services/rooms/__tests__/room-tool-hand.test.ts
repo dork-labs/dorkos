@@ -515,10 +515,12 @@ describe('the room tool hand', () => {
       expect(runner.turns).toEqual([]);
     });
 
-    it('lets an agent react as often as a person can — no hourly count (DOR-2739)', () => {
+    it('lets an agent react as often as a person can — no hourly count (DOR-2739)', async () => {
       const entries = Array.from({ length: 40 }, (_, n) =>
         service.post(channel.id, { authorId: human, text: `line ${n}` })
       );
+      // Past Ana's turns, so the room's 👀 receipts on the posts are gone (DOR-2823).
+      await service.triggersIdle();
 
       // Forty is twice the retired 20-an-hour ceiling: every one lands.
       for (const entry of entries) {
