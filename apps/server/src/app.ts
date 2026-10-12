@@ -122,9 +122,6 @@ export function createApp(options: { admission: MainRequestAdmission }) {
   // `middleware/host-guard.ts`.
   app.use('/api', hostGuard);
 
-  // Preserve signed webhook bytes before JSON consumes the stream. This only
-  // parses: sessionGate and the Relay receiver still own authorization/dispatch.
-  app.post('/api/relay/webhooks/:adapterId', express.raw({ type: '*/*', limit: '1mb' }));
   app.use(express.json({ limit: API_JSON_BODY_LIMIT }));
   app.use(requestLogger);
 

@@ -7,13 +7,18 @@
  * prove is a two-way chat before touching the lifecycle (spec §3.3, A3.7).
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import express from 'express';
 import request from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
-import { createRelayRouter } from '../relay.js';
+import { relayRoutesListener } from './relay-routes-listener.js';
+import type { RequestListener } from 'node:http';
 import type { RelayCore } from '@dorkos/relay';
 import type { AdapterManager } from '../../services/relay/adapter-manager.js';
 import { RoomError } from '../../services/rooms/room-errors.js';
+
+// The `/api` chain reads config (login, the host allowlist); nothing is set.
+vi.mock('../../services/core/config-manager.js', () => ({
+  configManager: { get: vi.fn().mockReturnValue(null), set: vi.fn() },
+}));
 
 const fixtureTarget = swappableServer();
 
@@ -101,7 +106,7 @@ function createLifecycle(store: ReturnType<typeof createStore>, opts?: { throwOn
 function createApp(
   store: ReturnType<typeof createStore>,
   overrides: Partial<AdapterManager> = {}
-): express.Application {
+): RequestListener {
   const adapterManager = {
     getAdapter: vi.fn().mockReturnValue({ config: { id: 'telegram-1', label: 'Telegram' } }),
     getBindingStore: vi.fn().mockReturnValue(store),
@@ -111,13 +116,7 @@ function createApp(
     ...overrides,
   } as unknown as AdapterManager;
 
-  const app = express();
-  app.use(express.json());
-  app.use(
-    '/api/relay',
-    createRelayRouter(createMockRelayCore(), adapterManager, undefined as never)
-  );
-  return app;
+  return relayRoutesListener({ relayCore: createMockRelayCore(), adapterManager });
 }
 
 describe('PATCH /bindings/:id — bridge transitions route through BridgeLifecycle (DOR-878)', () => {

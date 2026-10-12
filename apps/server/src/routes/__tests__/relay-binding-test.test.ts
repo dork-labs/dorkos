@@ -5,14 +5,18 @@
  * and rate limiting.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import express from 'express';
 import type { Server } from 'node:http';
 import request from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
-import { createRelayRouter } from '../relay.js';
+import { relayRoutesListener } from './relay-routes-listener.js';
 import type { RelayCore } from '@dorkos/relay';
 import type { AdapterManager } from '../../services/relay/adapter-manager.js';
 import type { AdapterBinding } from '@dorkos/shared/relay-schemas';
+
+// The `/api` chain reads config (login, the host allowlist); nothing is set.
+vi.mock('../../services/core/config-manager.js', () => ({
+  configManager: { get: vi.fn().mockReturnValue(null), set: vi.fn() },
+}));
 
 const target = swappableServer();
 
@@ -80,21 +84,12 @@ function createMockAdapterManager(overrides?: Partial<AdapterManager>): AdapterM
 }
 
 function createTestApp(adapterManager?: AdapterManager): Server {
-  const app = express();
-  app.use(express.json());
-  app.use(
-    '/api/relay',
-    createRelayRouter(
-      createMockRelayCore() as unknown as RelayCore,
-      adapterManager as AdapterManager | undefined
-    )
+  return target.mount(
+    relayRoutesListener({
+      relayCore: createMockRelayCore() as unknown as RelayCore,
+      adapterManager,
+    })
   );
-  app.use(
-    (err: Error, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
-      res.status(500).json({ error: err.message });
-    }
-  );
-  return target.mount(app);
 }
 
 // ---------------------------------------------------------------------------

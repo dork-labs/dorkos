@@ -26,7 +26,7 @@
  *
  * @module routes/unclaimed-chats
  */
-import { Router } from 'express';
+import { Hono } from 'hono';
 import { z } from 'zod';
 import { SessionStrategySchema, ChannelTypeSchema } from '@dorkos/shared/relay-schemas';
 import { PermissionModeSchema } from '@dorkos/shared/schemas';
@@ -35,13 +35,17 @@ import type { UnclaimedChatStore } from '../services/relay/unclaimed-chat-store.
 import type { BridgeLifecycle } from '../services/relay/chat-bridge/index.js';
 import { RoomError } from '../services/rooms/room-errors.js';
 import { bridgeChatTypeForBinding } from './relay-adapters.js';
+import type { ApiEnv } from '../http/api-chain.js';
+import { readJsonBody } from '../http/request-body.js';
+import { readQuery } from '../http/request-query.js';
+import { validationFailureBody } from '../lib/route-utils.js';
 
 /** Minimal mesh lookup the claim route needs to validate an agent exists. */
 export interface UnclaimedChatsMeshLike {
   getProjectPath(agentId: string): string | undefined;
 }
 
-/** Constructor dependencies for {@link createUnclaimedChatsRouter}. */
+/** Constructor dependencies for {@link createUnclaimedChatsRoutes}. */
 export interface UnclaimedChatsRouterDeps {
   /** The durable claim-feed store. */
   store: UnclaimedChatStore;
@@ -84,39 +88,36 @@ const ClaimRequestSchema = z.object({
 });
 
 /**
- * Create the unclaimed-chats router.
+ * Create the unclaimed-chats routes.
  *
  * @param deps - Injected store + binding store; see {@link UnclaimedChatsRouterDeps}.
- * @returns An Express router to mount at `/api/relay/unclaimed-chats`.
+ * @returns The routes, to mount at `/api/relay/unclaimed-chats`.
  */
-export function createUnclaimedChatsRouter(deps: UnclaimedChatsRouterDeps): Router {
-  const router = Router();
+export function createUnclaimedChatsRoutes(deps: UnclaimedChatsRouterDeps): Hono<ApiEnv> {
+  const router = new Hono<ApiEnv>();
   const { store, bindingStore, meshCore, lifecycle, leaveChat } = deps;
 
-  router.get('/', (req, res) => {
-    const statusParam = req.query.status;
+  router.get('/', (c) => {
+    const statusParam = readQuery(c).status;
     const status =
       typeof statusParam === 'string' &&
       ['pending', 'claimed', 'ignored', 'blocked'].includes(statusParam)
         ? (statusParam as 'pending' | 'claimed' | 'ignored' | 'blocked')
         : 'pending';
-    res.json({ chats: store.list(status) });
+    return c.json({ chats: store.list(status) });
   });
 
-  router.post('/:id/claim', async (req, res) => {
-    const chat = store.getById(req.params.id);
+  router.post('/:id/claim', async (c) => {
+    const chat = store.getById(c.req.param('id'));
     if (!chat) {
-      res.status(404).json({ error: 'Unclaimed chat not found' });
-      return;
+      return c.json({ error: 'Unclaimed chat not found' }, 404);
     }
-    const result = ClaimRequestSchema.safeParse(req.body ?? {});
+    const result = ClaimRequestSchema.safeParse(readJsonBody(c, { emptyAs: {} }));
     if (!result.success) {
-      res.status(400).json({ error: 'Validation failed', details: z.flattenError(result.error) });
-      return;
+      return c.json(validationFailureBody(result.error), 400);
     }
     if (meshCore && !meshCore.getProjectPath(result.data.agentId)) {
-      res.status(400).json({ error: `Agent '${result.data.agentId}' not found in mesh registry` });
-      return;
+      return c.json({ error: `Agent '${result.data.agentId}' not found in mesh registry` }, 400);
     }
 
     // The unclaimed row's `channelType` is subject-derived (`human-subject.ts`
@@ -147,27 +148,27 @@ export function createUnclaimedChatsRouter(deps: UnclaimedChatsRouterDeps): Rout
       // The exact race the spec calls out: a manually created binding took
       // this chat between the card being shown and the claim being clicked.
       if (err instanceof BindingConflictError) {
-        res.status(409).json({
-          error: err.message,
-          code: 'CHAT_ALREADY_BOUND',
-          conflict: {
-            bindingId: err.conflict.id,
-            agentId: err.conflict.agentId,
-            label: err.conflict.label,
+        return c.json(
+          {
+            error: err.message,
+            code: 'CHAT_ALREADY_BOUND',
+            conflict: {
+              bindingId: err.conflict.id,
+              agentId: err.conflict.agentId,
+              label: err.conflict.label,
+            },
           },
-        });
-        return;
+          409
+        );
       }
-      res.status(500).json({ error: err instanceof Error ? err.message : 'Claim failed' });
-      return;
+      return c.json({ error: err instanceof Error ? err.message : 'Claim failed' }, 500);
     }
     store.claim(chat.id, result.data.agentId);
 
     // "Answer privately" (the default): the claim above IS the whole act,
     // unchanged from before this task.
     if (!result.data.bridge) {
-      res.status(201).json({ binding });
-      return;
+      return c.json({ binding }, 201);
     }
 
     // "Answer in a channel" (spec §3.1, task 2.1): claim, binding, and bridge
@@ -179,27 +180,30 @@ export function createUnclaimedChatsRouter(deps: UnclaimedChatsRouterDeps): Rout
     // reason rides alongside it as `bridgeError` rather than failing the
     // claim (spec §3.1).
     if (!lifecycle) {
-      res.status(201).json({
-        binding,
-        bridgeError:
-          'Channels are not available on this install, so this chat was answered privately instead.',
-      });
-      return;
+      return c.json(
+        {
+          binding,
+          bridgeError:
+            'Channels are not available on this install, so this chat was answered privately instead.',
+        },
+        201
+      );
     }
 
     const typed = bridgeChatTypeForBinding(binding.platformChatType, binding.channelType);
     if ('refusal' in typed) {
-      res.status(201).json({ binding, bridgeError: typed.refusal });
-      return;
+      return c.json({ binding, bridgeError: typed.refusal }, 201);
     }
 
     const agentPath = meshCore?.getProjectPath(result.data.agentId);
     if (!agentPath) {
-      res.status(201).json({
-        binding,
-        bridgeError: `Agent '${result.data.agentId}' not found in mesh registry`,
-      });
-      return;
+      return c.json(
+        {
+          binding,
+          bridgeError: `Agent '${result.data.agentId}' not found in mesh registry`,
+        },
+        201
+      );
     }
 
     try {
@@ -229,45 +233,40 @@ export function createUnclaimedChatsRouter(deps: UnclaimedChatsRouterDeps): Rout
           : err instanceof Error
             ? err.message
             : 'Bridge failed';
-      res.status(201).json({ binding, bridgeError: message });
-      return;
+      return c.json({ binding, bridgeError: message }, 201);
     }
 
     // The lifecycle flipped `bridge`/`roomId` on the binding; read it back so
     // the response carries the room the person is about to land in.
     const bridged = bindingStore.getById(binding.id) ?? binding;
-    res.status(201).json({ binding: bridged });
+    return c.json({ binding: bridged }, 201);
   });
 
-  router.post('/:id/ignore', (req, res) => {
-    const chat = store.getById(req.params.id);
+  router.post('/:id/ignore', (c) => {
+    const chat = store.getById(c.req.param('id'));
     if (!chat) {
-      res.status(404).json({ error: 'Unclaimed chat not found' });
-      return;
+      return c.json({ error: 'Unclaimed chat not found' }, 404);
     }
     store.ignore(chat.id);
-    res.status(204).end();
+    return c.body(null, 204);
   });
 
-  router.post('/:id/block', (req, res) => {
-    const chat = store.getById(req.params.id);
+  router.post('/:id/block', (c) => {
+    const chat = store.getById(c.req.param('id'));
     if (!chat) {
-      res.status(404).json({ error: 'Unclaimed chat not found' });
-      return;
+      return c.json({ error: 'Unclaimed chat not found' }, 404);
     }
     store.block(chat.id);
-    res.status(204).end();
+    return c.body(null, 204);
   });
 
-  router.post('/:id/leave', async (req, res) => {
-    const chat = store.getById(req.params.id);
+  router.post('/:id/leave', async (c) => {
+    const chat = store.getById(c.req.param('id'));
     if (!chat) {
-      res.status(404).json({ error: 'Unclaimed chat not found' });
-      return;
+      return c.json({ error: 'Unclaimed chat not found' }, 404);
     }
     if (!leaveChat) {
-      res.status(501).json({ error: 'This adapter cannot leave a chat on its platform yet.' });
-      return;
+      return c.json({ error: 'This adapter cannot leave a chat on its platform yet.' }, 501);
     }
     try {
       // The platform call runs BEFORE the row is touched: if it throws, the
@@ -275,8 +274,7 @@ export function createUnclaimedChatsRouter(deps: UnclaimedChatsRouterDeps): Rout
       // silently hiding a chat the bot never actually left.
       await leaveChat(chat.adapterId, chat.chatId);
     } catch (err) {
-      res.status(500).json({ error: err instanceof Error ? err.message : 'Leave failed' });
-      return;
+      return c.json({ error: err instanceof Error ? err.message : 'Leave failed' }, 500);
     }
     // Leaving is stronger than Block, not a second name for it: the bot is no
     // longer in the chat at all, so nothing further CAN arrive. `block` is the
@@ -284,7 +282,7 @@ export function createUnclaimedChatsRouter(deps: UnclaimedChatsRouterDeps): Rout
     // new status is needed to say a platform-level thing the store never has
     // to enforce itself.
     store.block(chat.id);
-    res.status(204).end();
+    return c.body(null, 204);
   });
 
   return router;

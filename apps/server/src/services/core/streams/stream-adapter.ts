@@ -3,11 +3,12 @@
  *
  * @module services/core/streams/stream-adapter
  */
+import type { ServerResponse } from 'node:http';
 import type { Response } from 'express';
 import type { StreamEvent } from '@dorkos/shared/types';
 
-/** Initialize an Express response for SSE streaming with appropriate headers. */
-export function initSSEStream(res: Response): void {
+/** Initialize a response for SSE streaming with appropriate headers. */
+export function initSSEStream(res: Pick<ServerResponse, 'writeHead'>): void {
   res.writeHead(200, {
     'Content-Type': 'text/event-stream',
     'Cache-Control': 'no-cache',

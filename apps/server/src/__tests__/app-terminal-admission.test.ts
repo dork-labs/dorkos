@@ -251,7 +251,7 @@ describe('main HTTP admission through the real app', () => {
     expect(mounts).toContain('/api/projects');
     expect(mounts).toContain('/api/auth/admission-fixture');
     expect(mounts).toContain('/api/connectors/webhooks/admission-fixture');
-    expect(mounts).toContain('/api/relay/webhooks/admission-fixture');
+    expect(mounts).toContain('/api/relay');
     expect(mounts).toContain('/api/canvas/docs');
     expect(mounts).toContain('/api/audit');
     expect(mounts).toContain('/api/session-locations');
@@ -276,7 +276,11 @@ describe('main HTTP admission through the real app', () => {
     // same `/` mount on Hono (`routes/a2a.ts`, DOR-2809), so they are asked for
     // by hand below.
     expect(mounts).toContain('/');
-    expect(mounts).toHaveLength(68);
+    // 68 -> 67: the signed Relay webhook is no longer its own Express parser
+    // mount; it is a route of the `/api/relay` group on Hono, whose raw bytes
+    // a body rule keeps (`routes/relay-webhooks.ts`), so it is asked for by
+    // hand below.
+    expect(mounts).toHaveLength(67);
     const byHand = [
       '/',
       '/x/fixture',
@@ -287,6 +291,7 @@ describe('main HTTP admission through the real app', () => {
       '/.well-known/agent-card.json',
       '/.well-known/agent.json',
       '/a2a',
+      '/api/relay/webhooks/admission-fixture',
     ];
     for (const mount of [...mounts, ...byHand, '/unknown']) {
       expectTerminal(

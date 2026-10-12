@@ -23,13 +23,12 @@ import {
   type RelayCore,
   type RelayPublisher,
 } from '@dorkos/relay';
-import express from 'express';
 import { env } from '../env.js';
-import { errorHandler } from '../middleware/error-handler.js';
-import { createAdapterRouter } from '../routes/relay-adapters.js';
+import { createRelayWebhookRoutes, relayWebhookBodyRule } from '../routes/relay-webhooks.js';
 import { createApp, finalizeApp } from '../app.js';
 import { composedListener } from '../http/__tests__/composed-listener.js';
-import { createRelayRouter } from '../routes/relay.js';
+import { honoGroupListener } from '../http/__tests__/hono-group-listener.js';
+import type { HonoApiDeps } from '../http/hono-api.js';
 import type { AdapterManager } from '../services/relay/adapter-manager.js';
 import { MainRequestAdmission } from '../services/core/lifecycle/main-request-admission.js';
 import { initConfigManager, configManager } from '../services/core/config-manager.js';
@@ -73,6 +72,19 @@ function signed(
     'X-Timestamp': timestamp,
     'X-Nonce': nonce,
   };
+}
+
+/** The Relay routes over the fixture publisher and manager, as the server hands them over. */
+function relayDeps(): HonoApiDeps {
+  return { relay: { relayCore: publisher as unknown as RelayCore, adapterManager: manager } };
+}
+
+/** The webhook receiver alone, behind the `/api` chain and its raw-bytes body rule. */
+function standaloneReceiver() {
+  return honoGroupListener(
+    { path: '/api/relay', routes: createRelayWebhookRoutes(manager) },
+    { bodyRules: [relayWebhookBodyRule] }
+  );
 }
 
 /** Send literal UTF-8 so application/json does not reserialize a Buffer wrapper. */
@@ -122,9 +134,8 @@ beforeEach(async () => {
   app.post('/api/ordinary-json-probe', (req, res) =>
     res.json({ body: req.body, isBuffer: Buffer.isBuffer(req.body) })
   );
-  app.use('/api/relay', createRelayRouter(publisher as unknown as RelayCore, manager));
   finalizeApp(app);
-  target.mount(composedListener(app, admission));
+  target.mount(composedListener(app, admission, relayDeps()));
 });
 
 afterEach(async () => {
@@ -251,12 +262,7 @@ describe('signed Relay JSON through the finalized application', () => {
   it.each(['full-app', 'standalone-receiver'] as const)(
     'accepts more than 100kb but below 1mb in %s',
     async (composition) => {
-      if (composition === 'standalone-receiver') {
-        const app = express();
-        app.use('/api/relay', createAdapterRouter(manager));
-        app.use(errorHandler);
-        target.mount(app);
-      }
+      if (composition === 'standalone-receiver') target.mount(standaloneReceiver());
       const padding = 'x'.repeat(200 * 1024);
       const body = Buffer.from(JSON.stringify({ padding }));
       expect(body.length).toBeGreaterThan(100 * 1024);
@@ -273,12 +279,7 @@ describe('signed Relay JSON through the finalized application', () => {
   it.each(['full-app', 'standalone-receiver'] as const)(
     'refuses more than 1mb before adapter verification in %s',
     async (composition) => {
-      if (composition === 'standalone-receiver') {
-        const app = express();
-        app.use('/api/relay', createAdapterRouter(manager));
-        app.use(errorHandler);
-        target.mount(app);
-      }
+      if (composition === 'standalone-receiver') target.mount(standaloneReceiver());
       const body = Buffer.from(JSON.stringify({ padding: 'x'.repeat(1024 * 1024) }));
       const headers = signed(body);
       const result = await send(body, headers);
@@ -381,10 +382,10 @@ describe('signed Relay JSON through the finalized application', () => {
       // The same listener/observer has a successful counterpart. Admission is
       // terminal, so build a fresh admitted app only for that control.
       if (gate === 'admission') {
-        const controlApp = createApp({ admission: new MainRequestAdmission() });
-        controlApp.use('/api/relay', createRelayRouter(publisher as unknown as RelayCore, manager));
+        const controlAdmission = new MainRequestAdmission();
+        const controlApp = createApp({ admission: controlAdmission });
         finalizeApp(controlApp);
-        target.mount(controlApp);
+        target.mount(composedListener(controlApp, controlAdmission, relayDeps()));
       }
       expect((await send(EXACT, headers)).status).toBe(200);
       expect(inbound).toHaveBeenCalledTimes(1);

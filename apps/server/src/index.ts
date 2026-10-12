@@ -123,7 +123,6 @@ import { TaskReconciler } from './services/tasks/task-reconciler.js';
 import { TaskRegistrar } from './services/tasks/task-registrar.js';
 import { setTasksInitError } from './services/tasks/task-state.js';
 import { RelayCore, AdapterRegistry, SignalEmitter, type AgentRuntimeLike } from '@dorkos/relay';
-import { createRelayRouter } from './routes/relay.js';
 import { ConnectorEventAccessQueryService } from './services/connectors/events/access-query-service.js';
 import type { ConnectorRoutesDeps } from './routes/connectors.js';
 import type { ConnectorSignedIngress } from './services/connectors/events/signed-ingress.js';
@@ -139,7 +138,6 @@ import { ManagedConnectorEventPullService } from './services/connectors/events/m
 import { ConnectorEventDeliveryService } from './services/connectors/events/delivery-service.js';
 import { ConnectorEventNativeDestination } from './services/connectors/events/channel-destination.js';
 
-import { createUnclaimedChatsRouter } from './routes/unclaimed-chats.js';
 import { ConnectorRegistry } from './services/connectors/registry.js';
 import { ConnectorCatalogCache } from './services/connectors/resources/catalog-cache.js';
 import { createRawMcpPendingConnectResolver } from './services/connectors/resources/raw-mcp-pending-connect.js';
@@ -3831,9 +3829,14 @@ async function start() {
   deps.connectors = connectorRoutes;
   mountedRouters.push('connectors');
 
-  // Mount Relay routes if enabled
+  // Relay routes, only when Relay is enabled and started.
   if (relayEnabled && relayCore) {
-    app.use('/api/relay', createRelayRouter(relayCore, adapterManager, traceStore));
+    deps.relay = {
+      relayCore,
+      ...(adapterManager && { adapterManager }),
+      ...(traceStore && { traceStore }),
+      activity: activityService,
+    };
     // The claim feed (connection-scoping spec §Part 3) — mounted only when
     // the store was actually wired (relay enabled + binding subsystem up).
     const unclaimedChatsStore = adapterManager?.getUnclaimedChats();
@@ -3850,24 +3853,18 @@ async function start() {
       // needs (and so TS can see the closure below is over a value already
       // known non-null, not the outer optional).
       const leaveChatForClaims = adapterManager;
-      app.use(
-        '/api/relay/unclaimed-chats',
-        createUnclaimedChatsRouter({
-          store: unclaimedChatsStore,
-          bindingStore: bindingStoreForClaims,
-          ...(meshCore && { meshCore }),
-          ...(lifecycleForClaims && { lifecycle: lifecycleForClaims }),
-          ...(leaveChatForClaims && {
-            leaveChat: (adapterId: string, chatId: string) =>
-              leaveChatForClaims.leaveChat(adapterId, chatId),
-          }),
-        })
-      );
+      deps.unclaimedChats = {
+        store: unclaimedChatsStore,
+        bindingStore: bindingStoreForClaims,
+        ...(meshCore && { meshCore }),
+        ...(lifecycleForClaims && { lifecycle: lifecycleForClaims }),
+        ...(leaveChatForClaims && {
+          leaveChat: (adapterId: string, chatId: string) =>
+            leaveChatForClaims.leaveChat(adapterId, chatId),
+        }),
+      };
     }
     setRelayEnabled(true);
-
-    // Store relayCore on app.locals so the sessions router can access it
-    app.locals.relayCore = relayCore;
 
     // Wire relay events to unified SSE stream
     relayCore.subscribe('relay.human.console.>', (envelope) => {

@@ -82,6 +82,8 @@ import { createProfileRouter, type ProfileRouterDeps } from '../routes/profile.j
 import projectRoutes from '../routes/projects.js';
 import { createRuntimesRoutes } from '../routes/runtimes.js';
 import { createPushRoutes, type PushRouterDeps } from '../routes/push.js';
+import { createRelayRoutes, type RelayRouteDeps } from '../routes/relay.js';
+import { relayWebhookBodyRule } from '../routes/relay-webhooks.js';
 import readCursorRoutes from '../routes/read-cursors.js';
 import { createRemoteAccessRoutes } from '../routes/remote-access.js';
 import { createSearchRoutes, type SearchRouterDeps } from '../routes/search.js';
@@ -92,6 +94,10 @@ import { createTasksRoutes, type TasksRouterDeps } from '../routes/tasks.js';
 import { createSystemRoutes, type SystemRouteDeps } from '../routes/system.js';
 import { createTeamRoutes, type TeamRouterDeps } from '../routes/team.js';
 import { createTemplateRoutes } from '../routes/templates.js';
+import {
+  createUnclaimedChatsRoutes,
+  type UnclaimedChatsRouterDeps,
+} from '../routes/unclaimed-chats.js';
 import { createTestControlRoutes, type TestControlDeps } from '../routes/test-control.js';
 import tunnelRoutes from '../routes/tunnel.js';
 import uploadRoutes from '../routes/uploads.js';
@@ -200,6 +206,17 @@ export interface ComposedGroupDeps {
    * A2A is on, Relay and the mesh started, and the exposure guard allowed it.
    */
   a2a?: A2aRouteDeps;
+  /**
+   * The message bus, its connections and chat routes, and the webhook receiver
+   * (`/api/relay`). Only handed over when Relay is enabled and started.
+   */
+  relay?: RelayRouteDeps;
+  /**
+   * The claim feed (`/api/relay/unclaimed-chats`). Only handed over with
+   * {@link ComposedGroupDeps.relay}, and only when the binding subsystem came
+   * up with its store.
+   */
+  unclaimedChats?: UnclaimedChatsRouterDeps;
 }
 
 /** What the moved route groups read from the running server, handed over by `index.ts`. */
@@ -226,11 +243,14 @@ export interface HonoApiOptions {
 export function createHonoApi(options: HonoApiOptions): Hono<ApiEnv> {
   const auth = getAuth();
   const deps = options.deps ?? {};
+  const docEventBodyRule = canvasDocBodyRule(() => deps.docChannel?.metrics);
   const app = createApiApp({
     admission: options.admission,
     // Feedback carries an opt-in screenshot, so it may be larger than the app-wide
-    // limit; document events are page envelopes, so they may be smaller.
-    bodyRules: [feedbackBodyRule, canvasDocBodyRule(() => deps.docChannel?.metrics)],
+    // limit; document events are page envelopes, so they may be smaller. A
+    // signed Relay webhook keeps its raw bytes, whether or not Relay is on, as
+    // Express parsed it.
+    bodyRules: [feedbackBodyRule, docEventBodyRule, relayWebhookBodyRule],
     beforeBodyParsing: (early) => {
       if (auth) mountBetterAuth(early, { auth, maxAttempts: env.DORKOS_AUTH_SIGNIN_RATE_LIMIT });
       if (deps.connectorEventIngress) {
@@ -342,6 +362,13 @@ export function createHonoApi(options: HonoApiOptions): Hono<ApiEnv> {
     app.route('/api/capabilities', createCapabilitiesInvokeRoutes(deps.capabilities));
   }
   app.route('/api', createApiDocsRoutes());
+  if (deps.relay) {
+    app.route('/api/relay', createRelayRoutes(deps.relay));
+    // Its own paths only, none of which the Relay routes register.
+    if (deps.unclaimedChats) {
+      app.route('/api/relay/unclaimed-chats', createUnclaimedChatsRoutes(deps.unclaimedChats));
+    }
+  }
   if (deps.mcp) app.route('/mcp', createMcpRoutes(deps.mcp));
   // Its routes carry their whole paths, two of them outside `/a2a`.
   if (deps.a2a) app.route('/', createA2aRoutes(deps.a2a));

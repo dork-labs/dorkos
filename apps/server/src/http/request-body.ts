@@ -40,10 +40,9 @@ type NodeBodyParser = (
 /**
  * A body parser for some requests only, chosen INSTEAD of the app-wide one.
  *
- * Feedback brings a larger limit for its screenshots and document events a
- * smaller one for page envelopes (`http/hono-api.ts` hands both over). The
- * Express chain still mounts one of its own ahead of `express.json`, raw bytes
- * for a signed relay webhook; a route group brings its rule here when it moves.
+ * Feedback brings a larger limit for its screenshots, document events a
+ * smaller one for page envelopes, and a signed Relay webhook its raw bytes
+ * (`http/hono-api.ts` hands all three over).
  */
 export interface BodyRule {
   /**

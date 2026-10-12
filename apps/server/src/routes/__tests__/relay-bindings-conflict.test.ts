@@ -9,17 +9,21 @@
  * @module routes/__tests__/relay-bindings-conflict
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import express from 'express';
 import request from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { RelayCore } from '@dorkos/relay';
-import { createRelayRouter } from '../relay.js';
+import { relayRoutesListener } from './relay-routes-listener.js';
 import { BindingStore } from '../../services/relay/binding-store.js';
 import { BindingRouter, type RelayCoreLike } from '../../services/relay/binding-router.js';
 import type { AdapterManager } from '../../services/relay/adapter-manager.js';
+
+// The `/api` chain reads config (login, the host allowlist); nothing is set.
+vi.mock('../../services/core/config-manager.js', () => ({
+  configManager: { get: vi.fn().mockReturnValue(null), set: vi.fn() },
+}));
 
 const fixtureTarget = swappableServer();
 const fixtureServer = fixtureTarget.server;
@@ -35,7 +39,6 @@ describe('POST/PATCH /bindings conflict + POST /bindings/:id/move', () => {
   let tmpDir: string;
   let bindingStore: BindingStore;
   let bindingRouter: BindingRouter;
-  let app: express.Application;
 
   beforeEach(async () => {
     tmpDir = mkdtempSync(join(tmpdir(), 'dorkos-binding-conflict-'));
@@ -59,14 +62,12 @@ describe('POST/PATCH /bindings conflict + POST /bindings/:id/move', () => {
       getMeshCore: vi.fn().mockReturnValue({ getProjectPath: () => '/proj/agent-a' }),
     } as unknown as AdapterManager;
 
-    app = express();
-    app.use(express.json());
-    app.use(
-      '/api/relay',
-      createRelayRouter(createMockRelayCore() as unknown as RelayCore, adapterManager, undefined)
+    fixtureTarget.mount(
+      relayRoutesListener({
+        relayCore: createMockRelayCore() as unknown as RelayCore,
+        adapterManager,
+      })
     );
-
-    fixtureTarget.mount(app);
   });
 
   afterEach(async () => {
