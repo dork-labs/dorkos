@@ -24,6 +24,8 @@ let updateKind: 'command' | 'desktop-install-failed' = 'command';
 let identityVisible = false;
 let profileVisible = false;
 let promoQualifies = false;
+/** What the slot told the two prompts about the getting-started card. */
+let promptOptions: Array<{ gettingStartedCardShown?: boolean } | undefined> = [];
 
 // A settled panel, so these cases are about what they are named after rather
 // than about the boot gate. The gate's own behaviour is covered in
@@ -38,8 +40,14 @@ vi.mock('@/layers/features/onboarding', () => ({
     dismiss: vi.fn(),
     isLoading: false,
   }),
-  useIdentityPrompt: () => ({ visible: identityVisible }),
-  useProfilePrompt: () => ({ visible: profileVisible }),
+  useIdentityPrompt: (options?: { gettingStartedCardShown?: boolean }) => {
+    promptOptions.push(options);
+    return { visible: identityVisible };
+  },
+  useProfilePrompt: (options?: { gettingStartedCardShown?: boolean }) => {
+    promptOptions.push(options);
+    return { visible: profileVisible };
+  },
   ProgressCard: () => <div data-testid="card-getting-started" />,
   IdentityPromptCard: () => <div data-testid="card-identity-prompt" />,
   ProfilePromptCard: () => <div data-testid="card-profile-prompt" />,
@@ -105,6 +113,7 @@ beforeEach(() => {
   identityVisible = false;
   profileVisible = false;
   promoQualifies = false;
+  promptOptions = [];
 });
 
 afterEach(() => cleanup());
@@ -122,6 +131,21 @@ describe('SidebarBottomSlot priority', () => {
     gettingStarted = updateReady = true;
     render(<SidebarBottomSlot model={{ zones: [], gettingStartedPending: true }} />);
     expect(drawn()).toBe('update');
+  });
+
+  it('tells the prompts the card is hidden, so they can take the slot (DOR-2845)', () => {
+    // The prompts wait while the card shows. Told the unheld value, they would
+    // wait for a card nobody can see, and the name question went unasked.
+    gettingStarted = true;
+    render(<SidebarBottomSlot model={{ zones: [], gettingStartedPending: true }} />);
+    expect(promptOptions).not.toHaveLength(0);
+    expect(promptOptions.every((o) => o?.gettingStartedCardShown === false)).toBe(true);
+  });
+
+  it('tells the prompts the card is showing when it is', () => {
+    gettingStarted = true;
+    render(<SidebarBottomSlot model={EMPTY_MODEL} />);
+    expect(promptOptions.every((o) => o?.gettingStartedCardShown === true)).toBe(true);
   });
 
   it('draws no getting-started card at all while the zone still has suggestions', () => {

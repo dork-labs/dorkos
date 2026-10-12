@@ -16,8 +16,8 @@
  *
  * **One "Getting started" list at a time** (DOR-2845). While the panel's own
  * Getting started zone still has a suggestion, the card here steps aside and
- * the next one in line takes the slot. The card comes back once the zone has
- * nothing left to suggest.
+ * the next one in line takes the slot, the name and role prompts included. The
+ * card comes back once the zone has nothing left to suggest.
  *
  * @module features/dashboard-sidebar/ui/bottom-slot/SidebarBottomSlot
  */
@@ -48,16 +48,19 @@ import { UpdatePill } from './UpdatePill';
  */
 export function SidebarBottomSlot({ model }: { model: SidebarModel }) {
   const { shouldShowGettingStarted, dismiss: dismissOnboarding } = useOnboarding();
+  const gettingStartedCardShown = shouldShowGettingStarted && !model.gettingStartedPending;
   const update = useUpdateReady();
-  const identityPrompt = useIdentityPrompt();
-  const prompt = useProfilePrompt();
+  // The prompts wait for the card, so they are told whether it is really on
+  // screen — or, held back for the list, it would ask them nowhere.
+  const identityPrompt = useIdentityPrompt({ gettingStartedCardShown });
+  const prompt = useProfilePrompt({ gettingStartedCardShown });
   const promo = usePromoCandidate('dashboard-sidebar');
   const boot = useBootState();
 
   const candidates: BottomSlotCandidate[] = [
     {
       id: 'getting-started',
-      show: shouldShowGettingStarted && !model.gettingStartedPending,
+      show: gettingStartedCardShown,
       render: () => <ProgressCard onDismiss={dismissOnboarding} />,
     },
     {
