@@ -25,7 +25,8 @@
  * so whatever it tokenizes to, it tokenizes to the same thing every time.
  *
  * On that basis the stable half was 3,961 B and the memory block 1,997 B, measured
- * before `<working_rules>` added about 1.5 KB to every stable half. (DOR-477
+ * before `<working_rules>` added 1,868 B to every stable half (1,591 B when it
+ * landed, plus 277 B for the discovery rule, DOR-2852). (DOR-477
  * estimated the block at ~2.2 KB from file sizes alone; the real figure is higher
  * because `<session_model>`, `<user_profile>` and `<env>` are in it too.) Across a
  * 20-turn thread the cumulative injected prefix falls from 1,251,600 B to
