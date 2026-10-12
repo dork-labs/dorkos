@@ -1,6 +1,7 @@
 ---
 covers:
   - 'feat(sessions): a chat can be set to never ask, refusing instead (DOR-2838)'
+  - 'fix(sessions): a chat set to never ask still asks nobody under a stricter ceiling'
 ---
 
 ### Added
