@@ -16,6 +16,7 @@ import { appRoutes } from '@/layers/shared/lib';
  */
 export function RoomPostMark({ stamp }: { stamp: RoomMessageStamp }) {
   const navigate = useNavigate();
+  const room = stamp.roomLabel ?? 'a room';
   return (
     <span
       data-testid="room-post-mark"
@@ -25,10 +26,11 @@ export function RoomPostMark({ stamp }: { stamp: RoomMessageStamp }) {
       <span>in</span>
       <button
         type="button"
+        aria-label={`Open ${room}`}
         onClick={() => void navigate({ ...appRoutes.channels(), search: { id: stamp.roomId } })}
         className="focus-ring text-foreground/80 hover:text-foreground max-w-48 truncate underline-offset-4 hover:underline"
       >
-        {stamp.roomLabel ?? 'a room'}
+        {room}
       </button>
     </span>
   );

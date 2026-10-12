@@ -134,7 +134,7 @@ export function resolveMessageAuthor(
   // A room post that opened a turn in a room-attached chat (DOR-2113): whoever
   // the room says posted it. Only the person's own room posts read as theirs.
   const roomPost = message.role === 'user' ? message.roomMessage : undefined;
-  if (roomPost && !roomPost.author?.you) return roomAuthor(roomPost.author, ctx);
+  if (roomPost && !roomPost.author?.you) return roomAuthor(roomPost, ctx);
 
   if (message.role === 'user') {
     return {
@@ -165,18 +165,20 @@ export function resolveMessageAuthor(
 /**
  * The identity of a room member who posted the message a room turn answered.
  *
- * @param author - The room's record of who posted it, or undefined when the
- *   room no longer has the entry.
+ * @param post - The server's stamp. Its author is absent when the room no
+ *   longer has the entry.
  * @param ctx - Caller-resolved identity, for an agent's face by its Mesh id.
  */
 function roomAuthor(
-  author: NonNullable<ChatMessage['roomMessage']>['author'],
+  post: NonNullable<ChatMessage['roomMessage']>,
   ctx: MessageAuthorContext
 ): MessageAuthor {
+  const { author } = post;
   if (!author) {
+    // Keyed by the entry, so two lost authors never share one header.
     return {
       kind: 'human',
-      id: `${ROOM_AUTHOR_ID_PREFIX}unknown`,
+      id: `${ROOM_AUTHOR_ID_PREFIX}entry:${post.entryId}`,
       displayName: UNKNOWN_ROOM_AUTHOR_NAME,
     };
   }

@@ -32,9 +32,10 @@ export function createRoomMessageLookup(
     const room = store.getRoom(roomId);
     const entry = room ? store.getEntryById(roomId, entryId) : null;
     const author = entry ? authors.getById(entry.authorId) : null;
-    if (!room || !author) return null;
+    if (!room || !entry || !author) return null;
     const ref = toAuthorRef(author);
     return {
+      text: entry.body.text,
       roomLabel: room.kind === 'channel' && room.slug ? `#${room.slug}` : room.title,
       author: {
         id: ref.id,

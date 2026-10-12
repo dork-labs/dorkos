@@ -32,13 +32,18 @@ export interface RoomTurnRef {
   entryId: string;
 }
 
+/** Where the ids line starts. It is in the preamble, ahead of every quoted message. */
+const IDS_LINE_START = /^Ids here: /m;
+
 /**
  * The ids line, as `idsLine` writes it on a turn that answers a message. Ids
  * are server-minted and pass through `sanitizeIdentity`, so neither holds a
- * space or a comma.
+ * space or a comma. Matched against the FIRST ids line only: on a turn that
+ * answers no message the real line has no "answering" clause, and a quoted
+ * message further down could carry a line that does.
  */
 const IDS_LINE =
-  /^Ids here: this room is ([^\s,]+), the message you are answering is ([^\s,]+), and /m;
+  /^Ids here: this room is ([^\s,]+), the message you are answering is ([^\s,]+), and /;
 
 /** Tags a leading run of context may hold before the room block. */
 const LEADING_TAGS: ReadonlySet<string> = new Set([
@@ -63,7 +68,9 @@ export function readRoomTurnRef(text: string): RoomTurnRef | null {
     const closeAt = text.indexOf(close, tagEnd + 1);
     if (closeAt < 0) return null;
     if (tag === CONTEXT_TAG.room_context) {
-      const match = IDS_LINE.exec(text.slice(tagEnd + 1, closeAt));
+      const body = text.slice(tagEnd + 1, closeAt);
+      const start = IDS_LINE_START.exec(body);
+      const match = start ? IDS_LINE.exec(body.slice(start.index)) : null;
       return match ? { roomId: match[1]!, entryId: match[2]! } : null;
     }
     pos = skipSpace(text, closeAt + close.length);

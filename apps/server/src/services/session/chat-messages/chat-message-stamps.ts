@@ -20,7 +20,7 @@ import type { HistoryMessage } from '@dorkos/shared/types';
 import type { SessionEvent } from '@dorkos/shared/session-stream';
 import type { ChatMessageRow } from '@dorkos/db';
 import { getChatMessageStore, type ChatMessageStore } from './chat-message-store.js';
-import { completeRoomStamp } from './room-message-stamps.js';
+import { withRoomStamp } from './room-message-stamps.js';
 
 /**
  * The wire stamp for one stored chat message.
@@ -88,7 +88,7 @@ export function stampHistory<
     let next = message;
     const stamps = store ? stampsFor(store, sessionIds, message.content) : [];
     if (stamps.length > 0) next = { ...next, chatMessages: stamps };
-    if (next.roomMessage) next = { ...next, roomMessage: completeRoomStamp(next.roomMessage) };
+    next = withRoomStamp(next, message.content);
     if (next !== message) changed = true;
     return next;
   });
@@ -113,8 +113,7 @@ export function stampEvent(
     const stamps =
       store && event.userMessage ? stampsFor(store, sessionIds, event.userMessage) : [];
     if (stamps.length > 0) next = { ...next, chatMessages: stamps };
-    if (next.roomMessage) next = { ...next, roomMessage: completeRoomStamp(next.roomMessage) };
-    return next;
+    return withRoomStamp(next, event.userMessage ?? '');
   }
   if (event.type === 'turn_input' && store) {
     const stamps = stampsFor(store, sessionIds, event.content);

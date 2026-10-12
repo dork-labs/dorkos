@@ -91,7 +91,7 @@ describe('a room post in a room-attached chat', () => {
 
   it('opens the room from the mark', () => {
     renderRow(userMessage(FROM_AGENT));
-    screen.getByRole('button', { name: '#dorkos' }).click();
+    screen.getByRole('button', { name: /#dorkos/ }).click();
     expect(navigate).toHaveBeenCalledWith(
       expect.objectContaining({ to: '/channels', search: { id: 'room-dorkos' } })
     );

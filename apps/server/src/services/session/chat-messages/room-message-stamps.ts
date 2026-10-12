@@ -23,6 +23,8 @@ export interface RoomMessageFacts {
   roomLabel: string;
   /** Who posted the entry. */
   author: RoomMessageAuthor;
+  /** The entry's words. */
+  text: string;
 }
 
 /** Looks up one room entry, or null when the room no longer has it. */
@@ -41,16 +43,45 @@ export function setRoomMessageLookup(next: RoomMessageLookup | undefined): void 
 }
 
 /**
- * A stamp with its room and author filled in from the server's records.
+ * A stamp with its room and author filled in from the server's records, or
+ * null when the message is not that post.
+ *
+ * A turn's prompt IS its post, so the words must match. Ids read back off a
+ * stored transcript come from text, and text that only names an entry (a task
+ * prompt, or a message that opens with a block of its own) must not take that
+ * entry's author. An entry the room no longer has cannot be checked; it keeps
+ * its ids, so the message still reads as from the room and not the person.
  *
  * @param stamp - The stamp as a runtime or projector recorded it. Only its ids are read.
+ * @param content - The words the message carries.
  * @param look - The lookup; the wired one when omitted.
  */
 export function completeRoomStamp(
   stamp: RoomMessageStamp,
+  content: string,
   look: RoomMessageLookup | undefined = lookup
-): RoomMessageStamp {
+): RoomMessageStamp | null {
   const ids = { roomId: stamp.roomId, entryId: stamp.entryId };
   const facts = look?.(stamp.roomId, stamp.entryId);
-  return facts ? { ...ids, roomLabel: facts.roomLabel, author: facts.author } : ids;
+  if (!facts) return ids;
+  if (facts.text.trim() !== content.trim()) return null;
+  return { ...ids, roomLabel: facts.roomLabel, author: facts.author };
+}
+
+/**
+ * A message with its room stamp completed, or with the stamp removed when the
+ * message turns out not to be that post.
+ *
+ * @param message - A user message, or a `turn_start`, that may carry a stamp.
+ * @param content - The words it carries.
+ */
+export function withRoomStamp<T extends { roomMessage?: RoomMessageStamp }>(
+  message: T,
+  content: string
+): T {
+  if (!message.roomMessage) return message;
+  const stamp = completeRoomStamp(message.roomMessage, content);
+  if (stamp) return { ...message, roomMessage: stamp };
+  const { roomMessage: _notThisPost, ...rest } = message;
+  return rest as T;
 }
