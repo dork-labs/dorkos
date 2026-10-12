@@ -643,7 +643,11 @@ contractSuite(
     {
       name: 'GET /api/runtimes/doe/inference answers nothing saved',
       path: '/api/runtimes/doe/inference',
-      expect: { status: 200, headers: JSON_TYPE, body: { inference: null, hasKey: false } },
+      expect: {
+        status: 200,
+        headers: JSON_TYPE,
+        body: { inference: null, hasKey: false, autoProtocol: null },
+      },
     },
     {
       name: 'GET /api/runtimes/doe/credits-models refuses a protocol it does not know',
@@ -942,7 +946,10 @@ describe('contract: tasks, account rules and model setup, driven by hand (login 
     });
     await check(server, {
       path: '/api/runtimes/doe/inference',
-      expect: { status: 200, body: { inference: LOCAL_INFERENCE, hasKey: false } },
+      expect: {
+        status: 200,
+        body: { inference: LOCAL_INFERENCE, hasKey: false, autoProtocol: null },
+      },
     });
   });
 
@@ -1170,7 +1177,7 @@ describe('contract: the same groups with login on', () => {
     await check(server, {
       path: '/api/runtimes/doe/inference',
       headers: apiKey,
-      expect: { status: 200, body: { inference: null, hasKey: false } },
+      expect: { status: 200, body: { inference: null, hasKey: false, autoProtocol: null } },
     });
     await check(server, {
       method: 'PUT',

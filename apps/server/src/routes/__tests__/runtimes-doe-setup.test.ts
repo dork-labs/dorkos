@@ -132,7 +132,7 @@ describe('owner authorization before DorkOS model setup effects', () => {
 });
 
 it('says which format DorkOS would pick in, and null when credits are not in use', async () => {
-  expect((await request(server).get('/doe/inference')).body).toEqual({
+  expect((await request(server).get('/api/runtimes/doe/inference')).body).toEqual({
     inference: null,
     hasKey: false,
     autoProtocol: null,
