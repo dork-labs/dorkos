@@ -1,4 +1,3 @@
-import express from 'express';
 import { createServer, type RequestListener } from 'node:http';
 import { randomUUID } from 'node:crypto';
 import { mkdtempSync, rmSync } from 'node:fs';
@@ -69,11 +68,10 @@ async function fixture() {
     configuredOwner: { ownerKind: owner.kind, ownerId: owner.installationId },
   });
   // Every connector route answers from the Hono `/api` chain, the signed
-  // ingress before any body is parsed; the offline service's own control
-  // routes stay on Express behind the front door, as the test runtime serves
-  // them.
-  const app = express();
-  let listener: RequestListener = app;
+  // ingress before any body is parsed, and the offline service's own control
+  // routes under `/api/test/composio`, as the test runtime serves them.
+  // Nothing is served until they all exist.
+  let listener: RequestListener = (_req, res) => res.writeHead(503).end();
   const server = createServer((req, res) => listener(req, res));
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
   disposers.push(async () => {
@@ -125,10 +123,9 @@ async function fixture() {
   const grants = new ConnectorEventGrantService(store, subscriptions, destinations, managed);
   const inbox = new ConnectorEventInboxStore({ db });
   const ingress = new ConnectorEventIngressService(store, inbox, settings);
-  app.use(express.json());
-  app.use('/api/test/composio', upstream.router);
   listener = honoGroupListener(
     [
+      { path: '/api/test/composio', routes: upstream.routes },
       {
         path: '/api/connectors/providers',
         routes: createConnectorProvidersRoutes({
@@ -164,7 +161,6 @@ async function fixture() {
       },
     ],
     {
-      legacy: app,
       beforeBodyParsing: (early) =>
         mountConnectorSignedIngress(early, {
           verifier: (id) => registry.resolveProviderInstance(id as never)?.events,

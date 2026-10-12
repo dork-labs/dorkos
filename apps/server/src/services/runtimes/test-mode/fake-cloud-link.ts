@@ -8,14 +8,16 @@
  * `/api/cloud/*` routes a production link uses — only the `FetchLike` network
  * dependency to `dorkos.ai` is faked, exactly like `demo-scenarios.ts` fakes
  * the agent backend. The code's approval address is a page this test server
- * serves itself ({@link createFakeCloudApprovalRouter}), so opening it never
+ * serves itself ({@link createFakeCloudApprovalRoutes}), so opening it never
  * reaches the real site, and opening it approves the code. Nothing here is wired into production — it is reachable
  * only when `DORKOS_TEST_RUNTIME=true`, and only via the gated dynamic
  * `import()` in `index.ts`'s composition root.
  *
  * @module services/runtimes/test-mode/fake-cloud-link
  */
-import { Router } from 'express';
+import { Hono } from 'hono';
+import type { ApiEnv } from '../../../http/api-chain.js';
+import { readQuery } from '../../../http/request-query.js';
 import { ManagedConnectorAccountListResponseSchema } from '@dorkos/shared/connector-managed-discovery-schemas';
 import { ManagedConnectorEventPullResponseSchema } from '@dorkos/shared/connector-event-schemas';
 import type { FetchLike, DeviceCodeResponse } from '../../core/auth/cloud-link-client.js';
@@ -174,15 +176,16 @@ const APPROVED_PAGE =
  *
  * @param link - The fake link whose code the page approves.
  */
-export function createFakeCloudApprovalRouter(link: Pick<FakeCloudLink, 'approve'>): Router {
-  const router = Router();
-  router.get('/approve', (req, res) => {
-    const code = typeof req.query.code === 'string' ? req.query.code : '';
-    if (!link.approve(code)) {
-      res.status(404).type('text/plain').send('That code is not waiting for approval.');
-      return;
+export function createFakeCloudApprovalRoutes(link: Pick<FakeCloudLink, 'approve'>): Hono<ApiEnv> {
+  const router = new Hono<ApiEnv>();
+  router.get('/approve', (c) => {
+    const code = readQuery(c).code;
+    if (!link.approve(typeof code === 'string' ? code : '')) {
+      return c.body('That code is not waiting for approval.', 404, {
+        'Content-Type': 'text/plain; charset=utf-8',
+      });
     }
-    res.type('html').send(APPROVED_PAGE);
+    return c.body(APPROVED_PAGE, 200, { 'Content-Type': 'text/html; charset=utf-8' });
   });
   return router;
 }

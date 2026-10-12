@@ -1,5 +1,4 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import express from 'express';
 import request from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
 
@@ -9,19 +8,30 @@ const mockEnv = vi.hoisted(() => ({
   NODE_ENV: 'test',
   DORKOS_MANAGED_BY: undefined as 'desktop' | undefined,
 }));
-vi.mock('../../env.js', () => ({ env: mockEnv }));
+vi.mock('../../env.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../env.js')>();
+  // The rest of the `/api` chain reads the real environment.
+  return { env: Object.assign(mockEnv, { ...actual.env, ...mockEnv }) };
+});
 
-// Mock fs/promises
-vi.mock('fs/promises', () => ({
-  default: { rm: vi.fn().mockResolvedValue(undefined) },
+// The `/api` chain reads login and the host settings from here; none are set.
+vi.mock('../../services/core/config-manager.js', () => ({
+  configManager: { get: vi.fn(), getDot: vi.fn() },
 }));
 
-// Mock child_process
-vi.mock('child_process', () => ({
+// The routes' deletion and re-spawn, stubbed; everything else the `/api` chain
+// imports from these modules stays real.
+vi.mock('fs/promises', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('fs/promises')>();
+  return { ...actual, default: { ...actual, rm: vi.fn().mockResolvedValue(undefined) } };
+});
+vi.mock('child_process', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('child_process')>()),
   spawn: vi.fn(() => ({ unref: vi.fn() })),
 }));
 
-import { createAdminRouter, MANAGED_BY_DESKTOP_CODE, RESET_TOKEN_REQUIRED_CODE } from '../admin.js';
+import { createAdminRoutes, MANAGED_BY_DESKTOP_CODE, RESET_TOKEN_REQUIRED_CODE } from '../admin.js';
+import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
 import { RESET_TOKEN_TTL_MS } from '../../services/core/auth/reset-token.js';
 import { spawn } from 'child_process';
 import fs from 'fs/promises';
@@ -36,7 +46,6 @@ const DORK_HOME = '/tmp/test-dork-home';
 const mockExit = vi.spyOn(process, 'exit').mockImplementation(() => undefined as never);
 
 describe('Admin routes', () => {
-  let app: express.Express;
   let mockShutdownServices: ReturnType<typeof vi.fn>;
   let mockCloseDb: ReturnType<typeof vi.fn>;
 
@@ -45,18 +54,16 @@ describe('Admin routes', () => {
     mockEnv.DORKOS_MANAGED_BY = undefined;
     mockShutdownServices = vi.fn().mockResolvedValue(undefined);
     mockCloseDb = vi.fn();
-    app = express();
-    app.use(express.json());
-    app.use(
-      '/api/admin',
-      createAdminRouter({
-        dorkHome: DORK_HOME,
-        shutdownServices: mockShutdownServices,
-        closeDb: mockCloseDb,
+    fixtureTarget.mount(
+      honoGroupListener({
+        path: '/api/admin',
+        routes: createAdminRoutes({
+          dorkHome: DORK_HOME,
+          shutdownServices: mockShutdownServices,
+          closeDb: mockCloseDb,
+        }),
       })
     );
-
-    fixtureTarget.mount(app);
   });
 
   afterEach(() => {

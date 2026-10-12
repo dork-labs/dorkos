@@ -65,7 +65,7 @@ import { SERVER_STOPPING_BODY, SERVER_STOPPING_HEADERS } from '../middleware/ter
 import { corsAllowsOrigin, corsRefusal, warnOnWildcardCorsOrigin } from './cors-policy.js';
 import { createFirstContactMarker } from './first-contact.js';
 import { honoRequestFacts, type RequestFactsVariables } from './request-facts.js';
-import { parseRequestBody, type BodyRule } from './request-body.js';
+import { parseRequestBody, underMount, type BodyRule } from './request-body.js';
 
 /** What the chain puts on `c.var`, under the names `res.locals` uses on Express. */
 export interface ApiVariables extends RequestFactsVariables {
@@ -107,18 +107,6 @@ const API_NOT_FOUND_BODY = { error: 'Not found', code: 'API_NOT_FOUND' } as cons
  * default, which the Express chain sends.
  */
 const PREFLIGHT_METHODS = ['GET', 'HEAD', 'PUT', 'PATCH', 'POST', 'DELETE'];
-
-/**
- * Whether a path falls under an Express-style `app.use(prefix)` mount: the
- * prefix itself or anything below it, ignoring case.
- *
- * @param path - The request path.
- * @param prefix - The mount path, lower-case, with no trailing slash.
- */
-function underMount(path: string, prefix: string): boolean {
-  const lowered = path.toLowerCase();
-  return lowered === prefix || lowered.startsWith(`${prefix}/`);
-}
 
 /**
  * Build a Hono app with the `/api` chain in place. Mount routes on it, then

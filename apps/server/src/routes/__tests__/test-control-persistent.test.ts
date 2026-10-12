@@ -16,21 +16,26 @@
  * can see it — which makes it worth proving it reports what
  * `getSessionWarmth`/`canSteerSession` say rather than a number of its own.
  *
- * The router is mounted on a bare express app rather than reached through
- * `createApp`, matching `test-control-agent-token.test.ts`: `app.ts` mounts
- * `/api/test/*` only under `DORKOS_TEST_RUNTIME`, so mounting it directly tests
- * the handler rather than the env gate.
+ * The routes are served alone behind the `/api` chain rather than reached
+ * through the composed server, matching `test-control-agent-token.test.ts`:
+ * `http/hono-api.ts` mounts `/api/test/*` only under `DORKOS_TEST_RUNTIME`, so
+ * serving them directly tests the handler rather than the env gate.
  */
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import express from 'express';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import request from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
 import { createTestDb } from '@dorkos/test-utils/db';
 import { FakeAgentRuntime } from '@dorkos/test-utils';
-import { testControlRouter } from '../test-control.js';
+import { createTestControlRoutes } from '../test-control.js';
+import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
 import { runtimeRegistry } from '../../services/core/runtime-registry.js';
 import { heldProcesses } from '../../services/runtimes/test-mode/held-process.js';
 import { TestModeRuntime } from '../../services/runtimes/test-mode/test-mode-runtime.js';
+
+// The `/api` chain reads login and the host settings from here; none are set.
+vi.mock('../../services/core/config-manager.js', () => ({
+  configManager: { get: vi.fn(), getDot: vi.fn() },
+}));
 
 const fixtureTarget = swappableServer();
 const fixtureServer = fixtureTarget.server;
@@ -41,17 +46,13 @@ const NEIGHBOUR = 'bbbbbbb1-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
 const FOREIGN = 'ccccccc1-cccc-4ccc-8ccc-cccccccccccc';
 
 describe('the held-process controls', () => {
-  let app: express.Express;
-
   beforeEach(() => {
     runtimeRegistry.setDb(createTestDb());
     runtimeRegistry.register(new TestModeRuntime());
     runtimeRegistry.setDefault('test-mode');
-    app = express();
-    app.use(express.json());
-    app.use('/api/test', testControlRouter);
-
-    fixtureTarget.mount(app);
+    fixtureTarget.mount(
+      honoGroupListener({ path: '/api/test', routes: createTestControlRoutes() })
+    );
   });
 
   afterEach(() => {

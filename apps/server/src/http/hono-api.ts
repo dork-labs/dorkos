@@ -29,23 +29,32 @@ import {
   mountConnectorSignedIngress,
   type ConnectorSignedIngress,
 } from '../services/connectors/events/signed-ingress.js';
+import { createA2aRoutes, type A2aRouteDeps } from '../routes/a2a.js';
 import { createActivityRoutes } from '../routes/activity.js';
+import { createAdminRoutes, type AdminDeps } from '../routes/admin.js';
 import { createAgentPauseRoutes, type AgentPauseRouterDeps } from '../routes/agent-pause.js';
 import { createAgentsRoutes, type AgentsRouterDeps } from '../routes/agents.js';
 import { createApprovalsRoutes, type ApprovalsRouterOptions } from '../routes/approvals.js';
 import { createApiDocsRoutes } from '../routes/api-docs.js';
 import { createConnectorRoutes, type ConnectorRoutesDeps } from '../routes/connectors.js';
 import { createAuditRoutes, type AuditRouterDeps } from '../routes/audit.js';
+import {
+  canvasDocBodyRule,
+  createCanvasDocEventRoutes,
+  type DocChannelHttp,
+} from '../routes/canvas-doc-events.js';
 import capabilitiesRoutes from '../routes/capabilities.js';
 import cloudRoutes from '../routes/cloud.js';
 import { createCapabilitiesCatalogRoutes } from '../routes/capabilities-catalog.js';
 import { createCapabilitiesInvokeRoutes } from '../routes/capabilities-invoke.js';
 import commandRoutes from '../routes/commands.js';
+import configRoutes from '../routes/config.js';
 import {
   createAgentCommitmentsRoutes,
   createCommitmentsRoutes,
   type CommitmentRouterDeps,
 } from '../routes/commitments.js';
+import { createDebugRoutes, type DebugDeps } from '../routes/debug.js';
 import diffRoutes from '../routes/diff.js';
 import directoryRoutes from '../routes/directory.js';
 import { createDiscoveryRoutes } from '../routes/discovery.js';
@@ -54,6 +63,7 @@ import {
   createExtensionDecisionsRoutes,
   type ExtensionDecisionsRouterDeps,
 } from '../routes/extension-decisions.js';
+import feedbackRoutes, { feedbackBodyRule } from '../routes/feedback.js';
 import fileRoutes from '../routes/files.js';
 import gitRoutes from '../routes/git.js';
 import { createHarnessRoutes, type HarnessRouterDeps } from '../routes/harness.js';
@@ -61,15 +71,20 @@ import { createHealthRoutes, type HealthRouteDeps } from '../routes/health.js';
 import keepAwakeRoutes from '../routes/keep-awake.js';
 import { createMarketplaceRoutes, type MarketplaceRouteDeps } from '../routes/marketplace.js';
 import { createMcpRoutes, type McpServerFactory } from '../routes/mcp.js';
+import mcpConfigRoutes from '../routes/mcp-config.js';
 import { createMcpOAuthRoutes } from '../routes/mcp-oauth.js';
 import { createMeshRoutes, type MeshRouterDeps } from '../routes/mesh.js';
+import { createMockMcpOAuthRoutes } from '../routes/mock-mcp-oauth-server.js';
 import modelRoutes from '../routes/models.js';
+import { createOnboardingRoutes, productionOnboardingDeps } from '../routes/onboarding.js';
 import { createNotificationsRoutes } from '../routes/notifications.js';
 import { createPermissionsRoutes, type PermissionsRouterDeps } from '../routes/permissions.js';
 import { createProfileRouter, type ProfileRouterDeps } from '../routes/profile.js';
 import projectRoutes from '../routes/projects.js';
 import { createRuntimesRoutes } from '../routes/runtimes.js';
 import { createPushRoutes, type PushRouterDeps } from '../routes/push.js';
+import { createRelayRoutes, type RelayRouteDeps } from '../routes/relay.js';
+import { relayWebhookBodyRule } from '../routes/relay-webhooks.js';
 import readCursorRoutes from '../routes/read-cursors.js';
 import { createRemoteAccessRoutes } from '../routes/remote-access.js';
 import { createSearchRoutes, type SearchRouterDeps } from '../routes/search.js';
@@ -80,7 +95,13 @@ import { createTasksRoutes, type TasksRouterDeps } from '../routes/tasks.js';
 import { createSystemRoutes, type SystemRouteDeps } from '../routes/system.js';
 import { createTeamRoutes, type TeamRouterDeps } from '../routes/team.js';
 import { createTemplateRoutes } from '../routes/templates.js';
+import {
+  createUnclaimedChatsRoutes,
+  type UnclaimedChatsRouterDeps,
+} from '../routes/unclaimed-chats.js';
+import { createTestControlRoutes, type TestControlDeps } from '../routes/test-control.js';
 import tunnelRoutes from '../routes/tunnel.js';
+import eventsRoutes from '../routes/events.js';
 import uploadRoutes from '../routes/uploads.js';
 import workbenchServeRoutes from '../routes/workbench-serve.js';
 import workspaceRoutes from '../routes/workspaces.js';
@@ -165,6 +186,47 @@ export interface ComposedGroupDeps {
    * request. Not under `/api`, but behind the same chain.
    */
   mcp?: McpServerFactory;
+  /**
+   * Document events (`/api/canvas/docs`). Always mounted; without this every
+   * request answers that document events are not available yet.
+   */
+  docChannel?: DocChannelHttp;
+  /**
+   * The agent registry first-run setup moves DorkBot's runtime through
+   * (`/api/onboarding`, always mounted), for a boot that mounts no mesh routes
+   * (the eval harness). Without it, the mesh routes' registry
+   * ({@link ComposedGroupDeps.mesh}) is used; with neither, DorkBot's manifest
+   * is still written, with no registry sync.
+   */
+  onboarding?: { meshCore: () => MeshCore | undefined };
+  /** The live reads behind `GET /api/debug/*`, which is always mounted. */
+  debug?: DebugDeps;
+  /** Reset and restart (`/api/admin`), which end this process. */
+  admin?: AdminDeps;
+  /**
+   * The test-control routes (`/api/test`). They are mounted whenever
+   * `DORKOS_TEST_RUNTIME` is set, and on any server handed these, as the eval
+   * harness's boot is.
+   */
+  testControl?: TestControlDeps;
+  /**
+   * The A2A gateway: the agent cards (`/.well-known/agent-card.json`, its
+   * legacy alias, `/a2a/agents/:id/card`) and the JSON-RPC endpoints under
+   * `/a2a`. Not under `/api`, but behind the same chain. Only handed over when
+   * A2A is on, Relay and the mesh started, and the exposure guard allowed it.
+   */
+  a2a?: A2aRouteDeps;
+  /**
+   * The message bus, its connections and chat routes, and the webhook receiver
+   * (`/api/relay`). Only handed over when Relay is enabled and started.
+   */
+  relay?: RelayRouteDeps;
+  /**
+   * The claim feed (`/api/relay/unclaimed-chats`). Only handed over with
+   * {@link ComposedGroupDeps.relay}, and only when the binding subsystem came
+   * up with its store.
+   */
+  unclaimedChats?: UnclaimedChatsRouterDeps;
 }
 
 /** What the moved route groups read from the running server, handed over by `index.ts`. */
@@ -191,8 +253,13 @@ export interface HonoApiOptions {
 export function createHonoApi(options: HonoApiOptions): Hono<ApiEnv> {
   const auth = getAuth();
   const deps = options.deps ?? {};
+  const docEventBodyRule = canvasDocBodyRule(() => deps.docChannel?.metrics);
   const app = createApiApp({
     admission: options.admission,
+    // Feedback carries an opt-in screenshot, so it may be larger than the app-wide
+    // limit; document events are page envelopes, so they may be smaller. A
+    // signed Relay webhook keeps its raw bytes while its receiver is mounted.
+    bodyRules: [feedbackBodyRule, docEventBodyRule, relayWebhookBodyRule],
     beforeBodyParsing: (early) => {
       if (auth) mountBetterAuth(early, { auth, maxAttempts: env.DORKOS_AUTH_SIGNIN_RATE_LIMIT });
       if (deps.connectorEventIngress) {
@@ -201,6 +268,9 @@ export function createHonoApi(options: HonoApiOptions): Hono<ApiEnv> {
     },
   });
   app.route('/api/health', createHealthRoutes(deps));
+  // The global event stream over SSE. Its WebSocket twin on the same path is an
+  // upgrade, answered before any route (`routes/events-socket.ts`).
+  app.route('/api/events', eventsRoutes);
   app.route('/api/models', modelRoutes);
   app.route('/api/commands', commandRoutes);
   app.route('/api/subagents', subagentRoutes);
@@ -224,6 +294,38 @@ export function createHonoApi(options: HonoApiOptions): Hono<ApiEnv> {
   app.route('/api/tunnel', tunnelRoutes);
   app.route('/api/remote-access', createRemoteAccessRoutes());
   app.route('/api/cloud', cloudRoutes);
+  app.route('/api/config', configRoutes);
+  app.route('/api/mcp-config', mcpConfigRoutes);
+  app.route(
+    '/api/onboarding',
+    createOnboardingRoutes(
+      productionOnboardingDeps(() => deps.onboarding?.meshCore() ?? deps.mesh?.meshCore)
+    )
+  );
+  app.route('/api/feedback', feedbackRoutes);
+  app.route(
+    '/api/canvas/docs',
+    createCanvasDocEventRoutes(() => deps.docChannel)
+  );
+  // Diagnostic reads. ALWAYS mounted and read-only: an env gate would make them
+  // unavailable in the one situation they exist for, because enabling one needs
+  // a restart and a restart destroys the in-memory state you wanted to read.
+  // They carry only what a span may carry, behind the chain's host guard and
+  // session gate with no carve-out (`routes/debug.ts`).
+  app.route(
+    '/api/debug',
+    createDebugRoutes(() => deps.debug)
+  );
+  if (deps.admin) app.route('/api/admin', createAdminRoutes(deps.admin));
+  // Test-only surfaces, imported always (no vitest or SDK deps) but mounted only
+  // in test mode, so none of their paths exist in production.
+  if (env.DORKOS_TEST_RUNTIME || deps.testControl) {
+    app.route('/api/test', createTestControlRoutes(deps.testControl));
+  }
+  // The mock OAuth-protected MCP server (DOR-952), at the ROOT so it can serve
+  // the `/.well-known/*` discovery paths there (RFC 9728/8414), beside its
+  // `/api/test/mcp-oauth/*` auth and MCP endpoints.
+  if (env.DORKOS_TEST_RUNTIME) app.route('/', createMockMcpOAuthRoutes());
   if (deps.sessionLocations) {
     app.route('/api/session-locations', createSessionLocationsRoutes(deps.sessionLocations));
   }
@@ -278,7 +380,16 @@ export function createHonoApi(options: HonoApiOptions): Hono<ApiEnv> {
     app.route('/api/capabilities', createCapabilitiesInvokeRoutes(deps.capabilities));
   }
   app.route('/api', createApiDocsRoutes());
+  if (deps.relay) {
+    app.route('/api/relay', createRelayRoutes(deps.relay));
+    // Its own paths only, none of which the Relay routes register.
+    if (deps.unclaimedChats) {
+      app.route('/api/relay/unclaimed-chats', createUnclaimedChatsRoutes(deps.unclaimedChats));
+    }
+  }
   if (deps.mcp) app.route('/mcp', createMcpRoutes(deps.mcp));
+  // Its routes carry their whole paths, two of them outside `/a2a`.
+  if (deps.a2a) app.route('/', createA2aRoutes(deps.a2a));
   return app;
 }
 

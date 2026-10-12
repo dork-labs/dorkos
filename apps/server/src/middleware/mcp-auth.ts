@@ -1,6 +1,5 @@
 import { timingSafeEqual } from 'node:crypto';
 import type { IncomingHttpHeaders } from 'node:http';
-import type { Request, Response, NextFunction } from 'express';
 import type { MiddlewareHandler } from 'hono';
 import { env } from '../env.js';
 import { configManager } from '../services/core/config-manager.js';
@@ -11,7 +10,7 @@ import { READ_ONLY_MCP_TOOL_NAMES } from '../services/core/external-mcp/tool-sec
 import { readJsonBody, type RequestBodyEnv } from '../http/request-body.js';
 
 /**
- * The surface a {@link createMcpAuth} middleware guards. Both surfaces share the
+ * The surface a {@link honoMcpAuth} middleware guards. Both surfaces share the
  * same credential acceptors; they differ only in the login-off fallback:
  *   - `'mcp'` applies the read-only capability carve-out (discovery + read-only
  *     tools stay tokenless; mutating calls require the token).
@@ -51,9 +50,8 @@ export interface McpAuthRequest {
 
 /**
  * Decide whether a request to the external `/mcp` endpoint or the `/a2a`
- * gateway (DOR-278) may go on. Both chains' adapters ask this, so the policy
- * lives in one place: {@link createMcpAuth} on Express, {@link honoMcpAuth} on
- * Hono.
+ * gateway (DOR-278) may go on. {@link honoMcpAuth} asks it for both, and the
+ * policy stays framework-free so it lives in one place.
  *
  * Credential acceptors run first on **both** surfaces and allow on first match:
  *   1. `env.MCP_API_KEY` — a static override for headless deployments (exact,
@@ -155,30 +153,6 @@ export async function decideMcpAuth(
   return isAllowedMcpMessage(request.body) ? { allowed: true } : refused;
 }
 
-/**
- * The credential check as Express middleware, for the `/a2a` gateway the
- * Express chain still serves. See {@link decideMcpAuth}.
- *
- * @param options - The surface this middleware guards.
- * @returns An Express middleware enforcing the surface's auth posture.
- */
-export function createMcpAuth({
-  surface,
-}: {
-  surface: McpAuthSurface;
-}): (req: Request, res: Response, next: NextFunction) => Promise<void> {
-  return async function mcpAuth(req: Request, res: Response, next: NextFunction): Promise<void> {
-    const decision = await decideMcpAuth(surface, req);
-    if (!decision.allowed) {
-      res.status(401).json(decision.body);
-      return;
-    }
-    if (decision.user) res.locals.user = decision.user;
-    if (decision.mcpLocalToken) res.locals.mcpLocalToken = true;
-    next();
-  };
-}
-
 /** The Hono environment {@link honoMcpAuth} reads and writes. */
 export type McpAuthEnv = RequestBodyEnv & {
   Variables: {
@@ -190,9 +164,9 @@ export type McpAuthEnv = RequestBodyEnv & {
 };
 
 /**
- * The credential check as Hono middleware, for `/mcp`. It reads the body the
- * chain already parsed (`readJsonBody`), the one the route then hands the
- * transport. See {@link decideMcpAuth}.
+ * The credential check as Hono middleware, for `/mcp` and the A2A gateway. It
+ * reads the body the chain already parsed (`readJsonBody`), the one the route
+ * then hands on. See {@link decideMcpAuth}.
  *
  * @param surface - The surface this middleware guards.
  * @returns A Hono middleware enforcing the surface's auth posture.

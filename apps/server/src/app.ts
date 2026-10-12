@@ -5,17 +5,10 @@ import cors from 'cors';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import sessionRoutes from './routes/sessions.js';
-import configRoutes from './routes/config.js';
 import roomRoutes from './routes/rooms.js';
-import canvasDocEventRoutes, { canvasDocJsonParser } from './routes/canvas-doc-events.js';
 import { createCommunityConnectionsRouter } from './routes/community-connections.js';
 import { createRemoteCommunitiesRouter } from './routes/remote-communities.js';
 import { gateCommunityConnections, gateRemoteCommunities } from './middleware/spaces-enabled.js';
-import onboardingRoutes from './routes/onboarding.js';
-import feedbackRoutes, { feedbackJsonParser } from './routes/feedback.js';
-import mcpConfigRoutes from './routes/mcp-config.js';
-import debugRoutes from './routes/debug.js';
-import eventsRouter from './routes/events.js';
 import { errorHandler } from './middleware/error-handler.js';
 import { hostGuard } from './middleware/host-guard.js';
 import { managedHostGuard } from './middleware/managed-host-guard.js';
@@ -29,8 +22,6 @@ import { corsAllowsOrigin, corsRefusal, warnOnWildcardCorsOrigin } from './http/
 import { createFirstContactMarker } from './http/first-contact.js';
 import { createClientFiles } from './http/client-files.js';
 import { API_JSON_BODY_LIMIT } from './http/request-body.js';
-import { testControlRouter } from './routes/test-control.js';
-import { createMockMcpOAuthRouter } from './routes/mock-mcp-oauth-server.js';
 import { env } from './env.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -129,19 +120,6 @@ export function createApp(options: { admission: MainRequestAdmission }) {
   // `middleware/host-guard.ts`.
   app.use('/api', hostGuard);
 
-  // Feedback submissions carry an opt-in screenshot inline as a `data:` URL, so
-  // this one path parses with a larger ceiling than the app-wide limit below.
-  // Mounted BEFORE that parser deliberately: body-parser skips a request whose
-  // body another parser already read, so the same middleware placed on the
-  // feedback router (mounted further down) would never bind and the app-wide
-  // 1 MB limit would 413 the submission first. Path-scoped, so nothing else
-  // gains the larger ceiling.
-  app.use('/api/feedback', feedbackJsonParser);
-  // Preserve signed webhook bytes before JSON consumes the stream. This only
-  // parses: sessionGate and the Relay receiver still own authorization/dispatch.
-  app.post('/api/relay/webhooks/:adapterId', express.raw({ type: '*/*', limit: '1mb' }));
-  // Page envelopes have a smaller wire ceiling than ordinary API requests.
-  app.use('/api/canvas/docs', canvasDocJsonParser);
   app.use(express.json({ limit: API_JSON_BODY_LIMIT }));
   app.use(requestLogger);
 
@@ -168,9 +146,7 @@ export function createApp(options: { admission: MainRequestAdmission }) {
 
   // API routes
   app.use('/api/sessions', sessionRoutes);
-  app.use('/api/config', configRoutes);
   app.use('/api/rooms', roomRoutes);
-  app.use('/api/canvas/docs', canvasDocEventRoutes);
   // Spaces are an experiment, off by default (DOR-2740): both refuse until a
   // person turns `spaces.enabled` on, except for the official space (spec
   // `official-community-space` D5), which each gate lets through by its
@@ -181,31 +157,6 @@ export function createApp(options: { admission: MainRequestAdmission }) {
     createCommunityConnectionsRouter()
   );
   app.use('/api/communities', gateRemoteCommunities(), createRemoteCommunitiesRouter());
-  app.use('/api/onboarding', onboardingRoutes);
-  app.use('/api/feedback', feedbackRoutes);
-  app.use('/api/events', eventsRouter);
-  app.use('/api/mcp-config', mcpConfigRoutes);
-  // Diagnostic reads (`GET /api/debug/*`). Mounted here rather than in
-  // `index.ts` — it needs no singleton the composition root has to hand it, only
-  // `app.locals.debugDeps`, which `index.ts` sets beside the moved routes' `deps`.
-  // ALWAYS mounted and read-only: an env gate would make it unavailable in the
-  // one situation it exists for, because enabling it needs a restart and a
-  // restart destroys the in-memory state you wanted to read. It carries only
-  // what a span may carry, and inherits `hostGuard` + `sessionGate` with no
-  // carve-out — see `routes/debug.ts`.
-  app.use('/api/debug', debugRoutes);
-
-  // Test control routes — only mounted when DORKOS_TEST_RUNTIME=true.
-  // The router is always imported (safe: no vitest/SDK deps), but routes are
-  // only reachable when the env var is set, so production is unaffected.
-  if (env.DORKOS_TEST_RUNTIME) {
-    app.use('/api/test', testControlRouter);
-    // The mock OAuth-protected MCP server (DOR-952) — mounted at the app ROOT so
-    // it can serve the `/.well-known/*` discovery paths there (RFC 9728/8414),
-    // alongside its `/api/test/mcp-oauth/*` auth + MCP endpoints. Gated the same
-    // way, so none of these paths exist in production.
-    app.use(createMockMcpOAuthRouter());
-  }
 
   return app;
 }

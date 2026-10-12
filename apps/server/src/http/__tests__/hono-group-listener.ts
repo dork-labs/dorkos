@@ -15,6 +15,7 @@ import { getRequestListener } from '@hono/node-server';
 import type { Hono, MiddlewareHandler } from 'hono';
 import { MainRequestAdmission } from '../../services/core/lifecycle/main-request-admission.js';
 import { createApiApp, type ApiEnv } from '../api-chain.js';
+import type { BodyRule } from '../request-body.js';
 import { createFrontDoor, frontDoorListener } from '../front-door.js';
 
 /** One group to mount: where, and its routes. */
@@ -36,6 +37,8 @@ export interface HonoGroupListenerOptions {
    * as `http/hono-api.ts` registers Better Auth and the signed webhook ingress.
    */
   beforeBodyParsing?: (app: Hono<ApiEnv>) => void;
+  /** Path-scoped body parsers, as `http/hono-api.ts` hands the chain its own. */
+  bodyRules?: readonly BodyRule[];
 }
 
 /**
@@ -52,6 +55,7 @@ export function honoGroupListener(
   const app = createApiApp({
     admission: new MainRequestAdmission(),
     beforeBodyParsing: options.beforeBodyParsing,
+    bodyRules: options.bodyRules,
   });
   if (options.before) app.use(options.before);
   const list: readonly MountedGroup[] = 'path' in groups ? [groups] : groups;

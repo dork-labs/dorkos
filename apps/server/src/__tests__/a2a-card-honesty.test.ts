@@ -20,9 +20,10 @@
  * `pnpm --filter @dorkos/a2a-gateway build` first.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import express from 'express';
+import { Hono } from 'hono';
+import type { RequestListener } from 'node:http';
 import request from '@dorkos/test-utils/supertest';
-import { swappableServer } from '@dorkos/test-utils/listening-server';
+import { honoListener, swappableServer } from '@dorkos/test-utils/listening-server';
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
 
 // Mock env before importing the middleware, so MCP_API_KEY is drivable.
@@ -50,9 +51,9 @@ vi.mock('../services/core/auth/mcp-local-token.js', () => ({
   getMcpLocalTokenPath: vi.fn(),
 }));
 
-import { createA2aRouter } from '../routes/a2a.js';
-import { createMcpAuth } from '../middleware/mcp-auth.js';
-import { buildA2aRateLimiters } from '../middleware/a2a-rate-limit.js';
+import { createA2aRoutes } from '../routes/a2a.js';
+import type { ApiEnv } from '../http/api-chain.js';
+import { parseRequestBody } from '../http/request-body.js';
 import { env } from '../env.js';
 import { configManager } from '../services/core/config-manager.js';
 import { verifyRequestAuth } from '../services/core/auth/index.js';
@@ -92,38 +93,35 @@ function mockConfig(opts: { authEnabled?: boolean } = {}): void {
 }
 
 /**
- * The A2A chain exactly as `index.ts` wires it: rate limiter, then the real
- * `createMcpAuth({ surface: 'a2a' })`, then the real router. Only Mesh, Relay
+ * The A2A routes exactly as the server mounts them (`routes/a2a.ts`): the real
+ * limiters, the real credential check (`decideMcpAuth` for the `'a2a'`
+ * surface), the real gateway, behind the chain's body parse. Only Mesh, Relay
  * and the DB are stubs — nothing about auth or card generation is faked.
  */
-function buildApp(): express.Express {
-  const { rpc: rpcRateLimiter, card: cardRateLimiter } = buildA2aRateLimiters({
-    rpcMaxPerMinute: 1000,
-    cardMaxPerMinute: 1000,
-  });
-
-  const { router, fleetCardHandler } = createA2aRouter({
-    meshCore: {
-      get: (id: string) => (id === AGENT.id ? AGENT : undefined),
-      list: () => [AGENT],
-    } as never,
-    relay: { publish: vi.fn(), subscribe: vi.fn(() => vi.fn()) } as never,
-    db: {
-      select: () => ({ from: () => ({ where: () => ({ get: () => undefined }) }) }),
-      insert: () => ({ values: () => ({ onConflictDoUpdate: () => ({ run: () => undefined }) }) }),
-    } as never,
-    baseUrl: BASE_URL,
-    version: VERSION,
-    rpcRateLimiter,
-    cardRateLimiter,
-  });
-
-  const a2aAuth = createMcpAuth({ surface: 'a2a' });
-  const app = express();
-  app.use(express.json());
-  app.get('/.well-known/agent-card.json', cardRateLimiter, a2aAuth, fleetCardHandler);
-  app.use('/a2a', a2aAuth, router);
-  return app;
+function buildApp(): RequestListener {
+  const app = new Hono<ApiEnv>();
+  app.use(parseRequestBody());
+  app.route(
+    '/',
+    createA2aRoutes({
+      meshCore: {
+        get: (id: string) => (id === AGENT.id ? AGENT : undefined),
+        list: () => [AGENT],
+      } as never,
+      relay: { publish: vi.fn(), subscribe: vi.fn(() => vi.fn()) } as never,
+      db: {
+        select: () => ({ from: () => ({ where: () => ({ get: () => undefined }) }) }),
+        insert: () => ({
+          values: () => ({ onConflictDoUpdate: () => ({ run: () => undefined }) }),
+        }),
+      } as never,
+      baseUrl: BASE_URL,
+      version: VERSION,
+      rpcMaxPerMinute: 1000,
+      cardMaxPerMinute: 1000,
+    })
+  );
+  return honoListener(app);
 }
 
 /** The bearer requirement a card must carry — protobuf JSON drops the empty scope list. */

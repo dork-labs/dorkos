@@ -1,12 +1,5 @@
-import { MainRequestAdmission } from '../../services/core/lifecycle/main-request-admission.js';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import http from 'node:http';
-
-vi.mock('../../services/core/tunnel-manager.js', () => ({
-  tunnelManager: {
-    status: { enabled: false, connected: false, url: null, port: null, startedAt: null },
-  },
-}));
 
 vi.mock('../../services/core/config-manager.js', () => ({
   configManager: {
@@ -28,7 +21,8 @@ vi.mock('../../services/core/event-fan-out.js', async (importOriginal) => ({
   },
 }));
 
-import { createApp } from '../../app.js';
+import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
+import eventsRoutes from '../events.js';
 import { eventFanOut } from '../../services/core/event-fan-out.js';
 
 let server: http.Server;
@@ -36,9 +30,9 @@ let baseUrl: string;
 
 beforeEach(async () => {
   vi.clearAllMocks();
-  const app = createApp({ admission: new MainRequestAdmission() });
+  server = http.createServer(honoGroupListener({ path: '/api/events', routes: eventsRoutes }));
   await new Promise<void>((resolve) => {
-    server = app.listen(0, () => {
+    server.listen(0, () => {
       const addr = server.address();
       const port = typeof addr === 'object' && addr ? addr.port : 0;
       baseUrl = `http://127.0.0.1:${port}`;
@@ -130,6 +124,12 @@ describe('GET /api/events (unified SSE stream)', () => {
     await collectConnectedEvent({ 'x-dorkos-agent': 'tok_revoked' });
 
     expect(vi.mocked(eventFanOut.addClient).mock.calls[0]?.[1]).toEqual({ kind: 'agent' });
+  });
+
+  it('unregisters from the fan-out when the client leaves', async () => {
+    await collectConnectedEvent();
+
+    await vi.waitFor(() => expect(mockUnsubscribe).toHaveBeenCalledTimes(1));
   });
 
   it('answers 503 BEFORE the SSE headers when the fan-out is full', async () => {

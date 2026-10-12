@@ -27,18 +27,18 @@ DorkOS has one identity core — [Better Auth](https://better-auth.com) — embe
 
 ## When to Use What
 
-| You need to…                                         | Use                                                                           |
-| ---------------------------------------------------- | ----------------------------------------------------------------------------- |
-| Gate a new `/api/*` route behind login               | Nothing — the app-wide `sessionGate` already covers `/api/*`                  |
-| Read the authenticated user in a handler             | `res.locals.user` (`{ userId }`), set by the gate on success                  |
-| Verify a credential outside the gate                 | `verifyRequestAuth(req)` (cookie → Bearer API key, one path)                  |
-| Decide whether an instance may be exposed            | `canExpose()` / `isExposureAllowed(state)`                                    |
-| Check whether an owner account exists                | `hasAnyUser()`                                                                |
-| Read who the owner is (id + name)                    | `readOwnerAccount()`                                                          |
-| Ask whether an AUTHOR is the owner                   | The injected `isOwnerAuthor(authorId)` — never `kind`                         |
-| Accept a machine credential on `/mcp`                | `createMcpAuth` (env override → user key → legacy → local token; fail-closed) |
-| Create the owner from a machine (no server, no SMTP) | `dorkos auth enable`                                                          |
-| Reset a lost owner password                          | `dorkos auth reset-password`                                                  |
+| You need to…                                         | Use                                                                         |
+| ---------------------------------------------------- | --------------------------------------------------------------------------- |
+| Gate a new `/api/*` route behind login               | Nothing — the app-wide `sessionGate` already covers `/api/*`                |
+| Read the authenticated user in a handler             | `res.locals.user` (`{ userId }`), set by the gate on success                |
+| Verify a credential outside the gate                 | `verifyRequestAuth(req)` (cookie → Bearer API key, one path)                |
+| Decide whether an instance may be exposed            | `canExpose()` / `isExposureAllowed(state)`                                  |
+| Check whether an owner account exists                | `hasAnyUser()`                                                              |
+| Read who the owner is (id + name)                    | `readOwnerAccount()`                                                        |
+| Ask whether an AUTHOR is the owner                   | The injected `isOwnerAuthor(authorId)` — never `kind`                       |
+| Accept a machine credential on `/mcp`                | `honoMcpAuth` (env override → user key → legacy → local token; fail-closed) |
+| Create the owner from a machine (no server, no SMTP) | `dorkos auth enable`                                                        |
+| Reset a lost owner password                          | `dorkos auth reset-password`                                                |
 
 ## Core Patterns
 
@@ -141,7 +141,7 @@ Do not confuse it with a locality check. `Host` says which name the caller asked
 
 ### MCP: 4-tier resolution + legacy seeding
 
-`createMcpAuth({ surface })` (`middleware/mcp-auth.ts`) guards both `/mcp` and `/a2a`. It keeps the JSON-RPC 401 shape those clients expect and resolves credentials in priority order, allowing on the first match:
+`honoMcpAuth(surface)` (`middleware/mcp-auth.ts`, over the framework-free `decideMcpAuth`) guards both `/mcp` and `/a2a`. It keeps the JSON-RPC 401 shape those clients expect and resolves credentials in priority order, allowing on the first match:
 
 1. `env.MCP_API_KEY` — static override for headless deployments (exact match, constant-time, un-revocable from the UI).
 2. A per-user Better Auth API key (or session cookie) via `verifyRequestAuth`.

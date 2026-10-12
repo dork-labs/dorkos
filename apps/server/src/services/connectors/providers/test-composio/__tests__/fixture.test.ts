@@ -1,4 +1,3 @@
-import express from 'express';
 import { createServer, type RequestListener } from 'node:http';
 import { readFileSync } from 'node:fs';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -26,10 +25,10 @@ afterEach(async () => {
 const signal = () => AbortSignal.timeout(5_000);
 async function fixture() {
   // The signed ingress answers from the Hono `/api` chain, before any body is
-  // parsed; the offline service's own control routes stay on Express behind
-  // the front door, as the test runtime serves them.
-  const app = express();
-  let listener: RequestListener = app;
+  // parsed; the offline service's own control routes answer behind it, under
+  // `/api/test/composio`, as the test runtime serves them. Nothing is served
+  // until both exist.
+  let listener: RequestListener = (_req, res) => res.writeHead(503).end();
   const server = createServer((req, res) => listener(req, res));
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
   disposers.push(async () => {
@@ -54,10 +53,7 @@ async function fixture() {
   });
   if (!provider?.events) throw new Error('Missing actual Composio events');
   const accept = vi.fn(async () => 'accepted' as const);
-  app.use(express.json());
-  app.use('/api/test/composio', upstream.router);
-  listener = honoGroupListener([], {
-    legacy: app,
+  listener = honoGroupListener([{ path: '/api/test/composio', routes: upstream.routes }], {
     beforeBodyParsing: (early) =>
       mountConnectorSignedIngress(early, { verifier: () => provider.events, accept }),
   });

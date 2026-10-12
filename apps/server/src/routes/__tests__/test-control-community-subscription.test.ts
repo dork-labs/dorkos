@@ -1,13 +1,18 @@
 /** @vitest-environment node */
-import express from 'express';
 import request from '@dorkos/test-utils/supertest';
 import { listeningServer } from '@dorkos/test-utils/listening-server';
-import { afterEach, describe, expect, it } from 'vitest';
-import { setRemoteCommunitySubscriptionProbe, testControlRouter } from '../test-control.js';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { createTestControlRoutes, setRemoteCommunitySubscriptionProbe } from '../test-control.js';
+import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
 
-const app = express();
-app.use('/api/test', testControlRouter);
-const server = listeningServer(app);
+// The `/api` chain reads login and the host settings from here; none are set.
+vi.mock('../../services/core/config-manager.js', () => ({
+  configManager: { get: vi.fn(), getDot: vi.fn() },
+}));
+
+const server = listeningServer(
+  honoGroupListener({ path: '/api/test', routes: createTestControlRoutes() })
+);
 
 afterEach(() => setRemoteCommunitySubscriptionProbe(undefined));
 

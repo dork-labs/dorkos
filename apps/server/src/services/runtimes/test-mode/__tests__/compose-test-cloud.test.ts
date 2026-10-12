@@ -1,5 +1,4 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import express from 'express';
 import request from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
 
@@ -36,8 +35,13 @@ vi.mock('../../../core/cloud/v1-client.js', () => ({
   },
 }));
 
+// The `/api` chain reads login and the host settings from here; none are set.
+vi.mock('../../../core/config-manager.js', () => ({
+  configManager: { get: vi.fn(), getDot: vi.fn() },
+}));
 import { composeTestModeCloud } from '../compose-test-cloud.js';
-import { testControlRouter } from '../../../../routes/test-control.js';
+import { createTestControlRoutes } from '../../../../routes/test-control.js';
+import { honoGroupListener } from '../../../../http/__tests__/hono-group-listener.js';
 import type { RuntimeRegistry } from '../../../core/runtime-registry.js';
 
 function registry() {
@@ -87,7 +91,7 @@ describe('composeTestModeCloud', () => {
       verification_uri: 'http://localhost:7242/api/test/fake-cloud/approve',
     });
 
-    const app = express().use(express.json()).use('/api/test', testControlRouter);
+    const app = honoGroupListener({ path: '/api/test', routes: createTestControlRoutes() });
     const page = await request(listener.mount(app)).get(
       '/api/test/fake-cloud/approve?code=DORK-2F7Q'
     );

@@ -44,16 +44,21 @@ vi.mock('../../lib/logger.js', () => ({
   logger: { error: vi.fn(), warn: vi.fn(), info: vi.fn(), debug: vi.fn() },
 }));
 
-import express from 'express';
+// The `/api` chain reads config (login, the host allowlist); nothing is set.
+vi.mock('../../services/core/config-manager.js', () => ({
+  configManager: { get: vi.fn().mockReturnValue(null), set: vi.fn() },
+}));
+
 import request from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { createAdapterRouter } from '../relay-adapters.js';
+import { createAdapterRoutes } from '../relay-adapters.js';
+import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
+import type { ActivityService } from '../../services/activity/activity-service.js';
 import { BindingStore } from '../../services/relay/binding-store.js';
 import type { AdapterManager } from '../../services/relay/adapter-manager.js';
-import { resolveAgentIdentity } from '../../middleware/agent-identity.js';
 
 const fixtureTarget = swappableServer();
 const fixtureServer = fixtureTarget.server;
@@ -150,16 +155,18 @@ describe('who the Activity feed says changed a connection or a chat route', () =
       getMeshCore: vi.fn(() => ({ getProjectPath: () => '/proj/agent' })),
     } as unknown as AdapterManager;
 
-    const app = express();
-    app.use(express.json());
-    app.use(resolveAgentIdentity);
-    app.locals.activityService = {
+    const activity = {
       emit: vi.fn(async (event: EmittedActor) => {
         emitted.push(event);
       }),
-    };
-    app.use('/api/relay', createAdapterRouter(adapterManager));
-    fixtureTarget.mount(app);
+    } as unknown as ActivityService;
+    // The `/api` chain resolves the agent header, as `resolveAgentIdentity` did.
+    fixtureTarget.mount(
+      honoGroupListener({
+        path: '/api/relay',
+        routes: createAdapterRoutes({ adapterManager, activity }),
+      })
+    );
   });
 
   afterEach(async () => {

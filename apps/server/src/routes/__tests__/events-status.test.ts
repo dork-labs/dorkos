@@ -1,4 +1,3 @@
-import { MainRequestAdmission } from '../../services/core/lifecycle/main-request-admission.js';
 /**
  * Integration tests for global session-list discovery → unified `/api/events` SSE.
  *
@@ -13,14 +12,9 @@ import http from 'node:http';
 import type { SessionListEvent } from '@dorkos/shared/session-stream';
 import { FakeAgentRuntime, createMockSession } from '@dorkos/test-utils';
 
-// createApp() reads tunnel + config state at construction — stub both so the
-// app builds without a live ConfigManager. The real eventFanOut is intentionally
-// NOT mocked: these tests assert events reach the SSE wire.
-vi.mock('../../services/core/tunnel-manager.js', () => ({
-  tunnelManager: {
-    status: { enabled: false, connected: false, url: null, port: null, startedAt: null },
-  },
-}));
+// The `/api` chain's session gate reads config — stub it so the route serves
+// without a live ConfigManager. The real eventFanOut is intentionally NOT
+// mocked: these tests assert events reach the SSE wire.
 vi.mock('../../services/core/config-manager.js', () => ({
   configManager: {
     get: vi.fn().mockReturnValue(null),
@@ -28,7 +22,8 @@ vi.mock('../../services/core/config-manager.js', () => ({
   },
 }));
 
-import { createApp } from '../../app.js';
+import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
+import eventsRoutes from '../events.js';
 import { eventFanOut } from '../../services/core/event-fan-out.js';
 import { SessionListBroadcaster } from '../../services/session/catalog/session-list-broadcaster.js';
 import {
@@ -41,9 +36,9 @@ let server: http.Server;
 let baseUrl: string;
 
 beforeEach(async () => {
-  const app = createApp({ admission: new MainRequestAdmission() });
+  server = http.createServer(honoGroupListener({ path: '/api/events', routes: eventsRoutes }));
   await new Promise<void>((resolve) => {
-    server = app.listen(0, () => {
+    server.listen(0, () => {
       const addr = server.address();
       const port = typeof addr === 'object' && addr ? addr.port : 0;
       baseUrl = `http://127.0.0.1:${port}`;

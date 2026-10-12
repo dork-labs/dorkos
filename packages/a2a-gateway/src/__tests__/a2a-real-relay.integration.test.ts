@@ -12,18 +12,16 @@
  * against the production relay, not just a stand-in.
  */
 import { describe, it, expect, afterEach } from 'vitest';
-import express from 'express';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
-import type { Server } from 'node:http';
-import type { AddressInfo } from 'node:net';
 import { createTestDb } from '@dorkos/test-utils/db';
 import { RelayCore } from '@dorkos/relay';
 import type { RelayPublisher, AdapterRegistryLike, DeliveryResult } from '@dorkos/relay';
 import type { RelayEnvelope, StandardPayload } from '@dorkos/shared/relay-schemas';
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
-import { createA2aHandlers } from '../express-handlers.js';
+import { createA2aGateway } from '../http-handlers.js';
+import { serveGateway, type ServedGateway } from './serve-gateway.js';
 import type { AgentRegistryLike } from '../types.js';
 
 // ---------------------------------------------------------------------------
@@ -170,7 +168,7 @@ function sendParams(text: string, agentId: string) {
 
 const tempDirs: string[] = [];
 let relay: RelayCore;
-let server: Server;
+let served: ServedGateway;
 let baseUrl: string;
 let rpcId = 0;
 
@@ -180,26 +178,20 @@ async function buildHarness(script: ResponderScript): Promise<void> {
   relay = new RelayCore({ dataDir, adapterRegistry: new CcaShapedResponder(script) });
 
   const db = createTestDb();
-  const handlers = createA2aHandlers({
-    agentRegistry: makeRegistry([makeManifest()]),
-    relay,
-    db,
-    config: { baseUrl: 'http://127.0.0.1:0', version: '0.0.0-test' },
-  });
-
-  const app = express();
-  app.use('/a2a', handlers.jsonRpc);
-  await new Promise<void>((resolve) => {
-    server = app.listen(0, '127.0.0.1', () => resolve());
-  });
-  const { port } = server.address() as AddressInfo;
-  baseUrl = `http://127.0.0.1:${port}`;
+  served = await serveGateway();
+  served.mount(
+    createA2aGateway({
+      agentRegistry: makeRegistry([makeManifest()]),
+      relay,
+      db,
+      config: { baseUrl: 'http://127.0.0.1:0', version: '0.0.0-test' },
+    })
+  );
+  baseUrl = served.baseUrl;
 }
 
 afterEach(async () => {
-  await new Promise<void>((resolve, reject) => {
-    server.close((err) => (err ? reject(err) : resolve()));
-  });
+  await served.close();
   await relay.close();
   for (const dir of tempDirs.splice(0)) {
     await fs.rm(dir, { recursive: true, force: true });

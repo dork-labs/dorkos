@@ -123,7 +123,6 @@ import { TaskReconciler } from './services/tasks/task-reconciler.js';
 import { TaskRegistrar } from './services/tasks/task-registrar.js';
 import { setTasksInitError } from './services/tasks/task-state.js';
 import { RelayCore, AdapterRegistry, SignalEmitter, type AgentRuntimeLike } from '@dorkos/relay';
-import { createRelayRouter } from './routes/relay.js';
 import { ConnectorEventAccessQueryService } from './services/connectors/events/access-query-service.js';
 import type { ConnectorRoutesDeps } from './routes/connectors.js';
 import type { ConnectorSignedIngress } from './services/connectors/events/signed-ingress.js';
@@ -139,7 +138,6 @@ import { ManagedConnectorEventPullService } from './services/connectors/events/m
 import { ConnectorEventDeliveryService } from './services/connectors/events/delivery-service.js';
 import { ConnectorEventNativeDestination } from './services/connectors/events/channel-destination.js';
 
-import { createUnclaimedChatsRouter } from './routes/unclaimed-chats.js';
 import { ConnectorRegistry } from './services/connectors/registry.js';
 import { ConnectorCatalogCache } from './services/connectors/resources/catalog-cache.js';
 import { createRawMcpPendingConnectResolver } from './services/connectors/resources/raw-mcp-pending-connect.js';
@@ -221,8 +219,6 @@ import { MeshCore, type AdoptedAgent } from '@dorkos/mesh';
 import { setMeshInitError } from './services/mesh/mesh-state.js';
 import { ensureDorkBot } from './services/mesh/ensure-dorkbot.js';
 import { setAgentPathLookup } from './services/mesh/agent-path-lookup.js';
-import { createA2aRouter } from './routes/a2a.js';
-import { buildA2aRateLimiters } from './middleware/a2a-rate-limit.js';
 import { resolveToolVisibilityFor } from './services/runtimes/shared/permission-tool-filter.js';
 import { composeCapabilityRegistryForDocs } from './services/core/self-description/dorkos-registry.js';
 import {
@@ -257,7 +253,6 @@ import {
   SESSION_ATTACHMENT_SWEEP_INTERVAL_MS,
   sweepSessionAttachments,
 } from './services/session/attachments/index.js';
-import { createAdminRouter } from './routes/admin.js';
 import { ExtensionManager } from './services/extensions/extension-manager.js';
 import { startExtensionApprovalQueue } from './services/extensions/extension-approval-queue.js';
 import { ensureCoreExtensions } from './services/core-extensions/ensure-core-extensions.js';
@@ -357,7 +352,6 @@ import {
 } from './services/core/approvals/index.js';
 import type { McpServerFactory } from './routes/mcp.js';
 import { setRemoteCommunitySubscriptionProbe } from './routes/test-control.js';
-import { createMcpAuth } from './middleware/mcp-auth.js';
 import {
   createDb,
   runMigrations,
@@ -2793,7 +2787,6 @@ async function start() {
     revalidateRuntime: (proof) =>
       docChannelRuntimePrincipals.current?.revalidatePrincipal(proof) ?? Promise.resolve(false),
   });
-  app.locals.docChannelHttp = { ...docChannelHttp, metrics: docChannelMetrics };
   const docStreamAuthority = {
     resolveScope: (scope: string) => canvasDocuments.lifecycle.resolveScope(scope),
     requireScopeCurrent: (
@@ -2829,8 +2822,7 @@ async function start() {
     docStreamAuthority
   );
   setDocScopeNotificationsFactory(
-    (scope, req, res) => (signal) =>
-      docScopes.subscribe(scope, docChannelHttp.actor(req, res), signal)
+    (scope, caller) => (signal) => docScopes.subscribe(scope, docChannelHttp.actor(caller), signal)
   );
 
   // An answer given after the in-session hold gave up has to reach the agent that
@@ -2922,8 +2914,8 @@ async function start() {
     const { startTestComposioFixture } =
       await import('./services/connectors/providers/test-composio/fixture.js');
     testComposioFixture = await startTestComposioFixture({ testRuntime: true, localOrigin });
-    const { testControlRouter } = await import('./routes/test-control.js');
-    testControlRouter.use('/composio', testComposioFixture.router);
+    const { addTestControlGroup } = await import('./routes/test-control.js');
+    addTestControlGroup('/composio', testComposioFixture.routes);
   }
   // Built before the ways register: linking the DorkOS account again (seen as
   // early as boot) sends what the old link refused or never applied again.
@@ -3518,12 +3510,6 @@ async function start() {
       // entries iff this returns a live token — withholds otherwise (needs-auth).
       tokenProvider: agentMcpOAuthService,
     });
-    // Expose the resolver to the test-control probe seam (DOR-952), which dials a
-    // managed server through its INJECTED connection to prove the bearer gate.
-    // Test branch only — the seam route is itself mounted only under the gate.
-    if (env.DORKOS_TEST_RUNTIME) {
-      app.locals.agentMcpServerService = agentMcpServerService;
-    }
     // A managed server that refuses the token DorkOS injected flips its row back
     // to needs-auth and draws the sign-in card in the conversation the person hit
     // it in (DOR-981). Wired only for claude-code, because its per-turn MCP status
@@ -3708,7 +3694,18 @@ async function start() {
   const deps: HonoApiDeps = {
     connectorEventIngress: connectorSignedIngress,
     mcp: mcpServerFactory,
+    docChannel: { ...docChannelHttp, metrics: docChannelMetrics },
   };
+  // The test-control routes' reads, on a test-mode server only: handing them
+  // over is what mounts the routes. The managed-MCP resolver is what the probe
+  // seam (DOR-952) dials a managed server through, to prove the bearer gate.
+  if (env.DORKOS_TEST_RUNTIME) {
+    deps.testControl = {
+      meshCore: () => meshCore,
+      approvals: () => approvalService,
+      agentMcpServers: () => agentMcpServerService,
+    };
+  }
 
   // Hand the Tasks routes their deps if enabled (`startup/tasks.ts`).
   ({ schedulerService, taskRegistrar, taskFileWatcher, taskReconciler, attachAgentTaskRoots } =
@@ -3832,9 +3829,14 @@ async function start() {
   deps.connectors = connectorRoutes;
   mountedRouters.push('connectors');
 
-  // Mount Relay routes if enabled
+  // Relay routes, only when Relay is enabled and started.
   if (relayEnabled && relayCore) {
-    app.use('/api/relay', createRelayRouter(relayCore, adapterManager, traceStore));
+    deps.relay = {
+      relayCore,
+      ...(adapterManager && { adapterManager }),
+      ...(traceStore && { traceStore }),
+      activity: activityService,
+    };
     // The claim feed (connection-scoping spec §Part 3) — mounted only when
     // the store was actually wired (relay enabled + binding subsystem up).
     const unclaimedChatsStore = adapterManager?.getUnclaimedChats();
@@ -3851,24 +3853,18 @@ async function start() {
       // needs (and so TS can see the closure below is over a value already
       // known non-null, not the outer optional).
       const leaveChatForClaims = adapterManager;
-      app.use(
-        '/api/relay/unclaimed-chats',
-        createUnclaimedChatsRouter({
-          store: unclaimedChatsStore,
-          bindingStore: bindingStoreForClaims,
-          ...(meshCore && { meshCore }),
-          ...(lifecycleForClaims && { lifecycle: lifecycleForClaims }),
-          ...(leaveChatForClaims && {
-            leaveChat: (adapterId: string, chatId: string) =>
-              leaveChatForClaims.leaveChat(adapterId, chatId),
-          }),
-        })
-      );
+      deps.unclaimedChats = {
+        store: unclaimedChatsStore,
+        bindingStore: bindingStoreForClaims,
+        ...(meshCore && { meshCore }),
+        ...(lifecycleForClaims && { lifecycle: lifecycleForClaims }),
+        ...(leaveChatForClaims && {
+          leaveChat: (adapterId: string, chatId: string) =>
+            leaveChatForClaims.leaveChat(adapterId, chatId),
+        }),
+      };
     }
     setRelayEnabled(true);
-
-    // Store relayCore on app.locals so the sessions router can access it
-    app.locals.relayCore = relayCore;
 
     // Wire relay events to unified SSE stream
     relayCore.subscribe('relay.human.console.>', (envelope) => {
@@ -4052,7 +4048,7 @@ async function start() {
   // broken?"), and this one hands over raw state for a person to read. They
   // overlap today; conflating them would mean a new debug read could only be
   // added by widening the health checks' dependency surface.
-  app.locals.debugDeps = {
+  deps.debug = {
     docChannelMetrics,
     roomSessions: roomStore,
     // The SAME probe object the boot sweep and the deep health check hold, so
@@ -4364,9 +4360,6 @@ async function start() {
 
   // Approvals — always available. The cockpit lists what is waiting on a person
   // and records their decision (spec `agent-trust` §3.3).
-  // The test-only seam that seeds a request card reads it from here; production
-  // mounts no test router, so nothing else does.
-  app.locals.approvalService = approvalService;
   deps.approvals = {
     service: approvalService,
     options: {
@@ -4435,7 +4428,7 @@ async function start() {
       ? env.DORKOS_A2A_ENABLED
       : (configManager.get('a2a')?.enabled ?? false);
   if (a2aEnabled && relayCore && meshCore) {
-    // The A2A surface is guarded by createMcpAuth({ surface: 'a2a' }). In
+    // The A2A surface is guarded by decideMcpAuth for the 'a2a' surface. In
     // login-off mode the per-instance local token gates JSON-RPC execution, but
     // that token is a loopback-trust mechanism (a 0600 file only a local operator
     // can read) — it does not make the surface safe on a non-loopback bind. So the
@@ -4475,33 +4468,17 @@ async function start() {
         /\/+$/,
         ''
       );
-      const version = env.DORKOS_VERSION_OVERRIDE ?? '0.0.0';
-      const { rpc: rpcRateLimiter, card: cardRateLimiter } = buildA2aRateLimiters({
-        rpcMaxPerMinute: env.DORKOS_A2A_RPC_RATE_LIMIT,
-        cardMaxPerMinute: env.DORKOS_A2A_CARD_RATE_LIMIT,
-      });
-
-      const { router: a2aRouter, fleetCardHandler } = createA2aRouter({
+      // The cards, the JSON-RPC endpoints and their own gates (the credential
+      // check and the two limiters) answer from the Hono chain: `routes/a2a.ts`.
+      deps.a2a = {
         meshCore,
         relay: relayCore,
         db,
         baseUrl,
-        version,
-        rpcRateLimiter,
-        cardRateLimiter,
-      });
-
-      // Fleet Agent Card at the spec well-known path (AGENT_CARD_PATH in the
-      // A2A SDK — standard clients discover the card here). The legacy
-      // /.well-known/agent.json path is kept during the transition. Cards get
-      // the lighter discovery limiter, applied before auth so unauthenticated
-      // scraping is throttled too.
-      const a2aAuth = createMcpAuth({ surface: 'a2a' });
-      app.get('/.well-known/agent-card.json', cardRateLimiter, a2aAuth, fleetCardHandler);
-      app.get('/.well-known/agent.json', cardRateLimiter, a2aAuth, fleetCardHandler);
-
-      // Per-agent cards and JSON-RPC under /a2a (per-route limiters live in the router)
-      app.use('/a2a', a2aAuth, a2aRouter);
+        version: env.DORKOS_VERSION_OVERRIDE ?? '0.0.0',
+        rpcMaxPerMinute: env.DORKOS_A2A_RPC_RATE_LIMIT,
+        cardMaxPerMinute: env.DORKOS_A2A_CARD_RATE_LIMIT,
+      };
 
       // Names the credential a caller must send. "none" was never true here —
       // execution is gated in every posture; only WHICH credential changes.
@@ -4518,15 +4495,8 @@ async function start() {
     }
   }
 
-  // Mount Admin routes (reset, restart)
-  app.use(
-    '/api/admin',
-    createAdminRouter({
-      dorkHome,
-      shutdownServices,
-      closeDb: () => db.$client.close(),
-    })
-  );
+  // Admin routes (reset, restart)
+  deps.admin = { dorkHome, shutdownServices, closeDb: () => db.$client.close() };
   mountedRouters.push('admin');
 
   // Mount Marketplace routes. The install pipeline has two optional
@@ -4873,8 +4843,10 @@ async function start() {
           name: 'connectors.execute_read',
           arguments: { ...input.target },
         });
-      app.locals.connectorRuntimeRequestProbe = runtimeRequestProbe;
-      app.locals.connectorRuntimeExecutionProbe = runtimeExecutionProbe;
+      if (deps.testControl) {
+        deps.testControl.connectorRequestProbe = () => runtimeRequestProbe;
+        deps.testControl.connectorExecutionProbe = () => runtimeExecutionProbe;
+      }
     }
     logger.info('[Connectors] Runtime execution listener initialized');
   }

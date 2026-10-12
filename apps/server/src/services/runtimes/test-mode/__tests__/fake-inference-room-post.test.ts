@@ -1,11 +1,15 @@
 import { describe, expect, it, vi } from 'vitest';
-import express from 'express';
 import request from '@dorkos/test-utils/supertest';
 import { listeningServer } from '@dorkos/test-utils/listening-server';
 
 vi.mock('../../../../env.js', () => ({ env: { DORKOS_TEST_RUNTIME: true } }));
+// The `/api` chain reads login and the host settings from here; none are set.
+vi.mock('../../../core/config-manager.js', () => ({
+  configManager: { get: vi.fn(), getDot: vi.fn() },
+}));
 
-import { createFakeInferenceRouter, roomToPostIn } from '../fake-inference.js';
+import { createFakeInferenceRoutes, roomToPostIn } from '../fake-inference.js';
+import { honoGroupListener } from '../../../../http/__tests__/hono-group-listener.js';
 
 const ROOM = '01M4MCJ4TMAQ3ASVV3KKDFR1Q3';
 const POST_TOOL = { type: 'function', function: { name: 'post_to_room' } };
@@ -19,10 +23,9 @@ function chunks(text: string): Array<{ choices: Array<Record<string, unknown>> }
     .map((line) => JSON.parse(line.slice('data: '.length)));
 }
 
-const app = express();
-app.use(express.json());
-app.use(createFakeInferenceRouter());
-const server = listeningServer(app);
+const server = listeningServer(
+  honoGroupListener({ path: '/fake', routes: createFakeInferenceRoutes() })
+);
 
 describe('the fake inference endpoint in a room', () => {
   it('posts through post_to_room when the turn offers it and names its room', () => {
@@ -62,7 +65,7 @@ describe('the fake inference endpoint in a room', () => {
 
   it('streams the reply as a post_to_room call carrying the canned text', async () => {
     const res = await request(server)
-      .post('/v1/chat/completions')
+      .post('/fake/v1/chat/completions')
       .send({
         model: 'm',
         tools: [POST_TOOL],

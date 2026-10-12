@@ -8,7 +8,7 @@
  * v0.3 — via {@link duplicateInterfacesForLegacy}. The SDK serves and accepts
  * only the protocol versions a card explicitly declares, so this duplication
  * is exactly what keeps agents built against the older protocol able to talk
- * to us. See `express-handlers.ts` for the request side of the same bargain.
+ * to us. See `http-handlers.ts` for the request side of the same bargain.
  *
  * @module a2a-gateway/agent-card-generator
  */

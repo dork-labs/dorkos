@@ -182,7 +182,7 @@ describe('common room document notifications', () => {
     'delivers idle document changes over the actual %s room handler without entry cursors',
     async (protocol) => {
       const f = fixture();
-      const factory = vi.fn((_scope, _req, _res) => f.notifications);
+      const factory = vi.fn((_scope, _caller) => f.notifications);
       setDocScopeNotificationsFactory(factory);
       const req = { params: { id: f.room.id }, headers: {}, query: {} } as unknown as Request<{
         id: string;
@@ -224,11 +224,7 @@ describe('common room document notifications', () => {
       try {
         await until(() => frames().some((frame) => frame.event === 'canvas_channel_snapshot'));
         expect(frames()[0]!.event).toBe('snapshot');
-        expect(factory).toHaveBeenCalledWith(
-          f.scope,
-          expect.objectContaining({ headers: {} }),
-          expect.objectContaining({ locals: expect.any(Object) })
-        );
+        expect(factory).toHaveBeenCalledWith(f.scope, expect.objectContaining({ headers: {} }));
         const initialCursor = f.service.maxSeq(f.room.id);
         f.append();
         await until(() => documentEvents(frames()).length === 1);
