@@ -32,7 +32,7 @@
  *
  * @module routes/cloud
  */
-import { Router, type Response } from 'express';
+import { Hono, type Context } from 'hono';
 import { z } from 'zod';
 import type { Problem } from '@dork-labs/cloud-api';
 import { runtimeDisplayName, type RuntimeCapabilities } from '@dorkos/shared/agent-runtime';
@@ -79,16 +79,20 @@ import { creditsKilled } from '../services/core/cloud/credits-availability.js';
 import { creditsRuntimeViews, creditsStatus } from '../services/core/cloud/credits-runtimes.js';
 import { runtimeRegistry } from '../services/core/runtime-registry.js';
 import {
-  refuseEnvelopeUnlessOwner,
-  refuseErrorUnlessOwner,
+  envelopeRefusalUnlessOwner,
+  errorRefusalUnlessOwner,
   type AccountOwnerWording,
 } from './cloud-owner-bar.js';
+import type { ApiEnv } from '../http/api-chain.js';
+import { readJsonBody } from '../http/request-body.js';
+import { honoRequestFacts } from '../http/request-facts.js';
+import { readQuery } from '../http/request-query.js';
 import { refuseUnlessAccountOwner } from '../lib/caller-authority.js';
 import { logger, logError } from '../lib/logger.js';
-import { createCloudCommunitiesRouter } from './cloud-communities.js';
+import { createCloudCommunitiesRoutes } from './cloud-communities.js';
 import { gateCloudCommunities } from '../middleware/spaces-enabled.js';
 
-const router = Router();
+const router = new Hono<ApiEnv>();
 
 /**
  * What each account write says when it refuses a caller that is not the person
@@ -146,19 +150,22 @@ const OWNER_ONLY = {
  * account signs in to the official space answers (spec
  * `official-community-space` D5).
  */
-router.use('/communities', gateCloudCommunities(), createCloudCommunitiesRouter());
+router.use('/communities/*', gateCloudCommunities());
+router.route('/communities', createCloudCommunitiesRoutes());
 
 /** POST /api/cloud/link/start — begin the device flow; returns codes to display. */
-router.post('/link/start', async (req, res) => {
-  if (refuseErrorUnlessOwner(req, res, OWNER_ONLY.linkStart)) return;
+router.post('/link/start', async (c) => {
+  const refusal = errorRefusalUnlessOwner(honoRequestFacts(c), OWNER_ONLY.linkStart);
+  if (refusal) return c.json(refusal, 403);
   try {
     const result = await getCloudLinkManager().startLink();
-    return res.json(result);
+    return c.json(result);
   } catch (err) {
     logger.error('[Cloud] Failed to start device link', logError(err));
-    return res
-      .status(502)
-      .json({ error: 'Could not reach the DorkOS cloud to start linking. Try again shortly.' });
+    return c.json(
+      { error: 'Could not reach the DorkOS cloud to start linking. Try again shortly.' },
+      502
+    );
   }
 });
 
@@ -169,10 +176,10 @@ router.post('/link/start', async (req, res) => {
  * code waiting for approval links this computer to whichever account approves
  * it, so only the person who may start a link (the owner bar) is shown it.
  */
-router.get('/link/status', (req, res) => {
+router.get('/link/status', (c) => {
   const { pending, ...status } = getCloudLinkManager().getStatus();
-  const mayLink = refuseUnlessAccountOwner(req, res) === undefined;
-  res.json(pending && mayLink ? { ...status, pending } : status);
+  const mayLink = refuseUnlessAccountOwner(honoRequestFacts(c)) === undefined;
+  return c.json(pending && mayLink ? { ...status, pending } : status);
 });
 
 /**
@@ -181,27 +188,27 @@ router.get('/link/status', (req, res) => {
  * first and a key it issues is kept. Answers the state it settled in:
  * `linked` while this computer holds a key, else `idle`.
  */
-router.post('/link/cancel', async (req, res) => {
-  if (refuseErrorUnlessOwner(req, res, OWNER_ONLY.linkCancel)) return;
-  res.json(await getCloudLinkManager().cancelLink());
+router.post('/link/cancel', async (c) => {
+  const refusal = errorRefusalUnlessOwner(honoRequestFacts(c), OWNER_ONLY.linkCancel);
+  if (refusal) return c.json(refusal, 403);
+  return c.json(await getCloudLinkManager().cancelLink());
 });
 
 /** POST /api/cloud/unlink — withdraw locally before best-effort server-side revoke. */
-router.post('/unlink', async (req, res) => {
-  if (refuseErrorUnlessOwner(req, res, OWNER_ONLY.unlink)) return;
+router.post('/unlink', async (c) => {
+  const refusal = errorRefusalUnlessOwner(honoRequestFacts(c), OWNER_ONLY.unlink);
+  if (refusal) return c.json(refusal, 403);
   try {
     await getCloudLinkManager().unlink();
-    return res.json({ ok: true });
+    return c.json({ ok: true });
   } catch (err) {
     logger.error('[Cloud] Unlink failed', logError(err));
-    return res.status(500).json({ error: 'Failed to unlink this instance' });
+    return c.json({ error: 'Failed to unlink this instance' }, 500);
   }
 });
 
 /** GET /api/cloud/status — settled linked/unlinked summary for Settings. */
-router.get('/status', (_req, res) => {
-  res.json(getCloudLinkManager().getSummary());
-});
+router.get('/status', (c) => c.json(getCloudLinkManager().getSummary()));
 
 /**
  * POST /api/cloud/link/check — ask the DorkOS account, now, whether it still
@@ -209,11 +216,12 @@ router.get('/status', (_req, res) => {
  * computer whose account was deleted comes back unlinked with its key cleared;
  * a service that cannot be reached keeps the link. Never an error.
  */
-router.post('/link/check', async (req, res) => {
+router.post('/link/check', async (c) => {
   // Owner-only, like the deletion it follows: it reaches the service on this
   // computer's key, and nothing an agent does needs it.
-  if (refuseEnvelopeUnlessOwner(req, res, OWNER_ONLY.linkCheck)) return;
-  res.json(await getCloudLinkManager().checkLink());
+  const refusal = envelopeRefusalUnlessOwner(honoRequestFacts(c), OWNER_ONLY.linkCheck);
+  if (refusal) return c.json(refusal, 403);
+  return c.json(await getCloudLinkManager().checkLink());
 });
 
 /**
@@ -223,31 +231,31 @@ router.post('/link/check', async (req, res) => {
  * `available: false` — unlinked, and route absent — so reaching here really does
  * mean the service is unwell.
  *
- * @param res - The Express response to answer on.
+ * @param c - The request's context.
  * @param error - The value the read rejected with.
  * @param what - What was being read, for the log line.
  */
-function cloudReadFailed(res: Response, error: unknown, what: string) {
+function cloudReadFailed(c: Context<ApiEnv>, error: unknown, what: string) {
   const problem = problemOf(error);
   logger.warn(`[Cloud] Could not read ${what}`, {
     ...logError(error),
     code: problem?.code,
     status: problem?.status,
   });
-  return res.status(502).json({ error: 'Could not reach the DorkOS cloud. Try again shortly.' });
+  return c.json({ error: 'Could not reach the DorkOS cloud. Try again shortly.' }, 502);
 }
 
 /** GET /api/cloud/plan — the plan card's entitlements + credit position. */
-router.get('/plan', async (_req, res) => {
+router.get('/plan', async (c) => {
   try {
     const overview = await readPlanOverview();
     const body: CloudPlanResponse =
       overview === null
         ? { available: false }
         : { available: true, entitlements: overview.entitlements, balance: overview.balance };
-    return res.json(body);
+    return c.json(body);
   } catch (err) {
-    return cloudReadFailed(res, err, 'the plan');
+    return cloudReadFailed(c, err, 'the plan');
   }
 });
 
@@ -255,67 +263,67 @@ router.get('/plan', async (_req, res) => {
 const UsageGroupingSchema = z.enum(['seat', 'model', 'day']).default('seat');
 
 /** GET /api/cloud/usage — one grouped usage window for the credits gauge. */
-router.get('/usage', async (req, res) => {
-  const grouping = UsageGroupingSchema.safeParse(req.query.groupBy);
-  if (!grouping.success) return res.status(400).json({ error: 'Unknown grouping' });
+router.get('/usage', async (c) => {
+  const grouping = UsageGroupingSchema.safeParse(readQuery(c).groupBy);
+  if (!grouping.success) return c.json({ error: 'Unknown grouping' }, 400);
   try {
     const usage = await readUsage(grouping.data as UsageGrouping);
     const body: CloudUsageResponse =
       usage === null ? { available: false } : { available: true, usage };
-    return res.json(body);
+    return c.json(body);
   } catch (err) {
-    return cloudReadFailed(res, err, 'usage');
+    return cloudReadFailed(c, err, 'usage');
   }
 });
 
 /** GET /api/cloud/nudge — the already-reduced comparison, when there is one. */
-router.get('/nudge', async (_req, res) => {
+router.get('/nudge', async (c) => {
   try {
     const nudge = await readNudge();
     const body: CloudNudgeResponse =
       nudge === null ? { available: false } : { available: true, nudge };
-    return res.json(body);
+    return c.json(body);
   } catch (err) {
     // A nudge is an optional affordance; an unwell service hides it rather than
     // turning the settings page red.
     logger.warn('[Cloud] Could not read the nudge', logError(err));
-    return res.json({ available: false } satisfies CloudNudgeResponse);
+    return c.json({ available: false } satisfies CloudNudgeResponse);
   }
 });
 
 /** GET /api/cloud/orgs — the organizations this account belongs to. */
-router.get('/orgs', async (_req, res) => {
+router.get('/orgs', async (c) => {
   try {
     const orgs = await listOrgs();
     const body: CloudOrgsResponse =
       orgs === null ? { available: false } : { available: true, orgs };
-    return res.json(body);
+    return c.json(body);
   } catch (err) {
-    return cloudReadFailed(res, err, 'organizations');
+    return cloudReadFailed(c, err, 'organizations');
   }
 });
 
 /** GET /api/cloud/orgs/:orgId/seats — one organization's seats. */
-router.get('/orgs/:orgId/seats', async (req, res) => {
+router.get('/orgs/:orgId/seats', async (c) => {
   try {
-    const seats = await listSeats(req.params.orgId);
+    const seats = await listSeats(c.req.param('orgId'));
     const body: CloudSeatsResponse =
       seats === null ? { available: false } : { available: true, seats };
-    return res.json(body);
+    return c.json(body);
   } catch (err) {
-    return cloudReadFailed(res, err, 'seats');
+    return cloudReadFailed(c, err, 'seats');
   }
 });
 
 /** GET /api/cloud/orgs/:orgId/members — who could hold a person seat. */
-router.get('/orgs/:orgId/members', async (req, res) => {
+router.get('/orgs/:orgId/members', async (c) => {
   try {
-    const members = await listMembers(req.params.orgId);
+    const members = await listMembers(c.req.param('orgId'));
     const body: CloudMembersResponse =
       members === null ? { available: false } : { available: true, members };
-    return res.json(body);
+    return c.json(body);
   } catch (err) {
-    return cloudReadFailed(res, err, 'members');
+    return cloudReadFailed(c, err, 'members');
   }
 });
 
@@ -370,20 +378,20 @@ interface WriteFailureWording {
  * `{ ok: false, problem }` envelope carries the service's status inside
  * `problem.status`, so nothing is lost.
  *
- * @param res - The Express response to answer on.
+ * @param c - The request's context.
  * @param error - The value the write rejected with.
  * @param wording - What was being done, and what to say when it is not served.
  */
-function cloudWriteFailed(res: Response, error: unknown, wording: WriteFailureWording) {
+function cloudWriteFailed(c: Context<ApiEnv>, error: unknown, wording: WriteFailureWording) {
   if (wording.absent !== undefined && isAbsent(error)) {
-    return res.json({ ok: false, message: wording.absent } satisfies CloudWriteRefusal);
+    return c.json({ ok: false, message: wording.absent } satisfies CloudWriteRefusal);
   }
   const problem = problemOf(error);
   if (problem !== null) {
-    return res.json({ ok: false, problem } satisfies CloudWriteRefusal);
+    return c.json({ ok: false, problem } satisfies CloudWriteRefusal);
   }
   logger.warn(`[Cloud] Could not ${wording.what}`, logError(error));
-  return res.json({
+  return c.json({
     ok: false,
     message: wording.unconfirmed ?? 'Couldn’t reach your DorkOS account. Try again shortly.',
   } satisfies CloudWriteRefusal);
@@ -396,41 +404,43 @@ const NOT_LINKED: CloudWriteRefusal = {
 };
 
 /** POST /api/cloud/seats/:seatId/assign — give a seat to a person or an agent. */
-router.post('/seats/:seatId/assign', async (req, res) => {
-  if (refuseEnvelopeUnlessOwner(req, res, OWNER_ONLY.seats)) return;
+router.post('/seats/:seatId/assign', async (c) => {
+  const refusal = envelopeRefusalUnlessOwner(honoRequestFacts(c), OWNER_ONLY.seats);
+  if (refusal) return c.json(refusal, 403);
   // 200 with a refusal envelope, for the reason {@link cloudWriteFailed} gives.
-  if (!isCloudLinked()) return res.json(NOT_LINKED);
-  const parsed = SeatAssignBodySchema.safeParse(req.body);
-  if (!parsed.success) return res.status(400).json({ ok: false, message: 'Unknown subject' });
+  if (!isCloudLinked()) return c.json(NOT_LINKED);
+  const parsed = SeatAssignBodySchema.safeParse(readJsonBody(c));
+  if (!parsed.success) return c.json({ ok: false, message: 'Unknown subject' }, 400);
   try {
-    const seat = await assignSeat(req.params.seatId, parsed.data.subject);
-    return res.json({ ok: true, seat } satisfies CloudSeatActionResponse);
+    const seat = await assignSeat(c.req.param('seatId'), parsed.data.subject);
+    return c.json({ ok: true, seat } satisfies CloudSeatActionResponse);
   } catch (err) {
-    return cloudWriteFailed(res, err, { what: 'change a seat' });
+    return cloudWriteFailed(c, err, { what: 'change a seat' });
   }
 });
 
 /** POST /api/cloud/seats/:seatId/release — hand a seat back. */
-router.post('/seats/:seatId/release', async (req, res) => {
-  if (refuseEnvelopeUnlessOwner(req, res, OWNER_ONLY.seats)) return;
-  if (!isCloudLinked()) return res.json(NOT_LINKED);
+router.post('/seats/:seatId/release', async (c) => {
+  const refusal = envelopeRefusalUnlessOwner(honoRequestFacts(c), OWNER_ONLY.seats);
+  if (refusal) return c.json(refusal, 403);
+  if (!isCloudLinked()) return c.json(NOT_LINKED);
   try {
-    await releaseSeat(req.params.seatId);
-    return res.json({ ok: true } satisfies CloudSeatActionResponse);
+    await releaseSeat(c.req.param('seatId'));
+    return c.json({ ok: true } satisfies CloudSeatActionResponse);
   } catch (err) {
-    return cloudWriteFailed(res, err, { what: 'change a seat' });
+    return cloudWriteFailed(c, err, { what: 'change a seat' });
   }
 });
 
 /** GET /api/cloud/offers — what the service will sell this account, as it sent it. */
-router.get('/offers', async (_req, res) => {
+router.get('/offers', async (c) => {
   try {
     const offers = await readOffers();
     const body: CloudOffersResponse =
       offers === null ? { available: false } : { available: true, offers };
-    return res.json(body);
+    return c.json(body);
   } catch (err) {
-    return cloudReadFailed(res, err, 'offers');
+    return cloudReadFailed(c, err, 'offers');
   }
 });
 
@@ -458,24 +468,25 @@ const BILLING_ABSENT: Record<CloudBillingPage, string> = {
  * the person's own browser; nothing is paid here. A refusal answers 200, for
  * the reason {@link cloudWriteFailed} gives.
  */
-router.post('/billing/:page', async (req, res) => {
-  if (refuseEnvelopeUnlessOwner(req, res, OWNER_ONLY.billing)) return;
-  const page = BillingPageSchema.safeParse(req.params.page);
-  if (!page.success) return res.status(404).json({ ok: false, message: 'Unknown billing page' });
+router.post('/billing/:page', async (c) => {
+  const refusal = envelopeRefusalUnlessOwner(honoRequestFacts(c), OWNER_ONLY.billing);
+  if (refusal) return c.json(refusal, 403);
+  const page = BillingPageSchema.safeParse(c.req.param('page'));
+  if (!page.success) return c.json({ ok: false, message: 'Unknown billing page' }, 404);
   let skuId: string | undefined;
   if (page.data === 'checkout') {
-    const parsed = CheckoutBodySchema.safeParse(req.body);
-    if (!parsed.success) return res.status(400).json({ ok: false, message: 'Choose an offer' });
+    const parsed = CheckoutBodySchema.safeParse(readJsonBody(c));
+    if (!parsed.success) return c.json({ ok: false, message: 'Choose an offer' }, 400);
     skuId = parsed.data.skuId;
   }
   // A short-lived page address is not something to keep in any cache.
-  res.setHeader('Cache-Control', 'no-store');
-  if (!isCloudLinked()) return res.json(NOT_LINKED);
+  c.header('Cache-Control', 'no-store');
+  if (!isCloudLinked()) return c.json(NOT_LINKED);
   try {
     const url = await openBillingPage({ kind: page.data, skuId });
-    return res.json({ ok: true, url } satisfies CloudBillingSessionResponse);
+    return c.json({ ok: true, url } satisfies CloudBillingSessionResponse);
   } catch (err) {
-    return cloudWriteFailed(res, err, {
+    return cloudWriteFailed(c, err, {
       what: `open the ${page.data} page`,
       absent: BILLING_ABSENT[page.data],
     });
@@ -487,10 +498,11 @@ router.post('/billing/:page', async (req, res) => {
  * holds. When the answer already carries a download link, it is here; until
  * then, asking again is how to get it. Sent `no-store`.
  */
-router.post('/account/export', async (req, res) => {
-  res.setHeader('Cache-Control', 'no-store');
-  if (refuseEnvelopeUnlessOwner(req, res, OWNER_ONLY.export)) return;
-  if (!isCloudLinked()) return res.json(NOT_LINKED);
+router.post('/account/export', async (c) => {
+  c.header('Cache-Control', 'no-store');
+  const refusal = envelopeRefusalUnlessOwner(honoRequestFacts(c), OWNER_ONLY.export);
+  if (refusal) return c.json(refusal, 403);
+  if (!isCloudLinked()) return c.json(NOT_LINKED);
   try {
     const job = await requestAccountExport();
     const body: CloudAccountExportResponse = {
@@ -502,9 +514,9 @@ router.post('/account/export', async (req, res) => {
         emailRequested: job.emailRequested,
       },
     };
-    return res.json(body);
+    return c.json(body);
   } catch (err) {
-    return cloudWriteFailed(res, err, {
+    return cloudWriteFailed(c, err, {
       what: 'request an account export',
       absent: 'Exporting your data isn’t available on your account yet.',
     });
@@ -518,14 +530,15 @@ router.post('/account/export', async (req, res) => {
  * Once it has, `POST /api/cloud/link/check` finds this computer unlinked.
  * A refusal answers 200, for the reason {@link cloudWriteFailed} gives.
  */
-router.post('/account/deletion', async (req, res) => {
-  res.setHeader('Cache-Control', 'no-store');
+router.post('/account/deletion', async (c) => {
+  c.header('Cache-Control', 'no-store');
   // Only the owner of this DorkOS may ask to end the account, never an
   // agent: not one that names itself, not one holding an approval token, and,
   // with login on, not one presenting the person's API key instead of a
   // browser session, nor a person signed in to some other account.
-  if (refuseEnvelopeUnlessOwner(req, res, OWNER_ONLY.deletion)) return;
-  if (!isCloudLinked()) return res.json(NOT_LINKED);
+  const refusal = envelopeRefusalUnlessOwner(honoRequestFacts(c), OWNER_ONLY.deletion);
+  if (refusal) return c.json(refusal, 403);
+  if (!isCloudLinked()) return c.json(NOT_LINKED);
   try {
     const deletion = await requestAccountDeletion();
     const body: CloudAccountDeletionResponse = {
@@ -536,9 +549,9 @@ router.post('/account/deletion', async (req, res) => {
         confirmBy: deletion.confirmBy,
       },
     };
-    return res.json(body);
+    return c.json(body);
   } catch (err) {
-    return cloudWriteFailed(res, err, {
+    return cloudWriteFailed(c, err, {
       what: 'ask to delete the account',
       absent: 'Deleting your account from the app isn’t available on your account yet.',
       // The request may have reached the service, and the email gone, before
@@ -554,8 +567,8 @@ router.post('/account/deletion', async (req, res) => {
  * runtimes they reach, who chose them as a default, and the notices owed about
  * choices made for the person. Carries no credential.
  */
-router.get('/credits', async (_req, res) => {
-  res.json(await creditsStatus());
+router.get('/credits', async (c) => {
+  return c.json(await creditsStatus());
 });
 
 const CreditsDefaultBodySchema = z.object({
@@ -571,11 +584,12 @@ const CreditsDefaultBodySchema = z.object({
  * credits ON while they cannot be had,
  * so nothing is ever set that would refuse every turn.
  */
-router.put('/credits/default', async (req, res) => {
-  if (refuseErrorUnlessOwner(req, res, OWNER_ONLY.credits)) return;
-  const parsed = CreditsDefaultBodySchema.safeParse(req.body);
+router.put('/credits/default', async (c) => {
+  const refusal = errorRefusalUnlessOwner(honoRequestFacts(c), OWNER_ONLY.credits);
+  if (refusal) return c.json(refusal, 403);
+  const parsed = CreditsDefaultBodySchema.safeParse(readJsonBody(c));
   if (!parsed.success) {
-    return res.status(400).json({ error: 'Name a runtime and whether to use credits.' });
+    return c.json({ error: 'Name a runtime and whether to use credits.' }, 400);
   }
   const { runtime, useCredits } = parsed.data;
   // A runtime whose credits choice moves the whole runtime (OpenCode: one
@@ -591,36 +605,41 @@ router.put('/credits/default', async (req, res) => {
     live?.getCapabilities().credits?.scope === 'runtime' &&
     live.hasRunningTurns?.() === true
   ) {
-    return res.status(409).json({
-      error: `${runtimeDisplayName(runtime)} is in the middle of a reply. Switch once it finishes, so nothing it is doing is cut off.`,
-    });
+    return c.json(
+      {
+        error: `${runtimeDisplayName(runtime)} is in the middle of a reply. Switch once it finishes, so nothing it is doing is cut off.`,
+      },
+      409
+    );
   }
   if (useCredits) {
     const view = creditsRuntimeViews().find((candidate) => candidate.type === runtime);
     if (!view?.wired) {
-      return res
-        .status(400)
-        .json({ error: `${runtimeDisplayName(runtime)} can't run on DorkOS credits yet.` });
+      return c.json(
+        { error: `${runtimeDisplayName(runtime)} can't run on DorkOS credits yet.` },
+        400
+      );
     }
     if (creditsKilled()) {
-      return res.status(409).json({ error: 'DorkOS credits are turned off on this computer.' });
+      return c.json({ error: 'DorkOS credits are turned off on this computer.' }, 409);
     }
     if (!isCloudLinked()) {
-      return res.status(409).json({ error: 'Sign in to your DorkOS account first.' });
+      return c.json({ error: 'Sign in to your DorkOS account first.' }, 409);
     }
   }
   setCreditsDefault(runtime, useCredits);
-  return res.json(await creditsStatus());
+  return c.json(await creditsStatus());
 });
 
 /**
  * POST /api/cloud/credits/undo-filled — put back every runtime DorkOS set to
  * credits on a new link, leaving the person's own picks alone ("Undo all").
  */
-router.post('/credits/undo-filled', async (req, res) => {
-  if (refuseErrorUnlessOwner(req, res, OWNER_ONLY.credits)) return;
+router.post('/credits/undo-filled', async (c) => {
+  const refusal = errorRefusalUnlessOwner(honoRequestFacts(c), OWNER_ONLY.credits);
+  if (refusal) return c.json(refusal, 403);
   undoFilledDefaults();
-  return res.json(await creditsStatus());
+  return c.json(await creditsStatus());
 });
 
 const CreditsNoticeDismissBodySchema = z.object({
@@ -629,12 +648,13 @@ const CreditsNoticeDismissBodySchema = z.object({
 });
 
 /** POST /api/cloud/credits/notices/dismiss — settle one notice without changing any choice. */
-router.post('/credits/notices/dismiss', async (req, res) => {
-  if (refuseErrorUnlessOwner(req, res, OWNER_ONLY.creditsNotice)) return;
-  const parsed = CreditsNoticeDismissBodySchema.safeParse(req.body);
-  if (!parsed.success) return res.status(400).json({ error: 'Name the notice to dismiss.' });
+router.post('/credits/notices/dismiss', async (c) => {
+  const refusal = errorRefusalUnlessOwner(honoRequestFacts(c), OWNER_ONLY.creditsNotice);
+  if (refusal) return c.json(refusal, 403);
+  const parsed = CreditsNoticeDismissBodySchema.safeParse(readJsonBody(c));
+  if (!parsed.success) return c.json({ error: 'Name the notice to dismiss.' }, 400);
   dismissCreditsNotice(parsed.data);
-  return res.json(await creditsStatus());
+  return c.json(await creditsStatus());
 });
 
 export default router;

@@ -11,9 +11,6 @@ import canvasDocEventRoutes, { canvasDocJsonParser } from './routes/canvas-doc-e
 import { createCommunityConnectionsRouter } from './routes/community-connections.js';
 import { createRemoteCommunitiesRouter } from './routes/remote-communities.js';
 import { gateCommunityConnections, gateRemoteCommunities } from './middleware/spaces-enabled.js';
-import tunnelRoutes from './routes/tunnel.js';
-import { createRemoteAccessRouter } from './routes/remote-access.js';
-import cloudRoutes from './routes/cloud.js';
 import onboardingRoutes from './routes/onboarding.js';
 import feedbackRoutes, { feedbackJsonParser } from './routes/feedback.js';
 import mcpConfigRoutes from './routes/mcp-config.js';
@@ -183,9 +180,6 @@ export function createApp(options: { admission: MainRequestAdmission }) {
     createCommunityConnectionsRouter()
   );
   app.use('/api/communities', gateRemoteCommunities(), createRemoteCommunitiesRouter());
-  app.use('/api/tunnel', tunnelRoutes);
-  app.use('/api/remote-access', createRemoteAccessRouter());
-  app.use('/api/cloud', cloudRoutes);
   app.use('/api/onboarding', onboardingRoutes);
   app.use('/api/feedback', feedbackRoutes);
   app.use('/api/events', eventsRouter);

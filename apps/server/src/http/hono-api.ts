@@ -37,6 +37,7 @@ import { createApiDocsRoutes } from '../routes/api-docs.js';
 import { createConnectorRoutes, type ConnectorRoutesDeps } from '../routes/connectors.js';
 import { createAuditRoutes, type AuditRouterDeps } from '../routes/audit.js';
 import capabilitiesRoutes from '../routes/capabilities.js';
+import cloudRoutes from '../routes/cloud.js';
 import { createCapabilitiesCatalogRoutes } from '../routes/capabilities-catalog.js';
 import { createCapabilitiesInvokeRoutes } from '../routes/capabilities-invoke.js';
 import commandRoutes from '../routes/commands.js';
@@ -69,6 +70,7 @@ import projectRoutes from '../routes/projects.js';
 import { createRuntimesRoutes } from '../routes/runtimes.js';
 import { createPushRoutes, type PushRouterDeps } from '../routes/push.js';
 import readCursorRoutes from '../routes/read-cursors.js';
+import { createRemoteAccessRoutes } from '../routes/remote-access.js';
 import { createSearchRoutes, type SearchRouterDeps } from '../routes/search.js';
 import { createSessionLocationsRoutes } from '../routes/session-locations.js';
 import { createShapesRoutes, type ShapesRouterDeps } from '../routes/shapes.js';
@@ -77,6 +79,7 @@ import { createTasksRoutes, type TasksRouterDeps } from '../routes/tasks.js';
 import { createSystemRoutes, type SystemRouteDeps } from '../routes/system.js';
 import { createTeamRoutes, type TeamRouterDeps } from '../routes/team.js';
 import { createTemplateRoutes } from '../routes/templates.js';
+import tunnelRoutes from '../routes/tunnel.js';
 import uploadRoutes from '../routes/uploads.js';
 import workbenchServeRoutes from '../routes/workbench-serve.js';
 import workspaceRoutes from '../routes/workspaces.js';
@@ -210,6 +213,11 @@ export function createHonoApi(options: HonoApiOptions): Hono<ApiEnv> {
   // Always mounted; the account rules inside it record their changes in the
   // activity feed when it was handed over.
   app.route('/api/runtimes', createRuntimesRoutes({ activity: deps.activity }));
+  // The person's own tunnel, managed remote access and the DorkOS account:
+  // the Owner-only front-door settings, behind the same chain as every route.
+  app.route('/api/tunnel', tunnelRoutes);
+  app.route('/api/remote-access', createRemoteAccessRoutes());
+  app.route('/api/cloud', cloudRoutes);
   if (deps.sessionLocations) {
     app.route('/api/session-locations', createSessionLocationsRoutes(deps.sessionLocations));
   }

@@ -57,23 +57,20 @@ function refusalFor(
 }
 
 /**
- * Answer 403 `{ ok: false, code, message }` unless the caller owns this
- * install.
+ * The 403 body for the writes that answer with an envelope, for a route on the
+ * Hono chain that answers it itself: `c.json(body, 403)`.
  *
- * @param req - The incoming request.
- * @param res - The response, written on refusal.
+ * @param caller - The request's facts.
  * @param wording - What this write says when it refuses.
- * @returns `true` when the request was answered, so the caller must return.
+ * @returns `{ ok: false, code, message }`, or `undefined` when the caller owns
+ *   this install.
  */
-export function refuseEnvelopeUnlessOwner(
-  req: Request,
-  res: Response,
+export function envelopeRefusalUnlessOwner(
+  caller: RequestFacts,
   wording: AccountOwnerWording
-): boolean {
-  const refusal = refusalFor(expressRequestFacts(req, res), wording);
-  if (refusal === undefined) return false;
-  res.status(403).json({ ok: false, ...refusal });
-  return true;
+): { ok: false; code: string; message: string } | undefined {
+  const refusal = refusalFor(caller, wording);
+  return refusal === undefined ? undefined : { ok: false, ...refusal };
 }
 
 /**

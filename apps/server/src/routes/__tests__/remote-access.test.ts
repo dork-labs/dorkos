@@ -2,9 +2,10 @@
  * `/api/remote-access` (DOR-2086): who may start managed setup, choose a mode
  * and withdraw, and that closing stays open to everyone.
  *
- * The router is mounted alone behind a fixture standing in for `sessionGate`,
- * the way `tunnel.test.ts` tests the same bars, so a refusal here is the
- * route's and not the app gate's.
+ * The routes are served behind the real `/api` chain with the session gate
+ * stubbed open and the identity it would have resolved set in `before`, the
+ * way `tunnel.test.ts` tests the same bars, so a refusal here is the route's
+ * and not the app gate's.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -12,7 +13,18 @@ vi.mock('../../services/core/config-manager.js', () => ({
   configManager: { get: vi.fn(), set: vi.fn(), onChange: vi.fn(() => () => undefined) },
 }));
 
-import express from 'express';
+// A tunnel is open at `box.ngrok.app`, so the `/api` host guard trusts that
+// name and a request from another device reaches the route's own local bar.
+vi.mock('../../lib/trusted-origins.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../lib/trusted-origins.js')>()),
+  getTunnelHosts: () => ['box.ngrok.app'],
+}));
+
+vi.mock('../../services/core/auth/session-gate.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../services/core/auth/session-gate.js')>()),
+  decideSessionGate: vi.fn(async () => ({ allowed: true })),
+}));
+
 import request from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
 import type { RemoteAccessReport } from '@dorkos/shared/types';
@@ -20,7 +32,8 @@ import type { RemoteAccessReport } from '@dorkos/shared/types';
 import { configManager } from '../../services/core/config-manager.js';
 import type { RequestUser } from '../../services/core/auth/session-gate.js';
 import { markManagedIngress } from '../../services/core/remote/ingress-mark.js';
-import { createRemoteAccessRouter, REMOTE_SETUP_NEEDS_THIS_COMPUTER } from '../remote-access.js';
+import { createRemoteAccessRoutes, REMOTE_SETUP_NEEDS_THIS_COMPUTER } from '../remote-access.js';
+import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
 
 const REPORT: RemoteAccessReport = {
   mode: 'off',
@@ -50,17 +63,20 @@ function deps() {
 
 let current: ReturnType<typeof deps>;
 
-/** The router alone, with the identity `sessionGate` would have resolved. */
+/** The routes alone, with the identity `sessionGate` would have resolved. */
 function app(options: { user?: RequestUser; managed?: boolean } = {}) {
-  const fixture = express();
-  fixture.use(express.json());
-  fixture.use((req, res, next) => {
-    if (options.user) res.locals.user = options.user;
-    if (options.managed) markManagedIngress(req);
-    next();
-  });
-  fixture.use('/api/remote-access', createRemoteAccessRouter(current));
-  return target.mount(fixture);
+  return target.mount(
+    honoGroupListener(
+      { path: '/api/remote-access', routes: createRemoteAccessRoutes(current) },
+      {
+        before: async (c, next) => {
+          if (options.user) c.set('user', options.user);
+          if (options.managed) markManagedIngress(c.env.incoming);
+          await next();
+        },
+      }
+    )
+  );
 }
 
 function loginOn(enabled: boolean): void {
