@@ -2,6 +2,14 @@
   "version": 1,
   "specs": [
     {
+      "id": "261012-191847",
+      "slug": "mini-app-placement",
+      "title": "Mini-app placement rules and navigation to mini-app pages",
+      "created": "2026-10-12",
+      "status": "specified",
+      "linearIssue": "DOR-2866"
+    },
+    {
       "id": "261009-220922",
       "slug": "tab-identity-everywhere",
       "title": "Tabs that say who or where and whether it needs you, on every page",

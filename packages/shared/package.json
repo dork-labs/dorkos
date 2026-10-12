@@ -389,6 +389,10 @@
       "types": "./src/smart-groups.ts",
       "default": "./dist/smart-groups.js"
     },
+    "./mini-app-placement": {
+      "types": "./src/mini-app-placement.ts",
+      "default": "./dist/mini-app-placement.js"
+    },
     "./canvas-source-key": {
       "types": "./src/canvas-source-key.ts",
       "default": "./dist/canvas-source-key.js"

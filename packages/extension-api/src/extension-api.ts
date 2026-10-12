@@ -41,6 +41,37 @@ export interface ExtensionDialogProps {
   readonly onOpenChange: (open: boolean) => void;
 }
 
+/**
+ * Where a right-panel tab shows by default: in chats with these agents, in
+ * these rooms, and on these pages. A tab shows wherever any of them matches.
+ *
+ * Page keys are the first part of the address: `home`, `activity`, `tasks`,
+ * `workspaces`, `team`, `connections`, `marketplace`, `x/<extensionId>` for a
+ * mini app's own pages, `session` for every chat and `channels` for every
+ * channel and direct message. `'*'` means everywhere.
+ *
+ * Agent and room ids belong to one computer. A mini app built for one person
+ * can name them; one shared with others should use pages, and leave the
+ * specific agents and rooms to the person in Settings.
+ *
+ * @example
+ * ```ts
+ * // In every chat, and on Activity.
+ * api.registerComponent('right-panel', 'queue', Queue, {
+ *   label: 'Queue',
+ *   showIn: { pages: ['session', 'activity'] },
+ * });
+ * ```
+ */
+export interface ExtensionTabPlacement {
+  /** Agent ids: the tab shows in a chat with any of them. */
+  readonly agents?: readonly string[];
+  /** Room ids: channels and direct messages on this computer. */
+  readonly rooms?: readonly string[];
+  /** Page keys, or `'*'` for everywhere. */
+  readonly pages?: readonly string[];
+}
+
 /** Controls returned by `registerDialog`. Safe to call before the dialog first renders. */
 export interface ExtensionDialogControls {
   /** Show the dialog, closing any other extension dialog. Does nothing when it is already open. */
@@ -294,6 +325,10 @@ export interface ExtensionAPI {
    *   `visibleWhen` applies only to the `dashboard.sections` slot: a predicate
    *   the host re-evaluates on render, returning false to hide the section
    *   without unregistering it. Omit it and the section is always visible.
+   *   `showIn` applies only to the `right-panel` slot: where the tab shows by
+   *   default (see {@link ExtensionTabPlacement}). Omit it and the tab shows
+   *   everywhere. A person, or an agent, can change it in Settings; their
+   *   choice replaces this default.
    */
   registerComponent(
     slot: ExtensionPointId,
@@ -305,6 +340,7 @@ export interface ExtensionAPI {
       icon?: ComponentType<{ className?: string }>;
       group?: string;
       visibleWhen?: () => boolean;
+      showIn?: ExtensionTabPlacement;
     }
   ): () => void;
 

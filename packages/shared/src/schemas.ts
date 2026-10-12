@@ -23,6 +23,7 @@ import {
   NotificationPrefsSchema,
   RemoteAccessModeSchema,
 } from './config-schema.js';
+import { SavedPlacementSchema } from './mini-app-placement.js';
 // The effort ladder itself lives in the dependency-free constants module so this
 // file and `config-schema.ts` (which this file already imports) can both build
 // their enums from ONE list — see `EFFORT_LEVELS` for why it cannot live in either.
@@ -5048,6 +5049,9 @@ export const ServerConfigSchema = z
         // defined in config-schema.ts; on the wire because `SessionComposer`
         // picks its field from it and Settings shows it back as a switch.
         composer: ComposerPrefsSchema,
+        // Where each mini app's right-panel tab shows (spec
+        // `mini-app-placement`). Also defined in mini-app-placement.ts.
+        panelTabs: z.array(SavedPlacementSchema),
         // The two halves of the power-door answer (spec `full-power-defaults`,
         // D1). On the wire because the cockpit decides from them whether to put
         // the door up at all — a curated DTO that omitted them would leave the
