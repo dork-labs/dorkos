@@ -1,12 +1,13 @@
 import { RateLimited } from '../http.js';
 
 /**
- * The shared per-minute attempt limiter every older per-caller and per-account limit spends from
- * (`app.ts`): sign-ups, bootstrap, invite previews, pairings, host keys, password guesses.
+ * The per-minute attempt limiter. `app.ts` makes one shared instance that the older per-caller
+ * limits spend from (sign-ups, bootstrap, invite previews, pairings, host keys), and a second one
+ * only for password guesses.
  *
  * It holds at most `maxKeys` keys; when full it drops keys idle for a minute, then its oldest key.
- * That last step means spraying keys into it can evict another key's budget, which is why mailed
- * links keep their own store (`email-links/limiter.ts`).
+ * That last step means spraying keys into it can evict another key's budget, which is why password
+ * guesses get their own instance and mailed links keep their own store (`email-links/limiter.ts`).
  */
 export function createAttemptLimiter(maxKeys = 10_000) {
   const attemptTimes = new Map<string, number[]>();
