@@ -15,11 +15,18 @@ import {
 import { utimes } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
-import express from 'express';
 import request from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
 import type { MarketplaceJson, PluginPackageManifest, PluginSource } from '@dorkos/marketplace';
 import { resolvePackageSource } from '../marketplace/packages.js';
+
+// The session gate lets every request through: these cases are about the
+// routes' own bars, and each one sets the user the gate would have proved
+// (`before` below), as the Express version stubbed `res.locals.user`.
+vi.mock('../../services/core/auth/session-gate.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../services/core/auth/session-gate.js')>()),
+  decideSessionGate: vi.fn(async () => ({ allowed: true })),
+}));
 
 vi.mock('../../lib/logger.js', () => ({
   logger: { error: vi.fn(), warn: vi.fn(), info: vi.fn(), debug: vi.fn() },
@@ -87,7 +94,8 @@ import {
   GitRemoteUnreachableError,
 } from '../../services/marketplace/lib/git/git-tree.js';
 import type { InstallResult, PermissionPreview } from '../../services/marketplace/types.js';
-import { createMarketplaceRouter } from '../marketplace.js';
+import { createMarketplaceRoutes } from '../marketplace.js';
+import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
 import {
   authorizeCapability,
   composeRegistry,
@@ -275,7 +283,6 @@ function writePackageManifest(dir: string, manifest: Record<string, unknown>): v
 
 describe('Marketplace Routes', () => {
   let dorkHome: string;
-  let app: express.Express;
   let sourceManager: MarketplaceSourceManager;
   let cache: MarketplaceCache;
   let fetcher: FakeFetcher;
@@ -319,43 +326,44 @@ describe('Marketplace Routes', () => {
    * `PackageFetcher`, so the add is proved through the very path refresh takes.
    */
   function mountRouter(routeFetcher: PackageFetcher): void {
-    app = express();
-    app.use(express.json());
-    app.use((req, res, next) => {
-      // Stands in for the agent-identity middleware. Absent an agent header this
-      // request looks like the cockpit's, which is the caller the mutation routes
-      // let through without an approval (DOR-467).
-      if (agentHeader) req.headers['x-dorkos-agent'] = agentHeader;
-      // And for `sessionGate`, which resolves an identity only when login is on.
-      if (signedInUser) res.locals.user = signedInUser;
-      next();
-    });
-    app.use(
-      '/api/marketplace',
-      createMarketplaceRouter({
-        sourceManager,
+    const routes = createMarketplaceRoutes({
+      sourceManager,
+      cache,
+      cacheRetention: new PackageCacheRetention({
         cache,
-        cacheRetention: new PackageCacheRetention({
-          cache,
-          dorkHome,
-          listAgentScopes: () => agentScopes,
-          logger: noopLogger,
-        }),
-        fetcher: routeFetcher,
-        installer,
-        uninstallFlow: uninstallFlow as unknown as UninstallFlow,
-        updateFlow: updateFlow as unknown as UpdateFlow,
         dorkHome,
-        onPluginsChanged,
         listAgentScopes: () => agentScopes,
-        capabilityRegistry: () => gateRegistry,
-        confirmationProvider: new TokenConfirmationProvider(approvals),
-        consent,
-        heldBackCards: { approvals, onGranted: vi.fn() },
-      })
-    );
+        logger: noopLogger,
+      }),
+      fetcher: routeFetcher,
+      installer,
+      uninstallFlow: uninstallFlow as unknown as UninstallFlow,
+      updateFlow: updateFlow as unknown as UpdateFlow,
+      dorkHome,
+      onPluginsChanged,
+      listAgentScopes: () => agentScopes,
+      capabilityRegistry: () => gateRegistry,
+      confirmationProvider: new TokenConfirmationProvider(approvals),
+      consent,
+      heldBackCards: { approvals, onGranted: vi.fn() },
+    });
 
-    fixtureTarget.mount(app);
+    fixtureTarget.mount(
+      honoGroupListener(
+        { path: '/api/marketplace', routes },
+        {
+          before: async (c, next) => {
+            // Stands in for the agent-identity middleware. Absent an agent header
+            // this request looks like the cockpit's, which is the caller the
+            // mutation routes let through without an approval (DOR-467).
+            if (agentHeader) c.env.incoming.headers['x-dorkos-agent'] = agentHeader;
+            // And for `sessionGate`, which resolves an identity only when login is on.
+            if (signedInUser) c.set('user', signedInUser);
+            await next();
+          },
+        }
+      )
+    );
   }
 
   afterEach(() => {

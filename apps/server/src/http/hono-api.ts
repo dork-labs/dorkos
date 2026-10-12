@@ -53,6 +53,7 @@ import gitRoutes from '../routes/git.js';
 import { createHarnessRoutes, type HarnessRouterDeps } from '../routes/harness.js';
 import { createHealthRoutes, type HealthRouteDeps } from '../routes/health.js';
 import keepAwakeRoutes from '../routes/keep-awake.js';
+import { createMarketplaceRoutes, type MarketplaceRouteDeps } from '../routes/marketplace.js';
 import { createMcpOAuthRoutes } from '../routes/mcp-oauth.js';
 import { createMeshRoutes, type MeshRouterDeps } from '../routes/mesh.js';
 import modelRoutes from '../routes/models.js';
@@ -107,6 +108,12 @@ export interface ComposedGroupDeps {
    * handed over when the marketplace started (`startup/marketplace.ts`).
    */
   shapes?: ShapesRouterDeps;
+  /**
+   * Package sources, installs, updates, held-back packages and dev links
+   * (`/api/marketplace`). Only handed over when the marketplace started
+   * (`startup/marketplace.ts`).
+   */
+  marketplace?: MarketplaceRouteDeps;
   /** The Inbox (`/api/notifications`). */
   notifications?: NotificationService;
   /** Web push devices (`/api/push`). */
@@ -193,6 +200,9 @@ export function createHonoApi(options: HonoApiOptions): Hono<ApiEnv> {
   if (deps.templates) app.route('/api/templates', createTemplateRoutes(deps.templates.dorkHome));
   if (deps.harness) app.route('/api/harness', createHarnessRoutes(deps.harness));
   if (deps.shapes) app.route('/api/shapes', createShapesRoutes(deps.shapes));
+  if (deps.marketplace) {
+    app.route('/api/marketplace', createMarketplaceRoutes(deps.marketplace));
+  }
   if (deps.team) app.route('/api/team', createTeamRoutes(deps.team));
   if (deps.profile) app.route('/api/profile', createProfileRouter(deps.profile));
   if (deps.search) app.route('/api/search', createSearchRoutes(deps.search));

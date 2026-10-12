@@ -4562,7 +4562,6 @@ async function start() {
   // than gating the entire namespace.
   ({ devLinkWatcher, templateConfirmationProvider, agentPackageInstaller, marketplaceMcpDeps } =
     await startMarketplace({
-      app,
       dorkHome,
       extensionManager,
       adapterManager,

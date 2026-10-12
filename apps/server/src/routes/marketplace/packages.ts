@@ -26,10 +26,10 @@ import {
   enrichWithUpdatedAt,
 } from '../../services/marketplace/telemetry/updated-at.js';
 import type { MarketplaceSource } from '../../services/marketplace/types.js';
-import type { MarketplaceRouteDeps } from '../marketplace.js';
+import type { MarketplaceRouteDeps, MarketplaceRoutes } from '../marketplace.js';
 import type { MarketplaceRouteContext } from './context.js';
-import { mapErrorToStatus, safeReaddir } from './shared.js';
-import type { Router } from 'express';
+import { readQuery } from '../../http/request-query.js';
+import { errorResponse, safeReaddir, validationFailed } from './shared.js';
 
 /** Query schema for `GET /api/marketplace/packages/:name`. */
 const GetPackageQuerySchema = z.object({
@@ -263,19 +263,19 @@ function trimPartialUtf8Tail(buffer: Buffer, length: number): number {
 /**
  * Register the `/packages` and `/packages/:name` routes on the marketplace router.
  *
- * @param router - The marketplace router.
+ * @param app - The marketplace routes.
  * @param deps - The router's injected dependencies.
  * @param _ctx - The helpers every route group shares.
  */
 export function mountPackageRoutes(
-  router: Router,
+  app: MarketplaceRoutes,
   deps: MarketplaceRouteDeps,
   _ctx: MarketplaceRouteContext
 ): void {
   const { sourceManager, fetcher, installer } = deps;
 
   // GET /packages -- aggregate packages from every enabled marketplace
-  router.get('/packages', async (_req, res) => {
+  app.get('/packages', async (c) => {
     try {
       const sources = await sourceManager.list();
       const enabled = sources.filter((source) => source.enabled);
@@ -287,26 +287,22 @@ export function mountPackageRoutes(
       // when the cache is cold or the site is unreachable.
       const withCounts = enrichWithInstallCounts(packages, installCountsProvider.getCounts());
       const enriched = enrichWithUpdatedAt(withCounts, updatedAtProvider.getUpdatedAt());
-      res.json({ packages: enriched });
+      return c.json({ packages: enriched });
     } catch (err) {
       logger.error('[Marketplace] Failed to aggregate packages', err);
-      const mapped = mapErrorToStatus(err);
-      res.status(mapped.status).json(mapped.body);
+      return errorResponse(c, err);
     }
   });
 
   // GET /packages/:name -- fetch and validate a single package entry
-  router.get('/packages/:name', async (req, res) => {
-    const parsedQuery = GetPackageQuerySchema.safeParse(req.query);
-    if (!parsedQuery.success) {
-      return res
-        .status(400)
-        .json({ error: 'Validation failed', details: z.flattenError(parsedQuery.error) });
-    }
+  app.get('/packages/:name', async (c) => {
+    const name = c.req.param('name');
+    const parsedQuery = GetPackageQuerySchema.safeParse(readQuery(c));
+    if (!parsedQuery.success) return validationFailed(c, parsedQuery.error);
 
     try {
       const { preview, manifest, packagePath } = await installer.preview({
-        name: req.params.name,
+        name,
         marketplace: parsedQuery.data.marketplace,
       });
       // The installer already staged the package locally, so read its README
@@ -314,7 +310,7 @@ export function mountPackageRoutes(
       // response shape stays clean (the client shows nothing rather than an
       // empty placeholder).
       const readme = await readPackageReadme(packagePath);
-      return res.json({
+      return c.json({
         manifest,
         packagePath,
         preview,
@@ -326,9 +322,8 @@ export function mountPackageRoutes(
         ...(readme !== undefined && { readme }),
       });
     } catch (err) {
-      logger.error(`[Marketplace] Failed to fetch package ${req.params.name}`, err);
-      const mapped = mapErrorToStatus(err);
-      return res.status(mapped.status).json(mapped.body);
+      logger.error(`[Marketplace] Failed to fetch package ${name}`, err);
+      return errorResponse(c, err);
     }
   });
 }

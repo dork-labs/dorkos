@@ -15,19 +15,20 @@ import {
   updatesNotAsShown,
 } from '../../services/marketplace/flows/update-installed.js';
 import { trustedCaller } from '../../services/core/capabilities/index.js';
-import { getRequestAgentIdentity } from '../../middleware/agent-identity.js';
 import { readCallerAuthority } from '../../lib/caller-authority.js';
-import type { MarketplaceRouteDeps } from '../marketplace.js';
+import { readJsonBody } from '../../http/request-body.js';
+import { honoRequestFacts } from '../../http/request-facts.js';
+import type { MarketplaceRouteDeps, MarketplaceRoutes } from '../marketplace.js';
 import type { MarketplaceRouteContext } from './context.js';
 import {
   BATCH_UPDATE_NEEDS_APPROVAL_CODE,
+  errorResponse,
   fromOutdatedClient,
-  mapErrorToStatus,
   outdatedClientResponse,
   updateRefusalResponse,
+  validationFailed,
   type UpdateRefusal,
 } from './shared.js';
-import type { Router } from 'express';
 
 /**
  * Body schema for `POST /api/marketplace/updates`. `apply` must be the literal
@@ -63,12 +64,12 @@ const ApplyUpdatesBodySchema = z
 /**
  * Register the `/updates` routes on the marketplace router.
  *
- * @param router - The marketplace router.
+ * @param app - The marketplace routes.
  * @param deps - The router's injected dependencies.
  * @param ctx - The helpers every route group shares.
  */
 export function mountUpdateRoutes(
-  router: Router,
+  app: MarketplaceRoutes,
   deps: MarketplaceRouteDeps,
   ctx: MarketplaceRouteContext
 ): void {
@@ -90,17 +91,16 @@ export function mountUpdateRoutes(
   // and, for each newer version, what it runs (`disclosed`): what a confirm step
   // shows and an apply sends back (DOR-2306). A read: nothing installed
   // changes, so it is not gated, exactly like the per-package route.
-  router.get('/updates', async (req, res) => {
+  app.get('/updates', async (c) => {
     try {
-      const query = readProjectPathQuery(req, res);
+      const query = readProjectPathQuery(c);
       if (query.refused) return query.refused;
-      const confined = await confineProjectPath(res, query.projectPath);
+      const confined = await confineProjectPath(c, query.projectPath);
       if (confined.refused) return confined.refused;
-      return res.json(await checkInstalledUpdates(updateDeps, confined.projectPath));
+      return c.json(await checkInstalledUpdates(updateDeps, confined.projectPath));
     } catch (err) {
       logger.error('[Marketplace] Failed to check installed packages for updates', err);
-      const mapped = mapErrorToStatus(err);
-      return res.status(mapped.status).json(mapped.body);
+      return errorResponse(c, err);
     }
   });
 
@@ -108,26 +108,26 @@ export function mountUpdateRoutes(
   // each held to the version and the disclosure they saw (DOR-2306). Each
   // reinstall stays in the scope its installation was found in; a failed one is
   // reported on that installation and the rest carry on.
-  router.post('/updates', async (req, res) => {
-    if (fromOutdatedClient(req.body)) return outdatedClientResponse(res);
-    const parsed = ApplyUpdatesBodySchema.safeParse(req.body);
-    if (!parsed.success) {
-      return res
-        .status(400)
-        .json({ error: 'Validation failed', details: z.flattenError(parsed.error) });
-    }
+  app.post('/updates', async (c) => {
+    const body = readJsonBody(c);
+    if (fromOutdatedClient(body)) return outdatedClientResponse(c);
+    const parsed = ApplyUpdatesBodySchema.safeParse(body);
+    if (!parsed.success) return validationFailed(c, parsed.error);
     const { targets, confirmationToken } = parsed.data;
 
     try {
-      const confined = await confineProjectPath(res, parsed.data.projectPath);
+      const confined = await confineProjectPath(c, parsed.data.projectPath);
       if (confined.refused) return confined.refused;
-      if (batchNeedsApproval(req, res)) {
-        return res.status(403).json({
-          error:
-            'Updating several packages at once cannot wait for a person to approve each ' +
-            'install. Ask a person to update them in DorkOS.',
-          code: BATCH_UPDATE_NEEDS_APPROVAL_CODE,
-        });
+      if (batchNeedsApproval(c)) {
+        return c.json(
+          {
+            error:
+              'Updating several packages at once cannot wait for a person to approve each ' +
+              'install. Ask a person to update them in DorkOS.',
+            code: BATCH_UPDATE_NEEDS_APPROVAL_CODE,
+          },
+          403
+        );
       }
       const requested = {
         projectPath: confined.projectPath,
@@ -142,12 +142,12 @@ export function mountUpdateRoutes(
         installPaths,
       });
       for (const input of reinstallInputsFor(records, requested)) {
-        const decision = await authorize(req, res, 'marketplace.install', input);
-        if (decision.outcome !== 'allowed') return gateResponse(res, decision);
+        const decision = await authorize(c, 'marketplace.install', input);
+        if (decision.outcome !== 'allowed') return gateResponse(c, decision);
       }
 
-      const trusted = trustedCaller(readCallerAuthority(req, res)) !== undefined;
-      const identity = getRequestAgentIdentity(res);
+      const trusted = trustedCaller(readCallerAuthority(honoRequestFacts(c))) !== undefined;
+      const identity = c.get('agentIdentity');
       const outcome = await applyApprovedUpdates<UpdateRefusal>(
         updateDeps,
         { ...requested, installPaths },
@@ -185,14 +185,13 @@ export function mountUpdateRoutes(
           }
         }
       );
-      if ('refused' in outcome) return updateRefusalResponse(res, outcome.refused);
+      if ('refused' in outcome) return updateRefusalResponse(c, outcome.refused);
       // The response is the record of what changed: each installation's
       // `applied` or `applyError`.
-      return res.json(outcome.result);
+      return c.json(outcome.result);
     } catch (err) {
       logger.error('[Marketplace] Failed to apply updates', err);
-      const mapped = mapErrorToStatus(err);
-      return res.status(mapped.status).json(mapped.body);
+      return errorResponse(c, err);
     }
   });
 }

@@ -44,7 +44,7 @@
     "apps/community/src/schema.ts": 1917,
     "apps/desktop/scripts/smoke-packaged.ts": 641,
     "apps/e2e/capture/config.ts": 562,
-    "apps/server/src/index.ts": 3619,
+    "apps/server/src/index.ts": 3618,
     "apps/server/src/routes/relay-adapters.ts": 558,
     "apps/server/src/routes/remote-communities.ts": 721,
     "apps/server/src/routes/rooms.ts": 749,
