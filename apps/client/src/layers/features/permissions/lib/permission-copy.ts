@@ -39,7 +39,7 @@ export const PRESET_SUMMARY: Record<PermissionPreset, string> = {
  * The short line under a default-layer row saying where its state came from.
  *
  * @param source - The resolved source.
- * @param preset - The chosen preset, or `null` for not chosen yet.
+ * @param preset - The chosen preset, or `null` for not chosen yet (read as Trusted).
  */
 export function defaultSourceText(
   source: PermissionSource,
@@ -50,9 +50,7 @@ export function defaultSourceText(
     case 'default-action':
       return 'Changed from your preset';
     case 'preset':
-      return preset ? `From ${PRESET_LABEL[preset]}` : 'From your preset';
-    case 'unchanged':
-      return 'Not chosen yet, so it works as before';
+      return `From ${PRESET_LABEL[preset ?? 'trusted']}`;
     case 'floor':
       return 'Never Allowed';
     case 'always-asks':

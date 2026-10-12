@@ -155,6 +155,18 @@ export type RelayBudget = z.infer<typeof RelayBudgetSchema>;
 
 // === Envelope ===
 
+/**
+ * A turn's permission level on the wire: how often it asks and how far it
+ * reaches (`TurnPermissionLevel` in `agent-runtime.ts`).
+ */
+export const RelaySenderLevelSchema = z
+  .object({
+    asks: z.enum(['always', 'when-risky', 'never']),
+    reach: z.enum(['read', 'edit', 'workspace', 'everything']),
+    auto: z.literal(true).optional(),
+  })
+  .openapi('RelaySenderLevel');
+
 export const RelayEnvelopeSchema = z
   .object({
     id: z.string().describe('ULID message ID'),
@@ -175,6 +187,14 @@ export const RelayEnvelopeSchema = z
       .string()
       .optional()
       .describe('Opaque correlation id joining every hop of one dispatch'),
+    // What the sending agent's turn ran at, stamped by the server at publish
+    // from that turn's recorded level, never from anything the sender wrote.
+    // Read only for a `relay.agent.*` sender: the answering turn runs no looser
+    // (spec `trusted-by-default-flip` §4.4). Optional, like `dispatchId`, so
+    // every envelope already on disk keeps parsing; absent means unknown.
+    senderLevel: RelaySenderLevelSchema.optional().describe(
+      "The level the sending agent's turn ran at, as the server recorded it"
+    ),
   })
   .openapi('RelayEnvelope');
 

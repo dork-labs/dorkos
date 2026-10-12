@@ -130,6 +130,9 @@ export const mcpDomain: CapabilityDomain = {
         'finish.',
       tier: 'destructive',
       area: 'packages',
+      // Puts a command someone else wrote where every session of this agent runs
+      // it, so even an Allowed Tools & packages area asks (ADR 261006-225605).
+      consent: 'third-party-code',
       approvalSubject: { field: 'agentId', kind: 'agent' },
       input: z.object({
         agentId: agentIdField,
@@ -166,9 +169,9 @@ export const mcpDomain: CapabilityDomain = {
       title: 'Import a discovered MCP server into DorkOS management',
       description:
         'Bring a server DorkOS discovered in a project’s .mcp.json under DorkOS management: ' +
-        'resolve its transport, then add it as an enabled, editable managed server. Routed ' +
-        'through the same approval gate as add, because the imported entry will run in the ' +
-        'agent’s environment. Rejects the reserved name "dorkos" and any name already managed; ' +
+        'resolve its transport, then add it as an enabled, editable managed server. It asks ' +
+        'a person first only when the agent’s permissions say so: the entry already runs in ' +
+        'the agent’s environment from the project’s own .mcp.json. Rejects the reserved name "dorkos" and any name already managed; ' +
         'reports a clear error when no such discovered server can be resolved.',
       tier: 'destructive',
       area: 'packages',
@@ -213,6 +216,8 @@ export const mcpDomain: CapabilityDomain = {
         'command/args/url, exactly like add.',
       tier: 'destructive',
       area: 'packages',
+      // Same as add: a changed transport is a new command for every session.
+      consent: 'third-party-code',
       approvalSubject: { field: 'agentId', kind: 'agent' },
       input: z.object({
         agentId: agentIdField,

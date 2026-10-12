@@ -41,6 +41,7 @@ import { relayTurnOrigin } from '../session/origin/turn-origin.js';
 import { resolveTurnRuntimeType } from '../runtimes/shared/resolve-agent-runtime-type.js';
 import { AdapterError } from './adapter-error.js';
 import { createTurnExecutionSettingsResolver } from './turn-execution-settings.js';
+import { createAgentDmModeResolver } from './agent-dm-mode.js';
 
 /** Dependencies for constructing runtime adapters. */
 export interface AdapterFactoryDeps {
@@ -188,6 +189,10 @@ export async function createAdapter(
           sessionAgentPath: (sessionId) => runtimeRegistry.getSessionAgentPath(sessionId),
           placementOf: (agentPath) => resolveSessionCwd({ agentPath }),
         }),
+        // The mode one of our agents' messages starts at: the answering agent's
+        // configured stop, held by the adapter to the sender's stamped level
+        // (spec `trusted-by-default-flip` §4.4).
+        resolveAgentDmMode: createAgentDmModeResolver(),
         // Who answers a message addressed to an AGENT rather than a session —
         // the shape an agent-to-agent `relay_send` arrives on. The same single
         // copy of the binding-then-manifest ladder rooms and the chat bindings

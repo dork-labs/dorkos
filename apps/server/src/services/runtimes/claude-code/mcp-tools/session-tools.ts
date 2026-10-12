@@ -81,6 +81,10 @@ import {
 } from '../../../session/launch/launch-session.js';
 import { getStartWorkService, type StartReservation } from '../../../extensions/start-work.js';
 import {
+  readAgentExecutionDefaults,
+  resolveUnattendedDefaultStop,
+} from '../../../session/resolve-session-defaults.js';
+import {
   NO_CHAT_CEILING_RUNTIME,
   resolveStartPermission,
   type CallingChat,
@@ -121,7 +125,8 @@ export const OTHER_AGENTS_HOME_MESSAGE =
  *   ceiling its meaning.
  *
  * The external server can produce none of them: it has no chat, so its caller
- * is held to `acceptEdits` (`NO_CHAT_CEILING_MODE`).
+ * is held to the agent's own Files & commands stop, or to `acceptEdits`
+ * (`NO_CHAT_CEILING_MODE`) when it has none.
  */
 export type SessionStartCallerResolver = () =>
   { agentPath?: string; sessionId?: string; permissionMode?: string; runtime?: string } | undefined;
@@ -440,7 +445,23 @@ export function createSessionStartHandler(
     // The level it runs at: the calling chat's own or lower, never higher (spec
     // `inherited-start-permission`). The ceiling is read here, at the moment of
     // the call, from server-bound state; nothing in `args` can raise it.
-    const level = await resolveStartPermission(args.permissionMode, caller.chat, runtimeType);
+    //
+    // With no chat (the external `/mcp` server), the agent the token names is
+    // held to its own Files & commands stop (spec `trusted-by-default-flip`
+    // §5.2). Only a registered agent reaches here: a plain key, a per-user
+    // key or an unidentified caller is refused above as UNKNOWN_CALLER.
+    const callerStop = caller.chat
+      ? null
+      : resolveUnattendedDefaultStop({
+          configSection: runtime.getCapabilities().settings.configSection,
+          agent: await readAgentExecutionDefaults(agentPath),
+        });
+    const level = await resolveStartPermission(
+      args.permissionMode,
+      caller.chat,
+      runtimeType,
+      callerStop
+    );
     if (!level.ok) return refuse(level.error, level.code);
     const permission = level.permission;
 

@@ -28,6 +28,7 @@ import type {
   AdapterStatus as SharedAdapterStatus,
   BudgetRejectionCode,
 } from '@dorkos/shared/relay-schemas';
+import type { TurnPermissionLevel } from '@dorkos/shared/agent-runtime';
 import type { DeadLetterNotice } from './dead-letter-queue.js';
 
 // --- Re-exported config types — @dorkos/shared is the single source of truth ---
@@ -391,6 +392,16 @@ export interface PublishOptions {
    * sets it, which is what keeps a client-supplied bridge `from` unpublishable.
    */
   serverBridgePrincipal?: boolean;
+  /**
+   * The level the sending agent's turn ran at, as the server recorded it.
+   *
+   * Like {@link serverBridgePrincipal} it is an in-process argument, never a
+   * wire field: the HTTP publish route does not pass it, so only server code
+   * that read the sender's own turn can set it. Stamped onto the envelope as
+   * `senderLevel`; the agent handler reads it only for a `relay.agent.*`
+   * sender, and an envelope without one is held to the runtime's default.
+   */
+  senderLevel?: TurnPermissionLevel;
 }
 
 // === Adapter Logger ===

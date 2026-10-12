@@ -5,11 +5,7 @@
  * preset ever silently widens.
  */
 import { describe, it, expect } from 'vitest';
-import {
-  PERMISSION_PRESET_TABLES,
-  UNCHANGED_PERMISSION_TABLE,
-  presetTableFor,
-} from '../permission-presets.js';
+import { PERMISSION_PRESET_TABLES, presetTableFor } from '../permission-presets.js';
 import { PERMISSION_AREAS, isFloorArea } from '../permission-areas.js';
 import { PERMISSION_AREA_IDS } from '../permission-schemas.js';
 
@@ -80,35 +76,35 @@ describe('shipped preset tables', () => {
     });
   });
 
-  it('Unchanged reproduces the behaviour before permissions existed', () => {
-    // Rooms management was an off-by-default tool group (merge never was), the
-    // floor areas were out of an agent's reach (except the boundaries tool,
-    // which always asked on a card of its own), everything else ran on its tier.
-    expect(UNCHANGED_PERMISSION_TABLE).toEqual({
+  it('Trusted', () => {
+    expect(PERMISSION_PRESET_TABLES.trusted).toEqual({
       areas: {
-        rooms: 'blocked',
+        rooms: 'allowed',
         tasks: 'allowed',
         agents: 'allowed',
         messages: 'allowed',
         connections: 'allowed',
         packages: 'allowed',
         extensions: 'allowed',
-        // Own chat (DOR-2732): an agent summarizing its own chat, Allowed everywhere.
         own_chat: 'allowed',
         settings: 'allowed',
-        safety: 'blocked',
-        permissions: 'blocked',
-        reach: 'blocked',
+        // Loop-guard settings stay a person's call until DOR-2745.
+        safety: 'ask',
+        permissions: 'allowed',
+        // Never Allowed for an agent.
+        reach: 'ask',
       },
-      actions: { 'rooms.merge': 'allowed', 'operator.update_agent_boundaries': 'ask' },
-      filesStop: null,
+      actions: {},
+      filesStop: 'autonomy',
     });
-    expect(presetTableFor(null)).toBe(UNCHANGED_PERMISSION_TABLE);
+  });
+
+  it('an install that never chose resolves against Trusted', () => {
+    expect(presetTableFor(null)).toBe(PERMISSION_PRESET_TABLES.trusted);
   });
 
   it('no table ever sets a floor area to Allowed', () => {
-    const tables = [...Object.values(PERMISSION_PRESET_TABLES), UNCHANGED_PERMISSION_TABLE];
-    for (const table of tables) {
+    for (const table of Object.values(PERMISSION_PRESET_TABLES)) {
       for (const id of PERMISSION_AREA_IDS) {
         if (isFloorArea(id)) expect(table.areas[id]).not.toBe('allowed');
       }
@@ -116,7 +112,7 @@ describe('shipped preset tables', () => {
   });
 
   it('every table is frozen', () => {
-    for (const table of [...Object.values(PERMISSION_PRESET_TABLES), UNCHANGED_PERMISSION_TABLE]) {
+    for (const table of Object.values(PERMISSION_PRESET_TABLES)) {
       expect(Object.isFrozen(table)).toBe(true);
       expect(Object.isFrozen(table.areas)).toBe(true);
     }

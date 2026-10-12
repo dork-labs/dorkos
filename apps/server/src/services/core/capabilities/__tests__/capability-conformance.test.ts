@@ -344,6 +344,7 @@ const { createCapabilitiesInvokeRouter } =
   await import('../../../../routes/capabilities-invoke.js');
 const { createApprovalsRouter } = await import('../../../../routes/approvals.js');
 const { initCapabilityTierGate, APPROVAL_TOKEN_HEADER } = await import('../tier-enforcement.js');
+const { askFor } = await import('./permission-gate-fixtures.js');
 const { ApprovalService } = await import('../../approvals/index.js');
 
 /** The agent every probe calls as: unrestricted ceiling, so only the tier gates it. */
@@ -368,6 +369,14 @@ const approvalDb = createTestDb();
 const approvalService = new ApprovalService(approvalDb);
 const requestTarget = swappableServer();
 initCapabilityTierGate({ approvals: approvalService });
+// Under Trusted (ADR 261006-225605) the two destructive capabilities whose area
+// is Allowed and that run no third-party code (`marketplace.uninstall`,
+// `mcp.import`) run, recorded, with no card. These probes are about the card
+// reaching every adapter path, so a person has set those two to Ask; every
+// other capability resolves exactly as Trusted has it.
+// `trusted-destructive.test.ts` pins which destructive capabilities ask under
+// Trusted with nothing set.
+askFor(DESTRUCTIVE_ID, 'mcp.import');
 
 /** Read a plain payload back out of an MCP text-content result. */
 function unwrapText(result: { content: { type: string; text?: string }[] }): unknown {

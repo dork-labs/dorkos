@@ -23,6 +23,12 @@ const FIXTURE_ACTIONS: PermissionActionInfo[] = [
   { id: 'operator.config_patch', title: 'Change settings', tier: 'act', area: null },
   { id: 'permissions.change', title: 'Change a permission', tier: 'act', area: 'permissions' },
   {
+    id: 'operator.update_agent_boundaries',
+    title: "Change an agent's safety boundaries",
+    tier: 'destructive',
+    area: 'safety',
+  },
+  {
     id: 'operator.update_agent_execution',
     title: 'Change what an agent runs on',
     tier: 'destructive',

@@ -107,6 +107,27 @@ describe('Relay MCP Tools', () => {
       );
     });
 
+    it("stamps the sending turn's level, so the agent that answers runs no looser", async () => {
+      const deps = makeMockDeps({});
+      const handler = createRelaySendHandler(deps, {
+        ...SENDER,
+        turnLevel: () => ({ asks: 'always', reach: 'edit' }),
+      });
+      await handler({ subject: 'relay.agent.x', payload: {} });
+      expect(vi.mocked(deps.relayCore!.publish).mock.calls[0]![2]).toMatchObject({
+        senderLevel: { asks: 'always', reach: 'edit' },
+      });
+    });
+
+    it('stamps nothing when no level was recorded for the sending turn', async () => {
+      const deps = makeMockDeps({});
+      const handler = createRelaySendHandler(deps, { ...SENDER, turnLevel: () => undefined });
+      await handler({ subject: 'relay.agent.x', payload: {} });
+      expect(vi.mocked(deps.relayCore!.publish).mock.calls[0]![2]).not.toHaveProperty(
+        'senderLevel'
+      );
+    });
+
     it('returns ACCESS_DENIED on access error', async () => {
       const deps = makeMockDeps({
         publish: vi.fn().mockRejectedValue(new Error('Access denied: a -> b')),

@@ -559,6 +559,9 @@ export class RelayPublishPipeline {
       // Stamped only when the caller supplied one — an unset field keeps the
       // envelope byte-identical to what every pre-existing producer writes.
       ...(options.dispatchId !== undefined ? { dispatchId: options.dispatchId } : {}),
+      // The same rule for the sending turn's level (an in-process argument
+      // only server code can pass; see `PublishOptions.senderLevel`).
+      ...(options.senderLevel !== undefined ? { senderLevel: { ...options.senderLevel } } : {}),
     };
 
     // Index for rate-limit counting (before fan-out so every published

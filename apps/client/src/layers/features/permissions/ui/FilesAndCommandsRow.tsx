@@ -170,13 +170,9 @@ export function DefaultFilesAndCommandsRow({
   const source =
     files.stop === null
       ? filesSourceText('runtime-own')
-      : files.presetStop === null
-        ? ''
-        : files.stop === files.presetStop
-          ? preset
-            ? `From ${PRESET_LABEL[preset]}`
-            : 'From your preset'
-          : 'Changed from your preset';
+      : files.stop === files.presetStop
+        ? `From ${PRESET_LABEL[preset ?? 'trusted']}`
+        : 'Changed from your preset';
 
   return (
     <div className="@container" data-testid="permission-row-files">

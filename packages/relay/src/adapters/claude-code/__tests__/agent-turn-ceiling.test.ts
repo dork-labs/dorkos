@@ -8,17 +8,20 @@
  */
 import { describe, it, expect, vi } from 'vitest';
 import type { RelayEnvelope } from '@dorkos/shared/relay-schemas';
+import type { PermissionModeDescriptor, TurnPermissionLevel } from '@dorkos/shared/agent-runtime';
+import { clampModeToCeiling } from '@dorkos/shared/permission-semantics';
 import type { StreamEvent } from '@dorkos/shared/types';
 import { handleAgentMessage } from '../agent-handler.js';
-import type { AgentRuntimeLike, SessionRuntimeBinder } from '../types.js';
+import type { AgentDmModeResolver, AgentRuntimeLike, SessionRuntimeBinder } from '../types.js';
 import type { RelayPublisher } from '../../../types.js';
 
 const EPOCH = Date.UTC(2026, 9, 6, 10, 0, 0);
 const now = (): number => EPOCH;
 const SUBJECT = 'relay.agent.default.agent-01';
 
-function envelope(from: string): RelayEnvelope {
+function envelope(from: string, senderLevel?: TurnPermissionLevel): RelayEnvelope {
   return {
+    ...(senderLevel ? { senderLevel } : {}),
     id: 'msg-1',
     subject: SUBJECT,
     from,
@@ -59,12 +62,15 @@ function relay(): RelayPublisher {
 }
 
 /** Deliver one message; return what the turn was sent with and how it was bound. */
-async function deliver(from: string) {
+async function deliver(
+  from: string,
+  opts: { senderLevel?: TurnPermissionLevel; resolveAgentDmMode?: AgentDmModeResolver } = {}
+) {
   const agentManager = runtime();
   const bindSessionRuntime = vi.fn<SessionRuntimeBinder>().mockResolvedValue(undefined);
   await handleAgentMessage(
     SUBJECT,
-    envelope(from),
+    envelope(from, opts.senderLevel),
     { agent: { directory: '/agents/b' } } as never,
     EPOCH,
     {
@@ -74,11 +80,14 @@ async function deliver(from: string) {
       now,
       logger: { warn: vi.fn(), info: vi.fn(), error: vi.fn(), debug: vi.fn() },
       bindSessionRuntime,
+      runtimeType: 'claude-code',
+      ...(opts.resolveAgentDmMode ? { resolveAgentDmMode: opts.resolveAgentDmMode } : {}),
     },
     relay()
   );
   expect(agentManager.sendMessage).toHaveBeenCalledOnce();
   const sent = vi.mocked(agentManager.sendMessage).mock.calls[0]![2] as {
+    permissionMode?: string;
     permissionCeiling?: unknown;
   };
   return { sent, bound: bindSessionRuntime.mock.calls[0]?.[0] };
@@ -108,5 +117,100 @@ describe('the conversation is recorded with its sender', () => {
   it('passes one of our agents’ stamp too', async () => {
     const { bound } = await deliver('relay.agent.default.agent-02');
     expect(bound?.from).toBe('relay.agent.default.agent-02');
+  });
+});
+
+/** Claude Code's trust-axis modes, as it declares them (the parts a level reads). */
+const CLAUDE: { default: string; values: PermissionModeDescriptor[] } = {
+  default: 'default',
+  values: [
+    { id: 'default', label: 'Default', asks: 'always', reach: 'edit' },
+    { id: 'acceptEdits', label: 'Accept edits', asks: 'when-risky', reach: 'edit' },
+    { id: 'bypassPermissions', label: 'Bypass permissions', asks: 'never', reach: 'everything' },
+  ] as PermissionModeDescriptor[],
+};
+
+/** The levels a sending agent's turn can be stamped with. */
+const FULL_AUTONOMY: TurnPermissionLevel = { asks: 'never', reach: 'everything' };
+const DEFAULT_LEVEL: TurnPermissionLevel = { asks: 'always', reach: 'edit' };
+
+/** What the runtime runs the turn at: its per-send mode under the ceiling. */
+function runsAt(sent: { permissionMode?: string; permissionCeiling?: unknown }): string {
+  return clampModeToCeiling(
+    CLAUDE,
+    sent.permissionMode ?? 'default',
+    sent.permissionCeiling as TurnPermissionLevel
+  );
+}
+
+describe("an agent DM runs at the stricter of the receiver's stop and the sender's level (§4.4)", () => {
+  /** The answering agent is configured at Full autonomy. */
+  const atFullAutonomy: AgentDmModeResolver = async () => 'bypassPermissions';
+  const AGENT = 'relay.agent.default.agent-02';
+
+  it("runs at the receiver's configured stop when the sender ran at Full autonomy", async () => {
+    const { sent } = await deliver(AGENT, {
+      senderLevel: FULL_AUTONOMY,
+      resolveAgentDmMode: atFullAutonomy,
+    });
+    expect(sent.permissionMode).toBe('bypassPermissions');
+    expect(sent.permissionCeiling).toEqual(FULL_AUTONOMY);
+    expect(runsAt(sent)).toBe('bypassPermissions');
+  });
+
+  it('runs no looser than a sender that ran at Default', async () => {
+    const { sent } = await deliver(AGENT, {
+      senderLevel: DEFAULT_LEVEL,
+      resolveAgentDmMode: atFullAutonomy,
+    });
+    expect(runsAt(sent)).toBe('default');
+  });
+
+  it('runs at a receiver set to Ask first even when the sender ran at Full autonomy', async () => {
+    const { sent } = await deliver(AGENT, {
+      senderLevel: FULL_AUTONOMY,
+      resolveAgentDmMode: async () => 'default',
+    });
+    expect(runsAt(sent)).toBe('default');
+  });
+
+  it('keeps the prompting default under the runtime default when nothing was stamped', async () => {
+    const resolveAgentDmMode = vi.fn(atFullAutonomy);
+    const { sent } = await deliver(AGENT, { resolveAgentDmMode });
+    expect(sent.permissionMode).toBe('default');
+    expect(sent.permissionCeiling).toBe('runtime-default');
+    expect(resolveAgentDmMode).not.toHaveBeenCalled();
+  });
+
+  it.each(['a2a-gateway', 'relay.external.mcp'])(
+    'ignores a level on a message from %s, which is not one of our agents',
+    async (from) => {
+      const { sent } = await deliver(from, {
+        senderLevel: FULL_AUTONOMY,
+        resolveAgentDmMode: atFullAutonomy,
+      });
+      expect(sent.permissionMode).toBe('default');
+      expect(sent.permissionCeiling).toBe('runtime-default');
+    }
+  );
+
+  it('keeps the default when the receiver has no stop configured', async () => {
+    const { sent } = await deliver(AGENT, {
+      senderLevel: FULL_AUTONOMY,
+      resolveAgentDmMode: async () => undefined,
+    });
+    expect(sent.permissionMode).toBe('default');
+    expect(sent.permissionCeiling).toBe('runtime-default');
+  });
+
+  it('keeps the default when the receiver’s stop cannot be read', async () => {
+    const { sent } = await deliver(AGENT, {
+      senderLevel: FULL_AUTONOMY,
+      resolveAgentDmMode: async () => {
+        throw new Error('EIO');
+      },
+    });
+    expect(sent.permissionMode).toBe('default');
+    expect(sent.permissionCeiling).toBe('runtime-default');
   });
 });

@@ -118,9 +118,15 @@ export interface PermissionListedAction {
   area: PermissionAreaId | null;
   /** The MCP tool name the action is listed under, when it has one. */
   toolName?: string;
+  /** It runs someone else's code, so an area-level Allowed still asks. */
+  consent?: GatedAction['consent'];
 }
 
-/** What an install is before anybody chose a preset: today's behaviour. */
+/**
+ * What the gate reads before boot wires the live config: an install that never
+ * chose a preset, which resolves as Trusted (ADR `261006-225605`). Boot wires
+ * the live config before any route or session can reach the gate.
+ */
 const UNCHOSEN: PermissionConfigInput = { preset: null, defaults: { areas: {}, actions: {} } };
 
 /**
@@ -170,8 +176,8 @@ let sources: PermissionGateSources = DEFAULT_SOURCES;
  * Wire the gate to the live config (and, in tests, a manifest reader). Called
  * once at boot beside `initCapabilityTierGate`.
  *
- * Until it runs, the config reads as "no preset chosen" (Unchanged), which is
- * exactly the behaviour before permissions existed, so nothing opens up.
+ * Until it runs, the config reads as "no preset chosen" (Trusted), and no
+ * agent's own settings are read.
  *
  * @param next - The sources to use; either half may be omitted to keep the default.
  */
@@ -196,7 +202,10 @@ export function permissionGateSources(): PermissionGateSources {
 }
 
 /** A gated action, with the area it declares. */
-export type PermissionGatedAction = Pick<GatedAction, 'id' | 'tier' | 'areasForInput'> & {
+export type PermissionGatedAction = Pick<
+  GatedAction,
+  'id' | 'tier' | 'areasForInput' | 'consent'
+> & {
   /** The permission area, or `null` for an action that is always allowed on its tier. */
   area: PermissionAreaId | null;
   /**
@@ -334,6 +343,7 @@ export async function resolveCallPermission(request: {
         ? { alwaysAsks: true }
         : {}),
       tier: action.tier,
+      ...(action.consent ? { consent: action.consent } : {}),
       config,
       ...(agent ? { agent } : {}),
       ...(identity?.inactive ? { inactive: true } : {}),

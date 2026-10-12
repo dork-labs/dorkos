@@ -20,6 +20,7 @@ import {
   canonicalizeAgentSubject,
   resolveOutboundBudget,
   refusedByTurnCeiling,
+  senderLevelOption,
   TURN_CEILING_ERROR,
   type SenderIdentity,
 } from './relay-helpers.js';
@@ -88,6 +89,7 @@ export function createRelaySendHandler(
         from: identity.subject,
         replyTo: args.replyTo,
         budget: resolveOutboundBudget(resolveInboundBudget?.(), args.budget),
+        ...senderLevelOption(identity),
       });
       // Rejected with no delivery (e.g. rate-limited) means the message was
       // dropped — report an error, never a success.
@@ -322,6 +324,7 @@ export function createRelayQueryHandler(
           from: identity.subject,
           replyTo: inboxSubject,
           budget: resolveOutboundBudget(resolveInboundBudget?.(), args.budget),
+          ...senderLevelOption(identity),
         });
         // If the message was rejected before reaching any recipient (e.g. rate-limit),
         // return immediately rather than waiting the full timeout.
@@ -496,6 +499,7 @@ export function createRelayDispatchHandler(
         from: identity.subject,
         replyTo: inboxSubject,
         budget: resolveOutboundBudget(resolveInboundBudget?.(), args.budget),
+        ...senderLevelOption(identity),
       });
 
       // Early rejection: auto-unregister the inbox to prevent leaks

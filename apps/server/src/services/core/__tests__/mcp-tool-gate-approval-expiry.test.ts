@@ -31,7 +31,12 @@ import { approvals as approvalsTable, eq, type Db } from '@dorkos/db';
 
 import { ApprovalService } from '../approvals/index.js';
 import { startApprovalVerdictDelivery } from '../approvals/approval-verdict-delivery.js';
-import { initCapabilityTierGate, resetCapabilityTierGate } from '../capabilities/index.js';
+import {
+  initCapabilityTierGate,
+  resetCapabilityTierGate,
+  resetPermissionGate,
+} from '../capabilities/index.js';
+import { askFor } from '../capabilities/__tests__/permission-gate-fixtures.js';
 import { gateHandRegisteredMcpTools, type SdkMcpTool } from '../mcp-tool-gate.js';
 
 const TARGET = '01KXQ3P7ADJY9DSXMZW1XGWCV4';
@@ -66,11 +71,14 @@ describe('a held call whose approval stops being answerable', () => {
     queue = [];
     stopDelivery = startApprovalVerdictDelivery(approvals);
     initCapabilityTierGate({ approvals });
+    // A person set it to Ask: under Trusted a delete runs, recorded, with no card.
+    askFor('mesh_unregister');
   });
 
   afterEach(() => {
     stopDelivery();
     resetCapabilityTierGate();
+    resetPermissionGate();
     vi.restoreAllMocks();
   });
 

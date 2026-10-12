@@ -16,6 +16,7 @@
 import {
   PERMISSION_AREAS,
   PERMISSION_AREA_IDS,
+  getPermissionArea,
   isFloorArea,
   resolvePermission,
   type AgentPermissions,
@@ -40,6 +41,7 @@ import type { PermissionStop } from '@dorkos/shared/agent-runtime';
 import { PERMISSION_STOPS } from '@dorkos/shared/permission-semantics';
 import {
   extensionDomainName,
+  type ActionConsent,
   type CapabilitySource,
   type CapabilityTier,
 } from '@dorkos/shared/capabilities';
@@ -87,6 +89,8 @@ export interface PermissionActionInfo {
   toolName?: string;
   /** Its card shows the change it would make, so it is never Allowed (DOR-2328). */
   alwaysAsks?: true;
+  /** It runs someone else's code, so an area-level Allowed still asks. */
+  consent?: ActionConsent;
   /** The running extension it came from; absent on DorkOS's own actions (DOR-2685). */
   source?: CapabilitySource;
 }
@@ -236,7 +240,7 @@ export class PermissionService {
       if (state === 'allowed' && isFloorArea(area)) {
         throw new PermissionError(
           'FLOOR_NEVER_ALLOWED',
-          'Safety limits, Permissions, and Reach & secrets are never Allowed. Choose Ask or Blocked.'
+          'Safety limits and Reach & secrets are never Allowed. Choose Ask or Blocked.'
         );
       }
     }
@@ -257,7 +261,8 @@ export class PermissionService {
       if (state === 'allowed' && isFloorArea(action.area)) {
         throw new PermissionError(
           'FLOOR_NEVER_ALLOWED',
-          `"${action.title}" is in an area that is never Allowed. Choose Ask or Blocked.`
+          `"${action.title}" is in ${getPermissionArea(action.area)?.label ?? action.area}, ` +
+            'which is never Allowed. Choose Ask or Blocked.'
         );
       }
       if (state === 'allowed' && action.alwaysAsks) {
@@ -589,7 +594,7 @@ export class PermissionService {
           after: null,
         });
       }
-      if (presetStop !== null && stops.global !== presetStop) {
+      if (stops.global !== presetStop) {
         changes.push({
           target: { kind: 'default' },
           key: { kind: 'files' },
@@ -614,7 +619,7 @@ export class PermissionService {
           defaults: { areas: {}, actions: {} },
         });
       }
-      if (presetStop !== null && stops.global !== presetStop) {
+      if (stops.global !== presetStop) {
         this.deps.config.setGlobalTrustStop(presetStop);
       }
       await cleared.write();
@@ -827,7 +832,7 @@ export class PermissionService {
     actionId: string,
     tier: CapabilityTier,
     agent?: AgentPermissions,
-    alwaysAsks?: true
+    action?: Pick<PermissionActionInfo, 'alwaysAsks' | 'consent'>
   ): ResolvedPermission {
     return resolvePermission({
       area,
@@ -835,7 +840,8 @@ export class PermissionService {
       tier,
       config,
       ...(agent ? { agent } : {}),
-      ...(alwaysAsks ? { alwaysAsks } : {}),
+      ...(action?.alwaysAsks ? { alwaysAsks: true } : {}),
+      ...(action?.consent ? { consent: action.consent } : {}),
     });
   }
 
@@ -873,7 +879,7 @@ export class PermissionService {
                 a.id,
                 a.tier,
                 own,
-                a.alwaysAsks
+                a
               );
               return withLastChange(
                 {
@@ -970,14 +976,11 @@ export class PermissionService {
     // "Custom" is never stored: it is the default changes, plus the global stop
     // when it is not the one the preset sets (an unset stop included: an install
     // whose preset came from an upgrade, or whose stop was cleared, does not
-    // start where its preset says), plus each per-runtime stop that differs.
-    // Undecided installs have no preset stop, so their stops are not changes to
-    // anything.
+    // start where its preset says), plus each per-runtime stop that differs. An
+    // undecided install counts against Trusted, the table it resolves against.
     const stopChanges =
-      presetStop === null
-        ? 0
-        : (stops.global !== presetStop ? 1 : 0) +
-          runtimeStops.filter((entry) => entry.stop !== presetStop).length;
+      (stops.global !== presetStop ? 1 : 0) +
+      runtimeStops.filter((entry) => entry.stop !== presetStop).length;
     const presetLastChange = lastChanges.get('default:preset');
     return {
       preset: config.preset,

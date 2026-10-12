@@ -162,12 +162,13 @@ describe('extension tools at the gate (DOR-2685)', () => {
 
   it('holds a destructive tool for a person even when the area is Allowed', async () => {
     // Decision 1: destructive extension tools are allowed only because every
-    // call asks a person first, exactly as a core destructive action does.
-    preset = 'full';
+    // call asks a person first. A core destructive action in the same Allowed
+    // area runs, recorded (ADR 261006-225605); an extension's never does.
+    preset = 'trusted';
     const extension = await call('ext_mail_app.wipe');
     expect(extension).toMatchObject({ status: 'approval_required' });
-    expect(shape(extension)).toEqual(shape(await call('probe.wipe')));
-    expect(ran).toEqual([]);
+    expect(await call('probe.wipe')).toBe('ran');
+    expect(ran).toEqual(['probe.wipe']);
   });
 
   it('asks for a destructive extension tool even when that one tool is set to Allowed', async () => {

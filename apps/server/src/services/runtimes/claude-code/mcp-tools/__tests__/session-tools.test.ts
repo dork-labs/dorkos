@@ -89,6 +89,12 @@ vi.mock('../../../../session/message-dispatcher.js', () => ({
 }));
 
 import { runtimeRegistry } from '../../../../core/runtime-registry.js';
+import { readManifest } from '@dorkos/shared/manifest';
+import type { PermissionStop } from '@dorkos/shared/agent-runtime';
+import {
+  initPermissionGate,
+  resetPermissionGate,
+} from '../../../../core/capabilities/permission-enforcement.js';
 import { dispatchMessage } from '../../../../session/message-dispatcher.js';
 import { setAccountUsageStore } from '../../../../core/usage/current-usage-store.js';
 import type { AccountUsageStore } from '../../../../core/usage/account-usage-store.js';
@@ -1088,7 +1094,44 @@ describe("session_start runs at the calling chat's level or lower (spec inherite
       return handler!;
     }
 
-    it('is held to Accept edits', async () => {
+    /** The agent's own Files & commands stop, as the permission gate reads it. */
+    function agentStopIs(stop: PermissionStop) {
+      vi.mocked(readManifest).mockResolvedValue({ name: 'scout' } as never);
+      initPermissionGate({ readAgentPermissions: async () => ({ filesAndCommands: stop }) });
+    }
+
+    afterEach(() => {
+      vi.mocked(readManifest).mockResolvedValue(null);
+      resetPermissionGate();
+    });
+
+    it("is held to its own Files & commands stop: at Full autonomy, it may start one", async () => {
+      // Spec `trusted-by-default-flip` §5.2: a registered agent's token from
+      // `/mcp` is held to that agent's own stop, not to Accept edits.
+      agentStopIs('autonomy');
+      const result = await externalHandler()({ ...BASE, permissionMode: 'bypassPermissions' });
+      expect(result.isError).toBeUndefined();
+      expect(savedMode()).toBe('bypassPermissions');
+      expect(payloadOf(result).permission).toMatchObject({
+        mode: 'bypassPermissions',
+        callerMode: null,
+        sameAsCaller: false,
+      });
+    });
+
+    it('is held below Accept edits by its own Ask first', async () => {
+      agentStopIs('ask');
+      expect(
+        await expectRefused(externalHandler(), { ...BASE, permissionMode: 'acceptEdits' })
+      ).toEqual({
+        error:
+          'Without a chat of your own, you can start a chat at Default or lower, ' +
+          'not Accept edits.',
+        code: 'ABOVE_YOUR_LEVEL',
+      });
+    });
+
+    it('is held to Accept edits with no stop of its own', async () => {
       expect(
         await expectRefused(externalHandler(), { ...BASE, permissionMode: 'bypassPermissions' })
       ).toEqual({

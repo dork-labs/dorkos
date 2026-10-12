@@ -26,7 +26,9 @@ import {
   composeRegistry,
   describeGatedAttempt,
   initCapabilityTierGate,
+  initPermissionGate,
   resetCapabilityTierGate,
+  resetPermissionGate,
   CapabilityGateRefusal,
   type CapabilityDefinition,
   type CapabilityRegistry,
@@ -142,6 +144,13 @@ describe('mcp.* tier posture', () => {
     expect(imp.surfaces.mcp?.readOnlyCarveOut).toBeUndefined();
     expect(imp.approvalDisplayFields).toEqual(['agentId', 'name']);
 
+    // Add and update put a command someone else wrote where every session of
+    // the agent runs it, so they keep asking under Trusted; import brings in a
+    // server the agent's environment already runs (ADR 261006-225605).
+    expect(capability('mcp.add').consent).toBe('third-party-code');
+    expect(capability('mcp.update').consent).toBe('third-party-code');
+    expect(imp.consent).toBeUndefined();
+
     for (const id of ['mcp.remove', 'mcp.enable', 'mcp.disable', 'mcp.test']) {
       expect(capability(id).tier).toBe('act');
     }
@@ -176,16 +185,21 @@ describe('mcp.add approval card', () => {
   });
 });
 
-describe('mcp.* gate enforcement (through registry.invoke)', () => {
+describe('mcp.* gate enforcement under Trusted (through registry.invoke)', () => {
   let approvals: ApprovalService;
 
   beforeEach(() => {
     vi.spyOn(eventFanOut, 'broadcast').mockImplementation(() => {});
     approvals = new ApprovalService(createTestDb());
     initCapabilityTierGate({ approvals });
+    // Tools & packages is Allowed under Trusted: add and update still ask.
+    initPermissionGate({
+      readConfig: () => ({ preset: 'trusted', defaults: { areas: {}, actions: {} } }),
+    });
   });
   afterEach(() => {
     resetCapabilityTierGate();
+    resetPermissionGate();
     vi.restoreAllMocks();
   });
 
@@ -238,6 +252,25 @@ describe('mcp.* gate enforcement (through registry.invoke)', () => {
     });
     // The gate is the only writer: a refused add left the manifest untouched.
     expect(await service.list(AGENT_ID)).toEqual([]);
+  });
+
+  it('mcp.update without approval returns approval_required and changes NOTHING', async () => {
+    const { service, deps } = await setup();
+    const registry = composeRegistry([mcpDomain], deps);
+    await service.add({
+      agentId: AGENT_ID,
+      name: 'my-server',
+      connection: STDIO_CONNECTION,
+      addedBy: 'person',
+    });
+
+    const card = await invokeExpectingRefusal(registry, 'mcp.update', {
+      agentId: AGENT_ID,
+      name: 'my-server',
+      connection: { transport: 'stdio', command: 'other-server', args: [] },
+    });
+    expect(card).toMatchObject({ status: 'approval_required', capabilityId: 'mcp.update' });
+    expect((await service.list(AGENT_ID))[0]).toMatchObject({ connection: STDIO_CONNECTION });
   });
 
   it('mcp.add on a granted retry writes the enabled entry with the approver recorded', async () => {
@@ -332,15 +365,36 @@ describe('mcp.import approval card', () => {
 
 describe('mcp.import gate enforcement (through registry.invoke)', () => {
   let approvals: ApprovalService;
+  let preset: 'careful' | 'trusted';
 
   beforeEach(() => {
     vi.spyOn(eventFanOut, 'broadcast').mockImplementation(() => {});
     approvals = new ApprovalService(createTestDb());
     initCapabilityTierGate({ approvals });
+    // Careful asks for it; the Trusted case below runs it.
+    preset = 'careful';
+    initPermissionGate({
+      readConfig: () => ({ preset, defaults: { areas: {}, actions: {} } }),
+    });
   });
   afterEach(() => {
     resetCapabilityTierGate();
+    resetPermissionGate();
     vi.restoreAllMocks();
+  });
+
+  it('runs under Trusted with no card: the server already runs in the agent’s environment', async () => {
+    preset = 'trusted';
+    const { service, deps } = await setup({
+      filesystem: { command: 'npx', args: ['-y', '@mcp/fs'] },
+    });
+    const registry = composeRegistry([mcpDomain], deps);
+
+    await registry.invoke('mcp.import', { agentId: AGENT_ID, name: 'filesystem' }, {
+      identity: AGENT,
+    });
+    expect(approvals.listPending()).toEqual([]);
+    expect(await service.list(AGENT_ID)).toHaveLength(1);
   });
 
   /** The approval payload a refused destructive call returns. */

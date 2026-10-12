@@ -28,6 +28,7 @@ import type {
 import { extractPayloadContent, extractSenderIdentity } from '../../lib/payload-utils.js';
 import { extractSessionIdFromSubject } from '../../lib/subjects.js';
 import type {
+  AgentDmModeResolver,
   AgentRuntimeLike,
   AgentSessionStoreLike,
   ExecutionSettingsResolver,
@@ -76,6 +77,8 @@ export interface AgentHandlerDeps {
   resolveExecutionSettings?: ExecutionSettingsResolver;
   /** Refuse a turn whose sender-named folder is not the agent's desk — see {@link TurnDeskCheck}. */
   checkTurnDesk?: TurnDeskCheck;
+  /** The mode one of our agents' messages starts at — see {@link AgentDmModeResolver}. */
+  resolveAgentDmMode?: AgentDmModeResolver;
   /**
    * This turn's stop handle, owned by the caller (DOR-791).
    *
@@ -348,6 +351,47 @@ export function isTurnShapingSender(from: string): boolean {
   );
 }
 
+/** The server-stamped sender prefix of one of our own agents. */
+const AGENT_SENDER_PREFIX = 'relay.agent.';
+
+/**
+ * The power of a turn one of our agents' messages starts (spec
+ * `trusted-by-default-flip` §4.4): the answering agent's configured stop as
+ * the mode, and the level the sender's own turn ran at as the ceiling, so the
+ * turn runs at the stricter of the two.
+ *
+ * `undefined`, and the caller keeps the prompting default under the runtime's
+ * default, in every case that cannot be vouched for: a sender that is not
+ * stamped as one of our agents (the A2A gateway, an external MCP client), an
+ * envelope with no stamped level (nothing recorded the sender's turn, or a
+ * runtime whose tools reach DorkOS over `/mcp`), no resolver or runtime type
+ * wired, or no mode configured for this runtime.
+ *
+ * @param envelope - The message, with its server-stamped sender and level.
+ * @param agentDirectory - The answering agent's directory.
+ * @param deps - The handler's dependencies, for the resolver and the runtime.
+ * @param log - Where a failed lookup is reported.
+ */
+async function agentDmPower(
+  envelope: RelayEnvelope,
+  agentDirectory: string | undefined,
+  deps: AgentHandlerDeps,
+  log: { warn: (message: string) => void }
+): Promise<{ mode: PermissionMode; ceiling: TurnPermissionCeiling } | undefined> {
+  const senderLevel = envelope.senderLevel;
+  if (!envelope.from.startsWith(AGENT_SENDER_PREFIX) || !senderLevel) return undefined;
+  const runtimeType = deps.runtimeType ?? deps.agentManager.type;
+  if (!deps.resolveAgentDmMode || !runtimeType) return undefined;
+  let mode: PermissionMode | undefined;
+  try {
+    mode = await deps.resolveAgentDmMode({ agentDirectory, runtimeType });
+  } catch (err) {
+    log.warn(`[CCA] could not read the answering agent's stop: ${describeError(err)}`);
+    return undefined;
+  }
+  return mode === undefined ? undefined : { mode, ceiling: senderLevel };
+}
+
 /** Why a turn was stopped before it started: its folder is not its agent's desk. */
 class DeskRefusal extends Error {
   constructor(message: string) {
@@ -480,16 +524,24 @@ export async function handleAgentMessage(
   // controls (an older publisher, a hand-built envelope). It lands on the
   // prompting mode — absence is not consent (DOR-604). The in-process readers
   // that used to default to 'acceptEdits' were the bug and are gone.
-  const effectivePermissionMode: PermissionMode = bindingPerms?.permissionMode ?? 'default';
-  // The mode above only reaches a conversation that is NEW: a runtime resolves
-  // a turn as per-send → stored → its own default, and a warm or stored
-  // conversation keeps the level it already has. So a sender that may not shape
-  // the turn (another agent, the A2A gateway, an external MCP client) also
-  // bounds THIS turn at the runtime's default, whatever the conversation is set
-  // to. Power flows downstream, never up (spec `trusted-by-default-flip` §4).
+  //
+  // One of our agents is the exception (spec `trusted-by-default-flip` §4.4):
+  // its message runs at the answering agent's configured stop, held to the
+  // level the sender's own turn ran at, so the turn runs at the stricter of the
+  // two. That needs the level the server stamped on the envelope; with none,
+  // or for anybody else, nothing changes.
+  const agentDm = await agentDmPower(envelope, context?.agent?.directory, deps, log);
+  const effectivePermissionMode: PermissionMode =
+    bindingPerms?.permissionMode ?? agentDm?.mode ?? 'default';
+  // The mode above reaches a conversation that is NEW; a runtime resolves a
+  // turn as per-send → stored → its own default. So a sender that may not
+  // shape the turn (another agent, the A2A gateway, an external MCP client)
+  // also bounds THIS turn, whatever the conversation is set to: at the stamped
+  // level of one of our agents, else at the runtime's default. Power flows
+  // downstream, never up (spec `trusted-by-default-flip` §4).
   const permissionCeiling: TurnPermissionCeiling | undefined = trustedShaper
     ? undefined
-    : 'runtime-default';
+    : (agentDm?.ceiling ?? 'runtime-default');
 
   // Which model an agent is, is a property of the AGENT — so the manifest is
   // looked for where the agent lives, and NOT at `effectiveCwd`. The two differ

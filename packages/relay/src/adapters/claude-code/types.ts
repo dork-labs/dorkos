@@ -188,6 +188,24 @@ export type SessionRuntimeBinder = (binding: {
 }) => Promise<void>;
 
 /**
+ * The mode a message from one of our agents starts the answering turn at: the
+ * answering agent's configured Files & commands stop, as THIS runtime's own
+ * mode id (spec `trusted-by-default-flip` §4.4). The sender's stamped level is
+ * the ceiling on top, so the turn runs at the stricter of the two.
+ *
+ * `undefined` means nothing is configured, or this runtime declares no mode at
+ * that stop; the turn then runs at the prompting default, as before. Tolerant
+ * by contract: a rejection is read as `undefined`.
+ *
+ * @param turn.agentDirectory - The answering agent's directory, when one resolved.
+ * @param turn.runtimeType - The runtime that answers.
+ */
+export type AgentDmModeResolver = (turn: {
+  agentDirectory: string | undefined;
+  runtimeType: string;
+}) => Promise<PermissionMode | undefined>;
+
+/**
  * Minimal interface for agent session management.
  *
  * This is a structural subset of the `AgentRuntime` interface from
@@ -483,6 +501,12 @@ export interface ClaudeCodeAdapterDeps {
    * `cwd` is trusted as it was before this existed.
    */
   checkTurnDesk?: TurnDeskCheck;
+  /**
+   * The mode a message from one of our agents starts at — see
+   * {@link AgentDmModeResolver}. Absent means every agent DM runs at the
+   * prompting default, held to the runtime's default.
+   */
+  resolveAgentDmMode?: AgentDmModeResolver;
   /**
    * Which runtime a turn addressed to an AGENT by a mesh subject runs on — see
    * {@link TurnRuntimeTypeResolver}. Absent means the host's default runtime

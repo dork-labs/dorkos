@@ -103,7 +103,11 @@
  *
  * @module services/core/capabilities/tier-enforcement
  */
-import type { CapabilitySource, CapabilityTier } from '@dorkos/shared/capabilities';
+import type {
+  ActionConsent,
+  CapabilitySource,
+  CapabilityTier,
+} from '@dorkos/shared/capabilities';
 import type {
   ApprovalOrigin,
   ApprovalServiceAction,
@@ -194,6 +198,11 @@ export interface GatedAction {
    * `CapabilityDefinition.areasForInput`; `permission-enforcement.ts` applies it.
    */
   areasForInput?: (input: unknown) => readonly PermissionAreaId[];
+  /**
+   * What the action's consent is about. See `CapabilityDefinition.consent`;
+   * `permission-enforcement.ts` hands it to the resolver.
+   */
+  consent?: ActionConsent;
   /** The input fields the approval card may show. Required on `destructive`. */
   approvalDisplayFields?: readonly string[];
   /**
@@ -419,7 +428,7 @@ export type TierEnforcementDecision =
   | { outcome: 'denied'; payload: TierDeniedPayload };
 
 /**
- * A destructive call an action-level Allowed permission allowed without asking
+ * A destructive call an Allowed permission allowed without asking
  * anyone.
  *
  * The one `allowed` decision that reaches the audit hook. Every other allowed call
@@ -1008,11 +1017,12 @@ export function enforceCapabilityTier(request: TierEnforcementRequest): TierEnfo
   }
 
   // Allowed runs. An `act` call is audited by the attribution observer on
-  // invoke, like any other allowed call. A `destructive` call can only resolve
-  // Allowed from an ACTION-level setting (the resolver turns an area-level
-  // Allowed on a destructive action into Ask), and it gets one Activity line
-  // saying no card was shown: a stretch in which DorkOS goes quiet must not also
-  // be one in which it goes blind.
+  // invoke, like any other allowed call. A `destructive` call resolves Allowed
+  // from an action-level setting, or from an area-level one when the action
+  // runs no third-party code (the resolver keeps an area-level Allowed at Ask
+  // for those, ADR `261006-225605`), and it gets one Activity line saying no
+  // card was shown: a stretch in which DorkOS goes quiet must not also be one
+  // in which it goes blind.
   if (permission?.state === 'allowed') {
     const approval: GrantedApproval = { via: 'permission', source: permission.source };
     if (tier === 'destructive') {

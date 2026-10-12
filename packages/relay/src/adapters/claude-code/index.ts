@@ -11,6 +11,7 @@ export type {
   AgentSessionStoreLike,
   TasksStoreLike,
   RefusedAskReporter,
+  AgentDmModeResolver,
   ExecutionSettingsResolver,
   TurnDeskCheck,
   TurnRuntimeTypeResolver,

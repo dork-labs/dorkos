@@ -14,6 +14,7 @@ import { z } from 'zod';
 import { extendZodWithOpenApiOnce } from '../zod-openapi.js';
 import { PERMISSION_STOPS } from '../permission-semantics.js';
 import {
+  CHOOSABLE_PERMISSION_PRESETS,
   PERMISSION_ACTION_ID_PATTERN,
   PERMISSION_AREA_IDS,
   PERMISSION_PRESETS,
@@ -22,7 +23,13 @@ import {
 
 extendZodWithOpenApiOnce();
 
-export { PERMISSION_STATES, PERMISSION_AREA_IDS, PERMISSION_PRESETS, PERMISSION_ACTION_ID_PATTERN };
+export {
+  PERMISSION_STATES,
+  PERMISSION_AREA_IDS,
+  PERMISSION_PRESETS,
+  CHOOSABLE_PERMISSION_PRESETS,
+  PERMISSION_ACTION_ID_PATTERN,
+};
 
 /** One of {@link PERMISSION_STATES}. */
 export const PermissionStateSchema = z.enum(PERMISSION_STATES).openapi('PermissionState');
@@ -94,7 +101,6 @@ export const PERMISSION_SOURCES = [
   'default-action',
   'default-area',
   'preset',
-  'unchanged',
   'floor',
   'inactive',
   /** A stored Allowed on an action whose card shows what changes, kept at Ask. */
@@ -149,10 +155,11 @@ export type PermissionSurface = z.infer<typeof PermissionSurfaceSchema>;
  * How sure DorkOS is about who made a change. `local-trust` means login was off,
  * so the change came from "someone on this computer", never a confirmed "you".
  * `outside` means the agent's settings file changed without DorkOS writing it,
- * so nobody can be named at all.
+ * so nobody can be named at all. `agent` means an agent made the change itself,
+ * because its Permissions area let it, with no card.
  */
 export const PermissionAttributionSchema = z
-  .enum(['signed-in', 'local-trust', 'agent-request-approved', 'upgrade', 'outside'])
+  .enum(['signed-in', 'local-trust', 'agent-request-approved', 'agent', 'upgrade', 'outside'])
   .openapi('PermissionAttribution');
 
 /** How sure DorkOS is about who made a permission change. */

@@ -234,13 +234,11 @@ describe('an agent patching a guarded setting', () => {
     expect(approvals.listPending()[0]).toMatchObject({ alwaysOffered: false });
   });
 
-  it('is Blocked on an undecided install, as the refusal before it was', async () => {
+  it('asks on an undecided install, which reads as Trusted: Reach & secrets is never Allowed', async () => {
     preset = null;
     const decision = await refusal(TUNNEL_PATCH);
-    expect(decision).toMatchObject({
-      outcome: 'denied',
-      payload: { reason: 'permission_blocked' },
-    });
+    expect(decision).toMatchObject({ outcome: 'approval_required' });
+    expect(approvals.listPending()[0]).toMatchObject({ area: 'reach', alwaysOffered: false });
     expect(written).toEqual([]);
   });
 });

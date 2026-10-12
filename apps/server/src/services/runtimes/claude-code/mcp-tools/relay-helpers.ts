@@ -5,6 +5,7 @@
  */
 import { createHash } from 'node:crypto';
 import path from 'node:path';
+import type { TurnPermissionLevel } from '@dorkos/shared/agent-runtime';
 import type { McpToolDeps } from './types.js';
 import { jsonContent } from './types.js';
 import { isServerManagedSubject, parseAgentSubject } from '@dorkos/relay';
@@ -36,6 +37,27 @@ export interface SenderIdentity {
    * Used by `relay_notify_user` to resolve the caller's own integration bindings.
    */
   agentId?: string;
+  /**
+   * The level the calling session's current turn runs at, read at call time
+   * from what the server recorded for it (`turn-power/turn-levels.ts`). Present
+   * only in session: the external `/mcp` server has no turn to read. Stamped on
+   * every message this caller publishes, so the agent it reaches runs no looser
+   * (spec `trusted-by-default-flip` §4.4). Answers `undefined` when nothing was
+   * recorded, and the message then carries no level.
+   */
+  turnLevel?: () => TurnPermissionLevel | undefined;
+}
+
+/**
+ * The publish option that stamps a caller's turn level, or nothing.
+ *
+ * @param identity - The caller, with its turn-level reader when it has one.
+ */
+export function senderLevelOption(identity: SenderIdentity): {
+  senderLevel?: TurnPermissionLevel;
+} {
+  const level = identity.turnLevel?.();
+  return level ? { senderLevel: level } : {};
 }
 
 /**

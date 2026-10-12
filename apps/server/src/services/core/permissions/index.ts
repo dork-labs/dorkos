@@ -70,6 +70,7 @@ export function permissionActions(
     title: cap.title,
     tier: cap.tier,
     area: cap.area,
+    ...(cap.consent ? { consent: cap.consent } : {}),
     ...(cap.surfaces.mcp ? { toolName: cap.surfaces.mcp.toolName } : {}),
     ...(cap.describeApprovalChange || isAlwaysAskingExtensionTool(cap)
       ? { alwaysAsks: true as const }
@@ -83,6 +84,7 @@ export function permissionActions(
     title: tool.title,
     tier: tool.tier,
     area: tool.area,
+    ...(tool.consent ? { consent: tool.consent } : {}),
     toolName: id,
   }));
   return [...capabilities, ...tools];

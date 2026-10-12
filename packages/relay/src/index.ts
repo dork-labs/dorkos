@@ -183,6 +183,7 @@ export type {
   TraceStoreLike,
   TasksStoreLike,
   RefusedAskReporter,
+  AgentDmModeResolver,
   ExecutionSettingsResolver,
   TurnDeskCheck,
   TurnRuntimeTypeResolver,

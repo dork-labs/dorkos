@@ -87,18 +87,42 @@ describe('PermissionService.setDefaults', () => {
     expect(world.events[0]!.resourceId).toBeNull();
   });
 
-  it('refuses Allowed on a floor area and on a floor-area action', async () => {
+  it('refuses Allowed on Safety limits and Reach & secrets, and on an action in either', async () => {
     const world = createPermissionWorld();
-    await expect(
-      world.service.setDefaults({ areas: { safety: 'allowed' }, surface: 'settings' }, LOCAL)
-    ).rejects.toMatchObject({ code: 'FLOOR_NEVER_ALLOWED', status: 400 });
+    for (const area of ['safety', 'reach'] as const) {
+      await expect(
+        world.service.setDefaults({ areas: { [area]: 'allowed' }, surface: 'settings' }, LOCAL)
+      ).rejects.toMatchObject({
+        code: 'FLOOR_NEVER_ALLOWED',
+        status: 400,
+        message: 'Safety limits and Reach & secrets are never Allowed. Choose Ask or Blocked.',
+      });
+    }
     await expect(
       world.service.setDefaults(
-        { actions: { 'permissions.change': 'allowed' }, surface: 'settings' },
+        { actions: { 'operator.update_agent_boundaries': 'allowed' }, surface: 'settings' },
         LOCAL
       )
-    ).rejects.toMatchObject({ code: 'FLOOR_NEVER_ALLOWED' });
+    ).rejects.toMatchObject({
+      code: 'FLOOR_NEVER_ALLOWED',
+      message: expect.stringContaining('is in Safety limits, which is never Allowed'),
+    });
     expect(world.events).toEqual([]);
+  });
+
+  it('lets a person set Permissions to Allowed, area and action alike', async () => {
+    // Permissions stopped being a floor (ADR 261006-225605): an agent may change
+    // permissions as a person may, and every change is recorded.
+    const world = createPermissionWorld();
+    await world.service.setDefaults(
+      { areas: { permissions: 'allowed' }, surface: 'settings' },
+      LOCAL
+    );
+    await world.service.setDefaults(
+      { actions: { 'permissions.change': 'allowed' }, surface: 'settings' },
+      LOCAL
+    );
+    expect(world.events).toHaveLength(2);
   });
 
   it('refuses unknown areas, unknown actions, and actions with no area', async () => {

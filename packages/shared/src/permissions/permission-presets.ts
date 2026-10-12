@@ -1,6 +1,6 @@
 /**
- * The preset tables, plus the hidden Unchanged table that stands in while no
- * preset has been chosen (spec `agent-permissions` D5).
+ * The preset tables. An install that has not chosen one resolves against
+ * Trusted (ADR `261006-225605`).
  *
  * **Shipped preset values are frozen.** Changing one later is a config migration
  * that first copies the old value into `permissions.defaults` for every install
@@ -18,8 +18,8 @@ export interface PermissionPresetTable {
   readonly areas: Readonly<Record<PermissionAreaId, PermissionState>>;
   /** Action-level entries that beat the area entry. */
   readonly actions: Readonly<Record<string, PermissionState>>;
-  /** The Files & commands trust stop this preset writes; `null` leaves it alone. */
-  readonly filesStop: PermissionStop | null;
+  /** The Files & commands trust stop this preset writes. */
+  readonly filesStop: PermissionStop;
 }
 
 /**
@@ -124,64 +124,12 @@ export const PERMISSION_PRESET_TABLES: Readonly<Record<PermissionPreset, Permiss
   Object.freeze({ careful: CAREFUL, balanced: BALANCED, full: FULL, trusted: TRUSTED });
 
 /**
- * Unchanged: what an install gets while `permissions.preset` is `null`. It must
- * reproduce the behaviour before permissions existed EXACTLY: Rooms management
- * was an off-by-default tool group (Blocked), the floor areas were not reachable
- * by an agent (Blocked), and everything else ran on its tier alone (Allowed).
- *
- * `rooms.merge` has an action entry of its own: it was never behind the
- * `roomsManage` tool group, so it ran on every install. Putting it in the Rooms
- * area with the area's Blocked would silently remove it from undecided installs
- * (a decomposition-stage resolution of a spec gap).
- *
- * `operator.update_agent_boundaries` has one too, for the same reason: it sits
- * in Safety limits, which Unchanged blocks, but it always ran behind a card of
- * its own (it is `destructive`), so an undecided install keeps asking for it
- * rather than losing it.
- *
- * Extension tools (DOR-2685) did not exist before permissions, so there is no
- * old behaviour to reproduce; they take the same answer as every other
- * non-floor area here, Allowed, so their tier alone decides. A destructive
- * extension tool still asks: the resolver turns an area-level Allowed on a
- * destructive action into Ask.
- *
- * `filesStop: null`: the stored trust stop stays untouched.
- *
- * Own chat (DOR-2732) is a new area — an agent asking for its OWN conversation
- * to be summarized — so it has no old behaviour to reproduce, and it is Allowed
- * here and in all three presets. A permissive default, argued: it reaches
- * nothing outside the agent's own conversation, runs only after the asking turn
- * ends, at most once an hour, and the chat shows it happened. Adding an area
- * changes no shipped value.
- */
-export const UNCHANGED_PERMISSION_TABLE: PermissionPresetTable = Object.freeze({
-  areas: Object.freeze({
-    rooms: 'blocked',
-    tasks: 'allowed',
-    agents: 'allowed',
-    messages: 'allowed',
-    connections: 'allowed',
-    packages: 'allowed',
-    extensions: 'allowed',
-    own_chat: 'allowed',
-    settings: 'allowed',
-    safety: 'blocked',
-    permissions: 'blocked',
-    reach: 'blocked',
-  }),
-  actions: Object.freeze({
-    'rooms.merge': 'allowed',
-    'operator.update_agent_boundaries': 'ask',
-  }),
-  filesStop: null,
-});
-
-/**
- * The table a config resolves against: the chosen preset, or Unchanged when no
- * preset has been chosen.
+ * The table a config resolves against: the chosen preset, or Trusted when no
+ * preset has been chosen. Agents are trusted by default (ADR `261006-225605`),
+ * so an install that never picked runs the way Trusted reads.
  *
  * @param preset - The stored preset, or `null` for not chosen yet.
  */
 export function presetTableFor(preset: PermissionPreset | null): PermissionPresetTable {
-  return preset === null ? UNCHANGED_PERMISSION_TABLE : PERMISSION_PRESET_TABLES[preset];
+  return preset === null ? TRUSTED : PERMISSION_PRESET_TABLES[preset];
 }

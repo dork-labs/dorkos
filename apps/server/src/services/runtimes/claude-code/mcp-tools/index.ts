@@ -20,7 +20,8 @@ import { getSessionTools } from './session-tools.js';
 import { runningPermissionMode } from './session-start-permission.js';
 import { getTasksTools } from './task-tools.js';
 import { getRelayTools } from './relay-tools.js';
-import { resolveSenderIdentity } from './relay-helpers.js';
+import { resolveSenderIdentity, type SenderIdentity } from './relay-helpers.js';
+import { postLevelFor } from '../../../core/turn-power/turn-levels.js';
 import { getAdapterTools } from './adapter-tools.js';
 import { getBindingTools } from './binding-tools.js';
 import { getTraceTools } from './trace-tools.js';
@@ -187,7 +188,14 @@ export function handRegisteredInSessionToolSet(
   // Resolve the caller's trusted Relay identity from the session's identity
   // anchor (its agent manifest), not from tool arguments — this is what relay
   // `from`/namespace access rules key on.
-  const relayIdentity = resolveSenderIdentity(deps, session?.cwd, identity);
+  const relayIdentity: SenderIdentity = {
+    ...resolveSenderIdentity(deps, session?.cwd, identity),
+    // What this session's turn runs at, read at call time, so a message it
+    // sends carries it and the agent that answers runs no looser (spec
+    // `trusted-by-default-flip` §4.4). Either id the turn may be recorded
+    // under: the key it was sent with, or the SDK's canonical id.
+    turnLevel: () => postLevelFor([sessionId]) ?? postLevelFor([session?.sdkSessionId]),
+  };
   const identityPath = homeOf(identity);
   // Which relay envelope THIS turn is answering, if the bus started it (DOR-791).
   // The adapter that dispatched the turn bound it under the session key the turn

@@ -9,7 +9,7 @@
  *
  * @module shared/permissions/resolve-permission
  */
-import type { CapabilityTier } from '../capabilities.js';
+import type { ActionConsent, CapabilityTier } from '../capabilities.js';
 import type { PermissionStop } from '../agent-runtime.js';
 import { isFloorArea } from './permission-areas.js';
 import { presetTableFor } from './permission-presets.js';
@@ -33,13 +33,16 @@ export interface ResolvedPermission {
   source: PermissionSource;
   /** The coarse answer every "why?" line starts from. */
   layer: 'agent' | 'default' | 'floor';
-  /** True when the destructive rule turned an area-level Allowed into Ask. */
+  /**
+   * True when the third-party-code rule turned an area-level Allowed on a
+   * destructive action into Ask.
+   */
   destructiveAsk?: true;
 }
 
 /** The install-wide half of the model: the preset and the changes on top of it. */
 export interface PermissionConfigInput {
-  /** The chosen preset, or `null` for not chosen yet (Unchanged). */
+  /** The chosen preset, or `null` for not chosen yet (resolves as Trusted). */
   preset: PermissionPreset | null;
   /** The changes a person made on top of the preset. */
   defaults: PermissionOverrides;
@@ -69,6 +72,12 @@ export interface ResolvePermissionInput {
    * resolves to Ask, source `always-asks`, the way a floor area's does.
    */
   alwaysAsks?: boolean;
+  /**
+   * What the action's consent is about. `'third-party-code'` marks an action
+   * that puts code someone else wrote where DorkOS will run it; an area-level
+   * Allowed on such a destructive action still asks.
+   */
+  consent?: ActionConsent;
 }
 
 const AGENT_SOURCES: ReadonlySet<PermissionSource> = new Set(['agent-action', 'agent-area']);
@@ -76,7 +85,6 @@ const AREA_LEVEL_SOURCES: ReadonlySet<PermissionSource> = new Set([
   'agent-area',
   'default-area',
   'preset',
-  'unchanged',
 ]);
 
 /** True when `value` is one of the three states (guards a hand-edited file). */
@@ -96,17 +104,16 @@ function own(
   return isState(value) ? value : undefined;
 }
 
-/** The layer-6 answer: the preset table, or Unchanged while none is chosen. */
+/** The layer-6 answer: the preset table (Trusted while none is chosen). */
 function fromPreset(input: ResolvePermissionInput): {
   state: PermissionState;
   source: PermissionSource;
   actionLevel: boolean;
 } {
   const table = presetTableFor(input.config.preset);
-  const source: PermissionSource = input.config.preset === null ? 'unchanged' : 'preset';
   const actionState = own(table.actions, input.actionId);
-  if (actionState) return { state: actionState, source, actionLevel: true };
-  return { state: table.areas[input.area], source, actionLevel: false };
+  if (actionState) return { state: actionState, source: 'preset', actionLevel: true };
+  return { state: table.areas[input.area], source: 'preset', actionLevel: false };
 }
 
 /**
@@ -114,8 +121,9 @@ function fromPreset(input: ResolvePermissionInput): {
  *
  * Precedence, first match wins: inactive identity, the agent's action entry,
  * the agent's area entry, the default action entry, the default area entry,
- * then the preset (or Unchanged). Then two post-rules: an area-level Allowed on
- * a destructive action becomes Ask, and Allowed in a floor area becomes Ask.
+ * then the preset. Then the post-rules: an area-level Allowed on a destructive
+ * action that runs third-party code becomes Ask, Allowed in a floor area
+ * becomes Ask, and Allowed on an action whose card shows a change becomes Ask.
  *
  * @param input - The action, its area and tier, the config and the agent.
  */
@@ -148,6 +156,7 @@ export function resolvePermission(input: ResolvePermissionInput): ResolvedPermis
   let destructiveAsk: true | undefined;
   if (
     input.tier === 'destructive' &&
+    input.consent === 'third-party-code' &&
     state === 'allowed' &&
     !actionLevel &&
     AREA_LEVEL_SOURCES.has(source)

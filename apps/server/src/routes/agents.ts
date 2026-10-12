@@ -72,6 +72,7 @@ import {
 import type { ConfirmationProvider } from '../services/marketplace-mcp/confirmation-provider.js';
 import { DisclosedEffectsSchema } from '../services/marketplace/preview/disclosed-effects.js';
 import { computeTargetDir } from '../services/marketplace/flows/install-agent.js';
+import { templateFromTrustedSource } from '../services/core/agent-templates/trusted-template-source.js';
 import { type MarketplaceInstaller } from '../services/marketplace/installer/marketplace-installer.js';
 import {
   DisclosureChangedError,
@@ -459,7 +460,9 @@ export function createAgentsRouter(meshCore?: MeshCoreLike, deps: AgentCreationD
       }
       // A template is cloned into a staging folder and shown before it lands
       // (DOR-2325): a person is disclosed what it brings; anyone else gets a
-      // card. There is no ungated way to create from a template.
+      // card, unless it is a built-in template that brings nothing that runs
+      // on its own and the install is Trusted (spec `trusted-by-default-flip`
+      // §5.10). There is no ungated way to create from a template.
       let templateGate: TemplateGate | undefined;
       if (req.body?.template !== undefined) {
         const identity = getRequestAgentIdentity(res);
@@ -473,6 +476,7 @@ export function createAgentsRouter(meshCore?: MeshCoreLike, deps: AgentCreationD
                 confirmationToken: decision.data.confirmationToken,
               }),
               ...(identity && { requestedBy: identity.displayName || identity.agentPath }),
+              trustedSource: await templateFromTrustedSource(req.body.template, identity),
             });
       }
       // `skipTemplateDownload` is the marketplace install's own switch: it skips

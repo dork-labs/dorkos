@@ -137,33 +137,54 @@ describe('dorkos permissions', () => {
 
   it('chooses a preset', async () => {
     apiCallMock.mockResolvedValue({ changes: [], permissions: OVERVIEW });
-    expect(await runPermissionsDispatcher(['set', '--preset', 'balanced'])).toBe(0);
+    expect(await runPermissionsDispatcher(['set', '--preset', 'careful'])).toBe(0);
     expect(apiCallMock).toHaveBeenCalledWith('PUT', '/api/permissions/preset', {
-      preset: 'balanced',
+      preset: 'careful',
       surface: 'cli',
     });
-    expect(out()).toContain('Preset is now Balanced.');
+    expect(out()).toContain('Preset is now Careful.');
   });
 
-  it('sets the Full power preset with nothing to acknowledge first (DOR-2739)', async () => {
+  it('sets the Trusted preset with nothing to acknowledge first (DOR-2739)', async () => {
     apiCallMock.mockResolvedValue({ changes: [], permissions: OVERVIEW });
-    expect(await runPermissionsDispatcher(['set', '--preset', 'full'])).toBe(0);
+    expect(await runPermissionsDispatcher(['set', '--preset', 'trusted'])).toBe(0);
     expect(apiCallMock).toHaveBeenCalledWith('PUT', '/api/permissions/preset', {
-      preset: 'full',
+      preset: 'trusted',
       surface: 'cli',
     });
+    expect(out()).toContain('Preset is now Trusted.');
     expect(err()).toBe('');
+  });
+
+  it.each(['balanced', 'full'])(
+    'no longer offers %s, and says which presets there are',
+    async (preset) => {
+      expect(await runPermissionsDispatcher(['set', '--preset', preset])).toBe(1);
+      expect(apiCallMock).not.toHaveBeenCalled();
+      expect(err()).toContain(`'${preset}' is not a preset. Use one of: trusted, careful.`);
+    }
+  );
+
+  it('still reads a stored Balanced, and reads an undecided install as Trusted', async () => {
+    apiCallMock.mockResolvedValue({ ...OVERVIEW, preset: 'balanced', changeCount: 0 });
+    await runPermissionsDispatcher([]);
+    expect(out()).toContain('Preset: Balanced');
+    vi.mocked(console.log).mockClear();
+    apiCallMock.mockResolvedValue({ ...OVERVIEW, preset: null, changeCount: 0 });
+    await runPermissionsDispatcher([]);
+    expect(out()).toContain('Preset: Trusted');
+    expect(out()).toMatch(/Tasks & schedules\s+tasks\s+Ask\s+From Trusted/);
   });
 
   it("prints the server's floor refusal as it is", async () => {
     apiCallMock.mockRejectedValue(
       new ApiError(400, {
-        error: 'Reach & secrets is never Allowed.',
+        error: 'Safety limits and Reach & secrets are never Allowed. Choose Ask or Blocked.',
         code: 'FLOOR_NEVER_ALLOWED',
       })
     );
     expect(await runPermissionsDispatcher(['set', 'reach', 'allowed'])).toBe(1);
-    expect(err()).toContain('Reach & secrets is never Allowed.');
+    expect(err()).toContain('Safety limits and Reach & secrets are never Allowed.');
   });
 
   it('reads the history for one agent, found by name', async () => {
