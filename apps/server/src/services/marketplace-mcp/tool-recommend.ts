@@ -20,6 +20,7 @@ import type { MarketplaceJsonEntry } from '@dorkos/marketplace';
 
 import type { MarketplaceMcpDeps } from './marketplace-mcp-tools.js';
 import { recommend } from './recommend-engine.js';
+import { scanUpdateView } from '../marketplace/flows/update-installed.js';
 
 /**
  * Input schema for the `marketplace_recommend` MCP tool. Exposed as a raw
@@ -46,6 +47,24 @@ export type RecommendInput = z.infer<z.ZodObject<typeof RecommendInputSchema>>;
 
 /** Default package type assigned to entries with no explicit `type` field. */
 const DEFAULT_PACKAGE_TYPE = 'plugin' as const;
+
+/**
+ * The names of every package installed in any scope, or `undefined` when the
+ * scan failed and nothing can be said.
+ *
+ * @param deps - Marketplace dependency bundle; reads `dorkHome` and `listAgentScopes`.
+ */
+async function installedNames(deps: MarketplaceMcpDeps): Promise<ReadonlySet<string> | undefined> {
+  try {
+    const records = await scanUpdateView(deps, undefined);
+    return new Set(records.map((record) => record.package.name));
+  } catch (err) {
+    deps.logger.warn('[marketplace_recommend] could not read installed packages', {
+      error: err instanceof Error ? err.message : String(err),
+    });
+    return undefined;
+  }
+}
 
 /**
  * Build the `marketplace_recommend` MCP tool handler bound to the supplied
@@ -82,6 +101,7 @@ export function createRecommendHandler(deps: MarketplaceMcpDeps) {
     }
 
     const scored = recommend(allEntries, args.context, args.limit);
+    const installed = scored.length > 0 ? await installedNames(deps) : undefined;
 
     return {
       content: [
@@ -96,6 +116,7 @@ export function createRecommendHandler(deps: MarketplaceMcpDeps) {
                 marketplace: s.marketplace,
                 relevanceScore: s.score,
                 reason: s.reason,
+                ...(installed && { installed: installed.has(s.entry.name) }),
               })),
             },
             null,

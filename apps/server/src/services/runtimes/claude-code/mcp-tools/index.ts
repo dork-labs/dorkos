@@ -51,6 +51,7 @@ import type {
 import { composeDorkOsCapabilityRegistry } from '../../../core/self-description/dorkos-registry.js';
 import { registerDorkOsResources } from '../../../core/mcp-resources/index.js';
 import { logger } from '../../../../lib/logger.js';
+import { readsCallerConnections } from '../../../connectors/runtime-capability-scope.js';
 
 // Re-export the individual handlers and handler factories, which the per-domain
 // tests import by name to exercise one handler without standing up a server.
@@ -400,9 +401,15 @@ export function createDorkOsToolServer(
       handTools: hand.reach,
     };
     const connectorTurn = session?.connectorTurn;
-    if (!connectorTurn?.isConnectorCapabilityId(capabilityId)) return invocation;
-    const serverPrincipal = await connectorTurn.resolvePrincipal();
-    return { ...invocation, serverPrincipal };
+    if (!connectorTurn) return invocation;
+    if (connectorTurn.isConnectorCapabilityId(capabilityId)) {
+      return { ...invocation, serverPrincipal: await connectorTurn.resolvePrincipal() };
+    }
+    // `connector_recommend` reads the caller's own granted connections to say
+    // what is already connected; without the principal it leaves that out.
+    if (!connectorTools || !readsCallerConnections(capabilityId)) return invocation;
+    const serverPrincipal = await connectorTurn.resolvePrincipal().catch(() => undefined);
+    return serverPrincipal ? { ...invocation, serverPrincipal } : invocation;
   };
   // The in-session hold seam (DOR-939): only with BOTH a live session (an event
   // queue to render the inline card into) and the approval primitive can a fresh

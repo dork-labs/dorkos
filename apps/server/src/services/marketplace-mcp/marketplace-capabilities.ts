@@ -225,7 +225,9 @@ export const marketplaceDomain: CapabilityDomain = {
       id: 'marketplace.recommend',
       title: 'Recommend packages',
       description:
-        'Recommend marketplace packages based on a context description (e.g., "I need to track errors in my Next.js app"). Uses keyword + tag matching. Returns top matches with relevance scores and reasons.',
+        'Recommend marketplace packages based on a context description (e.g., "I need to track errors in my Next.js app"). Uses keyword + tag matching. Returns top matches with relevance scores and reasons. ' +
+        'installed:true means a package by that name is already installed here, so do not offer it as new; ' +
+        'no installed field means DorkOS could not tell.',
       tier: 'observe',
       area: null,
       areaNote: 'reading',

@@ -1,4 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { z } from 'zod';
 import type { Logger } from '@dorkos/shared/logger';
 import type { MarketplaceJson, MarketplaceJsonEntry } from '@dorkos/marketplace';
@@ -92,6 +95,7 @@ function parseResponse(result: { content: { type: 'text'; text: string }[] }): {
     marketplace: string;
     relevanceScore: number;
     reason: string;
+    installed?: boolean;
   }>;
 } {
   expect(result.content).toHaveLength(1);
@@ -310,6 +314,8 @@ describe('createRecommendHandler', () => {
       marketplace: 'community',
       relevanceScore: expect.any(Number),
       reason: expect.any(String),
+      // Nothing is installed under the test's empty data directory.
+      installed: false,
     });
     expect(rec.relevanceScore).toBeGreaterThan(0);
     expect(rec.reason.length).toBeGreaterThan(0);
@@ -343,5 +349,68 @@ describe('createRecommendHandler', () => {
     const payload = parseResponse(result);
 
     expect(payload.recommendations[0]!.type).toBe('plugin');
+  });
+});
+
+describe('createRecommendHandler — installed', () => {
+  const community = (): MarketplaceJson =>
+    marketplace('community', [
+      entry({ name: 'sentry-monitor', description: 'Track errors', tags: ['errors'] }),
+      entry({ name: 'error-digest', description: 'Daily errors summary', tags: ['errors'] }),
+    ]);
+
+  it('says which recommended packages are already installed in any scope', async () => {
+    const dorkHome = await mkdtemp(join(tmpdir(), 'dorkos-recommend-installed-'));
+    try {
+      const dir = join(dorkHome, 'plugins', 'sentry-monitor', '.dork');
+      await mkdir(dir, { recursive: true });
+      await writeFile(
+        join(dir, 'manifest.json'),
+        JSON.stringify({
+          schemaVersion: 1,
+          type: 'plugin',
+          name: 'sentry-monitor',
+          version: '1.0.0',
+        })
+      );
+      const deps = {
+        ...buildDeps({ sources: [source('community')], marketplaces: { community: community() } }),
+        dorkHome,
+      };
+
+      const payload = parseResponse(
+        await createRecommendHandler(deps)({ context: 'errors', limit: 5 })
+      );
+
+      const byName = Object.fromEntries(payload.recommendations.map((r) => [r.name, r.installed]));
+      expect(byName).toEqual({ 'sentry-monitor': true, 'error-digest': false });
+    } finally {
+      await rm(dorkHome, { recursive: true, force: true });
+    }
+  });
+
+  it('leaves installed out, never false, when the installed scan fails', async () => {
+    const logger = buildLogger();
+    const deps: MarketplaceMcpDeps = {
+      ...buildDeps({
+        sources: [source('community')],
+        marketplaces: { community: community() },
+        logger,
+      }),
+      listAgentScopes: () => {
+        throw new Error('agent registry offline');
+      },
+    };
+
+    const payload = parseResponse(
+      await createRecommendHandler(deps)({ context: 'errors', limit: 5 })
+    );
+
+    expect(payload.recommendations).toHaveLength(2);
+    for (const rec of payload.recommendations) expect(rec).not.toHaveProperty('installed');
+    expect(logger.warn).toHaveBeenCalledWith(
+      expect.stringContaining('could not read installed packages'),
+      expect.objectContaining({ error: 'agent registry offline' })
+    );
   });
 });

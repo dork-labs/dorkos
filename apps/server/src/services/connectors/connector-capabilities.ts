@@ -2,7 +2,9 @@
  * Provider-neutral connector discovery capabilities.
  *
  * Private accounts, connection flows, and attachment mutations are deliberately
- * absent. Agents execute only through the authenticated internal connector MCP
+ * absent. The one account fact here is `connector_recommend`'s `connected` flag,
+ * read from the calling agent's own granted connections and nobody else's
+ * (see `recommend/connector-recommend.ts`). Agents execute only through the authenticated internal connector MCP
  * server, whose capabilities recheck exact canonical grants for every call.
  *
  * @module services/connectors/connector-capabilities
@@ -12,8 +14,14 @@ import type { ConnectorCatalogResourcePage } from '@dorkos/shared/connector-reso
 
 import { defineCapability, type CapabilityDomain } from '../core/capabilities/index.js';
 import type { CapabilityDeps } from '../core/capabilities/index.js';
+import { CapabilityToolError } from '../core/capabilities/mcp-envelope.js';
 import { agentAppSetupNote, appReachProblem } from './app-connection-way.js';
-import { recommendConnector, type RelayAdapterCatalog } from './routing.js';
+import type { RelayAdapterCatalog } from './routing.js';
+import {
+  callerConnectedToolkits,
+  recommendByIntent,
+  recommendService,
+} from './recommend/connector-recommend.js';
 import type { ConnectorRegistry } from './registry.js';
 
 /**
@@ -144,13 +152,28 @@ export const connectorDomain: CapabilityDomain = {
       id: 'connector.recommend',
       title: 'Recommend how to connect a service',
       description:
-        'Recommend the best route for a service. Account setup and access changes ' +
-        'remain owner actions in the DorkOS app.',
+        'Find the best way to connect an app. Pass service with an exact service id, or ' +
+        'intent with the task in plain words (for example "let the team know the deploy is ' +
+        'done") to get up to 5 apps that could do it, best first; an empty list means none ' +
+        'fits. connected:true means an account for it is already shared with you; false ' +
+        'means none is; no connected field means DorkOS could not tell. Account setup and ' +
+        'access changes remain owner actions in the DorkOS app.',
       tier: 'observe',
       area: null,
       areaNote: 'connected accounts have their own grant model',
       input: z.object({
-        service: z.string().min(1).describe("Service slug, for example 'gmail' or 'slack'."),
+        service: z
+          .string()
+          .min(1)
+          .optional()
+          .describe("Exact service id, for example 'gmail' or 'slack'."),
+        intent: z
+          .string()
+          .trim()
+          .min(1)
+          .max(500)
+          .optional()
+          .describe('The task in plain words, when you do not know which app does it.'),
       }),
       output: z.unknown(),
       surfaces: {
@@ -161,9 +184,25 @@ export const connectorDomain: CapabilityDomain = {
           annotations: { idempotentHint: true, openWorldHint: true },
         },
       },
-      invoke: async (deps, input) => {
-        const { registry, relay } = requireConnectorDeps(deps);
-        return recommendConnector(input.service, { registry, ...(relay && { relay }) });
+      invoke: async (deps, input, context) => {
+        if ((input.service === undefined) === (input.intent === undefined)) {
+          throw new CapabilityToolError({
+            error:
+              'Pass exactly one of service (an exact service id) or intent (the task in ' +
+              'plain words), not both or neither.',
+            code: 'INVALID_INPUT',
+          });
+        }
+        const connectorDeps = requireConnectorDeps(deps);
+        const toolkits = await callerConnectedToolkits(deps, context);
+        return input.service !== undefined
+          ? recommendService(input.service, connectorDeps, toolkits)
+          : recommendByIntent(
+              input.intent!,
+              connectorDeps,
+              toolkits,
+              context.signal ?? AbortSignal.timeout(30_000)
+            );
       },
     }),
   ],
