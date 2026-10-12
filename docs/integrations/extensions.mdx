@@ -86,6 +86,15 @@ An extension can also bring skills: short guides that teach your agents when and
 
 For the manifest fields, the `ctx.tools.handle` API and how skills are checked, see `contributing/extension-authoring.md`.
 
+## Where a tab shows
+
+An extension's right-panel tab can show everywhere, or only beside the agents, channels and pages it belongs to. You decide where:
+
+- **In the panel.** Open the panel's **⋯** menu. **Hide here** hides the tab in this channel, in chats with this agent, or on this page (Home counts as #team). **Show here** brings back a tab that is hidden here. **Open full page** goes to the extension's own page, when it has one. Hide here and Show here are not offered in a chat with no agent, or in a channel from a connected space, because there is nothing narrower to name there than every chat or every channel.
+- **In Settings.** Open **Settings → Extensions**. Under each extension with a tab, **Panel tab shows** has two choices: **Everywhere**, or **Only in…** a list of agents, channels and pages you pick. Where a tab shows everywhere but was hidden in some places, those places are listed under **Hidden in**, and you can remove them there.
+
+An extension can say where its tab belongs by default, with `showIn` on `registerComponent`. Your choice replaces that default, and **Use its default** puts it back. Your choice applies to everyone who uses this DorkOS, and an agent can change it too. The saved list is `ui.panelTabs` in your settings file. For the details, see `contributing/extension-authoring.md`.
+
 ## Testing locally
 
 The host discovers extensions from two directories: `.dork/extensions/<id>/` in your project for a local extension, or `~/.dork/extensions/<id>/` for a global one available everywhere. It also loads extensions that come inside an installed marketplace plugin, once you approve them. Drop your manifest and entry file there, then open **Settings → Extensions** and click **Reload Extensions** to pick up the change without restarting the client.

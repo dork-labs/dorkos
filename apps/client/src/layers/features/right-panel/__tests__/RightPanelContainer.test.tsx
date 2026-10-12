@@ -11,6 +11,21 @@ import type { RightPanelContribution } from '@/layers/shared/model';
 const { mockPanelExpand } = vi.hoisted(() => ({ mockPanelExpand: vi.fn() }));
 
 // Mock react-resizable-panels with imperative handle support for panelRef
+// Placement (spec `mini-app-placement`) reads config and two queries; this
+// suite is about built-in tabs, so "here" is the route's page and nothing is
+// saved. The placement behaviour has its own suite.
+vi.mock('../model/use-placement-here', () => ({
+  usePlacementHere: (pathname: string) => ({
+    status: 'ready',
+    here: { page: pathname.split('/').filter(Boolean)[0] ?? 'home' },
+  }),
+}));
+vi.mock('@/layers/entities/config', () => ({
+  useConfig: () => ({ data: {} }),
+  usePanelTabPlacements: () => [],
+  useSetPanelTabPlacement: () => ({ setPlacement: vi.fn(), isPending: false }),
+}));
+
 vi.mock('react-resizable-panels', async () => {
   const { useImperativeHandle } = await import('react');
 

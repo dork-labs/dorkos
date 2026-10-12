@@ -67,6 +67,7 @@ import {
   seedIdentityPromptDismissedDefault,
   seedWorkingHoursDefaults,
   seedDoeDefaultModel,
+  seedUiPanelTabs,
   seedFirstRunOnboardingLeaves,
   seedHarnessAutoAdopt,
   seedHarnessGlobal,
@@ -1734,6 +1735,57 @@ describe('seedFirstRunOnboardingLeaves migration (DOR-2783)', () => {
       expect(onDisk.onboarding).toHaveProperty('priorRuntime', null);
       // Everything the install already had is untouched.
       expect(onDisk.onboarding.completedAt).toBe('2026-09-01T00:00:00.000Z');
+      expect(() => UserConfigSchema.parse(onDisk)).not.toThrow();
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('seedUiPanelTabs migration (DOR-2867)', () => {
+  it('reserves an empty list on a `ui` block that predates it', () => {
+    const store = createMockStore({ ui: { theme: 'dark', composer: { richText: true } } });
+    seedUiPanelTabs(store);
+    expect(store.data.ui).toEqual({ theme: 'dark', composer: { richText: true }, panelTabs: [] });
+  });
+
+  it('keeps a saved placement, and writes nothing (idempotent)', () => {
+    const saved = [{ tab: 'social-queue:queue', show: { agents: ['a'], rooms: [], pages: [] } }];
+    const store = createMockStore({ ui: { panelTabs: saved } });
+    seedUiPanelTabs(store);
+    expect(store.writes).toEqual([]);
+    expect(store.data.ui).toEqual({ panelTabs: saved });
+  });
+
+  it('a real pre-0.112.0 config file gains the leaf on disk (full conf path)', () => {
+    const dir = path.join(os.tmpdir(), 'test-dork-ui-panel-tabs-mig-' + Date.now());
+    const cfgPath = path.join(dir, 'config.json');
+    fs.mkdirSync(dir, { recursive: true });
+    try {
+      const { panelTabs: _drop, ...uiWithout } = USER_CONFIG_DEFAULTS.ui;
+      fs.writeFileSync(
+        cfgPath,
+        JSON.stringify({
+          version: 1,
+          ui: { ...uiWithout, theme: 'dark' },
+          __internal__: { migrations: { version: '0.111.0' } },
+        }),
+        'utf-8'
+      );
+      new Conf({
+        configName: 'config',
+        cwd: dir,
+        schema: CONF_JSON_SCHEMA as unknown as Schema<Record<string, unknown>>,
+        defaults: USER_CONFIG_DEFAULTS,
+        clearInvalidConfig: false,
+        projectVersion: '0.112.0',
+        migrations: CONFIG_MIGRATIONS,
+      });
+      const onDisk = JSON.parse(fs.readFileSync(cfgPath, 'utf-8')) as {
+        ui: Record<string, unknown>;
+      };
+      expect(onDisk.ui).toHaveProperty('panelTabs', []);
+      expect(onDisk.ui.theme).toBe('dark');
       expect(() => UserConfigSchema.parse(onDisk)).not.toThrow();
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
@@ -4277,7 +4329,7 @@ describe('CONFIG_MIGRATIONS append-only pins (DOR-1222 regression guard)', () =>
     // pass this having scanned nothing. The count is the knowable bound; the
     // table is append-only, so raising it is the deliberate act of adding a
     // migration, which is exactly when this check should be re-read.
-    expect(Object.keys(bodies)).toHaveLength(51);
+    expect(Object.keys(bodies)).toHaveLength(52);
 
     const reaching = Object.keys(bodies).filter((key) =>
       reachedDeclarations(bodies[key]!, pool).includes('describeLoadError')
