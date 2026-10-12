@@ -1,6 +1,8 @@
 ---
 covers:
   - 'feat(community): operators can create a space under a reserved name (DOR-2848)'
+  - "fix(community): a reserved-name grant goes with the space's hold on the name (DOR-2848)"
+  - 'fix(community): a renamed space takes its reserved name back, and only the reserved-name scope releases it (DOR-2848)'
 ---
 
 ### Added

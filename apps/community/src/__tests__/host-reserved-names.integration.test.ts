@@ -235,6 +235,48 @@ it('replays the same request, and refuses a second space under the same name', a
   expect((await h.pool.query('SELECT 1 FROM reserved_name_grants')).rowCount).toBe(1);
 });
 
+it('lets the granted space rename and take its name back, and guards releasing it', async () => {
+  // Purpose: fails if a renamed official space can never take its reserved name back, or if a
+  // key without the reserved-name scope can release the name and so erase the grant's record.
+  const rename = (shortName: string) =>
+    h.call(`/api/v1/host/communities/${official}/short-name`, {
+      method: 'PUT',
+      bearer: everyOtherScopeKey,
+      body: { shortName },
+    });
+  await expectStatus(await rename('dorkos-hq'), 200, 'rename away');
+  expect(await (await expectStatus(await lookup('dorkos'), 200, 'old name')).json()).toEqual({
+    communityId: official,
+    shortName: 'dorkos-hq',
+  });
+  await expectStatus(await rename('dorkos'), 200, 'take the reserved name back');
+  expect((await lookup('dorkos')).status).toBe(200);
+  await expectStatus(await rename('dorkos-hq'), 200, 'rename away again');
+  const release = (bearer: string) =>
+    h.call(`/api/v1/host/communities/${official}/short-names/dorkos`, {
+      method: 'DELETE',
+      bearer,
+    });
+  expect((await release(everyOtherScopeKey)).status).toBe(403);
+  expect(
+    (await h.pool.query("SELECT 1 FROM reserved_name_grants WHERE short_name='dorkos'")).rowCount
+  ).toBe(1);
+  const both = await issue('Write and reserved names', ['communities:write', SCOPE]);
+  await expectStatus(await release(both.secret), 204, 'release with both scopes');
+  expect(
+    (await h.pool.query("SELECT 1 FROM reserved_name_grants WHERE short_name='dorkos'")).rowCount
+  ).toBe(0);
+  expect((await lookup('dorkos')).status).toBe(404);
+  const audit = await h.pool.query(
+    `SELECT actor_api_key_id FROM host_audit_events
+     WHERE action='community.reserved_name.release' AND community_id=$1`,
+    [official]
+  );
+  expect(audit.rows).toEqual([{ actor_api_key_id: both.id }]);
+  // Now released, the name is reserved for everyone again, this space included.
+  expect((await rename('dorkos')).status).toBe(409);
+});
+
 it('creates one space when two requests race for the same reserved name', async () => {
   // Purpose: fails if two concurrent creations could both bind the name, or leave a grant or
   // a space behind for the one that lost.

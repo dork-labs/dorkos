@@ -54,6 +54,19 @@ export function isGrantableReservedName(name: string, reservedNames: ReadonlySet
 export const grantedShortNameSql = `EXISTS(SELECT 1 FROM reserved_name_grants g
   WHERE g.short_name=n.short_name AND g.community_id=n.community_id)`;
 
+/** Whether a host operator gave `name` to this community, and it still holds it. */
+export async function hasReservedNameGrant(
+  db: Queryable,
+  name: string,
+  communityId: string
+): Promise<boolean> {
+  const grant = await db.query(
+    'SELECT 1 FROM reserved_name_grants WHERE short_name=$1 AND community_id=$2',
+    [name, communityId]
+  );
+  return Boolean(grant.rowCount);
+}
+
 const taken = () =>
   new ApiError(409, 'SHORT_NAME_TAKEN', 'That web address is taken. Choose another.');
 const reserved = () =>
@@ -124,7 +137,12 @@ export async function assignShortName(
   if (input.shortName !== null) {
     if (
       input.reservedNames.has(input.shortName) &&
-      !(input.allowReserved && isGrantableReservedName(input.shortName, input.reservedNames))
+      !(
+        isGrantableReservedName(input.shortName, input.reservedNames) &&
+        (input.allowReserved ||
+          // The space a host operator gave this name to may take it back after a rename.
+          (await hasReservedNameGrant(client, input.shortName, input.communityId)))
+      )
     )
       throw reserved();
     const bound = await client.query<{ community_id: string }>(

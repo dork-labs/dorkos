@@ -19,6 +19,7 @@ import {
 import {
   assignShortName,
   grantedShortNameSql,
+  hasReservedNameGrant,
   holdShortNames,
   isGrantableReservedName,
   liftShortNameHold,
@@ -165,6 +166,15 @@ export function registerShortNameRoutes(
       const at = now();
       await assertHostActor(client, actor, at);
       if (!locked.rowCount) throw new ApiError(404, 'NOT_FOUND', 'Space not found.');
+      // Releasing a reserved name a host operator gave this space removes the record of that
+      // grant with it, so it needs the same authority as giving the name out.
+      const granted = name ? await hasReservedNameGrant(client, name, communityId) : false;
+      if (
+        granted &&
+        actor.kind === 'api_key' &&
+        !actor.scopes.includes('communities:reserved_names')
+      )
+        throw new ApiError(403, 'FORBIDDEN', 'This key does not allow that action.');
       const released = name
         ? await client.query(
             `DELETE FROM community_short_names
@@ -177,9 +187,9 @@ export function registerShortNameRoutes(
       }
       await holdShortNames(client, [name!], holds, at);
       await recordHostAudit(client, actor, {
-        action: 'community.short_name.release',
+        action: granted ? 'community.reserved_name.release' : 'community.short_name.release',
         communityId,
-        changedFields: ['short_name'],
+        changedFields: granted ? ['short_name', 'reserved_name_grant'] : ['short_name'],
       });
     });
     return c.body(null, 204);
