@@ -61,13 +61,15 @@ vi.mock('@dorkos/shared/manifest', () => ({ readManifest: vi.fn(async () => null
 import request from '@dorkos/test-utils/supertest';
 import { listeningServer } from '@dorkos/test-utils/listening-server';
 import { createApp, finalizeApp } from '../../app.js';
+import { composedListener } from '../../http/__tests__/composed-listener.js';
 import { createTestDb } from '@dorkos/test-utils/db';
 import type { Db } from '@dorkos/db';
 import { runtimeRegistry } from '../../services/core/runtime-registry.js';
 
-const app = createApp({ admission: new MainRequestAdmission() });
+const admission = new MainRequestAdmission();
+const app = createApp({ admission });
 finalizeApp(app);
-const testServer = listeningServer(app);
+const testServer = listeningServer(composedListener(app, admission));
 
 /** The id DorkOS minted, which the runtime has since retired. */
 const RETIRED_ID = '11111111-1111-4111-8111-111111111111';

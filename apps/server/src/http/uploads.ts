@@ -3,9 +3,9 @@
  * `multipart/form-data` body off the raw Node request, the way `multer`
  * (2.4) read it for the routes that moved off Express.
  *
- * It is a port of multer's middleware for the shape these routes use (one
- * file field, memory or disk storage, a synchronous type filter), not a new
- * parser: the same `busboy` underneath with the same limits and the same
+ * It is a port of multer's middleware for the shapes these routes use (one
+ * file field or several, memory or disk storage, a synchronous type filter),
+ * not a new parser: the same `busboy` underneath with the same limits and the same
  * off-by-one correction, the same refusal codes and messages, the same order
  * in which a refusal is decided, the files already written removed before the
  * answer, and the rest of the body drained first so the client is not cut off
@@ -128,14 +128,36 @@ export interface UploadLimits {
   files?: number;
   /** The most text fields in one body. */
   fields?: number;
+  /** The most bytes one text field's value may carry. */
+  fieldSize?: number;
 }
 
-/** Options for {@link parseUploads}. */
-export interface ParseUploadsOptions {
+/** A form field files may arrive in, and how many. */
+export interface UploadField {
+  /** The field name. */
+  name: string;
+  /** The most files it may carry; no limit when absent. */
+  maxCount?: number;
+}
+
+/** Options for {@link parseUploads} that accept files in one field. */
+export type SingleFieldUploadOptions = UploadOptionsBase & {
   /** The one form field files may arrive in; a file in any other is refused. */
   field: string;
   /** The most files that field may carry (`upload.array(field, n)`, `single` is 1). */
   maxCount?: number;
+};
+
+/** Options for {@link parseUploads}. */
+export type ParseUploadsOptions =
+  | SingleFieldUploadOptions
+  | (UploadOptionsBase & {
+      /** The fields files may arrive in (`upload.fields([...])`); a file in any other is refused. */
+      fields: readonly UploadField[];
+    });
+
+/** What every {@link ParseUploadsOptions} carries. */
+interface UploadOptionsBase {
   /** See {@link UploadLimits}. */
   limits?: UploadLimits;
   /** An error refuses the whole body, as a multer `fileFilter` passing one did. */
@@ -212,6 +234,13 @@ export function parseUploadForm<E extends UploadEnv>(
   );
 }
 
+/** How many files each allowed field may still take: multer's wrapped filter. */
+function fileAllowance(options: ParseUploadsOptions): Map<string, number> {
+  const fields: readonly UploadField[] =
+    'fields' in options ? options.fields : [{ name: options.field, maxCount: options.maxCount }];
+  return new Map(fields.map((field) => [field.name, field.maxCount ?? Infinity]));
+}
+
 /** A file slot, held from the moment a file is accepted, so order survives storage. */
 interface Slot {
   file?: UploadedFile;
@@ -226,7 +255,7 @@ class UploadRead {
   private cleanupDone = false;
   private pendingWrites = 0;
   private onIdle: (() => void) | undefined;
-  private filesLeft: number;
+  private readonly filesLeft: Map<string, number>;
   private readonly slots: Slot[] = [];
   private readonly stored: UploadedFile[] = [];
   private readonly writing = new Set<UploadedFile>();
@@ -242,7 +271,7 @@ class UploadRead {
     private readonly resolve: (form: UploadForm) => void,
     private readonly reject: (error: unknown) => void
   ) {
-    this.filesLeft = options.maxCount ?? Infinity;
+    this.filesLeft = fileAllowance(options);
   }
 
   start(): void {
@@ -342,13 +371,14 @@ class UploadRead {
 
     // multer's wrapped filter: the field and its count first, then the route's.
     let refusal: unknown;
-    if (fieldname !== this.options.field || this.filesLeft <= 0) {
+    const left = this.filesLeft.get(fieldname) ?? 0;
+    if (left <= 0) {
       refusal = new UploadLimitError('LIMIT_UNEXPECTED_FILE', fieldname);
     } else {
-      this.filesLeft -= 1;
+      this.filesLeft.set(fieldname, left - 1);
       refusal = this.options.filter?.(file);
       // A refused file does not use up a slot.
-      if (refusal) this.filesLeft += 1;
+      if (refusal) this.filesLeft.set(fieldname, left);
     }
     if (this.failed) {
       stream.resume();

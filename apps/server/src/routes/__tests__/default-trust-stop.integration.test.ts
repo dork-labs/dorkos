@@ -14,7 +14,6 @@
  * real SQLite db, and the real sessions route.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import express from 'express';
 import request from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
 import fs from 'node:fs';
@@ -53,7 +52,6 @@ vi.mock('../../services/runtimes/claude-code/sdk/sdk-utils.js', () => ({
 const SESSION_ID = '11111111-2222-4333-8444-555555555555';
 
 describe('a standing Full-autonomy default, end to end', () => {
-  let app: express.Express;
   let tmpDir: string;
   let fake: FakeAgentRuntime;
 
@@ -76,25 +74,18 @@ describe('a standing Full-autonomy default, end to end', () => {
     runtimeRegistry.setDb(createTestDb());
 
     const configRouter = (await import('../config.js')).default;
-    const sessionsRouter = (await import('../sessions.js')).default;
+    const { createSessionRoutes } = await import('../sessions.js');
     const { honoGroupListener } = await import('../../http/__tests__/hono-group-listener.js');
     // Stands in for `sessionGate`'s resolved user — the cockpit's own posture,
     // which the operator-only write policy on these leaves requires.
     const user = { userId: 'user_cockpit', credential: 'cookie' } as const;
-    app = express();
-    app.use(express.json());
-    app.use((_req, res, next) => {
-      res.locals.user = user;
-      next();
-    });
-    app.use('/api/sessions', sessionsRouter);
-    // The config routes answer from the Hono `/api` app, in front of the
-    // sessions router still on Express, as the running server routes them.
     fixtureTarget.mount(
       honoGroupListener(
-        { path: '/api/config', routes: configRouter },
+        [
+          { path: '/api/config', routes: configRouter },
+          { path: '/api/sessions', routes: createSessionRoutes() },
+        ],
         {
-          legacy: app,
           before: (c, next) => {
             c.set('user', user);
             return next();

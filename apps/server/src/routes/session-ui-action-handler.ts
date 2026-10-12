@@ -25,11 +25,13 @@
  *
  * @module routes/session-ui-action-handler
  */
-import type { Request, Response } from 'express';
+import type { Context } from 'hono';
 import { UiActionRequestSchema } from '@dorkos/shared/schemas';
 import { formatUiActionMessage } from '@dorkos/shared/ui-widget';
 import { runtimeRegistry } from '../services/core/runtime-registry.js';
-import { parseSessionId, sendError } from '../lib/route-utils.js';
+import type { ApiEnv } from '../http/api-chain.js';
+import { readJsonBody } from '../http/request-body.js';
+import { errorBody, parseSessionId } from '../lib/route-utils.js';
 import { DEFAULT_CWD } from '../lib/resolve-root.js';
 import { logger } from '../lib/logger.js';
 import {
@@ -40,23 +42,22 @@ import {
 } from '../services/session/index.js';
 
 /**
- * Express handler for `POST /api/sessions/:id/ui-action`. Mounted directly by
- * `sessions.ts` (Express 5 forwards async rejections natively); see the
- * module doc for semantics.
+ * Handler for `POST /api/sessions/:id/ui-action`, mounted by `sessions.ts`; see
+ * the module doc for semantics.
  *
- * @param req - The Express request (`:id` route param + `UiActionRequest` body)
- * @param res - The Express response (202 trigger / 400 / 404 / 409)
+ * @param c - The request context (`:id` route param + `UiActionRequest` body);
+ *   answers 202 trigger / 400 / 404 / 409
  */
-export async function sessionUiActionHandler(req: Request, res: Response): Promise<void> {
-  const sessionId = parseSessionId(req.params.id);
-  if (!sessionId) return sendError(res, 400, 'Invalid session ID', 'INVALID_SESSION_ID');
+export async function sessionUiActionHandler(c: Context<ApiEnv>): Promise<Response> {
+  const sessionId = parseSessionId(c.req.param('id'));
+  if (!sessionId) return c.json(errorBody('Invalid session ID', 'INVALID_SESSION_ID'), 400);
 
-  const parsed = UiActionRequestSchema.safeParse(req.body);
+  const parsed = UiActionRequestSchema.safeParse(readJsonBody(c));
   if (!parsed.success) {
     // Surface the first issue (e.g. the serialized-payload size cap) — every
     // field feeds the injected turn prompt, so a clear reject beats a generic one.
     const detail = parsed.error.issues[0]?.message ?? 'Invalid request';
-    return sendError(res, 400, detail, 'VALIDATION_ERROR');
+    return c.json(errorBody(detail, 'VALIDATION_ERROR'), 400);
   }
 
   const runtime = await runtimeRegistry.resolveForSession(sessionId);
@@ -73,11 +74,11 @@ export async function sessionUiActionHandler(req: Request, res: Response): Promi
     const probeCwd = parsed.data.cwd ?? peekProjector(sessionId)?.cwd ?? DEFAULT_CWD;
     const stored = await runtime.getSession(probeCwd, sessionId);
     if (!stored) {
-      return sendError(res, 404, 'Session not found', 'SESSION_NOT_FOUND');
+      return c.json(errorBody('Session not found', 'SESSION_NOT_FOUND'), 404);
     }
   }
 
-  const clientId = (req.headers['x-client-id'] as string) || crypto.randomUUID();
+  const clientId = c.req.header('x-client-id') || crypto.randomUUID();
   const content = formatUiActionMessage(parsed.data);
   const { cwd } = parsed.data;
 
@@ -128,14 +129,16 @@ export async function sessionUiActionHandler(req: Request, res: Response): Promi
       // does not read as a session locked against itself by mistake.
       ownTurn: holder?.clientId === clientId,
     });
-    res.status(409).json({
-      error: 'Session locked',
-      code: 'SESSION_LOCKED',
-      lockedBy: holder?.clientId ?? 'unknown',
-      lockedAt: new Date(holder?.since ?? Date.now()).toISOString(),
-    });
-    return;
+    return c.json(
+      {
+        error: 'Session locked',
+        code: 'SESSION_LOCKED',
+        lockedBy: holder?.clientId ?? 'unknown',
+        lockedAt: new Date(holder?.since ?? Date.now()).toISOString(),
+      },
+      409
+    );
   }
 
-  res.status(202).json({ sessionId: result.canonicalId });
+  return c.json({ sessionId: result.canonicalId }, 202);
 }

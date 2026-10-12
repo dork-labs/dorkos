@@ -23,16 +23,21 @@
  *
  * @module routes/session-continue
  */
+import type { Context } from 'hono';
+import type { ContentfulStatusCode } from 'hono/utils/http-status';
+import type { MeshCore } from '@dorkos/mesh';
+import { CREDITS_ACCOUNT_ID, type LimitHistoryResponse } from '@dorkos/shared/account-usage';
+import { ContinueSessionRequestSchema, WaitForResetRequestSchema } from '@dorkos/shared/schemas';
+import type { ApiEnv } from '../http/api-chain.js';
+import { readJsonBody } from '../http/request-body.js';
+import { readQuery } from '../http/request-query.js';
+import { honoRequestFacts } from '../http/request-facts.js';
+import { boundaryRefusal, errorBody, parseSessionId } from '../lib/route-utils.js';
+import { logger } from '../lib/logger.js';
 import {
   AmbiguousSessionError,
   SessionDiscoveryUnavailableError,
 } from '../services/session/resolution/session-lookup-error.js';
-import type { Request, Response } from 'express';
-import type { MeshCore } from '@dorkos/mesh';
-import { CREDITS_ACCOUNT_ID, type LimitHistoryResponse } from '@dorkos/shared/account-usage';
-import { ContinueSessionRequestSchema, WaitForResetRequestSchema } from '@dorkos/shared/schemas';
-import { assertBoundary, parseSessionId, sendError } from '../lib/route-utils.js';
-import { logger } from '../lib/logger.js';
 import {
   ContinueError,
   cancelAutoContinue,
@@ -47,64 +52,64 @@ import { resolveSessionCwdOrDefault } from '../services/session/index.js';
 import { runtimeRegistry } from '../services/core/runtime-registry.js';
 import type { RoomSessionPlacePort } from '../services/workspace/room-session-place.js';
 import { resolveCaller } from './room-caller.js';
-import { sendRoomError } from './room-error-response.js';
+import { roomErrorReply } from './room-error-response.js';
 import { rejectUnknownModel } from './session-model-gate.js';
-import { refuseErrorUnlessOwner } from './cloud-owner-bar.js';
+import { errorRefusalUnlessOwner } from './cloud-owner-bar.js';
+
+/** What continuing a session reads from the running server. */
+export interface SessionContinueDeps {
+  /** The agent registry, for the launch a handoff makes. */
+  meshCore?: MeshCore;
+  /** Where a room conversation runs, for a handoff in one. */
+  roomSessionPlace?: RoomSessionPlacePort;
+}
 
 /**
- * The session id, once the caller is known to be a person; `null` after
- * answering a refusal.
+ * The session id, once the caller is known to be a person; the refusal to
+ * answer otherwise.
  */
-function requirePersonAndSession(req: Request, res: Response): string | null {
-  const sessionId = parseSessionId(req.params.id as string);
-  if (!sessionId) {
-    sendError(res, 400, 'Invalid session ID', 'INVALID_SESSION_ID');
-    return null;
-  }
+function requirePersonAndSession(c: Context<ApiEnv>): string | Response {
+  const sessionId = parseSessionId(c.req.param('id'));
+  if (!sessionId) return c.json(errorBody('Invalid session ID', 'INVALID_SESSION_ID'), 400);
   let caller;
   try {
-    caller = resolveCaller(req, res);
+    caller = resolveCaller(honoRequestFacts(c));
   } catch (err) {
-    sendRoomError(res, err, 'session-continue');
-    return null;
+    // No caller was resolved, so no refusal here is worded for the owner.
+    const reply = roomErrorReply(err, 'session-continue', () => false);
+    return c.json(reply.body, reply.status as ContentfulStatusCode);
   }
   if (caller.kind !== 'human') {
-    sendError(res, 403, 'Only a person can move or hold a chat', 'PEOPLE_ONLY');
-    return null;
+    return c.json(errorBody('Only a person can move or hold a chat', 'PEOPLE_ONLY'), 403);
   }
   return sessionId;
 }
 
 /** Answer a refusal from the service, or a 500 for anything else. */
-function sendContinueError(res: Response, err: unknown, route: string): void {
-  if (err instanceof AccountNotAllowedError) {
-    res.status(409).json(err.toBody());
-    return;
-  }
+function continueErrorReply(c: Context<ApiEnv>, err: unknown, route: string): Response {
+  if (err instanceof AccountNotAllowedError) return c.json(err.toBody(), 409);
   if (err instanceof ContinueError || err instanceof CarryOverError) {
-    sendError(res, err.status, err.message, err.code);
-    return;
+    return c.json(errorBody(err.message, err.code), err.status as ContentfulStatusCode);
   }
   logger.error(`[session-continue] ${route} failed`, {
     err: err instanceof Error ? err.message : String(err),
   });
-  sendError(res, 500, 'Something went wrong, and nothing was changed.', 'CONTINUE_ERROR');
+  return c.json(errorBody('Something went wrong, and nothing was changed.', 'CONTINUE_ERROR'), 500);
 }
 
 /**
  * `GET /api/sessions/:id/continue-options` — the accounts a limited session
  * could continue on, in order, with the session's current plan.
  *
- * @param req - The request.
- * @param res - The response.
+ * @param c - The request context.
  */
-export async function continueOptionsHandler(req: Request, res: Response): Promise<void> {
-  const sessionId = requirePersonAndSession(req, res);
-  if (!sessionId) return;
+export async function continueOptionsHandler(c: Context<ApiEnv>): Promise<Response> {
+  const sessionId = requirePersonAndSession(c);
+  if (sessionId instanceof Response) return sessionId;
   try {
-    res.json(await continueOptions(sessionId));
+    return c.json(await continueOptions(sessionId));
   } catch (err) {
-    sendContinueError(res, err, 'continue-options');
+    return continueErrorReply(c, err, 'continue-options');
   }
 }
 
@@ -118,66 +123,66 @@ const CONTINUE_ON_CREDITS = {
  * `POST /api/sessions/:id/continue` — continue a limited session on another
  * account or another model.
  *
- * @param req - The request.
- * @param res - The response.
+ * @param deps - What a handoff launches with.
+ * @returns The handler.
  */
-export async function continueSessionHandler(req: Request, res: Response): Promise<void> {
-  const sessionId = requirePersonAndSession(req, res);
-  if (!sessionId) return;
-  const parsed = ContinueSessionRequestSchema.safeParse(req.body ?? {});
-  if (!parsed.success) return sendError(res, 400, 'Invalid request', 'VALIDATION_ERROR');
-  // Moving onto DorkOS credits spends the account's money, so it is the
-  // owner's call alone, like every other credits choice (DOR-2652).
-  if (
-    parsed.data.account === CREDITS_ACCOUNT_ID &&
-    refuseErrorUnlessOwner(req, res, CONTINUE_ON_CREDITS)
-  ) {
-    return;
-  }
-  try {
-    const result = await continueSession(sessionId, parsed.data, {
-      meshCore: req.app.locals.meshCore as MeshCore | undefined,
-      roomSessionPlace: req.app.locals.roomSessionPlace as RoomSessionPlacePort | undefined,
-      clientId: (req.headers['x-client-id'] as string) || crypto.randomUUID(),
-      checkModel: rejectUnknownModel,
-    });
-    res.status(202).json(result);
-  } catch (err) {
-    sendContinueError(res, err, 'continue');
-  }
+export function continueSessionHandler(
+  deps: SessionContinueDeps
+): (c: Context<ApiEnv>) => Promise<Response> {
+  return async (c) => {
+    const sessionId = requirePersonAndSession(c);
+    if (sessionId instanceof Response) return sessionId;
+    const parsed = ContinueSessionRequestSchema.safeParse(readJsonBody(c, { emptyAs: {} }));
+    if (!parsed.success) return c.json(errorBody('Invalid request', 'VALIDATION_ERROR'), 400);
+    // Moving onto DorkOS credits spends the account's money, so it is the
+    // owner's call alone, like every other credits choice (DOR-2652).
+    if (parsed.data.account === CREDITS_ACCOUNT_ID) {
+      const refusal = errorRefusalUnlessOwner(honoRequestFacts(c), CONTINUE_ON_CREDITS);
+      if (refusal) return c.json(refusal, 403);
+    }
+    try {
+      const result = await continueSession(sessionId, parsed.data, {
+        meshCore: deps.meshCore,
+        roomSessionPlace: deps.roomSessionPlace,
+        clientId: c.req.header('x-client-id') || crypto.randomUUID(),
+        checkModel: rejectUnknownModel,
+      });
+      return c.json(result, 202);
+    } catch (err) {
+      return continueErrorReply(c, err, 'continue');
+    }
+  };
 }
 
 /**
  * `POST /api/sessions/:id/wait` — wait for the account's reset.
  *
- * @param req - The request.
- * @param res - The response.
+ * @param c - The request context.
  */
-export async function waitForResetHandler(req: Request, res: Response): Promise<void> {
-  const sessionId = requirePersonAndSession(req, res);
-  if (!sessionId) return;
-  const parsed = WaitForResetRequestSchema.safeParse(req.body ?? {});
-  if (!parsed.success) return sendError(res, 400, 'Invalid request', 'VALIDATION_ERROR');
+export async function waitForResetHandler(c: Context<ApiEnv>): Promise<Response> {
+  const sessionId = requirePersonAndSession(c);
+  if (sessionId instanceof Response) return sessionId;
+  const parsed = WaitForResetRequestSchema.safeParse(readJsonBody(c, { emptyAs: {} }));
+  if (!parsed.success) return c.json(errorBody('Invalid request', 'VALIDATION_ERROR'), 400);
   try {
-    res.json({ plan: await waitForReset(sessionId, parsed.data) });
+    return c.json({ plan: await waitForReset(sessionId, parsed.data) });
   } catch (err) {
-    sendContinueError(res, err, 'wait');
+    return continueErrorReply(c, err, 'wait');
   }
 }
 
 /**
  * `POST /api/sessions/:id/continue/cancel` — cancel a pending handoff.
  *
- * @param req - The request.
- * @param res - The response.
+ * @param c - The request context.
  */
-export async function cancelContinueHandler(req: Request, res: Response): Promise<void> {
-  const sessionId = requirePersonAndSession(req, res);
-  if (!sessionId) return;
+export async function cancelContinueHandler(c: Context<ApiEnv>): Promise<Response> {
+  const sessionId = requirePersonAndSession(c);
+  if (sessionId instanceof Response) return sessionId;
   try {
-    res.json({ plan: await cancelAutoContinue(sessionId) });
+    return c.json({ plan: await cancelAutoContinue(sessionId) });
   } catch (err) {
-    sendContinueError(res, err, 'continue/cancel');
+    return continueErrorReply(c, err, 'continue/cancel');
   }
 }
 
@@ -186,40 +191,38 @@ export async function cancelContinueHandler(req: Request, res: Response): Promis
  * limits ended, at most 20, oldest first; 404 for a session this server does
  * not know, 403 for one whose directory is outside the boundary.
  *
- * @param req - The request.
- * @param res - The response.
+ * @param c - The request context.
  */
-export async function limitHistoryHandler(req: Request, res: Response): Promise<void> {
-  const sessionId = parseSessionId(req.params.id as string);
-  if (!sessionId) return sendError(res, 400, 'Invalid session ID', 'INVALID_SESSION_ID');
+export async function limitHistoryHandler(c: Context<ApiEnv>): Promise<Response> {
+  const sessionId = parseSessionId(c.req.param('id'));
+  if (!sessionId) return c.json(errorBody('Invalid session ID', 'INVALID_SESSION_ID'), 400);
   // The same boundary judgement as `GET /:id/events`: a directory the caller
   // named first, else the one the session's runtime places it in.
-  const cwdParam = (req.query.cwd as string) || undefined;
+  const cwdParam = (readQuery(c).cwd as string) || undefined;
   let cwd: string;
   try {
     const runtime = await runtimeRegistry.resolveForSession(sessionId);
     cwd = await resolveSessionCwdOrDefault(runtime, sessionId, cwdParam);
   } catch (err) {
     if (err instanceof AmbiguousSessionError || err instanceof SessionDiscoveryUnavailableError)
-      return sendError(
-        res,
-        err instanceof AmbiguousSessionError ? 409 : 503,
-        err.message,
-        err.code
+      return c.json(
+        errorBody(err.message, err.code),
+        err instanceof AmbiguousSessionError ? 409 : 503
       );
     throw err;
   }
-  if (!(await assertBoundary(cwd, res, { allowDorkHome: true }))) return;
+  const outside = await boundaryRefusal(cwd, { allowDorkHome: true });
+  if (outside) return c.json(outside, 403);
   const store = getSessionLimitStore();
   if (!store?.knowsSession(sessionId)) {
-    return sendError(res, 404, 'Session not found', 'SESSION_NOT_FOUND');
+    return c.json(errorBody('Session not found', 'SESSION_NOT_FOUND'), 404);
   }
   try {
-    res.json({ entries: store.history(sessionId) } satisfies LimitHistoryResponse);
+    return c.json({ entries: store.history(sessionId) } satisfies LimitHistoryResponse);
   } catch (err) {
     logger.error('[session-continue] limit-history failed', {
       err: err instanceof Error ? err.message : String(err),
     });
-    sendError(res, 500, 'Could not read the limit history.', 'LIMIT_HISTORY_ERROR');
+    return c.json(errorBody('Could not read the limit history.', 'LIMIT_HISTORY_ERROR'), 500);
   }
 }

@@ -23,7 +23,9 @@
  *
  * @module routes/session-canvas
  */
-import { Router, type Request, type Response } from 'express';
+import { Hono, type Context } from 'hono';
+import type { ContentfulStatusCode } from 'hono/utils/http-status';
+import type { ZodType } from 'zod';
 import {
   CanvasEditingRequestSchema,
   OpenCanvasDocumentRequestSchema,
@@ -38,28 +40,19 @@ import {
 import { RoomError } from '../services/rooms/index.js';
 import { peekProjector } from '../services/session/session-state-projector.js';
 import { runtimeRegistry } from '../services/core/runtime-registry.js';
+import type { ApiEnv } from '../http/api-chain.js';
+import { readJsonBody } from '../http/request-body.js';
+import { honoRequestFacts } from '../http/request-facts.js';
 import { resolveCaller } from './room-caller.js';
-import { sendRoomError } from './room-error-response.js';
-import { parseBody, parseSessionId, sendError } from '../lib/route-utils.js';
+import { isOwnerCaller, roomErrorReply } from './room-error-response.js';
+import { errorBody, parseSessionId, validationFailureBody } from '../lib/route-utils.js';
 
-/**
- * `mergeParams` so `:id` — the SESSION, owned by the router this one is mounted
- * under — is readable here.
- */
-const router = Router({ mergeParams: true });
-
-/** What a handler here reads off the path. */
-interface SessionCanvasParams {
-  /** The session. Owned by the sessions router. */
-  id: string;
-  /** The document, on the routes that name one. */
-  documentId: string;
-}
-
-/** The canvas service plus the scope and caller this request may act as. */
+/** The canvas service plus the scope this request may act on, and who is asking. */
 interface CanvasAccess {
   canvas: CanvasService;
   scope: string;
+  /** Whether the caller owns this install, for how a refusal is worded. */
+  ownerAsking: () => boolean;
 }
 
 /**
@@ -75,36 +68,46 @@ interface CanvasAccess {
  * - **503** when this process stood no canvas service up. Honest rather than a
  *   fabricated empty table.
  *
- * @param req - The request, for its caller and its `:id`.
- * @param res - The response, for `resolveCaller` and the refusal.
- * @returns The service and scope, or `null` after answering the refusal.
+ * @param c - The request context, for its caller and its `:id`.
+ * @returns The service and scope, or the refusal to return.
  */
-function requireCanvasAccess(
-  req: Request<SessionCanvasParams>,
-  res: Response
-): CanvasAccess | null {
-  const sessionId = parseSessionId(req.params.id);
-  if (!sessionId) {
-    sendError(res, 400, 'Invalid session ID', 'INVALID_SESSION_ID');
-    return null;
-  }
+function requireCanvasAccess(c: Context<ApiEnv>): CanvasAccess | Response {
+  const sessionId = parseSessionId(c.req.param('id'));
+  if (!sessionId) return c.json(errorBody('Invalid session ID', 'INVALID_SESSION_ID'), 400);
   let caller;
   try {
-    caller = resolveCaller(req, res);
+    caller = resolveCaller(honoRequestFacts(c));
   } catch (err) {
-    sendRoomError(res, err, 'session-canvas');
-    return null;
+    return roomRefusal(c, err, 'session-canvas', () => false);
   }
   if (caller.kind !== 'human') {
-    sendError(res, 403, 'A session’s canvas is the person’s own', 'PEOPLE_ONLY');
-    return null;
+    return c.json(errorBody('A session’s canvas is the person’s own', 'PEOPLE_ONLY'), 403);
   }
   const canvas = peekCanvasService();
   if (!canvas) {
-    sendError(res, 503, 'The canvas is not available on this server', 'CANVAS_UNAVAILABLE');
-    return null;
+    return c.json(
+      errorBody('The canvas is not available on this server', 'CANVAS_UNAVAILABLE'),
+      503
+    );
   }
-  return { canvas, scope: sessionScope(sessionId) };
+  return { canvas, scope: sessionScope(sessionId), ownerAsking: () => isOwnerCaller(caller) };
+}
+
+/** A thrown room refusal, answered. */
+function roomRefusal(
+  c: Context<ApiEnv>,
+  err: unknown,
+  context: string,
+  ownerAsking: () => boolean
+): Response {
+  const reply = roomErrorReply(err, context, ownerAsking);
+  return c.json(reply.body, reply.status as ContentfulStatusCode);
+}
+
+/** The body parsed by `schema`, or the 400 a body it cannot read answers. */
+function parseCanvasBody<T>(c: Context<ApiEnv>, schema: ZodType<T>): T | Response {
+  const result = schema.safeParse(readJsonBody(c));
+  return result.success ? result.data : c.json(validationFailureBody(result.error), 400);
 }
 
 /**
@@ -145,117 +148,127 @@ function namesAKnownSession(sessionId: string): boolean {
   }
 }
 
-/** GET / — everything on this session's canvas, pinned first then most recent. */
-router.get<SessionCanvasParams>('/', (req, res) => {
-  const access = requireCanvasAccess(req, res);
-  if (!access) return;
-  res.json({ documents: access.canvas.list(access.scope) });
-});
-
-/** GET /:documentId — one document, content included. */
-router.get<SessionCanvasParams>('/:documentId', (req, res) => {
-  const access = requireCanvasAccess(req, res);
-  if (!access) return;
-  const document = access.canvas.get(access.scope, req.params.documentId);
-  if (!document) {
-    return sendError(res, 404, 'No such document on this canvas', 'CANVAS_DOCUMENT_NOT_FOUND');
-  }
-  res.json(document);
-});
-
-/** POST / — put something on this session's canvas. */
-router.post<SessionCanvasParams>('/', (req, res) => {
-  const body = parseBody(OpenCanvasDocumentRequestSchema, req.body, res);
-  if (!body) return;
-  const access = requireCanvasAccess(req, res);
-  if (!access) return;
-  if (!namesAKnownSession(req.params.id)) {
-    return sendError(res, 404, 'Session not found', 'SESSION_NOT_FOUND');
-  }
-  try {
-    const document = access.canvas.open(access.scope, SESSION_OWNER_AUTHOR, body.content, {
-      ...(body.pinned !== undefined ? { pinned: body.pinned } : {}),
-      ...(body.channel ? { channel: body.channel } : {}),
-    });
-    res.status(201).json(document);
-  } catch (err) {
-    sendRoomError(res, err, 'POST /:id/canvas');
-  }
-});
+const NO_SUCH_DOCUMENT = errorBody('No such document on this canvas', 'CANVAS_DOCUMENT_NOT_FOUND');
 
 /**
- * PATCH /:documentId — change one document: its content, its pin, its place in
- * the order.
+ * The six canvas routes, mounted by `routes/sessions.ts` at `/:id/canvas`, so
+ * `:id` is the session.
  *
- * Applied in that order, and each part is optional, so a caller that only wants
- * to pin something does not have to re-send its content.
+ * @returns The routes.
  */
-router.patch<SessionCanvasParams>('/:documentId', (req, res) => {
-  const body = parseBody(UpdateCanvasDocumentRequestSchema, req.body, res);
-  if (!body) return;
-  const access = requireCanvasAccess(req, res);
-  if (!access) return;
-  try {
-    const { canvas, scope } = access;
-    const documentId = req.params.documentId;
-    let document = canvas.get(scope, documentId);
-    if (body.content !== undefined) {
-      document = canvas.update(scope, SESSION_OWNER_AUTHOR, documentId, body.content);
-    }
-    if (body.pinned !== undefined) {
-      document = canvas.pin(scope, documentId, body.pinned);
-    }
-    if (body.activate === true) {
-      document = canvas.activate(scope, documentId);
-    }
-    if (!document) {
-      // Reached only when the body asked for nothing AND the document is gone.
-      throw new RoomError('CANVAS_DOCUMENT_NOT_FOUND', 'No such document on this canvas');
-    }
-    res.json(document);
-  } catch (err) {
-    sendRoomError(res, err, 'PATCH /:id/canvas/:documentId');
-  }
-});
+export function createSessionCanvasRoutes(): Hono<ApiEnv> {
+  const router = new Hono<ApiEnv>();
 
-/** DELETE /:documentId — take a document off the canvas, in every window. */
-router.delete<SessionCanvasParams>('/:documentId', (req, res) => {
-  const access = requireCanvasAccess(req, res);
-  if (!access) return;
-  try {
-    access.canvas.close(access.scope, req.params.documentId);
-    res.status(204).end();
-  } catch (err) {
-    sendRoomError(res, err, 'DELETE /:id/canvas/:documentId');
-  }
-});
+  /** GET / — everything on this session's canvas, pinned first then most recent. */
+  router.get('/', (c) => {
+    const access = requireCanvasAccess(c);
+    if (access instanceof Response) return access;
+    return c.json({ documents: access.canvas.list(access.scope) });
+  });
 
-/**
- * POST /:documentId/editing — say you are editing this document, or that you
- * have stopped.
- *
- * While the lock stands, the agent's update to the same document is HELD and
- * the agent is told so rather than reporting success. It earns its keep on a
- * session for the reason the canvas moved to the server at all: two devices on
- * one session is the point.
- */
-router.post<SessionCanvasParams>('/:documentId/editing', (req, res) => {
-  const body = parseBody(CanvasEditingRequestSchema, req.body, res);
-  if (!body) return;
-  const access = requireCanvasAccess(req, res);
-  if (!access) return;
-  try {
-    res.json(
-      access.canvas.heartbeat(
-        access.scope,
-        SESSION_OWNER_AUTHOR,
-        req.params.documentId,
-        body.editing
-      )
-    );
-  } catch (err) {
-    sendRoomError(res, err, 'POST /:id/canvas/:documentId/editing');
-  }
-});
+  /** GET /:documentId — one document, content included. */
+  router.get('/:documentId', (c) => {
+    const access = requireCanvasAccess(c);
+    if (access instanceof Response) return access;
+    const document = access.canvas.get(access.scope, c.req.param('documentId'));
+    if (!document) return c.json(NO_SUCH_DOCUMENT, 404);
+    return c.json(document);
+  });
 
-export default router;
+  /** POST / — put something on this session's canvas. */
+  router.post('/', (c) => {
+    const body = parseCanvasBody(c, OpenCanvasDocumentRequestSchema);
+    if (body instanceof Response) return body;
+    const access = requireCanvasAccess(c);
+    if (access instanceof Response) return access;
+    if (!namesAKnownSession(c.req.param('id')!)) {
+      return c.json(errorBody('Session not found', 'SESSION_NOT_FOUND'), 404);
+    }
+    try {
+      const document = access.canvas.open(access.scope, SESSION_OWNER_AUTHOR, body.content, {
+        ...(body.pinned !== undefined ? { pinned: body.pinned } : {}),
+        ...(body.channel ? { channel: body.channel } : {}),
+      });
+      return c.json(document, 201);
+    } catch (err) {
+      return roomRefusal(c, err, 'POST /:id/canvas', access.ownerAsking);
+    }
+  });
+
+  /**
+   * PATCH /:documentId — change one document: its content, its pin, its place in
+   * the order.
+   *
+   * Applied in that order, and each part is optional, so a caller that only wants
+   * to pin something does not have to re-send its content.
+   */
+  router.patch('/:documentId', (c) => {
+    const body = parseCanvasBody(c, UpdateCanvasDocumentRequestSchema);
+    if (body instanceof Response) return body;
+    const access = requireCanvasAccess(c);
+    if (access instanceof Response) return access;
+    try {
+      const { canvas, scope } = access;
+      const documentId = c.req.param('documentId');
+      let document = canvas.get(scope, documentId);
+      if (body.content !== undefined) {
+        document = canvas.update(scope, SESSION_OWNER_AUTHOR, documentId, body.content);
+      }
+      if (body.pinned !== undefined) {
+        document = canvas.pin(scope, documentId, body.pinned);
+      }
+      if (body.activate === true) {
+        document = canvas.activate(scope, documentId);
+      }
+      if (!document) {
+        // Reached only when the body asked for nothing AND the document is gone.
+        throw new RoomError('CANVAS_DOCUMENT_NOT_FOUND', 'No such document on this canvas');
+      }
+      return c.json(document);
+    } catch (err) {
+      return roomRefusal(c, err, 'PATCH /:id/canvas/:documentId', access.ownerAsking);
+    }
+  });
+
+  /** DELETE /:documentId — take a document off the canvas, in every window. */
+  router.delete('/:documentId', (c) => {
+    const access = requireCanvasAccess(c);
+    if (access instanceof Response) return access;
+    try {
+      access.canvas.close(access.scope, c.req.param('documentId'));
+      return c.body(null, 204);
+    } catch (err) {
+      return roomRefusal(c, err, 'DELETE /:id/canvas/:documentId', access.ownerAsking);
+    }
+  });
+
+  /**
+   * POST /:documentId/editing — say you are editing this document, or that you
+   * have stopped.
+   *
+   * While the lock stands, the agent's update to the same document is HELD and
+   * the agent is told so rather than reporting success. It earns its keep on a
+   * session for the reason the canvas moved to the server at all: two devices on
+   * one session is the point.
+   */
+  router.post('/:documentId/editing', (c) => {
+    const body = parseCanvasBody(c, CanvasEditingRequestSchema);
+    if (body instanceof Response) return body;
+    const access = requireCanvasAccess(c);
+    if (access instanceof Response) return access;
+    try {
+      return c.json(
+        access.canvas.heartbeat(
+          access.scope,
+          SESSION_OWNER_AUTHOR,
+          c.req.param('documentId'),
+          body.editing
+        )
+      );
+    } catch (err) {
+      return roomRefusal(c, err, 'POST /:id/canvas/:documentId/editing', access.ownerAsking);
+    }
+  });
+
+  return router;
+}

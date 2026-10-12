@@ -102,6 +102,7 @@ vi.mock('@openai/codex-sdk', () => {
 import request from '@dorkos/test-utils/supertest';
 import { listeningServer } from '@dorkos/test-utils/listening-server';
 import { createApp, finalizeApp } from '../../app.js';
+import { composedListener } from '../../http/__tests__/composed-listener.js';
 import { createTestDb } from '@dorkos/test-utils/db';
 import { sessionMetadata, eq } from '@dorkos/db';
 import type { Db } from '@dorkos/db';
@@ -112,9 +113,10 @@ import { DEFAULT_CWD } from '../../lib/resolve-root.js';
 import { OpenCodeRuntime } from '../../services/runtimes/opencode/opencode-runtime.js';
 import { peekProjector, disposeProjector } from '../../services/session/session-state-projector.js';
 
-const app = createApp({ admission: new MainRequestAdmission() });
+const admission = new MainRequestAdmission();
+const app = createApp({ admission });
 finalizeApp(app);
-const testServer = listeningServer(app);
+const testServer = listeningServer(composedListener(app, admission));
 
 /** Base URL for raw SSE collection through the file-scoped listener. */
 function testServerBaseUrl(): string {

@@ -55,6 +55,8 @@ import request from '@dorkos/test-utils/supertest';
 import { listeningServer } from '@dorkos/test-utils/listening-server';
 import { createTestDb } from '@dorkos/test-utils/db';
 import { createApp, finalizeApp } from '../../app.js';
+import { composedListener } from '../../http/__tests__/composed-listener.js';
+import type { SessionRouteDeps } from '../../routes/sessions.js';
 import { runtimeRegistry } from '../../services/core/runtime-registry.js';
 import {
   SessionTouchStore,
@@ -65,9 +67,14 @@ import {
   resetSessionVisibility,
 } from '../../services/audit/session-visibility.js';
 
-const app = createApp({ admission: new MainRequestAdmission() });
+const admission = new MainRequestAdmission();
+const app = createApp({ admission });
 finalizeApp(app);
-const server = listeningServer(app);
+/** What the session routes read; the tests change it between requests. */
+const sessionLocals: Record<string, unknown> = {};
+const server = listeningServer(
+  composedListener(app, admission, { sessions: sessionLocals as SessionRouteDeps })
+);
 
 const CHAT = '00000000-0000-4000-8000-000000000001';
 const OTHER = '00000000-0000-4000-8000-000000000002';
@@ -115,7 +122,7 @@ describe('session touches', () => {
     const db = createTestDb();
     store = new SessionTouchStore(db);
     setSessionTouchStore(store);
-    app.locals.resolveTouches = (ids: string[]) => store.resolve(ids);
+    sessionLocals.resolveTouches = (ids: string[]) => store.resolve(ids);
     runtime = new FakeAgentRuntime('fake-touch');
     runtimeRegistry.setDb(db);
     runtimeRegistry.register(runtime);
@@ -126,9 +133,9 @@ describe('session touches', () => {
   afterEach(() => {
     vi.clearAllMocks();
     setSessionTouchStore(undefined);
-    delete app.locals.resolveTouches;
-    delete app.locals.resolveRoomOrigins;
-    delete app.locals.meshCore;
+    delete sessionLocals.resolveTouches;
+    delete sessionLocals.resolveRoomOrigins;
+    delete sessionLocals.meshCore;
   });
 
   const touchOf = (id: string) => store.resolve([id]).get(id);
@@ -224,7 +231,7 @@ describe('session touches', () => {
 
   describe('GET /api/sessions/recent', () => {
     function agentAt(path: string) {
-      app.locals.meshCore = {
+      sessionLocals.meshCore = {
         listWithPaths: () => [{ id: path, name: 'agent', projectPath: path }],
       };
     }
@@ -303,7 +310,7 @@ describe('session touches', () => {
           userLastMessageAt: '2026-10-08T11:00:00.000Z',
         },
       ]);
-      app.locals.resolveRoomOrigins = (ids: string[]) =>
+      sessionLocals.resolveRoomOrigins = (ids: string[]) =>
         new Map(ids.map((id) => [id, { roomLabel: '#dorkos', roomId: 'room-1' }]));
 
       const wrote = await request(server)

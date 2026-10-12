@@ -95,7 +95,7 @@ If you do stand one up by hand:
 - **`DORKOS_BOUNDARY` defaults to `$HOME`.** A `DORK_HOME` under `/private/tmp`
   answers **403** on `/api/commands`, `/api/files` and `/api/directory`. The
   failure is asymmetric, which is more confusing than a uniform wall: the session
-  routes pass `allowDorkHome` to `assertBoundary` (`routes/sessions.ts`,
+  routes pass `allowDorkHome` to `boundaryRefusal` (`routes/sessions.ts`,
   `lib/boundary.ts`), so `/api/sessions` keeps working for agents under that same
   out-of-bounds `DORK_HOME`.
 - **Give every concurrent instance its own `DORK_HOME`, not just its own port.**

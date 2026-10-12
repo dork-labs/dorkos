@@ -128,6 +128,50 @@ describe('parseUploads', () => {
     expect(await readdir(path.join(dir, 'nested'))).toEqual([]);
   });
 
+  it('takes files in each of several fields, up to each field’s own count', async () => {
+    options = {
+      fields: [
+        { name: 'clip', maxCount: 1 },
+        { name: 'frame', maxCount: 1 },
+      ],
+      disk: options.disk,
+    };
+    const res = await request(server)
+      .post('/upload')
+      .attach('frame', Buffer.from('f'), 'f.png')
+      .attach('clip', Buffer.from('c'), 'c.gif');
+
+    expect(res.status).toBe(200);
+    expect(res.body.files).toEqual([
+      { name: 'f.png', size: 1, stored: 'saved-f.png' },
+      { name: 'c.gif', size: 1, stored: 'saved-c.gif' },
+    ]);
+  });
+
+  it('refuses a second file in a field of one, and removes the first', async () => {
+    options = {
+      fields: [
+        { name: 'clip', maxCount: 1 },
+        { name: 'frame', maxCount: 1 },
+      ],
+      disk: options.disk,
+    };
+    const res = await request(server)
+      .post('/upload')
+      .attach('clip', Buffer.from('a'), 'a.gif')
+      .attach('clip', Buffer.from('b'), 'b.gif');
+
+    expect(res.body).toEqual({ error: 'Unexpected file field', code: 'LIMIT_UNEXPECTED_FILE' });
+    expect(await readdir(path.join(dir, 'nested'))).toEqual([]);
+  });
+
+  it('refuses a file in a field the list does not name', async () => {
+    options = { fields: [{ name: 'clip' }] };
+    const res = await request(server).post('/upload').attach('other', Buffer.from('x'), 'x.txt');
+
+    expect(res.body).toEqual({ error: 'Unexpected file field', code: 'LIMIT_UNEXPECTED_FILE' });
+  });
+
   it('reads no files, and no error, from a body that is not multipart', async () => {
     const res = await request(server)
       .post('/upload')
@@ -173,6 +217,13 @@ describe('parseUploadForm', () => {
 
     expect(res.body).toEqual({ error: 'Too many fields', code: 'LIMIT_FIELD_COUNT' });
     expect(await readdir(path.join(dir, 'nested'))).toEqual([]);
+  });
+
+  it('refuses a text field longer than the field size limit', async () => {
+    options = { ...options, limits: { ...options.limits, fieldSize: 4 } };
+    const res = await request(server).post('/form').field('note', 'too long');
+
+    expect(res.body).toEqual({ error: 'Field value too long', code: 'LIMIT_FIELD_VALUE' });
   });
 
   it('answers no form for a body that is not multipart', async () => {

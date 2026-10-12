@@ -90,6 +90,7 @@ import roomRoutes from '../routes/rooms.js';
 import { createRemoteAccessRoutes } from '../routes/remote-access.js';
 import { createSearchRoutes, type SearchRouterDeps } from '../routes/search.js';
 import { createSessionLocationsRoutes } from '../routes/session-locations.js';
+import { createSessionRoutes, type SessionRouteDeps } from '../routes/sessions.js';
 import { createShapesRoutes, type ShapesRouterDeps } from '../routes/shapes.js';
 import subagentRoutes from '../routes/subagents.js';
 import { createTasksRoutes, type TasksRouterDeps } from '../routes/tasks.js';
@@ -218,6 +219,12 @@ export interface ComposedGroupDeps {
    */
   a2a?: A2aRouteDeps;
   /**
+   * What the session routes read (`/api/sessions`, always mounted): the agent
+   * registry, the room ports and the origin overlays. Read per request, so a
+   * test may change it between requests.
+   */
+  sessions?: SessionRouteDeps;
+  /**
    * The message bus, its connections and chat routes, and the webhook receiver
    * (`/api/relay`). Only handed over when Relay is enabled and started.
    */
@@ -269,6 +276,10 @@ export function createHonoApi(options: HonoApiOptions): Hono<ApiEnv> {
     },
   });
   app.route('/api/health', createHealthRoutes(deps));
+  // Sessions, their messages and the per-session stream. Its WebSocket twin on
+  // `/:id/events` is an upgrade, answered before any route
+  // (`routes/session-events-socket.ts`).
+  app.route('/api/sessions', createSessionRoutes(deps.sessions ?? {}));
   // The global event stream over SSE. Its WebSocket twin on the same path is an
   // upgrade, answered before any route (`routes/events-socket.ts`).
   app.route('/api/events', eventsRoutes);

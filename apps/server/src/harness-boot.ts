@@ -144,10 +144,6 @@ export async function bootInProcessTestServer(dorkHome: string): Promise<InProce
 
   const admission = new MainRequestAdmission();
   const app = createApp({ admission });
-  // The session routes read it. `POST /api/test/seed-agent` gets it below;
-  // harness cases seed on disk instead, but a route that answers 500 for a
-  // missing registry is worse than one wired.
-  app.locals.meshCore = mesh;
 
   // **The capability invoke route, with the rooms domain on it.** The Hono
   // `/api` app mounts `POST /api/capabilities/:id/invoke` (and the catalog)
@@ -184,6 +180,10 @@ export async function bootInProcessTestServer(dorkHome: string): Promise<InProce
   return {
     listener: frontDoorListener(
       composeFrontDoor(app, admission, {
+        // The session routes read the registry. `POST /api/test/seed-agent`
+        // gets it too; harness cases seed on disk instead, but a route that
+        // answers 500 for a missing registry is worse than one wired.
+        sessions: { meshCore: mesh },
         capabilities,
         onboarding: { meshCore: () => mesh },
         testControl: { meshCore: () => mesh },

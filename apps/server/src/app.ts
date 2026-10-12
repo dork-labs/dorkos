@@ -4,7 +4,6 @@ import express from 'express';
 import cors from 'cors';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import sessionRoutes from './routes/sessions.js';
 import { createCommunityConnectionsRouter } from './routes/community-connections.js';
 import { createRemoteCommunitiesRouter } from './routes/remote-communities.js';
 import { gateCommunityConnections, gateRemoteCommunities } from './middleware/spaces-enabled.js';
@@ -144,7 +143,6 @@ export function createApp(options: { admission: MainRequestAdmission }) {
   app.use(auditRequestFallback);
 
   // API routes
-  app.use('/api/sessions', sessionRoutes);
   // Spaces are an experiment, off by default (DOR-2740): both refuse until a
   // person turns `spaces.enabled` on, except for the official space (spec
   // `official-community-space` D5), which each gate lets through by its
