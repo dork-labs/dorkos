@@ -18,12 +18,14 @@
  * @module app/download/windows
  */
 import { findLatestExeDownloadUrl } from '@/lib/desktop-download';
+import { countDownload } from '@/lib/telemetry/download-count';
 
 export const runtime = 'nodejs';
 
-/** Redirect to the newest `.exe` release asset, or 503 when none exists. */
-export async function GET(): Promise<Response> {
+/** Redirect to the newest `.exe` release asset, or 503 when none exists; count the request either way. */
+export async function GET(request: Request): Promise<Response> {
   const url = await findLatestExeDownloadUrl();
+  countDownload(request, 'windows', url !== null);
   if (!url) {
     return new Response('No Windows desktop build is available yet.', {
       status: 503,

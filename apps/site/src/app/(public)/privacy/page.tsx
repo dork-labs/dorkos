@@ -26,7 +26,7 @@ export default function PrivacyPolicyPage() {
       <article className="space-y-8">
         <header className="space-y-2">
           <h1 className="text-charcoal font-mono text-3xl font-bold">Privacy Policy</h1>
-          <p className="text-warm-gray text-lg">Last updated: October 2, 2026</p>
+          <p className="text-warm-gray text-lg">Last updated: October 12, 2026</p>
           <p className="text-warm-gray leading-relaxed">
             DorkOS is made by {company.legalName}. When this page says “we,” that is who we mean.
           </p>
@@ -292,6 +292,12 @@ export default function PrivacyPolicyPage() {
               reshuffled every day, so the count cannot be traced back to you. We also honor your
               browser’s Do Not Track and Global Privacy Control signals: if either is on, the cookie
               version stays off automatically.
+            </p>
+            <p className="text-warm-gray leading-relaxed">
+              When you download the desktop app, our server counts the download: which app (Mac or
+              Windows), the name of the site that sent you (never the page), and a campaign tag if
+              the link had one. The count has no cookie, no ID and not your address. If Do Not Track
+              or Global Privacy Control is on, we do not count it at all.
             </p>
 
             <AnalyticsPreferenceControl />
