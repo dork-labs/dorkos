@@ -205,6 +205,44 @@ describe('NangoConnectorProvider — self-host-custody semantics', () => {
 // A Nango integration's key is the person's own name for it; its template id
 // says which app it is. Across the port it goes by the app's DorkOS id, so it
 // joins the popular app's row instead of listing it twice (DOR-2436).
+describe('NangoConnectorProvider — catalog pages', () => {
+  // DOR-2237: the kept app list pages one refresh under one signal. Fails if every
+  // page re-lists the whole catalog upstream, as Composio did before DOR-2231.
+  it('reads the catalog once per read, however many pages it is served in', async () => {
+    const client = new FakeNangoClient(
+      ['gmail', 'slack', 'notion', 'linear', 'github'].map((key) => ({
+        uniqueKey: key,
+        provider: key,
+        displayName: key,
+        authMode: 'OAUTH2',
+      }))
+    );
+    let upstream = 0;
+    const list = client.listIntegrations.bind(client);
+    client.listIntegrations = () => {
+      upstream += 1;
+      return list();
+    };
+    const provider = new NangoConnectorProvider({ client });
+
+    const read = new AbortController().signal;
+    const slugs: string[] = [];
+    let cursor: string | undefined;
+    do {
+      const page = await provider.listToolkitPage({ cursor, limit: 2, signal: read });
+      if (page.status !== 'ok') throw new Error('page failed');
+      slugs.push(...page.toolkits.map((toolkit) => toolkit.slug));
+      cursor = page.nextCursor;
+    } while (cursor);
+
+    expect(slugs).toHaveLength(5);
+    expect(upstream).toBe(1);
+    // A new read asks again: keeping the list between reads is the kept app list's job.
+    await provider.listToolkitPage({ limit: 2, signal: new AbortController().signal });
+    expect(upstream).toBe(2);
+  });
+});
+
 describe('NangoConnectorProvider — integrations go by their app’s service id', () => {
   function providerOver(integrations: NangoIntegration[]) {
     const client = new FakeNangoClient(integrations);
