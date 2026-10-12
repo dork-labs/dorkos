@@ -220,8 +220,9 @@ export interface ComposedGroupDeps {
   a2a?: A2aRouteDeps;
   /**
    * What the session routes read (`/api/sessions`, always mounted): the agent
-   * registry, the room ports and the origin overlays. Read per request, so a
-   * test may change it between requests.
+   * registry, the room ports and the origin overlays. The router keeps this
+   * object and reads its fields per request, so a test may change a field
+   * between requests (not swap the object).
    */
   sessions?: SessionRouteDeps;
   /**

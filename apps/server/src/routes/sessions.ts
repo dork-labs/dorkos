@@ -7,9 +7,10 @@
  * per-session event stream. The larger handlers live in the `session-*.ts`
  * files beside this one.
  *
- * Every route whose path names `:id`, and the canvas group mounted under one,
- * runs {@link guardSessionParam} first: an agent gets 404 for a session it may
- * not read, a person's own chat (spec `audit-trail` §3.4).
+ * Every path under `/:id` runs {@link guardSessionParam} first, registered once
+ * ahead of every route so a route added later is covered without naming it: an
+ * agent gets 404 for a session it may not read, a person's own chat (spec
+ * `audit-trail` §3.4).
  *
  * @module routes/sessions
  */
@@ -114,8 +115,10 @@ import {
 import { ControlRequestTimeoutError } from '../services/runtimes/claude-code/sessions/bounded-control.js';
 
 /**
- * What the session routes read from the running server, handed over by
- * `index.ts`. Every field is read per request.
+ * What the session routes read from the running server, handed over once by
+ * `index.ts` at boot. The router keeps this object, and a handler reads the field
+ * it needs from it on each request; the origin resolvers are copied off
+ * `app.locals` when the object is built, so one set there later is not seen.
  *
  * The origin overlays (session-origin-legibility, team-room-home §D2.3) are
  * narrow batched lookups, each its own read rather than a widening of any bag:
@@ -177,6 +180,13 @@ const SWITCH_NOW = {
 export function createSessionRoutes(deps: SessionRouteDeps = {}): Hono<ApiEnv> {
   const router = new Hono<ApiEnv>();
 
+  // The read guard, once, in front of every path under `/:id`: the routes below,
+  // the answer routes and the canvas group mounted here, and any route added
+  // later. Registered first, so it runs first. In Hono `/:id/*` matches `/:id`
+  // itself too, so this one line runs it exactly once per request. A static path
+  // such as `/recent` reaches it as an id that does not parse, which it passes.
+  router.use('/:id/*', guardSessionParam);
+
   // GET /api/sessions - List sessions aggregated across all registered runtimes
   // (ADR-0310). Responds with the { sessions, warnings?, accountUsage? } envelope rather than a
   // bare array: aggregation degrades gracefully per runtime, and the in-band
@@ -225,8 +235,8 @@ export function createSessionRoutes(deps: SessionRouteDeps = {}): Hono<ApiEnv> {
   });
 
   // GET /api/sessions/recent - Most-recent sessions across ALL agents (DOR-329).
-  // MUST be registered before the `/:id` routes below, or Express 5 would capture
-  // `recent` as an `:id` param. Resolves agent project paths server-side via the
+  // MUST be registered before the `/:id` routes below: `/:id` matches `recent` too,
+  // and Hono answers from the first route registered. Resolves agent project paths server-side via the
   // mesh registry, then fans out via listRecentSessions (bounded concurrency,
   // subtree cwd membership per DOR-203 + DOR-674, ADR-0310 per-runtime
   // degradation).
@@ -269,7 +279,7 @@ export function createSessionRoutes(deps: SessionRouteDeps = {}): Hono<ApiEnv> {
 
   // GET /api/sessions/daily-counts - Sessions started per day across ALL agents
   // (DOR-1039). Same registration rule as `/recent` above: it MUST precede the
-  // `/:id` routes or Express 5 captures `daily-counts` as an `:id`. Backs the
+  // `/:id` routes, which would otherwise answer `daily-counts` as an `:id`. Backs the
   // Activity tab's week line, which sits above a machine-wide feed and so must
   // count at that same machine-wide SCOPE rather than one project's sessions.
   router.get('/daily-counts', async (c) => {
@@ -293,7 +303,7 @@ export function createSessionRoutes(deps: SessionRouteDeps = {}): Hono<ApiEnv> {
   // GET /api/sessions/pending-interactions — every prompt anywhere on this
   // machine that is waiting on a person (spec `unified-conversation` §3.3).
   //
-  // MUST be registered before the `/:id` routes below, or Express 5 captures
+  // MUST be registered before the `/:id` routes below, which would otherwise answer
   // `pending-interactions` as an `:id` — the same trap `/recent` and
   // `/daily-counts` document, and the reason this route is not `/:id/…`-shaped.
   //
@@ -352,7 +362,7 @@ export function createSessionRoutes(deps: SessionRouteDeps = {}): Hono<ApiEnv> {
   // miss ('claude-code' for legacy sessions predating the table) and NEVER
   // writes: a read path that back-filled would mint a ghost row for any id it
   // was handed, and first-write-wins would make that guess the binding (DOR-812).
-  router.get('/:id/runtime-type', guardSessionParam, async (c) => {
+  router.get('/:id/runtime-type', async (c) => {
     const sessionId = parseSessionId(c.req.param('id'));
     if (!sessionId) return c.json(errorBody('Invalid session ID', 'INVALID_SESSION_ID'), 400);
     const runtime = await runtimeRegistry.getSessionRuntimeType(sessionId);
@@ -383,7 +393,7 @@ export function createSessionRoutes(deps: SessionRouteDeps = {}): Hono<ApiEnv> {
   // read that back-filled would mint a row for any id it was handed, and
   // `persistSessionRuntime` is first-write-wins, so the guess would become the
   // binding (DOR-812).
-  router.get('/:id/settings', guardSessionParam, async (c) => {
+  router.get('/:id/settings', async (c) => {
     const sessionId = parseSessionId(c.req.param('id'));
     if (!sessionId) return c.json(errorBody('Invalid session ID', 'INVALID_SESSION_ID'), 400);
     // Under the id as asked, deliberately: a session that has not started has no
@@ -400,7 +410,7 @@ export function createSessionRoutes(deps: SessionRouteDeps = {}): Hono<ApiEnv> {
   // used to read the default project directory, which finds nothing — and, on a
   // server whose default sits outside the configured boundary, threw rather than
   // answering. Both now resolve through the same ladder.
-  router.get('/:id', guardSessionParam, async (c) => {
+  router.get('/:id', async (c) => {
     const sessionId = parseSessionId(c.req.param('id'));
     if (!sessionId) return c.json(errorBody('Invalid session ID', 'INVALID_SESSION_ID'), 400);
 
@@ -470,7 +480,7 @@ export function createSessionRoutes(deps: SessionRouteDeps = {}): Hono<ApiEnv> {
   });
 
   // GET /api/sessions/:id/tasks - Get task state from SDK transcript
-  router.get('/:id/tasks', guardSessionParam, async (c) => {
+  router.get('/:id/tasks', async (c) => {
     const sessionId = parseSessionId(c.req.param('id'));
     if (!sessionId) return c.json(errorBody('Invalid session ID', 'INVALID_SESSION_ID'), 400);
 
@@ -510,7 +520,7 @@ export function createSessionRoutes(deps: SessionRouteDeps = {}): Hono<ApiEnv> {
   // resolveSessionCwdOrNull. A session it genuinely cannot place answers 404 rather
   // than an empty list, so "no messages yet" and "wrong/missing cwd" are never
   // the same response (DOR-1322).
-  router.get('/:id/messages', guardSessionParam, async (c) => {
+  router.get('/:id/messages', async (c) => {
     const sessionId = parseSessionId(c.req.param('id'));
     if (!sessionId) return c.json(errorBody('Invalid session ID', 'INVALID_SESSION_ID'), 400);
 
@@ -561,7 +571,7 @@ export function createSessionRoutes(deps: SessionRouteDeps = {}): Hono<ApiEnv> {
   });
 
   // PATCH /api/sessions/:id - Update session settings
-  router.patch('/:id', guardSessionParam, async (c) => {
+  router.patch('/:id', async (c) => {
     const sessionId = parseSessionId(c.req.param('id'));
     if (!sessionId) return c.json(errorBody('Invalid session ID', 'INVALID_SESSION_ID'), 400);
 
@@ -729,7 +739,7 @@ export function createSessionRoutes(deps: SessionRouteDeps = {}): Hono<ApiEnv> {
   });
 
   // POST /api/sessions/:id/fork - Fork a session
-  router.post('/:id/fork', guardSessionParam, async (c) => {
+  router.post('/:id/fork', async (c) => {
     const sessionId = parseSessionId(c.req.param('id'));
     if (!sessionId) return c.json(errorBody('Invalid session ID', 'INVALID_SESSION_ID'), 400);
 
@@ -754,7 +764,7 @@ export function createSessionRoutes(deps: SessionRouteDeps = {}): Hono<ApiEnv> {
   });
 
   // POST /api/sessions/:id/reload-plugins - Reload plugins from disk
-  router.post('/:id/reload-plugins', guardSessionParam, async (c) => {
+  router.post('/:id/reload-plugins', async (c) => {
     const sessionId = parseSessionId(c.req.param('id'));
     if (!sessionId) return c.json(errorBody('Invalid session ID', 'INVALID_SESSION_ID'), 400);
 
@@ -816,7 +826,7 @@ export function createSessionRoutes(deps: SessionRouteDeps = {}): Hono<ApiEnv> {
   // orchestration and the lock/error invariants, and
   // `services/session/launch/launch-session.ts` for the binding this route shares
   // with every other surface that starts a session from a message.
-  router.post('/:id/messages', guardSessionParam, async (c) => {
+  router.post('/:id/messages', async (c) => {
     const sessionId = parseSessionId(c.req.param('id'));
     if (!sessionId) return c.json(errorBody('Invalid session ID', 'INVALID_SESSION_ID'), 400);
 
@@ -904,12 +914,12 @@ export function createSessionRoutes(deps: SessionRouteDeps = {}): Hono<ApiEnv> {
 
   // POST /api/sessions/:id/opened — the chat page is showing this chat (spec
   // `your-activity-first` D3). Handler in `session-touch-handler.ts`.
-  router.post('/:id/opened', guardSessionParam, sessionOpenedHandler);
+  router.post('/:id/opened', sessionOpenedHandler);
 
   // GET /api/sessions/:id/chat-messages - What this chat sent other chats, and
   // when another chat stopped it (spec `spin-off-chats` §6): the Sent cards and
   // the "Stopped by" lines. Re-read on every `chat_activity` stream nudge.
-  router.get('/:id/chat-messages', guardSessionParam, async (c) => {
+  router.get('/:id/chat-messages', async (c) => {
     const sessionId = parseSessionId(c.req.param('id'));
     if (!sessionId) return c.json(errorBody('Invalid session ID', 'INVALID_SESSION_ID'), 400);
     const service = getChatMessageService();
@@ -930,9 +940,9 @@ export function createSessionRoutes(deps: SessionRouteDeps = {}): Hono<ApiEnv> {
   // Handlers live in `session-queue-handler.ts` so this file stays under the size
   // rule. The queue is per SESSION: any window may edit or remove any message on
   // it, whichever window typed it. See the handler's module doc.
-  router.get('/:id/queue', guardSessionParam, sessionQueueListHandler);
-  router.patch('/:id/queue/:messageId', guardSessionParam, sessionQueueUpdateHandler);
-  router.delete('/:id/queue/:messageId', guardSessionParam, sessionQueueRemoveHandler);
+  router.get('/:id/queue', sessionQueueListHandler);
+  router.patch('/:id/queue/:messageId', sessionQueueUpdateHandler);
+  router.delete('/:id/queue/:messageId', sessionQueueRemoveHandler);
 
   // POST /api/sessions/:id/{approve,deny,batch-approve,batch-deny,submit-answers,
   // submit-elicitation} — answering a prompt (`session-answers.ts`). The answer
@@ -948,7 +958,7 @@ export function createSessionRoutes(deps: SessionRouteDeps = {}): Hono<ApiEnv> {
   // clicked in, so running it against whatever a later turn leaves behind is not
   // the same action. A click after that turn ENDED is accepted, even while the
   // runtime finishes closing the stream (DOR-1239). See the handler's module doc.
-  router.post('/:id/ui-action', guardSessionParam, sessionUiActionHandler);
+  router.post('/:id/ui-action', sessionUiActionHandler);
 
   // POST /api/sessions/:id/command-intents/:intent — Runtime-fulfilled command
   // intent (currently `compact`), DOR-109. The handler lives in
@@ -957,41 +967,39 @@ export function createSessionRoutes(deps: SessionRouteDeps = {}): Hono<ApiEnv> {
   // called), else drives runtime.executeCommandIntent through the durable
   // projector (trigger-only, 202; delivery over /events, e.g. compact_boundary);
   // busy → 409 SESSION_LOCKED — see the handler's module doc.
-  router.post('/:id/command-intents/:intent', guardSessionParam, sessionCommandIntentHandler);
+  router.post('/:id/command-intents/:intent', sessionCommandIntentHandler);
 
   // /api/sessions/:id/canvas — this session's own canvas (spec
   // `canvas-agent-seat` §1.6). Six thin handlers over the one writer, in their own
   // file for the same reason the devtools sink is: this one stays under the size
   // rule. A person is the gate; an agent is refused `PEOPLE_ONLY` and reaches its
   // own canvas through `control_ui` and `read_canvas_document` instead.
-  router.use('/:id/canvas', guardSessionParam);
-  router.use('/:id/canvas/*', guardSessionParam);
   router.route('/:id/canvas', createSessionCanvasRoutes());
 
   // Out of usage: continue on another account or model, or wait for the reset
   // (spec claude-account-fleet D9). Handlers in `session-continue.ts`.
-  router.get('/:id/continue-options', guardSessionParam, continueOptionsHandler);
-  router.post('/:id/continue', guardSessionParam, continueSessionHandler(deps));
-  router.post('/:id/continue/cancel', guardSessionParam, cancelContinueHandler);
-  router.post('/:id/wait', guardSessionParam, waitForResetHandler);
+  router.get('/:id/continue-options', continueOptionsHandler);
+  router.post('/:id/continue', continueSessionHandler(deps));
+  router.post('/:id/continue/cancel', cancelContinueHandler);
+  router.post('/:id/wait', waitForResetHandler);
   // How past limits ended, for the transcript (spec claude-account-ui §7.1).
-  router.get('/:id/limit-history', guardSessionParam, limitHistoryHandler);
+  router.get('/:id/limit-history', limitHistoryHandler);
 
   // POST /api/sessions/:id/devtools/ingest — DevTools bridge capture sink (DOR-213).
   // Session-gated (credentialed same-origin client call), Zod-validated, batch-capped.
   // The handler lives in `session-devtools.ts` to keep this file under the size rule.
-  router.post('/:id/devtools/ingest', guardSessionParam, sessionDevtoolsIngestHandler);
+  router.post('/:id/devtools/ingest', sessionDevtoolsIngestHandler);
 
   // POST /api/sessions/:id/devtools/action — the result of one driving round trip
   // (spec `canvas-agent-seat` §2.1): what the click did, what the page says now.
   // Same posture as the ingest sink above; the handler lives beside it.
-  router.post('/:id/devtools/action', guardSessionParam, sessionDevtoolsActionHandler);
+  router.post('/:id/devtools/action', sessionDevtoolsActionHandler);
 
   // POST /api/sessions/:id/devtools/recording — a finished browser recording, as
   // two file parts: the GIF and its last frame (spec `canvas-agent-seat` §3.4).
   // Multipart rather than JSON because the GIF is megabytes of binary, and the
   // destination is the server's own, never one this request names.
-  router.post('/:id/devtools/recording', guardSessionParam, sessionDevtoolsRecordingHandler);
+  router.post('/:id/devtools/recording', sessionDevtoolsRecordingHandler);
 
   /**
    * GET /:id/attachments/:file — an image this session's turn produced.
@@ -1001,23 +1009,21 @@ export function createSessionRoutes(deps: SessionRouteDeps = {}): Hono<ApiEnv> {
    * answered — the message part carries that URL verbatim rather than rebuilding
    * it, which is what keeps the store a real seam.
    */
-  router.get('/:id/attachments/:file', guardSessionParam, sessionAttachmentHandler);
+  router.get('/:id/attachments/:file', sessionAttachmentHandler);
 
   // POST /api/sessions/:id/mcp-app/resource — Read a ui:// MCP App resource
   // (SEP-1865) for client rendering. The handler lives in
   // `session-mcp-app-resource-handler.ts`; config stays server-side (ADR
   // 260708-141143). See the handler's module doc.
-  router.post('/:id/mcp-app/resource', guardSessionParam, sessionMcpAppResourceHandler);
+  router.post('/:id/mcp-app/resource', sessionMcpAppResourceHandler);
 
   // POST /api/sessions/:id/tasks/:taskId/stop - Stop a running background task
-  router.post('/:id/tasks/:taskId/stop', guardSessionParam, async (c) => {
+  router.post('/:id/tasks/:taskId/stop', async (c) => {
     const sessionId = parseSessionId(c.req.param('id'));
     if (!sessionId) return c.json(errorBody('Invalid session ID', 'INVALID_SESSION_ID'), 400);
 
-    // Express 5 typings widen route params to string | string[]; a multi-value
-    // taskId can only come from a malformed path, so reject it as invalid.
-    const taskId = typeof c.req.param('taskId') === 'string' ? c.req.param('taskId') : undefined;
-    if (!taskId) return c.json(errorBody('Invalid task ID', 'INVALID_TASK_ID'), 400);
+    // The route matches only a non-empty segment, so `taskId` is always set.
+    const taskId = c.req.param('taskId');
 
     const runtime = await runtimeRegistry.resolveForSession(sessionId);
     try {
@@ -1044,7 +1050,7 @@ export function createSessionRoutes(deps: SessionRouteDeps = {}): Hono<ApiEnv> {
   // agent's background work, ending that work (spec `warm-process-lifecycle` D2a,
   // DOR-2065). Takes no body. `switched: false` means there was no running agent
   // to switch, which is a normal answer: the held message is already on its way.
-  router.post('/:id/process/switch', guardSessionParam, async (c) => {
+  router.post('/:id/process/switch', async (c) => {
     const sessionId = parseSessionId(c.req.param('id'));
     if (!sessionId) return c.json(errorBody('Invalid session ID', 'INVALID_SESSION_ID'), 400);
     // It ends an agent's running work on a person's say-so: the owner's call,
@@ -1056,7 +1062,7 @@ export function createSessionRoutes(deps: SessionRouteDeps = {}): Hono<ApiEnv> {
   });
 
   // POST /api/sessions/:id/interrupt - Interrupt the active query
-  router.post('/:id/interrupt', guardSessionParam, async (c) => {
+  router.post('/:id/interrupt', async (c) => {
     const sessionId = parseSessionId(c.req.param('id'));
     if (!sessionId) return c.json(errorBody('Invalid session ID', 'INVALID_SESSION_ID'), 400);
 
@@ -1101,17 +1107,17 @@ export function createSessionRoutes(deps: SessionRouteDeps = {}): Hono<ApiEnv> {
   //
   // The single delivery path for session state (spec chat-stream-reconnection,
   // Design B.3, ADR-0264/ADR-0266). Always on — NO `enableCrossClientSync` gate,
-  // no feature flag. Express 5 forwards rejections that escape the handler's own
-  // pre-flush guard to the error middleware natively: pre-flush they get a JSON
-  // error response, post-flush Express destroys the socket — the correct SSE
-  // failure mode (see the `res.headersSent` guard in error-handler.ts).
+  // no feature flag. A rejection that escapes the handler reaches the chain's
+  // error handler (`answerError` in `http/api-chain.ts`): before the head is
+  // written it answers JSON, after it closes the connection, which is the
+  // correct SSE failure mode (the client reconnects).
   //
   // The SAME path is also served over a WebSocket, by `session-events-socket.ts`
   // through the upgrade router, and that is what the cockpit connects to (ADR
   // 260805-041016). This SSE route stays because it is the public integration
   // contract (`docs/integrations/sse-protocol.mdx`). Both share their sequencing
   // — see `services/session/session-stream-delivery.ts`.
-  router.get('/:id/events', guardSessionParam, sessionEventsHandler);
+  router.get('/:id/events', sessionEventsHandler);
 
   return router;
 }

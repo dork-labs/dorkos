@@ -30,7 +30,6 @@ import { getUserById, readOwnerAccount } from '../services/core/auth/index.js';
 import { configManager } from '../services/core/config-manager.js';
 import { runtimeRegistry } from '../services/core/runtime-registry.js';
 import { resolveAnswererName } from '../services/identity/operator-profile.js';
-import { guardSessionParam } from './session-read-guard.js';
 
 /**
  * What a caller is told when it tried to answer a prompt without being a person
@@ -173,8 +172,9 @@ const INVALID_REQUEST = errorBody('Invalid request', 'VALIDATION_ERROR');
 const ALREADY_RESOLVED = errorBody('Interaction already resolved', 'INTERACTION_ALREADY_RESOLVED');
 
 /**
- * The six answer routes, each behind the session read guard and then
- * {@link requirePersonToAnswer}: the Ask is reachable from every route in the
+ * The six answer routes, each behind {@link requirePersonToAnswer}, and behind
+ * the session read guard `routes/sessions.ts` puts in front of every path under
+ * `/:id` before it mounts these: the Ask is reachable from every route in the
  * cockpit, so who may answer it is a property of the endpoint rather than of
  * where the card happened to be drawn.
  *
@@ -184,7 +184,7 @@ export function createSessionAnswerRoutes(): Hono<ApiEnv> {
   const router = new Hono<ApiEnv>();
 
   // POST /api/sessions/:id/approve - Approve pending tool call
-  router.post('/:id/approve', guardSessionParam, async (c) => {
+  router.post('/:id/approve', async (c) => {
     const answering = startAnswer(c);
     if (answering instanceof Response) return answering;
     const { sessionId, facts } = answering;
@@ -208,7 +208,7 @@ export function createSessionAnswerRoutes(): Hono<ApiEnv> {
   // Guarded for the same reason as approve, not as a symmetry: an agent that can
   // deny can suppress a person's decision and bury the card that would have told
   // them. Same argument the capability approvals' deny route makes.
-  router.post('/:id/deny', guardSessionParam, async (c) => {
+  router.post('/:id/deny', async (c) => {
     const answering = startAnswer(c);
     if (answering instanceof Response) return answering;
     const { sessionId, facts } = answering;
@@ -241,7 +241,7 @@ export function createSessionAnswerRoutes(): Hono<ApiEnv> {
     ['/:id/batch-approve', true],
     ['/:id/batch-deny', false],
   ] as const) {
-    router.post(path, guardSessionParam, async (c) => {
+    router.post(path, async (c) => {
       const answering = startAnswer(c);
       if (answering instanceof Response) return answering;
       const { sessionId, facts } = answering;
@@ -260,7 +260,7 @@ export function createSessionAnswerRoutes(): Hono<ApiEnv> {
   // POST /api/sessions/:id/submit-answers - Submit answers for AskUserQuestion.
   // A question is answered by a person too. The three kinds of prompt share one
   // bar, because they are one object to whoever is being asked.
-  router.post('/:id/submit-answers', guardSessionParam, async (c) => {
+  router.post('/:id/submit-answers', async (c) => {
     const answering = startAnswer(c);
     if (answering instanceof Response) return answering;
     const { sessionId, facts } = answering;
@@ -277,7 +277,7 @@ export function createSessionAnswerRoutes(): Hono<ApiEnv> {
   });
 
   // POST /api/sessions/:id/submit-elicitation - Submit response to MCP elicitation
-  router.post('/:id/submit-elicitation', guardSessionParam, async (c) => {
+  router.post('/:id/submit-elicitation', async (c) => {
     const answering = startAnswer(c);
     if (answering instanceof Response) return answering;
     const { sessionId, facts } = answering;
