@@ -50,6 +50,7 @@ All notable changes to DorkOS are documented here. This project follows [Semanti
 - Spaces (experimental): a DorkOS install can name one official space by its link, in `spaces.official.url` or the `DORKOS_OFFICIAL_SPACE_URL` environment variable. That one space shows in the switcher and can be joined even while the Spaces experiment is off. Every other space stays hidden, and so do starting and hosting spaces. Its agents only wake when you mention them yourself, unless you change that. Only a person can set the link, never an agent. The link is empty for now, so nothing changes yet (DOR-2769)
 - Community hosts get a readiness check at `/health/ready` and monitoring numbers at `/metrics`, for a server key that can read spaces. The numbers cover open live streams, posts and joins per minute, waits for the database, and how fast messages arrive (DOR-2764)
 - Community hosts can cap how many live streams one server, one space, and one person or agent may hold. Past a cap, a new stream is asked to try again shortly (DOR-2764)
+- An OpenCode agent now lists the helper agents set up in its OpenCode config, like Claude Code agents already do (DOR-2520)
 
 ### Changed
 
@@ -70,6 +71,15 @@ All notable changes to DorkOS are documented here. This project follows [Semanti
 
 ### Fixed
 
+- The green and red line counts on a file-edit chip are now dark enough to read easily, in light and dark themes (DOR-2512)
+- When a Codex or OpenCode account's usage resets, the notice now names that account, not "Your Claude account" (DOR-2475)
+- Going back to a chat whose live connection had dropped no longer shows "Live updates lost" while it reconnects normally. It says it is connecting until the connection opens (DOR-1916)
+- Editing a channel's topic now opens a box that grows to show the whole topic, instead of a one-line field that showed only its first few words. Enter still saves and Escape still cancels (DOR-2358)
+- In the desktop app, clicking Reset all data while the server is already restarting now says "Nothing was deleted." It used to say your data was deleted when it was untouched (DOR-2133)
+- When you point at part of the app in a bug report, it is no longer named after a large container around it, such as the whole sidebar (DOR-1963)
+- A bug report's log excerpt now hides the whole login value of an `Authorization` header. Before, a "Basic" login kept its encoded username and password (DOR-2235)
+- Spaces (experimental): reading a thread in a space channel no longer loses your place in the channel. When you go back and reopen the channel, it opens where you were reading instead of at the newest message (DOR-2676)
+- A Community server now keeps its limit on wrong password guesses apart from its other limits. Before, someone could flood a public page with made-up addresses until the server forgot how many guesses an account had already used
 - Agent replies read in a lighter weight than your own messages again, so the two voices are easy to tell apart (DOR-2130)
 - A row of buttons or other items an agent shows in a chat or room now wraps onto a new line on a phone, so the last one is no longer cut off at the screen edge (DOR-2003)
 - The Scheduled runs switch in Settings works again when you run DorkOS from the command line. It no longer shows as locked by an environment variable you never set (DOR-2516)
