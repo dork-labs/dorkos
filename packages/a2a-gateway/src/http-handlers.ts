@@ -41,6 +41,7 @@ import {
   validateVersion,
   type ServerCallContext,
 } from '@a2a-js/sdk/server';
+import { isV1JsonRpcMethod } from '@a2a-js/sdk/compat/v0_3';
 import { LegacyJsonRpcTransportHandler } from '@a2a-js/sdk/compat/v0_3/server';
 import type { RelayCore } from '@dorkos/relay';
 import type { Logger } from '@dorkos/shared/logger';
@@ -81,7 +82,8 @@ export interface A2aRpcOptions {
    * and the gateway does not try to read the stream again.
    *
    * Leave the key out and the gateway reads the body itself, parsing it only
-   * when its content type is `application/json`.
+   * when its content type is `application/json`. It sets no size limit then,
+   * so a host that does this must bound the request body itself.
    */
   parsedBody?: unknown;
 }
@@ -137,25 +139,6 @@ const MESSAGE_METHODS = new Set([
   // v0.3
   'message/send',
   'message/stream',
-]);
-
-/**
- * The v1.0 JSON-RPC method names. A request naming anything else is handed to
- * the v0.3 handler, as the SDK's Express adapter does with compat on: that
- * handler knows the v0.3 names, and answers an unknown one in v0.3's shape.
- */
-const V1_METHODS = new Set([
-  'SendMessage',
-  'SendStreamingMessage',
-  'GetTask',
-  'ListTasks',
-  'CancelTask',
-  'SubscribeToTask',
-  'CreateTaskPushNotificationConfig',
-  'GetTaskPushNotificationConfig',
-  'ListTaskPushNotificationConfigs',
-  'DeleteTaskPushNotificationConfig',
-  'GetExtendedAgentCard',
 ]);
 
 /** JSON-RPC request id extracted for error responses. */
@@ -354,11 +337,10 @@ export function createA2aGateway(deps: A2aGatewayDeps): A2aGateway {
     }
 
     const method = methodOf(body);
-    // Any parsed body that names no v1.0 method, a missing method included.
-    const useLegacy =
-      typeof body === 'object' &&
-      body !== null &&
-      !(typeof method === 'string' && V1_METHODS.has(method));
+    // Any parsed body that names no v1.0 method, a missing method included, goes
+    // to the v0.3 handler, as the SDK's Express adapter does with compat on: that
+    // handler knows the v0.3 names, and answers an unknown one in v0.3's shape.
+    const useLegacy = typeof body === 'object' && body !== null && !isV1JsonRpcMethod(method);
     const mapToError = useLegacy
       ? LegacyJsonRpcTransportHandler.mapToLegacyJSONRPCError
       : JsonRpcTransportHandler.mapToJSONRPCError;
@@ -499,23 +481,29 @@ function sseBody(
 ): ReadableStream<Uint8Array> {
   const encoder = new TextEncoder();
   let pending = first;
+  // Set once the client leaves: an event the agent sends after that has nowhere
+  // to go, and is not an error.
+  let cancelled = false;
   return new ReadableStream<Uint8Array>({
     async pull(controller) {
       try {
         const next = pending ?? (await iterator.next());
         pending = undefined;
+        if (cancelled) return;
         if (next.done) {
           controller.close();
           return;
         }
         controller.enqueue(encoder.encode(formatSSEEvent(next.value)));
       } catch (error) {
+        if (cancelled) return;
         logger.error('[a2a] error during an SSE stream', error);
         controller.enqueue(encoder.encode(formatSSEErrorEvent(errorEnvelope(error))));
         controller.close();
       }
     },
     async cancel() {
+      cancelled = true;
       await iterator.return?.();
     },
   });
