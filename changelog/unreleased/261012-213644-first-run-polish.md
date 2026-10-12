@@ -3,6 +3,10 @@ covers:
   - "fix(server): a fresh install shows no 'while you were away' report (DOR-2845)"
   - 'fix(client): one Getting started list at a time (DOR-2845)'
   - 'fix(client): a new chat is named for its agent, never "Session" (DOR-2845)'
+  - "fix(server): the first 'while you were away' report waits for an install-age gate (DOR-2845)"
+  - 'fix(client): the name and role prompts ask while the Getting started card waits (DOR-2845)'
+  - 'chore: one changelog fragment for the first-run polish (DOR-2845)'
+  - 'chore: fold the review fixes into the first-run changelog fragment (DOR-2845)'
 ---
 
 ### Fixed
