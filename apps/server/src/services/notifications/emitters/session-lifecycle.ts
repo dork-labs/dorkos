@@ -44,8 +44,8 @@ import type { SessionLifecycle, SessionLimit } from '@dorkos/shared/session-stre
 import { onProjectorStatusChange } from '../../session/session-state-projector.js';
 import { resolveAgentIdForPath } from '../../mesh/agent-path-lookup.js';
 import { notify, resolveStanding } from '../notification-service.js';
-import { armEscalation } from '../escalation-service.js';
-import type { NotificationPayload } from '../notification-registry.js';
+import { armEscalation, cancelEscalationByKey } from '../escalation-service.js';
+import { notificationEntry, type NotificationPayload } from '../notification-registry.js';
 import { withSessionLimitStore } from '../../session/fleet/session-limit-store.js';
 import { getAccountUsageStore } from '../../core/usage/current-usage-store.js';
 import { canonicalAccountPath } from '../../core/usage/runtime-accounts.js';
@@ -255,11 +255,24 @@ export function watchSessionLifecycle(): () => void {
 
   return onProjectorStatusChange(({ sessionId, cwd, retiredSessionId, status }) => {
     // A rekey re-announce carries the id this projector streamed under before
-    // its canonical id resolved. Retiring it keeps the maps from holding state
-    // nothing will ever move again.
+    // its canonical id resolved. Its state MOVES to the new id rather than being
+    // dropped: an error episode armed under the old id would otherwise keep a
+    // timer nothing can resolve, beside a second one armed here (DOR-2136).
     if (retiredSessionId) {
+      const carried = previous.get(retiredSessionId);
+      const episode = errorSince.get(retiredSessionId);
       previous.delete(retiredSessionId);
       errorSince.delete(retiredSessionId);
+      if (carried !== undefined && !previous.has(sessionId)) previous.set(sessionId, carried);
+      if (episode !== undefined) {
+        cancelEscalationByKey(
+          notificationEntry('session.error').dedupeKey(
+            sessionErrorPayload(retiredSessionId, cwd, episode)
+          )
+        );
+        errorSince.set(sessionId, episode);
+        armEscalation('session.error', sessionErrorPayload(sessionId, cwd, episode));
+      }
     }
 
     const before = previous.get(sessionId);
