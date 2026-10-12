@@ -1,6 +1,7 @@
 ---
 covers:
   - 'fix(rooms): a chat posts in a room as its agent, never as you (DOR-2863)'
+  - 'fix(rooms): a bound chat keeps its recorded agent, and test the first send (DOR-2863)'
 ---
 
 ### Fixed
