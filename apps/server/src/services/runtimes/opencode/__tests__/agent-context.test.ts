@@ -241,6 +241,14 @@ describe('what an OpenCode turn carries', () => {
     expect(system).toContain('say so rather than guessing');
   });
 
+  // Same reason as above: the working rules must reach all three runtimes.
+  it('carries the <working_rules> block on the system channel', async () => {
+    const system = (await capturePromptBodies())[0]?.system ?? '';
+
+    expect(system).toContain('<working_rules>');
+    expect(system).toContain('including asking DorkOS for the access');
+  });
+
   // The memory block reaches opencode through the SAME shared builder, and this
   // is where that can fail: read from a real file in this agent's directory and
   // asserted on what the adapter actually sends.

@@ -157,6 +157,6 @@
     "packages/test-utils/src/fake-community-adapter.ts": 789,
     "packages/test-utils/src/mock-factories.ts": 1338,
     "packages/test-utils/src/runtime-capability-matrix.ts": 802,
-    "packages/test-utils/src/runtime-conformance.ts": 2452
+    "packages/test-utils/src/runtime-conformance.ts": 2432
   }
 }
