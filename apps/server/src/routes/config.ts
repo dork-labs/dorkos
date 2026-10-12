@@ -362,6 +362,9 @@ router.get('/', async (c) => {
       // wire because two surfaces read it: the chat composer picks its field
       // from it, and Settings → Preferences shows it back as a switch.
       composer: configManager.get('ui')?.composer ?? COMPOSER_PREFS_DEFAULTS,
+      // Where each mini app's right-panel tab shows (spec `mini-app-placement`).
+      // The panel and Settings both read it; `[]` covers the pre-migration read.
+      panelTabs: configManager.get('ui')?.panelTabs ?? [],
       // The power-door answer (spec `full-power-defaults`, D1). Both halves go
       // out because the cockpit decides from them whether the door is put up at
       // all: `fullPowerDecidedAt` is the "already asked" signal for both the

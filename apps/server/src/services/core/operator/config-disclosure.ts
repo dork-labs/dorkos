@@ -177,6 +177,16 @@ export const CONFIG_DISCLOSURE = {
   'ui.shapes.agentDefaults': 'expose',
   'ui.shapes.autoFollowAgent': 'expose',
   'ui.statusBar.pins': 'expose',
+  // Where each mini app's right-panel tab shows. Exposed so an agent can read a
+  // placement before it changes one. It names room ids, as `ui.sidebar.pinned`
+  // already does; nothing in it is secret.
+  'ui.panelTabs[].tab': 'expose',
+  'ui.panelTabs[].show.agents': 'expose',
+  'ui.panelTabs[].show.rooms': 'expose',
+  'ui.panelTabs[].show.pages': 'expose',
+  'ui.panelTabs[].hide.agents': 'expose',
+  'ui.panelTabs[].hide.rooms': 'expose',
+  'ui.panelTabs[].hide.pages': 'expose',
   'ui.composer.richText': 'expose',
   // Owner and tenant-qualified navigation history is local UI state. Withhold
   // the whole shape so a tokenless config read cannot enumerate private room IDs.

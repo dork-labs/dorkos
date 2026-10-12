@@ -11,8 +11,8 @@ vi.mock('../../config-manager.js', () => ({
     onChange: () => () => undefined,
   },
 }));
-vi.mock('../../auth/cloud-link-client.js', () => ({
-  resolveCloudBaseUrl: () => 'https://cloud.example.invalid',
+vi.mock('../cloud-api-origin.js', () => ({
+  resolveCloudApiBaseUrl: () => 'https://cloud.example.invalid',
 }));
 vi.mock('../../auth/cloud-link.js', () => ({ getCloudLinkGeneration: () => link.generation }));
 

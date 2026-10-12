@@ -36,7 +36,8 @@ interface ExtensionAPI {
   // right-panel tab strip; defaults to the id). options.icon is the tab-strip glyph for
   // slots that render one (right-panel) — any { className } component; omit it and the
   // strip falls back to a default puzzle-piece. Not 'dialog': use registerDialog.
-  registerComponent(slot: ExtensionPointId, id: string, component: ComponentType, options?: { priority?: number; label?: string; icon?: ComponentType<{ className?: string }> }): () => void;
+  // showIn: where a right-panel tab shows (pages 'session', 'channels', '*'=all).
+  registerComponent(slot: ExtensionPointId, id: string, component: ComponentType, options?: { priority?: number; label?: string; icon?: ComponentType<{ className?: string }>; showIn?: { agents?: string[]; rooms?: string[]; pages?: string[] } }): () => void;
   registerCommand(id: string, label: string, callback: () => void, options?: { icon?: string; shortcut?: string }): () => void;
   // Mounted only while open; draw your own frame, call onOpenChange(false) to close.
   registerDialog(id: string, component: ComponentType<{ onOpenChange: (open: boolean) => void }>): { open: () => void; close: () => void };
@@ -153,6 +154,7 @@ export function activate(api: ExtensionAPI) {
     label: 'My Panel',
     icon: MyTabIcon,
     priority: 50,
+    showIn: { pages: ['session'] },
   });
 }
 \`\`\`

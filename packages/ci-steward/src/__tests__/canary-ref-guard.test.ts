@@ -109,7 +109,7 @@ describe('the ref guard is present, first, and self-contained', () => {
   it('is byte-identical in every job, so one cannot rot alone', () => {
     // The count is asserted so a workflow silently losing its jobs, or the
     // canary list losing a workflow, does not turn this suite into a no-op.
-    expect(sites).toHaveLength(8);
+    expect(sites).toHaveLength(9);
     expect(new Set(sites.map(([f, j]) => jobOf(f, j).steps[0]!.run)).size).toBe(1);
     // The env block carries EVENT and REF; the body reads nothing else.
     for (const [f, j] of sites) {

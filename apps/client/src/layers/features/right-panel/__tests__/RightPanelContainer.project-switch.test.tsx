@@ -20,6 +20,21 @@ const { panelEvents } = vi.hoisted(() => ({ panelEvents: [] as string[] }));
 // A panel stub that behaves like the real one where it matters here: it knows
 // whether it is collapsed, and reports a collapse or expand through the same
 // callbacks, so a panel shut by a project switch is visible to the test.
+// Placement (spec `mini-app-placement`) reads config and two queries; this
+// suite is about built-in tabs, so "here" is the route's page and nothing is
+// saved. The placement behaviour has its own suite.
+vi.mock('../model/use-placement-here', () => ({
+  usePlacementHere: (pathname: string) => ({
+    status: 'ready',
+    here: { page: pathname.split('/').filter(Boolean)[0] ?? 'home' },
+  }),
+}));
+vi.mock('@/layers/entities/config', () => ({
+  useConfig: () => ({ data: {} }),
+  usePanelTabPlacements: () => [],
+  useSetPanelTabPlacement: () => ({ setPlacement: vi.fn(), isPending: false }),
+}));
+
 vi.mock('react-resizable-panels', async () => {
   const { useImperativeHandle, useRef } = await import('react');
 

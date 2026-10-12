@@ -201,7 +201,7 @@ export function tolerateRetiredRoomKeys(schema: { properties?: Record<string, un
   const properties = (rooms as { properties?: Record<string, unknown> }).properties;
   if (properties == null || typeof properties !== 'object') return;
   properties['toolOnlyReplies'] = { type: 'boolean' };
-  // The two per-turn caps on our own agents, retired by `'0.112.0'` (DOR-2739)
+  // The two per-turn caps on our own agents, retired by `'0.113.0'` (DOR-2739)
   // on the same terms: the key removes them where it runs, this where it never
   // does.
   properties['maxPostsPerTurn'] = { type: 'integer' };

@@ -6,7 +6,7 @@
  *
  * `conf` selects a migration only when its key is `<= projectVersion`, and
  * `SERVER_VERSION` resolves to `apps/server/package.json`'s version in a dev
- * tree, so a `0.112.0` body runs under NO default test environment.
+ * tree, so a `0.113.0` body runs under NO default test environment.
  * `DORKOS_VERSION_OVERRIDE` has to be set before `lib/version.ts` is imported —
  * the same reasoning `config-scheduler-timezone-migration.test.ts` gives.
  *
@@ -19,7 +19,7 @@
 import { describe, it, expect, afterEach, vi } from 'vitest';
 
 vi.hoisted(() => {
-  process.env.DORKOS_VERSION_OVERRIDE = '0.112.0';
+  process.env.DORKOS_VERSION_OVERRIDE = '0.113.0';
 });
 
 import fs from 'fs';
@@ -62,8 +62,8 @@ function readRooms(dir: string): Record<string, unknown> {
 }
 
 describe('dropping the per-turn agent caps on an upgrade boot (real conf + Ajv)', () => {
-  it('really is running the 0.112.0 migration, or none of the rest of this file means anything', () => {
-    expect(SERVER_VERSION).toBe('0.112.0');
+  it('really is running the 0.113.0 migration, or none of the rest of this file means anything', () => {
+    expect(SERVER_VERSION).toBe('0.113.0');
   });
 
   it('removes both caps and keeps everything else under rooms', () => {

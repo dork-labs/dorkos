@@ -149,6 +149,7 @@ api.registerStatusBarItem(id, Item, { label, priority?, when?, urgent? }): () =>
 - **`priority?`** — orders the contribution within its slot; lower sorts earlier (leftward in a tab strip). Defaults to a mid value.
 - **`label?`** — the human name shown where the slot has a label or tab (the `right-panel` tab strip, `settings.tabs`, `sidebar.footer`). Defaults to the namespaced id, so set it for any tabbed or labelled slot.
 - **`icon?`** — the tab-strip glyph for slots that render one (today, `right-panel`). It is any component the host renders with a `className` (a `{ className?: string }` component). Omit it and the strip falls back to a default puzzle-piece. Note: extensions can only import `react`, `react-dom`, and `@dorkos/extension-api` at runtime, so you cannot import a `lucide-react` icon here — supply your own inline-SVG component instead.
+- **`showIn?`** — `right-panel` only: where the tab shows by default, as `{ agents?, rooms?, pages? }`. See [Where a tab shows](#where-a-tab-shows). Omit it and the tab shows everywhere.
 - **`visibleWhen?`** — `dashboard.sections` only: a predicate the host re-evaluates on every render. Return false to hide your section without unregistering it (useful when it has nothing to say). Omit it and the section is always visible.
 - **`group?`** — `settings.tabs` only: names the sidebar section the tab sits under in the Settings dialog. The built-in sections are `'You'`, `'Agents'` and `'This computer'`, and naming one adds your tab to the end of it. `'Advanced'` puts your tab behind the folded Advanced disclosure at the bottom, with Server, Tools, Room limits, Experiments and Danger zone; use it for something most people set once or never. Any other name makes a section of its own, below the built-in ones and above Advanced. Omit it and the tab lands under "Add-ons", the section reserved for contributed tabs, so a tab written before this field existed still files itself somewhere honest. Same option on `registerSettingsTab`.
 
@@ -409,7 +410,49 @@ export function activate(api: ExtensionAPI): void {
 }
 ```
 
-**When the tab appears.** Your tab is added to the right panel's tab strip and stays available wherever the panel shows: the public `registerComponent` API accepts `visibleWhen` only for `dashboard.sections`, not for the route/transport/agent predicate built-in right-panel tabs use to scope themselves, so an **extension tab is always visible**. It registers as a _contextual_ tab (never the global fallback). That has a real consequence — the panel auto-selects the first contextual tab when the active one isn't showing, so on routes where no built-in contextual tab is visible (home, activity, tasks), **your tab can become the default and open on its own**, ahead of the global Pulse tab. Because it can auto-open in any context, always render a useful empty state when there is nothing relevant to show.
+#### Where a tab shows
+
+A tab shows where its placement says, and a person can change that without touching your code. Three layers decide it, and the last one wins:
+
+1. **Everywhere.** What a tab gets when nothing else says otherwise.
+2. **Your default**, `showIn` on `registerComponent`.
+3. **The saved choice** in config `ui.panelTabs`, keyed by `<your-id>:<tabId>`. A person sets it in Settings → Extensions (**Panel tab shows**), or with **Hide here** and **Show here** in the panel's ⋯ menu. An agent can set it with `config_patch`. It replaces your default whole; **Use its default** removes it.
+
+```ts
+api.registerComponent('right-panel', 'queue', QueuePanel, {
+  label: 'Queue',
+  showIn: { pages: ['session', 'activity'] }, // every chat, and Activity
+});
+```
+
+A placement names agents, rooms and pages, and the tab shows wherever any of them matches:
+
+- **`agents`**: agent ids. The tab shows in a chat with that agent.
+- **`rooms`**: room ids, for channels and direct messages on this computer. Home counts as #team.
+- **`pages`**: the first part of the address: `home`, `activity`, `tasks`, `workspaces`, `team`, `connections`, `marketplace`, `x/<extension-id>`, plus `session` for every chat and `channels` for every channel. `'*'` means everywhere.
+
+Agent and room ids belong to one computer. A mini app built for one person (an agent built it, on their machine) can name them. One you share should stick to pages and leave the specific agents and rooms to the person. To put a tab beside specific agents and rooms for this person, an agent writes `ui.panelTabs`:
+
+```jsonc
+// config_patch
+{
+  "ui": {
+    "panelTabs": [
+      {
+        "tab": "social-queue:queue",
+        "show": { "agents": ["01KJ…"], "rooms": ["01M2…"], "pages": [] },
+        "hide": { "agents": [], "rooms": [], "pages": [] },
+      },
+    ],
+  },
+}
+```
+
+`ui.panelTabs` is one list for everybody using this DorkOS, and a patch replaces it whole, so read it first (`config_get`) and send it back with your one entry changed.
+
+The panel's ⋯ menu also has **Open full page**, which goes to your home page (`registerPage('', …)`), or else your first page listed in the menu; pages with `:params`, or registered with `menu: false`, are never offered. A `showIn` that names nothing, or a page key no page has, logs a console warning, because either one puts the tab nowhere.
+
+**When the tab appears.** Your tab registers as a _contextual_ tab (never the global fallback). The panel auto-selects the first contextual tab when the active one isn't showing, so on a page where no built-in contextual tab shows (home, activity, tasks), **your tab can become the default and open on its own**, ahead of the global Pulse tab. Always render a useful empty state when there is nothing relevant to show.
 
 ### Pages (`/x/…`)
 

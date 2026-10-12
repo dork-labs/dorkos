@@ -142,6 +142,13 @@ function fullyPopulatedConfig(): Record<string, unknown> {
       },
       statusBar: { pins: ['cwd'] },
       composer: { richText: true },
+      panelTabs: [
+        {
+          tab: 'social-queue:queue',
+          show: { agents: ['01AGENT'], rooms: ['01JROOM'], pages: ['activity'] },
+          hide: { agents: ['01OTHER'], rooms: ['01JHIDDEN'], pages: ['tasks'] },
+        },
+      ],
       fullPowerDecidedAt: '2026-08-22T11:15:00.000Z',
       fullPowerChoice: 'full',
       communityNavigation: {

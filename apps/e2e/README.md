@@ -289,7 +289,10 @@ Notes:
   _instead of_ the app shell — so every spec would time out waiting for
   `[data-testid="app-shell"]`. `global-setup.ts` dismisses it on every API leg
   before the first spec runs, which is what makes a throwaway `DORK_HOME` usable
-  at all.
+  at all. The one exception is the first-run journey (`first-run/`, its own
+  `playwright.first-run.config.ts`), which needs that wizard: it boots its own
+  never-onboarded servers, runs with `pnpm e2e:first-run`, and gates the merge
+  queue as `browser-test.yml`'s `first-run` job.
 - `--project chromium` runs the cockpit project; add `-g "<title>"` to run a
   single test by name.
 

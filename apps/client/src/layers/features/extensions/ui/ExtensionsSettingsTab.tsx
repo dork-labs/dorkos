@@ -3,6 +3,7 @@ import { toast } from 'sonner';
 import type { ExtensionRecordPublic } from '@dorkos/extension-api';
 import { Button, MoreDetails } from '@/layers/shared/ui';
 import { cn } from '@/layers/shared/lib';
+import { useDeepLinkScroll, useSettingsDeepLink } from '@/layers/shared/model';
 import {
   useExtensions,
   useEnableExtension,
@@ -22,6 +23,10 @@ import { TrustedSourcesSection } from './TrustedSourcesSection';
 /** Extensions tab in the Settings dialog — manage discovered extensions. */
 export function ExtensionsSettingsTab() {
   const { data: extensions = [], isLoading } = useExtensions();
+  // "Where it shows…" in the right panel opens this tab with the mini app's id
+  // as the section: bring its card into view once the list has drawn.
+  const { section } = useSettingsDeepLink();
+  useDeepLinkScroll(isLoading ? null : section);
   const enableMutation = useEnableExtension();
   const disableMutation = useDisableExtension();
   const reloadMutation = useReloadExtensions();

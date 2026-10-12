@@ -16,9 +16,13 @@ import {
   useTransport,
 } from '@/layers/shared/model';
 import { cn } from '@/layers/shared/lib';
+import { effectivePlacement, placementShows } from '@dorkos/shared/mini-app-placement';
+import { useConfig, usePanelTabPlacements } from '@/layers/entities/config';
 import { PanelErrorBoundary } from './PanelErrorBoundary';
+import { MiniAppTabMenu } from './MiniAppTabMenu';
 import { RightPanelHeader, RIGHT_PANEL_PANEL_ID, rightPanelTabDomId } from './RightPanelHeader';
 import { useRightPanelSizing } from '../model/use-right-panel-sizing';
+import { usePlacementHere } from '../model/use-placement-here';
 
 /** The design system's entrance curve — fast start, gentle stop. */
 const EASE_OUT = 'cubic-bezier(0, 0, 0.2, 1)';
@@ -105,7 +109,7 @@ export function RightPanelContainer({
   // Filter to only visible contributions, passing route + transport + agent
   // context to each predicate. Memoized so the auto-select effect below only
   // re-runs when the inputs actually change, not on every render.
-  const visibleContributions = useMemo(
+  const routeContributions = useMemo(
     () =>
       allContributions.filter(
         (c) =>
@@ -122,6 +126,33 @@ export function RightPanelContainer({
     [allContributions, pathname, transport, agentId, cwd, explicitAgentPath, isRemoteCommunityRoom]
   );
 
+  // Mini-app tabs also follow their placement rules (spec `mini-app-placement`).
+  // While "here" is still resolving, the last answer stands in, so an open
+  // mini-app tab is not dropped for a frame and swapped for another tab.
+  const hereState = usePlacementHere(pathname, isRemoteCommunityRoom);
+  const here = hereState.status === 'ready' ? hereState.here : hereState.last;
+  const savedPlacements = usePanelTabPlacements();
+  const configLoaded = useConfig().data !== undefined;
+  // A Map keeps the LAST entry per tab, the same rule as `savedPlacementFor`.
+  const savedByTab = useMemo(
+    () => new Map(savedPlacements.map((entry) => [entry.tab, entry])),
+    [savedPlacements]
+  );
+  const { visibleContributions, hiddenMiniAppTabs } = useMemo(() => {
+    const visible: typeof routeContributions = [];
+    const hidden: typeof routeContributions = [];
+    for (const c of routeContributions) {
+      if (!c.extensionId) visible.push(c);
+      else if (
+        here &&
+        placementShows(effectivePlacement(savedByTab.get(c.id), c.declaredPlacement), here)
+      )
+        visible.push(c);
+      else hidden.push(c);
+    }
+    return { visibleContributions: visible, hiddenMiniAppTabs: hidden };
+  }, [routeContributions, here, savedByTab]);
+
   // Auto-select a default tab when the active tab is not visible. View-only: this
   // must not persist over the per-agent stored preference (DOR-227), so a tab
   // hidden by the current route/transport is restored once it returns.
@@ -133,6 +164,9 @@ export function RightPanelContainer({
   // Profile (or the persisted tab), while dashboard/activity/tasks/… — where no
   // contextual tab is visible — fall back to Pulse.
   useEffect(() => {
+    // Never re-pick while "here" is resolving: the pick would overwrite the tab
+    // the person was on, and nothing would put it back.
+    if (hereState.status === 'pending') return;
     if (visibleContributions.length > 0) {
       const activeIsVisible = visibleContributions.some((c) => c.id === activeTab);
       if (!activeIsVisible) {
@@ -140,7 +174,7 @@ export function RightPanelContainer({
         setActiveTabView((firstContextual ?? visibleContributions[0]).id);
       }
     }
-  }, [visibleContributions, activeTab, setActiveTabView]);
+  }, [visibleContributions, activeTab, setActiveTabView, hereState.status]);
 
   // The shell is never route-hidden — only its body varies (research:
   // 20260720_context-aware-right-inspector-panels). So "show" tracks the user's
@@ -180,11 +214,24 @@ export function RightPanelContainer({
       <RightPanelHeader
         contributions={visibleContributions}
         actions={
-          ActiveHeaderActions ? (
-            <Suspense fallback={null}>
-              <ActiveHeaderActions />
-            </Suspense>
-          ) : undefined
+          <>
+            {ActiveHeaderActions ? (
+              <Suspense fallback={null}>
+                <ActiveHeaderActions />
+              </Suspense>
+            ) : null}
+            {/* Only once "here" has settled (a pick made while it resolves
+                would be written for the place just left) and config has
+                loaded (a write needs the whole saved list to change one). */}
+            {hereState.status === 'ready' && configLoaded && (
+              <MiniAppTabMenu
+                active={activeContribution?.extensionId ? activeContribution : null}
+                hidden={hiddenMiniAppTabs}
+                here={hereState.here}
+                saved={savedByTab}
+              />
+            )}
+          </>
         }
       />
       <div

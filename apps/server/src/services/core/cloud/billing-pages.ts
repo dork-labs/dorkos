@@ -27,7 +27,7 @@ import {
   type AccountExport,
   type OffersResponse,
 } from '@dork-labs/cloud-api';
-import { resolveCloudBaseUrl } from '../auth/cloud-link-client.js';
+import { resolveCloudApiBaseUrl } from './cloud-api-origin.js';
 import { createCloudV1Client, readOrNull } from './v1-client.js';
 
 /** Which hosted page to open. */
@@ -190,7 +190,7 @@ export function safePageUrl(url: string): string | null {
   if (!isLoopbackHttp(parsed)) return null;
   let service: URL;
   try {
-    service = new URL(resolveCloudBaseUrl());
+    service = new URL(resolveCloudApiBaseUrl());
   } catch {
     return null;
   }

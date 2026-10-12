@@ -128,6 +128,15 @@ export const NO_RISK_DEFAULTS: readonly string[] = [
   'ui.shapes.autoFollowAgent',
   'ui.statusBar.pins',
   'ui.composer.richText',
+  // Where each mini app's tab shows. An empty list means every tab follows its
+  // mini app's own default; nothing here grants anything.
+  'ui.panelTabs[].tab',
+  'ui.panelTabs[].show.agents',
+  'ui.panelTabs[].show.rooms',
+  'ui.panelTabs[].show.pages',
+  'ui.panelTabs[].hide.agents',
+  'ui.panelTabs[].hide.rooms',
+  'ui.panelTabs[].hide.pages',
   // The power-door answer, both halves (spec `full-power-defaults`, D1). Records
   // of an ANSWER and nothing more: they send nothing off the machine, grant no
   // capability, and no gate reads them. A wipe that lands both back on `null`

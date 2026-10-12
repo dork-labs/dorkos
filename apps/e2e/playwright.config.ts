@@ -870,6 +870,10 @@ export default defineConfig({
         // Runs against the test-mode leg in `chromium-extension-seams` too, for
         // the same reason: it opens chats, and one here would be billed.
         '**/extensions/start-work.spec.ts',
+        // Runs against the test-mode leg in `chromium-extension-seams` too: it
+        // turns `hello-world` on and off, so it must share that project's one
+        // worker with the two files above.
+        '**/extensions/mini-app-tab-placement.spec.ts',
         // Runs against the production leg in `chromium-production` below, and
         // only there. On this leg its every assertion would be vacuous: Vite's
         // shell carries no Content-Security-Policy, so a spec written to prove
@@ -1076,8 +1080,14 @@ export default defineConfig({
       // the extension off under the other's test. A per-project limit rather
       // than a project dependency, because a dependency makes this a setup
       // project, which the balanced-shard reporter's `TestRun.exclude()` refuses.
+      // `mini-app-tab-placement.spec.ts` (spec `mini-app-placement`) is the
+      // third file on that worker for the same reason.
       workers: 1,
-      testMatch: ['**/extensions/extension-seams.spec.ts', '**/extensions/start-work.spec.ts'],
+      testMatch: [
+        '**/extensions/extension-seams.spec.ts',
+        '**/extensions/start-work.spec.ts',
+        '**/extensions/mini-app-tab-placement.spec.ts',
+      ],
     },
     // The only project whose `baseURL` is an EXPRESS port rather than a Vite
     // one, because the production leg serves the built shell itself — which is

@@ -118,6 +118,7 @@ import { backupConfigFile } from './config/backups.js';
 import { adviceFor } from './config/load-error-advice.js';
 import { unreadableMessage } from './config/unreadable-message.js';
 import { classifyConfigLoadFailure } from './config/load-failure.js';
+import { readStoredConfigForSalvage, sleepSync } from './config/salvage-read.js';
 import {
   tolerateLegacyClaudeAccountEncoding,
   tolerateRetiredRoomKeys,
@@ -133,60 +134,6 @@ import {
   unreadableSettingsWarning,
 } from './config/widened-leaves.js';
 import type { WidenedLeaf, WidenedLeafPolicy } from './config/widened-leaves.js';
-
-/**
- * The result of reading a config file that `conf` refused, before replacing it.
- *
- * The two cases are kept apart because only one of them permits a replacement.
- * `read: true` means the bytes are in hand, which is both what salvage needs
- * and the only proof that the file, rather than the machine, is the problem.
- * `read: false` means the file was never read at all, and nothing may be
- * concluded from that except that DorkOS must keep its hands off it.
- */
-type SalvageRead = { read: true; value: unknown } | { read: false; error: unknown };
-
-/**
- * Read a config file that `conf` just refused, so its protections can be
- * salvaged before the file is replaced.
- *
- * Retried on the same staircase as the load itself, and for the same reason.
- * This read happens during whatever is going wrong on the machine, so a single
- * unretried attempt is at its least likely to succeed exactly when it matters
- * most: a storm that condemns the file is still blowing when salvage runs, and
- * a salvage that comes back empty silently costs the person a protection
- * (DOR-584) rather than a preference.
- *
- * Never throws. A read that worked but whose contents will not parse is still
- * `read: true` with an `undefined` value — a truncated file is genuinely
- * unsalvageable, and that is a different fact from never having seen it.
- *
- * @param configPath - Absolute path to the config file being replaced.
- * @param retryDelaysMs - Backoff between attempts; its length is the retry count.
- * @returns The parsed contents, or the failure that stopped the read.
- */
-function readStoredConfigForSalvage(
-  configPath: string,
-  retryDelaysMs: readonly number[]
-): SalvageRead {
-  for (let attempt = 0; ; attempt++) {
-    let raw: string;
-    try {
-      raw = fs.readFileSync(configPath, 'utf-8');
-    } catch (error) {
-      const delay = retryDelaysMs[attempt];
-      if (delay === undefined) return { read: false, error };
-      sleepSync(delay);
-      continue;
-    }
-    try {
-      return { read: true, value: JSON.parse(raw) };
-    } catch {
-      // Read fine, will not parse. Nothing to salvage, but the file is
-      // genuinely damaged and may be replaced.
-      return { read: true, value: undefined };
-    }
-  }
-}
 
 export { classifyConfigLoadFailure, type ConfigLoadFailureKind } from './config/load-failure.js';
 
@@ -321,20 +268,6 @@ function describeLoadError(error: unknown): string {
  * reported rather than guessed at.
  */
 export const CONFIG_LOAD_RETRY_DELAYS_MS = [50, 200, 500] as const;
-
-/**
- * Block this thread for `ms`.
- *
- * Deliberately blocking: {@link ConfigManager} is constructed synchronously
- * during boot and everything after it needs the config, so there is nothing
- * useful to yield to. Only ever reached on the retry path, and bounded by
- * {@link CONFIG_LOAD_RETRY_DELAYS_MS}.
- *
- * @param ms - How long to block for.
- */
-function sleepSync(ms: number): void {
-  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
-}
 
 /** The exact options object both `Conf` constructions below are built from. */
 type ConfConstructorOptions = ConstructorParameters<typeof Conf<UserConfig>>[0];
@@ -3162,7 +3095,7 @@ export function retireToolOnlyReplies(store: {
   if (current.maxPostsPerTurn == null) {
     // @ts-expect-error -- `rooms.maxPostsPerTurn` left the schema (DOR-2739). This
     // shipped body is frozen and still names the default it seeded; that reads
-    // `undefined` now, and the `'0.112.0'` key deletes the leaf either way.
+    // `undefined` now, and the `'0.113.0'` key deletes the leaf either way.
     next.maxPostsPerTurn = USER_CONFIG_DEFAULTS.rooms.maxPostsPerTurn;
     changed = true;
   }
@@ -3454,7 +3387,7 @@ export function seedRoomCanvasOps(store: {
   store.set('rooms', {
     ...current,
     // @ts-expect-error -- `rooms.maxCanvasOpsPerTurn` left the schema (DOR-2739).
-    // Same frozen-body note as `retireToolOnlyReplies`: `'0.112.0'` deletes it.
+    // Same frozen-body note as `retireToolOnlyReplies`: `'0.113.0'` deletes it.
     maxCanvasOpsPerTurn: USER_CONFIG_DEFAULTS.rooms.maxCanvasOpsPerTurn,
   });
 }
@@ -3801,6 +3734,26 @@ export function seedDoeRuntime(store: {
     store.set('runtimes.doe', { enabled: true, inference: null, defaultTrustStop: null });
   if (store.get('runtimes.environment.inherit.doe') === undefined)
     store.set('runtimes.environment.inherit.doe', []);
+}
+
+/**
+ * Seed `ui.panelTabs` (spec `mini-app-placement`): where each mini app's
+ * right-panel tab shows. An empty list, so every tab keeps following its mini
+ * app's own default, which is where it already showed.
+ *
+ * A nested leaf in a section every stored config already has, so nothing else
+ * writes it to disk (conf's top-level merge is shallow). Idempotent: a list
+ * already there, or any value a person or agent wrote, is left alone.
+ *
+ * @param store - The conf store, narrowed to what this body reads and writes.
+ */
+export function seedUiPanelTabs(store: {
+  get: (key: string) => unknown;
+  set: (key: string, value: unknown) => void;
+}): void {
+  const ui = store.get('ui');
+  if (!ui || typeof ui !== 'object' || Array.isArray(ui) || 'panelTabs' in ui) return;
+  store.set('ui', { ...ui, panelTabs: [] });
 }
 
 /**
@@ -4865,12 +4818,19 @@ export const CONFIG_MIGRATIONS = {
   // v0.111.0 is the newest tag, so this opens 0.112.0. Frozen from merge, for
   // the reason `'0.60.0'` above states; anything further opens `'0.113.0'`.
   //
+  // Disjoint from every other key here: it adds one nested leaf under `ui`,
+  // beside the fields it preserves. See `seedUiPanelTabs`.
+  '0.112.0': seedUiPanelTabs,
+  // v0.111.0 is the newest tag and 0.112.0 has merged (panel tabs above), so
+  // this opens 0.113.0. Frozen from merge, for the reason `'0.60.0'` above
+  // states; anything further opens `'0.114.0'`.
+  //
   // Disjoint from every other key here: it deletes two leaves under `rooms`
   // and touches nothing beside them.
   //
   // `rooms.maxPostsPerTurn` and `rooms.maxCanvasOpsPerTurn` — the per-turn caps
   // on our own agents, retired (ADR 261006-225605, DOR-2739).
-  '0.112.0': dropAgentTurnCaps,
+  '0.113.0': dropAgentTurnCaps,
 } as const;
 
 /**

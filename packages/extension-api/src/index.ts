@@ -63,6 +63,7 @@ export type {
   ExtensionReadableState,
   ExtensionPageProps,
   ExtensionPageOptions,
+  ExtensionTabPlacement,
   ProjectRef,
   StatusBarItemOptions,
   StatusBarSlotContext,

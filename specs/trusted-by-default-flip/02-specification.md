@@ -204,7 +204,7 @@ Cancel window for `connectors.execute_destructive`:
 
 ### 5.7 Config migration (PR4)
 
-Key: the next free key above the newest `v*` tag at landing time (PR2 took `0.102.0`, PR3 takes `0.112.0`). Pin it in `merged-migration-hashes.ts`. Body `applyTrustedPosture(store)` in `config-manager.ts`:
+Key: the next free key above the newest `v*` tag at landing time (PR2 took `0.102.0`, PR3 takes `0.113.0`). Pin it in `merged-migration-hashes.ts`. Body `applyTrustedPosture(store)` in `config-manager.ts`:
 
 1. **Careful intent** = `permissions.preset === 'careful'`, or `preset == null && ui.fullPowerChoice === 'supervised'`. Then: set `preset: 'careful'` if it was `null`, set `ui.trustNoticeSeenAt` to now, change nothing else.
 2. **Otherwise** (`null`, `'balanced'`, `'full'`, or a hand-written unknown):
@@ -250,7 +250,7 @@ Control Center (`widgets/control-center`) shows the posture as "Trusted" or "Car
 
 Operator scope addition, 2026-10-06 (DOR-2753 is cancelled and folded in here).
 
-As built (PR3): the per-turn post and canvas refusals, `ReactionBudget`, `NotifyBudget` (with the `RATE_LIMITED` relay outcome, the escalation `reserveNote` and the `notify_budget` refusal reason) are deleted; the `0.112.0` key (`dropAgentTurnCaps`) removes `rooms.maxPostsPerTurn` and `rooms.maxCanvasOpsPerTurn` from disk, and `tolerateRetiredRoomKeys` lets conf load a file that still has them. The frozen helpers that once seeded them (`seedRoomCanvasOps` under `0.79.0`, `retireToolOnlyReplies` under `0.81.0`) keep their text (the append-only guards hash them) and carry `@ts-expect-error` comments. The tool descriptions for `react_to_room_entry` and `relay_notify_user` no longer say "a limited number per hour". Full power is assumed for agents, tasks and schedules, so the alarm that says so and the caps that apply only to our own agents go.
+As built (PR3): the per-turn post and canvas refusals, `ReactionBudget`, `NotifyBudget` (with the `RATE_LIMITED` relay outcome, the escalation `reserveNote` and the `notify_budget` refusal reason) are deleted; the `0.113.0` key (`dropAgentTurnCaps`) removes `rooms.maxPostsPerTurn` and `rooms.maxCanvasOpsPerTurn` from disk, and `tolerateRetiredRoomKeys` lets conf load a file that still has them. The frozen helpers that once seeded them (`seedRoomCanvasOps` under `0.79.0`, `retireToolOnlyReplies` under `0.81.0`) keep their text (the append-only guards hash them) and carry `@ts-expect-error` comments. The tool descriptions for `react_to_room_entry` and `relay_notify_user` no longer say "a limited number per hour". Full power is assumed for agents, tasks and schedules, so the alarm that says so and the caps that apply only to our own agents go.
 
 Caps removed (each is a refusal that applies to our agents only; none protects against an outsider):
 
