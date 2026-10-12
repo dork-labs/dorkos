@@ -755,3 +755,94 @@ export function setNestedValue(
   }
   current[parts.at(-1)!] = value;
 }
+
+/**
+ * How long a save or a reload waits for the saves ahead of it before going on
+ * without them. A save is a local file write and normally takes milliseconds;
+ * this bound only exists so one hung write cannot stall every later save and
+ * the adapter queue behind it forever.
+ */
+export const CONFIG_SAVE_WAIT_MS = 30_000;
+
+/**
+ * Orders this process's saves of `adapters.json`, so a hot-reload never
+ * replaces the in-memory configs with a read of the file older than them, and
+ * an earlier save never lands on top of a later one.
+ *
+ * The server's own saves set off {@link watchAdapterConfig}, so a reload's read
+ * routinely runs alongside an API edit: add a connection, then delete it at
+ * once. A read that began before the add's save finished returned the file
+ * without the connection, and assigning it dropped the connection until the
+ * next reload, so the delete answered 404. And because a save first moves
+ * secrets into the credential store, two saves started close together could
+ * finish in either order: a slow one holding an older list wrote last and put
+ * a removed connection back on disk.
+ */
+export class AdapterConfigWrites {
+  /** Settles once every save tracked so far has finished, failed or been given up on. */
+  private settled: Promise<void> = Promise.resolve();
+
+  /**
+   * Start with no saves pending.
+   *
+   * @param waitMs - The bound on waiting for earlier saves ({@link CONFIG_SAVE_WAIT_MS}).
+   */
+  constructor(private readonly waitMs = CONFIG_SAVE_WAIT_MS) {}
+
+  /**
+   * Queue a save behind every earlier one. `save` runs only when they are done,
+   * and must write the configs as they are then, not as they were when it was
+   * queued. Every edit of the in-memory configs must queue its save in the same
+   * tick as the edit, with no `await` between them: a save queued during a read
+   * is how {@link reloadInto} knows the read is stale.
+   *
+   * @param save - Writes the current configs.
+   * @returns The save, for the caller to await; its failure is the caller's. A
+   *   handler is already attached, so it may be awaited later without its
+   *   rejection counting as unhandled in the meantime.
+   */
+  track(save: () => Promise<void>): Promise<void> {
+    const write = this.waitForSaves().then(save);
+    this.settled = write.catch(() => undefined);
+    return write;
+  }
+
+  /**
+   * Read the file once no save is pending, read it again if a save was queued
+   * meanwhile, then hand the result to `apply` in the same tick as the last
+   * check, so no edit can land between the check and the assignment.
+   *
+   * @param configPath - Absolute path to adapters.json
+   * @param apply - Replaces the in-memory configs with what was read.
+   */
+  async reloadInto(
+    configPath: string,
+    apply: (loaded: LoadedAdapterConfigs) => void
+  ): Promise<void> {
+    for (;;) {
+      await this.waitForSaves();
+      const before = this.settled;
+      const loaded = await loadAdapterConfig(configPath);
+      if (before === this.settled) return apply(loaded);
+    }
+  }
+
+  /** Wait for the saves queued so far, but never longer than the bound. */
+  private async waitForSaves(): Promise<void> {
+    let timer: NodeJS.Timeout | undefined;
+    const gaveUp = await Promise.race([
+      this.settled.then(() => false),
+      new Promise<boolean>((resolve) => {
+        timer = setTimeout(() => resolve(true), this.waitMs);
+        timer.unref();
+      }),
+    ]);
+    clearTimeout(timer);
+    if (gaveUp) {
+      logger.warn(
+        `[AdapterConfig] A save of adapters.json has not finished after ${this.waitMs} ms; ` +
+          `going on without it. If it finishes later it may overwrite newer settings.`
+      );
+    }
+  }
+}
