@@ -4479,6 +4479,9 @@
           "color": {
             "type": "string"
           },
+          "agentId": {
+            "type": "string"
+          },
           "you": {
             "type": "boolean"
           }

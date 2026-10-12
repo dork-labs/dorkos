@@ -1,6 +1,7 @@
 ---
 covers:
   - 'fix(rooms): a room post in a chat shows who wrote it, never you (DOR-2113)'
+  - "fix(rooms): check a room post's words, read only the first ids line, and cover OpenCode and chat_read (DOR-2113)"
 ---
 
 ### Fixed
