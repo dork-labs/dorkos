@@ -44,7 +44,6 @@
  * staleness that covers them.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import express from 'express';
 import request from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
 import { createTestDb } from '@dorkos/test-utils/db';
@@ -111,7 +110,8 @@ vi.mock('node:fs/promises', async (importOriginal) => {
   };
 });
 
-import { createTasksRouter } from '../../../routes/tasks.js';
+import { createTasksRoutes } from '../../../routes/tasks.js';
+import { honoGroupListener } from '../../../http/__tests__/hono-group-listener.js';
 import { TaskRegistrar } from '../task-registrar.js';
 import { TaskStore } from '../task-store.js';
 import type { TaskSchedulerService } from '../task-scheduler-service.js';
@@ -160,7 +160,6 @@ function createMockScheduler(): TaskSchedulerService {
 }
 
 describe('a task write tells the world it happened', () => {
-  let app: express.Application;
   let store: TaskStore;
   let db: Db;
   let activityService: ActivityService;
@@ -173,19 +172,6 @@ describe('a task write tells the world it happened', () => {
     store = new TaskStore(db);
     activityService = new ActivityService(db);
     const scheduler = createMockScheduler();
-    app = express();
-    app.use(express.json());
-    app.use(
-      '/api/tasks',
-      createTasksRouter(
-        store,
-        scheduler,
-        new TaskRegistrar({ store, scheduler }),
-        DORK_HOME,
-        undefined,
-        activityService
-      )
-    );
 
     const deps = {
       taskStore: store,
@@ -207,7 +193,18 @@ describe('a task write tells the world it happened', () => {
       filePath: '/tmp/tasks/nightly/SKILL.md',
     });
 
-    fixtureTarget.mount(app);
+    fixtureTarget.mount(
+      honoGroupListener({
+        path: '/api/tasks',
+        routes: createTasksRoutes({
+          store,
+          scheduler,
+          registrar: new TaskRegistrar({ store, scheduler }),
+          dorkHome: DORK_HOME,
+          activity: activityService,
+        }),
+      })
+    );
   });
 
   afterEach(() => {

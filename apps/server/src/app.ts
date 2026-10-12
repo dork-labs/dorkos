@@ -16,7 +16,6 @@ import { createRemoteAccessRouter } from './routes/remote-access.js';
 import cloudRoutes from './routes/cloud.js';
 import onboardingRoutes from './routes/onboarding.js';
 import feedbackRoutes, { feedbackJsonParser } from './routes/feedback.js';
-import runtimesRoutes from './routes/runtimes.js';
 import mcpConfigRoutes from './routes/mcp-config.js';
 import debugRoutes from './routes/debug.js';
 import eventsRouter from './routes/events.js';
@@ -201,7 +200,6 @@ export function createApp(options: {
   app.use('/api/cloud', cloudRoutes);
   app.use('/api/onboarding', onboardingRoutes);
   app.use('/api/feedback', feedbackRoutes);
-  app.use('/api/runtimes', runtimesRoutes);
   app.use('/api/events', eventsRouter);
   app.use('/api/mcp-config', mcpConfigRoutes);
   // Diagnostic reads (`GET /api/debug/*`). Mounted here rather than in

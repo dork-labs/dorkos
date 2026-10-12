@@ -60,12 +60,14 @@ import { createNotificationsRoutes } from '../routes/notifications.js';
 import { createPermissionsRoutes, type PermissionsRouterDeps } from '../routes/permissions.js';
 import { createProfileRouter, type ProfileRouterDeps } from '../routes/profile.js';
 import projectRoutes from '../routes/projects.js';
+import { createRuntimesRoutes } from '../routes/runtimes.js';
 import { createPushRoutes, type PushRouterDeps } from '../routes/push.js';
 import readCursorRoutes from '../routes/read-cursors.js';
 import { createSearchRoutes, type SearchRouterDeps } from '../routes/search.js';
 import { createSessionLocationsRoutes } from '../routes/session-locations.js';
 import { createShapesRoutes, type ShapesRouterDeps } from '../routes/shapes.js';
 import subagentRoutes from '../routes/subagents.js';
+import { createTasksRoutes, type TasksRouterDeps } from '../routes/tasks.js';
 import { createSystemRoutes, type SystemRouteDeps } from '../routes/system.js';
 import { createTeamRoutes, type TeamRouterDeps } from '../routes/team.js';
 import { createTemplateRoutes } from '../routes/templates.js';
@@ -129,6 +131,11 @@ export interface ComposedGroupDeps {
   mcpOAuth?: AgentMcpOAuthService;
   /** What agents promised (`/api/commitments`, `/api/agents/:id/commitments`). */
   commitments?: CommitmentRouterDeps;
+  /**
+   * Scheduled tasks and their runs (`/api/tasks`). Only handed over when Tasks
+   * started (`startup/tasks.ts`).
+   */
+  tasks?: TasksRouterDeps;
 }
 
 /** What the moved route groups read from the running server, handed over by `index.ts`. */
@@ -177,6 +184,9 @@ export function createHonoApi(options: HonoApiOptions): Hono<ApiEnv> {
   app.route('/api/diff', diffRoutes);
   app.route('/api/workbench', workbenchServeRoutes);
   app.route('/api/uploads', uploadRoutes);
+  // Always mounted; the account rules inside it record their changes in the
+  // activity feed when it was handed over.
+  app.route('/api/runtimes', createRuntimesRoutes({ activity: deps.activity }));
   if (deps.sessionLocations) {
     app.route('/api/session-locations', createSessionLocationsRoutes(deps.sessionLocations));
   }
@@ -188,6 +198,7 @@ export function createHonoApi(options: HonoApiOptions): Hono<ApiEnv> {
   if (deps.search) app.route('/api/search', createSearchRoutes(deps.search));
   if (deps.activity) app.route('/api/activity', createActivityRoutes(deps.activity));
   if (deps.audit) app.route('/api/audit', createAuditRoutes(deps.audit));
+  if (deps.tasks) app.route('/api/tasks', createTasksRoutes(deps.tasks));
   if (deps.notifications) {
     app.route('/api/notifications', createNotificationsRoutes(deps.notifications));
   }

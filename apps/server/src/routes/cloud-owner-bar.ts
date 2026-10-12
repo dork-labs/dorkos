@@ -21,6 +21,7 @@
  * @module routes/cloud-owner-bar
  */
 import type { Request, Response } from 'express';
+import { expressRequestFacts, type RequestFacts } from '../http/request-facts.js';
 import { refuseUnlessAccountOwner } from '../lib/caller-authority.js';
 
 /** Refusal code when anything but a person asks for a DorkOS account action. */
@@ -42,11 +43,10 @@ export interface AccountOwnerWording {
 
 /** A refusal, worded, or `undefined` when the caller may act. */
 function refusalFor(
-  req: Request,
-  res: Response,
+  caller: RequestFacts,
   wording: AccountOwnerWording
 ): { code: string; message: string } | undefined {
-  const refusal = refuseUnlessAccountOwner(req, res);
+  const refusal = refuseUnlessAccountOwner(caller);
   if (refusal === undefined) return undefined;
   return refusal === 'not-a-person'
     ? { code: PERSON_ONLY_CODE, message: wording.personOnly }
@@ -70,7 +70,7 @@ export function refuseEnvelopeUnlessOwner(
   res: Response,
   wording: AccountOwnerWording
 ): boolean {
-  const refusal = refusalFor(req, res, wording);
+  const refusal = refusalFor(expressRequestFacts(req, res), wording);
   if (refusal === undefined) return false;
   res.status(403).json({ ok: false, ...refusal });
   return true;
@@ -89,8 +89,24 @@ export function refuseErrorUnlessOwner(
   res: Response,
   wording: AccountOwnerWording
 ): boolean {
-  const refusal = refusalFor(req, res, wording);
-  if (refusal === undefined) return false;
-  res.status(403).json({ error: refusal.message, code: refusal.code });
+  const body = errorRefusalUnlessOwner(expressRequestFacts(req, res), wording);
+  if (body === undefined) return false;
+  res.status(403).json(body);
   return true;
+}
+
+/**
+ * The 403 body {@link refuseErrorUnlessOwner} answers with, for a route on the
+ * Hono chain that answers it itself: `c.json(body, 403)`.
+ *
+ * @param caller - The request's facts.
+ * @param wording - What this write says when it refuses.
+ * @returns `{ error, code }`, or `undefined` when the caller owns this install.
+ */
+export function errorRefusalUnlessOwner(
+  caller: RequestFacts,
+  wording: AccountOwnerWording
+): { error: string; code: string } | undefined {
+  const refusal = refusalFor(caller, wording);
+  return refusal === undefined ? undefined : { error: refusal.message, code: refusal.code };
 }

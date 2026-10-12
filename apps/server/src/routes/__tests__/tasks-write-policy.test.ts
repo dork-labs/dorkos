@@ -16,7 +16,6 @@
  * @module routes/__tests__/tasks-write-policy
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import express from 'express';
 import request from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
 import { createTestDb } from '@dorkos/test-utils/db';
@@ -41,6 +40,14 @@ const state = vi.hoisted(() => ({ authEnabled: false }));
  * module scope and could not otherwise see it.
  */
 const DORK_HOME = vi.hoisted(() => '/tmp/dork-test');
+
+// The session gate lets every request through: these cases are about the
+// route's own bars, and each one sets the user the gate would have proved
+// (`before` below), as the Express version stubbed `res.locals.user`.
+vi.mock('../../services/core/auth/session-gate.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../services/core/auth/session-gate.js')>()),
+  decideSessionGate: vi.fn(async () => ({ allowed: true })),
+}));
 
 vi.mock('../../services/core/config-manager.js', () => ({
   configManager: {
@@ -85,7 +92,9 @@ vi.mock('node:fs/promises', async (importOriginal) => {
 });
 
 import { parseSkillFile } from '@dorkos/skills/parser';
-import { createTasksRouter } from '../tasks.js';
+import { createTasksRoutes } from '../tasks.js';
+import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
+import type { AgentIdentity } from '../../services/core/agent-identity/agent-identity-service.js';
 import { TaskRegistrar } from '../../services/tasks/task-registrar.js';
 import { TaskStore } from '../../services/tasks/task-store.js';
 import type { TaskSchedulerService } from '../../services/tasks/task-scheduler-service.js';
@@ -108,7 +117,6 @@ function createMockScheduler(): TaskSchedulerService {
 }
 
 describe('operator-only task fields on the REST routes', () => {
-  let app: express.Application;
   let store: TaskStore;
   let db: Db;
   let existing: Task;
@@ -116,7 +124,7 @@ describe('operator-only task fields on the REST routes', () => {
   /** Stands in for `sessionGate`'s resolved user, when login is on. */
   let signedInUser: { userId: string; credential: 'cookie' | 'api-key' } | undefined;
   /**
-   * Stands in for what `resolveAgentIdentity` leaves on `res.locals` when a
+   * Stands in for what the chain's agent-identity step leaves on `c.var` when a
    * caller presents a token that resolves to a live agent. Set directly rather
    * than by mounting the middleware, because the middleware's own job (hash the
    * token, read the table) is covered in `middleware/__tests__`; what these
@@ -139,19 +147,28 @@ describe('operator-only task fields on the REST routes', () => {
       filePath: '/tmp/tasks/nightly/SKILL.md',
     });
 
-    app = express();
-    app.use(express.json());
-    app.use((_req, res, next) => {
-      if (signedInUser) res.locals.user = signedInUser;
-      if (resolvedAgentIdentity) res.locals.agentIdentity = resolvedAgentIdentity;
-      next();
-    });
-    app.use(
-      '/api/tasks',
-      createTasksRouter(store, scheduler, new TaskRegistrar({ store, scheduler }), DORK_HOME)
+    fixtureTarget.mount(
+      honoGroupListener(
+        {
+          path: '/api/tasks',
+          routes: createTasksRoutes({
+            store,
+            scheduler,
+            registrar: new TaskRegistrar({ store, scheduler }),
+            dorkHome: DORK_HOME,
+          }),
+        },
+        {
+          // Stands in for what the session gate and the agent-identity step resolved.
+          before: (c, next) => {
+            if (signedInUser) c.set('user', signedInUser);
+            if (resolvedAgentIdentity)
+              c.set('agentIdentity', resolvedAgentIdentity as AgentIdentity);
+            return next();
+          },
+        }
+      )
     );
-
-    fixtureTarget.mount(app);
   });
 
   afterEach(() => {

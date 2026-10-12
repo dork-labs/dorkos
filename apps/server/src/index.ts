@@ -3715,10 +3715,14 @@ async function start() {
   );
   logger.info(`[MCP] External MCP server mounted at /mcp (stateless, ${mcpAuthMode})`);
 
-  // Mount Tasks routes if enabled (`startup/tasks.ts`).
+  // `deps` is what the moved Hono routes read (`http/hono-api.ts`), set where
+  // each group used to be mounted on Express.
+  const deps: HonoApiDeps = {};
+
+  // Hand the Tasks routes their deps if enabled (`startup/tasks.ts`).
   ({ schedulerService, taskRegistrar, taskFileWatcher, taskReconciler, attachAgentTaskRoots } =
     await startTasks({
-      app,
+      honoDeps: deps,
       tasksEnabled,
       taskStore,
       dorkHome,
@@ -4016,10 +4020,6 @@ async function start() {
   // this point, and a runtime that cannot produce such a turn omits the hook and
   // subscribes to nothing.
   for (const runtime of runtimeRegistry.listRuntimes()) subscribeRuntimeTurns(runtime);
-
-  // `deps` is what the moved Hono routes read (`http/hono-api.ts`), set where
-  // each group used to be mounted on Express.
-  const deps: HonoApiDeps = {};
 
   // Mesh routes if MeshCore initialized successfully (always-on, ADR-0062)
   // taskStore/relayCore power topology enrichment (relay badges, task counts);

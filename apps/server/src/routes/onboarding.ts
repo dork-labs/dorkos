@@ -4,7 +4,7 @@
  * - `POST /api/onboarding/first-run` records the path picked on the Welcome
  *   screen and sets it up. It saves keys and moves the default runtime, so it
  *   sits behind the same bars as the DorkOS model setup
- *   (`doe-setup-router.ts`): this computer, and a person who owns the install.
+ *   (`routes/runtimes-doe-setup.ts`): this computer, and a person who owns the install.
  * - `POST /api/onboarding/welcome` posts DorkBot's welcome into #team, once.
  *
  * @module routes/onboarding
