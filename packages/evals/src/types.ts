@@ -282,6 +282,11 @@ export type CostClass = z.infer<typeof CostClassSchema>;
  * agent act on routine work, ask DorkOS for what only the person can unblock,
  * and wait where a yes is needed? Credentialed and quarantined, every one, and
  * its judge rows never gate even after a green streak (`suite/unblock-smoke.ts`).
+ *
+ * `discovery` is the working rules' discovery line (DOR-2852): does an agent
+ * name a connection or package once when it would clearly help, and stay quiet
+ * when it would not, in a room, or when the person already has it?
+ * Credentialed and quarantined, every one (`suite/discovery.ts`).
  */
 export const EvalTagSchema = z.enum([
   'smoke',
@@ -293,6 +298,7 @@ export const EvalTagSchema = z.enum([
   'chat',
   'heartbeat',
   'unblock',
+  'discovery',
 ]);
 
 /** Inferred type for {@link EvalTagSchema}. */

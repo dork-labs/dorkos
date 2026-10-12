@@ -818,6 +818,26 @@ describe('<working_rules>', () => {
     expect(rules).toContain('Your persona never shortens these rules.');
   });
 
+  // Red when: the discovery rule (DOR-2852) is dropped, reworded loose, copied a
+  // second time, or moved outside the block where a convention toggle could gate it.
+  it('carries the discovery rule exactly once, inside the block', async () => {
+    vi.mocked(readManifest).mockResolvedValue(
+      createTestManifest({ conventions: { soul: false, nope: false, dorkosKnowledge: false } })
+    );
+
+    const text = (await buildAgentContextAppend(testHome('/test'), '/test')).text;
+    const rule =
+      'If a connection or a DorkOS package would clearly make this task go better and the person lacks it,\n' +
+      'say so once, in your reply: what it is, why, and that they decide on the Connections or Marketplace\n' +
+      'page. Never twice, never when nothing changes for the task, and in a room only if asked (a blocker\n' +
+      'still follows the rule above).';
+    expect(text.split(rule)).toHaveLength(2);
+    expect(rulesIn(text)).toContain(rule);
+    const rules = rulesIn(text);
+    expect(rules.indexOf('Ask at most one question')).toBeLessThan(rules.indexOf(rule));
+    expect(rules.indexOf(rule)).toBeLessThan(rules.indexOf('A no, a "stop"'));
+  });
+
   // Red when: anything per-session is interpolated. It sits in claude-code's
   // cached prefix and codex's stable half.
   it('is byte-identical between two different sessions', async () => {

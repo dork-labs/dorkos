@@ -66,6 +66,7 @@ bill, so it is worth knowing which is which:
 | `chat`         | the same six chat cases, on whichever runtime you point them at | yes, and NOT on a Claude plan       |
 | `heartbeat`    | four seeded beat situations: the right move and the right rung  | yes, credentialed                   |
 | `unblock`      | does the agent act, ask DorkOS for access, or wait for a yes    | yes, credentialed                   |
+| `discovery`    | names a connection or package once when it helps, quiet if not  | yes, credentialed                   |
 | `all`          | everything registered                                           | yes                                 |
 
 ### The `chat` suite, and runs that pay somebody else
