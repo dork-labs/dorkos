@@ -270,7 +270,8 @@ it('gives out a name the host reserved for itself, and a host operator may do it
     201,
     'operator gives out the host’s own name'
   );
-  expect((await created.json()).community.shortName).toBe('our-brand');
+  const ours = await created.json();
+  expect(ours.community.shortName).toBe('our-brand');
   expect(
     (
       await h.pool.query(
@@ -278,6 +279,31 @@ it('gives out a name the host reserved for itself, and a host operator may do it
       )
     ).rows[0].granted_by_host_actor
   ).toMatch(/^person:/);
+  // Abandoning the space takes its record with it, and the name is reserved for everyone again.
+  await expectStatus(
+    await h.call(
+      `/api/v1/host/communities/${ours.community.id}/owner-claims/${ours.ownerClaimGrantId}/revoke`,
+      { cookie: operatorCookie, body: {} }
+    ),
+    204,
+    'revoke the claim'
+  );
+  await expectStatus(
+    await h.call(`/api/v1/host/communities/${ours.community.id}`, {
+      method: 'DELETE',
+      cookie: operatorCookie,
+    }),
+    204,
+    'abandon'
+  );
+  expect(
+    (await h.pool.query("SELECT 1 FROM reserved_name_grants WHERE short_name='our-brand'")).rowCount
+  ).toBe(0);
+  const retaken = await h.call('/api/v1/host/communities', {
+    bearer: everyOtherScopeKey,
+    body: { idempotencyKey: 'our-brand-plain', name: 'Squatter', shortName: 'our-brand' },
+  });
+  expect((await retaken.json()).code).toBe('SHORT_NAME_RESERVED');
 });
 
 it('still reports, and never opens, a reserved name a space took before it was reserved', async () => {

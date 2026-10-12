@@ -117,6 +117,7 @@ const TENANT_TABLES = [
   'read_cursors',
   'removed_file_blobs',
   'reports',
+  'reserved_name_grants',
   'tenant_reconciliation',
 ];
 

@@ -222,7 +222,7 @@ curl -sS https://your-host/api/v1/host/communities/reserved-name \
 
 It answers like any new unclaimed community: an `ownerClaimToken`, shown once. Send its claim link, `https://your-host/claim#claim=<ownerClaimToken>`, to the person who will own the space. They open it and sign in with their own account, and the address starts working once they have claimed it. A retry with the same `idempotencyKey` and body returns the same community without the token; reissue the claim if it was lost. The address can be given out once: a second request for it is refused while any community holds it.
 
-The server keeps a record of each address given out: the address, the community, the reason, and the key or person who gave it. It also writes a `community.create_reserved_name` host audit row. Revoke the key when you are done.
+The server keeps a record of each address given out, for as long as the community holds it: the address, the community, the reason, and the key or person who gave it. It also writes a `community.create_reserved_name` host audit row. Releasing the address, or deleting the community, removes the record with it, and the address goes back to being reserved for everyone. Revoke the key when you are done.
 
 ## Removed messages and files
 
