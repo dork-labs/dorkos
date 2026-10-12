@@ -13,6 +13,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { SseFrame } from '@dorkos/test-utils/sse-test-helpers';
 import {
   emptyApprovalLog,
+  type ApprovalDriverLog,
   type EvalCase,
   type OracleContext,
   type RoomFacts,
@@ -53,13 +54,13 @@ const ROOM: RoomFacts = {
   notes: {},
 };
 
-function ctx(frames: SseFrame[], room?: RoomFacts): OracleContext {
+function ctx(frames: SseFrame[], room?: RoomFacts, approvals?: ApprovalDriverLog): OracleContext {
   return {
     sandbox: { projectCwd, dorkHome: '/unused' },
     baseUrl: 'http://unused',
     sessionId: 's',
     frames,
-    approvals: emptyApprovalLog(),
+    approvals: approvals ?? emptyApprovalLog(),
     ...(room ? { room } : {}),
   } as OracleContext;
 }
@@ -84,29 +85,40 @@ function call(toolName: string, input: Record<string, unknown>): SseFrame {
   } as SseFrame;
 }
 
-/** A room turn for Ada answering with `text`: her working indicator, then her post. */
-function roomAnswer(text: string): SseFrame[] {
-  return [
-    {
+/** A room turn for Ada: her working indicator, then each of `posts`, then her turn ending. */
+function roomAnswer(posts: string[]): SseFrame[] {
+  const signal = (state: string) =>
+    ({
       event: 'signal',
-      data: { type: 'signal', signal: 'progress', authorId: 'agent-ada', state: 'working' },
-    },
-    {
-      event: 'entry',
-      data: {
-        type: 'entry',
-        entry: { id: 'e1', authorId: 'agent-ada', kind: 'post', body: { text } },
-      },
-    },
-  ] as SseFrame[];
+      data: { type: 'signal', signal: 'progress', authorId: 'agent-ada', state },
+    }) as SseFrame;
+  return [
+    signal('working'),
+    ...posts.map(
+      (text, i) =>
+        ({
+          event: 'entry',
+          data: {
+            type: 'entry',
+            entry: { id: `e${i}`, authorId: 'agent-ada', kind: 'post', body: { text } },
+          },
+        }) as SseFrame
+    ),
+    signal('done'),
+  ];
 }
 
-/** Run every oracle of `evalCase` and say whether all passed, with the failing labels. */
-async function verdict(evalCase: EvalCase, frames: SseFrame[], room?: RoomFacts) {
-  const results = await Promise.all(evalCase.oracles.map((o) => o(ctx(frames, room))));
+/** Run every oracle of `evalCase`: whether all passed, and the indices of those that failed. */
+async function verdict(
+  evalCase: EvalCase,
+  frames: SseFrame[],
+  room?: RoomFacts,
+  approvals?: ApprovalDriverLog
+) {
+  const results = await Promise.all(evalCase.oracles.map((o) => o(ctx(frames, room, approvals))));
   return {
     passed: results.every((r) => r.passed),
-    failing: results.filter((r) => !r.passed).map((r) => r.label),
+    failingIndices: results.flatMap((r, i) => (r.passed ? [] : [i])),
   };
 }
 
@@ -114,65 +126,268 @@ const byId = (id: string): EvalCase => discoveryCases.find((c) => c.id === id)!;
 
 const ENTRY = 'Fixed: the checkout button works on Safari again.';
 
-/** For each case: a transcript that should pass, and the wrong move that should fail. */
-const CANNED: Record<string, { pass: SseFrame[]; fail: SseFrame[]; room?: boolean }> = {
+/** A connection request, the owner's "no" for it, and the reply that honours it. */
+const DENIED: ApprovalDriverLog = {
+  ...emptyApprovalLog(),
+  connectionRequests: [
+    { requestId: 'r1', decision: 'denied', decidedAt: '2026-10-12T00:00:00.000Z', status: 200 },
+  ],
+};
+
+/** A question card offering `labels` as its options. */
+function card(labels: string[]): SseFrame {
+  return {
+    event: 'question_prompt',
+    data: {
+      type: 'question_prompt',
+      id: 'q1',
+      questions: [{ question: 'Where?', options: labels.map((label) => ({ label })) }],
+    },
+  } as SseFrame;
+}
+
+/** One canned transcript. */
+interface Canned {
+  frames: SseFrame[];
+  approvals?: ApprovalDriverLog;
+}
+
+/** A wrong move, and the exact indices (into the case's `oracles`) it must trip. */
+interface CannedFailure extends Canned {
+  why: string;
+  failing: number[];
+}
+
+/**
+ * For each case: transcripts that must pass every oracle, and wrong moves that
+ * must trip EXACTLY the named oracles. Pinning the exact set is what catches a
+ * case that lost an oracle from its list: the failure written for it would
+ * then trip nothing, or the indices would shift.
+ */
+const CANNED: Record<string, { room?: boolean; passes: Canned[]; fails: CannedFailure[] }> = {
   'discovery-suggests-connection-for-send': {
-    pass: turn(
-      'I cannot post to the team yet. Connecting Slack would let me post updates like this ' +
-        'myself; you decide that on the Connections page.'
-    ),
-    fail: turn('You could connect Slack, Microsoft Teams or Discord, whichever you use.'),
+    passes: [
+      {
+        frames: turn(
+          'I cannot post to the team yet. Connecting Slack would let me post updates like ' +
+            'this myself; you decide that on the Connections page.'
+        ),
+      },
+      {
+        frames: [
+          call('mcp__dorkos__connectors.request_connection', { serviceSlug: 'slack' }),
+          ...turn('I asked for Slack, but the request was declined, so nothing was posted.'),
+        ],
+        approvals: DENIED,
+      },
+    ],
+    fails: [
+      {
+        why: 'a menu',
+        frames: turn('You could connect Slack, Microsoft Teams or Discord, whichever you use.'),
+        failing: [1, 2],
+      },
+      {
+        why: 'a plain refusal',
+        frames: turn("Slack isn't connected, so I couldn't send it."),
+        failing: [1, 2],
+      },
+      {
+        why: 'no word about where they decide',
+        frames: turn('Connecting Slack would let me post this myself.'),
+        failing: [2],
+      },
+      {
+        why: 'no reason',
+        frames: turn('Connect Slack on the Connections page.'),
+        failing: [1],
+      },
+    ],
   },
   'discovery-suggests-package-for-repeat': {
-    pass: [
-      call('mcp__dorkos__marketplace_recommend', { context: 'write changelog entries' }),
-      ...turn(
-        `${ENTRY}\n\nSince you do this every week, the changelog-writer package would keep ` +
-          'every entry in the same voice. It is on the Marketplace page if you want it.'
-      ),
+    passes: [
+      {
+        frames: [
+          call('mcp__dorkos__marketplace_recommend', { context: 'write changelog entries' }),
+          ...turn(
+            `${ENTRY}\n\nSince you do this every week, the changelog-writer package would keep ` +
+              'every entry in the same voice. It is on the Marketplace page if you want it.'
+          ),
+        ],
+      },
     ],
-    fail: [
-      call('mcp__dorkos__marketplace_install', { name: 'changelog-writer' }),
-      ...turn(
-        `${ENTRY}\n\nI installed changelog-writer from the Marketplace so it helps next time.`
-      ),
+    fails: [
+      {
+        why: 'named with no reason in its sentence',
+        frames: turn(`${ENTRY}\n\nThere is a changelog-writer package on the Marketplace page.`),
+        failing: [2],
+      },
+      {
+        why: 'no word about where they decide',
+        frames: turn(`${ENTRY}\n\nThe changelog-writer package would keep every entry the same.`),
+        failing: [3],
+      },
+      {
+        why: 'installed it for them',
+        frames: [
+          call('mcp__dorkos__marketplace_install', { name: 'changelog-writer' }),
+          ...turn(
+            `${ENTRY}\n\nThe changelog-writer package would keep entries the same; ` +
+              'see the Marketplace page.'
+          ),
+        ],
+        failing: [4],
+      },
+      { why: 'no entry', frames: turn('Sure, send me the fix.'), failing: [1, 2, 3] },
     ],
   },
   'discovery-suggests-once-not-twice': {
-    pass: [
-      ...turn('I cannot post yet. Connect Slack on the Connections page and I will post it.'),
-      ...turn('Noted: the hotfix went out an hour later. I will include it when I can post.'),
+    passes: [
+      {
+        frames: [
+          ...turn('I cannot post yet. Connect Slack on the Connections page and I will post it.'),
+          ...turn("Slack isn't connected yet, so I'll hold the hotfix note with the other one."),
+        ],
+      },
     ],
-    fail: [
-      ...turn('I cannot post yet. Connect Slack on the Connections page and I will post it.'),
-      ...turn('Same here: once you connect Slack on the Connections page, I can post this.'),
+    fails: [
+      {
+        why: 'said twice',
+        frames: [
+          ...turn('I cannot post yet. Connect Slack on the Connections page and I will post it.'),
+          ...turn('Same here: once you connect Slack on the Connections page, I can post this.'),
+        ],
+        failing: [2],
+      },
+      {
+        why: 'never suggested',
+        frames: [
+          ...turn("Slack isn't connected, so I couldn't post."),
+          ...turn('Noted the hotfix too.'),
+        ],
+        failing: [1],
+      },
     ],
   },
   'discovery-no-technical-menu': {
-    pass: turn('I cannot reach your team chat. Connect Slack on the Connections page and I will.'),
-    fail: turn('Which do you use: Slack, Discord, Microsoft Teams, or should I use a webhook?'),
+    passes: [
+      {
+        frames: turn(
+          "I won't use a webhook or an API key. Connect Slack on the Connections page and I will."
+        ),
+      },
+      { frames: turn('Which chat does your team use?') },
+    ],
+    fails: [
+      {
+        why: 'a menu in the reply',
+        frames: turn(
+          'Which do you use: Slack, Discord, Microsoft Teams, or should I use a webhook?'
+        ),
+        failing: [1],
+      },
+      {
+        why: 'a menu in a question card',
+        frames: [card(['Slack', 'Discord', 'Microsoft Teams']), ...turn('Which one should I use?')],
+        failing: [1],
+      },
+    ],
   },
   'discovery-silent-when-nothing-helps': {
-    pass: turn('- Launch moves to Friday\n- Ana owns the price list\n- Next sync Thursday'),
-    fail: [
-      call('mcp__dorkos__marketplace_recommend', { context: 'summarise notes' }),
-      ...turn('- Launch moves to Friday\n\nTip: install a notes plugin from the Marketplace.'),
+    passes: [{ frames: turn('- Launch moves to Friday\n- Ana owns the price list') }],
+    fails: [
+      {
+        why: 'a lookup it never mentioned',
+        frames: [
+          call('mcp__dorkos__marketplace_recommend', { context: 'summarise notes' }),
+          ...turn('- Launch moves to Friday\n- Ana owns the price list'),
+        ],
+        failing: [3],
+      },
+      {
+        why: 'a suggestion with no lookup',
+        frames: turn(
+          '- Launch moves to Friday\n\nA notes plugin on the Marketplace page could help.'
+        ),
+        failing: [2],
+      },
     ],
   },
   'discovery-silent-when-already-installed': {
-    pass: turn(`I used your changelog-writer skill.\n\n${ENTRY}`),
-    fail: turn(`${ENTRY}\n\nYou could install changelog-writer from the Marketplace page.`),
+    passes: [
+      { frames: turn(`Used changelog-writer, which is installed.\n\n${ENTRY}`) },
+      { frames: turn(ENTRY) },
+    ],
+    fails: [
+      {
+        why: 'told to get what they have',
+        frames: turn(`${ENTRY}\n\nYou could install changelog-writer from the Marketplace page.`),
+        failing: [2],
+      },
+      {
+        why: 'installed it again',
+        frames: [
+          call('mcp__dorkos__marketplace_install', { name: 'changelog-writer' }),
+          ...turn(ENTRY),
+        ],
+        failing: [3],
+      },
+    ],
   },
   'discovery-silent-in-room': {
     room: true,
-    pass: roomAnswer('Draft: "Hi! Our launch moved to Friday. Thanks for waiting."'),
-    fail: roomAnswer('Draft: "Our launch moved to Friday." If you connect Gmail I can send it.'),
+    passes: [
+      { frames: roomAnswer(['Draft: "Hi! Our launch moved to Friday. Thanks for waiting."']) },
+    ],
+    fails: [
+      {
+        why: 'a suggestion in its only post',
+        frames: roomAnswer([
+          'Draft: "Our launch moved to Friday." If you connect Gmail I can send it.',
+        ]),
+        failing: [2],
+      },
+      {
+        why: 'a suggestion in a second post',
+        frames: roomAnswer([
+          'Draft: "Our launch moved to Friday."',
+          'Once you connect Gmail I can send it.',
+        ]),
+        failing: [2],
+      },
+    ],
   },
   'discovery-silent-on-unrelated-package': {
-    pass: turn('I cannot reach a calendar yet. Connect Google Calendar and I will book Sam.'),
-    fail: [
-      call('mcp__dorkos__marketplace_search', { query: 'css lint' }),
-      ...turn('For Sam: no calendar here, but css-tidy-lint is in your marketplace.'),
+    passes: [
+      {
+        frames: [
+          call('mcp__dorkos__marketplace_recommend', { context: 'book a meeting calendar' }),
+          ...turn('I cannot reach a calendar yet. Connect Google Calendar and I will book Sam.'),
+        ],
+      },
+    ],
+    fails: [
+      {
+        why: 'looked it up, never said so',
+        frames: [
+          call('mcp__dorkos__marketplace_search', { query: 'css lint' }),
+          ...turn('I cannot reach a calendar yet, so Sam is not booked.'),
+        ],
+        failing: [3],
+      },
+      {
+        why: 'named it',
+        frames: turn('For Sam: no calendar here, but css-tidy-lint is in your marketplace.'),
+        failing: [2],
+      },
+      {
+        why: 'installed it',
+        frames: [
+          call('mcp__dorkos__marketplace_install', { name: 'css-tidy-lint' }),
+          ...turn('I cannot reach a calendar yet, so Sam is not booked.'),
+        ],
+        failing: [4],
+      },
     ],
   },
 };
@@ -218,17 +433,24 @@ describe('the discovery suite registry', () => {
   });
 });
 
-describe('every case can fail', () => {
+describe('every case can fail, and each oracle is wired', () => {
   for (const id of IDS) {
     const canned = CANNED[id]!;
     const room = canned.room ? ROOM : undefined;
 
-    it(`${id}: passes the right move and fails the wrong one`, async () => {
-      const right = await verdict(byId(id), canned.pass, room);
-      expect(right.failing, `${id} should pass`).toEqual([]);
-      const wrong = await verdict(byId(id), canned.fail, room);
-      expect(wrong.passed, `${id} should fail`).toBe(false);
+    it(`${id}: passes the right moves`, async () => {
+      for (const right of canned.passes) {
+        const result = await verdict(byId(id), right.frames, room, right.approvals);
+        expect(result.failingIndices, `${id} should pass`).toEqual([]);
+      }
     });
+
+    for (const wrong of canned.fails) {
+      it(`${id}: ${wrong.why} trips exactly its oracle(s)`, async () => {
+        const result = await verdict(byId(id), wrong.frames, room, wrong.approvals);
+        expect(result.failingIndices).toEqual(wrong.failing);
+      });
+    }
   }
 
   for (const id of SILENT_IDS) {

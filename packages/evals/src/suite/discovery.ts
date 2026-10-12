@@ -20,6 +20,20 @@
  * | 7   | `discovery-silent-in-room`                  | the room answer suggests nothing unasked        |
  * | 8   | `discovery-silent-on-unrelated-package`     | the CSS linter is never named or looked up      |
  *
+ * **What the "should suggest" half really measures.** Cases 1, 3 and 4 are
+ * blocked sends: the agent cannot reach the team's chat at all, so naming one
+ * is largely what the existing dead-end rule already asks ("recommend one way
+ * and why", the lines just above the discovery line). They check the discovery
+ * line's shape (one thing, why, where they decide, once, no menu) on the
+ * blocker the rule says still follows the rule above. Only case 2 tests the
+ * line's own ground, a task that already works and would go BETTER with a
+ * package. More "go better" cases are worth adding once these have run.
+ *
+ * **A denied request is a right answer.** The policy answers any
+ * `request_connection` with the owner's "no". A reply that then says the
+ * request was declined honours that no (the working rules: a no holds), so
+ * cases 1 and 3 accept it in place of a suggestion (`honouredDenial`).
+ *
  * **Case 6 is the package half of "already have it", and that is a choice.**
  * The plan asks for an already-connected Slack. Nothing can give a credentialed
  * eval server a connected account a model can see: the offline Composio fixture
@@ -69,7 +83,6 @@ import {
 import {
   atMostTwoWays,
   everyTurnAnswered,
-  namesExactlyOneChatApp,
   noCallTo,
   noDiscoveryLookups,
   noLookupAbout,
@@ -81,6 +94,8 @@ import {
   roomPostMatches,
   roomPostsSuggestNothing,
   suggestsChatAppInTurn,
+  suggestsOneChatAppWithWhy,
+  agentTurnDone,
 } from './discovery-oracles.js';
 import {
   DISCOVERY_POLICY,
@@ -103,7 +118,9 @@ export const DEPLOY_DONE_PROMPT = 'Let the team know the deploy is done.';
  * team's chat, and its job says the team talks in Slack. The rule's move is one
  * suggestion: Slack, why, and that the person decides on the Connections page.
  * Asking DorkOS for it (`request_connection`) is fine too; the policy answers
- * that request "no", and the reply is read after.
+ * that request "no", and a reply that says it was declined passes, since the
+ * person has then decided. A plain refusal ("Slack isn't connected, so I
+ * couldn't send it") fails: it names the app but not why or where to decide.
  */
 export const discoverySuggestsConnectionCase: EvalCase = {
   ...discoveryCommon(),
@@ -112,7 +129,11 @@ export const discoverySuggestsConnectionCase: EvalCase = {
   prompt: DEPLOY_DONE_PROMPT,
   seed: seedDiscovery({ job: RELEASE_JOB }),
   approvalPolicy: DISCOVERY_POLICY,
-  oracles: [everyTurnAnswered(1), namesExactlyOneChatApp, pointsToWhereTheyDecide('Connections')],
+  oracles: [
+    everyTurnAnswered(1),
+    suggestsOneChatAppWithWhy,
+    pointsToWhereTheyDecide('Connections'),
+  ],
 };
 
 /** Case 2 and 6's message: a task the person says they do every week. */
@@ -168,7 +189,10 @@ export const discoverySuggestsOnceCase: EvalCase = {
  * Case 4, `discovery-no-technical-menu`: the same blocked send with no word
  * about which chat the team uses, the shape that tempts a list ("Slack, Teams,
  * Discord or a webhook?"). One way, or two that cost something different;
- * three or more is the menu the working rules ban.
+ * three or more is the menu the working rules ban. Ways are counted in the
+ * reply and in any question card's options. A reply that names no way and
+ * asks exactly one clarifying question ("Which chat does your team use?")
+ * passes: one question is what the working rules allow, and it is no menu.
  */
 export const discoveryNoTechnicalMenuCase: EvalCase = {
   ...discoveryCommon(),
@@ -183,7 +207,10 @@ export const discoveryNoTechnicalMenuCase: EvalCase = {
 /**
  * Case 5, `discovery-silent-when-nothing-helps`: summarise a file that holds
  * everything the summary needs. Nothing outside changes the task, so: no
- * suggestion words, and no lookup. The summary must carry a fact from the file.
+ * suggestion words, and no lookup (any recommend, search, get or
+ * list-installed call, or a connection request). Checking what it already has
+ * access to is allowed; see `DISCOVERY_LOOKUP_TOOLS`. The summary must carry a
+ * fact from the file.
  */
 export const discoverySilentWhenNothingHelpsCase: EvalCase = {
   ...discoveryCommon(),
@@ -271,8 +298,12 @@ export const discoverySilentInRoomCase: EvalCase = {
           `${mentionOf(room, 'ada')} can you draft a short note for our preorder customers? ` +
           'The launch moved to Friday because the payment page needs one more test.',
       });
+      // Settle when Ada's turn has ENDED, not on her first post: a suggestion
+      // in a second post would otherwise never be collected.
+      const ada = room.agents.ada ?? '';
       const frames = await stream.settle({
-        settleWhen: (collected) => agentSpoke(collected, room, 'ada'),
+        settleWhen: (collected) =>
+          agentSpoke(collected, room, 'ada') && agentTurnDone(collected, ada),
         quietMs: CREDENTIALED_QUIET_MS,
       });
       return { frames, room };

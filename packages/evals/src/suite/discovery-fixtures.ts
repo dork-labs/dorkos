@@ -62,7 +62,12 @@ export const FIXTURE_PACKAGES: Record<string, FixturePackage> = {
   },
   [UNRELATED_PACKAGE]: {
     name: UNRELATED_PACKAGE,
-    description: 'Lints and tidies CSS files and Tailwind class lists, and flags unused selectors.',
+    // "order" is shared with case 8's prompt on purpose: the keyword scorer behind
+    // `marketplace_recommend` then really offers this package for "book a
+    // meeting … the Q4 order", which is the over-match the case is about.
+    description:
+      'Lints and tidies CSS files and Tailwind class lists: puts rules in a consistent order ' +
+      'and flags unused selectors.',
     tags: ['css', 'lint', 'stylesheet', 'tailwind'],
     skill: {
       name: 'tidying-css',
@@ -134,7 +139,9 @@ async function writePackageTree(dir: string, pkg: FixturePackage): Promise<void>
  * `${dorkHome}/marketplaces.json` (which also keeps the production sources out,
  * since those are seeded only when the file is absent), and each package as a
  * relative-path plugin beside its `marketplace.json`. The same shape as the
- * `marketplace-search-and-install` case's fixture (`suite/operate.ts`).
+ * `marketplace-search-and-install` case's fixture (`suite/operate.ts`). With
+ * no names it writes `sources: []`, so the case has no marketplace at all and
+ * no lookup can reach the network.
  *
  * @param sandbox - The eval sandbox.
  * @param names - Which of {@link FIXTURE_PACKAGES} to list.
@@ -143,6 +150,10 @@ export async function seedMarketplace(
   sandbox: EvalSandbox,
   names: readonly string[]
 ): Promise<void> {
+  if (names.length === 0) {
+    await writeJson(path.join(sandbox.dorkHome, 'marketplaces.json'), { version: 1, sources: [] });
+    return;
+  }
   const root = path.join(sandbox.dorkHome, 'eval-fixtures', 'discovery-marketplace');
   const listed = names.map((name) => FIXTURE_PACKAGES[name]!);
   for (const pkg of listed) await writePackageTree(path.join(root, pkg.name), pkg);
@@ -198,7 +209,9 @@ export function seedDiscovery(opts: {
 }): (sandbox: EvalSandbox) => Promise<void> {
   return async (sandbox) => {
     await writeDiscoveryAgent(sandbox, 'assistant', opts.job);
-    if (opts.marketplace) await seedMarketplace(sandbox, opts.marketplace);
+    // Always written: with no file, the server seeds the public marketplaces,
+    // and a case would then reach the live network (as governance.ts does).
+    await seedMarketplace(sandbox, opts.marketplace ?? []);
     for (const name of opts.installed ?? []) await seedInstalledPackage(sandbox, name);
     for (const [relative, content] of Object.entries(opts.files ?? {})) {
       const target = path.join(sandbox.projectCwd, relative);
