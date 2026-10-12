@@ -2,6 +2,8 @@
 covers:
   - 'fix(server): an agent offers the ways to connect an app DorkOS cannot reach yet (FB-57)'
   - "fix(server): the owner's answer to an unwaited request reaches the chat at once (FB-57)"
+  - 'refactor(server): move the elsewhere note out of the request service (FB-57)'
+  - 'chore(changelog): fold the FB-57 fragments into one'
 ---
 
 ### Fixed
