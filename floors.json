@@ -1,6 +1,6 @@
 {
  "schema": 1,
- "updated_at": "2026-10-05T12:14:43.618Z",
+ "updated_at": "2026-10-12T12:58:06.765Z",
  "slos": {
   "headroom": {
    "floor": {
@@ -17,6 +17,10 @@
     },
     {
      "week": "2026-W40",
+     "status": "breach"
+    },
+    {
+     "week": "2026-W41",
      "status": "breach"
     }
    ],
@@ -38,13 +42,17 @@
     {
      "week": "2026-W40",
      "status": "ok"
+    },
+    {
+     "week": "2026-W41",
+     "status": "breach"
     }
    ],
    "moved": []
   },
   "wasted-queue-builds": {
    "floor": {
-    "share": 0.2
+    "share": 0.115
    },
    "weeks": [
     {
@@ -58,9 +66,21 @@
     {
      "week": "2026-W40",
      "status": "ok"
+    },
+    {
+     "week": "2026-W41",
+     "status": "ok"
     }
    ],
-   "moved": []
+   "moved": [
+    {
+     "week": "2026-W41",
+     "stat": "share",
+     "from": 0.2,
+     "to": 0.115,
+     "why": "4 consecutive weeks met or ok: tightened halfway to the objective"
+    }
+   ]
   },
   "flaky-test-runs": {
    "floor": {},
@@ -75,6 +95,10 @@
     },
     {
      "week": "2026-W40",
+     "status": "unmeasured"
+    },
+    {
+     "week": "2026-W41",
      "status": "unmeasured"
     }
    ],
@@ -96,13 +120,17 @@
     {
      "week": "2026-W40",
      "status": "breach"
+    },
+    {
+     "week": "2026-W41",
+     "status": "breach"
     }
    ],
    "moved": []
   },
   "review-completes": {
    "floor": {
-    "share": 0.9
+    "share": 0.945
    },
    "weeks": [
     {
@@ -116,9 +144,21 @@
     {
      "week": "2026-W40",
      "status": "ok"
+    },
+    {
+     "week": "2026-W41",
+     "status": "ok"
     }
    ],
-   "moved": []
+   "moved": [
+    {
+     "week": "2026-W41",
+     "stat": "share",
+     "from": 0.9,
+     "to": 0.945,
+     "why": "4 consecutive weeks met or ok: tightened halfway to the objective"
+    }
+   ]
   },
   "review-recovery": {
    "floor": {
@@ -135,6 +175,10 @@
     },
     {
      "week": "2026-W40",
+     "status": "insufficient"
+    },
+    {
+     "week": "2026-W41",
      "status": "insufficient"
     }
    ],
@@ -156,6 +200,10 @@
     {
      "week": "2026-W40",
      "status": "ok"
+    },
+    {
+     "week": "2026-W41",
+     "status": "ok"
     }
    ],
    "moved": []
@@ -176,6 +224,10 @@
     {
      "week": "2026-W40",
      "status": "breach"
+    },
+    {
+     "week": "2026-W41",
+     "status": "ok"
     }
    ],
    "moved": []
@@ -195,6 +247,10 @@
     },
     {
      "week": "2026-W40",
+     "status": "breach"
+    },
+    {
+     "week": "2026-W41",
      "status": "breach"
     }
    ],
@@ -216,6 +272,10 @@
     {
      "week": "2026-W40",
      "status": "ok"
+    },
+    {
+     "week": "2026-W41",
+     "status": "ok"
     }
    ],
    "moved": []
@@ -236,6 +296,10 @@
     },
     {
      "week": "2026-W40",
+     "status": "met"
+    },
+    {
+     "week": "2026-W41",
      "status": "met"
     }
    ],
