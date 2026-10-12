@@ -1,5 +1,4 @@
 /** @vitest-environment node */
-import express from 'express';
 import request from '@dorkos/test-utils/supertest';
 import { listeningServer } from '@dorkos/test-utils/listening-server';
 import type { CommunityRef } from '@dorkos/shared/community-adapter';
@@ -68,13 +67,13 @@ vi.mock('../../services/communities/remote/state.js', () => ({
   }),
 }));
 
-import { createRemoteCommunitiesRouter } from '../remote-communities.js';
+import { createRemoteCommunitiesRoutes } from '../remote-communities.js';
+import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
 import { PinnedHttpError } from '../../services/communities/remote/pinned-origin.js';
 
-const instance = express();
-instance.use(express.json());
-instance.use('/api/communities', createRemoteCommunitiesRouter());
-const server = listeningServer(instance);
+const server = listeningServer(
+  honoGroupListener({ path: '/api/communities', routes: createRemoteCommunitiesRoutes() })
+);
 const base = `/api/communities/${fixture.ref}`;
 
 describe('a person’s own conduct in a space, through this computer', () => {

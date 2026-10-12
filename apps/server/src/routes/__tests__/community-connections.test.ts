@@ -1,9 +1,8 @@
 import { mkdtemp, rm } from 'node:fs/promises';
 import { once } from 'node:events';
-import type { Server } from 'node:http';
+import { createServer, type Server } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import express from 'express';
 import request from '@dorkos/test-utils/supertest';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { CommunityConnectionDescriptor } from '@dorkos/shared/community-connections';
@@ -23,6 +22,10 @@ vi.mock('../../services/rooms/index.js', () => ({
 vi.mock('../../services/core/auth/index.js', () => ({
   readOwnerAccount: () => ({ id: owner.id }),
 }));
+// The `/api` chain these routes run behind reads login and the host allowlist from config.
+vi.mock('../../services/core/config-manager.js', () => ({
+  configManager: { get: vi.fn(() => undefined) },
+}));
 vi.mock('../../lib/caller-authority.js', () => ({
   isLocalCaller: () => true,
   requireOperatorCookieUnderLogin: () => undefined,
@@ -38,7 +41,8 @@ vi.mock('../../services/communities/remote/state.js', () => ({
   getRemoteWakePolicy: vi.fn(),
 }));
 
-import { createCommunityConnectionsRouter } from '../community-connections.js';
+import { createCommunityConnectionsRoutes } from '../community-connections.js';
+import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
 import { RemoteConnectionStore } from '../../services/communities/remote/connection-store.js';
 import {
   RemoteCommunityRateLimitedError,
@@ -61,7 +65,6 @@ import {
 } from '../../services/communities/remote/community-attention-cache.js';
 
 let directory: string;
-let app: ReturnType<typeof express>;
 let server: Server;
 const ref = CommunityRefSchema.parse('remote_owner_a');
 const navigation = {
@@ -92,13 +95,15 @@ beforeAll(async () => {
     },
     'private-verifier'
   );
-  app = express();
-  app.use(express.json());
-  app.use(
-    '/api/community-connections',
-    createCommunityConnectionsRouter(new RemoteCommunityPairingService(store), navigation as never)
-  );
-  server = app.listen(0, '127.0.0.1');
+  server = createServer(
+    honoGroupListener({
+      path: '/api/community-connections',
+      routes: createCommunityConnectionsRoutes(
+        new RemoteCommunityPairingService(store),
+        navigation as never
+      ),
+    })
+  ).listen(0, '127.0.0.1');
   await once(server, 'listening');
 });
 afterAll(async () => {
@@ -118,13 +123,12 @@ describe('local connection route authority and public projection', () => {
     vi.spyOn(selectionService, 'start').mockRejectedValue(
       new RemoteCommunitySelectionRequiredError()
     );
-    const selectionApp = express();
-    selectionApp.use(express.json());
-    selectionApp.use(
-      '/api/community-connections',
-      createCommunityConnectionsRouter(selectionService)
-    );
-    const selectionServer = selectionApp.listen(0, '127.0.0.1');
+    const selectionServer = createServer(
+      honoGroupListener({
+        path: '/api/community-connections',
+        routes: createCommunityConnectionsRoutes(selectionService),
+      })
+    ).listen(0, '127.0.0.1');
     await once(selectionServer, 'listening');
     try {
       const response = await request(selectionServer)
@@ -146,10 +150,12 @@ describe('local connection route authority and public projection', () => {
     const busyDirectory = await mkdtemp(join(tmpdir(), 'busy-'));
     const busyService = new RemoteCommunityPairingService(new RemoteConnectionStore(busyDirectory));
     vi.spyOn(busyService, 'poll').mockRejectedValue(new RemotePairingBusyError());
-    const busyApp = express();
-    busyApp.use(express.json());
-    busyApp.use('/api/community-connections', createCommunityConnectionsRouter(busyService));
-    const busyServer = busyApp.listen(0, '127.0.0.1');
+    const busyServer = createServer(
+      honoGroupListener({
+        path: '/api/community-connections',
+        routes: createCommunityConnectionsRoutes(busyService),
+      })
+    ).listen(0, '127.0.0.1');
     await once(busyServer, 'listening');
     try {
       const response = await request(busyServer)
@@ -172,10 +178,12 @@ describe('local connection route authority and public projection', () => {
       new RemoteConnectionStore(upgradeDirectory)
     );
     vi.spyOn(upgradeService, 'start').mockRejectedValue(new RemoteCommunityUpgradeRequiredError());
-    const upgradeApp = express();
-    upgradeApp.use(express.json());
-    upgradeApp.use('/api/community-connections', createCommunityConnectionsRouter(upgradeService));
-    const upgradeServer = upgradeApp.listen(0, '127.0.0.1');
+    const upgradeServer = createServer(
+      honoGroupListener({
+        path: '/api/community-connections',
+        routes: createCommunityConnectionsRoutes(upgradeService),
+      })
+    ).listen(0, '127.0.0.1');
     await once(upgradeServer, 'listening');
     try {
       const response = await request(upgradeServer)
@@ -199,10 +207,12 @@ describe('local connection route authority and public projection', () => {
     const nameDirectory = await mkdtemp(join(tmpdir(), 'community-connections-name-'));
     const nameService = new RemoteCommunityPairingService(new RemoteConnectionStore(nameDirectory));
     vi.spyOn(nameService, 'start').mockRejectedValue(new RemoteCommunityNameNotFoundError());
-    const nameApp = express();
-    nameApp.use(express.json());
-    nameApp.use('/api/community-connections', createCommunityConnectionsRouter(nameService));
-    const nameServer = nameApp.listen(0, '127.0.0.1');
+    const nameServer = createServer(
+      honoGroupListener({
+        path: '/api/community-connections',
+        routes: createCommunityConnectionsRoutes(nameService),
+      })
+    ).listen(0, '127.0.0.1');
     await once(nameServer, 'listening');
     try {
       const response = await request(nameServer)
@@ -229,10 +239,12 @@ describe('local connection route authority and public projection', () => {
     vi.spyOn(limitedService, 'start')
       .mockRejectedValueOnce(new RemoteCommunityRateLimitedError(17))
       .mockRejectedValueOnce(new RemoteCommunityRateLimitedError());
-    const limitedApp = express();
-    limitedApp.use(express.json());
-    limitedApp.use('/api/community-connections', createCommunityConnectionsRouter(limitedService));
-    const limitedServer = limitedApp.listen(0, '127.0.0.1');
+    const limitedServer = createServer(
+      honoGroupListener({
+        path: '/api/community-connections',
+        routes: createCommunityConnectionsRoutes(limitedService),
+      })
+    ).listen(0, '127.0.0.1');
     await once(limitedServer, 'listening');
     try {
       const response = await request(limitedServer)
@@ -273,13 +285,12 @@ describe('local connection route authority and public projection', () => {
     const reservedService = new RemoteCommunityPairingService(
       new RemoteConnectionStore(reservedDirectory)
     );
-    const reservedApp = express();
-    reservedApp.use(express.json());
-    reservedApp.use(
-      '/api/community-connections',
-      createCommunityConnectionsRouter(reservedService)
-    );
-    const reservedServer = reservedApp.listen(0, '127.0.0.1');
+    const reservedServer = createServer(
+      honoGroupListener({
+        path: '/api/community-connections',
+        routes: createCommunityConnectionsRoutes(reservedService),
+      })
+    ).listen(0, '127.0.0.1');
     await once(reservedServer, 'listening');
     try {
       const response = await request(reservedServer)
@@ -353,9 +364,12 @@ describe('local connection route authority and public projection', () => {
     );
     const agents = [{ localAgentId: 'scout-local', displayName: 'Scout' }];
     const read = vi.spyOn(impactService, 'disconnectImpact').mockResolvedValue({ agents });
-    const impactApp = express();
-    impactApp.use('/api/community-connections', createCommunityConnectionsRouter(impactService));
-    const impactServer = impactApp.listen(0, '127.0.0.1');
+    const impactServer = createServer(
+      honoGroupListener({
+        path: '/api/community-connections',
+        routes: createCommunityConnectionsRoutes(impactService),
+      })
+    ).listen(0, '127.0.0.1');
     await once(impactServer, 'listening');
     const answered = await request(impactServer)
       .get(`/api/community-connections/${ref}/disconnect-impact`)
@@ -496,9 +510,12 @@ describe('owner-scoped attention projection', () => {
     const service = new RemoteCommunityPairingService(new RemoteConnectionStore(directory));
     vi.spyOn(service, 'list').mockResolvedValue(listed);
     vi.spyOn(service, 'status').mockResolvedValue(connection);
-    const testApp = express();
-    testApp.use('/api/community-connections', createCommunityConnectionsRouter(service));
-    const testServer = testApp.listen(0, '127.0.0.1');
+    const testServer = createServer(
+      honoGroupListener({
+        path: '/api/community-connections',
+        routes: createCommunityConnectionsRoutes(service),
+      })
+    ).listen(0, '127.0.0.1');
     await once(testServer, 'listening');
     try {
       return await request(testServer).get(path).set('x-test-author', 'author-a');
@@ -646,16 +663,16 @@ describe('attention within a budget, with last confirmed counts as the fallback'
       listed = listed.filter((item) => item.ref !== target);
       return { remoteRevoked: true, agentsNotRemoved: [] };
     });
-    const testApp = express();
-    testApp.use(
-      '/api/community-connections',
-      createCommunityConnectionsRouter(
-        service,
-        navigation as never,
-        new CommunityAttentionCache(budgetMs)
-      )
-    );
-    testServer = testApp.listen(0, '127.0.0.1');
+    testServer = createServer(
+      honoGroupListener({
+        path: '/api/community-connections',
+        routes: createCommunityConnectionsRoutes(
+          service,
+          navigation as never,
+          new CommunityAttentionCache(budgetMs)
+        ),
+      })
+    ).listen(0, '127.0.0.1');
     await once(testServer, 'listening');
   }
 
@@ -1004,20 +1021,19 @@ describe('who may wake agents in a space is the owner’s call', () => {
       },
     });
     policy = new RemoteWakePolicy(store);
-    const wakeApp = express();
-    wakeApp.use(express.json());
-    wakeApp.use(
-      '/api/community-connections',
-      createCommunityConnectionsRouter(
-        new RemoteCommunityPairingService(store),
-        navigation as never,
-        undefined,
-        undefined,
-        undefined,
-        policy
-      )
-    );
-    wakeServer = wakeApp.listen(0, '127.0.0.1');
+    wakeServer = createServer(
+      honoGroupListener({
+        path: '/api/community-connections',
+        routes: createCommunityConnectionsRoutes(
+          new RemoteCommunityPairingService(store),
+          navigation as never,
+          undefined,
+          undefined,
+          undefined,
+          policy
+        ),
+      })
+    ).listen(0, '127.0.0.1');
     await once(wakeServer, 'listening');
   });
   afterAll(async () => {
@@ -1111,20 +1127,19 @@ describe('where agents answer without a mention is the owner’s call', () => {
     });
     const answerIn = new RemoteAnswerIn(new AnswerInStore(answerDirectory, store), store);
     policy = new RemoteWakePolicy(store, [], undefined, answerIn);
-    const answerApp = express();
-    answerApp.use(express.json());
-    answerApp.use(
-      '/api/community-connections',
-      createCommunityConnectionsRouter(
-        new RemoteCommunityPairingService(store),
-        navigation as never,
-        undefined,
-        undefined,
-        undefined,
-        policy
-      )
-    );
-    answerServer = answerApp.listen(0, '127.0.0.1');
+    answerServer = createServer(
+      honoGroupListener({
+        path: '/api/community-connections',
+        routes: createCommunityConnectionsRoutes(
+          new RemoteCommunityPairingService(store),
+          navigation as never,
+          undefined,
+          undefined,
+          undefined,
+          policy
+        ),
+      })
+    ).listen(0, '127.0.0.1');
     await once(answerServer, 'listening');
   });
   afterAll(async () => {

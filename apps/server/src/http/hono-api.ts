@@ -48,6 +48,7 @@ import cloudRoutes from '../routes/cloud.js';
 import { createCapabilitiesCatalogRoutes } from '../routes/capabilities-catalog.js';
 import { createCapabilitiesInvokeRoutes } from '../routes/capabilities-invoke.js';
 import commandRoutes from '../routes/commands.js';
+import { createCommunityConnectionsRoutes } from '../routes/community-connections.js';
 import configRoutes from '../routes/config.js';
 import {
   createAgentCommitmentsRoutes,
@@ -88,6 +89,7 @@ import { relayWebhookBodyRule } from '../routes/relay-webhooks.js';
 import readCursorRoutes from '../routes/read-cursors.js';
 import roomRoutes from '../routes/rooms.js';
 import { createRemoteAccessRoutes } from '../routes/remote-access.js';
+import { createRemoteCommunitiesRoutes } from '../routes/remote-communities.js';
 import { createSearchRoutes, type SearchRouterDeps } from '../routes/search.js';
 import { createSessionLocationsRoutes } from '../routes/session-locations.js';
 import { createSessionRoutes, type SessionRouteDeps } from '../routes/sessions.js';
@@ -97,6 +99,7 @@ import { createTasksRoutes, type TasksRouterDeps } from '../routes/tasks.js';
 import { createSystemRoutes, type SystemRouteDeps } from '../routes/system.js';
 import { createTeamRoutes, type TeamRouterDeps } from '../routes/team.js';
 import { createTemplateRoutes } from '../routes/templates.js';
+import { gateCommunityConnections, gateRemoteCommunities } from '../middleware/spaces-enabled.js';
 import {
   createUnclaimedChatsRoutes,
   type UnclaimedChatsRouterDeps,
@@ -296,6 +299,14 @@ export function createHonoApi(options: HonoApiOptions): Hono<ApiEnv> {
   app.route('/api/projects', projectRoutes);
   app.route('/api/read-cursors', readCursorRoutes);
   app.route('/api/rooms', roomRoutes);
+  // Spaces (rooms on another server) are an experiment, off by default
+  // (DOR-2740): both groups refuse until a person turns `spaces.enabled` on,
+  // except for the official space (spec `official-community-space` D5), which
+  // each gate lets through by its `:ref`. A space's credentials stay here.
+  app.use('/api/community-connections/*', gateCommunityConnections());
+  app.route('/api/community-connections', createCommunityConnectionsRoutes());
+  app.use('/api/communities/*', gateRemoteCommunities());
+  app.route('/api/communities', createRemoteCommunitiesRoutes());
   app.route('/api/files', fileRoutes);
   app.route('/api/diff', diffRoutes);
   app.route('/api/workbench', workbenchServeRoutes);

@@ -39,7 +39,9 @@ describe('audit trail startup wiring', () => {
     const gate = app.indexOf('app.use(sessionGate);');
     const identity = app.indexOf('app.use(resolveAgentIdentity);');
     const scope = app.indexOf('app.use(auditActor);');
-    const firstRoute = app.indexOf("'/api/community-connections',");
+    // Every route group answers from Hono now; what Express still serves after
+    // the scope is the `/api` catch-all, and whatever index.ts mounts later.
+    const firstRoute = app.indexOf("app.use('/api', (_req, res) =>");
     expect(gate).toBeGreaterThan(-1);
     expect(identity).toBeGreaterThan(gate);
     expect(scope).toBeGreaterThan(identity);
