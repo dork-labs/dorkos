@@ -53,7 +53,7 @@ describe('TraitSliders', () => {
     render(<TraitSliders traits={custom} onChange={vi.fn()} />);
 
     expect(screen.getByText('1/5 Mime')).toBeInTheDocument();
-    expect(screen.getByText('5/5 Rogue')).toBeInTheDocument();
+    expect(screen.getByText('5/5 Self-starter')).toBeInTheDocument();
   });
 
   it('calls onChange with updated traits on slider change', () => {
