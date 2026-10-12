@@ -95,14 +95,12 @@ export function unblockCommon(): Pick<
 /** The tools a file-editing turn may use. Everything else is denied. */
 export const FILE_TOOLS = ['Write', 'Edit', 'MultiEdit', 'Bash'];
 
-/** The connection tools a request-shaped turn may use. Everything else is denied. */
-export const CONNECTION_TOOLS = [
-  'connectors.request_connection',
-  'connectors.get_connection_request',
-  'connectors.list_granted_connections',
-  'connectors.list_granted_operations',
-  'connector_list_toolkits',
-];
+/**
+ * The one line every question card in an `unblock` turn is answered with, so
+ * an `AskUserQuestion` never parks the turn until the guard fires. The card
+ * itself stays on the stream, and row 34 counts it as a check-in.
+ */
+export const QUESTION_ANSWER = 'Use your best judgment.';
 
 /** Row 10's folder: a messy Downloads, with a duplicate and an empty file. */
 export const DOWNLOADS_DIR = 'Downloads';

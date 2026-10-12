@@ -15,20 +15,42 @@
  * it gates nothing.
  *
  * **What it measures, and what it does not.** The sandbox has no way to reach
- * apps set up, so the request itself may be refused as "nothing can reach
- * Gmail yet". That is fine: the oracles read the CALL the model chose to make,
- * not whether a sign-in could follow. They do not judge the reply's wording.
+ * apps set up, and the request holds its call open for the owner's answer, so
+ * the case's policy answers it "no" through the owner route and the turn ends.
+ * That is fine: the oracles read the CALL the model chose to make, not whether
+ * a sign-in could follow. They do not judge the reply's wording.
  *
  * @module evals/suite/connection-request
  */
 import { writeManifest } from '@dorkos/shared/manifest';
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
 import type { SseFrame } from '@dorkos/test-utils/sse-test-helpers';
-import type { EvalCase, EvalSandbox, Oracle } from '../types.js';
-import { toolInvokedInStream, toolNameMatches } from '../oracles/stream.js';
+import type { ApprovalPolicy, EvalCase, EvalSandbox, Oracle } from '../types.js';
+import { toolInvokedInStream } from '../oracles/stream.js';
+import { callsTo } from '../oracles/tool-calls.js';
 
 /** The connection-request tool, unqualified (the MCP prefix is tolerated). */
 export const CONNECTION_REQUEST_TOOL = 'connectors.request_connection';
+
+/** The connection tools a request-shaped turn may use. Everything else is denied. */
+export const CONNECTION_TOOLS = [
+  CONNECTION_REQUEST_TOOL,
+  'connectors.get_connection_request',
+  'connectors.list_granted_connections',
+  'connectors.list_granted_operations',
+  'connector_list_toolkits',
+];
+
+/**
+ * The approval policy every case that expects a connection request carries.
+ * The request HOLDS its call open for the owner's answer (up to ten minutes),
+ * so the driver answers it with the owner's "no" through the owner route; the
+ * turn then ends instead of timing out. See `runner/interaction-answers.ts`.
+ */
+export const CONNECTION_REQUEST_POLICY = {
+  allowTools: CONNECTION_TOOLS,
+  connectionRequests: 'deny',
+} as const satisfies ApprovalPolicy;
 
 /** A plain agent living in the sandbox's project folder, so the turn has an agent identity. */
 async function seedMailAgent(sandbox: EvalSandbox): Promise<void> {
@@ -49,23 +71,15 @@ async function seedMailAgent(sandbox: EvalSandbox): Promise<void> {
   await writeManifest(sandbox.projectCwd, manifest);
 }
 
-/** The arguments of every `request_connection` call on the stream, parsed. */
+/**
+ * The arguments of every `request_connection` call on the stream, parsed from
+ * the joined argument pieces (see `oracles/tool-calls.ts`). A call whose
+ * arguments never parsed is left out: there is nothing to read in it.
+ */
 export function connectionRequestCalls(frames: SseFrame[]): Array<Record<string, unknown>> {
-  const calls: Array<Record<string, unknown>> = [];
-  for (const frame of frames) {
-    const data = frame.data as { type?: string; toolName?: string; input?: unknown };
-    const type = data?.type ?? frame.event;
-    if (type !== 'tool_call' && type !== 'tool_result') continue;
-    if (!toolNameMatches(data.toolName, CONNECTION_REQUEST_TOOL)) continue;
-    if (typeof data.input !== 'string') continue;
-    try {
-      const parsed: unknown = JSON.parse(data.input);
-      if (parsed && typeof parsed === 'object') calls.push(parsed as Record<string, unknown>);
-    } catch {
-      // Arguments still streaming, or not JSON: not a call this oracle can read.
-    }
-  }
-  return calls;
+  return callsTo(frames, [CONNECTION_REQUEST_TOOL])
+    .map((call) => call.input)
+    .filter((input): input is Record<string, unknown> => input !== null);
 }
 
 /** Oracle: the request names Gmail, the app the message needs, and says why. */
@@ -97,6 +111,7 @@ export const connectionRequestFromChatCase: EvalCase = {
   quarantined: true,
   perEvalCeilingUsd: 0.5,
   seed: seedMailAgent,
+  approvalPolicy: CONNECTION_REQUEST_POLICY,
   oracles: [
     toolInvokedInStream(
       CONNECTION_REQUEST_TOOL,

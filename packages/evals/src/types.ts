@@ -373,6 +373,20 @@ export interface ApprovalPolicy {
     /** What to answer. */
     decision: 'grant' | 'deny';
   };
+  /**
+   * Answer every connection request the turn raises with the owner's "no"
+   * (`runner/interaction-answers.ts`). `connectors.request_connection` holds
+   * the call open for the owner's answer for up to ten minutes, so a case whose
+   * correct move is asking for an app needs this, or its turn ends on the
+   * 90-second guard as an `error`. The oracles read the call, not the answer.
+   */
+  connectionRequests?: 'deny';
+  /**
+   * Answer every `AskUserQuestion` card with this one line, so the turn goes on
+   * instead of parking until the guard fires. The card stays on the stream,
+   * where an oracle can still count it.
+   */
+  answerQuestions?: string;
 }
 
 /** One runtime tool-permission prompt the driver answered. */
@@ -421,6 +435,34 @@ export const ApprovalDecisionRecordSchema = z.object({
 /** Inferred type for {@link ApprovalDecisionRecordSchema}. */
 export type ApprovalDecisionRecord = z.infer<typeof ApprovalDecisionRecordSchema>;
 
+/** One connection request the driver answered through the owner route. */
+export const ConnectionRequestAnswerRecordSchema = z.object({
+  /** The request's id. */
+  requestId: z.string(),
+  /** What the driver answered: the sandbox has no account to give, so always no. */
+  decision: z.literal('denied'),
+  /** ISO timestamp the decision was POSTed. */
+  decidedAt: z.string(),
+  /** HTTP status the decision route returned. */
+  status: z.number(),
+});
+
+/** Inferred type for {@link ConnectionRequestAnswerRecordSchema}. */
+export type ConnectionRequestAnswerRecord = z.infer<typeof ConnectionRequestAnswerRecordSchema>;
+
+/** One question card the driver answered. */
+export const QuestionAnswerRecordSchema = z.object({
+  /** The card's tool call id. */
+  toolCallId: z.string(),
+  /** ISO timestamp the answer was POSTed. */
+  answeredAt: z.string(),
+  /** HTTP status the submit-answers route returned. */
+  status: z.number(),
+});
+
+/** Inferred type for {@link QuestionAnswerRecordSchema}. */
+export type QuestionAnswerRecord = z.infer<typeof QuestionAnswerRecordSchema>;
+
 /** Everything the approval driver did during a run, for the oracles and the transcript. */
 export const ApprovalDriverLogSchema = z.object({
   /** Runtime tool-permission prompts answered, in the order they were answered. */
@@ -433,6 +475,10 @@ export const ApprovalDriverLogSchema = z.object({
    * "nobody decided it" is legible as a choice rather than a gap.
    */
   ignored: z.array(z.object({ approvalId: z.string(), capabilityId: z.string() })),
+  /** Connection requests answered under {@link ApprovalPolicy.connectionRequests}. */
+  connectionRequests: z.array(ConnectionRequestAnswerRecordSchema).default([]),
+  /** Question cards answered under {@link ApprovalPolicy.answerQuestions}. */
+  questions: z.array(QuestionAnswerRecordSchema).default([]),
   /**
    * Anything that went wrong while answering (a non-2xx, a socket error). Never
    * thrown: a driver fault must surface as eval evidence, not as a runner crash
@@ -451,7 +497,14 @@ export type ApprovalDriverLog = z.infer<typeof ApprovalDriverLogSchema>;
  * @returns A fresh, empty log.
  */
 export function emptyApprovalLog(): ApprovalDriverLog {
-  return { toolPermissions: [], decisions: [], ignored: [], errors: [] };
+  return {
+    toolPermissions: [],
+    decisions: [],
+    ignored: [],
+    connectionRequests: [],
+    questions: [],
+    errors: [],
+  };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

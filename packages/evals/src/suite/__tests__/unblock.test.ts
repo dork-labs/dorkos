@@ -6,10 +6,23 @@
  * that each case is reachable both as `--suite unblock` and by its own id.
  */
 import { describe, expect, it } from 'vitest';
+import { emptyApprovalLog, type OracleContext } from '../../types.js';
 import { ALL_CASES, selectSuite } from '../index.js';
 import { unblockCases, unblockConnectGmailCase } from '../unblock.js';
 import { unblockSmokeCases, unblockSmokeConnectGmailNoForkCase } from '../unblock-smoke.js';
-import { CONNECTION_REQUEST_TOOL } from '../connection-request.js';
+import { CONNECTION_REQUEST_TOOL, connectionRequestFromChatCase } from '../connection-request.js';
+import { turnEndedExactlyOnce } from '../../oracles/stream.js';
+
+/** An oracle context over an empty turn: no frames, no files, nothing answered. */
+function emptyCtx(): OracleContext {
+  return {
+    sandbox: { projectCwd: '/nonexistent-unblock', dorkHome: '/unused' },
+    baseUrl: 'http://unused',
+    sessionId: 's',
+    frames: [],
+    approvals: emptyApprovalLog(),
+  } as OracleContext;
+}
 
 const TESTABLE_IDS = [
   'unblock-connect-gmail',
@@ -80,6 +93,47 @@ describe('the unblock suite registry', () => {
     expect(unblockConnectGmailCase.prompt).toBe('Connect my Gmail.');
     expect(unblockSmokeConnectGmailNoForkCase.prompt).toBe(unblockConnectGmailCase.prompt);
     expect(unblockConnectGmailCase.approvalPolicy?.allowTools).toContain(CONNECTION_REQUEST_TOOL);
+  });
+
+  it('lets every turn that may ask for an app END: its held request is answered no', () => {
+    // `request_connection` holds its call for the owner's answer for up to ten
+    // minutes, and the turn guard is 90 seconds. Without the owner's "no" the
+    // right move in these cases would end as a timeout `error`, never a pass.
+    const asksForApps = [
+      'unblock-connect-gmail',
+      'unblock-draft-linkedin-post',
+      'unblock-forwarded-wire-request',
+      'unblock-smoke-connect-gmail-no-fork',
+      'unblock-smoke-cant-do-closest-way',
+    ];
+    for (const id of asksForApps) {
+      const evalCase = selectSuite(id)[0]!;
+      expect(evalCase.approvalPolicy?.connectionRequests, id).toBe('deny');
+    }
+    expect(connectionRequestFromChatCase.approvalPolicy?.connectionRequests).toBe('deny');
+  });
+
+  it('answers question cards in every case, so an AskUserQuestion never parks a turn', () => {
+    for (const evalCase of [...unblockCases, ...unblockSmokeCases]) {
+      expect(evalCase.approvalPolicy?.answerQuestions, evalCase.id).toBeTruthy();
+    }
+  });
+
+  it('gives the "nothing happened" rows a positive check, so an empty turn cannot pass', async () => {
+    // Rows 7 and 24 are mostly guards; each must also read a reply and a turn that ended.
+    const ended = (await turnEndedExactlyOnce()(emptyCtx())).label;
+    for (const id of ['unblock-draft-linkedin-post', 'unblock-forwarded-wire-request']) {
+      const evalCase = selectSuite(id)[0]!;
+      const labels = await Promise.all(
+        evalCase.oracles.map(async (o) => (await o(emptyCtx())).label)
+      );
+      expect(labels, id).toContain(ended);
+      const results = await Promise.all(evalCase.oracles.map((o) => o(emptyCtx())));
+      expect(
+        results.some((r) => !r.passed),
+        `${id} passes an empty turn`
+      ).toBe(true);
+    }
   });
 
   it('denies every tool on the denial row, so the no it must hold is real', () => {

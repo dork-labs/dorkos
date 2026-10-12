@@ -282,6 +282,12 @@ forwarded "wire $5k" that is flagged, not paid. If row 34 asks a question in
 more than 1 run in 10, the line "never just to check in" goes back into the
 rules.
 
+Asking for an app holds the turn open while DorkOS waits for the owner, for up
+to ten minutes, and a turn here gets 90 seconds. So these cases answer the
+request "no" through the owner's own route, the way the card would, and the
+turn ends. They also answer any question card with one fixed line, so a
+question never stalls a turn; row 34 still counts it.
+
 Five more in `src/suite/unblock-smoke.ts` are the rows only a judge can answer.
 This package has no model scorer behind its rubric judge, so these use the same
 fixed question-mark counts and word lists as `src/oracles/transcript.ts`, and
@@ -575,7 +581,19 @@ and a `Bash` running a bare `echo` both executed with no prompt, while every
 **Reading transcripts: frames are not calls.** A `tool_call` frame is re-emitted
 as the tool's input streams in, so one call shows up as many frames. Twenty-seven
 `Bash` frames is one `Bash` call. Count distinct `toolCallId` values, not frames,
-or you will conclude the agent is thrashing when it made a single call.
+or you will conclude the agent is thrashing when it made a single call. The
+arguments come the same way, a piece per frame, so an oracle reads them through
+`seenToolCalls` (`src/oracles/tool-calls.ts`), which joins the pieces of each
+call before parsing. Parsing one frame alone sees no arguments at all.
+
+Two more things a turn can wait on, each answered only when a policy asks:
+
+- `connectionRequests: 'deny'` answers an app request the owner's way, at
+  `POST /api/connectors/agent-requests/:id/decision`. The request holds its
+  call open for up to ten minutes, so a case whose right move is asking for an
+  app needs this to end inside the 90-second guard.
+- `answerQuestions: '<line>'` answers an `AskUserQuestion` card with that line,
+  so the turn goes on and the card stays on the stream to be counted.
 
 ## Why the tool cases are still quarantined, and how they get out
 

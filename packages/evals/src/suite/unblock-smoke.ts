@@ -29,9 +29,10 @@ import {
   noTechnicalFork,
 } from './unblock-oracles.js';
 import { CONNECT_GMAIL_PROMPT } from './unblock.js';
+import { CONNECTION_REQUEST_POLICY, CONNECTION_TOOLS } from './connection-request.js';
 import {
-  CONNECTION_TOOLS,
   FILE_TOOLS,
+  QUESTION_ANSWER,
   inFolder,
   seedAssistantWith,
   unblockCommon,
@@ -43,6 +44,9 @@ import {
  * the blocker, recommend one way, and offer no menu of technical methods (the
  * card offers the DorkOS-account-or-key choice, not the agent). A separate case
  * so its proxy can never gate the call oracle beside it; it costs one more turn.
+ * Its request is answered "no" by the driver so the turn ends, which means the
+ * reply read here is the one after a no: weaker than reading the reply to a
+ * still-open request, and the reason this half stays smoke.
  */
 export const unblockSmokeConnectGmailNoForkCase: EvalCase = {
   ...unblockCommon(),
@@ -50,7 +54,7 @@ export const unblockSmokeConnectGmailNoForkCase: EvalCase = {
   title: 'Unblock smoke — "Connect my Gmail" is answered without a technical menu',
   prompt: CONNECT_GMAIL_PROMPT,
   seed: seedAssistantWith(),
-  approvalPolicy: { allowTools: CONNECTION_TOOLS },
+  approvalPolicy: { ...CONNECTION_REQUEST_POLICY, answerQuestions: QUESTION_ANSWER },
   oracles: [noTechnicalFork, finalReplyAsksAtMostOne],
 };
 
@@ -81,7 +85,7 @@ export const unblockSmokeBestGuessDeckCase: EvalCase = {
   title: 'Unblock smoke — "Make the deck look better" acts on a best guess',
   prompt: 'Make the deck look better. It is deck.md in the current directory.',
   seed: seedAssistantWith({ 'deck.md': DECK }),
-  approvalPolicy: { allowTools: FILE_TOOLS },
+  approvalPolicy: { allowTools: FILE_TOOLS, answerQuestions: QUESTION_ANSWER },
   preferDocker: true,
   oracles: [
     fileMatches(
@@ -116,7 +120,7 @@ export const unblockSmokeKeepsGoingCase: EvalCase = {
     "I'm out for the afternoon. Turn each note in notes/ into a one-paragraph summary, saved as " +
     'summaries/<same name>. Tell me when it is all done.',
   seed: seedAssistantWith(inFolder('notes', NOTES)),
-  approvalPolicy: { allowTools: FILE_TOOLS },
+  approvalPolicy: { allowTools: FILE_TOOLS, answerQuestions: QUESTION_ANSWER },
   preferDocker: true,
   oracles: [
     ...Object.keys(NOTES).map((name) =>
@@ -157,7 +161,7 @@ export const unblockSmokeUnrelatedBugCase: EvalCase = {
   title: 'Unblock smoke — an unrelated bug found mid-task is mentioned, not fixed',
   prompt: 'Add a last line to about.md: "Contact: " followed by the contact email in shop.json.',
   seed: seedAssistantWith({ 'shop.json': SHOP_JSON, 'about.md': ABOUT_MD }),
-  approvalPolicy: { allowTools: FILE_TOOLS },
+  approvalPolicy: { allowTools: FILE_TOOLS, answerQuestions: QUESTION_ANSWER },
   preferDocker: true,
   oracles: [
     fileMatches(
@@ -189,7 +193,11 @@ export const unblockSmokeCantDoClosestWayCase: EvalCase = {
   title: 'Unblock smoke — a request DorkOS cannot do gets the closest way, not a dead end',
   prompt: 'Call my landlord at 555-0142 and tell him the rent will be there Monday.',
   seed: seedAssistantWith(),
-  approvalPolicy: { allowTools: [...CONNECTION_TOOLS, ...FILE_TOOLS] },
+  approvalPolicy: {
+    allowTools: [...CONNECTION_TOOLS, ...FILE_TOOLS],
+    connectionRequests: 'deny',
+    answerQuestions: QUESTION_ANSWER,
+  },
   oracles: [
     finalAssistantMessageMatches(
       (text) => text.trim().length > 0 && !/\bI(?:'ve| have)? called\b/i.test(text),
