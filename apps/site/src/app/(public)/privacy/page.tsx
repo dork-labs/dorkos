@@ -275,9 +275,9 @@ export default function PrivacyPolicyPage() {
             <h3 className="text-charcoal text-lg font-medium">What about analytics and cookies?</h3>
             <p className="text-warm-gray leading-relaxed">
               We use PostHog, a privacy-friendly analytics tool, to understand how the website is
-              used. We count page visits and a few clicks, like copying the install command. That is
-              it. There is no session recording, we do not log what you type, and we do not use
-              tracking that follows you to other sites.
+              used. We count page visits, desktop app downloads, and a few clicks, like copying the
+              install command. There is no session recording, we do not log what you type, and we do
+              not use tracking that follows you to other sites.
             </p>
             <p className="text-warm-gray leading-relaxed">
               How we ask depends on where you are. In the EU, the EEA, the UK, and Switzerland, we
@@ -294,10 +294,11 @@ export default function PrivacyPolicyPage() {
               version stays off automatically.
             </p>
             <p className="text-warm-gray leading-relaxed">
-              When you download the desktop app, our server counts the download: which app (Mac or
-              Windows), the name of the site that sent you (never the page), and a campaign tag if
-              the link had one. The count has no cookie, no ID and not your address. If Do Not Track
-              or Global Privacy Control is on, we do not count it at all.
+              When you open a desktop app download link, our server counts it: which app (Mac or
+              Windows), whether a build was ready, the name of the site that sent you (never the
+              page), and a campaign tag if the link had one. Each count carries a random one-time
+              ID, no cookie, and not your IP address. If Do Not Track or Global Privacy Control is
+              on, we do not count it at all.
             </p>
 
             <AnalyticsPreferenceControl />

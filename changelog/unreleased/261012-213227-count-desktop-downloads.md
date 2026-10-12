@@ -5,4 +5,4 @@ covers:
 
 ### Added
 
-- The website now counts desktop app downloads, including ones from links on other sites. Each count has no cookie, no ID and no address, and none is made when your browser asks not to be tracked. The privacy page says so
+- The website now counts desktop app downloads, including ones from links on other sites. Each count carries a random one-time ID, no cookie and not your IP address, and none is made when your browser asks not to be tracked. The privacy page says so.

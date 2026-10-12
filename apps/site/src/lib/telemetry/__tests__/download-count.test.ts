@@ -17,11 +17,17 @@ vi.mock('next/server', () => ({
 
 import { env } from '@/env';
 
-import { buildDownloadEvent, countDownload } from '../download-count';
+import {
+  buildDownloadEvent,
+  countDownload,
+  DOWNLOAD_COUNT_LIMIT,
+  resetDownloadCountLimit,
+} from '../download-count';
 
 /** A download request with the given headers and query. */
-function download(query = '', headers: Record<string, string> = {}): Request {
+function download(query = '', headers: Record<string, string> = {}, method = 'GET'): Request {
   return new Request(`https://dorkos.ai/download/mac${query}`, {
+    method,
     headers: { 'user-agent': 'Mozilla/5.0 (Macintosh)', ...headers },
   });
 }
@@ -33,6 +39,7 @@ beforeEach(() => {
   vi.spyOn(console, 'error').mockImplementation(() => {});
   env.POSTHOG_PROJECT_KEY = 'phc_test';
   pending.length = 0;
+  resetDownloadCountLimit();
 });
 
 afterEach(() => {
@@ -87,6 +94,34 @@ describe('buildDownloadEvent', () => {
     ['a crawler', { 'user-agent': 'Googlebot/2.1' }],
   ])('sends nothing for %s', (_label, headers) => {
     expect(buildDownloadEvent(download('', headers), 'mac', true)).toBeNull();
+  });
+
+  it('sends nothing for a HEAD probe', () => {
+    expect(buildDownloadEvent(download('', {}, 'HEAD'), 'mac', true)).toBeNull();
+  });
+
+  it('counts a plain command-line download, which is a real download', () => {
+    expect(
+      buildDownloadEvent(download('', { 'user-agent': 'curl/8.7.1' }), 'mac', true)
+    ).not.toBeNull();
+  });
+
+  it('stops counting one address past the limit, and counts another', () => {
+    const from = (ip: string) => download('', { 'x-forwarded-for': ip });
+    for (let i = 0; i < DOWNLOAD_COUNT_LIMIT; i++) {
+      expect(buildDownloadEvent(from('203.0.113.7'), 'mac', true)).not.toBeNull();
+    }
+    expect(buildDownloadEvent(from('203.0.113.7'), 'mac', true)).toBeNull();
+    expect(buildDownloadEvent(from('203.0.113.8'), 'mac', true)).not.toBeNull();
+  });
+
+  it('never puts the address in the event', () => {
+    const event = buildDownloadEvent(
+      download('', { 'x-forwarded-for': '203.0.113.9' }),
+      'mac',
+      true
+    );
+    expect(JSON.stringify(event)).not.toContain('203.0.113.9');
   });
 
   it('sends nothing when no project key is set', () => {

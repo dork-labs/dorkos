@@ -20,7 +20,10 @@
  *   `utm_campaign` when the link carried them.
  * - **Nothing at all** when the browser sends Global Privacy Control or Do Not
  *   Track (the same signals that pin the site to cookieless capture in
- *   `lib/consent.ts`), for link-preview bots, or when no project key is set.
+ *   `lib/consent.ts`), for link-preview bots, for a `HEAD` probe (Next answers
+ *   one with this same handler), past a per-address limit, or when no project
+ *   key is set. The address is used only for that limit, in memory, and is
+ *   never sent.
  *
  * Sent after the response with `after()`, so a slow PostHog never delays the
  * redirect, and failures are logged and dropped.
@@ -29,6 +32,7 @@
  */
 import { after } from 'next/server';
 import { env } from '@/env';
+import { createPerIpLimiter } from '@/lib/rate-limit/per-ip-limiter';
 
 /** The desktop builds the download links serve. */
 export type DownloadPlatform = 'mac' | 'windows';
@@ -40,14 +44,32 @@ const POSTHOG_TIMEOUT_MS = 3000;
 const BOT_USER_AGENT =
   /bot|crawl|spider|preview|slack|discord|facebookexternalhit|embedly|whatsapp|telegram|skype|vkshare|linkedin/i;
 
+/** Counts per address per window; past it the link still works, it just is not counted. */
+export const DOWNLOAD_COUNT_LIMIT = 10;
+
+/** The window {@link DOWNLOAD_COUNT_LIMIT} applies to. */
+export const DOWNLOAD_COUNT_WINDOW_MS = 10 * 60 * 1000;
+
+const limiter = createPerIpLimiter({
+  limit: DOWNLOAD_COUNT_LIMIT,
+  windowMs: DOWNLOAD_COUNT_WINDOW_MS,
+});
+
+/** Forget every address the limit has seen (tests). */
+export function resetDownloadCountLimit(): void {
+  limiter.reset();
+}
+
 /** A campaign value we keep: short, and only plain characters. */
 const CAMPAIGN_VALUE = /^[a-z0-9._-]{1,64}$/i;
 
-/** Whether the request carries a decline signal or comes from a link-preview bot. */
+/** Whether the request is a probe, a decline, a link-preview bot, or over the limit. */
 function shouldSkip(request: Request): boolean {
   const { headers } = request;
+  if (request.method !== 'GET') return true;
   if (headers.get('sec-gpc') === '1' || headers.get('dnt') === '1') return true;
-  return BOT_USER_AGENT.test(headers.get('user-agent') ?? '');
+  if (BOT_USER_AGENT.test(headers.get('user-agent') ?? '')) return true;
+  return !limiter.consume(request).allowed;
 }
 
 /** The referring site's host name, `null` when there is none, never its path. */
