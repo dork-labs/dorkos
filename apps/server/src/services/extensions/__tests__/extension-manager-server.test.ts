@@ -563,6 +563,10 @@ describe('ExtensionManager — server lifecycle', () => {
       expect(manager.getServerRouter('shutdown-ext')).toBeNull();
       expect(mockScheduledCleanup).toHaveBeenCalled();
       expect(mockReleaseListeners).toHaveBeenCalledTimes(1);
+      // DOR-2462: the cleanups list is a copy taken when `register()` returned.
+      // Fails if the context is not disposed too, so a timer the extension
+      // scheduled later, or schedules after this, keeps running.
+      expect(mockDispose).toHaveBeenCalledTimes(1);
     });
 
     it('is a no-op for extensions without an active server', async () => {
@@ -714,6 +718,9 @@ describe('ExtensionManager — server lifecycle', () => {
       expect(manager.getServerRouter('reload-srv')).not.toBeNull();
       // compileServer called twice: once during initialize, once during reload
       expect(mockCompileServer).toHaveBeenCalledTimes(2);
+      // The old instance's context is disposed, so its timers stop beside the
+      // new instance's (DOR-2462).
+      expect(mockDispose).toHaveBeenCalledTimes(1);
     });
   });
 
