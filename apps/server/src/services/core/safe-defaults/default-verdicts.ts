@@ -338,6 +338,8 @@ export const SAFE_DEFAULTS: Readonly<Record<string, unknown>> = {
   // Public exposure starts off, with no hostname, token, or edge passcode.
   'tunnel.enabled': false,
   'browser.enabled': false,
+  // The computer experiment is off until a person enables it.
+  'computers.enabled': false,
   // Spaces stay hidden until a person opts in (DOR-2740).
   'spaces.enabled': false,
   // No official space until a release or a person names one (spec

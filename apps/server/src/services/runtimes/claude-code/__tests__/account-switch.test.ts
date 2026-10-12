@@ -30,7 +30,11 @@ vi.mock('../../../session/catalog/session-list-broadcaster.js', () => ({
   sessionListBroadcaster: { stop: vi.fn().mockResolvedValue(undefined), start: vi.fn() },
 }));
 vi.mock('../../../core/runtime-registry.js', () => ({
-  runtimeRegistry: { getNativeSessionCwd: vi.fn(() => null), listRuntimes: vi.fn() },
+  runtimeRegistry: {
+    computerRuntimeForAgentPath: () => undefined,
+    getNativeSessionCwd: vi.fn(() => null),
+    listRuntimes: vi.fn(),
+  },
 }));
 vi.mock('../../../../lib/logger.js', () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },

@@ -60,12 +60,12 @@ export const CLAUDE_CODE_DORKOS_TOOL_PREFIX = `mcp__${DORKOS_MCP_SERVER_NAME}__`
  * @param tool - The tool's registered name on the `dorkos` server.
  */
 export function dorkosToolNameFor(
-  runtime: 'claude-code' | 'codex' | 'opencode' | 'doe',
+  runtime: 'claude-code' | 'codex' | 'opencode' | 'doe' | 'computer-local',
   tool: string
 ): string {
   if (runtime === 'doe') return tool;
   const prefix =
-    runtime === 'opencode'
+    runtime === 'opencode' || runtime === 'computer-local'
       ? OPENCODE_DORKOS_TOOL_PREFIX
       : runtime === 'codex'
         ? CODEX_DORKOS_TOOL_PREFIX

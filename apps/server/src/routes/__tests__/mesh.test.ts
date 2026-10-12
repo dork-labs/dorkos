@@ -103,6 +103,7 @@ function createMockMeshCore() {
     unregister: vi.fn().mockResolvedValue({ manifestKept: false }),
     list: vi.fn().mockReturnValue([]),
     listWithHealth: vi.fn().mockReturnValue([]),
+    listWithPaths: vi.fn().mockReturnValue([]),
     get: vi.fn().mockReturnValue(undefined),
     listDenied: vi.fn().mockReturnValue([]),
     update: vi.fn().mockReturnValue(undefined),

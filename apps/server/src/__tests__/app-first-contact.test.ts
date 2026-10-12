@@ -40,6 +40,7 @@ vi.mock('../lib/boundary.js', () => ({
 vi.mock('../services/core/runtime-registry.js', () => ({
   RuntimeNotRegisteredError: class RuntimeNotRegisteredError extends Error {},
   runtimeRegistry: {
+    computerRuntimeForAgentPath: () => undefined,
     getNativeSessionCwd: vi.fn(() => null),
     getDefault: vi.fn(() => ({ type: 'claude-code' })),
     getDefaultType: vi.fn(() => 'claude-code'),

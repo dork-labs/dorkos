@@ -23,6 +23,7 @@ let registered: Record<string, { configSection: string | null; supportsEffort: b
 
 vi.mock('../../core/runtime-registry.js', () => ({
   runtimeRegistry: {
+    computerRuntimeForAgentPath: () => undefined,
     getNativeSessionCwd: vi.fn(() => null),
     getSessionSettings: () => readSettings(),
     has: (type: string) => registered[type] !== undefined,

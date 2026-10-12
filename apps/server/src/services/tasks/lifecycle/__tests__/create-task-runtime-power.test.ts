@@ -50,6 +50,7 @@ vi.mock('../../../core/runtime-registry.js', async () => {
   };
   return {
     runtimeRegistry: {
+      computerRuntimeForAgentPath: () => undefined,
       getNativeSessionCwd: vi.fn(() => null),
       getAllCapabilities: () => registered,
       getDefaultType: () => 'claude-code',

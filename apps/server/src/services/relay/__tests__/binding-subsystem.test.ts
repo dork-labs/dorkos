@@ -47,6 +47,7 @@ const persistSessionRuntime = vi.fn(async (..._args: unknown[]) => true);
 
 vi.mock('../../core/runtime-registry.js', () => ({
   runtimeRegistry: {
+    computerRuntimeForAgentPath: () => undefined,
     getNativeSessionCwd: vi.fn(() => null),
     getDefaultType: () => getDefaultType(),
     getSessionRuntimeType: (id: string) => getSessionRuntimeType(id),

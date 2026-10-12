@@ -257,3 +257,17 @@ describe('export-openapi', () => {
     expect(repo?.post?.description).toContain('ROOM_REPOS_DISABLED');
   });
 });
+
+it('documents the admitted computer routes without exposing private endpoints', () => {
+  const paths = generateOpenAPISpec().paths ?? {};
+  const operations = Object.entries(paths).filter(([path]) => path.startsWith('/api/computers'));
+  expect(operations).toHaveLength(8);
+  expect(paths['/api/computers']?.post).toBeDefined();
+  expect(paths['/api/computers/control']?.delete).toBeDefined();
+  const document = JSON.stringify(operations);
+  expect(document).toContain('X-Client-Id');
+  expect(document).toContain('not-the-owner');
+  expect(document).toContain('additionalProperties');
+  expect(document).not.toContain('opencodePassword');
+  expect(document).not.toContain('desktopUrl');
+});

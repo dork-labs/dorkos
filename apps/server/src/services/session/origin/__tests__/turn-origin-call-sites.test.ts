@@ -34,6 +34,8 @@ const EXPECTED: Readonly<Record<string, readonly string[]>> = {
   // A person posted a message and is holding the session's event stream open.
   // It binds through the launch service, which forwards what it is told.
   'routes/sessions.ts': ['agent-launch', 'interactive'],
+  // An owner opens a normal chat in the retained agent computer.
+  'startup/computers.ts': ['interactive'],
   // A room turn, carrying the one fact that decides its power.
   'services/rooms/room-turn-runner.ts': ['room'],
   // A task's run — the timer's, or a person's "Run now".

@@ -401,7 +401,9 @@ async function buildCLI() {
   execSync('pnpm turbo build --filter=@dorkos/client', { cwd: ROOT, stdio: 'inherit' });
   await fs.cp(path.join(ROOT, 'apps/client/dist'), path.join(OUT, 'client'), { recursive: true });
 
-  // 2. Bundle server (esbuild) — inlines @dorkos/shared, externalizes node_modules
+  // Bundle Conf in both entries so its patched when-exit signal handling also
+  // ships to npm consumers; an external Conf would load the unpatched registry copy.
+  // 2. Bundle server (esbuild) — inlines @dorkos/shared, externalizes native dependencies.
   console.log('[2/3] Bundling server...');
   const serverBundle = await build({
     entryPoints: [path.join(ROOT, 'apps/server/src/index.ts')],
@@ -443,7 +445,6 @@ async function buildCLI() {
       'dotenv',
       'uuid',
       'zod',
-      'conf',
       '@inquirer/prompts',
     ],
     plugins: [dorkosSourcePlugin()],
@@ -537,7 +538,6 @@ async function buildCLI() {
     external: [
       'dotenv',
       '../server/index.js',
-      'conf',
       '@inquirer/prompts',
       '@ngrok/ngrok',
       // better-sqlite3 is a native addon (.node) that esbuild cannot bundle.

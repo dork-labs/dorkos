@@ -23,7 +23,7 @@ import { startRelayAdapters } from './startup/relay-adapters.js';
 import { startTasks } from './startup/tasks.js';
 import { startMarketplace } from './startup/marketplace.js';
 import { ClaudeCodeRuntime } from './services/runtimes/claude-code/claude-code-runtime.js';
-import { shutdownSessionPumps } from './services/runtimes/claude-code/sessions/session-pump-registry.js';
+import { shutdownRuntimes } from './startup/shutdown-runtimes.js';
 import { reapOrphanedWarmProcesses } from './services/runtimes/claude-code/sessions/warm-process-ledger.js';
 import { sharedBackgroundWorkLedger } from './services/runtimes/claude-code/messaging/background-work-ledger.js';
 import { inventorySessionIds } from './services/runtimes/claude-code/sessions/session-inventory.js';
@@ -171,7 +171,6 @@ import { ConnectorProgramPrincipalService } from './services/connectors/principa
 import type { ConnectorOwnerAuthority } from './services/connectors/principal/server-principal.js';
 import { ConnectorRuntimePrincipalService } from './services/connectors/principal/runtime-principal-service.js';
 import { connectorThreadKeys } from './services/connectors/principal/thread-keys.js';
-import { codexAppServerPool } from './services/runtimes/codex/app-server/process-pool.js';
 import { CanonicalConnectorRuntimeAuthorityResolver } from './services/connectors/principal/runtime-authority-resolver.js';
 import {
   ConnectorAgentRequestService,
@@ -5293,18 +5292,8 @@ async function shutdownServices() {
     meshCore.stopPeriodicReconciliation();
     meshCore.close();
   }
-  // Kill the managed OpenCode sidecar (SIGTERM, then SIGKILL after a grace
-  // window) so shutdown never leaves an orphan. No-op when it never booted.
-  await openCodeServerManager.shutdown();
-  // Same for Codex's app-server processes (ADR 261005-113107): end stdin,
-  // then SIGTERM, then SIGKILL, by the PID the pool spawned. No-op on exec.
-  await codexAppServerPool.shutdown();
-  await creditsRelay?.close();
+  await shutdownRuntimes(creditsRelay);
   creditsRelay = null;
-  // Same for any warm claude-code process: close stdin so it drains, then close
-  // the query so the CLI child actually dies. No-op when none was ever warmed,
-  // which is every server until the persistent path is opted into.
-  await shutdownSessionPumps();
   // Stream cancelled, managed access drained within its deadline, what is owed kept (DOR-2086).
   await managedRemoteCommands.shutdown();
   await tunnelManager.stop();

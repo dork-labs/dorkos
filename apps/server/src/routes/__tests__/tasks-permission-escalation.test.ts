@@ -67,6 +67,7 @@ vi.mock('../../services/core/config-manager.js', () => ({
 
 vi.mock('../../services/core/runtime-registry.js', () => ({
   runtimeRegistry: {
+    computerRuntimeForAgentPath: () => undefined,
     getNativeSessionCwd: vi.fn(() => null),
     // Read by `capabilitiesForTaskRuntime` for a create that names no runtime
     // of its own (DOR-1615) — which is every fixture in this file, so the create
