@@ -202,9 +202,9 @@ export function spinOffBriefing(opts: {
     );
   } else {
     lines.push(
-      'It does not hear from you on its own, and it cannot take chat messages: it belongs to a ' +
-        'room, an outside chat or a scheduled run. Report in the room it works in with ' +
-        'post_to_room, if you are a member, or say it in your own last message.'
+      'It does not hear from you on its own, and it cannot take chat messages. If it works in ' +
+        'a room you are in, report there with post_to_room; otherwise say it in your own last ' +
+        'message.'
     );
   }
   return lines.join(' ');
