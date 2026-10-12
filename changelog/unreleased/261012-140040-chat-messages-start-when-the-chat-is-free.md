@@ -1,6 +1,7 @@
 ---
 covers:
   - 'fix(server): a message waiting on a chat starts the moment that chat is free'
+  - "fix(server): keep the single-ingress guard whole, and close the review's gaps"
 ---
 
 ### Fixed
