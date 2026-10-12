@@ -3,6 +3,7 @@ covers:
   - 'feat(server): an agent mentions a connection or package once when it would clearly help (DOR-2852)'
   - 'fix(server): word the discovery rule so a room may still ask and a blocker keeps its rule (DOR-2852)'
   - 'fix(evals): make the discovery oracles fail the wrong moves and pass the right ones (DOR-2853)'
+  - 'fix(evals): let unblock turns end, and read streamed tool arguments'
 ---
 
 ### Changed
