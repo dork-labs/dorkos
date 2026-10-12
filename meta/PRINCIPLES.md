@@ -15,7 +15,9 @@ _Status: decided, not built yet. Today the caps exist and the loop guards count 
   - Code from strangers (marketplace hooks, plugins, extensions) still needs a yes.
   - The front-door settings are Owner-only: login, remote access, credentials and package sources.
 - **Privacy comes from access levels.** People and agents get different default access levels, and both can be edited. Both can read every agent's chats. A person's own private chats stay private. What an agent did still shows in the record.
-- **Irreversible actions in outside accounts just happen.** Everyone is told, there is an undo window where the service allows one, and the action is recorded.
+- **Irreversible actions in outside accounts just happen when a person asked or it is the agent's job.** Everyone is told, there is an undo window where the service allows one, and the action is recorded. This is how we read ADR `261006-225605` item 7, not a change to it: item 7 is about the platform's approval cards, and this clause is the agent's own judgment about when to act.
+- **A few things always need a yes, even inside an agent's job.** A promise to an outsider (a date, price, refund or discount), signing up or agreeing to terms, spending past its limit, and giving anyone new access. The yes comes from the owner or the agent's manager. A member's request covers only things done in their own name. A guest can ask, and the agent passes it to its manager.
+- **Blocked is never a dead end.** When only a person can unblock an agent, it does every step it can, recommends one way through, and finishes once they choose. The rules agents follow are the `<working_rules>` block every agent gets, whatever its settings.
 - **Watch for spinning, not for length.** A loop guard looks for agents going round in circles with no progress, never for long work. Collaboration that runs for days must never trip it. When unsure, the agents keep going.
 - **The record comes first.** The audit trail ships before any gate comes off.
 
