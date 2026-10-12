@@ -1,8 +1,8 @@
 /**
  * Request bodies on the Hono chain: parsed once, up front, exactly the way the
- * Express chain's `express.json` parses them today.
+ * Express chain's `express.json` parsed them.
  *
- * Both chains run `body-parser` (the parser `express.json` is) on the raw Node
+ * The chain runs `body-parser` (the parser `express.json` is) on the raw Node
  * request. Re-implementing it on `c.req.json()` would quietly change what a
  * client sees for every body that is not plain, well-formed JSON: a 1 MB
  * limit checked against `Content-Length` before a byte is read, gzip and
@@ -12,7 +12,7 @@
  * moved route has to give the same one.
  *
  * The parse happens in the chain, before the session gate, because that is
- * where Express does it: an oversized POST is a `413` even when it carries no
+ * where Express did it: an oversized POST is a `413` even when it carries no
  * credential, and a malformed one is a `500` (the error handler maps only the
  * size limit; see `middleware/error-handler.ts`).
  *
@@ -27,8 +27,8 @@ import type { Context, MiddlewareHandler } from 'hono';
 import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import type { HttpBindings } from '@hono/node-server';
 
-/** The app-wide JSON body limit, on both chains. */
-export const API_JSON_BODY_LIMIT = '1mb';
+/** The app-wide JSON body limit, on the chain. */
+const API_JSON_BODY_LIMIT = '1mb';
 
 /** A Node body parser: `body-parser`'s `json`, `raw` and the like. */
 type NodeBodyParser = (

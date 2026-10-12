@@ -34,17 +34,15 @@ vi.mock('../../services/core/config-manager.js', () => ({
 
 import request from '@dorkos/test-utils/supertest';
 import { listeningServer } from '@dorkos/test-utils/listening-server';
-import { createApp } from '../../app.js';
 import { composedListener } from '../../http/__tests__/composed-listener.js';
 import type { HonoApiDeps } from '../../http/hono-api.js';
 import { runtimeRegistry } from '../../services/core/runtime-registry.js';
 import type { UnattendedAutonomyDeps } from '../../services/core/unattended-autonomy/unattended-autonomy.js';
 
 const admission = new MainRequestAdmission();
-const app = createApp({ admission });
 /** What the moved routes read, swapped per test like the running server's bag. */
 const deps: HonoApiDeps = {};
-const testServer = listeningServer(composedListener(app, admission, deps));
+const testServer = listeningServer(composedListener(admission, deps));
 
 /** A profile declaring one asking mode and one autonomy mode. */
 const CAPABILITIES = {

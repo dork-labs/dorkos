@@ -615,8 +615,11 @@ export interface ProjectsApi {
   onChange(listener: () => void): () => void;
 }
 
-/** Server-side extension entry point signature. */
-export type ServerExtensionRegister = (
-  router: import('express').Router,
-  ctx: DataProviderContext
-) => void | (() => void) | Promise<void | (() => void)>;
+export type {
+  ExtensionFetchHandler,
+  RegisterOutcome,
+  ServerExtensionHandlers,
+  ServerExtensionRegister,
+  ServerExtensionRegisterResult,
+} from './server-entry.js';
+export { readRegisterResult, serverEntryRegister } from './server-entry.js';

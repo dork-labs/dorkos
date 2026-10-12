@@ -4,9 +4,10 @@
  * A contract file states what the real server answers for one route group:
  * status, the headers that matter, and the body or its Zod schema. It talks to
  * the COMPOSED server, booted from `src/index.ts` exactly as the e2e legs boot
- * it, over a real port. So the same unchanged file passes before a group moves
- * (Express answers) and after (Hono answers), which is the proof a move PR
- * offers. A move PR may not edit its group's contract file (plan rule 2).
+ * it, over a real port. So the same unchanged file passed before a group moved
+ * (Express answered) and after (Hono answers), which is the proof each move PR
+ * offered; a move PR could not edit its group's contract file (plan rule 2).
+ * The contracts now pin the server's answers for whatever changes it next.
  *
  * Each case set should include the refusals as well as the answers: no
  * credential, a foreign `Host`, a wrong `Origin`, an empty body, malformed JSON
@@ -30,7 +31,6 @@ const SERVER_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '.
 const REPO_ROOT = path.resolve(SERVER_DIR, '../..');
 // The CLI script run by this Node, not the `.bin` shim, so it spawns the same way everywhere.
 const TSX_CLI = path.join(SERVER_DIR, 'node_modules/tsx/dist/cli.mjs');
-const RECORD_MOUNT_PATHS = path.join(SERVER_DIR, 'src/http/route-census/record-mount-paths.ts');
 
 /** How long a cold boot may take before the harness gives up. */
 export const BOOT_TIMEOUT_MS = 180_000;
@@ -153,7 +153,7 @@ export async function bootComposedServer(
   // numbers with a leading zero are not a valid semver prerelease, and the
   // config store refuses to start on that version.
   const version = `0.0.0-contract.r${randomUUID().slice(0, 8)}`;
-  const child = spawn(process.execPath, [TSX_CLI, '--import', RECORD_MOUNT_PATHS, 'src/index.ts'], {
+  const child = spawn(process.execPath, [TSX_CLI, 'src/index.ts'], {
     cwd: SERVER_DIR,
     env: serverEnv(port, dorkHome, version, extra),
     stdio: ['ignore', 'pipe', 'pipe'],

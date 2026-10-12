@@ -1,5 +1,5 @@
 /** Server-resolved metadata ownership. No browser or grant authority is issued here. */
-import type { Request, Response } from 'express';
+import type { RequestFacts } from '../../../http/request-facts.js';
 import { isLocalCaller, refuseUnlessAccountOwner } from '../../../lib/caller-authority.js';
 import { readOwnerAccount } from '../auth/index.js';
 import { configManager } from '../config-manager.js';
@@ -19,8 +19,8 @@ export interface BrowserOwnerNamespace {
 
 /**
  * Construct a resolver in trusted server composition, after auth and rooms boot.
- * It accepts real server Request/Response objects after sessionGate; request
- * body owner/actor fields are never read. Under login-off, the established local
+ * It accepts a request's facts after the session gate (`honoRequestFacts`);
+ * request body owner/actor fields are never read. Under login-off, the established local
  * trust and insecure-bind deployment residuals remain, without a human-proof
  * claim. The existing author registry preserves the local author's ID when the
  * install gains an owner account. This module does not wire a route or engine.
@@ -34,12 +34,12 @@ export function createBrowserOwnerScopeResolver() {
   let retired = false;
   return Object.freeze({
     /** Apply existing person/owner/local bars before resolving the operator author. */
-    resolve(req: Request, res: Response): BrowserOwnerScope | null {
+    resolve(caller: RequestFacts): BrowserOwnerScope | null {
       if (retired) return null;
       try {
         const loginEnabled = configManager.get('auth')?.enabled === true;
-        if (refuseUnlessAccountOwner(req, res) !== undefined) return null;
-        if (!loginEnabled && !isLocalCaller(req)) return null;
+        if (refuseUnlessAccountOwner(caller) !== undefined) return null;
+        if (!loginEnabled && !isLocalCaller(caller)) return null;
         const ownerId = readOwnerAccount()?.id ?? null;
         const author = resolveOperatorAuthor(getRoomService().authorRegistry);
         const ownerAuthorId = author.id;
@@ -55,8 +55,8 @@ export function createBrowserOwnerScopeResolver() {
         if (
           (configManager.get('auth')?.enabled === true) !== loginEnabled ||
           (readOwnerAccount()?.id ?? null) !== ownerId ||
-          refuseUnlessAccountOwner(req, res) !== undefined ||
-          (!loginEnabled && !isLocalCaller(req)) ||
+          refuseUnlessAccountOwner(caller) !== undefined ||
+          (!loginEnabled && !isLocalCaller(caller)) ||
           retired
         )
           return null;

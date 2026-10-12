@@ -13,10 +13,18 @@
  * tokens (the host strips them); `ctx.requirePerson` reads the host's verdict
  * instead (`proxy-ctx.ts`).
  *
+ * A request the router does not answer goes to the extension's `fetch`
+ * handler when `register()` returned one, as in-process
+ * (`http/fetch-handler.ts`): the path below the mount, the caller's headers,
+ * and a JSON body sent again as JSON or any other body as its stream.
+ *
  * @module services/extensions/isolation/child/virtual-server
  */
 import http from 'node:http';
+import { Readable } from 'node:stream';
+import type { ReadableStream as WebReadableStream } from 'node:stream/web';
 import type express from 'express';
+import type { ExtensionFetchHandler } from '@dorkos/extension-api/server';
 import type { ChildMessage, ConnMessage, HostMessage } from '../ipc-protocol.js';
 import { VirtualSocket } from '../virtual-socket.js';
 
@@ -42,6 +50,69 @@ export interface VirtualServer {
   receive(message: HostMessage): boolean;
   /** Drop every open connection (the child is stopping). */
   closeAll(): void;
+  /** Send what the router passes on to this `fetch` handler, or to the 404 for `null`. */
+  serveFetch(handler: ExtensionFetchHandler | null): void;
+}
+
+/** Methods whose request carries no body. */
+const BODILESS = new Set(['GET', 'HEAD']);
+
+/**
+ * Answer one request with an extension's `fetch` handler: a web `Request`
+ * for the path below the mount (`req.url` inside the mount), and its
+ * `Response` written back.
+ *
+ * @param handler - The extension's handler.
+ * @param req - The request, with any JSON body already parsed.
+ * @param res - Where the answer goes.
+ */
+async function answerWithFetch(
+  handler: ExtensionFetchHandler,
+  req: express.Request,
+  res: express.Response
+): Promise<void> {
+  const headers = new Headers();
+  for (const [name, value] of Object.entries(req.headers)) {
+    if (value === undefined) continue;
+    for (const one of Array.isArray(value) ? value : [value]) headers.append(name, one);
+  }
+  let body: BodyInit | null = null;
+  if (req.body !== undefined) {
+    body = JSON.stringify(req.body);
+    for (const name of ['content-length', 'content-encoding', 'transfer-encoding']) {
+      headers.delete(name);
+    }
+  } else if (!BODILESS.has(req.method)) {
+    body = Readable.toWeb(req) as unknown as BodyInit;
+  }
+  const abort = new AbortController();
+  res.once('close', () => {
+    if (!res.writableFinished) abort.abort();
+  });
+  const answer: unknown = await handler(
+    new Request(`http://${req.headers.host ?? 'localhost'}${req.url}`, {
+      method: req.method,
+      headers,
+      body,
+      signal: abort.signal,
+      duplex: 'half',
+    } as RequestInit)
+  );
+  if (!(answer instanceof Response)) {
+    throw new Error('The fetch handler answered with something that is not a Response.');
+  }
+  res.status(answer.status);
+  // `set-cookie` is left out here: the host drops it from every reply anyway.
+  answer.headers.forEach((value, name) => {
+    if (name !== 'set-cookie') res.setHeader(name, value);
+  });
+  if (!answer.body) {
+    res.end();
+    return;
+  }
+  Readable.fromWeb(answer.body as WebReadableStream)
+    .on('error', () => res.destroy())
+    .pipe(res);
 }
 
 /**
@@ -57,6 +128,14 @@ export function createVirtualServer(deps: VirtualServerDeps): VirtualServer {
   // same limit, gives isolated routes the same request.
   app.use(deps.express.json({ limit: '1mb' }));
   app.use(`/api/ext/${deps.extensionId}`, deps.router);
+  let fetchHandler: ExtensionFetchHandler | null = null;
+  app.use(`/api/ext/${deps.extensionId}`, (req, res, next) => {
+    if (!fetchHandler) {
+      next();
+      return;
+    }
+    answerWithFetch(fetchHandler, req, res).catch(next);
+  });
   // Nothing in the router matched.
   app.use((req: express.Request, res: express.Response) => {
     res.status(404).json({ error: `Extension '${deps.extensionId}' has no route for ${req.path}` });
@@ -118,6 +197,9 @@ export function createVirtualServer(deps: VirtualServerDeps): VirtualServer {
     closeAll() {
       for (const socket of sockets.values()) socket.destroy();
       sockets.clear();
+    },
+    serveFetch(handler) {
+      fetchHandler = handler;
     },
   };
 }

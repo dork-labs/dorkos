@@ -1,5 +1,4 @@
 /** Existing HTTP and WebSocket scopes share the production document stream instance. */
-import type { Request, Response } from 'express';
 import type { CanvasChannelNotification } from '@dorkos/shared/canvas-channel-schemas';
 import type { RequestFacts } from '../../../../http/request-facts.js';
 /** Privileged projection rechecks its captured authority at the actual wire boundary. */
@@ -23,12 +22,7 @@ export function setDocScopeNotificationsFactory(
 /** Preserve the request's actual authority facts; never substitute a default operator. */
 export function docScopeNotifications(
   scope: string,
-  req: Pick<Request, 'headers'>,
-  res: Pick<Response, 'locals'>
+  caller: DocScopeCaller
 ): DocScopeNotifications | undefined {
-  return factory?.(scope, {
-    headers: req.headers,
-    agentIdentity: res.locals.agentIdentity,
-    user: res.locals.user,
-  });
+  return factory?.(scope, caller);
 }

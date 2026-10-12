@@ -46,7 +46,7 @@ cd apps/e2e && PWDEBUG=1 npx playwright test tests/chat/send-message.spec.ts
 
 ```
 apps/e2e/
-├── playwright.config.ts      # Multi-server config (Vite + Express)
+├── playwright.config.ts      # Multi-server config (Vite + the Hono server)
 ├── manifest.json              # Test registry + run history (regenerable, gitignored — DOR-726)
 ├── manifest-curated.json      # Hand-curated relatedCode/explorationNotes (tracked)
 ├── GOTCHAS.md                 # Known anti-patterns and hard-won lessons
@@ -75,7 +75,7 @@ apps/e2e/
     ├── dashboard-sidebar/     # Roster groups and drag-and-drop
     ├── pulse/                 # Pulse panel tests
     ├── relay/                 # Relay "Connections" dialog + adapter wizard
-    ├── production/            # The built app served by Express, real CSP
+    ├── production/            # The built app served by the server, real CSP
     ├── rooms/                 # Channels, DMs, mentions, palette
     ├── settings/
     └── tasks/                 # Tasks Scheduler dialog
@@ -196,11 +196,11 @@ test.describe('Feature — Description @smoke', () => { ... });
 | `cd apps/e2e && PWDEBUG=1 npx playwright test <file>` | Debug mode                      |
 | `cd apps/e2e && npx playwright show-report`           | View HTML report                |
 
-The `webServer` config in `playwright.config.ts` auto-starts every leg the run needs — the Express and Vite servers, and (opt-in) the marketing site and production legs. No run adopts a server it did not start, so a busy port is a startup error naming that port rather than a silent attachment. `apps/e2e/README.md` has the port table and the isolated-run recipe.
+The `webServer` config in `playwright.config.ts` auto-starts every leg the run needs — the Hono and Vite servers, and (opt-in) the marketing site and production legs. No run adopts a server it did not start, so a busy port is a startup error naming that port rather than a silent attachment. `apps/e2e/README.md` has the port table and the isolated-run recipe.
 
 ### The production leg (`E2E_PROD`)
 
-Almost every spec loads the app from Vite, which serves its own shell with **no `Content-Security-Policy` header**. The shipped policy goes out only with the built shell an `NODE_ENV=production` Express server serves, so a directive that breaks a real browser surface used to be invisible to this entire suite (DOR-560 shipped one). `E2E_PROD=1` boots that leg — the built client, served the way production serves it — and the `chromium-production` project runs `tests/production/` against it. It is on by default in CI and off by default locally, because it has to build the client first.
+Almost every spec loads the app from Vite, which serves its own shell with **no `Content-Security-Policy` header**. The shipped policy goes out only with the built shell an `NODE_ENV=production` server serves, so a directive that breaks a real browser surface used to be invisible to this entire suite (DOR-560 shipped one). `E2E_PROD=1` boots that leg — the built client, served the way production serves it — and the `chromium-production` project runs `tests/production/` against it. It is on by default in CI and off by default locally, because it has to build the client first.
 
 Keep it a smoke subset: the shell booting, and the surfaces the policy can silently take away. Ordinary feature coverage belongs on the app leg. Never drive a turn there — that leg registers the real Claude Code runtime.
 
@@ -355,7 +355,7 @@ Browser tests that don't need real Claude API calls use `TestModeRuntime` — a 
 
 ### How It Works
 
-1. Playwright starts a second Express server with `DORKOS_TEST_RUNTIME=true` on `MOCK_PORT` (default 4243, env `DORKOS_MOCK_PORT`)
+1. Playwright starts a second server with `DORKOS_TEST_RUNTIME=true` on `MOCK_PORT` (default 4243, env `DORKOS_MOCK_PORT`)
 2. A second Vite client on `MOCK_VITE_PORT` (default 4248, env `DORKOS_MOCK_VITE_PORT`) proxies `/api` to the mock server
 3. Tests configure scenarios via `POST /api/test/scenario` before each interaction
 4. The `chromium-mock` Playwright project targets the mock Vite client
@@ -367,13 +367,13 @@ Every row names the env var that MOVES the leg — the name you set, not the
 
 | Env var (default)                 | Service                                                                   |
 | --------------------------------- | ------------------------------------------------------------------------- |
-| `DORKOS_COCKPIT_PORT` (4245)      | App Express server                                                        |
+| `DORKOS_COCKPIT_PORT` (4245)      | App server                                                                |
 | `DORKOS_COCKPIT_VITE_PORT` (4244) | Vite client proxying to the app server                                    |
-| `DORKOS_MOCK_PORT` (4243)         | Test-mode Express server                                                  |
+| `DORKOS_MOCK_PORT` (4243)         | Test-mode server                                                          |
 | `DORKOS_MOCK_VITE_PORT` (4248)    | Vite client proxying to mock server — 6244 is reserved for `@dorkos/site` |
-| `DORKOS_PROD_PORT` (4246)         | Production Express server, serving the built client (opt-in, `E2E_PROD`)  |
+| `DORKOS_PROD_PORT` (4246)         | Production server, serving the built client (opt-in, `E2E_PROD`)          |
 
-Every Express leg runs against a throwaway `DORK_HOME` under `/tmp`, keyed by that
+Every server leg runs against a throwaway `DORK_HOME` under `/tmp`, keyed by that
 leg's port and deleted before every boot — `/tmp/dorkos-cockpit-<port>`,
 `/tmp/dorkos-test-mode-<port>` and `/tmp/dorkos-production-<port>`. No run reads or writes the dev data directory
 (`apps/server/.temp/.dork`) or a real `~/.dork` (DOR-1223). The app leg reads

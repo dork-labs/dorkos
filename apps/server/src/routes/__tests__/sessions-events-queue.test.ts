@@ -73,7 +73,6 @@ vi.mock('../../services/core/config-manager.js', () => ({
 
 vi.mock('@dorkos/shared/manifest', () => ({ readManifest: vi.fn(async () => null) }));
 
-import { createApp, finalizeApp } from '../../app.js';
 import { composedListener } from '../../http/__tests__/composed-listener.js';
 import { STREAM_EPOCH } from '../../lib/stream-cursor.js';
 import {
@@ -92,10 +91,8 @@ import {
 } from '../../services/session/session-state-projector.js';
 
 const admission = new MainRequestAdmission();
-const app = createApp({ admission });
-finalizeApp(app);
 // Routed as the running server routes: the session routes answer from Hono.
-const listener = composedListener(app, admission);
+const listener = composedListener(admission);
 
 const SESSION_ID = '00000000-0000-4000-8000-0000000000aa';
 const TAB = 'window-a';

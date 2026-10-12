@@ -7,7 +7,7 @@ vi.mock('../../services/core/tunnel-manager.js', () => ({
 
 import { tunnelManager } from '../../services/core/tunnel-manager.js';
 import { markManagedIngress } from '../../services/core/remote/ingress-mark.js';
-import { bypassesManagedIngress, managedHostGuard } from '../managed-host-guard.js';
+import { bypassesManagedIngress } from '../managed-host-guard.js';
 
 function request(host: string): IncomingMessage {
   return { headers: { host } } as unknown as IncomingMessage;
@@ -40,17 +40,5 @@ describe('bypassesManagedIngress', () => {
 
   it('flags nothing while managed access is closed', () => {
     expect(bypassesManagedIngress(request('abc.remote.example'))).toBe(false);
-  });
-});
-
-describe('managedHostGuard', () => {
-  it('answers 403 and never calls next for a bypass', () => {
-    setManagedHosts(['abc.remote.example']);
-    const json = vi.fn();
-    const res = { status: vi.fn(() => ({ json })) };
-    const next = vi.fn();
-    managedHostGuard(request('abc.remote.example') as never, res as never, next);
-    expect(res.status).toHaveBeenCalledWith(403);
-    expect(next).not.toHaveBeenCalled();
   });
 });

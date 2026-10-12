@@ -13,12 +13,11 @@
  *
  * @module routes/audit-reader
  */
-import type { Request, Response } from 'express';
 import type { AccountIds } from '../services/audit/account-ids.js';
 import { auditTrail } from '../services/audit/audit-trail.js';
 import { OWNER_READER, type AuditReader } from '../services/audit/visibility.js';
 import { readableSessionIds } from '../services/audit/session-visibility.js';
-import { getRequestAgentIdentity, presentsAgentIdentity } from '../middleware/agent-identity.js';
+import { presentsAgentIdentity } from '../middleware/agent-identity.js';
 import { errorBody } from '../lib/route-utils.js';
 import type { RequestFacts } from '../http/request-facts.js';
 
@@ -28,40 +27,15 @@ type ReaderFacts = Pick<RequestFacts, 'headers' | 'agentIdentity'>;
 /**
  * Who is reading, from the request.
  *
- * Takes a request's facts (`http/request-facts.ts`), or the Express request
- * and response the Express routes still hand it.
- *
- * @param request - The request's facts, or the Express request, for the raw agent header.
- * @param res - With an Express request: the response carrying the resolved identity.
+ * @param facts - The request's facts (`http/request-facts.ts`), for the raw
+ *   agent header and the resolved identity. A WebSocket upgrade passes
+ *   `upgradeCaller(headers, locals)`.
  * @param accounts - Names an agent as a stable account id; defaults to the
  *   process-wide audit trail's.
  */
 export function readerOfRequest(
-  request: ReaderFacts,
-  accounts?: Pick<AccountIds, 'forAgentIdentity'>
-): AuditReader;
-export function readerOfRequest(
-  req: Pick<Request, 'headers'>,
-  res: Pick<Response, 'locals'>,
-  accounts?: Pick<AccountIds, 'forAgentIdentity'>
-): AuditReader;
-export function readerOfRequest(
-  req: Pick<Request, 'headers'> | ReaderFacts,
-  second?: Pick<Response, 'locals'> | Pick<AccountIds, 'forAgentIdentity'>,
-  third?: Pick<AccountIds, 'forAgentIdentity'>
-): AuditReader {
-  const express = second !== undefined && 'locals' in second;
-  const facts: ReaderFacts = express
-    ? { headers: req.headers, agentIdentity: getRequestAgentIdentity(second) }
-    : (req as ReaderFacts);
-  const accounts = (express ? third : second) as Pick<AccountIds, 'forAgentIdentity'> | undefined;
-  return readerOf(facts, accounts ?? auditTrail()?.accounts);
-}
-
-/** {@link readerOfRequest}'s rule, on the request's facts. */
-function readerOf(
   facts: ReaderFacts,
-  accounts: Pick<AccountIds, 'forAgentIdentity'> | undefined
+  accounts: Pick<AccountIds, 'forAgentIdentity'> | undefined = auditTrail()?.accounts
 ): AuditReader {
   if (!presentsAgentIdentity(facts)) return OWNER_READER;
   const identity = facts.agentIdentity;

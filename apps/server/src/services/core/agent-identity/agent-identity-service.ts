@@ -378,10 +378,10 @@ export class AgentIdentityService {
 }
 
 /**
- * The process-wide service, initialized at boot before the Express app is
- * built. Mirrors the auth module's `initAuth`/`getAuth` singleton so the
- * resolution middleware — which is mounted inside `createApp()`, where no
- * database handle is in scope — can reach it lazily.
+ * The process-wide service, initialized at boot before the first request.
+ * Mirrors the auth module's `initAuth`/`getAuth` singleton so the
+ * agent-identity step in the chain (`http/api-chain.ts`), which has no
+ * database handle in scope, can reach it lazily.
  */
 let service: AgentIdentityService | undefined;
 

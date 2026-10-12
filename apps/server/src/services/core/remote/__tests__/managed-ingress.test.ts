@@ -69,7 +69,11 @@ beforeEach(async () => {
   });
   app.get('/whoami', (req, res) => {
     res.json({
-      local: isLocalCaller(req),
+      local: isLocalCaller({
+        headers: req.headers,
+        peerAddress: req.socket.remoteAddress,
+        managedIngress: isManagedIngress(req),
+      }),
       marked: isManagedIngress(req),
     });
   });

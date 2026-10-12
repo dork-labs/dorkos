@@ -3,12 +3,12 @@
  * eval-harness). Wires the SUBSET of `index.ts start()` that a driven turn
  * needs — the config store, the consolidated DB + migrations, the durable
  * session-event store, and a registered `TestModeRuntime` as the default — then
- * builds the app via `createApp()` / `finalizeApp()`. Everything is scoped to
- * `dorkHome`, so a boot never touches the developer's real `~/.dork`.
+ * builds the app via `composeFrontDoor()`. Everything is scoped to `dorkHome`,
+ * so a boot never touches the developer's real `~/.dork`.
  *
- * WHY THIS EXISTS: `createApp()` alone mounts only routes. The runtime registry,
- * the DB handle, and the session-event store are process-global singletons that
- * `start()` wires and `createApp()` does not — so a bare `createApp()` server
+ * WHY THIS EXISTS: `composeFrontDoor()` alone mounts only routes. The runtime
+ * registry, the DB handle, and the session-event store are process-global
+ * singletons that `start()` wires and the routes do not — so a bare server
  * answers `/api/health` but 400s / 500s the moment a real turn is triggered (no
  * runtime registered). The harness needs a REAL turn to stream on `test-mode`
  * (the `widget-round-trip` eval), which requires exactly that wiring.
@@ -25,7 +25,6 @@ import { mkdir } from 'node:fs/promises';
 import type { RequestListener } from 'node:http';
 import { createDb, runMigrations, type Db } from '@dorkos/db';
 import { MeshCore } from '@dorkos/mesh';
-import { createApp, finalizeApp } from './app.js';
 import { frontDoorListener } from './http/front-door.js';
 import { composeFrontDoor } from './http/hono-api.js';
 import { MainRequestAdmission } from './services/core/lifecycle/main-request-admission.js';
@@ -52,9 +51,9 @@ import { LocalRoomAttachmentStore } from './services/rooms/attachments/local-roo
 /** A booted in-process harness server: its routing plus a DB-closing teardown. */
 export interface InProcessTestServer {
   /**
-   * The server's routing, as the running server serves it: the front door,
-   * the Hono `/api` app with the moved route groups, and the configured
-   * Express app behind it (routes + a registered test-mode runtime).
+   * The server's routing, as the running server serves it: the front door
+   * built by `composeFrontDoor()`, with every route group mounted on the
+   * chain (routes + a registered test-mode runtime).
    */
   listener: RequestListener;
   /** Close the sandbox DB handle so the sandbox directory can be removed cleanly. */
@@ -79,8 +78,8 @@ export interface InProcessTestServer {
  * @returns The server's routing and a teardown that closes the DB.
  */
 export async function bootInProcessTestServer(dorkHome: string): Promise<InProcessTestServer> {
-  // Config store first — `sessionGate` reads it on every request; without it
-  // `createApp()` 500s (spec eval-harness Errata, in-process boot recipe).
+  // Config store first — the session gate reads it on every request; without
+  // it every request 500s (spec eval-harness Errata, in-process boot recipe).
   initConfigManager(dorkHome);
 
   // Filesystem boundary — the `/events` subscribe (and cwd validation) call
@@ -131,7 +130,7 @@ export async function bootInProcessTestServer(dorkHome: string): Promise<InProce
   const mesh = new MeshCore({ db, agentsHomeDir, logger });
   await mesh.reconcileOnStartup();
 
-  // The rooms graph. `/api/rooms` is mounted by `createApp()` unconditionally,
+  // The rooms graph. `/api/rooms` is mounted unconditionally,
   // so without this every room route answers 500 ("RoomService not initialized")
   // — including the SSE stream a rooms eval collects.
   const rooms = createRoomSubsystem({ db });
@@ -143,7 +142,6 @@ export async function bootInProcessTestServer(dorkHome: string): Promise<InProce
   });
 
   const admission = new MainRequestAdmission();
-  const app = createApp({ admission });
 
   // **The capability invoke route, with the rooms domain on it.** The Hono
   // `/api` app mounts `POST /api/capabilities/:id/invoke` (and the catalog)
@@ -175,11 +173,10 @@ export async function bootInProcessTestServer(dorkHome: string): Promise<InProce
   // This boot needs no env var to know the answer: it registers
   // `TestModeRuntime` itself, unconditionally, so these routes belong on it by
   // construction (`http/hono-api.ts` mounts them once either way).
-  finalizeApp(app);
 
   return {
     listener: frontDoorListener(
-      composeFrontDoor(app, admission, {
+      composeFrontDoor(admission, {
         // The session routes read the registry. `POST /api/test/seed-agent`
         // gets it too; harness cases seed on disk instead, but a route that
         // answers 500 for a missing registry is worse than one wired.

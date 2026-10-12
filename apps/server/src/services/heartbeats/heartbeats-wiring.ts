@@ -1,8 +1,8 @@
 /**
  * Heartbeats at server startup and shutdown (spec `heartbeats` §3, §9, §11):
  * one call from the composition root builds the store, the outbox, the runner
- * and the event-wake hub, wires them to the services they read, mounts
- * `GET /api/agents/:id/heartbeat`, and follows `heartbeats.enabled`.
+ * and the event-wake hub, wires them to the services they read, hands over
+ * what `GET /api/agents/:id/heartbeat` reads, and follows `heartbeats.enabled`.
  *
  * - **Off is really off** (§3.6). With `heartbeats.enabled` false nothing is
  *   armed and nothing is answered: no beat timer, no outbox tick, no event-wake
@@ -16,7 +16,6 @@
  */
 import { randomUUID } from 'node:crypto';
 import { agentPause } from '../mesh/pause/index.js';
-import type { Express } from 'express';
 import { and, desc, eq, gt, inArray } from 'drizzle-orm';
 import type { MeshCore } from '@dorkos/mesh';
 import { agentConnectionAttachments, pulseRuns, pulseSchedules, type Db } from '@dorkos/db';
@@ -25,12 +24,13 @@ import { configManager } from '../core/config-manager.js';
 import { runtimeRegistry } from '../core/runtime-registry.js';
 import type { CommitmentService } from '../commitments/index.js';
 import { resolveAgentIdForPath } from '../mesh/agent-path-lookup.js';
-import { refuseUnlessAccountOwner } from '../../lib/caller-authority.js';
 import { resolveSessionCwd } from '../workspace/resolve-session-cwd.js';
 import { setLaunchOriginReader } from '../session/origin/outsider-turns.js';
 import { onDispatchLifecycle } from '../session/message-dispatcher.js';
 import { auditTrail } from '../audit/audit-trail.js';
-import { createHeartbeatRouter } from '../../routes/heartbeats.js';
+import type { HeartbeatRouterDeps } from '../../routes/heartbeats.js';
+import type { HeartbeatTriageRouterDeps } from '../../routes/heartbeat-triage.js';
+import type { SessionOriginResolvers } from '../session/origin/session-origin-overlays.js';
 import { createReportsToChain, OWNER_FALLBACK_ACCOUNT_ID } from './reports-to.js';
 import { HeartbeatStore } from './heartbeat-store.js';
 import { RaiseStore } from './raises/raise-store.js';
@@ -64,8 +64,14 @@ import {
 
 /** What the composition root hands over. */
 export interface HeartbeatsWiringDeps extends DeliveryDeps {
-  /** The Express app, for the status route and the chat list's label. */
-  app: Express;
+  /**
+   * Where the routes' reads go: the status route's
+   * (`GET /api/agents/:id/heartbeat`) and the credits answer's
+   * (`PUT /api/heartbeats/triage-credits`), both mounted by `http/hono-api.ts`.
+   */
+  routes: { heartbeat?: HeartbeatRouterDeps; heartbeatTriage?: HeartbeatTriageRouterDeps };
+  /** The session list's origin overlays, which gain the chat list's Heartbeat label. */
+  origins: SessionOriginResolvers;
   /** Mesh, once it runs. */
   meshCore: () => MeshCore | undefined;
   /** Commitments, for the gatherer, the prompt and due wakes. */
@@ -185,7 +191,7 @@ export function startHeartbeats(deps: HeartbeatsWiringDeps): HeartbeatsHandle {
   const presenceOf = () => ({ hours: hours(), away: configManager.get('profile').away ?? null });
   const nameOf = (id: string) =>
     agents.get(id)?.name ?? configManager.get('profile').displayName ?? 'your manager';
-  const triage = mountTriage({ app: deps.app, db, raises, timezone: () => hours().timezone });
+  const triage = mountTriage({ routes: deps.routes, db, raises, timezone: () => hours().timezone });
   const outbox = new BeatOutbox({
     store,
     raises,
@@ -342,7 +348,7 @@ function mountStatus(
     triage: TriageMount;
   }
 ): void {
-  deps.app.locals.resolveBeatChats = beatChatResolver(deps.db);
+  deps.origins.resolveBeatChats = beatChatResolver(deps.db);
   const isAgent = (id: string) => deps.meshCore()?.get(id) !== undefined;
   const status = (agentId: string, viewerIsOwner: boolean, days?: number) =>
     heartbeatStatus({
@@ -365,13 +371,7 @@ function mountStatus(
           ...(days !== undefined ? { days } : {}),
         }),
     });
-  deps.app.use(
-    '/api/agents/:id/heartbeat',
-    createHeartbeatRouter({
-      isOwner: (req, res) => refuseUnlessAccountOwner(req, res) === undefined,
-      status,
-    })
-  );
+  deps.routes.heartbeat = { status };
   // An agent reads what anyone but the owner sees: no held words, no chat ids.
   setHeartbeatStatusReader({
     status: (agentId, days) => status(agentId, false, days),

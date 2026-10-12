@@ -23,7 +23,6 @@ vi.mock('../../services/core/config-manager.js', () => ({
 import request from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
 import { DeepHealthResponseSchema } from '@dorkos/shared/health-schemas';
-import { createApp } from '../../app.js';
 import { composedListener } from '../../http/__tests__/composed-listener.js';
 import type { DeepHealthDeps } from '../../services/observability/deep-health/index.js';
 
@@ -32,7 +31,7 @@ const fixtureTarget = swappableServer();
 /** The server's routing, with the deep-health reads a test hands it, if any. */
 function serve(deepHealth?: DeepHealthDeps) {
   const admission = new MainRequestAdmission();
-  return composedListener(createApp({ admission }), admission, { deepHealth });
+  return composedListener(admission, { deepHealth });
 }
 
 describe('GET /api/health/deep', () => {

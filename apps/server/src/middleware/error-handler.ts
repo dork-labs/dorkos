@@ -1,5 +1,4 @@
 import { BoundaryError } from '../lib/boundary.js';
-import type { Request, Response, NextFunction } from 'express';
 import { runtimeDisplayName } from '@dorkos/shared/agent-runtime';
 import { logger } from '../lib/logger.js';
 import {
@@ -19,8 +18,7 @@ export interface ErrorReply {
 /**
  * Log an error no route handled, with the request it broke.
  *
- * Shared by the Express handler below and the Hono chain's `onError`
- * (`http/api-chain.ts`), so both chains leave the same line.
+ * Written by the chain's `onError` (`http/api-chain.ts`).
  *
  * @param err - The error.
  * @param method - The request method.
@@ -38,28 +36,10 @@ export function logRequestError(err: Error, method: string, path: string): void 
   });
 }
 
-/** Global Express error handler that logs the error and returns a JSON response. */
-export function errorHandler(err: Error, req: Request, res: Response, next: NextFunction): void {
-  // If the response is already streaming/flushed (e.g. the durable session SSE
-  // stream), the headers are sent and we can't write a JSON error body. Express 5
-  // auto-forwards async rejections here, so a post-flush rejection would otherwise
-  // throw ERR_HTTP_HEADERS_SENT — delegate to Express's default handler, which
-  // closes the socket. (Matches the guards in http/send-file.ts, routes/mcp.ts.)
-  if (res.headersSent) {
-    next(err);
-    return;
-  }
-
-  logRequestError(err, req.method, req.path);
-  const reply = errorReply(err);
-  res.status(reply.status).json(reply.body);
-}
-
 /**
  * How an error no route handled is answered: which status, and which body.
  *
- * One mapping for both chains, so a moved route fails exactly the way it did
- * under Express.
+ * One mapping for every route, so they all fail the same way.
  *
  * @param err - The error.
  * @returns The status and body to answer with.
@@ -112,7 +92,7 @@ export function errorReply(err: Error): ErrorReply {
 
   // A body that never fit is not a server fault, and answering 500 to it is a
   // small lie with a real cost: a person saving a large file in a room was told
-  // "Internal server error" by `express.json`'s own 1 MB limit, so the message
+  // "Internal server error" by the body parser's own 1 MB limit, so the message
   // said nothing about the one thing they could act on (DOR-1600's review).
   //
   // Deliberately narrow. `body-parser` raises several kinds of failure and this

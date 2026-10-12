@@ -36,12 +36,12 @@ vi.mock('../../session/launch/launch-session.js', () => ({
   }),
 }));
 
-import express from 'express';
 import request from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
 import { createTestDb } from '@dorkos/test-utils/db';
 import type { ProjectInfo } from '@dorkos/extension-api/server';
-import { createExtensionsRouter } from '../../../routes/extensions.js';
+import { createExtensionsRoutes } from '../../../routes/extensions.js';
+import { honoGroupListener } from '../../../http/__tests__/hono-group-listener.js';
 import { SessionStartedByStore } from '../../session/origin/session-started-by-store.js';
 import { StartWorkService, setStartWorkService } from '../start-work.js';
 import { createDataProviderContext } from '../extension-server-api-factory.js';
@@ -98,13 +98,16 @@ beforeEach(() => {
         : undefined,
     listPublic: () => [],
   };
-  const app = express();
-  app.use(express.json());
-  app.use(
-    '/api/extensions',
-    createExtensionsRouter(manager as never, '/tmp/unused', () => null)
+  target.mount(
+    honoGroupListener({
+      path: '/api/extensions',
+      routes: createExtensionsRoutes({
+        manager: manager as never,
+        dorkHome: '/tmp/unused',
+        getCwd: () => null,
+      }),
+    })
   );
-  target.mount(app);
 });
 
 afterEach(() => {

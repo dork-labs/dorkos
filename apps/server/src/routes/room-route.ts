@@ -9,7 +9,7 @@
  * this" and everything else (several parse their body first, some resolve the
  * caller before a query). Whether the refusal is worded for the install's
  * owner depends on whether a caller had been resolved when it was thrown,
- * which is what `res.locals` carried on Express (DOR-2457).
+ * which the route holds itself (DOR-2457).
  *
  * @module routes/room-route
  */

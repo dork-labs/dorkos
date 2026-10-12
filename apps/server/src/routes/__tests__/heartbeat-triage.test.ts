@@ -3,7 +3,14 @@
  * answers the credits offer, never an agent, and the answer is recorded.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import express from 'express';
+
+// The chain these routes run behind reads config and the tunnel per request.
+vi.mock('../../services/core/config-manager.js', () => ({
+  configManager: { get: vi.fn().mockReturnValue(null), set: vi.fn() },
+}));
+vi.mock('../../services/core/tunnel-manager.js', () => ({
+  tunnelManager: { status: { enabled: false, connected: false, url: null } },
+}));
 import request from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
 
@@ -14,7 +21,8 @@ vi.mock('../../lib/caller-authority.js', () => ({
   refuseUnlessAccountOwner: () => refusal.value,
 }));
 
-import { createHeartbeatTriageRouter } from '../heartbeat-triage.js';
+import { createHeartbeatTriageRoutes } from '../heartbeat-triage.js';
+import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
 
 const target = swappableServer();
 let choice: boolean | null;
@@ -24,19 +32,14 @@ beforeEach(() => {
   choice = null;
   records = [];
   refusal.value = undefined;
-  const app = express();
-  app.use(express.json());
-  app.use(
-    '/api/heartbeats/triage-credits',
-    createHeartbeatTriageRouter({
-      choice: () => choice,
-      setChoice: (next) => {
-        choice = next;
-      },
-      record: (before, after) => records.push([before, after]),
-    })
-  );
-  target.mount(app);
+  const routes = createHeartbeatTriageRoutes({
+    choice: () => choice,
+    setChoice: (next) => {
+      choice = next;
+    },
+    record: (before, after) => records.push([before, after]),
+  });
+  target.mount(honoGroupListener({ path: '/api/heartbeats/triage-credits', routes }));
 });
 
 describe('PUT /api/heartbeats/triage-credits', () => {

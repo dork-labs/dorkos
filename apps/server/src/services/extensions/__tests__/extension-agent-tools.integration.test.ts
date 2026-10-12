@@ -338,7 +338,7 @@ describe('extension agent tools through the real lifecycle', () => {
     expect(registered()).toEqual([]);
     // Never offered at all, not offered and then taken back.
     expect(changes).toEqual([]);
-    expect(manager.getServerRouter(ID)).toBeNull();
+    expect(manager.getServerHandler(ID)).toBeNull();
     expect(g.__dor2685_stops).toBe(g.__dor2685_starts);
     delete g.__dor2685_gate;
   }, 30_000);

@@ -1,13 +1,19 @@
 /**
- * The chain-parity matrix (`plans/2026-10-express-to-hono.md`, item 4).
+ * The chain matrix: what the chain (`http/api-chain.ts`) answers in every cell
+ * of login on/off × `Origin` × `Host` × credential × request, and for odd
+ * bodies, thrown errors, a stopping server and a managed hostname.
  *
- * One probe route is mounted behind each chain: the real Express chain from
- * `createApp`, and the Hono chain from `createApiApp`. Every cell of login
- * on/off × `Origin` × `Host` × credential × request is sent to both, and the
- * two must answer alike: the status, the body, the headers a browser or a
- * client acts on, who the probe was told is calling, and the audit row the
- * request left. A route that moves to Hono is then gated, attributed and
- * recorded exactly as it was.
+ * Each answer is checked against a snapshot RECORDED FROM THE EXPRESS CHAIN
+ * the server ran until DOR-2818, when this file was the chain-parity matrix
+ * (`plans/2026-10-express-to-hono.md`, item 4) and required the Hono chain to
+ * answer every cell exactly as Express did: the status, the body, the headers
+ * a browser or a client acts on, who the probe was told is calling, and the
+ * audit row the request left. Express is gone; its answers stay the bar. A
+ * snapshot that changes is a change to how every route is gated, attributed
+ * or recorded, and must be argued for as one, never updated in passing.
+ *
+ * The run's random ids (the owner, its API key, their hashes) are replaced by
+ * placeholders before comparing (`stable`).
  *
  * Better Auth is real, on a throwaway database, so the cookie and the API key
  * are the genuine article. The agent-token store is faked at its seam
@@ -22,10 +28,9 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import type { AddressInfo } from 'node:net';
 import { gzipSync } from 'node:zlib';
+import { createHash } from 'node:crypto';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import { getRequestListener } from '@hono/node-server';
 import { RESPONSE_ALREADY_SENT } from '@hono/node-server/utils/response';
-import type express from 'express';
 import { createDb, runMigrations, user } from '@dorkos/db';
 
 const state = vi.hoisted(() => ({ login: false }));
@@ -56,8 +61,8 @@ vi.mock('../../services/core/agent-identity/agent-identity-service.js', async (o
   };
 });
 
-import { createApp, finalizeApp } from '../../app.js';
 import { createApiApp, type ApiEnv } from '../api-chain.js';
+import { frontDoorListener } from '../front-door.js';
 import { readJsonBody } from '../request-body.js';
 import { MainRequestAdmission } from '../../services/core/lifecycle/main-request-admission.js';
 import { tunnelManager } from '../../services/core/tunnel-manager.js';
@@ -75,14 +80,15 @@ let GOOD_COOKIE = '';
 /** A real per-user API key for the owner. */
 let GOOD_API_KEY = '';
 let ownerId = '';
+/** The owner's API key record id. */
+let apiKeyId = '';
 const authHome = mkdtempSync(path.join(tmpdir(), 'dorkos-chain-parity-'));
 afterAll(() => rmSync(authHome, { recursive: true, force: true }));
 
-// Building the Express app and driving hundreds of real requests is slow on a
-// machine running other suites.
+// Driving hundreds of real requests is slow on a machine running other suites.
 vi.setConfig({ testTimeout: 120_000, hookTimeout: 60_000 });
 
-/** Every audit row either chain wrote, in order. */
+/** Every audit row the chain wrote, in order. */
 const recorded: unknown[] = [];
 
 beforeAll(() => {
@@ -120,7 +126,7 @@ function probeReport(method: string, body: unknown, user: unknown, agent: unknow
   };
 }
 
-/** What the probe can throw, by name, to compare the two error handlers. */
+/** What the probe can throw, by name. */
 const THROWABLE: Record<string, () => unknown> = {
   plain: () => new Error('the probe broke'),
   'not-an-error': () => 'a thrown string',
@@ -138,34 +144,7 @@ const RAW_PATH = '/api/chain-probe/raw';
 /** A route that fails after its response has started. */
 const MIDSTREAM_PATH = '/api/chain-probe/midstream';
 
-function buildExpress(admission: MainRequestAdmission): express.Express {
-  const app = createApp({ admission });
-  const probe = (req: express.Request, res: express.Response) =>
-    res.json(probeReport(req.method, req.body, res.locals.user, res.locals.agentIdentity));
-  app.all('/api/chain-probe', probe);
-  app.all('/api/health/chain-probe', probe);
-  app.all('/api/health/deep/chain-probe', probe);
-  app.post(RECORDING_PATH, (req, res) => {
-    recordAudit({ action: 'probe.recorded', operation: 'execute', summary: 'probe' } as never);
-    probe(req, res);
-  });
-  app.all('/api/chain-probe/throw/:kind', (req) => {
-    throw THROWABLE[req.params.kind as string]!();
-  });
-  app.get(RAW_PATH, (_req, res) => {
-    res.writeHead(200, { 'content-type': 'text/plain' });
-    res.end('written to the Node response');
-  });
-  app.get(MIDSTREAM_PATH, (_req, res) => {
-    res.writeHead(200, { 'content-type': 'text/plain' });
-    res.write('partly ');
-    throw new Error('failed mid-stream');
-  });
-  finalizeApp(app);
-  return app;
-}
-
-function buildHono(admission: MainRequestAdmission) {
+function buildChain(admission: MainRequestAdmission) {
   const app = createApiApp({ admission });
   const probe = (c: Context<ApiEnv>) =>
     c.json(probeReport(c.req.method, readJsonBody(c), c.get('user'), c.get('agentIdentity')));
@@ -202,7 +181,7 @@ interface Probe {
   chunked?: boolean;
 }
 
-/** The parts of an answer both chains must agree on. */
+/** The parts of an answer the matrix compares. */
 interface Answer {
   status: number;
   /** `Set-Cookie`, kept out of the comparison: Better Auth signs each one afresh. */
@@ -214,7 +193,7 @@ interface Answer {
   audit: unknown[];
 }
 
-/** Headers a client or browser acts on; anything else may differ. */
+/** Headers a client or browser acts on; nothing else is compared. */
 const COMPARED_HEADERS = [
   'access-control-allow-origin',
   'access-control-allow-credentials',
@@ -226,9 +205,9 @@ const COMPARED_HEADERS = [
 
 /**
  * `Vary` as a set, the allowed headers without spacing, and the content type
- * without its charset: Express writes `application/json; charset=utf-8`,
- * Hono `application/json`, and `cors` reflects the requested header list as
- * sent while `hono/cors` trims it.
+ * without its charset: the recorded answers came from Express, which wrote
+ * `application/json; charset=utf-8` where Hono writes `application/json`, and
+ * reflected the requested header list as sent where `hono/cors` trims it.
  */
 function normalizeHeaders(raw: Record<string, string | string[] | undefined>) {
   const one = (name: string) => {
@@ -249,7 +228,7 @@ function normalizeHeaders(raw: Record<string, string | string[] | undefined>) {
 
 /**
  * The same, for a whole response. A `204` drops its content type: the Hono
- * Node adapter labels every bodiless response `text/plain`, Express labels
+ * Node adapter labels every bodiless response `text/plain`, Express labeled
  * none, and there is no body for the label to describe.
  */
 function normalizeResponse(status: number, raw: Record<string, string | string[] | undefined>) {
@@ -310,15 +289,13 @@ async function listen(listener: RequestListener): Promise<{ server: Server; port
 }
 
 const admission = new MainRequestAdmission();
-let expressPort = 0;
-let honoPort = 0;
+let port = 0;
 const servers: Server[] = [];
 
 beforeAll(async () => {
   const db = createDb(path.join(authHome, 'auth.db'));
   runMigrations(db);
   const auth = initAuth(db, authHome);
-  const viaExpress = await listen(buildExpress(admission) as unknown as RequestListener);
   // A real owner, a real session cookie and a real API key, from Better Auth
   // itself: what is under test is the chain around it, not its routes.
   const account = { email: 'owner' + '@' + 'dork.test', password: 'correct-horse-battery-staple' };
@@ -332,18 +309,14 @@ beforeAll(async () => {
     .map((cookie) => cookie.split(';')[0])
     .join('; ');
   ownerId = db.select().from(user).get()!.id;
-  GOOD_API_KEY = (await auth.api.createApiKey({ body: { userId: ownerId, name: 'parity' } })).key;
+  const created = await auth.api.createApiKey({ body: { userId: ownerId, name: 'parity' } });
+  GOOD_API_KEY = created.key;
+  apiKeyId = created.id;
   recorded.length = 0;
-  // Served the way the front door serves Hono (`http/front-door.ts`).
-  const viaHono = await listen(
-    getRequestListener(buildHono(admission).fetch, {
-      overrideGlobalObjects: false,
-      autoCleanupIncoming: false,
-    })
-  );
-  servers.push(viaExpress.server, viaHono.server);
-  expressPort = viaExpress.port;
-  honoPort = viaHono.port;
+  // Served the way the server serves it (`http/front-door.ts`).
+  const served = await listen(frontDoorListener(buildChain(admission)));
+  servers.push(served.server);
+  port = served.port;
 });
 afterAll(async () => {
   await Promise.all(servers.map((server) => new Promise((resolve) => server.close(resolve))));
@@ -355,13 +328,21 @@ beforeEach(() => {
 /** An answer without its cookies, which Better Auth signs afresh each time. */
 type Comparable = Omit<Answer, 'cookies'>;
 
-/** Send one request to both chains and return both answers. */
-async function both(probe: Probe): Promise<{ express: Comparable; hono: Comparable }> {
-  const strip = ({ cookies: _cookies, ...rest }: Answer): Comparable => rest;
-  return {
-    express: strip(await send(expressPort, probe)),
-    hono: strip(await send(honoPort, probe)),
-  };
+/** An answer with the run's random ids (the owner, its API key) replaced, for a snapshot. */
+function stable(answer: Comparable): Comparable {
+  const keyId = apiKeyId;
+  const hash = (id: string) => createHash('sha256').update(id, 'utf8').digest('hex').slice(0, 12);
+  let text = JSON.stringify(answer)
+    .replaceAll(ownerId, '<owner>')
+    .replaceAll(hash(ownerId), '<owner-hash>');
+  if (keyId) text = text.replaceAll(keyId, '<key>').replaceAll(hash(keyId), '<key-hash>');
+  return JSON.parse(text) as Comparable;
+}
+
+/** Send one request to the chain and return its answer, ready to compare. */
+async function answer(probe: Probe, to = port): Promise<Comparable> {
+  const { cookies: _cookies, ...rest } = await send(to, probe);
+  return rest;
 }
 
 const HOSTS = { loopback: 'localhost:4242', foreign: 'rebound.example:4242' } as const;
@@ -419,7 +400,7 @@ const REQUESTS: Record<string, Probe> = {
   'GET a route that writes the Node response itself': { method: 'GET', path: RAW_PATH },
 };
 
-describe('the chain-parity matrix', () => {
+describe('the chain matrix', () => {
   for (const login of [false, true]) {
     for (const [hostName, host] of Object.entries(HOSTS)) {
       for (const [originName, origin] of Object.entries(ORIGINS)) {
@@ -433,8 +414,8 @@ describe('the chain-parity matrix', () => {
                 ...credential,
                 ...request.headers,
               };
-              const answers = await both({ ...request, headers });
-              expect(answers.hono, `${credentialName}, ${requestName}`).toEqual(answers.express);
+              const answered = await answer({ ...request, headers });
+              expect(stable(answered)).toMatchSnapshot(`${credentialName}, ${requestName}`);
             }
           }
         });
@@ -443,53 +424,53 @@ describe('the chain-parity matrix', () => {
   }
 
   it('really varies: the cells it compares do not all answer alike', async () => {
-    // A matrix where both chains answered 500 to everything would agree in
-    // every cell. Pin a few cells that must differ from each other.
+    // A snapshot of 500 for everything would match in every cell. Pin a few
+    // cells that must differ from each other.
     const loopback = { host: HOSTS.loopback };
     state.login = false;
     expect(
-      (await both({ method: 'GET', path: '/api/chain-probe', headers: loopback })).hono.status
+      (await answer({ method: 'GET', path: '/api/chain-probe', headers: loopback })).status
     ).toBe(200);
     expect(
-      (await both({ method: 'GET', path: '/api/chain-probe', headers: { host: HOSTS.foreign } }))
-        .hono.status
+      (await answer({ method: 'GET', path: '/api/chain-probe', headers: { host: HOSTS.foreign } }))
+        .status
     ).toBe(403);
     expect(
       (
-        await both({
+        await answer({
           method: 'GET',
           path: '/api/chain-probe',
           headers: { ...loopback, origin: ORIGINS.foreign },
         })
-      ).hono.status
+      ).status
     ).toBe(500);
     state.login = true;
     expect(
-      (await both({ method: 'GET', path: '/api/chain-probe', headers: loopback })).hono.status
+      (await answer({ method: 'GET', path: '/api/chain-probe', headers: loopback })).status
     ).toBe(401);
-    const signedIn = await both({
+    const signedIn = await answer({
       method: 'POST',
       path: '/api/chain-probe',
       headers: { ...loopback, cookie: GOOD_COOKIE },
     });
-    expect(signedIn.hono.status).toBe(200);
-    expect(signedIn.hono.body).toMatchObject({ user: { userId: ownerId, credential: 'cookie' } });
-    expect(signedIn.hono.audit).toHaveLength(1);
-    const withKey = await both({
+    expect(signedIn.status).toBe(200);
+    expect(signedIn.body).toMatchObject({ user: { userId: ownerId, credential: 'cookie' } });
+    expect(signedIn.audit).toHaveLength(1);
+    const withKey = await answer({
       method: 'GET',
       path: '/api/chain-probe',
       headers: { ...loopback, authorization: `Bearer ${GOOD_API_KEY}` },
     });
-    expect(withKey.hono.body).toMatchObject({
+    expect(withKey.body).toMatchObject({
       user: { userId: ownerId, credential: 'api-key' },
       surface: 'http',
     });
-    const asAgent = await both({
+    const asAgent = await answer({
       method: 'GET',
       path: '/api/chain-probe',
       headers: { ...loopback, cookie: GOOD_COOKIE, 'x-dorkos-agent': GOOD_AGENT_TOKEN },
     });
-    expect(asAgent.hono.body).toMatchObject({
+    expect(asAgent.body).toMatchObject({
       agent: '/agents/scout',
       actor: { type: 'agent', id: '/agents/scout' },
     });
@@ -565,8 +546,7 @@ describe('bodies', () => {
   for (const [name, probe] of Object.entries(BODIES)) {
     it(`reads ${name} the same way`, async () => {
       state.login = name.endsWith('login on');
-      const answers = await both(probe);
-      expect(answers.hono).toEqual(answers.express);
+      expect(stable(await answer(probe))).toMatchSnapshot();
     });
   }
 });
@@ -574,13 +554,13 @@ describe('bodies', () => {
 describe('errors', () => {
   for (const kind of Object.keys(THROWABLE)) {
     it(`answers a route that throws a ${kind} error the same way`, async () => {
-      const answers = await both({
+      const answered = await answer({
         method: 'GET',
         path: `/api/chain-probe/throw/${kind}`,
         headers: { host: HOSTS.loopback },
       });
-      expect(answers.hono.status).toBeGreaterThanOrEqual(400);
-      expect(answers.hono).toEqual(answers.express);
+      expect(answered.status).toBeGreaterThanOrEqual(400);
+      expect(stable(answered)).toMatchSnapshot();
     });
   }
 });
@@ -588,23 +568,15 @@ describe('errors', () => {
 describe('a stopping server', () => {
   it('refuses every request alike once the server is stopping', async () => {
     const closing = new MainRequestAdmission();
-    const viaExpress = await listen(buildExpress(closing) as unknown as RequestListener);
-    const viaHono = await listen(
-      getRequestListener(buildHono(closing).fetch, {
-        overrideGlobalObjects: false,
-        autoCleanupIncoming: false,
-      })
-    );
+    const served = await listen(frontDoorListener(buildChain(closing)));
     try {
       closing.close();
       const probe = { method: 'GET', path: '/api/chain-probe', headers: { host: HOSTS.loopback } };
-      const fromExpress = await send(viaExpress.port, probe);
-      const fromHono = await send(viaHono.port, probe);
-      expect(fromHono.status).toBe(503);
-      expect(fromHono).toEqual(fromExpress);
+      const answered = await answer(probe, served.port);
+      expect(answered.status).toBe(503);
+      expect(stable(answered)).toMatchSnapshot();
     } finally {
-      viaExpress.server.close();
-      viaHono.server.close();
+      served.server.close();
     }
   });
 });
@@ -613,29 +585,20 @@ describe('a managed hostname that skipped the managed ingress', () => {
   it('is refused alike, before any route', async () => {
     const managed = tunnelManager as unknown as { managedHosts?: string[] };
     managed.managedHosts = ['abc.remote.example'];
-    const admission = new MainRequestAdmission();
-    const viaExpress = await listen(buildExpress(admission) as unknown as RequestListener);
-    const viaHono = await listen(
-      getRequestListener(buildHono(admission).fetch, {
-        overrideGlobalObjects: false,
-        autoCleanupIncoming: false,
-      })
-    );
+    const served = await listen(frontDoorListener(buildChain(new MainRequestAdmission())));
     try {
       const probe = {
         method: 'GET',
         path: '/api/chain-probe',
         headers: { host: 'abc.remote.example' },
       };
-      const fromExpress = await send(viaExpress.port, probe);
-      const fromHono = await send(viaHono.port, probe);
-      expect(fromHono.status).toBe(403);
-      expect(fromHono.body).toEqual({ error: 'Forbidden.' });
-      expect(fromHono).toEqual(fromExpress);
+      const answered = await answer(probe, served.port);
+      expect(answered.status).toBe(403);
+      expect(answered.body).toEqual({ error: 'Forbidden.' });
+      expect(stable(answered)).toMatchSnapshot();
     } finally {
       delete managed.managedHosts;
-      viaExpress.server.close();
-      viaHono.server.close();
+      served.server.close();
     }
   });
 });
@@ -643,13 +606,13 @@ describe('a managed hostname that skipped the managed ingress', () => {
 describe('a route that fails after its response has started', () => {
   it('is cut off the same way, and the Hono chain still logs it', async () => {
     vi.mocked(logger.error).mockClear();
-    const answers = await both({
+    const answered = await answer({
       method: 'GET',
       path: MIDSTREAM_PATH,
       headers: { host: HOSTS.loopback },
     });
-    expect(answers.hono).toMatchObject({ status: 200, body: 'partly ', complete: false });
-    expect(answers.hono).toEqual(answers.express);
+    expect(answered).toMatchObject({ status: 200, body: 'partly ', complete: false });
+    expect(stable(answered)).toMatchSnapshot();
     expect(logger.error).toHaveBeenCalledWith(
       '[DorkOS Error]',
       'failed mid-stream',
@@ -659,10 +622,9 @@ describe('a route that fails after its response has started', () => {
 });
 
 describe('odd spellings of a gated path', () => {
-  // Each chain must gate the path its own router would route. Express matches
-  // case-insensitively and without decoding; Hono decodes first and has
-  // already folded dot segments. Neither may hand a credential-less caller a
-  // 2xx under any spelling.
+  // The gate must refuse the path the router would route, however it is
+  // spelled: Hono decodes first and has already folded dot segments. No
+  // spelling may hand a credential-less caller a 2xx.
   const SPELLINGS = [
     '/API/chain-probe',
     '/api/CHAIN-PROBE',
@@ -680,28 +642,25 @@ describe('odd spellings of a gated path', () => {
   for (const spelling of SPELLINGS) {
     it(`never answers ${spelling} without a credential, login on`, async () => {
       state.login = true;
-      const answers = await both({
+      const answered = await answer({
         method: 'GET',
         path: spelling,
         headers: { host: HOSTS.loopback },
       });
-      // Hono's gate runs before its 404 and judges the folded path, so it
-      // refuses every one. Express routes some spellings nowhere, and its 404
-      // is as safe as a 401.
-      expect(answers.hono.status).toBe(401);
-      expect([401, 404]).toContain(answers.express.status);
+      // The gate runs before the 404 and judges the folded path, so it
+      // refuses every one.
+      expect(answered.status).toBe(401);
     });
   }
 
-  it('pins the one routing difference: Hono paths are case-sensitive', async () => {
-    // Express routes `/API/chain-probe` to the probe; Hono finds no route.
-    // Moved groups inherit this (see the module doc of `http/api-chain.ts`).
-    const answers = await both({
+  it('pins the one routing difference from Express: paths are case-sensitive', async () => {
+    // Express routed `/API/chain-probe` to the probe; Hono finds no route.
+    // Every group inherits this (see the module doc of `http/api-chain.ts`).
+    const answered = await answer({
       method: 'GET',
       path: '/API/chain-probe',
       headers: { host: HOSTS.loopback },
     });
-    expect(answers.express.status).toBe(200);
-    expect(answers.hono.status).toBe(404);
+    expect(answered.status).toBe(404);
   });
 });

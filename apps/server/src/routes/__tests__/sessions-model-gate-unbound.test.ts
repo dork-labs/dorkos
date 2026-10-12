@@ -121,7 +121,6 @@ vi.mock('../../services/core/cloud/v1-client.js', async (importOriginal) => {
 import request from '@dorkos/test-utils/supertest';
 import { listeningServer } from '@dorkos/test-utils/listening-server';
 import type { ModelOption, Session } from '@dorkos/shared/types';
-import { createApp, finalizeApp } from '../../app.js';
 import { composedListener } from '../../http/__tests__/composed-listener.js';
 import { projectModelOptions } from '../../services/runtimes/opencode/providers/models.js';
 import { createTestDb } from '@dorkos/test-utils/db';
@@ -139,9 +138,7 @@ const CREDITS_STORE = nodePath.join(
 );
 
 const admission = new MainRequestAdmission();
-const app = createApp({ admission });
-finalizeApp(app);
-const testServer = listeningServer(composedListener(app, admission));
+const testServer = listeningServer(composedListener(admission));
 
 /** No row in `session_metadata` — the state a client-minted id starts in. */
 const UNBOUND = 'aaaaaaaa-0000-4000-8000-00000000000a';

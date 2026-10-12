@@ -1,14 +1,14 @@
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
 import http from 'node:http';
+import type { RequestListener } from 'node:http';
 import type { Request, Response } from 'express';
-import express from 'express';
 import request from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
 import type { DataProxyConfig } from '@dorkos/extension-api';
 
 // --- Mocks ---
 
-const mockSecretGet = vi.fn<[string], Promise<string | null>>();
+const mockSecretGet = vi.fn<(key: string) => Promise<string | null>>();
 
 vi.mock('@dorkos/shared/extension-secrets', () => ({
   ExtensionSecretStore: vi.fn().mockImplementation(function () {
@@ -21,7 +21,12 @@ vi.mock('@dorkos/shared/extension-secrets', () => ({
   }),
 }));
 
-vi.mock('../../../lib/logger.js', () => ({
+// Login off: the chain's session gate reads the `auth` section.
+vi.mock('../../../core/config-manager.js', () => ({
+  configManager: { get: vi.fn().mockReturnValue(null), set: vi.fn() },
+}));
+
+vi.mock('../../../../lib/logger.js', () => ({
   logger: {
     info: vi.fn(),
     debug: vi.fn(),
@@ -32,28 +37,30 @@ vi.mock('../../../lib/logger.js', () => ({
 
 // The real limiter's behaviour is pinned in
 // `middleware/__tests__/extension-proxy-rate-limit.test.ts`. Here it stands in
-// as a spy so these tests can prove WHERE it is mounted — ahead of the handler,
+// as a spy so these tests can prove WHERE it is asked — ahead of the forwarder,
 // so a refusal costs no outbound request — without driving 120 requests.
-const limiter = vi.hoisted(() => ({ seen: [] as string[], refuse: false }));
+const limiter = vi.hoisted(() => ({ hits: 0, refuse: false }));
 
-vi.mock('../../../middleware/extension-proxy-rate-limit.js', () => ({
+vi.mock('../../../../middleware/extension-proxy-rate-limit.js', () => ({
   EXTENSION_PROXY_RATE_LIMIT_DEFAULT: 120,
-  buildExtensionProxyRateLimiter:
-    () =>
-    (req: Request, res: Response, next: () => void): void => {
-      limiter.seen.push(req.url);
-      if (limiter.refuse) {
-        res.status(429).json({ error: 'Too many requests', code: 'PROXY_RATE_LIMITED' });
-        return;
-      }
-      next();
-    },
+  EXTENSION_PROXY_RATE_LIMITED_BODY: { error: 'Too many requests', code: 'PROXY_RATE_LIMITED' },
+  buildExtensionProxyRateLimiter: () => () => {
+    limiter.hits += 1;
+    return { allowed: !limiter.refuse, headers: { 'RateLimit-Limit': '120' } };
+  },
 }));
 
 // Import after mocks
-import { createProxyRouter, STRIPPED_HEADERS } from '../extension-proxy.js';
-import { logger } from '../../../lib/logger.js';
-import { AGENT_IDENTITY_HEADER } from '../../../middleware/agent-identity.js';
+import {
+  createProxyForwarder,
+  createProxyHandler,
+  proxySegments,
+  STRIPPED_HEADERS,
+} from '../extension-proxy.js';
+import { createExtensionApiRoutes } from '../../../../routes/extension-api.js';
+import { honoGroupListener } from '../../../../http/__tests__/hono-group-listener.js';
+import { logger } from '../../../../lib/logger.js';
+import { AGENT_IDENTITY_HEADER } from '../../../../middleware/agent-identity.js';
 
 const fixtureTarget = swappableServer();
 
@@ -119,12 +126,12 @@ function makeRes(): Response & {
  * GET one path with a raw HTTP client, so the request line reaches the server
  * exactly as written — no client-side path normalization.
  *
- * @param app - The Express app to listen on an ephemeral port.
+ * @param app - The listener to serve on an ephemeral port.
  * @param rawPath - The request target, sent verbatim.
  */
-function rawGetStatus(app: express.Express, rawPath: string): Promise<number> {
+function rawGetStatus(app: RequestListener, rawPath: string): Promise<number> {
   return new Promise((resolve, reject) => {
-    const server = app.listen(0, () => {
+    const server = http.createServer(app).listen(0, () => {
       const address = server.address();
       const port = typeof address === 'object' && address ? address.port : 0;
       http
@@ -137,38 +144,51 @@ function rawGetStatus(app: express.Express, rawPath: string): Promise<number> {
   });
 }
 
-/** Shape of an Express Router's internal route stack. */
-interface RouterStack {
-  stack: Array<{
-    route: {
-      stack: Array<{ handle: (req: Request, res: Response) => Promise<void> }>;
-    };
-  }>;
-}
-
 /**
- * Extract the proxy handler from the router created by createProxyRouter.
- *
- * The last entry in the route's stack — the rate limiter is mounted ahead of it.
+ * The forwarder for `config`, driven the way the old Express handler was: a
+ * fake request in (its `params.splat` segments, `url`, headers and body) and
+ * its answer written onto a fake response.
  */
 function getProxyHandler(
   config: DataProxyConfig = DEFAULT_CONFIG
 ): (req: Request, res: Response) => Promise<void> {
-  const router = createProxyRouter('test-ext', config, '/fake/dork-home');
-  const routerInternal = router as unknown as RouterStack;
-  const routeStack = routerInternal.stack[0].route.stack;
-  return routeStack[routeStack.length - 1].handle;
+  const forward = createProxyForwarder('test-ext', config, '/fake/dork-home');
+  return async (req, res) => {
+    const answer = await forward({
+      method: req.method,
+      segments: (req.params as { splat?: string[] }).splat ?? [],
+      url: req.url,
+      headers: req.headers,
+      body: req.body,
+    });
+    res.status(answer.status);
+    for (const [name, value] of Object.entries(answer.headers)) res.setHeader(name, value);
+    if (answer.json !== undefined) res.json(answer.json);
+    else res.send(answer.text);
+  };
+}
+
+/**
+ * A server answering `/api/ext/test-ext/*` with the real proxy handler behind
+ * the real `/api` chain, as the running server does.
+ */
+function proxyApp(config: DataProxyConfig = DEFAULT_CONFIG): RequestListener {
+  const handler = createProxyHandler('test-ext', config, '/fake/dork-home');
+  return honoGroupListener({
+    path: '/api/ext',
+    routes: createExtensionApiRoutes({ getServerHandler: () => handler }),
+  });
 }
 
 // --- Tests ---
 
-describe('createProxyRouter', () => {
+describe('the extension data proxy', () => {
   let originalFetch: typeof globalThis.fetch;
 
   beforeEach(() => {
     vi.clearAllMocks();
     originalFetch = globalThis.fetch;
-    limiter.seen = [];
+    limiter.hits = 0;
     limiter.refuse = false;
   });
 
@@ -176,11 +196,13 @@ describe('createProxyRouter', () => {
     globalThis.fetch = originalFetch;
   });
 
-  it('returns an Express Router', () => {
-    const router = createProxyRouter('test-ext', DEFAULT_CONFIG, '/fake/dork-home');
-    // Express Router has a stack property
-    expect(router).toBeDefined();
-    expect(typeof router).toBe('function');
+  it('returns a forwarder and a handler', () => {
+    expect(typeof createProxyForwarder('test-ext', DEFAULT_CONFIG, '/fake/dork-home')).toBe(
+      'function'
+    );
+    expect(typeof createProxyHandler('test-ext', DEFAULT_CONFIG, '/fake/dork-home')).toBe(
+      'function'
+    );
   });
 
   describe('GET forwarding', () => {
@@ -588,12 +610,11 @@ describe('createProxyRouter', () => {
     });
   });
 
-  // Regression guard for the Express 5 migration (DOR-171): the other tests call
-  // the handler directly with a mock req, so they can't prove the route actually
-  // matches. Drive a real request through the mounted router to confirm
-  // '/proxy/*splat' matches and the multi-segment sub-path is reconstructed from
-  // req.params.splat (a segment array in Express 5, was req.params[0] in v4).
-  describe('real router wildcard matching (Express 5)', () => {
+  // The other tests call the forwarder directly with a fake request, so they
+  // can't prove the route actually matches. Drive a real request through the
+  // mounted handler to confirm `/proxy/*` matches and the multi-segment
+  // sub-path is rebuilt from its segments (`proxySegments`).
+  describe('real route matching', () => {
     it('matches /proxy/* and forwards the full sub-path with query string', async () => {
       mockSecretGet.mockResolvedValue('tok');
       globalThis.fetch = vi.fn().mockResolvedValue({
@@ -602,10 +623,9 @@ describe('createProxyRouter', () => {
         text: () => Promise.resolve('{}'),
       });
 
-      const app = express();
-      app.use(createProxyRouter('test-ext', DEFAULT_CONFIG, '/fake/dork-home'));
-
-      await request(fixtureTarget.mount(app)).get('/proxy/v1/issues/123?state=open');
+      await request(fixtureTarget.mount(proxyApp())).get(
+        '/api/ext/test-ext/proxy/v1/issues/123?state=open'
+      );
 
       expect(globalThis.fetch).toHaveBeenCalledWith(
         'https://api.example.com/v1/issues/123?state=open',
@@ -740,7 +760,7 @@ describe('createProxyRouter', () => {
     it('refuses an escape that arrived percent-encoded (%2f decoded into one segment)', async () => {
       armFetch();
 
-      // Express decodes each path segment, so `..%2f..%2fadmin` reaches the
+      // Each path segment is decoded on its own, so `..%2f..%2fadmin` reaches the
       // handler as a single segment that already contains separators.
       const handler = getProxyHandler(SCOPED);
       const res = makeRes();
@@ -774,27 +794,28 @@ describe('createProxyRouter', () => {
 
     // Sent down a raw socket rather than through supertest: superagent
     // normalizes `%2e%2e` in the path before it ever leaves the client, so
-    // supertest cannot express this request. A raw client can, and Express
-    // decodes the segments back into `..` on arrival.
-    it('refuses `%2e%2e` traversal driven through the real router', async () => {
+    // supertest cannot express this request. A raw client can. The URL's dot
+    // segments (`%2e%2e` among them) are resolved before the route matches, so
+    // this one names `/api/ext/admin`: it leaves the extension's mount and
+    // never reaches its proxy.
+    it('never forwards `%2e%2e` traversal driven through the real router', async () => {
       armFetch();
 
-      const app = express();
-      app.use(createProxyRouter('test-ext', SCOPED, '/fake/dork-home'));
+      const status = await rawGetStatus(
+        proxyApp(SCOPED),
+        '/api/ext/test-ext/proxy/%2e%2e/%2e%2e/admin'
+      );
 
-      const status = await rawGetStatus(app, '/proxy/%2e%2e/%2e%2e/admin');
-
-      expect(status).toBe(400);
+      expect(status).toBe(404);
       expect(globalThis.fetch).not.toHaveBeenCalled();
     });
 
     it('refuses `..%2f` traversal driven through the real router', async () => {
       armFetch();
 
-      const app = express();
-      app.use(createProxyRouter('test-ext', SCOPED, '/fake/dork-home'));
-
-      const res = await request(fixtureTarget.mount(app)).get('/proxy/..%2f..%2fadmin');
+      const res = await request(fixtureTarget.mount(proxyApp(SCOPED))).get(
+        '/api/ext/test-ext/proxy/..%2f..%2fadmin'
+      );
 
       expect(res.status).toBe(400);
       expect(globalThis.fetch).not.toHaveBeenCalled();
@@ -1036,12 +1057,9 @@ describe('createProxyRouter', () => {
         text: () => Promise.resolve('ok'),
       });
 
-      const app = express();
-      app.use(createProxyRouter('test-ext', DEFAULT_CONFIG, '/fake/dork-home'));
+      await request(fixtureTarget.mount(proxyApp())).get('/api/ext/test-ext/proxy/graphql');
 
-      await request(fixtureTarget.mount(app)).get('/proxy/graphql');
-
-      expect(limiter.seen).toEqual(['/proxy/graphql']);
+      expect(limiter.hits).toBe(1);
       expect(globalThis.fetch).toHaveBeenCalledTimes(1);
     });
 
@@ -1050,14 +1068,29 @@ describe('createProxyRouter', () => {
       globalThis.fetch = vi.fn();
       limiter.refuse = true;
 
-      const app = express();
-      app.use(createProxyRouter('test-ext', DEFAULT_CONFIG, '/fake/dork-home'));
-
-      const res = await request(fixtureTarget.mount(app)).get('/proxy/graphql');
+      const res = await request(fixtureTarget.mount(proxyApp())).get(
+        '/api/ext/test-ext/proxy/graphql'
+      );
 
       expect(res.status).toBe(429);
       expect(globalThis.fetch).not.toHaveBeenCalled();
       expect(mockSecretGet).not.toHaveBeenCalled();
     });
+  });
+});
+
+describe('proxySegments', () => {
+  it('matches /proxy and anything below it, in any case, decoding each segment', () => {
+    expect(proxySegments('/proxy')).toEqual([]);
+    expect(proxySegments('/proxy/')).toEqual([]);
+    expect(proxySegments('/PROXY/a/b')).toEqual(['a', 'b']);
+    expect(proxySegments('/proxy/..%2f..%2fadmin')).toEqual(['../../admin']);
+    expect(proxySegments('/proxy/%2e%2e/x')).toEqual(['..', 'x']);
+  });
+
+  it('passes on every other path', () => {
+    expect(proxySegments('/')).toBeNull();
+    expect(proxySegments('/proxyish/a')).toBeNull();
+    expect(proxySegments('/other/proxy')).toBeNull();
   });
 });

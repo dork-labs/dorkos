@@ -136,7 +136,7 @@ class EventFanOut {
    *   would be a silent allow for the next stream somebody adds, which is the
    *   argument `UpgradeRoute.credential` already makes — the gate gets tested,
    *   the WIRING of it does not. Both transports read it from the same
-   *   `res.locals`-shaped facts through `readCallerPrincipal`.
+   *   request facts through `readCallerPrincipal`.
    */
   addClient(client: FanOutClient, principal: CallerPrincipal): () => void {
     if (this.clients.size >= SSE.MAX_TOTAL_CLIENTS) {

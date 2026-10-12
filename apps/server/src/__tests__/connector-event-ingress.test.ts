@@ -18,8 +18,8 @@ vi.mock('../services/core/tunnel-manager.js', () => ({
 vi.mock('../lib/logger.js', () => ({
   logger: { info: vi.fn(), debug: vi.fn(), warn: vi.fn(), error: vi.fn() },
 }));
-import { createApp } from '../app.js';
-import { composedListener } from '../http/__tests__/composed-listener.js';
+import { frontDoorListener } from '../http/front-door.js';
+import { composeFrontDoor } from '../http/hono-api.js';
 import { logger } from '../lib/logger.js';
 
 const target = swappableServer();
@@ -47,15 +47,13 @@ beforeEach(() => {
 });
 function mount() {
   const admission = new MainRequestAdmission();
-  const app = createApp({ admission });
-  app.get('/api/ordinary-event-test', (_req, res) => res.json({ ordinary: true }));
-  // Routed as the running server routes: the signed webhook answers from the
-  // Hono `/api` app, the ordinary route from Express behind the front door.
-  target.mount(
-    composedListener(app, admission, {
-      connectorEventIngress: { verifier: () => verifier, accept },
-    })
-  );
+  // Routed as the running server routes, with one ordinary route beside the
+  // signed webhook.
+  const app = composeFrontDoor(admission, {
+    connectorEventIngress: { verifier: () => verifier, accept },
+  });
+  app.get('/api/ordinary-event-test', (c) => c.json({ ordinary: true }));
+  target.mount(frontDoorListener(app));
 }
 
 describe('signed events in the real composed middleware stack', () => {

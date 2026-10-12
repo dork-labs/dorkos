@@ -1,7 +1,7 @@
 flowchart TB
   accTitle: Planned DorkOS architecture after the vision reset
   accDescr: This entire view is planned architecture, not deployed topology. One app and a proposed shared workspace command core run locally or hosted, preserving optional Cloud and accountless local use. Persistence and execution placement remain explicit. Audit, current authority and work admission govern effects. Runtimes select engines, not authority or placement. Only one executor may own an agent; transfer fencing is not implemented. Relay will deliver conversation messages after migration.
-  direction["PLANNED TARGET · not deployment evidence<br/>Express → Hono → one program / one app"]
+  direction["PLANNED TARGET · not deployment evidence<br/>Local server now runs on Hono · next, one program / one app"]
   app["One DorkOS app<br/>Local or hosted workspace"]
   entry["HTTP · CLI · MCP · future APIs<br/>Authenticated actor + workspace + origin"]
   core["Proposed shared workspace command core<br/>Membership / access · conversations · projects<br/>Documents · tools · installed contributions"]

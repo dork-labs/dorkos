@@ -42,7 +42,7 @@ dorkos/
 │   ├── client/           # @dorkos/client - React 19 SPA (Vite 6, Tailwind 4, shadcn/ui)
 │   ├── community/        # @dorkos/community - Independent Hono/Postgres community service
 │   ├── design-system/    # @dorkos/design-system - Standalone shared UI catalog
-│   ├── server/           # @dorkos/server - Express 5 API (tsc, NodeNext)
+│   ├── server/           # @dorkos/server - Hono API on Node (tsc, NodeNext)
 │   ├── site/             # @dorkos/site - Marketing site & docs (Next.js 16, Fumadocs)
 │   ├── desktop/          # @dorkos/desktop - Electron shell
 │   └── e2e/              # @dorkos/e2e - Playwright browser tests
@@ -80,7 +80,7 @@ dorkos/
 ## Commands
 
 ```bash
-pnpm dev               # Express server + Vite dev server (loads .env)
+pnpm dev               # API server + Vite dev server (loads .env)
 pnpm dev:dogfood       # Dev preview (:6241) + the built CLI app (:4242) — the default workflow
 pnpm build             # Build all apps
 pnpm verify            # Affected-only typecheck + lint + test — the pre-PR loop-closer
@@ -131,7 +131,7 @@ Gotchas: under a running `pnpm dev`/`pnpm dev:dogfood`, `@dorkos/shared` rebuild
 
 ### Server (`apps/server/src/`)
 
-Express **5** on `DORKOS_PORT` (default 4242, dev 6242) — mind Express 5 semantics (`req.body` undefined on empty POSTs; changed wildcard routing). The `AgentRuntime` interface (`packages/shared/src/agent-runtime.ts`) abstracts agent backends; production runtimes live under `services/runtimes/`: **claude-code** (default), **codex** (SDK threads, ADR-0309), **opencode** (managed sidecar, ADR-0308), plus `test-mode` for e2e and `connect/` for runtime credentials/delegated login. Routes resolve a session's runtime via `runtimeRegistry` (per-session binding, first-write-wins, ADR-0255); session listing aggregates across runtimes with per-runtime degradation (ADR-0310). Every runtime must pass the shared conformance suite (`runtimeConformance` in `@dorkos/test-utils`); authoring checklist: `contributing/adding-a-runtime.md`.
+**Hono** on `@hono/node-server`, on `DORKOS_PORT` (default 4242, dev 6242). Every request enters one app (`http/hono-api.ts`, served by `http/front-door.ts`) and runs one middleware chain (`http/api-chain.ts`): admission, CORS, the `/api` host guard, body parsing, the session gate, agent identity, audit; a route group is a `new Hono<ApiEnv>()` mounted in `http/hono-api.ts`, reads its body with `readJsonBody(c)` and its caller with `honoRequestFacts(c)`, and paths match case-sensitively. Express runs only behind the extension bridge (`services/extensions/http/express-bridge.ts`), and an ESLint rule bans it everywhere else in `apps/server/src` (ADR `261009-192542`). The `AgentRuntime` interface (`packages/shared/src/agent-runtime.ts`) abstracts agent backends; production runtimes live under `services/runtimes/`: **claude-code** (default), **codex** (SDK threads, ADR-0309), **opencode** (managed sidecar, ADR-0308), plus `test-mode` for e2e and `connect/` for runtime credentials/delegated login. Routes resolve a session's runtime via `runtimeRegistry` (per-session binding, first-write-wins, ADR-0255); session listing aggregates across runtimes with per-runtime degradation (ADR-0310). Every runtime must pass the shared conformance suite (`runtimeConformance` in `@dorkos/test-utils`); authoring checklist: `contributing/adding-a-runtime.md`.
 
 **Service domains** under `services/` — a complete census, not a highlights list, so adding or removing a domain means editing this line and `scripts/__tests__/agents-service-census.test.ts` fails until you do. The full set, alphabetical: activity, audit, browser, canvas, commitments, communities, connectors, core, core-extensions, decisions, diff, extensions, harness, heartbeats, identity, marketplace, marketplace-mcp, mcp-apps, memory, mesh, notifications, observability, projects, relay, rooms, runtimes, search, session, shapes, tasks, terminal, workbench-serve, workspace (`__tests__` sits beside them and is the one directory that is not a domain). Filesystem scanning: `packages/mesh/src/discovery/unified-scanner.ts`. API docs at `/api/docs`.
 

@@ -61,12 +61,23 @@ vi.mock('../../lib/logger.js', () => ({
  */
 vi.mock('../../env.js', () => ({ env: { DORKOS_PORT: 7777 } }));
 vi.stubEnv('VITE_PORT', '7779');
+// CORS lets these test origins through, so each reaches the route's own
+// origin bar, which judges against the server's static set and not this list.
+vi.stubEnv('DORKOS_CORS_ORIGIN', 'https://evil.example,http://localhost:7777.evil.example');
+
+// The session gate lets every request through: these cases are about the
+// routes' own bars, and each one sets the user the gate would have proved
+// (`before` below), as the Express version stubbed `res.locals.user`.
+vi.mock('../../services/core/auth/session-gate.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../services/core/auth/session-gate.js')>()),
+  decideSessionGate: vi.fn(async () => ({ allowed: true })),
+}));
 
 import request from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
-import express from 'express';
 import type { ExtensionRecord, ExtensionRecordPublic } from '@dorkos/extension-api';
-import { createExtensionsRouter } from '../extensions.js';
+import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
+import { createExtensionsRoutes } from '../extensions.js';
 import {
   findOperatorOnlyPaths,
   OPERATOR_ONLY_CONFIG_CODE,
@@ -115,7 +126,6 @@ function stubPublic(): ExtensionRecordPublic {
 }
 
 describe('who may turn an extension on or off', () => {
-  let app: express.Application;
   let manager: {
     get: ReturnType<typeof vi.fn>;
     enable: ReturnType<typeof vi.fn>;
@@ -168,31 +178,33 @@ describe('who may turn an extension on or off', () => {
       updateCwd: vi.fn().mockResolvedValue({ added: [], removed: [] }),
     };
 
-    app = express();
-    app.use(express.json());
-    app.use((_req, res, next) => {
-      if (signedInUser) res.locals.user = signedInUser;
-      next();
-    });
-    // Wired so the refusal cases can assert what the FEED was told, not only
-    // what the config holds. A route that refused the write but still recorded
-    // "You turned this on" would pass every other assertion in this file
-    // (DOR-1801).
-    app.locals.activityService = {
-      emit: vi.fn(async (event: { actorType: string; actorLabel: string }) => {
-        emitted.push(event);
-      }),
-    };
-    app.use(
-      '/api/extensions',
-      createExtensionsRouter(
-        manager as unknown as Parameters<typeof createExtensionsRouter>[0],
-        DORK_HOME,
-        () => null
+    fixtureTarget.mount(
+      honoGroupListener(
+        {
+          path: '/api/extensions',
+          routes: createExtensionsRoutes({
+            manager: manager as unknown as Parameters<typeof createExtensionsRoutes>[0]['manager'],
+            dorkHome: DORK_HOME,
+            getCwd: () => null,
+            // Wired so the refusal cases can assert what the FEED was told, not
+            // only what the config holds. A route that refused the write but
+            // still recorded "You turned this on" would pass every other
+            // assertion in this file (DOR-1801).
+            activity: {
+              emit: vi.fn(async (event: { actorType: string; actorLabel: string }) => {
+                emitted.push(event);
+              }) as never,
+            },
+          }),
+        },
+        {
+          before: async (c, next) => {
+            if (signedInUser) c.set('user', signedInUser as never);
+            await next();
+          },
+        }
       )
     );
-
-    fixtureTarget.mount(app);
   });
 
   /**

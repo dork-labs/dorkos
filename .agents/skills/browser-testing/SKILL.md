@@ -11,7 +11,7 @@ description: Methodology for writing and maintaining DorkOS browser tests. Use w
 
 - Cross-component flows (sidebar click updates chat panel)
 - SSE streaming verification (message send → streaming indicator → response rendered)
-- Real API calls through the full stack (client → Express → Agent SDK)
+- Real API calls through the full stack (client → Hono → Agent SDK)
 - CSS/layout regressions visible only in a real browser
 - Browser-specific behavior (keyboard shortcuts, focus management)
 

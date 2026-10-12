@@ -27,7 +27,6 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import express from 'express';
 import type { RequestListener } from 'node:http';
 import request from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
@@ -35,7 +34,8 @@ import { createDb, runMigrations, user, type Db } from '@dorkos/db';
 import roomRoutes from '../rooms.js';
 import readCursorRoutes from '../read-cursors.js';
 import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
-import { getAuth, initAuth, toNodeHandler } from '../../services/core/auth/index.js';
+import { getAuth, initAuth } from '../../services/core/auth/index.js';
+import { mountBetterAuth } from '../../http/better-auth.js';
 import { createRoomSubsystem, setRoomService } from '../../services/rooms/index.js';
 import { setReadCursorService } from '../../services/core/read-cursor-service.js';
 import { configManager, initConfigManager } from '../../services/core/config-manager.js';
@@ -45,13 +45,11 @@ const fixtureTarget = swappableServer();
 const fixtureServer = fixtureTarget.server;
 
 /**
- * The rooms surface as the server routes it: the rooms routes on the Hono
- * `/api` chain (which runs the session gate), with Better Auth answering from
- * an Express app behind the front door.
+ * The rooms surface as the server routes it: the rooms routes on the chain
+ * (which runs the session gate), with Better Auth mounted before the body is
+ * parsed, as `http/hono-api.ts` mounts it.
  */
 function buildApp(): RequestListener {
-  const legacy = express();
-  legacy.all('/api/auth/*splat', toNodeHandler(getAuth()!));
   return honoGroupListener(
     [
       { path: '/api/rooms', routes: roomRoutes },
@@ -60,7 +58,9 @@ function buildApp(): RequestListener {
       // that the SAME author id carries across it and `/api/rooms` alike.
       { path: '/api/read-cursors', routes: readCursorRoutes },
     ],
-    { legacy }
+    {
+      beforeBodyParsing: (early) => mountBetterAuth(early, { auth: getAuth()!, maxAttempts: 1000 }),
+    }
   );
 }
 

@@ -10,19 +10,17 @@
  * would be trusted as tunnel traffic while never having shown a proof.
  *
  * Only managed hostnames are affected; the person's own tunnel and every local
- * name behave exactly as before. Mounted first in `createApp`, ahead of every
- * logger and route, in the same place on the Hono `/api` chain
- * (`http/api-chain.ts`), and asked by the upgrade router for WebSockets.
+ * name behave exactly as before. Asked second in the chain (`http/api-chain.ts`),
+ * ahead of every logger and route, and by the upgrade router for WebSockets.
  *
  * @module middleware/managed-host-guard
  */
 import type { IncomingMessage } from 'node:http';
-import type { NextFunction, Request, Response } from 'express';
 import { parseHostname } from '../lib/trusted-origins.js';
 import { isManagedIngress } from '../services/core/remote/ingress-mark.js';
 import { tunnelManager } from '../services/core/tunnel-manager.js';
 
-/** The refusal, on both chains. */
+/** The refusal. */
 export const MANAGED_HOST_REFUSAL_BODY = { error: 'Forbidden.' } as const;
 
 /**
@@ -38,20 +36,4 @@ export function bypassesManagedIngress(req: IncomingMessage): boolean {
   if (managedHosts.length === 0) return false;
   const hostname = parseHostname(req.headers.host);
   return hostname !== null && managedHosts.includes(hostname);
-}
-
-/**
- * Express middleware form of {@link bypassesManagedIngress}: a 403 before any
- * other handling.
- *
- * @param req - The incoming request.
- * @param res - The response; a refusal is a 403.
- * @param next - Passes control on for every other request.
- */
-export function managedHostGuard(req: Request, res: Response, next: NextFunction): void {
-  if (bypassesManagedIngress(req)) {
-    res.status(403).json(MANAGED_HOST_REFUSAL_BODY);
-    return;
-  }
-  next();
 }

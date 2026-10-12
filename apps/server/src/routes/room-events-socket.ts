@@ -1,4 +1,5 @@
 import { docScopeNotifications } from '../services/canvas/doc-channel/streams/registry.js';
+import { upgradeCaller } from '../services/core/streams/stream-upgrade-auth.js';
 /**
  * `GET /api/rooms/:id/events` over a WebSocket — what the app uses.
  *
@@ -49,10 +50,10 @@ export const roomEventsRoute: UpgradeRoute = {
     let service: ReturnType<typeof getRoomService>;
     try {
       service = getRoomService();
-      // The identity `sessionGate` and `resolveAgentIdentity` would have put on
-      // `res.locals` was resolved by `authorizeStreamUpgrade` instead, because
-      // neither middleware runs for an upgrade.
-      viewerAuthorId = resolveCaller({ headers }, { locals }).id;
+      // The identity the chain's session gate and agent-identity step resolve
+      // for a request was resolved by `authorizeStreamUpgrade` instead, because
+      // no chain runs for an upgrade.
+      viewerAuthorId = resolveCaller(upgradeCaller(headers, locals)).id;
       // Refuse BEFORE any frame is sent. `getRoom` is membership-scoped, so this
       // refuses an unknown room and a room the caller is not in identically —
       // subscribing to somebody else's DM by id is the same leak as reading it.
@@ -104,7 +105,10 @@ export const roomEventsRoute: UpgradeRoute = {
           roomId,
           viewerAuthorId,
           sinceCursor,
-          documentNotifications: docScopeNotifications(`room:${roomId}`, { headers }, { locals }),
+          documentNotifications: docScopeNotifications(
+            `room:${roomId}`,
+            upgradeCaller(headers, locals)
+          ),
         });
       },
     };

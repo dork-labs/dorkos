@@ -3,8 +3,15 @@
  * Heartbeat page reads, over a real heartbeat store, real measures and a real
  * HEARTBEAT.md on disk.
  */
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import express from 'express';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+// The chain these routes run behind reads config and the tunnel per request.
+vi.mock('../../services/core/config-manager.js', () => ({
+  configManager: { get: vi.fn().mockReturnValue(null), set: vi.fn() },
+}));
+vi.mock('../../services/core/tunnel-manager.js', () => ({
+  tunnelManager: { status: { enabled: false, connected: false, url: null } },
+}));
 import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -12,7 +19,14 @@ import request from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
 import { createTestDb } from '@dorkos/test-utils/db';
 import { HeartbeatStatusSchema } from '@dorkos/shared/heartbeat-schemas';
-import { createHeartbeatRouter } from '../heartbeats.js';
+
+const viewer = vi.hoisted(() => ({ owner: true }));
+vi.mock('../../lib/caller-authority.js', () => ({
+  refuseUnlessAccountOwner: () => (viewer.owner ? undefined : 'not-the-owner'),
+}));
+
+import { createHeartbeatRoutes } from '../heartbeats.js';
+import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
 import { HeartbeatStore } from '../../services/heartbeats/heartbeat-store.js';
 import { heartbeatStatus } from '../../services/heartbeats/heartbeat-status.js';
 import { RaiseStore } from '../../services/heartbeats/raises/raise-store.js';
@@ -24,7 +38,6 @@ let root: string;
 let store: HeartbeatStore;
 let raises: RaiseStore;
 let enabled: boolean;
-let owner: boolean;
 let db: Db;
 
 beforeEach(async () => {
@@ -34,46 +47,41 @@ beforeEach(async () => {
   store = new HeartbeatStore(db);
   raises = new RaiseStore(db);
   enabled = true;
-  owner = true;
+  viewer.owner = true;
   const agent = { id: 'agent-juno', name: 'Juno', runtime: 'doe', projectPath: root };
-  const app = express();
-  app.use(
-    '/api/agents/:id/heartbeat',
-    createHeartbeatRouter({
-      isOwner: () => owner,
-      status: (agentId, viewerIsOwner, days) =>
-        heartbeatStatus({
-          viewerIsOwner,
-          agent: agentId === agent.id ? agent : undefined,
-          store,
-          runner: {
-            nextBeatAt: () => new Date('2026-10-12T15:00:00Z'),
-            nextReportAt: () => new Date('2026-10-13T13:00:00Z'),
-          },
-          raises,
-          managerOf: () => 'acct-owner',
-          enabled,
-          runtimeRegistered: (runtime) => runtime === 'doe',
-          isAgent: (id) => id.startsWith('agent-'),
-          checks: async (a, viewer) => ({
-            runsOn: 'runtime',
-            runtime: a.runtime,
-            today: 0,
-            tokens: 0,
-            offer: viewer,
-          }),
-          measures: (a) =>
-            measureAgent(db, {
-              agentId: a.id,
-              agentPath: a.projectPath,
-              isAgent: (id) => id.startsWith('agent-'),
-              now: Date.parse('2026-10-12T16:00:00Z'),
-              ...(days !== undefined ? { days } : {}),
-            }),
+  const routes = createHeartbeatRoutes({
+    status: (agentId, viewerIsOwner, days) =>
+      heartbeatStatus({
+        viewerIsOwner,
+        agent: agentId === agent.id ? agent : undefined,
+        store,
+        runner: {
+          nextBeatAt: () => new Date('2026-10-12T15:00:00Z'),
+          nextReportAt: () => new Date('2026-10-13T13:00:00Z'),
+        },
+        raises,
+        managerOf: () => 'acct-owner',
+        enabled,
+        runtimeRegistered: (runtime) => runtime === 'doe',
+        isAgent: (id) => id.startsWith('agent-'),
+        checks: async (a, viewer) => ({
+          runsOn: 'runtime',
+          runtime: a.runtime,
+          today: 0,
+          tokens: 0,
+          offer: viewer,
         }),
-    })
-  );
-  target.mount(app);
+        measures: (a) =>
+          measureAgent(db, {
+            agentId: a.id,
+            agentPath: a.projectPath,
+            isAgent: (id) => id.startsWith('agent-'),
+            now: Date.parse('2026-10-12T16:00:00Z'),
+            ...(days !== undefined ? { days } : {}),
+          }),
+      }),
+  });
+  target.mount(honoGroupListener({ path: '/api/agents/:id/heartbeat', routes }));
 });
 
 afterEach(async () => {
@@ -145,7 +153,7 @@ describe('GET /api/agents/:id/heartbeat', () => {
     expect(withLine.report.items).toBe(2);
 
     // Anyone else sees that something is held, not what it says, nor the chat.
-    owner = false;
+    viewer.owner = false;
     const member = HeartbeatStatusSchema.parse(
       (await request(target.server).get('/api/agents/agent-juno/heartbeat')).body
     );

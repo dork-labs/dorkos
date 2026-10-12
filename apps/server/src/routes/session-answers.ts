@@ -48,7 +48,7 @@ const ANSWERING_NEEDS_COCKPIT =
 /**
  * Refuse anything that is not a person in the cockpit answering for themselves.
  *
- * These six routes were protected by `sessionGate` alone, which was defensible
+ * These six routes were protected by the session gate alone, which was defensible
  * while the only way to reach them was the session you were looking at.
  * Broadcasting the Ask to every route makes them reachable from everywhere, and
  * DOR-609's lesson is that _who acted_ is not _who may_.
@@ -84,7 +84,7 @@ const ANSWERING_NEEDS_COCKPIT =
  * the same callers through both and fails if they disagree — so the day a
  * second person exists, one of them cannot quietly widen.
  *
- * @param facts - The request's facts, with `sessionGate`'s resolved user.
+ * @param facts - The request's facts, with the session gate's resolved user.
  * @returns `undefined` when the caller may answer, or the refusal to answer with.
  */
 function requirePersonToAnswer(facts: RequestFacts): OperatorCookieRefusal | undefined {
@@ -118,7 +118,7 @@ function requirePersonToAnswer(facts: RequestFacts): OperatorCookieRefusal | und
  * lookup the day DorkOS has more than one, which is the same day the Ask needs
  * a per-caller entitlement filter.
  *
- * @param facts - The request's facts, with `sessionGate`'s resolved user.
+ * @param facts - The request's facts, with the session gate's resolved user.
  * @returns The answerer, as the `answeredBy` option the runtime takes: empty
  *   when no name is known or the lookup failed.
  */

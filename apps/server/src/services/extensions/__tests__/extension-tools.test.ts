@@ -62,7 +62,7 @@ function createMockManager(overrides: Partial<ExtensionManager> = {}): Extension
       },
       message: 'Extension activated successfully. Registered 1 contribution(s).',
     })),
-    getServerRouter: vi.fn(() => null),
+    getServerHandler: vi.fn(() => null),
     testServerCompilation: vi.fn(async () => null),
     ...overrides,
   } as unknown as ExtensionManager;
@@ -247,7 +247,7 @@ describe('list_extensions handler', () => {
         makePublicRecord('active-server', { hasServerEntry: true }),
         makePublicRecord('inactive-server', { hasServerEntry: true }),
       ]),
-      getServerRouter: vi.fn((id: string) => (id === 'active-server' ? ({} as never) : null)),
+      getServerHandler: vi.fn((id: string) => (id === 'active-server' ? ({} as never) : null)),
     });
     const handler = createListExtensionsHandler(createDeps(manager));
 

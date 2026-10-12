@@ -52,9 +52,8 @@ const config: KnipConfig = {
       ],
     },
     'apps/server': {
-      // Runtime-compiled extensions loaded by the esbuild core-extension host,
-      // and the route-census preload the contract harness passes to `--import`.
-      entry: ['src/core-extensions/**/*.{ts,tsx}', 'src/http/route-census/record-mount-paths.ts'],
+      // Runtime-compiled extensions loaded by the esbuild core-extension host.
+      entry: ['src/core-extensions/**/*.{ts,tsx}'],
       // Marketplace install fixtures are intentionally standalone sample packages.
       ignore: ['src/services/marketplace/fixtures/**'],
     },
@@ -105,7 +104,6 @@ const config: KnipConfig = {
         '@modelcontextprotocol/sdk',
         '@ngrok/ngrok',
         'conf',
-        'cors',
         'express',
         'uuid',
       ],

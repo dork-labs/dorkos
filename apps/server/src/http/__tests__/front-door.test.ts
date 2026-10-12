@@ -1,19 +1,19 @@
 /**
- * The front door must be invisible: every request it hands to Express has to
- * arrive and leave exactly as it did when Express was the listener itself.
+ * The front door must be invisible: every request reaches the server's Hono
+ * app and leaves as the app answered it, on real sockets.
  *
  * Each case drives real sockets through `createFrontDoorServer`, because the
- * failures this guards against only exist on the wire: a body drained while
- * Express still reads it, a stream cut short, the process-wide `Request`
- * swapped for the adapter's own, an upgrade that never reaches the router.
+ * failures this guards against only exist on the wire: a body drained while a
+ * route still reads it, a stream cut short, the process-wide `Request`
+ * swapped for the adapter's own, an upgrade that never reaches the router, a
+ * request the adapter cannot read answered with a bare 400.
  */
 import { createHash, randomBytes } from 'node:crypto';
 import { once } from 'node:events';
-import http, { type RequestListener, type Server } from 'node:http';
+import http, { type Server } from 'node:http';
 import net, { type AddressInfo } from 'node:net';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import express from 'express';
-import multer from 'multer';
+import { Hono } from 'hono';
 import { WebSocket } from 'ws';
 
 vi.mock('../../services/core/tunnel-manager.js', () => ({
@@ -28,17 +28,12 @@ vi.mock('../../services/core/config-manager.js', () => ({
 
 import { collectDurableEvents } from '@dorkos/test-utils/sse-test-helpers';
 import { KeepAwakeStatusSchema } from '@dorkos/shared/schemas';
-import { createApp, finalizeApp } from '../../app.js';
 import { MainRequestAdmission } from '../../services/core/lifecycle/main-request-admission.js';
 import { attachUpgradeRouter } from '../../services/core/streams/upgrade-router.js';
-import {
-  createFrontDoor,
-  createFrontDoorServer,
-  frontDoorListener,
-  type FrontDoorOptions,
-} from '../front-door.js';
-import { createApiApp } from '../api-chain.js';
-import { createHonoApi } from '../hono-api.js';
+import { createFrontDoorServer, frontDoorListener } from '../front-door.js';
+import type { ApiEnv } from '../api-chain.js';
+import { composeFrontDoor } from '../hono-api.js';
+import { streamToNodeResponse } from '../raw-node-stream.js';
 
 const TWO_MB = 2 * 1024 * 1024;
 
@@ -48,61 +43,91 @@ const STREAM_EVENTS = 5;
 /** Requests the fixture app saw end, by path. Filled by the `close` listener. */
 const closedRequests: string[] = [];
 
-const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 4 * TWO_MB } });
+/** The digest of some bytes, as the fixture reports it. */
+function sha256(bytes: Uint8Array): string {
+  return createHash('sha256').update(bytes).digest('hex');
+}
 
-/** A stand-in for the real app: the Express features the front door must not disturb. */
-function fixtureApp(): express.Express {
-  const app = express();
-  app.post('/raw', express.raw({ type: '*/*', limit: '5mb' }), (req, res) => {
-    const body = req.body as Buffer;
-    res.json({ bytes: body.length, sha256: createHash('sha256').update(body).digest('hex') });
+/** A stand-in for the real app: the features the front door must not disturb. */
+function fixtureApp(): Hono<ApiEnv> {
+  const app = new Hono<ApiEnv>();
+  app.post('/raw', async (c) => {
+    const body = new Uint8Array(await c.req.arrayBuffer());
+    return c.json({ bytes: body.length, sha256: sha256(body) });
   });
-  app.post('/json', express.json({ limit: '5mb' }), (req, res) => {
-    res.json({ length: (req.body as { blob: string }).blob.length });
+  app.post('/json', async (c) => {
+    const body = (await c.req.json()) as { blob: string };
+    return c.json({ length: body.blob.length });
   });
-  app.post('/small', express.json({ limit: '1kb' }), (_req, res) => res.json({ ok: true }));
-  app.post('/upload', upload.single('file'), (req, res) => {
-    const file = req.file!;
-    res.json({
-      field: (req.body as { note: string }).note,
-      name: file.originalname,
-      type: file.mimetype,
-      bytes: file.size,
-      sha256: createHash('sha256').update(file.buffer).digest('hex'),
+  // Refuses an oversize body from its declared length, without reading it.
+  app.post('/small', (c) =>
+    Number(c.req.header('content-length') ?? 0) > 1024
+      ? c.json({ error: 'too large' }, 413)
+      : c.json({ ok: true })
+  );
+  app.post('/upload', async (c) => {
+    const form = await c.req.formData();
+    const file = form.get('file') as File;
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    return c.json({
+      field: form.get('note'),
+      name: file.name,
+      type: file.type,
+      bytes: bytes.length,
+      sha256: sha256(bytes),
     });
   });
   // The durable stream's shape: numbered events, resumed after `Last-Event-ID`.
-  app.get('/api/sessions/:id/events', (req, res) => {
-    const after = Number(req.get('Last-Event-ID') ?? 0);
-    res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache' });
-    res.flushHeaders();
-    let next = after + 1;
-    const timer = setInterval(() => {
-      if (next > STREAM_EVENTS) {
-        clearInterval(timer);
-        res.end();
-        return;
-      }
-      res.write(`id: ${next}\nevent: tick\ndata: ${JSON.stringify({ n: next })}\n\n`);
-      next += 1;
-    }, 5);
-    req.on('close', () => {
-      clearInterval(timer);
-      closedRequests.push(req.path);
-    });
-  });
-  app.get('/forever', (req, res) => {
-    res.writeHead(200, { 'Content-Type': 'text/event-stream' });
-    res.write(': open\n\n');
-    req.on('close', () => closedRequests.push(req.path));
-  });
-  app.get('/head', (_req, res) => {
-    res.set('X-Fixture', 'yes').send('a body HEAD must not carry');
-  });
+  app.get('/api/sessions/:id/events', (c) =>
+    streamToNodeResponse(
+      c,
+      (res, { signal }) =>
+        new Promise<void>((resolve) => {
+          const after = Number(c.req.header('last-event-id') ?? 0);
+          res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache' });
+          res.flushHeaders();
+          let next = after + 1;
+          const timer = setInterval(() => {
+            if (next > STREAM_EVENTS) {
+              clearInterval(timer);
+              res.end();
+              resolve();
+              return;
+            }
+            res.write(`id: ${next}\nevent: tick\ndata: ${JSON.stringify({ n: next })}\n\n`);
+            next += 1;
+          }, 5);
+          signal.addEventListener('abort', () => {
+            clearInterval(timer);
+            closedRequests.push(c.req.path);
+            resolve();
+          });
+        })
+    )
+  );
+  app.get('/forever', (c) =>
+    streamToNodeResponse(
+      c,
+      (res, { signal }) =>
+        new Promise<void>((resolve) => {
+          res.writeHead(200, { 'Content-Type': 'text/event-stream' });
+          res.write(': open\n\n');
+          signal.addEventListener('abort', () => {
+            closedRequests.push(c.req.path);
+            resolve();
+          });
+        })
+    )
+  );
+  app.get('/head', (c) => c.text('a body HEAD must not carry', 200, { 'X-Fixture': 'yes' }));
+  app.get('/echo', (c) =>
+    c.json({ path: c.req.path, host: c.env.incoming.headers.host ?? null, method: c.req.method })
+  );
+  app.on('OPTIONS', '/', (c) =>
+    c.text(`app saw ${c.req.method} ${c.env.incoming.url}`, 200, { 'X-Fixture': 'yes' })
+  );
   // Refuses without reading the body, as an auth check ahead of an upload does.
-  app.post('/refuse', (_req, res) => {
-    res.status(401).json({ error: 'no' });
-  });
+  app.post('/refuse', (c) => c.json({ error: 'no' }, 401));
   app.get('/boom', () => {
     throw new Error('fixture failure');
   });
@@ -119,16 +144,23 @@ afterEach(async () => {
   }
 });
 
-/** Serve `legacy` through the front door on an ephemeral loopback port. */
-async function serveThroughFrontDoor(
-  legacy: RequestListener,
-  options: FrontDoorOptions = {}
-): Promise<string> {
-  const server = createFrontDoorServer(createFrontDoor(legacy, options));
+/** Serve `app` through the front door on an ephemeral loopback port. */
+async function serveThroughFrontDoor(app: Hono<ApiEnv>): Promise<string> {
+  const server = createFrontDoorServer(app);
   servers.push(server);
   server.listen(0, '127.0.0.1');
   await once(server, 'listening');
   return `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+}
+
+/** Send raw bytes to the front door and return the status line and the rest. */
+async function rawRequest(base: string, request: string): Promise<string> {
+  const socket = net.connect(Number(new URL(base).port), '127.0.0.1');
+  socket.end(request);
+  let raw = '';
+  socket.setEncoding('utf8').on('data', (chunk: string) => (raw += chunk));
+  await once(socket, 'close');
+  return raw;
 }
 
 describe('front door', () => {
@@ -139,7 +171,7 @@ describe('front door', () => {
     expect(globalThis.Response).toBe(before.Response);
   });
 
-  it('hands Express a 2 MB body byte for byte', async () => {
+  it('hands a route a 2 MB body byte for byte', async () => {
     const base = await serveThroughFrontDoor(fixtureApp());
     const body = randomBytes(TWO_MB);
     const res = await fetch(`${base}/raw`, {
@@ -148,13 +180,10 @@ describe('front door', () => {
       body,
     });
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({
-      bytes: TWO_MB,
-      sha256: createHash('sha256').update(body).digest('hex'),
-    });
+    expect(await res.json()).toEqual({ bytes: TWO_MB, sha256: sha256(body) });
   });
 
-  it('hands Express a 2 MB JSON body to parse', async () => {
+  it('hands a route a 2 MB JSON body to parse', async () => {
     const base = await serveThroughFrontDoor(fixtureApp());
     const blob = 'x'.repeat(TWO_MB);
     const res = await fetch(`${base}/json`, {
@@ -166,7 +195,7 @@ describe('front door', () => {
     expect(await res.json()).toEqual({ length: TWO_MB });
   });
 
-  it("keeps Express's own 413, and the next request still works", async () => {
+  it('keeps a route’s own 413, and the next request still works', async () => {
     const base = await serveThroughFrontDoor(fixtureApp());
     const tooBig = await fetch(`${base}/small`, {
       method: 'POST',
@@ -183,7 +212,7 @@ describe('front door', () => {
     expect(await ok.json()).toEqual({ ok: true });
   });
 
-  it('hands multer a multipart upload intact', async () => {
+  it('hands a route a multipart upload intact', async () => {
     const base = await serveThroughFrontDoor(fixtureApp());
     const bytes = randomBytes(TWO_MB);
     const form = new FormData();
@@ -196,12 +225,12 @@ describe('front door', () => {
       name: 'picture.png',
       type: 'image/png',
       bytes: TWO_MB,
-      sha256: createHash('sha256').update(bytes).digest('hex'),
+      sha256: sha256(bytes),
     });
   });
 
   it('streams SSE, and a Last-Event-ID reconnect resumes after it', async () => {
-    const listener = frontDoorListener(createFrontDoor(fixtureApp()));
+    const listener = frontDoorListener(fixtureApp());
 
     const first = await collectDurableEvents(listener, 'fixture', {
       until: (frames) => frames.length >= 2,
@@ -216,7 +245,7 @@ describe('front door', () => {
     expect(resumed.frames.map((f) => f.data)).toEqual([{ n: 3 }, { n: 4 }, { n: 5 }]);
   });
 
-  it('tells Express when a client hangs up on a stream', async () => {
+  it('tells a route when a client hangs up on a stream', async () => {
     const base = await serveThroughFrontDoor(fixtureApp());
     const req = http.get(`${base}/forever`);
     const [res] = (await once(req, 'response')) as [http.IncomingMessage];
@@ -233,16 +262,6 @@ describe('front door', () => {
     expect(await res.text()).toBe('');
   });
 
-  /** Send raw bytes to the front door and return the status line and the rest. */
-  async function rawRequest(base: string, request: string): Promise<string> {
-    const socket = net.connect(Number(new URL(base).port), '127.0.0.1');
-    socket.end(request);
-    let raw = '';
-    socket.setEncoding('utf8').on('data', (chunk: string) => (raw += chunk));
-    await once(socket, 'close');
-    return raw;
-  }
-
   it.each([
     ['no Host at all (HTTP/1.0)', 'GET /head HTTP/1.0\r\n\r\n'],
     [
@@ -253,50 +272,48 @@ describe('front door', () => {
       'a Host with a path in it',
       'GET /head HTTP/1.1\r\nHost: example.com/x\r\nConnection: close\r\n\r\n',
     ],
-  ])('hands Express a request Hono cannot read: %s', async (_name, request) => {
+  ])('still serves a request the adapter cannot read: %s', async (_name, request) => {
     const base = await serveThroughFrontDoor(fixtureApp());
     const raw = await rawRequest(base, request);
-    expect(raw.split('\r\n')[0]).toBe('HTTP/1.1 200 OK');
+    expect(raw.split('\r\n')[0]).toMatch(/^HTTP\/1\.[01] 200 OK$/);
     expect(raw).toMatch(/x-fixture: yes/i);
   });
 
-  it('lower-cases a Host in capitals, so a moved route still answers it', async () => {
-    const api = createApiApp({ admission: new MainRequestAdmission() });
-    api.get('/api/moved', (c) => c.json({ answeredBy: 'hono', host: c.env.incoming.headers.host }));
-    const base = await serveThroughFrontDoor(fixtureApp(), { api });
+  it('leaves the raw Host of an unreadable request as it came, for the guards to judge', async () => {
+    const base = await serveThroughFrontDoor(fixtureApp());
     const raw = await rawRequest(
       base,
-      'GET /api/moved HTTP/1.1\r\nHost: LocalHost:1\r\nConnection: close\r\n\r\n'
+      'GET /echo HTTP/1.1\r\nHost: example.com/x\r\nConnection: close\r\n\r\n'
+    );
+    expect(raw).toContain('{"path":"/echo","host":"example.com/x","method":"GET"}');
+  });
+
+  it('keeps a path that starts with two slashes a path, not a host', async () => {
+    const base = await serveThroughFrontDoor(fixtureApp());
+    const raw = await rawRequest(base, 'GET //echo HTTP/1.0\r\n\r\n');
+    expect(raw.split('\r\n')[0]).toMatch(/ 404 /);
+  });
+
+  it('lower-cases a Host in capitals, so a route still answers it', async () => {
+    const base = await serveThroughFrontDoor(fixtureApp());
+    const raw = await rawRequest(
+      base,
+      'GET /echo HTTP/1.1\r\nHost: LocalHost:1\r\nConnection: close\r\n\r\n'
     );
     expect(raw.split('\r\n')[0]).toBe('HTTP/1.1 200 OK');
-    expect(raw).toContain('{"answeredBy":"hono","host":"localhost:1"}');
-    // And the rest still reaches Express.
-    const legacy = await rawRequest(
-      base,
-      'GET /head HTTP/1.1\r\nHost: LocalHost:1\r\nConnection: close\r\n\r\n'
-    );
-    expect(legacy).toMatch(/x-fixture: yes/i);
+    expect(raw).toContain('{"path":"/echo","host":"localhost:1","method":"GET"}');
   });
 
-  it('claims only the moved routes: chain middleware claims nothing', async () => {
-    const api = createApiApp({ admission: new MainRequestAdmission() });
-    api.get('/api/moved', (c) => c.json({ answeredBy: 'hono' }));
-    const door = createFrontDoor(fixtureApp(), { api });
-    const claimed = door.app.routes.map((route) => `${route.method} ${route.path}`);
-    expect(claimed).toEqual(['GET /api/moved', 'ALL /*']);
-  });
-
-  it('hands Express an OPTIONS * request', async () => {
-    const legacy: RequestListener = (req, res) => res.end(`legacy saw ${req.method} ${req.url}`);
-    const base = await serveThroughFrontDoor(legacy);
+  it('serves an OPTIONS * request, at the root', async () => {
+    const base = await serveThroughFrontDoor(fixtureApp());
     const raw = await rawRequest(
       base,
       'OPTIONS * HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n'
     );
-    expect(raw).toMatch(/legacy saw OPTIONS \*$/);
+    expect(raw).toMatch(/app saw OPTIONS \*$/);
   });
 
-  it('keeps the connection when Express answers before a slow body has arrived', async () => {
+  it('keeps the connection when a route answers before a slow body has arrived', async () => {
     const base = await serveThroughFrontDoor(fixtureApp());
     const socket = net.connect(Number(new URL(base).port), '127.0.0.1');
     let raw = '';
@@ -316,14 +333,14 @@ describe('front door', () => {
     expect(raw).toMatch(/HTTP\/1\.1 200 OK[\s\S]*x-fixture: yes/i);
   });
 
-  it("keeps Express's own error answer", async () => {
+  it('keeps a route’s error answer', async () => {
     const base = await serveThroughFrontDoor(fixtureApp());
     const res = await fetch(`${base}/boom`);
     expect(res.status).toBe(500);
   });
 
   it('lets the upgrade router claim a WebSocket on the same server', async () => {
-    const server = createFrontDoorServer(createFrontDoor(fixtureApp()));
+    const server = createFrontDoorServer(fixtureApp());
     servers.push(server);
     attachUpgradeRouter(
       server,
@@ -352,18 +369,17 @@ describe('front door', () => {
     ws.close();
     await once(ws, 'close');
 
-    // An HTTP request to the same server still reaches Express.
+    // An HTTP request to the same server still reaches the app.
     const res = await fetch(`http://127.0.0.1:${port}/head`);
     expect(res.headers.get('x-fixture')).toBe('yes');
   });
 
   describe('with the real app behind it', () => {
     const admission = new MainRequestAdmission();
-    const app = createApp({ admission });
-    finalizeApp(app);
+    const app = composeFrontDoor(admission);
 
     it('answers a real route in its documented shape', async () => {
-      const base = await serveThroughFrontDoor(app, { api: createHonoApi({ admission }) });
+      const base = await serveThroughFrontDoor(app);
       const res = await fetch(`${base}/api/keep-awake`);
       expect(res.status).toBe(200);
       const body = await res.json();
@@ -384,6 +400,13 @@ describe('front door', () => {
       const base = await serveThroughFrontDoor(app);
       const res = await fetch(`${base}/api/no-such-route`);
       expect(res.status).toBe(404);
+    });
+
+    it('refuses an /api request with no Host at all, as the host guard always has', async () => {
+      const base = await serveThroughFrontDoor(app);
+      const raw = await rawRequest(base, 'GET /api/no-such-route HTTP/1.0\r\n\r\n');
+      expect(raw.split('\r\n')[0]).toMatch(/ 403 /);
+      expect(raw).toContain('HOST_NOT_ALLOWED');
     });
   });
 });

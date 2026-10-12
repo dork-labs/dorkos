@@ -27,15 +27,13 @@ vi.mock('../../lib/reveal-in-file-manager.js', () => ({
 
 import request from '@dorkos/test-utils/supertest';
 import { listeningServer } from '@dorkos/test-utils/listening-server';
-import { createApp } from '../../app.js';
 import { composedListener } from '../../http/__tests__/composed-listener.js';
 import { initBoundary } from '../../lib/boundary.js';
 import { revealInFileManager } from '../../lib/reveal-in-file-manager.js';
 
 const admission = new MainRequestAdmission();
-const app = createApp({ admission });
 // Routed as the running server routes: the moved groups answer from Hono.
-const testServer = listeningServer(composedListener(app, admission));
+const testServer = listeningServer(composedListener(admission));
 
 describe('Workbench file routes — real boundary + symlink escapes', () => {
   let root: string; // the global boundary

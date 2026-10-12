@@ -312,7 +312,7 @@ export function createSessionRoutes(deps: SessionRouteDeps = {}): Hono<ApiEnv> {
   // each fired and empty for one that was not. This is what a window reads on
   // mount so an Ask raised a minute ago shows up as fast as one raised now.
   //
-  // AUTHORITY: `sessionGate`, and then `askEntitlement` per row. Reading that
+  // AUTHORITY: the session gate, and then `askEntitlement` per row. Reading that
   // something needs a person is still not deciding it, and the header pill must
   // count for a cockpit that has not yet proven itself for a decision — a caller
   // holding one of the person's API keys sees every Ask here and still cannot

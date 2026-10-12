@@ -84,7 +84,7 @@
  * rather than an oversight.** The flag would make them reachable on the
  * login-off external `/mcp` surface with no token at all
  * (`middleware/mcp-auth.ts`), and what they return is other people's messages —
- * the same content the HTTP room routes serve behind `sessionGate`. Every other
+ * the same content the HTTP room routes serve behind the session gate. Every other
  * way to read a room's log on this machine asks for something; a read-only tier
  * is not a reason to be the exception. An external caller presents the local
  * token, exactly as it does to post.

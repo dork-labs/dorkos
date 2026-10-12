@@ -22,9 +22,9 @@
  *
  * @module routes/extensions
  */
-import { Router } from 'express';
-import type { Response } from 'express';
+import type { ServerResponse } from 'node:http';
 import fs from 'fs/promises';
+import { Hono, type Context } from 'hono';
 import { z } from 'zod';
 import type { ExtensionManager } from '../services/extensions/extension-manager.js';
 import type { ActivityService } from '../services/activity/activity-service.js';
@@ -35,18 +35,22 @@ import { ExtensionSecretStore } from '@dorkos/shared/extension-secrets';
 import { ExtensionSettingsStore } from '@dorkos/shared/extension-settings';
 import { resolveBlobPath } from '../services/extensions/extension-data-paths.js';
 import { readActivityActor } from '../services/activity/activity-actor.js';
+import type { ApiEnv } from '../http/api-chain.js';
+import { streamToNodeResponse } from '../http/raw-node-stream.js';
+import { readJsonBody } from '../http/request-body.js';
+import { honoRequestFacts } from '../http/request-facts.js';
 import { registerExtensionApprovalRoutes } from './extensions-approval.js';
 import { registerTrustedSourceRoutes } from './extensions-trusted-sources.js';
 import { registerExtensionInboxRoutes } from './extensions-inbox.js';
 import { registerExtensionStartWorkRoute } from './extensions-start-work.js';
-import { refuseIfNotAPerson, type PersonBarCopy } from './extensions-person-bar.js';
+import { refusedNotAPerson, type PersonBarCopy } from './extensions-person-bar.js';
 import {
   OPERATOR_ONLY_CONFIG_CODE,
   OPERATOR_ONLY_CONFIG_ERROR,
 } from '../services/core/operator/config-write-policy.js';
 
 /** Connected SSE clients for extension lifecycle events. */
-const sseClients = new Set<Response>();
+const sseClients = new Set<ServerResponse>();
 
 /**
  * Broadcast an `extension_reloaded` event to all connected SSE clients.
@@ -122,112 +126,131 @@ const EXTENSION_TOGGLE_BAR: PersonBarCopy = {
     `Settings > Extensions and make the change there.`,
 };
 
+/** What the `/api/extensions` routes read. */
+export interface ExtensionsRouterDeps {
+  /** The extension manager, for lifecycle operations. */
+  manager: ExtensionManager;
+  /** The resolved data directory, for extension data storage paths. */
+  dorkHome: string;
+  /** The current working directory, for a project extension's data. */
+  getCwd: () => string | null;
+  /** The Activity feed changes are recorded in, when the server has one. */
+  activity?: Pick<ActivityService, 'emit'>;
+}
+
+/** The answer for an id outside {@link SAFE_EXT_ID}. */
+const INVALID_ID = { error: 'Invalid extension ID' };
+
 /**
- * Create the extensions router.
+ * A validation failure, in the shape these routes have always answered.
  *
- * @param extensionManager - ExtensionManager instance for lifecycle operations
- * @param dorkHome - Resolved data directory for extension data storage paths
- * @param getCwd - Function returning the current working directory
+ * @param c - The request's context.
+ * @param error - What Zod refused.
  */
-export function createExtensionsRouter(
-  extensionManager: ExtensionManager,
-  dorkHome: string,
-  getCwd: () => string | null
-): Router {
-  const router = Router();
+function validationFailed(c: Context<ApiEnv>, error: z.ZodError): Response {
+  return c.json({ error: 'Validation failed', details: z.flattenError(error) }, 400);
+}
+
+/**
+ * Create the `/api/extensions` routes.
+ *
+ * @param deps - See {@link ExtensionsRouterDeps}.
+ * @returns The routes, for `app.route('/api/extensions', …)`.
+ */
+export function createExtensionsRoutes(deps: ExtensionsRouterDeps): Hono<ApiEnv> {
+  const { manager: extensionManager, dorkHome, getCwd, activity } = deps;
+  const router = new Hono<ApiEnv>();
 
   // GET /api/extensions/events -- SSE stream for extension lifecycle events
-  router.get('/events', (_req, res) => {
-    logger.warn('[DEPRECATED] GET /api/extensions/events — use GET /api/events instead');
-    res.set({
-      'Content-Type': 'text/event-stream',
-      'Cache-Control': 'no-cache',
-      Connection: 'keep-alive',
-    });
-    res.flushHeaders();
-
-    sseClients.add(res);
-
-    // Send initial heartbeat so the client knows the connection is live
-    res.write(':ok\n\n');
-
-    // Clean up on disconnect
-    res.on('close', () => {
-      sseClients.delete(res);
-    });
-  });
+  router.get('/events', (c) =>
+    streamToNodeResponse(c, (res, { signal }) => {
+      logger.warn('[DEPRECATED] GET /api/extensions/events — use GET /api/events instead');
+      res.writeHead(200, {
+        'Content-Type': 'text/event-stream; charset=utf-8',
+        'Cache-Control': 'no-cache',
+        Connection: 'keep-alive',
+      });
+      // Send initial heartbeat so the client knows the connection is live
+      res.write(':ok\n\n');
+      sseClients.add(res);
+      // Clean up on disconnect
+      return new Promise<void>((resolve) => {
+        const leave = (): void => {
+          sseClients.delete(res);
+          resolve();
+        };
+        if (signal.aborted) leave();
+        else signal.addEventListener('abort', leave, { once: true });
+      });
+    })
+  );
 
   // GET /api/extensions -- List all discovered extensions with status: every
   // copy that runs, then each older copy a newer one of the same trusted
   // source shadows, with `shadowedBy` set (spec `flow-multiproject` §9.2).
-  router.get('/', async (_req, res) => {
+  router.get('/', (c) => {
     try {
-      const extensions = [
-        ...extensionManager.listPublic(),
-        ...extensionManager.listShadowedPublic(),
-      ];
-      res.json(extensions);
+      return c.json([...extensionManager.listPublic(), ...extensionManager.listShadowedPublic()]);
     } catch (err) {
       logger.error('[Extensions] Failed to list extensions', err);
-      res.status(500).json({ error: 'Failed to list extensions' });
+      return c.json({ error: 'Failed to list extensions' }, 500);
     }
   });
 
   // POST /api/extensions/:id/enable -- Enable an extension
-  router.post('/:id/enable', async (req, res) => {
+  router.post('/:id/enable', async (c) => {
+    const id = c.req.param('id');
     try {
-      const { id } = req.params;
-      if (!SAFE_EXT_ID.test(id)) return res.status(400).json({ error: 'Invalid extension ID' });
+      if (!SAFE_EXT_ID.test(id)) return c.json(INVALID_ID, 400);
       // Identity before the state of the world, matching the order the tunnel
       // and approval routes use: a caller that may not do this at all is told
       // so, rather than being told whether the extension exists.
-      if (refuseIfNotAPerson(req, res, EXTENSION_TOGGLE_BAR)) return undefined;
+      const refused = refusedNotAPerson(c, EXTENSION_TOGGLE_BAR);
+      if (refused) return refused;
       const result = await extensionManager.enable(id);
       if (!result) {
-        return res.status(404).json({ error: `Extension '${id}' not found or cannot be enabled` });
+        return c.json({ error: `Extension '${id}' not found or cannot be enabled` }, 404);
       }
 
-      const activityService = req.app.locals.activityService as ActivityService | undefined;
-      if (activityService) {
-        await activityService.emit({
-          // Always the person today — the bar above refuses anything that named
-          // itself an agent — and read from the caller anyway, so this router has
-          // exactly one way of saying who acted and no route can drift back to
-          // asserting it.
-          ...readActivityActor(req, res),
-          category: 'config',
-          eventType: 'config.extension_installed',
-          resourceType: 'extension',
-          resourceId: id,
-          resourceLabel: result.extension.manifest.name,
-          summary: `Installed extension ${result.extension.manifest.name}`,
-        });
-      }
+      await activity?.emit({
+        // Always the person today — the bar above refuses anything that named
+        // itself an agent — and read from the caller anyway, so this router has
+        // exactly one way of saying who acted and no route can drift back to
+        // asserting it.
+        ...readActivityActor(honoRequestFacts(c)),
+        category: 'config',
+        eventType: 'config.extension_installed',
+        resourceType: 'extension',
+        resourceId: id,
+        resourceLabel: result.extension.manifest.name,
+        summary: `Installed extension ${result.extension.manifest.name}`,
+      });
 
       // Apply live across all connected clients — the bundle is already compiled
       // (enable() awaits it), so clients hot-load the extension's contributions
       // via the SSE `extension_reloaded` handler instead of requiring a page reload.
       broadcastExtensionReloaded([id]);
 
-      res.json(result);
+      return c.json(result);
     } catch (err) {
-      logger.error(`[Extensions] Failed to enable ${req.params.id}`, err);
-      res.status(500).json({ error: 'Failed to enable extension' });
+      logger.error(`[Extensions] Failed to enable ${id}`, err);
+      return c.json({ error: 'Failed to enable extension' }, 500);
     }
   });
 
   // POST /api/extensions/:id/disable -- Disable an extension
-  router.post('/:id/disable', async (req, res) => {
+  router.post('/:id/disable', async (c) => {
+    const id = c.req.param('id');
     try {
-      const { id } = req.params;
-      if (!SAFE_EXT_ID.test(id)) return res.status(400).json({ error: 'Invalid extension ID' });
+      if (!SAFE_EXT_ID.test(id)) return c.json(INVALID_ID, 400);
       // Barred in this direction too, unlike `POST /api/tunnel/stop`, which runs
       // nothing because stopping only narrows exposure. `operator-only` is a rule
       // about PATHS and never about values (`config-write-policy.ts`, pinned by
       // its own drift guard), and silently switching off the extension somebody's
       // work depends on is not a favour. The approval routes beside this one gate
       // `revoke` for the same reason.
-      if (refuseIfNotAPerson(req, res, EXTENSION_TOGGLE_BAR)) return undefined;
+      const refused = refusedNotAPerson(c, EXTENSION_TOGGLE_BAR);
+      if (refused) return refused;
       const result = await extensionManager.disable(id);
       if (!result) {
         // `disable()` returns null for two distinct reasons: the extension does
@@ -235,53 +258,46 @@ export function createExtensionsRouter(
         // (`canDisable: false`). Distinguish them so the client gets an honest
         // status — 409 Conflict for "exists but forbidden", not a misleading 404.
         if (extensionManager.get(id)) {
-          return res
-            .status(409)
-            .json({ error: `Extension '${id}' is required and cannot be disabled` });
+          return c.json({ error: `Extension '${id}' is required and cannot be disabled` }, 409);
         }
-        return res.status(404).json({ error: `Extension '${id}' not found` });
+        return c.json({ error: `Extension '${id}' not found` }, 404);
       }
 
-      const activityService = req.app.locals.activityService as ActivityService | undefined;
-      if (activityService) {
-        await activityService.emit({
-          // Person-barred like `/enable`, and read from the caller for the same
-          // reason.
-          ...readActivityActor(req, res),
-          category: 'config',
-          eventType: 'config.extension_removed',
-          resourceType: 'extension',
-          resourceId: id,
-          resourceLabel: result.extension.manifest.name,
-          summary: `Removed extension ${result.extension.manifest.name}`,
-        });
-      }
+      await activity?.emit({
+        // Person-barred like `/enable`, and read from the caller for the same
+        // reason.
+        ...readActivityActor(honoRequestFacts(c)),
+        category: 'config',
+        eventType: 'config.extension_removed',
+        resourceType: 'extension',
+        resourceId: id,
+        resourceLabel: result.extension.manifest.name,
+        summary: `Removed extension ${result.extension.manifest.name}`,
+      });
 
       // Apply live across all connected clients — the SSE `extension_reloaded`
       // handler deactivates the extension and removes its contributions in place,
       // so disabling takes effect without a page reload.
       broadcastExtensionReloaded([id]);
 
-      res.json(result);
+      return c.json(result);
     } catch (err) {
-      logger.error(`[Extensions] Failed to disable ${req.params.id}`, err);
-      res.status(500).json({ error: 'Failed to disable extension' });
+      logger.error(`[Extensions] Failed to disable ${id}`, err);
+      return c.json({ error: 'Failed to disable extension' }, 500);
     }
   });
 
   // POST /api/extensions/:id/init-server -- Initialize server-side extension
-  router.post('/:id/init-server', async (req, res) => {
+  router.post('/:id/init-server', async (c) => {
+    const id = c.req.param('id');
     try {
-      const { id } = req.params;
-      if (!SAFE_EXT_ID.test(id)) return res.status(400).json({ error: 'Invalid extension ID' });
+      if (!SAFE_EXT_ID.test(id)) return c.json(INVALID_ID, 400);
       const result = await extensionManager.initializeServer(id);
-      if (!result.ok) {
-        return res.status(400).json({ error: result.error });
-      }
-      res.json({ ok: true });
+      if (!result.ok) return c.json({ error: result.error }, 400);
+      return c.json({ ok: true });
     } catch (err) {
-      logger.error(`[Extensions] Failed to init server for ${req.params.id}`, err);
-      res.status(500).json({ error: 'Failed to initialize server extension' });
+      logger.error(`[Extensions] Failed to init server for ${id}`, err);
+      return c.json({ error: 'Failed to initialize server extension' }, 500);
     }
   });
 
@@ -290,81 +306,71 @@ export function createExtensionsRouter(
   // The scan reads every known project, so it runs after this answers: the
   // reply is the list as it stands, and clients hear what the scan changed
   // from the `extension_reloaded` broadcast.
-  router.post('/reload', async (_req, res) => {
+  router.post('/reload', (c) => {
     try {
       extensionManager.requestRefresh();
-      res.json(extensionManager.listPublic());
+      return c.json(extensionManager.listPublic());
     } catch (err) {
       logger.error('[Extensions] Failed to reload extensions', err);
-      res.status(500).json({ error: 'Failed to reload extensions' });
+      return c.json({ error: 'Failed to reload extensions' }, 500);
     }
   });
 
   // POST /api/extensions/cwd-changed -- Notify server that the active CWD changed
-  router.post('/cwd-changed', async (req, res) => {
+  router.post('/cwd-changed', async (c) => {
     try {
-      const parsed = CwdChangedBodySchema.safeParse(req.body);
-      if (!parsed.success) {
-        return res
-          .status(400)
-          .json({ error: 'Validation failed', details: z.flattenError(parsed.error) });
-      }
+      const parsed = CwdChangedBodySchema.safeParse(readJsonBody(c));
+      if (!parsed.success) return validationFailed(c, parsed.error);
 
-      const { cwd } = parsed.data;
-      const diff = await extensionManager.updateCwd(cwd);
+      const diff = await extensionManager.updateCwd(parsed.data.cwd);
       const changed = diff.added.length > 0 || diff.removed.length > 0;
-
       if (changed) {
         logger.info(
           `[Extensions] CWD changed: +${diff.added.length} -${diff.removed.length} extensions`
         );
       }
-
-      res.json({ changed, added: diff.added, removed: diff.removed });
+      return c.json({ changed, added: diff.added, removed: diff.removed });
     } catch (err) {
       logger.error('[Extensions] Failed to handle CWD change', err);
-      res.status(500).json({ error: 'Failed to handle CWD change' });
+      return c.json({ error: 'Failed to handle CWD change' }, 500);
     }
   });
 
   // GET /api/extensions/:id/bundle -- Serve compiled JS bundle
-  router.get('/:id/bundle', async (req, res) => {
+  router.get('/:id/bundle', async (c) => {
+    const id = c.req.param('id');
     try {
-      const { id } = req.params;
-      if (!SAFE_EXT_ID.test(id)) return res.status(400).json({ error: 'Invalid extension ID' });
+      if (!SAFE_EXT_ID.test(id)) return c.json(INVALID_ID, 400);
       const bundle = await extensionManager.readBundle(id);
-      if (!bundle) {
-        return res.status(404).json({ error: `Bundle not available for '${id}'` });
-      }
-      res.set('Content-Type', 'application/javascript');
-      res.set('Cache-Control', 'no-store');
-      res.send(bundle);
+      if (!bundle) return c.json({ error: `Bundle not available for '${id}'` }, 404);
+      return c.body(bundle, 200, {
+        'Content-Type': 'application/javascript; charset=utf-8',
+        'Cache-Control': 'no-store',
+      });
     } catch (err) {
-      logger.error(`[Extensions] Failed to serve bundle for ${req.params.id}`, err);
-      res.status(500).json({ error: 'Failed to serve bundle' });
+      logger.error(`[Extensions] Failed to serve bundle for ${id}`, err);
+      return c.json({ error: 'Failed to serve bundle' }, 500);
     }
   });
 
   // GET /api/extensions/:id/data -- Read extension's persistent data
-  router.get('/:id/data', async (req, res) => {
+  router.get('/:id/data', async (c) => {
+    const id = c.req.param('id');
     try {
-      const { id } = req.params;
-      if (!SAFE_EXT_ID.test(id)) return res.status(400).json({ error: 'Invalid extension ID' });
+      if (!SAFE_EXT_ID.test(id)) return c.json(INVALID_ID, 400);
       const dataPath = resolveBlobPath(id, extensionManager, dorkHome, getCwd);
-      if (!dataPath) {
-        return res.status(404).json({ error: `Extension '${id}' not found` });
-      }
+      if (!dataPath) return c.json({ error: `Extension '${id}' not found` }, 404);
 
       try {
         const data = await fs.readFile(dataPath, 'utf-8');
-        res.json(JSON.parse(data));
+        return c.json(JSON.parse(data));
       } catch {
         // No data file -- return 204 No Content
-        res.status(204).send();
+        return c.body(null, 204);
       }
     } catch (err) {
-      logger.error(`[Extensions] Failed to read data for ${req.params.id}`, err);
-      res.status(500).json({ error: 'Failed to read extension data' });
+      logger.error(`[Extensions] Failed to read data for ${id}`, err);
+      return c.json({ error: 'Failed to read extension data' }, 500);
     }
   });
 
@@ -381,34 +387,28 @@ export function createExtensionsRouter(
   // only ever overwrite its OWN blob, under its own scope-resolved directory.
   // If this ever needs recording, it needs collapsing (one line per extension per
   // window) rather than one line per call, and that is its own piece of work.
-  router.put('/:id/data', async (req, res) => {
+  router.put('/:id/data', async (c) => {
+    const id = c.req.param('id');
     try {
-      const { id } = req.params;
-      if (!SAFE_EXT_ID.test(id)) return res.status(400).json({ error: 'Invalid extension ID' });
+      if (!SAFE_EXT_ID.test(id)) return c.json(INVALID_ID, 400);
       const dataPath = resolveBlobPath(id, extensionManager, dorkHome, getCwd);
-      if (!dataPath) {
-        return res.status(404).json({ error: `Extension '${id}' not found` });
-      }
+      if (!dataPath) return c.json({ error: `Extension '${id}' not found` }, 404);
 
-      await writeFileAtomic(dataPath, JSON.stringify(req.body, null, 2));
-
-      res.status(200).json({ ok: true });
+      await writeFileAtomic(dataPath, JSON.stringify(readJsonBody(c), null, 2));
+      return c.json({ ok: true }, 200);
     } catch (err) {
-      logger.error(`[Extensions] Failed to write data for ${req.params.id}`, err);
-      res.status(500).json({ error: 'Failed to write extension data' });
+      logger.error(`[Extensions] Failed to write data for ${id}`, err);
+      return c.json({ error: 'Failed to write extension data' }, 500);
     }
   });
 
   // GET /api/extensions/:id/secrets -- List declared secrets with isSet status (never returns values)
-  router.get('/:id/secrets', async (req, res) => {
+  router.get('/:id/secrets', async (c) => {
+    const id = c.req.param('id');
     try {
-      const { id } = req.params;
-      if (!SAFE_EXT_ID.test(id)) return res.status(400).json({ error: 'Invalid extension ID' });
-
+      if (!SAFE_EXT_ID.test(id)) return c.json(INVALID_ID, 400);
       const record = extensionManager.get(id);
-      if (!record) {
-        return res.status(404).json({ error: `Extension '${id}' not found` });
-      }
+      if (!record) return c.json({ error: `Extension '${id}' not found` }, 404);
 
       const declared = record.manifest.serverCapabilities?.secrets ?? [];
       const store = new ExtensionSecretStore(id, dorkHome);
@@ -421,76 +421,60 @@ export function createExtensionsRouter(
           isSet: await store.has(s.key),
         }))
       );
-
-      res.json(result);
+      return c.json(result);
     } catch (err) {
-      logger.error(`[Extensions] Failed to list secrets for ${req.params.id}`, err);
-      res.status(500).json({ error: 'Failed to list secrets' });
+      logger.error(`[Extensions] Failed to list secrets for ${id}`, err);
+      return c.json({ error: 'Failed to list secrets' }, 500);
     }
   });
 
   // PUT /api/extensions/:id/secrets/:key -- Set a secret value (write-only)
-  router.put('/:id/secrets/:key', async (req, res) => {
+  router.put('/:id/secrets/:key', async (c) => {
+    const { id, key } = c.req.param();
     try {
-      const { id, key } = req.params;
-      if (!SAFE_EXT_ID.test(id)) return res.status(400).json({ error: 'Invalid extension ID' });
-
-      const parsed = SetSecretBodySchema.safeParse(req.body);
-      if (!parsed.success) {
-        return res
-          .status(400)
-          .json({ error: 'Validation failed', details: z.flattenError(parsed.error) });
-      }
+      if (!SAFE_EXT_ID.test(id)) return c.json(INVALID_ID, 400);
+      const parsed = SetSecretBodySchema.safeParse(readJsonBody(c));
+      if (!parsed.success) return validationFailed(c, parsed.error);
 
       const record = extensionManager.get(id);
-      if (!record) {
-        return res.status(404).json({ error: `Extension '${id}' not found` });
-      }
+      if (!record) return c.json({ error: `Extension '${id}' not found` }, 404);
 
       // Validate key is declared in manifest
       const declared = record.manifest.serverCapabilities?.secrets ?? [];
       if (!declared.some((s) => s.key === key)) {
-        return res
-          .status(400)
-          .json({ error: `Secret '${key}' not declared in extension manifest` });
+        return c.json({ error: `Secret '${key}' not declared in extension manifest` }, 400);
       }
 
       const store = new ExtensionSecretStore(id, dorkHome);
       await store.set(key, parsed.data.value);
 
-      const activityService = req.app.locals.activityService as ActivityService | undefined;
-      if (activityService) {
-        await activityService.emit({
-          // No person bar on this route, so this genuinely varies: an agent that
-          // identified itself is named, and the feed stops crediting the person
-          // with a machine's write (DOR-1801).
-          ...readActivityActor(req, res),
-          category: 'config',
-          eventType: 'config.extension_updated',
-          resourceType: 'extension',
-          resourceId: id,
-          resourceLabel: record.manifest.name,
-          summary: `Updated secret "${key}" for extension ${record.manifest.name}`,
-        });
-      }
+      await activity?.emit({
+        // No person bar on this route, so this genuinely varies: an agent that
+        // identified itself is named, and the feed stops crediting the person
+        // with a machine's write (DOR-1801).
+        ...readActivityActor(honoRequestFacts(c)),
+        category: 'config',
+        eventType: 'config.extension_updated',
+        resourceType: 'extension',
+        resourceId: id,
+        resourceLabel: record.manifest.name,
+        summary: `Updated secret "${key}" for extension ${record.manifest.name}`,
+      });
 
-      res.json({ ok: true });
+      return c.json({ ok: true });
     } catch (err) {
-      logger.error(`[Extensions] Failed to set secret for ${req.params.id}`, err);
-      res.status(500).json({ error: 'Failed to set secret' });
+      logger.error(`[Extensions] Failed to set secret for ${id}`, err);
+      return c.json({ error: 'Failed to set secret' }, 500);
     }
   });
 
   // DELETE /api/extensions/:id/secrets/:key -- Remove a secret
-  router.delete('/:id/secrets/:key', async (req, res) => {
+  router.delete('/:id/secrets/:key', async (c) => {
+    const { id, key } = c.req.param();
     try {
-      const { id, key } = req.params;
-      if (!SAFE_EXT_ID.test(id)) return res.status(400).json({ error: 'Invalid extension ID' });
-
+      if (!SAFE_EXT_ID.test(id)) return c.json(INVALID_ID, 400);
       const record = extensionManager.get(id);
-      if (!record) {
-        return res.status(404).json({ error: `Extension '${id}' not found` });
-      }
+      if (!record) return c.json({ error: `Extension '${id}' not found` }, 404);
 
       const store = new ExtensionSecretStore(id, dorkHome);
       // Asked BEFORE the delete, because `delete` is idempotent and says nothing
@@ -500,11 +484,10 @@ export function createExtensionsRouter(
       const wasSet = await store.has(key);
       await store.delete(key);
 
-      const activityService = req.app.locals.activityService as ActivityService | undefined;
-      if (activityService && wasSet) {
-        await activityService.emit({
+      if (wasSet) {
+        await activity?.emit({
           // Ungated like its `PUT` twin, and attributed the same way (DOR-1829).
-          ...readActivityActor(req, res),
+          ...readActivityActor(honoRequestFacts(c)),
           category: 'config',
           eventType: 'config.extension_updated',
           resourceType: 'extension',
@@ -514,112 +497,94 @@ export function createExtensionsRouter(
         });
       }
 
-      res.json({ ok: true });
+      return c.json({ ok: true });
     } catch (err) {
-      logger.error(`[Extensions] Failed to delete secret for ${req.params.id}`, err);
-      res.status(500).json({ error: 'Failed to delete secret' });
+      logger.error(`[Extensions] Failed to delete secret for ${id}`, err);
+      return c.json({ error: 'Failed to delete secret' }, 500);
     }
   });
 
   // GET /api/extensions/:id/settings -- List declared settings with current values
-  router.get('/:id/settings', async (req, res) => {
+  router.get('/:id/settings', async (c) => {
+    const id = c.req.param('id');
     try {
-      const { id } = req.params;
-      if (!SAFE_EXT_ID.test(id)) return res.status(400).json({ error: 'Invalid extension ID' });
-
+      if (!SAFE_EXT_ID.test(id)) return c.json(INVALID_ID, 400);
       const record = extensionManager.get(id);
-      if (!record) {
-        return res.status(404).json({ error: `Extension '${id}' not found` });
-      }
+      if (!record) return c.json({ error: `Extension '${id}' not found` }, 404);
 
       const declared = record.manifest.serverCapabilities?.settings ?? [];
       const store = new ExtensionSettingsStore(dorkHome, id);
       const stored = await store.getAll();
 
-      const result = declared.map((s) => {
-        const hasStored = s.key in stored;
-        return {
-          key: s.key,
-          type: s.type,
-          label: s.label,
-          description: s.description,
-          placeholder: s.placeholder,
-          group: s.group,
-          value: hasStored ? stored[s.key] : (s.default ?? null),
-          isDefault: !hasStored,
-          ...(s.options && { options: s.options }),
-          ...(s.min !== undefined && { min: s.min }),
-          ...(s.max !== undefined && { max: s.max }),
-        };
-      });
-
-      res.json(result);
+      return c.json(
+        declared.map((s) => {
+          const hasStored = s.key in stored;
+          return {
+            key: s.key,
+            type: s.type,
+            label: s.label,
+            description: s.description,
+            placeholder: s.placeholder,
+            group: s.group,
+            value: hasStored ? stored[s.key] : (s.default ?? null),
+            isDefault: !hasStored,
+            ...(s.options && { options: s.options }),
+            ...(s.min !== undefined && { min: s.min }),
+            ...(s.max !== undefined && { max: s.max }),
+          };
+        })
+      );
     } catch (err) {
-      logger.error(`[Extensions] Failed to list settings for ${req.params.id}`, err);
-      res.status(500).json({ error: 'Failed to list settings' });
+      logger.error(`[Extensions] Failed to list settings for ${id}`, err);
+      return c.json({ error: 'Failed to list settings' }, 500);
     }
   });
 
   // PUT /api/extensions/:id/settings/:key -- Store a setting value
-  router.put('/:id/settings/:key', async (req, res) => {
+  router.put('/:id/settings/:key', async (c) => {
+    const { id, key } = c.req.param();
     try {
-      const { id, key } = req.params;
-      if (!SAFE_EXT_ID.test(id)) return res.status(400).json({ error: 'Invalid extension ID' });
-
-      const parsed = SetSettingBodySchema.safeParse(req.body);
-      if (!parsed.success) {
-        return res
-          .status(400)
-          .json({ error: 'Validation failed', details: z.flattenError(parsed.error) });
-      }
+      if (!SAFE_EXT_ID.test(id)) return c.json(INVALID_ID, 400);
+      const parsed = SetSettingBodySchema.safeParse(readJsonBody(c));
+      if (!parsed.success) return validationFailed(c, parsed.error);
 
       const record = extensionManager.get(id);
-      if (!record) {
-        return res.status(404).json({ error: `Extension '${id}' not found` });
-      }
+      if (!record) return c.json({ error: `Extension '${id}' not found` }, 404);
 
       // Validate key is declared in manifest
       const declared = record.manifest.serverCapabilities?.settings ?? [];
       if (!declared.some((s) => s.key === key)) {
-        return res
-          .status(400)
-          .json({ error: `Setting '${key}' not declared in extension manifest` });
+        return c.json({ error: `Setting '${key}' not declared in extension manifest` }, 400);
       }
 
       const store = new ExtensionSettingsStore(dorkHome, id);
       await store.set(key, parsed.data.value);
 
-      const activityService = req.app.locals.activityService as ActivityService | undefined;
-      if (activityService) {
-        await activityService.emit({
-          // Ungated like the secrets route beside it, and attributed the same way.
-          ...readActivityActor(req, res),
-          category: 'config',
-          eventType: 'config.extension_updated',
-          resourceType: 'extension',
-          resourceId: id,
-          resourceLabel: record.manifest.name,
-          summary: `Updated setting "${key}" for extension ${record.manifest.name}`,
-        });
-      }
+      await activity?.emit({
+        // Ungated like the secrets route beside it, and attributed the same way.
+        ...readActivityActor(honoRequestFacts(c)),
+        category: 'config',
+        eventType: 'config.extension_updated',
+        resourceType: 'extension',
+        resourceId: id,
+        resourceLabel: record.manifest.name,
+        summary: `Updated setting "${key}" for extension ${record.manifest.name}`,
+      });
 
-      res.json({ ok: true });
+      return c.json({ ok: true });
     } catch (err) {
-      logger.error(`[Extensions] Failed to set setting for ${req.params.id}`, err);
-      res.status(500).json({ error: 'Failed to set setting' });
+      logger.error(`[Extensions] Failed to set setting for ${id}`, err);
+      return c.json({ error: 'Failed to set setting' }, 500);
     }
   });
 
   // DELETE /api/extensions/:id/settings/:key -- Reset setting to default
-  router.delete('/:id/settings/:key', async (req, res) => {
+  router.delete('/:id/settings/:key', async (c) => {
+    const { id, key } = c.req.param();
     try {
-      const { id, key } = req.params;
-      if (!SAFE_EXT_ID.test(id)) return res.status(400).json({ error: 'Invalid extension ID' });
-
+      if (!SAFE_EXT_ID.test(id)) return c.json(INVALID_ID, 400);
       const record = extensionManager.get(id);
-      if (!record) {
-        return res.status(404).json({ error: `Extension '${id}' not found` });
-      }
+      if (!record) return c.json({ error: `Extension '${id}' not found` }, 404);
 
       const store = new ExtensionSettingsStore(dorkHome, id);
       // Read first, for the reason the secrets route above states: resetting a
@@ -628,11 +593,10 @@ export function createExtensionsRouter(
       const hadStoredValue = (await store.get(key)) !== null;
       await store.delete(key);
 
-      const activityService = req.app.locals.activityService as ActivityService | undefined;
-      if (activityService && hadStoredValue) {
-        await activityService.emit({
+      if (hadStoredValue) {
+        await activity?.emit({
           // Ungated like its `PUT` twin, and attributed the same way (DOR-1829).
-          ...readActivityActor(req, res),
+          ...readActivityActor(honoRequestFacts(c)),
           category: 'config',
           eventType: 'config.extension_updated',
           resourceType: 'extension',
@@ -642,16 +606,16 @@ export function createExtensionsRouter(
         });
       }
 
-      res.json({ ok: true });
+      return c.json({ ok: true });
     } catch (err) {
-      logger.error(`[Extensions] Failed to delete setting for ${req.params.id}`, err);
-      res.status(500).json({ error: 'Failed to delete setting' });
+      logger.error(`[Extensions] Failed to delete setting for ${id}`, err);
+      return c.json({ error: 'Failed to delete setting' }, 500);
     }
   });
 
-  registerExtensionApprovalRoutes(router, extensionManager, SAFE_EXT_ID);
-  registerTrustedSourceRoutes(router, extensionManager);
-  registerExtensionInboxRoutes(router, extensionManager, dorkHome, SAFE_EXT_ID);
+  registerExtensionApprovalRoutes(router, extensionManager, SAFE_EXT_ID, activity);
+  registerTrustedSourceRoutes(router, extensionManager, activity);
+  registerExtensionInboxRoutes(router, extensionManager, dorkHome, SAFE_EXT_ID, activity);
   registerExtensionStartWorkRoute(router, extensionManager, SAFE_EXT_ID);
 
   return router;

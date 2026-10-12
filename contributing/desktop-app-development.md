@@ -1,6 +1,6 @@
 # Desktop App Development Guide
 
-> Developer reference for the DorkOS desktop app (`apps/desktop`) — a thin Electron shell that runs the same Express server and React client as the CLI install, packaged as a signed, notarized macOS app.
+> Developer reference for the DorkOS desktop app (`apps/desktop`) — a thin Electron shell that runs the same Hono server and React client as the CLI install, packaged as a signed, notarized macOS app.
 
 ---
 
@@ -72,7 +72,7 @@ This is the part that surprises people. Getting it wrong produces an app that bu
 
 ### The server runs as a child process
 
-The main process spawns the Express server, not in-process:
+The main process spawns the server, not in-process:
 
 - **Production**: Electron `UtilityProcess.fork` of the bundled `dist/server/server-entry.mjs`.
 - **Development**: `child_process.fork` via `tsx` of the original `src/server-entry.ts` (system Node, so the shared `better-sqlite3` stays compiled for system Node and `pnpm dev` keeps working).
