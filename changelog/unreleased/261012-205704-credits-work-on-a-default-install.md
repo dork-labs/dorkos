@@ -1,6 +1,7 @@
 ---
 covers:
   - 'fix(server): send /v1 Cloud calls to the Cloud service, not the website (DOR-2673)'
+  - 'fix(server): match the default website by origin; regenerate the cloud diagram (DOR-2673)'
 ---
 
 ### Fixed
