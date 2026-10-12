@@ -27,7 +27,7 @@ export function activate(api: ExtensionAPI): () => void {
 An extension with a server half can answer web requests at `/api/ext/<your-id>/`. Its page calls them with `fetch('/api/ext/my-extension/status')`. You can write that API in two ways.
 
 - **With the router.** `register(router, ctx)` gets an Express router. Add routes to it: `router.get('/status', …)` answers `GET /api/ext/my-extension/status`.
-- **With a fetch handler.** Return `{ fetch }` from `register`. `fetch` takes a standard web `Request` and returns a `Response`. A Hono app, or code written for Bun or Deno, works as it is: `return { fetch: app.fetch }`. If your server half needs nothing from `ctx`, export the app itself with `export default app`.
+- **With a fetch handler.** Return `{ fetch }` from `register`. `fetch` takes a standard web `Request` and returns a `Response`. Any handler of that shape, such as a Hono app, works as it is: `return { fetch: app.fetch }`. It runs inside DorkOS on Node, so code that needs Bun or Deno's own features does not. If your server half needs nothing from `ctx`, export the app itself with `export default app`.
 
 ```typescript title="server.ts"
 export default function register(router, ctx) {

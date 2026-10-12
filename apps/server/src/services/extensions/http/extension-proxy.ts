@@ -137,7 +137,7 @@ export interface ProxyAnswer {
  * percent-decoded on its own (so `..%2f..` arrives as one segment holding
  * separators, which the confinement check then refuses).
  *
- * @param subPath - The path below the extension's mount, as sent.
+ * @param subPath - The path below the extension's mount, still percent-encoded.
  */
 export function proxySegments(subPath: string): string[] | null {
   const match = /^\/proxy(?:\/(.*))?$/i.exec(subPath);

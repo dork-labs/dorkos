@@ -16,13 +16,25 @@
 import type { Context } from 'hono';
 import type { ApiEnv } from '../../../http/api-chain.js';
 
+/**
+ * The largest request body an extension is handed, in its own process or in
+ * the server's: the app-wide JSON limit (`http/request-body.ts`).
+ */
+export const MAX_FORWARDED_BODY_BYTES = 1024 * 1024;
+
+/** The error a request with a larger body is answered with, as a `413`. */
+export const TOO_LARGE = 'That request is too large.';
+
 /** The request an extension handler is given. */
 export interface ExtensionRequest {
   /** The Hono context, behind the whole `/api` chain. */
   readonly c: Context<ApiEnv>;
-  /** The extension's mount as the request named it: `/api/ext/<id>`. */
+  /** The extension's mount, `/api/ext/<id>`, with the id the route matched. */
   readonly mount: string;
-  /** The path below the mount, as sent (still percent-encoded), starting with `/`. */
+  /**
+   * The path below the mount, starting with `/`: still percent-encoded, with
+   * dot segments resolved, as the route matched it.
+   */
   readonly subPath: string;
 }
 

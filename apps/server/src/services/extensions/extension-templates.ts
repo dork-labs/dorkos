@@ -140,8 +140,8 @@ export function generateServerTemplate(name: string, description: string): strin
 // Your API lives at /api/ext/${name}/. Serve it one of two ways:
 //   - Router: add Express routes to \`router\`, as below.
 //   - Fetch handler: return { fetch } from register(). It gets a web-standard
-//     Request and returns a Response, so an app written for Hono, Bun or Deno
-//     works as is. See the commented example at the end of register().
+//     Request and returns a Response, so a Hono app works as is (it runs on
+//     Node, so Bun- or Deno-only APIs are not there). See the commented example at the end of register().
 
 import type { Router } from 'express';
 import type { DataProviderContext, ServerExtensionRegisterResult } from '@dorkos/extension-api/server';

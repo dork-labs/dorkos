@@ -265,7 +265,7 @@ describe('the reply header allowlist', () => {
       expect(res.headers.get(name), name).toBeNull();
     }
     expect(res.headers.get('etag')).toBe('"v1"');
-    // The child's own CORS header is dropped like the rest. What remains is
+    // The child's own CORS headers are dropped like the rest. What remains is
     // DorkOS's: the `/api` chain's CORS step answers every request with it,
     // as the Express chain's did.
     expect(res.headers.get('access-control-allow-credentials')).toBe('true');

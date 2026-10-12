@@ -1122,7 +1122,7 @@ router.get('/deep/path', handler); // GET  /api/ext/my-ext/deep/path
 
 #### Serving with a fetch handler
 
-`register` can return `{ fetch, cleanup? }` instead of adding routes (DOR-2687). `fetch` takes a web-standard `Request` and returns a `Response` (or a promise of one), the shape a Hono, Bun or Deno app exposes, so an app written for its own server runs unchanged:
+`register` can return `{ fetch, cleanup? }` instead of adding routes (DOR-2687). `fetch` takes a web-standard `Request` and returns a `Response` (or a promise of one), the shape a Hono app exposes, so an app written against the web `Request` and `Response` runs unchanged. It runs on Node inside DorkOS (or its own Node process), so Bun- or Deno-only APIs are not there:
 
 ```typescript
 import { Hono } from 'hono';
@@ -1140,8 +1140,8 @@ export default register;
 A server entry that needs nothing from `ctx` can export the handler's owner itself: `export default app`, or `export default { fetch(request) { … } }`.
 
 - **The path is below your mount.** `GET /api/ext/my-ext/status?x=1` reaches `fetch` as `http://<host>/status?x=1`. The mount is always `/api/ext/<id>`.
-- **The request is the caller's.** Headers as sent (in-process; an extension that runs separately gets them stripped, as its router does). A JSON body DorkOS already parsed is sent again as JSON, so `request.json()` works; any other body is the caller's stream. `request.signal` aborts when the caller leaves.
-- **Order.** With a router as well, the router answers first; what it passes on goes to the `dataProxy` (for `/proxy/*`, when declared), then to `fetch`. `fetch` answers everything it is given, so a path it does not serve should return its own 404.
+- **The request is the caller's.** Headers as sent (in-process; an extension that runs separately gets them stripped, as its router does). A JSON body DorkOS already parsed is sent again as JSON, so `request.json()` works; any other body is the caller's bytes, up to 1 MB (a larger one is answered `413` before `fetch` runs). `request.signal` aborts when the caller leaves.
+- **Order.** In-process, the router answers first; what it passes on goes to the `dataProxy` (for `/proxy/*`, when declared), then to `fetch`. For an extension that runs in its own process, the `dataProxy` is asked first, in DorkOS, and what it passes on goes to the process: its router, then `fetch`. `fetch` answers everything it is given, so a path it does not serve should return its own 404.
 - **Errors.** A `fetch` that throws, or returns something that is not a `Response`, gets the same `500` a throwing route does, and DorkOS keeps serving.
 - **People only.** `ctx.requirePerson` is Express middleware, so a route that must refuse agents and other sites belongs on the router.
 

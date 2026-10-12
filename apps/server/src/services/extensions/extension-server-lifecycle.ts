@@ -452,9 +452,11 @@ export class ExtensionServerLifecycle {
           extensionName: record.manifest.name,
           toolChecks,
         });
-      // A register() that throws after adding an account listener or advisor
-      // must not leave it behind: this instance never becomes active.
-      registered = releaseListeners;
+      // A register() that throws, or returns something unusable, must leave
+      // nothing behind: its schedules are cancelled, its account listeners and
+      // advisor released, and a late `ctx` call starts nothing. This instance
+      // never becomes active.
+      registered = dispose;
       closeTools = () => tools.close();
 
       const outcome = await settleWithin(

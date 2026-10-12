@@ -4,14 +4,17 @@
  * `server-entry.ts`).
  *
  * The handler gets a `Request` for the path below the mount, so an app
- * written for its own server (a Hono app, a Bun or Deno handler) serves
- * unchanged: a request to `/api/ext/my-ext/items?page=2` arrives as
- * `http://<host>/items?page=2`. Everything else is the request as sent,
- * behind the whole `/api` chain:
+ * written for its own server against the web `Request` and `Response` (a Hono
+ * app, say) serves unchanged: a request to `/api/ext/my-ext/items?page=2`
+ * arrives as `http://<host>/items?page=2`. The URL is always on the app's own
+ * origin, the `Host` the chain vetted, whatever the request target named.
+ * Everything else is the request as sent, behind the whole `/api` chain:
  *
  * - **Headers** as the caller sent them, as an in-process router sees them.
  * - **The body.** A JSON body the chain already parsed is sent again as JSON,
- *   so `request.json()` works; any other body is the caller's stream, unread.
+ *   so `request.json()` works; any other body is the caller's bytes. A body
+ *   over 1 MB is answered `413` before the handler runs, as for an extension
+ *   in its own process.
  * - **Leaving.** The request's `signal` aborts when the caller goes away.
  *
  * Whatever the handler answers is sent as it is. A handler that throws, or
@@ -20,29 +23,118 @@
  *
  * @module services/extensions/http/fetch-handler
  */
-import { Readable } from 'node:stream';
+import type { IncomingMessage } from 'node:http';
 import type { ExtensionFetchHandler } from '@dorkos/extension-api/server';
 import type { Context } from 'hono';
 import type { ApiEnv } from '../../../http/api-chain.js';
-import type { ExtensionHttpHandler } from './extension-http.js';
+import {
+  MAX_FORWARDED_BODY_BYTES,
+  TOO_LARGE,
+  type ExtensionHttpHandler,
+} from './extension-http.js';
 
 /** Methods whose request carries no body. */
 const BODILESS = new Set(['GET', 'HEAD']);
+
+/** What {@link readBody} gives back for a body over the limit. */
+const OVER_LIMIT = Symbol('over limit');
+
+/**
+ * The URL the handler is given: the path below the mount and the query, on
+ * the origin the `Host` header names. Built field by field, never by resolving
+ * the path against the origin, so a path such as `//evil.com/x` stays a path.
+ *
+ * @param c - The request's context.
+ * @param subPath - The path below the mount.
+ */
+function extensionUrl(c: Context<ApiEnv>, subPath: string): URL {
+  const sent = new URL(c.req.url);
+  // An absolute-form target (`GET http://elsewhere/…`) names a host of its
+  // own in the URL; the `Host` header is the one the chain's host guard read.
+  const host = c.env.incoming.headers.host;
+  let url = new URL(sent.origin);
+  if (host) {
+    try {
+      url = new URL(`${sent.protocol}//${host}`);
+    } catch {
+      // Not a host a URL can carry: keep the URL's own origin.
+    }
+  }
+  url.pathname = subPath;
+  url.search = sent.search;
+  url.hash = '';
+  return url;
+}
+
+/**
+ * Read a body the chain did not parse, up to {@link MAX_FORWARDED_BODY_BYTES}.
+ *
+ * @param incoming - The caller's request stream.
+ * @returns The bytes, `null` for none, or {@link OVER_LIMIT}.
+ */
+function readBody(incoming: IncomingMessage): Promise<Buffer | null | typeof OVER_LIMIT> {
+  const declared = Number(incoming.headers['content-length']);
+  if (Number.isFinite(declared) && declared > MAX_FORWARDED_BODY_BYTES) {
+    // Drain it unread, so the 413 is not cut off by a reset.
+    incoming.resume();
+    return Promise.resolve(OVER_LIMIT);
+  }
+  if (incoming.readableEnded) return Promise.resolve(null);
+  return new Promise((resolve, reject) => {
+    const chunks: Buffer[] = [];
+    let seen = 0;
+    const stop = (): void => {
+      incoming.off('data', onData);
+      incoming.off('end', onEnd);
+      incoming.off('error', onError);
+      incoming.off('close', onClose);
+    };
+    function onData(chunk: Buffer): void {
+      seen += chunk.byteLength;
+      if (seen > MAX_FORWARDED_BODY_BYTES) {
+        // Stop keeping it, and let the rest drain unread: destroying the
+        // request would cut the 413 off on its way out.
+        stop();
+        incoming.resume();
+        resolve(OVER_LIMIT);
+        return;
+      }
+      chunks.push(chunk);
+    }
+    function onEnd(): void {
+      stop();
+      resolve(seen === 0 ? null : Buffer.concat(chunks));
+    }
+    function onError(error: Error): void {
+      stop();
+      reject(error);
+    }
+    function onClose(): void {
+      onError(new Error('The request closed before its body arrived.'));
+    }
+    incoming.on('data', onData);
+    incoming.on('end', onEnd);
+    incoming.on('error', onError);
+    incoming.on('close', onClose);
+  });
+}
 
 /**
  * The `Request` an extension's fetch handler is given: the path below its
  * mount, the caller's headers, and the body.
  *
  * @param c - The request's context.
- * @param subPath - The path below the mount, as sent.
+ * @param subPath - The path below the mount.
+ * @returns The request, or `null` when its body is over the limit.
  */
-export function extensionRequest(c: Context<ApiEnv>, subPath: string): Request {
+export async function extensionRequest(
+  c: Context<ApiEnv>,
+  subPath: string
+): Promise<Request | null> {
   // Read from the raw Node pair and Hono's request, never `c.req.raw.body` or
   // `.signal`: either builds the platform `Request` from the incoming stream,
   // which the chain's JSON parser may already have read to the end.
   const { incoming, outgoing } = c.env;
-  const sent = new URL(c.req.url);
-  const url = new URL(`${subPath}${sent.search}`, sent.origin);
   const headers = new Headers(c.req.raw.headers);
   const parsed = c.get('body');
   let body: BodyInit | null = null;
@@ -52,20 +144,20 @@ export function extensionRequest(c: Context<ApiEnv>, subPath: string): Request {
     headers.delete('content-encoding');
     headers.delete('transfer-encoding');
   } else if (!BODILESS.has(c.req.method)) {
-    body = Readable.toWeb(incoming) as unknown as BodyInit;
+    const read = await readBody(incoming);
+    if (read === OVER_LIMIT) return null;
+    body = read as BodyInit | null;
   }
   const left = new AbortController();
   outgoing.once('close', () => {
     if (!outgoing.writableFinished) left.abort();
   });
-  return new Request(url, {
+  return new Request(extensionUrl(c, subPath), {
     method: c.req.method,
     headers,
     body,
     signal: left.signal,
-    // A streamed body needs this in Node; it changes nothing for a string.
-    duplex: 'half',
-  } as RequestInit);
+  });
 }
 
 /**
@@ -80,7 +172,11 @@ export function createFetchHandler(
   fetch: ExtensionFetchHandler
 ): ExtensionHttpHandler {
   return async ({ c, subPath }) => {
-    const answer: unknown = await fetch(extensionRequest(c, subPath));
+    const request = await extensionRequest(c, subPath);
+    // The rest of that body is never read, so the connection cannot carry
+    // another request: it closes once this answer is out.
+    if (!request) return c.json({ error: TOO_LARGE }, 413, { connection: 'close' });
+    const answer: unknown = await fetch(request);
     if (!(answer instanceof Response)) {
       throw new Error(`${name} answered with something that is not a Response.`);
     }

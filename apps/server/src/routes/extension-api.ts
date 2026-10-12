@@ -20,17 +20,21 @@ import type { ApiEnv } from '../http/api-chain.js';
 import type { ExtensionManager } from '../services/extensions/extension-manager.js';
 
 /**
- * The mount and the path below it, from the URL as sent: `req.baseUrl` and
- * `req.path` on Express. The route only matched a lower-case `/api/ext/`, so
- * the mount is always its first three segments.
+ * The mount and the path below it: `req.baseUrl` and `req.path` on Express.
  *
- * @param url - The request URL as sent, with its query.
+ * Both come from the URL the route matched, never the request target as
+ * sent: the URL has an absolute-form target reduced to its path and its dot
+ * segments resolved, so the mount always names the extension the lookup
+ * found, and the path below it is that extension's own.
+ *
+ * @param url - The request's URL, as the route matched it.
+ * @param id - The extension id the route matched.
  */
-export function splitExtensionMount(url: string): { mount: string; subPath: string } {
-  const pathname = url.split('?')[0] ?? '';
-  const parts = pathname.split('/');
+export function splitExtensionMount(url: string, id: string): { mount: string; subPath: string } {
+  // `/api/ext/<id>/…`: the path below the mount starts at the fourth segment.
+  const parts = new URL(url).pathname.split('/');
   return {
-    mount: parts.slice(0, 4).join('/'),
+    mount: `/api/ext/${id}`,
     subPath: `/${parts.slice(4).join('/')}`,
   };
 }
@@ -50,7 +54,7 @@ export function createExtensionApiRoutes(
     const id = c.req.param('id') ?? '';
     const handler = manager.getServerHandler(id);
     if (!handler) return c.json({ error: `Extension '${id}' has no server routes` }, 404);
-    const { mount, subPath } = splitExtensionMount(c.env.incoming.url ?? c.req.path);
+    const { mount, subPath } = splitExtensionMount(c.req.url, id);
     return (await handler({ c, mount, subPath })) ?? c.notFound();
   };
   routes.all('/:id', serve);

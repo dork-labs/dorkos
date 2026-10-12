@@ -794,9 +794,11 @@ describe('the extension data proxy', () => {
 
     // Sent down a raw socket rather than through supertest: superagent
     // normalizes `%2e%2e` in the path before it ever leaves the client, so
-    // supertest cannot express this request. A raw client can, and the proxy
-    // decodes the segments back into `..` on arrival.
-    it('refuses `%2e%2e` traversal driven through the real router', async () => {
+    // supertest cannot express this request. A raw client can. The URL's dot
+    // segments (`%2e%2e` among them) are resolved before the route matches, so
+    // this one names `/api/ext/admin`: it leaves the extension's mount and
+    // never reaches its proxy.
+    it('never forwards `%2e%2e` traversal driven through the real router', async () => {
       armFetch();
 
       const status = await rawGetStatus(
@@ -804,7 +806,7 @@ describe('the extension data proxy', () => {
         '/api/ext/test-ext/proxy/%2e%2e/%2e%2e/admin'
       );
 
-      expect(status).toBe(400);
+      expect(status).toBe(404);
       expect(globalThis.fetch).not.toHaveBeenCalled();
     });
 

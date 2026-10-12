@@ -308,14 +308,15 @@ describe('ExtensionManager — server lifecycle', () => {
       });
 
       await manager.initialize(null);
-      mockReleaseListeners.mockClear();
+      mockDispose.mockClear();
 
       const result = await manager.initializeServer('throw-srv');
 
       expect(result.ok).toBe(false);
       expect(result.error).toBe('register failed');
-      // An account listener or advisor it added before throwing does not outlive it.
-      expect(mockReleaseListeners).toHaveBeenCalledTimes(1);
+      // An account listener, advisor or schedule it added before throwing does
+      // not outlive it: disposing the context releases all three.
+      expect(mockDispose).toHaveBeenCalledTimes(1);
     });
 
     it('returns ok:false when module does not export a function', async () => {
@@ -637,6 +638,32 @@ describe('ExtensionManager — server lifecycle', () => {
 
       expect(result.ok).toBe(false);
       expect(result.error).toMatch(/fetch/);
+      expect(manager.getServerHandler('bad-fetch')).toBeNull();
+    });
+
+    it('stops what a refused register() scheduled, and keeps it from starting more', async () => {
+      const record = makeRecord('bad-fetch', {
+        status: 'compiled',
+        hasServerEntry: true,
+        serverEntryPath: '/fake/extensions/bad-fetch/server.ts',
+      });
+      mockDiscover.mockResolvedValue([record]);
+      mockCompile.mockResolvedValue({ code: 'bundle', sourceHash: 'hash' });
+      mockCompileServer.mockResolvedValue({
+        code: `module.exports = function register(_router, ctx) {
+          ctx.schedule(5, async () => {});
+          return { cleanup: 'nope' };
+        };`,
+        sourceHash: 'srvhash',
+      });
+      await manager.initialize(null);
+      mockDispose.mockClear();
+
+      const result = await manager.initializeServer('bad-fetch');
+
+      expect(result.ok).toBe(false);
+      // Disposing cancels its schedules and makes a later `ctx.schedule` inert.
+      expect(mockDispose).toHaveBeenCalledTimes(1);
       expect(manager.getServerHandler('bad-fetch')).toBeNull();
     });
 

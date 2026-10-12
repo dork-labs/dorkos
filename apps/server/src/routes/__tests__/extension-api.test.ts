@@ -222,12 +222,12 @@ describe('/api/ext/:id/*', () => {
 });
 
 describe('splitExtensionMount', () => {
-  it('splits the mount from the path below it, keeping the URL as sent', () => {
-    expect(splitExtensionMount('/api/ext/my-ext/a%20b/c?x=1')).toEqual({
+  it('splits the mount from the path below it, keeping the path percent-encoded', () => {
+    expect(splitExtensionMount('http://localhost/api/ext/my-ext/a%20b/c?x=1', 'my-ext')).toEqual({
       mount: '/api/ext/my-ext',
       subPath: '/a%20b/c',
     });
-    expect(splitExtensionMount('/api/ext/my-ext')).toEqual({
+    expect(splitExtensionMount('http://localhost/api/ext/my-ext', 'my-ext')).toEqual({
       mount: '/api/ext/my-ext',
       subPath: '/',
     });

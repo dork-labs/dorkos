@@ -2,6 +2,8 @@
  * An extension's `fetch` handler behind `/api/ext/:id/*`, on the real `/api`
  * chain: what the handler is given, and what the caller gets back.
  */
+import http from 'node:http';
+import type { AddressInfo } from 'node:net';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import request from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
@@ -48,6 +50,33 @@ function serve(handler: ExtensionHttpHandler): void {
   );
 }
 
+/**
+ * Send `target` exactly as written, which supertest would tidy: an
+ * absolute-form target, or one with dot segments.
+ */
+function rawGet(target: string): Promise<{ status: number; body: Record<string, unknown> }> {
+  const { port } = server.address() as AddressInfo;
+  return new Promise((resolve, reject) => {
+    const req = http.request(
+      {
+        host: '127.0.0.1',
+        port,
+        method: 'GET',
+        path: target,
+        headers: { host: `localhost:${port}` },
+      },
+      (res) => {
+        let text = '';
+        res.setEncoding('utf8');
+        res.on('data', (chunk: string) => (text += chunk));
+        res.on('end', () => resolve({ status: res.statusCode ?? 0, body: JSON.parse(text) }));
+      }
+    );
+    req.on('error', reject);
+    req.end();
+  });
+}
+
 /** A handler that describes the request it was given. */
 const describeRequest: ExtensionFetchHandler = async (req) => {
   const url = new URL(req.url);
@@ -57,6 +86,7 @@ const describeRequest: ExtensionFetchHandler = async (req) => {
     search: url.search,
     contentType: req.headers.get('content-type'),
     custom: req.headers.get('x-custom'),
+    host: url.host,
     body: req.method === 'GET' || req.method === 'HEAD' ? null : await req.text(),
   });
 };
@@ -76,6 +106,33 @@ describe('an extension served with a fetch handler', () => {
       search: '?page=2',
       custom: 'yes',
     });
+  });
+
+  it('never gets a URL off the app’s own origin from a doubled slash', async () => {
+    const res = await request(server).get('/api/ext/my-ext//evil.com/login?x=1');
+
+    expect(res.body.host).not.toBe('evil.com');
+    expect(res.body).toMatchObject({ path: '//evil.com/login', search: '?x=1' });
+  });
+
+  it('gets the path below its mount from an absolute-form request, on the app’s origin', async () => {
+    const { port } = server.address() as AddressInfo;
+
+    const res = await rawGet('http://evil.com/api/ext/my-ext/items?page=2');
+
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({
+      host: `localhost:${port}`,
+      path: '/items',
+      search: '?page=2',
+    });
+  });
+
+  it('gets the path below its mount after dot segments are resolved', async () => {
+    const res = await rawGet('/api/ext/other/../my-ext/items/../things');
+
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({ path: '/things' });
   });
 
   it('gets / at its mount itself', async () => {
@@ -103,6 +160,49 @@ describe('an extension served with a fetch handler', () => {
       .send('just words');
 
     expect(res.body).toMatchObject({ method: 'PUT', body: 'just words' });
+  });
+
+  it('answers a body over 1 MB with 413, before the handler runs', async () => {
+    const handler = vi.fn(describeRequest);
+    serve(createFetchHandler('My Extension', handler));
+
+    const res = await request(server)
+      .put('/api/ext/my-ext/notes')
+      .set('content-type', 'text/plain')
+      .send('x'.repeat(1024 * 1024 + 1));
+
+    expect(res.status).toBe(413);
+    expect(res.body).toEqual({ error: 'That request is too large.' });
+    expect(handler).not.toHaveBeenCalled();
+  });
+
+  it('answers a streamed body that grows past 1 MB with 413, before the handler runs', async () => {
+    const handler = vi.fn(describeRequest);
+    serve(createFetchHandler('My Extension', handler));
+    const { port } = server.address() as AddressInfo;
+
+    const status = await new Promise<number>((resolve, reject) => {
+      const req = http.request(
+        {
+          host: '127.0.0.1',
+          port,
+          method: 'POST',
+          path: '/api/ext/my-ext/upload',
+          headers: { 'content-type': 'application/octet-stream' },
+        },
+        (res) => {
+          res.resume();
+          resolve(res.statusCode ?? 0);
+        }
+      );
+      req.on('error', reject);
+      const chunk = Buffer.alloc(256 * 1024, 1);
+      for (let i = 0; i < 5; i++) req.write(chunk);
+      req.end();
+    });
+
+    expect(status).toBe(413);
+    expect(handler).not.toHaveBeenCalled();
   });
 
   it('answers with whatever the handler answered, behind the chain’s own headers', async () => {
@@ -200,5 +300,23 @@ describe('a router and a fetch handler together', () => {
     });
 
     expect(handled).toBeNull();
+  });
+});
+
+describe('the mount and path a handler is given', () => {
+  beforeEach(() => {
+    serve(async ({ mount, subPath }) => Response.json({ mount, subPath }));
+  });
+
+  it('names the extension that serves the request, after dot segments are resolved', async () => {
+    const res = await rawGet('/api/ext/other/../my-ext/x');
+
+    expect(res.body).toEqual({ mount: '/api/ext/my-ext', subPath: '/x' });
+  });
+
+  it('names the mount and path of an absolute-form request', async () => {
+    const res = await rawGet('http://localhost/api/ext/my-ext/a%20b/c?q=1');
+
+    expect(res.body).toEqual({ mount: '/api/ext/my-ext', subPath: '/a%20b/c' });
   });
 });

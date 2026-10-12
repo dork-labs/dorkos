@@ -5,8 +5,8 @@
  * - **An Express router.** `register(router, ctx)` adds routes to the router
  *   it is handed, as it always has.
  * - **A fetch handler.** `register` returns `{ fetch }`: a function that takes
- *   a web-standard `Request` and returns a `Response`, the shape a Hono, Bun
- *   or Deno app exposes. A server entry that needs nothing from `ctx` can
+ *   a web-standard `Request` and returns a `Response`, the shape a Hono app
+ *   exposes. It runs on Node, so Bun- or Deno-only APIs are not there. A server entry that needs nothing from `ctx` can
  *   export that object itself (`export default app` for a Hono app).
  *
  * Both work together: a request the router does not answer goes to the

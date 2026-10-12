@@ -5,4 +5,4 @@ covers:
 
 ### Added
 
-- Extension authors can now serve an extension's own API with a fetch handler: a function that takes a standard web request and returns a response. A Hono app, or code written for Bun or Deno, works as it is. The Express router still works, and both can be used together.
+- Extension authors can now serve an extension's own API with a fetch handler: a function that takes a standard web request and returns a response. Any handler of that shape, such as a Hono app, works as it is. It runs inside DorkOS on Node, so code that needs Bun or Deno's own features does not. The Express router still works, and both can be used together.

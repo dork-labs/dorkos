@@ -56,12 +56,14 @@ import type { RequestFacts } from '../../../http/request-facts.js';
 import { honoRequestFacts } from '../../../http/request-facts.js';
 import { assessPerson } from '../../../routes/extensions-person-bar.js';
 import { requirePersonCopy } from '../inbox/extension-inbox-context.js';
-import { firstAnswer, type ExtensionHttpHandler } from '../http/extension-http.js';
+import {
+  firstAnswer,
+  MAX_FORWARDED_BODY_BYTES,
+  TOO_LARGE,
+  type ExtensionHttpHandler,
+} from '../http/extension-http.js';
 import { ISOLATION_LIMITS, PERSON_VERDICT_HEADER, type PersonVerdict } from './ipc-protocol.js';
 import type { IsolatedExtensionHost } from './isolated-host.js';
-
-/** The largest request body forwarded: the app-wide JSON limit (`app.ts`). */
-export const MAX_FORWARDED_BODY_BYTES = 1024 * 1024;
 
 /** Headers that describe one hop, never forwarded either way (RFC 9110 §7.6.1). */
 const HOP_BY_HOP = new Set([
@@ -276,7 +278,7 @@ export function createIsolatedHandler(options: IsolatedHandlerOptions): Extensio
 
       const declared = Number(req.headers['content-length']);
       if (Number.isFinite(declared) && declared > MAX_FORWARDED_BODY_BYTES) {
-        sendJson(res, 413, { error: 'That request is too large.' });
+        sendJson(res, 413, { error: TOO_LARGE });
         return;
       }
 
@@ -391,7 +393,7 @@ export function createIsolatedHandler(options: IsolatedHandlerOptions): Extensio
           seen += chunk.byteLength;
           if (seen > MAX_FORWARDED_BODY_BYTES) {
             req.unpipe(upstream);
-            finish({ status: 413, error: 'That request is too large.' });
+            finish({ status: 413, error: TOO_LARGE });
           }
         });
         req.pipe(upstream);
