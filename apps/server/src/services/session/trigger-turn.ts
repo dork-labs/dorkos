@@ -1036,6 +1036,12 @@ export async function triggerTurn(opts: TriggerTurnOpts): Promise<TriggerTurnRes
     // self-sufficient history source for log-backed runtimes (ADR-0263).
     const turn = feedProjector(projector, guarded, {
       ...(opts.privateReceiptId === undefined ? { userMessage: content } : {}),
+      // Which room post opened this turn (DOR-2113), so a history rebuilt from
+      // this record shows the post as its author's, never the person's own.
+      // The server fills in who at the wire boundary.
+      ...(roomContext?.triggerEntryId
+        ? { roomMessage: { roomId: roomContext.room.id, entryId: roomContext.triggerEntryId } }
+        : {}),
       ...(opts.onTurnStart ? { onTurnStart: opts.onTurnStart } : {}),
     })
       // guardTurnErrors already swallows source throws; this catch is the last line

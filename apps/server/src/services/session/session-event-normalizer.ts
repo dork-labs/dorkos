@@ -980,6 +980,9 @@ export const TURN_REOPENING_STREAM_EVENT_TYPES: ReadonlySet<StreamEvent['type']>
  *   on the synthesized `turn_start` so log-backed runtimes can reconstruct the
  *   user side of the conversation from the EventLog alone (the POST is
  *   trigger-only, so the durable stream is the only place it can ride).
+ * @param opts.roomMessage - The room and entry, when a room post opened this
+ *   turn, so the post can be shown as its author's rather than the person's
+ *   (DOR-2113).
  * @param opts.origin - Who opened this window. Omit for the ordinary case, a
  *   turn a person or a caller triggered. Pass `'runtime'` for a window NOBODY
  *   asked for: the persistent pump's synthetic turn around a `result` that
@@ -998,17 +1001,13 @@ export const TURN_REOPENING_STREAM_EVENT_TYPES: ReadonlySet<StreamEvent['type']>
 export async function feedProjector(
   projector: SessionStateProjector,
   events: AsyncIterable<StreamEvent>,
-  opts: {
-    userMessage?: string;
-    origin?: TurnOrigin;
+  opts: Pick<RawOf<'turn_start'>, 'userMessage' | 'roomMessage' | 'origin'> & {
     onTurnStart?: (seq: number) => void;
   } = {}
 ): Promise<void> {
-  const start: RawOf<'turn_start'> = {
-    type: 'turn_start',
-    ...(opts.userMessage !== undefined ? { userMessage: opts.userMessage } : {}),
-    ...(opts.origin !== undefined ? { origin: opts.origin } : {}),
-  };
+  // Callers spread only the fields they have, so nothing here is undefined.
+  const { onTurnStart: _onTurnStart, ...fields } = opts;
+  const start: RawOf<'turn_start'> = { type: 'turn_start', ...fields };
   // Two statements, and they must stay two. Folded into
   // `opts.onTurnStart?.(projector.ingest(start).seq)` the optional CALL
   // short-circuits its own arguments, so a caller that passed no callback — which

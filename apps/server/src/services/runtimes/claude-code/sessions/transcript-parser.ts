@@ -16,6 +16,7 @@ import { apiErrorCode, buildApiErrorPart, isApiErrorRecord } from '../sdk/api-er
 import { mapSdkAnswersToIndices } from './question-answers.js';
 import { applyToolResult } from './tool-result-outcome.js';
 import { classifyOrigin } from './classify-origin.js';
+import { userHistoryMessage } from '../../../session/chat-messages/room-turn-ref.js';
 
 export interface TranscriptLine {
   type: string;
@@ -569,13 +570,13 @@ export function parseTranscript(lines: string[], images?: TranscriptImageRef[]):
         }
 
         if (textParts.length > 0) {
-          const cleanText = stripSystemTags(textParts.join('\n'));
+          const rawText = textParts.join('\n');
+          const cleanText = stripSystemTags(rawText);
           if (cleanText.trim()) {
-            messages.push({
-              id: parsed.uuid || crypto.randomUUID(),
-              role: 'user',
-              content: cleanText,
-            });
+            // A room turn keeps the entry it answered, so the sender is shown (DOR-2113).
+            messages.push(
+              userHistoryMessage(parsed.uuid || crypto.randomUUID(), rawText, cleanText)
+            );
           }
         }
         continue;
@@ -649,11 +650,8 @@ export function parseTranscript(lines: string[], images?: TranscriptImageRef[]):
       const cleanText = stripSystemTags(text);
       if (!cleanText.trim()) continue;
 
-      messages.push({
-        id: parsed.uuid || crypto.randomUUID(),
-        role: 'user',
-        content: cleanText,
-      });
+      // Read off the record as stored, not `text`: a relay payload is not context.
+      messages.push(userHistoryMessage(parsed.uuid || crypto.randomUUID(), msgContent, cleanText));
     } else if (parsed.type === 'assistant' && parsed.message) {
       const contentBlocks = parsed.message.content;
 

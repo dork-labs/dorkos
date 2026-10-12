@@ -54,10 +54,12 @@ export interface ChatReadInput {
 export interface ChatReadMessage {
   /** The message's id in the chat. */
   id: string;
-  /** Who said it: the person, the chat's own agent, or another chat. */
-  from: 'person' | 'agent' | 'chat';
+  /** Who said it: the person, the chat's own agent, another chat, or a room member. */
+  from: 'person' | 'agent' | 'chat' | 'room';
   /** When the message carries words another chat sent: who sent them. */
   sender?: ChatMessageSender;
+  /** When a room post opened the turn (DOR-2113): the room, and who posted it. */
+  room?: { id: string; name?: string; author?: string };
   /** When another chat sent it: what kind. */
   kind?: ChatMessageKind;
   /** When it was said (ISO 8601), when the chat recorded it. */
@@ -150,6 +152,15 @@ function readMessages(message: HistoryMessage, include: 'text' | 'tools'): ChatR
         ...at,
         text: stamp.text,
       }));
+    }
+    const post = message.roomMessage;
+    if (post && !post.author?.you) {
+      const room = {
+        id: post.roomId,
+        ...(post.roomLabel ? { name: post.roomLabel } : {}),
+        ...(post.author ? { author: post.author.displayName } : {}),
+      };
+      return [{ id: message.id, from: 'room', room, ...at, text: message.content }];
     }
     return [{ id: message.id, from: 'person', ...at, text: message.content }];
   }

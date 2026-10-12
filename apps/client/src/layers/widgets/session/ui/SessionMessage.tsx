@@ -32,7 +32,12 @@ import { feedArticleProps } from '@/layers/shared/model';
 import type { FeedPosition, MessageAuthor } from '@/layers/shared/model';
 import { Message, formatTime } from '@/layers/features/conversation';
 import type { ChatMessage, MessageGrouping } from '@/layers/shared/model';
-import { ChatFromMark, MessageProvider, type InteractiveToolHandle } from '@/layers/features/chat';
+import {
+  ChatFromMark,
+  MessageProvider,
+  RoomPostMark,
+  type InteractiveToolHandle,
+} from '@/layers/features/chat';
 import { renderSessionBody } from './render-session-body';
 
 interface SessionMessageProps {
@@ -143,9 +148,12 @@ export function SessionMessage({
   // Words another chat sent: the author line says which chat (spec
   // `spin-off-chats` §6), and they are not this person's to run elsewhere.
   const fromChat = isUser ? message.chatMessages?.[0] : undefined;
+  // A room post this chat answered: the author line says which room (DOR-2113).
+  const fromRoom = isUser && fromChat === undefined ? message.roomMessage : undefined;
   const showRunWith =
     isUserPrompt &&
     fromChat === undefined &&
+    (fromRoom === undefined || fromRoom.author?.you === true) &&
     message.messageType !== 'command' &&
     message.messageType !== 'compaction' &&
     message.content.trim().length > 0;
@@ -203,7 +211,9 @@ export function SessionMessage({
                   // wrap on a narrow screen rather than truncating to nothing.
                   className: 'flex-wrap gap-y-0.5',
                 }
-              : {})}
+              : fromRoom
+                ? { mark: <RoomPostMark stamp={fromRoom} />, className: 'flex-wrap gap-y-0.5' }
+                : {})}
           />
           <Message.Content id={contentId}>
             {renderSessionBody(message, { rowId: message.id, isStreaming })}

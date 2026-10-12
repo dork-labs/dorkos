@@ -28,6 +28,7 @@ export { StartedByLine, StartedPrompt } from './ui/StartedByLine';
 // Chats messaging chats (spec `spin-off-chats` §6): the received message's
 // author mark, the Sent card and the "Stopped by" line, and the reads behind them.
 export { ChatFromMark, ReceivedChatMessages } from './ui/messaging/ReceivedChatMessage';
+export { RoomPostMark } from './ui/messaging/RoomPostMark';
 export { SentChatCard } from './ui/messaging/SentChatCard';
 export { ChatStopLine } from './ui/messaging/ChatStopLine';
 export { useChatActivity } from './model/messaging/use-chat-activity';

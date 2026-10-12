@@ -6,7 +6,11 @@
  *
  * @module shared/model/chat-message-types
  */
-import type { ChatMessageStamp, ChatStopNotice } from '@dorkos/shared/chat-messages';
+import type {
+  ChatMessageStamp,
+  ChatStopNotice,
+  RoomMessageStamp,
+} from '@dorkos/shared/chat-messages';
 import type {
   AlwaysAllowScope,
   QuestionItem,
@@ -35,6 +39,12 @@ export interface ChatMessage {
    * here and never from the text.
    */
   chatMessages?: ChatMessageStamp[];
+  /**
+   * The room post this user message carried into a room-attached chat
+   * (DOR-2113). Filled in by the server; the row draws its author from here,
+   * never "You" unless the room says the person wrote it.
+   */
+  roomMessage?: RoomMessageStamp;
   /** @internal Client-only tag for streaming messages awaiting server ID reconciliation. */
   _streaming?: boolean;
   /**
