@@ -286,7 +286,7 @@ export type RoomErrorCode =
   /**
    * A rooms capability was called on a login-on install by a caller the surface
    * could name neither as an agent nor as a person
-   * (`room-capabilities.ts`'s `callerAuthor`).
+   * (`service/room-caller-author.ts`'s `callerAuthor`).
    *
    * **A refusal rather than a fallback, and that is the whole fix.** These verbs
    * act on ONE member's rooms, so "who is asking" is not decoration; resolving an
@@ -294,8 +294,12 @@ export type RoomErrorCode =
    * came to read the owner's direct messages. There is no honest default on an
    * install that requires a login, so there is no default.
    *
-   * Unreachable with login off, where the operator IS the unattributable caller
-   * (the documented DOR-505 residual).
+   * With login off it is reached only by a CHAT with no agent identity (the
+   * in-session tool server is the one surface that names its chat, as
+   * `sessionId`; a surface that starts naming one opts into this refusal): a chat
+   * speaks for its agent, never for the person, so it never takes the operator
+   * fallback that other unattributable callers get there (the documented
+   * DOR-505 residual, DOR-2863).
    */
   | 'UNIDENTIFIED_CALLER'
   /**

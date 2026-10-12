@@ -141,6 +141,27 @@ export function resolveAgentHome(
 }
 
 /**
+ * The agent a chat runs as when its turn names none and its folder belongs to
+ * no agent: the agent the server recorded for the chat (DOR-2863).
+ *
+ * A chat an agent starts (`session_start`) may stand in any folder that is not
+ * another agent's, and it runs as that agent. Its folder then names nobody, so
+ * every turn after the first resolved no identity at all, and its room posts
+ * were written as the person. The recorded agent is the server's own binding,
+ * written once at launch, never a caller's claim. A folder that names an agent,
+ * or one this resolver refuses, keeps its own answer.
+ *
+ * @param recorded - The agent recorded for the chat, when there is one.
+ * @param cwd - Where the turn stands.
+ */
+export function chatAgentOf(recorded: string | null | undefined, cwd: string): string | undefined {
+  if (!recorded) return undefined;
+  const home = canonicalHome(path.resolve(recorded));
+  if (home === null) return undefined;
+  return resolveFolder(path.resolve(cwd)).kind === 'none' ? home : undefined;
+}
+
+/**
  * The resolved home, or `undefined` when there is none to read identity from.
  *
  * @param resolution - A resolved folder.
