@@ -22,10 +22,12 @@ import {
   useOpenConnections,
   useSettingsDeepLink,
 } from '@/layers/shared/model';
+import { OfficialSpaceOfferCard } from '@/layers/entities/community';
 import { useDefaultAgentSession } from '@/layers/entities/config';
 import { ProfileRolePicker, useProfile } from '@/layers/entities/user-profile';
 import { OperatorIdentityForm } from '@/layers/features/profile';
 import { useIdentityQuestion } from '../model/use-identity-prompt';
+import { useOnboarding } from '../model/use-onboarding';
 
 /**
  * How long the name row's thanks line lingers before the row goes (ms) — the
@@ -73,6 +75,12 @@ type ProfileRowPhase = 'closed' | 'open' | 'saving' | 'error';
  * row follows and expands the shared role picker inline (spec
  * `user-profile-onboarding` §ProgressCard items). The "Connect a service"
  * row links to the Connections page (`/connections`).
+ *
+ * After a first run that set up an AI (either path), the one-time offer to join
+ * the official DorkOS space sits above the rows (spec `official-community-space`
+ * item 5, DOR-2873). This is the first landing in #team, so the offer never adds
+ * a step to the timed first run, and it draws nothing until an official space is
+ * configured, the space is joined, or Not now was chosen.
  */
 export function ProgressCard({ onDismiss }: ProgressCardProps) {
   const reducedMotion = useReducedMotion();
@@ -84,6 +92,10 @@ export function ProgressCard({ onDismiss }: ProgressCardProps) {
   const { roles, rolePromptDismissedAt, isLoading, saveRoles, dismissIdentityPrompt } =
     useProfile();
   const identityQuestion = useIdentityQuestion();
+  const { firstRunPath } = useOnboarding().state;
+  // Only a first run that set up an AI: "Continue without an account" lands on
+  // a welcome asking for AI, and the community can wait for Settings.
+  const offerOfficialSpace = firstRunPath === 'dorkos' || firstRunPath === 'own';
 
   const [identityPhase, setIdentityPhase] = useState<IdentityRowPhase>('closed');
   const [profilePhase, setProfilePhase] = useState<ProfileRowPhase>('closed');
@@ -199,6 +211,8 @@ export function ProgressCard({ onDismiss }: ProgressCardProps) {
       </button>
 
       <h3 className="mb-2 text-xs font-medium">Getting started</h3>
+
+      {offerOfficialSpace && <OfficialSpaceOfferCard className="mb-2" />}
 
       <ul className="space-y-0.5">
         {items.map(({ icon: Icon, label, onClick, expanded }) => (
