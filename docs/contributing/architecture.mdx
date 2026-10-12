@@ -97,7 +97,7 @@ Source registries supply package metadata and content. The website browses them.
 
 [![Public Cloud requests, optional inference configuration, and the separate tunnel path](/diagrams/architecture/cloud-boundary.svg)](/diagrams/architecture/cloud-boundary.svg)
 
-The public `packages/cloud-api` package defines schemas, routes, fixtures and a fetch client. Existing device-link, heartbeat and managed-service calls still use `/api/auth/device/*` and `/api/instances/*`; versioned clients use `/v1`. Both resolve `DORKOS_CLOUD_URL`, falling back to the website origin. Service implementation does not itself migrate those callers or origins.
+The public `packages/cloud-api` package defines schemas, routes, fixtures and a fetch client. Existing device-link, heartbeat and managed-service calls still use `/api/auth/device/*` and `/api/instances/*`; versioned clients use `/v1`. The older calls go to `DORKOS_CLOUD_URL` (default the website). The `/v1` calls go to `DORKOS_CLOUD_API_URL`; unset, that follows a custom `DORKOS_CLOUD_URL`, and otherwise defaults to the Cloud service's own address, since the website has no `/v1` routes.
 
 The contract's remote command stream uses SSE and has lease/acknowledgement semantics. The existing local tunnel manager separately uses the ngrok SDK; the managed command consumer remains separate app-side work. Remote browser traffic travels through the tunnel to the local server. Credits inference is another optional path, selected through Runs on on a linked installation. The environment variable can disable credits; it cannot authorize spending. Local DorkOS and Community both run without Cloud.
 

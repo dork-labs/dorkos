@@ -43,8 +43,8 @@ vi.mock('../../services/core/config-manager.js', () => ({
 }));
 
 const service = vi.hoisted(() => ({ baseUrl: 'http://127.0.0.1:1' }));
-vi.mock('../../services/core/auth/cloud-link-client.js', () => ({
-  resolveCloudBaseUrl: () => service.baseUrl,
+vi.mock('../../services/core/cloud/cloud-api-origin.js', () => ({
+  resolveCloudApiBaseUrl: () => service.baseUrl,
 }));
 
 /**

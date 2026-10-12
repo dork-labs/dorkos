@@ -17,8 +17,8 @@ vi.mock('../../config-manager.js', () => ({
     return link.managers.at(-1);
   },
 }));
-vi.mock('../../auth/cloud-link-client.js', () => ({
-  resolveCloudBaseUrl: () => link.origin.replace(/\/+$/, ''),
+vi.mock('../cloud-api-origin.js', () => ({
+  resolveCloudApiBaseUrl: () => link.origin.replace(/\/+$/, ''),
 }));
 vi.mock('../../auth/cloud-link.js', () => ({ getCloudLinkGeneration: () => link.generation }));
 

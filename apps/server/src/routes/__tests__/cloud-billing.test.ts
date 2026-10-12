@@ -50,6 +50,9 @@ vi.mock('../../services/core/auth/cloud-link-client.js', async (importOriginal) 
   ...(await importOriginal<typeof import('../../services/core/auth/cloud-link-client.js')>()),
   resolveCloudBaseUrl: () => cloud.baseUrl,
 }));
+vi.mock('../../services/core/cloud/cloud-api-origin.js', () => ({
+  resolveCloudApiBaseUrl: () => cloud.baseUrl,
+}));
 
 // The link flow itself is not under test here; only its accessor is imported.
 vi.mock('../../services/core/auth/cloud-link.js', () => ({
