@@ -138,7 +138,7 @@ Under the hood, Mesh writes Relay access-control rules with a priority scheme. H
 | **50**   | Cross-namespace allow | Explicitly permitted cross-namespace communication |
 | **10**   | Cross-namespace deny  | Default deny for all other cross-namespace traffic |
 
-The **Let all my agents talk to each other** switch in Team → Access is one cross-namespace allow at priority 50, written with `*` on both sides. It outranks every namespace's catch-all deny, so while it is on, any agent can message any other agent on this machine. Turning it off removes that one rule and leaves the pairs you added untouched. `GET /api/mesh/topology` reports it as `openMesh`.
+The **Let all my agents talk to each other** switch in Team → Access is one cross-namespace allow at priority 50, written with `*` on both sides. It outranks every namespace's catch-all deny, so while it is on, any agent can message any other agent on this machine. Turning it off removes that one rule and leaves the pairs you added untouched. It is on when you install DorkOS: the first start writes the rule once (`services/mesh/seed-open-mesh.ts`), and never again, so a switch you turned off stays off. `GET /api/mesh/topology` reports it as `openMesh`.
 
 ### Storage tables and the Relay endpoint
 

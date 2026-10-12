@@ -133,8 +133,7 @@ export async function shootSettingsRooms(
  * it and has to put it back byte-for-byte.
  */
 const SETTLED_POWER_DECISION = {
-  fullPowerDecidedAt: '2026-07-01T00:00:00.000Z',
-  fullPowerChoice: 'supervised',
+  trustNoticeSeenAt: '2026-07-01T00:00:00.000Z',
 } as const;
 
 /**
@@ -173,7 +172,7 @@ export async function captureFullPowerDoor(browser: Browser, rec: RunRecorder): 
     return;
   }
   const unanswerPowerDecision = () =>
-    patch('/api/config', { ui: { fullPowerDecidedAt: null, fullPowerChoice: null } });
+    patch('/api/config', { ui: { trustNoticeSeenAt: null } });
   const settlePowerDecision = () => patch('/api/config', { ui: SETTLED_POWER_DECISION });
 
   try {

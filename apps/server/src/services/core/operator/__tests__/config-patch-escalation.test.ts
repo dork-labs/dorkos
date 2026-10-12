@@ -63,11 +63,13 @@ describe('which areas a config patch reaches', () => {
     expect(operatorOnlyAreasForPatch({ rooms: { maxAgentDepth: 9 } })).toEqual(['safety']);
   });
 
-  it('puts a trust stop and a consent stamp in Permissions', () => {
+  it('puts a trust stop and the trust notice stamp in Permissions', () => {
     expect(operatorOnlyAreasForPatch({ runtimes: { defaultTrustStop: 'autonomy' } })).toEqual([
       'permissions',
     ]);
-    expect(operatorOnlyAreasForPatch({ ui: { fullPowerChoice: 'full' } })).toEqual(['permissions']);
+    expect(
+      operatorOnlyAreasForPatch({ ui: { trustNoticeSeenAt: '2026-10-07T11:15:00.000Z' } })
+    ).toEqual(['permissions']);
   });
 
   it('names every area a mixed patch reaches, each once', () => {

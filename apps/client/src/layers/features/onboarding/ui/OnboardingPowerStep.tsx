@@ -25,7 +25,7 @@ interface OnboardingPowerStepProps {
  * ## Steps track flow progress, not consent
  *
  * The door itself writes the one authoritative "they answered" signal,
- * `ui.fullPowerDecidedAt`. This stage writes NO consent field: answering the door
+ * `ui.trustNoticeSeenAt`. This stage writes NO consent field: answering the door
  * either way records `completeStep('power')` (flow progress) and advances;
  * choosing "Decide later" records `skipStep('power')` and advances, writing
  * nothing about consent. A deferred new user is picked up by the moments rail

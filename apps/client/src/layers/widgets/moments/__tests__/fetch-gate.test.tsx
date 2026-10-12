@@ -43,7 +43,7 @@ import { MomentHost } from '@/layers/widgets/moments';
 // Stub the two moment bodies so the REAL collector drives eligibility off real
 // config, without dragging their router/mutation providers into this harness.
 // The telemetry body is what the assertions look for; the door is stubbed out
-// and kept ineligible below (`ui.fullPowerDecidedAt` set) so telemetry is the
+// and kept ineligible below (`ui.trustNoticeSeenAt` set) so telemetry is the
 // sole moment — the gate under test is identical for both (they share it).
 vi.mock('@/layers/features/telemetry-consent', () => ({
   TelemetryConsentMoment: () => (
@@ -64,7 +64,7 @@ function config(telemetryDecided: boolean) {
   return {
     onboarding: { completedAt: '2026-08-01T10:00:00.000Z', dismissedAt: null },
     telemetry: { userHasDecided: telemetryDecided },
-    ui: { fullPowerDecidedAt: '2026-08-01T10:00:00.000Z' },
+    ui: { trustNoticeSeenAt: '2026-08-01T10:00:00.000Z' },
   } as unknown as never;
 }
 

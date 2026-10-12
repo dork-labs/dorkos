@@ -2656,10 +2656,11 @@ describe('what power a room turn runs at (DOR-1917)', () => {
   });
 
   it('sends no permission mode at all when no stop is configured', async () => {
-    // The shipped default, and the whole safety argument for this change: an
-    // install whose operator never answered the power door behaves byte for byte
-    // as it did — no mode on the turn, and no fourth argument on the row, so the
-    // runtime's own default still decides.
+    // With no stop at either tier, a room turn behaves byte for byte as it did
+    // — no mode on the turn, and no fourth argument on the row, so the
+    // runtime's own default still decides. (A fresh install ships the global
+    // stop at Full autonomy, ADR 261006-225605, so it is unset here.)
+    runtimesConfig = { ...USER_CONFIG_DEFAULTS.runtimes, defaultTrustStop: null };
     await createSessionRoomTurnRunner().run(request());
 
     expect(triggered[0].newSessionPermissionMode).toBeUndefined();

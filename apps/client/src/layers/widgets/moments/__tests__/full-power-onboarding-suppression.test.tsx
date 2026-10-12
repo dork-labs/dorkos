@@ -43,7 +43,7 @@ function setEligibleConfig() {
   vi.mocked(useConfig).mockReturnValue({
     data: {
       onboarding: { completedAt: '2026-08-01T10:00:00.000Z', dismissedAt: null },
-      ui: { fullPowerDecidedAt: null },
+      ui: { trustNoticeSeenAt: null },
       telemetry: { userHasDecided: true },
       auth: { enabled: false },
     },

@@ -248,6 +248,7 @@ import { MeshCore, type AdoptedAgent } from '@dorkos/mesh';
 import { createMeshRouter } from './routes/mesh.js';
 import { setMeshInitError } from './services/mesh/mesh-state.js';
 import { ensureDorkBot } from './services/mesh/ensure-dorkbot.js';
+import { applyTrustedStores, openMeshStep } from './services/mesh/seed-open-mesh.js';
 import { setAgentPathLookup } from './services/mesh/agent-path-lookup.js';
 import { createA2aRouter } from './routes/a2a.js';
 import { buildA2aRateLimiters } from './middleware/a2a-rate-limit.js';
@@ -2614,7 +2615,10 @@ async function start() {
         version: SERVER_VERSION,
         config: {
           get: () => configManager.get('permissions'),
-          set: (next) => configManager.set('permissions', next),
+          // Merged onto the stored section, so a field the sweep does not know
+          // (`trustedStoresAppliedAt`) is never dropped by its write.
+          set: (next) =>
+            configManager.set('permissions', { ...configManager.get('permissions'), ...next }),
         },
         agents: () =>
           mesh.listWithPaths().map((a) => ({
@@ -2662,6 +2666,21 @@ async function start() {
       });
     } catch (err) {
       logger.warn('[Permissions] Could not record the ended standing permissions', logError(err));
+    }
+    // The Trusted defaults that live outside config.json, once per install
+    // (spec `trusted-by-default-flip` §5.3): our agents may message each other
+    // across projects. A person who turns that off later keeps it off.
+    try {
+      await applyTrustedStores({
+        config: {
+          get: () => configManager.get('permissions'),
+          set: (next) => configManager.set('permissions', next),
+        },
+        steps: [openMeshStep(meshCore, relayCore !== undefined)],
+        logger,
+      });
+    } catch (err) {
+      logger.warn('[Trust] Could not apply the trusted defaults', logError(err));
     }
     if (meshStartupReconciled) {
       remoteCommunityRuntime?.start();

@@ -127,16 +127,18 @@ export const NO_RISK_DEFAULTS: readonly string[] = [
   'ui.shapes.autoFollowAgent',
   'ui.statusBar.pins',
   'ui.composer.richText',
-  // The power-door answer, both halves (spec `full-power-defaults`, D1). Records
-  // of an ANSWER and nothing more: they send nothing off the machine, grant no
-  // capability, and no gate reads them. A wipe that lands both back on `null`
-  // simply puts the question again, which is the right outcome and costs one
-  // dialog.
-  'ui.fullPowerDecidedAt',
-  'ui.fullPowerChoice',
+  // When the person saw the "agents now work without asking" notice. It gates
+  // that notice and nothing else: no capability, no bound, nothing sent. A wipe
+  // that lands it back on `null` shows the notice once more.
+  'ui.trustNoticeSeenAt',
   // Bookkeeping for the one-shot permission upgrade sweep: which server version
   // already ran it. It grants nothing and no gate reads it.
   'permissions.upgradeSweptVersion',
+  // Bookkeeping for the once-per-install Trusted defaults outside config.json
+  // (`services/mesh/seed-open-mesh.ts`). It grants nothing itself: the stores it
+  // records are argued where they live, and a wipe that clears it re-applies
+  // the same defaults a fresh install gets.
+  'permissions.trustedStoresAppliedAt',
   // How loud DorkOS is, and how long before it tries a louder channel. No data
   // moves on any of these: the sounds and the browser notification are this
   // machine talking to the person at it, and `phoneAfterMinutes` cannot deliver
@@ -299,10 +301,10 @@ export const NO_RISK_DEFAULTS: readonly string[] = [
  * what they set.
  */
 export const SAFE_DEFAULTS: Readonly<Record<string, unknown>> = {
-  // No permission preset chosen: every action keeps exactly the behavior it had
-  // before permissions existed, which grants nothing new (Rooms stays Blocked),
-  // and the person's own defaults start empty (spec `agent-permissions`).
-  'permissions.preset': null,
+  // The person's own changes on top of the preset start empty: nothing is added
+  // to what the preset says (spec `agent-permissions`). The preset itself is
+  // argued in PERMISSIVE_DEFAULTS, and an Ask or Blocked entry a person added
+  // carries across a wipe (PROTECTIVE_CARRYOVERS).
   'permissions.defaults.areas': {},
   'permissions.defaults.actions': {},
   // Public exposure starts off, with no hostname, token, or edge passcode.
@@ -434,14 +436,9 @@ export const SAFE_DEFAULTS: Readonly<Record<string, unknown>> = {
   'runtimes.opencode.baseURL': null,
   'runtimes.codex.credentialRef': null,
   providers: {},
-  // No standing answer to "how much may a new session do without asking", so
-  // every runtime keeps its own default — and no shipped runtime defaults to a
-  // stop that stops asking (pinned across the whole set by
-  // `services/runtimes/__tests__/permission-semantics.test.ts`). `null` is
-  // therefore the protective value on a real axis: the permissive one is
-  // reachable here, it is `'autonomy'`, and it takes a person and a consent
-  // dialog to write (spec `trust-dial`, decision 6).
-  'runtimes.defaultTrustStop': null,
+  // One runtime's own stop. `null` adds nothing of its own: the runtime follows
+  // `runtimes.defaultTrustStop`, which is argued in PERMISSIVE_DEFAULTS. A person
+  // who set one runtime to Ask keeps it across a wipe (PROTECTIVE_CARRYOVERS).
   'runtimes.claudeCode.defaultTrustStop': null,
   'runtimes.codex.defaultTrustStop': null,
   'runtimes.opencode.defaultTrustStop': null,
@@ -539,6 +536,17 @@ export const PERMISSIVE_DEFAULTS: Readonly<Record<string, PermissiveDefault>> = 
     value: true,
     reason:
       'A warm agent holds a process open between messages — the same executable, the same permissions, the same per-dispatch boundary check — so nothing about what it may DO changes and no gate is relaxed. It is listed here rather than as `no-risk` because it does spend something on its own: memory, up to about 1 GB per warm agent. That is bounded in code rather than by this leaf (at most twelve stay warm, and the idle reaper closes the rest), and turning it back off is one switch away: the `Warm agents` row in the Control Center (#1209), which is where the control that left Settings → Experiments now lives.',
+  },
+  // Trusted by default (DOR-2739). Both are one decision, argued once each.
+  'permissions.preset': {
+    value: 'trusted',
+    reason:
+      'ADR 261006-225605: in-circle capability defaults to full power; every use is recorded by the audit trail (`audit_events`), and outsider-origin turns seed nothing (`permissionSeedForOrigin`). Safety limits and Reach & secrets still ask, and the Careful preset turns asking back on everywhere at once; a Careful choice carries across a wipe (PROTECTIVE_CARRYOVERS).',
+  },
+  'runtimes.defaultTrustStop': {
+    value: 'autonomy',
+    reason:
+      'ADR 261006-225605: in-circle capability defaults to full power; every use is recorded by the audit trail (`audit_events`), and outsider-origin turns seed nothing (`permissionSeedForOrigin`). A new session of our own agents edits files and runs commands without asking; a stop a person set to Ask or Act carries across a wipe (PROTECTIVE_CARRYOVERS).',
   },
   'scheduler.maxConcurrentRuns': {
     value: 4,

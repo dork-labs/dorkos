@@ -1173,6 +1173,92 @@ export function dropSchedulerTimezone(store: {
   }
 }
 
+/** A stored value as a plain object, or `null` when it is anything else. */
+function plainObject(value: unknown): Record<string, unknown> | null {
+  return value !== null && typeof value === 'object' && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
+}
+
+/**
+ * Migration body: move an existing install to the Trusted posture once, unless
+ * the person already chose to be asked (DOR-2739, ADR 261006-225605, spec
+ * `trusted-by-default-flip` §5.7).
+ *
+ * | Stored                                                        | Becomes                                                     |
+ * | ------------------------------------------------------------- | ----------------------------------------------------------- |
+ * | `permissions.preset: 'careful'`                               | unchanged; `ui.trustNoticeSeenAt` stamped (no notice)       |
+ * | preset `null` or `'trusted'`, and `ui.fullPowerChoice: 'supervised'` | preset `'careful'`; `ui.trustNoticeSeenAt` stamped     |
+ * | anything else (`null`, `'balanced'`, `'full'`, unknown)       | preset `'trusted'`; notice left to show                     |
+ * | `runtimes.defaultTrustStop` `null` or `'act'`, on that last row | `'autonomy'` (`'ask'` and `'autonomy'` kept)              |
+ * | `ui.fullPowerDecidedAt`, `ui.fullPowerChoice`                 | deleted (the door is retired)                               |
+ *
+ * **Why an explicit Careful choice is respected.** A person who already said
+ * "keep asking me" answered the question the notice asks; moving them would be
+ * the silent flip the ADR forbids. Full and Balanced were both answers to "how
+ * much should agents ask", and Trusted is what that answer now means.
+ *
+ * **Why `'trusted'` counts as unanswered beside `'supervised'`.** Before this
+ * release no build offered Trusted, so a stored `'trusted'` is conf's own
+ * top-level defaults merge: an install from before `permissions` existed gets
+ * the section from `USER_CONFIG_DEFAULTS` before any key runs, and `'0.83.0'`
+ * (which maps a "keep asking me" answer to Careful) then sees a preset and steps
+ * aside. Reading that seed as an answer would move exactly the person who chose
+ * to be asked.
+ *
+ * **What it leaves alone.** `permissions.defaults` and every per-agent override
+ * (a person's own changes stay on top of the preset), the per-runtime stops
+ * (`null` already follows the global one), and a stop a person set to `'ask'`.
+ * `permissions.trustedStoresAppliedAt` is not set here: the mesh rules and the
+ * database are not in this file, so the boot steps that change them stamp it.
+ *
+ * Idempotent: a second run finds the preset it wrote, keeps a stamped notice,
+ * and has no door fields left to delete.
+ *
+ * @internal Exported for testing only.
+ * @param store - The `conf` store instance (provides `get`/`set`).
+ * @param now - The time to stamp; injectable for tests.
+ */
+export function applyTrustedPosture(
+  store: {
+    get: (key: string) => unknown;
+    set: (key: string, value: unknown) => void;
+  },
+  now: Date = new Date()
+): void {
+  const permissions = plainObject(store.get('permissions'));
+  const ui = plainObject(store.get('ui'));
+  const preset = permissions?.preset ?? null;
+  const keptAsking =
+    preset === 'careful' ||
+    ((preset === null || preset === 'trusted') && ui?.fullPowerChoice === 'supervised');
+
+  const nextPermissions = {
+    ...(permissions ?? { defaults: { areas: {}, actions: {} }, upgradeSweptVersion: null }),
+    preset: keptAsking ? 'careful' : 'trusted',
+  };
+  if (nextPermissions.preset !== preset) store.set('permissions', nextPermissions);
+
+  if (!keptAsking) {
+    const runtimes = plainObject(store.get('runtimes'));
+    const stop = runtimes?.defaultTrustStop ?? null;
+    if (runtimes && (stop === null || stop === 'act')) {
+      store.set('runtimes', { ...runtimes, defaultTrustStop: 'autonomy' });
+    }
+  }
+
+  if (!ui) return;
+  const { fullPowerDecidedAt: _decidedAt, fullPowerChoice: _choice, ...nextUi } = ui;
+  if (keptAsking && (nextUi.trustNoticeSeenAt ?? null) === null) {
+    nextUi.trustNoticeSeenAt = now.toISOString();
+  }
+  const changed =
+    'fullPowerDecidedAt' in ui ||
+    'fullPowerChoice' in ui ||
+    nextUi.trustNoticeSeenAt !== ui.trustNoticeSeenAt;
+  if (changed) store.set('ui', nextUi);
+}
+
 /**
  * Migration body: remove `rooms.maxPostsPerTurn` and `rooms.maxCanvasOpsPerTurn`
  * (DOR-2739).
@@ -4931,6 +5017,22 @@ export const CONFIG_MIGRATIONS = {
     // `dropAgentTurnCaps`.
     dropAgentTurnCaps(store);
   },
+  // 0.102.0 has merged, so 0.103.0 is the next key. Frozen from merge, for the
+  // reason `'0.60.0'` above states; anything further opens `'0.104.0'`.
+  //
+  // Writes `permissions.preset`, `runtimes.defaultTrustStop` and
+  // `ui.trustNoticeSeenAt`, and deletes the two door fields `'0.67.0'` seeded
+  // and `'0.83.0'` read. Both earlier keys run first, so this one sees their
+  // output; nothing after it reads what it removes.
+  '0.103.0': (store: {
+    get: (key: string) => unknown;
+    set: (key: string, value: unknown) => void;
+  }) => {
+    // Trusted by default (ADR 261006-225605, DOR-2739): an install that chose
+    // to be asked keeps Careful, every other install moves to Trusted once and
+    // is shown a notice. See `applyTrustedPosture`.
+    applyTrustedPosture(store);
+  },
 } as const;
 
 /**
@@ -5220,6 +5322,32 @@ function tolerateRetiredRoomKeys(schema: { properties?: Record<string, unknown> 
   properties['maxCanvasOpsPerTurn'] = { type: 'integer' };
 }
 
+/**
+ * Declare the retired `ui` keys, for the same reason and with the same limits
+ * as {@link tolerateRetiredRuntimeKeys}.
+ *
+ * `ui.fullPowerDecidedAt` and `ui.fullPowerChoice` recorded the answer to the
+ * full-power door, retired with it by `'0.103.0'` (DOR-2739): that key moves
+ * what they meant into `permissions.preset` and `ui.trustNoticeSeenAt`, and
+ * this is what makes the husks go away on an install the key never reaches.
+ * `ui.autonomyAcknowledgedAt`, retired by `'0.101.0'`, is declared on the same
+ * terms. No `default` on any of them, because conf builds Ajv with
+ * `useDefaults` and a declared default would write the retired key into every
+ * config.
+ *
+ * @param schema - The generated JSON Schema for the whole config, mutated in place.
+ */
+function tolerateRetiredUiKeys(schema: { properties?: Record<string, unknown> }): void {
+  const ui = schema.properties?.['ui'];
+  if (ui == null || typeof ui !== 'object') return;
+  const properties = (ui as { properties?: Record<string, unknown> }).properties;
+  if (properties == null || typeof properties !== 'object') return;
+  const timestamp = { anyOf: [{ type: 'string' }, { type: 'null' }] };
+  properties['fullPowerDecidedAt'] = timestamp;
+  properties['fullPowerChoice'] = { anyOf: [{ type: 'string' }, { type: 'null' }] };
+  properties['autonomyAcknowledgedAt'] = timestamp;
+}
+
 const jsonSchemaFull = z.toJSONSchema(UserConfigSchema, {
   target: 'jsonSchema2019-09',
   // Two tolerances, composed. `z.toJSONSchema` takes ONE override, so a second
@@ -5248,6 +5376,9 @@ tolerateRetiredRuntimeKeys(jsonSchemaFull);
 // route. Two calls rather than one call doing both: they name two sections, and
 // a miss on either is a husk that never leaves.
 tolerateRetiredRoomKeys(jsonSchemaFull);
+
+// And the retired power-door and autonomy-acknowledgement leaves under `ui`.
+tolerateRetiredUiKeys(jsonSchemaFull);
 
 /**
  * The per-top-level-key JSON Schema conf validates against, tolerances included.

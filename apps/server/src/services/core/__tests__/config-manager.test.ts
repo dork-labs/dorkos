@@ -93,7 +93,9 @@ import { execSync } from 'child_process';
 const RUNTIMES_DEFAULTS = {
   environment: { inherit: { claudeCode: [], codex: [], opencode: [] } },
   default: 'claude-code',
-  defaultTrustStop: null,
+  // Trusted by default (ADR 261006-225605): the global stop ships at Full
+  // autonomy, and each runtime's own stop ships `null` so it follows it.
+  defaultTrustStop: 'autonomy',
   claudeCode: {
     defaultAccount: null,
     accounts: [],
@@ -3967,7 +3969,7 @@ describe('CONFIG_MIGRATIONS append-only pins (DOR-1222 regression guard)', () =>
     // pass this having scanned nothing. The count is the knowable bound; the
     // table is append-only, so raising it is the deliberate act of adding a
     // migration, which is exactly when this check should be re-read.
-    expect(Object.keys(bodies)).toHaveLength(45);
+    expect(Object.keys(bodies)).toHaveLength(46);
 
     const reaching = Object.keys(bodies).filter((key) =>
       reachedDeclarations(bodies[key]!, pool).includes('describeLoadError')

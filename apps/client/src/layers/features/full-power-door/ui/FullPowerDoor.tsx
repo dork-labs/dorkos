@@ -85,11 +85,11 @@ const FULL_POWER_POINTS: ReadonlyArray<{ lead: string; rest: string }> = [
  * Nothing here flips silently — this is the surface whose ACCEPT does the
  * flipping. Accept is two steps in order:
  *
- * 1. **One** `PATCH /api/config` carrying both decision fields and the stop,
- *    together, so the decision and what it decided cannot land apart. No
+ * 1. **One** `PATCH /api/config` carrying `ui.trustNoticeSeenAt` and the stop,
+ *    together, so the answer and what it decided cannot land apart. No
  *    acknowledgement rides with it: the consent ritual is retired (ADR
  *    261006-225605). Then `PUT /api/permissions/preset`
- *    with Full power (spec `agent-permissions` D5), so what agents may do
+ *    with Trusted (spec `agent-permissions` D5), so what agents may do
  *    follows the answer on every install; a failure here reports like a config
  *    failure and the mesh step never fires.
  * 2. `PUT /api/mesh/topology/access` `* → * allow`, via `useSetOpenMesh`.
@@ -102,8 +102,8 @@ const FULL_POWER_POINTS: ReadonlyArray<{ lead: string; rest: string }> = [
  *
  * ## Keep asking me first / Customize…
  *
- * Both record `{ fullPowerDecidedAt, fullPowerChoice: 'supervised' }` and the
- * Careful permission preset, and nothing else — no stop, no mesh. Customize… (shown only when the host passes
+ * Both record `ui.trustNoticeSeenAt` and the Careful permission preset, and
+ * nothing else — no stop, no mesh. Customize… (shown only when the host passes
  * `onCustomize`) then opens the power surface so the person can pick specifics;
  * moving to full power later from there is a normal, supported path. Dismissing
  * the dialog (the X) writes nothing, and the moment re-arbitrates on the next
@@ -136,19 +136,16 @@ export function FullPowerDoor({ heading, onClose, onCustomize }: FullPowerDoorPr
     setSubmitting(true);
     const now = new Date().toISOString();
     try {
-      // Step 1 — the decision rides WITH the stop. One request, not two.
+      // Step 1 — the notice is marked seen WITH the stop. One request, not two.
       await updateConfig.mutateAsync({
-        ui: {
-          fullPowerDecidedAt: now,
-          fullPowerChoice: 'full',
-        },
+        ui: { trustNoticeSeenAt: now },
         runtimes: { defaultTrustStop: 'autonomy' },
       });
       // Step 1b — the permission preset, so what agents may do follows the
       // answer on EVERY install, not only on the ones a config migration mapped
       // at upgrade (spec `agent-permissions` D5). Idempotent: a retry after a
       // failure here re-chooses the same preset and records nothing new.
-      await setPermission.mutateAsync({ kind: 'preset', preset: 'full', surface: 'first-run' });
+      await setPermission.mutateAsync({ kind: 'preset', preset: 'trusted', surface: 'first-run' });
     } catch (err) {
       // Step 2 never fires when step 1 fails.
       setConfigError(describeWriteFailure(err));
@@ -173,9 +170,7 @@ export function FullPowerDoor({ heading, onClose, onCustomize }: FullPowerDoorPr
     setConfigError(null);
     setSubmitting(true);
     try {
-      await updateConfig.mutateAsync({
-        ui: { fullPowerDecidedAt: new Date().toISOString(), fullPowerChoice: 'supervised' },
-      });
+      await updateConfig.mutateAsync({ ui: { trustNoticeSeenAt: new Date().toISOString() } });
       // The careful answer's preset: agents ask before arranging rooms (the one
       // area on the new model so far).
       await setPermission.mutateAsync({ kind: 'preset', preset: 'careful', surface: 'first-run' });

@@ -226,7 +226,10 @@ export function createPermissionService(wiring: PermissionServiceWiring): Permis
   return new PermissionService({
     config: {
       get: () => wiring.config.get('permissions'),
-      set: (next) => wiring.config.set('permissions', next),
+      // Merged onto the stored section, so a field the service does not know
+      // (`trustedStoresAppliedAt`) is never dropped by its write.
+      set: (next) =>
+        wiring.config.set('permissions', { ...wiring.config.get('permissions'), ...next }),
       trustStops: () => readTrustStops(wiring.config),
       setGlobalTrustStop: (stop) => {
         wiring.config.setDot('runtimes.defaultTrustStop', stop);

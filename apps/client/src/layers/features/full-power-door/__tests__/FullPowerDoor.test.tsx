@@ -166,14 +166,11 @@ describe('FullPowerDoor', () => {
     // `toHaveBeenCalledWith` compares the whole object, so an extra key fails it.
     expect(configMutateAsync).toHaveBeenCalledTimes(1);
     expect(configMutateAsync).toHaveBeenCalledWith({
-      ui: {
-        fullPowerDecidedAt: expect.any(String),
-        fullPowerChoice: 'full',
-      },
+      ui: { trustNoticeSeenAt: expect.any(String) },
       runtimes: { defaultTrustStop: 'autonomy' },
     });
     const body = configMutateAsync.mock.calls[0][0] as { ui: object; approvals?: unknown };
-    expect(Object.keys(body.ui).sort()).toEqual(['fullPowerChoice', 'fullPowerDecidedAt']);
+    expect(Object.keys(body.ui)).toEqual(['trustNoticeSeenAt']);
     expect(body).not.toHaveProperty('approvals');
 
     // Step 2 — the mesh opens `* -> *` only after the config write lands.
@@ -238,7 +235,7 @@ describe('FullPowerDoor', () => {
     await waitFor(() =>
       expect(presetMutateAsync).toHaveBeenCalledWith({
         kind: 'preset',
-        preset: 'full',
+        preset: 'trusted',
         surface: 'first-run',
       })
     );
@@ -284,7 +281,7 @@ describe('FullPowerDoor', () => {
     // Exact body: no ack, no stop — the consent-gated values
     // are untouched by "keep asking me first".
     expect(configMutateAsync).toHaveBeenCalledWith({
-      ui: { fullPowerDecidedAt: expect.any(String), fullPowerChoice: 'supervised' },
+      ui: { trustNoticeSeenAt: expect.any(String) },
     });
     expect(meshMutateAsync).not.toHaveBeenCalled();
     await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1));
@@ -297,7 +294,7 @@ describe('FullPowerDoor', () => {
     await user.click(screen.getByRole('button', { name: CUSTOMIZE }));
 
     expect(configMutateAsync).toHaveBeenCalledWith({
-      ui: { fullPowerDecidedAt: expect.any(String), fullPowerChoice: 'supervised' },
+      ui: { trustNoticeSeenAt: expect.any(String) },
     });
     expect(meshMutateAsync).not.toHaveBeenCalled();
     await waitFor(() => expect(onCustomize).toHaveBeenCalledTimes(1));

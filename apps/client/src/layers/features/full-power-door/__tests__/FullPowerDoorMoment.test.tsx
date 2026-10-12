@@ -94,7 +94,7 @@ describe('FullPowerDoorMoment', () => {
 
     // It records the supervised decision, opens the Control Center, and closes.
     expect(configMutateAsync).toHaveBeenCalledWith({
-      ui: { fullPowerDecidedAt: expect.any(String), fullPowerChoice: 'supervised' },
+      ui: { trustNoticeSeenAt: expect.any(String) },
     });
     await waitFor(() => expect(useAppStore.getState().controlCenterOpen).toBe(true));
     expect(onClose).toHaveBeenCalledTimes(1);

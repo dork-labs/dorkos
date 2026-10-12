@@ -118,10 +118,10 @@ describe('OnboardingPowerStep', () => {
     // then the mesh opened — the stage did not re-implement any of it.
     expect(configMutateAsync).toHaveBeenCalledTimes(1);
     // The stage inherits the door's preset write, so a fresh install that
-    // accepts here gets Full power permissions too.
+    // accepts here gets Trusted permissions too.
     expect(presetMutateAsync).toHaveBeenCalledWith({
       kind: 'preset',
-      preset: 'full',
+      preset: 'trusted',
       surface: 'first-run',
     });
     expect(meshMutateAsync).toHaveBeenCalledWith(true);
@@ -139,7 +139,7 @@ describe('OnboardingPowerStep', () => {
 
     // The door writes only the supervised decision — no stop, no mesh.
     expect(configMutateAsync).toHaveBeenCalledWith({
-      ui: { fullPowerDecidedAt: expect.any(String), fullPowerChoice: 'supervised' },
+      ui: { trustNoticeSeenAt: expect.any(String) },
     });
     expect(meshMutateAsync).not.toHaveBeenCalled();
     await waitFor(() => expect(completeStep).toHaveBeenCalledWith('power'));

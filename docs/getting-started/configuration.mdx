@@ -628,7 +628,7 @@ Changing it applies to the next message you send in each chat — nothing you ha
 
 The switch used to sit in Settings under Experiments and moved to the Control Center when it stopped being an experiment; `dorkos config set runtimes.claudeCode.persistentSession false` does the same thing from a terminal. Once you turn it off it stays off — your agents cannot turn it back on for you. One more thing worth saying plainly: if you had turned this off yourself while it was an experiment, the update that turns it on will turn yours on too. DorkOS has no way to tell an off you chose from the off it shipped with — they are the same word in the same file.
 
-**And you can say how much a new chat may do before it checks with you.** That is `runtimes.defaultTrustStop`, and it takes one of three words: `ask` (stop before changing anything), `act` (get on with the work, stop for the risky parts), or `autonomy` (never stop). It ships as `null`, which means every runtime starts where it always did — asking first. One setting covers every runtime, because those three words mean the same thing whichever agent you are talking to; each runtime works out its own equivalent. If you want something different for just one of them, set `defaultTrustStop` inside that runtime's own block and it wins there.
+**And you can say how much a new chat may do before it checks with you.** That is `runtimes.defaultTrustStop`, and it takes one of three words: `ask` (stop before changing anything), `act` (get on with the work, stop for the risky parts), or `autonomy` (never stop). It ships as `autonomy`: a new chat edits files and runs commands without stopping to ask, and everything it does is recorded in Activity. Set it to `ask` if you want to approve each change first, or to `null` to let each runtime start where it used to, which is asking first. One setting covers every runtime, because those three words mean the same thing whichever agent you are talking to; each runtime works out its own equivalent. If you want something different for just one of them, set `defaultTrustStop` inside that runtime's own block and it wins there.
 
 With `autonomy`, every new chat starts with the approval prompts turned off, so agents act without stopping for your OK each time. They still ask when something genuinely needs your call, and still follow anything you have told them to check with you about. Settings shows a quiet note while that is on, so you can always find it. Chats you already have keep what they are running with, whatever you change here. This setting is for the chats you open yourself: scheduled runs, chat apps, and rooms have their own settings and their own, stricter rules.
 
@@ -642,9 +642,9 @@ With `autonomy`, every new chat starts with the approval prompts turned off, so 
     },
     'runtimes.defaultTrustStop': {
       description:
-        'How much a new chat may do before it checks with you: "ask", "act", or "autonomy". When null — how it ships — each runtime starts where it always did, which is asking first.',
+        'How much a new chat may do before it checks with you: "ask", "act", or "autonomy". Ships as "autonomy": new chats work without stopping to ask. When null, each runtime starts where it always did, which is asking first. The Careful preset sets "ask".',
       type: '"ask" | "act" | "autonomy" | null',
-      default: 'null',
+      default: '"autonomy"',
     },
     'runtimes.claudeCode.defaultAccount': {
       description:
@@ -948,15 +948,15 @@ What your agents may do on their own, what waits for your yes, and what they can
 
 These are changed on the Permissions page (Settings → Permissions, or an agent's own Permissions page), never here, so that every change DorkOS makes is recorded in the history. (An edit made straight to an agent's settings file is recorded too, as changed outside DorkOS.) `PATCH /api/config` and `dorkos config set` refuse any `permissions` key and say where to go instead.
 
-Choosing a preset (Careful, Balanced, or Full power) sets all twelve areas AND moves `runtimes.defaultTrustStop`, the global Files & commands stop: Careful to `ask`, Balanced to `act`, Full power to `autonomy`. Per-runtime stops (`runtimes.claudeCode.defaultTrustStop` and its siblings, documented under Runtimes above) are left alone by a preset and show up as changes on top of it.
+Choosing a preset sets all twelve areas AND moves `runtimes.defaultTrustStop`, the global Files & commands stop: Trusted to `autonomy`, Careful to `ask`. (Balanced and Full power, from earlier versions, still read: Balanced moves it to `act`, Full power to `autonomy`.) Per-runtime stops (`runtimes.claudeCode.defaultTrustStop` and its siblings, documented under Runtimes above) are left alone by a preset and show up as changes on top of it.
 
 <TypeTable
   type={{
     'permissions.preset': {
       description:
-        'The starting point for every area: `careful`, `balanced` or `full`. `null` means you have not chosen yet, and agents work as they did before permissions existed.',
-      type: "'careful' | 'balanced' | 'full' | null",
-      default: 'null',
+        'The starting point for every area. `trusted`, how DorkOS ships: your agents work without asking, except for safety limits and reach and secrets, and everything they do is recorded in Activity. `careful`: agents ask first. `balanced` and `full` are older choices that still work. `null` reads as `trusted`.',
+      type: "'trusted' | 'careful' | 'balanced' | 'full' | null",
+      default: "'trusted'",
     },
     'permissions.defaults.areas': {
       description:
@@ -973,7 +973,9 @@ Choosing a preset (Careful, Balanced, or Full power) sets all twelve areas AND m
   }}
 />
 
-DorkOS keeps one more value here, `permissions.upgradeSweptVersion`. It records which version last carried your old settings across on upgrade; leave it alone.
+DorkOS keeps two more values here; leave both alone. `permissions.upgradeSweptVersion` records which version last carried your old settings across on upgrade. `permissions.trustedStoresAppliedAt` records when DorkOS first let your agents message each other across projects. That happens once: if you turn it off in Team → Access, it stays off.
+
+If DorkOS ever has to replace a damaged config file with a fresh one, it keeps your Careful preset, the areas and actions you set to Ask or Blocked, and any Files & commands stop you set to Ask or Act. A fresh file would otherwise start you on Trusted.
 
 Each agent's own differences live in its `.dork/agent.json`, under `permissions` (`areas`, `actions`, and its own `filesAndCommands` stop).
 
@@ -983,20 +985,14 @@ At Full autonomy, a conversation's agent no longer stops for your approval befor
 
 The same goes for any other setting that will not stop to ask. Some agents cannot pause mid-turn to ask permission, so their middle setting ("Act") edits files and runs commands in your project without checking with you.
 
-You can also make Full autonomy where every new chat starts, in Settings under the defaults for new sessions, or right after you change a chat's setting — a quiet line offers it there for a few seconds. From then on new chats start with the approval prompts off, and Settings keeps a note saying so with a link to change it back. **Scheduled runs follow the same level.** A task you create without picking a level starts at whatever you chose here, worked out for the agent that will run it; if you never chose one, it starts where scheduled runs have always started — able to edit files, stopping for anything riskier. Picking a level on the task itself always wins. Chat apps and rooms still have their own settings and their own, stricter rules, and a task file on disk can never hand itself the never-ask level — that is refused whatever your default says.
+You can also make Full autonomy where every new chat starts, in Settings under the defaults for new sessions, or right after you change a chat's setting — a quiet line offers it there for a few seconds. From then on new chats start with the approval prompts off, and Settings keeps a note saying so with a link to change it back. **Scheduled runs follow the same level.** A task you create without picking a level starts at whatever you chose here, worked out for the agent that will run it; that is Full autonomy unless you changed it. If you set it to `null`, a task starts where scheduled runs have always started — able to edit files, stopping for anything riskier. Picking a level on the task itself always wins. Chat apps and rooms still have their own settings and their own, stricter rules, and a task file on disk can never hand itself the never-ask level — that is refused whatever your default says.
 
 <TypeTable
   type={{
-    'ui.fullPowerDecidedAt': {
+    'ui.trustNoticeSeenAt': {
       description:
-        'When you answered the question about how much power your agents run with — whichever way you answered. DorkOS writes this itself, and once it is set you are never asked again.',
+        'When you saw the note that your agents now work without asking. DorkOS writes this itself, and once it is set the note does not come back.',
       type: 'string | null',
-      default: 'null',
-    },
-    'ui.fullPowerChoice': {
-      description:
-        'What you chose: full power, or keep asking me first. Saying "keep asking me first" changes nothing anywhere, and you can move to full power later without being asked again.',
-      type: '"full" | "supervised" | null',
       default: 'null',
     },
   }}

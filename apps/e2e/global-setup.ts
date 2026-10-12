@@ -221,11 +221,10 @@ async function readConfigWhenReady(
  * ever sees it, and no spec has to know it exists. Channels stay off; the
  * defaults are already `false`, so `userHasDecided: true` alone closes it.
  *
- * The full-power consent door is the fourth, and it bites the same way: a launch
- * modal on the same rail, eligible whenever `ui.fullPowerDecidedAt` is null and
- * onboarding is settled — this suite's steady state. Settling a "supervised"
- * decision makes it ineligible without flipping any consent-gated value, so the
- * suite keeps its safe defaults; the opt-in `full-power-door.spec.ts` re-opens it
+ * The trust notice is the fourth, and it bites the same way: a launch modal on
+ * the same rail, eligible whenever `ui.trustNoticeSeenAt` is null and onboarding
+ * is settled — this suite's steady state. Marking it seen makes it ineligible
+ * and changes no permission; the opt-in `full-power-door.spec.ts` re-opens it
  * deliberately on a serial run.
  *
  * The spaces experiment is switched ON here too (DOR-2740): it ships off, and
@@ -249,7 +248,7 @@ async function dismissOnboarding(baseURL: string): Promise<void> {
           identityPromptDismissedAt?: string | null;
         };
         telemetry?: { userHasDecided?: boolean };
-        ui?: { fullPowerDecidedAt?: string | null; fullPowerChoice?: string | null };
+        ui?: { trustNoticeSeenAt?: string | null };
         dorkHome?: string;
       };
     // Before the first write, and on the same read that was already happening.
@@ -264,7 +263,7 @@ async function dismissOnboarding(baseURL: string): Promise<void> {
       profile?.rolePromptDismissedAt &&
       profile?.identityPromptDismissedAt &&
       telemetry?.userHasDecided &&
-      ui?.fullPowerDecidedAt &&
+      ui?.trustNoticeSeenAt &&
       experiments?.some(({ key, enabled }) => key === 'spaces.enabled' && enabled)
     ) {
       return;
@@ -295,24 +294,13 @@ async function dismissOnboarding(baseURL: string): Promise<void> {
             // idempotent: on a persistent home that already decided, this rewrites
             // the same `true`, and the channels it does not name keep their values.
             telemetry: { userHasDecided: true },
-            // The full-power consent door is the second launch modal on the moments
-            // rail (spec `full-power-defaults` D3), eligible whenever onboarding is
-            // settled and `ui.fullPowerDecidedAt` is still null — which is EXACTLY
-            // this suite's steady state, so without this every spec is ambushed by
-            // it the way telemetry once ambushed them. Settle a real "supervised"
-            // decision: it records that the question was answered WITHOUT flipping
-            // any consent-gated value (no autonomy stop, no open mesh), so the suite
-            // runs at the same safe defaults it always has. The
-            // opt-in `full-power-door.spec.ts` re-opens the door on its own serial
-            // run; nothing else should see it.
-            ui: {
-              fullPowerDecidedAt: ui?.fullPowerDecidedAt ?? now,
-              // `?? 'supervised'` for the same reason the timestamp uses `?? now`: a
-              // persistent home that already chose 'full' keeps it rather than being
-              // quietly demoted. (Theoretical for a throwaway e2e home, but the two
-              // fields settle together, so they defer together.)
-              fullPowerChoice: ui?.fullPowerChoice ?? 'supervised',
-            },
+            // The trust notice is the second launch modal on the moments rail,
+            // eligible whenever onboarding is settled and `ui.trustNoticeSeenAt`
+            // is still null — which is EXACTLY this suite's steady state, so
+            // without this every spec is ambushed by it the way telemetry once
+            // ambushed them. Marking it seen changes no permission. The opt-in
+            // `full-power-door.spec.ts` re-opens it on its own serial run.
+            ui: { trustNoticeSeenAt: ui?.trustNoticeSeenAt ?? now },
             // Spaces are an experiment, off by default (DOR-2740). The suite's
             // space specs prove the surfaces themselves, so the suite runs with
             // it ON, exactly as it ran before the switch existed. The switch's

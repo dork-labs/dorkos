@@ -317,16 +317,12 @@ export const CONFIG_WRITE_POLICY = {
   // slot offers, exactly like `ui.sidebar.gettingStarted.retired` above; nothing
   // it gates is a security control.
   'ui.promos.dismissedIds': 'agent-writable',
-  // The power-door answer: these record that a PERSON was asked a consent
-  // question and what they said. An agent that
-  // could write them could close the door on a question nobody ever saw — and
-  // then, having recorded `'full'`, hand the binding form a pre-selected
-  // `canInitiate`. They grant nothing by themselves, which is why they are
-  // `no-risk` in the safe-defaults table; a consent record an agent can write is
-  // still a consent record an agent can forge, which is why they are refused
-  // here. The two verdicts answer different questions and are meant to differ.
-  'ui.fullPowerDecidedAt': 'operator-only',
-  'ui.fullPowerChoice': 'operator-only',
+  // When a PERSON saw the "agents now work without asking" notice. An agent
+  // that could write it could dismiss, unseen, the one notice that tells the
+  // person what agents may now do and how to turn asking back on. It grants
+  // nothing by itself, which is why it is `no-risk` in the safe-defaults table;
+  // a record of what a person was told is still not an agent's to forge.
+  'ui.trustNoticeSeenAt': 'operator-only',
 
   // Every way the operator finds out that something is waiting on them. An agent
   // that could write these could turn off the knock, stop the phone ever ringing
@@ -794,6 +790,10 @@ export const CONFIG_WRITE_POLICY = {
   'permissions.defaults.areas': 'operator-only',
   'permissions.defaults.actions': 'operator-only',
   'permissions.upgradeSweptVersion': 'operator-only',
+  // Machine-managed like the marker above: the boot steps that apply the
+  // Trusted defaults outside config.json stamp it once. An agent that cleared
+  // it would re-open the mesh a person had closed on the next boot.
+  'permissions.trustedStoresAppliedAt': 'operator-only',
 
   // The credential and the identity of the account link.
   'cloud.instanceToken': 'operator-only',
@@ -1052,12 +1052,9 @@ export const OPERATOR_ONLY_STAKES: readonly OperatorOnlyStakeGroup[] = [
       'runtimes.claudeCode.defaultTrustStop',
       'runtimes.codex.defaultTrustStop',
       'runtimes.opencode.defaultTrustStop',
-      // The power-door answer. Filed under `approvals` rather than a stake of
-      // its own because that is what the question was about: whether the person
-      // is asked before work happens. The record grants nothing by itself, but
-      // writing it is how the asking stops.
-      'ui.fullPowerDecidedAt',
-      'ui.fullPowerChoice',
+      // The notice that says agents work without asking. Filed here because
+      // that is what it tells the person about: whether they are asked first.
+      'ui.trustNoticeSeenAt',
       // What agents may do without asking. Refused on this route before this
       // table is read (see `USE_PERMISSIONS_API`); listed so the stake sentence
       // is right if that refusal is ever reached around.
@@ -1065,6 +1062,7 @@ export const OPERATOR_ONLY_STAKES: readonly OperatorOnlyStakeGroup[] = [
       'permissions.defaults.areas',
       'permissions.defaults.actions',
       'permissions.upgradeSweptVersion',
+      'permissions.trustedStoresAppliedAt',
     ],
   },
   {

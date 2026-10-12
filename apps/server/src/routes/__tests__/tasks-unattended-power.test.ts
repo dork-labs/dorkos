@@ -223,8 +223,10 @@ describe('POST /api/tasks resolves an omitted permission mode', () => {
   });
 
   it('lands on exactly acceptEdits when no stop is configured', async () => {
-    // The byte-for-byte regression: anybody who never answered the power door
-    // gets what this route has always produced.
+    // The byte-for-byte regression: with no stop at either tier, this route
+    // produces what it always has. (A fresh install ships the global stop at
+    // Full autonomy, ADR 261006-225605, so it is unset here.)
+    state.runtimes = runtimes({ defaultTrustStop: null });
     const res = await request(fixtureServer).post('/api/tasks').send(createBody());
 
     expect(res.status).toBe(201);
@@ -234,6 +236,7 @@ describe('POST /api/tasks resolves an omitted permission mode', () => {
   it('writes no `permissions:` line into the file at that level', async () => {
     // Unchanged behavior, and worth pinning: `acceptEdits` is the level the file
     // format leaves unsaid, so the default must not start writing it out.
+    state.runtimes = runtimes({ defaultTrustStop: null });
     await request(fixtureServer).post('/api/tasks').send(createBody());
 
     const frontmatter = writtenSchedule();

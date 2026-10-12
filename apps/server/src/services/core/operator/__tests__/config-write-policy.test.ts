@@ -128,6 +128,7 @@ describe('CONFIG_WRITE_POLICY drift guard', () => {
       'permissions.defaults.actions',
       'permissions.defaults.areas',
       'permissions.preset',
+      'permissions.trustedStoresAppliedAt',
       'permissions.upgradeSweptVersion',
       // The record of WHO wrote the display name, not the name itself — which
       // stays agent-writable, because DorkBot saving "call me Dorian" is the
@@ -210,8 +211,7 @@ describe('CONFIG_WRITE_POLICY drift guard', () => {
       'ui.communityNavigation.owners[].installationDestination.path',
       'ui.communityNavigation.owners[].installationDestination.search',
       'ui.communityNavigation.owners[].ownerKey',
-      'ui.fullPowerChoice',
-      'ui.fullPowerDecidedAt',
+      'ui.trustNoticeSeenAt',
       // Three uploads.* leaves a person can tighten past the shipped default,
       // all carried by the wipe floor (DOR-1505 added `allowedTypes`).
       'uploads.allowedTypes',

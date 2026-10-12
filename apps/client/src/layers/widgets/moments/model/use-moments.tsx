@@ -31,7 +31,7 @@ export function useTelemetryMomentDescriptor(): MomentDescriptor | null {
  * flips full power on, so it outranks the telemetry invitation below it.
  *
  * Eligible when config has loaded, onboarding is over (`completedAt ?? dismissedAt`
- * is set), and `ui.fullPowerDecidedAt` is still null — a nullable timestamp plus
+ * is set), and `ui.trustNoticeSeenAt` is still null — a nullable timestamp plus
  * an "onboarding already over" gate, the same existing-user re-ask idiom as
  * `use-profile-prompt`. The rail's own rules (no moment over the onboarding
  * overlay, at most one moment per launch, nothing from an unconfirmed cache) are
@@ -47,7 +47,7 @@ export function useFullPowerMomentDescriptor(): MomentDescriptor | null {
   const onboardingOver =
     config.onboarding?.completedAt != null || config.onboarding?.dismissedAt != null;
   if (!onboardingOver) return null;
-  if (config.ui?.fullPowerDecidedAt != null) return null;
+  if (config.ui?.trustNoticeSeenAt != null) return null;
   return {
     id: 'full-power-door',
     priority: MOMENT_PRIORITY.high,

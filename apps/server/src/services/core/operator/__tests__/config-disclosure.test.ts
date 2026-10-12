@@ -142,8 +142,7 @@ function fullyPopulatedConfig(): Record<string, unknown> {
       },
       statusBar: { pins: ['cwd'] },
       composer: { richText: true },
-      fullPowerDecidedAt: '2026-08-22T11:15:00.000Z',
-      fullPowerChoice: 'full',
+      trustNoticeSeenAt: '2026-10-07T11:15:00.000Z',
       communityNavigation: {
         version: 1,
         owners: [

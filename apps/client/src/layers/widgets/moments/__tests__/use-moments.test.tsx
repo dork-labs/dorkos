@@ -99,7 +99,7 @@ describe('useMoments', () => {
 function setConfig(
   cfg: {
     onboarding?: { completedAt?: string | null; dismissedAt?: string | null } | null;
-    fullPowerDecidedAt?: string | null;
+    trustNoticeSeenAt?: string | null;
     telemetryDecided?: boolean;
   } | null
 ) {
@@ -112,7 +112,7 @@ function setConfig(
               cfg.onboarding === undefined
                 ? { completedAt: '2026-08-01T10:00:00.000Z', dismissedAt: null }
                 : cfg.onboarding,
-            ui: { fullPowerDecidedAt: cfg.fullPowerDecidedAt ?? null },
+            ui: { trustNoticeSeenAt: cfg.trustNoticeSeenAt ?? null },
             telemetry: { userHasDecided: cfg.telemetryDecided ?? true },
           },
     isLoading: false,
@@ -127,7 +127,7 @@ describe('useFullPowerMomentDescriptor', () => {
   });
 
   it('offers the door when onboarding is over and the power question is unanswered', () => {
-    setConfig({ fullPowerDecidedAt: null });
+    setConfig({ trustNoticeSeenAt: null });
 
     const { result } = renderHook(() => useFullPowerMomentDescriptor());
 
@@ -148,7 +148,7 @@ describe('useFullPowerMomentDescriptor', () => {
   });
 
   it('never offers the door once the power question has been answered', () => {
-    setConfig({ fullPowerDecidedAt: '2026-08-02T09:00:00.000Z' });
+    setConfig({ trustNoticeSeenAt: '2026-08-02T09:00:00.000Z' });
 
     const { result } = renderHook(() => useFullPowerMomentDescriptor());
 
@@ -156,7 +156,7 @@ describe('useFullPowerMomentDescriptor', () => {
   });
 
   it('withholds the door while onboarding is neither finished nor dismissed', () => {
-    setConfig({ onboarding: { completedAt: null, dismissedAt: null }, fullPowerDecidedAt: null });
+    setConfig({ onboarding: { completedAt: null, dismissedAt: null }, trustNoticeSeenAt: null });
 
     const { result } = renderHook(() => useFullPowerMomentDescriptor());
 
@@ -173,7 +173,7 @@ describe('useFullPowerMomentDescriptor', () => {
 
   it('is collected above telemetry when both are eligible', () => {
     // Onboarding over, power unanswered, telemetry undecided → both eligible.
-    setConfig({ fullPowerDecidedAt: null, telemetryDecided: false });
+    setConfig({ trustNoticeSeenAt: null, telemetryDecided: false });
 
     const { result } = renderHook(() => useMoments());
 

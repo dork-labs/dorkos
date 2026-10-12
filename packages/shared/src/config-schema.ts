@@ -454,9 +454,9 @@ export function parseCredentialReference(
  * something new.
  *
  * **A step is flow progress, never consent.** `'power'` records that the person
- * reached and left the power stage; whether they actually answered the door is
- * {@link UserConfig.ui}`.fullPowerDecidedAt`, which the door itself writes. A
- * skipped stage completes no answer.
+ * reached and left the power stage; whether they saw what agents may do is
+ * {@link UserConfig.ui}`.trustNoticeSeenAt`, which the stage itself writes. A
+ * skipped stage records no answer.
  */
 export const ONBOARDING_STEPS = ['power', 'meet-dorkbot', 'profile', 'discovery'] as const;
 
@@ -1903,9 +1903,8 @@ const DefaultModelSchema = z.string().min(1).nullable().default(null);
 const DefaultEffortSchema = z.enum(EFFORT_LEVELS).nullable().default(null);
 
 /**
- * How much a NEW session may do without asking, or `null` to let the runtime
- * decide — which is byte-for-byte the behavior before this field existed, and
- * the shipped default (spec `trust-dial`, decision 6).
+ * How much a NEW session may do without asking. `null` lets the runtime decide,
+ * which is byte-for-byte the behavior before these fields existed.
  *
  * **A stop, never a mode id.** `'ask' | 'act' | 'autonomy'` are the three
  * positions of the Trust Dial, and they mean the same thing on every runtime;
@@ -1922,7 +1921,23 @@ const DefaultEffortSchema = z.enum(EFFORT_LEVELS).nullable().default(null);
  * by the CLI); the two are pinned together by
  * `packages/shared/src/__tests__/config-schema.test.ts`.
  */
-const DefaultTrustStopSchema = z.enum(['ask', 'act', 'autonomy']).nullable().default(null);
+const TrustStopSchema = z.enum(['ask', 'act', 'autonomy']).nullable();
+
+/**
+ * `runtimes.defaultTrustStop`, the stop every runtime starts from. Ships at
+ * `'autonomy'` (ADR 261006-225605): our own agents work without asking, and
+ * every action is recorded. Outsider-origin turns seed nothing from it
+ * (`permissionSeedForOrigin`), and the Careful preset writes `'ask'` here. See
+ * {@link TrustStopSchema} for the vocabulary.
+ */
+const GlobalTrustStopSchema = TrustStopSchema.default('autonomy');
+
+/**
+ * `runtimes.<runtime>.defaultTrustStop`, one runtime's own answer. Ships `null`,
+ * which adds no answer of its own: the runtime follows
+ * {@link GlobalTrustStopSchema}. See {@link TrustStopSchema} for the vocabulary.
+ */
+const RuntimeTrustStopSchema = TrustStopSchema.default(null);
 
 /** The ways DorkOS can run Codex — see `runtimes.codex.transport`. */
 export const CODEX_TRANSPORTS = ['auto', 'app-server', 'exec'] as const;
@@ -2114,9 +2129,9 @@ export const ClaudeCodeSettingsSchema = z.object({
   defaultEffort: DefaultEffortSchema,
   /**
    * Trust stop a new claude-code session starts at, overriding
-   * `runtimes.defaultTrustStop`. See {@link DefaultTrustStopSchema}.
+   * `runtimes.defaultTrustStop`. See {@link RuntimeTrustStopSchema}.
    */
-  defaultTrustStop: DefaultTrustStopSchema,
+  defaultTrustStop: RuntimeTrustStopSchema,
   /**
    * Whether a Claude Code chat keeps its agent running between your
    * messages instead of starting it up again for each one. Ships `true`
@@ -2242,33 +2257,15 @@ export const UserConfigSchema = z.object({
         owners: [],
       })),
       /**
-       * When this person answered the full-power door — **either way** (spec
-       * `full-power-defaults`, D1).
+       * When this person saw the one-time "agents now work without asking"
+       * notice, or answered the onboarding statement that replaces it, as an
+       * ISO 8601 string (ADR 261006-225605). `null` until then, and the notice
+       * shows while it is `null` on a Trusted install.
        *
-       * The single "they have been asked" signal, read by both hosts of the same
-       * door: the onboarding power stage and the one-time modal existing users
-       * meet on the moments rail. Non-null means never ask again, whichever way
-       * they answered, because re-asking a question somebody already answered is
-       * the nagging this program exists to avoid.
-       *
-       * Nothing here grants a capability: it records that a question was put
-       * and answered. `operator-only` to write, because a consent record an
-       * agent can write is a consent record an agent can forge.
+       * Gates a notice and nothing else: it grants no capability. Operator-only
+       * to write, so an agent cannot dismiss a notice meant for a person.
        */
-      fullPowerDecidedAt: z.string().datetime().nullable().default(null),
-      /**
-       * What they chose at the door: `'full'` (unlock everything) or
-       * `'supervised'` (keep asking me first). `null` until they answer.
-       *
-       * Read rather than inferred, because the two answers lead somewhere
-       * different afterwards: `'full'` is what pre-selects `canInitiate` on a new
-       * adapter binding, and `'supervised'` is a first-class answer that changes
-       * nothing anywhere. Choosing `'supervised'` here and moving to full power
-       * later is a normal, supported path — the door itself never re-asks once
-       * {@link UserConfig.ui}`.fullPowerDecidedAt` is set, and the Control Center
-       * that will offer that second chance in one click arrives with task 2.2.
-       */
-      fullPowerChoice: z.enum(['full', 'supervised']).nullable().default(null),
+      trustNoticeSeenAt: z.string().datetime().nullable().default(null),
     })
     .default(() => ({
       theme: 'system' as const,
@@ -2290,13 +2287,11 @@ export const UserConfigSchema = z.object({
       statusBar: { pins: [] },
       composer: { richText: true },
       communityNavigation: { version: 1 as const, owners: [] },
-      // Both halves of the power-door answer. Declared here as well as per-field
-      // because `conf` merges top-level defaults SHALLOWLY: the per-field default
-      // is what a fresh install lands on, this literal is what an upgrade whose
-      // stored `ui` block predates the fields lands on, and a field declared in
-      // only one of the two is a silent disagreement between those paths.
-      fullPowerDecidedAt: null,
-      fullPowerChoice: null,
+      // Declared here as well as per-field because `conf` merges top-level
+      // defaults SHALLOWLY: the per-field default is what a fresh install lands
+      // on, this literal is what an install with no stored `ui` block lands on,
+      // and a field declared in only one of the two is a silent disagreement.
+      trustNoticeSeenAt: null,
     })),
   /**
    * How DorkOS gets your attention, and how hard it tries.
@@ -3288,10 +3283,10 @@ export const UserConfigSchema = z.object({
       default: z.string().default('claude-code'),
       /**
        * How much a new session may do without asking, on every runtime that has
-       * no answer of its own. See {@link DefaultTrustStopSchema}; a
+       * no answer of its own. See {@link GlobalTrustStopSchema}; a
        * `runtimes.<runtime>.defaultTrustStop` beats this one.
        */
-      defaultTrustStop: DefaultTrustStopSchema,
+      defaultTrustStop: GlobalTrustStopSchema,
       // The rename heal runs BEFORE this object is parsed, so a config still
       // spelling the default `activeAccount` parses with the operator's choice
       // in the new key. What settles the FILE is a write that names `runtimes`,
@@ -3340,9 +3335,9 @@ export const UserConfigSchema = z.object({
           defaultModel: DefaultModelSchema,
           /**
            * Trust stop a new OpenCode session starts at, overriding
-           * `runtimes.defaultTrustStop`. See {@link DefaultTrustStopSchema}.
+           * `runtimes.defaultTrustStop`. See {@link RuntimeTrustStopSchema}.
            */
-          defaultTrustStop: DefaultTrustStopSchema,
+          defaultTrustStop: RuntimeTrustStopSchema,
         })
         .default(() => ({
           enabled: true,
@@ -3371,9 +3366,9 @@ export const UserConfigSchema = z.object({
           defaultEffort: DefaultEffortSchema,
           /**
            * Trust stop a new codex session starts at, overriding
-           * `runtimes.defaultTrustStop`. See {@link DefaultTrustStopSchema}.
+           * `runtimes.defaultTrustStop`. See {@link RuntimeTrustStopSchema}.
            */
-          defaultTrustStop: DefaultTrustStopSchema,
+          defaultTrustStop: RuntimeTrustStopSchema,
           /**
            * How DorkOS runs Codex (ADR 261005-113107). `auto` follows DorkOS's
            * own default, resolved in one place (`resolveCodexTransport`), so a
@@ -3397,7 +3392,7 @@ export const UserConfigSchema = z.object({
     .default(() => ({
       environment: { inherit: { claudeCode: [], codex: [], opencode: [] } },
       default: 'claude-code',
-      defaultTrustStop: null,
+      defaultTrustStop: 'autonomy' as const,
       claudeCode: {
         defaultAccount: null,
         accounts: [],
@@ -3455,8 +3450,13 @@ export const UserConfigSchema = z.object({
    */
   permissions: z
     .object({
-      /** The preset every area starts from. `null` = not chosen yet ("Unchanged"). */
-      preset: z.enum(PERMISSION_PRESETS).nullable().default(null),
+      /**
+       * The preset every area starts from. Ships `'trusted'` (ADR
+       * 261006-225605): our own agents work without asking, and every action is
+       * recorded. `'careful'` turns asking back on. `null` is still readable and
+       * means the same as `'trusted'`; the `'0.103.0'` migration leaves none.
+       */
+      preset: z.enum(PERMISSION_PRESETS).nullable().default('trusted'),
       /** The changes a person made on top of the preset ("Full power, 2 changes"). */
       defaults: z
         .object({
@@ -3471,11 +3471,20 @@ export const UserConfigSchema = z.object({
        * means never. Machine-managed: the boot sweep stamps it.
        */
       upgradeSweptVersion: z.string().nullable().default(null),
+      /**
+       * When the Trusted defaults were applied to the stores outside this file
+       * (the open mesh rule, and later the connected apps), as an ISO 8601
+       * string; `null` means not yet. Machine-managed: the boot steps that do
+       * that work stamp it once (`services/mesh/seed-open-mesh.ts`), so a
+       * person who later narrows one of those stores keeps their choice.
+       */
+      trustedStoresAppliedAt: z.string().datetime().nullable().default(null),
     })
     .default(() => ({
-      preset: null,
+      preset: 'trusted' as const,
       defaults: { areas: {}, actions: {} },
       upgradeSweptVersion: null,
+      trustedStoresAppliedAt: null,
     })),
   cloud: z
     .object({
