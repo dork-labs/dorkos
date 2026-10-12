@@ -706,6 +706,87 @@ jobs:
           overwrite: true
           retention-days: 7
 
+  # THE ONE-MINUTE FIRST RUN (DOR-2844). `apps/e2e/first-run/first-run.journey.ts`
+  # times a never-onboarded install from Welcome to DorkBot's first real reply,
+  # once per path (Continue with DorkOS, Use my own AI). It needs a fresh home
+  # per path and its own test-mode flags, so it cannot share a shard's servers
+  # (`playwright.first-run.config.ts` says why) and runs as its own job beside
+  # the shards: same events, same skip on pull_request, and the fan-in below
+  # fails the build when it did not pass. Nothing leaves the runner: the Cloud,
+  # its credits and the model are the in-process test-mode fakes.
+  first-run:
+    name: first-run
+    if: ${{ github.event_name != 'pull_request' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      # The setup mirrors browser-shard's steps one for one; the reasons for each are written there.
+      - name: A canary run is against main
+        env:
+          EVENT: ${{ github.event_name }}
+          REF: ${{ github.ref }}
+        run: |
+          if [ -z "$EVENT" ] || [ -z "$REF" ]; then
+            echo "::error title=The main canary runs against main only::EVENT or REF is empty, so this cannot be shown to be a safe run. Refusing rather than assuming it is not a canary."
+            exit 1
+          fi
+          if [ "$EVENT" != 'schedule' ] && [ "$EVENT" != 'workflow_dispatch' ]; then
+            echo "event '$EVENT' is not a canary event; nothing to check."
+            exit 0
+          fi
+          if [ "$REF" != 'refs/heads/main' ]; then
+            echo "::error title=The main canary runs against main only::this $EVENT run is on '$REF', not 'refs/heads/main'. Nothing was tested. Dispatch it with --ref main; a run on a branch would post this check on that branch's head, under the name of a required context."
+            exit 1
+          fi
+          echo "canary $EVENT run against $REF."
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Resolve the Playwright version the cache is keyed on
+        id: pw
+        run: echo "version=$(pnpm --filter @dorkos/e2e exec playwright --version | awk '{print $2}')" >> "$GITHUB_OUTPUT"
+      - name: Restore the Chromium browser Playwright drives
+        id: pw-cache
+        uses: actions/cache@v6
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-chromium-${{ runner.os }}-${{ steps.pw.outputs.version }}
+      - name: Install the Chromium browser Playwright drives
+        timeout-minutes: 10
+        run: |
+          printf 'Acquire::http::Timeout "20";\nAcquire::https::Timeout "20";\nAcquire::Retries "2";\n' \
+            | sudo tee /etc/apt/apt.conf.d/99-ci-acquire-timeouts >/dev/null
+          if [ -f /etc/apt/apt-mirrors.txt ]; then
+            sudo sed -i '/azure\.archive\.ubuntu\.com/d' /etc/apt/apt-mirrors.txt
+          fi
+          for attempt in 1 2; do
+            if [ "${{ steps.pw-cache.outputs.cache-hit }}" = "true" ]; then
+              pnpm --filter @dorkos/e2e exec playwright install-deps chromium && exit 0
+            else
+              pnpm --filter @dorkos/e2e exec playwright install --with-deps chromium && exit 0
+            fi
+            echo "playwright install attempt $attempt failed; retrying once" >&2
+            sleep 15
+          done
+          exit 1
+      - name: Build what the webServer legs boot from
+        run: pnpm exec turbo run build --filter=@dorkos/server --filter=@dorkos/client
+      - name: Run the first-run journey
+        timeout-minutes: 15
+        run: pnpm --filter @dorkos/e2e run e2e:first-run
+      - name: Upload the first-run traces
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: first-run-results
+          path: apps/e2e/test-results/
+          overwrite: true
+          retention-days: 7
+
   # THE CHECK. Everything above is an implementation detail of this job's answer.
   #
   # Two things it does, and it must do both:
@@ -732,7 +813,7 @@ jobs:
   # every ubuntu-latest image) and the uploaded shard reports. That is why it
   # costs seconds rather than re-paying the setup once more.
   browser-test:
-    needs: browser-shard
+    needs: [browser-shard, first-run]
     if: ${{ always() }}
     runs-on: ubuntu-latest
     # Nothing here waits on anything slow. Ten minutes is a backstop against a
@@ -795,6 +876,11 @@ jobs:
           echo "::error::the browser suite did not pass — the browser-shard matrix reported '${{ needs.browser-shard.result }}'. Open the shard jobs above for the failing specs, and the playwright-report-shard-* artifacts for their traces, screenshots and videos."
           exit 1
 
+      - name: Refuse a run whose first run did not pass
+        if: ${{ github.event_name != 'pull_request' && needs.first-run.result != 'success' }}
+        run: |
+          echo "::error::the one-minute first run did not pass — the first-run job reported '${{ needs.first-run.result }}'. Open it above for the failing path, and the first-run-results artifact for its trace."
+          exit 1
       - uses: actions/checkout@v7
         if: ${{ github.event_name != 'pull_request' }}
 

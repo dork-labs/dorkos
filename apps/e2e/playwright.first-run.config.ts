@@ -78,8 +78,8 @@ export default defineConfig({
   testDir: './first-run',
   // Not `*.spec.ts` on purpose: the main suite's executed-tests gate
   // (scripts/assert-browser-tests-executed.sh) counts every `*.spec.ts` as a
-  // main-suite file, and this one runs only here, by `pnpm e2e:first-run`,
-  // until CI runs this config (DOR-2844).
+  // main-suite file, and this one runs only here: by `pnpm e2e:first-run`, and
+  // in CI by browser-test.yml's `first-run` job in the merge queue (DOR-2844).
   testMatch: 'first-run.journey.ts',
   reporter: [['list']],
   workers: 1,
@@ -95,7 +95,7 @@ export default defineConfig({
     {
       command: apiCommand(leg),
       url: `http://localhost:${leg.apiPort}/api/health`,
-      name: `Express API (${leg.project})`,
+      name: `API (${leg.project})`,
       timeout: 240_000,
       reuseExistingServer: false,
       stdout: 'pipe' as const,

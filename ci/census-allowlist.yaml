@@ -144,6 +144,16 @@ entries:
     reason: The shards do not run on pull_request, so their result is only meaningful off it; this is the step that fails the queue build, or the canary run, on a red shard.
   - workflow: browser-test.yml
     job: browser-test
+    step: Refuse a run whose first run did not pass
+    kind: step-if
+    reason: The first-run job skips pull_request like the shards, so its result is only meaningful off it; this is the step that fails the queue build, or the canary run, when the one-minute first run broke (DOR-2844).
+  - workflow: browser-test.yml
+    job: first-run
+    step: Upload the first-run traces
+    kind: step-if
+    reason: Uploads the traces only when the journey failed; it asserts nothing, and the failing step has already failed the job.
+  - workflow: browser-test.yml
+    job: browser-test
     step: actions/checkout
     kind: step-if
     reason: Checks out code for the executed-count proof the queue and the main canary run; the PR leg is a pass-through.
