@@ -65,15 +65,21 @@ export function isPersonOnlyMode(mode: string | undefined): boolean {
 }
 
 /**
- * Whether the tool gate is answering at "Never ask" right now: every ask it
- * would raise (a tool approval, a question, an MCP server's request) is refused
- * instead. Read through {@link gatePermissionMode}, so a ceiling stricter than
- * Default (Plan) answers as Plan does.
+ * Whether the tool gate refuses every ask right now (a tool approval, a
+ * question, an MCP server's request) rather than putting it to a person: the
+ * chat is set to "Never ask", or the turn runs at it.
+ *
+ * The chosen mode counts on its own because a ceiling stricter than Default
+ * (another agent's Plan) clamps the turn to Plan, which asks. Held to Plan, a
+ * chat set to never ask still asks nobody: refusing is stricter than asking, so
+ * reading both can never let anything more run.
  *
  * @param session - The session's chosen mode and both ceilings.
  */
 export function neverAsks(session: CeilingedMode<string | undefined>): boolean {
-  return gatePermissionMode(session) === NEVER_ASK_MODE_ID;
+  return (
+    isPersonOnlyMode(session.permissionMode) || gatePermissionMode(session) === NEVER_ASK_MODE_ID
+  );
 }
 
 /** A session's chosen mode with both ceilings the tool gate reads. */
@@ -184,7 +190,7 @@ export type ModeDecision = 'allow' | 'ask' | 'refuse';
  * runtime has since retired (DOR-885). Such an id is not a member of the union
  * and gets no arm — it asks, for the same reason every unnamed mode does.
  *
- * ## Why everything but `bypassPermissions` asks
+ * ## Why every other mode but `bypassPermissions` asks
  *
  * `canUseTool` is not the first gate — it is the last one. The Claude Code CLI
  * runs its own permission engine first and only round-trips to this callback for
@@ -226,11 +232,13 @@ export type ModeDecision = 'allow' | 'ask' | 'refuse';
  * rubber-stamped it" shape fixed above for `acceptEdits`, and it is deliberate
  * only because the mode is named for it. Tracked separately.
  *
- * @param mode - The session's permission mode.
- * `dontAsk` ("Never ask") is the one mode that answers `refuse`: what would
- * ask anywhere else is refused, and nobody is asked. The CLI refuses those calls
- * itself before this callback; `createCanUseTool` refuses the rest.
+ * ## `dontAsk` refuses
  *
+ * "Never ask" is the one mode that answers `refuse`: what would ask anywhere
+ * else is refused, and nobody is asked. The CLI refuses those calls itself
+ * before this callback; `createCanUseTool` refuses the rest.
+ *
+ * @param mode - The session's permission mode.
  * @returns `'allow'` to run without asking, `'ask'` to raise an approval card,
  *   `'refuse'` to deny without asking.
  */

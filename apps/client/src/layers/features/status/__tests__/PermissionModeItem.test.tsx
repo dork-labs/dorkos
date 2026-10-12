@@ -444,13 +444,14 @@ describe('PermissionModeItem', () => {
       expect(screen.getByTestId('popover-trigger')).toHaveTextContent('Workspace write');
     });
 
-    it('falls back to the shared name for a mode the runtime does not declare', () => {
+    it('falls back to the mode’s own id when nothing declares or labels it', () => {
       mockCapabilitiesForRuntime.mockReturnValue(CLAUDE_CAPABILITIES);
-      render(<PermissionModeItem mode={'dontAsk' as never} onChangeMode={vi.fn()} />);
+      // An id nobody labels falls back to itself.
+      render(<PermissionModeItem mode={'retired-mode' as never} onChangeMode={vi.fn()} />);
 
-      expect(screen.getByTestId('popover-trigger')).toHaveTextContent('Don’t ask');
+      expect(screen.getByTestId('popover-trigger')).toHaveTextContent('retired-mode');
       // …and the dial admits it has nowhere to point.
-      expect(screen.getByTestId('trust-dial-stranded')).toHaveTextContent('Don’t ask');
+      expect(screen.getByTestId('trust-dial-stranded')).toHaveTextContent('retired-mode');
     });
   });
 

@@ -110,9 +110,11 @@ describe('a ceiling never loosens Never ask (clampModeToCeiling)', () => {
 
   it('is still held down by a ceiling stricter than Default, such as Plan', () => {
     expect(clampClaudeMode(NEVER_ASK_MODE_ID, PLAN)).toBe('plan');
+    // Held to Plan, which asks, a chat set to never ask still asks nobody.
     expect(neverAsks({ permissionMode: NEVER_ASK_MODE_ID, turnPermissionCeiling: PLAN })).toBe(
-      false
+      true
     );
+    expect(neverAsks({ permissionMode: 'default', turnPermissionCeiling: PLAN })).toBe(false);
   });
 
   it('is never the stand-in for another mode a ceiling refuses', () => {
@@ -177,7 +179,12 @@ describe('the tool gate under Never ask (resolveModeDecision, createCanUseTool)'
     ['mcp__other__anything', {}],
     ['AskUserQuestion', { questions: [] }],
   ])('denies %s at once, and raises no card or question', async (tool, input) => {
-    for (const extra of [{}, { turnPermissionCeiling: 'runtime-default' as const }]) {
+    for (const extra of [
+      {},
+      { turnPermissionCeiling: 'runtime-default' as const },
+      // A stricter ceiling clamps the turn to Plan, which asks: still refused.
+      { turnPermissionCeiling: PLAN },
+    ]) {
       const s = session(NEVER_ASK_MODE_ID, extra);
       const result = await createCanUseTool(s, log, undefined, identity)(tool, input, context('t'));
       expect(result).toEqual({ behavior: 'deny', message: NEVER_ASK_DENIAL });

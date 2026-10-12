@@ -51,6 +51,7 @@ import { CHAT_SEND_TOOL, CHAT_STOP_TOOL } from '@dorkos/shared/chat-messages';
 import {
   ceilingOn,
   gatePermissionMode,
+  neverAsks,
   resolveModeDecision,
   type CeilingedMode,
 } from '../turn-permission.js';
@@ -988,7 +989,9 @@ export function createCanUseTool(
     // "Never ask" refuses ahead of everything below, the question and the safe
     // lists included: whatever reaches this callback is a call the CLI would
     // have asked about, and in this mode nobody is asked and nothing extra runs.
-    if (decision === 'refuse') {
+    // `neverAsks` also covers a chat set to it whose turn a stricter ceiling
+    // holds to Plan, which would otherwise ask.
+    if (decision === 'refuse' || neverAsks(session)) {
       log.info('[canUseTool] refused: the chat is set to never ask', {
         toolName,
         toolUseID: context.toolUseID,

@@ -99,6 +99,25 @@ describe('a chat set to Never ask only starts chats that cannot ask', () => {
   });
 });
 
+describe('a chat set to Never ask whose turn a stricter ceiling holds to Plan', () => {
+  const heldToPlan = (requested: string | undefined) =>
+    resolveStartPermission(
+      requested,
+      { sessionId: 'caller', permissionMode: 'plan', runtime: 'claude-code', neverAsks: true },
+      'claude-code'
+    );
+
+  it('still starts nothing that can ask, Plan included', async () => {
+    expect(await heldToPlan(undefined)).toMatchObject({ ok: false });
+    expect(await heldToPlan('plan')).toMatchObject({ ok: false });
+    expect(await heldToPlan('default')).toMatchObject({ ok: false });
+  });
+
+  it('cannot reach past Plan by naming Never ask', async () => {
+    expect(await heldToPlan('dontAsk')).toMatchObject({ ok: false, code: 'ABOVE_YOUR_LEVEL' });
+  });
+});
+
 describe('other chats are unchanged', () => {
   it('still start at their own level and inherit it', async () => {
     expect(await start('default', undefined)).toMatchObject({

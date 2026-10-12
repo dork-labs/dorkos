@@ -18,6 +18,7 @@ import { getCoreTools } from './core-tools.js';
 import { getAccountTools } from './account-tools.js';
 import { getSessionTools } from './session-tools.js';
 import { runningPermissionMode } from './session-start-permission.js';
+import { isPersonOnlyMode } from '../turn-permission.js';
 import { getTasksTools } from './task-tools.js';
 import { getRelayTools } from './relay-tools.js';
 import { resolveSenderIdentity } from './relay-helpers.js';
@@ -246,6 +247,8 @@ export function handRegisteredInSessionToolSet(
         runtime: 'claude-code',
         ...(callingSession ? { sessionId: callingSession } : {}),
         ...(running ? { permissionMode: running } : {}),
+        // Set to "Never ask" even where a stricter ceiling holds the turn to Plan.
+        ...(isPersonOnlyMode(session?.permissionMode) ? { neverAsks: true } : {}),
       };
     }),
     ...getTasksTools(deps, resolveTaskProvenance),

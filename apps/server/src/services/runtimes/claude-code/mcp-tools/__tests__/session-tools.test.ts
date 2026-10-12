@@ -1113,6 +1113,17 @@ describe("session_start runs at the calling chat's level or lower (spec inherite
     expect(body).toMatchObject({ code: 'UNKNOWN_PERMISSION_MODE' });
   });
 
+  it('holds a chat SET to Never ask whose turn runs at Plan to chats that cannot ask', async () => {
+    const handler = createSessionStartHandler(makeDeps(), () => ({
+      agentPath: AGENT_HOME,
+      sessionId: 'parent-chat',
+      runtime: 'claude-code',
+      permissionMode: 'plan',
+      neverAsks: true,
+    }));
+    await expectRefused(handler, { ...BASE, permissionMode: 'plan' });
+  });
+
   it('refuses Never ask by name: only a person picks it (DOR-2838)', async () => {
     const body = await expectRefused(fromChatAt('bypassPermissions'), {
       ...BASE,

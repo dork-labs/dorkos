@@ -69,7 +69,9 @@ Anything outside both lists is refused once the host's chats run in "Never ask" 
 
 ### Run its chats in "Never ask"
 
-The spec has the host run `dontAsk`, which DorkOS calls **Never ask**: the tools the allowlist names run, and everything else is refused without asking anyone. It is a switch under **Ask first** on the chat's trust dial, on Claude Code only, and only a person can turn it on: an agent cannot pick it for itself or for a chat it starts, and a chat in it can only start chats that cannot ask either.
+The spec has the host run `dontAsk`, which DorkOS calls **Never ask**: the tools the allowlist names run, and everything else is refused without asking anyone. It is a switch under **Ask first** on the chat's trust dial, on Claude Code only, and only a person can turn it on: no DorkOS tool lets an agent pick it for itself or for a chat it starts, and a chat in it can only start chats that cannot ask either.
+
+Claude Code also reads `allow` rules from the agent's `.claude/settings.local.json` and from the staff user's own `~/.claude/settings.json`, and Never ask runs those too. Keep both free of `allow` rules, so the allowlist above is the whole list.
 
 It belongs to each chat, not to the agent. The host has one chat per channel, made by the first post it answers there, and a new chat starts at **Ask first**. So:
 
