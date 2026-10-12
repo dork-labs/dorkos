@@ -66,7 +66,9 @@ import type { RequestFacts } from '../http/request-facts.js';
  * one answer for every room route, including the ones added after this line.
  *
  * **Throwing, rather than returning a refusal.** Every room route already funnels
- * a {@link RoomError} through `sendRoomError`, so a new route inherits this
+ * a {@link RoomError} through `roomRoute` (`routes/room-route.ts`), and every
+ * Express route that resolves a room caller through `sendRoomError`, so a new
+ * route inherits this
  * without doing anything, and one that forgets a `try` fails loudly rather than
  * quietly acting as the owner.
  *
@@ -99,7 +101,8 @@ import type { RequestFacts } from '../http/request-facts.js';
  * Takes a request's facts (`http/request-facts.ts`), which is how a Hono
  * route asks, or a request-and-response pair. Only the pair form keeps the
  * caller for `sendRoomError` on `res.locals`; a Hono route holds the caller it
- * got back and words a refusal with `roomErrorReply` itself.
+ * got back and words a refusal with `roomErrorReply` itself (the room routes
+ * through `roomRoute`).
  *
  * @param req - The request's facts, or anything holding the request's headers,
  *   for the raw `X-DorkOS-Agent` the refusal above reads: an Express `Request`,

@@ -19,26 +19,30 @@
  *
  * @module routes/room-follow
  */
-import { Router, type Request, type Response } from 'express';
+import { Hono, type Context } from 'hono';
 import {
   FollowRoomMemberRequestSchema,
   PublishRoomViewRequestSchema,
 } from '@dorkos/shared/room-schemas';
 import { getRoomService, RoomError } from '../services/rooms/index.js';
-import { resolveCaller } from './room-caller.js';
-import { sendRoomError } from './room-error-response.js';
-import { parseBody } from '../lib/route-utils.js';
+import type { ApiEnv } from '../http/api-chain.js';
+import { readJsonBody } from '../http/request-body.js';
+import { parseOrRefuse, roomRoute, type RoomCaller } from './room-route.js';
 
 /**
- * `mergeParams` so `:id` — the ROOM, owned by the router this one is mounted
- * under — is readable here.
+ * Mounted at `/:id/follow` by the rooms router, so `:id` — the ROOM — is a
+ * parameter of every route here.
  */
-const router = Router({ mergeParams: true });
+const router = new Hono<ApiEnv>();
 
-/** What a handler here reads off the path: the room it is mounted under. */
-interface FollowParams {
-  /** The room. Owned by the rooms router. */
-  id: string;
+/**
+ * The room this request is about: the `:id` the rooms router mounts this group
+ * under.
+ *
+ * @param c - The Hono context.
+ */
+function roomOf(c: Context<ApiEnv>): string {
+  return c.req.param('id')!;
 }
 
 /**
@@ -49,17 +53,16 @@ interface FollowParams {
  * first and gated afterwards would have already published a frame by the time it
  * decided whether the caller was allowed to.
  *
- * @param req - The request, for its caller.
- * @param res - The response, for `resolveCaller`.
+ * @param caller - The request's caller, resolved here.
  * @returns The caller's author id.
  * @throws {RoomError} `PEOPLE_ONLY` when an agent is calling.
  */
-function requirePersonCaller(req: Request<FollowParams>, res: Response): string {
-  const caller = resolveCaller(req, res);
-  if (caller.kind !== 'human') {
+function requirePersonCaller(caller: RoomCaller): string {
+  const author = caller();
+  if (author.kind !== 'human') {
     throw new RoomError('PEOPLE_ONLY', 'Only a person can follow somebody, or be followed.');
   }
-  return caller.id;
+  return author.id;
 }
 
 /**
@@ -69,16 +72,13 @@ function requirePersonCaller(req: Request<FollowParams>, res: Response): string 
  * calls it on a beat, and a claim nobody restates lapses on its own. That is
  * what makes a closed tab, a crashed browser and a lost network the same event.
  */
-router.put<FollowParams>('/', (req, res) => {
-  const body = parseBody(FollowRoomMemberRequestSchema, req.body, res);
-  if (!body) return;
-  try {
-    const caller = requirePersonCaller(req, res);
-    getRoomService().follow.follow(req.params.id, caller, body.memberId);
-    res.status(204).end();
-  } catch (err) {
-    sendRoomError(res, err, 'PUT /:id/follow');
-  }
+router.put('/', (c) => {
+  const body = parseOrRefuse(c, FollowRoomMemberRequestSchema, readJsonBody(c));
+  if (body instanceof Response) return body;
+  return roomRoute(c, 'PUT /:id/follow', (caller) => {
+    getRoomService().follow.follow(roomOf(c), requirePersonCaller(caller), body.memberId);
+    return c.body(null, 204);
+  });
 });
 
 /**
@@ -88,15 +88,12 @@ router.put<FollowParams>('/', (req, res) => {
  * twice is not an error, and a page unloading after its claim already lapsed
  * should not be told off.
  */
-router.delete<FollowParams>('/', (req, res) => {
-  try {
-    const caller = requirePersonCaller(req, res);
-    getRoomService().follow.unfollow(req.params.id, caller);
-    res.status(204).end();
-  } catch (err) {
-    sendRoomError(res, err, 'DELETE /:id/follow');
-  }
-});
+router.delete('/', (c) =>
+  roomRoute(c, 'DELETE /:id/follow', (caller) => {
+    getRoomService().follow.unfollow(roomOf(c), requirePersonCaller(caller));
+    return c.body(null, 204);
+  })
+);
 
 /**
  * POST /view — say where you are looking, for whoever is following you.
@@ -105,16 +102,17 @@ router.delete<FollowParams>('/', (req, res) => {
  * sending, which is how a client that missed the "nobody is following you any
  * more" frame goes quiet on its own.
  */
-router.post<FollowParams>('/view', (req, res) => {
-  const body = parseBody(PublishRoomViewRequestSchema, req.body, res);
-  if (!body) return;
-  try {
-    const caller = requirePersonCaller(req, res);
-    const followed = getRoomService().follow.publishView(req.params.id, caller, body);
-    res.json({ followed });
-  } catch (err) {
-    sendRoomError(res, err, 'POST /:id/follow/view');
-  }
+router.post('/view', (c) => {
+  const body = parseOrRefuse(c, PublishRoomViewRequestSchema, readJsonBody(c));
+  if (body instanceof Response) return body;
+  return roomRoute(c, 'POST /:id/follow/view', (caller) => {
+    const followed = getRoomService().follow.publishView(
+      roomOf(c),
+      requirePersonCaller(caller),
+      body
+    );
+    return c.json({ followed });
+  });
 });
 
 export default router;

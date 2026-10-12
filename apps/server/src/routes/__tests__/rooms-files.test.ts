@@ -68,8 +68,9 @@ vi.mock('../../services/core/config-manager.js', () => ({
   configManager: { get: vi.fn().mockReturnValue(null), set: vi.fn() },
 }));
 
-import express from 'express';
 import { createApp, finalizeApp } from '../../app.js';
+import { composedListener } from '../../http/__tests__/composed-listener.js';
+import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
 import roomsRouter from '../rooms.js';
 import {
   createRoomSubsystem,
@@ -101,24 +102,28 @@ import { AttachmentRowStore } from '../../services/rooms/attachments/attachment-
 
 const execFileAsync = promisify(execFile);
 
-const app = createApp({ admission: new MainRequestAdmission() });
+const admission = new MainRequestAdmission();
+const app = createApp({ admission });
 finalizeApp(app);
-const testServer = listeningServer(app);
+const testServer = listeningServer(composedListener(app, admission));
 
 /**
- * The rooms router behind a stand-in for `sessionGate`: it sets
- * `res.locals.user` exactly as the gate does for a signed-in request, which is
- * the one thing the file routes read to decide whose name a commit carries.
+ * The rooms routes behind a stand-in for the session gate: it sets `user`
+ * exactly as the gate does for a signed-in request, which is the one thing the
+ * file routes read to decide whose name a commit carries.
  */
 let signedInUserId = '';
-const signedInApp = express();
-signedInApp.use(express.json());
-signedInApp.use((_req, res, next) => {
-  res.locals.user = { userId: signedInUserId };
-  next();
-});
-signedInApp.use('/api/rooms', roomsRouter);
-const signedInServer = listeningServer(signedInApp);
+const signedInServer = listeningServer(
+  honoGroupListener(
+    { path: '/api/rooms', routes: roomsRouter },
+    {
+      before: async (c, next) => {
+        c.set('user', { userId: signedInUserId } as never);
+        await next();
+      },
+    }
+  )
+);
 
 const ANA_PATH = '/agents/ana';
 

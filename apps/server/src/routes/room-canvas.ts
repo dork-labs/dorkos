@@ -24,7 +24,7 @@
  *
  * @module routes/room-canvas
  */
-import { Router, type Request, type Response } from 'express';
+import { Hono, type Context } from 'hono';
 import {
   CanvasEditingRequestSchema,
   CanvasViewingRequestSchema,
@@ -44,29 +44,25 @@ import {
   writeCanvasDiffReview,
   type CanvasDiffReviewDeps,
 } from '../services/rooms/canvas/canvas-diff-review.js';
-import { resolveCaller } from './room-caller.js';
-import { sendRoomError } from './room-error-response.js';
-import { parseBody, sendError } from '../lib/route-utils.js';
+import type { ApiEnv } from '../http/api-chain.js';
+import { readJsonBody } from '../http/request-body.js';
+import { errorBody } from '../lib/route-utils.js';
+import { parseOrRefuse, roomRoute, type RoomCaller } from './room-route.js';
 
 /**
- * `mergeParams` so `:id` — the ROOM, owned by the router this one is mounted
- * under — is readable here. Without it every handler would answer about a room
- * with an empty id.
+ * Mounted at `/:id/canvas` by the rooms router, so `:id` — the ROOM — is a
+ * parameter of every route here.
  */
-const router = Router({ mergeParams: true });
+const router = new Hono<ApiEnv>();
 
 /**
- * What a handler here reads off the path: the ROOM, from the router this one is
- * mounted under, and the document when the route names one.
+ * The room this request is about: the `:id` the rooms router mounts this group
+ * under.
  *
- * Declared because `mergeParams` merges at RUNTIME and Express's types cannot
- * see the mount point, so `:id` would otherwise type as absent everywhere.
+ * @param c - The Hono context.
  */
-interface CanvasParams {
-  /** The room. Owned by the rooms router. */
-  id: string;
-  /** The document, on the routes that name one. */
-  documentId: string;
+function roomOf(c: Context<ApiEnv>): string {
+  return c.req.param('id')!;
 }
 
 /**
@@ -114,8 +110,8 @@ const REVIEWING_IS_A_PERSONS =
  * already refuses agents with — rather than a second `caller.kind` test, because
  * a second copy of a rule like this is a place for the two to disagree.
  *
- * @param req - The request, for its caller and its `:id`.
- * @param res - The response, for `resolveCaller`.
+ * @param c - The Hono context, for its `:id`.
+ * @param caller - The request's caller, resolved here.
  * @param opts.write - Whether this route changes the canvas.
  * @param opts.personOnly - What a non-person was trying to do, when only a
  *   person may; omitted where agents are welcome.
@@ -125,12 +121,12 @@ const REVIEWING_IS_A_PERSONS =
  *   route that is a person's.
  */
 function requireCanvasAccess(
-  req: Request<CanvasParams>,
-  res: Response,
+  c: Context<ApiEnv>,
+  caller: RoomCaller,
   opts: { write?: boolean; personOnly?: string } = {}
 ): string {
-  const callerId = resolveCaller(req, res).id;
-  const room = getRoomService().requireMembership(req.params.id, callerId);
+  const callerId = caller().id;
+  const room = getRoomService().requireMembership(roomOf(c), callerId);
   if (opts.write === true && room.archived) {
     throw new RoomError('ROOM_ARCHIVED', 'This room is archived');
   }
@@ -143,48 +139,40 @@ function requireCanvasAccess(
 }
 
 /** GET / — everything on this room's canvas, pinned first then most recent. */
-router.get<CanvasParams>('/', (req, res) => {
-  try {
-    requireCanvasAccess(req, res);
-    res.json({ documents: getRoomService().canvas.list(req.params.id) });
-  } catch (err) {
-    sendRoomError(res, err, 'GET /:id/canvas');
-  }
-});
+router.get('/', (c) =>
+  roomRoute(c, 'GET /:id/canvas', (caller) => {
+    requireCanvasAccess(c, caller);
+    return c.json({ documents: getRoomService().canvas.list(roomOf(c)) });
+  })
+);
 
 /** GET /:documentId — one document, content included. */
-router.get<CanvasParams>('/:documentId', (req, res) => {
-  try {
-    requireCanvasAccess(req, res);
-    const document = getRoomService().canvas.get(req.params.id, req.params.documentId);
+router.get('/:documentId', (c) =>
+  roomRoute(c, 'GET /:id/canvas/:documentId', (caller) => {
+    requireCanvasAccess(c, caller);
+    const document = getRoomService().canvas.get(roomOf(c), c.req.param('documentId'));
     if (!document) {
-      return sendError(
-        res,
-        404,
-        'No such document on this room’s canvas',
-        'CANVAS_DOCUMENT_NOT_FOUND'
+      return c.json(
+        errorBody('No such document on this room’s canvas', 'CANVAS_DOCUMENT_NOT_FOUND'),
+        404
       );
     }
-    res.json(document);
-  } catch (err) {
-    sendRoomError(res, err, 'GET /:id/canvas/:documentId');
-  }
-});
+    return c.json(document);
+  })
+);
 
 /** POST / — put something on the canvas as yourself. */
-router.post<CanvasParams>('/', (req, res) => {
-  const body = parseBody(OpenCanvasDocumentRequestSchema, req.body, res);
-  if (!body) return;
-  try {
-    const caller = requireCanvasAccess(req, res, { write: true });
-    const document = getRoomService().canvas.open(req.params.id, caller, body.content, {
+router.post('/', (c) => {
+  const body = parseOrRefuse(c, OpenCanvasDocumentRequestSchema, readJsonBody(c));
+  if (body instanceof Response) return body;
+  return roomRoute(c, 'POST /:id/canvas', (caller) => {
+    const callerId = requireCanvasAccess(c, caller, { write: true });
+    const document = getRoomService().canvas.open(roomOf(c), callerId, body.content, {
       ...(body.pinned !== undefined ? { pinned: body.pinned } : {}),
       ...(body.channel ? { channel: body.channel } : {}),
     });
-    res.status(201).json(document);
-  } catch (err) {
-    sendRoomError(res, err, 'POST /:id/canvas');
-  }
+    return c.json(document, 201);
+  });
 });
 
 /**
@@ -216,16 +204,14 @@ router.post<CanvasParams>('/', (req, res) => {
  * Declared above `/:documentId` so the literal path is matched before the
  * parameter would swallow it.
  */
-router.post<CanvasParams>('/viewing', (req, res) => {
-  const body = parseBody(CanvasViewingRequestSchema, req.body, res);
-  if (!body) return;
-  try {
-    const caller = requireCanvasAccess(req, res, { personOnly: VIEWING_IS_A_PERSONS });
-    getRoomService().canvas.setViewing(req.params.id, caller, body.documentId);
-    res.status(204).end();
-  } catch (err) {
-    sendRoomError(res, err, 'POST /:id/canvas/viewing');
-  }
+router.post('/viewing', (c) => {
+  const body = parseOrRefuse(c, CanvasViewingRequestSchema, readJsonBody(c));
+  if (body instanceof Response) return body;
+  return roomRoute(c, 'POST /:id/canvas/viewing', (caller) => {
+    const callerId = requireCanvasAccess(c, caller, { personOnly: VIEWING_IS_A_PERSONS });
+    getRoomService().canvas.setViewing(roomOf(c), callerId, body.documentId);
+    return c.body(null, 204);
+  });
 });
 
 /**
@@ -235,49 +221,45 @@ router.post<CanvasParams>('/viewing', (req, res) => {
  * Applied in that order, and each part is optional, so a caller that only wants
  * to pin something does not have to re-send its content.
  */
-router.patch<CanvasParams>('/:documentId', (req, res) => {
-  const body = parseBody(UpdateCanvasDocumentRequestSchema, req.body, res);
-  if (!body) return;
-  try {
+router.patch('/:documentId', (c) => {
+  const body = parseOrRefuse(c, UpdateCanvasDocumentRequestSchema, readJsonBody(c));
+  if (body instanceof Response) return body;
+  return roomRoute(c, 'PATCH /:id/canvas/:documentId', (caller) => {
     // Gated FIRST, and this is the route the gap was found on: a body of `{}`
     // asks for nothing, so every branch below was skipped and the handler
     // answered 200 with the document it had already fetched — to a caller who
     // may not be a member, out of a room that may be archived.
-    const caller = requireCanvasAccess(req, res, { write: true });
+    const callerId = requireCanvasAccess(c, caller, { write: true });
     const service = getRoomService();
-    const roomId = req.params.id;
-    const documentId = req.params.documentId;
+    const roomId = roomOf(c);
+    const documentId = c.req.param('documentId');
     let document = service.canvas.get(roomId, documentId);
     if (body.content !== undefined) {
-      document = service.canvas.update(roomId, caller, documentId, body.content);
+      document = service.canvas.update(roomId, callerId, documentId, body.content);
     }
     if (body.pinned !== undefined) {
-      document = service.canvas.pin(roomId, caller, documentId, body.pinned);
+      document = service.canvas.pin(roomId, callerId, documentId, body.pinned);
     }
     if (body.activate === true) {
-      document = service.canvas.activate(roomId, caller, documentId);
+      document = service.canvas.activate(roomId, callerId, documentId);
     }
     if (!document) {
       // Reached only when the body asked for nothing AND the document is gone.
       // The service raises this for every other path, so the two answers agree.
       throw new RoomError('CANVAS_DOCUMENT_NOT_FOUND', 'No such document on this room’s canvas');
     }
-    res.json(document);
-  } catch (err) {
-    sendRoomError(res, err, 'PATCH /:id/canvas/:documentId');
-  }
+    return c.json(document);
+  });
 });
 
 /** DELETE /:documentId — take a document off the table. */
-router.delete<CanvasParams>('/:documentId', (req, res) => {
-  try {
-    const caller = requireCanvasAccess(req, res, { write: true });
-    getRoomService().canvas.close(req.params.id, caller, req.params.documentId);
-    res.status(204).end();
-  } catch (err) {
-    sendRoomError(res, err, 'DELETE /:id/canvas/:documentId');
-  }
-});
+router.delete('/:documentId', (c) =>
+  roomRoute(c, 'DELETE /:id/canvas/:documentId', (caller) => {
+    const callerId = requireCanvasAccess(c, caller, { write: true });
+    getRoomService().canvas.close(roomOf(c), callerId, c.req.param('documentId'));
+    return c.body(null, 204);
+  })
+);
 
 /**
  * POST /:documentId/thread — open this document's discussion, or re-open it.
@@ -290,15 +272,13 @@ router.delete<CanvasParams>('/:documentId', (req, res) => {
  * It wakes nobody. The entry addresses no one and is never dispatched, exactly
  * as the line a canvas change already writes (ADR `260911-200302`).
  */
-router.post<CanvasParams>('/:documentId/thread', (req, res) => {
-  try {
-    const caller = requireCanvasAccess(req, res, { write: true });
-    const thread = getRoomService().canvas.discuss(req.params.id, caller, req.params.documentId);
-    res.status(thread.created ? 201 : 200).json(thread);
-  } catch (err) {
-    sendRoomError(res, err, 'POST /:id/canvas/:documentId/thread');
-  }
-});
+router.post('/:documentId/thread', (c) =>
+  roomRoute(c, 'POST /:id/canvas/:documentId/thread', (caller) => {
+    const callerId = requireCanvasAccess(c, caller, { write: true });
+    const thread = getRoomService().canvas.discuss(roomOf(c), callerId, c.req.param('documentId'));
+    return c.json(thread, thread.created ? 201 : 200);
+  })
+);
 
 /**
  * POST /:documentId/editing — say you are editing this document, or that you
@@ -309,17 +289,20 @@ router.post<CanvasParams>('/:documentId/thread', (req, res) => {
  * was deferred and never landed. It lapses on its own once the heartbeats stop,
  * evaluated lazily, so a browser that crashed mid-edit cannot wedge a document.
  */
-router.post<CanvasParams>('/:documentId/editing', (req, res) => {
-  const body = parseBody(CanvasEditingRequestSchema, req.body, res);
-  if (!body) return;
-  try {
-    const caller = requireCanvasAccess(req, res, { write: true });
-    res.json(
-      getRoomService().canvas.heartbeat(req.params.id, caller, req.params.documentId, body.editing)
+router.post('/:documentId/editing', (c) => {
+  const body = parseOrRefuse(c, CanvasEditingRequestSchema, readJsonBody(c));
+  if (body instanceof Response) return body;
+  return roomRoute(c, 'POST /:id/canvas/:documentId/editing', (caller) => {
+    const callerId = requireCanvasAccess(c, caller, { write: true });
+    return c.json(
+      getRoomService().canvas.heartbeat(
+        roomOf(c),
+        callerId,
+        c.req.param('documentId'),
+        body.editing
+      )
     );
-  } catch (err) {
-    sendRoomError(res, err, 'POST /:id/canvas/:documentId/editing');
-  }
+  });
 });
 
 /**
@@ -383,16 +366,12 @@ function reviewDeps(): CanvasDiffReviewDeps {
  * operator's because on a single-person install they are the same caller; on one
  * with login on they are not, and this is the line.
  */
-router.get<CanvasParams>('/:documentId/diff', (req, res) => {
-  void (async () => {
-    try {
-      requireCanvasAccess(req, res, { personOnly: REVIEWING_IS_A_PERSONS });
-      res.json(await readCanvasDiffReview(reviewDeps(), req.params.id, req.params.documentId));
-    } catch (err) {
-      sendRoomError(res, err, 'GET /:id/canvas/:documentId/diff');
-    }
-  })();
-});
+router.get('/:documentId/diff', (c) =>
+  roomRoute(c, 'GET /:id/canvas/:documentId/diff', async (caller) => {
+    requireCanvasAccess(c, caller, { personOnly: REVIEWING_IS_A_PERSONS });
+    return c.json(await readCanvasDiffReview(reviewDeps(), roomOf(c), c.req.param('documentId')));
+  })
+);
 
 /**
  * PUT /:documentId/diff — put a reviewed file back in the member's working copy.
@@ -409,19 +388,15 @@ router.get<CanvasParams>('/:documentId/diff', (req, res) => {
  * ownership line is drawn at the MERGE and nowhere else. Archived rooms refuse
  * it too, like every other canvas write.
  */
-router.put<CanvasParams>('/:documentId/diff', (req, res) => {
-  const body = parseBody(RoomCanvasDiffWriteRequestSchema, req.body, res);
-  if (!body) return;
-  void (async () => {
-    try {
-      requireCanvasAccess(req, res, { write: true, personOnly: REVIEWING_IS_A_PERSONS });
-      res.json(
-        await writeCanvasDiffReview(reviewDeps(), req.params.id, req.params.documentId, body)
-      );
-    } catch (err) {
-      sendRoomError(res, err, 'PUT /:id/canvas/:documentId/diff');
-    }
-  })();
+router.put('/:documentId/diff', (c) => {
+  const body = parseOrRefuse(c, RoomCanvasDiffWriteRequestSchema, readJsonBody(c));
+  if (body instanceof Response) return body;
+  return roomRoute(c, 'PUT /:id/canvas/:documentId/diff', async (caller) => {
+    requireCanvasAccess(c, caller, { write: true, personOnly: REVIEWING_IS_A_PERSONS });
+    return c.json(
+      await writeCanvasDiffReview(reviewDeps(), roomOf(c), c.req.param('documentId'), body)
+    );
+  });
 });
 
 export default router;

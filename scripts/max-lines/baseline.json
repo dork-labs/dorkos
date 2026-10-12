@@ -47,7 +47,6 @@
     "apps/server/src/index.ts": 3573,
     "apps/server/src/routes/relay-adapters.ts": 543,
     "apps/server/src/routes/remote-communities.ts": 721,
-    "apps/server/src/routes/rooms.ts": 749,
     "apps/server/src/routes/sessions.ts": 696,
     "apps/server/src/routes/test-control.ts": 699,
     "apps/server/src/services/browser/egress/broker/broker.ts": 660,

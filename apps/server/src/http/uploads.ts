@@ -16,9 +16,9 @@
  * `express.json` did. A request that is not multipart, or has no body, is no
  * files and no error, as multer called `next()` for it.
  *
- * What multer did that these routes never relied on is left out: text fields
- * are checked against the same limits and then dropped, since no route read
- * `req.body` on an upload.
+ * Text fields are checked against the same limits and gathered the way multer
+ * gathered them into `req.body` (`http/form-fields.ts`); {@link parseUploadForm}
+ * hands them back beside the files, for a route that reads them.
  *
  * @module http/uploads
  */
@@ -32,6 +32,7 @@ import type { HttpBindings } from '@hono/node-server';
 import busboy, { type Busboy } from 'busboy';
 import type { Context } from 'hono';
 import typeis from 'type-is';
+import { appendFormField, emptyFormFields, type FormFields } from './form-fields.js';
 
 /** Why the parser refused a body: multer's `MulterError` codes. */
 export type UploadErrorCode =
@@ -43,6 +44,7 @@ export type UploadErrorCode =
   | 'LIMIT_FIELD_COUNT'
   | 'LIMIT_UNEXPECTED_FILE'
   | 'MISSING_FIELD_NAME'
+  | 'INVALID_FIELD_NAME'
   | 'STREAM_DESTROYED';
 
 /** multer's message for each code, which routes put on the wire. */
@@ -55,6 +57,7 @@ const MESSAGES: Record<UploadErrorCode, string> = {
   LIMIT_FIELD_COUNT: 'Too many fields',
   LIMIT_UNEXPECTED_FILE: 'Unexpected file field',
   MISSING_FIELD_NAME: 'Field name missing',
+  INVALID_FIELD_NAME: 'Invalid field name',
   STREAM_DESTROYED: 'File stream was destroyed',
 };
 
@@ -123,6 +126,8 @@ export interface UploadLimits {
   fileSize?: number;
   /** The most files in one body. */
   files?: number;
+  /** The most text fields in one body. */
+  fields?: number;
 }
 
 /** Options for {@link parseUploads}. */
@@ -137,6 +142,19 @@ export interface ParseUploadsOptions {
   filter?: (file: UploadFileInfo) => Error | undefined;
   /** Disk storage; without it, files are kept in memory. */
   disk?: UploadDiskStorage;
+  /**
+   * How a filename with no declared charset is decoded: multer's
+   * `defParamCharset`, `latin1` unless a route asks for `utf8`.
+   */
+  paramCharset?: 'latin1' | 'utf8';
+}
+
+/** A multipart body read whole: its files and its text fields. */
+export interface UploadForm {
+  /** The stored files, in the order they arrived. */
+  files: UploadedFile[];
+  /** The text fields, as multer gathered them into `req.body`. */
+  fields: FormFields;
 }
 
 /** The Hono environment {@link parseUploads} reads: the raw Node request. */
@@ -157,14 +175,33 @@ type UploadEnv = { Bindings: HttpBindings };
  * @param options - See {@link ParseUploadsOptions}.
  * @returns The stored files.
  */
-export function parseUploads<E extends UploadEnv>(
+export async function parseUploads<E extends UploadEnv>(
   c: Context<E>,
   options: ParseUploadsOptions
 ): Promise<UploadedFile[]> {
+  return (await parseUploadForm(c, options))?.files ?? [];
+}
+
+/**
+ * Read a `multipart/form-data` body: {@link parseUploads}, keeping the text
+ * fields too.
+ *
+ * Resolves `undefined` for a request that is not multipart or has no body,
+ * where multer left `req.body` as the JSON stage set it; the route reads that
+ * instead. Rejects as {@link parseUploads} does.
+ *
+ * @param c - The Hono context.
+ * @param options - See {@link ParseUploadsOptions}.
+ * @returns The files and fields, or `undefined` when the body is not multipart.
+ */
+export function parseUploadForm<E extends UploadEnv>(
+  c: Context<E>,
+  options: ParseUploadsOptions
+): Promise<UploadForm | undefined> {
   const req = c.env.incoming;
   // `type-is` is multer's own test: a body (a length or chunked encoding) of
   // any `multipart/*` type.
-  if (!typeis(req, ['multipart'])) return Promise.resolve([]);
+  if (!typeis(req, ['multipart'])) return Promise.resolve(undefined);
   return new Promise((resolve, reject) => new UploadRead(req, options, resolve, reject).start());
 }
 
@@ -187,11 +224,12 @@ class UploadRead {
   private readonly stored: UploadedFile[] = [];
   private readonly writing = new Set<UploadedFile>();
   private readonly removedOnAbort = new Set<UploadedFile>();
+  private readonly fields = emptyFormFields();
 
   constructor(
     private readonly req: IncomingMessage,
     private readonly options: ParseUploadsOptions,
-    private readonly resolve: (files: UploadedFile[]) => void,
+    private readonly resolve: (form: UploadForm) => void,
     private readonly reject: (error: unknown) => void
   ) {
     this.filesLeft = options.maxCount ?? Infinity;
@@ -204,7 +242,7 @@ class UploadRead {
         headers: req.headers,
         limits: busboyLimits(this.options.limits),
         // multer's default: a filename with no declared charset is latin1.
-        defParamCharset: 'latin1',
+        defParamCharset: this.options.paramCharset ?? 'latin1',
       });
     } catch (err) {
       // A multipart type with no boundary: refused before a byte is read.
@@ -217,7 +255,7 @@ class UploadRead {
       if (!req.readableEnded) this.requestFailed(new Error('Request closed'));
     });
     const parser = this.parser;
-    parser.on('field', (name, _value, info) => this.onField(name, info));
+    parser.on('field', (name, value, info) => this.onField(name, value, info));
     parser.on('file', (name, stream, info) => this.onFile(name, stream, info));
     parser.on('error', (err) => this.abort(err));
     parser.on('partsLimit', () => this.abort(new UploadLimitError('LIMIT_PART_COUNT')));
@@ -230,15 +268,22 @@ class UploadRead {
     req.pipe(parser);
   }
 
-  /** A text field: checked against the limits, then dropped. */
+  /** A text field: checked against the limits, then gathered. */
   private onField(
     name: string | null | undefined,
+    value: string,
     info: { nameTruncated: boolean; valueTruncated: boolean }
   ): void {
     if (name == null) return this.abort(new UploadLimitError('MISSING_FIELD_NAME'));
+    const fieldname = decodeFormDataName(name);
     if (info.nameTruncated) return this.abort(new UploadLimitError('LIMIT_FIELD_KEY'));
     if (info.valueTruncated) {
-      return this.abort(new UploadLimitError('LIMIT_FIELD_VALUE', decodeFormDataName(name)));
+      return this.abort(new UploadLimitError('LIMIT_FIELD_VALUE', fieldname));
+    }
+    try {
+      appendFormField(this.fields, fieldname, value);
+    } catch {
+      this.abort(new UploadLimitError('INVALID_FIELD_NAME', fieldname));
     }
   }
 
@@ -428,7 +473,10 @@ class UploadRead {
     req.resume();
     const settle = () => {
       if (error !== undefined) this.reject(error);
-      else this.resolve(this.slots.flatMap((slot) => (slot.file ? [slot.file] : [])));
+      else {
+        const files = this.slots.flatMap((slot) => (slot.file ? [slot.file] : []));
+        this.resolve({ files, fields: this.fields });
+      }
     };
     if (error !== undefined && req.readable && !req.destroyed) {
       let called = false;

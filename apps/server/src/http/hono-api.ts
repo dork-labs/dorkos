@@ -86,6 +86,7 @@ import { createPushRoutes, type PushRouterDeps } from '../routes/push.js';
 import { createRelayRoutes, type RelayRouteDeps } from '../routes/relay.js';
 import { relayWebhookBodyRule } from '../routes/relay-webhooks.js';
 import readCursorRoutes from '../routes/read-cursors.js';
+import roomRoutes from '../routes/rooms.js';
 import { createRemoteAccessRoutes } from '../routes/remote-access.js';
 import { createSearchRoutes, type SearchRouterDeps } from '../routes/search.js';
 import { createSessionLocationsRoutes } from '../routes/session-locations.js';
@@ -282,6 +283,7 @@ export function createHonoApi(options: HonoApiOptions): Hono<ApiEnv> {
   app.route('/api/workspaces', workspaceRoutes);
   app.route('/api/projects', projectRoutes);
   app.route('/api/read-cursors', readCursorRoutes);
+  app.route('/api/rooms', roomRoutes);
   app.route('/api/files', fileRoutes);
   app.route('/api/diff', diffRoutes);
   app.route('/api/workbench', workbenchServeRoutes);

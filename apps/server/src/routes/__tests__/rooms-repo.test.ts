@@ -64,6 +64,7 @@ vi.mock('../../services/core/config-manager.js', () => ({
 }));
 
 import { createApp, finalizeApp } from '../../app.js';
+import { composedListener } from '../../http/__tests__/composed-listener.js';
 import {
   createRoomSubsystem,
   setRoomMergeService,
@@ -90,9 +91,10 @@ function gitInRepo(args: string[], store: RoomRepoStore, roomId: string): Promis
   return runGit(args, store.repoPath(roomId), store.homeDir(roomId));
 }
 
-const app = createApp({ admission: new MainRequestAdmission() });
+const admission = new MainRequestAdmission();
+const app = createApp({ admission });
 finalizeApp(app);
-const testServer = listeningServer(app);
+const testServer = listeningServer(composedListener(app, admission));
 
 const ANA_PATH = '/agents/ana';
 
