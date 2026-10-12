@@ -226,7 +226,7 @@ export const marketplaceDomain: CapabilityDomain = {
       title: 'Recommend packages',
       description:
         'Recommend marketplace packages based on a context description (e.g., "I need to track errors in my Next.js app"). Uses keyword + tag matching. Returns top matches with relevance scores and reasons. ' +
-        'installed:true means a package by that name is already installed here, so do not offer it as new; ' +
+        'installed:true means it is already installed for you (globally or in your project), so do not offer it as new; ' +
         'no installed field means DorkOS could not tell.',
       tier: 'observe',
       area: null,
@@ -241,8 +241,14 @@ export const marketplaceDomain: CapabilityDomain = {
           annotations: { idempotentHint: true, openWorldHint: true },
         },
       },
-      invoke: async (deps, input) =>
-        unwrapMcpEnvelope(await createRecommendHandler(requireMarketplaceDeps(deps))(input)),
+      // The session's own project, so `installed` covers it beside the global
+      // scope and never another agent's project.
+      invoke: async (deps, input, context) =>
+        unwrapMcpEnvelope(
+          await createRecommendHandler(requireMarketplaceDeps(deps))(input, {
+            ...(context.cwd && { projectPath: context.cwd }),
+          })
+        ),
     }),
 
     // ── Mutations (gated by the confirmation provider) ──────────────────────

@@ -304,8 +304,9 @@ describe('in-session tool exposure', () => {
         registry: {
           assertAvailable: vi.fn(),
           providersForToolkit: async () => ({ providers: [], warnings: [] }),
+          listProviders: () => [],
         } as never,
-        catalog: vi.fn() as never,
+        catalog: vi.fn(async () => ({ services: [], warnings: [] })) as never,
       },
       connectorExecutionDeps: {
         authorization: { assertAvailable: vi.fn() } as never,
@@ -313,7 +314,14 @@ describe('in-session tool exposure', () => {
         access: { listRuntimeConnections: access } as never,
       },
     });
-    const call = async (connectorTurn?: object, connectorTools = true) => {
+    const call = async (
+      connectorTurn?: object,
+      connectorTools = true,
+      tool: { name: string; arguments: Record<string, unknown> } = {
+        name: 'connector_recommend',
+        arguments: { service: 'gmail' },
+      }
+    ) => {
       const session = { cwd: '/agents/alpha', ...(connectorTurn && { connectorTurn }) };
       const server = createDorkOsToolServer(
         createAgentSessionDeps(),
@@ -331,10 +339,7 @@ describe('in-session tool exposure', () => {
         server.instance.connect(serverTransport),
         client.connect(clientTransport),
       ]);
-      const result = (await client.callTool({
-        name: 'connector_recommend',
-        arguments: { service: 'gmail' },
-      })) as { content: Array<{ text: string }> };
+      const result = (await client.callTool(tool)) as { content: Array<{ text: string }> };
       await Promise.all([client.close(), server.instance.close()]);
       return JSON.parse(result.content[0]!.text) as { connected?: boolean };
     };
@@ -359,6 +364,11 @@ describe('in-session tool exposure', () => {
         })
       )
     ).not.toHaveProperty('connected');
+    // Only the allowlisted reader gets the principal: an ordinary in-session
+    // tool on the same connector turn never opens or receives it.
+    const notForOthers = vi.fn(async () => principal);
+    await call(turn(notForOthers), true, { name: 'connector_list_toolkits', arguments: {} });
+    expect(notForOthers).not.toHaveBeenCalled();
   });
 
   it('always-loads exactly the eleven a turn cannot search for first', async () => {

@@ -1,70 +1,87 @@
 import { describe, expect, it } from 'vitest';
 import type { ConnectorCatalogService } from '@dorkos/shared/connector-resource-schemas';
 
-import { INTENT_CATEGORY_KEYWORDS, matchServicesToIntent } from '../intent-match.js';
+import {
+  INTENT_CATEGORY_KEYWORDS,
+  INTENT_WEAK_CATEGORY_KEYWORDS,
+  matchServicesToIntent,
+} from '../intent-match.js';
 import { BUILT_IN_APPS } from '../../resources/built-in-apps.js';
 
-/** The popular apps as the catalog lists them, plus a few live ones with no shelf. */
-const CATALOG: ConnectorCatalogService[] = [
+const live = (serviceSlug: string, displayName: string) => ({
+  serviceSlug,
+  displayName,
+  iconKey: serviceSlug,
+  intents: [{ kind: 'account' as const, routes: [] }],
+});
+
+/**
+ * The popular apps as the catalog lists them, then live apps with no shelf —
+ * several of them deliberately named after everyday words. The live apps come
+ * FIRST in catalog order here, so a popular app winning a tie proves the
+ * popularity tie-break rather than catalog order.
+ */
+const CATALOG = [
+  live('agent_mail', 'Agent Mail'),
+  live('zoho_mail', 'Zoho Mail'),
+  live('monday', 'monday.com'),
+  live('close', 'Close'),
+  live('helpscout', 'Help Scout'),
+  live('microsoft_teams', 'Microsoft Teams'),
+  live('deployhq', 'DeployHQ'),
+  live('salesforce', 'Salesforce'),
   ...BUILT_IN_APPS.map((app) => ({
-    serviceSlug: app.serviceSlug,
-    displayName: app.displayName,
-    iconKey: app.serviceSlug,
-    intents: [{ kind: 'account' as const, routes: [] }],
+    ...live(app.serviceSlug, app.displayName),
     category: app.category,
+    popular: true,
   })),
-  {
-    serviceSlug: 'microsoft_teams',
-    displayName: 'Microsoft Teams',
-    iconKey: 'microsoft_teams',
-    intents: [{ kind: 'account' as const, routes: [] }],
-  },
-  {
-    serviceSlug: 'deployhq',
-    displayName: 'DeployHQ',
-    iconKey: 'deployhq',
-    intents: [{ kind: 'account' as const, routes: [] }],
-  },
 ] as unknown as ConnectorCatalogService[];
 
-const slugs = (intent: string, limit = 5) =>
-  matchServicesToIntent(intent, CATALOG, limit).map((match) => match.service.serviceSlug);
+const slugs = (intent: string, limit = 5, preferred?: string[]) =>
+  matchServicesToIntent(intent, CATALOG, limit, {
+    ...(preferred && { preferred: new Set(preferred) }),
+  }).map((match) => match.service.serviceSlug);
 
 describe('matchServicesToIntent', () => {
-  it('points "let the team know the deploy is done" at chat apps', () => {
-    const found = matchServicesToIntent('let the team know the deploy is done', CATALOG, 5);
-    expect(found.map((match) => match.service.serviceSlug)).toEqual([
-      // Named by a whole word of its name ("Teams"), so it leads.
-      'microsoft_teams',
-      'slack',
-      'telegram',
-    ]);
-    expect(found.find((match) => match.service.serviceSlug === 'slack')?.matchedBy).toEqual([
-      'category',
-    ]);
-  });
-
-  it('points "message the team" at chat apps', () => {
-    expect(slugs('message the team')).toEqual(expect.arrayContaining(['slack', 'telegram']));
-  });
-
-  it('points "summarise my inbox" at email apps', () => {
-    expect(slugs('summarise my inbox')).toEqual(['gmail', 'outlook']);
+  it.each([
+    ['let the team know the deploy is done', ['slack', 'telegram']],
+    ['message the team', ['slack', 'telegram']],
+    ['summarise my inbox', ['gmail', 'outlook']],
+    ['check my mail', ['gmail', 'outlook']],
+    ['file a bug report', ['linear', 'jira', 'asana', 'todoist']],
+    ['close the ticket', ['linear', 'jira', 'asana', 'todoist']],
+    ['schedule a meeting with Sam on monday', ['googlecalendar']],
+    ['add the meeting to google calendar', ['googlecalendar']],
+    ['send an email with outlook', ['outlook', 'gmail']],
+    ['update the deal in salesforce', ['salesforce', 'hubspot']],
+    [
+      'post the release notes to slack',
+      ['slack', 'notion', 'googledocs', 'googlesheets', 'airtable'],
+    ],
+  ])('%s → %j', (intent, expected) => {
+    expect(slugs(intent)).toEqual(expected);
   });
 
   it('returns nothing, never a padded guess, when nothing fits', () => {
     expect(slugs('water the plants on the balcony')).toEqual([]);
-    expect(slugs('the and of to')).toEqual([]);
+    expect(slugs('the and of to this')).toEqual([]);
+    // Everyday words that happen to be app names do not pick an app alone.
+    expect(slugs('help me write a status update')).toEqual([]);
+    expect(slugs('call me on monday')).toEqual([]);
   });
 
-  it('puts an app the description names ahead of its shelf-mates', () => {
-    expect(slugs('send an email with outlook')[0]).toBe('outlook');
-    expect(slugs('add the meeting to google calendar')[0]).toBe('googlecalendar');
+  it('needs a second word before an ambiguous shelf word picks a shelf', () => {
+    expect(slugs('open an issue')).toEqual([]);
+    expect(slugs('open an issue in the backlog')[0]).toBe('linear');
   });
 
   it('matches whole words of a name, never part of one', () => {
     // "deploy" is a piece of "DeployHQ", not a word of it.
     expect(slugs('deploy the site')).toEqual([]);
+  });
+
+  it('puts apps the caller already has first among equal scores', () => {
+    expect(slugs('summarise my inbox', 5, ['outlook'])).toEqual(['outlook', 'gmail']);
   });
 
   it('returns at most the limit, best first', () => {
@@ -73,10 +90,12 @@ describe('matchServicesToIntent', () => {
 
   it('maps every keyword to exactly one shelf', () => {
     const seen = new Map<string, string>();
-    for (const [category, keywords] of Object.entries(INTENT_CATEGORY_KEYWORDS)) {
-      for (const keyword of keywords) {
-        expect(seen.get(keyword), `${keyword} is on ${seen.get(keyword)} too`).toBeUndefined();
-        seen.set(keyword, category);
+    for (const table of [INTENT_CATEGORY_KEYWORDS, INTENT_WEAK_CATEGORY_KEYWORDS]) {
+      for (const [category, keywords] of Object.entries(table)) {
+        for (const keyword of keywords ?? []) {
+          expect(seen.get(keyword), `${keyword} is on ${seen.get(keyword)} too`).toBeUndefined();
+          seen.set(keyword, category);
+        }
       }
     }
   });

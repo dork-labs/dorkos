@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -9,6 +9,7 @@ import type { MarketplaceJson, MarketplaceJsonEntry } from '@dorkos/marketplace'
 import { createRecommendHandler, RecommendInputSchema } from '../tool-recommend.js';
 import type { MarketplaceMcpDeps } from '../marketplace-mcp-tools.js';
 import type { MarketplaceSource } from '../../marketplace/types.js';
+import * as installedScanner from '../../marketplace/installed-scanner.js';
 
 /** Build a noop logger so warn/info/error calls are silent during tests. */
 function buildLogger(): Logger {
@@ -300,9 +301,12 @@ describe('createRecommendHandler', () => {
         ]),
       },
     });
-    const handler = createRecommendHandler(deps);
+    const dorkHome = await mkdtemp(join(tmpdir(), 'dorkos-recommend-shape-'));
+    const handler = createRecommendHandler({ ...deps, dorkHome });
 
-    const result = await handler({ context: 'sentry errors', limit: 5 });
+    const result = await handler({ context: 'sentry errors', limit: 5 }).finally(() =>
+      rm(dorkHome, { recursive: true, force: true })
+    );
     const payload = parseResponse(result);
 
     expect(payload.recommendations).toHaveLength(1);
@@ -353,64 +357,118 @@ describe('createRecommendHandler', () => {
 });
 
 describe('createRecommendHandler — installed', () => {
-  const community = (): MarketplaceJson =>
-    marketplace('community', [
-      entry({ name: 'sentry-monitor', description: 'Track errors', tags: ['errors'] }),
-      entry({ name: 'error-digest', description: 'Daily errors summary', tags: ['errors'] }),
-    ]);
+  let dorkHome: string;
+  let project: string;
+  let otherProject: string;
 
-  it('says which recommended packages are already installed in any scope', async () => {
-    const dorkHome = await mkdtemp(join(tmpdir(), 'dorkos-recommend-installed-'));
-    try {
-      const dir = join(dorkHome, 'plugins', 'sentry-monitor', '.dork');
-      await mkdir(dir, { recursive: true });
+  beforeEach(async () => {
+    dorkHome = await mkdtemp(join(tmpdir(), 'dorkos-recommend-installed-'));
+    project = await mkdtemp(join(tmpdir(), 'dorkos-recommend-project-'));
+    otherProject = await mkdtemp(join(tmpdir(), 'dorkos-recommend-other-'));
+  });
+
+  afterEach(async () => {
+    for (const dir of [dorkHome, project, otherProject]) {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  /** Write an installed plugin under `<root>/plugins/<name>`, with its provenance when given. */
+  async function install(root: string, name: string, installedFrom?: string): Promise<void> {
+    const dir = join(root, 'plugins', name, '.dork');
+    await mkdir(dir, { recursive: true });
+    await writeFile(
+      join(dir, 'manifest.json'),
+      JSON.stringify({ schemaVersion: 1, type: 'plugin', name, version: '1.0.0' })
+    );
+    if (installedFrom) {
       await writeFile(
-        join(dir, 'manifest.json'),
+        join(dir, 'install-metadata.json'),
         JSON.stringify({
-          schemaVersion: 1,
-          type: 'plugin',
-          name: 'sentry-monitor',
+          name,
           version: '1.0.0',
+          type: 'plugin',
+          installedFrom,
+          installedAt: '2026-01-15T10:00:00.000Z',
         })
       );
-      const deps = {
-        ...buildDeps({ sources: [source('community')], marketplaces: { community: community() } }),
-        dorkHome,
-      };
-
-      const payload = parseResponse(
-        await createRecommendHandler(deps)({ context: 'errors', limit: 5 })
-      );
-
-      const byName = Object.fromEntries(payload.recommendations.map((r) => [r.name, r.installed]));
-      expect(byName).toEqual({ 'sentry-monitor': true, 'error-digest': false });
-    } finally {
-      await rm(dorkHome, { recursive: true, force: true });
     }
+  }
+
+  const depsFor = (logger = buildLogger()): MarketplaceMcpDeps => ({
+    ...buildDeps({
+      sources: [source('community')],
+      marketplaces: {
+        community: marketplace('community', [
+          entry({ name: 'sentry-monitor', description: 'Track errors', tags: ['errors'] }),
+          entry({ name: 'error-digest', description: 'Daily errors summary', tags: ['errors'] }),
+          entry({ name: 'error-pager', description: 'Page on errors', tags: ['errors'] }),
+        ]),
+      },
+      logger,
+    }),
+    dorkHome,
+    // Another agent's project is registered; it must not count for this caller.
+    listAgentScopes: () => [{ projectPath: otherProject }],
+  });
+
+  const flags = async (deps: MarketplaceMcpDeps, projectPath?: string) => {
+    const payload = parseResponse(
+      await createRecommendHandler(deps)(
+        { context: 'errors', limit: 5 },
+        projectPath ? { projectPath } : {}
+      )
+    );
+    return Object.fromEntries(
+      payload.recommendations.map((r) => [r.name, 'installed' in r ? r.installed : 'unknown'])
+    );
+  };
+
+  it('counts a global install from the same marketplace, and nothing else', async () => {
+    await install(dorkHome, 'sentry-monitor', 'community');
+    expect(await flags(depsFor())).toEqual({
+      'sentry-monitor': true,
+      'error-digest': false,
+      'error-pager': false,
+    });
+  });
+
+  it("counts the caller's own project, never another agent's", async () => {
+    await install(join(project, '.dork'), 'error-digest', 'community');
+    await install(join(otherProject, '.dork'), 'error-pager', 'community');
+    expect(await flags(depsFor(), project)).toMatchObject({
+      'error-digest': true,
+      'error-pager': false,
+    });
+    // Without a known project only the global scope is read.
+    expect(await flags(depsFor())).toMatchObject({ 'error-digest': false });
+  });
+
+  it('says false for a same-named package from another marketplace', async () => {
+    await install(dorkHome, 'sentry-monitor', 'someone-else');
+    expect((await flags(depsFor()))['sentry-monitor']).toBe(false);
+  });
+
+  it('leaves installed out when a same-named install does not say where it came from', async () => {
+    await install(dorkHome, 'sentry-monitor');
+    expect((await flags(depsFor()))['sentry-monitor']).toBe('unknown');
   });
 
   it('leaves installed out, never false, when the installed scan fails', async () => {
     const logger = buildLogger();
-    const deps: MarketplaceMcpDeps = {
-      ...buildDeps({
-        sources: [source('community')],
-        marketplaces: { community: community() },
-        logger,
-      }),
-      listAgentScopes: () => {
-        throw new Error('agent registry offline');
-      },
-    };
+    await install(dorkHome, 'sentry-monitor', 'community');
+    const deps = depsFor(logger);
+    const scan = vi
+      .spyOn(installedScanner, 'scanInstallationRecords')
+      .mockRejectedValueOnce(new Error('disk unreadable'));
 
-    const payload = parseResponse(
-      await createRecommendHandler(deps)({ context: 'errors', limit: 5 })
-    );
+    const result = await flags(deps);
 
-    expect(payload.recommendations).toHaveLength(2);
-    for (const rec of payload.recommendations) expect(rec).not.toHaveProperty('installed');
+    expect(Object.values(result)).toEqual(['unknown', 'unknown', 'unknown']);
     expect(logger.warn).toHaveBeenCalledWith(
       expect.stringContaining('could not read installed packages'),
-      expect.objectContaining({ error: 'agent registry offline' })
+      expect.objectContaining({ error: 'disk unreadable' })
     );
+    scan.mockRestore();
   });
 });

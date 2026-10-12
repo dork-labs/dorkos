@@ -20,7 +20,10 @@ import type { MarketplaceJsonEntry } from '@dorkos/marketplace';
 
 import type { MarketplaceMcpDeps } from './marketplace-mcp-tools.js';
 import { recommend } from './recommend-engine.js';
-import { scanUpdateView } from '../marketplace/flows/update-installed.js';
+import {
+  scanInstallationRecords,
+  type InstalledPackage,
+} from '../marketplace/installed-scanner.js';
 
 /**
  * Input schema for the `marketplace_recommend` MCP tool. Exposed as a raw
@@ -48,22 +51,66 @@ export type RecommendInput = z.infer<z.ZodObject<typeof RecommendInputSchema>>;
 /** Default package type assigned to entries with no explicit `type` field. */
 const DEFAULT_PACKAGE_TYPE = 'plugin' as const;
 
+/** One installed package, as far as matching a recommendation needs. */
+type InstalledRef = Pick<InstalledPackage, 'name' | 'type' | 'installedFrom'>;
+
 /**
- * The names of every package installed in any scope, or `undefined` when the
- * scan failed and nothing can be said.
+ * The packages installed where the caller would use them: the global scope,
+ * plus the caller's own project when it is known. Another agent's project is
+ * not scanned, so a package only that agent has does not count. `undefined`
+ * when the scan failed and nothing can be said.
  *
- * @param deps - Marketplace dependency bundle; reads `dorkHome` and `listAgentScopes`.
+ * @param deps - Marketplace dependency bundle; reads `dorkHome`.
+ * @param projectPath - The calling session's project, when the surface knows it.
  */
-async function installedNames(deps: MarketplaceMcpDeps): Promise<ReadonlySet<string> | undefined> {
+async function installedInScope(
+  deps: MarketplaceMcpDeps,
+  projectPath: string | undefined
+): Promise<readonly InstalledRef[] | undefined> {
   try {
-    const records = await scanUpdateView(deps, undefined);
-    return new Set(records.map((record) => record.package.name));
+    const records = await scanInstallationRecords(
+      deps.dorkHome,
+      projectPath ? { projectPath } : { agents: [] }
+    );
+    return records.map((record) => record.package);
   } catch (err) {
     deps.logger.warn('[marketplace_recommend] could not read installed packages', {
       error: err instanceof Error ? err.message : String(err),
     });
     return undefined;
   }
+}
+
+/**
+ * Whether this recommended package is installed. `true` when an install has
+ * its name, type and marketplace; `false` when none has its name and type, or
+ * every one that does came from another marketplace. `undefined` when an
+ * install with its name and type does not record where it came from, so it
+ * cannot be told apart from a same-named package elsewhere — or when the scan
+ * failed.
+ *
+ * @param installed - What {@link installedInScope} found, or `undefined`.
+ * @param name - The package name.
+ * @param type - The package type.
+ * @param marketplace - The marketplace the recommendation came from.
+ */
+function installedFlag(
+  installed: readonly InstalledRef[] | undefined,
+  name: string,
+  type: string,
+  marketplace: string
+): boolean | undefined {
+  if (!installed) return undefined;
+  const same = installed.filter((pkg) => pkg.name === name && pkg.type === type);
+  if (same.some((pkg) => pkg.installedFrom === marketplace)) return true;
+  if (same.some((pkg) => pkg.installedFrom === undefined)) return undefined;
+  return false;
+}
+
+/** Who is asking, as far as the installed check needs. */
+export interface RecommendCaller {
+  /** The calling session's project directory, when the surface knows it. */
+  projectPath?: string;
 }
 
 /**
@@ -76,10 +123,11 @@ async function installedNames(deps: MarketplaceMcpDeps): Promise<ReadonlySet<str
  * with stub source manager + fetcher implementations.
  *
  * @param deps - Marketplace dependency bundle (source manager, fetcher, logger).
- * @returns An async handler function suitable for `server.tool(...)`.
+ * @returns An async handler function suitable for `server.tool(...)`, taking the
+ *   input and, optionally, who is asking ({@link RecommendCaller}).
  */
 export function createRecommendHandler(deps: MarketplaceMcpDeps) {
-  return async (args: RecommendInput) => {
+  return async (args: RecommendInput, caller: RecommendCaller = {}) => {
     const sources = (await deps.sourceManager.list()).filter((s) => s.enabled);
     const allEntries: { entry: MarketplaceJsonEntry; marketplace: string }[] = [];
 
@@ -101,7 +149,8 @@ export function createRecommendHandler(deps: MarketplaceMcpDeps) {
     }
 
     const scored = recommend(allEntries, args.context, args.limit);
-    const installed = scored.length > 0 ? await installedNames(deps) : undefined;
+    const installed =
+      scored.length > 0 ? await installedInScope(deps, caller.projectPath) : undefined;
 
     return {
       content: [
@@ -109,15 +158,19 @@ export function createRecommendHandler(deps: MarketplaceMcpDeps) {
           type: 'text' as const,
           text: JSON.stringify(
             {
-              recommendations: scored.map((s) => ({
-                name: s.entry.name,
-                type: s.entry.type ?? DEFAULT_PACKAGE_TYPE,
-                description: s.entry.description ?? '',
-                marketplace: s.marketplace,
-                relevanceScore: s.score,
-                reason: s.reason,
-                ...(installed && { installed: installed.has(s.entry.name) }),
-              })),
+              recommendations: scored.map((s) => {
+                const type = s.entry.type ?? DEFAULT_PACKAGE_TYPE;
+                const flag = installedFlag(installed, s.entry.name, String(type), s.marketplace);
+                return {
+                  name: s.entry.name,
+                  type,
+                  description: s.entry.description ?? '',
+                  marketplace: s.marketplace,
+                  relevanceScore: s.score,
+                  reason: s.reason,
+                  ...(flag !== undefined && { installed: flag }),
+                };
+              }),
             },
             null,
             2

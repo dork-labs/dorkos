@@ -11,6 +11,7 @@ import { createServerPrincipal } from '../../principal/server-principal.js';
 import type { ConnectorAccessQueryService } from '../../execution/access-query-service.js';
 import type { CapabilityDeps, CapabilityHandlerContext } from '../../../core/capabilities/index.js';
 import { CapabilityToolError } from '../../../core/capabilities/mcp-envelope.js';
+import { CATALOG_TRUNCATED_WARNING } from '../connector-recommend.js';
 
 const recommend = connectorDomain.capabilities.find((c) => c.id === 'connector.recommend')!;
 
@@ -146,6 +147,48 @@ describe('connector_recommend', () => {
     });
   });
 
+  describe('reads the whole catalog', () => {
+    it('scores an app listed past the first pages of a long catalog', async () => {
+      // 600 live apps after the built-in ones: Zendesk sits past the 500th service.
+      const toolkits = Array.from({ length: 599 }, (_, index) => ({
+        slug: `app_${String(index).padStart(3, '0')}`,
+        displayName: `App ${String(index).padStart(3, '0')}`,
+        authKind: 'oauth2' as const,
+      }));
+      toolkits.push({ slug: 'zendesk', displayName: 'Zendesk', authKind: 'oauth2' as const });
+      connectorDeps.registry.register(
+        new FakeConnectorProvider({ type: 'nango', custody: 'self-host', toolkits })
+      );
+      const pages = vi.spyOn(connectorDeps, 'catalog');
+
+      const result = (await invoke({ intent: 'reply to the zendesk queue' })) as {
+        services: Array<{ serviceSlug: string }>;
+        warnings: unknown[];
+      };
+
+      expect(result.services.map((s) => s.serviceSlug)).toEqual(['zendesk']);
+      expect(result.warnings).toEqual([]);
+      expect(pages.mock.calls.length).toBeGreaterThan(4);
+    });
+
+    it('says so when the catalog is longer than one search reads', async () => {
+      connectorDeps = {
+        ...connectorDeps,
+        catalog: async ({ cursor }) => ({
+          services: [],
+          warnings: [],
+          nextCursor: String(Number(cursor ?? 0) + 100),
+        }),
+      };
+      const result = (await invoke({ intent: 'summarise my inbox' })) as {
+        services: unknown[];
+        warnings: Array<{ message: string }>;
+      };
+      expect(result.services).toEqual([]);
+      expect(result.warnings).toEqual([CATALOG_TRUNCATED_WARNING]);
+    });
+  });
+
   describe('service mode stays as it was', () => {
     it('returns only recommendations and warnings when no turn principal reached the call', async () => {
       const result = await invoke({ service: 'gmail' });
@@ -165,12 +208,10 @@ describe('connector_recommend', () => {
       })) as { services: Array<{ serviceSlug: string; connected?: boolean }> };
 
       expect(gmail.connected).toBe(true);
-      expect(intent.services).toEqual([
-        expect.objectContaining({ serviceSlug: 'gmail', connected: true }),
-        // Outlook has an account route here only through the built-in shelf;
-        // with no route the flag stays unknown rather than false.
-        expect.not.objectContaining({ connected: true }),
-      ]);
+      expect(intent.services.map((s) => s.serviceSlug)).toEqual(['gmail', 'outlook']);
+      expect(intent.services[0]).toMatchObject({ serviceSlug: 'gmail', connected: true });
+      // No route reaches Outlook here, so the flag stays unknown rather than false.
+      expect(intent.services[1]).not.toHaveProperty('connected');
       expect(listRuntimeConnections).toHaveBeenCalledWith(principal);
       expect(listRuntimeConnections.mock.calls.every(([p]) => p === principal)).toBe(true);
     });
@@ -204,6 +245,21 @@ describe('connector_recommend', () => {
         { serverPrincipal: runtimePrincipal() }
       );
       expect(result.connected).toBe(true);
+    });
+
+    it('leaves connected out for an app that may be set up as a chat app instead', async () => {
+      // Slack has a chat-app route and an account route; the bot set up under
+      // Messaging is not in this view, so "no account" is not "not set up".
+      const { access } = accessListing({ connections: [] } as Listed);
+      const result = await invoke(
+        { service: 'slack' },
+        { connectorExecutionDeps: { access } } as Partial<CapabilityDeps>,
+        { serverPrincipal: runtimePrincipal() }
+      );
+      expect(result.recommendations).toEqual(
+        expect.arrayContaining([expect.objectContaining({ kind: 'relay-adapter' })])
+      );
+      expect(result).not.toHaveProperty('connected');
     });
 
     it('leaves connected out for a chat-only app, which has no account to have', async () => {

@@ -4,8 +4,9 @@
  * Private accounts, connection flows, and attachment mutations are deliberately
  * absent. The one account fact here is `connector_recommend`'s `connected` flag,
  * read from the calling agent's own granted connections and nobody else's
- * (see `recommend/connector-recommend.ts`). Agents execute only through the authenticated internal connector MCP
- * server, whose capabilities recheck exact canonical grants for every call.
+ * (see `recommend/connector-recommend.ts`). Agents execute only through the
+ * authenticated internal connector MCP server, whose capabilities recheck
+ * exact canonical grants for every call.
  *
  * @module services/connectors/connector-capabilities
  */
@@ -154,10 +155,11 @@ export const connectorDomain: CapabilityDomain = {
       description:
         'Find the best way to connect an app. Pass service with an exact service id, or ' +
         'intent with the task in plain words (for example "let the team know the deploy is ' +
-        'done") to get up to 5 apps that could do it, best first; an empty list means none ' +
-        'fits. connected:true means an account for it is already shared with you; false ' +
-        'means none is; no connected field means DorkOS could not tell. Account setup and ' +
-        'access changes remain owner actions in the DorkOS app.',
+        'done") to get up to 5 apps that could do it, best first. An empty list means none ' +
+        'fits, unless a warning says the app list was cut short. connected:true means an ' +
+        'account for it is already shared with you; false means none is; no connected field ' +
+        'means DorkOS could not tell (a chat app may be set up under Messaging). Account ' +
+        'setup and access changes remain owner actions in the DorkOS app.',
       tier: 'observe',
       area: null,
       areaNote: 'connected accounts have their own grant model',
