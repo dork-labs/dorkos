@@ -14,6 +14,11 @@
  * its turn once this one is gone. The arbitration
  * itself is `BottomSlot` in `shared/ui`, which knows nothing about any of these.
  *
+ * **One "Getting started" list at a time** (DOR-2845). While the panel's own
+ * Getting started zone still has a suggestion, the card here steps aside and
+ * the next one in line takes the slot, the name and role prompts included. The
+ * card comes back once the zone has nothing left to suggest.
+ *
  * @module features/dashboard-sidebar/ui/bottom-slot/SidebarBottomSlot
  */
 import { usePromoCandidate } from '@/layers/features/feature-promos';
@@ -26,6 +31,7 @@ import {
   useProfilePrompt,
 } from '@/layers/features/onboarding';
 import { BottomSlot, type BottomSlotCandidate } from '@/layers/shared/ui';
+import type { SidebarModel } from '../../model/build-sidebar-model';
 import { useBootState } from '../../model/boot/use-boot-state';
 import { useUpdateReady } from './use-update-ready';
 import { UpdatePill } from './UpdatePill';
@@ -36,19 +42,25 @@ import { UpdatePill } from './UpdatePill';
  * Mounted by `DashboardSidebar` (so a marketplace body takeover replaces it
  * along with the rest of the body) and, on a phone, at the bottom of the Home
  * panel.
+ *
+ * @param props.model - The panel's model, read only for whether its own
+ *   Getting started zone still has something to suggest.
  */
-export function SidebarBottomSlot() {
+export function SidebarBottomSlot({ model }: { model: SidebarModel }) {
   const { shouldShowGettingStarted, dismiss: dismissOnboarding } = useOnboarding();
+  const gettingStartedCardShown = shouldShowGettingStarted && !model.gettingStartedPending;
   const update = useUpdateReady();
-  const identityPrompt = useIdentityPrompt();
-  const prompt = useProfilePrompt();
+  // The prompts wait for the card, so they are told whether it is really on
+  // screen — or, held back for the list, it would ask them nowhere.
+  const identityPrompt = useIdentityPrompt({ gettingStartedCardShown });
+  const prompt = useProfilePrompt({ gettingStartedCardShown });
   const promo = usePromoCandidate('dashboard-sidebar');
   const boot = useBootState();
 
   const candidates: BottomSlotCandidate[] = [
     {
       id: 'getting-started',
-      show: shouldShowGettingStarted,
+      show: gettingStartedCardShown,
       render: () => <ProgressCard onDismiss={dismissOnboarding} />,
     },
     {

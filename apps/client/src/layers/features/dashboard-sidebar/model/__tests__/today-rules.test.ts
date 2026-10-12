@@ -532,7 +532,8 @@ describe('selectTodayItems — membership', () => {
     };
     const row = selectTodayItems(state).find((entry) => entry.key === 'session:ses-orphan');
     expect(row?.glyph).toEqual({ kind: 'icon', icon: 'session' });
-    expect(row?.primary).toBe('Session');
+    // "Chat", never "Session" (DOR-2845).
+    expect(row?.primary).toBe('Chat');
   });
 
   it('reserves a verb line for a streaming session and nothing else', () => {
