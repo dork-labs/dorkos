@@ -42,4 +42,7 @@ export type {
   IdentityQuestion,
 } from './model/use-identity-prompt';
 export { IdentityPromptCard } from './ui/IdentityPromptCard';
+// The first run's offer to join the official DorkOS space (DOR-2873): inside the
+// Getting started card, or the bottom slot's own card while that one waits.
+export { useFirstRunSpaceOffer } from './model/use-first-run-space-offer';
 export type { IdentityPromptCardProps } from './ui/IdentityPromptCard';

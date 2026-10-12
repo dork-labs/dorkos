@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
 /**
  * The cockpit's bottom-slot PRIORITY: getting started > update > identity
- * prompt > profile prompt > promo (spec `sidebar-simplification` D4).
+ * prompt > profile prompt > the DorkOS community offer > promo (spec
+ * `sidebar-simplification` D4, DOR-2873).
  *
  * `bottom-slot.test.tsx` proves the arbiter picks the first candidate whose
  * `show` is true. That is a mechanism; this is the product decision — that a
@@ -24,6 +25,8 @@ let updateKind: 'command' | 'desktop-install-failed' = 'command';
 let identityVisible = false;
 let profileVisible = false;
 let promoQualifies = false;
+/** The first run's offer to join the official DorkOS space is due (DOR-2873). */
+let spaceOffer = false;
 /** What the slot told the two prompts about the getting-started card. */
 let promptOptions: Array<{ gettingStartedCardShown?: boolean } | undefined> = [];
 
@@ -51,6 +54,11 @@ vi.mock('@/layers/features/onboarding', () => ({
   ProgressCard: () => <div data-testid="card-getting-started" />,
   IdentityPromptCard: () => <div data-testid="card-identity-prompt" />,
   ProfilePromptCard: () => <div data-testid="card-profile-prompt" />,
+  useFirstRunSpaceOffer: () => spaceOffer,
+}));
+
+vi.mock('@/layers/entities/community', () => ({
+  OfficialSpaceOfferCard: () => <div data-testid="card-official-space-offer" />,
 }));
 
 vi.mock('@/layers/features/feature-promos', () => ({
@@ -96,7 +104,14 @@ import type { SidebarModel } from '../model/build-sidebar-model';
 const EMPTY_MODEL: SidebarModel = { zones: [] };
 
 /** Every card the slot can draw, in the priority order under test. */
-const RUNGS = ['getting-started', 'update', 'identity-prompt', 'profile-prompt', 'promo'] as const;
+const RUNGS = [
+  'getting-started',
+  'update',
+  'identity-prompt',
+  'profile-prompt',
+  'official-space-offer',
+  'promo',
+] as const;
 
 /** Which card the slot actually drew, or `null`. */
 function drawn(): string | null {
@@ -113,6 +128,7 @@ beforeEach(() => {
   identityVisible = false;
   profileVisible = false;
   promoQualifies = false;
+  spaceOffer = false;
   promptOptions = [];
 });
 
@@ -201,11 +217,54 @@ describe('SidebarBottomSlot priority', () => {
       updateReady = peeled <= 1;
       identityVisible = peeled <= 2;
       profileVisible = peeled <= 3;
+      spaceOffer = peeled <= 4;
       promoQualifies = true;
       render(<SidebarBottomSlot model={EMPTY_MODEL} />);
       winners.push(drawn());
       cleanup();
     }
     expect(winners).toEqual([...RUNGS]);
+  });
+
+  describe('the offer to join the DorkOS community (DOR-2873)', () => {
+    /** Day one: the card waits while the panel's own Getting started list has suggestions. */
+    const DAY_ONE: SidebarModel = { zones: [], gettingStartedPending: true };
+
+    it('waits for the name and role prompts on day one, then takes the slot', () => {
+      gettingStarted = identityVisible = profileVisible = spaceOffer = promoQualifies = true;
+      render(<SidebarBottomSlot model={DAY_ONE} />);
+      expect(drawn()).toBe('identity-prompt');
+      cleanup();
+
+      // The name was answered or skipped; the role question is next.
+      identityVisible = false;
+      render(<SidebarBottomSlot model={DAY_ONE} />);
+      expect(drawn()).toBe('profile-prompt');
+      cleanup();
+
+      // Both answered or skipped: the community comes before marketing.
+      profileVisible = false;
+      render(<SidebarBottomSlot model={DAY_ONE} />);
+      expect(drawn()).toBe('official-space-offer');
+    });
+
+    it('rides inside the Getting started card while it shows, never here as well', () => {
+      gettingStarted = spaceOffer = true;
+      render(<SidebarBottomSlot model={EMPTY_MODEL} />);
+      expect(drawn()).toBe('getting-started');
+      expect(screen.queryByTestId('card-official-space-offer')).toBeNull();
+    });
+
+    it('takes its turn once the Getting started card is dismissed', () => {
+      spaceOffer = promoQualifies = true;
+      render(<SidebarBottomSlot model={EMPTY_MODEL} />);
+      expect(drawn()).toBe('official-space-offer');
+    });
+
+    it('stays dormant while the offer is not due (no official space, joined or skipped)', () => {
+      gettingStarted = true;
+      render(<SidebarBottomSlot model={DAY_ONE} />);
+      expect(drawn()).toBeNull();
+    });
   });
 });
