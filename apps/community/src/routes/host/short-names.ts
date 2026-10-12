@@ -18,7 +18,9 @@ import {
 } from '../../host/communities.js';
 import {
   assignShortName,
+  grantedShortNameSql,
   holdShortNames,
+  isGrantableReservedName,
   liftShortNameHold,
   normalizeShortName,
   shortNameAvailability,
@@ -61,14 +63,17 @@ export function registerShortNameRoutes(
     c.header('Cache-Control', 'no-store');
     limitLookup(c);
     const name = normalizeShortName(c.req.param('name'));
-    if (!name || reservedNames.has(name)) throw noCommunity();
+    // A reserved name opens a space only when a host operator gave it to that space.
+    if (!name || (reservedNames.has(name) && !isGrantableReservedName(name, reservedNames)))
+      throw noCommunity();
     const found = await pool.query<{ community_id: string; current: string | null }>(
       `SELECT n.community_id,
               (SELECT m.short_name FROM community_short_names m
                 WHERE m.community_id=n.community_id AND m.state='current') AS current
        FROM community_short_names n JOIN communities c ON c.id=n.community_id
-       WHERE n.short_name=$1 AND c.lifecycle IN ('active','archived','held')`,
-      [name]
+       WHERE n.short_name=$1 AND c.lifecycle IN ('active','archived','held')
+         AND (NOT $2::boolean OR ${grantedShortNameSql})`,
+      [name, reservedNames.has(name)]
     );
     const row = found.rows[0];
     if (!row) throw noCommunity();

@@ -147,7 +147,7 @@
     "packages/relay/src/adapters/telegram/telegram-adapter.ts": 509,
     "packages/relay/src/relay-publish.ts": 654,
     "packages/shared/src/account-usage.ts": 577,
-    "packages/shared/src/community-admin-wire.ts": 646,
+    "packages/shared/src/community-admin-wire.ts": 618,
     "packages/shared/src/community-wire.ts": 1032,
     "packages/shared/src/config-schema.ts": 1359,
     "packages/shared/src/transport.ts": 1113,

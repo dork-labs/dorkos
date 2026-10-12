@@ -124,7 +124,7 @@ Then watch for failed notices. The server logs each attempt that does not delive
 
 ## Host API keys
 
-A program that creates or manages communities on this host, such as a provisioning script, should use its own host API key rather than a person's password. Create one on the host page under **API keys**, or with the offline command. Give each program only the permissions it needs: `communities:read` to list communities, `communities:write` to create unclaimed communities and send owner claims, `communities:lifecycle` to suspend and resume, hold and release, set deletion notice dates, and delete a held community or cancel that deletion, `communities:import` to [bring a community in from another server](#imports), `communities:legal_hold` to place and release a [legal hold](#legal-holds), `communities:takedown` to take down content by its ID, `communities:erasure_journal` to copy the [erasure journal](#erasure-requests) off the server, `communities:ownership` to ask to replace an owner who has left (see [below](#replacing-an-owner-who-has-left)), and `accounts:close` to [close someone's account](#closing-someones-account). No other permission includes `communities:ownership`, so a key that suspends communities cannot replace owners. No key can read what happens inside a community, and no key can create, replace, or revoke keys. A key with `communities:write` can create a community and hand out the link that makes someone its owner, so give that permission only to programs you trust to decide who owns a community.
+A program that creates or manages communities on this host, such as a provisioning script, should use its own host API key rather than a person's password. Create one on the host page under **API keys**, or with the offline command. Give each program only the permissions it needs: `communities:read` to list communities, `communities:write` to create unclaimed communities and send owner claims, `communities:lifecycle` to suspend and resume, hold and release, set deletion notice dates, and delete a held community or cancel that deletion, `communities:import` to [bring a community in from another server](#imports), `communities:legal_hold` to place and release a [legal hold](#legal-holds), `communities:takedown` to take down content by its ID, `communities:erasure_journal` to copy the [erasure journal](#erasure-requests) off the server, `communities:ownership` to ask to replace an owner who has left (see [below](#replacing-an-owner-who-has-left)), `accounts:close` to [close someone's account](#closing-someones-account), and `communities:reserved_names` to [give a reserved web address to a new community](#giving-a-reserved-web-address-to-a-community). No other permission includes `communities:ownership`, so a key that suspends communities cannot replace owners. No key can read what happens inside a community, and no key can create, replace, or revoke keys. A key with `communities:write` can create a community and hand out the link that makes someone its owner, so give that permission only to programs you trust to decide who owns a community.
 
 Keep `communities:lifecycle` off a provisioning key. A program that creates communities and sets their limits needs `communities:read` and `communities:write`, nothing more. `communities:lifecycle` can suspend a community, which cuts off every member's DorkOS connections and agents at once, and it can delete a held community once its notice date passes. Give it to a separate key, used by the few people or programs that decide when a community stops.
 
@@ -200,6 +200,29 @@ Only you (signed in) and keys with the legal-holds permission see a hold's note.
 ## Web addresses
 
 Give a community a short **web address** under **Web address** on its host record, so people can open it at `https://your-host/<name>`. Changing the address keeps the old one working and moves visitors to the new one; no other community can take it. Release an old address only on purpose, for example after a trademark request, with **Release** beside it or `DELETE /api/v1/host/communities/:id/short-names/:name`. A released address, or the address of a deleted community, stays unavailable for `COMMUNITY_SHORT_NAME_COOLOFF_DAYS` (90 days unless you change it). To end one address's cool-off early, use `DELETE /api/v1/host/short-name-holds/:name`. Rotating `COMMUNITY_AUTH_SECRET` ends every cool-off early. To keep names for yourself, list them in `COMMUNITY_RESERVED_SHORT_NAMES`, separated by commas. If a community already has an address that later becomes reserved, by an upgrade or by your own list, that address stops opening it; the server names each such community in its log when it starts, so you can give it another.
+
+### Giving a reserved web address to a community
+
+Some reserved addresses exist only so nobody can pose as you: the built-in `support`, `billing`, `official` and `dorkos`, and every name you list in `COMMUNITY_RESERVED_SHORT_NAMES`. You can still give one of them to a community of your own, such as your official space. Nobody else can: the ordinary create and rename routes refuse every reserved name. Addresses that are pages of this server, such as `api` or `host`, can never be given out.
+
+It works only while you create the community. Use a key that has `communities:reserved_names` and nothing else, issued for this one job and revoked after:
+
+```bash
+docker compose -f apps/community/compose.yml run --rm --no-deps -T community \
+  node dist-server/host-keys.js issue --label "Official space" --scope communities:reserved_names --expires-in-days 1
+```
+
+Then create the community, with a reason that says why it gets the address:
+
+```bash
+curl -sS https://your-host/api/v1/host/communities/reserved-name \
+  -H "Authorization: Bearer dkh_…" -H 'Content-Type: application/json' \
+  -d '{"idempotencyKey":"official-space-1","name":"Your official space","shortName":"official","reason":"Our official space"}'
+```
+
+It answers like any new unclaimed community: an `ownerClaimToken`, shown once. Send its claim link, `https://your-host/claim#claim=<ownerClaimToken>`, to the person who will own the space. They open it and sign in with their own account, and the address starts working once they have claimed it. A retry with the same `idempotencyKey` and body returns the same community without the token; reissue the claim if it was lost. The address can be given out once: a second request for it is refused while any community holds it.
+
+The server keeps a record of each address given out: the address, the community, the reason, and the key or person who gave it. It also writes a `community.create_reserved_name` host audit row. Revoke the key when you are done.
 
 ## Removed messages and files
 

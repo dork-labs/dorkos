@@ -10,7 +10,7 @@ import { KeepOwnership } from './owner-replacement/KeepOwnership.js';
 import { OwnerReplacementClaim } from './owner-replacement/OwnerReplacementClaim.js';
 import { KEEP_OWNERSHIP_PATH, OWNER_REPLACEMENT_CLAIM_PATH } from './owner-replacement/links.js';
 import { ShortNameRoute } from './components/ShortNameRoute.js';
-import { COMMUNITY_RESERVED_SHORT_NAMES } from '@dorkos/shared/community-admin-wire';
+import { COMMUNITY_PATH_SHORT_NAMES } from '@dorkos/shared/community-admin-wire';
 import { parseShortNamePath } from '../short-names/path.js';
 import { SignInLinkedNotice } from './sign-up/SignInLinkedNotice.js';
 import { COMMUNITY_EMAIL_LINK_PAGES } from '@dorkos/shared/community-wire';
@@ -18,7 +18,7 @@ import { ResetPassword } from './email-links/ResetPassword.js';
 import { EmailSignIn } from './email-links/EmailSignIn.js';
 import { ConfirmEmail } from './email-links/ConfirmEmail.js';
 
-const RESERVED_SHORT_NAMES: ReadonlySet<string> = new Set(COMMUNITY_RESERVED_SHORT_NAMES);
+const RESERVED_SHORT_NAMES: ReadonlySet<string> = new Set(COMMUNITY_PATH_SHORT_NAMES);
 
 /**
  * Select the browser surface from an exact root or tenant-qualified path, with the one-time
