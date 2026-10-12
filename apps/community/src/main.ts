@@ -2,6 +2,7 @@ import { fileURLToPath } from 'node:url';
 import { serve } from '@hono/node-server';
 import { serveStatic } from '@hono/node-server/serve-static';
 import { Pool } from 'pg';
+import { COMMUNITY_PATH_SHORT_NAMES } from '@dorkos/shared/community-admin-wire';
 import { COMMUNITY_EMAIL_LINK_PAGES } from '@dorkos/shared/community-wire';
 import { createCommunityApp } from './app.js';
 import { createLiveHub } from './live/app-hub.js';
@@ -137,7 +138,9 @@ app.get(
 );
 registerShortNamePages(app, {
   indexPath: fileURLToPath(new URL('../dist/index.html', import.meta.url)),
-  reservedNames: config.reservedShortNames,
+  // Only paths are never a short address; every other reserved name is served, and the lookup
+  // opens it only when a host operator gave it to a space.
+  reservedNames: new Set(COMMUNITY_PATH_SHORT_NAMES),
 });
 // A name a community already holds may have become reserved since, by an upgrade or the host's
 // own list; that address no longer opens the space, so say so where the server admin will see it.

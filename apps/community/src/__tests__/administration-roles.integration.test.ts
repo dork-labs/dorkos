@@ -1488,6 +1488,31 @@ const actions: Action<unknown>[] = [
       expect(receipt.rows).toEqual([{ lifecycle: 'pending_owner' }]);
     },
   }),
+  define<{ key: string; name: string }>({
+    rule: 'Create a community under a reserved name: host operator only, never an owner or member',
+    route: 'POST /host/communities/reserved-name',
+    allowed: HOST_ROLES,
+    status: 201,
+    prepare: async () => {
+      // One name a host reserved for itself per attempt, since each can be given out once.
+      const name = `rsv-${randomUUID().slice(0, 8)}`;
+      config.reservedShortNames.add(name);
+      return { key: `roles-reserved-${randomUUID()}`, name };
+    },
+    call: ({ key, name }) => ({
+      method: 'POST',
+      path: '/api/v1/host/communities/reserved-name',
+      body: { idempotencyKey: key, name: 'Reserved by matrix', shortName: name, reason: 'Matrix' },
+    }),
+    effect: async (body, _role, { name }) => {
+      const created = JSON.parse(body.toString('utf8')) as { community: { id: string } };
+      const grant = await pool.query(
+        'SELECT community_id FROM reserved_name_grants WHERE short_name=$1',
+        [name]
+      );
+      expect(grant.rows).toEqual([{ community_id: created.community.id }]);
+    },
+  }),
   define<{ id: string; grantId: string }>({
     rule: 'Issue a pending-owner claim: host operator only',
     route: 'POST /host/communities/:id/owner-claims/reissue',
