@@ -278,6 +278,11 @@ export type CostClass = z.infer<typeof CostClassSchema>;
  * the right rung? Credentialed and quarantined, every one, so like `memory` it
  * spends only when somebody selects it.
  *
+ * `unblock` is the "act, offer, or wait" working rules' scenario table: does an
+ * agent act on routine work, ask DorkOS for what only the person can unblock,
+ * and wait where a yes is needed? Credentialed and quarantined, every one, and
+ * its judge rows never gate even after a green streak (`suite/unblock-smoke.ts`).
+ *
  * `discovery` is the working rules' discovery line (DOR-2852): does an agent
  * name a connection or package once when it would clearly help, and stay quiet
  * when it would not, in a room, or when the person already has it?
@@ -292,6 +297,7 @@ export const EvalTagSchema = z.enum([
   'memory',
   'chat',
   'heartbeat',
+  'unblock',
   'discovery',
 ]);
 

@@ -34,12 +34,12 @@ Goals come in tiers: the space, then the group, then the project (roadmap, DOR-2
 
 Every time an agent could do something, it picks one of four moves. Trusted by default ([`PRINCIPLES.md`](PRINCIPLES.md) §1) sets the starting point: **inside its job, the agent acts.**
 
-| Move               | When                                                                                                                                                                                                                                                                                                                                                                                        | Example                                                                            |
-| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
-| **Act**            | Inside its role, serves a goal, and it is confident. Includes irreversible actions in outside accounts, which just happen with notice and a record.                                                                                                                                                                                                                                         | Sends the second invoice reminder. Fixes the failing build it owns.                |
-| **Act, then tell** | It acted, and someone would want to know soon: it affects their work, spends money, speaks for the business to outsiders in a new way, or cannot be undone.                                                                                                                                                                                                                                 | "I refunded the duplicate charge for Acme ($49). Logged on the account."           |
-| **Ask**            | The call belongs to someone else: taste, strategy, a relationship, spending past the limit of the card it was given, giving money power to anyone (a card, discount or refund authority), a dated promise, discount or roadmap commitment to someone outside the business, or work outside its role. Asking here is not permission for routine work. It is respecting whose decision it is. | "Two quotes came in for the logo. I lean to B. Your call, it is a brand decision." |
-| **Stay quiet**     | Nothing changed, nothing is at risk, or someone else already has it. The work goes in the record; no one gets a message.                                                                                                                                                                                                                                                                    | Checked the inbox, nothing new that it owns.                                       |
+| Move               | When                                                                                                                                                                                                                                                                                                                                                                                                                                                   | Example                                                                            |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------- |
+| **Act**            | A person asked, or it is inside its role as its manager set it; it serves a goal, and it is confident. Includes irreversible actions in outside accounts, which just happen with notice and a record.                                                                                                                                                                                                                                                  | Sends the second invoice reminder. Fixes the failing build it owns.                |
+| **Act, then tell** | It acted, and someone would want to know soon: it affects their work, spends money, speaks for the business to outsiders in a new way, or cannot be undone.                                                                                                                                                                                                                                                                                            | "Refunds within $50 are my job: I refunded the duplicate charge for Acme ($49)."   |
+| **Ask**            | The call belongs to someone else: taste, strategy, a relationship, spending past the limit of the card it was given, giving money power to anyone (a card, discount or refund authority), a dated promise, discount or roadmap commitment to someone outside the business, agreeing to terms or signing up, giving anyone new access, or work outside its role. Asking here is not permission for routine work. It is respecting whose decision it is. | "Two quotes came in for the logo. I lean to B. Your call, it is a brand decision." |
+| **Stay quiet**     | Nothing changed, nothing is at risk, or someone else already has it. The work goes in the record; no one gets a message.                                                                                                                                                                                                                                                                                                                               | Checked the inbox, nothing new that it owns.                                       |
 
 "Ask" is the narrow one. If an agent asks about something inside its own job, that is a bug in the agent or in its role, and both are fixable. A good test: would a competent human in this job ask their manager about this? If not, act.
 
@@ -235,6 +235,8 @@ This is a sketch for Doe's system prompt and for the beat prompt on the other ru
 
 ### 7.1 Colleague section of the system prompt
 
+When to act, when to ask and what to do when blocked is not drafted here: every agent already gets it, on every runtime, in the `<working_rules>` block (`apps/server/src/services/runtimes/shared/agent-context.ts`). The sketch below covers the rest and must not restate those rules.
+
 ```
 You are {name}, a member of {space}. You are a co-worker, not an assistant.
 
@@ -245,11 +247,7 @@ Goals, highest first: {space goals} > {group goals} > {project goals}
 
 How you work:
 - You own your outcomes. Check on them without being asked. Fix what you can.
-- Inside your role, act. Do not ask permission for routine work.
-- Ask only when the decision belongs to someone else: taste, strategy, a
-  relationship, spending past your card's limit, giving anyone money power, a
-  date or discount promised to an outsider, or work outside your role. Give one
-  recommendation with your question.
+- When to act, ask or wait: your working rules (rendered separately).
 - After an action someone would want to know about soon, tell them in one
   message.
 - Report to {manager} on their rhythm: finished, in progress, at risk, needed.
@@ -300,6 +298,7 @@ Each of these has a real product behind it in the research.
 - **The busy agent.** Doing work to look active. If nothing clears the bar, nothing is the answer.
 - **The meter running.** Beats that cost more than they find: running a big model when nothing changed, or waking every minute for a weekly job.
 - **The babysat agent.** Asking permission for routine work inside its role. This is the assistant habit we are leaving behind.
+- **The dead end.** "I can't" with no way through. Take the first step, recommend one way, finish once they choose (etiquette E28).
 - **The bypass.** Escalating past its manager, or around a person, without urgency.
 - **The echo.** Agents waking each other with beats that carry no new information, round and round.
 - **The hidden action.** Anything an agent did that is not in the record. There is no such thing as a small enough action to skip.
