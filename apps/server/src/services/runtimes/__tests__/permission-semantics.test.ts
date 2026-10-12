@@ -398,14 +398,15 @@ describe('the dial every runtime can offer', () => {
 
   it('never leaves a runtime with a stop it declares two trust modes for by accident', () => {
     // A second mode at a stop is a REFINEMENT — a switch inside the stop, which
-    // something has to render. Claude's `auto` is the only one that ships, so a
-    // new one showing up here is a UI decision, not a data detail.
+    // something has to render. Claude's `dontAsk` ("Never ask", inside Ask
+    // first) and `auto` (inside Act) are the ones that ship, so a new one
+    // showing up here is a UI decision, not a data detail.
     const refined = PROFILES.flatMap((caps) =>
       resolveTrustStops(caps.permissionModes.values)
         .filter((s) => s.refinements.length > 0)
         .map((s) => `${caps.type}/${s.stop}`)
     );
-    expect(refined).toEqual(['claude-code/act']);
+    expect(refined).toEqual(['claude-code/ask', 'claude-code/act']);
   });
 });
 

@@ -175,10 +175,9 @@ describe('"Always Allow" and the session mode (DOR-1316)', () => {
     expect(resolved).toEqual([[bypass]]);
   });
 
-  it('refuses a mode this runtime does not declare, whatever the SDK calls it', async () => {
-    // `dontAsk` exists in the SDK and is deliberately not surfaced by
-    // claude-code. Storing it would make the session row display a posture the
-    // runtime never adopted.
+  it('never adopts Never ask off a card: a person picks it on the dial (DOR-2838)', async () => {
+    // "Always Allow" over one call is not a person choosing a chat that refuses
+    // everything it would ask about; that choice is made on the trust dial.
     const undeclared: PermissionUpdate = {
       type: 'setMode',
       mode: 'dontAsk',

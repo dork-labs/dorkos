@@ -92,7 +92,7 @@ import {
 import { resolveThinkingOptions } from './thinking-config.js';
 import { createEditBaselineCapture, detectSlashCommandName } from './message-sender-shared.js';
 import type { MessageSenderOpts } from './message-sender-shared.js';
-import { turnPermissionMode } from '../turn-permission.js';
+import { neverAsks, turnPermissionMode } from '../turn-permission.js';
 import { auditToolHookMatchers } from '../audit-tool-hooks.js';
 
 /**
@@ -838,6 +838,10 @@ export async function resolveLaunch(args: {
       serverName: request.serverName,
       mode: request.mode,
     });
+    // A chat set to "Never ask" declines an MCP server's request for input
+    // rather than putting it to a person, as it refuses tool asks
+    // (`createCanUseTool`). Read per request, through the turn's ceiling.
+    if (neverAsks(session)) return Promise.resolve({ action: 'decline' as const });
     return handleElicitation(session, request, signal);
   };
 

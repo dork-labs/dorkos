@@ -59,7 +59,7 @@ const PERMISSION_MODE_LABELS: Record<string, string> = {
   default: 'Default',
   acceptEdits: 'Accept edits',
   plan: 'Plan mode',
-  dontAsk: 'Don’t ask',
+  dontAsk: 'Never ask',
   bypassPermissions: 'Bypass all',
   auto: 'Auto',
 };

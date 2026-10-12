@@ -43,6 +43,14 @@ const CLAUDE: PermissionModeDescriptor[] = [
     promise: 'Asks before it edits a file or runs a command.',
   },
   {
+    id: 'dontAsk',
+    label: 'Never ask',
+    stop: 'ask',
+    asks: 'always',
+    reach: 'edit',
+    promise: 'Runs only what you allowed. Refuses the rest without asking you.',
+  },
+  {
     id: 'acceptEdits',
     label: 'Accept edits',
     stop: 'act',
@@ -437,7 +445,7 @@ export function TrustDialShowcases() {
           Stranded — the session is at a mode this runtime no longer offers
         </ShowcaseLabel>
         <ShowcaseDemo>
-          <LiveDial descriptors={CLAUDE} initial="dontAsk" />
+          <LiveDial descriptors={CLAUDE} initial="retired-mode" />
         </ShowcaseDemo>
 
         <ShowcaseLabel>Planning — the stops are frozen until Plan goes off</ShowcaseLabel>

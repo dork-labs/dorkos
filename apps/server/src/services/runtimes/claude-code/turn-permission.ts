@@ -11,11 +11,15 @@
  * SDK's mode, and through the warm process's fingerprint moves a live process
  * down and back up), the tool-approval callback, and `session_start`'s ceiling.
  *
+ * And what that mode then does with a call the CLI hands the tool gate
+ * (`resolveModeDecision`): run it, ask a person, or refuse it unasked.
+ *
  * @module services/runtimes/claude-code/turn-permission
  */
 import type { TurnPermissionBound, TurnPermissionCeiling } from '@dorkos/shared/agent-runtime';
 import { clampModeToCeiling } from '@dorkos/shared/permission-semantics';
-import { CLAUDE_CODE_CAPABILITIES } from './runtime-constants.js';
+import { PermissionModeSchema, type PermissionModeId } from '@dorkos/shared/schemas';
+import { CLAUDE_CODE_CAPABILITIES, NEVER_ASK_MODE_ID } from './runtime-constants.js';
 
 /**
  * The mode this turn runs at: the session's own mode, held to the turn's
@@ -35,21 +39,41 @@ export function turnPermissionMode<M extends string | undefined>(session: {
 /**
  * One Claude Code mode held to one ceiling, by what each mode declares.
  *
- * `dontAsk` is the one mode the SDK takes that DorkOS does not declare, so the generic clamp has
- * nothing to weigh it by and would fall back to the runtime's default, which ASKS: looser than a
- * mode that runs only what the agent's own allow rules permit and refuses everything else. So
- * wherever a ceiling admits the default it admits `dontAsk` too, and a stranger's turn keeps an
- * agent set to `dontAsk` there (spec `official-community-space` D10, D11). Under a stricter
- * ceiling, such as another agent's Plan, it is clamped like any other mode.
+ * "Never ask" (`dontAsk`) needs no rule of its own here: it declares Default's
+ * level (`runtime-constants.ts`), so wherever a ceiling admits Default it admits
+ * Never ask too, and a stranger's turn keeps an agent set to it there (spec
+ * `official-community-space` D10, D11). Under a stricter ceiling, such as another
+ * agent's Plan, it is clamped like any other mode. And because Default is
+ * declared first, a mode a ceiling refuses is replaced by Default, never by it.
  *
  * @param mode - The mode a person chose for the conversation.
  * @param ceiling - The ceiling the turn or its background work carries.
  */
 export function clampClaudeMode(mode: string, ceiling: TurnPermissionCeiling): string {
-  const declared = CLAUDE_CODE_CAPABILITIES.permissionModes;
-  if (mode === 'dontAsk' && clampModeToCeiling(declared, 'default', ceiling) === 'default')
-    return mode;
-  return clampModeToCeiling(declared, mode, ceiling);
+  return clampModeToCeiling(CLAUDE_CODE_CAPABILITIES.permissionModes, mode, ceiling);
+}
+
+/**
+ * Whether a mode is one only a person picks, on the trust dial: "Never ask". An
+ * agent cannot name it for a chat it starts, and an "Always allow" click does not
+ * adopt it (a click that allowed one call is not a choice to refuse the rest).
+ *
+ * @param mode - A mode id.
+ */
+export function isPersonOnlyMode(mode: string | undefined): boolean {
+  return mode === NEVER_ASK_MODE_ID;
+}
+
+/**
+ * Whether the tool gate is answering at "Never ask" right now: every ask it
+ * would raise (a tool approval, a question, an MCP server's request) is refused
+ * instead. Read through {@link gatePermissionMode}, so a ceiling stricter than
+ * Default (Plan) answers as Plan does.
+ *
+ * @param session - The session's chosen mode and both ceilings.
+ */
+export function neverAsks(session: CeilingedMode<string | undefined>): boolean {
+  return gatePermissionMode(session) === NEVER_ASK_MODE_ID;
 }
 
 /** A session's chosen mode with both ceilings the tool gate reads. */
@@ -138,4 +162,116 @@ export function ceilingOn(session: {
   if (stranger(session.turnPermissionCeiling) || stranger(session.backgroundPermissionCeiling))
     return 'stranger';
   return heldToACeiling(session) ? 'held' : 'none';
+}
+
+/**
+ * What a permission mode says to do with a tool call: run it, ask a person, or
+ * refuse it without asking ("Never ask").
+ */
+export type ModeDecision = 'allow' | 'ask' | 'refuse';
+
+/**
+ * Decide what a session's permission mode does with one tool call.
+ *
+ * This is the gate's closed end: an **exhaustive** switch over
+ * `PermissionMode` where every arm names its mode. Adding a member to the
+ * union without deciding here is a `tsc` error, not a silent auto-allow — the
+ * `never` assignment in the `default` arm enforces that, and it is the whole
+ * point of the function.
+ *
+ * The parameter is nevertheless a `PermissionModeId`: a mode id is
+ * whatever its runtime declared, and a session can be sitting in one this
+ * runtime has since retired (DOR-885). Such an id is not a member of the union
+ * and gets no arm — it asks, for the same reason every unnamed mode does.
+ *
+ * ## Why everything but `bypassPermissions` asks
+ *
+ * `canUseTool` is not the first gate — it is the last one. The Claude Code CLI
+ * runs its own permission engine first and only round-trips to this callback for
+ * calls it has **already decided need asking** (`--permission-prompt-tool stdio`;
+ * its `createCanUseTool` returns straight away on `allow`/`deny` and sends a
+ * `can_use_tool` control request only on `ask`). Verified against the shipped
+ * binary at SDK 0.3.177 / CLI 2.1.177:
+ *
+ * - Under `acceptEdits` the CLI auto-allows a write **inside** the allowed
+ *   working directories on its own. An edit that reaches DorkOS is one the CLI
+ *   escalated on purpose — `decisionReason: {type:'workingDir', reason:'Path is
+ *   outside allowed working directories'}`. Auto-accepting it here would
+ *   rubber-stamp exactly that escalation, which is how `~/.ssh/authorized_keys`
+ *   or `~/.zshrc` gets written by an agent that was told to stay in a project.
+ * - Under `acceptEdits` the CLI also auto-allows a 7-command filesystem
+ *   allowlist (`mkdir touch rm rmdir mv cp sed`) and any read-only command.
+ *   Every other shell command — `curl … | sh`, `npm install`, `python x.py` —
+ *   falls through to `ask` and lands here. Returning `allow` for those is what
+ *   let a Slack message run a shell command on the operator's machine (DOR-604).
+ *
+ * So the honest rule is: if a call got this far, someone should look at it. The
+ * shipped description "Auto-accept file edits; still prompt for other tools"
+ * stays true end-to-end — the auto-accepting happens one layer up, where it can
+ * still tell an in-workspace edit from an escape.
+ *
+ * The two bullets above are **still dated to SDK 0.3.177 / CLI 2.1.177 and were
+ * NOT re-verified** on the 0.3.224 bump — nobody re-read the CLI's permission
+ * engine for the `acceptEdits` working-directory escalation or the 7-command
+ * allowlist. Note that this function's own conclusion does not rest on them: it
+ * asks for everything but `bypassPermissions`, so a CLI that escalated MORE than
+ * these bullets describe is still handled correctly. They would only become wrong
+ * in the direction that matters if the CLI started escalating LESS.
+ *
+ * `bypassPermissions` is the sole exception, because it means "skip all tool
+ * approval prompts". Note this is a policy choice, not an unreachable branch:
+ * the CLI resolves most calls itself under that mode, but it still escalates a
+ * few — a dangerous `rm`/`rmdir`, for one — and those do arrive here, where this
+ * function allows them. That is the same "the CLI escalated on purpose and we
+ * rubber-stamped it" shape fixed above for `acceptEdits`, and it is deliberate
+ * only because the mode is named for it. Tracked separately.
+ *
+ * @param mode - The session's permission mode.
+ * `dontAsk` ("Never ask") is the one mode that answers `refuse`: what would
+ * ask anywhere else is refused, and nobody is asked. The CLI refuses those calls
+ * itself before this callback; `createCanUseTool` refuses the rest.
+ *
+ * @returns `'allow'` to run without asking, `'ask'` to raise an approval card,
+ *   `'refuse'` to deny without asking.
+ */
+export function resolveModeDecision(mode: PermissionModeId): ModeDecision {
+  const named = PermissionModeSchema.safeParse(mode);
+  // An id this runtime does not name has no rule here, and absence of a rule is
+  // never consent — the same answer the exhaustive arms below give every mode
+  // but `bypassPermissions`.
+  if (!named.success) return 'ask';
+  const namedMode = named.data;
+  switch (namedMode) {
+    // "Skip all tool approval prompts" — this mode IS consent. The CLI resolves
+    // most calls under it upstream, but not quite all (see the TSDoc above).
+    case 'bypassPermissions':
+      return 'allow';
+
+    // Every remaining mode asks, each for its own reason:
+    //   `default`     — "Prompt on tool use", exactly as shipped.
+    //   `acceptEdits` — the CLI already auto-accepted in-workspace writes; what
+    //                   reaches here left the working directory.
+    //   `auto`        — research-preview classifier; DorkOS still raises a card.
+    //   `plan`        — read-only planning; the CLI answers writes with "Cannot
+    //                   write to X while in plan mode". Nothing executes here.
+    case 'default':
+    case 'acceptEdits':
+    case 'auto':
+    case 'plan':
+      return 'ask';
+
+    // "Never ask": refuse what any other mode would ask about. Never `ask`
+    // (nobody may be asked) and never `allow` (that would widen it).
+    case 'dontAsk':
+      return 'refuse';
+
+    default: {
+      // Unreachable while the switch is exhaustive; if a new mode is added to
+      // `PermissionMode` this line stops compiling. At runtime an unknown mode
+      // asks — absence of a rule is never consent.
+      const exhaustive: never = namedMode;
+      void exhaustive;
+      return 'ask';
+    }
+  }
 }

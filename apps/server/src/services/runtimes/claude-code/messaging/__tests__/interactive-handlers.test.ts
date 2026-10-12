@@ -5,9 +5,9 @@ import {
   handleAskUserQuestion,
   handleElicitation,
   handleToolApproval,
-  resolveModeDecision,
   type ToolApprovalContext,
 } from '../interactive-handlers.js';
+import { resolveModeDecision } from '../../turn-permission.js';
 import type { InteractiveSession, PendingInteraction } from '../interaction-wait.js';
 import {
   autoModeStopStats,
@@ -585,7 +585,7 @@ describe('resolveModeDecision — the gate closes on non-match (DOR-604)', () =>
    * The whole decision table, written out. Each entry names the mode, the tool,
    * and the expected decision, so a regression says which cell moved.
    */
-  const TABLE: ReadonlyArray<[PermissionMode, 'allow' | 'ask']> = [
+  const TABLE: ReadonlyArray<[PermissionMode, 'allow' | 'ask' | 'refuse']> = [
     // bypassPermissions IS consent — this is the mode's documented meaning, and
     // the CLI resolves it upstream without ever consulting this callback.
     ['bypassPermissions', 'allow'],
@@ -596,7 +596,8 @@ describe('resolveModeDecision — the gate closes on non-match (DOR-604)', () =>
     ['acceptEdits', 'ask'],
     ['auto', 'ask'],
     ['plan', 'ask'],
-    ['dontAsk', 'ask'],
+    // "Never ask" refuses what every other mode asks about (DOR-2838).
+    ['dontAsk', 'refuse'],
   ];
 
   it.each(TABLE)('%s -> %s', (mode, expected) => {
