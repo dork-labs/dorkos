@@ -150,6 +150,10 @@ describe('PATCH /api/config: account usage catches up before the answer', () => 
     };
   }
 
+  // The first test in this file pays for loading the config and runtimes routers cold (about
+  // 1.2 s idle, against about 0.1 s for every later test), and under heavy load that alone passed
+  // vitest's 5 s default (DOR-2550). The scan itself waits on `hold()` signals, not the clock, so
+  // the timeout at the end is generous rather than tuned, as in DOR-2478.
   it('lists no standalone `default` once a save registers its folder, even with a scan in flight', async () => {
     const mods = await mountApp();
     const main = accountFolder('.claude');
@@ -188,7 +192,7 @@ describe('PATCH /api/config: account usage catches up before the answer', () => 
     const ids = after.body.accounts.map((a: { accountId: string }) => a.accountId);
     expect(ids).not.toContain('default');
     expect(ids).toContain('claude');
-  });
+  }, 30_000);
 
   it('does not loop when the reconcile writes config itself', async () => {
     const mods = await mountApp();
