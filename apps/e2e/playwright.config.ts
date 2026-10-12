@@ -576,7 +576,7 @@ export default defineConfig({
       //
       // **NO CONTENT-SECURITY-POLICY REACHES THIS LEG.** Vite serves its own
       // shell with no CSP header, so nothing a spec does here exercises the
-      // shipped policy (`SHELL_CSP` in `apps/server/src/app.ts`), which only
+      // shipped policy (`SHELL_CSP` in `apps/server/src/http/client-files.ts`), which only
       // goes out with the BUILT shell an `NODE_ENV=production` server serves.
       // That used to be the whole story: a directive that broke a real browser
       // surface stayed green through this entire suite, and
@@ -732,7 +732,7 @@ export default defineConfig({
     // `NODE_ENV=production`, serving the built client itself. No Vite anywhere:
     // that is the point, because the shell Vite serves carries no
     // `Content-Security-Policy` and the shell this one serves carries the real
-    // policy at both of its doors (`SHELL_CSP` in `apps/server/src/app.ts`).
+    // policy at both of its doors (`SHELL_CSP` in `apps/server/src/http/client-files.ts`).
     // `tests/production/shipped-shell.spec.ts` is the whole of what runs here,
     // and its header says why it is a smoke subset rather than the suite.
     //
