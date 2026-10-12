@@ -68,6 +68,9 @@ import { fileURLToPath } from 'node:url';
 const FACTS_PARAMETERS: Record<string, string> = {
   // `recordSettingsChange(activity, caller: Pick<RequestFacts, …>, …)`
   'extension-decisions.ts': 'caller',
+  // Each handler binds `const caller = honoRequestFacts(c)` and spreads it.
+  'runtimes-account-eligibility.ts': 'caller',
+  'tasks.ts': 'caller',
 };
 
 /** The `routes/` directory this guard walks. */
