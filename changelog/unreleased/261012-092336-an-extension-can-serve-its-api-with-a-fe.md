@@ -1,6 +1,6 @@
 ---
 covers:
-  - 'feat(extensions): an extension can serve its API with a fetch handler (DOR-2810, DOR-2687)'
+  - '#2812'
 ---
 
 ### Added
