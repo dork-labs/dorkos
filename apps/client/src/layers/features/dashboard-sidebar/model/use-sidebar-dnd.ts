@@ -41,6 +41,23 @@ export const COMPUTED_ZONE_REJECTION =
   'Heads up and Today fill themselves. Pin it to Library to keep it in place.';
 
 /**
+ * What a drop into Add-ons is answered with. Add-ons lists the pages mini apps
+ * add and nothing else, so a channel or an agent has no place there — and
+ * "Pin it to Library" would point at the section it is already in.
+ */
+export const ADD_ONS_REJECTION = 'Add-ons lists extension pages only.';
+
+/**
+ * The sentence a drop into one computed section is refused with — one source
+ * for the toast and the screen-reader announcement.
+ *
+ * @param zone - The computed section the drop landed in.
+ */
+export function computedZoneRejection(zone: ComputedZone): string {
+  return zone === 'addons' ? ADD_ONS_REJECTION : COMPUTED_ZONE_REJECTION;
+}
+
+/**
  * The three Library sections a row can sit in without belonging to a group.
  *
  * **Ids, not labels.** This travelled as the printed name ("Direct messages")
@@ -72,14 +89,18 @@ export type SidebarContainer =
    */
   | { kind: 'ungrouped'; section?: UngroupedSectionId }
   /**
-   * A computed zone — Heads up, Today or Getting started (R3).
+   * A computed zone — Heads up, Today or Getting started (R3) — or Library's
+   * Add-ons, which fills itself from the pages mini apps add.
    *
    * These are the only containers that are never a home: nothing is dragged
    * OUT of them, because the model gives every row in them `draggable: false`.
    * They exist as a container so a row dragged INTO one is rejected with a
    * sentence instead of springing back in silence.
    */
-  | { kind: 'computed'; zone: 'now' | 'today' | 'getting-started' };
+  | { kind: 'computed'; zone: ComputedZone };
+
+/** The sections that fill themselves, so nothing may be dropped into them. */
+export type ComputedZone = 'now' | 'today' | 'getting-started' | 'addons';
 
 /**
  * The `data` object a draggable/droppable node carries. dnd-kit reuses one data
@@ -140,7 +161,7 @@ export type SidebarDropOp =
    * in — and the distinct kind is what lets `SidebarDnd` say so rather than
    * appear to lose the gesture.
    */
-  | { kind: 'reject-computed-zone'; ref: SidebarItemRef };
+  | { kind: 'reject-computed-zone'; ref: SidebarItemRef; zone: ComputedZone };
 
 // ---------------------------------------------------------------------------
 // Node-data ↔ descriptor conversion (used by the live dnd adapter + tests)
@@ -158,7 +179,7 @@ function isSidebarContainer(value: unknown): value is SidebarContainer {
   }
   if (kind === 'computed') {
     const zone = (value as { zone?: unknown }).zone;
-    return zone === 'now' || zone === 'today' || zone === 'getting-started';
+    return zone === 'now' || zone === 'today' || zone === 'getting-started' || zone === 'addons';
   }
   return kind === 'group' && typeof (value as { groupId?: unknown }).groupId === 'string';
 }
@@ -315,7 +336,9 @@ export function classifySidebarDrop(
   // what the operator controls (R3, design-meta rule 6). Checked FIRST, before
   // any source branch: where the row came from does not change the answer, and
   // putting it here is what leaves the existing table below untouched.
-  if (container.kind === 'computed') return { kind: 'reject-computed-zone', ref };
+  if (container.kind === 'computed') {
+    return { kind: 'reject-computed-zone', ref, zone: container.zone };
+  }
 
   // Source: a pinned reference.
   if (from.kind === 'pinned') {
@@ -449,7 +472,7 @@ function describeSidebarDropOp(op: SidebarDropOp, ctx: SidebarDndAnnounceContext
     case 'reject-smart-group':
       return `Can’t move ${ctx.itemName(op.ref)} into ${ctx.groupName(op.groupId)}. Membership is rule-based. Edit rules instead.`;
     case 'reject-computed-zone':
-      return `Can’t move ${ctx.itemName(op.ref)} there. ${COMPUTED_ZONE_REJECTION}`;
+      return `Can’t move ${ctx.itemName(op.ref)} there. ${computedZoneRejection(op.zone)}`;
     case 'none':
       return '';
   }
@@ -468,6 +491,7 @@ function describeSidebarDragOver(
     case 'ungrouped':
       return `Over ${container.section === undefined ? 'Agents' : UNGROUPED_SECTION_LABEL[container.section]}.`;
     case 'computed':
+      if (container.zone === 'addons') return 'Over Add-ons.';
       return container.zone === 'today' ? 'Over Today.' : 'Over Heads up.';
     case 'group':
       return `Over ${ctx.groupName(container.groupId)}.`;

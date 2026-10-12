@@ -21,6 +21,11 @@ import { appRoutes } from '@/layers/shared/lib';
  * rather than adding a fourth thing to the bottom of the panel. Updates never
  * enter Heads up — Heads up means your agents need you.
  *
+ * **A mini app's page is not a fifth destination.** Library's Add-ons section
+ * lists those pages (spec `mini-app-placement` Part 2, superseding
+ * `flow-multiproject` N10's "no sidebar entry"), so this strip stays the four
+ * places DorkOS itself goes.
+ *
  * @module features/dashboard-sidebar/ui/SidebarFooterStrip
  */
 import { useCallback, useEffect } from 'react';

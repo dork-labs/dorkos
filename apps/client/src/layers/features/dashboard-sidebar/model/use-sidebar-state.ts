@@ -22,8 +22,8 @@ import { useCallback, useMemo } from 'react';
 import { useRouterState, useSearch } from '@tanstack/react-router';
 import { useShallow } from 'zustand/shallow';
 import type { SessionLifecycle } from '@dorkos/shared/session-stream';
-import { useRenderSlot } from '@/layers/shared/lib';
-import { useNow } from '@/layers/shared/model';
+import { listedPageAt, useRenderSlot } from '@/layers/shared/lib';
+import { useMenuExtensionPages, useNow } from '@/layers/shared/model';
 import {
   disambiguateDisplayNames,
   useExecutionExceptions,
@@ -47,7 +47,12 @@ import { useDigestFacts } from './use-digest-facts';
 import { useGettingStartedRetirement } from './use-getting-started-retirement';
 import { useJourneyFacts } from './use-journey-facts';
 import { useTodayRevealStore } from './today-reveal-store';
-import type { AgentRosterEntry, SidebarModelPrefs, SidebarState } from './sidebar-state';
+import type {
+  AgentRosterEntry,
+  SidebarAddOnPage,
+  SidebarModelPrefs,
+  SidebarState,
+} from './sidebar-state';
 
 /**
  * How coarse the model's clock is, in milliseconds.
@@ -163,12 +168,22 @@ function useStableList(value: string[]): string[] {
  * change smuggled in behind a highlight. The highlight is handled on its own,
  * next to the row that needs it (`SidebarChrome`'s `activeRoomId`).
  *
+ * **A mini app's page is open when you are on it or anywhere under it**, and it
+ * names the one listed page that holds the address ({@link listedPageAt}), so
+ * the Add-ons section lights one row. Every rule that reads this asks about
+ * sessions and rooms, so an add-on target moves nothing but that tint.
+ *
  * @param roomKindOf - Resolves a room id to its kind, from the room list.
+ * @param addOns - The listed mini-app pages, for which one is open.
  */
 function useActiveTarget(
-  roomKindOf: (roomId: string) => 'channel' | 'dm' | 'thread'
+  roomKindOf: (roomId: string) => 'channel' | 'dm' | 'thread',
+  addOns: readonly SidebarAddOnPage[]
 ): SidebarTarget | null {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
+  const addOn = listedPageAt(addOns, pathname);
+  const addOnExtensionId = addOn?.extensionId ?? null;
+  const addOnPath = addOn?.path ?? null;
   const search = useSearch({ strict: false }) as {
     id?: string;
     dir?: string;
@@ -188,12 +203,15 @@ function useActiveTarget(
   const roomKind = roomId === null ? null : roomKindOf(roomId);
   return useMemo(() => {
     if (sessionId !== null) return { kind: 'session', sessionId, agentPath: cwd ?? '', cwd };
+    if (addOnExtensionId !== null && addOnPath !== null) {
+      return { kind: 'add-on', extensionId: addOnExtensionId, path: addOnPath };
+    }
     if (roomId === null || roomKind === null) return null;
     if (rootEntryId !== null) {
       return { kind: 'room', roomId, roomKind: 'thread', rootEntryId };
     }
     return { kind: 'room', roomId, roomKind };
-  }, [sessionId, cwd, roomId, roomKind, rootEntryId]);
+  }, [sessionId, cwd, addOnExtensionId, addOnPath, roomId, roomKind, rootEntryId]);
 }
 
 /** What a caller may tell {@link useSidebarState} about its own surface. */
@@ -434,7 +452,16 @@ export function useSidebarState(options: UseSidebarStateOptions = {}): SidebarSt
     () => (roomId: string) => roomKinds.get(roomId) ?? ('channel' as const),
     [roomKinds]
   );
-  const activeTarget = useActiveTarget(roomKindOf);
+  // ── The pages mini apps added (spec `mini-app-placement` Part 2) ──
+  // The registry's menu list — listed pages only, by title — narrowed to what
+  // the model may hold. It changes only when an extension registers or drops a
+  // page, so this memo holds across everything else.
+  const menuPages = useMenuExtensionPages();
+  const addOns = useMemo<SidebarAddOnPage[]>(
+    () => menuPages.map(({ id, extensionId, path, title }) => ({ id, extensionId, path, title })),
+    [menuPages]
+  );
+  const activeTarget = useActiveTarget(roomKindOf, addOns);
 
   // ── Whether Today's automated runs are unfolded (BC-19) ──
   const todayAutomatedExpanded = useTodayRevealStore((s) => s.automatedExpanded);
@@ -499,6 +526,7 @@ export function useSidebarState(options: UseSidebarStateOptions = {}): SidebarSt
       mentions: NO_MENTIONS,
       ...(coveredSignalIds === undefined ? {} : { coveredSignalIds }),
       todayAutomatedExpanded,
+      addOns,
       activeTarget,
       journey: journey.facts,
       digest: digestFacts.digest,
@@ -521,6 +549,7 @@ export function useSidebarState(options: UseSidebarStateOptions = {}): SidebarSt
       userLastMessageAt,
       lastTouchedByYouAt,
       todayAutomatedExpanded,
+      addOns,
       activeTarget,
       journey.facts,
       digestFacts.digest,

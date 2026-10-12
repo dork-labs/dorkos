@@ -419,11 +419,11 @@ export interface ExtensionPageProps {
 
 /** How an extension page is named and listed. */
 export interface ExtensionPageOptions {
-  /** Title for the page bar, tab, palette and phone menu. */
+  /** Title for the page bar, tab, palette and the sidebar's Add-ons section. */
   title: string;
   /** Icon, sized by the host with `className`. */
   icon?: ComponentType<{ className?: string }>;
-  /** List it in the palette and the phone "Add-ons" menu. Default true. */
+  /** List it in the palette and the sidebar's Add-ons section. Default true. */
   menu?: boolean;
 }
 
