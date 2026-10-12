@@ -26,7 +26,7 @@ export default function PrivacyPolicyPage() {
       <article className="space-y-8">
         <header className="space-y-2">
           <h1 className="text-charcoal font-mono text-3xl font-bold">Privacy Policy</h1>
-          <p className="text-warm-gray text-lg">Last updated: October 2, 2026</p>
+          <p className="text-warm-gray text-lg">Last updated: October 12, 2026</p>
           <p className="text-warm-gray leading-relaxed">
             DorkOS is made by {company.legalName}. When this page says “we,” that is who we mean.
           </p>
@@ -275,9 +275,9 @@ export default function PrivacyPolicyPage() {
             <h3 className="text-charcoal text-lg font-medium">What about analytics and cookies?</h3>
             <p className="text-warm-gray leading-relaxed">
               We use PostHog, a privacy-friendly analytics tool, to understand how the website is
-              used. We count page visits and a few clicks, like copying the install command. That is
-              it. There is no session recording, we do not log what you type, and we do not use
-              tracking that follows you to other sites.
+              used. We count page visits, desktop app downloads, and a few clicks, like copying the
+              install command. There is no session recording, we do not log what you type, and we do
+              not use tracking that follows you to other sites.
             </p>
             <p className="text-warm-gray leading-relaxed">
               How we ask depends on where you are. In the EU, the EEA, the UK, and Switzerland, we
@@ -292,6 +292,13 @@ export default function PrivacyPolicyPage() {
               reshuffled every day, so the count cannot be traced back to you. We also honor your
               browser’s Do Not Track and Global Privacy Control signals: if either is on, the cookie
               version stays off automatically.
+            </p>
+            <p className="text-warm-gray leading-relaxed">
+              When you open a desktop app download link, our server counts it: which app (Mac or
+              Windows), whether a build was ready, the name of the site that sent you (never the
+              page), and a campaign tag if the link had one. Each count carries a random one-time
+              ID, no cookie, and not your IP address. If Do Not Track or Global Privacy Control is
+              on, we do not count it at all.
             </p>
 
             <AnalyticsPreferenceControl />
