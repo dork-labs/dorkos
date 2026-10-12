@@ -158,7 +158,10 @@ export function createCommunityApp({
   const receiptGate = config.testRuntime ? new DeliveryReceiptGate() : undefined;
   app.onError(handleError);
   app.get('/health', (c) => c.json({ status: 'ok' }));
-  const { limitAttempts, refundAttempt } = createAttemptLimiter();
+  const { limitAttempts } = createAttemptLimiter();
+  // Password guesses keep their own map, keyed by account: a flood of made-up callers on the
+  // shared one above evicts its oldest keys, and must never evict a spent guess budget.
+  const passwordGuesses = createAttemptLimiter();
   // Mailed links keep their own limits, apart from the shared map above (email-links/limiter.ts).
   const emailLinkLimiter = new EmailLinkLimiter();
   // The socket peer, or the address a configured trusted proxy names; see `callerAddress`.
@@ -168,8 +171,8 @@ export function createCommunityApp({
   const confirmPassword = createPasswordConfirmation({
     auth,
     ceiling: config.limits.reauthAttemptsPerMinute,
-    spend: limitAttempts,
-    refund: refundAttempt,
+    spend: passwordGuesses.limitAttempts,
+    refund: passwordGuesses.refundAttempt,
     hasPassword: (userId) => accountHasPassword(pool, userId),
   });
   const jsonBodyMs = hooks?.jsonBodyMs ?? JSON_BODY_MS;
@@ -456,8 +459,8 @@ export function createCommunityApp({
     checkPassword: createAccountPasswordCheck({
       auth,
       ceiling: config.limits.reauthAttemptsPerMinute,
-      spend: limitAttempts,
-      refund: refundAttempt,
+      spend: passwordGuesses.limitAttempts,
+      refund: passwordGuesses.refundAttempt,
     }),
     canSendNotice,
     hooks: {
@@ -525,12 +528,11 @@ export function createCommunityApp({
         config.limits.invitePreviewAttemptsPerMinute
       );
     },
-    limitPreviewIdentity: (token) => {
+    limitPreviewIdentity: (token) =>
       limitAttempts(
         `invite-preview-identity:${hashSecret(token)}`,
         config.limits.invitePreviewAttemptsPerMinute
-      );
-    },
+      ),
   });
   registerMemberRoutes(communityApi, { pool, auth, confirmPassword, now });
   registerModerationRoutes(communityApi, { pool, auth, config });
