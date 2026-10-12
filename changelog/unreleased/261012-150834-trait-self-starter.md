@@ -1,6 +1,7 @@
 ---
 covers:
   - 'feat(shared): the boldest trait levels are Self-starter, Bold and Daredevil'
+  - 'fix(shared): previews and the Sentinel tagline match the new autonomy wording'
 ---
 
 ### Changed
