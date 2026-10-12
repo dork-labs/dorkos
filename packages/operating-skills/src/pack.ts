@@ -346,8 +346,12 @@ export interface OperatingSkill {
  *   rungs, what urgent means, pace, resolved, the report and
  *   `heartbeat_status`. The new skill seeds without a bump; the bump is for the
  *   sibling lists in `operating-dorkos` and `answering-dorkos-questions`.
+ * - 41: `operating-dorkos` tells an agent to get a service's exact name from
+ *   `connector_list_toolkits` before `request_connection`, and that a shell CLI
+ *   sign-in grants DorkOS nothing (DOR-2236), matching what the refusal, the
+ *   tool description and the per-turn Accounts guidance already say (DOR-2231).
  */
-export const OPERATING_SKILLS_VERSION = 40;
+export const OPERATING_SKILLS_VERSION = 41;
 
 /**
  * The canonical pack, umbrella skill first. Every entry is validated against the
