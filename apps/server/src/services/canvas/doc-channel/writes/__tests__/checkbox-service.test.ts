@@ -827,7 +827,10 @@ it('raw fence reuse still decodes replaced evidence codecs and refuses malformed
   expect(h.counts()).toEqual({ events: { n: 0 }, batches: { n: 0 } });
 });
 
-it('bounded recovery progresses through 101 original intents with a stable keyset and no effects', async () => {
+it('bounded recovery pages past a full page of original intents with a stable keyset and no effects', async () => {
+  // Every seeded intent shares one updatedAt, so only the intentId tie-break can carry the cursor
+  // past a page. Each recovery runs the full authority and fence checks (~10ms of CPU), so the
+  // page is two rows, not the default 100: 101 recoveries timed out on loaded CI runners.
   const h = await fixture();
   const before = await readFile(h.path);
   h.failCompletion(true);
@@ -835,7 +838,7 @@ it('bounded recovery progresses through 101 original intents with a stable keyse
   await writeFile(h.path, before);
   const base = h.store.getWriteIntent(h.row().intentId)!;
   h.db.$client.prepare("UPDATE canvas_doc_write_intents SET status='prepared'").run();
-  for (let i = 0; i < 100; i++) {
+  for (let i = 0; i < 2; i++) {
     const intentId = randomUUID(),
       eventId = randomUUID();
     const input = { ...(base.input as CheckboxRequest), eventId };
@@ -857,9 +860,9 @@ it('bounded recovery progresses through 101 original intents with a stable keyse
     h.store.transaction((tx) => tx.insert(canvasDocWriteIntents).values(seeded).run());
     h.service.validate(h.store.getWriteIntent(intentId)!);
   }
-  const one = await recoverCheckboxPage(h.service);
-  expect(one).toMatchObject({ selected: 100, verified: 0, retryableFailures: 0, hasMore: true });
-  const two = await recoverCheckboxPage(h.service, one.cursor);
+  const one = await recoverCheckboxPage(h.service, undefined, 2);
+  expect(one).toMatchObject({ selected: 2, verified: 0, retryableFailures: 0, hasMore: true });
+  const two = await recoverCheckboxPage(h.service, one.cursor, 2);
   expect(two).toMatchObject({ selected: 1, verified: 0, retryableFailures: 0, hasMore: false });
   expect(one.cursor).not.toEqual(two.cursor);
   expect(await readFile(h.path)).toEqual(before);
@@ -868,6 +871,7 @@ it('bounded recovery progresses through 101 original intents with a stable keyse
     recoverCheckboxPage(h.service, { updatedAt: 'invalid', intentId: 'x' })
   ).rejects.toThrow('cursor');
   await expect(recoverCheckboxPage(h.service, undefined, 101)).rejects.toThrow('limit');
+  await expect(recoverCheckboxPage(h.service, undefined, 0)).rejects.toThrow('limit');
 });
 
 it('does not remove an unowned exclusive-create collider during failure or recovery', async () => {

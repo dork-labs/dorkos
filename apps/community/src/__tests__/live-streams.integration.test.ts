@@ -230,6 +230,16 @@ async function insertQuietly(s: Space, text: string) {
   }
 }
 
+/** How many backends this database's live listeners hold open now. */
+async function listenerBackends(): Promise<number> {
+  const counted = await h.pool.query<{ n: number }>(
+    `SELECT count(*)::int AS n FROM pg_stat_activity
+     WHERE application_name=$1 AND datname=current_database()`,
+    [LIVE_LISTENER_APPLICATION_NAME]
+  );
+  return counted.rows[0].n;
+}
+
 /** The id of the account behind a membership. */
 async function userOf(memberId: string) {
   return (
@@ -483,6 +493,10 @@ describe('fan-out', () => {
     const s = await space();
     const stream = await open(s, { cookie: s.owner.cookie });
     try {
+      // The last test's streams closed the listener, and a stream reopening it does not wait for
+      // the connect. Cut only once its one backend is there; on a loaded runner it once was not.
+      await expect.poll(() => h.live.listenerState, { timeout: PROMPT_MS }).toBe('listening');
+      await expect.poll(listenerBackends, { timeout: PROMPT_MS }).toBe(1);
       await insertQuietly(s, 'missed while down');
       const cut = await h.pool.query(
         `SELECT pg_terminate_backend(pid) FROM pg_stat_activity
@@ -990,15 +1004,7 @@ describe('stream lifetime', () => {
     const s = await space();
     const pool = new Pool({ connectionString: h.config.databaseUrl });
     const app = createCommunityApp({ config: h.config, pool });
-    const listeners = async () =>
-      (
-        await h.pool.query<{ n: number }>(
-          `SELECT count(*)::int AS n FROM pg_stat_activity
-           WHERE application_name=$1 AND datname=current_database()`,
-          [LIVE_LISTENER_APPLICATION_NAME]
-        )
-      ).rows[0].n;
-    expect(await listeners()).toBe(0);
+    expect(await listenerBackends()).toBe(0);
     const response = await app.fetch(
       new Request(`http://localhost${s.base}/channels/${s.channelId}/events`, {
         headers: { cookie: s.owner.cookie },
@@ -1006,10 +1012,10 @@ describe('stream lifetime', () => {
     );
     const reader = response.body!.getReader();
     await reader.read();
-    expect(await listeners()).toBe(1);
+    expect(await listenerBackends()).toBe(1);
     // The stream is never cancelled: only the pool ends, as a harness's teardown does.
     await pool.end();
-    expect(await listeners()).toBe(0);
+    expect(await listenerBackends()).toBe(0);
     await reader.cancel().catch(() => undefined);
   });
 
