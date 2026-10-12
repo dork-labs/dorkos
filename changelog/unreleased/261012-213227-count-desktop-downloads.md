@@ -1,6 +1,7 @@
 ---
 covers:
   - 'feat(site): count each desktop download, anonymously, at the link'
+  - 'fix(site): skip HEAD probes, limit counts per address, and say exactly what a download count carries'
 ---
 
 ### Added
