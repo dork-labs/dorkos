@@ -29,8 +29,6 @@ import { createApp, finalizeApp } from './app.js';
 import { frontDoorListener } from './http/front-door.js';
 import { composeFrontDoor } from './http/hono-api.js';
 import { MainRequestAdmission } from './services/core/lifecycle/main-request-admission.js';
-import { env } from './env.js';
-import { testControlRouter } from './routes/test-control.js';
 import { initBoundary } from './lib/boundary.js';
 import { logger } from './lib/logger.js';
 import { initConfigManager } from './services/core/config-manager.js';
@@ -146,8 +144,9 @@ export async function bootInProcessTestServer(dorkHome: string): Promise<InProce
 
   const admission = new MainRequestAdmission();
   const app = createApp({ admission });
-  // `POST /api/test/seed-agent` reads it; harness cases seed on disk instead,
-  // but a route that answers 500 for a missing local is worse than one wired.
+  // The session routes read it. `POST /api/test/seed-agent` gets it below;
+  // harness cases seed on disk instead, but a route that answers 500 for a
+  // missing registry is worse than one wired.
   app.locals.meshCore = mesh;
 
   // **The capability invoke route, with the rooms domain on it.** The Hono
@@ -168,25 +167,24 @@ export async function bootInProcessTestServer(dorkHome: string): Promise<InProce
     roomDeps: { rooms: rooms.service },
   });
 
-  // **The test-control routes, mounted here rather than left to `createApp()`.**
-  // `env.ts` validates the environment ONCE at module load, so `createApp()`
-  // reads whatever `DORKOS_TEST_RUNTIME` was when the server's module graph was
-  // first imported — which, in the eval harness, is before the runner sets it
-  // (the CLI loads the suite, and the suite imports `@dorkos/server` subpaths,
-  // at startup). The visible symptom was `/api/test/scenario` answering 404 on a
-  // server that IS running the test-mode runtime, so a rooms case could not hold
-  // a turn open long enough to stop it.
+  // **The test-control routes, mounted by handing them their deps.**
+  // `env.ts` validates the environment ONCE at module load, so a gate on
+  // `DORKOS_TEST_RUNTIME` reads whatever it was when the server's module graph
+  // was first imported — which, in the eval harness, is before the runner sets
+  // it (the CLI loads the suite, and the suite imports `@dorkos/server`
+  // subpaths, at startup). The visible symptom was `/api/test/scenario`
+  // answering 404 on a server that IS running the test-mode runtime, so a rooms
+  // case could not hold a turn open long enough to stop it.
   //
-  // This boot needs no env var to know the answer: it registers `TestModeRuntime`
-  // itself, unconditionally, so these routes belong on it by construction. The
-  // guard is only against mounting the same router twice when the variable
-  // happened to be set early enough for `createApp()` to have done it. It must
-  // stay ABOVE `finalizeApp`, which installs the `/api` catch-all 404.
-  if (!env.DORKOS_TEST_RUNTIME) app.use('/api/test', testControlRouter);
+  // This boot needs no env var to know the answer: it registers
+  // `TestModeRuntime` itself, unconditionally, so these routes belong on it by
+  // construction (`http/hono-api.ts` mounts them once either way).
   finalizeApp(app);
 
   return {
-    listener: frontDoorListener(composeFrontDoor(app, admission, { capabilities })),
+    listener: frontDoorListener(
+      composeFrontDoor(app, admission, { capabilities, testControl: { meshCore: () => mesh } })
+    ),
     dispose: () => {
       // Close the underlying better-sqlite3 handle so the sandbox teardown can
       // remove the db (and its WAL sidecars) without a lingering open descriptor.

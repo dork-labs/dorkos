@@ -10,11 +10,10 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { mkdtemp, mkdir, realpath, rm } from 'node:fs/promises';
 import { once } from 'node:events';
 import type { AddressInfo } from 'node:net';
-import type { Server } from 'node:http';
+import { createServer, type Server } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
-import express from 'express';
 import type { StreamEvent } from '@dorkos/shared/types';
 import { UserConfigSchema } from '@dorkos/shared/config-schema';
 
@@ -37,7 +36,8 @@ import { setCloudV1Fetch } from '../../../core/cloud/v1-client.js';
 import { __setCreditsStateForTests } from '../../../core/cloud/credits-inference.js';
 import { DoeRuntime } from '../../doe/doe-runtime.js';
 import { createFakeCloudV1Fetch, FAKE_CLOUD_MODEL } from '../fake-cloud-v1.js';
-import { createFakeInferenceRouter, FAKE_INFERENCE_REPLY } from '../fake-inference.js';
+import { createFakeInferenceRoutes, FAKE_INFERENCE_REPLY } from '../fake-inference.js';
+import { honoGroupListener } from '../../../../http/__tests__/hono-group-listener.js';
 import { TEST_MODE_DOE_REFUSAL, testModeDoeOptions } from '../compose-test-cloud.js';
 import type { DoeInferenceConfig } from '@dorkos/shared/config-schema';
 
@@ -55,14 +55,16 @@ beforeAll(async () => {
     ...defaults,
     cloud: { ...(defaults.cloud as object), instanceToken: 'fake-instance-key' },
   };
-  const app = express()
-    .use(express.json({ limit: '1mb' }))
-    .use((req, _res, next) => {
-      seen.push({ path: req.path, authorization: req.headers.authorization });
-      next();
-    })
-    .use('/api/test/fake-inference', createFakeInferenceRouter());
-  server = app.listen(0, '127.0.0.1');
+  const listener = honoGroupListener(
+    { path: '/api/test/fake-inference', routes: createFakeInferenceRoutes() },
+    {
+      before: async (c, next) => {
+        seen.push({ path: c.req.path, authorization: c.req.header('authorization') });
+        await next();
+      },
+    }
+  );
+  server = createServer(listener).listen(0, '127.0.0.1');
   await once(server, 'listening');
   base = `http://127.0.0.1:${(server.address() as AddressInfo).port}/api/test/fake-inference/v1`;
   setCloudV1Fetch(createFakeCloudV1Fetch({ inferenceBaseUrl: base }));

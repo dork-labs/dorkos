@@ -1,7 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import express from 'express';
 import ts from 'typescript';
 import request from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
@@ -22,8 +21,13 @@ import { CloudApiProblemError, createCloudApiClient } from '@dork-labs/cloud-api
 const mockEnv = vi.hoisted(() => ({ DORKOS_TEST_RUNTIME: true }));
 vi.mock('../../../../env.js', () => ({ env: mockEnv }));
 
+// The `/api` chain reads login and the host settings from here; none are set.
+vi.mock('../../../core/config-manager.js', () => ({
+  configManager: { get: vi.fn(), getDot: vi.fn() },
+}));
 import { createFakeCloudV1Fetch, FAKE_CLOUD_MODEL } from '../fake-cloud-v1.js';
-import { createFakeInferenceRouter, FAKE_INFERENCE_REPLY } from '../fake-inference.js';
+import { createFakeInferenceRoutes, FAKE_INFERENCE_REPLY } from '../fake-inference.js';
+import { honoGroupListener } from '../../../../http/__tests__/hono-group-listener.js';
 
 const INFERENCE_BASE = 'http://localhost:7242/api/test/fake-inference/v1';
 const client = () =>
@@ -44,8 +48,8 @@ describe('the test-mode /v1 Cloud', () => {
     expect(() => createFakeCloudV1Fetch({ inferenceBaseUrl: INFERENCE_BASE })).toThrow(
       'createFakeCloudV1Fetch is test-mode only (DORKOS_TEST_RUNTIME)'
     );
-    expect(() => createFakeInferenceRouter()).toThrow(
-      'createFakeInferenceRouter is test-mode only (DORKOS_TEST_RUNTIME)'
+    expect(() => createFakeInferenceRoutes()).toThrow(
+      'createFakeInferenceRoutes is test-mode only (DORKOS_TEST_RUNTIME)'
     );
   });
 
@@ -113,7 +117,7 @@ describe('the test-mode /v1 Cloud', () => {
   });
 
   it('the fake inference stream answers models and a streamed chat completion with usage', async () => {
-    const app = express().use(express.json()).use('/fake', createFakeInferenceRouter());
+    const app = honoGroupListener({ path: '/fake', routes: createFakeInferenceRoutes() });
     const models = await request(listener.mount(app)).get('/fake/v1/models');
     expect(models.body.data[0].id).toBe(FAKE_CLOUD_MODEL.id);
 
@@ -142,6 +146,7 @@ describe('the test-mode /v1 Cloud', () => {
       '../../../core/cloud/plan.ts',
       '../../../core/auth/cloud-link.ts',
       '../../../../app.ts',
+      '../../../../http/hono-api.ts',
       '../../../../routes/test-control.ts',
       '../../../../routes/cloud.ts',
       '../../doe/doe-runtime.ts',

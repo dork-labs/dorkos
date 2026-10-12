@@ -14,22 +14,27 @@
  *
  * These tests are the pinning for that.
  *
- * The router is mounted on a bare express app rather than reached through
- * `createApp`, because `app.ts` mounts `/api/test/*` only under
- * `DORKOS_TEST_RUNTIME` — mounting it directly tests the handler rather than
- * the env gate.
+ * The routes are served alone behind the `/api` chain rather than reached
+ * through the composed server, because `http/hono-api.ts` mounts `/api/test/*`
+ * only under `DORKOS_TEST_RUNTIME` — serving them directly tests the handler
+ * rather than the env gate.
  */
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import express from 'express';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import request from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
 import { createTestDb } from '@dorkos/test-utils/db';
 import { agentIdentityTokens, type Db } from '@dorkos/db';
-import { testControlRouter } from '../test-control.js';
+import { createTestControlRoutes, type TestControlMesh } from '../test-control.js';
+import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
 import {
   initAgentIdentityService,
   resetAgentIdentityService,
 } from '../../services/core/agent-identity/agent-identity-service.js';
+
+// The `/api` chain reads login and the host settings from here; none are set.
+vi.mock('../../services/core/config-manager.js', () => ({
+  configManager: { get: vi.fn(), getDot: vi.fn() },
+}));
 
 const fixtureTarget = swappableServer();
 const fixtureServer = fixtureTarget.server;
@@ -41,27 +46,29 @@ const REGISTERED = '/projects/ana';
 const UNREGISTERED = '/projects/nobody-lives-here';
 
 describe('POST /api/test/agent-token', () => {
-  let app: express.Express;
+  let meshCore: TestControlMesh | undefined;
   let db: Db;
 
   beforeEach(() => {
     db = createTestDb();
     initAgentIdentityService(db);
-    app = express();
-    app.use(express.json());
     // The same shape the two production runtimes consult before they let
     // `resolveAgentTokenEnv` mint anything (`launch-resolver.ts`,
     // `codex-runtime.ts`): a path lookup against the mesh registry.
     // The slug and the display name are DIFFERENT strings, exactly as a real
     // manifest has them: `ana` addresses the agent, `Ana` renders it. A fixture
     // where the two agree could not tell which one the seam minted (DOR-1264).
-    app.locals.meshCore = {
+    meshCore = {
       getByPath: (projectPath: string) =>
         projectPath === REGISTERED ? { name: 'ana', displayName: 'Ana' } : undefined,
+      syncFromDisk: async () => 'synced',
     };
-    app.use('/api/test', testControlRouter);
-
-    fixtureTarget.mount(app);
+    fixtureTarget.mount(
+      honoGroupListener({
+        path: '/api/test',
+        routes: createTestControlRoutes({ meshCore: () => meshCore }),
+      })
+    );
   });
 
   afterEach(() => {
@@ -116,7 +123,7 @@ describe('POST /api/test/agent-token', () => {
     // A server whose mesh failed to start knows nothing about any agent. The
     // safe reading of "I cannot tell you if this is registered" is no, because
     // the alternative is minting for every path on a degraded boot.
-    delete app.locals.meshCore;
+    meshCore = undefined;
 
     const res = await request(fixtureServer)
       .post('/api/test/agent-token')

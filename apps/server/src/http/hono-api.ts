@@ -30,22 +30,30 @@ import {
   type ConnectorSignedIngress,
 } from '../services/connectors/events/signed-ingress.js';
 import { createActivityRoutes } from '../routes/activity.js';
+import { createAdminRoutes, type AdminDeps } from '../routes/admin.js';
 import { createAgentPauseRoutes, type AgentPauseRouterDeps } from '../routes/agent-pause.js';
 import { createAgentsRoutes, type AgentsRouterDeps } from '../routes/agents.js';
 import { createApprovalsRoutes, type ApprovalsRouterOptions } from '../routes/approvals.js';
 import { createApiDocsRoutes } from '../routes/api-docs.js';
 import { createConnectorRoutes, type ConnectorRoutesDeps } from '../routes/connectors.js';
 import { createAuditRoutes, type AuditRouterDeps } from '../routes/audit.js';
+import {
+  canvasDocBodyRule,
+  createCanvasDocEventRoutes,
+  type DocChannelHttp,
+} from '../routes/canvas-doc-events.js';
 import capabilitiesRoutes from '../routes/capabilities.js';
 import cloudRoutes from '../routes/cloud.js';
 import { createCapabilitiesCatalogRoutes } from '../routes/capabilities-catalog.js';
 import { createCapabilitiesInvokeRoutes } from '../routes/capabilities-invoke.js';
 import commandRoutes from '../routes/commands.js';
+import configRoutes from '../routes/config.js';
 import {
   createAgentCommitmentsRoutes,
   createCommitmentsRoutes,
   type CommitmentRouterDeps,
 } from '../routes/commitments.js';
+import { createDebugRoutes, type DebugDeps } from '../routes/debug.js';
 import diffRoutes from '../routes/diff.js';
 import directoryRoutes from '../routes/directory.js';
 import { createDiscoveryRoutes } from '../routes/discovery.js';
@@ -54,6 +62,7 @@ import {
   createExtensionDecisionsRoutes,
   type ExtensionDecisionsRouterDeps,
 } from '../routes/extension-decisions.js';
+import feedbackRoutes, { feedbackBodyRule } from '../routes/feedback.js';
 import fileRoutes from '../routes/files.js';
 import gitRoutes from '../routes/git.js';
 import { createHarnessRoutes, type HarnessRouterDeps } from '../routes/harness.js';
@@ -61,8 +70,10 @@ import { createHealthRoutes, type HealthRouteDeps } from '../routes/health.js';
 import keepAwakeRoutes from '../routes/keep-awake.js';
 import { createMarketplaceRoutes, type MarketplaceRouteDeps } from '../routes/marketplace.js';
 import { createMcpRoutes, type McpServerFactory } from '../routes/mcp.js';
+import mcpConfigRoutes from '../routes/mcp-config.js';
 import { createMcpOAuthRoutes } from '../routes/mcp-oauth.js';
 import { createMeshRoutes, type MeshRouterDeps } from '../routes/mesh.js';
+import { createMockMcpOAuthRoutes } from '../routes/mock-mcp-oauth-server.js';
 import modelRoutes from '../routes/models.js';
 import { createNotificationsRoutes } from '../routes/notifications.js';
 import { createPermissionsRoutes, type PermissionsRouterDeps } from '../routes/permissions.js';
@@ -80,6 +91,7 @@ import { createTasksRoutes, type TasksRouterDeps } from '../routes/tasks.js';
 import { createSystemRoutes, type SystemRouteDeps } from '../routes/system.js';
 import { createTeamRoutes, type TeamRouterDeps } from '../routes/team.js';
 import { createTemplateRoutes } from '../routes/templates.js';
+import { createTestControlRoutes, type TestControlDeps } from '../routes/test-control.js';
 import tunnelRoutes from '../routes/tunnel.js';
 import uploadRoutes from '../routes/uploads.js';
 import workbenchServeRoutes from '../routes/workbench-serve.js';
@@ -165,6 +177,21 @@ export interface ComposedGroupDeps {
    * request. Not under `/api`, but behind the same chain.
    */
   mcp?: McpServerFactory;
+  /**
+   * Document events (`/api/canvas/docs`). Always mounted; without this every
+   * request answers that document events are not available yet.
+   */
+  docChannel?: DocChannelHttp;
+  /** The live reads behind `GET /api/debug/*`, which is always mounted. */
+  debug?: DebugDeps;
+  /** Reset and restart (`/api/admin`), which end this process. */
+  admin?: AdminDeps;
+  /**
+   * The test-control routes (`/api/test`). They are mounted whenever
+   * `DORKOS_TEST_RUNTIME` is set, and on any server handed these, as the eval
+   * harness's boot is.
+   */
+  testControl?: TestControlDeps;
 }
 
 /** What the moved route groups read from the running server, handed over by `index.ts`. */
@@ -193,6 +220,9 @@ export function createHonoApi(options: HonoApiOptions): Hono<ApiEnv> {
   const deps = options.deps ?? {};
   const app = createApiApp({
     admission: options.admission,
+    // Feedback carries an opt-in screenshot, so it may be larger than the app-wide
+    // limit; document events are page envelopes, so they may be smaller.
+    bodyRules: [feedbackBodyRule, canvasDocBodyRule(() => deps.docChannel?.metrics)],
     beforeBodyParsing: (early) => {
       if (auth) mountBetterAuth(early, { auth, maxAttempts: env.DORKOS_AUTH_SIGNIN_RATE_LIMIT });
       if (deps.connectorEventIngress) {
@@ -224,6 +254,32 @@ export function createHonoApi(options: HonoApiOptions): Hono<ApiEnv> {
   app.route('/api/tunnel', tunnelRoutes);
   app.route('/api/remote-access', createRemoteAccessRoutes());
   app.route('/api/cloud', cloudRoutes);
+  app.route('/api/config', configRoutes);
+  app.route('/api/mcp-config', mcpConfigRoutes);
+  app.route('/api/feedback', feedbackRoutes);
+  app.route(
+    '/api/canvas/docs',
+    createCanvasDocEventRoutes(() => deps.docChannel)
+  );
+  // Diagnostic reads. ALWAYS mounted and read-only: an env gate would make them
+  // unavailable in the one situation they exist for, because enabling one needs
+  // a restart and a restart destroys the in-memory state you wanted to read.
+  // They carry only what a span may carry, behind the chain's host guard and
+  // session gate with no carve-out (`routes/debug.ts`).
+  app.route(
+    '/api/debug',
+    createDebugRoutes(() => deps.debug)
+  );
+  if (deps.admin) app.route('/api/admin', createAdminRoutes(deps.admin));
+  // Test-only surfaces, imported always (no vitest or SDK deps) but mounted only
+  // in test mode, so none of their paths exist in production.
+  if (env.DORKOS_TEST_RUNTIME || deps.testControl) {
+    app.route('/api/test', createTestControlRoutes(deps.testControl));
+  }
+  // The mock OAuth-protected MCP server (DOR-952), at the ROOT so it can serve
+  // the `/.well-known/*` discovery paths there (RFC 9728/8414), beside its
+  // `/api/test/mcp-oauth/*` auth and MCP endpoints.
+  if (env.DORKOS_TEST_RUNTIME) app.route('/', createMockMcpOAuthRoutes());
   if (deps.sessionLocations) {
     app.route('/api/session-locations', createSessionLocationsRoutes(deps.sessionLocations));
   }

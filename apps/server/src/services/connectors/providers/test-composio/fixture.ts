@@ -1,8 +1,11 @@
 /** Offline upstream for real Composio clients. Loaded only by the test-runtime bootstrap. */
 import { createHmac, randomUUID } from 'node:crypto';
 import { createServer } from 'node:http';
-import express, { Router } from 'express';
+import express from 'express';
+import { Hono } from 'hono';
 import { z } from 'zod';
+import type { ApiEnv } from '../../../../http/api-chain.js';
+import { readJsonBody } from '../../../../http/request-body.js';
 import { stableStringify } from '@dorkos/shared/capabilities';
 import { legacyDefaultProviderInstanceId } from '../../legacy-connection-migration.js';
 import {
@@ -324,9 +327,10 @@ export async function startTestComposioFixture(options: {
     server.close();
     throw error;
   }
-  const router = Router();
-  router.get('/status', (_req, res) =>
-    res.json({
+  // The test-control group (`/api/test/composio`) that drives the fake.
+  const routes = new Hono<ApiEnv>();
+  routes.get('/status', (c) =>
+    c.json({
       mode,
       accounts: accounts.size,
       accountOrdinals: [...accounts.values()].map((account) => account.ordinal),
@@ -335,18 +339,18 @@ export async function startTestComposioFixture(options: {
       mutations,
     })
   );
-  router.post('/events-state', (req, res) => {
+  routes.post('/events-state', (c) => {
     const input = z
       .object({ mode: z.enum(['ready', 'unavailable']) })
       .strict()
-      .safeParse(req.body);
-    if (!input.success) return void res.sendStatus(400);
+      .safeParse(readJsonBody(c));
+    if (!input.success) return c.text('Bad Request', 400);
     mode = input.data.mode;
-    res.json({ mode });
+    return c.json({ mode });
   });
-  router.post('/emit', async (req, res) => {
-    const input = emitInput.safeParse(req.body);
-    if (!input.success) return void res.sendStatus(400);
+  routes.post('/emit', async (c) => {
+    const input = emitInput.safeParse(readJsonBody(c));
+    if (!input.success) return c.text('Bad Request', 400);
     const account = [...accounts.values()].find(
       (item) => item.ordinal === input.data.accountOrdinal && item.status === 'ACTIVE'
     );
@@ -357,7 +361,7 @@ export async function startTestComposioFixture(options: {
         item.disabled_at === null
     );
     if (!account || matches.length !== 1)
-      return void res.status(409).json({ error: 'One active offline trigger is required' });
+      return c.json({ error: 'One active offline trigger is required' }, 409);
     const trigger = matches[0]!;
     const timestamp = String(Math.floor(Date.now() / 1000));
     const body = JSON.stringify({
@@ -396,14 +400,14 @@ export async function startTestComposioFixture(options: {
         body,
       });
       await response.body?.cancel();
-      res.json({ eventId: input.data.eventId, status: response.status });
+      return c.json({ eventId: input.data.eventId, status: response.status });
     } catch {
-      res.status(502).json({ error: 'Offline ingress unavailable' });
+      return c.json({ error: 'Offline ingress unavailable' }, 502);
     }
   });
   return {
     baseUrl,
-    router,
+    routes,
     async close() {
       server.closeAllConnections();
       await new Promise<void>((resolve) => server.close(() => resolve()));

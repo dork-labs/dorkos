@@ -15,9 +15,7 @@ import {
 } from '@dorkos/db';
 import type { DocChannelHttp } from '../../../routes/canvas-doc-events.js';
 import { resolveCaller } from '../../../routes/room-caller.js';
-import { getRequestAgentIdentity } from '../../../middleware/agent-identity.js';
 import { isContained } from '../../../lib/boundary.js';
-import type { RequestUser } from '../../core/auth/index.js';
 import {
   TOKEN_ABSOLUTE_TTL_MS,
   TOKEN_IDLE_TTL_MS,
@@ -307,9 +305,9 @@ export function createDocChannelHttpComposition(deps: {
       ingest: new DocChannelIngest(channels),
       grants,
     }),
-    actor(req, res) {
-      resolveCaller(req, res); // Refuse unknown/revoked agent headers before minting a principal.
-      const identity = getRequestAgentIdentity(res);
+    actor(caller) {
+      resolveCaller(caller); // Refuse unknown/revoked agent headers before minting a principal.
+      const identity = caller.agentIdentity;
       const owner = currentOwner();
       if (identity) {
         const agent = deps.db
@@ -324,12 +322,12 @@ export function createDocChannelHttpComposition(deps: {
           agentId: agent.id,
           agentPath: agent.projectPath,
         });
-        const raw = req.headers['x-dorkos-agent'];
+        const raw = caller.headers['x-dorkos-agent'];
         if (typeof raw !== 'string') throw new DocChannelNotFoundError();
         tokens.set(principal, createHash('sha256').update(raw).digest('hex'));
         return { surface: 'http', principal };
       }
-      const user = res.locals.user as RequestUser | undefined;
+      const user = caller.user;
       if (user && (owner.kind !== 'user' || owner.userId !== user.userId))
         throw new DocChannelNotFoundError();
       return { surface: 'http', principal: createServerPrincipal({ kind: 'operator', owner }) };

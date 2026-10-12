@@ -257,7 +257,6 @@ import {
   SESSION_ATTACHMENT_SWEEP_INTERVAL_MS,
   sweepSessionAttachments,
 } from './services/session/attachments/index.js';
-import { createAdminRouter } from './routes/admin.js';
 import { ExtensionManager } from './services/extensions/extension-manager.js';
 import { startExtensionApprovalQueue } from './services/extensions/extension-approval-queue.js';
 import { ensureCoreExtensions } from './services/core-extensions/ensure-core-extensions.js';
@@ -2793,7 +2792,6 @@ async function start() {
     revalidateRuntime: (proof) =>
       docChannelRuntimePrincipals.current?.revalidatePrincipal(proof) ?? Promise.resolve(false),
   });
-  app.locals.docChannelHttp = { ...docChannelHttp, metrics: docChannelMetrics };
   const docStreamAuthority = {
     resolveScope: (scope: string) => canvasDocuments.lifecycle.resolveScope(scope),
     requireScopeCurrent: (
@@ -2829,8 +2827,7 @@ async function start() {
     docStreamAuthority
   );
   setDocScopeNotificationsFactory(
-    (scope, req, res) => (signal) =>
-      docScopes.subscribe(scope, docChannelHttp.actor(req, res), signal)
+    (scope, caller) => (signal) => docScopes.subscribe(scope, docChannelHttp.actor(caller), signal)
   );
 
   // An answer given after the in-session hold gave up has to reach the agent that
@@ -2922,8 +2919,8 @@ async function start() {
     const { startTestComposioFixture } =
       await import('./services/connectors/providers/test-composio/fixture.js');
     testComposioFixture = await startTestComposioFixture({ testRuntime: true, localOrigin });
-    const { testControlRouter } = await import('./routes/test-control.js');
-    testControlRouter.use('/composio', testComposioFixture.router);
+    const { addTestControlGroup } = await import('./routes/test-control.js');
+    addTestControlGroup('/composio', testComposioFixture.routes);
   }
   // Built before the ways register: linking the DorkOS account again (seen as
   // early as boot) sends what the old link refused or never applied again.
@@ -3518,12 +3515,6 @@ async function start() {
       // entries iff this returns a live token — withholds otherwise (needs-auth).
       tokenProvider: agentMcpOAuthService,
     });
-    // Expose the resolver to the test-control probe seam (DOR-952), which dials a
-    // managed server through its INJECTED connection to prove the bearer gate.
-    // Test branch only — the seam route is itself mounted only under the gate.
-    if (env.DORKOS_TEST_RUNTIME) {
-      app.locals.agentMcpServerService = agentMcpServerService;
-    }
     // A managed server that refuses the token DorkOS injected flips its row back
     // to needs-auth and draws the sign-in card in the conversation the person hit
     // it in (DOR-981). Wired only for claude-code, because its per-turn MCP status
@@ -3708,7 +3699,18 @@ async function start() {
   const deps: HonoApiDeps = {
     connectorEventIngress: connectorSignedIngress,
     mcp: mcpServerFactory,
+    docChannel: { ...docChannelHttp, metrics: docChannelMetrics },
   };
+  // The test-control routes' reads, on a test-mode server only: handing them
+  // over is what mounts the routes. The managed-MCP resolver is what the probe
+  // seam (DOR-952) dials a managed server through, to prove the bearer gate.
+  if (env.DORKOS_TEST_RUNTIME) {
+    deps.testControl = {
+      meshCore: () => meshCore,
+      approvals: () => approvalService,
+      agentMcpServers: () => agentMcpServerService,
+    };
+  }
 
   // Hand the Tasks routes their deps if enabled (`startup/tasks.ts`).
   ({ schedulerService, taskRegistrar, taskFileWatcher, taskReconciler, attachAgentTaskRoots } =
@@ -4052,7 +4054,7 @@ async function start() {
   // broken?"), and this one hands over raw state for a person to read. They
   // overlap today; conflating them would mean a new debug read could only be
   // added by widening the health checks' dependency surface.
-  app.locals.debugDeps = {
+  deps.debug = {
     docChannelMetrics,
     roomSessions: roomStore,
     // The SAME probe object the boot sweep and the deep health check hold, so
@@ -4364,9 +4366,6 @@ async function start() {
 
   // Approvals — always available. The cockpit lists what is waiting on a person
   // and records their decision (spec `agent-trust` §3.3).
-  // The test-only seam that seeds a request card reads it from here; production
-  // mounts no test router, so nothing else does.
-  app.locals.approvalService = approvalService;
   deps.approvals = {
     service: approvalService,
     options: {
@@ -4518,15 +4517,8 @@ async function start() {
     }
   }
 
-  // Mount Admin routes (reset, restart)
-  app.use(
-    '/api/admin',
-    createAdminRouter({
-      dorkHome,
-      shutdownServices,
-      closeDb: () => db.$client.close(),
-    })
-  );
+  // Admin routes (reset, restart)
+  deps.admin = { dorkHome, shutdownServices, closeDb: () => db.$client.close() };
   mountedRouters.push('admin');
 
   // Mount Marketplace routes. The install pipeline has two optional
@@ -4873,8 +4865,10 @@ async function start() {
           name: 'connectors.execute_read',
           arguments: { ...input.target },
         });
-      app.locals.connectorRuntimeRequestProbe = runtimeRequestProbe;
-      app.locals.connectorRuntimeExecutionProbe = runtimeExecutionProbe;
+      if (deps.testControl) {
+        deps.testControl.connectorRequestProbe = () => runtimeRequestProbe;
+        deps.testControl.connectorExecutionProbe = () => runtimeExecutionProbe;
+      }
     }
     logger.info('[Connectors] Runtime execution listener initialized');
   }

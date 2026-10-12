@@ -24,6 +24,7 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import bodyParser from 'body-parser';
 import type { Context, MiddlewareHandler } from 'hono';
+import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import type { HttpBindings } from '@hono/node-server';
 
 /** The app-wide JSON body limit, on both chains. */
@@ -39,10 +40,10 @@ type NodeBodyParser = (
 /**
  * A body parser for some requests only, chosen INSTEAD of the app-wide one.
  *
- * The Express chain mounts these ahead of `express.json` (a larger limit for
- * feedback screenshots, a smaller one for canvas page events, raw bytes for a
- * signed relay webhook), and `express.json` then skips the body they read. A
- * route group brings its rule to the chain when it moves.
+ * Feedback brings a larger limit for its screenshots and document events a
+ * smaller one for page envelopes (`http/hono-api.ts` hands both over). The
+ * Express chain still mounts one of its own ahead of `express.json`, raw bytes
+ * for a signed relay webhook; a route group brings its rule here when it moves.
  */
 export interface BodyRule {
   /**
@@ -52,6 +53,43 @@ export interface BodyRule {
   matches(method: string, path: string): boolean;
   /** The parser to run. */
   parse: NodeBodyParser;
+  /**
+   * Answer a body this rule's parser refused, in the group's own words: the
+   * status and JSON body to send. Without it the refusal is thrown to the
+   * chain's error handler, as the app-wide parser's is.
+   */
+  answerFailure?: (error: unknown, request: RefusedBodyRequest) => RefusedBodyAnswer;
+}
+
+/** The request a {@link BodyRule} refused the body of. */
+export interface RefusedBodyRequest {
+  /** The request method. */
+  method: string;
+  /** The request path. */
+  path: string;
+  /** The raw response, to watch it go out. */
+  outgoing: ServerResponse;
+}
+
+/** What a {@link BodyRule} answers a body it refused with. */
+export interface RefusedBodyAnswer {
+  /** The status. */
+  status: ContentfulStatusCode;
+  /** The JSON body. */
+  body: object;
+}
+
+/**
+ * Whether a path falls under an Express-style `app.use(prefix)` mount: the
+ * prefix itself or anything below it, ignoring case. A {@link BodyRule} matches
+ * this way, as the Express parser it replaces did.
+ *
+ * @param path - The request path.
+ * @param prefix - The mount path, lower-case, with no trailing slash.
+ */
+export function underMount(path: string, prefix: string): boolean {
+  const lowered = path.toLowerCase();
+  return lowered === prefix || lowered.startsWith(`${prefix}/`);
 }
 
 /** The Hono environment the body stage reads and writes. */
@@ -82,11 +120,18 @@ export function parseRequestBody<E extends RequestBodyEnv>(
   return async (c, next) => {
     const { incoming, outgoing } = c.env;
     const rule = rules.find((candidate) => candidate.matches(c.req.method, c.req.path));
-    await new Promise<void>((resolve, reject) => {
-      (rule?.parse ?? parseJson)(incoming, outgoing, (error) =>
-        error ? reject(error) : resolve()
-      );
+    const failure = await new Promise<{ error: unknown } | undefined>((resolve, reject) => {
+      (rule?.parse ?? parseJson)(incoming, outgoing, (error) => {
+        if (!error) resolve(undefined);
+        else if (rule?.answerFailure) resolve({ error });
+        else reject(error);
+      });
     });
+    if (failure) {
+      const { method, path } = c.req;
+      const answer = rule!.answerFailure!(failure.error, { method, path, outgoing });
+      return c.json(answer.body, answer.status);
+    }
     // `body-parser` leaves `body` unset when it read nothing (no body, or a
     // type it does not parse), as Express 5 leaves `req.body` undefined.
     const body = (incoming as IncomingMessage & { body?: unknown }).body;

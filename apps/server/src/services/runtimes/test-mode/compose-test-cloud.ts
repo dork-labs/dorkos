@@ -21,16 +21,16 @@
 import type { RuntimeRegistry } from '../../core/runtime-registry.js';
 import { initCloudLinkManager } from '../../core/auth/cloud-link.js';
 import { setCloudV1Fetch } from '../../core/cloud/v1-client.js';
-import { testControlRouter } from '../../../routes/test-control.js';
+import { addTestControlGroup } from '../../../routes/test-control.js';
 import { localDialHost } from '../../../lib/local-dial-host.js';
 import { logger } from '../../../lib/logger.js';
 import { env } from '../../../env.js';
 import { DoeRuntime } from '../doe/index.js';
 import type { DoeRuntimeOptions } from '../doe/doe-runtime.js';
 import { resolveDoeInference } from '../doe/credentials.js';
-import { createFakeCloudApprovalRouter, createFakeCloudLink } from './fake-cloud-link.js';
+import { createFakeCloudApprovalRoutes, createFakeCloudLink } from './fake-cloud-link.js';
 import { createFakeCloudV1Fetch } from './fake-cloud-v1.js';
-import { createFakeInferenceRouter } from './fake-inference.js';
+import { createFakeInferenceRoutes } from './fake-inference.js';
 
 /** Why a test-mode DorkOS turn on anything but credits is refused. */
 export const TEST_MODE_DOE_REFUSAL =
@@ -72,8 +72,8 @@ export function composeTestModeCloud(registry: RuntimeRegistry): DoeRuntime | nu
   setCloudV1Fetch(
     createFakeCloudV1Fetch({ inferenceBaseUrl: `${origin}/api/test/fake-inference/v1` })
   );
-  testControlRouter.use('/fake-cloud', createFakeCloudApprovalRouter(link));
-  testControlRouter.use('/fake-inference', createFakeInferenceRouter());
+  addTestControlGroup('/fake-cloud', createFakeCloudApprovalRoutes(link));
+  addTestControlGroup('/fake-inference', createFakeInferenceRoutes());
 
   if (!env.DORKOS_TEST_RUNTIME_DOE) return null;
   const doe = new DoeRuntime(testModeDoeOptions());

@@ -270,7 +270,10 @@ describe('main HTTP admission through the real app', () => {
     // (`routes/connectors.ts`), so `/api/connectors/providers` is asked for by
     // hand below.
     expect(mounts).toContain('/api/connectors');
-    expect(mounts).toHaveLength(70);
+    // 70 -> 71: the mock OAuth MCP server is one `/` mount on Hono
+    // (`http/hono-api.ts`), where it used to be a path-less Express `use`.
+    expect(mounts).toContain('/');
+    expect(mounts).toHaveLength(71);
     const byHand = [
       '/',
       '/x/fixture',

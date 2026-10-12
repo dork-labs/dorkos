@@ -20,15 +20,29 @@ function collect<T extends ts.Node>(guard: (node: ts.Node) => node is T): T[] {
 }
 const calls = collect(ts.isCallExpression);
 const assignments = collect(ts.isBinaryExpression);
-function localAssignment(name: string): ts.ObjectLiteralExpression {
-  const matches = assignments.filter(
-    (node) =>
-      node.operatorToken.kind === ts.SyntaxKind.EqualsToken &&
-      node.left.getText(source) === `app.locals.${name}`
-  );
+/**
+ * The object `index.ts` hands the moved routes under `name` (`http/hono-api.ts`):
+ * either `deps.<name> = { … }`, or `<name>: { … }` in the `deps` declaration.
+ */
+function handedOver(name: string): ts.ObjectLiteralExpression {
+  const assigned = assignments
+    .filter(
+      (node) =>
+        node.operatorToken.kind === ts.SyntaxKind.EqualsToken &&
+        node.left.getText(source) === `deps.${name}`
+    )
+    .map((node) => node.right);
+  const declared = collect(ts.isPropertyAssignment)
+    .filter(
+      (node) =>
+        node.name.getText(source) === name &&
+        ts.isVariableDeclaration(node.parent.parent) &&
+        node.parent.parent.name.getText(source) === 'deps'
+    )
+    .map((node) => node.initializer);
+  const matches = [...assigned, ...declared];
   expect(matches).toHaveLength(1);
-  const assigned = matches[0]!.right;
-  const value = ts.isSatisfiesExpression(assigned) ? assigned.expression : assigned;
+  const value = ts.isSatisfiesExpression(matches[0]!) ? matches[0]!.expression : matches[0]!;
   expect(ts.isObjectLiteralExpression(value)).toBe(true);
   return value as ts.ObjectLiteralExpression;
 }
@@ -47,13 +61,13 @@ describe('production document metrics bootstrap', () => {
     expect(migrations).toHaveLength(1);
     expect(migrations[0]!.arguments.map((node) => node.getText(source))).toEqual(['db']);
     expect(migrations[0]!.pos).toBeLessThan(construction.pos);
-    const http = localAssignment('docChannelHttp');
+    const http = handedOver('docChannel');
     const metrics = http.properties
       .filter(ts.isPropertyAssignment)
       .filter((node) => node.name.getText(source) === 'metrics');
     expect(metrics).toHaveLength(1);
     expect(metrics[0]!.initializer.getText(source)).toBe(name);
-    const debug = localAssignment('debugDeps');
+    const debug = handedOver('debug');
     expect(
       debug.properties
         .filter(ts.isShorthandPropertyAssignment)
