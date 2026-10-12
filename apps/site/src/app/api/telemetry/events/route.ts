@@ -33,7 +33,9 @@
  * stored, logged, or forwarded to PostHog. The one header read is the client IP,
  * taken by the throttle into a process-local counter holding nothing but a count
  * and a timestamp. `distinct_id` is the payload's own `distinctId` (the app's anonymous
- * per-install `instanceId`), never a user id. Public payload docs:
+ * per-install `instanceId`), never a user id. The one addition is the install-ref
+ * join: a `first_run_completed` carrying an install ref also sends a
+ * `$create_alias` keyed on that ref (see `installRefAlias`). Public payload docs:
  * https://dorkos.ai/telemetry
  *
  * @module app/api/telemetry/events
@@ -43,6 +45,11 @@ import { z } from 'zod';
 
 import { env } from '@/env';
 import { consumeEventsTelemetryQuota } from '@/lib/telemetry/events-rate-limit';
+import {
+  INSTALL_REF_TOKEN_PATTERN,
+  INSTALL_REF_UTM_PATTERN,
+  installRefDistinctId,
+} from '@/lib/telemetry/install-ref';
 
 export const runtime = 'edge';
 
@@ -68,6 +75,18 @@ const SessionCreatedProperties = z
   })
   .strict();
 
+/** Mirrors `FirstRunCompletedProperties` in the shared registry (DOR-2862). */
+const FirstRunCompletedProperties = z
+  .object({
+    installRef: z.string().regex(INSTALL_REF_TOKEN_PATTERN).optional(),
+    utmSource: z.string().regex(INSTALL_REF_UTM_PATTERN).optional(),
+    utmCampaign: z.string().regex(INSTALL_REF_UTM_PATTERN).optional(),
+  })
+  .strict();
+
+/** Mirrors `InstanceActiveProperties` in the shared registry (DOR-2862). */
+const InstanceActiveProperties = z.object({}).strict();
+
 /** Mirrors the envelope fields in the shared registry. */
 const envelopeFields = {
   distinctId: z.string().uuid(),
@@ -88,6 +107,20 @@ const TelemetryEventSchema = z.discriminatedUnion('event', [
     .object({
       event: z.literal('session_created'),
       properties: SessionCreatedProperties,
+      ...envelopeFields,
+    })
+    .strict(),
+  z
+    .object({
+      event: z.literal('first_run_completed'),
+      properties: FirstRunCompletedProperties,
+      ...envelopeFields,
+    })
+    .strict(),
+  z
+    .object({
+      event: z.literal('instance_active'),
+      properties: InstanceActiveProperties,
       ...envelopeFields,
     })
     .strict(),
@@ -373,17 +406,20 @@ async function forwardToPostHog(events: AcceptedEvent[]): Promise<void> {
       body: JSON.stringify({
         api_key: apiKey,
         historical_migration: false,
-        batch: events.map((e) => ({
-          event: e.event,
-          distinct_id: e.distinctId,
-          timestamp: e.timestamp,
-          properties: {
-            ...e.properties,
-            dorkos_version: e.dorkosVersion,
-            // Marks these as owned-ingest events (vs the site's browser SDK).
-            $lib: 'dorkos-owned-ingest',
-          },
-        })),
+        batch: [
+          ...events.map((e) => ({
+            event: e.event,
+            distinct_id: e.distinctId,
+            timestamp: e.timestamp,
+            properties: {
+              ...e.properties,
+              dorkos_version: e.dorkosVersion,
+              // Marks these as owned-ingest events (vs the site's browser SDK).
+              $lib: 'dorkos-owned-ingest',
+            },
+          })),
+          ...events.flatMap(installRefAlias),
+        ],
       }),
     });
   } catch (error) {
@@ -391,6 +427,29 @@ async function forwardToPostHog(events: AcceptedEvent[]): Promise<void> {
       error: error instanceof Error ? error.message : String(error),
     });
   }
+}
+
+/**
+ * The install-ref join (DOR-2862). A `first_run_completed` carrying an install
+ * ref adds one `$create_alias` that folds the install's anonymous `instanceId`
+ * into the ref's distinct id. The site aliased the visitor who copied the
+ * command to that same id (`trackHeroInstallCopy` in `lib/analytics.ts`), so
+ * the visit, the copy and the first run become one PostHog person, with no
+ * account. Same shape as the account link in `lib/posthog-server.ts`, which
+ * stays the stronger join. Every other event adds nothing.
+ *
+ * @param event - One accepted event.
+ */
+function installRefAlias(event: AcceptedEvent) {
+  if (event.event !== 'first_run_completed' || !event.properties.installRef) return [];
+  return [
+    {
+      event: '$create_alias',
+      distinct_id: installRefDistinctId(event.properties.installRef),
+      timestamp: event.timestamp,
+      properties: { alias: event.distinctId, $lib: 'dorkos-owned-ingest' },
+    },
+  ];
 }
 
 /**

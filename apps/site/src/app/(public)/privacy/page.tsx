@@ -91,6 +91,13 @@ export default function PrivacyPolicyPage() {
             session content as telemetry.
           </p>
           <p className="text-warm-gray leading-relaxed">
+            If you also turn on feature-usage data, the app tells us when it starts, when you start
+            a new chat, when you finish setup, and once a day that it is running. If you installed
+            with a command copied from this site, that command may carry a short random install tag.
+            Your computer keeps the tag either way. It leaves only with the “finished setup” event,
+            and only if feature-usage data is on.
+          </p>
+          <p className="text-warm-gray leading-relaxed">
             The first time you run DorkOS, it shows a notice explaining this and sends nothing on
             that first run. You can turn it off any time in three ways: run{' '}
             <span className="font-mono">dorkos telemetry disable</span>, set the environment
@@ -299,6 +306,18 @@ export default function PrivacyPolicyPage() {
               page), and a campaign tag if the link had one. Each count carries a random one-time
               ID, no cookie, and not your IP address. If Do Not Track or Global Privacy Control is
               on, we do not count it at all.
+            </p>
+
+            <p className="text-warm-gray leading-relaxed">
+              If analytics cookies are on when you copy the one-line installer or the{' '}
+              <span className="font-mono">npx</span> command, the copied command ends with a short
+              install tag, like <span className="font-mono">--ref=k3j4mnb8x2qa.hn</span>. The tag is
+              new for each copy. It holds a random code and, if the link that brought you had one,
+              its campaign tag. We record the same tag with your copy. If you later turn on
+              feature-usage data in the app, that lets us see this visit led to that install. Your
+              name, email, and IP address are never part of it. Without analytics cookies, the
+              command you copy has no tag. The desktop downloads and{' '}
+              <span className="font-mono">npm install -g</span> never carry one.
             </p>
 
             <AnalyticsPreferenceControl />
