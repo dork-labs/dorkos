@@ -11,8 +11,7 @@
  *
  * @module routes/remote-community-conduct
  */
-import type { Request, Response, Router } from 'express';
-import { CommunityRefSchema, type CommunityRef } from '@dorkos/shared/community-adapter';
+import type { Context, Hono } from 'hono';
 import {
   RemoteCommunityDisplayNameRequestSchema,
   RemoteCommunityDisplayNameResponseSchema,
@@ -21,122 +20,113 @@ import {
   RemoteCommunityRulesResponseSchema,
   RemoteCommunityStandingSchema,
 } from '@dorkos/shared/community-views';
+import type { ApiEnv } from '../http/api-chain.js';
+import { readJsonBody } from '../http/request-body.js';
+import { honoRequestFacts } from '../http/request-facts.js';
 import { clearsTheAgentBar } from '../lib/caller-authority.js';
-import { resolveCommunityOwner } from './community-connections.js';
 import { getRemoteCommunityAdapter } from '../services/communities/remote/state.js';
-import type { CommunityRefusalAction } from './remote-community-refusal.js';
+import {
+  communityFailure,
+  communityTarget,
+  verifiedConnection,
+  type CommunityTarget,
+} from './remote-community-http.js';
 
-/** The two helpers the remote-communities router shares with these routes. */
-export interface RemoteCommunityConductDeps {
-  /** Refuse unless the owner's connection is verified and grants `capability`. */
-  verifiedConnection: (
-    ref: CommunityRef,
-    owner: string,
-    capability: 'read' | 'post'
-  ) => Promise<unknown>;
-  /** Answer a failure with the space's refusal in plain words. */
-  fail: (res: Response, error: unknown, action?: CommunityRefusalAction) => void;
-}
-
-/** The owner and the space, or `null` once the request has been answered. */
-function resolve(req: Request, res: Response) {
-  const owner = resolveCommunityOwner(req, res);
-  const ref = CommunityRefSchema.safeParse(req.params.ref);
-  if (!owner || !ref.success) return null;
-  if (!clearsTheAgentBar(req, res)) {
-    res.status(403).json({
-      code: 'COMMUNITY_PERSON_REQUIRED',
-      error: 'Only you can do this in a space, not an agent.',
-    });
-    return null;
+/** The owner and the space, or the refusal: the owner's bars, then the agent bar. */
+function resolve(c: Context<ApiEnv>): CommunityTarget | Response {
+  const target = communityTarget(c);
+  if (target instanceof Response) return target;
+  if (!clearsTheAgentBar(honoRequestFacts(c))) {
+    return c.json(
+      {
+        code: 'COMMUNITY_PERSON_REQUIRED',
+        error: 'Only you can do this in a space, not an agent.',
+      },
+      403
+    );
   }
-  return { owner, ref: ref.data };
+  return target;
 }
 
 /**
- * Register the conduct routes on the remote-communities router.
+ * Register the conduct routes on the remote-communities routes.
  *
- * @param router - The `/api/communities` router.
- * @param deps - The router's connection check and refusal helper.
+ * @param router - The `/api/communities` routes.
  */
-export function registerRemoteCommunityConductRoutes(
-  router: Router,
-  { verifiedConnection, fail }: RemoteCommunityConductDeps
-): void {
-  router.get('/:ref/rooms/:roomId/standing', async (req, res) => {
-    const target = resolve(req, res);
-    if (!target) return;
+export function registerRemoteCommunityConductRoutes(router: Hono<ApiEnv>): void {
+  router.get('/:ref/rooms/:roomId/standing', async (c) => {
+    const target = resolve(c);
+    if (target instanceof Response) return target;
+    const roomId = c.req.param('roomId');
     try {
       await verifiedConnection(target.ref, target.owner, 'read');
       const standing = await getRemoteCommunityAdapter(target.ref, target.owner).getStanding(
-        req.params.roomId
+        roomId
       );
-      res.json(
-        RemoteCommunityStandingSchema.parse({
-          community: target.ref,
-          roomId: req.params.roomId,
-          ...standing,
-        })
+      return c.json(
+        RemoteCommunityStandingSchema.parse({ community: target.ref, roomId, ...standing })
       );
     } catch (error) {
-      fail(res, error);
+      return communityFailure(c, error);
     }
   });
 
-  router.post('/:ref/rules/accept', async (req, res) => {
-    const target = resolve(req, res);
-    if (!target) return;
-    const input = RemoteCommunityRulesAcceptRequestSchema.safeParse(req.body);
-    if (!input.success) return res.status(400).json({ error: 'Read the rules first.' });
+  router.post('/:ref/rules/accept', async (c) => {
+    const target = resolve(c);
+    if (target instanceof Response) return target;
+    const input = RemoteCommunityRulesAcceptRequestSchema.safeParse(readJsonBody(c));
+    if (!input.success) return c.json({ error: 'Read the rules first.' }, 400);
     try {
       await verifiedConnection(target.ref, target.owner, 'post');
       const rules = await getRemoteCommunityAdapter(target.ref, target.owner).acceptRules(
         input.data.version
       );
-      res.json(RemoteCommunityRulesResponseSchema.parse({ community: target.ref, rules }));
+      return c.json(RemoteCommunityRulesResponseSchema.parse({ community: target.ref, rules }));
     } catch (error) {
-      fail(res, error, 'accept-rules');
+      return communityFailure(c, error, 'accept-rules');
     }
   });
 
-  router.put('/:ref/me/display-name', async (req, res) => {
-    const target = resolve(req, res);
-    if (!target) return;
-    const input = RemoteCommunityDisplayNameRequestSchema.safeParse(req.body);
-    if (!input.success)
-      return res.status(400).json({ error: 'Use letters, numbers and spaces, up to 128.' });
+  router.put('/:ref/me/display-name', async (c) => {
+    const target = resolve(c);
+    if (target instanceof Response) return target;
+    const input = RemoteCommunityDisplayNameRequestSchema.safeParse(readJsonBody(c));
+    if (!input.success) {
+      return c.json({ error: 'Use letters, numbers and spaces, up to 128.' }, 400);
+    }
     try {
       await verifiedConnection(target.ref, target.owner, 'post');
       const member = await getRemoteCommunityAdapter(target.ref, target.owner).setDisplayName(
         input.data.displayName
       );
-      res.json(
+      return c.json(
         RemoteCommunityDisplayNameResponseSchema.parse({
           community: target.ref,
           displayName: member.displayName,
         })
       );
     } catch (error) {
-      fail(res, error, 'rename');
+      return communityFailure(c, error, 'rename');
     }
   });
 
-  router.post('/:ref/rooms/:roomId/entries/:entryId/reports', async (req, res) => {
-    const target = resolve(req, res);
-    if (!target) return;
-    const input = RemoteCommunityReportRequestSchema.safeParse(req.body);
-    if (!input.success)
-      return res.status(400).json({ error: 'Pick a reason. Notes are up to 1,000 characters.' });
+  router.post('/:ref/rooms/:roomId/entries/:entryId/reports', async (c) => {
+    const target = resolve(c);
+    if (target instanceof Response) return target;
+    const input = RemoteCommunityReportRequestSchema.safeParse(readJsonBody(c));
+    if (!input.success) {
+      return c.json({ error: 'Pick a reason. Notes are up to 1,000 characters.' }, 400);
+    }
     try {
       await verifiedConnection(target.ref, target.owner, 'post');
       await getRemoteCommunityAdapter(target.ref, target.owner).reportEntry(
-        req.params.roomId,
-        req.params.entryId,
+        c.req.param('roomId'),
+        c.req.param('entryId'),
         input.data
       );
-      res.status(204).end();
+      return c.body(null, 204);
     } catch (error) {
-      fail(res, error, 'report');
+      return communityFailure(c, error, 'report');
     }
   });
 }

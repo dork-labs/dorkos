@@ -107,6 +107,14 @@ vi.mock('../../services/core/config-manager.js', () => ({
   },
 }));
 
+// The `/api` chain's session gate would refuse a caller with no credential
+// once login is on; each case stands in for what the gate resolved instead,
+// through `buildApp`'s `user`.
+vi.mock('../../services/core/auth/session-gate.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../services/core/auth/session-gate.js')>()),
+  decideSessionGate: vi.fn(async () => ({ allowed: true })),
+}));
+
 vi.mock('../../lib/boundary.js', () => ({
   validateBoundary: vi.fn(async (p: string) => p),
   validateBoundaryOrDorkHome: vi.fn(async (p: string) => p),
@@ -116,11 +124,11 @@ vi.mock('../../lib/boundary.js', () => ({
   BoundaryError: class BoundaryError extends Error {},
 }));
 
-import express from 'express';
 import type { Server } from 'node:http';
 import request from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
-import sessionRoutes from '../sessions.js';
+import { createSessionRoutes, type SessionRouteDeps } from '../sessions.js';
+import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
 import {
   disposeProjector,
   getOrCreateProjector,
@@ -158,23 +166,29 @@ function buildApp(
     bindings?: Record<string, { roomId: string; authorId: string }>;
   } = {}
 ): Server {
-  const app = express();
-  app.use(express.json());
-  app.use((_req, res, next) => {
-    if (options.user) res.locals.user = options.user;
-    if (options.agentIdentity) res.locals.agentIdentity = options.agentIdentity;
-    next();
-  });
+  const deps: SessionRouteDeps = {};
   if (options.bindings) {
-    app.locals.roomSessionBindings = {
+    deps.roomSessionBindings = {
       bindingForSession: (sessionId: string) => {
         const binding = options.bindings?.[sessionId];
         return binding ? { ...binding, sessionId } : undefined;
       },
-    };
+    } as unknown as SessionRouteDeps['roomSessionBindings'];
   }
-  app.use('/api/sessions', sessionRoutes);
-  return target.mount(app);
+  return target.mount(
+    honoGroupListener(
+      { path: '/api/sessions', routes: createSessionRoutes(deps) },
+      {
+        before: (c, next) => {
+          if (options.user) c.set('user', options.user);
+          if (options.agentIdentity) {
+            c.set('agentIdentity', options.agentIdentity as never);
+          }
+          return next();
+        },
+      }
+    )
+  );
 }
 
 /** Park a session on a permission prompt, as a runtime does. */

@@ -75,7 +75,7 @@ import {
 import { isCloudLinked, problemOf } from '../services/core/cloud/v1-client.js';
 import { logger, logError } from '../lib/logger.js';
 import { envelopeRefusalUnlessOwner, type AccountOwnerWording } from './cloud-owner-bar.js';
-import { cloudOfficialOnlyOrigin } from '../middleware/spaces-enabled.js';
+import { officialOnlyOrigin } from '../middleware/spaces-enabled.js';
 import type { ApiEnv } from '../http/api-chain.js';
 import { readJsonBody } from '../http/request-body.js';
 import { honoRequestFacts } from '../http/request-facts.js';
@@ -394,7 +394,7 @@ export function createCloudCommunitiesRoutes(
       const all = await readAccountSignInOrigins();
       // With spaces off the gate let this through for the official space alone, so the answer
       // names its server or nothing (spec `official-community-space` D5).
-      const official = cloudOfficialOnlyOrigin(c);
+      const official = officialOnlyOrigin(c);
       const origins =
         all === null || official === null
           ? all

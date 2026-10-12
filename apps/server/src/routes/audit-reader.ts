@@ -71,9 +71,8 @@ function readerOf(
 }
 
 /**
- * Whether this caller may read the session. A Hono route that may not answers
- * `c.json(SESSION_NOT_FOUND_BODY, 404)`, which is what
- * {@link refuseUnreadableSession} writes on Express.
+ * Whether this caller may read the session. A route that may not answers
+ * `c.json(SESSION_NOT_FOUND_BODY, 404)`.
  *
  * @param request - The request's facts (`http/request-facts.ts`).
  * @param sessionId - The session asked for.
@@ -86,37 +85,16 @@ export function canReadSession(request: ReaderFacts, sessionId: string): boolean
 export const SESSION_NOT_FOUND_BODY = errorBody('Session not found', 'SESSION_NOT_FOUND');
 
 /**
- * Answer 404 when this caller may not read the session, and say so.
- *
- * @param req - The request.
- * @param res - The response; written to on a refusal.
- * @param sessionId - The session asked for.
- * @returns `true` when the request was refused and answered.
- */
-export function refuseUnreadableSession(
-  req: Pick<Request, 'headers'>,
-  res: Response,
-  sessionId: string
-): boolean {
-  const reader = readerOfRequest(req, res);
-  if (readableSessionIds(reader, [sessionId]).has(sessionId)) return false;
-  res.status(404).json(SESSION_NOT_FOUND_BODY);
-  return true;
-}
-
-/**
  * The sessions in a list this caller may read, in order.
  *
- * @param req - The request.
- * @param res - The response carrying the resolved identity.
+ * @param request - The request's facts (`http/request-facts.ts`).
  * @param sessions - The list.
  */
 export function readableSessions<T extends { id: string }>(
-  req: Pick<Request, 'headers'>,
-  res: Pick<Response, 'locals'>,
+  request: ReaderFacts,
   sessions: T[]
 ): T[] {
-  const reader = readerOfRequest(req, res);
+  const reader = readerOfRequest(request);
   if (reader.kind === 'owner') return sessions;
   const readable = readableSessionIds(
     reader,

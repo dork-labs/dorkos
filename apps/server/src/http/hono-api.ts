@@ -48,6 +48,7 @@ import cloudRoutes from '../routes/cloud.js';
 import { createCapabilitiesCatalogRoutes } from '../routes/capabilities-catalog.js';
 import { createCapabilitiesInvokeRoutes } from '../routes/capabilities-invoke.js';
 import commandRoutes from '../routes/commands.js';
+import { createCommunityConnectionsRoutes } from '../routes/community-connections.js';
 import configRoutes from '../routes/config.js';
 import {
   createAgentCommitmentsRoutes,
@@ -86,15 +87,19 @@ import { createPushRoutes, type PushRouterDeps } from '../routes/push.js';
 import { createRelayRoutes, type RelayRouteDeps } from '../routes/relay.js';
 import { relayWebhookBodyRule } from '../routes/relay-webhooks.js';
 import readCursorRoutes from '../routes/read-cursors.js';
+import roomRoutes from '../routes/rooms.js';
 import { createRemoteAccessRoutes } from '../routes/remote-access.js';
+import { createRemoteCommunitiesRoutes } from '../routes/remote-communities.js';
 import { createSearchRoutes, type SearchRouterDeps } from '../routes/search.js';
 import { createSessionLocationsRoutes } from '../routes/session-locations.js';
+import { createSessionRoutes, type SessionRouteDeps } from '../routes/sessions.js';
 import { createShapesRoutes, type ShapesRouterDeps } from '../routes/shapes.js';
 import subagentRoutes from '../routes/subagents.js';
 import { createTasksRoutes, type TasksRouterDeps } from '../routes/tasks.js';
 import { createSystemRoutes, type SystemRouteDeps } from '../routes/system.js';
 import { createTeamRoutes, type TeamRouterDeps } from '../routes/team.js';
 import { createTemplateRoutes } from '../routes/templates.js';
+import { gateCommunityConnections, gateRemoteCommunities } from '../middleware/spaces-enabled.js';
 import {
   createUnclaimedChatsRoutes,
   type UnclaimedChatsRouterDeps,
@@ -217,6 +222,13 @@ export interface ComposedGroupDeps {
    */
   a2a?: A2aRouteDeps;
   /**
+   * What the session routes read (`/api/sessions`, always mounted): the agent
+   * registry, the room ports and the origin overlays. The router keeps this
+   * object and reads its fields per request, so a test may change a field
+   * between requests (not swap the object).
+   */
+  sessions?: SessionRouteDeps;
+  /**
    * The message bus, its connections and chat routes, and the webhook receiver
    * (`/api/relay`). Only handed over when Relay is enabled and started.
    */
@@ -268,6 +280,10 @@ export function createHonoApi(options: HonoApiOptions): Hono<ApiEnv> {
     },
   });
   app.route('/api/health', createHealthRoutes(deps));
+  // Sessions, their messages and the per-session stream. Its WebSocket twin on
+  // `/:id/events` is an upgrade, answered before any route
+  // (`routes/session-events-socket.ts`).
+  app.route('/api/sessions', createSessionRoutes(deps.sessions ?? {}));
   // The global event stream over SSE. Its WebSocket twin on the same path is an
   // upgrade, answered before any route (`routes/events-socket.ts`).
   app.route('/api/events', eventsRoutes);
@@ -282,6 +298,15 @@ export function createHonoApi(options: HonoApiOptions): Hono<ApiEnv> {
   app.route('/api/workspaces', workspaceRoutes);
   app.route('/api/projects', projectRoutes);
   app.route('/api/read-cursors', readCursorRoutes);
+  app.route('/api/rooms', roomRoutes);
+  // Spaces (rooms on another server) are an experiment, off by default
+  // (DOR-2740): both groups refuse until a person turns `spaces.enabled` on,
+  // except for the official space (spec `official-community-space` D5), which
+  // each gate lets through by its `:ref`. A space's credentials stay here.
+  app.use('/api/community-connections/*', gateCommunityConnections());
+  app.route('/api/community-connections', createCommunityConnectionsRoutes());
+  app.use('/api/communities/*', gateRemoteCommunities());
+  app.route('/api/communities', createRemoteCommunitiesRoutes());
   app.route('/api/files', fileRoutes);
   app.route('/api/diff', diffRoutes);
   app.route('/api/workbench', workbenchServeRoutes);

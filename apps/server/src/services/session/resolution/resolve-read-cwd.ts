@@ -17,7 +17,7 @@
  * no `res` and cannot answer a request. Every caller MUST judge the directory
  * they get back before reading anything with it, because a directory resolved
  * from the runtime's live binding is one the CALLER never named, and
- * `assertBoundary(undefined)` passes. Skipping that check inverts the boundary:
+ * `boundaryRefusal(undefined)` passes. Skipping that check inverts the boundary:
  * a request that omits `?cwd=` would read a session that the same request with
  * an explicit `?cwd=` is refused for. DOR-1322 shipped with exactly that gap on
  * `/:id/messages` and it was closed with DOR-1444.

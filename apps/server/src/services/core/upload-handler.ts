@@ -1,7 +1,7 @@
 import path from 'path';
 import { randomUUID } from 'crypto';
 import fs from 'fs/promises';
-import type { ParseUploadsOptions } from '../../http/uploads.js';
+import type { SingleFieldUploadOptions } from '../../http/uploads.js';
 
 /** Sanitize a filename: strip path components, replace unsafe chars, add UUID prefix. */
 function sanitizeFilename(original: string): string {
@@ -45,7 +45,7 @@ class UploadHandler {
    * and disk storage under sanitized names. `parseUploads` (`http/uploads.ts`)
    * reads the body with them.
    */
-  uploadOptions(cwd: string, config: UploadConfig): ParseUploadsOptions {
+  uploadOptions(cwd: string, config: UploadConfig): SingleFieldUploadOptions {
     return {
       field: UPLOAD_FIELD,
       maxCount: config.maxFiles,

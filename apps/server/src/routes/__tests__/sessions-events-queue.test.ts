@@ -74,6 +74,7 @@ vi.mock('../../services/core/config-manager.js', () => ({
 vi.mock('@dorkos/shared/manifest', () => ({ readManifest: vi.fn(async () => null) }));
 
 import { createApp, finalizeApp } from '../../app.js';
+import { composedListener } from '../../http/__tests__/composed-listener.js';
 import { STREAM_EPOCH } from '../../lib/stream-cursor.js';
 import {
   MessageQueueStore,
@@ -90,8 +91,11 @@ import {
   streamGenerationOf,
 } from '../../services/session/session-state-projector.js';
 
-const app = createApp({ admission: new MainRequestAdmission() });
+const admission = new MainRequestAdmission();
+const app = createApp({ admission });
 finalizeApp(app);
+// Routed as the running server routes: the session routes answer from Hono.
+const listener = composedListener(app, admission);
 
 const SESSION_ID = '00000000-0000-4000-8000-0000000000aa';
 const TAB = 'window-a';
@@ -166,7 +170,7 @@ describe('GET /api/sessions/:id/events — the queue on the wire', () => {
   it('a cold connect hydrates the whole queue, in order, in the snapshot frame', async () => {
     seedQueue('first', 'second', 'third');
 
-    const { frames } = await collectDurableEvents(app, SESSION_ID, {
+    const { frames } = await collectDurableEvents(listener, SESSION_ID, {
       until: (f) => f.some((frame) => frame.event === 'snapshot'),
     });
 
@@ -187,7 +191,7 @@ describe('GET /api/sessions/:id/events — the queue on the wire', () => {
       emitQueueUpdate(SESSION_ID);
     };
 
-    const { frames } = await collectDurableEvents(app, SESSION_ID, {
+    const { frames } = await collectDurableEvents(listener, SESSION_ID, {
       until: (f) => f.some((frame) => frame.event === 'queue_update'),
     });
 
@@ -207,7 +211,7 @@ describe('GET /api/sessions/:id/events — the queue on the wire', () => {
       emitQueueUpdate(SESSION_ID);
     };
 
-    const { frames } = await collectDurableEvents(app, SESSION_ID, {
+    const { frames } = await collectDurableEvents(listener, SESSION_ID, {
       until: (f) => f.some((frame) => frame.event === 'queue_update'),
     });
 
@@ -234,7 +238,7 @@ describe('GET /api/sessions/:id/events — the queue on the wire', () => {
       });
     };
 
-    const { frames } = await collectDurableEvents(app, SESSION_ID, {
+    const { frames } = await collectDurableEvents(listener, SESSION_ID, {
       until: (f) => f.some((frame) => frame.event === 'queue_update'),
     });
 
@@ -261,7 +265,7 @@ describe('GET /api/sessions/:id/events — resuming across queue updates', () =>
     emitQueueUpdate(SESSION_ID); // seq 3
     projector.ingest({ type: 'turn_end' }); // seq 4
 
-    const { frames } = await collectDurableEvents(app, SESSION_ID, {
+    const { frames } = await collectDurableEvents(listener, SESSION_ID, {
       lastEventId: frameId(1),
       until: (f) => f.some((frame) => frame.id?.endsWith('-4')),
     });
@@ -279,7 +283,7 @@ describe('GET /api/sessions/:id/events — resuming across queue updates', () =>
     // queue rides that hydration rather than being lost with the cursor.
     seedQueue('survived the restart');
 
-    const { frames } = await collectDurableEvents(app, SESSION_ID, {
+    const { frames } = await collectDurableEvents(listener, SESSION_ID, {
       lastEventId: `${SESSION_ID}-${STREAM_EPOCH - 1}-g0-4523`,
       until: (f) => f.some((frame) => frame.event === 'snapshot'),
     });

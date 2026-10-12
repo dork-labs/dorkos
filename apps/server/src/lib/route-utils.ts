@@ -120,8 +120,8 @@ export function discardStream(stream: Readable): void {
   stream.destroy();
 }
 
-/** Options for {@link assertBoundary}. */
-export interface AssertBoundaryOptions {
+/** Options for {@link boundaryRefusal}. */
+export interface BoundaryRefusalOptions {
   /**
    * Also accept DorkOS's own `{dorkHome}/agents/*` subtree — the agent-registry
    * seam (PR #409, `validateBoundaryOrDorkHome`). Set it for a SESSION-CWD
@@ -148,34 +148,30 @@ export interface AssertBoundaryOptions {
 /**
  * Validate that a path is within the directory boundary.
  *
- * Sends a 403 response if the path violates the boundary and returns `false`.
- * Returns `true` if the path is valid or not provided. With
- * `allowDorkHome`, the `{dorkHome}/agents/*` subtree is additionally accepted
- * for agent-home session cwds (see {@link AssertBoundaryOptions.allowDorkHome}).
+ * With `allowDorkHome`, the `{dorkHome}/agents/*` subtree is additionally
+ * accepted for agent-home session cwds (see
+ * {@link BoundaryRefusalOptions.allowDorkHome}). A route answers a refusal with
+ * `c.json(refusal, 403)`.
  *
  * @param pathToCheck - User-supplied path (skipped if undefined/null)
- * @param res - Express response object (used to send 403 on violation)
  * @param opts - Boundary options (e.g. `allowDorkHome` for session cwds)
- * @returns `true` if the path is valid, `false` if a 403 was sent
+ * @returns `undefined` if the path is valid or not provided, else the 403 body
+ * @throws Anything the boundary check throws that is not a {@link BoundaryError}.
  */
-export async function assertBoundary(
+export async function boundaryRefusal(
   pathToCheck: string | undefined | null,
-  res: Response,
-  opts: AssertBoundaryOptions = {}
-): Promise<boolean> {
-  if (!pathToCheck) return true;
+  opts: BoundaryRefusalOptions = {}
+): Promise<{ error: string; code: string } | undefined> {
+  if (!pathToCheck) return undefined;
   try {
     if (opts.allowDorkHome) {
       await validateBoundaryOrDorkHome(pathToCheck);
     } else {
       await validateBoundary(pathToCheck);
     }
-    return true;
+    return undefined;
   } catch (err) {
-    if (err instanceof BoundaryError) {
-      res.status(403).json({ error: err.message, code: err.code });
-      return false;
-    }
+    if (err instanceof BoundaryError) return { error: err.message, code: err.code };
     throw err;
   }
 }

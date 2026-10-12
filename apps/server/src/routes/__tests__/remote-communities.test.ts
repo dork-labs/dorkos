@@ -1,5 +1,4 @@
 /** @vitest-environment node */
-import express from 'express';
 import request from '@dorkos/test-utils/supertest';
 import { listeningServer } from '@dorkos/test-utils/listening-server';
 import { HaltRoomResponseSchema } from '@dorkos/shared/room-schemas';
@@ -165,6 +164,10 @@ const fixture = vi.hoisted(() => {
   };
 });
 
+// The `/api` chain these routes run behind reads login and the host allowlist from config.
+vi.mock('../../services/core/config-manager.js', () => ({
+  configManager: { get: vi.fn(() => undefined) },
+}));
 vi.mock('../community-connections.js', () => ({
   resolveCommunityOwner: () => fixture.currentOwner,
 }));
@@ -270,7 +273,8 @@ vi.mock('../../services/rooms/index.js', () => ({
   }),
 }));
 
-import { createRemoteCommunitiesRouter } from '../remote-communities.js';
+import { createRemoteCommunitiesRoutes } from '../remote-communities.js';
+import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
 import { RemoteConnectionAuthorizationError } from '../../services/communities/remote/connection-store.js';
 import {
   PinnedHttpError,
@@ -278,14 +282,9 @@ import {
 } from '../../services/communities/remote/pinned-origin.js';
 import { CommunityRoomNotFoundError } from '@dorkos/shared/community-adapter';
 
-function app() {
-  const instance = express();
-  instance.use(express.json());
-  instance.use('/api/communities', createRemoteCommunitiesRouter());
-  return instance;
-}
-
-const testServer = listeningServer(app());
+const testServer = listeningServer(
+  honoGroupListener({ path: '/api/communities', routes: createRemoteCommunitiesRoutes() })
+);
 
 async function* failingRoomStream(error: Error): AsyncGenerator<never, void, unknown> {
   throw error;

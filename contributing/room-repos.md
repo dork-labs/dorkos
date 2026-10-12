@@ -328,7 +328,7 @@ commit on `main`, through the same mutex merges use, after `assertMainCheckoutRe
 `baseCommit` is required for move and delete — nobody moves or deletes files they have not seen.
 
 - **People only.** An agent is refused `PEOPLE_ONLY` (403), not 404: it is already a visible member,
-  and merging is its write path. An upload is refused before multer reads a byte.
+  and merging is its write path. An upload is refused before a byte of its body is read.
 - **Optimistic locking is per path**, not on `main` moving. `409 FILE_CHANGED` fires only when a
   path the change touches moved — the file a save or a replacing upload names, every file under a
   moved or deleted folder — and carries `{ path, commit, lastCommit }` so the client can name who
@@ -358,7 +358,7 @@ commit on `main`, through the same mutex merges use, after `assertMainCheckoutRe
 - **Every `.git` door is refused** (`assertWritablePath`): any case, trailing dots and spaces,
   HFS-ignorable characters, `git~<digit>`, and any colon at all (NTFS streams such as
   `.git::$INDEX_ALLOCATION`).
-- **Uploads use multer disk storage** in a per-request folder under `<dorkHome>/.temp/room-uploads/`,
+- **Uploads are written to disk** (`parseUploadForm` in `apps/server/src/http/uploads.ts`) in a per-request folder under `<dorkHome>/.temp/room-uploads/`,
   capped per file at the room's frozen `maxFileBytes`, removed before the response is sent.
 - The client editor is a **source** editor, not the session canvas. The canvas round-trips markdown
   through ProseMirror and would commit a reformat under a person's name that they never typed. Byte

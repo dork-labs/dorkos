@@ -35,7 +35,7 @@ import { createDb, runMigrations, user, type Db } from '@dorkos/db';
 import roomRoutes from '../rooms.js';
 import readCursorRoutes from '../read-cursors.js';
 import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
-import { getAuth, initAuth, sessionGate, toNodeHandler } from '../../services/core/auth/index.js';
+import { getAuth, initAuth, toNodeHandler } from '../../services/core/auth/index.js';
 import { createRoomSubsystem, setRoomService } from '../../services/rooms/index.js';
 import { setReadCursorService } from '../../services/core/read-cursor-service.js';
 import { configManager, initConfigManager } from '../../services/core/config-manager.js';
@@ -45,20 +45,23 @@ const fixtureTarget = swappableServer();
 const fixtureServer = fixtureTarget.server;
 
 /**
- * The rooms surface as the server routes it: the rooms router on an Express app
- * in `app.ts`'s middleware order, behind the front door with the Hono `/api`
- * chain answering `/api/read-cursors`.
+ * The rooms surface as the server routes it: the rooms routes on the Hono
+ * `/api` chain (which runs the session gate), with Better Auth answering from
+ * an Express app behind the front door.
  */
 function buildApp(): RequestListener {
   const legacy = express();
   legacy.all('/api/auth/*splat', toNodeHandler(getAuth()!));
-  legacy.use(express.json({ limit: '1mb' }));
-  legacy.use(sessionGate);
-  legacy.use('/api/rooms', roomRoutes);
-  // Mounted because a read cursor is not a room route: `/api/read-cursors` is
-  // the one write path onto read state, and this test's whole subject is that
-  // the SAME author id carries across it and `/api/rooms` alike.
-  return honoGroupListener({ path: '/api/read-cursors', routes: readCursorRoutes }, { legacy });
+  return honoGroupListener(
+    [
+      { path: '/api/rooms', routes: roomRoutes },
+      // Mounted because a read cursor is not a room route: `/api/read-cursors`
+      // is the one write path onto read state, and this test's whole subject is
+      // that the SAME author id carries across it and `/api/rooms` alike.
+      { path: '/api/read-cursors', routes: readCursorRoutes },
+    ],
+    { legacy }
+  );
 }
 
 // Emails are assembled from parts so the source never contains a literal address.

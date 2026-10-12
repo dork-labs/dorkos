@@ -20,12 +20,14 @@
  *
  * @module routes/session-command-intent-handler
  */
-import type { Request, Response } from 'express';
+import type { Context } from 'hono';
 import { z } from 'zod';
 import { COMMAND_INTENTS } from '@dorkos/shared/command-intents';
 import type { RuntimeCommandIntentId } from '@dorkos/shared/command-intents';
 import { runtimeRegistry } from '../services/core/runtime-registry.js';
-import { parseSessionId, sendError } from '../lib/route-utils.js';
+import type { ApiEnv } from '../http/api-chain.js';
+import { readJsonBody } from '../http/request-body.js';
+import { errorBody, parseSessionId } from '../lib/route-utils.js';
 import { DEFAULT_CWD } from '../lib/resolve-root.js';
 import { logger } from '../lib/logger.js';
 import {
@@ -37,8 +39,8 @@ import {
 
 /**
  * Optional trigger body: trailing instructions the user typed after the intent
- * token (e.g. `/compact focus on the API changes`). Express 5 leaves `req.body`
- * undefined on an empty POST, so the whole body is optional.
+ * token (e.g. `/compact focus on the API changes`). An empty POST has no body,
+ * so the whole body is optional.
  */
 const CommandIntentBodySchema = z.object({ instructions: z.string().optional() }).optional();
 
@@ -48,7 +50,7 @@ const CommandIntentBodySchema = z.object({ instructions: z.string().optional() }
  * `'runtime'` ⟺ {@link RuntimeCommandIntentId} by design). Returns `null` for an
  * unknown token or a client-native intent that shouldn't hit this route.
  *
- * @param param - The raw `:intent` route param (Express types it loosely).
+ * @param param - The raw `:intent` route param.
  */
 function parseRuntimeIntent(param: unknown): RuntimeCommandIntentId | null {
   const descriptor = COMMAND_INTENTS.find(
@@ -58,35 +60,35 @@ function parseRuntimeIntent(param: unknown): RuntimeCommandIntentId | null {
 }
 
 /**
- * Express handler for `POST /api/sessions/:id/command-intents/:intent`. Mounted
- * directly by `sessions.ts` (Express 5 forwards async rejections natively); see
- * the module doc for semantics.
+ * Handler for `POST /api/sessions/:id/command-intents/:intent`, mounted by
+ * `sessions.ts`; see the module doc for semantics.
  *
- * @param req - The Express request (`:id` + `:intent` route params; optional
- *   JSON body `{ instructions?: string }`)
- * @param res - The Express response (202 trigger / 400 / 404 / 409 / 422)
+ * @param c - The request context (`:id` + `:intent` route params; optional
+ *   JSON body `{ instructions?: string }`); answers 202 trigger / 400 / 404 /
+ *   409 / 422
  */
-export async function sessionCommandIntentHandler(req: Request, res: Response): Promise<void> {
-  const sessionId = parseSessionId(req.params.id);
-  if (!sessionId) return sendError(res, 400, 'Invalid session ID', 'INVALID_SESSION_ID');
+export async function sessionCommandIntentHandler(c: Context<ApiEnv>): Promise<Response> {
+  const sessionId = parseSessionId(c.req.param('id'));
+  if (!sessionId) return c.json(errorBody('Invalid session ID', 'INVALID_SESSION_ID'), 400);
 
   // Validate the intent against the runtime-fulfilled set. An unknown token (or a
   // client-native intent that shouldn't reach the server) is a client bug → 422.
-  const intent = parseRuntimeIntent(req.params.intent);
+  const intent = parseRuntimeIntent(c.req.param('intent'));
   if (!intent) {
-    return sendError(
-      res,
-      422,
-      `Unknown command intent: ${String(req.params.intent)}`,
-      'INVALID_COMMAND_INTENT'
+    return c.json(
+      errorBody(
+        `Unknown command intent: ${String(c.req.param('intent'))}`,
+        'INVALID_COMMAND_INTENT'
+      ),
+      422
     );
   }
 
-  // Optional body: trailing instructions after the intent token. Express 5
-  // leaves req.body undefined on an empty POST, so absence is valid.
-  const parsedBody = CommandIntentBodySchema.safeParse(req.body);
+  // Optional body: trailing instructions after the intent token. An empty
+  // POST has no body, so absence is valid.
+  const parsedBody = CommandIntentBodySchema.safeParse(readJsonBody(c));
   if (!parsedBody.success) {
-    return sendError(res, 400, 'Invalid request body', 'VALIDATION_ERROR');
+    return c.json(errorBody('Invalid request body', 'VALIDATION_ERROR'), 400);
   }
   const instructions = parsedBody.data?.instructions;
 
@@ -101,7 +103,7 @@ export async function sessionCommandIntentHandler(req: Request, res: Response): 
     const probeCwd = peekProjector(sessionId)?.cwd ?? DEFAULT_CWD;
     const stored = await runtime.getSession(probeCwd, sessionId);
     if (!stored) {
-      return sendError(res, 404, 'Session not found', 'SESSION_NOT_FOUND');
+      return c.json(errorBody('Session not found', 'SESSION_NOT_FOUND'), 404);
     }
   }
 
@@ -110,15 +112,16 @@ export async function sessionCommandIntentHandler(req: Request, res: Response): 
   // client; this is the server half of that honesty).
   const caps = runtime.getCapabilities();
   if (!caps.commandIntents[intent].supported) {
-    return sendError(
-      res,
-      422,
-      `${caps.type} does not support the ${intent} command intent`,
-      'COMMAND_INTENT_UNSUPPORTED'
+    return c.json(
+      errorBody(
+        `${caps.type} does not support the ${intent} command intent`,
+        'COMMAND_INTENT_UNSUPPORTED'
+      ),
+      422
     );
   }
 
-  const clientId = (req.headers['x-client-id'] as string) || crypto.randomUUID();
+  const clientId = c.req.header('x-client-id') || crypto.randomUUID();
   // The body carries no cwd (only optional instructions), so source it from
   // the session's live projector (set by the /events connect / prior turn).
   const cwd = peekProjector(sessionId)?.cwd ?? DEFAULT_CWD;
@@ -162,14 +165,16 @@ export async function sessionCommandIntentHandler(req: Request, res: Response): 
       sessionId,
       lockedBy: lockInfo?.clientId ?? 'unknown',
     });
-    res.status(409).json({
-      error: 'Session locked',
-      code: 'SESSION_LOCKED',
-      lockedBy: lockInfo?.clientId ?? 'unknown',
-      lockedAt: lockInfo ? new Date(lockInfo.acquiredAt).toISOString() : new Date().toISOString(),
-    });
-    return;
+    return c.json(
+      {
+        error: 'Session locked',
+        code: 'SESSION_LOCKED',
+        lockedBy: lockInfo?.clientId ?? 'unknown',
+        lockedAt: lockInfo ? new Date(lockInfo.acquiredAt).toISOString() : new Date().toISOString(),
+      },
+      409
+    );
   }
 
-  res.status(202).json({ sessionId });
+  return c.json({ sessionId }, 202);
 }

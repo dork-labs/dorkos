@@ -49,6 +49,7 @@ vi.mock('../../services/session/fleet/continue-service.js', async (importOrigina
 }));
 
 import { createApp, finalizeApp } from '../../app.js';
+import { composedListener } from '../../http/__tests__/composed-listener.js';
 import { runtimeRegistry } from '../../services/core/runtime-registry.js';
 import { createRoomSubsystem, setRoomService } from '../../services/rooms/index.js';
 import {
@@ -73,9 +74,10 @@ import {
   resetSessionVisibility,
 } from '../../services/audit/session-visibility.js';
 
-const app = createApp({ admission: new MainRequestAdmission() });
+const admission = new MainRequestAdmission();
+const app = createApp({ admission });
 finalizeApp(app);
-const testServer = listeningServer(app);
+const testServer = listeningServer(composedListener(app, admission));
 
 const SESSION = '0e7270c6-5555-4666-8777-888888888888';
 const base = `/api/sessions/${SESSION}`;

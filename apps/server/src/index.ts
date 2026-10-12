@@ -1282,19 +1282,13 @@ async function start() {
       activity: activityService,
       // Read when an automatic handoff fires, long after boot: the app and its
       // Mesh and room ports exist by then (the app is created further down).
-      launchDeps: () => ({
-        meshCore: app.locals.meshCore as MeshCore | undefined,
-        roomSessionPlace: app.locals.roomSessionPlace as RoomSessionPlacePort | undefined,
-      }),
+      launchDeps: () => ({ meshCore, roomSessionPlace: roomSessionPlacePort }),
     });
     // Waits for an account's reset, confirms it with a reading and resumes the
     // session by itself. After the planner, which settles pre-restart `auto`
     // plans before this re-arms the stored waits.
     const uninstallResume = installResumeService({
-      launchDeps: () => ({
-        meshCore: app.locals.meshCore as MeshCore | undefined,
-        roomSessionPlace: app.locals.roomSessionPlace as RoomSessionPlacePort | undefined,
-      }),
+      launchDeps: () => ({ meshCore, roomSessionPlace: roomSessionPlacePort }),
       // Task 2.2's idle probe, for an account the store cannot confirm on its
       // own. An account it cannot probe is still confirmed from store readings.
       probe: probeForReset,
@@ -3892,7 +3886,7 @@ async function start() {
   // store into the session router's imports. A Tasks-disabled install leaves
   // the second unset, which both overlays treat as a safe no-op.
   //
-  // Wired to the session routes via app.locals AND to the global session-list
+  // Wired to the session routes (`deps.sessions`) AND to the global session-list
   // stream below, because both produce client-visible session rows and a room
   // turn must read the same way whichever one a client heard it from (DOR-1141).
   if (taskStore) {
@@ -3951,7 +3945,6 @@ async function start() {
   // mount. Both take the ledger as a PORT — neither the broadcaster nor the
   // session routes may reach into the rooms domain — so this one line is where
   // the rooms half of a fleet-wide prompt is decided.
-  app.locals.roomSessionBindings = roomStore.sessionLedger;
   sessionListBroadcaster.setRoomBindings(roomStore.sessionLedger);
 
   // And where a room conversation RUNS, for the other surface that can start a
@@ -3965,7 +3958,6 @@ async function start() {
     worktrees: () => roomWorktrees,
     sessionRuntime: (sessionId) => runtimeRegistry.resolveForSession(sessionId),
   });
-  app.locals.roomSessionPlace = roomSessionPlacePort;
 
   // Wire global session-list discovery → unified SSE stream (ADR-0265/0266).
   // ALWAYS ON: fans every registered runtime's transition-only session-list
@@ -3998,11 +3990,18 @@ async function start() {
   // when a subsystem is disabled the routes degrade to safe defaults.
   if (meshCore) {
     deps.mesh = { meshCore, taskStore, relayCore, activity: activityService };
-    // Expose the registry to the (statically-mounted) sessions router so
-    // GET /api/sessions/recent can resolve agent project paths (DOR-329).
-    app.locals.meshCore = meshCore;
     mountedRouters.push('mesh');
   }
+  // The session routes' reads: the registry `/recent` resolves agent project
+  // paths from (DOR-329), the room ports, and the same origin overlays the
+  // session-list stream carries, so a room turn reads the same either way
+  // (DOR-1141).
+  deps.sessions = {
+    ...sessionOriginResolvers(app.locals),
+    meshCore,
+    roomSessionBindings: roomStore.sessionLedger,
+    roomSessionPlace: roomSessionPlacePort,
+  };
 
   // Deep health (`GET /api/health/deep`) — the checks `dorkos doctor --deep`
   // cannot run from outside because they need this process's own view of rooms,

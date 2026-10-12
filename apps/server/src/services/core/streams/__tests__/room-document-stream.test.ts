@@ -2,7 +2,8 @@
 import { EventEmitter } from 'node:events';
 import { randomUUID } from 'node:crypto';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import type { Request, Response } from 'express';
+import { Hono } from 'hono';
+import type { ApiEnv } from '../../../../http/api-chain.js';
 import type { WebSocket } from 'ws';
 import type { StreamFrame } from '@dorkos/shared/stream-socket';
 import type { Db } from '@dorkos/db';
@@ -128,8 +129,11 @@ class RecordingSink implements DurableStreamSink {
 }
 class ResponseProbe extends EventEmitter {
   readonly chunks: string[] = [];
-  locals: Record<string, unknown> = {};
   writableEnded = false;
+  destroyed = false;
+  get writableFinished() {
+    return this.writableEnded;
+  }
   writeHead = vi.fn();
   write(value: string) {
     this.chunks.push(value);
@@ -184,9 +188,6 @@ describe('common room document notifications', () => {
       const f = fixture();
       const factory = vi.fn((_scope, _caller) => f.notifications);
       setDocScopeNotificationsFactory(factory);
-      const req = { params: { id: f.room.id }, headers: {}, query: {} } as unknown as Request<{
-        id: string;
-      }>;
       let completion: Promise<void> | undefined;
       let frames: () => StreamFrame[];
       let end: () => void;
@@ -194,12 +195,19 @@ describe('common room document notifications', () => {
       if (protocol === 'sse') {
         const res = new ResponseProbe();
         sinks.push(res);
-        const next = vi.fn();
-        completion = roomEventsHandler(req, res as unknown as Response, next);
+        // The handler as the rooms group serves it, on the raw Node pair.
+        const app = new Hono<ApiEnv>().get('/api/rooms/:id/events', roomEventsHandler);
+        const incoming = { headers: {}, socket: {} };
+        completion = Promise.resolve(
+          app.fetch(new Request(`http://localhost/api/rooms/${f.room.id}/events`), {
+            incoming,
+            outgoing: res,
+          })
+        ).then(() => undefined);
         frames = () => res.frames();
         end = () => res.end();
         closed = () => res.writableEnded;
-        expect(next).not.toHaveBeenCalled();
+        await until(() => res.writeHead.mock.calls.length > 0);
         expect(res.writeHead).toHaveBeenCalledWith(
           200,
           expect.objectContaining({ 'Content-Type': 'text/event-stream' })

@@ -66,6 +66,8 @@ vi.mock('@dorkos/shared/manifest', () => ({
 import request from '@dorkos/test-utils/supertest';
 import { listeningServer } from '@dorkos/test-utils/listening-server';
 import { createApp, finalizeApp } from '../../app.js';
+import { composedListener } from '../../http/__tests__/composed-listener.js';
+import type { SessionRouteDeps } from '../../routes/sessions.js';
 import { createTestDb } from '@dorkos/test-utils/db';
 import { sessionMetadata, eq } from '@dorkos/db';
 import type { Db } from '@dorkos/db';
@@ -76,9 +78,14 @@ import { peekProjector, disposeProjector } from '../../services/session/session-
 import type { SessionSnapshot } from '@dorkos/shared/session-stream';
 import { USER_CONFIG_DEFAULTS } from '@dorkos/shared/config-schema';
 
-const app = createApp({ admission: new MainRequestAdmission() });
+const admission = new MainRequestAdmission();
+const app = createApp({ admission });
 finalizeApp(app);
-const testServer = listeningServer(app);
+/** What the session routes read; the tests change it between requests. */
+const sessionLocals: Record<string, unknown> = {};
+const testServer = listeningServer(
+  composedListener(app, admission, { sessions: sessionLocals as SessionRouteDeps })
+);
 
 /** Base URL for raw SSE collection through the file-scoped listener. */
 function testServerBaseUrl(): string {
@@ -141,7 +148,7 @@ describe('sessions route — multi-runtime routing (real registry + real DB)', (
   });
 
   afterEach(() => {
-    delete app.locals.meshCore;
+    delete sessionLocals.meshCore;
     // The projector registry is a process singleton; a triggered turn leaves
     // per-session projector state. Drop it so accumulated turns don't leak across
     // tests (e.g. an earlier "Echo: hi" turn surfacing in a later assertion).
@@ -360,7 +367,7 @@ describe('sessions route — multi-runtime routing (real registry + real DB)', (
     });
 
     it('records agentPath on first message for provenance', async () => {
-      app.locals.meshCore = {
+      sessionLocals.meshCore = {
         listWithPaths: () => [{ projectPath: '/projects/my-agent' }],
       };
       await postMessage(TEST_MODE_SESSION, {

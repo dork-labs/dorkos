@@ -11,7 +11,6 @@
  *
  * @module lib/file-route-guards
  */
-import type { Response } from 'express';
 import crypto from 'node:crypto';
 import path from 'node:path';
 import { validateBoundary, BoundaryError } from './boundary.js';
@@ -154,9 +153,8 @@ export interface PathErrorReply {
 
 /**
  * Map a boundary/path-resolution error to an HTTP answer, or `null` for an
- * unexpected error the caller should treat as a 500. A Hono route returns
- * `c.json(reply.body, reply.status)`; {@link sendPathError} writes it on
- * Express.
+ * unexpected error the caller should treat as a 500. A route returns
+ * `c.json(reply.body, reply.status)`.
  *
  * @param err - The thrown error to classify.
  */
@@ -172,19 +170,4 @@ export function pathErrorReply(err: unknown): PathErrorReply | null {
     return { status: 400, body: { error: 'Invalid path', code } };
   }
   return null;
-}
-
-/**
- * Map a boundary/path-resolution error to an HTTP response. Returns `true` when
- * it handled the error (caller should stop); `false` for an unexpected error the
- * caller should treat as a 500.
- *
- * @param res - The Express response to write on a handled error.
- * @param err - The thrown error to classify.
- */
-export function sendPathError(res: Response, err: unknown): boolean {
-  const reply = pathErrorReply(err);
-  if (!reply) return false;
-  res.status(reply.status).json(reply.body);
-  return true;
 }

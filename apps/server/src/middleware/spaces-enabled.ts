@@ -13,7 +13,6 @@
  * @module middleware/spaces-enabled
  */
 import type { IncomingMessage } from 'node:http';
-import type { Request, Response, NextFunction } from 'express';
 import type { HttpBindings } from '@hono/node-server';
 import type { MiddlewareHandler } from 'hono';
 import type { CommunityRef } from '@dorkos/shared/community-adapter';
@@ -43,11 +42,6 @@ const SPACES_DISABLED_BODY = {
   code: SPACES_DISABLED_CODE,
 } as const;
 
-/** Answer the refusal every space route gives while spaces are off. */
-export function refuseSpacesDisabled(res: Response): void {
-  res.status(404).json(SPACES_DISABLED_BODY);
-}
-
 /**
  * What a space gate asks about the official space (spec `official-community-space` D5). The
  * production answer is {@link getOfficialSpace}; a test passes its own.
@@ -59,18 +53,6 @@ export interface SpaceAccess {
   isOfficialLink(url: string): boolean;
   /** The official link's origin, or `null` when there is no official space. */
   origin(): string | null;
-}
-
-/**
- * Set on `res.locals` by a gate that let a request through only for the official space. A route
- * that answers with a list narrows it to the official space when it sees this, so the gate and
- * the route agree on one rule without the route reading config itself.
- */
-export const SPACES_OFFICIAL_ONLY = 'spacesOfficialOnly';
-
-/** Whether a gate let this request through for the official space alone. */
-export function officialOnly(res: Response): boolean {
-  return res.locals[SPACES_OFFICIAL_ONLY] === true;
 }
 
 /** What a space gate decided about one request. */
@@ -122,18 +104,36 @@ function decideSpaceGate(
   return { pass: false };
 }
 
-type Gate = (req: Request, res: Response, next: NextFunction) => void;
+/**
+ * The official space's origin, for a request a gate let through for the official space alone.
+ * Keyed by the raw request, so nothing outlives it.
+ */
+const officialOrigins = new WeakMap<IncomingMessage, string>();
 
-/** One space router's gate on the Express chain; see {@link decideSpaceGate}. */
-function spaceGate(rule: GateRule, access: () => SpaceAccess): Gate {
-  return (req, res, next) => {
-    const decision = decideSpaceGate(rule, req.method, req.path, req.body, access());
-    if (!decision.pass) {
-      refuseSpacesDisabled(res);
-      return;
+/**
+ * What a space gate reads: the raw Node request, and the body the chain parsed (`c.var.body`,
+ * `http/request-body.ts`), for a rule that reads one.
+ */
+type SpaceGateEnv = { Bindings: HttpBindings; Variables: { body?: unknown } };
+
+/**
+ * One space router's gate on the Hono chain; see {@link decideSpaceGate}. Mount it with
+ * `use('<mount>/*', …)`: it reads the path below that mount, so it covers the mount itself and
+ * every path under it, a route there or not.
+ */
+function spaceGate<E extends SpaceGateEnv>(
+  rule: GateRule,
+  access: () => SpaceAccess
+): MiddlewareHandler<E> {
+  return async (c, next) => {
+    const mount = c.req.routePath.replace(/\/\*$/, '');
+    const below = c.req.path.slice(mount.length);
+    const decision = decideSpaceGate(rule, c.req.method, below, c.get('body'), access());
+    if (!decision.pass) return c.json(SPACES_DISABLED_BODY, 404);
+    if (decision.officialOrigin !== undefined) {
+      officialOrigins.set(c.env.incoming, decision.officialOrigin);
     }
-    if (decision.officialOrigin !== undefined) res.locals[SPACES_OFFICIAL_ONLY] = true;
-    next();
+    await next();
   };
 }
 
@@ -150,7 +150,9 @@ function bodyRef(body: unknown): string | null {
  *
  * @param access - The official-space answer, read per request.
  */
-export function gateCommunityConnections(access: () => SpaceAccess = getOfficialSpace): Gate {
+export function gateCommunityConnections<E extends SpaceGateEnv>(
+  access: () => SpaceAccess = getOfficialSpace
+): MiddlewareHandler<E> {
   return spaceGate((method, segments, body, current) => {
     if (segments.length === 0) {
       if (method === 'GET') return 'official-only';
@@ -180,49 +182,38 @@ export function gateCommunityConnections(access: () => SpaceAccess = getOfficial
  *
  * @param access - The official-space answer, read per request.
  */
-export function gateRemoteCommunities(access: () => SpaceAccess = getOfficialSpace): Gate {
+export function gateRemoteCommunities<E extends SpaceGateEnv>(
+  access: () => SpaceAccess = getOfficialSpace
+): MiddlewareHandler<E> {
   return spaceGate((_method, segments) => segments[0] ?? null, access);
 }
 
 /**
- * The official space's origin, for a request {@link gateCloudCommunities} let through for the
- * official space alone. Keyed by the raw request, so nothing outlives it.
- */
-const cloudOfficialOrigins = new WeakMap<IncomingMessage, string>();
-
-/** The Hono environment {@link gateCloudCommunities} reads: the raw Node request. */
-type RawRequestEnv = { Bindings: HttpBindings };
-
-/**
- * Gate for `/api/cloud/communities`, on the Hono chain: with spaces off only `GET /sign-in`
- * answers, and only about the official space's server. Starting, hosting and moving spaces stay
- * off. Mount it with `use('<mount>/*', …)`; it reads the path below that mount.
+ * Gate for `/api/cloud/communities`: with spaces off only `GET /sign-in` answers, and only about
+ * the official space's server. Starting, hosting and moving spaces stay off.
  *
  * @param access - The official-space answer, read per request.
  */
-export function gateCloudCommunities<E extends RawRequestEnv>(
+export function gateCloudCommunities<E extends SpaceGateEnv>(
   access: () => SpaceAccess = getOfficialSpace
 ): MiddlewareHandler<E> {
-  const rule: GateRule = (method, segments) =>
-    method === 'GET' && segments.length === 1 && segments[0] === 'sign-in' ? 'official-only' : null;
-  return async (c, next) => {
-    const mount = c.req.routePath.replace(/\/\*$/, '');
-    const below = c.req.path.slice(mount.length);
-    const decision = decideSpaceGate(rule, c.req.method, below, undefined, access());
-    if (!decision.pass) return c.json(SPACES_DISABLED_BODY, 404);
-    if (decision.officialOrigin !== undefined) {
-      cloudOfficialOrigins.set(c.env.incoming, decision.officialOrigin);
-    }
-    await next();
-  };
+  return spaceGate(
+    (method, segments) =>
+      method === 'GET' && segments.length === 1 && segments[0] === 'sign-in'
+        ? 'official-only'
+        : null,
+    access
+  );
 }
 
 /**
- * The official space's origin when {@link gateCloudCommunities} let this request through for
- * it alone, or `null` when spaces are on.
+ * The official space's origin when a space gate let this request through for it alone, or
+ * `null` when spaces are on. A route that answers with a list narrows it to the official space
+ * when this is set, so the gate and the route agree on one rule without the route reading config
+ * itself.
  *
  * @param c - The request's context.
  */
-export function cloudOfficialOnlyOrigin(c: { env: HttpBindings }): string | null {
-  return cloudOfficialOrigins.get(c.env.incoming) ?? null;
+export function officialOnlyOrigin(c: { env: HttpBindings }): string | null {
+  return officialOrigins.get(c.env.incoming) ?? null;
 }

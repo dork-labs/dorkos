@@ -280,7 +280,11 @@ describe('main HTTP admission through the real app', () => {
     // mount; it is a route of the `/api/relay` group on Hono, whose raw bytes
     // a body rule keeps (`routes/relay-webhooks.ts`), so it is asked for by
     // hand below.
-    expect(mounts).toHaveLength(67);
+    // 67 -> 69: the two space groups' gates are `use` mounts of their own on
+    // Hono (`/api/community-connections/*`, `/api/communities/*`), beside the
+    // groups' `route` mounts (DOR-2815).
+    expect(mounts).toContain('/api/communities/admission-fixture');
+    expect(mounts).toHaveLength(69);
     const byHand = [
       '/',
       '/x/fixture',

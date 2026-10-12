@@ -14,7 +14,8 @@
  * too, with the agent projection.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import express from 'express';
+import type { RequestListener } from 'node:http';
+import { honoGroupListener } from '../../../../http/__tests__/hono-group-listener.js';
 import request from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
 import { mkdtemp, rm, readdir } from 'fs/promises';
@@ -79,7 +80,7 @@ const { AttachmentRowStore } = await import('../attachment-row-store.js');
 
 describe('the seam, through the real route', () => {
   let dorkHome: string;
-  let app: express.Express;
+  let app: RequestListener;
   let roomId: string;
 
   beforeEach(async () => {
@@ -101,9 +102,7 @@ describe('the seam, through the real route', () => {
       caller.id
     ).id;
 
-    app = express();
-    app.use(express.json());
-    app.use('/api/rooms', roomsRouter);
+    app = honoGroupListener({ path: '/api/rooms', routes: roomsRouter });
 
     fixtureTarget.mount(app);
   });
