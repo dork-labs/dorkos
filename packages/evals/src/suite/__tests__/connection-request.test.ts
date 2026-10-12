@@ -10,6 +10,7 @@ import { selectSuite } from '../index.js';
 import {
   connectionRequestCases,
   connectionRequestFromChatCase,
+  replyOffersBothWays,
   requestNamesGmail,
 } from '../connection-request.js';
 
@@ -68,5 +69,20 @@ describe('connection-request eval', () => {
     });
     expect((await requestNamesGmail(ctx([slack]))).passed).toBe(false);
     expect((await requestNamesGmail(ctx([reasonless]))).passed).toBe(false);
+  });
+
+  it('passes a reply that offers both ways in, and fails one that names only one (FB-57)', async () => {
+    const say = (text: string) =>
+      ({ event: 'text_delta', data: { type: 'text_delta', text } }) as SseFrame;
+    const both = [
+      GMAIL_CALL,
+      say('You can sign in to a DorkOS account, '),
+      say('or use a Composio key.'),
+    ];
+    expect((await replyOffersBothWays(ctx(both))).passed).toBe(true);
+    expect(
+      (await replyOffersBothWays(ctx([GMAIL_CALL, say('Link your DorkOS account.')]))).passed
+    ).toBe(false);
+    expect((await replyOffersBothWays(ctx([GMAIL_CALL]))).passed).toBe(false);
   });
 });

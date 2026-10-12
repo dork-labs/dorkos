@@ -125,9 +125,15 @@ export function registerChatConnectFirstStepTests(harness: ChatConnectHarness): 
       test.setTimeout(90_000);
       const agent = await seedAgent(request, harness.apiUrl);
       const { sessionId } = await openRequestingChat(page, request, harness.apiUrl, agent);
-      const held = startHeldRequest(request, harness.apiUrl, sessionId, agent.agentDir);
-
-      // Nothing reaches Slack yet, and the request was still recorded.
+      // Nothing reaches Slack yet, so the agent's call answers at once with
+      // the ways in to offer the person, rather than waiting in silence (FB-57).
+      // The request is still recorded, and its card is still shown.
+      const opened = await startHeldRequest(request, harness.apiUrl, sessionId, agent.agentDir);
+      expect(opened.ok(), await opened.text()).toBe(true);
+      expect(readMcpResult(await opened.json())).toMatchObject({
+        status: 'awaiting_owner',
+        note: expect.stringContaining('ask which one they want'),
+      });
       const card = page.getByTestId('chat-agent-request');
       await expect(card.getByRole('heading', { name: 'Connect Slack' })).toBeVisible();
       await card.getByRole('button', { name: 'Connect Slack' }).click();
@@ -155,10 +161,6 @@ export function registerChatConnectFirstStepTests(harness: ChatConnectHarness): 
       await expect(reloaded.getByTestId('agent-request-receipt')).toHaveText(
         `Allowed ${agent.agentName} to use Slack`
       );
-
-      const answer = await held;
-      expect(answer.ok(), await answer.text()).toBe(true);
-      expect(readMcpResult(await answer.json())).toMatchObject({ status: 'granted' });
       await releaseStep(request, harness.apiUrl, sessionId);
     });
   });
