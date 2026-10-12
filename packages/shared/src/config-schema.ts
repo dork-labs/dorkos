@@ -55,6 +55,7 @@ import {
   ExtensionDismissedApprovalSchema,
   ExtensionTrustedSourceSchema,
 } from './extension-config-schemas.js';
+import { ToursStateSchema } from './tours-state.js';
 // Plain id lists, never the named schemas in `permissions/permission-schemas.ts`:
 // the same SRC-alias reason as `HARNESS_IDS` above.
 import {
@@ -65,6 +66,7 @@ import {
 export * from './credential-reference.js';
 export * from './remote-access-settings.js';
 export * from './extension-config-schemas.js';
+export * from './tours-state.js';
 export {
   RuntimeInheritedEnvNamesSchema,
   isReservedRuntimeEnvName,
@@ -357,24 +359,6 @@ export const OnboardingStateSchema = z.object({
 });
 
 export type OnboardingState = z.infer<typeof OnboardingStateSchema>;
-
-/**
- * Persisted state for the DorkBot living tour (DOR-419). Tracks which tours the
- * user has already run (`seen`) and which they declined (`declined`) so an
- * occasion never re-offers a tour the user has finished or waved off. Ids are the
- * tour definition ids (`'tasks' | 'relay' | 'mesh' | 'general'`), stored as free
- * strings so adding a tour never needs a schema migration. Managed automatically
- * by the client; not user-editable.
- */
-export const ToursStateSchema = z.object({
-  seen: z.array(z.string()).default(() => []),
-  declined: z.array(z.string()).default(() => []),
-});
-
-export type ToursState = z.infer<typeof ToursStateSchema>;
-
-/** Frozen defaults for the {@link ToursStateSchema} block (empty on a fresh install). */
-export const TOURS_DEFAULTS: ToursState = ToursStateSchema.parse({});
 
 /**
  * Where the stored {@link UserProfileSchema} `displayName` came from (DOR-1022).
@@ -730,6 +714,9 @@ export type SidebarGroup = z.infer<typeof SidebarGroupSchema>;
  * single bodies, so folding one folds the zone; the id is the zone's own id, so
  * nothing has to translate.
  *
+ * `addons` is the Library section that lists the pages mini apps add (spec
+ * `mini-app-placement` Part 2). It holds a fold flag and nothing else.
+ *
  * **Widening this enum is a non-event, and that is by construction.** The
  * `dropUnknownSectionIds` preprocessor below strips any key a build does not
  * recognise, so a config written by a newer DorkOS loads on an older one — it
@@ -745,6 +732,7 @@ export const SidebarSectionIdSchema = z.enum([
   'channels',
   'dms',
   'agents',
+  'addons',
   'threads',
   'recents',
 ]);

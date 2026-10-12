@@ -40,7 +40,7 @@ export interface ContributedIconProps {
  * Draw a contributed icon, or the puzzle piece when there is none, when it is
  * not something React can render (an untyped extension's `icon: 'flow'`), or
  * when it throws while drawing. Every surface that shows an extension's icon —
- * a tab, a page bar, a palette row, the phone menu — draws it through here, so
+ * a tab, a page bar, a palette row, an Add-ons row — draws it through here, so
  * one bad icon costs a glyph, never the row, the bar or the app.
  *
  * @param props - The raw icon and a className.

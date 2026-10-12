@@ -151,6 +151,25 @@ export interface DigestState {
 }
 
 /**
+ * One page a mini app added, as the Add-ons section reads it.
+ *
+ * **A view type, not the registry entry.** `shared/model`'s extension registry
+ * holds the page's component and icon; the model must not hold React, so the
+ * assembly hook maps each listed page into this shape and the row component
+ * looks the icon up again by {@link SidebarAddOnPage.id}.
+ */
+export interface SidebarAddOnPage {
+  /** The page's contribution id, `<extensionId>:<path>`. */
+  id: string;
+  /** The extension that registered it. */
+  extensionId: string;
+  /** The path it registered: `''` for the extension's home. Never a `:param` path. */
+  path: string;
+  /** The title it registered — what the row says. */
+  title: string;
+}
+
+/**
  * One snapshot of everything the sidebar is a function of.
  *
  * Two fields go beyond the spec's §A2 table, and both exist because a
@@ -293,6 +312,12 @@ export interface SidebarState {
    * follow them to another machine.
    */
   todayAutomatedExpanded?: boolean;
+  /**
+   * The pages mini apps added that a menu may list, by title — what the
+   * Library's Add-ons section draws (spec `mini-app-placement` Part 2). Empty
+   * when no extension added one, and then the section is absent.
+   */
+  addOns: readonly SidebarAddOnPage[];
   /** What the operator has open right now, from the router. `null` off-route. */
   activeTarget: SidebarTarget | null;
   /** How far along this operator is (BC-12). */

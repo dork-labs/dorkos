@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import type { SidebarPrefs, SidebarGroup, SidebarItemRef } from '@dorkos/shared/config-schema';
 import {
+  ADD_ONS_REJECTION,
   classifySidebarDrop,
   COMPUTED_ZONE_REJECTION,
   resolveSidebarDrop,
@@ -54,6 +55,7 @@ const UNGROUPED: SidebarContainer = { kind: 'ungrouped' };
 const inGroup = (groupId: string): SidebarContainer => ({ kind: 'group', groupId });
 const TODAY: SidebarContainer = { kind: 'computed', zone: 'today' };
 const NOW: SidebarContainer = { kind: 'computed', zone: 'now' };
+const ADDONS: SidebarContainer = { kind: 'computed', zone: 'addons' };
 
 const dragItem = (ref: SidebarItemRef, from: SidebarContainer): SidebarDragDescriptor => ({
   type: 'item',
@@ -436,7 +438,17 @@ describe('R3 — a drop into a computed zone', () => {
   it('is rejected when the drop lands on a ROW in the zone, not only its body', () => {
     const p = prefs({ pinned: [agent('/api')] });
     const op = classifySidebarDrop(p, dragAgent('/api', PINNED), dropItem('/other', TODAY));
-    expect(op).toEqual({ kind: 'reject-computed-zone', ref: agent('/api') });
+    expect(op).toEqual({ kind: 'reject-computed-zone', ref: agent('/api'), zone: 'today' });
+  });
+
+  it('refuses a drop into Add-ons, which lists extension pages and nothing else', () => {
+    // Add-ons fills itself from the pages mini apps add. A channel or an agent
+    // dropped there must be refused — never quietly taken out of its section,
+    // which is what falling through to "ungrouped" would have done.
+    const p = prefs({ groups: [grp({ id: 'g1', items: [agent('/web')] })] });
+    const op = classifySidebarDrop(p, dragAgent('/web', inGroup('g1')), dropContainer(ADDONS));
+    expect(op).toEqual({ kind: 'reject-computed-zone', ref: agent('/web'), zone: 'addons' });
+    expect(resolveSidebarDrop(p, dragAgent('/web', inGroup('g1')), dropContainer(ADDONS))).toBe(p);
   });
 
   it('changes nothing — a pinned row dropped in Today stays pinned', () => {
@@ -640,6 +652,17 @@ describe('buildSidebarAnnouncements', () => {
         over: over({ type: 'container', container: { kind: 'computed', zone: 'today' } }),
       })
     ).toBe(`Can’t move api-server there. ${COMPUTED_ZONE_REJECTION}`);
+  });
+
+  it('refuses a drop into Add-ons with its own sentence, not the Heads up one', () => {
+    const a = announcements(prefs({ pinned: [agent('/api')] }));
+    const overAddOns = over({ type: 'container', container: ADDONS });
+    expect(a.onDragEnd({ ...active(agentNode('/api', PINNED)), over: overAddOns })).toBe(
+      `Can’t move api-server there. ${ADD_ONS_REJECTION}`
+    );
+    expect(a.onDragOver({ ...active(agentNode('/api', PINNED)), over: overAddOns })).toBe(
+      'Over Add-ons.'
+    );
   });
 
   it('names Heads up and Today on drag-over', () => {

@@ -9,8 +9,8 @@ import type { ExtensionAPI, ExtensionPageProps, StatusBarSlotContext } from '@do
  *
  * - a section on the Activity tab,
  * - a command palette item that says hello, and one that marks its tab,
- * - a page at `/x/hello-world`, listed in the command palette and the phone's
- *   "Add-ons" menu, with a "Start a chat" button that starts work in a new
+ * - a page at `/x/hello-world`, listed in the command palette and the sidebar's
+ *   Add-ons section, with a "Start a chat" button that starts work in a new
  *   chat and leaves the current one alone,
  * - an item in the chat status bar, shown only when the chat has a folder,
  * - a tab in the right panel, which its command marks with a dot.

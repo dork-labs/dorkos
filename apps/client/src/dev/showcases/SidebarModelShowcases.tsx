@@ -33,33 +33,10 @@
  * @module dev/showcases/SidebarModelShowcases
  */
 import { useId, useState } from 'react';
-import {
-  AlertTriangle,
-  Bot,
-  CalendarClock,
-  ChevronRight,
-  CircleHelp,
-  Clock,
-  Hash,
-  Loader,
-  MessageSquarePlus,
-  Moon,
-  ShieldQuestion,
-  Sparkles,
-  Sun,
-  UserPlus,
-} from 'lucide-react';
-import { cn, resolveAgentVisual } from '@/layers/shared/lib';
-import {
-  IdentityAvatar,
-  SectionHeader,
-  SidebarMenu,
-  SidebarRow,
-  Switch,
-  statusDotClass,
-} from '@/layers/shared/ui';
+import { Hash, Moon, Sun } from 'lucide-react';
+import { cn } from '@/layers/shared/lib';
+import { SectionHeader, SidebarMenu, SidebarRow, Switch } from '@/layers/shared/ui';
 import type {
-  SidebarIconId,
   SidebarModel,
   SidebarRowModel,
   SidebarSectionModel,
@@ -71,6 +48,7 @@ import {
 } from '@/layers/features/dashboard-sidebar/model/build-sidebar-model';
 import { SIDEBAR_FIXTURES } from '@/layers/features/dashboard-sidebar/model/fixtures';
 import { SidebarZone } from '@/layers/features/dashboard-sidebar/ui/SidebarZone';
+import { RowGlyph } from './sidebar-model-row-glyph';
 import { anchorKey } from '@/layers/features/dashboard-sidebar/model/rules/targets';
 import type { SidebarState } from '@/layers/features/dashboard-sidebar/model/sidebar-state';
 import { PlaygroundSection } from '../PlaygroundSection';
@@ -83,23 +61,6 @@ import { ShowcaseLabel } from '../ShowcaseLabel';
  * page is the number the guide names, and a browser test can assert it.
  */
 const PANEL_WIDTH = 272;
-
-/** What each semantic icon id in the model is actually drawn as. */
-const ICON: Record<SidebarIconId, typeof Bot> = {
-  permission: ShieldQuestion,
-  question: CircleHelp,
-  error: AlertTriangle,
-  schedule: CalendarClock,
-  overflow: ChevronRight,
-  working: Loader,
-  automated: CalendarClock,
-  digest: Sparkles,
-  'add-agent': UserPlus,
-  'first-session': MessageSquarePlus,
-  team: Hash,
-  dorkbot: Bot,
-  session: MessageSquarePlus,
-};
 
 /**
  * One node's provenance, drawn where the node is.
@@ -135,42 +96,6 @@ function ReasonChip({
       {reason}
     </span>
   );
-}
-
-/**
- * The mark at the head of a row, from the model's semantic glyph.
- *
- * Every face is drawn from a hash of the identity's own path or id — there is
- * no photo to fetch and no agent to look up, which is what keeps this page
- * working with no server behind it.
- *
- * @param row - The row whose glyph this is.
- * @param state - The snapshot the row came from, for display names.
- */
-function RowGlyph({ row, state }: { row: SidebarRowModel; state: SidebarState }) {
-  const { glyph } = row;
-
-  if (glyph.kind === 'icon') {
-    const Icon = ICON[glyph.icon];
-    return <Icon aria-hidden className="text-sidebar-foreground/60 size-3.5" />;
-  }
-  if (glyph.kind === 'agent-avatar') {
-    const visual = resolveAgentVisual({ id: glyph.agentPath });
-    return (
-      <IdentityAvatar
-        kind="agent"
-        size="xs"
-        color={visual.color}
-        emoji={visual.emoji}
-        fallback={(state.displayNames[glyph.agentPath] ?? '?').slice(0, 1).toUpperCase()}
-        className="text-3xs size-[18px]"
-      />
-    );
-  }
-  // `hash`, and the union has no fourth member — so this is the branch rather
-  // than a default after one, and adding a glyph kind makes the type error here
-  // instead of quietly drawing a `#` for it.
-  return <Hash aria-hidden className="text-sidebar-foreground/60 size-3.5" />;
 }
 
 /**
