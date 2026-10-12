@@ -36,6 +36,26 @@ export function isConnectorRuntimeCapabilityId(
 }
 
 /**
+ * Ordinary discovery capabilities (listed on the regular `dorkos` server, not
+ * the connector one) that read the calling agent's OWN granted connections
+ * when the turn's principal reaches them, and answer without that fact when it
+ * does not. `connector.recommend` uses it only to say whether the caller
+ * already has an account for an app.
+ */
+const CONNECTOR_PRINCIPAL_READER_CAPABILITY_IDS = Object.freeze(['connector.recommend'] as const);
+
+/**
+ * Whether a capability may be handed the turn's connector principal so it can
+ * read the caller's own granted connections.
+ *
+ * @param capabilityId - Registry capability identifier.
+ * @returns Whether the identifier is a principal-reading discovery capability.
+ */
+export function readsCallerConnections(capabilityId: string): boolean {
+  return CONNECTOR_PRINCIPAL_READER_CAPABILITY_IDS.some((candidate) => candidate === capabilityId);
+}
+
+/**
  * How long one `connectors.request_connection` call holds open waiting for the
  * person's answer before it returns the still-open request. Every runtime's
  * ceiling for one call on the connection tools is derived from this
