@@ -11,7 +11,8 @@
  */
 import type { RequestHandler } from 'express';
 import type { InboxApi, ProjectSettingsReader } from '@dorkos/extension-api/server';
-import { refuseIfNotAPerson, type PersonBarCopy } from '../../../routes/extensions-person-bar.js';
+import { assessPerson, type PersonBarCopy } from '../../../routes/extensions-person-bar.js';
+import { expressRequestFacts } from '../http/express-bridge.js';
 import { projectRegistry } from '../../projects/project-registry.js';
 import { getExtensionInbox, type ExtensionInboxService } from './extension-inbox.js';
 import { projectSettingsStore } from './extension-project-settings.js';
@@ -106,7 +107,11 @@ export function requirePersonCopy(extensionName: string): PersonBarCopy {
 export function createRequirePerson(extensionName: string): RequestHandler {
   const copy = requirePersonCopy(extensionName);
   return (req, res, next) => {
-    if (refuseIfNotAPerson(req, res, copy)) return;
+    const refusal = assessPerson(expressRequestFacts(req, res), copy);
+    if (refusal) {
+      res.status(refusal.status).json(refusal.body);
+      return;
+    }
     next();
   };
 }

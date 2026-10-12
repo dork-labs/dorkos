@@ -1,12 +1,12 @@
 /**
  * The server's one rate limiter: a bounded in-process sliding window, with a
- * thin adapter for each chain (DOR-2796).
+ * thin adapter for the chain's routes (DOR-2796).
  *
  * It replaces `express-rate-limit`, so its answers keep that package's shape:
  * the IETF draft-6 `RateLimit-*` headers (or the legacy `X-RateLimit-*` ones
  * where a limiter used them), `Retry-After` on a refusal, status 429 and each
  * limiter's own refusal body. Every limiter keys through `rateLimitKey`, so a
- * caller is one bucket whichever chain counts it.
+ * caller is one bucket whichever route counts it.
  *
  * ## Sliding, not fixed
  *
@@ -31,14 +31,8 @@
  *
  * @module http/rate-limiter
  */
-import type { NextFunction, Request, RequestHandler, Response as ExpressResponse } from 'express';
 import type { Context, MiddlewareHandler } from 'hono';
-import {
-  expressRequestFacts,
-  honoRequestFacts,
-  type RequestFacts,
-  type RequestFactsEnv,
-} from './request-facts.js';
+import { honoRequestFacts, type RequestFacts, type RequestFactsEnv } from './request-facts.js';
 import { rateLimitKey } from '../middleware/rate-limit-key.js';
 
 /** How much a limiter allows. */
@@ -190,55 +184,6 @@ interface RateLimitAnswer extends RateLimitPolicy {
   readonly message: object;
 }
 
-/** Options for {@link expressRateLimit}. */
-export interface ExpressRateLimitOptions extends RateLimitAnswer {
-  /** Count nothing for this request. */
-  readonly skip?: (req: Request) => boolean;
-  /** Answer a refusal yourself instead of sending `message`. */
-  readonly onLimited?: (req: Request, res: ExpressResponse) => void;
-  /**
-   * Give the count back once the response is done unless this holds, as for a
-   * refusal that cost nothing. A response that closes before it ends is given
-   * back too, as `express-rate-limit`'s `skipFailedRequests` did.
-   */
-  readonly countsWhen?: (req: Request, res: ExpressResponse) => boolean;
-}
-
-/**
- * The limiter as Express middleware, for the routes the Express chain still
- * mounts.
- *
- * @param options - The policy, headers, refusal and optional hooks.
- * @returns Express middleware.
- */
-export function expressRateLimit(options: ExpressRateLimitOptions): RequestHandler {
-  const limiter = createRateLimiter(options);
-  return (req: Request, res: ExpressResponse, next: NextFunction) => {
-    if (options.skip?.(req)) {
-      next();
-      return;
-    }
-    const now = Date.now();
-    const decision = limiter.hit(rateLimitKey(expressRequestFacts(req)), now);
-    if (!res.headersSent) res.set(rateLimitHeaders(decision, limiter.policy, options.headers, now));
-    if (!decision.allowed) {
-      if (options.onLimited) options.onLimited(req, res);
-      else res.status(429).json(options.message);
-      return;
-    }
-    const counts = options.countsWhen;
-    if (counts) {
-      res.once('finish', () => {
-        if (!counts(req, res)) decision.refund();
-      });
-      res.once('close', () => {
-        if (!res.writableEnded) decision.refund();
-      });
-    }
-    next();
-  };
-}
-
 /** Options for {@link honoRateLimit}. */
 export interface HonoRateLimitOptions extends RateLimitAnswer {
   /** Count nothing for this request. */
@@ -246,8 +191,8 @@ export interface HonoRateLimitOptions extends RateLimitAnswer {
   /** Answer a refusal yourself instead of sending `message`. */
   readonly onLimited?: (c: Context<RequestFactsEnv>) => Response | Promise<Response>;
   /**
-   * Give the count back once the handler has answered unless this holds. Unlike
-   * the Express adapter, a client that hangs up mid-response is not given back.
+   * Give the count back once the handler has answered unless this holds. A
+   * client that hangs up mid-response is not given back.
    */
   readonly countsWhen?: (c: Context<RequestFactsEnv>) => boolean;
 }

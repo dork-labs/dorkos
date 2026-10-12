@@ -16,7 +16,7 @@
  * noticed.
  *
  * Isolation tiers (fast → hardened):
- * - `in-process` (test-mode, structural): `createApp()` in the harness process,
+ * - `in-process` (test-mode, structural): the server's routing in the harness process,
  *   no launcher — see `harness-server.ts`. Fastest; serial (shared singletons).
  * - `child-process` (default credentialed): a Node subprocess with its own
  *   sandbox `DORK_HOME` + port. Real per-eval isolation of DorkOS's own state,

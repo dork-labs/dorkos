@@ -61,7 +61,6 @@ vi.mock('../../services/core/config-manager.js', () => ({
   configManager: { get: vi.fn().mockReturnValue(null), set: vi.fn() },
 }));
 
-import { createApp, finalizeApp } from '../../app.js';
 import { composedListener } from '../../http/__tests__/composed-listener.js';
 import { createRoomSubsystem, getRoomService, setRoomService } from '../../services/rooms/index.js';
 import { setReadCursorService } from '../../services/core/read-cursor-service.js';
@@ -74,9 +73,7 @@ import { initPermissionGate, resetPermissionGate } from '../../services/core/cap
 // The server's real routing: `/api/read-cursors` answers from the Hono `/api`
 // app, the rooms routes from Express behind it.
 const admission = new MainRequestAdmission();
-const app = createApp({ admission });
-finalizeApp(app);
-const testServer = listeningServer(composedListener(app, admission));
+const testServer = listeningServer(composedListener(admission));
 
 const ANA_PATH = '/agents/ana';
 const BO_PATH = '/agents/bo';

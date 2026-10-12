@@ -1,7 +1,7 @@
 /**
  * The managed remote-access ingress: a loopback-only HTTP listener that the
  * managed ngrok session forwards into, and that hands admitted requests to the
- * main Express app.
+ * front door's listener.
  *
  * A listener of its own, rather than forwarding managed traffic straight at the
  * main port, because that is the only way to know for certain which requests
@@ -46,7 +46,7 @@ import { markManagedIngress, noteGateAdmitted } from './ingress-mark.js';
 
 /** What the ingress hands admitted traffic to. */
 export interface ManagedIngressOptions {
-  /** The main server's request listener: its front door, which hands on to the Express app. */
+  /** The main server's request listener: its front door, built by `composeFrontDoor()`. */
   handler: (req: IncomingMessage, res: ServerResponse) => void;
   /**
    * Hand an admitted upgrade to the main server's upgrade router — in
@@ -120,8 +120,8 @@ export interface ManagedIngress {
  * Whether a request target is plain origin-form (`/path?query`), the only shape
  * the managed edge forwards. Anything else — absolute-form
  * (`http://host/path`), asterisk-form, or a target carrying a `#` — is refused,
- * because Express would route it by a pathname this check never saw:
- * `parseurl` reads `http://h/a2a` and `/a2a#x` both as `/a2a`.
+ * because Express's router used to route it by a pathname this check never saw:
+ * `parseurl` read `http://h/a2a` and `/a2a#x` both as `/a2a`.
  */
 function isOriginForm(target: string): boolean {
   return target.startsWith('/') && !target.includes('#');
@@ -131,7 +131,7 @@ function isOriginForm(target: string): boolean {
  * Paths never served over managed access until DOR-2085 decides otherwise.
  *
  * Takes an origin-form target only (see {@link isOriginForm}), whose pathname
- * is exactly what `parseurl` hands the Express router: everything before the
+ * is exactly what `parseurl` handed the Express router: everything before the
  * first `?`. The router matches that raw pathname without regard to case, so
  * this does too, and it also refuses the decoded form, which is stricter than
  * the router and never looser.

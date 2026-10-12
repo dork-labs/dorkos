@@ -53,7 +53,6 @@ vi.mock('../../services/core/config-manager.js', () => ({
 
 import request from '@dorkos/test-utils/supertest';
 import { listeningServer } from '@dorkos/test-utils/listening-server';
-import { createApp } from '../../app.js';
 import { composedListener } from '../../http/__tests__/composed-listener.js';
 
 // Import the mocked BoundaryError for instanceof checks
@@ -63,8 +62,7 @@ import { DEFAULT_CWD } from '../../lib/resolve-root.js';
 // The routes are served from the Hono `/api` app, so the test serves the
 // server's real routing rather than the Express app alone.
 const admission = new MainRequestAdmission();
-const app = createApp({ admission });
-const testServer = listeningServer(composedListener(app, admission));
+const testServer = listeningServer(composedListener(admission));
 const BOUNDARY = '/Users/testuser';
 const AGENTS_ROOT = '/home/node/.dork/agents';
 

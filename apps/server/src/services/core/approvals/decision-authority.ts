@@ -16,15 +16,15 @@
  *
  * ## `signed-in-operator` — the enforced posture
  *
- * When `config.auth.enabled` is `true`, `sessionGate` has already verified a
- * Better Auth session cookie or a per-user API key and attached the identity to
- * `res.locals.user`. A decision requires that identity to be there. This is real
+ * When `config.auth.enabled` is `true`, the session gate has already verified a
+ * Better Auth session cookie or a per-user API key and attached the identity as
+ * the request's `user`. A decision requires that identity to be there. This is real
  * enforcement: a caller with no credential cannot decide, whatever headers it
  * sends or omits.
  *
  * State the converse too, because it is the part that is easy to leave unsaid: a
  * PROGRAM holding a valid credential clears THIS resolver. A per-user API key
- * satisfies `sessionGate` exactly as a person's cookie does, so an agent handed
+ * satisfies the session gate exactly as a person's cookie does, so an agent handed
  * one, that also sheds its `X-DorkOS-Agent` header, reaches this path and is
  * allowed here. "Authenticated" means the credential was valid, never that a human
  * was present, and the Activity record this produces says "a signed-in account",
@@ -44,7 +44,7 @@
  *
  * ## `local-trust` — the default posture, stated honestly
  *
- * `config.auth.enabled` defaults to `false`, and with login off `sessionGate` is
+ * `config.auth.enabled` defaults to `false`, and with login off the session gate is
  * a documented pass-through. On a single-user machine where an agent has shell
  * access there is then NO cryptographic distinction between the person in the
  * cockpit and an agent running `curl`: both reach the same loopback API, and the
@@ -103,7 +103,7 @@ export interface DecisionAuthorityRequest {
    * holds an approval token, and a requester must not decide.
    */
   approvalTokenPresented: boolean;
-  /** The authenticated user `sessionGate` resolved, when login is enabled. */
+  /** The authenticated user the session gate resolved, when login is enabled. */
   user?: RequestUser;
   /** Whether local login is on. Defaults to the live user config. */
   loginEnabled?: LoginEnabledLookup;
@@ -134,7 +134,7 @@ export type DecisionAuthorityResult =
     };
 
 /**
- * Read `auth.enabled` from the live user config, exactly as `sessionGate` does.
+ * Read `auth.enabled` from the live user config, exactly as the session gate does.
  *
  * Boot initializes the config manager (index.ts) long before any router mounts. If
  * it somehow is not there, this reports login as ENABLED — the strict posture —
@@ -185,7 +185,7 @@ export function resolveDecisionAuthority(
     return { allowed: true, posture: 'local-trust', decidedBy: 'Local operator' };
   }
 
-  // Login is on, so proof exists and is required. `sessionGate` already rejected
+  // Login is on, so proof exists and is required. The session gate already rejected
   // an unauthenticated request; this is the second, independent check that makes
   // the guarantee a property of the endpoint rather than of the middleware order.
   if (!request.user) {

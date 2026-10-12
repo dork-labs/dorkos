@@ -14,7 +14,7 @@ import { readOwnerAccount } from './index.js';
  * person bars first (`routes/connector-owner-boundary.ts`), so the two cannot
  * disagree about who the owner is.
  *
- * @param user - The account `sessionGate` resolved, if any.
+ * @param user - The account the session gate resolved, if any.
  * @returns False when nobody is signed in, or no owner account can be read:
  *   nobody can be shown to own the install then.
  */

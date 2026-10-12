@@ -3,25 +3,21 @@
  * who a caller is and what they may do: credential checks, the browser-origin
  * policy, rate-limit keys and the caller-authority bars.
  *
- * During the move from Express to Hono (ADR `261009-192542`) a request runs
- * exactly one middleware chain, Express's or Hono's, and both chains must ask
- * the SAME policy functions. Those functions used to take an Express `Request`
- * and read `res.locals`. They now read a {@link RequestFacts}, and each
- * framework has one adapter that builds it: {@link expressRequestFacts} and
- * {@link honoRequestFacts}. A policy can then not tell, and cannot come to
- * depend on, which chain asked.
+ * The policies read a {@link RequestFacts}, never a framework's request: a
+ * route builds them with {@link honoRequestFacts}, and a WebSocket upgrade,
+ * which runs no chain, from its headers and the identity it resolved itself.
+ * A policy can then not tell, and cannot come to depend on, which surface
+ * asked. (They were built this way during the move from Express to Hono,
+ * ADR `261009-192542`, so that both chains asked the same functions.)
  *
  * Every field is a raw fact, never a framework's interpretation of one. The
- * one exception is {@link RequestFacts.forwardedAddress}, which is Express's
- * `req.ip` exactly as `trust proxy, 1` computes it; the Hono adapter computes
- * the same value with {@link forwardedClientAddress}, and a test holds the two
- * to each other.
+ * one exception is {@link RequestFacts.forwardedAddress}, the client address
+ * with one proxy hop trusted, which {@link forwardedClientAddress} computes.
  *
  * @module http/request-facts
  */
 import type { IncomingHttpHeaders, IncomingMessage } from 'node:http';
 import type { TLSSocket } from 'node:tls';
-import type { Request, Response } from 'express';
 import type { Context } from 'hono';
 import type { HttpBindings } from '@hono/node-server';
 import type { AgentIdentity } from '../services/core/agent-identity/agent-identity-service.js';
@@ -56,10 +52,9 @@ export interface RequestFacts {
 }
 
 /**
- * The Hono variables the identity middleware sets, under the same names the
- * Express chain uses on `res.locals`. Nothing sets them yet: when the session
- * gate and the agent-identity middleware move to Hono, they must `c.set`
- * exactly these keys, or every policy reads an anonymous caller.
+ * The Hono variables the chain's identity steps set (`http/api-chain.ts`): the
+ * session gate's `user` and the agent-identity step's `agentIdentity`. Every
+ * policy reads them through {@link honoRequestFacts}.
  */
 export interface RequestFactsVariables {
   /** Set by the session gate. */
@@ -75,20 +70,18 @@ export type RequestFactsEnv = {
 };
 
 /**
- * The client address Express reports as `req.ip` under `trust proxy, 1`.
+ * The client address with one proxy hop trusted: what Express reported as
+ * `req.ip` under `trust proxy, 1`, which the server ran with until it moved to
+ * Hono, so the rate limiters keep the keys they always had.
  *
- * One trusted hop, because `app.ts` sets `trust proxy` to `1`. Change one and
- * the other must follow, or the two chains key their limiters differently;
- * `__tests__/request-facts.test.ts` holds this to Express's answer.
- *
- * Express (through `proxy-addr` and `forwarded`) treats the socket peer as the
- * one trusted hop, so the client is the last `X-Forwarded-For` entry. Entries
+ * The socket peer is the one trusted hop, so the client is the last
+ * `X-Forwarded-For` entry. Entries
  * are split on commas with surrounding spaces dropped, and empty ones skipped;
  * with none left, the client is the peer itself.
  *
  * @param forwardedFor - The raw `X-Forwarded-For` header, if any.
  * @param peerAddress - The TCP peer address.
- * @returns The address Express would report as `req.ip`.
+ * @returns The client address.
  */
 export function forwardedClientAddress(
   forwardedFor: string | undefined,
@@ -102,31 +95,10 @@ export function forwardedClientAddress(
 }
 
 /**
- * The facts of an Express request.
- *
- * @param req - The Express request.
- * @param res - Its response, for what the identity middleware put on
- *   `res.locals`. Omit it where no identity has been resolved yet (the CORS
- *   delegate, a rate limiter's key).
- * @returns The request's facts.
- */
-export function expressRequestFacts(req: Request, res?: Pick<Response, 'locals'>): RequestFacts {
-  return {
-    headers: req.headers,
-    peerAddress: req.socket?.remoteAddress,
-    forwardedAddress: req.ip,
-    connectionEncrypted: isEncrypted(req),
-    managedIngress: isManagedIngress(req),
-    user: res?.locals.user as RequestUser | undefined,
-    agentIdentity: res?.locals.agentIdentity as AgentIdentity | undefined,
-  };
-}
-
-/**
  * The facts of a Hono request served through `@hono/node-server`.
  *
- * Reads the raw Node request rather than `c.req`, so the headers are the same
- * object shape Express hands its policies, duplicates joined the same way.
+ * Reads the raw Node request rather than `c.req`, so the headers are Node's
+ * own object (lower-case names, duplicates joined the way Node joins them).
  *
  * @param c - The Hono context.
  * @returns The request's facts.

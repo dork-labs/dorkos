@@ -1,11 +1,7 @@
 /**
- * The route census (DOR-2793, plan rule 2): the real server's routes, split by
- * which framework serves them, must equal the committed baseline, and no route
- * may be served by both.
- *
- * A move PR changes the baseline only by moving entries from `express` to
- * `hono`. Adding or removing a route edits the baseline in plain sight. To
- * regenerate it after an intended change:
+ * The route census (DOR-2793): the real server's routes must equal the
+ * committed baseline, so adding or removing a route is an edit a reviewer sees.
+ * To regenerate it after an intended change:
  *
  *   pnpm --filter @dorkos/server census:update
  */
@@ -13,7 +9,7 @@ import { readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { censusProblems, shadowProblems, type RouteCensus } from '../route-census/census.js';
+import { censusProblems, ROUTE_CENSUS_PATH, type RouteCensus } from '../route-census/census.js';
 import {
   BOOT_HOOK_TIMEOUT_MS,
   bootComposedServer,
@@ -36,20 +32,12 @@ describe('route census', () => {
     await server?.close();
   }, 30_000);
 
-  it('serves every baseline route from exactly one framework', async () => {
-    const res = await fetch(`${server!.baseUrl}/api/test/route-census`);
+  it('serves exactly the baseline routes', async () => {
+    const res = await fetch(`${server!.baseUrl}${ROUTE_CENSUS_PATH}`);
     expect(res.status).toBe(200);
     const actual = (await res.json()) as RouteCensus;
     // The census must have found the app at all: an empty walk passes nothing.
-    expect(actual.express.length + actual.hono.length).toBeGreaterThan(100);
-
-    // No route on both sides, by name or by a Hono pattern catching it first,
-    // whether or not the baseline is being rewritten.
-    const overlap = [
-      ...censusProblems(actual, { hono: actual.hono, express: actual.express }),
-      ...(await shadowProblems(actual)),
-    ];
-    expect(overlap).toEqual([]);
+    expect(actual.routes.length).toBeGreaterThan(100);
 
     if (UPDATE) {
       await writeFile(BASELINE, `${JSON.stringify(actual, null, 2)}\n`);

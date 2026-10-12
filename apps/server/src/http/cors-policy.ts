@@ -1,10 +1,9 @@
 /**
- * The CORS rule both chains share: which browser origins may read this
+ * The CORS rule the chain applies: which browser origins may read this
  * server's responses, and what a refused origin is answered with.
  *
- * The Express chain applies it through the `cors` package (`app.ts`), the Hono
- * chain through `hono/cors` (`http/api-chain.ts`). Neither decides anything of
- * its own.
+ * The chain applies it through `hono/cors` (`http/api-chain.ts`), which
+ * decides nothing of its own.
  *
  * @module http/cors-policy
  */
@@ -26,7 +25,7 @@ import type { RequestFacts } from './request-facts.js';
  * that name on any allowlist — turning a working deployment into a blank window.
  *
  * On `/api` that costs nothing: `middleware/host-guard.ts` runs right after
- * CORS in both chains and refuses exactly the rebound `Host` the pairing would have.
+ * CORS in the chain and refuses exactly the rebound `Host` the pairing would have.
  * This handler is app-wide, though, so it also answers mounts `hostGuard` never
  * sees — `/a2a`, the static SPA assets — and there the pairing is simply absent
  * rather than relocated. That is not an exploit, and the reason is worth stating
@@ -86,9 +85,9 @@ export function corsAllowsOrigin(facts: RequestFacts): boolean {
 }
 
 /**
- * The error a refused origin raises. It reaches each chain's error handler,
+ * The error a refused origin raises. It reaches the chain's error handler,
  * which answers `500` with this message outside production: the `cors`
- * package's own behaviour, kept so both chains refuse alike.
+ * package's own behaviour, kept so the chain refuses the same way it did.
  *
  * @param origin - The refused `Origin` header.
  */

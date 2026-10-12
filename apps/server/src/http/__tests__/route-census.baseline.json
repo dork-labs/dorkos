@@ -1,5 +1,5 @@
 {
-  "hono": [
+  "routes": [
     "ALL /api/admin/*",
     "ALL /api/auth/*",
     "ALL /api/canvas/docs/*",
@@ -50,6 +50,7 @@
     "DELETE /api/sessions/:id/queue/:messageId",
     "DELETE /api/tasks/:id",
     "DELETE /api/templates/:id",
+    "DELETE /api/terminal/:id",
     "DELETE /api/workspaces/:id",
     "DELETE /mcp",
     "GET /.well-known/agent-card.json",
@@ -60,6 +61,7 @@
     "GET /.well-known/oauth-protected-resource/*",
     "GET /a2a/agents/:id/card",
     "GET /api/activity",
+    "GET /api/agents/:id/heartbeat",
     "GET /api/agents/:id/permissions",
     "GET /api/agents/current",
     "GET /api/agents/mcp-oauth/callback",
@@ -514,6 +516,7 @@
     "POST /api/tasks/:id/trigger",
     "POST /api/tasks/runs/:id/cancel",
     "POST /api/templates",
+    "POST /api/terminal",
     "POST /api/test/agent-token",
     "POST /api/test/canonical-id",
     "POST /api/test/community-connection-change",
@@ -562,6 +565,7 @@
     "PUT /api/extensions/:id/secrets/:key",
     "PUT /api/extensions/:id/settings/:key",
     "PUT /api/files/content",
+    "PUT /api/heartbeats/triage-credits",
     "PUT /api/mesh/topology/access",
     "PUT /api/permissions/preset",
     "PUT /api/read-cursors/:kind/:id",
@@ -571,12 +575,5 @@
     "PUT /api/runtimes/claude-code/accounts/:id/only-projects",
     "PUT /api/runtimes/claude-code/project-accounts",
     "PUT /api/runtimes/doe/inference"
-  ],
-  "express": [
-    "DELETE /api/terminal/:id",
-    "GET /api/agents/:id/heartbeat",
-    "POST /api/terminal",
-    "PUT /api/heartbeats/triage-credits",
-    "USE /api"
   ]
 }

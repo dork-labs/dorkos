@@ -1,6 +1,8 @@
-import { Router } from 'express';
+import { Hono } from 'hono';
 import { z } from 'zod';
 import { CreateTerminalRequestSchema } from '@dorkos/shared/terminal-schemas';
+import type { ApiEnv } from '../http/api-chain.js';
+import { readJsonBody } from '../http/request-body.js';
 import { BoundaryError } from '../lib/boundary.js';
 import { logger } from '../lib/logger.js';
 import { TerminalLimitError, type TerminalManager } from '../services/terminal/index.js';
@@ -15,34 +17,32 @@ import { TerminalLimitError, type TerminalManager } from '../services/terminal/i
  */
 
 /**
- * Build the terminal router bound to a manager.
+ * Build the terminal routes bound to a manager, mounted at `/api/terminal`.
  *
  * @param manager - The terminal manager owning PTY lifecycles.
  */
-export function createTerminalRouter(manager: TerminalManager): Router {
-  const router = Router();
+export function createTerminalRoutes(manager: TerminalManager): Hono<ApiEnv> {
+  const router = new Hono<ApiEnv>();
 
   // POST /api/terminal — spawn a PTY in a boundary-confined cwd.
-  router.post('/', async (req, res) => {
-    const parsed = CreateTerminalRequestSchema.safeParse(req.body);
+  router.post('/', async (c) => {
+    const parsed = CreateTerminalRequestSchema.safeParse(readJsonBody(c));
     if (!parsed.success) {
-      return res
-        .status(400)
-        .json({ error: 'Validation failed', details: z.flattenError(parsed.error) });
+      return c.json({ error: 'Validation failed', details: z.flattenError(parsed.error) }, 400);
     }
     try {
       const id = await manager.create(parsed.data);
-      res.status(201).json({ id });
+      return c.json({ id }, 201);
     } catch (err) {
       if (err instanceof BoundaryError) {
         const status = err.code === 'NULL_BYTE' ? 400 : 403;
-        return res.status(status).json({ error: err.message, code: err.code });
+        return c.json({ error: err.message, code: err.code }, status);
       }
       if (err instanceof TerminalLimitError) {
-        return res.status(429).json({ error: err.message, code: 'TERMINAL_LIMIT' });
+        return c.json({ error: err.message, code: 'TERMINAL_LIMIT' }, 429);
       }
       logger.error('[terminal] POST / failed', { err });
-      res.status(500).json({ error: 'Internal server error' });
+      return c.json({ error: 'Internal server error' }, 500);
     }
   });
 
@@ -50,9 +50,9 @@ export function createTerminalRouter(manager: TerminalManager): Router {
   // the web client calls it when a user closes a terminal tab
   // (Transport.closeTerminal, DOR-226), while unmount/refresh only detaches so
   // the PTY stays re-attachable (DOR-225). Also serves external API consumers.
-  router.delete('/:id', (req, res) => {
-    manager.destroy(req.params.id);
-    res.status(204).end();
+  router.delete('/:id', (c) => {
+    manager.destroy(c.req.param('id'));
+    return c.body(null, 204);
   });
 
   return router;

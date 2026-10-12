@@ -2,25 +2,25 @@
  * Resolve an agent identity from the `X-DorkOS-Agent` header onto the request
  * context (spec `agent-trust` §3.1).
  *
- * Mounted app-wide immediately after `sessionGate` on the Express chain; the
- * Hono chain (`http/api-chain.ts`, which serves `/mcp`) runs the same
- * {@link resolveAgentIdentityFromHeaders}. It is purely additive: it reads a header, and on success attaches
- * {@link AgentIdentity} to `res.locals.agentIdentity` (the same place
- * `sessionGate` puts `res.locals.user`).
+ * The chain (`http/api-chain.ts`) runs {@link resolveAgentIdentityFromHeaders}
+ * right after the session gate, and a WebSocket upgrade runs it for itself
+ * (`services/core/streams/stream-upgrade-auth.ts`). It is purely additive: it
+ * reads a header, and on success the {@link AgentIdentity} becomes the
+ * request's `agentIdentity` (`c.var.agentIdentity`, beside the gate's `user`).
  *
- * ## This middleware never rejects a request
+ * ## This step never rejects a request
  *
  * Absent, unknown, malformed, or revoked tokens all fall through to today's
  * unattributed behavior — identity is attribution, not authorization (spec
  * §3.1, resolved open question: mandatory identity would break external MCP
  * clients and human CLI use for no security gain, since transport auth already
  * guards these surfaces). It also does not alter any existing auth outcome:
- * `sessionGate` has already decided whether the request may proceed by the time
- * this runs.
+ * the session gate has already decided whether the request may proceed by the
+ * time this runs.
  *
  * @module middleware/agent-identity
  */
-import type { Request, Response, NextFunction } from 'express';
+import type { IncomingHttpHeaders } from 'node:http';
 import {
   agentTokenDigestPrefix,
   getAgentIdentityService,
@@ -33,25 +33,10 @@ import type { RequestFacts } from '../http/request-facts.js';
 export const AGENT_IDENTITY_HEADER = 'x-dorkos-agent';
 
 /**
- * Read the resolved agent identity a request carries, or `undefined` when the
- * caller is the human operator or an unattributed client.
- *
- * Use this instead of touching `res.locals` directly so the storage location
- * stays a single-file detail.
- *
- * @param res - Anything holding the request-scoped locals — an Express
- *   `Response`, or the locals a WebSocket upgrade resolved for itself.
- * @returns The resolved identity, or `undefined`.
- */
-export function getRequestAgentIdentity(res: Pick<Response, 'locals'>): AgentIdentity | undefined {
-  return res.locals.agentIdentity as AgentIdentity | undefined;
-}
-
-/**
  * Whether this request claims to be a machine at all — resolved or not.
  *
- * The wider question than {@link getRequestAgentIdentity}, and a different one:
- * that reader answers "WHICH agent is this", which needs a token that verified;
+ * The wider question than the resolved `agentIdentity`, and a different one:
+ * that answers "WHICH agent is this", which needs a token that verified;
  * this answers "is a machine calling", which a token that did NOT verify still
  * says. A revoked or expired agent is still an agent, and a person in the
  * cockpit never sends this header at all.
@@ -74,37 +59,24 @@ export function getRequestAgentIdentity(res: Pick<Response, 'locals'>): AgentIde
  * never sends it at all — so the only caller that reaches it is one hand-rolling
  * requests, for which the strict answer is the useful one.
  *
- * Takes a request's facts (`http/request-facts.ts`), or the Express request and
- * response the Express chain still hands its routes.
- *
- * @param req - The request's facts, or the Express request, for the raw header.
- * @param res - With an Express request: the response carrying whatever the
- *   middleware resolved.
+ * @param request - The request's facts (`http/request-facts.ts`), for the raw
+ *   header and whatever resolved from it.
  * @returns True when the header was present, however it resolved.
  */
 export function presentsAgentIdentity(
   request: Pick<RequestFacts, 'headers' | 'agentIdentity'>
-): boolean;
-export function presentsAgentIdentity(
-  req: Pick<Request, 'headers'>,
-  res: Pick<Response, 'locals'>
-): boolean;
-export function presentsAgentIdentity(
-  req: Pick<Request, 'headers'> | Pick<RequestFacts, 'headers' | 'agentIdentity'>,
-  res?: Pick<Response, 'locals'>
 ): boolean {
-  const resolved = res
-    ? getRequestAgentIdentity(res)
-    : (req as Pick<RequestFacts, 'agentIdentity'>).agentIdentity;
-  return resolved !== undefined || req.headers[AGENT_IDENTITY_HEADER] !== undefined;
+  return (
+    request.agentIdentity !== undefined || request.headers[AGENT_IDENTITY_HEADER] !== undefined
+  );
 }
 
 /**
  * Resolve `X-DorkOS-Agent` from a set of request headers.
  *
- * Split out of the middleware because a WebSocket upgrade needs the identical
- * answer and has no Express request to hand it: an upgrade arrives on the HTTP
- * server's `upgrade` event, so no middleware runs for it (see
+ * One function for both callers because a WebSocket upgrade needs the identical
+ * answer and runs no chain: an upgrade arrives on the HTTP server's `upgrade`
+ * event, so no middleware runs for it (see
  * `services/core/streams/stream-upgrade-auth.ts`). One implementation rather than
  * two keeps "which token resolves to which agent" a single fact.
  *
@@ -118,7 +90,7 @@ export function presentsAgentIdentity(
  * @returns The resolved identity, or `undefined`.
  */
 export async function resolveAgentIdentityFromHeaders(
-  headers: Request['headers'],
+  headers: IncomingHttpHeaders,
   context = 'upgrade'
 ): Promise<AgentIdentity | undefined> {
   const header = headers[AGENT_IDENTITY_HEADER];
@@ -152,21 +124,4 @@ export async function resolveAgentIdentityFromHeaders(
     logger.debug('[agent-identity] Token resolution failed', { err: String(err) });
   }
   return undefined;
-}
-
-/**
- * Express middleware that resolves `X-DorkOS-Agent` onto the request context.
- *
- * @param req - The incoming request.
- * @param res - The response whose `locals` receives the identity.
- * @param next - The next middleware in the stack.
- */
-export async function resolveAgentIdentity(
-  req: Request,
-  res: Response,
-  next: NextFunction
-): Promise<void> {
-  const identity = await resolveAgentIdentityFromHeaders(req.headers, req.path);
-  if (identity) res.locals.agentIdentity = identity;
-  next();
 }

@@ -14,7 +14,6 @@ import { MainRequestAdmission } from './services/core/lifecycle/main-request-adm
 import path from 'path';
 import type { PermissionAreaId } from '@dorkos/shared/permissions';
 import { randomUUID } from 'node:crypto';
-import { createApp, finalizeApp } from './app.js';
 import { createFrontDoorServer, frontDoorListener } from './http/front-door.js';
 import { composeFrontDoor, type HonoApiDeps } from './http/hono-api.js';
 import { ManagedConnectorCloudError } from './services/core/auth/cloud-link-client.js';
@@ -460,7 +459,6 @@ import { TerminalManager, terminalUpgradeRoute } from './services/terminal/index
 import { attachUpgradeRouter } from './services/core/streams/upgrade-router.js';
 import { managedIngressFor } from './services/core/remote/managed-ingress.js';
 import { durableStreamRoutes } from './routes/stream-sockets.js';
-import { createTerminalRouter } from './routes/terminal.js';
 import { registerDorkosCommunityTelemetry } from './services/marketplace/telemetry/telemetry-reporter.js';
 import { registerHeartbeat, type HeartbeatCounts } from './services/core/heartbeat-reporter.js';
 import {
@@ -572,7 +570,7 @@ import {
   onProjectorRekey,
   expireOrphanedAsks,
   sweepOrphanedMessageQueues,
-  sessionOriginResolvers,
+  type SessionOriginResolvers,
   listRecentSessions,
   setAgentSessionSources,
   setPrivateSessionMessageAcceptanceService,
@@ -1075,8 +1073,8 @@ async function start() {
     resolveMcpLocalToken(dorkHome);
   }
 
-  // Agent identity (spec `agent-trust` §3.1) — must be initialized before
-  // `createApp()`, whose `resolveAgentIdentity` middleware reaches this
+  // Agent identity (spec `agent-trust` §3.1) — must be initialized before the
+  // first request, whose agent-identity step in the chain reaches this
   // singleton lazily (it has no database handle in scope, same as `getAuth`).
   initAgentIdentityService(db);
 
@@ -2707,7 +2705,6 @@ async function start() {
       return accepted;
     },
   };
-  const app = createApp({ admission: mainRequestAdmission });
 
   // Build mcpToolDeps and register factory only when ClaudeCodeRuntime is available.
   let mcpToolDeps: Parameters<typeof createExternalMcpServer>[0] | undefined;
@@ -3682,8 +3679,8 @@ async function start() {
   };
   logger.info(`[MCP] External MCP server mounted at /mcp (stateless, ${mcpAuthMode})`);
 
-  // `deps` is what the moved Hono routes read (`http/hono-api.ts`), set where
-  // each group used to be mounted on Express.
+  // `deps` is what the route groups read (`http/hono-api.ts`), each set where
+  // the service it hands over is ready.
   const deps: HonoApiDeps = {
     connectorEventIngress: connectorSignedIngress,
     mcp: mcpServerFactory,
@@ -3888,28 +3885,29 @@ async function start() {
   // Wired to the session routes (`deps.sessions`) AND to the global session-list
   // stream below, because both produce client-visible session rows and a room
   // turn must read the same way whichever one a client heard it from (DOR-1141).
+  const origins: SessionOriginResolvers = {};
   if (taskStore) {
-    app.locals.resolveTaskOrigins = (sessionIds: string[]) =>
+    origins.resolveTaskOrigins = (sessionIds: string[]) =>
       taskStore!.resolveTaskOrigins(sessionIds);
   }
-  app.locals.resolveRoomOrigins = (sessionIds: string[]) =>
-    roomStore.resolveRoomOrigins(sessionIds);
+  origins.resolveRoomOrigins = (sessionIds: string[]) => roomStore.resolveRoomOrigins(sessionIds);
   // Who started a chat (spec `flow-multiproject` §7.7): the third overlay, a
   // batched read of `session_started_by`, and the extension names its first
   // line says.
-  app.locals.resolveStartedBy = (sessionIds: string[]) =>
+  origins.resolveStartedBy = (sessionIds: string[]) =>
     getSessionStartedByStore()?.getMany(sessionIds) ?? new Map();
-  app.locals.extensionNameOf = (extensionId: string) =>
+  origins.extensionNameOf = (extensionId: string) =>
     extensionManager?.get(extensionId)?.manifest.name ?? extensionId;
   // What you did in each chat (spec `your-activity-first` D5): the fourth
   // overlay, a batched read of `session_touches`. Set before the broadcaster
   // takes its resolvers, so the live stream carries it exactly as the routes do.
-  app.locals.resolveTouches = (sessionIds: string[]) =>
+  origins.resolveTouches = (sessionIds: string[]) =>
     getSessionTouchStore()?.resolve(sessionIds) ?? new Map();
   // Agents wake on a beat or an event (spec `heartbeats`); sets the beat-chat
   // label resolver, so it runs before the broadcaster takes its resolvers.
   heartbeats.startHeartbeats({
-    app,
+    routes: deps,
+    origins,
     db,
     meshCore: () => meshCore,
     rooms: roomService,
@@ -3918,10 +3916,10 @@ async function start() {
     relay: () => relayChannelDeps,
     commitments: commitments.service,
   });
-  sessionListBroadcaster.setOriginResolvers(sessionOriginResolvers(app.locals));
+  sessionListBroadcaster.setOriginResolvers({ ...origins });
   // Who may read each session's transcript (spec `audit-trail` §3.4): an
   // agent sees agent work, never a person's own chat.
-  const { resolveTaskOrigins, resolveStartedBy } = app.locals;
+  const { resolveTaskOrigins, resolveStartedBy } = origins;
   wireSessionVisibility({ db, accounts: auditAccounts, resolveTaskOrigins, resolveStartedBy });
   // Live session upserts carry the flow items a chat works on, exactly as
   // `GET /api/sessions` does, so the first upsert after a list read no longer
@@ -3996,7 +3994,7 @@ async function start() {
   // session-list stream carries, so a room turn reads the same either way
   // (DOR-1141).
   deps.sessions = {
-    ...sessionOriginResolvers(app.locals),
+    ...origins,
     meshCore,
     roomSessionBindings: roomStore.sessionLedger,
     roomSessionPlace: roomSessionPlacePort,
@@ -4530,7 +4528,7 @@ async function start() {
     boundary: resolvedBoundary,
     idleTimeoutMs: terminalGraceTtlMinutes * 60_000,
   });
-  app.use('/api/terminal', createTerminalRouter(terminalManager));
+  deps.terminal = terminalManager;
   mountedRouters.push('terminal');
   logger.info('[DorkOS] routes mounted', { routers: mountedRouters.join(' ') });
 
@@ -4876,9 +4874,6 @@ async function start() {
     `[Capabilities] Registry composed (${capabilityRegistry.capabilities.length} capabilities); catalog at GET /api/capabilities/catalog, invoke at POST /api/capabilities/:id/invoke`
   );
 
-  // Finalize app: API 404 catch-all, error handler, and SPA serving
-  finalizeApp(app);
-
   // Inject relay into every registered runtime (a no-op for all runtimes today;
   // the method survives on the interface for future relay-aware runtimes).
   // Registry-wide rather than default-only: a relay-aware runtime needs the
@@ -4912,13 +4907,12 @@ async function start() {
     logger.warn(`[Auth] ${bindCheck.warning}`);
   }
 
-  const frontDoor = composeFrontDoor(app, mainRequestAdmission, deps);
+  const frontDoor = composeFrontDoor(mainRequestAdmission, deps);
   const server = startMainListener({
     admission: mainRequestAdmission,
-    // Hono is the front door: moved route groups answer from the Hono `/api`
-    // app (`http/hono-api.ts`), everything else from the Express app behind it
-    // (`http/front-door.ts`, ADR 261009-192542). Managed remote access serves
-    // the same door, so its requests meet the same routes and gates.
+    // Every request enters the one Hono app (`http/hono-api.ts`) through the
+    // front door (`http/front-door.ts`, ADR 261009-192542). Managed remote
+    // access serves the same door, so its requests meet the same routes and gates.
     listen: () => createFrontDoorServer(frontDoor).listen(PORT, host),
     onListening: (server) => {
       logger.info(`[DorkOS] server running on http://${host}:${PORT}`);

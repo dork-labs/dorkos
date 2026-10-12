@@ -90,14 +90,11 @@ vi.mock('@dorkos/shared/manifest', () => ({
 
 import request from '@dorkos/test-utils/supertest';
 import { listeningServer } from '@dorkos/test-utils/listening-server';
-import { createApp, finalizeApp } from '../../app.js';
 import { composedListener } from '../../http/__tests__/composed-listener.js';
 import { runtimeRegistry } from '../../services/core/runtime-registry.js';
 
 const admission = new MainRequestAdmission();
-const app = createApp({ admission });
-finalizeApp(app);
-const testServer = listeningServer(composedListener(app, admission));
+const testServer = listeningServer(composedListener(admission));
 
 const S1 = '00000000-0000-4000-8000-000000000001';
 const ENVELOPE = wrapKickoff('Read your SOUL.md and introduce yourself. Offer a first action.');

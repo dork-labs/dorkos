@@ -25,8 +25,12 @@ import {
 } from '@dorkos/relay';
 import { env } from '../env.js';
 import { createRelayWebhookRoutes, relayWebhookBodyRule } from '../routes/relay-webhooks.js';
-import { createApp, finalizeApp } from '../app.js';
 import { composedListener } from '../http/__tests__/composed-listener.js';
+import { frontDoorListener } from '../http/front-door.js';
+import { composeFrontDoor } from '../http/hono-api.js';
+import { readJsonBody } from '../http/request-body.js';
+import type { Context } from 'hono';
+import type { ApiEnv } from '../http/api-chain.js';
 import { honoGroupListener } from '../http/__tests__/hono-group-listener.js';
 import type { HonoApiDeps } from '../http/hono-api.js';
 import type { AdapterManager } from '../services/relay/adapter-manager.js';
@@ -126,16 +130,16 @@ beforeEach(async () => {
         : undefined,
   } as unknown as AdapterManager;
   admission = new MainRequestAdmission();
-  const app = createApp({ admission });
-  app.all('/api/relay/webhooks-neighbor', (req, res) =>
-    res.json({ body: req.body, isBuffer: Buffer.isBuffer(req.body) })
-  );
-  app.put(URL, (req, res) => res.json({ body: req.body, isBuffer: Buffer.isBuffer(req.body) }));
-  app.post('/api/ordinary-json-probe', (req, res) =>
-    res.json({ body: req.body, isBuffer: Buffer.isBuffer(req.body) })
-  );
-  finalizeApp(app);
-  target.mount(composedListener(app, admission, relayDeps()));
+  const app = composeFrontDoor(admission, relayDeps());
+  // Probes beside the real routes: what the chain parsed for each path.
+  const echo = (c: Context<ApiEnv>) => {
+    const parsed = readJsonBody(c);
+    return c.json({ body: parsed, isBuffer: Buffer.isBuffer(parsed) });
+  };
+  app.all('/api/relay/webhooks-neighbor', echo);
+  app.put(URL, echo);
+  app.post('/api/ordinary-json-probe', echo);
+  target.mount(frontDoorListener(app));
 });
 
 afterEach(async () => {
@@ -383,9 +387,7 @@ describe('signed Relay JSON through the finalized application', () => {
       // terminal, so build a fresh admitted app only for that control.
       if (gate === 'admission') {
         const controlAdmission = new MainRequestAdmission();
-        const controlApp = createApp({ admission: controlAdmission });
-        finalizeApp(controlApp);
-        target.mount(composedListener(controlApp, controlAdmission, relayDeps()));
+        target.mount(composedListener(controlAdmission, relayDeps()));
       }
       expect((await send(EXACT, headers)).status).toBe(200);
       expect(inbound).toHaveBeenCalledTimes(1);

@@ -18,8 +18,9 @@
  *   JSON and an extension's own `express.json()` passes. A body that parser
  *   does not read (text, a form, a file) is still unread for the router.
  * - **Who asked.** The session user and the agent the chain resolved are on
- *   `res.locals`, where `ctx.requirePerson` reads them; `req.ip` trusts one
- *   proxy hop, as the server's app did.
+ *   `res.locals`, where `ctx.requirePerson` reads them
+ *   ({@link expressRequestFacts}); `req.ip` trusts one proxy hop, as the
+ *   chain does.
  * - **Failures.** A route that throws, rejects or calls `next(err)` is
  *   answered by the chain's error handler, with the same status and body the
  *   Express error handler gave. A path the router does not serve passes on to
@@ -32,9 +33,36 @@
  * @module services/extensions/http/express-bridge
  */
 import type { ServerResponse } from 'node:http';
+import type { TLSSocket } from 'node:tls';
 import express, { type Request, type Response as ExpressResponse, type Router } from 'express';
 import { RESPONSE_ALREADY_SENT } from '@hono/node-server/utils/response';
+import type { RequestFacts } from '../../../http/request-facts.js';
+import type { AgentIdentity } from '../../core/agent-identity/agent-identity-service.js';
+import type { RequestUser } from '../../core/auth/session-gate.js';
+import { isManagedIngress } from '../../core/remote/ingress-mark.js';
 import type { ExtensionHttpHandler } from './extension-http.js';
+
+/**
+ * The facts of a request an extension's router is handling
+ * (`http/request-facts.ts`), for a policy the extension asks through `ctx`
+ * (`ctx.requirePerson`). Read off the bridged request and the identity the
+ * bridge put on `res.locals`, so the policy sees what the chain resolved.
+ *
+ * @param req - The bridged Express request.
+ * @param res - Its response, carrying `user` and `agentIdentity` on `locals`.
+ * @returns The request's facts.
+ */
+export function expressRequestFacts(req: Request, res: ExpressResponse): RequestFacts {
+  return {
+    headers: req.headers,
+    peerAddress: req.socket?.remoteAddress,
+    forwardedAddress: req.ip,
+    connectionEncrypted: Boolean((req.socket as TLSSocket | undefined)?.encrypted),
+    managedIngress: isManagedIngress(req),
+    user: res.locals.user as RequestUser | undefined,
+    agentIdentity: res.locals.agentIdentity as AgentIdentity | undefined,
+  };
+}
 
 /**
  * Serve one extension's Express router through its own private Express app.
@@ -46,7 +74,7 @@ import type { ExtensionHttpHandler } from './extension-http.js';
 export function bridgeExpressRouter(router: Router): ExtensionHttpHandler {
   const app = express();
   app.disable('x-powered-by');
-  // One trusted hop, as `app.ts` set it: `req.ip` reads the same.
+  // One trusted hop, as the chain trusts (`forwardedClientAddress`).
   app.set('trust proxy', 1);
   app.use('/api/ext/:id', router);
 
@@ -55,7 +83,7 @@ export function bridgeExpressRouter(router: Router): ExtensionHttpHandler {
     // has nothing to answer: Express never runs for it.
     if (router.stack.length === 0) return null;
     const { incoming, outgoing } = c.env;
-    // What the Express chain's identity steps put on `res.locals`, which
+    // What the chain's identity steps resolved, on `res.locals`, where
     // `ctx.requirePerson` and any extension reading the caller expect there.
     const locals: Record<string, unknown> = Object.create(null);
     const user = c.get('user');

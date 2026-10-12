@@ -33,7 +33,6 @@ vi.mock('../../services/core/config-manager.js', () => ({
 import type { Server } from 'node:http';
 import request from '@dorkos/test-utils/supertest';
 import { listeningServer, swappableServer } from '@dorkos/test-utils/listening-server';
-import { createApp } from '../../app.js';
 import { composedListener } from '../../http/__tests__/composed-listener.js';
 import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
 import { createRuntimesRoutes } from '../runtimes.js';
@@ -43,7 +42,7 @@ import { provisionClaudeCode } from '../../services/runtimes/claude-code/tooling
 import { provisionOllama } from '../../services/runtimes/opencode/providers/ollama-provision.js';
 
 const admission = new MainRequestAdmission();
-const server = listeningServer(composedListener(createApp({ admission }), admission));
+const server = listeningServer(composedListener(admission));
 const peerTarget = swappableServer();
 
 /**

@@ -437,8 +437,9 @@ async function buildCLI() {
       // packages/cli, exactly like better-sqlite3 and node-pty. Used by
       // services/extensions/extension-compiler.ts to tsx-transpile extensions.
       'esbuild',
+      // Only the extension bridge runs Express now
+      // (`services/extensions/http/express-bridge.ts`): an extension's router.
       'express',
-      'cors',
       'dotenv',
       'uuid',
       'zod',

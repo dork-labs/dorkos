@@ -1,7 +1,7 @@
 /**
  * Which requests arrived through the managed remote-access ingress.
  *
- * The managed ingress hands its requests to the same Express app (and its
+ * The managed ingress hands its requests to the same front door (and its
  * upgrades to the same upgrade router) that serve this machine, and its TCP
  * peer is the ngrok agent on loopback. So the socket alone would make a phone
  * on managed remote access look like a person at this machine. The ingress
@@ -9,8 +9,8 @@
  * whatever its `Host` says.
  *
  * Kept on the request object itself (a `WeakSet`, so nothing outlives it) rather
- * than only on `res.locals`, because a WebSocket upgrade has no response and no
- * Express around it.
+ * than on a framework's context, because a WebSocket upgrade has no response
+ * and runs no chain.
  *
  * @module services/core/remote/ingress-mark
  */
@@ -53,7 +53,7 @@ export function setManagedAdmissionListener(listener: ManagedAdmissionListener |
 }
 
 /**
- * Called by the session gate (Express and Hono alike) once it has let a request
+ * Called by the session gate once it has let a request
  * through, and by the managed ingress for a path the gate never decides on (a
  * page or asset). A managed request is passed on to the activity count, once;
  * any other request is ignored. So a request counts only after the edge proof

@@ -36,10 +36,9 @@ vi.mock('../lib/logger.js', () => ({
   },
 }));
 
-import type express from 'express';
+import { createApiApp } from '../http/api-chain.js';
 import request from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
-import { createApp } from '../app.js';
 import { composedListener } from '../http/__tests__/composed-listener.js';
 import { env } from '../env.js';
 import { logger } from '../lib/logger.js';
@@ -51,7 +50,7 @@ const fixtureServer = fixtureTarget.server;
 /** What the WebSocket upgrade asks of the shared origin policy. */
 const UPGRADE_POLICY = { allowNoOrigin: true, pairSameOriginWithHost: true } as const;
 
-// Building an Express app and driving a real request through it is slow on a
+// Building the server app and driving a real request through it is slow on a
 // machine already running other agents' suites, and every test here does both.
 // The default 5s budget false-failed six of eight runs under that load.
 vi.setConfig({ testTimeout: 30_000, hookTimeout: 30_000 });
@@ -59,7 +58,7 @@ vi.setConfig({ testTimeout: 30_000, hookTimeout: 30_000 });
 const EVIL_ORIGIN = 'https://evil.example.com';
 const LOOPBACK_ORIGIN = `http://localhost:${env.DORKOS_PORT}`;
 
-/** Read every warning `createApp` produced that mentions the CORS variable. */
+/** Read every warning building the chain produced that mentions the CORS variable. */
 function corsWarnings(): string[] {
   return vi
     .mocked(logger.warn)
@@ -78,14 +77,11 @@ function corsWarnings(): string[] {
  * the same rule.
  */
 describe('CORS: DORKOS_CORS_ORIGIN wildcard', () => {
-  let app: express.Express;
-
   beforeAll(() => {
     process.env.DORKOS_CORS_ORIGIN = '*';
     const admission = new MainRequestAdmission();
-    app = createApp({ admission });
 
-    fixtureTarget.mount(composedListener(app, admission));
+    fixtureTarget.mount(composedListener(admission));
   });
 
   afterAll(() => {
@@ -118,7 +114,7 @@ describe('CORS: DORKOS_CORS_ORIGIN wildcard', () => {
   it('warns the operator once, naming the variable and what to set instead', () => {
     vi.mocked(logger.warn).mockClear();
 
-    createApp({ admission: new MainRequestAdmission() });
+    createApiApp({ admission: new MainRequestAdmission() });
 
     const warnings = corsWarnings();
     expect(warnings).toHaveLength(1);
@@ -153,14 +149,11 @@ describe('CORS: DORKOS_CORS_ORIGIN wildcard', () => {
 // allowlist of the literal `*` — a list that matches no origin, suppresses the
 // same-origin branch, and warns about nothing. Both surfaces trim first now.
 describe('CORS: DORKOS_CORS_ORIGIN with surrounding whitespace', () => {
-  let app: express.Express;
-
   beforeAll(() => {
     process.env.DORKOS_CORS_ORIGIN = ' * ';
     const admission = new MainRequestAdmission();
-    app = createApp({ admission });
 
-    fixtureTarget.mount(composedListener(app, admission));
+    fixtureTarget.mount(composedListener(admission));
   });
 
   afterAll(() => {
@@ -182,7 +175,7 @@ describe('CORS: DORKOS_CORS_ORIGIN with surrounding whitespace', () => {
   it('warns about it rather than passing silently', () => {
     vi.mocked(logger.warn).mockClear();
 
-    createApp({ admission: new MainRequestAdmission() });
+    createApiApp({ admission: new MainRequestAdmission() });
 
     expect(corsWarnings()).toHaveLength(1);
   });
@@ -207,14 +200,11 @@ describe('CORS: DORKOS_CORS_ORIGIN with surrounding whitespace', () => {
 });
 
 describe('X-Content-Type-Options', () => {
-  let app: express.Express;
-
   beforeAll(() => {
     delete process.env.DORKOS_CORS_ORIGIN;
     const admission = new MainRequestAdmission();
-    app = createApp({ admission });
 
-    fixtureTarget.mount(composedListener(app, admission));
+    fixtureTarget.mount(composedListener(admission));
   });
 
   it('rides every API response, not only the routes that set it themselves', async () => {
@@ -231,14 +221,11 @@ describe('X-Content-Type-Options', () => {
 });
 
 describe('CORS: an explicit DORKOS_CORS_ORIGIN allowlist is untouched', () => {
-  let app: express.Express;
-
   beforeAll(() => {
     process.env.DORKOS_CORS_ORIGIN = 'http://localhost:5173,https://dorkos.example.com';
     const admission = new MainRequestAdmission();
-    app = createApp({ admission });
 
-    fixtureTarget.mount(composedListener(app, admission));
+    fixtureTarget.mount(composedListener(admission));
   });
 
   afterAll(() => {
@@ -265,7 +252,7 @@ describe('CORS: an explicit DORKOS_CORS_ORIGIN allowlist is untouched', () => {
   });
 
   it('does not warn about a real allowlist', () => {
-    createApp({ admission: new MainRequestAdmission() });
+    createApiApp({ admission: new MainRequestAdmission() });
 
     expect(corsWarnings()).toHaveLength(0);
   });
@@ -278,7 +265,7 @@ describe('CORS: an explicit DORKOS_CORS_ORIGIN allowlist is untouched', () => {
    * `cors({ origin: [...] })`. That form does not refuse anything: an origin off
    * the list simply gets no `Access-Control-Allow-Origin`, the browser withholds
    * the RESPONSE, and the route still runs. The delegate form refuses by calling
-   * back with an `Error`, which Express turns into a 500 — so folding the two
+   * back with an `Error`, which the chain turns into a 500 — so folding the two
    * paths together turned "no header" into "the request dies", for every address
    * that was not on the list.
    *

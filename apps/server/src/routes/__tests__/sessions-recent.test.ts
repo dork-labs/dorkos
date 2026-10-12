@@ -45,19 +45,16 @@ vi.mock('@dorkos/shared/manifest', () => ({
 
 import request from '@dorkos/test-utils/supertest';
 import { listeningServer } from '@dorkos/test-utils/listening-server';
-import { createApp, finalizeApp } from '../../app.js';
 import { composedListener } from '../../http/__tests__/composed-listener.js';
 import type { SessionRouteDeps } from '../../routes/sessions.js';
 import { createTestDb } from '@dorkos/test-utils/db';
 import { runtimeRegistry } from '../../services/core/runtime-registry.js';
 
 const admission = new MainRequestAdmission();
-const app = createApp({ admission });
-finalizeApp(app);
 /** What the session routes read; the tests change it between requests. */
 const sessionLocals: Record<string, unknown> = {};
 const testServer = listeningServer(
-  composedListener(app, admission, { sessions: sessionLocals as SessionRouteDeps })
+  composedListener(admission, { sessions: sessionLocals as SessionRouteDeps })
 );
 
 function makeSession(id: string, updatedAt: string, cwd: string): Session {

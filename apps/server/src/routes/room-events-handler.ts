@@ -109,11 +109,7 @@ export async function roomEventsHandler(c: Context<ApiEnv>): Promise<Response> {
       roomId,
       viewerAuthorId,
       sinceCursor,
-      documentNotifications: docScopeNotifications(
-        `room:${roomId}`,
-        { headers: facts.headers },
-        { locals: { agentIdentity: facts.agentIdentity, user: facts.user } }
-      ),
+      documentNotifications: docScopeNotifications(`room:${roomId}`, facts),
     };
     await deliverRoomStream(sink, plan);
   });

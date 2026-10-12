@@ -4,36 +4,15 @@
  *
  * @module lib/route-utils
  */
-import type { Response } from 'express';
 import type { Readable } from 'stream';
-import type { ZodSchema } from 'zod';
 import { z } from 'zod';
 import { validateBoundary, validateBoundaryOrDorkHome, BoundaryError } from './boundary.js';
 
 const uuidSchema = z.string().uuid();
 
 /**
- * Parse and validate a request body against a Zod schema.
- *
- * Returns the validated data on success, or `null` after sending a 400 response on failure.
- *
- * @param schema - Zod schema to validate against
- * @param data - Raw request data (body or query)
- * @param res - Express response object (used to send 400 on failure)
- * @returns Validated data or null if validation failed (response already sent)
- */
-export function parseBody<T>(schema: ZodSchema<T>, data: unknown, res: Response): T | null {
-  const result = schema.safeParse(data);
-  if (!result.success) {
-    res.status(400).json(validationFailureBody(result.error));
-    return null;
-  }
-  return result.data;
-}
-
-/**
- * The 400 body {@link parseBody} answers with, for a route that answers it
- * itself: a Hono route returns `c.json(validationFailureBody(error), 400)`.
+ * The 400 body for data that failed its schema: a route returns
+ * `c.json(validationFailureBody(error), 400)`.
  *
  * @param error - Why the data failed its schema.
  * @returns The body.
@@ -55,8 +34,8 @@ export function toErrorMessage(err: unknown, fallback = 'Internal server error')
 /**
  * Validate that a raw route param is a valid UUID.
  *
- * Accepts `unknown` so raw `req.params` values (typed `string | string[]` by
- * Express 5 typings) flow straight in — a non-string is simply invalid.
+ * Accepts `unknown` so any raw value flows straight in — a non-string is
+ * simply invalid.
  *
  * @param id - The raw value to validate
  * @returns The validated UUID string, or `null` if invalid
@@ -67,20 +46,7 @@ export function parseSessionId(id: unknown): string | null {
 }
 
 /**
- * Send a standardized JSON error response.
- *
- * @param res - Express response object
- * @param status - HTTP status code
- * @param message - Human-readable error message
- * @param code - Machine-readable error code
- */
-export function sendError(res: Response, status: number, message: string, code: string): void {
-  res.status(status).json(errorBody(message, code));
-}
-
-/**
- * The body {@link sendError} answers with, for a route that answers it itself:
- * a Hono route returns `c.json(errorBody(message, code), status)`.
+ * The repo's error body: a route returns `c.json(errorBody(message, code), status)`.
  *
  * @param message - Human-readable error message
  * @param code - Machine-readable error code

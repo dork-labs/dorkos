@@ -20,8 +20,7 @@
  *
  * @module routes/cloud-owner-bar
  */
-import type { Request, Response } from 'express';
-import { expressRequestFacts, type RequestFacts } from '../http/request-facts.js';
+import type { RequestFacts } from '../http/request-facts.js';
 import { refuseUnlessAccountOwner } from '../lib/caller-authority.js';
 
 /** Refusal code when anything but a person asks for a DorkOS account action. */
@@ -74,27 +73,8 @@ export function envelopeRefusalUnlessOwner(
 }
 
 /**
- * Answer 403 `{ error, code }` unless the caller owns this install.
- *
- * @param req - The incoming request.
- * @param res - The response, written on refusal.
- * @param wording - What this write says when it refuses.
- * @returns `true` when the request was answered, so the caller must return.
- */
-export function refuseErrorUnlessOwner(
-  req: Request,
-  res: Response,
-  wording: AccountOwnerWording
-): boolean {
-  const body = errorRefusalUnlessOwner(expressRequestFacts(req, res), wording);
-  if (body === undefined) return false;
-  res.status(403).json(body);
-  return true;
-}
-
-/**
- * The 403 body {@link refuseErrorUnlessOwner} answers with, for a route on the
- * Hono chain that answers it itself: `c.json(body, 403)`.
+ * The 403 body for the writes that answer with a status object, for a route on
+ * the Hono chain that answers it itself: `c.json(body, 403)`.
  *
  * @param caller - The request's facts.
  * @param wording - What this write says when it refuses.

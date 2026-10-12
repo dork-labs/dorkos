@@ -716,7 +716,7 @@ export async function waitForRoomFrames(
  *
  * **Reachable exactly where the harness mounts it.** These routes are gated on
  * `env.DORKOS_TEST_RUNTIME`, which the server validates ONCE at module load —
- * before the runner sets it — so `createApp()` decides it is false and does not
+ * before the runner sets it — so the server's routing decides it is false and does not
  * mount them. `harness-boot.ts` mounts them by hand for that reason, which is
  * what makes this callable on the in-process tier at all. A credentialed
  * child-process server mounts them only if the variable was set in its

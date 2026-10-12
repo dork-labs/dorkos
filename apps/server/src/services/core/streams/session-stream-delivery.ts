@@ -59,7 +59,7 @@ export interface SessionStreamPlan {
    * global stream both enforce that. This stream is the third door onto the
    * same detail, and one that defaulted to the operator would be an allow for
    * whatever opens it next. Both transports read the principal from the same
-   * `res.locals`-shaped facts.
+   * request facts.
    */
   principal: CallerPrincipal;
 }

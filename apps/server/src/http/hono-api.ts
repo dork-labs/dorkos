@@ -1,23 +1,23 @@
 /**
- * The Hono half of the server: the `/api` chain with every route group that
- * has moved off Express mounted on it (`plans/2026-10-express-to-hono.md`).
+ * The server's routing: the chain (`http/api-chain.ts`) with every route group
+ * mounted on it, and the client build behind them in production.
  *
- * {@link composeFrontDoor} hands it to the front door, which claims its routes
- * ahead of the Express fallthrough (`http/front-door.ts`). `index.ts` serves
- * that, and tests that need the server's real routing build the same thing.
- * Each move PR mounts its group here and deletes the group's Express router in
- * the same change.
+ * {@link composeFrontDoor} builds it; `index.ts` serves it through the front
+ * door (`http/front-door.ts`), and tests that need the server's real routing
+ * build the same thing.
  *
  * @module http/hono-api
  */
-import type { RequestListener } from 'node:http';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import type { Hono } from 'hono';
 import { env } from '../env.js';
 import { getAuth } from '../services/core/auth/index.js';
 import type { MainRequestAdmission } from '../services/core/lifecycle/main-request-admission.js';
 import { createApiApp, type ApiEnv } from './api-chain.js';
 import { mountBetterAuth } from './better-auth.js';
-import { createFrontDoor, type FrontDoor } from './front-door.js';
+import { createClientFiles } from './client-files.js';
+import { serveRouteCensus } from './route-census/census.js';
 import type { Db } from '@dorkos/db';
 import type { ActivityService } from '../services/activity/activity-service.js';
 import type { CapabilityRegistry } from '../services/core/capabilities/index.js';
@@ -71,6 +71,11 @@ import fileRoutes from '../routes/files.js';
 import gitRoutes from '../routes/git.js';
 import { createHarnessRoutes, type HarnessRouterDeps } from '../routes/harness.js';
 import { createHealthRoutes, type HealthRouteDeps } from '../routes/health.js';
+import { createHeartbeatRoutes, type HeartbeatRouterDeps } from '../routes/heartbeats.js';
+import {
+  createHeartbeatTriageRoutes,
+  type HeartbeatTriageRouterDeps,
+} from '../routes/heartbeat-triage.js';
 import keepAwakeRoutes from '../routes/keep-awake.js';
 import { createMarketplaceRoutes, type MarketplaceRouteDeps } from '../routes/marketplace.js';
 import { createMcpRoutes, type McpServerFactory } from '../routes/mcp.js';
@@ -101,6 +106,8 @@ import { createTasksRoutes, type TasksRouterDeps } from '../routes/tasks.js';
 import { createSystemRoutes, type SystemRouteDeps } from '../routes/system.js';
 import { createTeamRoutes, type TeamRouterDeps } from '../routes/team.js';
 import { createTemplateRoutes } from '../routes/templates.js';
+import { createTerminalRoutes } from '../routes/terminal.js';
+import type { TerminalManager } from '../services/terminal/index.js';
 import { gateCommunityConnections, gateRemoteCommunities } from '../middleware/spaces-enabled.js';
 import {
   createUnclaimedChatsRoutes,
@@ -116,7 +123,7 @@ import workspaceRoutes from '../routes/workspaces.js';
 /**
  * The groups that are only mounted when the server hands over what they read.
  * A test that builds the server bare passes none of them, and those paths then
- * answer the `/api` 404, as they did when `index.ts` mounted them on Express.
+ * answer the `/api` 404.
  */
 export interface ComposedGroupDeps {
   /** The team roster's reads (`/api/team`). */
@@ -173,6 +180,19 @@ export interface ComposedGroupDeps {
   profile?: ProfileRouterDeps;
   /** The agent registry's routes (`/api/mesh`). Only handed over when the mesh started. */
   mesh?: MeshRouterDeps;
+  /**
+   * An agent's Heartbeat page (`GET /api/agents/:id/heartbeat`). Handed over
+   * when heartbeats start (`services/heartbeats`).
+   */
+  heartbeat?: HeartbeatRouterDeps;
+  /**
+   * The answer to "Run cheap checks on DorkOS credits?"
+   * (`PUT /api/heartbeats/triage-credits`). Handed over with
+   * {@link ComposedGroupDeps.heartbeat}.
+   */
+  heartbeatTriage?: HeartbeatTriageRouterDeps;
+  /** The embedded terminal's REST half (`/api/terminal`); its socket is an upgrade. */
+  terminal?: TerminalManager;
   /** Agent identity, by folder (`/api/agents`). */
   agents?: AgentsRouterDeps;
   /** The discovery scan stream (`/api/discovery`). Only handed over when the mesh started. */
@@ -258,6 +278,12 @@ export interface HonoApiOptions {
   admission: MainRequestAdmission;
   /** See {@link HonoApiDeps}. A test that builds the server bare passes none. */
   deps?: HonoApiDeps;
+  /**
+   * Where the client build is, when this server serves one: what answers a
+   * page, a bundle and a deep link (`http/client-files.ts`). Omitted, nothing
+   * outside the routes is served.
+   */
+  clientDist?: string;
 }
 
 /**
@@ -280,6 +306,7 @@ export function createHonoApi(options: HonoApiOptions): Hono<ApiEnv> {
     // limit; document events are page envelopes, so they may be smaller. A
     // signed Relay webhook keeps its raw bytes while its receiver is mounted.
     bodyRules: [feedbackBodyRule, docEventBodyRule, relayWebhookBodyRule],
+    clientFiles: options.clientDist ? createClientFiles(options.clientDist) : undefined,
     beforeBodyParsing: (early) => {
       if (auth) mountBetterAuth(early, { auth, maxAttempts: env.DORKOS_AUTH_SIGNIN_RATE_LIMIT });
       if (deps.connectorEventIngress) {
@@ -393,14 +420,14 @@ export function createHonoApi(options: HonoApiOptions): Hono<ApiEnv> {
     );
     app.route('/api/ext', createExtensionApiRoutes(deps.extensions.manager));
   }
-  // These two were Express routers mounted on all of `/api`. Their groups
-  // register only their own concrete paths, so mounting them at `/api` claims
+  // These two are mounted on all of `/api`, because their paths span several
+  // prefixes. Their groups register only their own concrete paths, so mounting them at `/api` claims
   // nothing else: every other path still reaches its group or the `/api` 404.
   if (deps.permissions) app.route('/api', createPermissionsRoutes(deps.permissions));
   if (deps.agentPause) app.route('/api', createAgentPauseRoutes(deps.agentPause));
   if (deps.mesh) app.route('/api/mesh', createMeshRoutes(deps.mesh));
   if (deps.discovery) app.route('/api/discovery', createDiscoveryRoutes(deps.discovery));
-  // Five groups answer under `/api/agents`: the two above, and these three.
+  // Six groups answer under `/api/agents`: the two above, and these four.
   // Each registers only its own concrete paths, and no two share one: the
   // agents group's paths are all fixed words (`/current`, `/resolve`,
   // `/create`), never an `:id`, so no order between them changes an answer.
@@ -408,6 +435,9 @@ export function createHonoApi(options: HonoApiOptions): Hono<ApiEnv> {
   if (deps.commitments) {
     app.route('/api/commitments', createCommitmentsRoutes(deps.commitments));
     app.route('/api/agents/:id/commitments', createAgentCommitmentsRoutes(deps.commitments));
+  }
+  if (deps.heartbeat) {
+    app.route('/api/agents/:id/heartbeat', createHeartbeatRoutes(deps.heartbeat));
   }
   if (deps.agents) app.route('/api/agents', createAgentsRoutes(deps.agents));
   // Three groups share this prefix. The catalog is one segment deeper than the
@@ -427,32 +457,40 @@ export function createHonoApi(options: HonoApiOptions): Hono<ApiEnv> {
       app.route('/api/relay/unclaimed-chats', createUnclaimedChatsRoutes(deps.unclaimedChats));
     }
   }
+  if (deps.heartbeatTriage) {
+    app.route('/api/heartbeats/triage-credits', createHeartbeatTriageRoutes(deps.heartbeatTriage));
+  }
+  if (deps.terminal) app.route('/api/terminal', createTerminalRoutes(deps.terminal));
   if (deps.mcp) app.route('/mcp', createMcpRoutes(deps.mcp));
   // Its routes carry their whole paths, two of them outside `/a2a`.
   if (deps.a2a) app.route('/', createA2aRoutes(deps.a2a));
   return app;
 }
 
+/** Where the client build is when nothing names it: beside this package, from source or dist. */
+const DEFAULT_CLIENT_DIST = path.join(
+  path.dirname(fileURLToPath(import.meta.url)),
+  '../../../client/dist'
+);
+
 /**
- * The server's routing: the front door, with the Hono `/api` app claiming its
- * routes and `legacy` answering the rest. A test server also serves the route
- * census.
+ * The server's routing, as `index.ts` serves it: every route group, the client
+ * build in production (`CLIENT_DIST_PATH`, or the client package's own build),
+ * and the route census on a test server.
  *
- * Build it after `initAuth`, as `index.ts` does, or the Hono app has no auth
- * routes.
+ * Build it after `initAuth`, as `index.ts` does, or it has no auth routes.
  *
- * @param legacy - The Express app from `createApp`.
  * @param admission - The main listener's shared terminal state.
- * @param deps - What the moved groups read; see {@link HonoApiDeps}.
- * @returns The front door, for `createFrontDoorServer` or `frontDoorListener`.
+ * @param deps - What the route groups read; see {@link HonoApiDeps}.
+ * @returns The app, for `createFrontDoorServer` or `frontDoorListener`.
  */
 export function composeFrontDoor(
-  legacy: RequestListener,
   admission: MainRequestAdmission,
   deps?: HonoApiDeps
-): FrontDoor {
-  return createFrontDoor(legacy, {
-    api: createHonoApi({ admission, deps }),
-    census: env.DORKOS_TEST_RUNTIME,
-  });
+): Hono<ApiEnv> {
+  const clientDist =
+    env.NODE_ENV === 'production' ? (env.CLIENT_DIST_PATH ?? DEFAULT_CLIENT_DIST) : undefined;
+  const app = createHonoApi({ admission, deps, clientDist });
+  if (env.DORKOS_TEST_RUNTIME) serveRouteCensus(app);
+  return app;
 }

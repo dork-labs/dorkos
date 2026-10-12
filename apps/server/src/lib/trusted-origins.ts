@@ -7,8 +7,8 @@
  * a tunnel connects (so exposing the instance never needs a restart).
  *
  * {@link isTrustedBrowserOrigin} is THE origin decision — since DOR-1711 the
- * CORS delegate in `app.ts`, the `/mcp` mounts (`middleware/mcp-origin.ts`) and
- * the WebSocket upgrade router all call it, each passing the
+ * CORS delegate (`http/cors-policy.ts`), the `/mcp` mounts
+ * (`middleware/mcp-origin.ts`) and the WebSocket upgrade router all call it, each passing the
  * {@link BrowserOriginPolicy} its mount asks for, so what differs between them
  * is readable in one place rather than inferred from three implementations. The
  * `Host` allowlist in `middleware/host-guard.ts` and Better Auth's
@@ -63,7 +63,7 @@ export function parseHostname(hostHeader: string | undefined): string | null {
  * Whether a request's own `Host` header names this machine.
  *
  * Reads the RAW header on purpose. Express's `req.hostname` is NOT safe for this
- * question: `app.ts` sets `trust proxy: 1`, which makes `req.hostname` prefer
+ * question: the Express app set `trust proxy: 1`, which made `req.hostname` prefer
  * `X-Forwarded-Host` from the first hop — and on a direct connection the first
  * hop IS the caller. A request carrying `Host: dorkos.example.com` plus
  * `X-Forwarded-Host: localhost` therefore reports `req.hostname === 'localhost'`
@@ -312,8 +312,9 @@ export function resolveTrustedOrigins(): string[] {
  *
  * `*` parses to NO origins, on every surface. A wildcard is not an allowlist: it
  * would hand the whole API to any page the operator visits, and login is off by
- * default so nothing else would stop it. `buildCors` in `app.ts` warns once at
- * boot when it sees one; this is the half that makes the warning true.
+ * default so nothing else would stop it. `warnOnWildcardCorsOrigin`
+ * (`http/cors-policy.ts`) warns once at boot when it sees one; this is the half
+ * that makes the warning true.
  *
  * Entries are trimmed but otherwise passed through verbatim, including empty
  * ones, so a value that reaches CORS as a list of nothing still reads as a list
@@ -431,7 +432,7 @@ function isCanonicalOrigin(entry: string): boolean {
  */
 export function resolveAuthTrustedOrigins(): string[] {
   const trusted = resolveTrustedOrigins();
-  // eslint-disable-next-line no-restricted-syntax -- DORKOS_CORS_ORIGIN is not in env.ts; read the same way app.ts reads it
+  // eslint-disable-next-line no-restricted-syntax -- DORKOS_CORS_ORIGIN is not in env.ts; read the same way the chain reads it
   const configured = parseConfiguredOrigins(process.env.DORKOS_CORS_ORIGIN).filter(
     (origin) =>
       isCanonicalOrigin(origin) &&
@@ -474,7 +475,7 @@ export interface BrowserOriginFacts {
    * encryption — `https` when the socket is TLS, `http` otherwise — instead of
    * accepting both schemes. The server never terminates TLS itself (TLS is
    * always terminated by an upstream proxy), so in practice this is `false` and
-   * the default is `http`, matching what `buildCors` pins on the HTTP path.
+   * the default is `http`, matching what the CORS layer pins on the HTTP path.
    */
   connectionEncrypted: boolean;
   /**
@@ -571,8 +572,8 @@ export interface BrowserOriginPolicy {
 
 /**
  * Whether a browser's `Origin` may be trusted — THE origin policy, read by every
- * surface that judges one: the CORS delegate in `app.ts`, the `/mcp` family's
- * `middleware/mcp-origin.ts`, and the WebSocket upgrade router.
+ * surface that judges one: the CORS delegate (`http/cors-policy.ts`), the
+ * `/mcp` family's `middleware/mcp-origin.ts`, and the WebSocket upgrade router.
  *
  * ## Why one predicate (DOR-1711)
  *
@@ -603,7 +604,7 @@ export interface BrowserOriginPolicy {
  * LAN IP, on `https://`, or setting `DORKOS_CORS_ORIGIN`.
  *
  * So it mirrors what the HTTP surface already does, which is CORS **and**
- * `hostGuard` **together** (`app.ts` `buildCors` + `middleware/host-guard.ts`):
+ * `hostGuard` **together** (`http/cors-policy.ts` + `middleware/host-guard.ts`):
  *
  * 0. **`Origin: null`** — refused, always, before anything else. That is what a
  *    browser sends from a sandboxed iframe, a `data:` document or a `file://`
@@ -626,8 +627,9 @@ export interface BrowserOriginPolicy {
  *    published on; that is an outage, not a boundary.
  *
  *    This branch used to END the decision when the list was non-empty, on the
- *    stated grounds that `buildCors` did the same by switching to a static
- *    `cors({ origin: [...] })`. That premise is gone — `buildCors` now reads
+ *    stated grounds that the Express app's CORS delegate did the same by
+ *    switching to a static `cors({ origin: [...] })`. That premise is gone —
+ *    the CORS layer (`corsAllowsOrigin`, `http/cors-policy.ts`) now reads
  *    this policy for every request — and following it here was measured as a
  *    regression rather than a tightening (DOR-1711 round 2). The static `cors`
  *    form REFUSES NOTHING: an unlisted origin merely gets no
@@ -651,8 +653,8 @@ export interface BrowserOriginPolicy {
  *    already tell them to set and which feeds the PAIRED branch below.
  *
  *    **`DORKOS_CORS_ORIGIN='*'` is not honoured**, and since 2026-09 that is
- *    no longer a place this is stricter than CORS — `buildCors` now ignores the
- *    wildcard too, for the reason this branch always had. The old argument for
+ *    no longer a place this is stricter than CORS — the CORS layer now ignores
+ *    the wildcard too, for the reason this branch always had. The old argument for
  *    honouring it on HTTP was that a wildcard `Access-Control-Allow-Origin` is
  *    invalid for credentialed requests, so browsers reject it whatever the
  *    server says; that covers only the credentialed case, and login is off by
@@ -666,7 +668,7 @@ export interface BrowserOriginPolicy {
  *    `<scheme>://<Host>` for the `Host` this request asked for. This is the
  *    branch that covers reverse proxies, LAN addresses and `https://` without
  *    the operator listing every one. It is an EXACT string comparison, matching
- *    `buildCors`'s `` `${req.protocol}://${host}` ``.
+ *    the Express app's `` `${req.protocol}://${host}` ``.
  *
  * ## Branch 4 compares the whole origin, and that is the whole point
  *
@@ -688,9 +690,9 @@ export interface BrowserOriginPolicy {
  *
  * With `X-Forwarded-Proto` the comparison is pinned to that one scheme. Without
  * it, the scheme defaults to this connection's OWN encryption — `https` when the
- * socket is TLS, `http` otherwise — the same single scheme `buildCors` pins on
- * the HTTP path, where `req.protocol` is the forwarded scheme when a proxy names
- * one and `http` otherwise. Because the server never terminates TLS itself
+ * socket is TLS, `http` otherwise — the same single scheme the CORS layer pins
+ * on the HTTP path, where Express's `req.protocol` was the forwarded scheme
+ * when a proxy named one and `http` otherwise. Because the server never terminates TLS itself
  * (`index.ts` binds plain HTTP; a proxy always terminates upstream), a bare
  * socket resolves to `http`, so only `http://<host>` is accepted. That closes
  * the widening an accept-either fallback would leave open: `http://example.com`
@@ -759,7 +761,7 @@ export function isTrustedBrowserOrigin(
   // The scheme, pinned. A proxy that named it (`X-Forwarded-Proto`) wins;
   // otherwise default to this connection's own encryption — `http` for the plain
   // socket the server always binds, since TLS is terminated upstream. That is
-  // the scheme `buildCors` pins on the HTTP path, and it is a single equality,
+  // the scheme the CORS layer pins on the HTTP path, and it is a single equality,
   // not the accept-either that once widened the reverse-proxy case: `http://` and
   // `https://` on one name are different servers, so accepting both let a page on
   // the plaintext vhost of that name match a secure cockpit.

@@ -7,11 +7,10 @@
  * assertion in the file next door, which is about who a caller is and reads real
  * config.
  *
- * Every case runs through a real Express app AND a real Hono app (DOR-2794):
- * both chains must call the same caller local.
+ * Every case runs through a real Hono app, reading the request's facts as a
+ * route does.
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import express from 'express';
 import { Hono } from 'hono';
 import request from '@dorkos/test-utils/supertest';
 import type { RequestFactsEnv } from '../../http/request-facts.js';
@@ -41,18 +40,6 @@ let viaManagedIngress = false;
 // One app, one listener: the peer is rewritten per request so a LAN caller can
 // be simulated without a second network interface, exactly as the runtime
 // connect route's own peer tests do.
-const app = express();
-app.use((req, _res, next) => {
-  Object.defineProperty(req.socket, 'remoteAddress', {
-    value: currentPeer ?? undefined,
-    configurable: true,
-  });
-  if (viaManagedIngress) markManagedIngress(req);
-  next();
-});
-app.get('/probe', (req, res) => res.json({ local: isLocalCaller(req) }));
-
-// The same probe as a moved route would ask it.
 const honoApp = new Hono<RequestFactsEnv>();
 honoApp.get('/probe', (c) => {
   Object.defineProperty(c.env.incoming.socket, 'remoteAddress', {
@@ -63,10 +50,7 @@ honoApp.get('/probe', (c) => {
   return c.json({ local: isLocalCaller(honoRequestFacts(c)) });
 });
 
-const servers = {
-  express: listeningServer(app),
-  hono: listeningServer(honoListener(honoApp)),
-};
+const server = listeningServer(honoListener(honoApp));
 
 beforeEach(() => {
   mockEnv.DORKOS_ALLOW_INSECURE_BIND = false;
@@ -74,11 +58,11 @@ beforeEach(() => {
   viaManagedIngress = false;
 });
 
-describe.each(['express', 'hono'] as const)('isLocalCaller, through %s', (chain) => {
+describe('isLocalCaller', () => {
   /** Ask the probe with a given `Host` header and TCP peer. */
   async function probe(host: string, peer: string | null = '127.0.0.1'): Promise<boolean> {
     currentPeer = peer;
-    const res = await request(servers[chain]).get('/probe').set('Host', host);
+    const res = await request(server).get('/probe').set('Host', host);
     expect(res.status).toBe(200);
     return res.body.local as boolean;
   }

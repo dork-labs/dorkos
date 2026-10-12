@@ -109,11 +109,7 @@ export async function sessionEventsHandler(c: Context<ApiEnv>): Promise<Response
       // generation is what judges that — correctly, and in both directions.
       resume,
       principal: readCallerPrincipal(facts),
-      documentNotifications: docScopeNotifications(
-        `session:${sessionId}`,
-        { headers: facts.headers },
-        { locals: { agentIdentity: facts.agentIdentity, user: facts.user } }
-      ),
+      documentNotifications: docScopeNotifications(`session:${sessionId}`, facts),
     })
   );
 }

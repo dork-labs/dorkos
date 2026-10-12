@@ -15,13 +15,11 @@ vi.mock('../../services/core/config-manager.js', () => ({
 
 import request from '@dorkos/test-utils/supertest';
 import { listeningServer } from '@dorkos/test-utils/listening-server';
-import { createApp } from '../../app.js';
 import { composedListener } from '../../http/__tests__/composed-listener.js';
 import { devtoolsCaptureStore } from '../../services/session/index.js';
 
 const admission = new MainRequestAdmission();
-const app = createApp({ admission });
-const testServer = listeningServer(composedListener(app, admission));
+const testServer = listeningServer(composedListener(admission));
 
 function ingest(body: unknown, id = crypto.randomUUID()) {
   return request(testServer).post(`/api/sessions/${id}/devtools/ingest`).send(body);

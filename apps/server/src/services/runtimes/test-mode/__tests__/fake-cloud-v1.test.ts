@@ -145,7 +145,7 @@ describe('the test-mode /v1 Cloud', () => {
       '../../../core/cloud/credits-models.ts',
       '../../../core/cloud/plan.ts',
       '../../../core/auth/cloud-link.ts',
-      '../../../../app.ts',
+      '../../../../http/api-chain.ts',
       '../../../../http/hono-api.ts',
       '../../../../routes/test-control.ts',
       '../../../../routes/cloud.ts',

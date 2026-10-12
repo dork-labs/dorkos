@@ -154,7 +154,6 @@ import { mkdirSync, mkdtempSync, realpathSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import request from '@dorkos/test-utils/supertest';
-import { createApp, finalizeApp } from '../../app.js';
 import { composedListener } from '../../http/__tests__/composed-listener.js';
 import type { SessionRouteDeps } from '../../routes/sessions.js';
 import { disposeProjector } from '../../services/session/session-state-projector.js';
@@ -166,12 +165,10 @@ import { roomSessionPlace } from '../../services/rooms/repo/room-turn-place.js';
 import { workspaceGateFor } from '../../services/workspace/index.js';
 
 const admission = new MainRequestAdmission();
-const app = createApp({ admission });
-finalizeApp(app);
 /** What the session routes read; the tests change it between requests. */
 const sessionLocals: Record<string, unknown> = {};
 const server = createServer(
-  composedListener(app, admission, { sessions: sessionLocals as SessionRouteDeps })
+  composedListener(admission, { sessions: sessionLocals as SessionRouteDeps })
 );
 
 const S1 = '00000000-0000-4000-8000-0000000000c1';

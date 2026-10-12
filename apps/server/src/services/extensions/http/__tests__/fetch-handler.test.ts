@@ -38,15 +38,12 @@ const server = fixtureTarget.server;
  */
 function serve(handler: ExtensionHttpHandler): void {
   fixtureTarget.mount(
-    honoGroupListener(
-      {
-        path: '/api/ext',
-        routes: createExtensionApiRoutes({
-          getServerHandler: (id) => (id === 'my-ext' ? handler : null),
-        }),
-      },
-      { legacy: (_req, res) => res.end('legacy') }
-    )
+    honoGroupListener({
+      path: '/api/ext',
+      routes: createExtensionApiRoutes({
+        getServerHandler: (id) => (id === 'my-ext' ? handler : null),
+      }),
+    })
   );
 }
 

@@ -5,7 +5,7 @@
  * `bootInProcessTestServer` — the additive `@dorkos/server/harness-boot` export
  * that wires the config store, the sandbox DB, the durable session-event store,
  * and a registered `TestModeRuntime` as default (the subset of `start()` a real
- * turn needs, which `createApp()` alone does not) — then binds `listen(0)` so
+ * turn needs, which the routes alone do not) — then binds `listen(0)` so
  * the OS assigns a free port. It runs with `DORKOS_TEST_RUNTIME` set and
  * `DORK_HOME` pointed at the caller's sandbox, so the resolver
  * (`apps/server/src/lib/dork-home.ts`) reads the sandbox rather than the real
@@ -106,7 +106,7 @@ export interface StartInProcessServerOptions {
 function setBootEnv(key: string, value: string): () => void {
   // eslint-disable-next-line no-restricted-syntax -- capture the pre-boot value so dispose() can restore it; the harness owns the booted server's env.
   const prior = process.env[key];
-  // eslint-disable-next-line no-restricted-syntax -- the harness owns the booted server's env; DORK_HOME must be the sandbox before createApp runs.
+  // eslint-disable-next-line no-restricted-syntax -- the harness owns the booted server's env; DORK_HOME must be the sandbox before the server is built.
   process.env[key] = value;
   return () => {
     if (prior === undefined) {
@@ -134,8 +134,8 @@ export async function startInProcessServer(
 ): Promise<HarnessServer> {
   const host = opts.host ?? '127.0.0.1';
   // Point the live resolver (`resolveDorkHome()` reads `process.env.DORK_HOME`
-  // per call) at the sandbox and mark test mode BEFORE the boot: `createApp()`
-  // reads `DORKOS_TEST_RUNTIME` to mount the test-control routes, and any live
+  // per call) at the sandbox and mark test mode BEFORE the boot: the server's
+  // routing reads `DORKOS_TEST_RUNTIME` to mount the test-control routes, and any live
   // env reader must see the sandbox home.
   const restoreDorkHome = setBootEnv('DORK_HOME', opts.dorkHome);
   const restoreTestRuntime = setBootEnv('DORKOS_TEST_RUNTIME', 'true');
@@ -143,7 +143,7 @@ export async function startInProcessServer(
   // `bootInProcessTestServer` (a `@dorkos/server` harness export) wires the
   // SUBSET of `start()` a driven turn needs — the config store, the sandbox DB +
   // migrations, the durable session-event store, and a registered
-  // `TestModeRuntime` as default — that `createApp()` alone does not. Without it
+  // `TestModeRuntime` as default — that the routes alone do not. Without it
   // the server answers `/api/health` but rejects the first real turn (no runtime
   // registered). The wired singletons are process-global, so in-process servers
   // boot SERIALLY, one sandbox at a time (concurrent isolation is the

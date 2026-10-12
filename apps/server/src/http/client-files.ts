@@ -4,9 +4,8 @@
  * `plans/2026-10-express-to-hono.md` item 26).
  *
  * {@link createClientFiles} is a plain Node request handler, owned by no
- * framework. Until Express leaves the server (DOR-2818) it is the Express
- * app's last handler, so every route either chain serves still wins; after
- * that, it is what the front door falls through to.
+ * framework (DOR-2818): it is what the front door falls through to when no
+ * route in the chain claims a path.
  *
  * It is built on `serve-static` and `send`, the file senders `express.static`
  * and `res.sendFile` are, rather than a framework's own static middleware:

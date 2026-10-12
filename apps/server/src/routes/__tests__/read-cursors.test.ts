@@ -54,7 +54,6 @@ vi.mock('../../services/core/config-manager.js', () => ({
   configManager: { get: vi.fn().mockReturnValue(null), set: vi.fn() },
 }));
 
-import { createApp, finalizeApp } from '../../app.js';
 import { composedListener } from '../../http/__tests__/composed-listener.js';
 import {
   createRoomSubsystem,
@@ -74,10 +73,8 @@ import {
 } from '../../services/core/agent-identity/agent-identity-service.js';
 
 const admission = new MainRequestAdmission();
-const app = createApp({ admission });
-finalizeApp(app);
 
-const testServer = listeningServer(composedListener(app, admission));
+const testServer = listeningServer(composedListener(admission));
 
 /** Port of the file-scoped listener shared by Supertest and the raw SSE client. */
 function testServerPort(): number {
