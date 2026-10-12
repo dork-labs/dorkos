@@ -1,16 +1,20 @@
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import { PlaygroundSection } from '../PlaygroundSection';
 import { ShowcaseLabel } from '../ShowcaseLabel';
 import { ShowcaseDemo } from '../ShowcaseDemo';
 import { Button } from '@/layers/shared/ui';
 import {
+  ConnectingStep,
   OnboardingFlow,
-  SystemRequirementsStep,
-  WelcomeStep,
-  OnboardingNavBar,
+  OwnAiStep,
   ProgressCard,
+  WelcomeStep,
+  type DorkosConnectPhase,
+  type FirstRunAccountLink,
+  type FirstRunSlots,
 } from '@/layers/features/onboarding';
-import { renderRuntimeConnect } from '@/layers/features/runtime-connect';
+import { DoeInferenceForm, renderRuntimeConnect } from '@/layers/features/runtime-connect';
+import { FirstRunChips } from '@/layers/widgets/room-view';
 import type { SystemRequirements } from '@dorkos/shared/agent-runtime';
 
 // ── Mock data ────────────────────────────────────────────────
@@ -61,128 +65,98 @@ const OPENCODE_INSTALL: SystemRequirements['runtimes']['x'] = {
   ],
 };
 
-/** One runtime ready (Claude), two available to add — the common first run. */
-const MOCK_REQUIREMENTS_ONE_READY: SystemRequirements = {
+/** One AI app signed in (Claude Code), two more to add. */
+const APPS_ONE_READY: SystemRequirements = {
   runtimes: { 'claude-code': CLAUDE_READY, codex: CODEX_CONNECT, opencode: OPENCODE_INSTALL },
 };
 
-/** Everything connected — a pure success moment with no "more agents" count. */
-const MOCK_REQUIREMENTS_ALL_READY: SystemRequirements = {
-  runtimes: {
-    'claude-code': CLAUDE_READY,
-    codex: { ...CODEX_CONNECT, state: 'ready', connect: undefined },
-  },
-};
-
-/** Nothing ready yet — the connect-your-first-agent gate. */
-const MOCK_REQUIREMENTS_ZERO_READY: SystemRequirements = {
+/** Nothing signed in yet. */
+const APPS_NONE_READY: SystemRequirements = {
   runtimes: { codex: CODEX_CONNECT, opencode: OPENCODE_INSTALL },
 };
 
+const PENDING = {
+  userCode: 'DORK-2F7Q',
+  verificationUri: 'https://dorkos.ai/activate',
+  verificationUriComplete: 'https://dorkos.ai/activate?code=DORK-2F7Q',
+};
+
+/** A link that answers like the real one, without reaching anything. */
+const MOCK_LINK: FirstRunAccountLink = {
+  state: 'pending',
+  pending: PENDING,
+  starting: false,
+  startError: null,
+  start: async () => PENDING.userCode,
+  cancel: async () => {},
+  openBilling: noop,
+  billingPending: false,
+  billingNotice: null,
+};
+
+/** The flow's slots, with the link faked so nothing leaves the playground. */
+const PLAYGROUND_SLOTS: FirstRunSlots = {
+  renderAccountLink: (render) => render(MOCK_LINK),
+  renderRuntimeConnect,
+  renderOtherService: ({ onSave }) => <DoeInferenceForm onSave={onSave} />,
+};
+
+const CONNECTING_PHASES: ReadonlyArray<{ label: string; phase: DorkosConnectPhase }> = [
+  { label: 'Starting — recording the path, asking for a code', phase: { kind: 'starting' } },
+  {
+    label: 'Waiting — the fallback for a blocked tab',
+    phase: { kind: 'waiting', pending: PENDING },
+  },
+  { label: 'Finishing — approved, account getting ready', phase: { kind: 'finishing' } },
+  { label: 'Needs a card', phase: { kind: 'needs-card' } },
+  { label: 'Refused — outside the paid-plan countries', phase: { kind: 'refused' } },
+  { label: 'Expired code', phase: { kind: 'expired' } },
+  {
+    label: 'Failed before a code came',
+    phase: { kind: 'failed', message: 'Couldn’t reach DorkOS. Try again.' },
+  },
+];
+
 // ── Showcases ────────────────────────────────────────────────
 
-/** Comprehensive onboarding showcases — full flow, individual steps, and supporting components. */
+/** The first-run showcases: the whole flow, each screen and state, and the #team chips. */
 export function OnboardingFlowShowcases() {
   return (
     <>
       <InteractiveFlowShowcase />
-      <SystemRequirementsStepShowcase />
       <WelcomeStepShowcase />
-      <OnboardingNavBarShowcase />
+      <ConnectingStepShowcase />
+      <OwnAiStepShowcase />
+      <FirstRunChipsShowcase />
       <ProgressCardShowcase />
     </>
   );
 }
 
-// ── Full flow ────────────────────────────────────────────────
-
-function InteractiveFlowShowcase() {
-  const [flowKey, setFlowKey] = useState(0);
-
+/** A tall, framed stage for one first-run screen. */
+function Stage({ children, height = 'min-h-[560px]' }: { children: ReactNode; height?: string }) {
   return (
-    <PlaygroundSection
-      title="OnboardingFlow"
-      description="Full interactive onboarding: Welcome, the ready-first setup check, then the scripted DorkBot conversation (personality, discovery, and the handoff composer). Rendered in a contained viewport."
-    >
-      <div className="mb-3 flex items-center gap-2">
-        <Button variant="outline" size="sm" onClick={() => setFlowKey((k) => k + 1)}>
-          Restart flow
-        </Button>
-        <span className="text-muted-foreground text-xs">
-          Some steps may show loading states due to mock transport
-        </span>
-      </div>
-      <ShowcaseDemo>
-        <div className="border-border bg-background relative h-[600px] overflow-hidden rounded-lg border">
-          <OnboardingFlow key={flowKey} onComplete={noop} />
-        </div>
-      </ShowcaseDemo>
-    </PlaygroundSection>
+    <div className={`bg-background flex ${height} items-center justify-center rounded-lg py-8`}>
+      {children}
+    </div>
   );
 }
 
-// ── Individual steps ─────────────────────────────────────────
-
-function SystemRequirementsStepShowcase() {
-  const [oneKey, setOneKey] = useState(0);
-  const [allKey, setAllKey] = useState(0);
-  const [zeroKey, setZeroKey] = useState(0);
-
+function InteractiveFlowShowcase() {
+  const [flowKey, setFlowKey] = useState(0);
   return (
     <PlaygroundSection
-      title="SystemRequirementsStep"
-      description="First-run setup check, ready-first. A brief scan animation, then one of three outcomes: at least one agent ready (a 'Get started' success moment with a quiet disclosure to add more), everything ready (no disclosure count), or nothing ready yet (connect cards that do the setup). The ready states also disclose which runtime new chats will start on, with the one-tap change — simulated here, so nothing writes your own default. Click Replay to restart the scan."
+      title="OnboardingFlow"
+      description="The whole first run: Welcome, then Continue with DorkOS (the link is faked here), Use my own AI, or Continue without an account. Rendered in a contained viewport."
     >
-      <ShowcaseLabel>At least one ready — Claude connected, two more available</ShowcaseLabel>
       <div className="mb-3">
-        <Button variant="outline" size="sm" onClick={() => setOneKey((k) => k + 1)}>
-          Replay
+        <Button variant="outline" size="sm" onClick={() => setFlowKey((k) => k + 1)}>
+          Restart flow
         </Button>
       </div>
-      <ShowcaseDemo responsive>
-        <div className="flex min-h-[520px] items-center justify-center">
-          <SystemRequirementsStep
-            key={`one-${oneKey}`}
-            onContinue={noop}
-            renderConnect={renderRuntimeConnect}
-            simulatedResult={MOCK_REQUIREMENTS_ONE_READY}
-            simulatedDefaultRuntime="claude-code"
-          />
-        </div>
-      </ShowcaseDemo>
-
-      <ShowcaseLabel>Everything ready — no "more agents" count</ShowcaseLabel>
-      <div className="mb-3">
-        <Button variant="outline" size="sm" onClick={() => setAllKey((k) => k + 1)}>
-          Replay
-        </Button>
-      </div>
-      <ShowcaseDemo responsive>
-        <div className="flex min-h-[420px] items-center justify-center">
-          <SystemRequirementsStep
-            key={`all-${allKey}`}
-            onContinue={noop}
-            renderConnect={renderRuntimeConnect}
-            simulatedResult={MOCK_REQUIREMENTS_ALL_READY}
-            simulatedDefaultRuntime="codex"
-          />
-        </div>
-      </ShowcaseDemo>
-
-      <ShowcaseLabel>Nothing ready yet — connect your first agent</ShowcaseLabel>
-      <div className="mb-3">
-        <Button variant="outline" size="sm" onClick={() => setZeroKey((k) => k + 1)}>
-          Replay
-        </Button>
-      </div>
-      <ShowcaseDemo responsive>
-        <div className="flex min-h-[560px] items-center justify-center">
-          <SystemRequirementsStep
-            key={`zero-${zeroKey}`}
-            onContinue={noop}
-            renderConnect={renderRuntimeConnect}
-            simulatedResult={MOCK_REQUIREMENTS_ZERO_READY}
-          />
+      <ShowcaseDemo>
+        <div className="border-border bg-background relative h-[640px] overflow-hidden rounded-lg border">
+          <OnboardingFlow key={flowKey} onComplete={noop} slots={PLAYGROUND_SLOTS} />
         </div>
       </ShowcaseDemo>
     </PlaygroundSection>
@@ -193,27 +167,158 @@ function WelcomeStepShowcase() {
   return (
     <PlaygroundSection
       title="WelcomeStep"
-      description="Initial welcome screen with word-by-word heading animation, preview items, and Get started / Skip all setup actions."
+      description="The first screen: the mark, the two lines, Continue with DorkOS with who can buy a plan under it, and two quiet ways round. No scan, no animation hold, no vendor names."
     >
       <ShowcaseDemo responsive>
-        <div className="flex min-h-[400px] items-center justify-center">
-          <WelcomeStep onGetStarted={noop} onSkipAll={noop} />
-        </div>
+        <Stage>
+          <WelcomeStep onContinueWithDorkos={noop} onUseOwnAi={noop} onContinueWithout={noop} />
+        </Stage>
+      </ShowcaseDemo>
+      <ShowcaseLabel>Setting up “Continue without an account”</ShowcaseLabel>
+      <ShowcaseDemo responsive>
+        <Stage>
+          <WelcomeStep
+            onContinueWithDorkos={noop}
+            onUseOwnAi={noop}
+            onContinueWithout={noop}
+            busy="none"
+          />
+        </Stage>
+      </ShowcaseDemo>
+      <ShowcaseLabel>A pick that failed</ShowcaseLabel>
+      <ShowcaseDemo responsive>
+        <Stage>
+          <WelcomeStep
+            onContinueWithDorkos={noop}
+            onUseOwnAi={noop}
+            onContinueWithout={noop}
+            error="Setup is only available on this computer."
+          />
+        </Stage>
       </ShowcaseDemo>
     </PlaygroundSection>
   );
 }
 
-// ── Supporting components ────────────────────────────────────
-
-function OnboardingNavBarShowcase() {
+function ConnectingStepShowcase() {
   return (
     <PlaygroundSection
-      title="OnboardingNavBar"
-      description="The slim nav bar carried by every stage past the welcome screen — Back one stage and Skip all setup (the whole-flow exit; single steps skip themselves). The ready gate renders it even when no agent was found, which is exactly when the exit is needed. No step dots (a conversation is not a dotted wizard)."
+      title="ConnectingStep"
+      description="Continue with DorkOS while the person finishes in the browser. It moves on by itself once the account is ready; every other state offers one way forward."
     >
-      <ShowcaseDemo>
-        <OnboardingNavBar onBack={noop} onSkipAll={noop} />
+      {CONNECTING_PHASES.map(({ label, phase }) => (
+        <div key={phase.kind}>
+          <ShowcaseLabel>{label}</ShowcaseLabel>
+          <ShowcaseDemo responsive>
+            <Stage height="min-h-[440px]">
+              <ConnectingStep
+                phase={phase}
+                link={MOCK_LINK}
+                onRetry={noop}
+                onCancel={noop}
+                onUseOwnAi={noop}
+              />
+            </Stage>
+          </ShowcaseDemo>
+        </div>
+      ))}
+    </PlaygroundSection>
+  );
+}
+
+const OWN_AI_ROWS = [
+  { row: undefined, label: 'The list, nothing open' },
+  { row: 'openai', label: 'An OpenAI API key' },
+  { row: 'anthropic', label: 'An Anthropic API key' },
+  { row: 'openrouter', label: 'An OpenRouter key' },
+  { row: 'local', label: 'A model on this computer' },
+  { row: 'custom', label: 'Other service' },
+] as const;
+
+function OwnAiStepShowcase() {
+  return (
+    <PlaygroundSection
+      title="OwnAiStep"
+      description="Use my own AI: one list, the DorkOS engine first. Saving records the pick and lands in #team. The AI-app rows run on a simulated scan here, so nothing writes your own default."
+    >
+      {OWN_AI_ROWS.map(({ row, label }) => (
+        <div key={label}>
+          <ShowcaseLabel>{label}</ShowcaseLabel>
+          <ShowcaseDemo responsive>
+            <Stage>
+              <OwnAiStep
+                onBack={noop}
+                onSaved={noop}
+                slots={PLAYGROUND_SLOTS}
+                initialRow={row}
+                simulatedApps={{ requirements: APPS_ONE_READY, defaultRuntime: 'claude-code' }}
+              />
+            </Stage>
+          </ShowcaseDemo>
+        </div>
+      ))}
+      <ShowcaseLabel>An AI app you sign in to — one signed in</ShowcaseLabel>
+      <ShowcaseDemo responsive>
+        <Stage height="min-h-[760px]">
+          <OwnAiStep
+            onBack={noop}
+            onSaved={noop}
+            slots={PLAYGROUND_SLOTS}
+            initialRow="agent-app"
+            simulatedApps={{ requirements: APPS_ONE_READY, defaultRuntime: 'claude-code' }}
+          />
+        </Stage>
+      </ShowcaseDemo>
+      <ShowcaseLabel>An AI app you sign in to — none signed in yet</ShowcaseLabel>
+      <ShowcaseDemo responsive>
+        <Stage height="min-h-[760px]">
+          <OwnAiStep
+            onBack={noop}
+            onSaved={noop}
+            slots={PLAYGROUND_SLOTS}
+            initialRow="agent-app"
+            simulatedApps={{ requirements: APPS_NONE_READY }}
+          />
+        </Stage>
+      </ShowcaseDemo>
+    </PlaygroundSection>
+  );
+}
+
+/** DorkBot's first-run welcome, drawn plainly so the chips have something to sit under. */
+function WelcomePreview({ lines }: { lines: string[] }) {
+  return (
+    <div className="space-y-1 px-[var(--msg-padding-x)] pb-3 text-sm">
+      <p className="font-medium">DorkBot</p>
+      {lines.map((line) => (
+        <p key={line}>{line}</p>
+      ))}
+    </div>
+  );
+}
+
+function FirstRunChipsShowcase() {
+  return (
+    <PlaygroundSection
+      title="FirstRunChips"
+      description="The strip under DorkBot's first-run welcome in #team, until the person posts. With AI connected a chip is the first message to DorkBot; with no AI yet it offers the two ways to connect."
+    >
+      <ShowcaseLabel>Agents ready — first jobs</ShowcaseLabel>
+      <ShowcaseDemo responsive>
+        <WelcomePreview
+          lines={[
+            'Hi Dorian. Your agents run on DorkOS. Usage is in Settings.',
+            'Want a first tool? Pick one below, or tell me what you need.',
+          ]}
+        />
+        <FirstRunChips roomId="playground-team" mode="starters" />
+      </ShowcaseDemo>
+      <ShowcaseLabel>No AI yet — the two ways to connect</ShowcaseLabel>
+      <ShowcaseDemo responsive>
+        <WelcomePreview
+          lines={['Hi there. Agents need AI to reply. Connect DorkOS or your own.']}
+        />
+        <FirstRunChips roomId="playground-team" mode="connect" />
       </ShowcaseDemo>
     </PlaygroundSection>
   );

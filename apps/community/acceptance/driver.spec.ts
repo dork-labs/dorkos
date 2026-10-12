@@ -41,7 +41,11 @@ test.describe('Packaged Community local-agent proof @integration', () => {
       // The packaged local install starts as a person would see it. Finish this
       // actual first-visit UI before the connection controls are navigable.
       await localPage.goto(env.local);
-      const skipSetup = localPage.getByRole('button', { name: 'Skip all setup', exact: true });
+      // "Continue without an account" is the first run's skip (DOR-2783).
+      const skipSetup = localPage.getByRole('button', {
+        name: 'Continue without an account',
+        exact: true,
+      });
       await expect(skipSetup).toBeVisible();
       await skipSetup.click();
       await expect(skipSetup).toBeHidden();

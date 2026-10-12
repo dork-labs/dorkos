@@ -18,7 +18,10 @@ const inference = {
   maxOutputTokens: 1024,
 };
 afterEach(cleanup);
-function setup(overrides: Parameters<typeof createMockTransport>[0] = {}) {
+function setup(
+  overrides: Parameters<typeof createMockTransport>[0] = {},
+  onSave?: Parameters<typeof DoeInferenceForm>[0]['onSave']
+) {
   const transport = createMockTransport({
     getDoeInference: vi.fn().mockResolvedValue({ inference, hasKey: true }),
     ...overrides,
@@ -27,7 +30,7 @@ function setup(overrides: Parameters<typeof createMockTransport>[0] = {}) {
   render(
     <QueryClientProvider client={client}>
       <TransportProvider transport={transport}>
-        <DoeInferenceForm />
+        <DoeInferenceForm onSave={onSave} />
       </TransportProvider>
     </QueryClientProvider>
   );
@@ -108,6 +111,37 @@ describe('explicit DorkOS inference setup', () => {
       )
     );
     expect(transport.getDoeCreditsModels).toHaveBeenCalledWith('openai-chat-completions');
+    expect(transport.storeDoeCredential).not.toHaveBeenCalled();
+  });
+});
+
+describe('the first run’s Other service form (onSave)', () => {
+  it('starts a saved DorkOS credits setup on a key, since credits are not offered here', async () => {
+    setup(
+      {
+        getDoeInference: vi.fn().mockResolvedValue({
+          inference: { ...inference, source: 'dorkos-credits', provider: 'dorkos' },
+          hasKey: false,
+        }),
+      },
+      vi.fn().mockResolvedValue(undefined)
+    );
+    const runsOn = await screen.findByLabelText('Runs on');
+    expect(runsOn).toHaveValue('api-key');
+    expect(screen.queryByRole('option', { name: 'DorkOS credits' })).toBeNull();
+    expect(screen.getByLabelText('API key')).toBeInTheDocument();
+  });
+
+  it('keeps the typed key and shows the refusal when the save is refused', async () => {
+    const onSave = vi.fn().mockRejectedValue(new Error('That key was refused.'));
+    const transport = setup({}, onSave);
+    const user = userEvent.setup();
+    await screen.findByLabelText('API key');
+    await user.type(screen.getByLabelText('API key'), 'sk-bad');
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('That key was refused.');
+    expect(screen.getByLabelText('API key')).toHaveValue('sk-bad');
+    expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ source: 'api-key' }), 'sk-bad');
     expect(transport.storeDoeCredential).not.toHaveBeenCalled();
   });
 });

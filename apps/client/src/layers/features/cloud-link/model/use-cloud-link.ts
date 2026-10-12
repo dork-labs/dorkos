@@ -140,7 +140,14 @@ export function useCheckCloudLink(): (
 export type CloudLinkView =
   | { kind: 'loading' }
   | { kind: 'idle' }
-  | { kind: 'pending'; userCode: string; verificationUri: string; expiresAt: string }
+  | {
+      kind: 'pending';
+      userCode: string;
+      verificationUri: string;
+      /** The approval page with the code filled in, when the service sent one. */
+      verificationUriComplete?: string;
+      expiresAt: string;
+    }
   | {
       kind: 'linked';
       accountLabel: string | null;
@@ -437,10 +444,16 @@ export function useCloudLink(): UseCloudLink {
     // it is waiting on (the same in every tab), else the one this tab holds.
     const codes = flowState === 'pending' ? (linkStatus?.pending ?? flow.codes) : null;
     if (codes) {
+      // The filled-in address rides this tab's own codes when the server's
+      // flow read leaves it out.
+      const complete =
+        codes.verificationUriComplete ??
+        (flow.codes?.userCode === codes.userCode ? flow.codes.verificationUriComplete : undefined);
       return {
         kind: 'pending',
         userCode: codes.userCode,
         verificationUri: codes.verificationUri,
+        ...(complete ? { verificationUriComplete: complete } : {}),
         expiresAt: codes.expiresAt,
       };
     }

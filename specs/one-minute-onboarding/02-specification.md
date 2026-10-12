@@ -161,7 +161,7 @@ Migration key `0.106.0` (above `0.105.0`, the highest today; `0.104.0` is held b
 
   Nothing leaves the machine; no money-path flag is involved.
 
-- **Browser:** `apps/e2e/tests/onboarding/first-run.spec.ts` runs the DorkOS path (the fake approves on page open) and the own-AI path (a fake local endpoint), and stops the clock at **DorkBot's first real reply to a chip**, not at the scripted welcome. It asserts under 60 seconds from Welcome, and that no runtime, model or vendor name is visible on the DorkOS path. Old specs that pin removed copy are updated or deleted: `onboarding-power.spec.ts` moves its door assertions to `full-power-door.spec.ts`.
+- **Browser:** `apps/e2e/first-run/first-run.journey.ts` runs the DorkOS path (the fake approves on page open) and the own-AI path (a fake local endpoint), and stops the clock at **DorkBot's first real reply to a chip**, not at the scripted welcome. It asserts under 60 seconds from Welcome, and that no runtime, model or vendor name is visible on the DorkOS path. Old specs that pin removed copy are updated or deleted: `onboarding-power.spec.ts` moves its door assertions to `full-power-door.spec.ts`.
 - **Live dogfood:** a fresh data directory on an own dev port, stopwatched, on both paths: the DorkOS path with the test-mode Cloud, and the own-AI path with a local model.
 
 ## 9. Build PRs

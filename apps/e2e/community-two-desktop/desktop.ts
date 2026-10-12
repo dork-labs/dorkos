@@ -143,7 +143,8 @@ export async function launchDesktop(
   assert(paths.userData.startsWith(home + '/'), 'Electron data stays inside that home');
   const page = await app.firstWindow({ timeout: 180_000 });
   if (!relaunch) {
-    const skip = page.getByRole('button', { name: 'Skip all setup', exact: true });
+    // The first run's way past the account: no AI is needed to prove a Community.
+    const skip = page.getByRole('button', { name: 'Continue without an account', exact: true });
     await expect(skip).toBeVisible({ timeout: 180_000 });
     // The first click can land before the setup screen is interactive on a loaded machine.
     await expect(async () => {

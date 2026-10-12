@@ -99,21 +99,13 @@ describe('which surfaces declare rich text', () => {
     expect(SURFACES).toContain(CHAT);
   });
 
-  it('mounts the field in the shared card and the one surface that has no conversation', () => {
-    // Two, and the second is the point: the onboarding narration draws a
-    // composer with no conversation behind it — nothing to send to, no target —
-    // so it composes `Composer.Input` directly. Anything ELSE growing a third
-    // mount is a surface that has quietly stopped going through the shared card,
-    // and the detector above would go blind to it.
+  it('mounts the field in the shared card and nowhere else', () => {
+    // One. A second mount is a surface that has quietly stopped going through
+    // the shared card, and the detector above would go blind to it.
     const mounts = allClientTsx()
       .filter((rel) => !rel.includes('__tests__') && !rel.startsWith('dev' + path.sep))
       .filter((rel) => readClientSource(rel).includes('<Composer.Input'));
-    expect([...mounts].sort()).toEqual(
-      [
-        COMPOSER_HOST,
-        path.join('layers', 'features', 'onboarding', 'ui', 'OnboardingConversation.tsx'),
-      ].sort()
-    );
+    expect(mounts).toEqual([COMPOSER_HOST]);
   });
 
   it('chat passes it, from the preference', () => {

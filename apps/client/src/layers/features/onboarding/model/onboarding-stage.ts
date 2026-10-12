@@ -3,7 +3,7 @@
  *
  * The overlay renders above whatever route is active (practically always `/` on
  * first run), so the stage is synced to a single `?onboarding=` search param
- * declared on the router's root route. That makes the four entry screens
+ * declared on the router's root route. That makes the first-run screens
  * browser-navigable (back/forward walk the stages) and refresh-safe without
  * turning the overlay into real routes.
  *
@@ -11,8 +11,12 @@
  */
 import { z } from 'zod';
 
-/** The four ordered surfaces of first-run onboarding, in flow order. */
-export const ONBOARDING_STAGES = ['welcome', 'requirements', 'power', 'conversation'] as const;
+/**
+ * The first-run screens (spec `one-minute-onboarding` §2): Welcome, the DorkOS
+ * account link, the Own AI list, and the hand-off into #team. `connecting` and
+ * `own-ai` are two branches off Welcome, not steps in a row.
+ */
+export const ONBOARDING_STAGES = ['welcome', 'connecting', 'own-ai', 'landing'] as const;
 
 /** One of the first-run onboarding stages. */
 export type OnboardingStage = (typeof ONBOARDING_STAGES)[number];
