@@ -43,12 +43,17 @@ vi.mock('../../services/core/config-manager.js', () => ({
   },
 }));
 
-// Where this instance reaches its DorkOS account. A real https origin by
-// default; a test that needs a service on this machine says so.
+// Where this instance reaches its DorkOS account's `/v1` service. A real https
+// origin by default; a test that needs a service on this machine says so. The
+// device-link origin stays a different https address, so a page check that read
+// it instead of the `/v1` origin would fail the local-development case.
 const cloud = vi.hoisted(() => ({ baseUrl: 'https://account.example.invalid' }));
 vi.mock('../../services/core/auth/cloud-link-client.js', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../services/core/auth/cloud-link-client.js')>()),
-  resolveCloudBaseUrl: () => cloud.baseUrl,
+  resolveCloudBaseUrl: () => 'https://site.example.invalid',
+}));
+vi.mock('../../services/core/cloud/cloud-api-origin.js', () => ({
+  resolveCloudApiBaseUrl: () => cloud.baseUrl,
 }));
 
 // The link flow itself is not under test here; only its accessor is imported.

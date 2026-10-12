@@ -5,8 +5,8 @@
  *
  * It is deliberately thin. `@dork-labs/cloud-api/client` already owns the
  * request shape, the schema validation and the problem envelope; all this module
- * adds is where the service lives (the existing cloud config) and who is calling
- * (the existing device-link instance credential). Nothing here bakes in a host,
+ * adds is where the service lives ({@link resolveCloudApiBaseUrl}) and who is
+ * calling (the existing device-link instance credential). Nothing here bakes in
  * a plan, a price or any catalog value.
  *
  * **Not linked is a normal state, not an error.** Every reader returns `null`
@@ -25,7 +25,7 @@ import {
 } from '@dork-labs/cloud-api/client';
 import type { Problem } from '@dork-labs/cloud-api';
 import { configManager } from '../config-manager.js';
-import { resolveCloudBaseUrl } from '../auth/cloud-link-client.js';
+import { resolveCloudApiBaseUrl } from './cloud-api-origin.js';
 import { getCloudLinkGeneration } from '../auth/cloud-link.js';
 import { env } from '../../../env.js';
 
@@ -99,7 +99,7 @@ export function isCloudLinked(): boolean {
 export function createCloudV1Client(): CloudApiClient | null {
   const token = readCloudInstanceToken();
   if (token === null) return null;
-  return buildClient(resolveCloudBaseUrl(), token);
+  return buildClient(resolveCloudApiBaseUrl(), token);
 }
 
 /**
@@ -124,7 +124,7 @@ export function captureCloudV1Context(): CloudV1Context | null {
   observeTokenChanges();
   const token = readCloudInstanceToken();
   if (token === null || token.trim() === '') return null;
-  const baseUrl = resolveCloudBaseUrl();
+  const baseUrl = resolveCloudApiBaseUrl();
   const epoch = tokenEpoch;
   const manager = configManager;
   const generation = getCloudLinkGeneration();
@@ -134,7 +134,7 @@ export function captureCloudV1Context(): CloudV1Context | null {
       epoch === tokenEpoch &&
       manager === configManager &&
       token === readCloudInstanceToken() &&
-      baseUrl === resolveCloudBaseUrl() &&
+      baseUrl === resolveCloudApiBaseUrl() &&
       generation === getCloudLinkGeneration(),
   };
   streamTargets.set(context, { baseUrl, token });

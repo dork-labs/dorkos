@@ -83,15 +83,17 @@ export function normalizeHost(value) {
 }
 
 /**
- * The extra hosts that count as DorkOS hosts in this process: the host of `DORKOS_CLOUD_URL`.
+ * The extra hosts that count as DorkOS hosts in this process: the hosts of `DORKOS_CLOUD_URL`
+ * and `DORKOS_CLOUD_API_URL` (the app's `/v1` origin).
  *
  * @param environment - The environment to read (the process's own by default).
- * @returns Lowercase host names; empty when the variable is unset or not a URL.
+ * @returns Lowercase host names; empty when neither variable is set to a URL.
  */
 export function cloudHostsFrom(environment = process.env) {
-  const configured = environment.DORKOS_CLOUD_URL;
-  const host = configured ? normalizeHost(configured) : '';
-  return host ? [host] : [];
+  const hosts = [environment.DORKOS_CLOUD_URL, environment.DORKOS_CLOUD_API_URL]
+    .map((configured) => (configured ? normalizeHost(configured) : ''))
+    .filter(Boolean);
+  return [...new Set(hosts)];
 }
 
 /**
