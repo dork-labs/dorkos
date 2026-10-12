@@ -76,6 +76,7 @@ import { createMcpOAuthRoutes } from '../routes/mcp-oauth.js';
 import { createMeshRoutes, type MeshRouterDeps } from '../routes/mesh.js';
 import { createMockMcpOAuthRoutes } from '../routes/mock-mcp-oauth-server.js';
 import modelRoutes from '../routes/models.js';
+import { createOnboardingRoutes, productionOnboardingDeps } from '../routes/onboarding.js';
 import { createNotificationsRoutes } from '../routes/notifications.js';
 import { createPermissionsRoutes, type PermissionsRouterDeps } from '../routes/permissions.js';
 import { createProfileRouter, type ProfileRouterDeps } from '../routes/profile.js';
@@ -190,6 +191,14 @@ export interface ComposedGroupDeps {
    * request answers that document events are not available yet.
    */
   docChannel?: DocChannelHttp;
+  /**
+   * The agent registry first-run setup moves DorkBot's runtime through
+   * (`/api/onboarding`, always mounted), for a boot that mounts no mesh routes
+   * (the eval harness). Without it, the mesh routes' registry
+   * ({@link ComposedGroupDeps.mesh}) is used; with neither, DorkBot's manifest
+   * is still written, with no registry sync.
+   */
+  onboarding?: { meshCore: () => MeshCore | undefined };
   /** The live reads behind `GET /api/debug/*`, which is always mounted. */
   debug?: DebugDeps;
   /** Reset and restart (`/api/admin`), which end this process. */
@@ -287,6 +296,12 @@ export function createHonoApi(options: HonoApiOptions): Hono<ApiEnv> {
   app.route('/api/cloud', cloudRoutes);
   app.route('/api/config', configRoutes);
   app.route('/api/mcp-config', mcpConfigRoutes);
+  app.route(
+    '/api/onboarding',
+    createOnboardingRoutes(
+      productionOnboardingDeps(() => deps.onboarding?.meshCore() ?? deps.mesh?.meshCore)
+    )
+  );
   app.route('/api/feedback', feedbackRoutes);
   app.route(
     '/api/canvas/docs',

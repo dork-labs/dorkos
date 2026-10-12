@@ -9,7 +9,6 @@ import roomRoutes from './routes/rooms.js';
 import { createCommunityConnectionsRouter } from './routes/community-connections.js';
 import { createRemoteCommunitiesRouter } from './routes/remote-communities.js';
 import { gateCommunityConnections, gateRemoteCommunities } from './middleware/spaces-enabled.js';
-import onboardingRoutes from './routes/onboarding.js';
 import { errorHandler } from './middleware/error-handler.js';
 import { hostGuard } from './middleware/host-guard.js';
 import { managedHostGuard } from './middleware/managed-host-guard.js';
@@ -158,7 +157,6 @@ export function createApp(options: { admission: MainRequestAdmission }) {
     createCommunityConnectionsRouter()
   );
   app.use('/api/communities', gateRemoteCommunities(), createRemoteCommunitiesRouter());
-  app.use('/api/onboarding', onboardingRoutes);
 
   return app;
 }

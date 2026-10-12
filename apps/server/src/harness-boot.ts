@@ -183,7 +183,11 @@ export async function bootInProcessTestServer(dorkHome: string): Promise<InProce
 
   return {
     listener: frontDoorListener(
-      composeFrontDoor(app, admission, { capabilities, testControl: { meshCore: () => mesh } })
+      composeFrontDoor(app, admission, {
+        capabilities,
+        onboarding: { meshCore: () => mesh },
+        testControl: { meshCore: () => mesh },
+      })
     ),
     dispose: () => {
       // Close the underlying better-sqlite3 handle so the sandbox teardown can

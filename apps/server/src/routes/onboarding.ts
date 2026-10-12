@@ -7,11 +7,18 @@
  *   (`routes/runtimes-doe-setup.ts`): this computer, and a person who owns the install.
  * - `POST /api/onboarding/welcome` posts DorkBot's welcome into #team, once.
  *
+ * Mounted on the Hono `/api` app by `http/hono-api.ts`.
+ *
  * @module routes/onboarding
  */
 import path from 'node:path';
-import { Router, type Request, type Response } from 'express';
+import { Hono, type Context } from 'hono';
+import type { ContentfulStatusCode } from 'hono/utils/http-status';
+import type { MeshCore } from '@dorkos/mesh';
 import { FirstRunRequestSchema } from '@dorkos/shared/onboarding-schemas';
+import type { ApiEnv } from '../http/api-chain.js';
+import { readJsonBody } from '../http/request-body.js';
+import { honoRequestFacts } from '../http/request-facts.js';
 import { isLocalCaller, refuseUnlessAccountOwner } from '../lib/caller-authority.js';
 import { resolveDorkHome } from '../lib/dork-home.js';
 import { logger, logError } from '../lib/logger.js';
@@ -35,20 +42,19 @@ import { getRoomService } from '../services/rooms/index.js';
 import { storeDoeCredential } from '../services/runtimes/connect/doe-credentials.js';
 import type { PresetFetch } from '../services/runtimes/doe/presets.js';
 
-/** What the router builds its deps from, per request. */
+/** What the routes build their deps from, per request. */
 export interface OnboardingRouterDeps {
   /** The first-run writers, for one request. */
-  firstRun: (req: Request) => FirstRunDeps;
+  firstRun: () => FirstRunDeps;
   /** The welcome's config, rooms and name, for one request. */
-  welcome: (req: Request) => WelcomeDeps;
+  welcome: () => WelcomeDeps;
 }
 
-/** The person bar, then the owner bar; refuses with the sentence and returns `true`. */
-function refuseUnlessOwner(req: Request, res: Response): boolean {
-  const refusal = refuseUnlessAccountOwner(req, res);
-  if (!refusal) return false;
-  res.status(403).json({ error: 'Only the owner can set up DorkOS.', code: refusal });
-  return true;
+/** The person bar, then the owner bar: the 403 with the sentence, or `undefined`. */
+function refuseUnlessOwner(c: Context<ApiEnv>): Response | undefined {
+  const refusal = refuseUnlessAccountOwner(honoRequestFacts(c));
+  if (!refusal) return undefined;
+  return c.json({ error: 'Only the owner can set up DorkOS.', code: refusal }, 403);
 }
 
 /** DorkBot's directory. */
@@ -56,80 +62,95 @@ function dorkbotPath(): string {
   return path.join(resolveDorkHome(), 'agents', DORKBOT_AGENT_NAME);
 }
 
-/** The production deps: the config, the mesh write-through and the rooms. */
-const productionDeps: OnboardingRouterDeps = {
-  firstRun: (req) => ({
-    config: configManager,
-    setDorkBotRuntime: async (runtime) => {
-      try {
-        await updateAgentManifest({
-          agentPath: dorkbotPath(),
-          body: { runtime },
-          meshCore: req.app.locals.meshCore,
-        });
-      } catch (error) {
-        // An install without DorkBot, or a default no agent can name, still
-        // gets its default runtime moved; DorkBot keeps the runtime it has.
-        const skippable =
-          error instanceof AgentUpdateError && ['NOT_FOUND', 'VALIDATION'].includes(error.code);
-        if (!skippable) throw error;
-        logger.warn('[Onboarding] DorkBot was left on its runtime', { code: error.code });
-      }
-    },
-    storeCredential: (inference, secret) => storeDoeCredential(inference, secret),
-    fetch: ((url, init) => fetch(url, init)) satisfies PresetFetch,
-    linked: isCloudLinked,
-    isRuntime: (type) => runtimeRegistry.has(type),
-  }),
-  welcome: () => ({
-    config: configManager,
-    rooms: getRoomService(),
-    dorkbotPath: dorkbotPath(),
-    personName: () => configManager.get('profile').displayName ?? readOwnerAccount()?.name ?? null,
-  }),
-};
+/**
+ * The production deps: the config, the mesh write-through and the rooms.
+ *
+ * @param meshCore - The agent registry, read per request; `undefined` while the
+ *   mesh is not running, and DorkBot's manifest is then written without its
+ *   registry sync.
+ */
+export function productionOnboardingDeps(
+  meshCore: () => MeshCore | undefined
+): OnboardingRouterDeps {
+  return {
+    firstRun: () => ({
+      config: configManager,
+      setDorkBotRuntime: async (runtime) => {
+        try {
+          await updateAgentManifest({
+            agentPath: dorkbotPath(),
+            body: { runtime },
+            meshCore: meshCore(),
+          });
+        } catch (error) {
+          // An install without DorkBot, or a default no agent can name, still
+          // gets its default runtime moved; DorkBot keeps the runtime it has.
+          const skippable =
+            error instanceof AgentUpdateError && ['NOT_FOUND', 'VALIDATION'].includes(error.code);
+          if (!skippable) throw error;
+          logger.warn('[Onboarding] DorkBot was left on its runtime', { code: error.code });
+        }
+      },
+      storeCredential: (inference, secret) => storeDoeCredential(inference, secret),
+      fetch: ((url, init) => fetch(url, init)) satisfies PresetFetch,
+      linked: isCloudLinked,
+      isRuntime: (type) => runtimeRegistry.has(type),
+    }),
+    welcome: () => ({
+      config: configManager,
+      rooms: getRoomService(),
+      dorkbotPath: dorkbotPath(),
+      personName: () =>
+        configManager.get('profile').displayName ?? readOwnerAccount()?.name ?? null,
+    }),
+  };
+}
 
 /**
- * Build the first-run router.
+ * Build the first-run routes.
  *
  * @param deps - Where each request's writers come from.
+ * @returns The routes, to mount at `/api/onboarding`.
  */
-export function createOnboardingRouter(deps: OnboardingRouterDeps = productionDeps): Router {
-  const router = Router();
+export function createOnboardingRoutes(deps: OnboardingRouterDeps): Hono<ApiEnv> {
+  const router = new Hono<ApiEnv>();
 
-  router.post('/first-run', async (req, res) => {
-    if (!isLocalCaller(req)) {
-      return res.status(403).json({ error: 'Setup is only available on this computer.' });
+  router.post('/first-run', async (c) => {
+    if (!isLocalCaller(honoRequestFacts(c))) {
+      return c.json({ error: 'Setup is only available on this computer.' }, 403);
     }
-    if (refuseUnlessOwner(req, res)) return;
-    const parsed = FirstRunRequestSchema.safeParse(req.body);
-    if (!parsed.success) return res.status(400).json({ error: 'Choose how your agents run.' });
+    const refused = refuseUnlessOwner(c);
+    if (refused) return refused;
+    const parsed = FirstRunRequestSchema.safeParse(readJsonBody(c));
+    if (!parsed.success) return c.json({ error: 'Choose how your agents run.' }, 400);
     try {
-      return res.json(await applyFirstRun(parsed.data, deps.firstRun(req)));
+      return c.json(await applyFirstRun(parsed.data, deps.firstRun()));
     } catch (error) {
       if (error instanceof FirstRunError) {
-        return res.status(error.status).json({ error: error.message, code: error.code });
+        return c.json(
+          { error: error.message, code: error.code },
+          error.status as ContentfulStatusCode
+        );
       }
       logger.warn('[Onboarding] first-run setup failed', logError(error));
-      return res.status(500).json({ error: "Couldn't finish setup. Try again." });
+      return c.json({ error: "Couldn't finish setup. Try again." }, 500);
     }
   });
 
-  router.post('/welcome', (req, res) => {
-    if (refuseUnlessOwner(req, res)) return;
+  router.post('/welcome', (c) => {
+    const refused = refuseUnlessOwner(c);
+    if (refused) return refused;
     try {
-      return res.json(postFirstRunWelcome(deps.welcome(req)));
+      return c.json(postFirstRunWelcome(deps.welcome()));
     } catch (error) {
       if (error instanceof FirstRunError || error instanceof WelcomeUnavailableError) {
         const code = error instanceof FirstRunError ? error.code : 'team_unavailable';
-        return res.status(error.status).json({ error: error.message, code });
+        return c.json({ error: error.message, code }, error.status as ContentfulStatusCode);
       }
       logger.warn('[Onboarding] welcome failed', logError(error));
-      return res.status(500).json({ error: "Couldn't post DorkBot's welcome. Try again." });
+      return c.json({ error: "Couldn't post DorkBot's welcome. Try again." }, 500);
     }
   });
 
   return router;
 }
-
-export default createOnboardingRouter();
