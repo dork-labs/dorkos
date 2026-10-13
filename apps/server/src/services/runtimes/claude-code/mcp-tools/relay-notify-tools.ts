@@ -26,6 +26,10 @@
  * @module services/runtimes/claude-code/mcp-tools/relay-notify-tools
  */
 import { noteBeatBypass } from '../../../heartbeats/beat-turns.js';
+import {
+  chargeOutsiderOutput,
+  OUTSIDER_TURN_LIMIT,
+} from '../../../core/turn-power/outsider-output.js';
 import type { McpToolDeps } from './types.js';
 import { jsonContent } from './types.js';
 import { requireRelay, type SenderIdentity } from './relay-helpers.js';
@@ -162,6 +166,23 @@ export function createRelayNotifyUserHandler(deps: McpToolDeps, identity: Sender
           error:
             'This session is not a registered agent, so it has no integration bindings to notify through.',
           code: 'NOT_AN_AGENT',
+        },
+        true
+      );
+    }
+
+    // **A stranger's turn is still counted** (DOR-2739): our own agents send
+    // as many notes as they need, but a turn that read a stranger's words may
+    // send a few and no more, so one message from outside the team cannot make
+    // it write to people without end.
+    if (
+      !chargeOutsiderOutput('note', identity.sessionId?.(), deps.meshCore?.getProjectPath(agentId))
+    ) {
+      return jsonContent(
+        {
+          sent: false,
+          error: `A message from outside your team started this turn, so it can send ${OUTSIDER_TURN_LIMIT} notes at most. Put the rest in one note next turn.`,
+          code: 'TOO_MANY_NOTES_THIS_TURN',
         },
         true
       );

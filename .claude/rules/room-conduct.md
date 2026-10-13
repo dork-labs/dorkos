@@ -47,7 +47,9 @@ check. The halt path is a person's control and stays. The per-turn post cap
 (`rooms.maxPostsPerTurn`), canvas operations per turn, the notify budget and the reaction ceiling
 were caps on routine output: that ADR retired them as refusals and DOR-2739 removed them. Etiquette
 on routine output now rests on review and the record, not on a count. Never add one back as a
-refusal; outsider limits are a different thing and stay.
+refusal; outsider limits are a different thing and stay. One of them is a count: a turn that read a
+stranger's words may post 3 messages and send 3 notes (`turn-power/outsider-output.ts`), because
+the old caps were the only thing bounding such a turn.
 
 ## Invariants
 
