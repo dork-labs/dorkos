@@ -2,7 +2,8 @@
  * Mocks for the `Transport` slices split out of `mock-factories.ts`: what
  * happened (`ActivityTransport`), where every read answers an empty page, and
  * pausing agents (`AgentPauseTransport`), where nothing is paused and every
- * pause or resume succeeds. Heartbeats come from their own mock.
+ * pause or resume succeeds, and held connected-app actions, where every cancel
+ * succeeds. Heartbeats come from their own mock.
  *
  * @module test-utils/mock-transport-slices
  */
@@ -19,7 +20,8 @@ type SliceMethods =
   | 'getChatActivity'
   | 'listAgentPauses'
   | 'pauseAgent'
-  | 'resumeAgent';
+  | 'resumeAgent'
+  | 'cancelHeldConnectorAction';
 
 /** Mocks for every method of the split-out `Transport` slices. */
 export function transportSliceMocks(): Pick<Transport, SliceMethods> &
@@ -39,5 +41,8 @@ export function transportSliceMocks(): Pick<Transport, SliceMethods> &
     resumeAgent: vi
       .fn()
       .mockImplementation(async (agentId: string) => ({ agentId, paused: false, changed: true })),
+    cancelHeldConnectorAction: vi
+      .fn()
+      .mockImplementation(async (holdId: string) => ({ status: 'cancelled', holdId })),
   };
 }

@@ -18,6 +18,28 @@ describe('notification presentation', () => {
     expect(NOTIFICATION_ICONS['extension.approval']).toBe(Puzzle);
   });
 
+  // Spec trusted-by-default-flip §5.6: the waiting row opens where Cancel is;
+  // the row saying how it ended opens the chat the agent asked from.
+  it('takes a held action to the Inbox while it waits, and to its chat once it ended', () => {
+    const waiting: NotificationDTO = {
+      id: '01JZG0000000000000000011',
+      kind: 'connector.destructive_pending',
+      tier: 'notable',
+      subject: { type: 'system', id: 'hold-1' },
+      sessionId: 'session-1',
+      title: 'Scout will run “Delete message” in Gmail',
+      actions: [
+        { id: 'cancel', label: 'Cancel', style: 'danger' },
+        { id: 'open', label: 'Open', style: 'primary' },
+      ],
+      createdAt: '2026-10-13T12:00:00.000Z',
+    };
+    expect(notificationLink(waiting)).toEqual({ to: '/', search: { inbox: 'hold-1' } });
+    expect(
+      notificationLink({ ...waiting, actions: [{ id: 'open', label: 'Open', style: 'primary' }] })
+    ).toMatchObject({ search: { session: 'session-1' } });
+  });
+
   it('takes an extension approval row to Settings → Extensions', () => {
     const row: NotificationDTO = {
       id: '01JZG0000000000000000009',

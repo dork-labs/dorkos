@@ -9,7 +9,7 @@
  * description, tier, input schema, display fields, handler). The host builds
  * every definition field by field from that, so the privileged optional fields
  * a core capability may declare (`preflight`, `forwardsApproval`,
- * `inSessionCard`, `approvalSubject`, `areasForInput`, `readOnlyCarveOut`, CLI
+ * `cancelWindow`, `inSessionCard`, `approvalSubject`, `areasForInput`, `readOnlyCarveOut`, CLI
  * and HTTP surfaces, annotation overrides, and the rest) can never ride in on
  * an extension's object, whatever extra keys it carries.
  *
@@ -211,7 +211,7 @@ export function narrowExtensionContext(context: CapabilityHandlerContext): Exten
  * so only the fields named here can exist on it: id `<domain>.<name>`, MCP tool
  * name `<domain>__<name>` on the in-session server only, `output: z.unknown()`,
  * the given area, and `source` naming the extension. No preflight,
- * forwardsApproval, inSessionCard, approvalSubject, areasForInput,
+ * forwardsApproval, cancelWindow, inSessionCard, approvalSubject, areasForInput,
  * readOnlyCarveOut, CLI or HTTP surface, or annotation override is ever set.
  * Every definition, and its surfaces, is frozen, and the handler receives only
  * the narrowed {@link ExtensionToolContext}.

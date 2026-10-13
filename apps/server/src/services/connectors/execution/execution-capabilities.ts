@@ -15,6 +15,7 @@ import {
   type CapabilityDomain,
   type CapabilityHandlerContext,
   type CapabilityInvocationContext,
+  type CapabilityPreflightResult,
 } from '../../core/capabilities/index.js';
 import { CapabilityToolError } from '../../core/capabilities/mcp-envelope.js';
 import { isServerPrincipal, type ServerPrincipalProof } from '../principal/server-principal.js';
@@ -24,6 +25,9 @@ import {
 } from './access-query-service.js';
 import type { ConnectorExecutionAuthorizationService } from './authorization-service.js';
 import type { ConnectorExecutionBroker } from './execution-broker.js';
+import type { DestructiveHoldService } from './destructive-hold.js';
+import { cancelWindowFor } from './destructive-hold-window.js';
+import type { HeldActionOutcome } from '../../notifications/connector-hold-notifications.js';
 import type { ConnectorRuntimeExecutionCapabilityId } from '../runtime-capability-scope.js';
 import { SERVICE_CATALOG_TOOL_NAME } from '../connector-capabilities.js';
 import {
@@ -44,6 +48,11 @@ export interface ConnectorExecutionCapabilityDeps {
     ConnectorAgentRequestService,
     'open' | 'getForRuntime' | 'waitForResolution'
   >;
+  /**
+   * The cancel window an eligible destructive call waits out instead of an
+   * approval card. Absent, every destructive call keeps the card.
+   */
+  readonly holds?: DestructiveHoldService;
 }
 
 function requireRequestService(deps: ConnectorExecutionCapabilityDeps) {
@@ -183,20 +192,42 @@ function executionCapability(
         principal: requirePrincipal(context),
         ...(context.connectorAgentId ? { requestedAgentId: context.connectorAgentId } : {}),
       }),
+    // Only the destructive class waits out a cancel window; see
+    // `destructive-hold-window.ts` for who is held and who keeps the card.
+    ...(classification === 'destructive'
+      ? {
+          cancelWindow: async (
+            deps: CapabilityDeps,
+            _input: unknown,
+            context: CapabilityInvocationContext,
+            preflight: CapabilityPreflightResult
+          ) => cancelWindowFor(requireExecutionDeps(deps).holds, context, preflight),
+        }
+      : {}),
     invoke: async (deps, input, context) => {
       if (!context.preflight) {
         throw new Error(`Connector execution capability ${id} ran without registry preflight.`);
       }
-      return requireExecutionDeps(deps).broker.execute({
-        capabilityId: id,
-        target: input,
-        principal: requirePrincipal(context),
-        authorityBinding: context.preflight.authorityBinding,
-        ...(context.approval ? { approval: context.approval } : {}),
-        ...(context.connectorAgentId ? { requestedAgentId: context.connectorAgentId } : {}),
-        surface: context.connectorSurface ?? 'mcp',
-        signal: context.signal ?? new AbortController().signal,
-      });
+      const executionDeps = requireExecutionDeps(deps);
+      const held = context.approval?.via === 'hold' ? context.approval.holdId : undefined;
+      let outcome: HeldActionOutcome = 'not_sent';
+      try {
+        const response = await executionDeps.broker.execute({
+          capabilityId: id,
+          target: input,
+          principal: requirePrincipal(context),
+          authorityBinding: context.preflight.authorityBinding,
+          ...(context.approval ? { approval: context.approval } : {}),
+          ...(context.connectorAgentId ? { requestedAgentId: context.connectorAgentId } : {}),
+          surface: context.connectorSurface ?? 'mcp',
+          signal: context.signal ?? new AbortController().signal,
+        });
+        outcome = response.result.status;
+        return response;
+      } finally {
+        // A held action's waiting row is replaced by how it came out.
+        if (held) executionDeps.holds?.recordOutcome(held, outcome);
+      }
     },
   });
 }

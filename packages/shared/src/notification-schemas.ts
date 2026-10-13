@@ -123,6 +123,15 @@ export const NOTIFICATION_KINDS = [
    * `heartbeats` §6.3). Raised once per computer, while nobody has answered.
    */
   'heartbeat.credits-offer',
+  /**
+   * An agent's irreversible action in a connected app is waiting out its
+   * 60-second cancel window (spec `trusted-by-default-flip` §5.6). Anyone but
+   * that agent may cancel it. A second row of this kind says how a cancelled or
+   * dropped one ended.
+   */
+  'connector.destructive_pending',
+  /** A held connected-app action ran when its cancel window ended. */
+  'connector.destructive_executed',
 ] as const;
 
 /** Every kind of notification DorkOS can raise. */

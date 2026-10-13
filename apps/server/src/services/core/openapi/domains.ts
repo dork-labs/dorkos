@@ -11,6 +11,7 @@ import { registerCommitmentsOpenApi } from '../../commitments/commitments-openap
 import { registerHeartbeatsOpenApi } from '../../heartbeats/heartbeats-openapi.js';
 import { registerOnboardingOpenApi } from '../onboarding/onboarding-openapi.js';
 import { registerComputerOpenApi } from '../../computers/computer-openapi.js';
+import { registerConnectorHoldsOpenApi } from '../../connectors/execution/holds-openapi.js';
 
 /** Register independent domain paths in their existing order. */
 export function registerDomainOpenApi(registry: OpenAPIRegistry): void {
@@ -25,4 +26,5 @@ export function registerDomainOpenApi(registry: OpenAPIRegistry): void {
   registerOnboardingOpenApi(registry);
   registerComputerOpenApi(registry);
   registerFileWriteOpenApi(registry);
+  registerConnectorHoldsOpenApi(registry);
 }

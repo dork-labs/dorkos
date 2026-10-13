@@ -79,7 +79,7 @@
  * @module services/notifications/escalation-service
  */
 import type { EscalationDelay } from '@dorkos/shared/config-schema';
-import type { NotificationChannel } from '@dorkos/shared/notification-schemas';
+import type { NotificationChannel, WebPushPayload } from '@dorkos/shared/notification-schemas';
 import { sessionPath } from '@dorkos/shared/session-link';
 import { logger } from '../../lib/logger.js';
 import {
@@ -428,6 +428,30 @@ export class EscalationService {
     );
   }
 
+  /**
+   * Push to every subscribed browser now, without waiting for the ladder.
+   *
+   * For the one thing that cannot wait the escalation delay: an agent's
+   * irreversible action in a connected app runs sixty seconds after it is
+   * held (spec `trusted-by-default-flip` §5.6), sooner than any delay a person
+   * can choose, so a push that waited would only ever arrive after the fact.
+   * A person who set phone pings to `never` still gets none. The delivery is
+   * written to the ledger under the payload's `notificationId`.
+   *
+   * @param payload - What the push says. Never argument values or transcript.
+   */
+  async pushNow(payload: WebPushPayload): Promise<void> {
+    if (this.delayMs() === null) return;
+    const push = await this.deps.push.sendToAll(payload);
+    if (push.delivered > 0) {
+      this.deps.store.recordDelivery({
+        subjectKey: payload.notificationId,
+        channel: 'web_push',
+        detail: { delivered: push.delivered },
+      });
+    }
+  }
+
   /** The configured delay in milliseconds, or `null` when the answer is `never`. */
   private delayMs(): number | null {
     const delay = this.deps.readDelay();
@@ -584,6 +608,21 @@ export function armEscalation<K extends StandingNotificationKind>(
   } catch (err) {
     logger.warn('[Escalation] Could not start the clock on a blocking condition', { err, kind });
   }
+}
+
+/**
+ * Push to every subscribed browser now, from anywhere. See
+ * {@link EscalationService.pushNow}. Never throws, and a no-op before boot has
+ * wired a service.
+ *
+ * @param payload - What the push says.
+ */
+export function pushNow(payload: WebPushPayload): void {
+  const service = current;
+  if (!service) return;
+  service.pushNow(payload).catch((err: unknown) => {
+    logger.warn('[Escalation] Could not push a notification', { err });
+  });
 }
 
 /**

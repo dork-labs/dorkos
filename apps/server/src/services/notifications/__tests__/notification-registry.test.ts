@@ -158,6 +158,23 @@ const PAYLOADS: { [K in NotificationKind]: NotificationPayloads[K] } = {
     claimableAfter: '2026-10-04T10:00:00.000Z',
   },
   'heartbeat.credits-offer': {},
+  'connector.destructive_pending': {
+    holdId: 'hold-1',
+    agentId: 'agent-1',
+    agentName: 'Scout',
+    sessionId: 'sess-1',
+    actionName: 'Delete message',
+    serviceName: 'Gmail',
+  },
+  'connector.destructive_executed': {
+    holdId: 'hold-1',
+    agentId: 'agent-1',
+    agentName: 'Scout',
+    sessionId: 'sess-1',
+    actionName: 'Delete message',
+    serviceName: 'Gmail',
+    outcome: 'success',
+  },
 };
 
 /** The tier every kind is declared at, from the spec's own table. */
@@ -194,6 +211,11 @@ const EXPECTED_TIERS: Record<NotificationKind, string> = {
   'community.owner-replacement': 'notable',
   // An offer, raised once per computer: never an alarm (spec heartbeats §6.3).
   'heartbeat.credits-offer': 'quiet',
+  // Everyone sees it before it runs, but nothing waits on a person: never
+  // paged by the ladder; its own push goes out at once (spec §5.6).
+  'connector.destructive_pending': 'notable',
+  // News: it ran (spec trusted-by-default-flip §5.6).
+  'connector.destructive_executed': 'quiet',
 };
 
 /**
@@ -276,6 +298,8 @@ describe('notification registry', () => {
       'approval.pending',
       'ask.pending',
       'community.owner-replacement',
+      'connector.destructive_executed',
+      'connector.destructive_pending',
       'credits.refused',
       'dead-letter.created',
       'dm.received',

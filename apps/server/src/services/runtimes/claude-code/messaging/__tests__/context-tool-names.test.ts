@@ -504,7 +504,10 @@ describe('the claude-code prompt names tools the way the runtime exposes them', 
     // names it, as a searchable ending, so it stays deferred and unprefixed.
     // 129 -> 130 for `heartbeat_status` (spec `heartbeats` §10 PR 6): no prompt
     // block names it, so it stays deferred and unprefixed.
-    expect(advertised.size).toBe(130);
+    // 130 -> 131 for `connectors_cancel_held_action` (spec
+    // `trusted-by-default-flip` §5.6): no prompt block names it, so it stays
+    // deferred and unprefixed.
+    expect(advertised.size).toBe(131);
     for (const name of [
       'configure_doc_channel',
       'approve_doc_route',

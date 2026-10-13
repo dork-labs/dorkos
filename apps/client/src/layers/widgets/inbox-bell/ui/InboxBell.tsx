@@ -507,7 +507,7 @@ export function InboxBell() {
                   </div>
                 </div>
                 <div className="mt-1">
-                  <InboxList lens={lens} inBell onOpened={() => setOpen(false)} />
+                  <InboxList lens={lens} inBell focusId={focusId} onOpened={() => setOpen(false)} />
                 </div>
               </div>
             </div>

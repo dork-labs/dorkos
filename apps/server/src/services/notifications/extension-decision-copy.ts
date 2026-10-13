@@ -1,11 +1,13 @@
 /**
  * What an `extension.decision` notification says: the phone push that names
- * only who and how many projects, and the history row's "what was chosen · who".
- * Split from the registry, whose entry for the kind calls these.
+ * only who and how many projects, and the history row's "what was chosen · who";
+ * and where an `extension.approval` row files itself. Split from the registry,
+ * whose entries for the two kinds call these.
  *
  * @module services/notifications/extension-decision-copy
  */
-import type { NotificationPayload } from './notification-registry.js';
+import { extensionApprovalSubjectId } from '@dorkos/shared/extension-approval-schemas';
+import type { NotificationLocation, NotificationPayload } from './notification-registry.js';
 
 /** Counts an extension's projects with open decisions right now, when the inbox is up. */
 let openProjectCounter: ((extensionId: string) => number) | null = null;
@@ -78,4 +80,23 @@ export function extensionDecisionHistoryBody(
   if (r.outcome === 'cancelled') return 'No longer needed';
   const who = decidedByWords(r, p.extensionName);
   return r.choiceLabel ? `${r.choiceLabel} · ${who}` : who;
+}
+
+/**
+ * Where an `extension.approval` row files itself: the exact copy.
+ *
+ * @param p - That kind's payload.
+ * @returns The row's subject.
+ */
+export function subjectIdForCopy(
+  p: NotificationPayload<'extension.approval'>
+): NotificationLocation {
+  return {
+    subjectId: extensionApprovalSubjectId({
+      id: p.id,
+      path: p.path,
+      plugin: p.plugin,
+      version: p.version,
+    }),
+  };
 }

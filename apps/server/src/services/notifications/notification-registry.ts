@@ -27,7 +27,6 @@
  * @module services/notifications/notification-registry
  */
 import { runtimeDisplayName } from '@dorkos/shared/agent-runtime';
-import { extensionApprovalSubjectId } from '@dorkos/shared/extension-approval-schemas';
 import {
   NOTIFICATION_KINDS,
   type NotificationActionDTO,
@@ -40,7 +39,12 @@ import {
   EXTENSION_DECISION_PUSH_WINDOW_MS,
   extensionDecisionEscalation,
   extensionDecisionHistoryBody,
+  subjectIdForCopy,
 } from './extension-decision-copy.js';
+import {
+  CONNECTOR_HOLD_ENTRIES,
+  type ConnectorHoldPayloads,
+} from './connector-hold-notifications.js';
 
 /**
  * How a run finished, as `run.completed` reports it.
@@ -63,7 +67,7 @@ export type RunCompletionStatus = 'completed' | 'failed' | 'blocked';
  * A payload carries ids and short, already-human sentences — never transcript
  * content, tool input, or anything that would be unsafe on a phone lock screen.
  */
-export interface NotificationPayloads {
+export interface NotificationPayloads extends ConnectorHoldPayloads {
   /** An agent is parked on something only a person can answer. */
   'ask.pending': {
     sessionId: string;
@@ -690,22 +694,6 @@ const CREDITS_REFUSED_DEDUPE_WINDOW_MS = 60 * 60 * 1000;
  */
 const OWNER_REPLACEMENT_DEDUPE_WINDOW_MS = 210 * 24 * 60 * 60 * 1000;
 
-/**
- * Where an `extension.approval` row files itself: the exact copy.
- *
- * @param p - That kind's payload.
- */
-function subjectIdForCopy(p: NotificationPayload<'extension.approval'>): NotificationLocation {
-  return {
-    subjectId: extensionApprovalSubjectId({
-      id: p.id,
-      path: p.path,
-      plugin: p.plugin,
-      version: p.version,
-    }),
-  };
-}
-
 /** Longest slice of an agent's note that is used to tell two notes apart. */
 const NOTE_DEDUPE_PREFIX = 120;
 
@@ -1311,6 +1299,10 @@ const ENTRIES: NotificationRegistryMap = {
     dedupeWindowMs: REPORT_DAILY_DEDUPE_WINDOW_MS,
     relay: 'never',
   },
+
+  // An agent's held irreversible action in a connected app, and how it ended
+  // (spec `trusted-by-default-flip` §5.6). Declared beside its emitter.
+  ...CONNECTOR_HOLD_ENTRIES,
 };
 
 /**
@@ -1377,6 +1369,11 @@ export const NOTIFICATION_REGISTRY_KINDS: readonly NotificationKind[] = NOTIFICA
  * `community.owner-replacement` joined them in DOR-2543. It is raised from the owner's
  * connection list, and an hourly background check, by `emitters/community-owner-replacement.ts`.
  *
+ * `connector.destructive_pending` and `connector.destructive_executed` joined
+ * them in DOR-2739. They are raised by
+ * `services/connectors/execution/destructive-hold.ts` around an agent's
+ * cancel window — see `connector-hold-notifications.ts`.
+ *
  * `schedule.armed_by_agent` joined them in DOR-2739. It is raised by
  * `services/tasks/lifecycle/create-task.ts` when one of our agents makes a
  * schedule on a Trusted install — see `emitters/schedule-armed.ts`.
@@ -1404,6 +1401,8 @@ export const WIRED_NOTIFICATION_KINDS: readonly NotificationKind[] = [
   'extension.decision',
   'community.owner-replacement',
   'heartbeat.credits-offer',
+  'connector.destructive_pending',
+  'connector.destructive_executed',
 ];
 
 /**
