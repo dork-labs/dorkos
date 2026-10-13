@@ -22,6 +22,10 @@ interface Delivery {
   parentEntryId?: string;
   files: PendingFile[];
   attachmentIds: string[];
+  /** When each of `attachmentIds` was first uploaded, by this device's clock. */
+  uploadedAt: number[];
+  /** Bumped when stale uploads are dropped, so their replacements get new upload keys. */
+  uploadRound: number;
   status: 'sending' | 'failed';
   error?: string;
   /** The composer it was sent from and exactly what was typed, to go back to if it can never send. */
@@ -40,32 +44,43 @@ const COMMUNITY_GONE_CODES: ReadonlySet<string> = new Set([
 ]);
 
 /**
- * How long an uploaded file is reused when a held message is sent again. A space removes a file
- * no message took after an hour, so a reuse stays well inside that; past it the file is sent
- * again under the same key, which the space answers with the first upload if it still has it.
+ * How long an uploaded file may still go with a message. A space refuses a file no message took
+ * within an hour of its upload, and removes it soon after, so an upload older than this is
+ * replaced by a new one rather than reused or retried into a refusal.
  */
 const UPLOAD_REUSE_MS = 30 * 60_000;
 
-/** Uploads a held message already made, by space, room and staged-file id. */
-type UploadMemory = Map<string, { attachmentId: string; at: number }>;
+/**
+ * Files a held message already uploaded, by space, room and staged-file id, so sending it again
+ * attaches them instead of uploading them a second time (DOR-2835). Module-wide, so it outlives
+ * the composer while the draft (which lives in memory too) is held elsewhere.
+ */
+const uploadMemory = new Map<string, { attachmentId: string; at: number }>();
 
 function uploadKey(ref: string, roomId: string, fileId: string): string {
   return JSON.stringify([ref, roomId, fileId]);
 }
 
-/** The attachment a held message already uploaded for this file, while it is still reusable. */
-function reusableUpload(memory: UploadMemory, key: string): string | undefined {
-  const earlier = memory.get(key);
-  return earlier && Date.now() - earlier.at < UPLOAD_REUSE_MS ? earlier.attachmentId : undefined;
+function uploadFresh(at: number): boolean {
+  return Date.now() - at < UPLOAD_REUSE_MS;
 }
 
-function rememberUpload(memory: UploadMemory, key: string, attachmentId: string): void {
-  memory.set(key, { attachmentId, at: Date.now() });
+/** The upload a held message already made for this file, while it can still be reused. */
+function reusableUpload(key: string): { attachmentId: string; at: number } | undefined {
+  for (const [held, upload] of uploadMemory) if (!uploadFresh(upload.at)) uploadMemory.delete(held);
+  return uploadMemory.get(key);
+}
+
+/** Remember a new upload, stamped once: a reuse never makes it look younger than it is. */
+function rememberUpload(key: string, attachmentId: string): number {
+  const at = Date.now();
+  uploadMemory.set(key, { attachmentId, at });
+  return at;
 }
 
 /** Drop a sent message's uploads: they belong to its post now, and none is sent again. */
-function forgetUploads(memory: UploadMemory, job: Delivery): void {
-  for (const staged of job.files) memory.delete(uploadKey(job.ref, job.roomId, staged.id));
+function forgetUploads(job: Delivery): void {
+  for (const staged of job.files) uploadMemory.delete(uploadKey(job.ref, job.roomId, staged.id));
 }
 
 /** Join the non-blank parts of a draft with a blank line, so no part leaves an empty one. */
@@ -170,11 +185,6 @@ export function useRemoteCommunityDrafts({
   const [deliveries, setDeliveries] = useState<Delivery[]>([]);
   const jobs = useRef(new Map<string, Delivery>());
   const sent = useRef(0);
-  /**
-   * Files a held message already uploaded, by space, room and staged-file id, so sending it again
-   * attaches them instead of uploading them a second time (DOR-2835).
-   */
-  const uploaded = useRef<UploadMemory>(new Map());
   /** Messages already put back in each composer's draft, by draft key, in the order they were sent. */
   const returned = useRef(new Map<string, Delivery[]>());
   const running = useRef(new Set<string>());
@@ -207,7 +217,7 @@ export function useRemoteCommunityDrafts({
         job.context === context.current &&
         jobs.current.delete(entry.originIdempotencyKey)
       ) {
-        forgetUploads(uploaded.current, job);
+        forgetUploads(job);
         changed = true;
       }
     }
@@ -236,25 +246,30 @@ export function useRemoteCommunityDrafts({
     job.error = undefined;
     publish();
     try {
+      // An upload too old for the space to take is replaced, under new keys, not posted.
+      if (job.uploadedAt.some((at) => !uploadFresh(at))) {
+        job.attachmentIds = [];
+        job.uploadedAt = [];
+        job.uploadRound += 1;
+      }
       for (let i = job.attachmentIds.length; i < job.files.length; i++) {
         if (!allowed.current || !alive.current || job.address !== authority.current)
           throw new Error('Reconnect to this channel, then try again.');
         const staged = job.files[i]!;
         const fileKey = uploadKey(job.ref, job.roomId, staged.id);
-        const earlier = reusableUpload(uploaded.current, fileKey);
+        const earlier = reusableUpload(fileKey);
         if (earlier) {
-          job.attachmentIds.push(earlier);
+          job.attachmentIds.push(earlier.attachmentId);
+          job.uploadedAt.push(earlier.at);
           continue;
         }
-        // Keyed by the staged file, not this send, so the space answers a held message sent
-        // again with the upload it already has.
         const attachment = await transport.uploadRemoteCommunityAttachment(
           job.ref,
           job.roomId,
           staged.file,
-          `file:${staged.id}`
+          job.uploadRound ? `${job.key}:file:${i}:${job.uploadRound}` : `${job.key}:file:${i}`
         );
-        rememberUpload(uploaded.current, fileKey, attachment.id);
+        job.uploadedAt.push(rememberUpload(fileKey, attachment.id));
         job.attachmentIds.push(attachment.id);
       }
       if (!allowed.current || !alive.current || job.address !== authority.current)
@@ -266,7 +281,7 @@ export function useRemoteCommunityDrafts({
         idempotencyKey: job.key,
       });
       jobs.current.delete(job.key);
-      forgetUploads(uploaded.current, job);
+      forgetUploads(job);
       if (alive.current && job.address === authority.current && job.context === context.current)
         receipt.current(entry);
     } catch (cause) {
@@ -345,6 +360,8 @@ export function useRemoteCommunityDrafts({
       parentEntryId,
       files,
       attachmentIds: [],
+      uploadedAt: [],
+      uploadRound: 0,
       status: 'sending',
       origin: { draft: target, typed: held.text, seq: (sent.current += 1) },
     };
