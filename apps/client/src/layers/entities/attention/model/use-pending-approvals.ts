@@ -160,8 +160,8 @@ export function usePendingApprovals(): PendingApprovalsState {
       return;
     }
     // A deadline past what `setTimeout` can express needs no timer at all: no tab
-    // lives 25 days, and the mount-time read plus refetch-on-focus already
-    // correct the list. Arming one would be worse than useless — the platform
+    // lives 25 days, and the mount-time read plus the stream-reconnect re-sync
+    // already correct the list. Arming one would be worse than useless — the platform
     // clamps it to 1ms, it fires against a live row, prunes nothing, and the
     // re-arm below sends it round again every millisecond.
     if (delay > MAX_TIMEOUT_MS) return;

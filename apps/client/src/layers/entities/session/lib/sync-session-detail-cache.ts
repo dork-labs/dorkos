@@ -36,7 +36,7 @@
  * optimistic override that would have outranked it, so it silently reverts the
  * session to the mode it held a moment ago — the rail going quiet about a bypass
  * the person just switched on. That interleaving is ordinary, not exotic:
- * `refetchOnWindowFocus` against a 30s `staleTime`, the SSE reconnect broom, and
+ * a remount against a 30s `staleTime`, the SSE reconnect broom, and
  * a Claude account switch each put a list fetch in flight at an arbitrary moment.
  *
  * The property this module owes its readers is therefore stronger than "keep the
@@ -70,7 +70,7 @@
  *
  * An accepted write still moves the entry's staleness clock forward — to the
  * answer's own age rather than to "now", which is one round trip earlier, but
- * forward. List answers arrive on every window focus, so an open session's
+ * forward. List answers arrive on every remount and reconnect, so an open session's
  * detail query can go a long time without its 30s `staleTime` elapsing, and the
  * detail endpoint is consulted rarely while a rail is live.
  *
