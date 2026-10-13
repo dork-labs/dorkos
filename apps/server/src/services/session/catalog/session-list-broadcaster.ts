@@ -186,14 +186,13 @@ function carriesBlockedDetail(event: SessionListEvent): boolean {
  * ## What bounds it
  *
  * One frame per non-idle projector, and a projector lives until its session is
- * evicted or the server restarts. **Only claude-code evicts on a timer**
- * (`SESSIONS.TIMEOUT_MS`, 30 minutes idle). Codex, opencode and test-mode all
- * implement `checkSessionHealth` as a no-op — none of them holds a per-session
- * process — so their projectors are dropped only by an explicit act
- * (test-mode's `/api/test/reset`) or by a restart. On a codex- or
- * opencode-heavy machine this set therefore only grows. It is small in every
- * realistic fleet, but "small" is not a guarantee, and this is the one place in
- * the stream that writes N frames in a row.
+ * evicted or the server restarts. Claude-code evicts on a timer
+ * (`SESSIONS.TIMEOUT_MS`, 30 minutes idle), and the idle sweep drops a quiet
+ * Codex, OpenCode or Doe projector (`replay/projector-idle-sweep.ts`, DOR-2897),
+ * but never one in a non-idle lifecycle: those are exactly the ones listed
+ * here, and they stay until dealt with. The set is small in every realistic
+ * fleet, but "small" is not a guarantee, and this is the one place in the
+ * stream that writes N frames in a row.
  *
  * So it stops at the same buffer ceiling the fan-out's own broadcast enforces
  * (`SSE.MAX_BUFFERED_BYTES`), rather than filling process memory for a client

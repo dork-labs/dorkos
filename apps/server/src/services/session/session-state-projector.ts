@@ -38,12 +38,7 @@ import type {
 } from '@dorkos/shared/session-stream';
 import { deriveSessionActivity } from './activity/derive-activity.js';
 
-import type {
-  HistoryMessage,
-  PendingInteractionDTO,
-  PermissionMode,
-  TaskItem,
-} from '@dorkos/shared/types';
+import type { HistoryMessage, PendingInteractionDTO, TaskItem } from '@dorkos/shared/types';
 import type { QueuedMessage, SessionLimit } from '@dorkos/shared/schemas';
 import { isInterruptedTerminalReason } from '@dorkos/shared/schemas';
 import {
@@ -52,6 +47,7 @@ import {
   isUnrequestedAbortFailure,
 } from '@dorkos/shared/run-outcome';
 import { listPendingInteractions } from './pending-interactions.js';
+import { coldStatus, mergeBaseContextUsage } from './projector/cold-status.js';
 import type { SessionDebugCounters } from './session-debug-counters.js';
 import { logger } from '../../lib/logger.js';
 import { EventLog } from './replay/event-log.js';
@@ -173,9 +169,6 @@ interface SigninCardEntry {
  */
 type StatusChangePayload = Extract<SessionEvent, { type: 'status_change' }>['status'];
 
-/** Permission mode used before any `status_change` reports one. */
-const DEFAULT_PERMISSION_MODE: PermissionMode = 'default';
-
 /**
  * Events that ride the stream but are NOT part of the turn they arrive during.
  *
@@ -228,44 +221,6 @@ const TERMINAL_REASON_ERROR = 'error';
 // all come from `@dorkos/shared`, which is also where the claude-code result
 // mapper and the client's mirror of this projector read them. They used to be
 // hand-kept copies in each place (DOR-1320 review, DOR-1676).
-
-/** A fully-zeroed {@link SessionContextUsage}; the base for the first delta. */
-const ZERO_CONTEXT_USAGE: SessionContextUsage = {
-  totalTokens: 0,
-  maxTokens: 0,
-  outputTokens: 0,
-  cacheReadTokens: 0,
-  cacheCreationTokens: 0,
-};
-
-/**
- * Resolve the base to field-wise-merge a partial `contextUsage` delta onto.
- * When no prior usage exists (cold status), start from {@link ZERO_CONTEXT_USAGE}
- * so the merged result is still the full (non-partial) {@link SessionContextUsage}.
- *
- * @param prior - The currently-held usage, or `null` on a cold status.
- */
-function mergeBaseContextUsage(prior: SessionContextUsage | null): SessionContextUsage {
-  return prior ?? ZERO_CONTEXT_USAGE;
-}
-
-/** A cold-snapshot status: every usage field null, idle, no subagents. */
-function coldStatus(): SessionStatus {
-  return {
-    contextUsage: null,
-    cost: null,
-    usage: null,
-    cacheStats: null,
-    model: null,
-    permissionMode: DEFAULT_PERMISSION_MODE,
-    todoCounts: null,
-    runningSubagentCount: 0,
-    lifecycle: 'idle',
-    lastError: null,
-    limit: null,
-    accountUsage: null,
-  };
-}
 
 /**
  * The longest a snapshot waits for a new projector's status to be hydrated
@@ -508,6 +463,12 @@ export class SessionStateProjector {
 
   /** Per-session monotonic counter; `seq` of the latest ingested event. */
   private counter = 0;
+
+  /**
+   * How many times the registry has handed this instance out. The idle sweep
+   * keeps a projector somebody fetched since its last look (DOR-2897).
+   */
+  acquisitions = 0;
 
   /**
    * Identifies THIS instance's seq space on the wire, for the life of the
@@ -1917,6 +1878,11 @@ export class SessionStateProjector {
     return this.inProgressTurn;
   }
 
+  /** Whether a sign-in card is still open; it outlives its turn (see {@link openSigninCards}). */
+  hasOpenSigninCards(): boolean {
+    return this.openSigninCards.size > 0;
+  }
+
   /**
    * Assemble a {@link SessionSnapshot}: completed messages from the injected
    * loader, the live in-progress turn, the held status, recovery DTOs for
@@ -2393,6 +2359,7 @@ export function getOrCreateProjector(
     const stored = withSessionLimitStore('get', (store) => store.get(key));
     if (stored) projector.hydrateLimit(stored.limit);
   }
+  projector.acquisitions += 1;
   if (cwd !== undefined && projector.cwd === undefined) projector.cwd = cwd;
   if (opts?.persist !== undefined && sessionEventStore !== undefined) {
     projector.enablePersistence(sessionEventStore, opts.persist);
@@ -2418,8 +2385,9 @@ export function getOrCreateProjector(
  * client that never held the retired id says nothing.
  *
  * **In-memory and therefore bounded.** A projector lives until its session is
- * evicted (claude-code: `SESSIONS.TIMEOUT_MS`, 30 minutes idle) or the server
- * restarts, so this answers for the recent fleet, not for all history. That is
+ * evicted (claude-code: `SESSIONS.TIMEOUT_MS`, 30 minutes idle), a log-backed
+ * one until the idle sweep drops it (`replay/projector-idle-sweep.ts`), or the
+ * server restarts, so this answers for the recent fleet, not for all history. That is
  * the same bound the live fan-out has always had.
  */
 export function listProjectorStatuses(): ProjectorStatusUpdate[] {

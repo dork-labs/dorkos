@@ -556,7 +556,7 @@ import {
   SessionEventStore,
   StagedContextStore,
   setMessageQueueStore,
-  setSessionEventStore,
+  wireSessionEventStore,
   setStagedContextStore,
   SessionLimitStore,
   setSessionLimitStore,
@@ -952,9 +952,10 @@ async function start() {
   // Durable session-event store for LOG-BACKED runtimes (codex/opencode/
   // test-mode), injected once here so their completed-turn history survives a
   // server restart (DOR-189). Wired before any runtime registers so the first
-  // turn/subscribe of a log-backed session persists and hydrates.
+  // turn/subscribe of a log-backed session persists and hydrates. With the store
+  // holding their history, their idle in-memory copies are swept (DOR-2897).
   const sessionEventStore = new SessionEventStore(db);
-  setSessionEventStore(sessionEventStore);
+  wireSessionEventStore(sessionEventStore);
 
   // An agent that was waiting on a person when the last process stopped is not
   // waiting any more — its turn died with that process, and nothing can hand it

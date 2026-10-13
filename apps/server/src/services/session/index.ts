@@ -51,6 +51,7 @@ export type {
 // same truncation, as the session pane two panes away (DOR-1351).
 export { deriveSessionActivity } from './activity/derive-activity.js';
 export { persistenceModeFor } from './projector-persistence.js';
+export { wireSessionEventStore, sweepIdleProjectors } from './replay/projector-idle-sweep.js';
 export type { ProjectorPersistenceMode } from './projector-persistence.js';
 export { EventLog, EVENT_LOG_MAX_EVENTS } from './replay/event-log.js';
 export { reconstructHistoryFromEvents } from './event-log-history.js';
