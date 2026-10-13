@@ -39,6 +39,35 @@ const COMMUNITY_GONE_CODES: ReadonlySet<string> = new Set([
   'COMMUNITY_TAKEN_DOWN',
 ]);
 
+/**
+ * How long an uploaded file is reused when a held message is sent again. A space removes a file
+ * no message took after an hour, so a reuse stays well inside that; past it the file is sent
+ * again under the same key, which the space answers with the first upload if it still has it.
+ */
+const UPLOAD_REUSE_MS = 30 * 60_000;
+
+/** Uploads a held message already made, by space, room and staged-file id. */
+type UploadMemory = Map<string, { attachmentId: string; at: number }>;
+
+function uploadKey(ref: string, roomId: string, fileId: string): string {
+  return JSON.stringify([ref, roomId, fileId]);
+}
+
+/** The attachment a held message already uploaded for this file, while it is still reusable. */
+function reusableUpload(memory: UploadMemory, key: string): string | undefined {
+  const earlier = memory.get(key);
+  return earlier && Date.now() - earlier.at < UPLOAD_REUSE_MS ? earlier.attachmentId : undefined;
+}
+
+function rememberUpload(memory: UploadMemory, key: string, attachmentId: string): void {
+  memory.set(key, { attachmentId, at: Date.now() });
+}
+
+/** Drop a sent message's uploads: they belong to its post now, and none is sent again. */
+function forgetUploads(memory: UploadMemory, job: Delivery): void {
+  for (const staged of job.files) memory.delete(uploadKey(job.ref, job.roomId, staged.id));
+}
+
 /** Join the non-blank parts of a draft with a blank line, so no part leaves an empty one. */
 function joinDraft(parts: readonly string[]): string {
   return parts.filter((part) => part.trim()).join('\n\n');
@@ -141,6 +170,11 @@ export function useRemoteCommunityDrafts({
   const [deliveries, setDeliveries] = useState<Delivery[]>([]);
   const jobs = useRef(new Map<string, Delivery>());
   const sent = useRef(0);
+  /**
+   * Files a held message already uploaded, by space, room and staged-file id, so sending it again
+   * attaches them instead of uploading them a second time (DOR-2835).
+   */
+  const uploaded = useRef<UploadMemory>(new Map());
   /** Messages already put back in each composer's draft, by draft key, in the order they were sent. */
   const returned = useRef(new Map<string, Delivery[]>());
   const running = useRef(new Set<string>());
@@ -172,8 +206,10 @@ export function useRemoteCommunityDrafts({
         job?.address === authority.current &&
         job.context === context.current &&
         jobs.current.delete(entry.originIdempotencyKey)
-      )
+      ) {
+        forgetUploads(uploaded.current, job);
         changed = true;
+      }
     }
     if (changed) setDeliveries([...jobs.current.values()]);
   }, [entries]);
@@ -203,12 +239,22 @@ export function useRemoteCommunityDrafts({
       for (let i = job.attachmentIds.length; i < job.files.length; i++) {
         if (!allowed.current || !alive.current || job.address !== authority.current)
           throw new Error('Reconnect to this channel, then try again.');
+        const staged = job.files[i]!;
+        const fileKey = uploadKey(job.ref, job.roomId, staged.id);
+        const earlier = reusableUpload(uploaded.current, fileKey);
+        if (earlier) {
+          job.attachmentIds.push(earlier);
+          continue;
+        }
+        // Keyed by the staged file, not this send, so the space answers a held message sent
+        // again with the upload it already has.
         const attachment = await transport.uploadRemoteCommunityAttachment(
           job.ref,
           job.roomId,
-          job.files[i]!.file,
-          `${job.key}:file:${i}`
+          staged.file,
+          `file:${staged.id}`
         );
+        rememberUpload(uploaded.current, fileKey, attachment.id);
         job.attachmentIds.push(attachment.id);
       }
       if (!allowed.current || !alive.current || job.address !== authority.current)
@@ -220,6 +266,7 @@ export function useRemoteCommunityDrafts({
         idempotencyKey: job.key,
       });
       jobs.current.delete(job.key);
+      forgetUploads(uploaded.current, job);
       if (alive.current && job.address === authority.current && job.context === context.current)
         receipt.current(entry);
     } catch (cause) {

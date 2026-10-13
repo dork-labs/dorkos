@@ -471,6 +471,79 @@ describe('a post the space’s moderation held (DOR-2770)', () => {
     }
   );
 
+  // Purpose: fails if a held post with files uploads them again when sent again, leaving the
+  // first uploads unattached (DOR-2835), or if a later send keeps reusing a file already posted.
+  it('sends a held message again with the files it already uploaded', async () => {
+    const { transport, receipt, wrapper } = harness();
+    const onHold = vi.fn();
+    let uploads = 0;
+    vi.mocked(transport.uploadRemoteCommunityAttachment).mockImplementation(async () => ({
+      ...file,
+      id: `upload-${(uploads += 1)}`,
+    }));
+    vi.mocked(transport.postRemoteCommunityEntry)
+      .mockRejectedValueOnce(held('COMMUNITY_RULES_NOT_ACCEPTED'))
+      .mockResolvedValue(entry);
+    const { result } = renderHook(() => useRemoteCommunityDrafts(options(receipt, { onHold })), {
+      wrapper,
+    });
+    act(() => {
+      result.current.setText('with files');
+      result.current.attachments.add([new File(['a'], 'a.txt'), new File(['b'], 'b.txt')]);
+    });
+    act(() => result.current.send());
+    await waitFor(() => expect(onHold).toHaveBeenCalled());
+    expect(result.current.attachments.staged).toHaveLength(2);
+
+    act(() => result.current.send());
+    await waitFor(() => expect(receipt).toHaveBeenCalledWith(entry));
+    expect(transport.uploadRemoteCommunityAttachment).toHaveBeenCalledTimes(2);
+    const posts = vi.mocked(transport.postRemoteCommunityEntry).mock.calls;
+    expect(posts.map((call) => call[2].attachmentIds)).toEqual([
+      ['upload-1', 'upload-2'],
+      ['upload-1', 'upload-2'],
+    ]);
+    // Each upload is keyed by its staged file, so a resend the client cannot reuse (it reloaded,
+    // or the reuse window passed) still gets the space's first upload back, never a second one.
+    const keys = vi.mocked(transport.uploadRemoteCommunityAttachment).mock.calls.map((c) => c[3]);
+    expect(keys).toEqual([expect.stringMatching(/^file:/), expect.stringMatching(/^file:/)]);
+    expect(keys[0]).not.toBe(keys[1]);
+
+    // The same file staged again is a new file with its own upload.
+    act(() => result.current.attachments.add([new File(['a'], 'a.txt')]));
+    act(() => result.current.send());
+    await waitFor(() => expect(receipt).toHaveBeenCalledTimes(2));
+    expect(transport.uploadRemoteCommunityAttachment).toHaveBeenCalledTimes(3);
+  });
+
+  it('re-uploads under the same key once the reuse window has passed', async () => {
+    const { transport, receipt, wrapper } = harness();
+    const onHold = vi.fn();
+    vi.mocked(transport.uploadRemoteCommunityAttachment).mockResolvedValue(file);
+    vi.mocked(transport.postRemoteCommunityEntry)
+      .mockRejectedValueOnce(held('COMMUNITY_MUTED'))
+      .mockResolvedValue(entry);
+    const now = vi.spyOn(Date, 'now');
+    const start = Date.parse('2026-10-12T10:00:00Z');
+    now.mockReturnValue(start);
+    try {
+      const { result } = renderHook(() => useRemoteCommunityDrafts(options(receipt, { onHold })), {
+        wrapper,
+      });
+      act(() => result.current.attachments.add([new File(['a'], 'a.txt')]));
+      act(() => result.current.send());
+      await waitFor(() => expect(onHold).toHaveBeenCalled());
+      now.mockReturnValue(start + 31 * 60_000);
+      act(() => result.current.send());
+      await waitFor(() => expect(receipt).toHaveBeenCalledWith(entry));
+      const keys = vi.mocked(transport.uploadRemoteCommunityAttachment).mock.calls.map((c) => c[3]);
+      expect(keys).toHaveLength(2);
+      expect(keys[1]).toBe(keys[0]);
+    } finally {
+      now.mockRestore();
+    }
+  });
+
   it('still shows any other refusal as a failed row to retry', async () => {
     const { transport, receipt, wrapper } = harness();
     const onHold = vi.fn();
