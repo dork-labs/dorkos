@@ -112,6 +112,7 @@ import type { UserConfig, SidebarItemRef } from '@dorkos/shared/config-schema';
 import type { PermissionAreaId } from '@dorkos/shared/permissions';
 import { logger, logError } from '../../lib/logger.js';
 import { SERVER_VERSION } from '../../lib/version.js';
+import { cacheStoreReads } from './config/cached-store-reads.js';
 import {
   ConfigUnreadableError,
   ConfigMigrationFailedError,
@@ -210,7 +211,7 @@ function loadConfigStore(
   let lastError: unknown;
   for (let attempt = 0; ; attempt++) {
     try {
-      return { store: new Conf<UserConfig>(options) };
+      return { store: cacheStoreReads(new Conf<UserConfig>(options)) };
     } catch (error) {
       lastError = error;
       const kind = classifyConfigLoadFailure(error);
@@ -5361,9 +5362,7 @@ export class ConfigManager {
    */
   onChange(listener: ConfigChangeListener): () => void {
     this.listeners.add(listener);
-    return () => {
-      this.listeners.delete(listener);
-    };
+    return () => void this.listeners.delete(listener);
   }
 
   /** Notify subscribers that the named sections, at the named key paths, were just written. */
