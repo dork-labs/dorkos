@@ -1,6 +1,8 @@
 ---
 covers:
   - 'fix: one chat with an unusual id no longer empties the recent chats list (DOR-2233)'
+  - 'fix(client): keep the strict session id; warn once per unreadable recent session (DOR-2233)'
+  - 'chore: one changelog fragment for DOR-2233'
 ---
 
 ### Fixed
