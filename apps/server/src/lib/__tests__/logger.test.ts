@@ -13,6 +13,9 @@ describe('logger module', () => {
     vi.clearAllMocks();
 
     fs = await import('fs');
+    // The file reporter writes through a handle it keeps open (DOR-2902).
+    vi.mocked(fs.openSync).mockReturnValue(42);
+    vi.mocked(fs.fstatSync).mockReturnValue({ size: 0, ino: 1 } as never);
     loggerModule = await import('../logger.js');
   });
 
@@ -92,7 +95,7 @@ describe('logger module', () => {
     it('adds a file reporter after initialization', () => {
       loggerModule.initLogger({ logDir: '/tmp/test-logs' });
       loggerModule.logger.info('test log entry');
-      expect(vi.mocked(fs.appendFileSync)).toHaveBeenCalled();
+      expect(vi.mocked(fs.writeSync)).toHaveBeenCalled();
     });
   });
 
@@ -110,11 +113,12 @@ describe('logger module', () => {
       loggerModule.initLogger({ level: 5, logDir: '/test/logs' });
       loggerModule.logger.info('hello world');
 
-      const calls = vi.mocked(fs.appendFileSync).mock.calls;
+      const calls = vi.mocked(fs.writeSync).mock.calls;
       expect(calls.length).toBeGreaterThan(0);
 
-      const [filePath, content] = calls[0] as [string, string];
-      expect(filePath).toBe('/test/logs/dorkos.log');
+      const [fd, content] = calls[0] as unknown as [number, string];
+      expect(fd).toBe(42);
+      expect(vi.mocked(fs.openSync)).toHaveBeenCalledWith('/test/logs/dorkos.log', 'a');
 
       const parsed = JSON.parse(content.trim());
       expect(parsed).toMatchObject({
@@ -129,7 +133,7 @@ describe('logger module', () => {
       loggerModule.logger.info('first');
       loggerModule.logger.info('second');
 
-      const calls = vi.mocked(fs.appendFileSync).mock.calls;
+      const calls = vi.mocked(fs.writeSync).mock.calls;
       expect(calls.length).toBeGreaterThanOrEqual(2);
 
       for (const [, content] of calls) {
@@ -141,10 +145,10 @@ describe('logger module', () => {
       loggerModule.initLogger({ level: 5, logDir: '/tmp/test-logs' });
       loggerModule.logger.warn('timestamp test');
 
-      const calls = vi.mocked(fs.appendFileSync).mock.calls;
+      const calls = vi.mocked(fs.writeSync).mock.calls;
       expect(calls.length).toBeGreaterThan(0);
 
-      const [, content] = calls[0] as [string, string];
+      const [, content] = calls[0] as unknown as [number, string];
       const parsed = JSON.parse(content.trim());
       expect(() => new Date(parsed.time)).not.toThrow();
       expect(new Date(parsed.time).toISOString()).toBe(parsed.time);
@@ -241,7 +245,7 @@ describe('logger module', () => {
       expect(vi.mocked(fs.renameSync)).not.toHaveBeenCalled();
     });
 
-    it('cleans up old rotated files beyond maxLogFiles', () => {
+    it('cleans up rotated files from days beyond maxLogFiles', () => {
       const yesterday = new Date();
       yesterday.setDate(yesterday.getDate() - 1);
 
@@ -251,7 +255,7 @@ describe('logger module', () => {
       } as unknown as ReturnType<typeof fs.statSync>);
       vi.mocked(fs.existsSync).mockReturnValue(false);
 
-      // 16 rotated files, maxLogFiles defaults to 14 — should delete 2
+      // 16 days of rotated files, maxLogFiles defaults to 14 days — should delete 2
       const rotatedFiles = Array.from({ length: 16 }, (_, i) => {
         const d = String(i + 1).padStart(2, '0');
         return `dorkos.2026-01-${d}.log`;
@@ -276,7 +280,7 @@ describe('logger module', () => {
       } as unknown as ReturnType<typeof fs.statSync>);
       vi.mocked(fs.existsSync).mockReturnValue(false);
 
-      // 5 rotated files, maxLogFiles=3 — should delete 2
+      // 5 days of rotated files, maxLogFiles=3 days — should delete 2
       const rotatedFiles = Array.from({ length: 5 }, (_, i) => {
         const d = String(i + 1).padStart(2, '0');
         return `dorkos.2026-01-${d}.log`;
@@ -336,10 +340,10 @@ describe('logger module', () => {
       const tagged = loggerModule.createTaggedLogger('Tasks');
       tagged.info('scheduler started');
 
-      const calls = vi.mocked(fs.appendFileSync).mock.calls;
+      const calls = vi.mocked(fs.writeSync).mock.calls;
       expect(calls.length).toBeGreaterThan(0);
 
-      const [, content] = calls[0] as [string, string];
+      const [, content] = calls[0] as unknown as [number, string];
       const parsed = JSON.parse(content.trim());
       expect(parsed.tag).toBe('Tasks');
     });

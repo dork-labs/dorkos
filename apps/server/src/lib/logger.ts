@@ -10,20 +10,43 @@ import { clipFlattenedError, clipLogArgs, normalizeLogContext } from './serializ
  * Provides a singleton logger backed by consola. Before `initLogger()` is called,
  * the logger outputs to console only at info level. After `initLogger()`, it also
  * appends structured NDJSON entries to `{DORK_HOME}/logs/dorkos.log` with automatic
- * daily rotation and configurable size-based rotation.
+ * daily rotation and configurable size-based rotation, both checked as lines are
+ * written.
  *
  * @module lib/logger
  */
 
 const DEFAULT_MAX_LOG_SIZE = 500 * 1024; // 500KB
 const DEFAULT_MAX_LOG_FILES = 14;
+/**
+ * The most the rotated logs may hold on disk together. Rotation runs while the
+ * server is up (DOR-2902), so a busy day makes many files; the day count keeps
+ * the history, and this keeps it from filling a disk.
+ */
+const DEFAULT_MAX_ROTATED_LOG_BYTES = 200 * 1024 * 1024;
 
 // Module-scoped mutable state, set by initLogger()
 let logDir: string | undefined;
 let logFile: string | undefined;
 let maxLogSize = DEFAULT_MAX_LOG_SIZE;
 let maxLogFiles = DEFAULT_MAX_LOG_FILES;
+let maxRotatedLogBytes = DEFAULT_MAX_ROTATED_LOG_BYTES;
 let configuredLevel = 3; // info
+
+// The open log file (DOR-2902). Opening, appending and closing the file for
+// every line cost about 25 µs a line against about 1 µs through a handle kept
+// open, all of it on the event loop. Writes stay synchronous on purpose: a line
+// written just before a crash is the line somebody needs.
+let fd: number | undefined;
+/** Bytes in the open file, counted as they are written. */
+let fileBytes = 0;
+/** The UTC day the open file belongs to. */
+let fileDay: string | undefined;
+/** Size at which the open file is next rotated; moves on if a rotation fails. */
+let rotateAtBytes = DEFAULT_MAX_LOG_SIZE;
+let linesSinceIdentityCheck = 0;
+/** How often the open handle is checked against the path, in lines. */
+const IDENTITY_CHECK_LINES = 500;
 
 /**
  * Create an NDJSON file reporter that appends structured log entries to disk.
@@ -97,7 +120,7 @@ function createFileReporter() {
       }
 
       try {
-        fs.appendFileSync(logFile, entry + '\n');
+        writeLogLine(entry + '\n', formatDate(new Date()));
       } catch {
         // A log that cannot be written is not worth taking the caller down for.
       }
@@ -136,6 +159,79 @@ function extractTag(message: string | undefined): string | undefined {
   return TAG_PREFIX_PATTERN.exec(message)?.[1];
 }
 
+/**
+ * Append one line to the log file through the open handle, rotating first when
+ * the day has turned or the file has grown past its size. Rotation used to run
+ * only at startup, so a server that stayed up wrote one file without limit (one
+ * reached 53 MB).
+ *
+ * Every {@link IDENTITY_CHECK_LINES} lines the handle is checked against the
+ * path: a file deleted or moved aside by somebody else is reopened, rather than
+ * written to unseen. Somebody else is usually the CLI, whose `initLogger`
+ * rotates at its own start; until the check, lines go to the renamed file,
+ * which is kept like any rotated file.
+ *
+ * @param line - The NDJSON line, newline included.
+ * @param day - Today's UTC day, `YYYY-MM-DD`, by the same clock that dated the
+ *   open file.
+ */
+function writeLogLine(line: string, day: string): void {
+  if (fd === undefined) {
+    openLogFile();
+  } else if (day !== fileDay || fileBytes >= rotateAtBytes) {
+    closeLogFile();
+    rotateIfNeeded();
+    openLogFile();
+  } else if (++linesSinceIdentityCheck >= IDENTITY_CHECK_LINES) {
+    linesSinceIdentityCheck = 0;
+    if (!handleStillAtPath()) {
+      closeLogFile();
+      openLogFile();
+    }
+  }
+  if (fd === undefined) return;
+  fs.writeSync(fd, line);
+  fileBytes += Buffer.byteLength(line);
+}
+
+/** Open the log file for appending and take its size and day. */
+function openLogFile(): void {
+  if (!logFile) return;
+  try {
+    fd = fs.openSync(logFile, 'a');
+    fileBytes = fs.fstatSync(fd).size;
+  } catch {
+    fd = undefined;
+    fileBytes = 0;
+  }
+  fileDay = formatDate(new Date());
+  // A file still over the size after a rotation was tried (the rename failed)
+  // is tried again only after another full size, not on every line.
+  rotateAtBytes = fileBytes >= maxLogSize ? fileBytes + maxLogSize : maxLogSize;
+  linesSinceIdentityCheck = 0;
+}
+
+/** Close the open log file, if any. */
+function closeLogFile(): void {
+  if (fd === undefined) return;
+  try {
+    fs.closeSync(fd);
+  } catch {
+    // Already gone; nothing to release.
+  }
+  fd = undefined;
+}
+
+/** Whether the open handle is still the file at the log path. */
+function handleStillAtPath(): boolean {
+  if (fd === undefined || !logFile) return false;
+  try {
+    return fs.statSync(logFile).ino === fs.fstatSync(fd).ino;
+  } catch {
+    return false;
+  }
+}
+
 /** Format a date as YYYY-MM-DD. */
 function formatDate(d: Date): string {
   return d.toISOString().slice(0, 10);
@@ -146,9 +242,11 @@ function formatDate(d: Date): string {
  *
  * - If `dorkos.log` mtime is from a previous day, rename to `dorkos.YYYY-MM-DD.log`
  * - If `dorkos.log` exceeds maxLogSize, rename to `dorkos.YYYY-MM-DD.N.log`
- * - Cleanup: delete rotated files beyond maxLogFiles
+ * - Cleanup: keep the newest maxLogFiles days, within a total size
  *
- * Errors during rotation are silently ignored to avoid crashing on startup.
+ * Runs at startup and again whenever a write finds the day turned or the file
+ * full. Errors during rotation are silently ignored: logging carries on in the
+ * file as it is.
  */
 function rotateIfNeeded(): void {
   if (!logDir || !logFile) return;
@@ -170,7 +268,7 @@ function rotateIfNeeded(): void {
         fs.renameSync(logFile, path.join(logDir, `dorkos.${fileDate}.${seq}.log`));
       }
       rotated = true;
-    } else if (stat.size > maxLogSize) {
+    } else if (stat.size >= maxLogSize) {
       // Size rotation within same day
       const seq = nextSequenceNumber(today);
       fs.renameSync(logFile, path.join(logDir, `dorkos.${today}.${seq}.log`));
@@ -202,17 +300,51 @@ function nextSequenceNumber(date: string): number {
   }
 }
 
-/** Delete rotated log files beyond maxLogFiles. */
+/** A file's size, or 0 when it is already gone. */
+function sizeOf(filePath: string): number {
+  try {
+    return fs.statSync(filePath).size;
+  } catch {
+    return 0;
+  }
+}
+
+/** A rotated log file's name, parsed: `dorkos.YYYY-MM-DD[.N].log`. */
+const ROTATED_LOG_PATTERN = /^dorkos\.(\d{4}-\d{2}-\d{2})(?:\.(\d+))?\.log$/;
+
+/**
+ * Delete rotated log files outside the newest `maxLogFiles` days, then the
+ * oldest of the rest until they fit the total size (`maxRotatedLogBytes`, default
+ * {@link DEFAULT_MAX_ROTATED_LOG_BYTES}).
+ *
+ * Ordered by the parsed day and sequence number, never by name: as text,
+ * `.10.log` sorts before `.9.log`, so once a busy day passed ten rotations the
+ * newest files were the ones deleted (DOR-2902 review).
+ */
 function cleanupOldFiles(): void {
   if (!logDir) return;
   try {
-    const files = fs
+    const rotated = fs
       .readdirSync(logDir)
-      .filter((f) => /^dorkos\.\d{4}-\d{2}-\d{2}(\.\d+)?\.log$/.test(f))
-      .sort()
-      .reverse();
-    for (const old of files.slice(maxLogFiles)) {
-      fs.unlinkSync(path.join(logDir, old));
+      .flatMap((name) => {
+        const match = ROTATED_LOG_PATTERN.exec(name);
+        // The undated-sequence file is the day's last: the midnight rename
+        // comes after that day's size rotations.
+        const seq = match?.[2] === undefined ? Infinity : Number(match[2]);
+        return match ? [{ name, day: match[1]!, seq }] : [];
+      })
+      .sort((a, b) => (a.day === b.day ? b.seq - a.seq : a.day < b.day ? 1 : -1));
+    const keptDays = new Set([...new Set(rotated.map((file) => file.day))].slice(0, maxLogFiles));
+    let total = 0;
+    for (const file of rotated) {
+      const filePath = path.join(logDir, file.name);
+      total += keptDays.has(file.day) ? sizeOf(filePath) : Infinity;
+      if (total <= maxRotatedLogBytes) continue;
+      try {
+        fs.unlinkSync(filePath);
+      } catch {
+        // Already gone; nothing to delete.
+      }
     }
   } catch {
     // Cleanup failure is non-fatal
@@ -276,18 +408,23 @@ export let logger = createClippedConsola(3); // info
  * @param options.logDir - Log directory path (required).
  * @param options.level - Numeric log level (0=fatal … 5=trace). Defaults to 4 (debug) in dev, 3 (info) in production.
  * @param options.maxLogSize - Max log file size in bytes before rotation. Defaults to 500KB.
- * @param options.maxLogFiles - Max number of rotated log files to retain. Defaults to 14.
+ * @param options.maxLogFiles - How many days of rotated logs to keep. Defaults to 14.
+ * @param options.maxRotatedLogBytes - The most those days may hold together; the
+ *   oldest files go first. Defaults to 200 MB.
  */
 export function initLogger(options: {
   logDir: string;
   level?: number;
   maxLogSize?: number;
   maxLogFiles?: number;
+  maxRotatedLogBytes?: number;
 }): void {
+  closeLogFile();
   logDir = options.logDir;
   logFile = path.join(logDir, 'dorkos.log');
   maxLogSize = options?.maxLogSize ?? DEFAULT_MAX_LOG_SIZE;
   maxLogFiles = options?.maxLogFiles ?? DEFAULT_MAX_LOG_FILES;
+  maxRotatedLogBytes = options?.maxRotatedLogBytes ?? DEFAULT_MAX_ROTATED_LOG_BYTES;
 
   fs.mkdirSync(logDir, { recursive: true });
   rotateIfNeeded();
