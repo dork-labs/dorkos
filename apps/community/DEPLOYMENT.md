@@ -219,6 +219,18 @@ The page sends the confirmation when the person submits the form or chooses Goog
 
 This is a person's own word, not a check of their age. Invitations and owner claims work exactly as before.
 
+## Optional allowed countries
+
+You can open sign-up only to people who live in certain countries. Set `COMMUNITY_ALLOWED_COUNTRIES` to a comma-separated list of two-letter country codes in capitals, such as `US` or `US,CA` (the ISO 3166-1 codes: `GB` for the United Kingdom, not `UK`). Leave it unset and anyone can sign up, exactly as before. The service refuses to start with anything that is not a real country code.
+
+When it is set, every sign-up form names the countries, for example "Open to people who live in the United States," and the box the person ticks says "I live in the United States." If you also set a minimum age, one box covers both. It works the same way as the age question: every way of creating an account (email and password, Google, GitHub, single sign-on, the first owner, an owner claim, and joining an open space) checks it, the tick lasts 30 minutes in that browser and is used up once the account is made, and changing the list asks again, even of someone who confirmed the old one.
+
+It applies to new accounts only. People who already have an account sign in as before, and an existing account can still join an open space here, wherever it is. A page that leads with single sign-on can't tell a new person from someone who already has an account, so there the countries box says "I'm new here and live in the United States" and is never required. Someone new who skips it creates no account and comes back with a note asking them to tick it. A minimum age is still required there, as before.
+
+**An optional proxy check.** If your service sits behind a proxy that adds the visitor's country to each request (Cloudflare's `CF-IPCountry`, for example), set `COMMUNITY_COUNTRY_HEADER` to that header's name. A sign-up whose header names a country outside your list is then refused with "Sign-up isn't open in your country yet." A request with no header, or one that says the country is unknown (`XX`), is not refused: the person's own word stands. The service only reads the header when you name it, and refuses to start if you name one without `COMMUNITY_ALLOWED_COUNTRIES`. Name it only when every request reaches the service through that proxy; otherwise anyone could send the header themselves.
+
+Neither check is proof of where someone lives. A person can tick the box anyway, and a VPN changes the country a proxy sees. Treat this as a way to keep a launch to the places you plan to serve, not as a legal guarantee.
+
 ## Optional Render deployment
 
 Render is an optional managed deployment. It does not change Community identity or access rules. The Community still owns its own database, secrets, and files.

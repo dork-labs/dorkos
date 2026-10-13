@@ -11,6 +11,7 @@ const NO_PROVIDERS: CommunityWireAuthOptions = {
   github: false,
   oidc: null,
   minimumAge: null,
+  allowedCountries: null,
   emailLinks: false,
 };
 
@@ -21,8 +22,9 @@ export interface SignInOptionsState {
 }
 
 /**
- * The sign-in buttons this host offers beside email and password, the minimum age a new account
- * must confirm, and whether they have been read yet. A failed read counts as read, with none.
+ * The sign-in buttons this host offers beside email and password, the minimum age and countries
+ * a new account must confirm, and whether they have been read yet. A failed read counts as read,
+ * with none.
  */
 export function useSignInOptionsState(): SignInOptionsState {
   const [state, setState] = useState<SignInOptionsState>({ options: NO_PROVIDERS, loaded: false });
@@ -80,6 +82,9 @@ const MESSAGES: Record<string, string> = {
   admission_refused: "You can't join this space.",
   age_confirmation_required:
     'Your account was not created. Choose to create an account, tick the box that confirms your age, then try again.',
+  country_confirmation_required:
+    'No account was made. Tick the box that confirms where you live, then try again.',
+  country_not_open: "Sign-up isn't open in your country yet.",
   account_not_linked:
     "That sign-in didn't confirm your email, so it wasn't linked. Sign in with your password.",
   link_needs_password: 'This email already has an account here.',
@@ -101,6 +106,9 @@ const MESSAGES: Record<string, string> = {
 const SIGN_IN_ONLY_MESSAGES: Record<string, string> = {
   age_confirmation_required:
     'There is no account here for that sign-in yet, and this page only signs in to existing accounts. Create your account from your invitation link first, then come back.',
+  country_confirmation_required:
+    'There is no account here for that sign-in yet, and this page only signs in to existing accounts. Create your account from your invitation link first, then come back.',
+  country_not_open: "No account here for that sign-in, and sign-up isn't open in your country.",
 };
 
 /**
