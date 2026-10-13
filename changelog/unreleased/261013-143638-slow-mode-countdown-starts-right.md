@@ -5,4 +5,4 @@ covers:
 
 ### Fixed
 
-- In a space with slow mode, the wait shown after a held post now starts at the time the space gave, not one second more.
+- Spaces (experimental): in a channel with slow mode, the wait shown after a held post now starts at the time the space gave, not one second more.
