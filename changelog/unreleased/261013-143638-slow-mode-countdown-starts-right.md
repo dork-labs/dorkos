@@ -1,6 +1,7 @@
 ---
 covers:
   - 'fix(client): slow mode counts down from the wait the space named'
+  - 'fix(client): label the slow-mode fragment as Spaces (experimental)'
 ---
 
 ### Fixed
