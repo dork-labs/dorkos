@@ -19,7 +19,7 @@ import { appRoutes } from '@/layers/shared/lib';
  *
  * @module features/dashboard-sidebar/ui/SidebarChrome
  */
-import { createContext, useCallback, useContext, useMemo, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, type ReactNode } from 'react';
 import { useNavigate, useRouter, useRouterState } from '@tanstack/react-router';
 import { useQueryClient } from '@tanstack/react-query';
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
@@ -48,6 +48,9 @@ import { getRuntimeDescriptor } from '@/layers/entities/runtime';
 import { hasUnread, useRooms, useRoomOpenThreadStore, useTeamRoom } from '@/layers/entities/room';
 import {
   beginSessionNavigation,
+  markPendingSessionTarget,
+  clearPendingSessionTarget,
+  usePendingSessionTarget,
   notifySessionLookupFailed,
   resolveSessionForCwd,
   useStartNewSession,
@@ -184,6 +187,12 @@ export interface SidebarChromeValue {
    * needs and reaches nothing else.
    */
   homeRoomId: string | null;
+  /**
+   * The agent a click is heading to while its chat is looked up, or `null`.
+   * Tint only, for the same reason as `homeRoomId`: the anchor, the rollup and
+   * Today keep following what is actually open (DOR-2891).
+   */
+  pendingAgentPath: string | null;
   /** Open whatever a row points at, and remember that it was opened (BC-16). */
   openTarget: (target: SidebarTarget) => void;
   /** Start a session, optionally scoped to one agent's directory. */
@@ -372,7 +381,7 @@ export function SidebarChrome({ activeTarget, children }: SidebarChromeProps) {
       // answered by that record, and it has to survive walking away to
       // Marketplace or Team — which the router's `?dir` does not.
       if (cwd !== null) useInteractionStore.getState().recordOpened('agent', cwd);
-      navigate(toSession({ dir: cwd ?? undefined, session: sessionId }));
+      return navigate(toSession({ dir: cwd ?? undefined, session: sessionId }));
     },
     [navigate]
   );
@@ -388,6 +397,8 @@ export function SidebarChrome({ activeTarget, children }: SidebarChromeProps) {
       // agent click, and by any of the app's other navigations, which it
       // notices through the router's own location.
       const isStillWanted = beginSessionNavigation(() => router.state.location);
+      // The row shows the click landed while the lookup is out (DOR-2891).
+      const clearPending = markPendingSessionTarget(agentPath);
       void resolveSessionForCwd({ queryClient, transport }, agentPath)
         .then(async (resolved) => {
           if (!isStillWanted()) return;
@@ -400,8 +411,8 @@ export function SidebarChrome({ activeTarget, children }: SidebarChromeProps) {
               session: resolved.sessionId,
               dir: agentPath,
             });
-            if (isStillWanted()) void navigate(target);
-          } else openSession(resolved.sessionId, agentPath);
+            if (isStillWanted()) await navigate(target);
+          } else await openSession(resolved.sessionId, agentPath);
         })
         .catch((error: unknown) => {
           // The resolver handles its own failures, so a throw here is a defect
@@ -409,9 +420,10 @@ export function SidebarChrome({ activeTarget, children }: SidebarChromeProps) {
           // died in silence.
           reportClientError(transport, error);
           if (isStillWanted()) notifySessionLookupFailed(agentPath);
-        });
+        })
+        .finally(clearPending);
     },
-    [openSession, queryClient, router, transport]
+    [navigate, openSession, queryClient, router, transport]
   );
 
   // DorkBot, found the only way the client can: `isSystem` is the flag on the
@@ -459,12 +471,17 @@ export function SidebarChrome({ activeTarget, children }: SidebarChromeProps) {
   // documents: this must not become a second opinion about what is "active".
   const onHome = useRouterState({ select: (state) => state.location.pathname === '/' });
   const homeRoomId = onHome ? teamRoomId : null;
+  // An agent click still finding out which chat to open lights its row at once.
+  // Any navigation, that click's own included, hands the answer back to the
+  // router's location, so a lookup that was overtaken cannot keep a row lit.
+  const pendingAgentPath = usePendingSessionTarget();
+  useEffect(() => router.subscribe('onBeforeNavigate', clearPendingSessionTarget), [router]);
 
   const openTarget = useCallback(
     (target: SidebarTarget) => {
       switch (target.kind) {
         case 'session':
-          openSession(target.sessionId, target.cwd);
+          void openSession(target.sessionId, target.cwd);
           return;
         case 'agent':
           openAgent(target.path);
@@ -590,6 +607,7 @@ export function SidebarChrome({ activeTarget, children }: SidebarChromeProps) {
       bootSettled,
       activeTarget,
       homeRoomId,
+      pendingAgentPath,
       openTarget,
       newSession: (dir?: string) => startNewSession(dir),
       viewProfileFor,
@@ -621,6 +639,7 @@ export function SidebarChrome({ activeTarget, children }: SidebarChromeProps) {
       bootSettled,
       activeTarget,
       homeRoomId,
+      pendingAgentPath,
       openTarget,
       startNewSession,
       viewProfileFor,

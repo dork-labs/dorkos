@@ -40,6 +40,7 @@ import { TransportProvider, useAppStore, useTransport } from '@/layers/shared/mo
 import {
   useSessionDetail,
   useSessionChatStore,
+  sessionKeys,
   type SessionScopedCwd,
 } from '@/layers/entities/session';
 import { useTaskState } from '../model/use-task-state';
@@ -68,7 +69,7 @@ function createHarness() {
       <TransportProvider transport={transport}>{children}</TransportProvider>
     </QueryClientProvider>
   );
-  return { transport, wrapper };
+  return { transport, wrapper, queryClient };
 }
 
 beforeEach(() => {
@@ -93,6 +94,21 @@ describe('session-scoped queries and the working directory', () => {
     });
     expect(transport.getSession).toHaveBeenCalledTimes(1);
     expect(transport.getSession).not.toHaveBeenCalledWith(SESSION_ID, '/unrelated/project');
+  });
+
+  it('reads the detail once when a list naming its folder lands afterwards (DOR-2891)', async () => {
+    const { transport, wrapper, queryClient } = createHarness();
+    const { result, rerender } = renderHook(() => useSessionDetail(SESSION_ID), { wrapper });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    act(() => {
+      queryClient.setQueryData(sessionKeys.list('/agent'), [
+        { ...(result.current.data as object), id: SESSION_ID, cwd: '/agent' },
+      ]);
+    });
+    // Any later render (a status tick, a sibling's state) must not re-key it.
+    rerender();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(transport.getSession).toHaveBeenCalledTimes(1);
   });
 
   it('the session’s tasks are requested once, without a directory nothing named', async () => {

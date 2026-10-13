@@ -8,6 +8,7 @@ import { resolveSessionForCwd, notifySessionLookupFailed } from '../../lib/resol
 import { useSessionRouteContext, setSessionRouteContext } from './session-route-context';
 import { reportClientError, toSession, newSessionTarget } from '@/layers/shared/lib';
 import { beginSessionNavigation } from '../../lib/session-navigation-intent';
+import { markPendingSessionTarget } from './pending-session-target';
 
 /** Options for the directory setter returned by {@link useDirectoryState}. */
 export interface SetDirOptions {
@@ -69,6 +70,7 @@ export function useDirectoryState(): [
           return;
         }
         const isStillWanted = beginSessionNavigation(() => router.state.location);
+        const clearPending = markPendingSessionTarget(dir);
         // Always include a session ID so the URL has ?session=; without it the
         // chat input cannot accept text.
         //
@@ -94,8 +96,8 @@ export function useDirectoryState(): [
               : toSession({ session: resolved.sessionId });
             if (!isStillWanted()) return;
             setStoreDir(dir);
-            void navigate(target);
             opts?.onOpened?.();
+            await navigate(target);
           })
           .catch((error: unknown) => {
             reportClientError(transport, error);
@@ -104,7 +106,8 @@ export function useDirectoryState(): [
             // out — a defect is worth knowing about even when the person has
             // moved on; it is only the message TO THEM that would be a lie.
             if (isStillWanted()) notifySessionLookupFailed(dir);
-          });
+          })
+          .finally(clearPending);
         return;
       }
       void navigate(toSession((prev) => ({ ...prev, dir: undefined })));

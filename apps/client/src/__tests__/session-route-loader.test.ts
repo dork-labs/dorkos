@@ -1,14 +1,39 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { QueryClient } from '@tanstack/react-query';
 import { createMockTransport, createMockSession } from '@dorkos/test-utils';
-import { sessionRouteLoader, sessionLoaderDeps } from '../router';
+import { sessionRouteLoader, sessionLoaderDeps, reloadSessionMatches } from '../router';
 import { sessionSearchSchema, newSessionTarget } from '@/layers/shared/lib';
-import { getSessionRouteContext, sessionKeys } from '@/layers/entities/session';
+import {
+  clearSessionRouteContext,
+  getSessionRouteContext,
+  sessionKeys,
+  setSessionRouteContext,
+} from '@/layers/entities/session';
+import type { Session } from '@dorkos/shared/types';
+import { toast } from 'sonner';
+
+vi.mock('sonner', () => ({ toast: vi.fn() }));
 
 let transport: ReturnType<typeof createMockTransport>;
 let queryClient: QueryClient;
 beforeEach(() => {
+  // The route context is a module-level store: a chat an earlier test resolved
+  // would otherwise open from it here without asking the server.
+  for (const id of [
+    'existing',
+    'missing',
+    'a',
+    'b',
+    'cached',
+    'gone',
+    'gone2',
+    'gone3',
+    'gone4',
+    'hovered',
+  ])
+    clearSessionRouteContext(id);
   transport = createMockTransport();
+  reloadRoute = vi.fn<(sessionId: string) => void>();
   queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   vi.mocked(transport.createSessionLocation).mockResolvedValue({ id: 'opaque-location' });
   vi.mocked(transport.getSessionLocation).mockResolvedValue({ cwd: '/chosen/project' });
@@ -18,9 +43,10 @@ beforeEach(() => {
     createMockSession({ id: 'existing', cwd: '/actual/project' })
   );
 });
+let reloadRoute: ReturnType<typeof vi.fn<(sessionId: string) => void>>;
 function run(search: Parameters<typeof sessionSearchSchema.parse>[0]) {
   return sessionRouteLoader({
-    context: { queryClient, transport },
+    context: { queryClient, transport, reloadRoute },
     deps: sessionLoaderDeps({ search: sessionSearchSchema.parse(search) }),
   });
 }
@@ -224,5 +250,221 @@ describe('session route identity and launch lifecycle', () => {
     expect(
       sessionLoaderDeps({ search: sessionSearchSchema.parse({ session: 'a', panel: 'profile' }) })
     ).not.toHaveProperty('panel');
+  });
+});
+
+describe('opening a chat this window already knows (DOR-2891)', () => {
+  /** A getSession that never answers: a loader that waits on it never returns. */
+  function serverHangs() {
+    vi.mocked(transport.getSession).mockImplementation(() => new Promise<Session>(() => {}));
+  }
+
+  it('opens from a cached list row without waiting on the server', async () => {
+    queryClient.setQueryData(sessionKeys.list('/agent'), [
+      createMockSession({ id: 'cached', cwd: '/agent/sub', runtime: 'codex' }),
+    ]);
+    serverHangs();
+    await run({ session: 'cached' });
+    expect(getSessionRouteContext('cached')).toEqual({
+      cwd: '/agent/sub',
+      draft: false,
+      runtime: 'codex',
+    });
+    // Still checked, under the row's own directory, in the background.
+    expect(transport.getSession).toHaveBeenCalledWith('cached', '/agent/sub');
+  });
+
+  it('opens from the cross-agent recent window too', async () => {
+    queryClient.setQueryData(sessionKeys.recent(20), {
+      sessions: [createMockSession({ id: 'cached', cwd: '/recent' })],
+    });
+    serverHangs();
+    await run({ session: 'cached' });
+    expect(getSessionRouteContext('cached')?.cwd).toBe('/recent');
+  });
+
+  it('reopens a chat it resolved before without waiting', async () => {
+    await run({ session: 'existing' });
+    serverHangs();
+    await run({ session: 'existing' });
+    expect(getSessionRouteContext('existing')?.cwd).toBe('/actual/project');
+  });
+
+  it('asks once while a check of the same chat is already out', async () => {
+    queryClient.setQueryData(sessionKeys.list('/agent'), [
+      createMockSession({ id: 'cached', cwd: '/agent' }),
+    ]);
+    // A legacy link's redirect runs the loader twice in a row.
+    await run({ session: 'cached' });
+    await run({ session: 'cached' });
+    await vi.waitFor(() =>
+      expect(queryClient.getQueryData(sessionKeys.detail('cached', '/agent'))).toBeDefined()
+    );
+    expect(transport.getSession).toHaveBeenCalledTimes(1);
+  });
+
+  it('still drops a legacy directory from the address', async () => {
+    queryClient.setQueryData(sessionKeys.list('/agent'), [
+      createMockSession({ id: 'cached', cwd: '/agent' }),
+    ]);
+    serverHangs();
+    expect(await destination({ session: 'cached', dir: '/agent' })).toMatchObject({
+      session: 'cached',
+      dir: undefined,
+    });
+  });
+
+  it('opens the agent instead when a chat opened from its list is gone', async () => {
+    // A hidden tab can miss the event that removed a chat, and a reconnect now
+    // opens from that list at once. Waiting for a fresh list used to land on a
+    // chat that exists; so does this.
+    queryClient.setQueryData(sessionKeys.list('/agent'), [
+      createMockSession({ id: 'gone', cwd: '/agent' }),
+      createMockSession({ id: 'kept', cwd: '/agent' }),
+    ]);
+    const missing = Object.assign(new Error('Missing'), { status: 404 });
+    vi.mocked(transport.getSession).mockRejectedValue(missing);
+    await run({ session: 'gone' });
+    await vi.waitFor(() => expect(reloadRoute).toHaveBeenCalledWith('gone'));
+    expect(getSessionRouteContext('gone')).toBeUndefined();
+    expect(
+      queryClient.getQueryData<Session[]>(sessionKeys.list('/agent'))?.map((s) => s.id)
+    ).toEqual(['kept']);
+    const redirected = await run({ session: 'gone' }).catch((error: unknown) => error);
+    expect((redirected as { options: { search: unknown } }).options.search).toMatchObject({
+      launchRef: 'opaque-location',
+    });
+    expect(transport.createSessionLocation).toHaveBeenCalledWith('/agent');
+    // Said, not swapped in silently.
+    expect(toast).toHaveBeenCalledWith('That chat is gone. Opened the agent’s latest chat.');
+    // Once only: a second miss is the real error, never a loop.
+    await expect(run({ session: 'gone' })).rejects.toBe(missing);
+  });
+
+  it('shows the real error for a gone chat this window had opened itself', async () => {
+    setSessionRouteContext('gone2', { cwd: '/agent', draft: false });
+    const missing = Object.assign(new Error('Missing'), { status: 404 });
+    vi.mocked(transport.getSession).mockRejectedValue(missing);
+    await run({ session: 'gone2' });
+    await vi.waitFor(() => expect(reloadRoute).toHaveBeenCalledWith('gone2'));
+    await expect(run({ session: 'gone2' })).rejects.toBe(missing);
+  });
+
+  it('a hover preload’s 404 still reaches the click that reuses it', async () => {
+    // A click within the preload's stale time reuses its match without loading
+    // again, so the preload's background check is the only one that click gets.
+    queryClient.setQueryData(sessionKeys.list('/agent'), [
+      createMockSession({ id: 'hovered', cwd: '/agent' }),
+    ]);
+    const missing = Object.assign(new Error('Missing'), { status: 404 });
+    vi.mocked(transport.getSession).mockRejectedValue(missing);
+    await sessionRouteLoader({
+      context: { queryClient, transport, reloadRoute },
+      deps: sessionLoaderDeps({ search: sessionSearchSchema.parse({ session: 'hovered' }) }),
+      preload: true,
+    });
+    await vi.waitFor(() => expect(reloadRoute).toHaveBeenCalledWith('hovered'));
+    // The preload's own second run leaves the fallback to the click…
+    await expect(
+      sessionRouteLoader({
+        context: { queryClient, transport, reloadRoute },
+        deps: sessionLoaderDeps({ search: sessionSearchSchema.parse({ session: 'hovered' }) }),
+        preload: true,
+      })
+    ).rejects.toBe(missing);
+    // …which lands on the agent.
+    const redirected = await run({ session: 'hovered' }).catch((error: unknown) => error);
+    expect((redirected as { options: { search: unknown } }).options.search).toMatchObject({
+      launchRef: 'opaque-location',
+    });
+  });
+
+  it('opens the agent whose list held the chat, not the chat’s own subfolder', async () => {
+    // A broad folder somebody once opened holds it too, and is not the agent.
+    queryClient.setQueryData(sessionKeys.list('/'), [
+      createMockSession({ id: 'gone3', cwd: '/project/apps/desktop' }),
+    ]);
+    queryClient.setQueryData(sessionKeys.list('/project'), [
+      createMockSession({ id: 'gone3', cwd: '/project/apps/desktop' }),
+    ]);
+    vi.mocked(transport.getSession).mockRejectedValue(
+      Object.assign(new Error('Missing'), { status: 404 })
+    );
+    await run({ session: 'gone3' });
+    await vi.waitFor(() => expect(reloadRoute).toHaveBeenCalledWith('gone3'));
+    await run({ session: 'gone3' }).catch(() => {});
+    expect(transport.createSessionLocation).toHaveBeenCalledWith('/project');
+  });
+
+  it('shows the real error for a gone chat no agent list holds', async () => {
+    queryClient.setQueryData(sessionKeys.recent(20), {
+      sessions: [createMockSession({ id: 'gone4', cwd: '/recent' })],
+    });
+    const missing = Object.assign(new Error('Missing'), { status: 404 });
+    vi.mocked(transport.getSession).mockRejectedValue(missing);
+    await run({ session: 'gone4' });
+    await vi.waitFor(() => expect(reloadRoute).toHaveBeenCalledWith('gone4'));
+    await expect(run({ session: 'gone4' })).rejects.toBe(missing);
+  });
+
+  it('corrects a stale directory from the server’s answer', async () => {
+    await run({ session: 'existing' });
+    expect(getSessionRouteContext('existing')?.cwd).toBe('/actual/project');
+    vi.mocked(transport.getSession).mockResolvedValue(
+      createMockSession({ id: 'existing', cwd: '/moved/project' })
+    );
+    await run({ session: 'existing' });
+    await vi.waitFor(() => expect(getSessionRouteContext('existing')?.cwd).toBe('/moved/project'));
+    // Filed under the corrected directory too, so the page's read there does
+    // not ask a second time.
+    expect(
+      queryClient.getQueryData(sessionKeys.detail('existing', '/moved/project'))
+    ).toMatchObject({ cwd: '/moved/project' });
+  });
+
+  it('corrects a placeholder runtime from the server’s answer', async () => {
+    setSessionRouteContext('cached', { cwd: '/agent', draft: false, runtime: 'claude-code' });
+    vi.mocked(transport.getSession).mockResolvedValue(
+      createMockSession({ id: 'cached', cwd: '/agent', runtime: 'codex' })
+    );
+    await run({ session: 'cached' });
+    await vi.waitFor(() => expect(getSessionRouteContext('cached')?.runtime).toBe('codex'));
+  });
+
+  it('leaves a chat still being started to its own draft path', async () => {
+    setSessionRouteContext('cached', { cwd: '/agent', draft: true });
+    queryClient.setQueryData(sessionKeys.list('/agent'), [
+      createMockSession({ id: 'cached', cwd: '/agent' }),
+    ]);
+    const missing = Object.assign(new Error('Missing'), { status: 404 });
+    vi.mocked(transport.getSession).mockRejectedValue(missing);
+    await expect(run({ session: 'cached' })).rejects.toBe(missing);
+    expect(getSessionRouteContext('cached')?.draft).toBe(true);
+  });
+
+  it('does not count an outage as the chat being gone', async () => {
+    queryClient.setQueryData(sessionKeys.list('/agent'), [
+      createMockSession({ id: 'cached', cwd: '/agent' }),
+    ]);
+    vi.mocked(transport.getSession).mockRejectedValue(
+      Object.assign(new Error('Unavailable'), { status: 503 })
+    );
+    await run({ session: 'cached' });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(reloadRoute).not.toHaveBeenCalled();
+    expect(getSessionRouteContext('cached')?.cwd).toBe('/agent');
+  });
+});
+
+describe('reloading after a background check (DOR-2891)', () => {
+  it('reloads every match for the gone chat, and only those', () => {
+    const invalidate = vi.fn(
+      async (_opts: { filter: (match: { search: unknown }) => boolean }) => {}
+    );
+    reloadSessionMatches({ invalidate }, 'gone');
+    const { filter } = invalidate.mock.calls[0]![0];
+    expect(filter({ search: { session: 'gone' } })).toBe(true);
+    expect(filter({ search: { session: 'other' } })).toBe(false);
+    expect(filter({ search: {} })).toBe(false);
   });
 });
