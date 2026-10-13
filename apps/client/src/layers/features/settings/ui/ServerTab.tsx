@@ -210,7 +210,7 @@ function LoggingSection({ config }: { config: ServerConfig }) {
         </div>
       </SettingRow>
 
-      <SettingRow label="Old files kept" description="From 1 to 30.">
+      <SettingRow label="Days of logs kept" description="From 1 to 30, up to 200 MB in all.">
         <Input
           type="number"
           min={1}

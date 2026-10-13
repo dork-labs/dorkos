@@ -2046,6 +2046,8 @@ export const ClaudeCodeSettingsSchema = z.object({
 const LoggingConfigSchema = z.object({
   level: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace']).default('info'),
   maxLogSizeKb: z.number().int().min(100).max(10240).default(500),
+  // Days of rotated logs kept, within 200 MB in all. It counted files until the
+  // log began rotating while the server runs, many files a day (DOR-2902).
   maxLogFiles: z.number().int().min(1).max(30).default(14),
 });
 
