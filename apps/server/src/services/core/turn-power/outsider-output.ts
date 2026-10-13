@@ -23,9 +23,16 @@
  * ## One turn, and what counts
  *
  * Counted per turn on the conversation ({@link turnSerialOf}), so the next
- * turn starts over. Only a post or note that actually went out counts: ask
- * {@link outsiderOutputAllowed} before the send and {@link recordOutsiderOutput}
- * after it, so a send refused for another reason spends nothing.
+ * turn starts over. A renamed conversation is known by two ids, and a turn may
+ * be sent under either; serials only grow, so the newer of the two names the
+ * turn. A stranger's turn with no serial on either id (a runtime's own wake
+ * whose first turn ran before a restart) shares one count until a turn is sent
+ * again: rare, stranger-only, and on the side of counting.
+ *
+ * Only a post or note that went out counts: {@link reserveOutsiderOutput}
+ * takes one before the send, so two sends at once cannot both pass, and
+ * {@link releaseOutsiderOutput} gives it back when the send is refused or
+ * fails.
  *
  * A caller that names no session is not counted: no stranger's turn can be
  * placed for it. In memory only; a restart forgets the counts.
@@ -52,42 +59,48 @@ const counts = new Map<string, Record<OutsiderOutputKind, number>>();
 function strangerTurnKeyOf(sessionId: string | null | undefined): string | undefined {
   if (!sessionId || !turnStartedByOutsider(sessionId)) return undefined;
   const primary = primaryOf(sessionId);
-  const serial = turnSerialOf(primary) ?? turnSerialOf(sessionId) ?? 0;
+  const serial = Math.max(turnSerialOf(primary) ?? 0, turnSerialOf(sessionId) ?? 0);
   return `${primary}#${serial}`;
 }
 
 /**
- * Whether the calling turn may send one more of `kind`: always, unless a
- * stranger started it and it has already sent {@link OUTSIDER_TURN_LIMIT}.
+ * Take one post or note from the calling turn's allowance. Answers `false`,
+ * taking nothing, when a stranger started the turn and it has already sent
+ * {@link OUTSIDER_TURN_LIMIT}; `true` otherwise, including for every turn no
+ * stranger started. Give it back with {@link releaseOutsiderOutput} if the
+ * send does not go out.
  *
  * @param kind - What is about to be sent.
  * @param sessionId - The calling session, as the surface verified it.
  */
-export function outsiderOutputAllowed(
+export function reserveOutsiderOutput(
   kind: OutsiderOutputKind,
   sessionId: string | null | undefined
 ): boolean {
   const key = strangerTurnKeyOf(sessionId);
-  return key === undefined || (counts.get(key)?.[kind] ?? 0) < OUTSIDER_TURN_LIMIT;
+  if (key === undefined) return true;
+  const current = counts.get(key) ?? { post: 0, note: 0 };
+  if (current[kind] >= OUTSIDER_TURN_LIMIT) return false;
+  counts.delete(key);
+  counts.set(key, { ...current, [kind]: current[kind] + 1 });
+  if (counts.size > MEMORY) counts.delete(counts.keys().next().value!);
+  return true;
 }
 
 /**
- * Count one post or note that went out from the calling turn. Does nothing
- * for a turn no stranger started.
+ * Give back one post or note a send reserved and did not use.
  *
- * @param kind - What was sent.
- * @param sessionId - The calling session, as the surface verified it.
+ * @param kind - What was not sent.
+ * @param sessionId - The calling session, as it was given to the reservation.
  */
-export function recordOutsiderOutput(
+export function releaseOutsiderOutput(
   kind: OutsiderOutputKind,
   sessionId: string | null | undefined
 ): void {
   const key = strangerTurnKeyOf(sessionId);
-  if (key === undefined) return;
-  const current = counts.get(key) ?? { post: 0, note: 0 };
-  counts.delete(key);
-  counts.set(key, { ...current, [kind]: current[kind] + 1 });
-  if (counts.size > MEMORY) counts.delete(counts.keys().next().value!);
+  const current = key === undefined ? undefined : counts.get(key);
+  if (key === undefined || current === undefined || current[kind] === 0) return;
+  counts.set(key, { ...current, [kind]: current[kind] - 1 });
 }
 
 /**

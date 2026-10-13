@@ -11,9 +11,9 @@
 import type { TurnPermissionLevel } from '@dorkos/shared/agent-runtime';
 import { postLevelFor } from '../../core/turn-power/turn-levels.js';
 import {
-  outsiderOutputAllowed,
   OUTSIDER_TURN_LIMIT,
-  recordOutsiderOutput,
+  releaseOutsiderOutput,
+  reserveOutsiderOutput,
 } from '../../core/turn-power/outsider-output.js';
 import type { RoomAttachment, RoomMoment } from '@dorkos/shared/room-schemas';
 import { logger } from '../../../lib/logger.js';
@@ -258,10 +258,10 @@ export class RoomPosting {
     // **A stranger's turn is still counted** (DOR-2739). Our own agents post as
     // often as they need; a turn a stranger started may post a few messages and
     // no more, so one message from outside the team cannot make it talk without
-    // end. Asked before the write and counted only once the post landed, so a
+    // end. Taken before the write and given back if the write refuses, so a
     // post refused for any other reason spends nothing.
     const countedSession = input.callerSessionId ?? turn?.sessionId;
-    if (!outsiderOutputAllowed('post', countedSession)) {
+    if (!reserveOutsiderOutput('post', countedSession)) {
       logger.info('[rooms] refused a stranger-started turn a further post', {
         roomId,
         authorId: input.authorId,
@@ -280,33 +280,38 @@ export class RoomPosting {
         ? postLevelFor([input.callerSessionId, turn?.sessionId])
         : undefined;
     const { callerSessionId: _caller, ...postInput } = input;
-    const entry = this.post(
-      roomId,
-      {
-        ...postInput,
-        // **What a tool post has never carried, and now must** (spec
-        // `tool-only-room-replies` §D8). The turn-text path passes both; a tool
-        // post passed neither, so `sessionId` fell to `null` and the "answers
-        // this" pointer was simply absent. That was survivable while a deliberate
-        // post was rare. Under the flip it is EVERY agent reply in the product:
-        // the room would stop drawing the pointer, and no entry could be traced
-        // back to the session that wrote it.
-        //
-        // Both facts are in hand at write time — the live claim knows the entry it
-        // is answering, and the `(room, agent)` binding is the session that turn
-        // runs on — so they are filled from there rather than trusted from the
-        // caller. Only for a post made INSIDE a turn: a post with no claim behind
-        // it is answering nothing and belongs to no session here.
-        ...(turn !== undefined
-          ? {
-              answersEntryId: turn.entryId,
-              ...(turn.sessionId !== undefined ? { sessionId: turn.sessionId } : {}),
-            }
-          : {}),
-      },
-      authorLevel
-    );
-    recordOutsiderOutput('post', countedSession);
+    let entry: PostedEntry;
+    try {
+      entry = this.post(
+        roomId,
+        {
+          ...postInput,
+          // **What a tool post has never carried, and now must** (spec
+          // `tool-only-room-replies` §D8). The turn-text path passes both; a tool
+          // post passed neither, so `sessionId` fell to `null` and the "answers
+          // this" pointer was simply absent. That was survivable while a deliberate
+          // post was rare. Under the flip it is EVERY agent reply in the product:
+          // the room would stop drawing the pointer, and no entry could be traced
+          // back to the session that wrote it.
+          //
+          // Both facts are in hand at write time — the live claim knows the entry it
+          // is answering, and the `(room, agent)` binding is the session that turn
+          // runs on — so they are filled from there rather than trusted from the
+          // caller. Only for a post made INSIDE a turn: a post with no claim behind
+          // it is answering nothing and belongs to no session here.
+          ...(turn !== undefined
+            ? {
+                answersEntryId: turn.entryId,
+                ...(turn.sessionId !== undefined ? { sessionId: turn.sessionId } : {}),
+              }
+            : {}),
+        },
+        authorLevel
+      );
+    } catch (err) {
+      releaseOutsiderOutput('post', countedSession);
+      throw err;
+    }
     this.triggers.noteDeliberatePost(roomId, input.authorId);
     return entry;
   }

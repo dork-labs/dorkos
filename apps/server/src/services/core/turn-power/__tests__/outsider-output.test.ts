@@ -15,8 +15,8 @@ import {
 } from '../../../session/resolution/session-key-registry.js';
 import {
   OUTSIDER_TURN_LIMIT,
-  outsiderOutputAllowed,
-  recordOutsiderOutput,
+  releaseOutsiderOutput,
+  reserveOutsiderOutput,
   resetOutsiderOutput,
 } from '../outsider-output.js';
 
@@ -43,13 +43,10 @@ async function turn(sessionId: string, origin: TurnOrigin) {
   }
 }
 
-/** Send `kind` until refused, counting each; how many went out. */
+/** Send `kind` until refused; how many went out. */
 function sendAll(kind: 'post' | 'note', sessionId: string): number {
   let sent = 0;
-  while (outsiderOutputAllowed(kind, sessionId) && sent < 50) {
-    recordOutsiderOutput(kind, sessionId);
-    sent += 1;
-  }
+  while (sent < 50 && reserveOutsiderOutput(kind, sessionId)) sent += 1;
   return sent;
 }
 
@@ -79,7 +76,7 @@ describe('outsider output', () => {
   it('lets a stranger’s turn send a few, then refuses', async () => {
     await turn('stranger-1', STRANGER);
     expect(sendAll('post', 'stranger-1')).toBe(OUTSIDER_TURN_LIMIT);
-    expect(outsiderOutputAllowed('post', 'stranger-1')).toBe(false);
+    expect(reserveOutsiderOutput('post', 'stranger-1')).toBe(false);
   });
 
   it('counts a bridged room turn an outside author started', async () => {
@@ -93,9 +90,12 @@ describe('outsider output', () => {
     expect(sendAll('note', 'stranger-2')).toBe(OUTSIDER_TURN_LIMIT);
   });
 
-  it('spends nothing until a send is recorded', async () => {
+  it('gives back a send that did not go out', async () => {
     await turn('stranger-3', STRANGER);
-    for (let n = 0; n < 10; n += 1) expect(outsiderOutputAllowed('post', 'stranger-3')).toBe(true);
+    for (let n = 0; n < 10; n += 1) {
+      expect(reserveOutsiderOutput('post', 'stranger-3')).toBe(true);
+      releaseOutsiderOutput('post', 'stranger-3');
+    }
     expect(sendAll('post', 'stranger-3')).toBe(OUTSIDER_TURN_LIMIT);
   });
 
@@ -113,7 +113,11 @@ describe('outsider output', () => {
     linkSessionId('born-id', 'sdk-id');
     aliasTurnLevel('born-id', 'sdk-id');
     expect(sendAll('post', 'sdk-id')).toBe(OUTSIDER_TURN_LIMIT);
-    expect(outsiderOutputAllowed('post', 'born-id')).toBe(false);
+    expect(reserveOutsiderOutput('post', 'born-id')).toBe(false);
+    // The next turn is sent under the canonical id: it starts over, by either id.
+    await turn('sdk-id', STRANGER);
+    expect(sendAll('post', 'born-id')).toBe(OUTSIDER_TURN_LIMIT);
+    expect(reserveOutsiderOutput('post', 'sdk-id')).toBe(false);
   });
 
   it('never counts a caller that names no session', () => {

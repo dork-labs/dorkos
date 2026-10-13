@@ -39,6 +39,7 @@ import type {
 import type { StreamEvent } from '@dorkos/shared/types';
 import { turnAgentOf } from '../agent-identity/agent-home.js';
 import { agentIsReadingOutsider, countWhileRunning } from './live-outsider-turns.js';
+import { primaryOf } from '../../session/resolution/session-key-registry.js';
 import {
   ceilingCarriesOutsider,
   levelOfMode,
@@ -277,9 +278,14 @@ export function recordTurnLevels(
           }
           const level = levelForTurn(target, stored, opts);
           remember(turnLevels, sessionId, level);
-          turnSerials.delete(sessionId);
-          turnSerials.set(sessionId, ++nextTurnSerial);
-          if (turnSerials.size > TURN_LEVEL_MEMORY) {
+          // Under the id the turn was sent with AND the conversation's first
+          // id, so a turn sent under a renamed id is the newest by either.
+          const serial = ++nextTurnSerial;
+          for (const id of new Set([sessionId, primaryOf(sessionId)])) {
+            turnSerials.delete(id);
+            turnSerials.set(id, serial);
+          }
+          while (turnSerials.size > TURN_LEVEL_MEMORY) {
             turnSerials.delete(turnSerials.keys().next().value!);
           }
           const events = target.sendMessage(sessionId, content, opts);
