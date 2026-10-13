@@ -380,6 +380,7 @@ import {
   orphanedMirrorSweepDeps,
   sweepOrphanedMirrors,
 } from './services/communities/remote/orphaned-mirror-sweep.js';
+import { ownerNoticeSweep } from './services/notifications/emitters/community-owner-notice-sweep.js';
 import { RemoteRedactionSync } from './services/communities/remote/remote-redaction-sync.js';
 import { registerRemoteCommunityUnregisterCascade } from './services/communities/remote/mesh-unregister-cascade.js';
 import { isCurrentLocalMeshAgent } from './services/communities/remote/local-agent-authority.js';
@@ -1619,8 +1620,7 @@ async function start() {
         authors,
         attachmentRows: attachments,
         attachmentBytes: roomAttachmentBytes,
-        adapters: (communityRef, ownerAuthorId) =>
-          getRemoteCommunityAdapter(communityRef, ownerAuthorId),
+        adapters: getRemoteCommunityAdapter,
         isLocalAgentCurrent: (localAgentId) =>
           meshStartupReconciled && meshCore
             ? isCurrentLocalMeshAgent(meshCore, localAgentId)
@@ -1670,16 +1670,14 @@ async function start() {
   remoteRedactionSync = new RemoteRedactionSync({
     db,
     mirrors: remoteCommunityRuntime.mirrors,
-    readers: (communityRef, ownerAuthorId) =>
-      getRemoteCommunityAdapter(communityRef, ownerAuthorId),
+    readers: getRemoteCommunityAdapter,
     attachmentBytes: roomAttachmentBytes,
     publishRevisions: (localRoomId, seqs) => roomService.publishEntryRevisions(localRoomId, seqs),
   });
   remoteCommunitySubscriptions = new RemoteRoomSubscriptionRuntime({
     bridge: remoteCommunityBridge.current,
     enrollments: remoteCommunityRuntime.enrollments,
-    adapters: (communityRef, ownerAuthorId) =>
-      getRemoteCommunityAdapter(communityRef, ownerAuthorId),
+    adapters: getRemoteCommunityAdapter,
     resolveConnectionAccess: async (communityRef, ownerAuthorId) =>
       (await getRemotePairingService().status(communityRef, ownerAuthorId)).access,
     readOnlyConnections: () => getRemoteConnectionStore().readOnlyConnections(),
@@ -2290,6 +2288,7 @@ async function start() {
     if (meshStartupReconciled) {
       remoteCommunityRuntime?.start();
       remoteCommunitySubscriptions?.start();
+      ownerNoticeSweep.start();
       // Copies left behind by a connection that no longer exists (DOR-2334).
       const subscriptions = remoteCommunitySubscriptions;
       if (remoteCommunityRuntime && subscriptions)
@@ -5216,6 +5215,7 @@ async function shutdownServices() {
   }
   legacyRecordSweep.abort();
   remoteCommunitySubscriptions?.stop();
+  ownerNoticeSweep.stop();
   remoteCommunitySubscriptions = undefined;
   setRemoteCommunitySubscriptionProbe(undefined);
   remoteCommunityRuntime?.stop();

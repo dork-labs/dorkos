@@ -1272,7 +1272,8 @@ const ENTRIES: NotificationRegistryMap = {
   },
 
   'community.owner-replacement': {
-    // Raised by `emitters/community-owner-replacement.ts` from the owner's connection list.
+    // Raised by `emitters/community-owner-replacement.ts` from the owner's connection list and
+    // its hourly background check (`community-owner-notice-sweep.ts`, DOR-2760).
     // `notable`, never `blocking`: nothing is stuck, the wait is at least a week, and the
     // Community also emails the owner; it badges the bell and never reaches a phone.
     kind: 'community.owner-replacement',
@@ -1398,7 +1399,7 @@ export const NOTIFICATION_REGISTRY_KINDS: readonly NotificationKind[] = NOTIFICA
  * rows `ctx.inbox.record` writes for decisions that were never asked.
  *
  * `community.owner-replacement` joined them in DOR-2543. It is raised from the owner's
- * connection list by `emitters/community-owner-replacement.ts`.
+ * connection list, and an hourly background check, by `emitters/community-owner-replacement.ts`.
  */
 export const WIRED_NOTIFICATION_KINDS: readonly NotificationKind[] = [
   'ask.pending',
