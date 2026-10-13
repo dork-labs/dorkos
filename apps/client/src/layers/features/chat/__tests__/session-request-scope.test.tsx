@@ -117,6 +117,26 @@ describe('session-scoped queries and the working directory', () => {
     expect(transport.getTasks).not.toHaveBeenCalledWith(SESSION_ID, CWD);
   });
 
+  it('does not read the history again when the live stream already holds it (DOR-2890)', async () => {
+    const { transport, wrapper } = createHarness();
+    renderHook(
+      () =>
+        useSessionHistory({
+          sessionId: SESSION_ID,
+          sid: SESSION_ID,
+          transport: useTransport(),
+          sessionCwd: { cwd: null },
+          enableMessagePolling: true,
+          isStreaming: false,
+          streamHydrated: true,
+          setMessages: () => {},
+        }),
+      { wrapper }
+    );
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(transport.getMessages).not.toHaveBeenCalled();
+  });
+
   it('the message history goes out with no directory when nothing named one', async () => {
     const { transport, wrapper } = createHarness();
     function Probe({ sessionCwd }: { sessionCwd: SessionScopedCwd }) {
@@ -127,6 +147,7 @@ describe('session-scoped queries and the working directory', () => {
         sessionCwd,
         enableMessagePolling: false,
         isStreaming: false,
+        streamHydrated: false,
         setMessages: () => {},
       });
     }

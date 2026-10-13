@@ -60,7 +60,7 @@ import {
   CommandRegistrySchema,
   HealthResponseSchema,
   ErrorResponseSchema,
-  HistoryMessageSchema,
+  HistoryReadSchema,
   TaskItemSchema,
   TaskSchema,
   TaskRunSchema,
@@ -818,6 +818,14 @@ registry.registerPath({
             "The session's project directory (boundary-checked). Optional for a " +
             'session the server can already place; required for a cold session it cannot.',
         }),
+      since: z
+        .string()
+        .optional()
+        .openapi({
+          description:
+            'A message id. When the history holds it, only that message and the ones after ' +
+            'it come back, with `tail: true`; otherwise the whole history (DOR-2890).',
+        }),
     }),
   },
   responses: {
@@ -825,7 +833,7 @@ registry.registerPath({
       description: 'Message history',
       content: {
         'application/json': {
-          schema: z.object({ messages: z.array(HistoryMessageSchema) }),
+          schema: HistoryReadSchema,
         },
       },
     },

@@ -34,6 +34,7 @@ import type { MeshCore } from '@dorkos/mesh';
 import { getChatMessageService } from '../services/session/chat-messages/chat-message-service.js';
 import type { ChatActivityResponse } from '@dorkos/shared/chat-messages';
 import { stampHistory } from '../services/session/chat-messages/chat-message-stamps.js';
+import { historyRead } from '../services/session/chat-messages/history-read.js';
 import { filterKickoffHistory } from '@dorkos/shared/kickoff';
 import { CREDITS_ACCOUNT_ID } from '@dorkos/shared/account-usage';
 import type { ApiEnv } from '../http/api-chain.js';
@@ -547,7 +548,8 @@ export function createSessionRoutes(deps: SessionRouteDeps = {}): Hono<ApiEnv> {
     if (outside) return c.json(outside, 403);
 
     const etag = await runtime.getSessionETag(cwd, internalSessionId);
-    if (etag) {
+    // Only a whole read answers by ETag: the tag names the whole transcript.
+    if (etag && !readQuery(c).since) {
       c.header('ETag', etag);
       if (c.req.header('if-none-match') === etag) {
         return c.body(null, 304);
@@ -562,12 +564,12 @@ export function createSessionRoutes(deps: SessionRouteDeps = {}): Hono<ApiEnv> {
     // A message another chat sent carries its sender, stamped here from the
     // server's own record of the send (spec `spin-off-chats` §2), never read
     // from the text.
-    return c.json({
-      messages: stampHistory(
-        [...new Set([sessionId, internalSessionId])],
-        filterKickoffHistory(messages)
-      ),
-    });
+    // With `?since=` and that message found, only it and what follows go back
+    // (DOR-2890): the end-of-turn refresh keeps everything before it.
+    const ids = [...new Set([sessionId, internalSessionId])];
+    return c.json(
+      historyRead(stampHistory(ids, filterKickoffHistory(messages)), readQuery(c).since)
+    );
   });
 
   // PATCH /api/sessions/:id - Update session settings

@@ -11,7 +11,7 @@ import type {
   SessionUpdateResponse,
   SessionSettings,
   StoredSessionSettingsResponse,
-  HistoryMessage,
+  HistoryRead,
   TaskItem,
   SessionLockedError,
   ReloadPluginsResult,
@@ -80,7 +80,7 @@ export function createSessionMethods(
   baseUrl: string,
   getClientId: () => string,
   etagCache: Map<string, string>,
-  messageCache: Map<string, { messages: HistoryMessage[] }>
+  messageCache: Map<string, HistoryRead>
 ) {
   return {
     // ── Session CRUD ────────────────────────────────────────────────────────
@@ -200,12 +200,21 @@ export function createSessionMethods(
 
     // ── Message History (ETag caching) ────────────────────────────────────
 
-    async getMessages(sessionId: string, cwd?: string): Promise<{ messages: HistoryMessage[] }> {
-      const qs = buildQueryString({ cwd });
+    async getMessages(
+      sessionId: string,
+      cwd?: string,
+      page?: { since?: string }
+    ): Promise<HistoryRead> {
+      const qs = buildQueryString({ cwd, since: page?.since });
       const url = `/sessions/${sessionId}/messages${qs}`;
+      // The ETag names the whole transcript, so only a whole read may use it or
+      // fill the cache behind it: a tail (or any later page) answered 304 would
+      // come back as the cached WHOLE history, and a cached part would later
+      // stand in for one.
+      const whole = page === undefined;
 
       const headers: HeadersInit = { 'Content-Type': 'application/json' };
-      const cachedEtag = etagCache.get(sessionId);
+      const cachedEtag = whole ? etagCache.get(sessionId) : undefined;
       if (cachedEtag) headers['If-None-Match'] = cachedEtag;
 
       const res = await fetch(`${baseUrl}${url}`, { headers, credentials: 'include' });
@@ -221,9 +230,9 @@ export function createSessionMethods(
         throw new Error(error.error || `HTTP ${res.status}`);
       }
 
-      const data = await res.json();
+      const data = (await res.json()) as HistoryRead;
       const etag = res.headers.get('ETag');
-      if (etag) {
+      if (etag && whole) {
         etagCache.set(sessionId, etag);
         messageCache.set(sessionId, data);
       }
