@@ -4,9 +4,15 @@
  *
  * The connection list asks the same thing on every read (`routes/community-connections.ts`), but
  * that list is not read while spaces are switched off, so an owner would not hear of a takeover
- * request until they turned spaces back on. This check runs whatever the switch says. It only
- * reads and announces: the announcer's ledger makes each notice news once, whichever path
- * finds it first.
+ * request until they turned spaces back on. This check runs whatever the switch says, so it is
+ * the one thing that still reaches a switched-off space, and it reaches as little as it can: it
+ * reads each connection's saved state, never re-checking its access (which can revoke, purge or
+ * mark a connection), and asks only for the notice. A space that answers that it was deleted or
+ * taken down is still recorded as gone, as on any other request. The announcer's ledger makes
+ * each notice news once, whichever path finds it first.
+ *
+ * It starts after Mesh's startup reconcile, with the rest of the remote runtime, so a failed
+ * reconcile means no background notices until the next start.
  *
  * @module services/notifications/emitters/community-owner-notice-sweep
  */
@@ -22,12 +28,11 @@ import { getOwnerNoticeAnnouncer } from './community-owner-replacement.js';
 import {
   getRemoteCommunityAdapter,
   getRemoteConnectionStore,
-  getRemotePairingService,
 } from '../../communities/remote/state.js';
 
 /**
  * How often the background check runs. A takeover request waits days before it can complete, so
- * an hour is prompt, and costs each space two small reads an hour.
+ * an hour is prompt, and costs each readable space one small request an hour.
  */
 export const OWNER_NOTICE_SWEEP_MS = 60 * 60_000;
 
@@ -38,7 +43,7 @@ const FIRST_CHECK_MS = 60_000;
 export interface OwnerNoticeSweepDeps {
   /** Every owner's connection, in any state. */
   connections(): Promise<readonly { communityRef: CommunityRef; ownerAuthorId: string }[]>;
-  /** The connection's current status, its access re-checked. */
+  /** The connection as last saved: its access as last verified, never re-checked here. */
   status(ref: CommunityRef, ownerAuthorId: string): Promise<CommunityConnectionDescriptor>;
   /** What the space tells this owner now, or `undefined` for nothing. */
   notice(
@@ -82,7 +87,10 @@ export async function sweepOwnerNotices(deps: OwnerNoticeSweepDeps): Promise<num
 function productionDeps(): OwnerNoticeSweepDeps {
   return {
     connections: async () => (await getRemoteConnectionStore().connectionsIfLoaded()) ?? [],
-    status: (ref, owner) => getRemotePairingService().status(ref, owner),
+    status: async (ref, owner) => {
+      const store = getRemoteConnectionStore();
+      return store.project(await store.get(ref, owner));
+    },
     notice: async (ref, owner) =>
       ownerNoticeFrom(await getRemoteCommunityAdapter(ref, owner).ownerReplacementNotice()),
     announce: (ref, label, notice) =>
