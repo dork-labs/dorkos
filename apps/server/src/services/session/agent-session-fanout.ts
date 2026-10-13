@@ -24,10 +24,15 @@
  * whenever any chat changes, so the same question arrived every few seconds,
  * each answer started its own scan, and a per-runtime timeout does not stop the
  * work it gave up on. The scans stacked up until the whole server answered
- * every request in seconds. So callers asking the same question share one scan
- * while it runs, and its answer is reused for {@link AGENT_SESSION_FANOUT_FRESH_MS}
- * after it lands. Each caller gets its own copy of every session, because the
- * routes overlay settings onto the rows they are handed, in place.
+ * every request in seconds.
+ *
+ * So each question runs at most one scan at a time. A caller joins the running
+ * scan, or reuses a finished one for {@link AGENT_SESSION_FANOUT_FRESH_MS}, only
+ * when no session changed since that scan started ({@link markAgentSessionsChanged}).
+ * A caller asking after a change waits for the running scan and then shares the
+ * ONE scan that follows it, so it never gets an answer from before the change
+ * and the scans never pile up. Each caller gets its own copy of every session,
+ * because the routes overlay settings onto the rows they are handed, in place.
  *
  * ## One folder, several spellings (DOR-695)
  *
@@ -101,7 +106,7 @@ let sources: AgentSessionSources = NO_EXTRA_SOURCES;
 export function setAgentSessionSources(next: AgentSessionSources | null): void {
   sources = next ?? NO_EXTRA_SOURCES;
   // A scan run against the old sources answers a different question.
-  shared.clear();
+  questions.clear();
 }
 
 /**
@@ -122,11 +127,33 @@ export const AGENT_SESSION_FANOUT_FRESH_MS = 3_000;
 /** A fan-out's answer, before any caller copies it. */
 type FanOutResult = { perPath: AgentSessions[]; warnings: SessionListWarning[] };
 
+/** One scan, and the session generation it started under. */
+interface Scan {
+  generation: number;
+  result: Promise<FanOutResult>;
+}
+
+/** Everything known about one question: the scan running, the one queued behind it, the last answer. */
+interface Question {
+  running: Scan | null;
+  next: Promise<FanOutResult> | null;
+  done: (Scan & { at: number }) | null;
+}
+
+/** Questions by key. Pruned on every ask, so it holds only live or fresh ones. */
+const questions = new Map<string, Question>();
+
+/** Goes up whenever a session appears, changes or goes away. */
+let generation = 0;
+
 /**
- * Scans running or recently finished, by question. `at` is `null` while the
- * scan runs and the time it landed after.
+ * Say that a session changed, so no caller from now on is handed a scan that
+ * started before it. Called by the session-list broadcaster for every upsert
+ * and removal it sends.
  */
-const shared = new Map<string, { at: number | null; result: Promise<FanOutResult> }>();
+export function markAgentSessionsChanged(): void {
+  generation += 1;
+}
 
 /** A stable id per runtime object, so two different runtimes of one type never share a scan. */
 const runtimeIds = new WeakMap<AgentRuntime, number>();
@@ -151,12 +178,51 @@ function questionKey(runtimes: AgentRuntime[], uniquePaths: string[]): string {
 }
 
 /**
+ * Start a scan for `question` under the current generation.
+ *
+ * @param question - The question to scan for.
+ * @param runtimes - Runtimes to fan out across.
+ * @param uniquePaths - Deduped agent project directories.
+ */
+function startScan(
+  question: Question,
+  runtimes: AgentRuntime[],
+  uniquePaths: string[]
+): Promise<FanOutResult> {
+  const scan: Scan = { generation, result: scanAgentSessions(runtimes, uniquePaths) };
+  question.running = scan;
+  scan.result.then(
+    () => {
+      question.done = { ...scan, at: Date.now() };
+      if (question.running === scan) question.running = null;
+    },
+    // A scan that threw is not kept: the next caller asks again.
+    () => {
+      if (question.running === scan) question.running = null;
+    }
+  );
+  return scan.result;
+}
+
+/**
+ * Drop every question with nothing running, nothing queued and no fresh answer.
+ *
+ * @param now - The current time.
+ */
+function pruneQuestions(now: number): void {
+  for (const [key, question] of questions) {
+    const fresh = question.done !== null && now - question.done.at < AGENT_SESSION_FANOUT_FRESH_MS;
+    if (!question.running && !question.next && !fresh) questions.delete(key);
+  }
+}
+
+/**
  * Forget every shared scan.
  *
  * @internal Exported for tests that change a store between two fan-outs.
  */
 export function resetAgentSessionFanoutCache(): void {
-  shared.clear();
+  questions.clear();
 }
 
 /** Map `items` through `fn` with at most `concurrency` in flight, preserving input order. */
@@ -254,30 +320,40 @@ export async function fanOutAgentSessions(opts: {
   const uniquePaths = [...new Set(agentPaths)];
   const key = questionKey(runtimes, uniquePaths);
   const now = Date.now();
+  pruneQuestions(now);
 
-  for (const [other, entry] of shared) {
-    if (entry.at !== null && now - entry.at >= AGENT_SESSION_FANOUT_FRESH_MS) shared.delete(other);
+  let question = questions.get(key);
+  if (!question) {
+    question = { running: null, next: null, done: null };
+    questions.set(key, question);
   }
-  let entry = shared.get(key);
-  if (!entry) {
-    const created: { at: number | null; result: Promise<FanOutResult> } = {
-      at: null,
-      result: scanAgentSessions(runtimes, uniquePaths),
-    };
-    created.result.then(
-      () => {
-        created.at = Date.now();
-      },
-      // A scan that threw is not kept: the next caller asks again.
-      () => {
-        if (shared.get(key) === created) shared.delete(key);
-      }
-    );
-    shared.set(key, created);
-    entry = created;
+  const { running, done } = question;
+
+  let result: Promise<FanOutResult>;
+  if (done && done.generation === generation && now - done.at < AGENT_SESSION_FANOUT_FRESH_MS) {
+    result = done.result;
+  } else if (running && running.generation === generation) {
+    result = running.result;
+  } else if (running) {
+    // A session changed after the running scan started, so its answer may be
+    // missing it. Wait for it, then share one new scan with everyone else who
+    // asked meanwhile — never a second scan beside the first.
+    const owner = question;
+    owner.next ??= running.result
+      .then(
+        () => undefined,
+        () => undefined
+      )
+      .then(() => {
+        owner.next = null;
+        return startScan(owner, runtimes, uniquePaths);
+      });
+    result = owner.next;
+  } else {
+    result = startScan(question, runtimes, uniquePaths);
   }
 
-  const { perPath, warnings } = await entry.result;
+  const { perPath, warnings } = await result;
   return {
     perPath: perPath.map(({ dir, members }) => ({
       dir,

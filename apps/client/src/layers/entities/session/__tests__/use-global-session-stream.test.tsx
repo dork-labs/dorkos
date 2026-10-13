@@ -38,6 +38,7 @@ vi.mock('../model/navigation/use-session-id', () => ({
 
 import { useAppStore } from '@/layers/shared/model';
 import {
+  RECENT_REFRESH_MIN_GAP_MS,
   createThrottledRefresh,
   useGlobalSessionStream,
 } from '../model/stream/use-global-session-stream';
@@ -137,6 +138,61 @@ describe('useGlobalSessionStream — recent-sessions invalidation', () => {
     }
 
     expect(transport.listRecentSessions).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('useGlobalSessionStream — a change during a running fetch', () => {
+  beforeEach(() => {
+    useSessionListStore.setState({ sessions: {}, rekeys: {} });
+    vi.clearAllMocks();
+  });
+  afterEach(() => vi.useRealTimers());
+
+  it('asks again when a change lands while a Recent fetch is still running', async () => {
+    // A slow server answer can be in flight when the throttle's trailing run
+    // fires. Red when that run joins the running fetch instead of asking again:
+    // the last change of a turn then never reaches Recent.
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    let release: (value: RecentSessionsResponse) => void = () => {};
+    const listRecentSessions = vi
+      .fn()
+      .mockResolvedValueOnce(envelope)
+      .mockImplementationOnce(
+        () =>
+          new Promise<RecentSessionsResponse>((resolve) => {
+            release = resolve;
+          })
+      )
+      .mockResolvedValue(envelope);
+    const transport = createMockTransport({ listRecentSessions });
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <QueryClientProvider client={queryClient}>
+        <TransportProvider transport={transport}>{children}</TransportProvider>
+      </QueryClientProvider>
+    );
+    const { result } = renderHook(
+      () => ({ recent: useRecentSessions(), stream: useGlobalSessionStream() }),
+      { wrapper }
+    );
+    await waitFor(() => expect(result.current.recent.isSuccess).toBe(true));
+
+    act(() => {
+      useSessionListStore.getState().upsertSession(makeSession('a1'));
+    });
+    await waitFor(() => expect(listRecentSessions).toHaveBeenCalledTimes(2));
+    act(() => {
+      useSessionListStore
+        .getState()
+        .upsertSession({ ...makeSession('a1'), updatedAt: '2026-03-01T00:00:59.000Z' });
+    });
+
+    // The trailing run fires while the second fetch is still unanswered.
+    await act(async () => {
+      vi.advanceTimersByTime(RECENT_REFRESH_MIN_GAP_MS);
+    });
+    await waitFor(() => expect(listRecentSessions).toHaveBeenCalledTimes(3));
+    release(envelope);
   });
 });
 

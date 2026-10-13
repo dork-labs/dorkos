@@ -22,6 +22,7 @@ import {
   SessionListBroadcaster,
   sendSessionStatusSnapshot,
 } from '../catalog/session-list-broadcaster.js';
+import { fanOutAgentSessions, resetAgentSessionFanoutCache } from '../agent-session-fanout.js';
 import {
   getOrCreateProjector,
   disposeProjector,
@@ -138,6 +139,35 @@ describe('SessionListBroadcaster — multi-runtime fan-in (ADR-0310)', () => {
       );
     });
     expect(broadcastSpy).not.toHaveBeenCalledWith('session_upserted', expect.anything());
+  });
+
+  it('marks the machine-wide fan-out stale on every upsert and removal', async () => {
+    // Red when the wiring is lost: the fan-out then hands a caller asking
+    // because of a new chat an answer scanned before that chat existed.
+    const a = controllableSessionList();
+    runtimeA.subscribeSessionList.mockReturnValue(a.iterable);
+    const lister = new FakeAgentRuntime('lister');
+    lister.listSessions.mockResolvedValue([]);
+    const ask = () => fanOutAgentSessions({ runtimes: [lister], agentPaths: ['/agents/a0'] });
+    await ask();
+    await ask();
+    expect(lister.listSessions).toHaveBeenCalledTimes(1);
+
+    broadcaster.start([runtimeA]);
+    a.push({ type: 'session_upserted', session: createMockSession({ id: SESSION_A }) });
+    await vi.waitFor(() =>
+      expect(broadcastSpy).toHaveBeenCalledWith('session_upserted', expect.anything())
+    );
+    await ask();
+    expect(lister.listSessions).toHaveBeenCalledTimes(2);
+
+    a.push({ type: 'session_removed', sessionId: SESSION_A });
+    await vi.waitFor(() =>
+      expect(broadcastSpy).toHaveBeenCalledWith('session_removed', expect.anything())
+    );
+    await ask();
+    expect(lister.listSessions).toHaveBeenCalledTimes(3);
+    resetAgentSessionFanoutCache();
   });
 
   it('suppresses an upsert for an id the runtime has RETIRED', async () => {

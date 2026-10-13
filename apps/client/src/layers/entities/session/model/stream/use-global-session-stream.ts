@@ -31,17 +31,10 @@ import { syncSessionDetailCache } from '../../lib/sync-session-detail-cache';
  * Rides the same global-stream → cache bridge (ADR-0265) as the per-cwd caches,
  * alongside the hook's 30s staleTime. A prefix key invalidates every limit.
  *
- * A fetch already running is left to finish (`cancelRefetch: false`): the
- * server keeps scanning after the browser gives up on a request, so cancelling
- * and asking again only adds a second scan behind the first.
- *
  * @param queryClient - The TanStack Query client whose recent-sessions query to refresh.
  */
 function invalidateRecentSessions(queryClient: QueryClient): void {
-  void queryClient.invalidateQueries(
-    { queryKey: sessionKeys.recentRoot },
-    { cancelRefetch: false }
-  );
+  void queryClient.invalidateQueries({ queryKey: sessionKeys.recentRoot });
 }
 
 /**
@@ -103,10 +96,7 @@ export function createThrottledRefresh(
  * @param queryClient - The TanStack Query client whose week-count query to refresh.
  */
 function invalidateSessionDailyCounts(queryClient: QueryClient): void {
-  void queryClient.invalidateQueries(
-    { queryKey: sessionKeys.dailyCountsRoot },
-    { cancelRefetch: false }
-  );
+  void queryClient.invalidateQueries({ queryKey: sessionKeys.dailyCountsRoot });
 }
 
 /**

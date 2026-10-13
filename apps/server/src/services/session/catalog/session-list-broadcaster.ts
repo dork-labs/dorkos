@@ -53,6 +53,7 @@ import { sessionAudience } from '../../audit/session-visibility.js';
 import { DEFAULT_CWD } from '../../../lib/resolve-root.js';
 import { projectRegistry } from '../../projects/project-registry.js';
 import { logger } from '../../../lib/logger.js';
+import { markAgentSessionsChanged } from '../agent-session-fanout.js';
 
 /**
  * Permission mode used to build the global subscription context. The
@@ -666,6 +667,10 @@ export class SessionListBroadcaster {
   private broadcast(event: SessionListEvent, runtime?: AgentRuntime): void | Promise<void> {
     const validated = validateListEvent(event);
     if (!validated) return;
+    // The machine-wide fan-out must not hand a scan from before this change to
+    // a caller asking because of it.
+    if (validated.type === 'session_upserted' || validated.type === 'session_removed')
+      markAgentSessionsChanged();
     // Suppress an upsert for an id the runtime has RETIRED, matching
     // `aggregateSessionList`'s drop. Both produce client-visible session rows,
     // so if only one applied the rule they would disagree about whether a
