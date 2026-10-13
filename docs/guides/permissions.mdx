@@ -216,6 +216,8 @@ Agents used to ask first. Now they work on their own, and a record of everything
 
 **An extension an agent builds for you turns on by itself.** On Trusted, a mini app your agent makes with `create_extension` is approved the moment it is scaffolded, bound to that exact folder and the permissions it asks for today. A copy from anywhere else, or a later version that asks for more, still waits for you. On Careful, every extension waits, same as before.
 
+**Your connected apps are shared with every agent.** On Trusted, an app you connect starts shared with every agent, including agents you add later, at **Read and write**, or **Read** where that is all the app offers. The first time DorkOS starts after the upgrade, it does the same, once, for each app you had connected that no agent could use yet, and the one-time note lists them, each with **Choose agents** to pick agents one by one instead. If you had already dismissed the note, it shows once more to name them. An app you had already given to some agents stays exactly as it was. Deleting things and the other actions no level covers still need you to allow them one at a time. On Careful, nothing is shared: apps you connect wait for you to choose, and switching to Trusted later shares only the apps you connect after that. See [Connections](/docs/connections).
+
 **Two older settings are gone, and what they said carries over:**
 
 - **The per-agent limit** ("observe", "act"): an agent limited to observe now has every area Blocked. It can still post and react in conversations.

@@ -842,6 +842,13 @@ export const CONFIG_WRITE_POLICY = {
   // Trusted defaults outside config.json stamp it once. An agent that cleared
   // it would re-open the mesh a person had closed on the next boot.
   'permissions.trustedStoresAppliedAt': 'operator-only',
+  // Machine-managed: the apps that once-per-install step shared, which the
+  // trust notice names. An agent that rewrote it would choose what a person
+  // is told was shared.
+  'permissions.sharedAtUpgrade': 'operator-only',
+  // Machine-managed like the stamp above: an agent that cleared it would share
+  // every app nobody holds on the next boot.
+  'permissions.sharedAppsAppliedAt': 'operator-only',
 
   // The credential and the identity of the account link.
   'cloud.instanceToken': 'operator-only',
@@ -1130,6 +1137,8 @@ export const OPERATOR_ONLY_STAKES: readonly OperatorOnlyStakeGroup[] = [
       'permissions.defaults.actions',
       'permissions.upgradeSweptVersion',
       'permissions.trustedStoresAppliedAt',
+      'permissions.sharedAtUpgrade',
+      'permissions.sharedAppsAppliedAt',
     ],
   },
   {

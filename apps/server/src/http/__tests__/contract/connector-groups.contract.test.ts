@@ -905,7 +905,11 @@ async function connectOfflineGmail(
     `/api/connectors/authentication-flows/${started.json.flowId as string}`
   );
   expect(flow.json.state).toBe('connected');
-  return { providerInstanceId, connectionId: flow.json.connectionId as string };
+  const connectionId = flow.json.connectionId as string;
+  // On Trusted a new app starts shared with every agent (DOR-2739). These
+  // groups pin per-agent grants, so stop that share and start from nobody.
+  await setup(server, 'DELETE', `/api/connectors/connections/${connectionId}/every-agent`);
+  return { providerInstanceId, connectionId };
 }
 
 /** The operation revisions of one connection, by classification. */

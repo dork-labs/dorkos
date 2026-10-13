@@ -371,9 +371,13 @@ router.get('/', async (c) => {
       trustNoticeSeenAt: configManager.get('ui')?.trustNoticeSeenAt ?? null,
     },
     // The permission preset, so the app can tell a Trusted install from a
-    // Careful one without a second request (`trustPosture`). The full picture,
+    // Careful one without a second request (`trustPosture`), and the apps the
+    // Trusted upgrade shared, which the trust notice names. The full picture,
     // with every area, is `GET /api/permissions`.
-    permissions: { preset: configManager.get('permissions')?.preset ?? null },
+    permissions: {
+      preset: configManager.get('permissions')?.preset ?? null,
+      sharedAtUpgrade: configManager.get('permissions')?.sharedAtUpgrade ?? [],
+    },
     // The staged opt-ins, RESOLVED (DOR-1304). This is the block that exists
     // because curation is not free: `runtimes.claudeCode.persistentSession`
     // shipped behind a config flag and was unreachable from the cockpit, because

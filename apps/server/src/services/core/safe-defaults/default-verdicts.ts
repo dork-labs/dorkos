@@ -144,11 +144,10 @@ export const NO_RISK_DEFAULTS: readonly string[] = [
   // Bookkeeping for the one-shot permission upgrade sweep: which server version
   // already ran it. It grants nothing and no gate reads it.
   'permissions.upgradeSweptVersion',
-  // Bookkeeping for the once-per-install Trusted defaults outside config.json
-  // (`services/mesh/seed-open-mesh.ts`). It grants nothing itself: the stores it
-  // records are argued where they live, and a wipe that clears it re-applies
-  // the same defaults a fresh install gets.
-  'permissions.trustedStoresAppliedAt',
+  // Which apps that step shared, for the trust notice to name. It grants
+  // nothing: the sharing itself is the connection's own access level, and a
+  // wipe that empties the list only drops the notice's line.
+  'permissions.sharedAtUpgrade',
   // How loud DorkOS is, and how long before it tries a louder channel. No data
   // moves on any of these: the sounds and the browser notification are this
   // machine talking to the person at it, and `phoneAfterMinutes` cannot deliver
@@ -599,6 +598,19 @@ export const PERMISSIVE_DEFAULTS: Readonly<Record<string, PermissiveDefault>> = 
     value: true,
     reason:
       'A warm agent holds a process open between messages — the same executable, the same permissions, the same per-dispatch boundary check — so nothing about what it may DO changes and no gate is relaxed. It is listed here rather than as `no-risk` because it does spend something on its own: memory, up to about 1 GB per warm agent. That is bounded in code rather than by this leaf (at most twelve stay warm, and the idle reaper closes the rest), and turning it back off is one switch away: the `Warm agents` row in the Control Center (#1209), which is where the control that left Settings → Experiments now lives.',
+  },
+  // The two once-per-install Trusted steps (DOR-2739). `null` means "not run
+  // yet", and running a step loosens a default, so the unset stamp is the
+  // permissive side and a set one is carried across a wipe.
+  'permissions.trustedStoresAppliedAt': {
+    value: null,
+    reason:
+      'ADR 261006-225605: the open mesh rule is applied once per install, and the stamp is what stops a second run. A wipe that dropped it would re-open a mesh the person closed in Team → Access on the next boot, so a set stamp carries across a wipe (PROTECTIVE_CARRYOVERS).',
+  },
+  'permissions.sharedAppsAppliedAt': {
+    value: null,
+    reason:
+      'ADR 261006-225605 and decision D1: each connected app nobody held is shared with every agent once, and named in the trust notice. The stamp is what stops a second run, which would share again an app the person had since chosen agents for, so a set stamp carries across a wipe (PROTECTIVE_CARRYOVERS).',
   },
   // Trusted by default (DOR-2739). Both are one decision, argued once each.
   'permissions.preset': {

@@ -67,6 +67,12 @@ export interface PageAccessCardProps extends SharedCardProps {
   /** Agents the caller knows are relevant right now; listed first after agents with access. */
   preferredAgentIds?: string[];
   /**
+   * Start "Who can use it?" on this answer instead of the account's own, the
+   * first time the card loads (the trust notice's Choose agents). Nothing
+   * changes until Save.
+   */
+  startWho?: WhoCanUse;
+  /**
    * Show what the picked level lets agents do in this app, right under the
    * level switch (the app's side panel). Hidden when omitted.
    */
@@ -142,6 +148,8 @@ function AccessStep(
   const [who, setWho] = useState<WhoCanUse>('picked');
   const [levelTouched, setLevelTouched] = useState(false);
   const [showAll, setShowAll] = useState(false);
+  // Read once: a later refresh (after Save) shows what was saved.
+  const requestedWho = useRef(props.mode === 'page' ? props.startWho : undefined);
   const { data: meshAgents } = useRegisteredAgents(undefined, props.mode === 'page');
   // A save that can't be confirmed discards the snapshot; the card still names the account.
   const [connection, setConnection] = useState<ConnectorReconciliationPreview['connection'] | null>(
@@ -162,7 +170,9 @@ function AccessStep(
               .filter((agentId) => heldAccess(current[agentId]) !== 'none');
       setPicked(new Set(props.mode === 'agent' ? [props.agentId] : subjects));
       // The chat's one-agent card never offers "every agent" (DOR-2420).
-      const startWho = props.mode === 'page' ? initialWhoCanUse(preview) : 'picked';
+      const startWho =
+        props.mode === 'page' ? (requestedWho.current ?? initialWhoCanUse(preview)) : 'picked';
+      requestedWho.current = undefined;
       setWho(startWho);
       const heldLevel =
         startWho === 'every'

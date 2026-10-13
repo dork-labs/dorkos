@@ -2060,7 +2060,7 @@ describe('GET /api/config', () => {
     expect(res.body.ui.trustNoticeSeenAt).toBeNull();
     expect(res.body.ui).not.toHaveProperty('fullPowerDecidedAt');
     expect(res.body.ui).not.toHaveProperty('fullPowerChoice');
-    expect(res.body.permissions).toEqual({ preset: 'trusted' });
+    expect(res.body.permissions).toEqual({ preset: 'trusted', sharedAtUpgrade: [] });
   });
 
   it('records the trust notice as seen, and reads it back on the next GET', async () => {

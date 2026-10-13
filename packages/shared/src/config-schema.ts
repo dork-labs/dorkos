@@ -58,13 +58,9 @@ import {
   ExtensionTrustedSourceSchema,
 } from './extension-config-schemas.js';
 import { ToursStateSchema } from './tours-state.js';
-// Plain id lists, never the named schemas in `permissions/permission-schemas.ts`:
-// the same SRC-alias reason as `HARNESS_IDS` above.
-import {
-  PERMISSION_ACTION_ID_PATTERN,
-  PERMISSION_PRESETS,
-  PERMISSION_STATES,
-} from './permissions/permission-ids.js';
+// Built from plain id lists, never the named schemas in
+// `permissions/permission-schemas.ts`: the same SRC-alias reason as `HARNESS_IDS` above.
+import { PermissionsSettingsSchema } from './config-permissions.js';
 export * from './credential-reference.js';
 export * from './remote-access-settings.js';
 export * from './extension-config-schemas.js';
@@ -2055,9 +2051,6 @@ const LoggingConfigSchema = z.object({
   maxLogFiles: z.number().int().min(1).max(30).default(14),
 });
 
-/** A permission state as the config file stores it. */
-const PermissionConfigStateSchema = z.enum(PERMISSION_STATES);
-
 /** Explicit inference metadata. Secrets live in the credential store. */
 export const DoeInferenceConfigSchema = z
   .object({
@@ -3348,56 +3341,8 @@ export const UserConfigSchema = z.object({
       enabled: z.boolean().default(false),
     })
     .default(() => ({ enabled: false })),
-  /**
-   * What agents may do, by area (spec `agent-permissions` D4). The preset every
-   * area starts from, plus the changes a person made on top of it; each agent's
-   * own differences live in its manifest, not here.
-   *
-   * `operator-only` and refused outright by the generic config write paths
-   * (`PATCH /api/config`, `dorkos config set`): only the permission routes may
-   * write it, so every change carries a person's yes and an audit event.
-   *
-   * Declared twice on purpose (per field AND in the object-literal default):
-   * one feeds fresh installs, the other upgrades, and they must agree.
-   */
-  permissions: z
-    .object({
-      /**
-       * The preset every area starts from. Ships `'trusted'` (ADR
-       * 261006-225605): our own agents work without asking, and every action is
-       * recorded. `'careful'` turns asking back on. `null` is still readable and
-       * means the same as `'trusted'`; the `'0.115.0'` migration leaves none.
-       */
-      preset: z.enum(PERMISSION_PRESETS).nullable().default('trusted'),
-      /** The changes a person made on top of the preset ("Full power, 2 changes"). */
-      defaults: z
-        .object({
-          areas: z.record(z.string(), PermissionConfigStateSchema).default(() => ({})),
-          actions: z
-            .record(z.string().regex(PERMISSION_ACTION_ID_PATTERN), PermissionConfigStateSchema)
-            .default(() => ({})),
-        })
-        .default(() => ({ areas: {}, actions: {} })),
-      /**
-       * The server version the permission upgrade sweep last ran for; `null`
-       * means never. Machine-managed: the boot sweep stamps it.
-       */
-      upgradeSweptVersion: z.string().nullable().default(null),
-      /**
-       * When the Trusted defaults were applied to the stores outside this file
-       * (the open mesh rule, and later the connected apps), as an ISO 8601
-       * string; `null` means not yet. Machine-managed: the boot steps that do
-       * that work stamp it once (`services/mesh/seed-open-mesh.ts`), so a
-       * person who later narrows one of those stores keeps their choice.
-       */
-      trustedStoresAppliedAt: z.string().datetime().nullable().default(null),
-    })
-    .default(() => ({
-      preset: 'trusted' as const,
-      defaults: { areas: {}, actions: {} },
-      upgradeSweptVersion: null,
-      trustedStoresAppliedAt: null,
-    })),
+  /** What agents may do, by area. See {@link PermissionsSettingsSchema}. */
+  permissions: PermissionsSettingsSchema,
   cloud: z
     .object({
       /**

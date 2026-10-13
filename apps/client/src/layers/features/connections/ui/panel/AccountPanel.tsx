@@ -43,6 +43,8 @@ const RECENT_LIMIT = 3;
 export interface AccountPanelProps {
   /** The connected account the panel is about. */
   connectionId: string;
+  /** Open "Who can use it?" on this answer instead of the app's own (a link asked for it). */
+  startWho?: 'picked';
   /** A sign-in started for this account; the page opens it. */
   onSignInStarted: (flowId: string) => void;
   /** Open the exact per-action editor for this account. */
@@ -87,6 +89,7 @@ export function AccountPanel(props: AccountPanelProps) {
 
 function AccountPanelBody({
   connectionId,
+  startWho,
   detail,
   onSignInStarted,
   onEditExactActions,
@@ -145,6 +148,7 @@ function AccountPanelBody({
           variant="embedded"
           connectionId={connectionId}
           serviceName={appName}
+          startWho={startWho}
           onEditExactActions={onEditExactActions}
           appActions={{
             toolkit: connection.toolkit,

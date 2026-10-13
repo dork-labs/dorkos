@@ -8,7 +8,10 @@ import '@testing-library/jest-dom/vitest';
 import { toast } from 'sonner';
 import type { ServerConfig } from '@dorkos/shared/types';
 
+import { useNavigate } from '@tanstack/react-router';
+import type { ConnectorConnectionSummary } from '@dorkos/shared/connector-resource-schemas';
 import { useUpdateConfig } from '@/layers/entities/config';
+import { useConnectorConnections } from '@/layers/entities/connectors';
 import { useSetPermission } from '@/layers/entities/permissions';
 import { Dialog, DialogContent } from '@/layers/shared/ui';
 
@@ -20,12 +23,18 @@ vi.mock('@/layers/entities/config', async (importOriginal) => {
   return { ...actual, useUpdateConfig: vi.fn() };
 });
 vi.mock('@/layers/entities/permissions', () => ({ useSetPermission: vi.fn() }));
+vi.mock('@/layers/entities/connectors', () => ({ useConnectorConnections: vi.fn() }));
+vi.mock('@tanstack/react-router', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@tanstack/react-router')>()),
+  useNavigate: vi.fn(),
+}));
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 
 const calls: string[] = [];
 const configMutateAsync = vi.fn();
 const presetMutateAsync = vi.fn();
 const onClose = vi.fn();
+const navigate = vi.fn();
 
 function setMutations() {
   vi.mocked(useUpdateConfig).mockReturnValue({
@@ -39,14 +48,43 @@ function setMutations() {
 }
 
 /** The notice as the rail mounts it: inside the rail's dialog. */
-function renderNotice() {
+function renderNotice(sharedConnectionIds?: string[]) {
   return render(
     <Dialog open>
       <DialogContent>
-        <TrustNoticeMoment onClose={onClose} />
+        <TrustNoticeMoment onClose={onClose} sharedConnectionIds={sharedConnectionIds} />
       </DialogContent>
     </Dialog>
   );
+}
+
+/**
+ * One connected app as the Connections list reads it. `shared` gives it an
+ * every-agent level and its grants; `'level-only'` gives it the level with no
+ * grants yet (the app could not be read).
+ */
+function app(
+  connectionId: string,
+  toolkit: string,
+  label: string,
+  shared: boolean | 'level-only' = true
+): ConnectorConnectionSummary {
+  return {
+    connectionId,
+    toolkit,
+    label,
+    everyAgentLevel: shared ? 'read-write' : null,
+    everyAgent:
+      shared === true
+        ? { operationRevisionIds: ['revision-1'], classifications: ['read', 'write'] }
+        : null,
+  } as unknown as ConnectorConnectionSummary;
+}
+
+function setApps(connections: ConnectorConnectionSummary[]) {
+  vi.mocked(useConnectorConnections).mockReturnValue({
+    data: { connections },
+  } as unknown as ReturnType<typeof useConnectorConnections>);
 }
 
 /** A config the rail would read, eligible unless a test says otherwise. */
@@ -68,8 +106,11 @@ describe('TrustNoticeMoment', () => {
       calls.push('careful');
     });
     onClose.mockReset();
+    navigate.mockReset();
+    vi.mocked(useNavigate).mockReturnValue(navigate);
     vi.mocked(toast.success).mockReset();
     setMutations();
+    setApps([]);
   });
 
   afterEach(cleanup);
@@ -79,7 +120,9 @@ describe('TrustNoticeMoment', () => {
 
     expect(screen.getByTestId('trust-notice')).toHaveTextContent('Agents now work without asking');
     expect(
-      screen.getByText('They edit files, run commands and schedule work on their own.')
+      screen.getByText(
+        'They edit files, run commands, schedule work and use your connected apps on their own.'
+      )
     ).toBeInTheDocument();
     expect(
       screen.getByText('Everything they do is recorded in Activity. Anyone can pause an agent.')
@@ -90,6 +133,100 @@ describe('TrustNoticeMoment', () => {
     expect(screen.getByRole('link', { name: 'What changed' })).toHaveAttribute(
       'href',
       'https://dorkos.ai/docs/guides/permissions#what-changed'
+    );
+    expect(screen.queryByTestId('trust-notice-shared-apps')).not.toBeInTheDocument();
+  });
+
+  it('lists the apps the upgrade shared that are still shared with every agent', () => {
+    setApps([
+      app('conn-gmail', 'gmail', 'Work'),
+      app('conn-calendar', 'googlecalendar', 'Work'),
+      app('conn-narrowed', 'slack', 'Team', false),
+      app('conn-other', 'github', 'Mine'),
+    ]);
+    renderNotice(['conn-gmail', 'conn-calendar', 'conn-narrowed', 'conn-gone']);
+
+    const list = screen.getByTestId('trust-notice-shared-apps');
+    expect(list).toHaveTextContent('Shared with every agent:');
+    expect(screen.getByRole('button', { name: 'Choose agents for Gmail' })).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: /^Choose agents for Google ?Calendar$/i })
+    ).toBeInTheDocument();
+    // Narrowed already, removed, or never shared by the upgrade: not listed.
+    expect(screen.getAllByRole('button', { name: /^Choose agents for/ })).toHaveLength(2);
+  });
+
+  it('names two accounts of one app by their labels', () => {
+    setApps([app('conn-a', 'gmail', 'Work'), app('conn-b', 'gmail', 'Home')]);
+    renderNotice(['conn-a', 'conn-b']);
+
+    expect(
+      screen.getByRole('button', { name: 'Choose agents for Gmail (Work)' })
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: 'Choose agents for Gmail (Home)' })
+    ).toBeInTheDocument();
+  });
+
+  it('lists an app shared with every agent whose grants are not in place yet', () => {
+    // The level is there; the app could not be read, so no agent holds a grant
+    // yet. The follower will add them, so the person must hear about it now.
+    setApps([app('conn-gmail', 'gmail', 'Work', 'level-only')]);
+    renderNotice(['conn-gmail']);
+
+    expect(screen.getByRole('button', { name: 'Choose agents for Gmail' })).toBeInTheDocument();
+  });
+
+  it('keeps the notice for the other apps when Choose agents opens one of several', async () => {
+    setApps([app('conn-gmail', 'gmail', 'Work'), app('conn-calendar', 'googlecalendar', 'Work')]);
+    const user = userEvent.setup();
+    renderNotice(['conn-gmail', 'conn-calendar']);
+
+    await user.click(screen.getByRole('button', { name: 'Choose agents for Gmail' }));
+
+    // Not answered: it comes back on a later launch to name Calendar.
+    expect(configMutateAsync).not.toHaveBeenCalled();
+    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(navigate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        to: '/connections',
+        search: { app: 'conn-gmail', who: 'picked' },
+      })
+    );
+  });
+
+  it('says the apps stay shared when Keep asking me is chosen with apps listed', async () => {
+    setApps([app('conn-gmail', 'gmail', 'Work')]);
+    const user = userEvent.setup();
+    renderNotice(['conn-gmail']);
+
+    await user.click(screen.getByRole('button', { name: 'Keep asking me' }));
+
+    expect(toast.success).toHaveBeenCalledWith(
+      'Agents ask first again. Shared apps stay shared; change them in Connections.'
+    );
+  });
+
+  it("Choose agents on the last listed app stamps the notice, then opens that app's panel", async () => {
+    setApps([
+      app('conn-gmail', 'gmail', 'Work'),
+      app('conn-calendar', 'googlecalendar', 'Work', false),
+    ]);
+    const user = userEvent.setup();
+    renderNotice(['conn-gmail', 'conn-calendar']);
+
+    await user.click(screen.getByRole('button', { name: 'Choose agents for Gmail' }));
+
+    expect(configMutateAsync).toHaveBeenCalledWith({
+      ui: { trustNoticeSeenAt: expect.any(String) },
+    });
+    expect(presetMutateAsync).not.toHaveBeenCalled();
+    await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1));
+    expect(navigate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        to: '/connections',
+        search: { app: 'conn-gmail', who: 'picked' },
+      })
     );
   });
 

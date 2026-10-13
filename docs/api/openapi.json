@@ -40511,6 +40511,17 @@
                             ],
                             "additionalProperties": false
                           },
+                          "everyAgentLevel": {
+                            "type": [
+                              "string",
+                              "null"
+                            ],
+                            "enum": [
+                              "read",
+                              "read-write",
+                              null
+                            ]
+                          },
                           "subscriptionCount": {
                             "type": "integer",
                             "minimum": 0
@@ -41678,6 +41689,17 @@
                             "classifications"
                           ],
                           "additionalProperties": false
+                        },
+                        "everyAgentLevel": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "enum": [
+                            "read",
+                            "read-write",
+                            null
+                          ]
                         },
                         "subscriptionCount": {
                           "type": "integer",

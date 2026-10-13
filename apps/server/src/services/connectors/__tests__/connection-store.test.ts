@@ -165,8 +165,11 @@ describe('ConnectionStore lifecycle and cleanup', () => {
       .get()!;
     expect(unchanged.executionConfigGeneration).toBe(first.executionConfigGeneration);
 
-    // A new connection starts ready: nobody holds access on it yet.
+    // The store records a connection ready, with no grant of its own. Sharing a
+    // new one with every agent on Trusted is the sign-in's job, inside its own
+    // transaction (`connector-authentication-flow-service.test.ts`).
     expect(db.select().from(connections).get()?.grantReconciliationStatus).toBe('ready');
+    expect(db.select().from(connectionOperationGrants).all()).toEqual([]);
     // With nothing granted, a key change leaves nothing stale to re-check.
     registry.register(provider, 'digest-b');
     expect(db.select().from(connections).get()?.grantReconciliationStatus).toBe('ready');
