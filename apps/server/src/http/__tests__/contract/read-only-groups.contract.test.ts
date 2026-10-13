@@ -188,11 +188,6 @@ contractSuite('read-only and system groups', [
     },
   },
   {
-    name: 'GET /api/system/unattended-autonomy answers with no drivers on a fresh install',
-    path: '/api/system/unattended-autonomy',
-    expect: { status: 200, headers: JSON_TYPE, body: { drivers: [] } },
-  },
-  {
     name: 'GET /api/system/memory answers the memory provider’s state',
     path: '/api/system/memory',
     expect: {

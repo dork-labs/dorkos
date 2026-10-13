@@ -103,7 +103,7 @@ import { createSessionRoutes, type SessionRouteDeps } from '../routes/sessions.j
 import { createShapesRoutes, type ShapesRouterDeps } from '../routes/shapes.js';
 import subagentRoutes from '../routes/subagents.js';
 import { createTasksRoutes, type TasksRouterDeps } from '../routes/tasks.js';
-import { createSystemRoutes, type SystemRouteDeps } from '../routes/system.js';
+import { createSystemRoutes } from '../routes/system.js';
 import { createTeamRoutes, type TeamRouterDeps } from '../routes/team.js';
 import { createTemplateRoutes } from '../routes/templates.js';
 import { createTerminalRoutes } from '../routes/terminal.js';
@@ -270,7 +270,7 @@ export interface ComposedGroupDeps {
 }
 
 /** What the moved route groups read from the running server, handed over by `index.ts`. */
-export type HonoApiDeps = HealthRouteDeps & SystemRouteDeps & ComposedGroupDeps;
+export type HonoApiDeps = HealthRouteDeps & ComposedGroupDeps;
 
 /** Options for {@link createHonoApi}. */
 export interface HonoApiOptions {
@@ -325,7 +325,7 @@ export function createHonoApi(options: HonoApiOptions): Hono<ApiEnv> {
   app.route('/api/models', modelRoutes);
   app.route('/api/commands', commandRoutes);
   app.route('/api/subagents', subagentRoutes);
-  app.route('/api/system', createSystemRoutes(deps));
+  app.route('/api/system', createSystemRoutes());
   app.route('/api/keep-awake', keepAwakeRoutes);
   app.route('/api/errors', errorRoutes);
   app.route('/api/directory', directoryRoutes);

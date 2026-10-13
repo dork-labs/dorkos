@@ -33,7 +33,6 @@
       "relatedCode": [
         "apps/server/src/routes/rooms.ts",
         "apps/server/src/routes/room-caller.ts",
-        "apps/server/src/services/rooms/reactions/reaction-budget.ts",
         "apps/server/src/services/core/agent-identity/agent-token-env.ts",
         "apps/client/src/layers/features/entry-actions/ui/EntryReactionRow.tsx",
         "apps/client/src/layers/entities/room/lib/reactions.ts"

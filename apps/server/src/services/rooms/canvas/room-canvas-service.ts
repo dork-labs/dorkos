@@ -14,16 +14,13 @@ import type { CanvasChannelDeclaration } from '@dorkos/shared/canvas-channel-sch
  *
  * {@link RoomCanvasService.apply} is still the single enforcement point for
  * everything an agent does in a room. Archived room, verb not on the allow-list,
- * no usable referent, over the per-turn ceiling, held by somebody else's edit
- * lock — all five refusals are decided on this path, and the last two are
+ * no usable referent, held by somebody else's edit lock — all four refusals are decided on this path, and the last two are
  * decided inside the writer it delegates to so no caller can reach around them.
  *
  * It is **synchronous**, and that is not a style choice. The claude-code
- * `control_ui` handler returns to the model on the same call stack, so a ceiling
- * enforced anywhere later would be refusing an operation the tool had already
- * reported as successful — a bound that answers after the fact is not a bound,
- * it is a silent drop. `rooms.maxPostsPerTurn` only works for the same reason:
- * `postFromTool` is the same synchronous call that answers the model.
+ * `control_ui` handler returns to the model on the same call stack, so a refusal
+ * decided anywhere later would be refusing an operation the tool had already
+ * reported as successful — a silent drop.
  *
  * ## Two callers, one ledger
  *
@@ -177,19 +174,6 @@ export const NOT_IN_A_ROOM_MESSAGE =
   'That only works in a one-on-one session, not in a room. Rooms share a canvas, not a whole ' +
   'window — put a document on the canvas instead.';
 
-/**
- * What an agent is told when it has spent its canvas changes for this turn.
- *
- * @param limit - The ceiling in force right now, read live from settings.
- * @returns The sentence the model reads.
- */
-export function tooManyCanvasOpsMessage(limit: number): string {
-  return (
-    `You have already changed the canvas ${limit} times in this conversation during this turn, ` +
-    `which is the limit. Put the rest in one update next turn.`
-  );
-}
-
 /** How a room's canvas reaches the rest of the server. */
 export interface RoomCanvasDeps {
   /** The one writer, shared with every other scope. */
@@ -198,8 +182,6 @@ export interface RoomCanvasDeps {
   visibility: RoomVisibility;
   /** The room's live stream — who is watching. */
   broadcaster: RoomBroadcaster;
-  /** The per-turn ceiling, read PER CALL so a change in Settings binds the next operation. */
-  maxOpsPerTurn: () => number;
   /**
    * Write one turn's coalesced entry into the room's log.
    *
@@ -235,7 +217,6 @@ export class RoomCanvasService {
   private readonly canvas: CanvasService;
   private readonly visibility: RoomVisibility;
   private readonly broadcaster: RoomBroadcaster;
-  private readonly maxOpsPerTurn: () => number;
   private readonly postCanvasEvent: RoomCanvasDeps['postCanvasEvent'];
   private readonly displayNameFor: (authorId: string) => string;
   private readonly roomRepoPath: (roomId: string) => string | null;
@@ -264,16 +245,9 @@ export class RoomCanvasService {
    * operation is recognised, and {@link RoomCanvasService.record} posts its own
    * one-line entry on the spot instead of filing it.
    *
-   * **It carries the turn's spend, not just its clock.** The ceiling is a
-   * per-TURN budget, and a turn does not get a fresh one by ending: an agent
-   * that spent all three operations in-turn and then keeps working must be
-   * refused on its fourth exactly as it would have been on its fourth in-turn.
-   * Remembering only the instant would reset the count to zero the moment the
-   * line was posted, which is the ceiling deleting itself.
-   *
    * Bounded twice: by age and by count. Neither bound loses a row.
    */
-  private readonly closedTurns = new Map<string, { at: number; spent: number }>();
+  private readonly closedTurns = new Map<string, { at: number }>();
 
   /**
    * Who is looking at what, right now — room, then member, then the document
@@ -343,7 +317,6 @@ export class RoomCanvasService {
     this.canvas = deps.canvas;
     this.visibility = deps.visibility;
     this.broadcaster = deps.broadcaster;
-    this.maxOpsPerTurn = deps.maxOpsPerTurn;
     this.postCanvasEvent = deps.postCanvasEvent;
     this.displayNameFor = deps.displayNameFor;
     this.roomRepoPath = deps.roomRepoPath;
@@ -458,19 +431,6 @@ export class RoomCanvasService {
       // A room has NO shared active document by design, so the only default that
       // cannot edit somebody else's work is the author's own last one (§5.6).
       defaultTarget: 'author-last',
-      chargeCeiling: () => {
-        const limit = this.maxOpsPerTurn();
-        // **`>=`, never `< …` inverted.** The resolver reads the ceiling live
-        // from settings, and a host that has configured none answers
-        // `undefined` — where `spent >= undefined` is false (proceed, which is
-        // right) and `spent < undefined` is ALSO false (refuse, which is not).
-        // The conformance suite caught exactly that inversion: every room canvas
-        // command refused, with `undefined` printed in the sentence.
-        if (this.spentThisTurn(turnId) >= limit) {
-          return { code: 'TOO_MANY_CANVAS_OPS_THIS_TURN', reason: tooManyCanvasOpsMessage(limit) };
-        }
-        return null;
-      },
       record: (entry) => this.record(turnId, roomId, authorId, entry),
     });
   }
@@ -494,7 +454,7 @@ export class RoomCanvasService {
   finishTurn(turnId: string): void {
     const turn = this.ledger.get(turnId);
     this.ledger.delete(turnId);
-    this.markClosed(turnId, turn?.ops.length ?? 0);
+    this.markClosed(turnId);
     if (!turn || turn.ops.length === 0) return;
     this.postLine(turn.roomId, turn.authorId, turn.ops, turnId);
   }
@@ -576,7 +536,7 @@ export class RoomCanvasService {
     state.rooms.clear();
     // **Bumped whether or not anything was open.** The count is what makes the
     // next turn's id different from this one's; leaving it still would reuse an
-    // id `closedTurns` remembers the spend of.
+    // id `closedTurns` remembers as already closed.
     state.n += 1;
     state.at = this.now();
     this.expireTargetedTurns();
@@ -1219,10 +1179,6 @@ export class RoomCanvasService {
     // applied operation is named exactly once.
     const closed = this.closedTurns.get(turnId);
     if (closed !== undefined) {
-      // Charged before it is announced, so the turn's budget keeps shrinking
-      // while it keeps working. `apply` refused it already if there was nothing
-      // left, so anything reaching here is inside the ceiling.
-      closed.spent += 1;
       this.postLine(roomId, authorId, [entry], turnId);
       return;
     }
@@ -1279,13 +1235,9 @@ export class RoomCanvasService {
    * the one that holds when a machine is busy enough that ages alone would not
    * prune fast enough.
    */
-  private markClosed(turnId: string, spent: number): void {
+  private markClosed(turnId: string): void {
     const at = this.now();
-    // ADDED to whatever is already there, never assigned over it. `finishTurn`
-    // runs from a `finally` and a room turn can reach one more than once; an
-    // assignment would let the second, empty call hand the turn a fresh budget.
-    const already = this.closedTurns.get(turnId)?.spent ?? 0;
-    this.closedTurns.set(turnId, { at, spent: already + spent });
+    this.closedTurns.set(turnId, { at });
     for (const [id, record] of this.closedTurns) {
       if (at - record.at >= CLOSED_TURN_MEMORY_MS) this.closedTurns.delete(id);
     }
@@ -1334,22 +1286,6 @@ export class RoomCanvasService {
         ops: turn?.ops.length ?? 0,
       });
     }
-  }
-
-  /**
-   * How much of its ceiling one turn has already spent — what it applied while
-   * it was open, plus what it has applied since its line went out.
-   *
-   * The two halves have to be added rather than chosen between: the open ledger
-   * is emptied at `finishTurn`, so reading it alone says zero for every turn
-   * that has ended, and the ceiling would rearm itself the instant the line was
-   * posted.
-   *
-   * @param turnId - The room turn's dispatch id.
-   * @returns Operations charged to this turn so far.
-   */
-  private spentThisTurn(turnId: string): number {
-    return (this.closedTurns.get(turnId)?.spent ?? 0) + (this.ledger.get(turnId)?.ops.length ?? 0);
   }
 }
 

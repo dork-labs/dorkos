@@ -1,30 +1,17 @@
 import { Hono } from 'hono';
-import type { PermissionModeDescriptor, SystemRequirements } from '@dorkos/shared/agent-runtime';
+import type { SystemRequirements } from '@dorkos/shared/agent-runtime';
 import { deriveRuntimeReadiness } from '@dorkos/shared/agent-runtime';
 import type { MemoryProviderStatus } from '@dorkos/shared/memory-provider';
-import type { UnattendedAutonomyState } from '@dorkos/shared/permission-semantics';
 import { runtimeRegistry } from '../services/core/runtime-registry.js';
-import {
-  collectUnattendedAutonomy,
-  UNATTENDED_RUNTIME,
-  type UnattendedAutonomyDeps,
-} from '../services/core/unattended-autonomy/unattended-autonomy.js';
 import { memoryProviderStatus } from '../services/memory/registry.js';
 import type { ApiEnv } from '../http/api-chain.js';
-
-/** What the system routes read from the running server. */
-export interface SystemRouteDeps {
-  /** The live stores behind the unattended-autonomy banner; absent reads as none. */
-  unattendedAutonomy?: UnattendedAutonomyDeps;
-}
 
 /**
  * The `/api/system` routes.
  *
- * @param deps - See {@link SystemRouteDeps}.
  * @returns The routes, for `app.route('/api/system', …)`.
  */
-export function createSystemRoutes(deps: SystemRouteDeps = {}): Hono<ApiEnv> {
+export function createSystemRoutes(): Hono<ApiEnv> {
   const router = new Hono<ApiEnv>();
 
   /**
@@ -62,46 +49,6 @@ export function createSystemRoutes(deps: SystemRouteDeps = {}): Hono<ApiEnv> {
   });
 
   /**
-   * GET /api/system/unattended-autonomy — every live binding and scheduled task
-   * currently set to run an agent without asking anyone.
-   *
-   * The single read behind the standing unattended-autonomy banner, and shaped so
-   * the banner can afford to be app-wide: two small filters, a couple of map
-   * lookups per binding, one cheap synchronous SELECT for the tasks, and a payload
-   * of a handful of small objects. The client fetches it once and re-reads it when
-   * the server says bindings, tasks, or integrations moved — never per route,
-   * which is the constraint that kept this banner unbuilt until it had an
-   * aggregate of its own (spec `trust-dial`, "Follow-ups opened by the
-   * implementation").
-   *
-   * Degrades in both directions rather than failing: no relay and no Tasks means
-   * no drivers, and a boot where the runtime behind them is unregistered means no
-   * declared modes, which means no claim about what any stored mode does.
-   */
-  router.get('/unattended-autonomy', (c) => {
-    const autonomy = deps.unattendedAutonomy ?? {};
-
-    const modes: readonly PermissionModeDescriptor[] = runtimeRegistry.has(UNATTENDED_RUNTIME)
-      ? runtimeRegistry.get(UNATTENDED_RUNTIME).getCapabilities().permissionModes.values
-      : [];
-
-    const state = collectUnattendedAutonomy({
-      bindings: autonomy.bindings?.() ?? [],
-      tasks: autonomy.tasks?.() ?? [],
-      modes,
-      adapterName: autonomy.adapterName ?? ((id) => id),
-      // Permissive defaults, and only reachable when the subsystem that would
-      // answer is not running. For adapters that means there are no bindings to
-      // judge; for Mesh it means erring toward saying something rather than
-      // letting a subsystem outage silence a standing warning.
-      adapterLive: autonomy.adapterLive ?? (() => true),
-      agentLive: autonomy.agentLive ?? (() => true),
-    });
-
-    return c.json(state satisfies UnattendedAutonomyState);
-  });
-
-  /**
    * GET /api/system/memory — which memory backend is configured, which one is
    * actually serving agent calls right now, and why they differ.
    *
@@ -112,9 +59,9 @@ export function createSystemRoutes(deps: SystemRouteDeps = {}): Hono<ApiEnv> {
    * reads as amnesia to a person watching unless something says so. This is that
    * something, and the standing client banner is its consumer.
    *
-   * No deps bag: unlike `unattended-autonomy`, `registry.ts` is a self-contained
-   * module-level singleton every memory call already goes through directly, so
-   * there is nothing to hand over that the module does not already hold.
+   * No deps bag: `registry.ts` is a self-contained module-level singleton every
+   * memory call already goes through directly, so there is nothing to hand over
+   * that the module does not already hold.
    */
   router.get('/memory', (c) => c.json(memoryProviderStatus() satisfies MemoryProviderStatus));
 

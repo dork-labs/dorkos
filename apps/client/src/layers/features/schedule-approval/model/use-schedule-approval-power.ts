@@ -33,15 +33,6 @@
  * declares no mode at, or a stop that is not ABOVE where the schedule already
  * sits. Each answers `null`, and the card draws the plain Approve alone.
  *
- * ## The raise still meets the consent door
- *
- * Resolving one is not granting one. A mode that never asks is a posture a
- * person agrees to rather than arrives at, and every other surface that can
- * reach one opens `UnattendedAutonomyDialog` first (`use-posture-consent.ts`:
- * "a gate on one path is not a gate"). The card does the same before it sends
- * the PATCH — see {@link ScheduleApprovalCard}. This hook only answers what is
- * available.
- *
  * ## One refusal this cannot see, and why that is right
  *
  * A schedule an installed package owns takes `enabled` on the row alone and
