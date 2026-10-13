@@ -42,6 +42,11 @@ export class FakeScheduler implements SchedulerRegistrationTarget {
     this.jobs.delete(id);
   }
 
+  /** Whether a job is registered for `id`. */
+  hasJob(id: string): boolean {
+    return this.jobs.has(id);
+  }
+
   /** The cron the live job for `taskId` would fire on, or null when there is none. */
   cronFor(taskId: string): string | null {
     return this.jobs.get(taskId)?.cron ?? null;

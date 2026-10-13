@@ -66,6 +66,7 @@ let packagedFile: string;
 const registrar = {
   syncTask: vi.fn(),
   syncTaskByFilePath: vi.fn(),
+  repairTask: vi.fn(),
 } as unknown as TaskRegistrar;
 
 beforeEach(async () => {

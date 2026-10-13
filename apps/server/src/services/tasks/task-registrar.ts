@@ -33,7 +33,7 @@ const logger = createTaggedLogger('Tasks');
 /**
  * The slice of {@link TaskSchedulerService} the registrar drives.
  *
- * Narrowed to three members rather than taking the whole service: this lets a
+ * Narrowed to four members rather than taking the whole service: this lets a
  * caller that only writes rows depend on the registration seam without pulling
  * in a dispatch engine, and lets tests stand in a scheduler that records calls.
  */
@@ -44,6 +44,8 @@ export interface SchedulerRegistrationTarget {
   registerTask(task: Task): boolean;
   /** Stop and forget a task's cron job. */
   unregisterTask(id: string): void;
+  /** Whether a cron job is on the clock for this task right now. */
+  hasJob(id: string): boolean;
 }
 
 /** What the registrar needs to answer "should this task have a job right now?". */
@@ -103,6 +105,25 @@ export class TaskRegistrar {
     } else {
       this.deps.scheduler.unregisterTask(task.id);
     }
+  }
+
+  /**
+   * {@link syncTask}, but only when the clock disagrees with the row about
+   * whether the task has a job at all.
+   *
+   * For a caller that wrote nothing: the reconciler re-reads every task file
+   * every five minutes, and re-registering every job on every pass only churned
+   * the clock (DOR-2899). A row nothing changed cannot hold a different cron
+   * from its job, since every writer that changes one syncs it, so the only
+   * repair left is a job that is missing or should not be there.
+   *
+   * @param taskId - The task whose registration should be checked.
+   */
+  repairTask(taskId: string): void {
+    if (!this.deps.scheduler.isStarted) return;
+    const task = this.deps.store.getTask(taskId);
+    const shouldRun = Boolean(task?.cron) && task?.enabled === true && task.status === 'active';
+    if (shouldRun !== this.deps.scheduler.hasJob(taskId)) this.syncTask(taskId);
   }
 
   /**
