@@ -10,6 +10,14 @@ import { BLOB_DELETE_TIMEOUT_MS, communityFilesDeletable } from './pending-delet
 /** Maximum time an attachment or export writer owns an active reservation. */
 export const MANAGED_BLOB_RESERVATION_TTL_MS = 60 * 60 * 1000;
 
+/**
+ * How long after its reservation a writer that never reported back is still feared. Its storage
+ * call is aborted an hour after it starts (`managedBlobWriteSignal`), but a provider may publish a little later, so its
+ * key stays tombstoned and every sweep deletes it again. Past this, the writer is abandoned: one
+ * more delete settles the key for good, and nothing (a community's deletion included) waits on it.
+ */
+export const MANAGED_BLOB_WRITER_ABANDONED_MS = 24 * 60 * 60 * 1000;
+
 /** Tenant ownership reserved before an attachment or export reaches storage. */
 export interface ManagedBlobReservation {
   key: string;
