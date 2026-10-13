@@ -3,6 +3,7 @@ import type { CommunityConnectionAccess } from '@dorkos/shared/community-wire';
 import { useQuery } from '@tanstack/react-query';
 import type { ConfirmedCommunityAuthority } from '@/layers/shared/lib';
 import {
+  QUERY_TIMING,
   getCommunityConnectionGeneration,
   isCommunityAuthorityCurrent,
   subscribeCommunityConnectionGenerations,
@@ -165,6 +166,8 @@ export function useCommunityConnections(enabled = true) {
       : [...communityKeys.all, 'owner', 'unresolved', 'connections'],
     queryFn: () => withinCommunityAuthority(authority!, () => transport.listCommunityConnections()),
     enabled: enabled && authority !== null,
-    refetchInterval: 30_000,
+    // `community_connections_changed` (`useCommunityConnectionsSync`) re-reads
+    // this the moment it moves; the timer is only the safety net (DOR-2909).
+    refetchInterval: QUERY_TIMING.EVENT_BACKSTOP_REFETCH_MS,
   });
 }

@@ -7,7 +7,7 @@ import {
   useReconnectConnectorConnection,
   useResumeConnectorConnection,
 } from '@/layers/entities/connectors';
-import { useRelayEventStream, useToggleAdapter } from '@/layers/entities/relay';
+import { useToggleAdapter } from '@/layers/entities/relay';
 import {
   accountChangeError,
   AccountPanel,
@@ -99,7 +99,6 @@ export function ConnectionsPage() {
 
   const data = useAppList(deferredQuery, pendingSignIn);
   const { relay } = data;
-  useRelayEventStream(relay.enabled);
 
   const reconnect = useReconnectConnectorConnection();
   const resume = useResumeConnectorConnection();

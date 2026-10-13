@@ -4,10 +4,21 @@ import type { AdapterListItem } from '@dorkos/shared/transport';
 import type { CatalogEntry } from '@dorkos/shared/relay-schemas';
 
 const ADAPTERS_KEY = ['relay', 'adapters'] as const;
+
 const CATALOG_KEY = ['relay', 'adapters', 'catalog'] as const;
 
 /**
- * Fetch all Relay adapter configs and live statuses with 10-second polling.
+ * How often the adapter list checks again with no event. Faster than the shared
+ * backstop because one change still has no event: a chat app's connection
+ * failing on its own (recorded inside the adapter, never broadcast), which the
+ * health dot should show within half a minute (DOR-2909). DOR-2911 adds that
+ * event; then this joins the shared one-minute backstop.
+ */
+const ADAPTERS_BACKSTOP_MS = 30_000;
+
+/**
+ * Fetch all Relay adapter configs and live statuses, kept current by
+ * {@link useRelayAdaptersSync} with a slow poll behind it.
  *
  * @param enabled - When false, the query is skipped entirely (Relay feature gate).
  */
@@ -18,8 +29,9 @@ export function useRelayAdapters(enabled = true) {
     queryKey: [...ADAPTERS_KEY],
     queryFn: () => transport.listRelayAdapters(),
     enabled,
-    refetchInterval: 10_000,
-    refetchIntervalInBackground: false,
+    // `relay_adapters_changed` (`useRelayAdaptersSync`) is the real update; this
+    // only catches the changes the server does not announce.
+    refetchInterval: ADAPTERS_BACKSTOP_MS,
   });
 }
 
@@ -79,7 +91,7 @@ export function useToggleAdapter() {
  * (connect/disconnect). This hook invalidates the adapter list and catalog (a
  * prefix match on `['relay','adapters']` covers both) so those flips appear
  * immediately. Config-only edits, changes to disabled adapters, and silent
- * in-adapter drops do not broadcast — the 10s poll backstops them.
+ * in-adapter drops do not broadcast — the 30s poll backstops them.
  */
 export function useRelayAdaptersSync(): void {
   const queryClient = useQueryClient();

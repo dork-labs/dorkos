@@ -2380,7 +2380,7 @@ async function start() {
     }
 
     // Tick the Pulse attention badge on a real liveness transition (an agent
-    // went offline or came back online) instead of waiting for the 30s
+    // went offline or came back online) instead of waiting for the client's
     // mesh-status poll (DOR-403).
     meshCore.onLivenessChange((result) =>
       eventFanOut.broadcast('mesh_liveness_changed', {
