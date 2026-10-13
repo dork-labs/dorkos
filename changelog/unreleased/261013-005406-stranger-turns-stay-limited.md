@@ -1,6 +1,7 @@
 ---
 covers:
   - 'feat(trust): a turn a stranger started still posts and sends notes only a few times (DOR-2739)'
+  - 'fix(trust): count only turns a stranger started, and only sends that went out (DOR-2739)'
 ---
 
 ### Changed
