@@ -39,6 +39,7 @@ import type {
 import type { StreamEvent } from '@dorkos/shared/types';
 import { turnAgentOf } from '../agent-identity/agent-home.js';
 import { agentIsReadingOutsider, countWhileRunning } from './live-outsider-turns.js';
+import { primaryOf } from '../../session/resolution/session-key-registry.js';
 import {
   ceilingCarriesOutsider,
   levelOfMode,
@@ -59,6 +60,9 @@ const turnLevels = new Map<string, TurnPermissionLevel>();
 const entryLevels = new Map<string, TurnPermissionLevel>();
 /** Where each marked turn stood, so a turn its agent starts later is counted against the same agent. */
 const outsiderPlaces = new Map<string, { cwd?: string; forAgent?: string }>();
+/** How many turns this process has sent on each conversation, so a per-turn count knows when a turn is new. */
+const turnSerials = new Map<string, number>();
+let nextTurnSerial = 0;
 
 /** Set a key as the newest, dropping the oldest past the bound. */
 function remember(map: Map<string, TurnPermissionLevel>, key: string, level: TurnPermissionLevel) {
@@ -78,6 +82,17 @@ function remember(map: Map<string, TurnPermissionLevel>, key: string, level: Tur
  */
 export function lastTurnLevelOf(sessionId: string): TurnPermissionLevel | undefined {
   return turnLevels.get(sessionId);
+}
+
+/**
+ * Which turn a conversation is on: a number that changes each time a turn is
+ * sent on it, or `undefined` when this process sent none. Lets a count kept per
+ * turn tell one turn from the next without a hook of its own.
+ *
+ * @param sessionId - The id the turn was sent under.
+ */
+export function turnSerialOf(sessionId: string): number | undefined {
+  return turnSerials.get(sessionId);
 }
 
 /**
@@ -152,6 +167,8 @@ export function noteEntryLevel(entryId: string, level: TurnPermissionLevel | und
 export function aliasTurnLevel(from: string, to: string): void {
   const level = turnLevels.get(from);
   if (level !== undefined && from !== to) remember(turnLevels, to, level);
+  const serial = turnSerials.get(from);
+  if (serial !== undefined && from !== to) turnSerials.set(to, serial);
 }
 
 /**
@@ -261,6 +278,16 @@ export function recordTurnLevels(
           }
           const level = levelForTurn(target, stored, opts);
           remember(turnLevels, sessionId, level);
+          // Under the id the turn was sent with AND the conversation's first
+          // id, so a turn sent under a renamed id is the newest by either.
+          const serial = ++nextTurnSerial;
+          for (const id of new Set([sessionId, primaryOf(sessionId)])) {
+            turnSerials.delete(id);
+            turnSerials.set(id, serial);
+          }
+          while (turnSerials.size > TURN_LEVEL_MEMORY) {
+            turnSerials.delete(turnSerials.keys().next().value!);
+          }
           const events = target.sendMessage(sessionId, content, opts);
           if (!level.outsider) return events;
           // A caller that cannot name this session can still name its agent.
