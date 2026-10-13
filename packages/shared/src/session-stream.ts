@@ -1136,8 +1136,16 @@ export function questionOutcomeOf(
  */
 export const SessionSnapshotSchema = z
   .object({
-    /** Completed message history for the session. */
+    /**
+     * Completed message history: the newest `HISTORY_WINDOW_LIMIT`
+     * messages, or all of them in a shorter session (DOR-2889).
+     */
     messages: z.array(HistoryMessageSchema),
+    /**
+     * How many older messages the snapshot left out. Absent or 0 when
+     * `messages` is the whole history; read them with `GET /:id/messages?before=`.
+     */
+    earlierMessages: z.number().int().nonnegative().optional(),
     /** Events of the turn still in progress, or `null` when the session is idle. */
     inProgressTurn: z.array(SessionEventSchema).nullable(),
     /** Server-held status projection. */

@@ -7,7 +7,7 @@
  *
  * @module shared/lib/transport/http-transport
  */
-import type { HistoryMessage } from '@dorkos/shared/types';
+import type { HistoryPage } from '@dorkos/shared/types';
 import type { Transport } from '@dorkos/shared/transport';
 import { resolveStableClientId } from './client-id';
 import { createComputerMethods } from './computer-methods';
@@ -105,7 +105,7 @@ export interface HttpTransport
 export class HttpTransport implements Transport {
   readonly clientId: string;
   private readonly etagCache = new Map<string, string>();
-  private readonly messageCache = new Map<string, { messages: HistoryMessage[] }>();
+  private readonly messageCache = new Map<string, HistoryPage>();
 
   constructor(private readonly baseUrl: string) {
     this.clientId = resolveStableClientId();

@@ -11,18 +11,20 @@ import type {
 } from '@dorkos/shared/types';
 import { isWithinDirectory } from '@dorkos/shared/paths';
 import {
-  parseTranscript,
   extractTextContent,
   isPersonAuthoredUserRecord,
   stripSystemTags,
 } from './transcript-parser.js';
-import type { TranscriptImageRef, TranscriptLine } from './transcript-parser.js';
+import type { TranscriptLine } from './transcript-parser.js';
 import { classifyOrigin } from './classify-origin.js';
 import { deriveSessionTitle } from '../../shared/derive-title.js';
 import { projectSlug, subtreeSlugScope } from './project-slug.js';
-import { parseTasks } from './task-reader.js';
 import { SessionRootIndex, accountForTranscript } from './session-root-index.js';
 import { SessionLocator, type FindSessionOptions } from './transcripts/session-locator.js';
+import {
+  TranscriptHistoryCache,
+  type AttachTranscriptImages,
+} from './transcripts/transcript-history-cache.js';
 import { sumContextTokens } from '../sdk/context-tokens.js';
 import { resolveActiveClaudeRoot, resolveClaudeRootSet } from '../claude-config-dir.js';
 import { TRANSCRIPT } from '../../../../config/constants.js';
@@ -111,6 +113,19 @@ export class TranscriptReader {
     this.cachedMeta(filePath, sessionId)
   );
 
+  /** Parsed transcripts kept between reads, see {@link TranscriptHistoryCache}. */
+  private readonly historyCache: TranscriptHistoryCache;
+
+  /**
+   * Build a reader.
+   *
+   * @param options - `attachImages` places the images a transcript's tool
+   *   results carried; without it, history reads leave them out.
+   */
+  constructor(options: { attachImages?: AttachTranscriptImages } = {}) {
+    this.historyCache = new TranscriptHistoryCache({ attachImages: options.attachImages });
+  }
+
   /**
    * Drop the cached metadata for a session so the next listSessions/getSession
    * re-extracts it. Called after a rename so the SDK-persisted title surfaces
@@ -132,6 +147,7 @@ export class TranscriptReader {
     this.metaCache.clear();
     this.rootIndex.clear();
     this.locator.clear();
+    this.historyCache.clear();
   }
 
   /**
@@ -941,32 +957,18 @@ export class TranscriptReader {
   }
 
   /**
-   * Read messages from an SDK session transcript.
+   * Read messages from an SDK session transcript, through {@link historyCache}:
+   * an unchanged transcript is not read again, and a grown one is parsed only
+   * from where the last read stopped (DOR-2889). Images tool results carried
+   * are placed by the attacher this reader was built with.
    *
    * @param vaultRoot - The session's working directory.
    * @param sessionId - SDK session UUID.
-   * @param images - Collects the images tool results carried, for the caller to
-   *   resolve through the attachment store. This class stays a JSONL parser and
-   *   learns nothing about where DorkOS keeps bytes — the same division that
-   *   keeps approval receipts out of here (see `getMessageHistory`).
+   * @returns A copy the caller may change.
    */
-  async readTranscript(
-    vaultRoot: string,
-    sessionId: string,
-    images?: TranscriptImageRef[]
-  ): Promise<HistoryMessage[]> {
+  async readTranscript(vaultRoot: string, sessionId: string): Promise<HistoryMessage[]> {
     await validateBoundaryOrDorkHome(vaultRoot);
-    const filePath = await this.transcriptPath(vaultRoot, sessionId);
-
-    let content: string;
-    try {
-      content = await fs.readFile(filePath, 'utf-8');
-    } catch {
-      return [];
-    }
-
-    const lines = content.split('\n').filter((l) => l.trim());
-    return parseTranscript(lines, images);
+    return this.historyCache.read(await this.transcriptPath(vaultRoot, sessionId), sessionId);
   }
 
   /**
@@ -1089,19 +1091,11 @@ export class TranscriptReader {
     const fileTasks = await this.readTodosFromFile(sessionId);
     if (fileTasks !== null) return fileTasks;
 
-    // Fallback: parse TaskCreate/TaskUpdate tool_use blocks from JSONL transcript
+    // Fallback: TaskCreate/TaskUpdate tool_use blocks, folded by the same
+    // cached parse that serves the messages.
     await validateBoundaryOrDorkHome(vaultRoot);
     const filePath = await this.transcriptPath(vaultRoot, sessionId);
-
-    let content: string;
-    try {
-      content = await fs.readFile(filePath, 'utf-8');
-    } catch {
-      return [];
-    }
-
-    const lines = content.split('\n').filter((l) => l.trim());
-    return parseTasks(lines);
+    return this.historyCache.readTasks(filePath, sessionId);
   }
 
   /**

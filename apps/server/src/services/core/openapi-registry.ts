@@ -61,6 +61,7 @@ import {
   HealthResponseSchema,
   ErrorResponseSchema,
   HistoryMessageSchema,
+  HistoryPageSchema,
   TaskItemSchema,
   TaskSchema,
   TaskRunSchema,
@@ -818,14 +819,24 @@ registry.registerPath({
             "The session's project directory (boundary-checked). Optional for a " +
             'session the server can already place; required for a cold session it cannot.',
         }),
+      before: z
+        .string()
+        .optional()
+        .openapi({
+          description:
+            'A message id. Answers the page of up to 100 messages directly older ' +
+            'than it, with `earlierMessages` counting what remains before the page. ' +
+            'Without it the whole history is returned. An id no message has answers ' +
+            '404 HISTORY_CURSOR_UNKNOWN.',
+        }),
     }),
   },
   responses: {
     200: {
-      description: 'Message history',
+      description: 'Message history, or one page of it',
       content: {
         'application/json': {
-          schema: z.object({ messages: z.array(HistoryMessageSchema) }),
+          schema: HistoryPageSchema,
         },
       },
     },

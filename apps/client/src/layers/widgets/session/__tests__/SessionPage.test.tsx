@@ -66,6 +66,7 @@ const mockUseSessionDetail = vi.fn((_id: unknown, _options: unknown) => ({
   data: mockSessionTitle(),
 }));
 const mockRecordChatOpened = vi.fn<(sessionId: string | null) => void>();
+const mockSeek = vi.fn<(sessionId: string, messageId: string) => void>();
 vi.mock('@/layers/entities/session', () => ({
   useRecordChatOpened: (sessionId: string | null) => mockRecordChatOpened(sessionId),
   useSessionDetail: (id: unknown, options: unknown) => mockUseSessionDetail(id, options),
@@ -75,6 +76,8 @@ vi.mock('@/layers/entities/session', () => ({
   // The landing asks the history whether `?message=` names a chat message
   // (spin-off-chats §6); a transcript with none answers with the id as given.
   useSessionStreamStore: { getState: () => ({ getSession: () => ({ messages: [] }) }) },
+  // A `?message=` older than the opening window is read in first (DOR-2889).
+  useHistoryWindowStore: { getState: () => ({ seek: mockSeek }) },
 }));
 
 const mockInPlaceNavigate = vi.fn();
@@ -193,14 +196,18 @@ describe('SessionPage', () => {
     mockUseSessionSearch.mockReturnValue({ message: 'uuid-9' });
     render(<SessionPage />);
     expect(screen.getByTestId('chat-panel')).toHaveAttribute('data-land-on-row', 'msg-uuid-9');
+    // …and asks for older pages to be read until that message is loaded.
+    expect(mockSeek).toHaveBeenCalledWith('session-abc', 'uuid-9');
   });
 
   it('hands over nothing when no message was named', () => {
     // The paired control: every way into a conversation except a search hit
     // must leave its ordinary landing entirely alone.
+    mockSeek.mockClear();
     mockUseSessionSearch.mockReturnValue({});
     render(<SessionPage />);
     expect(screen.getByTestId('chat-panel')).toHaveAttribute('data-land-on-row', '');
+    expect(mockSeek).not.toHaveBeenCalled();
   });
 
   it('does not drop ?message= from the URL, because it is an address', () => {
