@@ -1065,6 +1065,47 @@ describe('a person’s own DorkOS install', () => {
     expect(filed.rows).toEqual([{ reporter_member_id: june.memberId, note: 'From the app' }]);
   });
 
+  // Purpose: fails if the app and the web page disagree on accepting the rules while the host
+  // holds the space (DOR-2836), or if the hold lets anything else through: an agent, or a
+  // change other people see, like a new name.
+  it('accepts the rules on hold through the app, as the web page does, and nothing else', async () => {
+    const lee = await person('Lee');
+    const install = await grantFor(lee.memberId);
+    const set = await expectStatus(
+      await call(scoped('/rules'), 'PUT', human({ cookie: ownerCookie }), {
+        text: 'Be kind to Lee.',
+        expectedVersion: (await expectStatus(await call(scoped('/rules'), 'GET', human(lee)), 200))
+          .version,
+      }),
+      200
+    );
+    const version = set.version as number;
+    await pool.query(
+      `UPDATE communities SET lifecycle='held',held_from_state='active',held_at=now(),
+         lifecycle_version=lifecycle_version+1 WHERE id=$1`,
+      [communityId]
+    );
+    try {
+      await expectStatus(await call(scoped('/rules/accept'), 'POST', install, { version }), 200);
+      await expectStatus(await call(scoped('/rules/accept'), 'POST', human(lee), { version }), 200);
+      expect(await auditCount('rules.accept', lee.memberId)).toBe(2);
+      await expectStatus(
+        await call(scoped('/rules/accept'), 'POST', agentOf(lee), { version }),
+        423
+      );
+      await expectStatus(
+        await call(scoped('/me'), 'PATCH', install, { displayName: 'Lee Held' }),
+        423
+      );
+    } finally {
+      await pool.query(
+        `UPDATE communities SET lifecycle='active',held_from_state=NULL,held_at=NULL,
+           lifecycle_version=lifecycle_version+1 WHERE id=$1`,
+        [communityId]
+      );
+    }
+  });
+
   it('lets a history-only or read-only grant read standing but change nothing', async () => {
     const kit = await person('Kit');
     for (const install of [

@@ -180,7 +180,10 @@ export function registerConductRoutes(
   });
 
   app.post('/rules/accept', async (c) => {
-    const { member: actor, recheck } = await requirePerson(c, auth, pool, 'post');
+    // Allowed on hold, as on the web page: accepting the rules changes nothing anyone sees.
+    const { member: actor, recheck } = await requirePerson(c, auth, pool, 'post', {
+      allowHeld: true,
+    });
     const body = await readJson(c, CommunityWireRulesAcceptRequestSchema);
     const result = await transaction(pool, async (client) => {
       // Share, so an edit (FOR UPDATE) waits: nobody accepts a version as it is being replaced.
