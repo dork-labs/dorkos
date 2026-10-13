@@ -317,7 +317,7 @@ export function OwnerReplacementClaim() {
           <div className="panel">
             {rules !== null && (
               <SingleSignOnRules
-                id="owner-replacement-minimum-age"
+                id="owner-replacement-sign-up"
                 rules={rules}
                 ageConfirmed={rulesConfirmed}
                 onAgeChange={setRulesConfirmed}
@@ -407,7 +407,7 @@ export function OwnerReplacementClaim() {
               </div>
               {passwordRules !== null && (
                 <SignUpConfirmation
-                  id="owner-replacement-minimum-age"
+                  id="owner-replacement-sign-up"
                   rules={passwordRules}
                   confirmed={rulesConfirmed}
                   onChange={setRulesConfirmed}

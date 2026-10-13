@@ -108,8 +108,7 @@ const SIGN_IN_ONLY_MESSAGES: Record<string, string> = {
     'There is no account here for that sign-in yet, and this page only signs in to existing accounts. Create your account from your invitation link first, then come back.',
   country_confirmation_required:
     'There is no account here for that sign-in yet, and this page only signs in to existing accounts. Create your account from your invitation link first, then come back.',
-  country_not_open:
-    'There is no account here for that sign-in yet, and new accounts are not open in your country.',
+  country_not_open: "No account here for that sign-in, and sign-up isn't open in your country.",
 };
 
 /**

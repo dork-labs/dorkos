@@ -3,6 +3,7 @@ covers:
   - 'feat(community): limit new sign-ups to the countries a host allows (DOR-2847)'
   - 'docs(community): explain allowed countries and test the sign-up box (DOR-2847)'
   - 'fix(community): never ask an existing account where it lives on single sign-on (DOR-2847)'
+  - 'fix(community): a shorter sign-in message, and a clearer box id (DOR-2847)'
 ---
 
 ### Added
