@@ -39,7 +39,8 @@ function request(overrides: Partial<OpenConnectorTurnRequest> = {}): OpenConnect
   };
 }
 
-const refused = () => new ConnectorRuntimeAuthorityError('authority_refused', 'not confirmed');
+const unrecorded = () =>
+  new ConnectorRuntimeAuthorityError('agent_unrecorded', 'no recorded agent');
 
 describe('openConnectorTurn (DOR-2752)', () => {
   it('opens the binding, its lease and the MCP injection', async () => {
@@ -50,13 +51,19 @@ describe('openConnectorTurn (DOR-2752)', () => {
     expect(t.createLeaseSupervisor).toHaveBeenCalledOnce();
   });
 
-  it('returns null when the chat’s agent cannot be confirmed', async () => {
-    const t = tools(vi.fn().mockRejectedValue(refused()));
+  it('returns null when the chat has no recorded agent', async () => {
+    const t = tools(vi.fn().mockRejectedValue(unrecorded()));
     await expect(openConnectorTurn(t, request())).resolves.toBeNull();
   });
 
+  it('still throws any other refusal, such as a real authority failure', async () => {
+    const refused = new ConnectorRuntimeAuthorityError('authority_refused', 'not confirmed');
+    const t = tools(vi.fn().mockRejectedValue(refused));
+    await expect(openConnectorTurn(t, request())).rejects.toBe(refused);
+  });
+
   it('still throws when a newer turn replaced this one', async () => {
-    const t = tools(vi.fn().mockRejectedValue(refused()));
+    const t = tools(vi.fn().mockRejectedValue(unrecorded()));
     await expect(openConnectorTurn(t, request({ isCurrent: () => false }))).rejects.toThrow(
       ConnectorRuntimeAuthorityError
     );
@@ -65,7 +72,7 @@ describe('openConnectorTurn (DOR-2752)', () => {
   it('still throws when the turn was cancelled', async () => {
     const controller = new AbortController();
     controller.abort(new Error('cancelled'));
-    const t = tools(vi.fn().mockRejectedValue(refused()));
+    const t = tools(vi.fn().mockRejectedValue(unrecorded()));
     await expect(openConnectorTurn(t, request({ signal: controller.signal }))).rejects.toThrow(
       'cancelled'
     );

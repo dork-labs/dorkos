@@ -2,11 +2,11 @@
  * Open a turn's connected apps, or let the turn run without them.
  *
  * A runtime that opens its connected-apps binding before the turn starts
- * (Codex, Doe) used to fail the whole turn when DorkOS could not confirm which
- * agent the chat belongs to — a chat started in an agent's folder with no
- * recorded agent, for example (DOR-2752). Retrying never helped. Running the
- * turn without connected apps is the honest outcome: nothing is granted that
- * could not be proved, and the chat still answers.
+ * (Codex, Doe, OpenCode) used to fail the whole turn when the chat had no
+ * recorded agent — a chat started in an agent's folder without naming the
+ * agent (DOR-2752). Retrying never helped. Running that turn without connected
+ * apps is the honest outcome: there is no agent to grant them to, and the chat
+ * still answers. Every other refusal still fails the turn.
  *
  * @module services/runtimes/connectors/open-connector-turn
  */
@@ -14,6 +14,9 @@ import { logger } from '../../../lib/logger.js';
 import { ConnectorRuntimeAuthorityError } from '../../connectors/principal/runtime-principal-service.js';
 import type {
   ConnectorRuntime,
+  ConnectorRuntimePrincipalPort,
+  ConnectorTurnOwnership,
+  OpenConnectorTurnInput,
   OpenConnectorTurnResult,
 } from '../../connectors/runtime-principal-port.js';
 import {
@@ -56,9 +59,62 @@ export interface OpenedConnectorTurn {
 }
 
 /**
- * Open the binding and its lease, or return `null` when this chat's agent
- * could not be confirmed. Any other failure, a cancelled turn, or a turn a
- * newer one replaced still throws, exactly as before.
+ * Open the binding, or return `null` when the chat has no recorded agent.
+ * Any other refusal or failure, a cancelled turn, or a turn a newer one
+ * replaced still throws, exactly as before.
+ *
+ * @param principals - The runtime principal port.
+ * @param input - The turn's binding request.
+ * @param ownership - Whether this turn is still the session's current one.
+ */
+export async function openTurnOrSkip(
+  principals: Pick<ConnectorRuntimePrincipalPort, 'openTurn'>,
+  input: OpenConnectorTurnInput,
+  ownership: ConnectorTurnOwnership
+): Promise<OpenConnectorTurnResult | null> {
+  try {
+    return await principals.openTurn(input, ownership);
+  } catch (err) {
+    input.signal.throwIfAborted();
+    const unrecorded =
+      err instanceof ConnectorRuntimeAuthorityError && err.code === 'agent_unrecorded';
+    if (!unrecorded || !ownership.isCurrent()) throw err;
+    logger.warn('[connectors] chat has no recorded agent; this turn runs without connected apps', {
+      runtime: input.runtime,
+      sessionId: input.canonicalSessionId,
+    });
+    return null;
+  }
+}
+
+/**
+ * Start the lease supervisor that keeps an opened binding alive for its turn.
+ *
+ * @param tools - The server's connector runtime tools.
+ * @param binding - The binding {@link openTurnOrSkip} opened.
+ * @param request - The turn's runtime, signal and lease-lost handler.
+ */
+export function startConnectorLease(
+  tools: ConnectorRuntimeTools,
+  binding: OpenConnectorTurnResult,
+  request: Pick<OpenConnectorTurnRequest, 'runtime' | 'signal' | 'onLost'>
+): ConnectorTurnLeaseSupervisorHandle {
+  const createSupervisor =
+    tools.createLeaseSupervisor ?? ((options) => new ConnectorTurnLeaseSupervisor(options));
+  return createSupervisor({
+    principals: tools.principals,
+    bindingId: binding.bindingId,
+    permit: binding.renewalPermit,
+    runtime: request.runtime,
+    expiresAt: binding.expiresAt,
+    signal: request.signal,
+    onLost: request.onLost,
+  });
+}
+
+/**
+ * Open the binding, its lease and its MCP injection, or return `null` when the
+ * chat has no recorded agent ({@link openTurnOrSkip}).
  *
  * @param tools - The server's connector runtime tools.
  * @param request - The turn's binding request.
@@ -68,35 +124,14 @@ export async function openConnectorTurn(
   request: OpenConnectorTurnRequest
 ): Promise<OpenedConnectorTurn | null> {
   const { runtime, sessionId, agentPath, cwd, signal, isCurrent, onLost } = request;
-  let binding: OpenConnectorTurnResult;
+  const binding = await openTurnOrSkip(
+    tools.principals,
+    { runtime, canonicalSessionId: sessionId, agentPath, canonicalCwd: cwd, signal },
+    { isCurrent }
+  );
+  if (!binding) return null;
   try {
-    binding = await tools.principals.openTurn(
-      { runtime, canonicalSessionId: sessionId, agentPath, canonicalCwd: cwd, signal },
-      { isCurrent }
-    );
-  } catch (err) {
-    signal.throwIfAborted();
-    const refused =
-      err instanceof ConnectorRuntimeAuthorityError && err.code === 'authority_refused';
-    if (!refused || !isCurrent()) throw err;
-    logger.warn('[connectors] agent not confirmed; this turn runs without connected apps', {
-      runtime,
-      sessionId,
-    });
-    return null;
-  }
-  try {
-    const createSupervisor =
-      tools.createLeaseSupervisor ?? ((options) => new ConnectorTurnLeaseSupervisor(options));
-    const supervisor = createSupervisor({
-      principals: tools.principals,
-      bindingId: binding.bindingId,
-      permit: binding.renewalPermit,
-      runtime,
-      expiresAt: binding.expiresAt,
-      signal,
-      onLost,
-    });
+    const supervisor = startConnectorLease(tools, binding, request);
     const injection: ConnectorRuntimeMcpInjection = {
       url: tools.listenerUrl,
       agentToolsUrl: tools.agentToolsUrl,

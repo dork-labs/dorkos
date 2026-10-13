@@ -30,6 +30,7 @@ import { detectOllama } from '../providers/ollama.js';
 import { TurnEventQueue } from '../events/global-event-hub.js';
 import { OPENCODE_STREAM_LOST_MESSAGE } from '../events/event-mapper.js';
 import type { ConnectorRuntimePrincipalPort } from '../../../connectors/runtime-principal-port.js';
+import { ConnectorRuntimeAuthorityError } from '../../../connectors/principal/runtime-principal-service.js';
 import { createRuntimeTurnRenewalConformanceFixture } from '../../connectors/__tests__/turn-renewal-conformance-fixture.js';
 import {
   DIRECTORY,
@@ -2426,6 +2427,33 @@ describe('OpenCodeRuntime', () => {
       expect(principals.revoke).toHaveBeenCalledWith('binding-1', 'turn_terminal');
       expect(stop).toHaveBeenCalledBefore(vi.mocked(principals.revoke));
       expect(vi.mocked(principals.openTurn).mock.calls[0]?.[1].isCurrent()).toBe(false);
+    });
+
+    it('runs the turn without connected apps when the chat has no recorded agent (DOR-2752)', async () => {
+      const harness = makeRuntime();
+      const principals = connectorPort();
+      vi.mocked(principals.openTurn).mockRejectedValueOnce(
+        new ConnectorRuntimeAuthorityError('agent_unrecorded', 'no recorded agent')
+      );
+      enableConnectorTools(harness, principals);
+      const sessionId = nextSessionId();
+      const { finished } = consume(
+        harness.runtime.sendMessage(sessionId, 'hello', { cwd: DIRECTORY })
+      );
+      const connection = await openTurn(harness);
+
+      const prompt = JSON.stringify(harness.client.session.promptAsync.mock.calls.at(-1));
+      expect(prompt).not.toContain('Accounts this agent session can use right now');
+      expect(
+        harness.client.mcp.add.mock.calls.some(
+          (call) => call[0]?.body?.name === 'dorkos_connections'
+        )
+      ).toBe(false);
+      for (const event of opencodeSimpleTurn(OC_SESSION_A, 'done')) {
+        connection.push(globalEvent(DIRECTORY, event));
+      }
+      await finished;
+      expect(principals.revoke).not.toHaveBeenCalled();
     });
 
     it('finishes revocation before granting the same-directory lease to the next turn', async () => {

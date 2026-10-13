@@ -472,10 +472,10 @@ describe('the dorkos tool server on a Codex turn', () => {
       expect(vi.mocked(principals.openTurn).mock.calls[0]?.[1].isCurrent()).toBe(false);
     });
 
-    it("runs the turn without connected apps when the chat's agent cannot be confirmed (DOR-2752)", async () => {
+    it('runs the turn without connected apps when the chat has no recorded agent (DOR-2752)', async () => {
       const principals = connectorPort();
       vi.mocked(principals.openTurn).mockRejectedValueOnce(
-        new ConnectorRuntimeAuthorityError('authority_refused', 'agent not confirmed')
+        new ConnectorRuntimeAuthorityError('agent_unrecorded', 'no recorded agent')
       );
       const runtime = makeRuntime();
       runtime.setConnectorRuntimeTools({

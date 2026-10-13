@@ -152,10 +152,8 @@ import {
   type CreditsModelDecision,
 } from '../../core/cloud/credits-models.js';
 import { creditsModelIdOf, creditsPromptModel, creditsSelection } from './credits-mode.js';
-import {
-  ConnectorTurnLeaseSupervisor,
-  type ConnectorTurnLeaseSupervisorHandle,
-} from '../connectors/connector-turn-lease-supervisor.js';
+import type { ConnectorTurnLeaseSupervisorHandle } from '../connectors/connector-turn-lease-supervisor.js';
+import { openTurnOrSkip, startConnectorLease } from '../connectors/open-connector-turn.js';
 
 /** Constructor dependencies for {@link OpenCodeRuntime} (composition root). */
 export interface OpenCodeRuntimeOptions {
@@ -679,17 +677,22 @@ export class OpenCodeRuntime implements AgentRuntime {
       const agentPath = homeOf(resolveAgentHome(cwd, opts?.forAgent));
       const meshAgent =
         opts?.connectorTurn && agentPath ? this.meshCore?.getByPath(agentPath) : undefined;
-      if (this.connectorRuntimeTools && meshAgent && agentPath) {
-        turn.connectorBinding = await this.connectorRuntimeTools.principals.openTurn(
-          {
-            runtime: this.type,
-            canonicalSessionId: sessionId,
-            agentPath,
-            canonicalCwd: directory,
-            signal: controller.signal,
-          },
-          { isCurrent: () => this.activeTurns.get(sessionId) === turn }
-        );
+      const opened =
+        this.connectorRuntimeTools && meshAgent && agentPath
+          ? await openTurnOrSkip(
+              this.connectorRuntimeTools.principals,
+              {
+                runtime: this.type,
+                canonicalSessionId: sessionId,
+                agentPath,
+                canonicalCwd: directory,
+                signal: controller.signal,
+              },
+              { isCurrent: () => this.activeTurns.get(sessionId) === turn }
+            )
+          : null;
+      if (this.connectorRuntimeTools && opened) {
+        turn.connectorBinding = opened;
         controller.signal.throwIfAborted();
         connectorInjection = {
           url: this.connectorRuntimeTools.listenerUrl,
@@ -716,18 +719,15 @@ export class OpenCodeRuntime implements AgentRuntime {
       if (connectorInjection && !mcpResult.connectorApplied) {
         await this.revokeConnectorTurn(turn, 'setup_failed');
       } else if (turn.connectorBinding && this.connectorRuntimeTools) {
-        const createSupervisor =
-          this.connectorRuntimeTools.createLeaseSupervisor ??
-          ((options) => new ConnectorTurnLeaseSupervisor(options));
-        turn.connectorSupervisor = createSupervisor({
-          principals: this.connectorRuntimeTools.principals,
-          bindingId: turn.connectorBinding.bindingId,
-          permit: turn.connectorBinding.renewalPermit,
-          runtime: this.type,
-          expiresAt: turn.connectorBinding.expiresAt,
-          signal: controller.signal,
-          onLost: (loss) => logger.warn('[OpenCodeRuntime] Connections lease lost', loss),
-        });
+        turn.connectorSupervisor = startConnectorLease(
+          this.connectorRuntimeTools,
+          turn.connectorBinding,
+          {
+            runtime: this.type,
+            signal: controller.signal,
+            onLost: (loss) => logger.warn('[OpenCodeRuntime] Connections lease lost', loss),
+          }
+        );
       }
       controller.signal.throwIfAborted();
 
