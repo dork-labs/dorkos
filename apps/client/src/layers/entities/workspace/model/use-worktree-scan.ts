@@ -29,6 +29,9 @@ export function useWorktreeScan(): {
     queryKey: worktreeScanQueryKey,
     queryFn: () => transport.scanWorktrees(),
     staleTime: SCAN_STALE_MS,
+    // A worktree made in a terminal has no event; switching back is the moment
+    // to look again (DOR-2896).
+    refetchOnWindowFocus: true,
   });
   return {
     root: query.data?.root ?? null,

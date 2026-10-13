@@ -333,6 +333,9 @@ export function useCloudLink(): UseCloudLink {
     // back to must read the flow on focus, or it would keep offering a new
     // start while another tab's code is already waiting.
     staleTime: 0,
+    // Opted back in: the app's default no longer re-reads on focus (DOR-2896),
+    // and this flow can move in another tab with no event to say so.
+    refetchOnWindowFocus: true,
     // Poll while a link waits for approval, whichever tab started it; every
     // terminal state stops it.
     refetchInterval: (query) => (query.state.data?.state === 'pending' ? POLL_INTERVAL_MS : false),
