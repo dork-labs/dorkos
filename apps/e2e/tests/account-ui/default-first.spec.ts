@@ -273,7 +273,10 @@ test.describe('DorkOS credits first where nothing works yet @smoke', () => {
 
     await page.goto('/?settings=runtimes');
     await basePage.waitForAppReady();
-    // On a phone, Settings opens on its list of sections.
+    // On a phone, Settings opens on its list of sections. The dialog loads the
+    // first time it is wanted (DOR-2901), so wait for it before asking what it
+    // shows: an instant check would see no list yet and skip the tap.
+    await expect(settingsPage.dialog).toBeVisible({ timeout: 30_000 });
     const runtimes = settingsPage.dialog.getByRole('button', { name: /^Runtimes/ });
     if (await runtimes.isVisible()) await runtimes.click();
     // A runtime that is not connected opens with its connect step showing.
