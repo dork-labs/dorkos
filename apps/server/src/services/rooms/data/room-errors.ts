@@ -251,6 +251,14 @@ export type RoomErrorCode =
    */
   | 'TURN_WAS_STOPPED'
   /**
+   * A turn a stranger started has already posted as many messages as
+   * such a turn may (`OUTSIDER_TURN_LIMIT`, DOR-2739). Our own agents are not
+   * counted (ADR 261006-225605); this is the one count left, kept as an
+   * outsider protection so one message from someone outside the team cannot
+   * make a turn post without end into a room that goes straight back out.
+   */
+  | 'TOO_MANY_POSTS_THIS_TURN'
+  /**
    * A rooms capability was called on a login-on install by a caller the surface
    * could name neither as an agent nor as a person
    * (`service/room-caller-author.ts`'s `callerAuthor`).

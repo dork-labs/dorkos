@@ -17,6 +17,15 @@ export function setSessionRouteContext(sessionId: string, context: SessionRouteC
   useRouteContexts.setState((state) => ({ contexts: { ...state.contexts, [sessionId]: context } }));
 }
 
+/** Forget a session's resolved location, e.g. once the server says it is gone. */
+export function clearSessionRouteContext(sessionId: string) {
+  useRouteContexts.setState((state) => {
+    if (!(sessionId in state.contexts)) return state;
+    const { [sessionId]: _removed, ...rest } = state.contexts;
+    return { contexts: rest };
+  });
+}
+
 /** Read a resolved location when preparing a continuation. */
 export function getSessionRouteContext(sessionId: string) {
   return useRouteContexts.getState().contexts[sessionId];

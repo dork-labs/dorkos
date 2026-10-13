@@ -2,7 +2,7 @@ import { wireStartupNotifications } from './startup/notifications.js';
 import { wireStartupTelemetry, wireStartupHeartbeat } from './startup/telemetry.js';
 import type { TestComposioFixture } from './services/connectors/providers/test-composio/fixture.js';
 import { wireTestConnectorProbes } from './startup/test-connector-probes.js';
-import { connectorRuntimeConsumer, takeDailySnapshot } from './startup/boot-helpers.js';
+import { connectorRuntimeConsumer } from './startup/boot-helpers.js';
 import { type ServerDocumentRelayOrigin } from '@dorkos/relay/server-private-document';
 import {
   readOriginalManagerDocumentAdapterOrigin,
@@ -354,6 +354,7 @@ import {
   runMigrations,
   databaseHoldsUserData,
   snapshotBeforeMigrations,
+  takeDailySnapshot,
   DatabaseOpenError,
   SnapshotFailedError,
   agents,
@@ -537,7 +538,7 @@ import {
   SessionEventStore,
   StagedContextStore,
   setMessageQueueStore,
-  setSessionEventStore,
+  wireSessionEventStore,
   setStagedContextStore,
   SessionLimitStore,
   setSessionLimitStore,
@@ -557,6 +558,7 @@ import {
 } from './services/session/index.js';
 import { aggregateSessionList } from './services/session/catalog/aggregate-session-list.js';
 import { peekCanvasService } from './services/canvas/index.js';
+import { sweepOrphanedCanvases } from './services/canvas/sweep-orphaned-canvases.js';
 import { env } from './env.js';
 
 // The live tunnel manager, re-exported for the CLI that started this server.
@@ -925,14 +927,15 @@ async function start() {
   // Skipped on a first boot so a brand-new install is not handed a `backups`
   // folder holding a copy of an empty database. The hourly tick picks the day up
   // later, by which time there may be something in it worth copying.
-  if (!firstBoot) takeDailySnapshot(db, backupsDir);
+  if (!firstBoot) void takeDailySnapshot(db, backupsDir, logger);
 
   // Durable session-event store for LOG-BACKED runtimes (codex/opencode/
   // test-mode), injected once here so their completed-turn history survives a
   // server restart (DOR-189). Wired before any runtime registers so the first
-  // turn/subscribe of a log-backed session persists and hydrates.
+  // turn/subscribe of a log-backed session persists and hydrates. With the store
+  // holding their history, their idle in-memory copies are swept (DOR-2897).
   const sessionEventStore = new SessionEventStore(db);
-  setSessionEventStore(sessionEventStore);
+  wireSessionEventStore(sessionEventStore);
 
   // An agent that was waiting on a person when the last process stopped is not
   // waiting any more — its turn died with that process, and nothing can hand it
@@ -2197,7 +2200,7 @@ async function start() {
     }
 
     // Tick the Pulse attention badge on a real liveness transition (an agent
-    // went offline or came back online) instead of waiting for the 30s
+    // went offline or came back online) instead of waiting for the client's
     // mesh-status poll (DOR-403).
     meshCore.onLivenessChange((result) =>
       eventFanOut.broadcast('mesh_liveness_changed', {
@@ -4778,44 +4781,18 @@ async function start() {
     throw err;
   });
 
-  /**
-   * Delete the canvas of every session a runtime has reported gone for good
-   * (spec `canvas-agent-seat` §Data model 6).
-   *
-   * Two-phase, like the message-queue sweep beside it: `onSessionRemoved` marks,
-   * and this asks a second time before deleting anything, so a session that came
-   * back between the two is spared.
-   *
-   * **It hands the sweep the degraded runtimes, and that is the half the
-   * precedent does not need.** `GET /api/sessions` degrades per runtime
-   * (ADR-0310), and a runtime that failed to list is a runtime whose sessions
-   * ALL look absent — so without this, one flaky sidecar would delete every
-   * OpenCode canvas on the machine. A listing that failed outright sweeps
-   * nothing at all.
-   */
-  async function sweepOrphanedCanvases(): Promise<void> {
-    const canvas = peekCanvasService();
-    if (!canvas) return;
-    try {
+  /** The canvas sweep, listing the default folder only when a session is marked gone. */
+  const sweepCanvases = (): Promise<number> =>
+    sweepOrphanedCanvases(peekCanvasService(), async () => {
       const listing = await aggregateSessionList({
         runtimes: runtimeRegistry.listRuntimes(),
         projectDir: env.DORKOS_DEFAULT_CWD ?? DEFAULT_CWD,
       });
-      canvas.sweepOrphanedCanvasDocuments({
-        sessions: listing.sessions.map((session) => ({
-          id: session.id,
-          runtime: session.runtime,
-        })),
+      return {
+        sessions: listing.sessions.map((session) => ({ id: session.id, runtime: session.runtime })),
         degradedRuntimes: [...new Set(listing.warnings.map((w) => w.runtime))],
-      });
-    } catch (err) {
-      // The listing itself failed, which is exactly the case that must delete
-      // nothing. Told rather than assumed: `null` is the sweep's own "I could
-      // not ask" input.
-      canvas.sweepOrphanedCanvasDocuments(null);
-      logger.warn('[canvas] could not list sessions for the orphan sweep', logError(err));
-    }
-  }
+      };
+    });
 
   // Start Tasks scheduler after server is listening
   if (schedulerService) {
@@ -4848,7 +4825,7 @@ async function start() {
   healthCheckInterval = setInterval(() => {
     claudeRuntime?.checkSessionHealth();
     sweepOrphanedMessageQueues();
-    void sweepOrphanedCanvases();
+    void sweepCanvases();
     void connectorAgentRequests?.reconcile().catch((error: unknown) => {
       logger.warn('[Connections] Agent request recovery failed', logError(error));
     });
@@ -4860,17 +4837,12 @@ async function start() {
   // hourly tick rather than trying to compute when midnight is — which is the
   // sort of arithmetic that quietly stops working across a DST change.
   //
-  // The tick that DOES take a snapshot blocks the event loop while it runs:
-  // better-sqlite3 is synchronous, so `VACUUM INTO` holds the thread for the
-  // whole copy — measured at ~464 ms for a 61 MB database, and it scales with
-  // file size. Once a day, on a local single-operator server, that is a pause
-  // nobody is positioned to notice. It stops being free if this database grows
-  // to the point where the copy takes long enough to stall a streaming turn (a
-  // second or more, so roughly 150 MB+); the fix then is a size threshold that
-  // hands large databases to better-sqlite3's incremental `db.backup()` API,
-  // which yields between pages. Not worth the second code path at 2 MB.
+  // The tick that takes a snapshot copies the database a few pages at a time
+  // with SQLite's online backup, handing the event loop back between steps. It
+  // used to be one `VACUUM INTO`, which held the thread for the whole copy:
+  // 0.35 s for a 131 MB database (DOR-2906). Never rejects.
   dailySnapshotInterval = setInterval(() => {
-    takeDailySnapshot(db, backupsDir);
+    void takeDailySnapshot(db, backupsDir, logger);
   }, INTERVALS.DAILY_SNAPSHOT_CHECK_MS);
 
   // Somebody has to own the disk that session images sit on. Once at boot, so a

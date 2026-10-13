@@ -22,8 +22,12 @@ const OPTIONS = 'GET /api/v1/auth-options';
 const PREFLIGHT = 'POST /api/v1/open-admission/preflight';
 const JOIN = 'POST /api/v1/open-admission/join';
 const NOTE = `dorkos-open-join:${community.id}`;
+const COUNTRY = 'POST /api/v1/country-confirmation';
 
-function options(minimumAge: number | null = null): Reply {
+function options(
+  minimumAge: number | null = null,
+  allowedCountries: string[] | null = null
+): Reply {
   return {
     status: 200,
     body: {
@@ -31,6 +35,7 @@ function options(minimumAge: number | null = null): Reply {
       github: false,
       oidc: { label: 'DorkOS', mark: 'dorkos' },
       minimumAge,
+      allowedCountries,
       emailLinks: false,
     },
   };
@@ -89,6 +94,83 @@ describe('the join page of an open space', () => {
     expect((button as HTMLButtonElement).disabled).toBe(true);
     fireEvent.click(screen.getByLabelText('I am at least 16 years old.'));
     expect((button as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it('lets anyone continue without the country box, and confirms it only when ticked', async () => {
+    // Purpose: fails if the single sign-on button waits on the countries box (which would make an
+    // existing account abroad claim to live here, or lock it out), if an unticked box is sent
+    // anyway, or if a ticked one is confirmed after the round trip that may make the account.
+    const paths = (calls: { method: string; url: string }[]) =>
+      calls.map((call) => call.method + ' ' + new URL(call.url, 'http://x').pathname);
+    const confirmed = { status: 200, body: { confirmed: true, expiresAt: '2026-10-07T00:30:00Z' } };
+    let calls = mockFetch({
+      [OPTIONS]: options(null, ['US']),
+      [PREFLIGHT]: preflight,
+      [COUNTRY]: confirmed,
+    });
+    const page = (
+      <OpenAdmission
+        community={community}
+        signedIn={false}
+        onAdmitted={vi.fn()}
+        onOtherWays={vi.fn()}
+      />
+    );
+    render(page);
+    let button = await screen.findByRole('button', { name: 'Continue with DorkOS' });
+    expect((button as HTMLButtonElement).disabled).toBe(false);
+    expect(
+      (screen.getByLabelText("I'm new here and live in the United States.") as HTMLInputElement)
+        .required
+    ).toBe(false);
+    fireEvent.click(button);
+    await waitFor(() => expect(signInSocial).toHaveBeenCalledTimes(1));
+    expect(paths(calls)).not.toContain(COUNTRY);
+    cleanup();
+    signInSocial.mockClear();
+
+    calls = mockFetch({
+      [OPTIONS]: options(null, ['US']),
+      [PREFLIGHT]: preflight,
+      [COUNTRY]: confirmed,
+    });
+    render(page);
+    button = await screen.findByRole('button', { name: 'Continue with DorkOS' });
+    fireEvent.click(screen.getByLabelText("I'm new here and live in the United States."));
+    fireEvent.click(button);
+    await waitFor(() => expect(signInSocial).toHaveBeenCalledTimes(1));
+    const country = paths(calls).indexOf(COUNTRY);
+    expect(country).toBeGreaterThan(-1);
+    expect(paths(calls)).not.toContain('POST /api/v1/age-confirmation');
+    expect(vi.mocked(fetch).mock.invocationCallOrder[country]).toBeLessThan(
+      signInSocial.mock.invocationCallOrder[0]!
+    );
+  });
+
+  it('still requires the minimum age beside the countries, and asks a signed-in account nothing', async () => {
+    // Purpose: fails if the countries change loosened the age check on this page, or a signed-in
+    // account is shown any box.
+    mockFetch({ [OPTIONS]: options(16, ['US']), [PREFLIGHT]: preflight });
+    render(
+      <OpenAdmission
+        community={community}
+        signedIn={false}
+        onAdmitted={vi.fn()}
+        onOtherWays={vi.fn()}
+      />
+    );
+    const button = await screen.findByRole('button', { name: 'Continue with DorkOS' });
+    expect((button as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(screen.getByLabelText('I am at least 16 years old.'));
+    expect((button as HTMLButtonElement).disabled).toBe(false);
+    cleanup();
+
+    mockFetch({ [OPTIONS]: options(16, ['US']) });
+    render(
+      <OpenAdmission community={community} signedIn onAdmitted={vi.fn()} onOtherWays={vi.fn()} />
+    );
+    await screen.findByRole('button', { name: 'Continue with DorkOS' });
+    expect(screen.queryByRole('checkbox')).toBeNull();
   });
 
   it('finishes the join it was asked for after the sign-in returns, once', async () => {

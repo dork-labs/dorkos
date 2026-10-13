@@ -1,4 +1,4 @@
-import { describe, it, expect, afterEach } from 'vitest';
+import { describe, it, expect, afterEach, vi } from 'vitest';
 import Database from 'better-sqlite3';
 import {
   chmodSync,
@@ -26,7 +26,9 @@ import {
   snapshotBeforeExtensionMigration,
   snapshotBeforeMigrations,
   snapshotDaily,
+  takeDailySnapshot,
   snapshotSqlite,
+  snapshotSqliteInSteps,
   SnapshotFailedError,
   SNAPSHOT_RETENTION,
 } from '../index';
@@ -396,15 +398,18 @@ describe('snapshotBeforeMigrations', () => {
 });
 
 describe('snapshotDaily', () => {
-  it('writes one snapshot per UTC day, however often it is called', () => {
+  it('writes one snapshot per UTC day, however often it is called', async () => {
     const home = tempDir();
     const db = createDb(path.join(home, 'dork.db'));
     runMigrations(db);
     const backups = path.join(home, 'backups');
 
-    const first = snapshotDaily(db, { dir: backups, now: new Date('2026-08-15T00:00:01Z') });
-    const again = snapshotDaily(db, { dir: backups, now: new Date('2026-08-15T23:59:59Z') });
-    const nextDay = snapshotDaily(db, { dir: backups, now: new Date('2026-08-16T04:00:00Z') });
+    const first = await snapshotDaily(db, { dir: backups, now: new Date('2026-08-15T00:00:01Z') });
+    const again = await snapshotDaily(db, { dir: backups, now: new Date('2026-08-15T23:59:59Z') });
+    const nextDay = await snapshotDaily(db, {
+      dir: backups,
+      now: new Date('2026-08-16T04:00:00Z'),
+    });
 
     expect(path.basename(first!)).toBe('dork-20260815-daily.db');
     expect(again).toBeNull();
@@ -415,14 +420,14 @@ describe('snapshotDaily', () => {
     ]);
   });
 
-  it('keeps a week of days and drops the oldest', () => {
+  it('keeps a week of days and drops the oldest', async () => {
     const home = tempDir();
     const db = createDb(path.join(home, 'dork.db'));
     runMigrations(db);
     const backups = path.join(home, 'backups');
 
     for (let day = 1; day <= 10; day++) {
-      snapshotDaily(db, {
+      await snapshotDaily(db, {
         dir: backups,
         now: new Date(`2026-08-${String(day).padStart(2, '0')}T12:00:00Z`),
       });
@@ -440,7 +445,7 @@ describe('snapshotDaily', () => {
     expect(readdirSync(backups)).toHaveLength(SNAPSHOT_RETENTION.daily);
   });
 
-  it('retakes a day whose snapshot is a zero-byte decoy', () => {
+  it('retakes a day whose snapshot is a zero-byte decoy', async () => {
     // Without this, one disk-full failure marks the UTC day permanently
     // "covered" by an empty file — silently, and while holding one of the seven
     // slots a real snapshot would otherwise occupy.
@@ -453,15 +458,15 @@ describe('snapshotDaily', () => {
     mkdirSync(backups, { recursive: true });
     writeFileSync(dest, '');
 
-    const written = snapshotDaily(db, { dir: backups, now });
+    const written = await snapshotDaily(db, { dir: backups, now });
 
     expect(written).toBe(dest);
     expect(statSync(dest).size).toBeGreaterThan(0);
     // And a real one on the same day is still left alone.
-    expect(snapshotDaily(db, { dir: backups, now })).toBeNull();
+    expect(await snapshotDaily(db, { dir: backups, now })).toBeNull();
   });
 
-  it('opens on its own, holding what the database held', () => {
+  it('opens on its own, holding what the database held', async () => {
     const home = tempDir();
     const db = createDb(path.join(home, 'dork.db'));
     runMigrations(db);
@@ -471,7 +476,7 @@ describe('snapshotDaily', () => {
       )
       .run();
 
-    const written = snapshotDaily(db, { dir: path.join(home, 'backups') })!;
+    const written = (await snapshotDaily(db, { dir: path.join(home, 'backups') }))!;
 
     const snapshot = new Database(written);
     try {
@@ -482,6 +487,135 @@ describe('snapshotDaily', () => {
     } finally {
       snapshot.close();
     }
+  });
+
+  it('copies rows still in the WAL, and leaves a file that needs no WAL beside it', async () => {
+    const home = tempDir();
+    const db = createDb(path.join(home, 'dork.db'));
+    runMigrations(db);
+    expect(db.$client.pragma('journal_mode', { simple: true })).toBe('wal');
+    db.$client
+      .prepare(
+        "INSERT INTO rooms (id, kind, slug, title, topic, archived, created_at, last_activity_at) VALUES ('01WAL', 'channel', 'wal', '#wal', NULL, 0, '2026-08-15T10:00:00Z', '2026-08-15T10:00:00Z')"
+      )
+      .run();
+
+    const written = (await snapshotDaily(db, { dir: path.join(home, 'backups') }))!;
+
+    const backups = readdirSync(path.join(home, 'backups'));
+    expect(backups).toEqual([path.basename(written)]);
+    const snapshot = new Database(written, { readonly: true });
+    try {
+      expect(snapshot.pragma('journal_mode', { simple: true })).toBe('delete');
+      expect(snapshot.prepare('SELECT id FROM rooms').all()).toEqual([{ id: '01WAL' }]);
+    } finally {
+      snapshot.close();
+    }
+  });
+
+  it('hands the event loop back while it copies (DOR-2906)', async () => {
+    const home = tempDir();
+    const db = createDb(path.join(home, 'dork.db'));
+    runMigrations(db);
+    // Enough pages for the backup to take many steps.
+    db.$client.exec('CREATE TABLE filler (blob TEXT)');
+    const insert = db.$client.prepare('INSERT INTO filler (blob) VALUES (?)');
+    db.$client.transaction(() => {
+      for (let i = 0; i < 2_000; i++) insert.run('x'.repeat(4_000));
+    })();
+
+    let ticks = 0;
+    const timer = setInterval(() => (ticks += 1), 0);
+    try {
+      await snapshotDaily(db, { dir: path.join(home, 'backups') });
+    } finally {
+      clearInterval(timer);
+    }
+    expect(ticks).toBeGreaterThan(0);
+  });
+
+  it('takeDailySnapshot warns instead of rejecting when the copy cannot be written', async () => {
+    const home = tempDir();
+    const db = createDb(path.join(home, 'dork.db'));
+    runMigrations(db);
+    const blocked = path.join(home, 'not-a-dir');
+    writeFileSync(blocked, 'a file where the folder should be');
+    const log = { info: vi.fn(), warn: vi.fn() };
+
+    await expect(takeDailySnapshot(db, blocked, log)).resolves.toBeUndefined();
+    expect(log.warn).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('snapshotSqliteInSteps (DOR-2906)', () => {
+  /** A migrated database with enough rows for the copy to take many steps. */
+  function bigDb() {
+    const home = tempDir();
+    const db = createDb(path.join(home, 'dork.db'));
+    runMigrations(db);
+    db.$client.exec('CREATE TABLE filler (blob TEXT)');
+    const insert = db.$client.prepare('INSERT INTO filler (blob) VALUES (?)');
+    db.$client.transaction(() => {
+      for (let i = 0; i < 2_000; i++) insert.run('x'.repeat(4_000));
+    })();
+    return { home, db };
+  }
+
+  /** Count the steps the copy takes, by wrapping its progress callback. */
+  function countSteps(sqlite: Database.Database, report?: { totalPages: number }) {
+    const steps = { count: 0 };
+    const original = sqlite.backup.bind(sqlite);
+    vi.spyOn(sqlite, 'backup').mockImplementation((dest, options) =>
+      original(dest, {
+        ...options,
+        progress: (info) => {
+          steps.count += 1;
+          return options!.progress!(report ? { ...info, ...report } : info);
+        },
+      })
+    );
+    return steps;
+  }
+
+  it('copies a page range at a time, many steps for a large database', async () => {
+    const { home, db } = bigDb();
+    const steps = countSteps(db.$client);
+    await snapshotSqliteInSteps(db.$client, path.join(home, 'copy.db'));
+    expect(steps.count).toBeGreaterThan(10);
+  });
+
+  it('refuses to write over an existing file', async () => {
+    const { home, db } = bigDb();
+    const dest = path.join(home, 'copy.db');
+    writeFileSync(dest, 'something already here');
+    await expect(snapshotSqliteInSteps(db.$client, dest)).rejects.toThrow(/already exists/);
+    expect(readFileSync(dest, 'utf8')).toBe('something already here');
+  });
+
+  it('gives up on a copy that keeps starting over, and leaves nothing behind', async () => {
+    const { home, db } = bigDb();
+    // Pretend the source is one page: three passes' worth is soon exceeded.
+    countSteps(db.$client, { totalPages: 1 });
+    const dest = path.join(home, 'copy.db');
+    await expect(snapshotSqliteInSteps(db.$client, dest)).rejects.toThrow(/kept changing/);
+    expect(readdirSync(home).filter((name) => name.startsWith('copy.db'))).toEqual([]);
+  });
+
+  it('runs one daily snapshot at a time', async () => {
+    const { home, db } = bigDb();
+    const backup = vi.spyOn(db.$client, 'backup');
+    const log = { info: vi.fn(), warn: vi.fn() };
+    const dir = path.join(home, 'backups');
+
+    await Promise.all([
+      takeDailySnapshot(db, dir, log),
+      takeDailySnapshot(db, dir, log),
+      takeDailySnapshot(db, dir, log),
+    ]);
+
+    expect(backup).toHaveBeenCalledTimes(1);
+    expect(readdirSync(dir).filter((name) => /-daily\.db$/.test(name))).toHaveLength(1);
+    expect(log.warn).not.toHaveBeenCalled();
   });
 });
 

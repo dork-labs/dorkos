@@ -137,6 +137,14 @@ export const QUERY_TIMING = {
   GIT_STATUS_STALE_TIME_MS: 5_000,
   /** Message history staleTime (ms). */
   MESSAGE_STALE_TIME_MS: 0,
+  /**
+   * How often a list the event stream already keeps current checks again
+   * anyway, in case an event was missed or a change has no event of its own
+   * (DOR-2909). The event is the real update; this is only the safety net, so
+   * it is slow. Polls pause on their own while the tab is hidden (TanStack's
+   * `refetchIntervalInBackground` defaults to false).
+   */
+  EVENT_BACKSTOP_REFETCH_MS: 60_000,
 } as const;
 
 export const CELEBRATIONS = {

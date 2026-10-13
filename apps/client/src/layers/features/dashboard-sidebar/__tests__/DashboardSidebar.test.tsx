@@ -133,6 +133,8 @@ let mockPathname = '/';
  * nothing at all.
  */
 const mockRouterNavigate = vi.fn();
+/** Every `onBeforeNavigate` listener the sidebar subscribed, to fire by hand. */
+const beforeNavigateListeners = new Set<() => void>();
 /**
  * The panel's boot phase, settled by default so these cases are about what they
  * are named after rather than about the gate. One case turns it off, because
@@ -157,6 +159,10 @@ vi.mock('@tanstack/react-router', async (importOriginal) => ({
   useNavigate: () => mockNavigate,
   useRouter: () => ({
     navigate: mockRouterNavigate,
+    subscribe: (_event: 'onBeforeNavigate', listener: () => void) => {
+      beforeNavigateListeners.add(listener);
+      return () => beforeNavigateListeners.delete(listener);
+    },
     state: {
       get location() {
         return mockLocation;
@@ -484,6 +490,14 @@ vi.mock('@/layers/entities/session', async (importOriginal) => ({
   // plain store with nothing to stub.
   useSessionRouteContext: (await importOriginal<typeof import('@/layers/entities/session')>())
     .useSessionRouteContext,
+  // Real too, for the same reason: the row an agent click lights while its
+  // lookup is out (DOR-2891).
+  markPendingSessionTarget: (await importOriginal<typeof import('@/layers/entities/session')>())
+    .markPendingSessionTarget,
+  usePendingSessionTarget: (await importOriginal<typeof import('@/layers/entities/session')>())
+    .usePendingSessionTarget,
+  clearPendingSessionTarget: (await importOriginal<typeof import('@/layers/entities/session')>())
+    .clearPendingSessionTarget,
   useAgentSessions: () => ({ sessions: [], activeSessionId: null, isLoading: false }),
   useAgentHottestStatus: () => ({ kind: 'idle', color: 'x', pulse: false, label: 'Idle' }),
   useAgentsAggregateStatus: () => false,
@@ -1395,6 +1409,29 @@ describe('DashboardSidebar', () => {
           search: { dir: undefined, session: 's9' },
         })
       );
+    });
+
+    it('lights the pressed agent at once, while its chat is still being looked up (DOR-2891)', async () => {
+      mockPathname = '/session';
+      mockLocation = { pathname: '/session', search: { session: 's1', dir: '/projects/alpha' } };
+      renderWithProviders(<DashboardSidebar />);
+      await waitFor(() => expect(agentRowButton('alpha')).toHaveAttribute('aria-current', 'page'));
+      // The server never answers: before, nothing on screen moved until it did.
+      mockTransport.listSessions.mockImplementation(() => new Promise(() => {}));
+      fireEvent.click(agentRowButton('beta'));
+      await waitFor(() => expect(agentRowButton('beta')).toHaveAttribute('aria-current', 'page'));
+      expect(agentRowButton('alpha')).not.toHaveAttribute('aria-current');
+      // Tint only: Today still holds the chat that is actually open.
+      expect(
+        within(todayZone()!)
+          .getAllByRole('button')
+          .some((row) => row.getAttribute('title')?.includes('alpha'))
+      ).toBe(true);
+      // Any navigation hands the answer back to the router, so a lookup that
+      // was overtaken cannot keep the row lit.
+      act(() => beforeNavigateListeners.forEach((listener) => listener()));
+      await waitFor(() => expect(agentRowButton('beta')).not.toHaveAttribute('aria-current'));
+      expect(agentRowButton('alpha')).toHaveAttribute('aria-current', 'page');
     });
 
     it('migrates legacy localStorage pins into server config, once', async () => {

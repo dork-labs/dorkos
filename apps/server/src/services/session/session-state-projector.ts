@@ -337,6 +337,12 @@ export class SessionStateProjector {
   private counter = 0;
 
   /**
+   * How many times the registry has handed this instance out. The idle sweep
+   * keeps a projector somebody fetched since its last look (DOR-2897).
+   */
+  acquisitions = 0;
+
+  /**
    * Identifies THIS instance's seq space on the wire, for the life of the
    * instance.
    *
@@ -1754,6 +1760,11 @@ export class SessionStateProjector {
     return this.inProgressTurn;
   }
 
+  /** Whether a sign-in card is still open; it outlives its turn (see {@link openSigninCards}). */
+  hasOpenSigninCards(): boolean {
+    return this.openSigninCards.size > 0;
+  }
+
   /**
    * Assemble a {@link SessionSnapshot}: completed messages from the injected
    * loader, the live in-progress turn, the held status, recovery DTOs for
@@ -2230,6 +2241,7 @@ export function getOrCreateProjector(
     const stored = withSessionLimitStore('get', (store) => store.get(key));
     if (stored) projector.hydrateLimit(stored.limit);
   }
+  projector.acquisitions += 1;
   if (cwd !== undefined && projector.cwd === undefined) projector.cwd = cwd;
   if (opts?.persist !== undefined && sessionEventStore !== undefined) {
     projector.enablePersistence(sessionEventStore, opts.persist);
@@ -2255,8 +2267,9 @@ export function getOrCreateProjector(
  * client that never held the retired id says nothing.
  *
  * **In-memory and therefore bounded.** A projector lives until its session is
- * evicted (claude-code: `SESSIONS.TIMEOUT_MS`, 30 minutes idle) or the server
- * restarts, so this answers for the recent fleet, not for all history. That is
+ * evicted (claude-code: `SESSIONS.TIMEOUT_MS`, 30 minutes idle), a log-backed
+ * one until the idle sweep drops it (`replay/projector-idle-sweep.ts`), or the
+ * server restarts, so this answers for the recent fleet, not for all history. That is
  * the same bound the live fan-out has always had.
  */
 export function listProjectorStatuses(): ProjectorStatusUpdate[] {

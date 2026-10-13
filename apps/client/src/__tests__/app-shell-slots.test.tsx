@@ -414,6 +414,7 @@ vi.mock('@/layers/entities/session', async (importOriginal) => ({
   // open in this isolation test.
   useSessionRow: () => ({ data: undefined }),
   useSessionRouteContext: () => undefined,
+  usePendingSessionTarget: () => null,
   sessionDisplayTitle: (title: string) => title,
 }));
 

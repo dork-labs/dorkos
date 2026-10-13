@@ -58,6 +58,7 @@ function recordingScheduler(): SchedulerRegistrationTarget & {
     unregisterTask(id: string) {
       unregistered.push(id);
     },
+    hasJob: () => false,
   };
 }
 

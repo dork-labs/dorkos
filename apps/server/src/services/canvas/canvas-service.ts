@@ -838,11 +838,8 @@ export class CanvasService {
   }
 
   /**
-   * How many sessions are marked as gone but not yet swept.
-   *
-   * @internal Exported for testing only. The two-phase rule is the claim, and a
-   * test that could not read the mark set could only assert whatever behaviour
-   * happens to follow from it.
+   * How many sessions are marked as gone but not yet swept. The health timer
+   * lists sessions for the sweep only while this is above zero (DOR-2905).
    */
   orphanMarkCount(): number {
     return this.orphanedSessions.size;

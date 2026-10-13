@@ -15,7 +15,14 @@ import { returnedSignIn, takeSignInFailure, useSignInOptions } from '../sign-in-
 import { LinkWithPassword } from '../sign-up/LinkWithPassword.js';
 import { ProviderButton } from '../sign-up/ProviderButton.js';
 import { ProviderButtons, type SignInProvider } from '../sign-up/ProviderButtons.js';
-import { confirmMinimumAge, MinimumAgeConfirmation } from '../sign-up/MinimumAgeConfirmation.js';
+import {
+  confirmSignUp,
+  singleSignOnConfirmations,
+  SignUpConfirmation,
+  SingleSignOnRules,
+  signUpRules,
+  type SignUpRules,
+} from '../sign-up/SignUpConfirmation.js';
 import { replacementDate } from './copy.js';
 import {
   clearReplacementFragment,
@@ -86,7 +93,8 @@ export function OwnerReplacementClaim() {
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [ageConfirmed, setAgeConfirmed] = useState(false);
+  const [rulesConfirmed, setRulesConfirmed] = useState(false);
+  const [countryConfirmed, setCountryConfirmed] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const [busy, setBusy] = useState(false);
   // A sign-in round trip that failed comes back here with `?error=`; say why once.
@@ -217,16 +225,16 @@ export function OwnerReplacementClaim() {
     }
   }
 
-  const minimumAge = providers.minimumAge;
-  // A password account needs the age box only when it is being created.
-  const passwordAge = mode === 'signup' ? minimumAge : null;
+  const rules = signUpRules(providers);
+  // A password account needs the sign-up box only when it is being created.
+  const passwordRules = mode === 'signup' ? rules : null;
 
   async function submitAccount(event: React.FormEvent) {
     event.preventDefault();
     setBusy(true);
     setError('');
     try {
-      if (passwordAge !== null) await confirmMinimumAge();
+      if (passwordRules) await confirmSignUp(passwordRules);
       await hostRequest(
         mode === 'signup' ? '/api/auth/sign-up/email' : '/api/auth/sign-in/email',
         'POST',
@@ -241,14 +249,14 @@ export function OwnerReplacementClaim() {
     }
   }
 
-  /** Start a sign-in round trip; `confirmAge` when the box for a new account was ticked. */
-  async function social(provider: SignInProvider, confirmAge: boolean) {
+  /** Start a sign-in round trip; `confirmRules` when the box for a new account was ticked. */
+  async function social(provider: SignInProvider, confirmRules: SignUpRules | null) {
     setBusy(true);
     setError('');
     try {
       const here = window.location.origin + OWNER_REPLACEMENT_CLAIM_PATH;
       // The provider's callback may create the account, so the confirmation must be in place.
-      if (confirmAge) await confirmMinimumAge();
+      if (confirmRules) await confirmSignUp(confirmRules);
       const result = await authClient.signIn.social({
         provider,
         callbackURL: here,
@@ -307,12 +315,14 @@ export function OwnerReplacementClaim() {
         )}
         {stage === 'account' && named && (
           <div className="panel">
-            {minimumAge !== null && (
-              <MinimumAgeConfirmation
-                id="owner-replacement-minimum-age"
-                minimumAge={minimumAge}
-                confirmed={ageConfirmed}
-                onChange={setAgeConfirmed}
+            {rules !== null && (
+              <SingleSignOnRules
+                id="owner-replacement-sign-up"
+                rules={rules}
+                ageConfirmed={rulesConfirmed}
+                onAgeChange={setRulesConfirmed}
+                countryConfirmed={countryConfirmed}
+                onCountryChange={setCountryConfirmed}
               />
             )}
             {providers.oidc ? (
@@ -320,9 +330,12 @@ export function OwnerReplacementClaim() {
                 provider="oidc"
                 label={providers.oidc.label}
                 mark={providers.oidc.mark ?? null}
-                // A new account must confirm the host's minimum age first, as on the owner claim.
-                disabled={busy || (minimumAge !== null && !ageConfirmed)}
-                onClick={() => void social('oidc', minimumAge !== null)}
+                // The named account may already exist, so only the minimum age is required here,
+                // as on the owner claim; the countries are confirmed only when ticked.
+                disabled={busy || (rules?.minimumAge != null && !rulesConfirmed)}
+                onClick={() =>
+                  void social('oidc', singleSignOnConfirmations(rules, countryConfirmed))
+                }
               />
             ) : (
               <p role="status" className="mb-0">
@@ -392,12 +405,12 @@ export function OwnerReplacementClaim() {
                     : `At least ${COMMUNITY_PASSWORD_MIN_LENGTH} characters.`}
                 </span>
               </div>
-              {passwordAge !== null && (
-                <MinimumAgeConfirmation
-                  id="owner-replacement-minimum-age"
-                  minimumAge={passwordAge}
-                  confirmed={ageConfirmed}
-                  onChange={setAgeConfirmed}
+              {passwordRules !== null && (
+                <SignUpConfirmation
+                  id="owner-replacement-sign-up"
+                  rules={passwordRules}
+                  confirmed={rulesConfirmed}
+                  onChange={setRulesConfirmed}
                 />
               )}
               <Button type="submit" variant="default" className="w-full" disabled={busy}>
@@ -411,8 +424,8 @@ export function OwnerReplacementClaim() {
             </form>
             <ProviderButtons
               providers={providers}
-              disabled={busy || (passwordAge !== null && !ageConfirmed)}
-              onChoose={(provider) => void social(provider, passwordAge !== null)}
+              disabled={busy || (passwordRules !== null && !rulesConfirmed)}
+              onChoose={(provider) => void social(provider, passwordRules)}
             />
           </>
         )}

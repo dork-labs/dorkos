@@ -432,6 +432,9 @@ export function explorerDirQueryOptions(
     queryFn: () => source.list(dirPath, { showHidden }),
     staleTime: QUERY_TIMING.FILE_TREE_STALE_TIME_MS,
     gcTime: QUERY_TIMING.FILE_TREE_GC_TIME_MS,
+    // Files change in an editor or a terminal with no event to say so, and that
+    // is exactly where a person was when they switch back (DOR-2896).
+    refetchOnWindowFocus: true,
     // Hold the previous rows while a show-hidden toggle refetches, so the tree
     // never blanks to a root spinner (DOR-404 review nit 3). Toggling
     // show-hidden repartitions this dir's key, and a fresh observer for the new

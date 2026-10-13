@@ -35,6 +35,7 @@ import { reportClientError } from '@/layers/shared/lib';
 import { sessionKeys } from '../api/query-keys';
 import { sessionListQueryOptions } from '../api/session-list-query';
 import { partitionSessionsByOwnership } from './chat-ownership';
+import { predatesSessionListReset } from './session-list-reset';
 
 /**
  * What every surface says when it could not find out which conversation an
@@ -152,7 +153,13 @@ export async function resolveSessionForCwd(
   deps: ResolveSessionDeps,
   cwd: string | null
 ): Promise<ResolvedSession | null> {
-  const sessions = trustedSessionsForCwd(deps.queryClient, cwd) ?? (await askServer(deps, cwd));
+  const cached = trustedSessionsForCwd(deps.queryClient, cwd);
+  // A list a reconnect marked stale still opens the chat at once; the fresh one
+  // replaces it behind the navigation (DOR-2891).
+  if (cached !== null && deps.queryClient.getQueryState(sessionKeys.list(cwd))?.isInvalidated) {
+    void askServer(deps, cwd);
+  }
+  const sessions = cached ?? (await askServer(deps, cwd));
   if (sessions === null) return null;
   const mostRecent = agentClickTarget(sessions);
   return mostRecent
@@ -277,14 +284,22 @@ async function askServer(deps: ResolveSessionDeps, cwd: string | null): Promise<
  * The cached session list for `cwd` when it can still be believed, or `null`
  * when this window has to ask.
  *
- * A NON-EMPTY, non-invalidated entry is the only cache hit worth taking. Empty
- * is the state a never-displayed directory is in, which is the whole bug.
- * Invalidated is the state a Claude account switch leaves every list in
- * (`session_list_invalidated` marks them; it does not drop them), so trusting
- * one there resumes an id belonging to the account that is no longer signed in.
+ * A NON-EMPTY entry fetched after the last account switch is the only cache
+ * hit worth taking. Empty is the state a never-displayed directory is in, which
+ * is the whole bug. A list fetched before a Claude account switch
+ * (`session_list_invalidated` marks them; it does not drop them) can name a chat
+ * belonging to the account that is no longer signed in, so it is not believed.
+ *
+ * An entry a stream reconnect invalidated IS believed: it is this agent's chats,
+ * possibly a little behind, and waiting for a fresh list after every wake from
+ * sleep made every agent click hang on the server (DOR-2891). The caller
+ * refreshes it in the background. The one moment nothing cached is believed is
+ * between the stream opening again and its first frame, which is what says
+ * whether a switch was missed meanwhile (`session-list-reset.ts`).
  */
 function trustedSessionsForCwd(queryClient: QueryClient, cwd: string | null): Session[] | null {
   const state = queryClient.getQueryState<Session[]>(sessionKeys.list(cwd));
-  if (state === undefined || state.isInvalidated) return null;
+  if (state === undefined) return null;
+  if (predatesSessionListReset(state.dataUpdatedAt)) return null;
   return state.data && state.data.length > 0 ? state.data : null;
 }

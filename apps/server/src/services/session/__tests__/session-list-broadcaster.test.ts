@@ -148,7 +148,13 @@ describe('SessionListBroadcaster — multi-runtime fan-in (ADR-0310)', () => {
     const a = controllableSessionList();
     runtimeA.subscribeSessionList.mockReturnValue(a.iterable);
     const lister = new FakeAgentRuntime('lister');
-    lister.listSessions.mockResolvedValue([]);
+    lister.listSessions.mockResolvedValue([
+      createMockSession({
+        id: SESSION_A,
+        cwd: '/agents/a0',
+        updatedAt: '2026-01-01T00:00:00.000Z',
+      }),
+    ]);
     const ask = () => fanOutAgentSessions({ runtimes: [lister], agentPaths: ['/agents/a0'] });
     await ask();
     await ask();
@@ -161,6 +167,23 @@ describe('SessionListBroadcaster — multi-runtime fan-in (ADR-0310)', () => {
     );
     await ask();
     expect(lister.listSessions).toHaveBeenCalledTimes(2);
+
+    // An update to a chat already listed reuses the fresh answer (DOR-2893).
+    broadcastSpy.mockClear();
+    a.push({
+      type: 'session_upserted',
+      session: createMockSession({
+        id: SESSION_A,
+        title: 'Renamed',
+        updatedAt: '2026-01-02T00:00:00.000Z',
+      }),
+    });
+    await vi.waitFor(() =>
+      expect(broadcastSpy).toHaveBeenCalledWith('session_upserted', expect.anything())
+    );
+    const answer = await ask();
+    expect(lister.listSessions).toHaveBeenCalledTimes(2);
+    expect(answer.perPath[0]!.members[0]!.title).toBe('Renamed');
 
     a.push({ type: 'session_removed', sessionId: SESSION_A });
     await vi.waitFor(() =>

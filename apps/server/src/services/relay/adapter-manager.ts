@@ -1244,7 +1244,7 @@ export class AdapterManager {
     nameOverride?: string
   ): Promise<void> {
     // Every connect/disconnect is a status change connected clients should see
-    // without waiting for the 10s poll — signal before the activity early-return.
+    // without waiting for the client's poll — signal before the activity early-return.
     broadcastAdaptersChanged();
 
     // The reconnect catch-up trigger (chats-as-channels §6.1): when an adapter

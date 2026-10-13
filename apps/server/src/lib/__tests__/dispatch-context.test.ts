@@ -20,7 +20,7 @@ describe('dispatch context', () => {
   /** Every NDJSON line the reporter has written this test, parsed. */
   function writtenLines(): Array<Record<string, unknown>> {
     return vi
-      .mocked(fs.appendFileSync)
+      .mocked(fs.writeSync)
       .mock.calls.map((call) => JSON.parse(String(call[1]).trim()) as Record<string, unknown>);
   }
 
@@ -31,6 +31,8 @@ describe('dispatch context', () => {
     vi.mocked(fs.statSync).mockImplementation(() => {
       throw Object.assign(new Error('ENOENT'), { code: 'ENOENT' });
     });
+    vi.mocked(fs.openSync).mockReturnValue(42);
+    vi.mocked(fs.fstatSync).mockReturnValue({ size: 0, ino: 1 } as never);
     loggerModule = await import('../logger.js');
     dispatch = await import('../dispatch-context.js');
     loggerModule.initLogger({ logDir: '/logs', level: 4 });

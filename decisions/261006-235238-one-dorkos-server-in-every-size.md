@@ -12,7 +12,7 @@ amends: [260727-184933, 260916-210001, 0319]
 
 ## Status
 
-Accepted (operator decision, 2026-10-06; Linear DOR-2735). Direction: the merge is after-launch work, so today's code still runs two servers.
+Accepted (operator decision, 2026-10-06; Linear DOR-2735). Direction: the merge starts before launch (Dorian, 2026-10-12), with a go/no-go on November 16. If its before-launch part is not ready by then, launch runs on today's space server and it finishes right after launch. Which parts land before launch and which after is in spec [`server-merge`](../specs/server-merge/02-specification.md). Until the merge lands, today's code still runs two servers.
 
 **Amends** (each stays Accepted):
 

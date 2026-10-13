@@ -530,7 +530,7 @@ export class ClaudeCodeRuntime implements AgentRuntime {
     this.cache.setClaudeCliPath(this.claudeCliPath);
     // The account probe spawns too; it runs the binary a session would.
     setAccountProbeBinaryResolver(() => this.spawnBinaryPath);
-    this.transcriptReader = new TranscriptReader();
+    this.transcriptReader = originalClaudeSessionQueryOperations.newReader(() => this.attachments);
     /** Build the original fixed query view inside its owning runtime constructor. */
     function createClaudeSessionQueryView(
       owner: ClaudeCodeRuntime
@@ -1546,8 +1546,12 @@ export class ClaudeCodeRuntime implements AgentRuntime {
   }
 
   /** @inheritdoc */
-  async findSession(sessionId: string): Promise<Session | null> {
-    return originalClaudeSessionQueryOperations.findSession(this.#sessionQueryKey, sessionId);
+  async findSession(sessionId: string, options?: { cwdHint?: string }): Promise<Session | null> {
+    return originalClaudeSessionQueryOperations.findSession(
+      this.#sessionQueryKey,
+      sessionId,
+      options
+    );
   }
 
   async getSession(projectDir: string, sessionId: string): Promise<Session | null> {

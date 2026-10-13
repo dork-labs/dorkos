@@ -7,11 +7,10 @@ import type {
   SessionEvent,
   SessionListEvent,
 } from '@dorkos/shared/session-stream';
-import type { TranscriptReader } from '../sessions/transcript-reader.js';
+import { TranscriptReader } from '../sessions/transcript-reader.js';
 import type { SessionStore } from '../sessions/session-store.js';
 import type { SessionAttachmentStore } from '../../../session/attachments/index.js';
 import type { SessionStateProjector } from '../../../session/index.js';
-import type { TranscriptImageRef } from '../sessions/transcript-parser.js';
 import { attachTranscriptImages } from '../media-capture.js';
 import { watchSessionList } from '../sessions/session-list-watcher.js';
 import { isCreditsClaudeRoot } from '../credits-root.js';
@@ -58,6 +57,14 @@ export function createIsolatedClaudeSessionQueryCustody() {
   return originalQueryFreeze({ register, read });
 }
 
+/** Construct Main's cached reader with a live read of the original runtime's attachment store. */
+export function newReader(attachments: () => SessionAttachmentStore | null): TranscriptReader {
+  return new TranscriptReader({
+    attachImages: (sessionId, messages, images) =>
+      attachTranscriptImages(attachments(), sessionId, messages, images),
+  });
+}
+
 /** Execute the original listSessions query only after the actual runtime private-key lookup. */
 export async function listSessions(ownerKey: object, projectDir: string): Promise<Session[]> {
   const facet = readOriginalClaudeSessionQueryView(ownerKey);
@@ -74,9 +81,13 @@ export async function listSessionsWithWarnings(
 }
 
 /** Execute the original findSession query only after the actual runtime private-key lookup. */
-export async function findSession(ownerKey: object, sessionId: string): Promise<Session | null> {
+export async function findSession(
+  ownerKey: object,
+  sessionId: string,
+  options?: Parameters<TranscriptReader['findSession']>[1]
+): Promise<Session | null> {
   const facet = readOriginalClaudeSessionQueryView(ownerKey);
-  return facet.transcriptReader.findSession(sessionId);
+  return facet.transcriptReader.findSession(sessionId, options);
 }
 
 /** Execute the original getSession query only after the actual runtime private-key lookup. */
@@ -126,15 +137,13 @@ export async function getMessageHistory(
   sessionId: string
 ): Promise<HistoryMessage[]> {
   const facet = readOriginalClaudeSessionQueryView(ownerKey);
-  const images: TranscriptImageRef[] = [];
-  const messages = await facet.transcriptReader.readTranscript(projectDir, sessionId, images);
-  // The same seam, for the same reason: the reader stays a JSONL parser, and
-  // what DorkOS did with the bytes a tool returned is overlaid back here.
-  // Re-materializing is idempotent — the attachment id is derived from the
-  // tool call, so reopening a transcript finds the first read's file instead
-  // of writing a second copy (`media-capture.ts`).
+  const messages = await facet.transcriptReader.readTranscript(projectDir, sessionId);
+  // Images tool results carried come back already placed: the reader's cache
+  // stores and splices each one the first time its line is parsed, through
+  // the attacher handed to it in the constructor. That keeps the reader a
+  // JSONL parser that learns nothing about where DorkOS keeps bytes.
   //
-  // **Idempotent only because both paths key storage on the CANONICAL id.**
+  // **Idempotent only because storage is keyed on the CANONICAL id.**
   // `sessionId` here is already canonical: both callers translate first
   // (`getSessionSnapshot`'s `historyId`, and `GET /:id/messages`'s
   // `internalSessionId`), because the transcript on disk is named by it. The
@@ -150,7 +159,6 @@ export async function getMessageHistory(
   // only one that rebuilds history by re-parsing a transcript rather than
   // replaying recorded `image_attachment` events, which carry their URL
   // (`services/session/event-log-history.ts`).
-  await attachTranscriptImages(facet.attachments, sessionId, messages, images);
   // And the third pass, for the refusals nobody was asked about (DOR-795): a
   // BACKGROUNDED subagent's denied tool call is written into the child's
   // transcript, not this one, so without this the conversation comes back
