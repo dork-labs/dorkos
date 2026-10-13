@@ -124,3 +124,26 @@ describe('isRowActive on a mini app’s page', () => {
     expect(isRowActive(teamRow, home)).toBe(false);
   });
 });
+
+describe('isRowActive while an agent click is being looked up (DOR-2891)', () => {
+  const alpha: SidebarTarget = { kind: 'agent', path: '/projects/alpha' };
+  const beta: SidebarTarget = { kind: 'agent', path: '/projects/beta' };
+  const openInAlpha: SidebarTarget = {
+    kind: 'session',
+    sessionId: 's1',
+    agentPath: '/projects/alpha',
+    cwd: '/projects/alpha',
+  };
+
+  it('lights only the agent being switched to', () => {
+    expect(isRowActive(beta, openInAlpha, null, '/projects/beta')).toBe(true);
+    expect(isRowActive(alpha, openInAlpha, null, '/projects/beta')).toBe(false);
+    expect(isRowActive(openInAlpha, openInAlpha, null, '/projects/beta')).toBe(false);
+    expect(isRowActive(teamRow, null, TEAM, '/projects/beta')).toBe(false);
+  });
+
+  it('falls back to what is open once nothing is pending', () => {
+    expect(isRowActive(alpha, openInAlpha, null, null)).toBe(true);
+    expect(isRowActive(beta, openInAlpha, null, null)).toBe(false);
+  });
+});

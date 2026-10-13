@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useMemo } from 'react';
 import { useSafeNavigate } from '@/layers/shared/model';
 import { toSession } from '@/layers/shared/lib';
 import { useSessionSearch } from '../navigation/use-session-search';
@@ -10,6 +10,8 @@ import type { Session } from '@dorkos/shared/types';
 // Same-slice imports via sibling modules (not the entities/session barrel) to
 // avoid a self-referential barrel import within this slice.
 import { sessionKeys } from '../../api/query-keys';
+import { sessionDetailQueryOptions } from '../../api/session-detail-query';
+import { findCachedSessionRow } from '../../lib/cached-session-row';
 
 /** Options for {@link useSessionDetail}. */
 export interface UseSessionDetailOptions<T> {
@@ -44,6 +46,35 @@ export interface UseSessionDetailOptions<T> {
 }
 
 /**
+ * The directory a session's detail is read under.
+ *
+ * Explicit legacy hints win; then this identity's resolved route context; then
+ * the directory a cached row names. A tab reads its chat before the route
+ * loader has installed the context, and asking under no directory cost a
+ * second read of the row the loader was already fetching under the row's own
+ * directory (DOR-2891). With nothing at all, null asks the server to resolve
+ * it, never a global default.
+ *
+ * The cached row is looked up once per session, not on every render: a list
+ * that lands after the read went out would otherwise move the read to a new
+ * key and send it again.
+ */
+function useSessionReadCwd(sessionId: string | null, dir: string | undefined): string | null {
+  const queryClient = useQueryClient();
+  const context = useSessionRouteContext(sessionId);
+  const cachedCwd = useMemo(
+    () =>
+      sessionId
+        ? (findCachedSessionRow(queryClient, sessionId, { listsOnly: true })?.cwd ?? null)
+        : null,
+    [queryClient, sessionId]
+  );
+  if (dir !== undefined) return dir;
+  if (context) return context.cwd;
+  return cachedCwd;
+}
+
+/**
  * The session's detail row from the server, cached under the one key every
  * reader and writer shares, and nothing else: no router, no navigation. For a
  * surface that only names a chat, like a tab, which may sit outside any route
@@ -60,30 +91,14 @@ export function useSessionRow<T = Session>(
 ) {
   const transport = useTransport();
   const queryClient = useQueryClient();
-
-  // Explicit legacy hints win; otherwise use this identity's resolved context.
-  // A missing context requests server-side resolution, never a global default.
-  const context = useSessionRouteContext(sessionId);
-  const cwd = options?.dir ?? context?.cwd ?? null;
+  const cwd = useSessionReadCwd(sessionId, options?.dir);
 
   return useQuery({
-    queryKey: sessionKeys.detail(sessionId, cwd),
-    queryFn: async () => {
-      const session = await transport.getSession(sessionId!, cwd ?? undefined);
-      queryClient.setQueryData(sessionKeys.nativeDetail(sessionId, cwd), session);
-      return session;
-    },
+    ...sessionDetailQueryOptions({ transport, queryClient }, sessionId, cwd),
     staleTime: options?.nameOnly ? Infinity : 30_000,
     ...(options?.nameOnly && { refetchOnWindowFocus: false, retry: false }),
     enabled: Boolean(sessionId) && (options?.enabled ?? true),
     select: options?.select,
-    // **Dropped wifi is not a reason to stop asking localhost.** TanStack's
-    // default `networkMode: 'online'` PAUSES a fetch whenever
-    // `navigator.onLine` is false, and this server is not on the internet —
-    // the ruling `useConfig` states at length, applied here because the trust
-    // dial reads this and a paused read left it with nothing to say
-    // (DOR-2103).
-    networkMode: 'always',
   });
 }
 
@@ -107,7 +122,7 @@ export function useSessionDetail<T = Session>(
 ) {
   const transport = useTransport();
   const context = useSessionRouteContext(sessionId);
-  const cwd = options?.dir ?? context?.cwd ?? null;
+  const cwd = useSessionReadCwd(sessionId, options?.dir);
   const navigate = useSafeNavigate();
   const search = useSessionSearch();
   // Settings PATCHes and optimistic list rows can make detail look successful

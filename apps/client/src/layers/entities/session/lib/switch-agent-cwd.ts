@@ -3,6 +3,7 @@ import type { QueryClient } from '@tanstack/react-query';
 import type { Transport } from '@dorkos/shared/transport';
 import { resolveSessionForCwd, notifySessionLookupFailed } from './resolve-session-for-cwd';
 import { beginSessionNavigation, type AppLocation } from './session-navigation-intent';
+import { markPendingSessionTarget } from '../model/navigation/pending-session-target';
 
 /**
  * App-store slice {@link switchAgentCwd} reads and writes. A structural subset
@@ -33,7 +34,12 @@ export interface SwitchAgentCwdDeps {
    * Kept router-agnostic so the caller owns the route target and the function
    * stays trivially testable.
    */
-  navigate: (search: { dir?: string; session?: string; draft?: '1'; launchRef?: string }) => void;
+  navigate: (search: {
+    dir?: string;
+    session?: string;
+    draft?: '1';
+    launchRef?: string;
+  }) => void | Promise<void>;
 }
 
 /**
@@ -64,21 +70,26 @@ export interface SwitchAgentCwdDeps {
 export async function switchAgentCwd(cwd: string, deps: SwitchAgentCwdDeps): Promise<void> {
   const { store, queryClient, transport, currentLocation, navigate } = deps;
   const isStillWanted = beginSessionNavigation(currentLocation);
+  // The agent's row shows the switch took while the lookup is out (DOR-2891).
+  const clearPending = markPendingSessionTarget(cwd);
+  try {
+    const resolved = await resolveSessionForCwd({ queryClient, transport }, cwd);
+    // Overtaken checks FIRST: an abandoned switch has nothing to say. Reporting a
+    // failure the person has already navigated away from would tell them we left
+    // them where they are while they are somewhere else.
+    if (!isStillWanted()) return;
+    if (resolved === null) {
+      notifySessionLookupFailed(cwd);
+      return;
+    }
 
-  const resolved = await resolveSessionForCwd({ queryClient, transport }, cwd);
-  // Overtaken checks FIRST: an abandoned switch has nothing to say. Reporting a
-  // failure the person has already navigated away from would tell them we left
-  // them where they are while they are somewhere else.
-  if (!isStillWanted()) return;
-  if (resolved === null) {
-    notifySessionLookupFailed(cwd);
-    return;
+    const target = resolved.isNew
+      ? await newSessionTarget(transport, { dir: cwd, session: resolved.sessionId })
+      : { search: { session: resolved.sessionId } };
+    if (!isStillWanted()) return;
+    store.setSelectedCwd(cwd);
+    await navigate(target.search);
+  } finally {
+    clearPending();
   }
-
-  const target = resolved.isNew
-    ? await newSessionTarget(transport, { dir: cwd, session: resolved.sessionId })
-    : { search: { session: resolved.sessionId } };
-  if (!isStillWanted()) return;
-  store.setSelectedCwd(cwd);
-  navigate(target.search);
 }
