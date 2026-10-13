@@ -32,6 +32,17 @@ describe('parseInstallRef', () => {
     });
   });
 
+  it('keeps the token but drops a campaign tag shaped like a per-person id', () => {
+    expect(parseInstallRef('k3j4mnb8x2qa.a1b2c3d4e5f60718.launch')).toEqual({
+      token: 'k3j4mnb8x2qa',
+      utmCampaign: 'launch',
+    });
+    expect(parseInstallRef('k3j4mnb8x2qa.hn.user-12345678')).toEqual({
+      token: 'k3j4mnb8x2qa',
+      utmSource: 'hn',
+    });
+  });
+
   it('folds case', () => {
     expect(parseInstallRef('K3J4MNB8X2QA.HN')).toEqual({ token: 'k3j4mnb8x2qa', utmSource: 'hn' });
   });

@@ -547,7 +547,7 @@ Options:
       --debug-trace        Write a local trace file for bug reports (never sent anywhere)
   -l, --log-level <level>  Log level (fatal|error|warn|info|debug|trace)
       --post-install-check  Verify installation and exit
-      --ref <ref>        Install tag from dorkos.ai; kept on this computer (see dorkos.ai/telemetry)
+      --ref <ref>          Install tag from dorkos.ai; kept on this computer (see dorkos.ai/telemetry)
   -h, --help             Show this help message
   -v, --version          Show version number
 

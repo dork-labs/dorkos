@@ -1416,10 +1416,14 @@ async function start() {
   // `?? false`, matching the install and heartbeat gates above and below. A
   // config block that is present but missing this key is not a person saying
   // yes to it, and absence is never read as consent.
-  const usageConsent =
-    resolveTelemetryConsent(telemetryConfig?.usage ?? false, telemetryEnv) && tier1SendGate;
+  // `isConsentLive` re-reads the setting on every send, so turning usage off
+  // mid-run stops the reporter at once (DOR-2862).
+  const usageOn = () =>
+    resolveTelemetryConsent(configManager.get('telemetry')?.usage ?? false, telemetryEnv);
+  const usageConsent = usageOn() && tier1SendGate;
   registerUsageReporter({
     enabled: usageConsent,
+    isConsentLive: usageOn,
     debug: telemetryDebug,
     dorkHome,
     dorkosVersion: SERVER_VERSION,
@@ -1427,12 +1431,7 @@ async function start() {
   if (usageConsent) {
     // `app_started` now, `first_run_completed` once per install (with the
     // dorkos.ai install ref, if any) and `instance_active` once a day (DOR-2862).
-    startInstallFunnel({
-      dorkHome,
-      runtimes: configManager.get('runtimes'),
-      isOnboardingComplete: () => configManager.get('onboarding').completedAt !== null,
-      onSettingsChange: (listener) => configManager.onChange((change) => listener(change.sections)),
-    });
+    startInstallFunnel({ dorkHome, config: configManager });
     logger.info('[Telemetry] Usage reporter active (consent: opt-in, notice-gated)');
   }
 

@@ -35,6 +35,18 @@ export const INSTALL_REF_FILENAME = 'install-ref.json';
 /** The whole wire form, `<token>[.<source>[.<campaign>]]`. */
 const WIRE_PATTERN = /^([a-z0-9]{12})(?:\.([a-z0-9_-]{0,32})(?:\.([a-z0-9_-]{0,32}))?)?$/;
 
+/**
+ * A campaign value shaped like a per-person id (16+ hex characters or 8+
+ * digits). The site never writes one; a hand-edited ref that does keeps its
+ * token but loses the tag. (An `@` cannot reach here: the wire pattern refuses it.)
+ */
+const PERSONAL_UTM = /[0-9a-f]{16,}|[0-9]{8,}/;
+
+/** Keep a campaign tag only when it is present and cannot name a person. */
+function keepUtm(value: string | undefined): string | undefined {
+  return value && !PERSONAL_UTM.test(value) ? value : undefined;
+}
+
 /** A parsed install ref: the token plus the first-touch campaign tags, when present. */
 export const InstallRefSchema = z
   .object({
@@ -62,7 +74,9 @@ const StoredInstallRefSchema = InstallRefSchema.extend({
 export function parseInstallRef(raw: string): InstallRef | null {
   const match = WIRE_PATTERN.exec(raw.trim().toLowerCase());
   if (!match) return null;
-  const [, token, utmSource, utmCampaign] = match;
+  const [, token] = match;
+  const utmSource = keepUtm(match[2]);
+  const utmCampaign = keepUtm(match[3]);
   return {
     token,
     ...(utmSource ? { utmSource } : {}),

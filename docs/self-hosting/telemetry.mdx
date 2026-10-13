@@ -86,11 +86,12 @@ If you already answered the first-run consent prompt on an older version, an upg
 
 ### The install tag
 
-When someone who allows analytics cookies on dorkos.ai copies the one-line installer or the `npx` command, the copied command ends with a short tag, like `--ref=k3j4mnb8x2qa.hn.launch`. The first part is a random code made for that one copy. The rest is the campaign tag of the link they arrived from, if it had one. It lets us see which visits led to an install that someone actually set up.
+When someone who allows analytics cookies on dorkos.ai copies the one-line installer or the `npx` command, the copied command ends with a short tag, like `--ref=k3j4mnb8x2qa.hn.launch`. The first part is a random code made for that one copy. The rest is the campaign tag of the link they arrived from, if it had one. It lets us count which copies led to an install that someone actually set up.
 
 - DorkOS saves the tag once, in `~/.dork/install-ref.json`, and never replaces it. Saving it sends nothing.
 - It leaves your computer only inside `first_run_completed`, and only when this channel is on.
-- It names one copy of a command, not a person or a computer. What it adds is the link between that copy and this install.
+- It names one copy of a command, not a person or a computer. We match it against the same tag on the website's copy event to count which copies led to an install.
+- It is only a label on those two events. It does not link this install to a website visitor or to an account. (Linking analytics to your account, below, is a separate choice.)
 - The desktop downloads and `npm install -g dorkos` never carry a tag: neither has a way to pass one into DorkOS.
 - Don't want it kept at all? Delete `~/.dork/install-ref.json`, or remove the `--ref=…` part before you run the command.
 

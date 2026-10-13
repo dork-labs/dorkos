@@ -1,7 +1,9 @@
 /**
  * The site half of the install ref (DOR-2862): a short anonymous tag added to
- * the install command a visitor copies, so PostHog can join that visit to the
- * first run of the install it led to, with no account.
+ * the install command a visitor copies. The same token rides as a plain event
+ * property on the site's `hero_install_copy` and the app's
+ * `first_run_completed`, so a query can join the two. It never creates an
+ * alias or merges PostHog persons.
  *
  * The ref is minted fresh for each copy and stored nowhere on the site: it lives
  * only in the copied command, the visitor's own `hero_install_copy` event, and
@@ -41,17 +43,6 @@ export interface FirstTouchUtm {
 }
 
 /**
- * The PostHog distinct id a ref joins under. The browser aliases the visitor to
- * it when they copy the command; the ingest aliases the install's `instanceId`
- * to it when `first_run_completed` arrives. Both sides must build it here.
- *
- * @param token - The ref's random token.
- */
-export function installRefDistinctId(token: string): string {
-  return `install_ref:${token}`;
-}
-
-/**
  * Mint a fresh random token.
  *
  * @param fillRandom - Random source (tests). Defaults to `crypto.getRandomValues`.
@@ -63,14 +54,19 @@ export function createInstallRefToken(
   return Array.from(bytes, (byte) => BASE36[byte % BASE36.length]).join('');
 }
 
+/** A campaign value that looks like it names a person: an email, or a long id. */
+const PERSONAL_UTM = /@|[0-9a-f]{16,}|[0-9]{8,}/i;
+
 /**
  * Fold a campaign tag into the ref's plain character set: lowercase, anything
- * else becomes `-`, capped at 32 characters. Empty in, `undefined` out.
+ * else becomes `-`, capped at 32 characters. Empty in, `undefined` out. A value
+ * that could name a person (an `@`, 16+ hex characters, or 8+ digits, the shape
+ * of an email or a per-recipient id in a mailing link) is dropped, not folded.
  *
  * @param value - A raw `utm_*` value.
  */
 export function sanitizeUtm(value: string | null | undefined): string | undefined {
-  if (!value) return undefined;
+  if (!value || PERSONAL_UTM.test(value)) return undefined;
   const cleaned = value
     .toLowerCase()
     .replace(/[^a-z0-9_-]/g, '-')

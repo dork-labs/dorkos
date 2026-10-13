@@ -64,11 +64,12 @@
  *   - "The KPI" funnel: `$pageview` -> `hero_install_copy`
  *   - "Newsletter" funnel: `$pageview` -> `newsletter_signup`
  *   - "Docs-to-install" funnel: `docs_visit` -> `hero_install_copy`
- *   - "Visit to first run" funnel (DOR-2862): `$pageview` -> `hero_install_copy`
- *     -> `first_run_completed` -> `instance_active`. The last two are app events
- *     from the owned ingest; they join the visitor's person through the install
- *     ref alias, so the path only completes for a visitor who allowed cookies,
- *     copied the curl or npx command, and whose install turned on usage data.
+ *   - "Visit to first run" (DOR-2862) is a query, not a funnel: the app's
+ *     `first_run_completed` belongs to a different PostHog person than the
+ *     visitor, and nothing merges them. Join `hero_install_copy` to it on
+ *     `properties.install_ref = properties.installRef` in SQL. Only visitors
+ *     who allowed cookies, copied the curl or npx command, and whose install
+ *     turned on usage data show up.
  * Break down any step by the `utm_source`/`utm_medium`/`utm_campaign` person
  * properties (see below) to see which launch-ladder rung drove it.
  *
@@ -94,10 +95,10 @@
  */
 import posthog from 'posthog-js';
 import { env } from '@/env';
+import { hasDntSignal, hasGpcSignal } from '@/lib/consent';
 import {
   createInstallRefToken,
   formatInstallRef,
-  installRefDistinctId,
   withInstallRef,
   type FirstTouchUtm,
 } from '@/lib/telemetry/install-ref';
@@ -118,21 +119,15 @@ export type InstallMethod = 'curl' | 'npm';
 
 /**
  * Fires when a visitor copies an install command. When the copy carried an
- * install ref, the event records its token as `install_ref`, and the visitor is
- * aliased to the ref's distinct id so the install's `first_run_completed` joins
- * this same PostHog person (DOR-2862).
+ * install ref, the event records its token as a plain `install_ref` property
+ * (DOR-2862). It never aliases or identifies anyone: the join to the install's
+ * `first_run_completed` happens in a query, on the token.
  *
  * @param method - Which install command was copied.
  * @param installRef - The ref's token, when the copied command carried one.
  */
 function trackHeroInstallCopy(method: InstallMethod, installRef?: string): void {
-  if (!analyticsEnabled) return;
-  if (installRef) {
-    posthog.alias(installRefDistinctId(installRef));
-    posthog.capture('hero_install_copy', { method, install_ref: installRef });
-    return;
-  }
-  posthog.capture('hero_install_copy', { method });
+  capture('hero_install_copy', installRef ? { method, install_ref: installRef } : { method });
 }
 
 /** What to put on the clipboard for one copy, and what to do once it lands. */
@@ -170,9 +165,11 @@ function firstTouchUtm(): FirstTouchUtm {
  */
 export function prepareInstallCopy(command: string, method: InstallMethod): InstallCopy {
   const plain: InstallCopy = { text: command, onCopied: () => trackHeroInstallCopy(method) };
-  // Cookieless, declined, Do Not Track and Global Privacy Control visitors all
-  // read as opted out here, so none of them is ever handed a ref.
-  if (!analyticsEnabled || posthog.has_opted_out_capturing()) return plain;
+  // Cookieless and declined visitors read as opted out. Do Not Track and Global
+  // Privacy Control are checked directly too, so a copy made before the consent
+  // banner reconciled PostHog can never carry a ref for them.
+  if (!analyticsEnabled || hasGpcSignal() || hasDntSignal()) return plain;
+  if (posthog.has_opted_out_capturing()) return plain;
   const token = createInstallRefToken();
   const text = withInstallRef(command, formatInstallRef(token, firstTouchUtm()));
   if (!text) return plain;

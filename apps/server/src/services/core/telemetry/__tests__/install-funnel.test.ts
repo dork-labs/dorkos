@@ -17,9 +17,11 @@ import {
   registerUsageReporter,
   shutdownUsageReporter,
 } from '../../usage-reporter.js';
-import { FUNNEL_STATE_FILENAME, startInstallFunnel } from '../install-funnel.js';
+import { FUNNEL_STATE_FILENAME, startInstallFunnel, type FunnelConfig } from '../install-funnel.js';
 
 const RUNTIMES = { codex: { enabled: true }, opencode: { enabled: false } };
+const DONE = '2026-10-12T08:00:00Z';
+const NOW = new Date('2026-10-12T09:00:00Z');
 
 interface SentEvent {
   event: string;
@@ -43,10 +45,15 @@ afterEach(async () => {
   vi.useRealTimers();
 });
 
+/** Live `telemetry.usage`, as the reporter's `isConsentLive` reads it. */
+let usageSetting = true;
+
 /** Register the real usage reporter, on or off, writing to `fetchMock`. */
 function registerReporter(enabled: boolean): void {
+  usageSetting = enabled;
   registerUsageReporter({
     enabled,
+    isConsentLive: () => usageSetting,
     debug: false,
     dorkHome,
     dorkosVersion: '9.9.9',
@@ -64,34 +71,37 @@ async function sent(): Promise<SentEvent[]> {
   );
 }
 
-/** A settings-change bus the test can fire, standing in for `configManager.onChange`. */
-function settingsBus() {
-  const listeners = new Set<(sections: readonly string[]) => void>();
-  return {
-    onSettingsChange: (listener: (sections: readonly string[]) => void) => {
+/** A stand-in for the config manager: onboarding state plus a change feed the test fires. */
+function fakeConfig(onboarding: { completedAt?: string | null; dismissedAt?: string | null }) {
+  const listeners = new Set<(change: { sections: readonly string[] }) => void>();
+  const state = { completedAt: null, dismissedAt: null, ...onboarding };
+  const config = {
+    get: (key: string) => (key === 'runtimes' ? RUNTIMES : state),
+    onChange: (listener: (change: { sections: readonly string[] }) => void) => {
       listeners.add(listener);
       return () => listeners.delete(listener);
     },
-    emit: (sections: string[]) => listeners.forEach((listener) => listener(sections)),
+  } as unknown as FunnelConfig;
+  return {
+    config,
+    onboarding: state,
+    emit: (sections: string[]) => listeners.forEach((listener) => listener({ sections })),
   };
 }
 
-/** Start the funnel with test doubles for the config readers. */
+/** Start the funnel; first run finished an hour ago unless told otherwise. */
 function start(
   overrides: {
-    onboarded?: () => boolean;
+    cfg?: ReturnType<typeof fakeConfig>;
     now?: () => Date;
-    bus?: ReturnType<typeof settingsBus>;
     checkIntervalMs?: number;
   } = {}
 ): void {
   stops.push(
     startInstallFunnel({
       dorkHome,
-      runtimes: RUNTIMES,
-      isOnboardingComplete: overrides.onboarded ?? (() => true),
-      onSettingsChange: (overrides.bus ?? settingsBus()).onSettingsChange,
-      now: overrides.now,
+      config: (overrides.cfg ?? fakeConfig({ completedAt: DONE })).config,
+      now: overrides.now ?? (() => NOW),
       checkIntervalMs: overrides.checkIntervalMs,
     })
   );
@@ -126,25 +136,23 @@ describe('install funnel, usage channel on', () => {
   });
 
   it('never repeats the first run, or a day it already reported, after a restart', async () => {
-    const day = () => new Date('2026-10-12T09:00:00Z');
-    start({ now: day });
+    start();
     await sent();
     fetchMock.mockClear();
 
-    start({ now: day });
+    start();
     expect(names(await sent())).toEqual(['app_started']);
   });
 
   it('waits for onboarding, then sends the first run when onboarding is written', async () => {
-    let onboarded = false;
-    const bus = settingsBus();
-    start({ onboarded: () => onboarded, bus });
-    bus.emit(['ui']);
+    const cfg = fakeConfig({});
+    start({ cfg });
+    cfg.emit(['ui']);
     expect(names(await sent())).not.toContain('first_run_completed');
 
-    onboarded = true;
-    bus.emit(['onboarding']);
-    bus.emit(['onboarding']);
+    cfg.onboarding.completedAt = NOW.toISOString();
+    cfg.emit(['onboarding']);
+    cfg.emit(['onboarding']);
     expect(names(await sent()).filter((n) => n === 'first_run_completed')).toHaveLength(1);
   });
 
@@ -158,6 +166,50 @@ describe('install funnel, usage channel on', () => {
     now = new Date('2026-10-13T00:30:00Z');
     vi.advanceTimersByTime(3000);
     expect(names(await sent()).filter((n) => n === 'instance_active')).toHaveLength(2);
+  });
+  it('counts a dismissed first run as a first run (same rule as firstRunClosed)', async () => {
+    start({ cfg: fakeConfig({ dismissedAt: DONE }) });
+    expect(names(await sent())).toContain('first_run_completed');
+  });
+
+  it('does not send a late first run for an install upgrading in long after setup', async () => {
+    start({ cfg: fakeConfig({ completedAt: '2026-06-01T00:00:00Z' }) });
+    expect(names(await sent())).toEqual(['app_started', 'instance_active']);
+    const state = JSON.parse(fs.readFileSync(path.join(dorkHome, FUNNEL_STATE_FILENAME), 'utf8'));
+    expect(state.firstRunReportedAt).toEqual(expect.any(String));
+  });
+
+  it('writes the state file atomically, leaving no temp files behind', async () => {
+    start();
+    await sent();
+    expect(fs.readdirSync(dorkHome).filter((f) => f.endsWith('.tmp'))).toEqual([]);
+  });
+
+  it('stops at once, sending and writing nothing, when usage is turned off mid-run', async () => {
+    vi.useFakeTimers();
+    let now = new Date('2026-10-12T23:30:00Z');
+    const cfg = fakeConfig({});
+    start({ cfg, now: () => now, checkIntervalMs: 1000 });
+    await sent();
+    fetchMock.mockClear();
+    const before = fs.readFileSync(path.join(dorkHome, FUNNEL_STATE_FILENAME), 'utf8');
+
+    usageSetting = false;
+    cfg.onboarding.completedAt = now.toISOString();
+    cfg.emit(['onboarding']);
+    now = new Date('2026-10-13T00:30:00Z');
+    vi.advanceTimersByTime(3000);
+
+    expect(await sent()).toEqual([]);
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(fs.readFileSync(path.join(dorkHome, FUNNEL_STATE_FILENAME), 'utf8')).toBe(before);
+  });
+
+  it('drops events already queued when usage is turned off before the flush', async () => {
+    start();
+    usageSetting = false;
+    expect(await sent()).toEqual([]);
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 });
 

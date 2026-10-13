@@ -170,7 +170,7 @@ export default function TelemetryPage() {
             </li>
             <li>
               <span className="font-mono">first_run_completed</span>, once per install, after you
-              finish setup: the install tag, if your install command carried one.
+              finish or skip setup: the install tag, if your install command carried one.
             </li>
             <li>
               <span className="font-mono">instance_active</span>, at most once a day while DorkOS
@@ -181,8 +181,9 @@ export default function TelemetryPage() {
             The install tag comes from a command copied on dorkos.ai by a visitor who allowed
             analytics cookies, like <span className="font-mono">--ref=k3j4mnb8x2qa.hn.launch</span>.
             It is a random code made for that one copy, plus the campaign tag of the link that
-            brought them, if any. It lets us see which visits led to an install that someone
-            actually used. DorkOS keeps it in{' '}
+            brought them, if any. It lets us count which copies led to an install that someone
+            actually used, by matching the tag on the two events. It is only a label: it never links
+            the app to a website visitor or an account. DorkOS keeps it in{' '}
             <span className="font-mono">~/.dork/install-ref.json</span> and sends it only with{' '}
             <span className="font-mono">first_run_completed</span>, only when this channel is on.
           </p>

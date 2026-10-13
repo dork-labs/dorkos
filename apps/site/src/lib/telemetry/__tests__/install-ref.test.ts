@@ -3,7 +3,6 @@ import { describe, expect, it } from 'vitest';
 import {
   createInstallRefToken,
   formatInstallRef,
-  installRefDistinctId,
   INSTALL_REF_TOKEN_PATTERN,
   sanitizeUtm,
   withInstallRef,
@@ -17,7 +16,7 @@ describe('site install ref (DOR-2862)', () => {
 
   it('folds campaign tags into plain characters, capped at 32', () => {
     expect(sanitizeUtm('Hacker News')).toBe('hacker-news');
-    expect(sanitizeUtm('a'.repeat(40))).toBe('a'.repeat(32));
+    expect(sanitizeUtm('x'.repeat(40))).toBe('x'.repeat(32));
     expect(sanitizeUtm('')).toBeUndefined();
     expect(sanitizeUtm(null)).toBeUndefined();
   });
@@ -42,7 +41,16 @@ describe('site install ref (DOR-2862)', () => {
     expect(withInstallRef('npm install -g dorkos@latest', 'k3j4mnb8x2qa')).toBeNull();
   });
 
-  it('namespaces the alias distinct id', () => {
-    expect(installRefDistinctId('k3j4mnb8x2qa')).toBe('install_ref:k3j4mnb8x2qa');
+  it.each(['kai@example.com', 'a1b2c3d4e5f60718', 'user-12345678'])(
+    'drops a campaign tag that could name a person: %j',
+    (value) => {
+      expect(sanitizeUtm(value)).toBeUndefined();
+      expect(formatInstallRef('k3j4mnb8x2qa', { source: value })).toBe('k3j4mnb8x2qa');
+    }
+  );
+
+  it('keeps ordinary campaign tags', () => {
+    expect(sanitizeUtm('launch-2026')).toBe('launch-2026');
+    expect(sanitizeUtm('newsletter_oct')).toBe('newsletter_oct');
   });
 });

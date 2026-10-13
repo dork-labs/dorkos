@@ -553,23 +553,22 @@ describe('install funnel events (DOR-2862)', () => {
     expect((await readJson(res)).accepted).toBe(2);
   });
 
-  it('joins the install to the visitor that copied the command, through the ref', async () => {
-    const sent = await forward([FIRST_RUN]);
-    expect(sent.batch).toHaveLength(2);
+  it('forwards the ref as plain properties and never sends an alias', async () => {
+    const sent = await forward([FIRST_RUN, { ...FIRST_RUN, properties: {} }, INSTANCE_ACTIVE]);
+    expect(sent.batch.map((e) => e.event)).toEqual([
+      'first_run_completed',
+      'first_run_completed',
+      'instance_active',
+    ]);
     expect(sent.batch[0]).toMatchObject({
-      event: 'first_run_completed',
       distinct_id: FIRST_RUN.distinctId,
       properties: { installRef: 'k3j4mnb8x2qa', utmSource: 'hn', utmCampaign: 'launch' },
     });
-    expect(sent.batch[1]).toEqual({
-      event: '$create_alias',
-      distinct_id: 'install_ref:k3j4mnb8x2qa',
-      timestamp: FIRST_RUN.timestamp,
-      properties: { alias: FIRST_RUN.distinctId, $lib: 'dorkos-owned-ingest' },
-    });
+    expect(JSON.stringify(sent)).not.toContain('$create_alias');
+    expect(JSON.stringify(sent)).not.toContain('"alias"');
   });
 
-  it('adds no alias for a first run without a ref, or for any other event', async () => {
+  it('forwards other events unchanged alongside a first run', async () => {
     const sent = await forward([
       { ...FIRST_RUN, properties: {} },
       INSTANCE_ACTIVE,

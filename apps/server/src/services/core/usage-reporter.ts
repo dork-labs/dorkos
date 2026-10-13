@@ -70,6 +70,13 @@ export interface UsageReporterOptions {
    */
   enabled: boolean;
   /**
+   * Live consent, read on every report and flush: the `telemetry.usage` setting
+   * through the env kill switch, as it is NOW. `enabled` is only the boot-time
+   * snapshot, so without this a person turning usage off mid-run would keep
+   * sending until the next restart. Defaults to always-true (tests).
+   */
+  isConsentLive?: () => boolean;
+  /**
    * Debug mode (`DORKOS_TELEMETRY_DEBUG`): print each batch to stderr instead of
    * sending it over the network.
    */
@@ -99,6 +106,8 @@ interface ReporterState {
   instanceId: string | null;
   /** Guards against overlapping async flushes. */
   flushing: boolean;
+  /** See {@link UsageReporterOptions.isConsentLive}. */
+  isConsentLive: () => boolean;
 }
 
 let state: ReporterState | null = null;
@@ -132,6 +141,7 @@ export function registerUsageReporter(options: UsageReporterOptions): void {
     timer: null,
     instanceId: null,
     flushing: false,
+    isConsentLive: options.isConsentLive ?? (() => true),
   };
 
   const intervalMs = options.flushIntervalMs ?? USAGE_FLUSH_INTERVAL_MS;
@@ -156,7 +166,16 @@ export function registerUsageReporter(options: UsageReporterOptions): void {
  * install funnel) avoid marking an event sent that a disabled reporter dropped.
  */
 export function isUsageReporterActive(): boolean {
-  return state !== null;
+  return state !== null && liveConsent(state);
+}
+
+/** Read live consent; a reader that throws counts as no. */
+function liveConsent(s: ReporterState): boolean {
+  try {
+    return s.isConsentLive();
+  } catch {
+    return false;
+  }
 }
 
 /**
@@ -168,7 +187,7 @@ export function isUsageReporterActive(): boolean {
  * @param input - The `{ event, properties }` half; the envelope is filled at flush.
  */
 export function reportUsageEvent(input: TelemetryEventInput): void {
-  if (!state) return;
+  if (!state || !liveConsent(state)) return;
   // Defensive: the registry is the source of truth even though the input is
   // typed. A malformed event is dropped, never sent.
   const parsed = TelemetryEventInputSchema.safeParse(input);
@@ -194,6 +213,11 @@ export function reportUsageEvent(input: TelemetryEventInput): void {
 export async function flushUsageEvents(): Promise<void> {
   const s = state;
   if (!s || s.flushing || s.queue.length === 0) return;
+  // Consent withdrawn since these were queued: drop them, send nothing.
+  if (!liveConsent(s)) {
+    s.queue.length = 0;
+    return;
+  }
   s.flushing = true;
   try {
     const drained = s.queue.splice(0, USAGE_BATCH_MAX);
