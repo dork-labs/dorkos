@@ -52,7 +52,7 @@ export class CanonicalConnectorRuntimeAuthorityResolver implements ConnectorRunt
     if ((await this.options.sessions.getSessionAgentPath(input.canonicalSessionId)) === null) {
       throw new ConnectorRuntimeAuthorityError(
         'agent_unrecorded',
-        'This chat has no recorded agent, so it can’t use connected apps.'
+        'This chat isn’t linked to an agent, so it can’t use connected apps.'
       );
     }
     throw new Error('Canonical runtime authority could not be verified.');
