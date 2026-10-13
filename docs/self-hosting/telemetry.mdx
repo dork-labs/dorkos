@@ -91,7 +91,7 @@ When someone who allows analytics cookies on dorkos.ai copies the one-line insta
 - DorkOS saves the tag once, in `~/.dork/install-ref.json`, and never replaces it. Saving it sends nothing.
 - It leaves your computer only inside `first_run_completed`, and only when this channel is on.
 - It names one copy of a command, not a person or a computer. We match it against the same tag on the website's copy event to count which copies led to an install.
-- It is only a label on those two events. It does not link this install to a website visitor or to an account. (Linking analytics to your account, below, is a separate choice.)
+- Matching the tag ties one copy to one install. Nothing merges this install with a website visitor or an account. (Linking analytics to your account, below, is a separate choice.)
 - The desktop downloads and `npm install -g dorkos` never carry a tag: neither has a way to pass one into DorkOS.
 - Don't want it kept at all? Delete `~/.dork/install-ref.json`, or remove the `--ref=…` part before you run the command.
 

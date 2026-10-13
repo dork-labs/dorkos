@@ -182,10 +182,11 @@ export default function TelemetryPage() {
             analytics cookies, like <span className="font-mono">--ref=k3j4mnb8x2qa.hn.launch</span>.
             It is a random code made for that one copy, plus the campaign tag of the link that
             brought them, if any. It lets us count which copies led to an install that someone
-            actually used, by matching the tag on the two events. It is only a label: it never links
-            the app to a website visitor or an account. DorkOS keeps it in{' '}
-            <span className="font-mono">~/.dork/install-ref.json</span> and sends it only with{' '}
-            <span className="font-mono">first_run_completed</span>, only when this channel is on.
+            actually used, by matching the tag on the two events. Matching it ties that one copy to
+            that one install. Nothing merges the app with a website visitor or an account. DorkOS
+            keeps it in <span className="font-mono">~/.dork/install-ref.json</span> and sends it
+            only with <span className="font-mono">first_run_completed</span>, only when this channel
+            is on.
           </p>
         </section>
 
