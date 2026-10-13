@@ -8,9 +8,12 @@ import {
   createUnreadablePromptReporter,
   createUnreadableSnapshotReporter,
   parsePendingInteractionsResponse,
+  parseRecentSessionsResponse,
   parseSessionEvent,
   parseSessionSnapshot,
 } from '../tolerant-session-frames';
+import { createSessionMethods } from '../session-methods';
+import { createMockSession } from '@dorkos/test-utils';
 
 const STATUS: SessionStatus = {
   contextUsage: null,
@@ -257,5 +260,54 @@ describe('unreadable-entry reporters', () => {
     report('a', 4, entry);
 
     expect(warn).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('parseRecentSessionsResponse (DOR-2233)', () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  const claude = createMockSession({ id: '0b8e5a52-3c1d-4e6f-9a7b-2c3d4e5f6a7b' });
+  const opencode = createMockSession({ id: 'ses_00fffd9a1b2c', runtime: 'opencode' });
+  // A UUID-looking id whose variant nibble fails a strict RFC 9562 check.
+  const looseUuid = createMockSession({
+    id: '12345678-1234-1234-1234-123456789012',
+    runtime: 'codex',
+  });
+
+  it('loads a list mixing Claude UUIDs with other runtime id shapes', () => {
+    const body = { sessions: [claude, opencode, looseUuid], agentActivity: {} };
+    expect(parseRecentSessionsResponse(body).sessions.map((s) => s.id)).toEqual([
+      claude.id,
+      opencode.id,
+      looseUuid.id,
+    ]);
+  });
+
+  it('drops only an unreadable row and keeps the rest of the list', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const body = { sessions: [claude, { id: '', title: 7 }, opencode], agentActivity: {} };
+    expect(parseRecentSessionsResponse(body).sessions.map((s) => s.id)).toEqual([
+      claude.id,
+      opencode.id,
+    ]);
+    expect(warn).toHaveBeenCalledOnce();
+    warn.mockRestore();
+  });
+
+  it('still rejects a broken envelope', () => {
+    expect(() => parseRecentSessionsResponse({ sessions: 'nope', agentActivity: {} })).toThrow();
+  });
+
+  it('is what the transport uses for the recent-sessions poll', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const body = { sessions: [opencode, { id: 42 }], agentActivity: {} };
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(new Response(JSON.stringify(body), { status: 200 }))
+    );
+    const methods = createSessionMethods('/api', () => 'host', new Map(), new Map());
+    const result = await methods.listRecentSessions(5);
+    expect(result.sessions.map((s) => s.id)).toEqual([opencode.id]);
+    warn.mockRestore();
   });
 });

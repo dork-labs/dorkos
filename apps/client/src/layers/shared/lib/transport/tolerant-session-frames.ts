@@ -13,6 +13,8 @@
  *   in-progress turn does not already show gets a trailing note: the session is
  *   still waiting on the person, and without a card or a note it would read as
  *   "waiting on you" with nothing to answer.
+ * - **Recent sessions** keep their readable rows: one bad row used to blank the
+ *   whole list on every poll (DOR-2233).
  * - **Queued messages and canvas** keep their valid items and drop the rest: they
  *   have no transcript position, and the server re-derives both on the next frame.
  * - **The snapshot envelope** (`status`, `cursor`) is not salvageable. Without a
@@ -36,8 +38,11 @@ import { UNREADABLE_ENTRY_ERROR_CODE } from '@dorkos/shared/run-outcome';
 import {
   HistoryMessageSchema,
   MessagePartSchema,
+  RecentSessionsResponseSchema,
+  SessionSchema,
   type HistoryMessage,
   type MessagePart,
+  type RecentSessionsResponse,
 } from '@dorkos/shared/schemas';
 import {
   InteractionPendingEventSchema,
@@ -309,6 +314,26 @@ export function parsePendingInteractionsResponse(data: unknown): PendingInteract
   const retry = PendingInteractionsResponseSchema.safeParse({ ...data, interactions });
   if (!retry.success) throw retry.error;
   console.warn('[Transport] skipped unreadable pending interactions', { unreadable });
+  return retry.data;
+}
+
+/**
+ * Parse the recent-sessions list so one unreadable session costs only its own
+ * row (DOR-2233). Every runtime owns its session ids (ADR-0310), so a single
+ * row the client cannot read used to blank the whole list on every poll. The
+ * envelope itself is still all-or-nothing.
+ *
+ * @param data - The raw `GET /sessions/recent` body.
+ */
+export function parseRecentSessionsResponse(data: unknown): RecentSessionsResponse {
+  const whole = RecentSessionsResponseSchema.safeParse(data);
+  if (whole.success) return whole.data;
+  if (!isRecord(data) || !Array.isArray(data.sessions)) throw whole.error;
+  const unreadable: UnreadableEntry[] = [];
+  const sessions = keepValidItems(SessionSchema, data.sessions, 'sessions', unreadable);
+  const retry = RecentSessionsResponseSchema.safeParse({ ...data, sessions });
+  if (!retry.success) throw retry.error;
+  console.warn('[Transport] skipped unreadable recent sessions', { unreadable });
   return retry.data;
 }
 
