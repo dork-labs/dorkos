@@ -610,7 +610,12 @@ export function isAlwaysOffered(row: {
     !isFloorArea(row.area) &&
     row.authorityBindingDigest === null &&
     (row.detail ?? null) === null &&
-    !(row.tier === 'destructive' && isExtensionCapabilityId(row.capabilityId))
+    !(row.tier === 'destructive' && isExtensionCapabilityId(row.capabilityId)) &&
+    // A config patch asks outside its own area only for a setting a person
+    // must decide each time (`areasForInput`). Permissions stopped being a
+    // floor area under Trusted (DOR-2739), so this keeps that card from
+    // offering Always allow, as a floor area's never does.
+    !(row.capabilityId === 'operator.config_patch' && row.area !== 'settings')
   );
 }
 
@@ -1125,8 +1130,7 @@ export class ApprovalService {
     const row = this.db.select().from(approvals).where(eq(approvals.id, approvalId)).get();
     if (!row) return undefined;
     if (this.isExpired(row)) return 'expired';
-    if (row.state === 'granted') return 'granted';
-    if (row.state === 'denied') return 'denied';
+    if (row.state === 'granted' || row.state === 'denied') return row.state;
     return undefined;
   }
 

@@ -258,6 +258,7 @@ async function runGate(run: GateRun): Promise<GateOutcome> {
     action,
     input,
     ...(identity ? { identity } : {}),
+    ...(requestingSession ? { sessionId: requestingSession.sessionId } : {}),
   });
 
   const decision = enforceCapabilityTier({

@@ -31,7 +31,8 @@ import { ScheduleIdentityRegistry } from '../../../../tasks/schedule-identity.js
 import { FakeScheduler } from '../../../../tasks/__tests__/fake-scheduler.js';
 import { skillsRoot } from '../../../../tasks/__tests__/task-root-fixtures.js';
 import type { McpToolDeps } from '../types.js';
-import { getTasksTools, REAPPROVAL_NOTE } from '../task-tools.js';
+import { getTasksTools } from '../task-tools.js';
+import { REAPPROVAL_NOTE } from '../task-tool-copy.js';
 import {
   AGENT_CONTENT_CHANGE_REASON,
   AGENT_SETTINGS_CHANGE_REASON,

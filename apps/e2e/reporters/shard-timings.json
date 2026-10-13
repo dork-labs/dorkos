@@ -280,10 +280,6 @@
       "seconds": 0.4,
       "tests": 2
     },
-    "chromium|full-power-door.spec.ts": {
-      "seconds": 90.7,
-      "tests": 2
-    },
     "chromium|gen-ui/channel-widgets.spec.ts": {
       "seconds": 38.6,
       "tests": 8
@@ -475,6 +471,10 @@
     "chromium|team/team-page.spec.ts": {
       "seconds": 135.6,
       "tests": 18
+    },
+    "chromium|trust-notice.spec.ts": {
+      "seconds": 27.6,
+      "tests": 2
     },
     "chromium|workbench/dev-server-preview.spec.ts": {
       "seconds": 32.9,

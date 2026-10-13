@@ -204,7 +204,7 @@ Cancel window for `connectors.execute_destructive`:
 
 ### 5.7 Config migration (PR4)
 
-Key: the next free key above the newest `v*` tag at landing time (PR2 took `0.102.0`, PR3 takes `0.113.0`). Pin it in `merged-migration-hashes.ts`. Body `applyTrustedPosture(store)` in `config-manager.ts`:
+Key: the next free key above the newest `v*` tag at landing time (PR2 took `0.102.0`, PR3 takes `0.113.0`, PR4 takes `0.115.0`). Pin it in `merged-migration-hashes.ts`. Body `applyTrustedPosture(store)` in `config-manager.ts`:
 
 1. **Careful intent** = `permissions.preset === 'careful'`, or `preset == null && ui.fullPowerChoice === 'supervised'`. Then: set `preset: 'careful'` if it was `null`, set `ui.trustNoticeSeenAt` to now, change nothing else.
 2. **Otherwise** (`null`, `'balanced'`, `'full'`, or a hand-written unknown):
@@ -245,6 +245,19 @@ Onboarding: `features/onboarding/ui/OnboardingPowerStep.tsx` renders the same co
 `entities/binding/ui/BindingDialog.tsx:143` (`defaultCanInitiate: fullPowerChoice === 'full'`): read `trustPosture` instead, so the dialog keeps preselecting what it preselects for a Full-power install today. `canInitiate` itself is out of scope.
 
 Control Center (`widgets/control-center`) shows the posture as "Trusted" or "Careful" with a link to Permissions.
+
+As built (PR4, 2026-10-13), where it differs from the above:
+
+- **Key `0.115.0`** (main took 0.112.0 to 0.114.0 while PR3 and PR4 were open).
+- **No onboarding statement.** Main's one-minute first run (DOR-2783) removed the power step, so `OnboardingPowerStep` is gone and a fresh install sees the notice once, on its second launch (the rail shows nothing in the launch the first run ends). The notice says "They edit files, run commands and schedule work on their own", not "use your connected apps", which is PR5.
+- **No agent DM mode over Relay** (§4.3/§4.4). `relay_send` was retired for `chat_send` (DOR-2790), which already holds a message to its sender's level.
+- **Installs and updates still confirm** under Trusted (§5.1's configured-source rule is dropped): the seeded sources are not owner-chosen, and a package is code from strangers. An uninstall runs on an area-level Allowed.
+- **Untrusted callers** (`resolve-permission.ts`): a caller with no agent identity, or a turn that read an outsider's words (`outsiderBoundOf`, so Codex and OpenCode over `/mcp` too), still asks for a destructive action and for any change in the Permissions area. This errs toward asking: a room turn with a stranger's message merely in view, or any Codex/OpenCode turn while one of that agent's outsider turns runs, asks too, and in a room turn nobody watches that card waits until it expires. Narrowing it to turns held to a stranger's ceiling is a follow-up.
+- **Person-only settings always ask**: an area a `config_patch` reaches beyond DorkOS settings (`areasForInput`) is resolved with `alwaysAsks`, and its card never offers Always allow, because Permissions is no longer a floor area.
+- **Open mesh on Trusted only** (§5.3): a closed mesh cannot tell "never opened" from "a person turned it off", so a Careful install is left as it is.
+- **Careful keeps Blocked**: moving INTO Careful from another preset keeps every install-wide area or action set to Blocked, so "Keep asking me" never loosens anything; choosing Careful again on a Careful install still clears everything (the reset).
+- **Recovery carries a `null` global stop as Ask** (`protected-state.ts`, `nullMeans`), so a Careful install with no stop of its own keeps asking after a wipe.
+- **Test-mode runtime and schedules**: its never-ask id (`always-allow`) cannot sit in a SKILL.md `schedule:` block, so the e2e and contract setups pin `runtimes.defaultTrustStop: null`; the browser suite does not run schedules at the Trusted stop (follow-up).
 
 ### 5.10 Agent-only caps and the unattended alarm come off (PR3)
 

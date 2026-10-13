@@ -87,18 +87,42 @@ describe('PermissionService.setDefaults', () => {
     expect(world.events[0]!.resourceId).toBeNull();
   });
 
-  it('refuses Allowed on a floor area and on a floor-area action', async () => {
+  it('refuses Allowed on Safety limits and Reach & secrets, and on an action in either', async () => {
     const world = createPermissionWorld();
-    await expect(
-      world.service.setDefaults({ areas: { safety: 'allowed' }, surface: 'settings' }, LOCAL)
-    ).rejects.toMatchObject({ code: 'FLOOR_NEVER_ALLOWED', status: 400 });
+    for (const area of ['safety', 'reach'] as const) {
+      await expect(
+        world.service.setDefaults({ areas: { [area]: 'allowed' }, surface: 'settings' }, LOCAL)
+      ).rejects.toMatchObject({
+        code: 'FLOOR_NEVER_ALLOWED',
+        status: 400,
+        message: 'Safety limits and Reach & secrets are never Allowed. Choose Ask or Blocked.',
+      });
+    }
     await expect(
       world.service.setDefaults(
-        { actions: { 'permissions.change': 'allowed' }, surface: 'settings' },
+        { actions: { 'operator.update_agent_boundaries': 'allowed' }, surface: 'settings' },
         LOCAL
       )
-    ).rejects.toMatchObject({ code: 'FLOOR_NEVER_ALLOWED' });
+    ).rejects.toMatchObject({
+      code: 'FLOOR_NEVER_ALLOWED',
+      message: expect.stringContaining('is in Safety limits, which is never Allowed'),
+    });
     expect(world.events).toEqual([]);
+  });
+
+  it('lets a person set Permissions to Allowed, area and action alike', async () => {
+    // Permissions stopped being a floor (ADR 261006-225605): an agent may change
+    // permissions as a person may, and every change is recorded.
+    const world = createPermissionWorld();
+    await world.service.setDefaults(
+      { areas: { permissions: 'allowed' }, surface: 'settings' },
+      LOCAL
+    );
+    await world.service.setDefaults(
+      { actions: { 'permissions.change': 'allowed' }, surface: 'settings' },
+      LOCAL
+    );
+    expect(world.events).toHaveLength(2);
   });
 
   it('refuses unknown areas, unknown actions, and actions with no area', async () => {
@@ -148,6 +172,31 @@ describe('PermissionService.setPreset', () => {
       before: null,
       after: 'full',
     });
+  });
+
+  it('keeps what a person Blocked when moving into Careful, so it never loosens (DOR-2739)', async () => {
+    const world = createPermissionWorld({
+      preset: 'trusted',
+      defaults: {
+        areas: { tasks: 'blocked', rooms: 'allowed' },
+        actions: { 'mesh.unregister': 'blocked' },
+      },
+    });
+    await world.service.setPreset({ preset: 'careful', surface: 'settings' }, LOCAL);
+    expect(world.config.preset).toBe('careful');
+    expect(world.config.defaults).toEqual({
+      areas: { tasks: 'blocked' },
+      actions: { 'mesh.unregister': 'blocked' },
+    });
+  });
+
+  it('clears everything, Blocked included, when Careful is chosen again to reset it', async () => {
+    const world = createPermissionWorld({
+      preset: 'careful',
+      defaults: { areas: { tasks: 'blocked' }, actions: {} },
+    });
+    await world.service.setPreset({ preset: 'careful', surface: 'settings' }, LOCAL);
+    expect(world.config.defaults).toEqual({ areas: {}, actions: {} });
   });
 
   it('is idempotent: choosing the same preset again records nothing', async () => {

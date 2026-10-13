@@ -1,13 +1,13 @@
 import type { APIRequestContext } from '@playwright/test';
 import { expect } from '../../fixtures';
 
-/** What choosing Full power moves besides the permissions themselves. */
+/** What choosing Trusted moves besides the permissions themselves. */
 export interface PowerSnapshot {
   trustStop: string | null;
 }
 
 /**
- * Read the global Files & commands stop, so a spec that chooses Full power can
+ * Read the global Files & commands stop, so a spec that chooses Trusted can
  * put it back for the specs after it on the same leg. `GET /api/config`
  * surfaces the stop as `executionDefaults.trustStop`.
  *
@@ -23,14 +23,14 @@ export async function readPower(request: APIRequestContext): Promise<PowerSnapsh
 }
 
 /**
- * Choose Full power, as the first-run door leaves an install. Full power moves
- * Files & commands to Full autonomy, a plain write (ADR 261006-225605).
+ * Choose Trusted, the preset every install runs on unless a person picked
+ * Careful (ADR 261006-225605). Trusted moves Files & commands to Full autonomy.
  *
  * @param request - The leg's API context.
  */
-export async function chooseFullPower(request: APIRequestContext): Promise<void> {
+export async function chooseTrusted(request: APIRequestContext): Promise<void> {
   const res = await request.put('/api/permissions/preset', {
-    data: { preset: 'full', surface: 'api' },
+    data: { preset: 'trusted', surface: 'api' },
   });
   expect(res.ok()).toBe(true);
 }

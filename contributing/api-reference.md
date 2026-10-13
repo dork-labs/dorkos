@@ -431,7 +431,7 @@ Feature-flag guarded via `DORKOS_TASKS_ENABLED`. Router is mounted at `/api/task
 
 Schedules support an optional `agentId` field for agent-linked scheduling. When `agentId` is set, the schedule's CWD is resolved from the agent's registered project path via MeshCore.
 
-`POST /api/tasks` requires `reason` when the caller does not clear the agent bar (no session cookie, presenting an agent identity or an approval token) — the schedule is a proposal, not a self-arm, so it is parked at `status: 'pending_approval'` instead of created active, and a proposal with no `reason` is refused with `400`. The `tasks_create` MCP tool (both the in-session and external `/mcp` servers) requires `reason` unconditionally, since every call there is by construction an agent asking. A parked schedule's row carries `reason`, `proposedBySessionId`, and `proposedByAgentPath` (DOR-1394; `packages/db/src/schema/tasks.ts`); `GET`/`PATCH` responses additionally resolve `proposedByName` live from agent identity rather than storing it, and populate `nextRuns` (the next three occurrences, from `previewNextRuns`) only for `pending_approval` rows, since that is the only state the live scheduler cannot answer for itself.
+`POST /api/tasks` requires `reason` when the caller does not clear the agent bar (no session cookie, presenting an agent identity or an approval token), and one with no `reason` is refused with `400`. Such a schedule is clamped, and is armed at once only when the caller presented a verified agent token on a Trusted install (ADR 261006-225605); otherwise it is parked at `status: 'pending_approval'`. The `tasks_create` MCP tool (both the in-session and external `/mcp` servers) requires `reason` unconditionally, since every call there is by construction an agent asking; the in-session server arms on a Trusted install, the external one always parks. A parked schedule's row carries `reason`, `proposedBySessionId`, and `proposedByAgentPath` (DOR-1394; `packages/db/src/schema/tasks.ts`); `GET`/`PATCH` responses additionally resolve `proposedByName` live from agent identity rather than storing it, and populate `nextRuns` (the next three occurrences, from `previewNextRuns`) only for `pending_approval` rows, since that is the only state the live scheduler cannot answer for itself.
 
 ## Notifications (`routes/notifications.ts`) and Push (`routes/push.ts`)
 
@@ -625,7 +625,7 @@ Undo one `permission.changed` event (spec `agent-permissions` D14): every key it
 
 ### PUT /api/permissions/preset
 
-Choose a preset for everyone (`careful`, `balanced`, `full`). Moves the global Files & commands stop to the preset's (Careful → `ask`, Balanced → `act`, Full power → `autonomy`) and clears the changes made on top of the old preset; `applyToAgents` also removes those agents' own settings so they follow the new preset.
+Choose a preset for everyone (`trusted`, `careful`, and the retired `balanced`/`full`, still accepted so an old install that chose one can still be read back). Moves the global Files & commands stop to the preset's (Trusted → `autonomy`, Careful → `ask`, Balanced → `act`, Full power → `autonomy`) and clears the changes made on top of the old preset; `applyToAgents` also removes those agents' own settings so they follow the new preset.
 
 **Request body:** `{ preset, applyToAgents?: string[], surface }`.
 

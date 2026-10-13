@@ -16,7 +16,8 @@
  * - the change is recorded in Activity as "Changed outside DorkOS", old → new;
  * - every approved schedule that follows the agent for a changed part waits for
  *   a person again, and its card shows the change old → new
- *   (`TaskApprovals.parkAgentFollowers`);
+ *   (`TaskApprovals.parkAgentFollowers`); on a Trusted install, only the ones
+ *   made from a file, a Shape or a package (ADR 261006-225605);
  * - nothing is ever switched on, and changing the agent back does not undo the
  *   park: a person decides.
  *
@@ -41,6 +42,7 @@ import {
 } from '../../core/agent-observation/outside-change-observer.js';
 import type { FollowedAgentChange, FollowedAgentField } from '../schedule-permission-clamp.js';
 import type { TaskApprovals } from './task-approvals.js';
+import { agentSchedulesArmWithoutAsking } from './agent-trust.js';
 
 /** An agent's execution defaults, as compared. `null` is "not set". */
 export interface AgentExecutionValues {
@@ -131,7 +133,11 @@ export class AgentExecutionObserver {
         // The park first, and a person told of it, because those stop work;
         // the Activity line last. A repeat after a failed line parks nothing
         // twice and raises nothing twice: the schedules are already waiting.
-        const { parked, updated } = deps.approvals.parkAgentFollowers(agent.id, changes);
+        // On a Trusted install the edit may be one of our agents' own, so only
+        // schedules made from a file are re-asked (ADR 261006-225605).
+        const { parked, updated } = deps.approvals.parkAgentFollowers(agent.id, changes, {
+          fileRowsOnly: agentSchedulesArmWithoutAsking(true),
+        });
         if (parked.length > 0) await deps.onParked(parked);
         await this.record(agent, agentPath, changes, parked.length + updated.length);
       },

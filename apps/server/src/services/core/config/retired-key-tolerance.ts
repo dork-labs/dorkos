@@ -207,3 +207,29 @@ export function tolerateRetiredRoomKeys(schema: { properties?: Record<string, un
   properties['maxPostsPerTurn'] = { type: 'integer' };
   properties['maxCanvasOpsPerTurn'] = { type: 'integer' };
 }
+
+/**
+ * Declare the retired `ui` keys, for the same reason and with the same limits
+ * as {@link tolerateRetiredRuntimeKeys}.
+ *
+ * `ui.fullPowerDecidedAt` and `ui.fullPowerChoice` recorded the answer to the
+ * full-power door, retired with it by `'0.115.0'` (DOR-2739): that key moves
+ * what they meant into `permissions.preset` and `ui.trustNoticeSeenAt`, and
+ * this is what makes the husks go away on an install the key never reaches.
+ * `ui.autonomyAcknowledgedAt`, retired by `'0.102.0'`, is declared on the same
+ * terms. No `default` on any of them, because conf builds Ajv with
+ * `useDefaults` and a declared default would write the retired key into every
+ * config.
+ *
+ * @param schema - The generated JSON Schema for the whole config, mutated in place.
+ */
+export function tolerateRetiredUiKeys(schema: { properties?: Record<string, unknown> }): void {
+  const ui = schema.properties?.['ui'];
+  if (ui == null || typeof ui !== 'object') return;
+  const properties = (ui as { properties?: Record<string, unknown> }).properties;
+  if (properties == null || typeof properties !== 'object') return;
+  const timestamp = { anyOf: [{ type: 'string' }, { type: 'null' }] };
+  properties['fullPowerDecidedAt'] = timestamp;
+  properties['fullPowerChoice'] = { anyOf: [{ type: 'string' }, { type: 'null' }] };
+  properties['autonomyAcknowledgedAt'] = timestamp;
+}

@@ -118,8 +118,19 @@ import { logger } from '../../../lib/logger.js';
  * empty map (no project limits). Any rule a person stated is narrower than none,
  * so a stored list or a non-empty map is protective as it stands (spec
  * `flow-multiproject` §8.1: which projects a Claude account may work in).
+ *
+ * `oneOf` is for a choice among named values where some of them ask more of
+ * agents than others ({@link ProtectiveCarryover.protectiveValues}): the Careful
+ * preset, or a trust stop at Ask. A stored value in that set is carried when the
+ * fresh value differs; anything else is not.
+ *
+ * `entries` is for a map of per-item states whose default is empty: the changes
+ * a person made on top of a permission preset. Only the entries whose state is
+ * in {@link ProtectiveCarryover.protectiveValues} are carried, merged over the
+ * fresh map; an Allowed entry is the permissive side and is left behind.
  */
-export type CarryoverDirection = 'boolean' | 'lower' | 'higher' | 'restricted' | 'ruled';
+export type CarryoverDirection =
+  'boolean' | 'lower' | 'higher' | 'restricted' | 'ruled' | 'oneOf' | 'entries';
 
 /** One config leaf whose default is permissive, and the direction that protects. */
 export interface ProtectiveCarryover {
@@ -135,6 +146,16 @@ export interface ProtectiveCarryover {
    * to compare against.
    */
   wildcard?: string;
+  /**
+   * For `direction: 'oneOf'` and `'entries'`, the values that protect the
+   * person: the ones that make agents ask, or stop them.
+   */
+  protectiveValues?: readonly string[];
+  /**
+   * For `direction: 'oneOf'`, what a stored `null` amounts to, when the fresh
+   * default is looser than it. Carried as that value.
+   */
+  nullMeans?: string;
   /** Why losing this on a wipe would cost the person a protection. */
   reason: string;
 }
@@ -351,6 +372,60 @@ export const PROTECTIVE_CARRYOVERS: readonly ProtectiveCarryover[] = [
   // for the rule to protect until the person registers the account again, and
   // a row cannot be carried by one leaf without its folder and id. Pinned by
   // `protected-state.test.ts`.
+  // Trusted by default (DOR-2739, ADR 261006-225605): a wipe lands on Trusted,
+  // so every way a person asked agents to ask first has to survive one.
+  {
+    path: 'permissions.preset',
+    direction: 'oneOf',
+    protectiveValues: ['careful'],
+    reason:
+      'The preset ships Trusted, where agents work without asking. A person who chose Careful asked to be asked first, and a wipe that handed Trusted back would stop every one of those questions without a word.',
+  },
+  {
+    path: 'permissions.defaults.areas',
+    direction: 'entries',
+    protectiveValues: ['ask', 'blocked'],
+    reason:
+      'An area a person set to Ask or Blocked on top of the preset. Under Trusted the preset allows it, so losing the change on a wipe would let agents do what the person had stopped.',
+  },
+  {
+    path: 'permissions.defaults.actions',
+    direction: 'entries',
+    protectiveValues: ['ask', 'blocked'],
+    reason:
+      'The same, for one action rather than a whole area: a single thing a person asked to approve, or refused outright.',
+  },
+  {
+    path: 'runtimes.defaultTrustStop',
+    direction: 'oneOf',
+    protectiveValues: ['ask', 'act'],
+    // A Careful install keeps a stop of `null` (each runtime's own default,
+    // which asks), so a stored `null` is carried as Ask, not lost to Full autonomy.
+    nullMeans: 'ask',
+    reason:
+      'The stop a new session starts at ships at Full autonomy. A person who set Ask or Act, or who stayed on Careful with no stop of their own, wanted file edits or commands approved first, and a wipe must not hand Full autonomy back.',
+  },
+  {
+    path: 'runtimes.claudeCode.defaultTrustStop',
+    direction: 'oneOf',
+    protectiveValues: ['ask', 'act'],
+    reason:
+      "Claude Code's own stop. `null` follows the global stop, which is Full autonomy on a fresh install, so a stop set to Ask or Act here is the only thing keeping that runtime asking.",
+  },
+  {
+    path: 'runtimes.codex.defaultTrustStop',
+    direction: 'oneOf',
+    protectiveValues: ['ask', 'act'],
+    reason:
+      "Codex's own stop. `null` follows the global stop, which is Full autonomy on a fresh install, so a stop set to Ask or Act here is the only thing keeping that runtime asking.",
+  },
+  {
+    path: 'runtimes.opencode.defaultTrustStop',
+    direction: 'oneOf',
+    protectiveValues: ['ask', 'act'],
+    reason:
+      "OpenCode's own stop. `null` follows the global stop, which is Full autonomy on a fresh install, so a stop set to Ask or Act here is the only thing keeping that runtime asking.",
+  },
   {
     path: 'scheduler.maxConcurrentRuns',
     direction: 'lower',
@@ -483,7 +558,9 @@ function writePath(root: Record<string, unknown>, path: string, value: unknown):
   let cursor = root;
   for (const part of parts) {
     const next = cursor[part];
-    if (next === null || typeof next !== 'object') cursor[part] = {};
+    // Copied, never written through: a container here can be the fresh
+    // config's own object, and a deeper path must not edit it in place.
+    cursor[part] = next !== null && typeof next === 'object' ? { ...next } : {};
     cursor = cursor[part] as Record<string, unknown>;
   }
   cursor[leaf] = value;
@@ -605,6 +682,23 @@ function moreProtective(
         return undefined;
       }
       return stored as Record<string, unknown>;
+    }
+    case 'oneOf': {
+      const value = stored === null && entry.nullMeans !== undefined ? entry.nullMeans : stored;
+      if (typeof value !== 'string') return undefined;
+      return entry.protectiveValues?.includes(value) && value !== fresh ? value : undefined;
+    }
+    case 'entries': {
+      // Only the entries that ask or stop are carried, merged over the fresh
+      // map so a default entry is never lost. An Allowed entry stays behind.
+      if (stored === null || typeof stored !== 'object' || Array.isArray(stored)) return undefined;
+      const kept = Object.entries(stored as Record<string, unknown>).filter(
+        ([, state]) => typeof state === 'string' && entry.protectiveValues?.includes(state)
+      );
+      if (kept.length === 0) return undefined;
+      const base =
+        fresh !== null && typeof fresh === 'object' ? (fresh as Record<string, unknown>) : {};
+      return { ...base, ...Object.fromEntries(kept) };
     }
     case 'restricted': {
       // See the CarryoverDirection doc: this compares STORED against the fresh

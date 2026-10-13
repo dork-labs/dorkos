@@ -103,6 +103,8 @@ import {
   initCapabilityTierGate,
   resetCapabilityTierGate,
 } from '../capabilities/tier-enforcement.js';
+import { resetPermissionGate } from '../capabilities/permission-enforcement.js';
+import { askFor } from '../capabilities/__tests__/permission-gate-fixtures.js';
 import { ApprovalService } from '../approvals/index.js';
 import { eventFanOut } from '../event-fan-out.js';
 import type { AgentIdentity } from '../agent-identity/index.js';
@@ -749,11 +751,14 @@ describe('hand-registered MCP tools carry a permission tier', () => {
           readOwnerAccount: () => null,
         }),
       });
+      // A person set both to Ask: under Trusted a delete runs, recorded, with no card.
+      askFor('tasks_delete', 'mesh_unregister');
     });
 
     afterEach(() => {
       resetCapabilityTierGate();
       resetAuditTrail();
+      resetPermissionGate();
       vi.restoreAllMocks();
     });
 
@@ -897,6 +902,31 @@ describe('hand-registered MCP tools carry a permission tier', () => {
           // The arguments themselves are never recorded: only what the tool
           // declares as its subject becomes the target.
           expect(rows[0]!.change).toBeNull();
+        });
+
+        it(`${server} ${name}: runs under Trusted with no card, and says so in Activity`, async () => {
+          // ADR 261006-225605: an area-level Allowed runs a destructive action
+          // that carries no third-party code. One Activity line records that no
+          // card was shown.
+          const attempts: unknown[] = [];
+          initCapabilityTierGate({ approvals, onAttempt: (attempt) => attempts.push(attempt) });
+          askFor();
+          const result = await toolsFor(AGENT).get(name)!.call(DESTRUCTIVE_INPUT[name]);
+          expect(sideEffects()).toEqual([Object.values(DESTRUCTIVE_INPUT[name])[0]]);
+          expect(payloadOf(result).status).not.toBe('approval_required');
+          expect(approvals.listPending()).toEqual([]);
+          expect(attempts).toEqual([
+            expect.objectContaining({
+              decision: {
+                outcome: 'allowed',
+                approval: { via: 'permission', source: 'preset' },
+              },
+            }),
+          ]);
+          // Recorded as the agent, with no approval to link to.
+          expect(gateAuditRows()).toMatchObject([
+            { action: `mcp.${name}`, outcome: 'ok', actorKind: 'agent' },
+          ]);
         });
 
         it(`${server} ${name}: refuses an agent whose access was turned off`, async () => {

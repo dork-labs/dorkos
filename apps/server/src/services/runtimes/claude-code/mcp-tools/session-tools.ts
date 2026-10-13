@@ -86,6 +86,7 @@ import { getChatMessageService } from '../../../session/chat-messages/chat-messa
 import { spinOffBriefing } from '../../../session/chat-messages/chat-report-back.js';
 import { rememberedChatTitle } from '../../../session/origin/started-by-origin-overlay.js';
 import {
+  chatlessCallerStop,
   NO_CHAT_CEILING_RUNTIME,
   resolveStartPermission,
   type CallingChat,
@@ -128,7 +129,8 @@ export const OTHER_AGENTS_HOME_MESSAGE =
  *   ceiling can hide from its live mode.
  *
  * The external server can produce none of them: it has no chat, so its caller
- * is held to `acceptEdits` (`NO_CHAT_CEILING_MODE`).
+ * is held to the agent's own Files & commands stop, or to `acceptEdits`
+ * (`NO_CHAT_CEILING_MODE`) when it has none.
  */
 export type SessionStartCallerResolver = () =>
   | {
@@ -492,7 +494,13 @@ export function createSessionStartHandler(
     // The level it runs at: the calling chat's own or lower, never higher (spec
     // `inherited-start-permission`). The ceiling is read here, at the moment of
     // the call, from server-bound state; nothing in `args` can raise it.
-    const level = await resolveStartPermission(args.permissionMode, caller.chat, runtimeType);
+    // With no chat (the external `/mcp` server) it is the agent's own stop.
+    const level = await resolveStartPermission(
+      args.permissionMode,
+      caller.chat,
+      runtimeType,
+      await chatlessCallerStop(caller.chat, runtime, agentPath)
+    );
     if (!level.ok) return refuse(level.error, level.code);
     const permission = level.permission;
 

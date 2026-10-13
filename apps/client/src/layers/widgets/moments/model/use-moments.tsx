@@ -1,7 +1,7 @@
 import { useConfig } from '@/layers/entities/config';
 import { useAppStore } from '@/layers/shared/model';
 import { TelemetryConsentMoment } from '@/layers/features/telemetry-consent';
-import { FullPowerDoorMoment } from '@/layers/features/full-power-door';
+import { TrustNoticeMoment, isTrustNoticeEligible } from '@/layers/features/trust-notice';
 
 import { MOMENT_PRIORITY, type MomentDescriptor } from './moment-descriptor';
 
@@ -27,32 +27,23 @@ export function useTelemetryMomentDescriptor(): MomentDescriptor | null {
 }
 
 /**
- * Full-power door descriptor — the high rung, shown once to existing users who
- * have not yet answered the power question. This is a consent door: its accept
- * flips full power on, so it outranks the telemetry invitation below it.
+ * Trust-notice descriptor — the high rung, shown once to say agents now work
+ * without asking (spec `trusted-by-default-flip` §5.8). It outranks the
+ * telemetry invitation below it: it describes how the install already behaves.
  *
- * Eligible when config has loaded, onboarding is over (`completedAt ?? dismissedAt`
- * is set), and `ui.fullPowerDecidedAt` is still null — a nullable timestamp plus
- * an "onboarding already over" gate, the same existing-user re-ask idiom as
- * `use-profile-prompt`. The rail's own rules (no moment over the onboarding
- * overlay, at most one moment per launch, nothing from an unconfirmed cache) are
- * the host's job and are deliberately not repeated here.
- *
- * This hook reads only `useConfig`, never a router hook, so the collector stays
- * renderable without a `RouterProvider`; the destination "Customize…" navigates
- * to lives in {@link FullPowerDoorMoment}, reached only when the door renders.
+ * Eligibility is {@link isTrustNoticeEligible}: config loaded, onboarding over,
+ * `ui.trustNoticeSeenAt` still null, and the install on Trusted. The rail's own
+ * rules (no moment over the onboarding overlay or in the launch the first run
+ * ended in, at most one moment per launch, nothing from an unconfirmed cache)
+ * are the host's job and are deliberately not repeated here.
  */
-export function useFullPowerMomentDescriptor(): MomentDescriptor | null {
+export function useTrustNoticeMomentDescriptor(): MomentDescriptor | null {
   const { data: config } = useConfig();
-  if (!config) return null;
-  const onboardingOver =
-    config.onboarding?.completedAt != null || config.onboarding?.dismissedAt != null;
-  if (!onboardingOver) return null;
-  if (config.ui?.fullPowerDecidedAt != null) return null;
+  if (!isTrustNoticeEligible(config)) return null;
   return {
-    id: 'full-power-door',
+    id: 'trust-notice',
     priority: MOMENT_PRIORITY.high,
-    render: ({ onClose }) => <FullPowerDoorMoment onClose={onClose} />,
+    render: ({ onClose }) => <TrustNoticeMoment onClose={onClose} />,
   };
 }
 
@@ -69,7 +60,7 @@ export function useFullPowerMomentDescriptor(): MomentDescriptor | null {
  * record that the moment's own field cannot.
  */
 export function useMoments(): MomentDescriptor[] {
-  const fullPower = useFullPowerMomentDescriptor();
+  const trustNotice = useTrustNoticeMomentDescriptor();
   const telemetry = useTelemetryMomentDescriptor();
   // The first run ended in this launch, so #team and DorkBot's welcome are on
   // screen with the chips that start the first job (spec
@@ -77,5 +68,5 @@ export function useMoments(): MomentDescriptor[] {
   // next launch, which is when the rail asks an existing user anyway.
   const firstRunThisLaunch = useAppStore((s) => s.onboardingHiddenForSession);
   if (firstRunThisLaunch) return [];
-  return [fullPower, telemetry].filter((d): d is MomentDescriptor => d !== null);
+  return [trustNotice, telemetry].filter((d): d is MomentDescriptor => d !== null);
 }

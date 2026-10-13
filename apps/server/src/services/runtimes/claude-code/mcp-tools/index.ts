@@ -263,7 +263,9 @@ export function handRegisteredInSessionToolSet(
     ...getTraceTools(deps),
     ...getMeshTools(deps),
     ...getAgentTools(deps),
-    ...getExtensionTools(deps),
+    // The same provenance the task tools read: present in a session, so a
+    // Trusted install approves an extension our agent creates (ADR 261006-225605).
+    ...getExtensionTools(deps, resolveTaskProvenance),
   ];
 
   // Exposure is applied AFTER the gate, never before: the gate rebuilds each

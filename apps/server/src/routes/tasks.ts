@@ -65,6 +65,7 @@ import {
   taskWorkOf,
 } from '../services/tasks/schedule-permission-clamp.js';
 import { changesApprovedWork } from '../services/tasks/task-file-update.js';
+import { agentSchedulesArmWithoutAsking } from '../services/tasks/approvals/agent-trust.js';
 import { refuseStickyAccountChange } from '../services/tasks/session/sticky-session.js';
 import {
   scheduleAccountRefusal,
@@ -353,16 +354,20 @@ export function createTasksRoutes(deps: TasksRouterDeps): Hono<ApiEnv> {
     // do the identical thing and used to do a shorter, wrong version of it — a row
     // with no SKILL.md behind it (DOR-1568). What is left here is what is genuinely
     // this door's: who is asking, what the activity feed is told, and the response.
+    // Read from the RESOLVED credential, never from the body: the caller's
+    // agent identity is set only for a caller that presented a live agent
+    // token. That is what makes the caller one of our agents, whose schedule a
+    // Trusted install arms at once; an unidentified caller's parks.
+    const agentIdentity = caller.agentIdentity;
     const outcome = await createScheduledTask(
       { store, registrar, dorkHome, ...(meshCore && { meshCore }) },
       {
         input: body as CreateTaskInput,
         trusted,
-        // Stamped from the RESOLVED credential, never from the body:
-        // `getRequestAgentIdentity` answers only for a caller that presented a
-        // live token, so an unidentified one leaves this null and the approval
-        // card honestly says it does not know who asked.
-        proposal: { agentPath: caller.agentIdentity?.agentPath ?? null },
+        callerIsOurAgent: agentIdentity != null,
+        // An unidentified caller leaves this null, and the approval card
+        // honestly says it does not know who asked.
+        proposal: { agentPath: agentIdentity?.agentPath ?? null },
       }
     );
 
@@ -384,11 +389,15 @@ export function createTasksRoutes(deps: TasksRouterDeps): Hono<ApiEnv> {
       // not refused — so the proposer is named rather than assumed (DOR-1829).
       ...readActivityActor(caller),
       category: 'tasks',
-      eventType: 'tasks.task_created',
+      // An agent's schedule armed without asking is recorded as exactly that,
+      // so the audit trail can answer "what did my agents set running?".
+      eventType: outcome.armedPayload ? 'schedule.armed_by_agent' : 'tasks.task_created',
       resourceType: 'schedule',
       resourceId: schedule.id,
       resourceLabel: schedule.displayName ?? schedule.name,
-      summary: `Created scheduled task ${schedule.displayName ?? schedule.name}`,
+      summary: outcome.armedPayload
+        ? `Scheduled task ${schedule.displayName ?? schedule.name}, which runs ${outcome.armedPayload.cadence}`
+        : `Created scheduled task ${schedule.displayName ?? schedule.name}`,
       linkPath: '/',
     });
 
@@ -631,10 +640,15 @@ export function createTasksRoutes(deps: TasksRouterDeps): Hono<ApiEnv> {
     // away and the sweep's up to five minutes, and until then the agent's work
     // would run approved. A person's change that wrote no file (a package's
     // row-only timing, DOR-2302) re-approves in the same act; a person's
-    // file-backed edit was re-approved just above. The park is then picked up by
-    // the "entered `pending_approval`" edge below like any other.
+    // file-backed edit was re-approved just above. One of our agents on a
+    // Trusted install re-approves like a person, except on a schedule made
+    // from a file (ADR 261006-225605). The park is then picked up by the
+    // "entered `pending_approval`" edge below like any other.
     if (!rearms || !changesFile) {
-      store.approvals.settleApprovedWorkChange(updated.id, before, { trusted: rearms });
+      store.approvals.settleApprovedWorkChange(updated.id, before, {
+        trusted: rearms,
+        armsAgentWork: !trusted && agentSchedulesArmWithoutAsking(caller.agentIdentity != null),
+      });
       updated = store.getTask(updated.id) ?? updated;
     }
 

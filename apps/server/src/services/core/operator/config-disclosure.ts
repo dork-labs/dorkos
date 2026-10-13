@@ -199,11 +199,9 @@ export const CONFIG_DISCLOSURE = {
   'ui.communityNavigation.owners[].destinations[].scrollAnchorEntryId': 'withhold',
   'ui.communityNavigation.owners[].installationDestination.path': 'withhold',
   'ui.communityNavigation.owners[].installationDestination.search': 'withhold',
-  // The power-door answer: a date and the word `'full'` or `'supervised'` name
-  // nothing and unlock nothing on being read. An agent that knows the operator chose supervised
-  // learns something genuinely useful — that it should expect to be asked.
-  'ui.fullPowerDecidedAt': 'expose',
-  'ui.fullPowerChoice': 'expose',
+  // When the person saw the "agents now work without asking" notice: a date
+  // that names nothing and unlocks nothing on being read.
+  'ui.trustNoticeSeenAt': 'expose',
 
   // How loud DorkOS may be, and how long before it tries a louder channel. All
   // preferences: none of them names a credential, a host or a device, and an
@@ -512,6 +510,9 @@ export const CONFIG_DISCLOSURE = {
   // Machine bookkeeping: which server version the permission upgrade sweep last
   // ran for.
   'permissions.upgradeSweptVersion': 'expose',
+  // Machine bookkeeping: when the Trusted defaults outside config.json were
+  // applied, once per install.
+  'permissions.trustedStoresAppliedAt': 'expose',
 
   'cloud.instanceToken': 'withhold',
   'cloud.instanceName': 'expose',

@@ -28,6 +28,14 @@ vi.mock('@/layers/entities/mesh', () => ({
   useRegisteredAgents: (...args: unknown[]) => mockUseRegisteredAgents(...args),
 }));
 
+// The server config the dialog reads its pre-selections from. Not loaded by
+// default, as on a first render; the posture tests set it.
+const mockUseConfig = vi.fn((): { data: unknown } => ({ data: undefined }));
+
+vi.mock('@/layers/entities/config', () => ({
+  useConfig: () => mockUseConfig(),
+}));
+
 // ---------------------------------------------------------------------------
 // Fixtures
 // ---------------------------------------------------------------------------
@@ -383,6 +391,37 @@ describe('BindingDialog', () => {
       });
       fireEvent.click(screen.getByRole('button', { name: /cancel/i }));
       expect(onOpenChange).toHaveBeenCalledWith(false);
+    });
+  });
+
+  describe('agent can initiate, pre-selected from the trust posture', () => {
+    afterEach(() => {
+      mockUseConfig.mockImplementation(() => ({ data: undefined }));
+    });
+
+    /** Submit a new binding on an install with this preset and report canInitiate. */
+    async function submittedCanInitiate(preset: string): Promise<unknown> {
+      mockUseConfig.mockImplementation(() => ({ data: { permissions: { preset } } }));
+      const onConfirm = vi.fn().mockResolvedValue(undefined);
+      render(
+        <BindingDialog
+          {...defaultCreateProps}
+          onConfirm={onConfirm}
+          initialValues={{ adapterId: 'telegram-1', agentId: 'agent-1' }}
+        />,
+        { wrapper: Wrapper }
+      );
+      fireEvent.click(screen.getByRole('button', { name: /add connection/i }));
+      await waitFor(() => expect(onConfirm).toHaveBeenCalled());
+      return onConfirm.mock.calls[0]![0].canInitiate;
+    }
+
+    it('is on for a Trusted install', async () => {
+      expect(await submittedCanInitiate('trusted')).toBe(true);
+    });
+
+    it('is off for a Careful install', async () => {
+      expect(await submittedCanInitiate('careful')).toBe(false);
     });
   });
 

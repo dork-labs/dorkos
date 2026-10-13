@@ -30,7 +30,7 @@ import { shootTaskRuntimePicker } from './surfaces-desktop-tasks.js';
  * Several drives live in sibling modules, all driven from the capture entry
  * points below: the #team conversation behind `team-room` in
  * `surfaces-desktop-team`, the power surfaces (Control Center, Settings → Room
- * limits, the full-power door) in `surfaces-desktop-power`, and the four-agent
+ * limits, the trust notice) in `surfaces-desktop-power`, and the four-agent
  * fleet drive behind `multi-session` in `surfaces-desktop-fleet`.
  *
  * @module capture/surfaces-desktop

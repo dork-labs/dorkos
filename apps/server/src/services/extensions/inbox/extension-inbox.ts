@@ -72,10 +72,8 @@ import {
   cancelEscalationByKey,
   getEscalationService,
 } from '../../notifications/escalation-service.js';
-import {
-  notificationEntry,
-  setOpenProjectCounter,
-} from '../../notifications/notification-registry.js';
+import { notificationEntry } from '../../notifications/notification-registry.js';
+import { setOpenProjectCounter } from '../../notifications/extension-decision-copy.js';
 import {
   pruneExtensionHistory,
   resolveStanding,
