@@ -1,7 +1,4 @@
-import { AmbiguousSessionError } from '../../../session/resolution/session-lookup-error.js';
 import fs from 'fs/promises';
-import { createReadStream } from 'node:fs';
-import { createInterface } from 'node:readline';
 import path from 'path';
 import { getSessionInfo } from '@anthropic-ai/claude-agent-sdk';
 import type {
@@ -25,6 +22,7 @@ import { deriveSessionTitle } from '../../shared/derive-title.js';
 import { projectSlug, subtreeSlugScope } from './project-slug.js';
 import { parseTasks } from './task-reader.js';
 import { SessionRootIndex, accountForTranscript } from './session-root-index.js';
+import { SessionLocator, type FindSessionOptions } from './transcripts/session-locator.js';
 import { sumContextTokens } from '../sdk/context-tokens.js';
 import { resolveActiveClaudeRoot, resolveClaudeRootSet } from '../claude-config-dir.js';
 import { TRANSCRIPT } from '../../../../config/constants.js';
@@ -108,6 +106,11 @@ export class TranscriptReader {
    */
   private rootIndex = new SessionRootIndex();
 
+  /** Session id → transcript path, so an id-only read walks the accounts once. */
+  private locator = new SessionLocator((filePath, sessionId) =>
+    this.cachedMeta(filePath, sessionId)
+  );
+
   /**
    * Drop the cached metadata for a session so the next listSessions/getSession
    * re-extracts it. Called after a rename so the SDK-persisted title surfaces
@@ -128,6 +131,7 @@ export class TranscriptReader {
   invalidateAll(): void {
     this.metaCache.clear();
     this.rootIndex.clear();
+    this.locator.clear();
   }
 
   /**
@@ -482,62 +486,37 @@ export class TranscriptReader {
     return sessions;
   }
 
-  /** Find an existing native transcript across configured accounts; never reverse a lossy slug. */
-  async findSession(sessionId: string): Promise<Session | null> {
-    if (!/^[a-f0-9-]{36}$/i.test(sessionId)) return null;
-    let found: Session | null = null;
-    for (const root of resolveClaudeRootSet()) {
-      const projects = path.join(root, 'projects');
-      let entries;
-      try {
-        entries = await fs.readdir(projects, { withFileTypes: true });
-      } catch (error) {
-        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
-        continue;
-      }
-      for (const entry of entries) {
-        if (!entry.isDirectory()) continue;
-        const filePath = path.join(projects, entry.name, `${sessionId}.jsonl`);
-        try {
-          const { session } = await this.extractSessionMeta(filePath, sessionId);
-          if (!session.cwd) {
-            const input = createReadStream(filePath);
-            const lines = createInterface({ input, crlfDelay: Infinity });
-            try {
-              for await (const line of lines) {
-                let record;
-                try {
-                  record = JSON.parse(line);
-                } catch {
-                  continue;
-                }
-                if (typeof record?.cwd === 'string' && record.cwd) {
-                  session.cwd = record.cwd;
-                  break;
-                }
-              }
-            } finally {
-              lines.close();
-              input.destroy();
-            }
-          }
-          if (!session.cwd) continue;
-          await validateBoundaryOrDorkHome(session.cwd);
-          if (found) throw new AmbiguousSessionError();
-          found = session;
-        } catch (error) {
-          if (error instanceof AmbiguousSessionError) throw error;
-          if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
-        }
-      }
+  /**
+   * Find an existing native transcript across configured accounts; never
+   * reverse a lossy slug. The caller's directory is searched first and a found
+   * path is remembered, so only the first lookup walks every project folder
+   * (see {@link SessionLocator}).
+   */
+  async findSession(sessionId: string, options?: FindSessionOptions): Promise<Session | null> {
+    return this.locator.find(sessionId, options);
+  }
+
+  /**
+   * A transcript's metadata, from {@link metaCache} while the file's mtime is
+   * unchanged. Always a copy: callers fill in fields the cache must not keep.
+   * Throws ENOENT for a missing file, like the read it replaces.
+   */
+  private async cachedMeta(filePath: string, sessionId: string): Promise<Session> {
+    const fileStat = await fs.stat(filePath);
+    const cached = this.metaCache.get(sessionId);
+    if (cached && cached.mtimeMs === fileStat.mtimeMs && cached.filePath === filePath) {
+      return { ...cached.session };
     }
-    return found;
+    const { session, hidden } = await this.extractSessionMeta(filePath, sessionId, fileStat);
+    this.metaCache.set(sessionId, { session, mtimeMs: fileStat.mtimeMs, hidden, filePath });
+    return { ...session };
   }
 
   /**
    * Get metadata for a single session. Both the head (title/timestamps) and the
    * tail (latest model/context/auto-compaction) are read inside
-   * {@link extractSessionMeta} — the single tail-read path shared with the list.
+   * {@link extractSessionMeta} — the single tail-read path shared with the list,
+   * and served from the same mtime-keyed cache.
    *
    * Unfiltered by design: unlike {@link listSessionsInDir}, a sidechain or
    * empty transcript is still returned when fetched directly by id — those
@@ -547,7 +526,7 @@ export class TranscriptReader {
     await validateBoundaryOrDorkHome(vaultRoot);
     const filePath = await this.transcriptPath(vaultRoot, sessionId);
     try {
-      const { session } = await this.extractSessionMeta(filePath, sessionId);
+      const session = await this.cachedMeta(filePath, sessionId);
       // Attribute a head-record-less transcript to the directory it was
       // fetched from — same rule as listSessions (ADR 260707-193314).
       if (session.cwd === undefined) session.cwd = vaultRoot;

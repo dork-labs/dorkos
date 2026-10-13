@@ -1911,8 +1911,16 @@ export interface AgentRuntime {
   /** Get metadata for a single session, or null if not found. */
   getSession(projectDir: string, sessionId: string): Promise<Session | null>;
 
-  /** Read native session metadata by id without a caller-supplied directory. Never creates a session. */
-  findSession?(sessionId: string): Promise<Session | null>;
+  /**
+   * Read native session metadata by id without a caller-supplied directory.
+   * Never creates a session.
+   *
+   * @param sessionId - The runtime's own session id.
+   * @param options - `cwdHint` is a directory the caller believes the session
+   *   ran in. A runtime may search it first; the answer must still be the
+   *   directory the session records, never the hint itself.
+   */
+  findSession?(sessionId: string, options?: { cwdHint?: string }): Promise<Session | null>;
 
   /** Read the full message history for a session. */
   getMessageHistory(projectDir: string, sessionId: string): Promise<HistoryMessage[]>;
