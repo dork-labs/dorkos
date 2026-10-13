@@ -67,6 +67,7 @@ import {
   seedIdentityPromptDismissedDefault,
   seedWorkingHoursDefaults,
   seedDoeDefaultModel,
+  seedUiPanelTabs,
   seedFirstRunOnboardingLeaves,
   seedHarnessAutoAdopt,
   seedHarnessGlobal,
@@ -1191,14 +1192,12 @@ describe('retireToolOnlyReplies migration (tool-only-room-replies §A2, DOR-2099
     }
   });
 
-  it('seeds the ceiling that outlived the experiment when it is absent', () => {
-    // The surviving half of the removed `'0.72.0'`'s job. `maxPostsPerTurn` is a
-    // nested leaf, conf's defaults merge is shallow, and this is now the only
-    // body that writes it — so an install that never ran `'0.72.0'` gets it here
-    // or not at all.
+  it('seeds nothing for the ceiling now that it is retired (DOR-2739)', () => {
+    // The frozen body still names `maxPostsPerTurn`'s default, which no longer
+    // exists, so it writes no value; `'0.113.0'` deletes the leaf regardless.
     const store = createMockStore({ rooms: { maxAgentDepth: 12, toolOnlyReplies: true } });
     retireToolOnlyReplies(store);
-    expect(store.data.rooms).toEqual({ maxAgentDepth: 12, maxPostsPerTurn: 3 });
+    expect(JSON.parse(JSON.stringify(store.data.rooms))).toEqual({ maxAgentDepth: 12 });
   });
 
   it('never overwrites a ceiling somebody chose', () => {
@@ -1227,7 +1226,7 @@ describe('retireToolOnlyReplies migration (tool-only-room-replies §A2, DOR-2099
     expect(store.data.rooms).toBeUndefined();
   });
 
-  it('a real config file loses the leaf and gains the ceiling on disk (full conf path)', () => {
+  it('a real config file loses the leaf on disk (full conf path)', () => {
     // The half neither the mock store nor a `getDot` assertion can reach (see
     // `seedRoomRepoDefaults` above for the DOR-1496 measurement this shape comes
     // from). Suppress the body and this goes red.
@@ -1263,9 +1262,9 @@ describe('retireToolOnlyReplies migration (tool-only-room-replies §A2, DOR-2099
         rooms: Record<string, unknown>;
       };
       expect('toolOnlyReplies' in onDisk.rooms).toBe(false);
-      expect(onDisk.rooms.maxPostsPerTurn).toBe(3);
-      // The upgrade removes one leaf and adds one; it changes nothing the person
-      // had set.
+      // The ceiling it once seeded is retired (DOR-2739), so nothing is added.
+      expect('maxPostsPerTurn' in onDisk.rooms).toBe(false);
+      // It changes nothing the person had set.
       expect(onDisk.rooms.maxAgentDepth).toBe(12);
       expect(onDisk.rooms.replyWaitMinutes).toBe(25);
       expect(() => UserConfigSchema.parse(onDisk)).not.toThrow();
@@ -1295,13 +1294,13 @@ describe('retireToolOnlyReplies migration (tool-only-room-replies §A2, DOR-2099
       );
 
       initConfigManager(dir);
-      expect(applyConfigPatch({ rooms: { maxPostsPerTurn: 2 } }).ok).toBe(true);
+      expect(applyConfigPatch({ rooms: { replyWaitMinutes: 25 } }).ok).toBe(true);
 
       const onDisk = JSON.parse(fs.readFileSync(cfgPath, 'utf-8')) as {
         rooms: Record<string, unknown>;
       };
       expect('toolOnlyReplies' in onDisk.rooms).toBe(false);
-      expect(onDisk.rooms.maxPostsPerTurn).toBe(2);
+      expect(onDisk.rooms.replyWaitMinutes).toBe(25);
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
     }
@@ -1309,17 +1308,12 @@ describe('retireToolOnlyReplies migration (tool-only-room-replies §A2, DOR-2099
 });
 
 describe('seedRoomCanvasOps migration (room-canvas §3.4, DOR-1999)', () => {
-  it('reserves the leaf on a `rooms` block that predates the room canvas', () => {
-    // What this catches: conf merges top-level defaults SHALLOWLY, so an
-    // upgrading install with a stored `rooms` block never inherits the new leaf
-    // on its own. Drop the body and it reads `undefined`.
-    const store = createMockStore({ rooms: { maxAgentDepth: 12, maxPostsPerTurn: 1 } });
+  it('reserves no value now that the leaf is retired (DOR-2739)', () => {
+    // The frozen body names a default that no longer exists, so the value it
+    // writes is empty; `'0.113.0'` deletes the leaf regardless.
+    const store = createMockStore({ rooms: { maxAgentDepth: 12 } });
     seedRoomCanvasOps(store);
-    expect(store.data.rooms).toEqual({
-      maxAgentDepth: 12,
-      maxPostsPerTurn: 1,
-      maxCanvasOpsPerTurn: 3,
-    });
+    expect(JSON.parse(JSON.stringify(store.data.rooms))).toEqual({ maxAgentDepth: 12 });
   });
 
   it('never overwrites a ceiling somebody tightened (idempotent)', () => {
@@ -1340,7 +1334,7 @@ describe('seedRoomCanvasOps migration (room-canvas §3.4, DOR-1999)', () => {
     expect(store.data.rooms).toBeUndefined();
   });
 
-  it('a real pre-0.79.0 config file gains the leaf on disk (full conf path)', () => {
+  it('a real pre-0.79.0 config file runs it cleanly on disk (full conf path)', () => {
     // The half neither the mock store nor a `getDot` assertion can reach: conf's
     // `store` getter re-reads and re-parses the file and hands back a copy Ajv
     // has already filled the default into, and that copy is discarded. Suppress
@@ -1377,10 +1371,10 @@ describe('seedRoomCanvasOps migration (room-canvas §3.4, DOR-1999)', () => {
       const onDisk = JSON.parse(fs.readFileSync(cfgPath, 'utf-8')) as {
         rooms: Record<string, unknown>;
       };
-      expect(onDisk.rooms.maxCanvasOpsPerTurn).toBe(3);
-      // The upgrade adds one leaf; it changes nothing the person had set.
+      // The retired leaf is never added (DOR-2739); nothing the person had set
+      // changes.
+      expect('maxCanvasOpsPerTurn' in onDisk.rooms).toBe(false);
       expect(onDisk.rooms.maxAgentDepth).toBe(12);
-      expect(onDisk.rooms.maxPostsPerTurn).toBe(1);
       expect(() => UserConfigSchema.parse(onDisk)).not.toThrow();
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
@@ -1734,6 +1728,57 @@ describe('seedFirstRunOnboardingLeaves migration (DOR-2783)', () => {
       expect(onDisk.onboarding).toHaveProperty('priorRuntime', null);
       // Everything the install already had is untouched.
       expect(onDisk.onboarding.completedAt).toBe('2026-09-01T00:00:00.000Z');
+      expect(() => UserConfigSchema.parse(onDisk)).not.toThrow();
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('seedUiPanelTabs migration (DOR-2867)', () => {
+  it('reserves an empty list on a `ui` block that predates it', () => {
+    const store = createMockStore({ ui: { theme: 'dark', composer: { richText: true } } });
+    seedUiPanelTabs(store);
+    expect(store.data.ui).toEqual({ theme: 'dark', composer: { richText: true }, panelTabs: [] });
+  });
+
+  it('keeps a saved placement, and writes nothing (idempotent)', () => {
+    const saved = [{ tab: 'social-queue:queue', show: { agents: ['a'], rooms: [], pages: [] } }];
+    const store = createMockStore({ ui: { panelTabs: saved } });
+    seedUiPanelTabs(store);
+    expect(store.writes).toEqual([]);
+    expect(store.data.ui).toEqual({ panelTabs: saved });
+  });
+
+  it('a real pre-0.112.0 config file gains the leaf on disk (full conf path)', () => {
+    const dir = path.join(os.tmpdir(), 'test-dork-ui-panel-tabs-mig-' + Date.now());
+    const cfgPath = path.join(dir, 'config.json');
+    fs.mkdirSync(dir, { recursive: true });
+    try {
+      const { panelTabs: _drop, ...uiWithout } = USER_CONFIG_DEFAULTS.ui;
+      fs.writeFileSync(
+        cfgPath,
+        JSON.stringify({
+          version: 1,
+          ui: { ...uiWithout, theme: 'dark' },
+          __internal__: { migrations: { version: '0.111.0' } },
+        }),
+        'utf-8'
+      );
+      new Conf({
+        configName: 'config',
+        cwd: dir,
+        schema: CONF_JSON_SCHEMA as unknown as Schema<Record<string, unknown>>,
+        defaults: USER_CONFIG_DEFAULTS,
+        clearInvalidConfig: false,
+        projectVersion: '0.112.0',
+        migrations: CONFIG_MIGRATIONS,
+      });
+      const onDisk = JSON.parse(fs.readFileSync(cfgPath, 'utf-8')) as {
+        ui: Record<string, unknown>;
+      };
+      expect(onDisk.ui).toHaveProperty('panelTabs', []);
+      expect(onDisk.ui.theme).toBe('dark');
       expect(() => UserConfigSchema.parse(onDisk)).not.toThrow();
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
@@ -4277,7 +4322,7 @@ describe('CONFIG_MIGRATIONS append-only pins (DOR-1222 regression guard)', () =>
     // pass this having scanned nothing. The count is the knowable bound; the
     // table is append-only, so raising it is the deliberate act of adding a
     // migration, which is exactly when this check should be re-read.
-    expect(Object.keys(bodies)).toHaveLength(51);
+    expect(Object.keys(bodies)).toHaveLength(53);
 
     const reaching = Object.keys(bodies).filter((key) =>
       reachedDeclarations(bodies[key]!, pool).includes('describeLoadError')

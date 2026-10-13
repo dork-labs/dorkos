@@ -49,7 +49,6 @@ import {
   NO_DEFAULT_DOCUMENT_MESSAGE,
   OPEN_CANVAS_NEEDS_CONTENT_MESSAGE,
   canvasChangeSentence,
-  tooManyCanvasOpsMessage,
 } from '../../rooms/canvas/room-canvas-service.js';
 
 const ANA = '/agents/ana';
@@ -185,153 +184,18 @@ describe('RoomCanvasService.apply', () => {
     });
   });
 
-  describe('the per-turn ceiling', () => {
-    it('refuses the fourth change of a turn, and writes nothing for it', () => {
-      // The defect this catches is the one the spec's review found: a ceiling
-      // counted after the write has already answered the model successfully.
-      for (const n of [1, 2, 3]) {
+  describe('no per-turn count (DOR-2739)', () => {
+    it('lands a fourth, and a tenth, change in one turn', () => {
+      // The retired ceiling was three. An agent changes the canvas as often as
+      // a person can; the loop guards bound conversations, not operations.
+      for (let n = 1; n <= 10; n += 1) {
         expect(
           applyAs(ana, 'turn-1', { action: 'open_canvas', content: jsonContent(`doc ${n}`) })
             .applied,
           `open ${n}`
         ).toBe(true);
       }
-      const fourth = applyAs(ana, 'turn-1', {
-        action: 'open_canvas',
-        content: jsonContent('doc 4'),
-      });
-      expect(fourth).toEqual({
-        applied: false,
-        code: 'TOO_MANY_CANVAS_OPS_THIS_TURN',
-        reason: tooManyCanvasOpsMessage(3),
-      });
-      // Three rows, not four: an operation that was refused left nothing behind.
-      expect(canvas.list(room.id)).toHaveLength(3);
-    });
-
-    /**
-     * The one case the `>=` in `chargeCeiling` exists for (DOR-2006 review, 10b).
-     *
-     * The resolver reads the ceiling live and a host that has configured none
-     * answers `undefined`. `spent >= undefined` is false, so the operation
-     * proceeds — which is right. The inversion that ships as `!(spent < limit)`
-     * reads the same for every real number and flips exactly here: `spent <
-     * undefined` is false too, so its negation refuses. Every canvas command in
-     * every room then fails with "already changed the canvas undefined times",
-     * and re-seeding it left 2033 of 2034 server tests green.
-     */
-    it('lets everything through when the host has configured no ceiling', () => {
-      const {
-        service: unlimited,
-        authors: theirAuthors,
-        human: owner,
-      } = createRoomHarness({
-        agents,
-        runner: scriptedRunner(() => null),
-        // Exactly what `configManager.get('rooms').maxCanvasOpsPerTurn` answers
-        // on a config that has no such key.
-        maxCanvasOpsPerTurn: () => undefined as unknown as number,
-      });
-      const theirRoom = unlimited.createRoom(
-        { kind: 'channel', title: 'Unbounded', members: [], agentPaths: [ANA] },
-        owner
-      );
-      const theirAna = theirAuthors.resolveAgent(ANA, 'Ana').id;
-
-      for (const n of [1, 2, 3, 4, 5] as const) {
-        const result = unlimited.canvas.apply({
-          roomId: theirRoom.id,
-          authorId: theirAna,
-          turnId: 'turn-1',
-          command: { action: 'open_canvas', content: jsonContent(`doc ${n}`) },
-        });
-        expect(result.applied, `open ${n}`).toBe(true);
-      }
-      expect(unlimited.canvas.list(theirRoom.id)).toHaveLength(5);
-    });
-
-    it('survives a turn that is closed more than once', () => {
-      // `finishTurn` runs from the collector's `finally`, and a room turn can
-      // reach one more than once — an abort and a settle, a retry, a second
-      // close on a turn that already ended. Each of those calls arrives with an
-      // EMPTY ledger, so a closed record that assigned its count rather than
-      // adding to it would hand the turn a fresh budget every time anything
-      // closed it again. Nothing else in this file can see that: it needs a
-      // second close AND an operation after it.
-      for (const n of [1, 2, 3]) {
-        applyAs(ana, 'turn-1', { action: 'open_canvas', content: jsonContent(`doc ${n}`) });
-      }
-      canvas.finishTurn('turn-1');
-      canvas.finishTurn('turn-1');
-
-      expect(
-        applyAs(ana, 'turn-1', { action: 'open_canvas', content: jsonContent('doc 4') })
-      ).toMatchObject({ applied: false, code: 'TOO_MANY_CANVAS_OPS_THIS_TURN' });
-      expect(canvas.list(room.id)).toHaveLength(3);
-    });
-
-    it('charges a late operation against the turn that spent it', () => {
-      // Two ops in-turn leaves one. The straggler takes it — and is named, which
-      // is the round-one behaviour — and the one after it is refused, because a
-      // late operation is charged like any other rather than being free.
-      for (const n of [1, 2]) {
-        applyAs(ana, 'turn-1', { action: 'open_canvas', content: jsonContent(`doc ${n}`) });
-      }
-      canvas.finishTurn('turn-1');
-
-      const third = applyAs(ana, 'turn-1', {
-        action: 'open_canvas',
-        content: jsonContent('doc 3'),
-      });
-      expect(third.applied, 'the third of three is still inside the ceiling').toBe(true);
-      // A second close, with nothing open, must not give the charge back.
-      canvas.finishTurn('turn-1');
-      expect(
-        applyAs(ana, 'turn-1', { action: 'open_canvas', content: jsonContent('doc 4') })
-      ).toMatchObject({ applied: false, code: 'TOO_MANY_CANVAS_OPS_THIS_TURN' });
-      expect(canvas.list(room.id)).toHaveLength(3);
-    });
-
-    it('starts again on the next turn', () => {
-      for (const n of [1, 2, 3]) {
-        applyAs(ana, 'turn-1', { action: 'open_canvas', content: jsonContent(`a${n}`) });
-      }
-      expect(
-        applyAs(ana, 'turn-2', { action: 'open_canvas', content: jsonContent('b1') }).applied
-      ).toBe(true);
-    });
-
-    it('is read live, so moving it in Settings binds the very next operation', () => {
-      // Read per call rather than captured, which is what makes a number changed
-      // in Settings bind the next change instead of the next server start. A
-      // captured option could only ever prove the code agrees with itself.
-      let ceiling = 2;
-      const live = createRoomHarness({
-        agents,
-        runner: scriptedRunner(() => null),
-        maxCanvasOpsPerTurn: () => ceiling,
-      });
-      const liveRoom = live.service.createRoom(
-        { kind: 'channel', title: 'Live', members: [], agentPaths: [ANA] },
-        live.human
-      );
-      const liveAna = live.authors.resolveAgent(ANA, 'Ana').id;
-      const change = (n: number) =>
-        live.service.canvas.apply({
-          roomId: liveRoom.id,
-          authorId: liveAna,
-          turnId: 'one-turn',
-          command: { action: 'open_canvas', content: jsonContent(`doc ${n}`) },
-        });
-
-      expect(change(1).applied).toBe(true);
-      expect(change(2).applied).toBe(true);
-      expect(change(3)).toMatchObject({ reason: tooManyCanvasOpsMessage(2) });
-
-      // Somebody raises it mid-conversation. The very next operation goes
-      // through, in the SAME turn.
-      ceiling = 4;
-      expect(change(4).applied).toBe(true);
+      expect(canvas.list(room.id)).toHaveLength(10);
     });
   });
 

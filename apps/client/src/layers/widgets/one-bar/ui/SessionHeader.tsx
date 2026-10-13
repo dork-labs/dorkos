@@ -76,7 +76,7 @@ export function SessionHeader() {
   // directory, and the honest name for it is the directory's. The favicon's
   // hash-a-face-from-cwd fallback is deliberately NOT reached for: a face
   // implies an agent.
-  const name = heldName ?? sessionDirectoryName ?? 'Session';
+  const name = heldName ?? sessionDirectoryName ?? 'Chat';
   const title = sessionDisplayTitle(sessionTitle ?? '');
 
   return (

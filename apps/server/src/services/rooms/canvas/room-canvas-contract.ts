@@ -13,8 +13,6 @@ export interface RoomCanvasDeps {
   visibility: RoomVisibility;
   /** The room's live stream — who is watching. */
   broadcaster: RoomBroadcaster;
-  /** The per-turn ceiling, read PER CALL so a change in Settings binds the next operation. */
-  maxOpsPerTurn: () => number;
   /**
    * Write one turn's coalesced entry into the room's log.
    *

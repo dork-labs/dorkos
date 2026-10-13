@@ -88,6 +88,7 @@ describe('UserConfigSchema', () => {
         },
         statusBar: { pins: [] },
         composer: { richText: true },
+        panelTabs: [],
         communityNavigation: { version: 1, owners: [] },
         fullPowerDecidedAt: null,
         fullPowerChoice: null,
@@ -128,8 +129,6 @@ describe('UserConfigSchema', () => {
         collectDebounceMs: 500,
         collectMaxEntries: 20,
         responseGate: 'routing',
-        maxPostsPerTurn: 3,
-        maxCanvasOpsPerTurn: 3,
         maxConcurrentTurnsPerAgent: 3,
         repo: {
           enabled: true,
@@ -504,6 +503,7 @@ describe('USER_CONFIG_DEFAULTS', () => {
         },
         statusBar: { pins: [] },
         composer: { richText: true },
+        panelTabs: [],
         communityNavigation: { version: 1, owners: [] },
         fullPowerDecidedAt: null,
         fullPowerChoice: null,
@@ -544,8 +544,6 @@ describe('USER_CONFIG_DEFAULTS', () => {
         collectDebounceMs: 500,
         collectMaxEntries: 20,
         responseGate: 'routing',
-        maxPostsPerTurn: 3,
-        maxCanvasOpsPerTurn: 3,
         maxConcurrentTurnsPerAgent: 3,
         repo: {
           enabled: true,

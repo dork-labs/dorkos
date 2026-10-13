@@ -85,7 +85,7 @@ export function SettingsShowcases() {
 /**
  * The Control Center flyout's contents (spec `full-power-defaults`, D7): the
  * global Trust Dial, the power switches, the overrides ledger and the
- * unattended-status line. Shown here as the body without its popover shell, on
+ * keep-awake line. Shown here as the body without its popover shell, on
  * the playground's mock data — an install with no exceptions renders the calm
  * empty ledger.
  */

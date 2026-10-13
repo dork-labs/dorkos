@@ -5,7 +5,12 @@
  */
 import type { RoomSummary, ThreadSummary } from '@dorkos/shared/room-schemas';
 import type { Session } from '@dorkos/shared/types';
-import type { AgentRosterEntry, SidebarModelPrefs, SidebarState } from '../sidebar-state';
+import type {
+  AgentRosterEntry,
+  SidebarAddOnPage,
+  SidebarModelPrefs,
+  SidebarState,
+} from '../sidebar-state';
 
 /**
  * The instant every fixture reasons from: 09:15 on 9 August 2026, **local**.
@@ -127,6 +132,17 @@ export function agent(
 }
 
 /**
+ * A page a mini app added, as the Add-ons section reads it.
+ *
+ * @param extensionId - The extension that registered it.
+ * @param path - The path it registered (`''` for its home).
+ * @param title - What the row says.
+ */
+export function addOn(extensionId: string, path: string, title: string): SidebarAddOnPage {
+  return { id: `${extensionId}:${path}`, extensionId, path, title };
+}
+
+/**
  * Sidebar preferences with nothing set — the shape a first run has.
  *
  * @param overrides - What this operator has changed.
@@ -170,6 +186,7 @@ export function emptyState(overrides: Partial<SidebarState> = {}): SidebarState 
     userLastMessageAt: {},
     lastTouchedByYouAt: {},
     mentions: {},
+    addOns: [],
     activeTarget: null,
     journey: {
       discoveredUnregisteredPaths: [],

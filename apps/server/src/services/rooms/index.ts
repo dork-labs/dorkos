@@ -6,9 +6,7 @@ import {
   readCollectWindow,
   readResponseGate,
   readMaxAttachmentsPerEntry,
-  readMaxCanvasOpsPerTurn,
   readMaxConcurrentTurnsPerAgent,
-  readMaxPostsPerTurn,
   readRoomMuted,
   readWelcomeBack,
 } from './limits/room-configuration.js';
@@ -40,7 +38,6 @@ import { indexRoomEntry, roomsSource, searchMessages } from '../search/index.js'
 import { BridgeStore } from '../relay/chat-bridge/bridge-store.js';
 import { AuthorRegistry, isOwnerRecord } from './author-registry.js';
 import { ensureHandles } from './handles/ensure-handles.js';
-import { ReactionBudget } from './reactions/reaction-budget.js';
 import { ReactionStore } from './reactions/reaction-store.js';
 import {
   CanvasDocumentStore,
@@ -340,10 +337,6 @@ export function createRoomSubsystem(opts: {
       budget:
         opts.budget ??
         new RoomTurnBudget({ limits: createTurnBudgetLimits(limitsFor, opts.db), db: opts.db }),
-      // Recovered from the reactions themselves rather than a counter table, so an
-      // agent that spent its hour and met a restart comes back spent
-      // (ADR 260814-195522).
-      reactionBudget: new ReactionBudget({ db: opts.db }),
       // The message index, behind its port. Composed here rather than imported by
       // the service so the rooms domain neither knows the index is FTS5 nor which
       // `sourceId` its own rows carry.
@@ -391,14 +384,6 @@ export function createRoomSubsystem(opts: {
       // Read per post, for the same reason: lowering the limit in Settings has to
       // bind the very next message.
       maxAttachmentsPerEntry: readMaxAttachmentsPerEntry,
-      // Read per post, for the same reason and one more: posting is the agent's
-      // only voice in a room, so an operator who feels this number is wrong must
-      // be able to move it without waiting for anything to restart.
-      maxPostsPerTurn: readMaxPostsPerTurn,
-      // Read per operation, for the same reason and one more: a room's canvas is
-      // a shared surface, so an operator who feels one agent is taking too much of
-      // it must be able to narrow the bound without waiting for a restart.
-      maxCanvasOpsPerTurn: readMaxCanvasOpsPerTurn,
       // Resolved per read rather than captured: the repo service is registered
       // later in bootstrap, and an install with no repo machinery answers `null`
       // forever — which is exactly right, because then no room has a shared tree

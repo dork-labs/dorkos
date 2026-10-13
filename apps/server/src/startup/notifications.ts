@@ -3,7 +3,6 @@ import {
   NotificationService,
   setNotificationService,
 } from '../services/notifications/notification-service.js';
-import { NotifyBudget } from '../services/relay/notify-budget.js';
 import { PushSubscriptionStore } from '../services/notifications/push-subscription-store.js';
 import { WebPushChannel } from '../services/notifications/channels/web-push.js';
 import {
@@ -63,12 +62,6 @@ export function wireStartupNotifications({
   });
   setNotificationService(notificationService);
 
-  // The hourly allowance that bounds how often an agent may interrupt a person.
-  // Built HERE rather than beside the MCP tool deps it used to live in, because
-  // two things spend it now: `relay_notify_user` and the escalation ladder. Two
-  // budgets would be two ceilings, which is one ceiling too many.
-  const notifyBudget = new NotifyBudget();
-
   // The escalation ladder (spec `notification-system` task 4.3,
   // ADR 260819-234829): what happens when nobody answers. Built beside the
   // pipeline for the same boot-order reason — a session that errors during
@@ -86,7 +79,6 @@ export function wireStartupNotifications({
       readDelay: () =>
         configManager.get('notifications')?.escalation?.phoneAfterMinutes ??
         NOTIFICATION_PREFS_DEFAULTS.escalation.phoneAfterMinutes,
-      reserveNote: (agentId) => notifyBudget.tryReserve(agentId),
     })
   );
 
@@ -133,7 +125,7 @@ export function wireStartupNotifications({
   // repository; say so once, in plain words (DOR-2326).
   void warnAboutGitProtection();
   // "While you were away" — composed once the day's first activity arrives.
-  watchShiftReport(notificationStore);
+  watchShiftReport(notificationStore, () => configManager.get('onboarding'));
 
-  return { notificationService, notifyBudget, pushSubscriptions, webPushChannel };
+  return { notificationService, pushSubscriptions, webPushChannel };
 }

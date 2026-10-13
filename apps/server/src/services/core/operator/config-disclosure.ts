@@ -177,6 +177,16 @@ export const CONFIG_DISCLOSURE = {
   'ui.shapes.agentDefaults': 'expose',
   'ui.shapes.autoFollowAgent': 'expose',
   'ui.statusBar.pins': 'expose',
+  // Where each mini app's right-panel tab shows. Exposed so an agent can read a
+  // placement before it changes one. It names room ids, as `ui.sidebar.pinned`
+  // already does; nothing in it is secret.
+  'ui.panelTabs[].tab': 'expose',
+  'ui.panelTabs[].show.agents': 'expose',
+  'ui.panelTabs[].show.rooms': 'expose',
+  'ui.panelTabs[].show.pages': 'expose',
+  'ui.panelTabs[].hide.agents': 'expose',
+  'ui.panelTabs[].hide.rooms': 'expose',
+  'ui.panelTabs[].hide.pages': 'expose',
   'ui.composer.richText': 'expose',
   // Owner and tenant-qualified navigation history is local UI state. Withhold
   // the whole shape so a tokenless config read cannot enumerate private room IDs.
@@ -264,14 +274,6 @@ export const CONFIG_DISCLOSURE = {
   'rooms.collectDebounceMs': 'expose',
   'rooms.collectMaxEntries': 'expose',
   'rooms.responseGate': 'expose',
-  // How much one agent may say in this person's own rooms. It names no
-  // credential and nowhere one lives, and an agent that can read it can say why
-  // its fourth post in one turn was refused.
-  'rooms.maxPostsPerTurn': 'expose',
-  // The same reasoning one line further: an agent that can read its canvas
-  // ceiling can say why its fourth change to the room's table was refused,
-  // instead of retrying into the same wall.
-  'rooms.maxCanvasOpsPerTurn': 'expose',
   // An agent that can read how many conversations it may work in at once can
   // say why a message is waiting for one of its other turns to finish.
   'rooms.maxConcurrentTurnsPerAgent': 'expose',

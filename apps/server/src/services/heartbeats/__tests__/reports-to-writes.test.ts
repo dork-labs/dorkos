@@ -25,7 +25,6 @@ import { AccountIds } from '../../audit/account-ids.js';
 import { initAuditTrail, resetAuditTrail } from '../../audit/audit-trail.js';
 import { AgentUpdateError, updateAgentManifest } from '../../core/operator/agent-updater.js';
 import { createUpdateAgentHandler } from '../../core/operator/operator-tool-handlers.js';
-import { NotifyBudget } from '../../relay/notify-budget.js';
 import type { McpToolDeps } from '../../runtimes/claude-code/mcp-tools/types.js';
 import type { MeshCore } from '@dorkos/mesh';
 
@@ -201,7 +200,6 @@ describe('the agent edit path (profile picker route and update_agent)', () => {
     await seed(mesh, manifest('B', { createdBy: 'A' }));
 
     const deps = {
-      notifyBudget: new NotifyBudget(),
       transcriptReader: {} as McpToolDeps['transcriptReader'],
       defaultCwd: root,
       dorkHome: root,
@@ -218,7 +216,6 @@ describe('the agent edit path (profile picker route and update_agent)', () => {
     const mesh = meshOverDisk();
     await seed(mesh, manifest('A', { createdBy: OWNER }));
     const deps = {
-      notifyBudget: new NotifyBudget(),
       transcriptReader: {} as McpToolDeps['transcriptReader'],
       defaultCwd: root,
       dorkHome: root,

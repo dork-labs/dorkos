@@ -12,13 +12,19 @@
  * adding a server-wide interval: the FIRST notification of a new local day
  * is what turns the report over, whatever kind it is.
  *
- * **What the 4am boundary decides here, and what it does not.** It decides
- * only two things: the dedupe date key a report is raised under, and when a
- * NEW attempt is allowed at all (once a report has already been raised for
+ * That first notification only makes a report due once this install is old
+ * enough for the day ({@link composeShiftReport}'s install-age gate), so a
+ * brand-new install's setup turn is never "while you were away" (DOR-2845);
+ * until then the check simply runs again on the next one.
+ *
+ * **What the 4am boundary decides here, and what it does not.** Here it
+ * decides two things: the dedupe date key a report is raised under, and when
+ * a NEW attempt is allowed at all (once a report has already been raised for
  * today's date, nothing re-checks until the boundary rolls to a new one).
- * The report's own CONTENT — what {@link composeShiftReport} counts — is a
- * trailing 24 hours from the moment it composes, never from this boundary;
- * see `shift-report.ts`'s module doc for why.
+ * {@link composeShiftReport} uses it for a third, the install-age gate. The
+ * report's own CONTENT — what it counts — is a trailing 24 hours from the
+ * moment it composes, never from this boundary; see `shift-report.ts`'s
+ * module doc for why.
  *
  * **State is in-memory, not persisted, and that is a deliberate trade.** A
  * crash mid-day loses only "have I already reported today" — never the
@@ -44,15 +50,21 @@ import {
   composeShiftReport,
   shiftReportBoundary,
   shiftReportDateKey,
+  type ShiftReportOnboarding,
 } from '../shift-report.js';
 
 /**
  * Watch for the day's first real activity and raise the Shift Report once.
  *
  * @param store - Where the day's activity already lives.
+ * @param readOnboarding - Reads config's first-run timestamps at check time,
+ *   one witness to how old this install is.
  * @returns An unsubscribe function.
  */
-export function watchShiftReport(store: NotificationStore): () => void {
+export function watchShiftReport(
+  store: NotificationStore,
+  readOnboarding: () => ShiftReportOnboarding | null | undefined = () => null
+): () => void {
   /** The local day a report was last confirmed raised for, if any. */
   let reportedFor: string | undefined;
   /**
@@ -82,7 +94,7 @@ export function watchShiftReport(store: NotificationStore): () => void {
     if (checking || localDate === reportedFor) return;
 
     checking = true;
-    void raiseIfDue(store, now, localDate)
+    void raiseIfDue(store, now, localDate, readOnboarding)
       .then((raised) => {
         if (raised) reportedFor = localDate;
       })
@@ -104,6 +116,7 @@ export function watchShiftReport(store: NotificationStore): () => void {
  *   is the trailing 24 hours from this, not from the local-day boundary.
  * @param localDate - The local day this check belongs to (the boundary's own
  *   date), used only as the report's dedupe identity.
+ * @param readOnboarding - Reads config's first-run timestamps.
  * @returns Whether today is settled: a row now exists — either just stored,
  *   or already there from an earlier attempt this process made or from
  *   before a restart. `false` only means the window is still empty, so the
@@ -112,10 +125,11 @@ export function watchShiftReport(store: NotificationStore): () => void {
 async function raiseIfDue(
   store: NotificationStore,
   now: number,
-  localDate: string
+  localDate: string,
+  readOnboarding: () => ShiftReportOnboarding | null | undefined
 ): Promise<boolean> {
   try {
-    const counts = composeShiftReport(store, now);
+    const counts = composeShiftReport(store, now, readOnboarding());
     if (!counts) return false;
 
     const { title, summary } = buildShiftReportText(counts);

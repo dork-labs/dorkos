@@ -128,6 +128,15 @@ export const NO_RISK_DEFAULTS: readonly string[] = [
   'ui.shapes.autoFollowAgent',
   'ui.statusBar.pins',
   'ui.composer.richText',
+  // Where each mini app's tab shows. An empty list means every tab follows its
+  // mini app's own default; nothing here grants anything.
+  'ui.panelTabs[].tab',
+  'ui.panelTabs[].show.agents',
+  'ui.panelTabs[].show.rooms',
+  'ui.panelTabs[].show.pages',
+  'ui.panelTabs[].hide.agents',
+  'ui.panelTabs[].hide.rooms',
+  'ui.panelTabs[].hide.pages',
   // The power-door answer, both halves (spec `full-power-defaults`, D1). Records
   // of an ANSWER and nothing more: they send nothing off the machine, grant no
   // capability, and no gate reads them. A wipe that lands both back on `null`
@@ -390,14 +399,6 @@ export const SAFE_DEFAULTS: Readonly<Record<string, unknown>> = {
   'rooms.collectDebounceMs': 500,
   'rooms.collectMaxEntries': 20,
   'rooms.responseGate': 'routing',
-  // How many messages one agent may post into a room inside one turn. A real
-  // bound — there was none before it — and the tightest a person might want is
-  // lower, which is why it carries.
-  'rooms.maxPostsPerTurn': 3,
-  // How many times one agent may change a room's shared canvas inside one turn.
-  // A real bound of the same kind, and the tightest a person might want is
-  // lower, which is why it carries.
-  'rooms.maxCanvasOpsPerTurn': 3,
   // How many conversations one agent may work in at once. A bound that starts
   // on — well short of the six writers per folder DOR-500 measured as damaging —
   // and the tightest a person might want is `1`, which is why it carries.

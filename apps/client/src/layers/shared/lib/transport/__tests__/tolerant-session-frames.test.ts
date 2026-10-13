@@ -8,9 +8,12 @@ import {
   createUnreadablePromptReporter,
   createUnreadableSnapshotReporter,
   parsePendingInteractionsResponse,
+  parseRecentSessionsResponse,
   parseSessionEvent,
   parseSessionSnapshot,
 } from '../tolerant-session-frames';
+import { createSessionMethods } from '../session-methods';
+import { createMockSession } from '@dorkos/test-utils';
 
 const STATUS: SessionStatus = {
   contextUsage: null,
@@ -257,5 +260,49 @@ describe('unreadable-entry reporters', () => {
     report('a', 4, entry);
 
     expect(warn).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('parseRecentSessionsResponse (DOR-2233)', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+
+  const first = createMockSession({ id: '0b8e5a52-3c1d-4e6f-9a7b-2c3d4e5f6a7b' });
+  const second = createMockSession({ id: '7d1c2b3a-4e5f-4a6b-8c7d-9e0f1a2b3c4d' });
+
+  it('drops a session whose id is not a UUID and keeps the rest of the list', () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const stray = createMockSession({ id: 'notes' });
+    const body = { sessions: [first, stray, second], agentActivity: {} };
+    expect(parseRecentSessionsResponse(body).sessions.map((s) => s.id)).toEqual([
+      first.id,
+      second.id,
+    ]);
+  });
+
+  it('drops a malformed row and warns about it once, not on every poll', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const body = { sessions: [first, { id: first.id, title: 7 }], agentActivity: {} };
+    expect(parseRecentSessionsResponse(body).sessions).toEqual([first]);
+    parseRecentSessionsResponse(body);
+    expect(warn).toHaveBeenCalledOnce();
+  });
+
+  it('still rejects a broken envelope', () => {
+    expect(() => parseRecentSessionsResponse({ sessions: 'nope', agentActivity: {} })).toThrow();
+  });
+
+  it('is what the transport uses for the recent-sessions poll', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const body = { sessions: [second, { id: 42 }], agentActivity: {} };
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(new Response(JSON.stringify(body), { status: 200 }))
+    );
+    const methods = createSessionMethods('/api', () => 'host', new Map(), new Map());
+    const result = await methods.listRecentSessions(5);
+    expect(result.sessions.map((s) => s.id)).toEqual([second.id]);
   });
 });

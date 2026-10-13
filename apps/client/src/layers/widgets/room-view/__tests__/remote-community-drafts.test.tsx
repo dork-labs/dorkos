@@ -471,6 +471,150 @@ describe('a post the space’s moderation held (DOR-2770)', () => {
     }
   );
 
+  // Purpose: fails if a held post with files uploads them again when sent again, leaving the
+  // first uploads unattached (DOR-2835).
+  it('sends a held message again with the files it already uploaded', async () => {
+    const { transport, receipt, wrapper } = harness();
+    const onHold = vi.fn();
+    let uploads = 0;
+    vi.mocked(transport.uploadRemoteCommunityAttachment).mockImplementation(async () => ({
+      ...file,
+      id: `upload-${(uploads += 1)}`,
+    }));
+    vi.mocked(transport.postRemoteCommunityEntry)
+      .mockRejectedValueOnce(held('COMMUNITY_RULES_NOT_ACCEPTED'))
+      .mockResolvedValue(entry);
+    const { result } = renderHook(() => useRemoteCommunityDrafts(options(receipt, { onHold })), {
+      wrapper,
+    });
+    act(() => {
+      result.current.setText('with files');
+      result.current.attachments.add([new File(['a'], 'a.txt'), new File(['b'], 'b.txt')]);
+    });
+    act(() => result.current.send());
+    await waitFor(() => expect(onHold).toHaveBeenCalled());
+    expect(result.current.attachments.staged).toHaveLength(2);
+
+    act(() => result.current.send());
+    await waitFor(() => expect(receipt).toHaveBeenCalledWith(entry));
+    expect(transport.uploadRemoteCommunityAttachment).toHaveBeenCalledTimes(2);
+    expect(
+      vi.mocked(transport.postRemoteCommunityEntry).mock.calls.map((call) => call[2].attachmentIds)
+    ).toEqual([
+      ['upload-1', 'upload-2'],
+      ['upload-1', 'upload-2'],
+    ]);
+  });
+
+  // Purpose: fails if a held message sent again reuses an upload too old for the space to take
+  // (it refuses a file no message took within an hour), or replaces it under the same key, which
+  // the space would answer with that same old upload.
+  it('uploads a held message’s file again under a new key once its first upload is too old', async () => {
+    const { transport, receipt, wrapper } = harness();
+    const onHold = vi.fn();
+    let uploads = 0;
+    vi.mocked(transport.uploadRemoteCommunityAttachment).mockImplementation(async () => ({
+      ...file,
+      id: `upload-${(uploads += 1)}`,
+    }));
+    vi.mocked(transport.postRemoteCommunityEntry)
+      .mockRejectedValueOnce(held('COMMUNITY_MUTED'))
+      .mockResolvedValue(entry);
+    const now = vi.spyOn(Date, 'now');
+    const start = Date.parse('2026-10-12T10:00:00Z');
+    now.mockReturnValue(start);
+    try {
+      const { result } = renderHook(() => useRemoteCommunityDrafts(options(receipt, { onHold })), {
+        wrapper,
+      });
+      act(() => result.current.attachments.add([new File(['a'], 'a.txt')]));
+      act(() => result.current.send());
+      await waitFor(() => expect(onHold).toHaveBeenCalled());
+      now.mockReturnValue(start + 31 * 60_000);
+      act(() => result.current.send());
+      await waitFor(() => expect(receipt).toHaveBeenCalledWith(entry));
+      const keys = vi
+        .mocked(transport.uploadRemoteCommunityAttachment)
+        .mock.calls.map((call) => call[3]);
+      expect(keys).toHaveLength(2);
+      expect(keys[1]).not.toBe(keys[0]);
+      expect(
+        vi.mocked(transport.postRemoteCommunityEntry).mock.lastCall?.[2].attachmentIds
+      ).toEqual(['upload-2']);
+    } finally {
+      now.mockRestore();
+    }
+  });
+
+  // Purpose: fails if retrying a post whose answer was lost swaps in new uploads when the old
+  // ones age. Its key names those exact files: the space answers a post that landed with its
+  // entry, but the same key with other files is a conflict for good.
+  it('retries a post whose answer was lost with the same files, however old', async () => {
+    const { transport, receipt, wrapper } = harness();
+    vi.mocked(transport.uploadRemoteCommunityAttachment).mockResolvedValue(file);
+    vi.mocked(transport.postRemoteCommunityEntry)
+      .mockRejectedValueOnce(new Error('Lost response'))
+      .mockResolvedValue(entry);
+    const now = vi.spyOn(Date, 'now');
+    const start = Date.parse('2026-10-12T10:00:00Z');
+    now.mockReturnValue(start);
+    try {
+      const { result } = renderHook(() => useRemoteCommunityDrafts(options(receipt)), {
+        wrapper,
+      });
+      act(() => result.current.attachments.add([new File(['a'], 'a.txt')]));
+      act(() => result.current.send());
+      await waitFor(() => expect(result.current.deliveries[0]?.status).toBe('failed'));
+      now.mockReturnValue(start + 31 * 60_000);
+      act(() => result.current.retry(result.current.deliveries[0]!.key));
+      await waitFor(() => expect(receipt).toHaveBeenCalledWith(entry));
+      expect(transport.uploadRemoteCommunityAttachment).toHaveBeenCalledTimes(1);
+      const posts = vi.mocked(transport.postRemoteCommunityEntry).mock.calls;
+      expect(posts[1]).toEqual(posts[0]);
+    } finally {
+      now.mockRestore();
+    }
+  });
+
+  // Purpose: fails if an upload retried after a lost answer is stamped when the answer came,
+  // not when it was first tried: the space keeps the first upload's time, so the reuse window
+  // would outlast the space's one-hour limit.
+  it('dates an upload from its first try, so a retried one is not reused too long', async () => {
+    const { transport, receipt, wrapper } = harness();
+    const onHold = vi.fn();
+    let uploads = 0;
+    vi.mocked(transport.uploadRemoteCommunityAttachment)
+      .mockRejectedValueOnce(new Error('Lost upload answer'))
+      .mockImplementation(async () => ({ ...file, id: `upload-${(uploads += 1)}` }));
+    vi.mocked(transport.postRemoteCommunityEntry)
+      .mockRejectedValueOnce(held('COMMUNITY_MUTED'))
+      .mockResolvedValue(entry);
+    const now = vi.spyOn(Date, 'now');
+    const start = Date.parse('2026-10-12T10:00:00Z');
+    now.mockReturnValue(start);
+    try {
+      const { result } = renderHook(() => useRemoteCommunityDrafts(options(receipt, { onHold })), {
+        wrapper,
+      });
+      act(() => result.current.attachments.add([new File(['a'], 'a.txt')]));
+      act(() => result.current.send());
+      await waitFor(() => expect(result.current.deliveries[0]?.status).toBe('failed'));
+      now.mockReturnValue(start + 20 * 60_000);
+      act(() => result.current.retry(result.current.deliveries[0]!.key));
+      await waitFor(() => expect(onHold).toHaveBeenCalled());
+      // 31 minutes after the first try, 11 after the answer came: too old to reuse.
+      now.mockReturnValue(start + 31 * 60_000);
+      act(() => result.current.send());
+      await waitFor(() => expect(receipt).toHaveBeenCalledWith(entry));
+      expect(transport.uploadRemoteCommunityAttachment).toHaveBeenCalledTimes(3);
+      expect(
+        vi.mocked(transport.postRemoteCommunityEntry).mock.lastCall?.[2].attachmentIds
+      ).toEqual(['upload-2']);
+    } finally {
+      now.mockRestore();
+    }
+  });
+
   it('still shows any other refusal as a failed row to retry', async () => {
     const { transport, receipt, wrapper } = harness();
     const onHold = vi.fn();

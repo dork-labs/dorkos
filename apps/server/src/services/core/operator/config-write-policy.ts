@@ -304,6 +304,16 @@ export const CONFIG_WRITE_POLICY = {
   'ui.shapes.agentDefaults': 'agent-writable',
   'ui.shapes.autoFollowAgent': 'agent-writable',
   'ui.statusBar.pins': 'agent-writable',
+  // Where each mini app's right-panel tab shows (spec `mini-app-placement`).
+  // A preference: a tab's placement grants the mini app nothing (its code
+  // already runs, or not, by the `extensions.*` approvals).
+  'ui.panelTabs[].tab': 'agent-writable',
+  'ui.panelTabs[].show.agents': 'agent-writable',
+  'ui.panelTabs[].show.rooms': 'agent-writable',
+  'ui.panelTabs[].show.pages': 'agent-writable',
+  'ui.panelTabs[].hide.agents': 'agent-writable',
+  'ui.panelTabs[].hide.rooms': 'agent-writable',
+  'ui.panelTabs[].hide.pages': 'agent-writable',
   'ui.composer.richText': 'agent-writable',
   // Preferences only: restoring a room always reauthorizes it server-side, so
   // changing an ID cannot widen access or disclose the remembered destination.
@@ -476,17 +486,8 @@ export const CONFIG_WRITE_POLICY = {
   'rooms.collectDebounceMs': 'operator-only',
   'rooms.collectMaxEntries': 'operator-only',
   'rooms.responseGate': 'operator-only',
-  // How many messages one agent may post into a room in one turn. Operator-only
-  // for the plainest reason in this list: it is a bound on the agent itself, and
-  // an agent that could raise it is voting itself more of the room.
-  'rooms.maxPostsPerTurn': 'operator-only',
-  // How many times one agent may change a room's shared canvas in one turn.
-  // Operator-only for exactly the reason above it: it is a bound on the agent
-  // itself, and an agent that could raise it is voting itself more of the table
-  // everybody else in the room is looking at.
-  'rooms.maxCanvasOpsPerTurn': 'operator-only',
-  // How many conversations one agent may work in at once. Operator-only for the
-  // same reason as the two above: it is a bound on the agents themselves, and an
+  // How many conversations one agent may work in at once. Operator-only: it is
+  // a bound on the agents themselves, and an
   // agent that could raise it is voting itself more turns in a shared folder.
   'rooms.maxConcurrentTurnsPerAgent': 'operator-only',
 
@@ -1147,15 +1148,8 @@ export const OPERATOR_ONLY_STAKES: readonly OperatorOnlyStakeGroup[] = [
       'rooms.collectDebounceMs',
       'rooms.collectMaxEntries',
       'rooms.responseGate',
-      // How much one turn may say in a room (spec `tool-only-room-replies`).
-      // It decides how much your agents say on their own, which is this stake
-      // exactly.
-      'rooms.maxPostsPerTurn',
-      // And how much of the room's shared canvas one turn may rearrange. Same
-      // stake: how much your agents do on their own in front of everybody else.
-      'rooms.maxCanvasOpsPerTurn',
-      // And how many conversations one agent may work in at once: how much
-      // your agents do on their own at the same time, and how much that spends.
+      // How many conversations one agent may work in at once: how much your
+      // agents do on their own at the same time, and how much that spends.
       'rooms.maxConcurrentTurnsPerAgent',
       'welcomeBack.enabled',
       'welcomeBack.absenceThresholdMinutes',

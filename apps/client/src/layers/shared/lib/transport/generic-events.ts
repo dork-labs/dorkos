@@ -40,9 +40,8 @@ export const GENERIC_EVENTS = [
   // payload `AccountUsage`, throttled per account on the server. The session
   // stream binding applies it to every open session on that account (§6 U).
   'account_usage',
-  // A task definition changed (created, edited, deleted). The standing
-  // unattended-autonomy banner reads it: a task dialled up to Full autonomy has
-  // to raise the banner as the form closes, not on the next page load.
+  // A task definition changed (created, edited, deleted). The Tasks list, the
+  // Activity feed and the pending-schedule-approval strip re-read on it.
   'tasks_changed',
   // An agent was paused everywhere or its pause was lifted (spec `audit-trail`
   // PR5). A stamp only: the paused badges re-read the list on it.

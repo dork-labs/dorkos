@@ -14,6 +14,7 @@ import type {
   ExtensionPageBadge,
   ExtensionPageOptions,
   ExtensionPageProps,
+  ExtensionTabPlacement,
   ProjectRef,
   StatusBarItemOptions,
   StatusBarSlotContext,
@@ -21,6 +22,8 @@ import type {
 } from '@dorkos/extension-api';
 import { isExtensionEventDeclared, StartWorkError } from '@dorkos/extension-api';
 import type { UiCommand, UiCanvasContent } from '@dorkos/shared/types';
+import { placementFromInput } from '@dorkos/shared/mini-app-placement';
+import { warnOnUnusableShowIn } from '../lib/placement-pages';
 import {
   DecisionActionResponseSchema,
   ListExtensionDecisionsResponseSchema,
@@ -102,6 +105,7 @@ export function createExtensionAPI(
         icon?: ComponentType<{ className?: string }>;
         group?: string;
         visibleWhen?: () => boolean;
+        showIn?: ExtensionTabPlacement;
       }
     ): () => void {
       // A dialog added here would have no way to open, so it is refused with a
@@ -111,6 +115,9 @@ export function createExtensionAPI(
           `[extensions] ${extId}: registerComponent('dialog', '${id}') cannot open; use registerDialog, which returns open() and close()`
         );
         return () => {};
+      }
+      if (slot === 'right-panel' && options?.showIn !== undefined) {
+        warnOnUnusableShowIn(extId, id, options.showIn);
       }
       const contribution = adaptToContribution(slot, `${extId}:${id}`, component, options);
       const unsub = deps.registry.register(slot, contribution);
@@ -559,6 +566,7 @@ function adaptToContribution(
     icon?: ComponentType<{ className?: string }>;
     group?: string;
     visibleWhen?: () => boolean;
+    showIn?: ExtensionTabPlacement;
   }
 ): Record<string, unknown> {
   const base = { id, priority: options?.priority ?? DEFAULT_PRIORITY };
@@ -585,6 +593,8 @@ function adaptToContribution(
       // close), so an extension tab can never trap the user — no per-tab header
       // wiring is required. `headerActions` is reserved for built-ins that need
       // header controls.
+      // `extensionId` and `declaredPlacement` are what make it a mini-app tab
+      // to the panel: placement rules apply only to tabs that carry them.
       return {
         ...base,
         component,
@@ -592,6 +602,8 @@ function adaptToContribution(
         icon: options?.icon,
         headerActions: undefined,
         visibleWhen: undefined,
+        extensionId: id.slice(0, id.indexOf(':')),
+        declaredPlacement: placementFromInput(options?.showIn),
       };
     case 'settings.tabs':
       return {

@@ -4,6 +4,7 @@ import { devtools } from 'zustand/middleware';
 import type { LucideIcon } from 'lucide-react';
 import type { ComponentType } from 'react';
 import type { Transport } from '@dorkos/shared/transport';
+import type { MiniAppPlacement } from '@dorkos/shared/mini-app-placement';
 import type {
   ExtensionPageBadge,
   ExtensionPageProps,
@@ -249,6 +250,17 @@ export interface RightPanelContribution extends BaseContribution {
    */
   headerActions?: ComponentType;
   /**
+   * The mini app that added this tab. Present only on tabs a mini app added
+   * through `registerComponent('right-panel', …)`; built-in tabs never set it.
+   * Its presence is what makes placement rules (`ui.panelTabs`) apply.
+   */
+  extensionId?: string;
+  /**
+   * The mini app's own default for where this tab shows (its `showIn`), or
+   * null when it declared none. A saved choice in `ui.panelTabs` replaces it.
+   */
+  declaredPlacement?: MiniAppPlacement | null;
+  /**
    * `transport`, `agentId`, `cwd`, `explicitAgentPath`, and
    * `isRemoteCommunityRoom` are optional so unit
    * callers can pass a bare `{ pathname }`; the shell (RightPanelContainer)
@@ -287,11 +299,11 @@ export interface ExtensionPageContribution extends BaseContribution {
   path: string;
   /** The page itself. */
   component: ComponentType<ExtensionPageProps>;
-  /** Title for the page bar, tab, palette and phone menu. */
+  /** Title for the page bar, tab, palette and the sidebar's Add-ons section. */
   title: string;
-  /** Icon for the page bar, tab, palette and phone menu. */
+  /** Icon for the page bar, tab, palette and the sidebar's Add-ons section. */
   icon?: ComponentType<{ className?: string }>;
-  /** Whether it is listed in the palette and the phone "Add-ons" menu. Param paths never are. */
+  /** Whether it is listed in the palette and the sidebar's Add-ons section. Param paths never are. */
   menu: boolean;
 }
 
@@ -519,7 +531,7 @@ export function usePageBadge(contributionId: string | null): ExtensionPageBadge 
 }
 
 /**
- * The extension pages the command palette and the phone "Add-ons" menu list:
+ * The extension pages the command palette and the sidebar's Add-ons section list:
  * every page that asked to be listed and has no `:param` in its path (a page
  * that needs a value cannot be opened from a menu), by title.
  *

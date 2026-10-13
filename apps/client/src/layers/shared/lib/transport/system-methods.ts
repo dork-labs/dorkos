@@ -59,7 +59,6 @@ import type { TemplateEntry } from '@dorkos/shared/template-catalog';
 import type { RuntimeCapabilities, SystemRequirements } from '@dorkos/shared/agent-runtime';
 import { MAX_CAPABILITY_LIMIT, type CapabilityCatalog } from '@dorkos/shared/capabilities';
 import type { MemoryProviderStatus } from '@dorkos/shared/memory-provider';
-import type { UnattendedAutonomyState } from '@dorkos/shared/permission-semantics';
 import type { KeepAwakeStatus } from '@dorkos/shared/schemas';
 import type { TransportScanOptions, TransportScanEvent } from '@dorkos/shared/mesh-schemas';
 import { fetchJSON, fetchNoContent, buildQueryString } from './http-client';
@@ -474,10 +473,6 @@ export function createSystemMethods(baseUrl: string) {
 
     checkRequirements(): Promise<SystemRequirements> {
       return fetchJSON<SystemRequirements>(baseUrl, '/system/requirements');
-    },
-
-    getUnattendedAutonomy(): Promise<UnattendedAutonomyState> {
-      return fetchJSON<UnattendedAutonomyState>(baseUrl, '/system/unattended-autonomy');
     },
 
     getKeepAwake(): Promise<KeepAwakeStatus> {

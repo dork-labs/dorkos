@@ -59,14 +59,12 @@ import { uiDomain } from '../../../session/browser-seat/ui-capabilities.js';
 import { composeDorkOsCapabilityRegistry } from '../../self-description/dorkos-registry.js';
 import type { McpToolDeps } from '../../../runtimes/claude-code/mcp-tools/types.js';
 import type { MarketplaceMcpDeps } from '../../../marketplace-mcp/marketplace-mcp-tools.js';
-import { NotifyBudget } from '../../../relay/notify-budget.js';
 
 const requestTarget = swappableServer();
 
 /** Minimal McpToolDeps — only the fields registration touches are set. */
 function createMinimalDeps(): McpToolDeps {
   return {
-    notifyBudget: new NotifyBudget(),
     transcriptReader: {
       listSessions: vi.fn().mockResolvedValue([]),
     } as unknown as McpToolDeps['transcriptReader'],

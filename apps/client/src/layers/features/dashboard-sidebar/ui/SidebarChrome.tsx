@@ -25,7 +25,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
 import type { RoomSummary } from '@dorkos/shared/room-schemas';
 import type { SidebarItemRef } from '@dorkos/shared/config-schema';
-import { reportClientError, toSession } from '@/layers/shared/lib';
+import { extensionPageHref, reportClientError, toSession } from '@/layers/shared/lib';
 import {
   useAgentCreationStore,
   useImportProjectsStore,
@@ -534,6 +534,11 @@ export function SidebarChrome({ activeTarget, children }: SidebarChromeProps) {
           // stands for open underneath it (BC-19). Pressing it again puts them
           // away.
           if (target.rollup === 'automated') toggleTodayAutomated();
+          return;
+        case 'add-on':
+          // A raw href, like an attention row's: `/x/<id>/<path>` is matched by
+          // the extension-page route rather than declared one page at a time.
+          void router.navigate({ href: extensionPageHref(target.extensionId, target.path) });
           return;
         case 'digest':
           // "While you were away…" is a door into the welcome-back note, and

@@ -161,9 +161,9 @@ export type MemoryProviderInfo = z.infer<typeof MemoryProviderInfoSchema>;
  * design: a benched backend hands every call to `builtin` from the inside, with
  * one warning in the server log — this is what lets `GET /api/system/memory`
  * and the standing client banner say the same thing without reading the log.
- * Plain fields rather than a Zod schema, matching {@link UnattendedAutonomyState}
- * in `permission-semantics.ts` — this is a read-only status projection, not
- * something ever parsed back off disk or off the wire into a decision.
+ * Plain fields rather than a Zod schema: this is a read-only status
+ * projection, not something ever parsed back off disk or off the wire into a
+ * decision.
  */
 export interface MemoryProviderStatus {
   /** The id `memory.provider` names. */

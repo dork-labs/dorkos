@@ -51,7 +51,6 @@ import type { ApiEnv } from '../../http/api-chain.js';
 import { parseRequestBody } from '../../http/request-body.js';
 import { createMcpEndpoint, createMcpRoutes } from '../mcp.js';
 import type { McpToolDeps } from '../../services/runtimes/claude-code/mcp-tools/types.js';
-import { NotifyBudget } from '../../services/relay/notify-budget.js';
 
 /**
  * ONE listener for the whole file, with the app behind it swapped per test
@@ -72,7 +71,6 @@ const TOKEN_PATH = '/tmp/dork/mcp-local-token';
  */
 function createMinimalDeps(): McpToolDeps {
   return {
-    notifyBudget: new NotifyBudget(),
     transcriptReader: {
       listSessions: vi.fn().mockResolvedValue([]),
     } as unknown as McpToolDeps['transcriptReader'],

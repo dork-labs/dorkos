@@ -476,3 +476,44 @@ export function describeWidenedLeaf(leaf: WidenedLeaf): string {
   const stored = sensitive ? '<hidden>' : JSON.stringify(leaf.stored);
   return `${leaf.path}: ${stored} (using ${JSON.stringify(leaf.used)})`;
 }
+
+/**
+ * Every stored leaf this build cannot read, across all sections.
+ *
+ * What `dorkos doctor`, `dorkos config validate` and the boot warning list. The
+ * repair itself happens on every read; this only reports what it skipped.
+ *
+ * @param stored - The whole stored config, as `conf` holds it.
+ * @param policy - The relaxed leaves, from {@link relaxWidenedLeaves}.
+ * @returns One entry per leaf whose value belongs to a newer build.
+ */
+export function findUnreadableLeaves(
+  stored: Record<string, unknown>,
+  policy: WidenedLeafPolicy
+): WidenedLeaf[] {
+  const found: WidenedLeaf[] = [];
+  for (const [key, value] of Object.entries(stored)) {
+    found.push(...repairWidenedLeaves(key, value, policy).skewed);
+  }
+  return found;
+}
+
+/**
+ * The one boot-time line naming the settings this build is running past.
+ *
+ * @param unreadable - What {@link findUnreadableLeaves} found.
+ * @param filePath - The config file, so the person knows where their values are.
+ * @returns The warning, or `null` when every setting is readable.
+ */
+export function unreadableSettingsWarning(
+  unreadable: readonly WidenedLeaf[],
+  filePath: string
+): string | null {
+  if (unreadable.length === 0) return null;
+  const what = unreadable.length === 1 ? 'setting holds a value' : 'settings hold values';
+  return (
+    `[Config] ${unreadable.length} ${what} this build cannot read, so it is running on ` +
+    `the defaults and leaving your values in ${filePath}: ` +
+    unreadable.map(describeWidenedLeaf).join(', ')
+  );
+}

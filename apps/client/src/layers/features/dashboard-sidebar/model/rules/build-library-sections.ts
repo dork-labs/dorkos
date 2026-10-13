@@ -19,6 +19,7 @@ import {
 } from '../build-sidebar-model';
 import type { SidebarSortMode } from '../section-sort-options';
 import type { AgentRosterEntry, SidebarState } from '../sidebar-state';
+import { addOnRows } from './add-on-rows';
 import { muteIndex } from './apply-mute-rules';
 import { indexSuppressedDms } from './hand-made-dm';
 import { agentRow, roomLibraryRow, type LibraryRowContext } from './library-rows';
@@ -253,8 +254,9 @@ function sectionOptions(
  * One fixed Library section, or `null` when it holds nothing.
  *
  * Chrome appears by data volume: no Direct messages section until a DM exists,
- * no Pins section until something is pinned (BC-32). Returning `null` is how
- * that promise is kept in one place instead of at four call sites.
+ * no Pins section until something is pinned, no Add-ons section until a mini app
+ * adds a page (BC-32). Returning `null` is how that promise is kept in one place
+ * instead of at five call sites.
  *
  * @param id - Which Library section this is. Narrower than
  *   `SidebarSectionModel['id']` on purpose: this helper reads the section's
@@ -459,7 +461,7 @@ function agentsToShow(
 
 /**
  * Library's sections: the operator's own sections first, then Pins, Channels,
- * Direct messages and Agents.
+ * Direct messages, Agents and Add-ons.
  *
  * **Sections lead, and they are peers rather than children** (D3). They used to
  * render as sub-headers inside Agents, which said "these are for agents" about a
@@ -561,7 +563,7 @@ export function buildLibrarySections(state: SidebarState): SidebarSectionModel[]
 
   const isWorking = rowIsWorking(state, rooms);
 
-  // What each of the four fixed sections holds, keyed by id. A `Record` over
+  // What each of the five fixed sections holds, keyed by id. A `Record` over
   // `LibrarySectionId` rather than a list, so adding an id to
   // `SIDEBAR_LIBRARY_SECTION_IDS` fails to compile here until it is given
   // content — which is what makes that tuple's docblock true.
@@ -582,9 +584,10 @@ export function buildLibrarySections(state: SidebarState): SidebarSectionModel[]
       reason: 'library:dms',
     },
     agents: { label: 'Agents', rows: agentRows, reason: 'library:agents' },
+    addons: { label: 'Add-ons', rows: addOnRows(state), reason: 'library:addons' },
   };
 
-  // The tuple IS the order of the four fixed sections; the operator's own come
+  // The tuple IS the order of the five fixed sections; the operator's own come
   // first, in the order they stored them.
   return [
     ...state.prefs.groups.map((group) =>

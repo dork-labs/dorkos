@@ -84,6 +84,21 @@ describe('which hosts count as DorkOS hosts', () => {
     expect(cloudHostsFrom({})).toEqual([]);
   });
 
+  it('counts the /v1 address the app is pointed at through DORKOS_CLOUD_API_URL', () => {
+    expect(
+      cloudHostsFrom({
+        DORKOS_CLOUD_URL: 'https://site.example.test',
+        DORKOS_CLOUD_API_URL: 'https://api.example.test/',
+      })
+    ).toEqual(['site.example.test', 'api.example.test']);
+    expect(
+      cloudHostsFrom({
+        DORKOS_CLOUD_URL: 'https://cloud.example.test',
+        DORKOS_CLOUD_API_URL: 'https://cloud.example.test:8443',
+      })
+    ).toEqual(['cloud.example.test']);
+  });
+
   it('finds a DorkOS host named inside a command-line argument', () => {
     expect(findDorkosHostInText('https://dorkos.ai/api/telemetry/events')).toBe('dorkos.ai');
     expect(findDorkosHostInText('--endpoint=cloud.dorkos.ai')).toBe('cloud.dorkos.ai');

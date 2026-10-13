@@ -139,6 +139,12 @@ describe('BC-14 — the zone leaves when everything is retired', () => {
     ];
     const ids = buildSidebarModel(withRetired(all)).zones.map((zone) => zone.id);
     expect(ids).not.toContain('getting-started');
+    // …and the bottom slot's own card is free to show (DOR-2845).
+    expect(buildSidebarModel(withRetired(all)).gettingStartedPending).toBeUndefined();
+  });
+
+  it('flags a pending zone, so the bottom slot never draws a second list (DOR-2845)', () => {
+    expect(buildSidebarModel(firstRunFixture).gettingStartedPending).toBe(true);
   });
 });
 
@@ -194,6 +200,11 @@ describe('BC-4 / BC-9 — the slot Getting started shares with Heads up', () => 
     // model that had simply deleted Getting started.
     const quiet: SidebarState = { ...dayOneAndWorking, workingSessionIds: [] };
     expect(buildSidebarModel(quiet).zones.map((zone) => zone.id)).toContain('getting-started');
+  });
+
+  it('keeps the zone pending while Heads up holds the slot', () => {
+    // So the bottom card does not pop in for the length of one turn (DOR-2845).
+    expect(buildSidebarModel(dayOneAndWorking).gettingStartedPending).toBe(true);
   });
 
   it('does not announce a working rollup as something that needs you', () => {

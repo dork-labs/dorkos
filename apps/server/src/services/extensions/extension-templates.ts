@@ -279,8 +279,9 @@ function generateRightPanelTabTemplate(name: string, description: string): strin
 //
 // ExtensionAPI Quick Reference:
 //   api.registerComponent(slot, id, component, options?) — Register a React component in a UI slot
-//     right-panel options: { priority?, label?, icon? } — label names the tab, icon is its
-//     tab-strip glyph (a { className } component; omit it for the default puzzle-piece)
+//     right-panel options: { priority?, label?, icon?, showIn? } — label names the tab, icon is its
+//     tab-strip glyph (a { className } component; omit it for the default puzzle-piece),
+//     showIn is where the tab shows by default ({ agents?, rooms?, pages? }; omit = everywhere)
 //   api.registerCommand(id, label, callback, options?)   — Register a command palette item
 //   api.notify(message, options?)                        — Show a toast notification
 //   api.loadData<T>() / api.saveData<T>(data)            — Persistent storage scoped to this extension
@@ -330,9 +331,12 @@ export function activate(api: ExtensionAPI): void {
   //   icon     — the tab-strip glyph; omit it and the strip shows a default puzzle-piece.
   //   priority — lower sorts earlier (leftward) in the tab strip.
   // The panel container owns the shared header (tab strip + close button), so this
-  // component only renders the tab body. Extension tabs can't scope themselves to a
-  // route or agent yet, so the tab stays available wherever the right panel shows —
-  // render a friendly empty state when there's nothing to show.
+  // component only renders the tab body.
+  //   showIn   — where the tab shows by default: { agents?, rooms?, pages? }, shown
+  //              wherever any matches. Pages: 'session' (every chat), 'channels' (every
+  //              channel), 'home', 'activity', 'tasks', 'team', or '*' for everywhere.
+  //              Omit it and the tab shows everywhere. A person can change it in
+  //              Settings → Extensions, or with "Hide here" in the panel.
   api.registerComponent('right-panel', '${name}-panel', ${pascalName}Panel, {
     priority: 50,
     label: '${titleName}',

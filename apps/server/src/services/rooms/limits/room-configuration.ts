@@ -147,24 +147,6 @@ export function readMaxAttachmentsPerEntry(): number {
 }
 
 /**
- * How many times one agent may change a room's shared canvas inside one turn,
- * read live from `rooms.maxCanvasOpsPerTurn` and degrading to the shipped
- * default the same way {@link readMaxPostsPerTurn} does (spec `room-canvas`
- * §3.4).
- *
- * Failing to the default keeps the limit BOUNDED, which is the only safe
- * direction here too: an unreadable config must never let one turn bury a room's
- * table under tabs nobody asked for.
- */
-export function readMaxCanvasOpsPerTurn(): number {
-  try {
-    return configManager.get('rooms').maxCanvasOpsPerTurn;
-  } catch {
-    return USER_CONFIG_DEFAULTS.rooms.maxCanvasOpsPerTurn;
-  }
-}
-
-/**
  * How many conversations one agent may work in at once, read live from
  * `rooms.maxConcurrentTurnsPerAgent` (DOR-2104).
  *
@@ -183,23 +165,6 @@ export function readMaxConcurrentTurnsPerAgent(): number {
     return configManager.get('rooms').maxConcurrentTurnsPerAgent;
   } catch {
     return 1;
-  }
-}
-
-/**
- * How many messages one agent may post into a room inside one turn, read live
- * from `rooms.maxPostsPerTurn` and degrading to the shipped default the same way
- * {@link readMaxAgentDepth} does (spec `tool-only-room-replies` §D9).
- *
- * Failing to the default keeps the limit BOUNDED, which is the only safe
- * direction here: an unreadable config must never let one turn serialise an
- * essay across the room.
- */
-export function readMaxPostsPerTurn(): number {
-  try {
-    return configManager.get('rooms').maxPostsPerTurn;
-  } catch {
-    return USER_CONFIG_DEFAULTS.rooms.maxPostsPerTurn;
   }
 }
 

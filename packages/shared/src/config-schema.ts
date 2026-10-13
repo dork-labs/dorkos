@@ -48,6 +48,14 @@ import { RuntimeEnvironmentSchema } from './runtime-environment-schema.js';
 import { CredentialReferenceSchema } from './credential-reference.js';
 import * as remote from './remote-access-settings.js';
 import { CommunityNavigationRefSchema, SpacesSettingsSchema } from './spaces-settings.js';
+import { SavedPlacementSchema } from './mini-app-placement.js';
+import {
+  ApprovedPermissionSetSchema,
+  ExtensionApprovedSourceSchema,
+  ExtensionDismissedApprovalSchema,
+  ExtensionTrustedSourceSchema,
+} from './extension-config-schemas.js';
+import { ToursStateSchema } from './tours-state.js';
 // Plain id lists, never the named schemas in `permissions/permission-schemas.ts`:
 // the same SRC-alias reason as `HARNESS_IDS` above.
 import {
@@ -57,134 +65,13 @@ import {
 } from './permissions/permission-ids.js';
 export * from './credential-reference.js';
 export * from './remote-access-settings.js';
+export * from './extension-config-schemas.js';
+export * from './tours-state.js';
 export {
   RuntimeInheritedEnvNamesSchema,
   isReservedRuntimeEnvName,
   RUNTIME_RESERVED_ENV_NAMES,
 } from './runtime-environment-schema.js';
-
-/**
- * Where a copy of an extension came from, when this machine can prove it (spec
- * `flow-multiproject` §9.1): the plugin that carries it, and the `owner/repo`
- * DorkOS's own installer recorded fetching that plugin from (lowercased, e.g.
- * `dork-labs/marketplace`). Never read from a file inside a project.
- */
-export const ExtensionOriginSchema = z.object({
-  /** The plugin folder that carries the extension. */
-  plugin: z.string().min(1),
-  /** The normalized `owner/repo` the plugin was installed from. */
-  source: z.string().min(1),
-});
-
-/** Where a copy of an extension provably came from. */
-export type ExtensionOrigin = z.infer<typeof ExtensionOriginSchema>;
-
-/**
- * One code source a person trusts (spec `flow-multiproject` §9.3): every
- * extension DorkOS installs from it runs without asking first. Only a person
- * can add one, once per source, and only a source DorkOS's installer proved.
- */
-export const ExtensionTrustedSourceSchema = z.object({
-  /** The normalized `owner/repo`, e.g. `dork-labs/marketplace`. */
-  source: z.string().min(1),
-  /** When the person trusted it. ISO 8601. */
-  trustedAt: z.string(),
-});
-
-/** One code source a person trusts. */
-export type ExtensionTrustedSource = z.infer<typeof ExtensionTrustedSourceSchema>;
-
-/**
- * The one copy of an extension a person approved to run code (DOR-2383).
- *
- * An approval is about code, and an id is only a name: two copies of an
- * extension can carry the same id, and the marketplace tools an agent may call
- * can install a second one. So an approval also records WHICH copy it was
- * given to, by where that copy lives. It is identity, not content: editing or
- * updating the approved copy keeps loading with nothing to click (DOR-504/506).
- * See `apps/server/src/services/extensions/extension-load-policy.ts`.
- */
-export const ExtensionApprovedSourceSchema = z.object({
-  /** Absolute path of the approved extension directory. */
-  path: z.string().min(1),
-  /**
-   * The installed marketplace plugin that carries this extension, when it came
-   * inside one; absent for an extension installed directly.
-   */
-  plugin: z.string().min(1).optional(),
-  /**
-   * Where the approved copy came from, when this machine can prove it (spec
-   * `flow-multiproject` §9.1): the carrying plugin and the `owner/repo` DorkOS's
-   * own installer recorded fetching it from. Present only when the approved
-   * copy had such a trusted origin. Another copy with the same trusted origin
-   * counts as approved too, so the same plugin installed into several projects
-   * asks once. A file inside a project can never supply this: it is read only
-   * from DorkOS's own install records.
-   */
-  origin: ExtensionOriginSchema.optional(),
-  /**
-   * For a copy whose plugin files changed after DorkOS installed it: the
-   * whole plugin folder's digest the person said yes to. Any further change
-   * asks again, because a path alone no longer says what is there.
-   */
-  digest: z.string().min(1).optional(),
-  /**
-   * The real path of the dev link this approval was given to (DOR-2696);
-   * absent for an installed copy. A dev link sits at its package's normal
-   * folder, so without this an approval of the installed copy would cover the
-   * link's files at the same path, and the other way round.
-   */
-  devLink: z.string().min(1).optional(),
-});
-
-/** The one copy of an extension a person approved to run code. */
-export type ExtensionApprovedSource = z.infer<typeof ExtensionApprovedSourceSchema>;
-
-/**
- * The permission set a person approved for one extension (DOR-2686): where it
- * runs and, when it runs separately, what it may reach. Recorded at the
- * moment of approval from what the extension declared then, so a later
- * version that declares MORE (a new host, a new program, agent access, or a
- * move back inside DorkOS) waits for a person again, while one that declares
- * less keeps running. See
- * `apps/server/src/services/extensions/isolation/permission-coverage.ts`.
- */
-export const ApprovedPermissionSetSchema = z.object({
-  /** Where it was approved to run: `in-process` is full access, and covers everything. */
-  runtime: z.enum(['in-process', 'subprocess']),
-  /** The `allow.net` entries approved. */
-  net: z.array(z.string()),
-  /** The `allow.run` entries approved, by the name the manifest wrote. */
-  run: z.array(z.string()),
-  /** Whether agent access (`allow.agents`) was approved. */
-  agents: z.boolean(),
-});
-
-/** The permission set a person approved for one extension. */
-export type ApprovedPermissionSet = z.infer<typeof ApprovedPermissionSetSchema>;
-
-/**
- * A copy of an extension a person said "Not now" to (DOR-2517).
- *
- * Declining removes, disables and revokes nothing: the extension stays
- * installed, and Settings → Extensions can still turn it on. This only stops
- * the Activity inbox asking about the same copy again. It asks again when the
- * path, the carrying plugin or the version changes, because then it is a
- * different thing to decide about.
- */
-export const ExtensionDismissedApprovalSchema = z.object({
-  /** Absolute path of the extension directory the person declined. */
-  path: z.string().min(1),
-  /** The installed marketplace plugin that carries it, when it came inside one. */
-  plugin: z.string().min(1).optional(),
-  /** The manifest version the person declined. */
-  version: z.string().min(1),
-  /** When they said "Not now". ISO 8601. */
-  dismissedAt: z.string(),
-});
-
-/** A copy of an extension a person said "Not now" to. */
-export type ExtensionDismissedApproval = z.infer<typeof ExtensionDismissedApprovalSchema>;
 
 /** One canonical route inside the local DorkOS installation. */
 export const CommunityInstallationPathSchema = z.enum([
@@ -472,24 +359,6 @@ export const OnboardingStateSchema = z.object({
 });
 
 export type OnboardingState = z.infer<typeof OnboardingStateSchema>;
-
-/**
- * Persisted state for the DorkBot living tour (DOR-419). Tracks which tours the
- * user has already run (`seen`) and which they declined (`declined`) so an
- * occasion never re-offers a tour the user has finished or waved off. Ids are the
- * tour definition ids (`'tasks' | 'relay' | 'mesh' | 'general'`), stored as free
- * strings so adding a tour never needs a schema migration. Managed automatically
- * by the client; not user-editable.
- */
-export const ToursStateSchema = z.object({
-  seen: z.array(z.string()).default(() => []),
-  declined: z.array(z.string()).default(() => []),
-});
-
-export type ToursState = z.infer<typeof ToursStateSchema>;
-
-/** Frozen defaults for the {@link ToursStateSchema} block (empty on a fresh install). */
-export const TOURS_DEFAULTS: ToursState = ToursStateSchema.parse({});
 
 /**
  * Where the stored {@link UserProfileSchema} `displayName` came from (DOR-1022).
@@ -845,6 +714,9 @@ export type SidebarGroup = z.infer<typeof SidebarGroupSchema>;
  * single bodies, so folding one folds the zone; the id is the zone's own id, so
  * nothing has to translate.
  *
+ * `addons` is the Library section that lists the pages mini apps add (spec
+ * `mini-app-placement` Part 2). It holds a fold flag and nothing else.
+ *
  * **Widening this enum is a non-event, and that is by construction.** The
  * `dropUnknownSectionIds` preprocessor below strips any key a build does not
  * recognise, so a config written by a newer DorkOS loads on an older one — it
@@ -860,6 +732,7 @@ export const SidebarSectionIdSchema = z.enum([
   'channels',
   'dms',
   'agents',
+  'addons',
   'threads',
   'recents',
 ]);
@@ -2385,6 +2258,17 @@ export const UserConfigSchema = z.object({
       statusBar: StatusBarPrefsSchema.default(() => ({ pins: [] })),
       /** Person-scoped message-box preferences (DOR-948). */
       composer: ComposerPrefsSchema.default(() => ({ richText: true })),
+      /**
+       * Where each mini app's right-panel tab shows (spec `mini-app-placement`):
+       * one saved choice per tab, keyed by `tab` (`<extensionId>:<tabId>`). A
+       * tab with no entry follows its mini app's declared default, or shows
+       * everywhere. Shared by everyone using this DorkOS.
+       *
+       * A list rather than a record because `PATCH /api/config` replaces lists
+       * and deep-merges objects: with a record, removing one tab's choice
+       * ("Reset") could not be written at all.
+       */
+      panelTabs: z.array(SavedPlacementSchema).default(() => []),
       /** Owner-qualified Community order and remembered destinations; never draft content. */
       communityNavigation: CommunityNavigationPrefsSchema.default(() => ({
         version: 1 as const,
@@ -2438,6 +2322,7 @@ export const UserConfigSchema = z.object({
       },
       statusBar: { pins: [] },
       composer: { richText: true },
+      panelTabs: [],
       communityNavigation: { version: 1 as const, owners: [] },
       // Both halves of the power-door answer. Declared here as well as per-field
       // because `conf` merges top-level defaults SHALLOWLY: the per-field default
@@ -2776,39 +2661,6 @@ export const UserConfigSchema = z.object({
        */
       responseGate: z.enum(['off', 'routing']).default('routing'),
       /**
-       * How many messages one agent may post into a room inside a single turn.
-       *
-       * Three is room for "on it", the answer, and a correction — and a refusal
-       * for the tenth, so one turn cannot serialise an essay across nine bubbles.
-       * It counts only what an agent posts through the tool while a turn of its
-       * own is running here; nothing you write is ever counted.
-       *
-       * Posting is the only voice an agent has in a room, which is what makes
-       * this a bound worth having. Like every number in this area, it is a
-       * judgement rather than a measurement — see `meta/agent-etiquette.md` §9.
-       *
-       * Every declaration of this value has to agree — here and in the `rooms`
-       * section literal below — for the reason above.
-       */
-      maxPostsPerTurn: z.number().int().min(1).max(10).default(3),
-      /**
-       * How many times one agent may change a room's shared canvas inside a
-       * single turn — opening a document, updating one, closing one.
-       *
-       * Three is the same judgement `maxPostsPerTurn` above makes, for the same
-       * reason: room for the thing you meant to show, a second thing beside it,
-       * and a correction — and a refusal after that, so one turn cannot bury the
-       * table under a dozen tabs nobody asked for. The refusal reaches the agent
-       * in the tool result, so it can put the rest in one change next turn.
-       *
-       * Nothing you do yourself is counted; this bounds agents only.
-       *
-       * Every declaration of this value has to agree — here and in the `rooms`
-       * section literal below — because `conf` merges top-level defaults
-       * shallowly.
-       */
-      maxCanvasOpsPerTurn: z.number().int().min(1).max(10).default(3),
-      /**
        * How many conversations one agent may work in at the same time.
        *
        * An agent's rooms and chats all run in its own folder, so two turns at
@@ -2925,15 +2777,9 @@ export const UserConfigSchema = z.object({
       collectDebounceMs: 500,
       collectMaxEntries: 20,
       responseGate: 'routing' as const,
-      // How much one agent may say in one room turn. Two declarations carry
-      // this value — the per-field one above and this — and both have to agree
-      // or the shallow defaults-merge lands somebody on the other value.
-      maxPostsPerTurn: 3,
-      // How many canvas changes one agent may make in one turn, same judgement
-      // and same both-sites rule as the line above it.
-      maxCanvasOpsPerTurn: 3,
-      // How many conversations one agent may work in at once, same both-sites
-      // rule as the lines above it.
+      // How many conversations one agent may work in at once. Two declarations
+      // carry this value — the per-field one above and this — and both have to
+      // agree or the shallow defaults-merge lands somebody on the other value.
       maxConcurrentTurnsPerAgent: MAX_CONCURRENT_TURNS_PER_AGENT_DEFAULT,
       repo: {
         enabled: true,

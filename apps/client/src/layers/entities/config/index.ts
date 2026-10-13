@@ -34,6 +34,11 @@ export type { PromoDismissals } from './model/use-promo-dismissals';
 export { useWelcomeBack } from './model/use-welcome-back';
 export type { WelcomeBackSetting } from './model/use-welcome-back';
 export { useStatusBarPrefs, useUpdateStatusBarPrefs } from './model/use-status-bar-prefs';
+export {
+  usePanelTabPlacements,
+  useSetPanelTabPlacement,
+  type SetPanelTabPlacement,
+} from './model/use-panel-tab-placements';
 export { useComposerRichText, useUpdateComposerPrefs } from './model/use-composer-prefs';
 export {
   useNotificationPrefs,
