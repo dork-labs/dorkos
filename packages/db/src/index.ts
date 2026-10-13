@@ -189,6 +189,7 @@ export * from './schema/index.js';
 // the primitives an extension's own migrator reuses.
 export {
   snapshotSqlite,
+  snapshotSqliteInSteps,
   pruneSnapshots,
   readMigrationState,
   databaseHoldsUserData,
