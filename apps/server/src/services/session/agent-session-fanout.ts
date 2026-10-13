@@ -16,6 +16,19 @@
  * "this machine" names, which is why the rule lives here and not in either of
  * them.
  *
+ * ## One scan answers everyone who asks at once
+ *
+ * A fan-out reads every runtime's store once per agent folder, and on a busy
+ * machine that is seconds of work: 37 agents and a 13 GB Codex home took 15 s
+ * or more (measured 2026-10-13). Every open window re-asks for the Recent list
+ * whenever any chat changes, so the same question arrived every few seconds,
+ * each answer started its own scan, and a per-runtime timeout does not stop the
+ * work it gave up on. The scans stacked up until the whole server answered
+ * every request in seconds. So callers asking the same question share one scan
+ * while it runs, and its answer is reused for {@link AGENT_SESSION_FANOUT_FRESH_MS}
+ * after it lands. Each caller gets its own copy of every session, because the
+ * routes overlay settings onto the rows they are handed, in place.
+ *
  * ## One folder, several spellings (DOR-695)
  *
  * The membership rule compares two strings that reach it from different
@@ -87,6 +100,8 @@ let sources: AgentSessionSources = NO_EXTRA_SOURCES;
  */
 export function setAgentSessionSources(next: AgentSessionSources | null): void {
   sources = next ?? NO_EXTRA_SOURCES;
+  // A scan run against the old sources answers a different question.
+  shared.clear();
 }
 
 /**
@@ -95,6 +110,54 @@ export function setAgentSessionSources(next: AgentSessionSources | null): void {
  * concurrent {@link aggregateSessionList} calls at this width.
  */
 export const AGENT_SESSION_FANOUT_CONCURRENCY = 5;
+
+/**
+ * How long a finished fan-out keeps answering callers who ask the same
+ * question. Short on purpose: it exists to absorb a burst of identical asks,
+ * not to serve old news. Every reader already treats this list as a summary
+ * the live session stream keeps current.
+ */
+export const AGENT_SESSION_FANOUT_FRESH_MS = 3_000;
+
+/** A fan-out's answer, before any caller copies it. */
+type FanOutResult = { perPath: AgentSessions[]; warnings: SessionListWarning[] };
+
+/**
+ * Scans running or recently finished, by question. `at` is `null` while the
+ * scan runs and the time it landed after.
+ */
+const shared = new Map<string, { at: number | null; result: Promise<FanOutResult> }>();
+
+/** A stable id per runtime object, so two different runtimes of one type never share a scan. */
+const runtimeIds = new WeakMap<AgentRuntime, number>();
+let nextRuntimeId = 0;
+
+/**
+ * The question a fan-out answers: which runtimes, over which folders.
+ *
+ * @param runtimes - The runtimes asked.
+ * @param uniquePaths - The deduped agent folders.
+ */
+function questionKey(runtimes: AgentRuntime[], uniquePaths: string[]): string {
+  const ids = runtimes.map((runtime) => {
+    let id = runtimeIds.get(runtime);
+    if (id === undefined) {
+      id = nextRuntimeId++;
+      runtimeIds.set(runtime, id);
+    }
+    return id;
+  });
+  return `${ids.join(',')}\0${[...uniquePaths].sort().join('\0')}`;
+}
+
+/**
+ * Forget every shared scan.
+ *
+ * @internal Exported for tests that change a store between two fan-outs.
+ */
+export function resetAgentSessionFanoutCache(): void {
+  shared.clear();
+}
 
 /** Map `items` through `fn` with at most `concurrency` in flight, preserving input order. */
 async function mapWithConcurrency<T, R>(
@@ -176,6 +239,9 @@ export interface AgentSessions {
  * what lets a caller say "some runs are missing" instead of quietly reporting a
  * smaller number (ADR-0310).
  *
+ * Callers asking the same question at once share one scan, and its answer is
+ * reused for {@link AGENT_SESSION_FANOUT_FRESH_MS} (see the module header).
+ *
  * @param opts - Fan-out inputs.
  * @param opts.runtimes - Runtimes to fan out across (already registry-resolved).
  * @param opts.agentPaths - Agent project directories to scan (deduped internally).
@@ -186,7 +252,51 @@ export async function fanOutAgentSessions(opts: {
 }): Promise<{ perPath: AgentSessions[]; warnings: SessionListWarning[] }> {
   const { runtimes, agentPaths } = opts;
   const uniquePaths = [...new Set(agentPaths)];
+  const key = questionKey(runtimes, uniquePaths);
+  const now = Date.now();
 
+  for (const [other, entry] of shared) {
+    if (entry.at !== null && now - entry.at >= AGENT_SESSION_FANOUT_FRESH_MS) shared.delete(other);
+  }
+  let entry = shared.get(key);
+  if (!entry) {
+    const created: { at: number | null; result: Promise<FanOutResult> } = {
+      at: null,
+      result: scanAgentSessions(runtimes, uniquePaths),
+    };
+    created.result.then(
+      () => {
+        created.at = Date.now();
+      },
+      // A scan that threw is not kept: the next caller asks again.
+      () => {
+        if (shared.get(key) === created) shared.delete(key);
+      }
+    );
+    shared.set(key, created);
+    entry = created;
+  }
+
+  const { perPath, warnings } = await entry.result;
+  return {
+    perPath: perPath.map(({ dir, members }) => ({
+      dir,
+      members: members.map((session) => ({ ...session })),
+    })),
+    warnings: warnings.map((warning) => ({ ...warning })),
+  };
+}
+
+/**
+ * The scan itself, uncached: every agent folder, every runtime.
+ *
+ * @param runtimes - Runtimes to fan out across.
+ * @param uniquePaths - Deduped agent project directories.
+ */
+async function scanAgentSessions(
+  runtimes: AgentRuntime[],
+  uniquePaths: string[]
+): Promise<FanOutResult> {
   const results = await mapWithConcurrency(
     uniquePaths,
     AGENT_SESSION_FANOUT_CONCURRENCY,
