@@ -22,8 +22,12 @@ const OPTIONS = 'GET /api/v1/auth-options';
 const PREFLIGHT = 'POST /api/v1/open-admission/preflight';
 const JOIN = 'POST /api/v1/open-admission/join';
 const NOTE = `dorkos-open-join:${community.id}`;
+const COUNTRY = 'POST /api/v1/country-confirmation';
 
-function options(minimumAge: number | null = null): Reply {
+function options(
+  minimumAge: number | null = null,
+  allowedCountries: string[] | null = null
+): Reply {
   return {
     status: 200,
     body: {
@@ -31,6 +35,7 @@ function options(minimumAge: number | null = null): Reply {
       github: false,
       oidc: { label: 'DorkOS', mark: 'dorkos' },
       minimumAge,
+      allowedCountries,
       emailLinks: false,
     },
   };
@@ -89,6 +94,44 @@ describe('the join page of an open space', () => {
     expect((button as HTMLButtonElement).disabled).toBe(true);
     fireEvent.click(screen.getByLabelText('I am at least 16 years old.'));
     expect((button as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it('asks a new account to confirm where they live before the sign-in that may make it', async () => {
+    // Purpose: fails if open joining skips the host's allowed countries on the way to a new
+    // account, confirms them after the round trip began, or asks a signed-in account at all.
+    const calls = mockFetch({
+      [OPTIONS]: options(null, ['US']),
+      [PREFLIGHT]: preflight,
+      [COUNTRY]: { status: 200, body: { confirmed: true, expiresAt: '2026-10-07T00:30:00.000Z' } },
+    });
+    render(
+      <OpenAdmission
+        community={community}
+        signedIn={false}
+        onAdmitted={vi.fn()}
+        onOtherWays={vi.fn()}
+      />
+    );
+    const button = await screen.findByRole('button', { name: 'Continue with DorkOS' });
+    expect((button as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(screen.getByLabelText('I live in the United States.'));
+    fireEvent.click(button);
+    await waitFor(() => expect(signInSocial).toHaveBeenCalledTimes(1));
+    const paths = calls.map((call) => call.method + ' ' + new URL(call.url, 'http://x').pathname);
+    const country = paths.indexOf(COUNTRY);
+    expect(country).toBeGreaterThan(-1);
+    expect(paths).not.toContain('POST /api/v1/age-confirmation');
+    expect(vi.mocked(fetch).mock.invocationCallOrder[country]).toBeLessThan(
+      signInSocial.mock.invocationCallOrder[0]!
+    );
+    cleanup();
+
+    mockFetch({ [OPTIONS]: options(null, ['US']) });
+    render(
+      <OpenAdmission community={community} signedIn onAdmitted={vi.fn()} onOtherWays={vi.fn()} />
+    );
+    await screen.findByRole('button', { name: 'Continue with DorkOS' });
+    expect(screen.queryByRole('checkbox')).toBeNull();
   });
 
   it('finishes the join it was asked for after the sign-in returns, once', async () => {
