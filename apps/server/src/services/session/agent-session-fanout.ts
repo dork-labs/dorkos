@@ -28,7 +28,8 @@
  *
  * So each question runs at most one scan at a time. A caller joins the running
  * scan, or reuses a finished one for {@link AGENT_SESSION_FANOUT_FRESH_MS}, only
- * when no session changed since that scan started ({@link markAgentSessionsChanged}).
+ * when no session appeared or went away since that scan started
+ * ({@link noteAgentSessionListEvent}).
  * A caller asking after a change waits for the running scan and then shares the
  * ONE scan that follows it, so it never gets an answer from before the change
  * and the scans never pile up. Each caller gets its own copy of every session,
@@ -125,7 +126,12 @@ export const AGENT_SESSION_FANOUT_CONCURRENCY = 5;
 export const AGENT_SESSION_FANOUT_FRESH_MS = 3_000;
 
 /** A fan-out's answer, before any caller copies it. */
-type FanOutResult = { perPath: AgentSessions[]; warnings: SessionListWarning[] };
+type FanOutResult = {
+  perPath: AgentSessions[];
+  warnings: SessionListWarning[];
+  /** When the scan began, so only updates it could have missed are laid over it. */
+  startedAt: number;
+};
 
 /** One scan, and the session generation it started under. */
 interface Scan {
@@ -143,16 +149,90 @@ interface Question {
 /** Questions by key. Pruned on every ask, so it holds only live or fresh ones. */
 const questions = new Map<string, Question>();
 
-/** Goes up whenever a session appears, changes or goes away. */
+/** Goes up whenever a session appears or goes away. */
 let generation = 0;
 
+/** Every session id the list has announced and not removed since. */
+const announcedIds = new Set<string>();
+
 /**
- * Say that a session changed, so no caller from now on is handed a scan that
- * started before it. Called by the session-list broadcaster for every upsert
- * and removal it sends.
+ * The newest row the session list announced for each recently updated
+ * session, and when. Laid over an answer from a scan that started BEFORE the
+ * update, the only kind that can be missing it. A scan that started after
+ * reads the runtime's own truth, which wins.
+ */
+const recentRows = new Map<string, { session: Session; at: number }>();
+
+/**
+ * How long an announced row is kept for laying over older scans. Far longer
+ * than any scan runs; it only bounds memory.
+ */
+const RECENT_ROW_KEEP_MS = 5 * 60_000;
+
+/**
+ * Say that the set of sessions changed, so no caller from now on is handed a
+ * scan that started before it.
  */
 export function markAgentSessionsChanged(): void {
   generation += 1;
+}
+
+/**
+ * Hear one session-list event. A session appearing or going away starts a new
+ * generation; an update to a listed one is remembered and laid over every
+ * answer from a scan that predates it instead (see {@link withLatestRow}).
+ *
+ * Every chat a working agent writes to sends an update every few seconds, and
+ * when each one forced a fresh scan the Recent list was rescanned back to back
+ * for as long as any agent was working (DOR-2893). Laying the update over a
+ * scan that predates it gives the same rows without the scan.
+ *
+ * @param event - The event the broadcaster is about to send.
+ */
+export function noteAgentSessionListEvent(
+  event:
+    { type: 'session_upserted'; session: Session } | { type: 'session_removed'; sessionId: string }
+): void {
+  const now = Date.now();
+  for (const [id, row] of recentRows) {
+    if (now - row.at <= RECENT_ROW_KEEP_MS) break;
+    recentRows.delete(id);
+  }
+  if (event.type === 'session_upserted') {
+    const { id } = event.session;
+    recentRows.delete(id);
+    recentRows.set(id, { session: event.session, at: now });
+    if (announcedIds.has(id)) return;
+    announcedIds.add(id);
+  } else {
+    recentRows.delete(event.sessionId);
+    if (!announcedIds.delete(event.sessionId)) return;
+  }
+  markAgentSessionsChanged();
+}
+
+/**
+ * A caller's copy of one scanned session, with an update the list announced
+ * after the scan began laid over it. Only the fields an update changes are
+ * taken: the scan's own `cwd`, `runtime` and the rest stay as scanned.
+ *
+ * @param session - The row as the scan found it.
+ * @param startedAt - When the scan that found it began.
+ */
+function withLatestRow(session: Session, startedAt: number): Session {
+  const latest = recentRows.get(session.id);
+  if (!latest || latest.at < startedAt) return { ...session };
+  const { session: row } = latest;
+  if (Date.parse(row.updatedAt) < Date.parse(session.updatedAt)) return { ...session };
+  return {
+    ...session,
+    title: row.title,
+    updatedAt: row.updatedAt,
+    lastMessagePreview: row.lastMessagePreview,
+    permissionMode: row.permissionMode,
+    model: row.model,
+    contextTokens: row.contextTokens,
+  };
 }
 
 /** A stable id per runtime object, so two different runtimes of one type never share a scan. */
@@ -189,7 +269,11 @@ function startScan(
   runtimes: AgentRuntime[],
   uniquePaths: string[]
 ): Promise<FanOutResult> {
-  const scan: Scan = { generation, result: scanAgentSessions(runtimes, uniquePaths) };
+  const startedAt = Date.now();
+  const scan: Scan = {
+    generation,
+    result: scanAgentSessions(runtimes, uniquePaths).then((found) => ({ ...found, startedAt })),
+  };
   question.running = scan;
   scan.result.then(
     () => {
@@ -223,6 +307,8 @@ function pruneQuestions(now: number): void {
  */
 export function resetAgentSessionFanoutCache(): void {
   questions.clear();
+  announcedIds.clear();
+  recentRows.clear();
 }
 
 /** Map `items` through `fn` with at most `concurrency` in flight, preserving input order. */
@@ -356,11 +442,11 @@ export async function fanOutAgentSessions(opts: {
     result = startScan(question, runtimes, uniquePaths);
   }
 
-  const { perPath, warnings } = await result;
+  const { perPath, warnings, startedAt } = await result;
   return {
     perPath: perPath.map(({ dir, members }) => ({
       dir,
-      members: members.map((session) => ({ ...session })),
+      members: members.map((session) => withLatestRow(session, startedAt)),
     })),
     warnings: warnings.map((warning) => ({ ...warning })),
   };
@@ -375,7 +461,7 @@ export async function fanOutAgentSessions(opts: {
 async function scanAgentSessions(
   runtimes: AgentRuntime[],
   uniquePaths: string[]
-): Promise<FanOutResult> {
+): Promise<Omit<FanOutResult, 'startedAt'>> {
   const results = await mapWithConcurrency(
     uniquePaths,
     AGENT_SESSION_FANOUT_CONCURRENCY,
