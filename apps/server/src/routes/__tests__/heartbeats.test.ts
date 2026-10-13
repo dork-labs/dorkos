@@ -85,11 +85,17 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
+  vi.useRealTimers();
   await rm(root, { recursive: true, force: true });
 });
 
 describe('GET /api/agents/:id/heartbeat', () => {
   it('answers how the agent wakes, its next beat, its last beats and what is held for people', async () => {
+    // The fixtures below are fixed instants, and what is held and reported
+    // depends on the clock. Pinned to the afternoon they describe, or the test
+    // starts failing the moment real time passes the held post's delivery time.
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-10-12T16:00:00Z'));
     await writeFile(
       join(root, '.dork', 'HEARTBEAT.md'),
       '---\nwake: timed\n---\n- Watch invoices.'
