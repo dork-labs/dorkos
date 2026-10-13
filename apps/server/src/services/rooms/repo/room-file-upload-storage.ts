@@ -1,10 +1,11 @@
+import type { UploadStreamFile, UploadedFile } from '../../../http/uploads.js';
+import type { RoomUploadStorageEngine } from './upload/room-upload-storage-contracts.js';
 /** Original Editor-selected upload storage. Namespace exclusion is not filesystem ownership. */
 import { promises as fs } from 'node:fs';
-import type { Request } from 'express';
+import type { IncomingMessage } from 'node:http';
 import { Readable } from 'node:stream';
 import { finished } from 'node:stream/promises';
 import type { InstallationRoomMutationContext } from '../../canvas/doc-channel/writes/installation-room-writes.js';
-import multer from 'multer';
 import {
   requireRoomFileEditorUploadStorageOwner,
   checkRoomFileEditorUploadCurrent,
@@ -19,7 +20,7 @@ import {
   type AcquiredFile,
 } from './upload/room-upload-source-custody.js';
 
-import { writeOriginalRoomUploadFile } from './upload/room-upload-write-current.js';
+import { closeUpload, writeOriginalRoomUploadFile } from './upload/room-upload-write-current.js';
 import { checkOriginalRoomUploadIdentity } from './upload/room-upload-identity-read.js';
 import type { OriginalRoomUploadWriteView } from './upload/room-upload-write-context.js';
 import {
@@ -58,10 +59,10 @@ export function createRoomFileUploadStorage(
   editor: RoomFileEditor,
   operation: object,
   directory: string
-): multer.StorageEngine {
+): RoomUploadStorageEngine {
   return new RoomFileUploadStorage(editor, operation, directory);
 }
-class RoomFileUploadStorage implements multer.StorageEngine {
+class RoomFileUploadStorage implements RoomUploadStorageEngine {
   readonly #writeKey = Object.freeze({});
   readonly #editor: RoomFileEditor;
   readonly #operation: object;
@@ -98,7 +99,7 @@ class RoomFileUploadStorage implements multer.StorageEngine {
       Object.freeze({
         complete: (error: unknown) => this.#complete(error),
         retire: () => this.#retire(),
-        issueSources: (request: Request, files: readonly Express.Multer.File[]) =>
+        issueSources: (request: IncomingMessage, files: readonly UploadedFile[]) =>
           this.#issueSources(request, files),
         restoreCause: (cause: unknown) =>
           this.#protocolErrors.has(cause as Error) && this.#failed ? this.#cause : cause,
@@ -108,27 +109,30 @@ class RoomFileUploadStorage implements multer.StorageEngine {
     Object.defineProperties(this, {
       _handleFile: {
         value: (
-          req: Request,
-          file: Express.Multer.File,
-          callback: (error?: any, info?: Partial<Express.Multer.File>) => void
+          req: IncomingMessage,
+          file: UploadStreamFile,
+          callback: (error?: unknown, info?: Partial<UploadedFile>) => void
         ) => this.#handle(req, file, callback),
       },
       _removeFile: {
-        value: (req: Request, file: Express.Multer.File, callback: (error: Error | null) => void) =>
-          this.#remove(req, file, callback),
+        value: (
+          req: IncomingMessage,
+          file: UploadedFile,
+          callback: (error: Error | null) => void
+        ) => this.#remove(req, file, callback),
       },
     });
   }
   _handleFile(
-    _req: Request,
-    _file: Express.Multer.File,
-    _callback: (error?: any, info?: Partial<Express.Multer.File>) => void
+    _req: IncomingMessage,
+    _file: UploadStreamFile,
+    _callback: (error?: unknown, info?: Partial<UploadedFile>) => void
   ): void {
     throw new Error('Uncaptured storage call.');
   }
   _removeFile(
-    _req: Request,
-    _file: Express.Multer.File,
+    _req: IncomingMessage,
+    _file: UploadedFile,
     _callback: (error: Error | null) => void
   ): void {
     throw new Error('Uncaptured storage call.');
@@ -174,9 +178,9 @@ class RoomFileUploadStorage implements multer.StorageEngine {
     }
   }
   #handle(
-    req: Request,
-    file: Express.Multer.File,
-    callback: (error?: any, info?: Partial<Express.Multer.File>) => void
+    req: IncomingMessage,
+    file: UploadStreamFile,
+    callback: (error?: unknown, info?: Partial<UploadedFile>) => void
   ): void {
     try {
       requireRoomFileEditorUploadCurrent(this.#editor, this.#operation, this.#directory, this, req);
@@ -242,8 +246,8 @@ class RoomFileUploadStorage implements multer.StorageEngine {
   async #write(record: AcquiredFile): Promise<void> {
     return writeOriginalRoomUploadFile(this.#writeKey, record);
   }
-  #remove(req: Request, file: Express.Multer.File, callback: (error: Error | null) => void): void {
-    const record = this.#files.get(file.path);
+  #remove(req: IncomingMessage, file: UploadedFile, callback: (error: Error | null) => void): void {
+    const record = typeof file.path === 'string' ? this.#files.get(file.path) : undefined;
     if (!record || record.request !== req) {
       callback(new Error('Unknown acquired upload file.'));
       return;
@@ -335,22 +339,19 @@ class RoomFileUploadStorage implements multer.StorageEngine {
     if (this.#failed) throw this.#cause;
     if (protocolFailed) throw error;
   }
-  async #close(record: AcquiredFile): Promise<void> {
-    if (record.handle) {
-      await record.handle.close();
-      record.handle = undefined;
-    }
+  #close(record: AcquiredFile): Promise<void> {
+    return closeUpload(record);
   }
   async #issueSources(
-    req: Request,
-    files: readonly Express.Multer.File[]
+    req: IncomingMessage,
+    files: readonly UploadedFile[]
   ): Promise<readonly Readonly<{ upload: object; size: number }>[]> {
     await this.#join();
     if (this.#failed) throw this.#cause;
     const seen = new Set<AcquiredFile>(),
       result: Readonly<{ upload: object; size: number }>[] = [];
     for (const file of files) {
-      const record = this.#files.get(file.path);
+      const record = typeof file.path === 'string' ? this.#files.get(file.path) : undefined;
       requireMatchingAcquiredRoomUpload(record, req, file, seen);
       seen.add(record);
       await this.#checkFile(record, true);

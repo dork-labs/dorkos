@@ -1,9 +1,9 @@
 /**
  * The credential gate for durable-stream WebSocket upgrades.
  *
- * **This is the file that replaces `sessionGate` for sockets.** An upgrade never
- * touches Express, so the app-wide middleware chain — `sessionGate` and
- * `resolveAgentIdentity` — does not run for it. Without this, moving the durable
+ * **This is the file that replaces the session gate for sockets.** An upgrade
+ * never runs the chain, so the session gate and
+ * `resolveAgentIdentityFromHeaders` do not run for it. Without this, moving the durable
  * streams from SSE to WebSockets would have silently un-gated every one of them
  * on an install with login enabled: the same URL, the same data, no credential.
  *
@@ -12,17 +12,18 @@
  * 1. **The gate.** When `config.auth.enabled` is `true`, a caller must present a
  *    valid session cookie or a per-user API key, verified through the same
  *    {@link verifyRequestAuth} the HTTP gate and the MCP middleware use. When
- *    login is off it is a pass-through, as the gate is. None of `sessionGate`'s
- *    exemptions apply here: they cover sign-in, the health probe and the
+ *    login is off it is a pass-through, as the gate is. None of the session
+ *    gate's exemptions apply here: they cover sign-in, the health probe and the
  *    signed-token workbench routes, none of which is a durable stream.
  * 2. **The attribution.** `X-DorkOS-Agent` is resolved the same additive way the
  *    middleware resolves it — never a rejection, only an identity when the token
  *    is good — because a room stream is membership-scoped and an agent reading
  *    one must resolve to itself rather than to the operator.
  *
- * The result is shaped as `res.locals` on purpose: `resolveCaller` and
- * `getRequestAgentIdentity` read identity from there, and handing them the same
- * shape is what lets the socket handlers reuse them unchanged instead of
+ * The result carries the same two identity fields a request's facts do
+ * (`http/request-facts.ts`), so a socket handler passes
+ * {@link upgradeCaller}`(headers, locals)` to `resolveCaller`,
+ * `readCallerPrincipal` and the other caller policies unchanged instead of
  * growing a parallel notion of who a caller is.
  *
  * ## What a browser sends on an upgrade
@@ -37,25 +38,41 @@
  */
 import type { IncomingHttpHeaders } from 'node:http';
 import { configManager } from '../config-manager.js';
-import { verifyRequestAuth } from '../auth/session-gate.js';
+import { verifyRequestAuth, type RequestUser } from '../auth/session-gate.js';
+import type { AgentIdentity } from '../agent-identity/agent-identity-service.js';
+import type { RequestFacts } from '../../../http/request-facts.js';
 import { resolveAgentIdentityFromHeaders } from '../../../middleware/agent-identity.js';
 import type { UpgradeDecision } from './upgrade-router.js';
 
 /**
- * The request-scoped identity slots the Express chain fills, as a socket
- * handler can supply them to `resolveCaller` / `getRequestAgentIdentity`.
+ * The identity fields the chain resolves for a request (the session gate's
+ * `user`, the agent-identity step's `agentIdentity`), resolved for an upgrade.
  */
 export interface StreamUpgradeLocals {
   /** Present only when login is enabled and a credential verified. */
-  user?: Awaited<ReturnType<typeof verifyRequestAuth>>;
+  user?: RequestUser;
   /** Present only when a valid `X-DorkOS-Agent` token was offered. */
-  agentIdentity?: Awaited<ReturnType<typeof resolveAgentIdentityFromHeaders>>;
+  agentIdentity?: AgentIdentity;
+}
+
+/**
+ * An upgrade's caller, as the caller policies read a request's facts.
+ *
+ * @param headers - The upgrade's headers.
+ * @param locals - The identity {@link authorizeStreamUpgrade} resolved.
+ * @returns The facts the caller policies read.
+ */
+export function upgradeCaller(
+  headers: IncomingHttpHeaders,
+  locals: StreamUpgradeLocals
+): Pick<RequestFacts, 'headers' | 'user' | 'agentIdentity'> {
+  return { headers, user: locals.user, agentIdentity: locals.agentIdentity };
 }
 
 /** An authorized upgrade, carrying the identity the handler should act as. */
 export interface AuthorizedStreamUpgrade {
   readonly ok: true;
-  /** The `res.locals`-shaped identity, for `resolveCaller`. */
+  /** The resolved identity, for `resolveCaller` and the other caller policies. */
   readonly locals: StreamUpgradeLocals;
 }
 

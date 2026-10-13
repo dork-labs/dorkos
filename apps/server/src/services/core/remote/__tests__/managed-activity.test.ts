@@ -14,7 +14,7 @@ import express from 'express';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { initConfigManager } from '../../config-manager.js';
-import { sessionGate } from '../../auth/session-gate.js';
+import { decideSessionGate } from '../../auth/session-gate.js';
 import type { RemoteEventBatch } from '../activity-outbox.js';
 import { noteGateAdmitted, setManagedAdmissionListener } from '../ingress-mark.js';
 import {
@@ -158,7 +158,14 @@ describe('counting through the real ingress and gate', () => {
     });
     // A page or asset is served before the gate, as the front door does.
     app.get('/', (_req, res) => void res.status(200).send('<html></html>'));
-    app.use(sessionGate);
+    // The chain's session gate step (`http/api-chain.ts`): the real decision,
+    // and the managed-access count once it admits.
+    app.use(async (req, res, next) => {
+      const decision = await decideSessionGate(req.method, req.path, { headers: req.headers });
+      if (!decision.allowed) return void res.status(401).end();
+      noteGateAdmitted(req, res);
+      next();
+    });
     // A second pass through the hook (the Hono chain, say) never counts twice.
     app.use((req, res, next) => {
       noteGateAdmitted(req, res);

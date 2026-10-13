@@ -1199,6 +1199,60 @@ describe('ClaudeCodeRuntime', () => {
       expect(events.find((e) => e.type === 'done')).toBeDefined();
     });
 
+    // DOR-2838. A chat set to "Never ask" launches the SDK in `dontAsk`, and the
+    // two callbacks the launch registers refuse rather than put anything to a
+    // person: a tool call is denied and an MCP server's request is declined.
+    it('launches Never ask as dontAsk and refuses through both callbacks', async () => {
+      const { query: mockedQuery } = await import('@anthropic-ai/claude-agent-sdk');
+      (mockedQuery as ReturnType<typeof vi.fn>).mockClear();
+      let launched: Options | undefined;
+      let tool: unknown;
+      let elicitation: unknown;
+      (mockedQuery as ReturnType<typeof vi.fn>).mockImplementation((args: { options: Options }) =>
+        wrapSdkQuery(
+          (async function* () {
+            launched = args.options;
+            tool = await args.options.canUseTool?.('Bash', { command: 'ls' }, {
+              signal: new AbortController().signal,
+              toolUseID: 'never-1',
+            } as never);
+            elicitation = await args.options.onElicitation?.(
+              { serverName: 'test-server', message: 'Which environment?' },
+              { signal: new AbortController().signal }
+            );
+            yield {
+              type: 'result',
+              subtype: 'success',
+              duration_ms: 100,
+              duration_api_ms: 80,
+              is_error: false,
+              num_turns: 1,
+              result: '',
+              stop_reason: 'end_turn',
+              total_cost_usd: 0.001,
+              usage: { input_tokens: 10, output_tokens: 5 },
+              modelUsage: {},
+              permission_denials: [],
+              uuid: 'uuid-result',
+              session_id: 'never-ask',
+            };
+          })()
+        )
+      );
+
+      agentManager.ensureSession('never-ask', { permissionMode: 'dontAsk' });
+      const events: StreamEvent[] = [];
+      for await (const event of agentManager.sendMessage('never-ask', 'hello')) {
+        events.push(event);
+      }
+
+      expect(launched?.permissionMode).toBe('dontAsk');
+      expect(tool).toMatchObject({ behavior: 'deny' });
+      expect(elicitation).toEqual({ action: 'decline' });
+      expect(events.find((e) => e.type === 'approval_required')).toBeUndefined();
+      expect(events.find((e) => e.type === 'elicitation_prompt')).toBeUndefined();
+    });
+
     it('retries resume failure once then surfaces error on second failure', async () => {
       const { query: mockedQuery } = await import('@anthropic-ai/claude-agent-sdk');
       (mockedQuery as ReturnType<typeof vi.fn>).mockClear();

@@ -15,7 +15,7 @@
  * @module services/extensions/extension-manager
  */
 import path from 'path';
-import type { Router } from 'express';
+import type { ExtensionHttpHandler } from './http/extension-http.js';
 import type { ExtensionRecord, ExtensionRecordPublic } from '@dorkos/extension-api';
 import type { ApprovedPermissionSet, ExtensionApprovedSource } from '@dorkos/shared/config-schema';
 import { isEnabled, setEnabled, type CoreExtensionInfo } from './extension-enable-resolution.js';
@@ -1380,9 +1380,9 @@ export class ExtensionManager {
     return this.serverLifecycle.shutdown(id);
   }
 
-  /** Get the Express router for a server-side extension. */
-  getServerRouter(id: string): Router | null {
-    return this.serverLifecycle.getRouter(id);
+  /** Get the HTTP handler for a server-side extension's `/api/ext/<id>/*`. */
+  getServerHandler(id: string): ExtensionHttpHandler | null {
+    return this.serverLifecycle.getHandler(id);
   }
 
   /**

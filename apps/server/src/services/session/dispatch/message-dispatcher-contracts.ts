@@ -75,8 +75,9 @@ export interface PendingDispatch {
    * nothing between now and then can change the lock's answer — and a pump that
    * retried immediately would spin: every refusal hands the slot back, which
    * schedules the pump, which launches it again, which is refused again. That
-   * loop exhausted the heap in testing. Only a boundary (or, if none ever
-   * comes, the wait bound) tries again.
+   * loop exhausted the heap in testing. Only a boundary, a dispatched turn
+   * letting go of the lock ({@link rearmLockWaiters}), or the wait bound tries
+   * again. A refusal never re-arms anything, so that loop cannot come back.
    */
   waitingOnLock: boolean;
   /**

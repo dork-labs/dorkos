@@ -5,7 +5,7 @@
  *
  * ## Why `Origin` is not enough here
  *
- * The CORS policy in `app.ts` allows two things a rebinding attacker gets for
+ * The CORS policy (`http/cors-policy.ts`) allows two things a rebinding attacker gets for
  * free: a request with no `Origin` at all, and a request whose `Origin` equals
  * `${req.protocol}://${req.headers.host}` (the same-origin fallback that keeps
  * Docker port remapping and SSH forwards working). A page served from
@@ -39,7 +39,6 @@
  *
  * @module middleware/host-guard
  */
-import type { Request, Response, NextFunction } from 'express';
 import { env } from '../env.js';
 import { logger } from '../lib/logger.js';
 import { getTunnelHosts, isLoopbackHost, parseHostname } from '../lib/trusted-origins.js';
@@ -119,9 +118,8 @@ function refusalMessage(hostname: string | null): string {
  * Decide whether an `/api` request's `Host` is one this instance answers to,
  * closing the DNS-rebinding path described in the module doc.
  *
- * Shared by the Express middleware below and the Hono chain
- * (`http/api-chain.ts`), so both refuse the same hosts with the same body and
- * leave the same log line. Inert when login is on or when
+ * The chain (`http/api-chain.ts`) asks it for every `/api` request, before the
+ * body is read. Inert when login is on or when
  * `DORKOS_ALLOW_INSECURE_BIND` is set; both flags are read per request, so
  * turning login on takes effect without a restart.
  *
@@ -136,8 +134,8 @@ export function refuseUntrustedHost(
   url: string
 ): { error: string; code: typeof HOST_NOT_ALLOWED_CODE } | null {
   // Login on: Better Auth cookies are origin-scoped, so a rebound origin never
-  // presents one and `sessionGate` already turns it away. Read per request so
-  // enabling login takes effect immediately.
+  // presents one and the session gate already turns it away. Read per request
+  // so enabling login takes effect immediately.
   if (configManager.get('auth')?.enabled === true) return null;
 
   // The container escape hatch: the surrounding environment owns the boundary.
@@ -159,46 +157,22 @@ export function refuseUntrustedHost(
   return { error: refusalMessage(hostname), code: HOST_NOT_ALLOWED_CODE };
 }
 
-/**
- * Express middleware that rejects `/api` requests carrying a `Host` this
- * instance does not answer to ({@link refuseUntrustedHost}).
- *
- * Mounted at `/api` in `createApp()` ahead of the body parser, so a rejected
- * request is answered before its payload is ever read.
- *
- * @param req - The incoming request (its `Host` header is the subject).
- * @param res - The response; a rejection is a 403 with the repo's error shape.
- * @param next - Passes control on when the host is trusted.
- */
-export function hostGuard(req: Request, res: Response, next: NextFunction): void {
-  const refusal = refuseUntrustedHost(req.headers.host, req.method, req.originalUrl);
-  if (!refusal) {
-    next();
-    return;
-  }
-  res.status(403).json(refusal);
-}
-
-/** Bearer leaf has no cookie/session fallback, so login cannot waive its raw Host check. */
-export function standaloneDocTokenHostGuard(req: Request, res: Response, next: NextFunction): void {
-  if (env.DORKOS_ALLOW_INSECURE_BIND) {
-    next();
-    return;
-  }
-  const hostname = parseHostname(req.headers.host);
+/** Bearer leaves never inherit the login-enabled Host waiver or log query credentials. */
+export function refuseStandaloneDocTokenHost(
+  host: string | undefined
+): { error: string; code: typeof HOST_NOT_ALLOWED_CODE } | null {
+  if (env.DORKOS_ALLOW_INSECURE_BIND) return null;
+  const hostname = parseHostname(host);
   if (
     isHostAllowed({
       hostname,
       trustedHosts: parseTrustedHosts(env.DORKOS_TRUSTED_HOSTS),
       tunnelHosts: getTunnelHosts(),
     })
-  ) {
-    next();
-    return;
-  }
-  // Do not log originalUrl: forbidden query credentials may have arrived on this rejected request.
-  res.status(403).json({
+  )
+    return null;
+  return {
     error: 'This instance does not answer to this Host header.',
     code: HOST_NOT_ALLOWED_CODE,
-  });
+  };
 }

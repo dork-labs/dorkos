@@ -28,7 +28,7 @@
  *
  * @module routes/extensions-approval
  */
-import type { Router } from 'express';
+import type { Hono } from 'hono';
 import {
   ApproveExtensionRequestSchema,
   DismissExtensionApprovalRequestSchema,
@@ -36,13 +36,16 @@ import {
 } from '@dorkos/shared/extension-approval-schemas';
 import { isExpectedCopy, type ExtensionManager } from '../services/extensions/extension-manager.js';
 import { readCallerPrincipal } from '../lib/caller-principal.js';
+import type { ApiEnv } from '../http/api-chain.js';
+import { readJsonBody } from '../http/request-body.js';
+import { honoRequestFacts } from '../http/request-facts.js';
 import { notificationEntitlement } from '../services/notifications/notification-entitlement.js';
 import type { ActivityService } from '../services/activity/activity-service.js';
 import { logger } from '../lib/logger.js';
 import { readActivityActor } from '../services/activity/activity-actor.js';
 import { broadcastExtensionReloaded } from './extensions.js';
 import { listPendingExtensionApprovals } from '../services/extensions/extension-approval-queue.js';
-import { refuseIfNotAPerson, type PersonBarCopy } from './extensions-person-bar.js';
+import { refusedNotAPerson, type PersonBarCopy } from './extensions-person-bar.js';
 import {
   EXTENSION_NOT_APPROVED_CODE,
   EXTENSION_NOT_APPROVED_ERROR,
@@ -80,11 +83,14 @@ const APPROVAL_BAR: PersonBarCopy = {
  * @param extensionManager - ExtensionManager instance for lifecycle operations.
  * @param safeExtId - The id pattern the parent router validates against, passed in
  *   so both files cannot drift to different notions of a valid extension id.
+ * @param activity - The Activity feed the decision is recorded in, when the
+ *   server has one.
  */
 export function registerExtensionApprovalRoutes(
-  router: Router,
+  router: Hono<ApiEnv>,
   extensionManager: ExtensionManager,
-  safeExtId: RegExp
+  safeExtId: RegExp,
+  activity?: Pick<ActivityService, 'emit'>
 ): void {
   // GET /api/extensions/pending-approvals -- Every installed extension waiting
   // for a person to let it run, oldest first (DOR-2517). A read, so it carries
@@ -93,35 +99,38 @@ export function registerExtensionApprovalRoutes(
   // the notification pipeline would not show the person's inbox to (an agent)
   // gets it without absolute paths or the home folder, the same rule the
   // inbox itself answers by.
-  router.get('/pending-approvals', async (req, res) => {
+  router.get('/pending-approvals', async (c) => {
     try {
-      const forPerson = notificationEntitlement(readCallerPrincipal(req, res)) !== 'none';
-      return res.json({
+      const forPerson =
+        notificationEntitlement(readCallerPrincipal(honoRequestFacts(c))) !== 'none';
+      return c.json({
         approvals: await listPendingExtensionApprovals(extensionManager, { forPerson }),
       });
     } catch (err) {
       logger.error('[Extensions] Failed to list extensions waiting for approval', err);
-      return res.status(500).json({ error: 'Failed to list extensions waiting for approval' });
+      return c.json({ error: 'Failed to list extensions waiting for approval' }, 500);
     }
   });
 
   // POST /api/extensions/:id/approve -- Record that a person approved this
   // extension to run code inside the DorkOS server process, and start it.
-  router.post('/:id/approve', async (req, res) => {
+  router.post('/:id/approve', async (c) => {
+    const id = c.req.param('id');
     try {
-      const { id } = req.params;
-      if (!safeExtId.test(id)) return res.status(400).json({ error: 'Invalid extension ID' });
-      if (refuseIfNotAPerson(req, res, APPROVAL_BAR)) return undefined;
+      if (!safeExtId.test(id)) return c.json({ error: 'Invalid extension ID' }, 400);
+      const refused = refusedNotAPerson(c, APPROVAL_BAR);
+      if (refused) return refused;
 
       const record = extensionManager.get(id);
-      if (!record) return res.status(404).json({ error: `Extension '${id}' not found` });
+      if (!record) return c.json({ error: `Extension '${id}' not found` }, 404);
       // Core extensions ship inside DorkOS and are exempt by origin, so there is no
       // approval to record for one. Say so rather than writing a list entry that
       // changes nothing.
       if (record.origin === 'core') {
-        return res.status(409).json({
-          error: `Extension '${id}' ships with DorkOS and does not need approving`,
-        });
+        return c.json(
+          { error: `Extension '${id}' ships with DorkOS and does not need approving` },
+          409
+        );
       }
 
       // The copy the person was shown, when the click came from a row that
@@ -129,40 +138,42 @@ export function registerExtensionApprovalRoutes(
       // copy is on disk NOW, so a row that went out of date — another plugin
       // took the id, a project folder reused it, the version moved — must
       // not approve the newcomer on the strength of a decision about the old.
-      const hasBody = req.body !== undefined && Object.keys(req.body as object).length > 0;
+      const body = readJsonBody(c);
+      const hasBody = body !== undefined && Object.keys(body as object).length > 0;
       if (hasBody) {
-        const expected = ApproveExtensionRequestSchema.safeParse(req.body);
+        const expected = ApproveExtensionRequestSchema.safeParse(body);
         if (!expected.success) {
-          return res
-            .status(400)
-            .json({ error: 'Send the path and version of the extension you were shown' });
+          return c.json(
+            { error: 'Send the path and version of the extension you were shown' },
+            400
+          );
         }
         if (!isExpectedCopy(record, expected.data)) {
-          return res.status(409).json({
-            error: 'This extension changed since you saw it. Nothing was turned on.',
-            code: STALE_APPROVAL_CODE,
-          });
+          return c.json(
+            {
+              error: 'This extension changed since you saw it. Nothing was turned on.',
+              code: STALE_APPROVAL_CODE,
+            },
+            409
+          );
         }
       }
 
       const extension = await extensionManager.approveToRun(id);
-      if (!extension) return res.status(404).json({ error: `Extension '${id}' not found` });
+      if (!extension) return c.json({ error: `Extension '${id}' not found` }, 404);
 
-      const activityService = req.app.locals.activityService as ActivityService | undefined;
-      if (activityService) {
-        await activityService.emit({
-          // Always the person — the bar above refuses any caller naming itself an
-          // agent — and read from the caller anyway, so every Activity entry on
-          // this router derives who acted rather than asserting it (DOR-1801).
-          ...readActivityActor(req, res),
-          category: 'config',
-          eventType: 'config.extension_updated',
-          resourceType: 'extension',
-          resourceId: id,
-          resourceLabel: extension.manifest.name,
-          summary: `Allowed ${extension.manifest.name} to run code inside DorkOS`,
-        });
-      }
+      await activity?.emit({
+        // Always the person — the bar above refuses any caller naming itself an
+        // agent — and read from the caller anyway, so every Activity entry on
+        // this router derives who acted rather than asserting it (DOR-1801).
+        ...readActivityActor(honoRequestFacts(c)),
+        category: 'config',
+        eventType: 'config.extension_updated',
+        resourceType: 'extension',
+        resourceId: id,
+        resourceLabel: extension.manifest.name,
+        summary: `Allowed ${extension.manifest.name} to run code inside DorkOS`,
+      });
 
       // The server half is live now, so tell every connected client to pick up the
       // extension's contributions instead of waiting for a page reload.
@@ -173,13 +184,13 @@ export function registerExtensionApprovalRoutes(
       // source the person does not trust yet. Returned to the app that
       // answered and never stored, so it shows once, on that device.
       const trustSource = extensionManager.trustOfferFor(id);
-      return res.json({
+      return c.json({
         extension,
         ...(trustSource ? { trustOffer: { source: trustSource } } : {}),
       });
     } catch (err) {
-      logger.error(`[Extensions] Failed to approve ${req.params.id}`, err);
-      return res.status(500).json({ error: 'Failed to approve extension' });
+      logger.error(`[Extensions] Failed to approve ${id}`, err);
+      return c.json({ error: 'Failed to approve extension' }, 500);
     }
   });
 
@@ -188,83 +199,87 @@ export function registerExtensionApprovalRoutes(
   // asking until either changes. Never destructive: nothing is uninstalled,
   // turned off or revoked. Same person bar as approving, because it answers the
   // same question.
-  router.post('/:id/dismiss-approval', async (req, res) => {
+  router.post('/:id/dismiss-approval', async (c) => {
+    const id = c.req.param('id');
     try {
-      const { id } = req.params;
-      if (!safeExtId.test(id)) return res.status(400).json({ error: 'Invalid extension ID' });
-      if (refuseIfNotAPerson(req, res, APPROVAL_BAR)) return undefined;
+      if (!safeExtId.test(id)) return c.json({ error: 'Invalid extension ID' }, 400);
+      const refused = refusedNotAPerson(c, APPROVAL_BAR);
+      if (refused) return refused;
 
-      const body = DismissExtensionApprovalRequestSchema.safeParse(req.body ?? {});
+      const body = DismissExtensionApprovalRequestSchema.safeParse(
+        readJsonBody(c, { emptyAs: {} })
+      );
       if (!body.success) {
-        return res
-          .status(400)
-          .json({ error: 'Send the path and version of the extension you were shown' });
+        return c.json({ error: 'Send the path and version of the extension you were shown' }, 400);
       }
 
       const result = extensionManager.dismissApproval(id, body.data);
       if (!result.ok) {
         if (result.reason === 'not_found') {
-          return res.status(404).json({ error: `Extension '${id}' not found` });
+          return c.json({ error: `Extension '${id}' not found` }, 404);
         }
         if (result.reason === 'core') {
-          return res.status(409).json({
-            error: `Extension '${id}' ships with DorkOS and never asks to be turned on`,
-          });
+          return c.json(
+            { error: `Extension '${id}' ships with DorkOS and never asks to be turned on` },
+            409
+          );
         }
-        return res.status(409).json({
-          error: 'This extension changed since you saw it. Nothing was changed.',
-          code: STALE_APPROVAL_CODE,
-        });
+        return c.json(
+          {
+            error: 'This extension changed since you saw it. Nothing was changed.',
+            code: STALE_APPROVAL_CODE,
+          },
+          409
+        );
       }
 
-      return res.status(204).end();
+      return c.body(null, 204);
     } catch (err) {
-      logger.error(`[Extensions] Failed to dismiss the approval for ${req.params.id}`, err);
-      return res.status(500).json({ error: 'Failed to dismiss extension approval' });
+      logger.error(`[Extensions] Failed to dismiss the approval for ${id}`, err);
+      return c.json({ error: 'Failed to dismiss extension approval' }, 500);
     }
   });
 
   // POST /api/extensions/:id/revoke -- Withdraw that approval and stop the
   // extension's server-side code immediately.
-  router.post('/:id/revoke', async (req, res) => {
+  router.post('/:id/revoke', async (c) => {
+    const id = c.req.param('id');
     try {
-      const { id } = req.params;
-      if (!safeExtId.test(id)) return res.status(400).json({ error: 'Invalid extension ID' });
-      if (refuseIfNotAPerson(req, res, APPROVAL_BAR)) return undefined;
+      if (!safeExtId.test(id)) return c.json({ error: 'Invalid extension ID' }, 400);
+      const refused = refusedNotAPerson(c, APPROVAL_BAR);
+      if (refused) return refused;
 
       const record = extensionManager.get(id);
-      if (!record) return res.status(404).json({ error: `Extension '${id}' not found` });
+      if (!record) return c.json({ error: `Extension '${id}' not found` }, 404);
       if (record.origin === 'core') {
-        return res.status(409).json({
-          error: `Extension '${id}' ships with DorkOS and cannot be stopped this way`,
-        });
+        return c.json(
+          { error: `Extension '${id}' ships with DorkOS and cannot be stopped this way` },
+          409
+        );
       }
 
       const extension = await extensionManager.revokeRunApproval(id);
-      if (!extension) return res.status(404).json({ error: `Extension '${id}' not found` });
+      if (!extension) return c.json({ error: `Extension '${id}' not found` }, 404);
 
-      const activityService = req.app.locals.activityService as ActivityService | undefined;
-      if (activityService) {
-        await activityService.emit({
-          // Always the person — the bar above refuses any caller naming itself an
-          // agent — and read from the caller anyway, so every Activity entry on
-          // this router derives who acted rather than asserting it (DOR-1801).
-          ...readActivityActor(req, res),
-          category: 'config',
-          eventType: 'config.extension_updated',
-          resourceType: 'extension',
-          resourceId: id,
-          resourceLabel: extension.manifest.name,
-          summary: `Stopped ${extension.manifest.name} from running code inside DorkOS`,
-        });
-      }
+      await activity?.emit({
+        // Always the person — the bar above refuses any caller naming itself an
+        // agent — and read from the caller anyway, so every Activity entry on
+        // this router derives who acted rather than asserting it (DOR-1801).
+        ...readActivityActor(honoRequestFacts(c)),
+        category: 'config',
+        eventType: 'config.extension_updated',
+        resourceType: 'extension',
+        resourceId: id,
+        resourceLabel: extension.manifest.name,
+        summary: `Stopped ${extension.manifest.name} from running code inside DorkOS`,
+      });
 
       broadcastExtensionReloaded([id]);
 
-      return res.json({ extension });
+      return c.json({ extension });
     } catch (err) {
-      logger.error(`[Extensions] Failed to revoke approval for ${req.params.id}`, err);
-      return res.status(500).json({ error: 'Failed to revoke extension approval' });
+      logger.error(`[Extensions] Failed to revoke approval for ${id}`, err);
+      return c.json({ error: 'Failed to revoke extension approval' }, 500);
     }
   });
 }

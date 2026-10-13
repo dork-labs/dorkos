@@ -124,12 +124,21 @@ export const OTHER_AGENTS_HOME_MESSAGE =
  *   asked next.
  * - `runtime` is the runtime that chat runs on, whose declared modes give the
  *   ceiling its meaning.
+ * - `neverAsks` is whether that chat is SET to "Never ask", which a stricter
+ *   ceiling can hide from its live mode.
  *
  * The external server can produce none of them: it has no chat, so its caller
  * is held to `acceptEdits` (`NO_CHAT_CEILING_MODE`).
  */
 export type SessionStartCallerResolver = () =>
-  { agentPath?: string; sessionId?: string; permissionMode?: string; runtime?: string } | undefined;
+  | {
+      agentPath?: string;
+      sessionId?: string;
+      permissionMode?: string;
+      runtime?: string;
+      neverAsks?: boolean;
+    }
+  | undefined;
 
 /** The input `session_start` accepts. */
 export const SessionStartInputShape = {
@@ -286,6 +295,7 @@ function callerOf(
           sessionId: resolved.sessionId ?? null,
           permissionMode: resolved.permissionMode ?? null,
           runtime: resolved.runtime ?? NO_CHAT_CEILING_RUNTIME,
+          ...(resolved.neverAsks ? { neverAsks: true } : {}),
         }
       : null,
   };
@@ -506,10 +516,9 @@ export function createSessionStartHandler(
     // turn, a scheduled run or a bridged chat cannot, so its spin-offs are
     // never promised one (spec `spin-off-chats` §5).
     const parentChatId = caller.chat?.sessionId ?? null;
-    const reportBack =
-      args.reportBack !== 'off' &&
-      parentChatId !== null &&
-      ((await getChatMessageService()?.canReceive(parentChatId)) ?? false);
+    const parentTakesMessages =
+      parentChatId !== null && ((await getChatMessageService()?.canReceive(parentChatId)) ?? false);
+    const reportBack = args.reportBack !== 'off' && parentTakesMessages;
     const claimed = reserveChatStart(sessionId, parentChatId, args.reason, permission, reportBack);
     if (!claimed.ok) return refuse(claimed.message, 'START_LIMIT');
     const reservation = claimed.reservation;
@@ -574,6 +583,7 @@ export function createSessionStartHandler(
                   parentTitle: rememberedChatTitle(caller.chat.sessionId),
                   parentAgentName: caller.label,
                   reportBack,
+                  parentTakesMessages,
                 })
               : null;
             // The starter's own background is never cut: the briefing gives

@@ -70,7 +70,6 @@ vi.mock('@dorkos/shared/manifest', () => ({
 }));
 
 import http from 'node:http';
-import { createApp, finalizeApp } from '../../app.js';
 import { composedListener } from '../../http/__tests__/composed-listener.js';
 import {
   initSessionVisibility,
@@ -80,10 +79,8 @@ import { STREAM_EPOCH } from '../../lib/stream-cursor.js';
 import { validateBoundary, validateBoundaryOrDorkHome } from '../../lib/boundary.js';
 
 const admission = new MainRequestAdmission();
-const app = createApp({ admission });
-finalizeApp(app);
 // Routed as the running server routes: the session routes answer from Hono.
-const listener = composedListener(app, admission);
+const listener = composedListener(admission);
 
 /** Valid UUID for session ID params (routes validate UUID format). */
 const SESSION_ID = '00000000-0000-4000-8000-000000000001';

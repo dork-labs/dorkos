@@ -1,7 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { AmbiguousSessionError } from '../../services/session/resolution/session-lookup-error.js';
-import { errorHandler } from '../error-handler.js';
-import type { Request, Response, NextFunction } from 'express';
+import { errorReply, logRequestError } from '../error-handler.js';
 
 vi.mock('../../lib/logger.js', () => ({
   logger: {
@@ -16,9 +15,7 @@ vi.mock('../../lib/logger.js', () => ({
   initLogger: vi.fn(),
 }));
 
-describe('errorHandler', () => {
-  const mockReq = {} as Request;
-  const mockNext = vi.fn() as NextFunction;
+describe('errorReply and logRequestError', () => {
   const originalNodeEnv = process.env.NODE_ENV;
 
   beforeEach(() => {
@@ -31,24 +28,10 @@ describe('errorHandler', () => {
     process.env.NODE_ENV = originalNodeEnv;
   });
 
-  function createMockRes() {
-    const res = {
-      status: vi.fn().mockReturnThis(),
-      json: vi.fn(),
-    } as unknown as Response;
-    return res;
-  }
-
   it('returns a clear conflict for ambiguous native session identities', () => {
-    const res = createMockRes();
-    errorHandler(
-      new AmbiguousSessionError(),
-      { method: 'GET', path: '/api/sessions/id' } as Request,
-      res,
-      mockNext
-    );
-    expect(res.status).toHaveBeenCalledWith(409);
-    expect(res.json).toHaveBeenCalledWith({
+    const reply = errorReply(new AmbiguousSessionError());
+    expect(reply.status).toBe(409);
+    expect(reply.body).toEqual({
       error: 'This chat ID matches multiple chats.',
       code: 'SESSION_ID_AMBIGUOUS',
     });
@@ -56,9 +39,8 @@ describe('errorHandler', () => {
 
   it('logs the method, path, code, and status beside the message', async () => {
     const { logger } = await import('../../lib/logger.js');
-    const res = createMockRes();
     const error = Object.assign(new Error('Refused'), { code: 'cloud_refused', status: 502 });
-    errorHandler(error, { method: 'GET', path: '/api/connectors/x' } as Request, res, mockNext);
+    logRequestError(error, 'GET', '/api/connectors/x');
     expect(logger.error).toHaveBeenCalledWith(
       '[DorkOS Error]',
       'Refused',
@@ -72,46 +54,43 @@ describe('errorHandler', () => {
   });
 
   it('returns 500 with error message', () => {
-    const res = createMockRes();
     const error = new Error('Something broke');
 
-    errorHandler(error, mockReq, res, mockNext);
+    const reply = errorReply(error);
 
-    expect(res.status).toHaveBeenCalledWith(500);
-    expect(res.json).toHaveBeenCalledWith({
+    expect(reply.status).toBe(500);
+    expect(reply.body).toEqual({
       error: 'Something broke',
       code: 'INTERNAL_ERROR',
     });
   });
 
   it('falls back to Internal Server Error for empty message', () => {
-    const res = createMockRes();
     const error = new Error('');
 
-    errorHandler(error, mockReq, res, mockNext);
+    const reply = errorReply(error);
 
-    expect(res.json).toHaveBeenCalledWith({
+    expect(reply.body).toEqual({
       error: 'Internal Server Error',
       code: 'INTERNAL_ERROR',
     });
   });
 
   it('answers a body that never fit with 413 and a code, not 500', () => {
-    // `express.json`'s own limit raises this, and it used to be flattened into
+    // The body parser's own limit raises this, and it used to be flattened into
     // "Internal server error" with `code: INTERNAL_ERROR` — so a person saving
     // a large file in a room was told the server broke, and given nothing they
     // could act on (DOR-1600's review).
-    const res = createMockRes();
     const tooLarge = Object.assign(new Error('request entity too large'), {
       type: 'entity.too.large',
       status: 413,
       expose: true,
     });
 
-    errorHandler(tooLarge, mockReq, res, mockNext);
+    const reply = errorReply(tooLarge);
 
-    expect(res.status).toHaveBeenCalledWith(413);
-    expect(res.json).toHaveBeenCalledWith({
+    expect(reply.status).toBe(413);
+    expect(reply.body).toEqual({
       error: 'That is too large to send in one request.',
       code: 'REQUEST_TOO_LARGE',
     });
@@ -121,48 +100,27 @@ describe('errorHandler', () => {
     // Deliberately narrow: widening this to "any 4xx that says expose" would
     // quietly restate every route's answer to a malformed body, which is a
     // change nobody has argued for here.
-    const res = createMockRes();
     const malformed = Object.assign(new Error('Unexpected token } in JSON'), {
       type: 'entity.parse.failed',
       status: 400,
       expose: true,
     });
 
-    errorHandler(malformed, mockReq, res, mockNext);
+    const reply = errorReply(malformed);
 
-    expect(res.status).toHaveBeenCalledWith(500);
+    expect(reply.status).toBe(500);
   });
 
   it('logs the error via logger', async () => {
     const { logger } = await import('../../lib/logger.js');
-    const res = createMockRes();
     const error = new Error('Log me');
 
-    errorHandler(error, mockReq, res, mockNext);
+    logRequestError(error, 'GET', '/api/x');
 
     expect(logger.error).toHaveBeenCalledWith(
       '[DorkOS Error]',
       'Log me',
       expect.objectContaining({ stack: expect.any(String) })
     );
-  });
-
-  it('delegates to next(err) instead of writing a body when headers are already sent', async () => {
-    // Simulates a rejection on an SSE-style response (e.g. the durable session
-    // events stream) that fires AFTER the handler has already flushed headers.
-    // Express 5 forwards such rejections here natively; writing res.json() at
-    // that point would throw ERR_HTTP_HEADERS_SENT, so the guard must delegate
-    // to Express's default handler (via next(err)) instead of responding.
-    const { logger } = await import('../../lib/logger.js');
-    const res = createMockRes();
-    Object.defineProperty(res, 'headersSent', { value: true });
-    const error = new Error('post-flush rejection');
-
-    expect(() => errorHandler(error, mockReq, res, mockNext)).not.toThrow();
-
-    expect(mockNext).toHaveBeenCalledWith(error);
-    expect(res.status).not.toHaveBeenCalled();
-    expect(res.json).not.toHaveBeenCalled();
-    expect(logger.error).not.toHaveBeenCalled();
   });
 });

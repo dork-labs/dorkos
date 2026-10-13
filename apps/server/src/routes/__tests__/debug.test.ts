@@ -52,7 +52,6 @@ vi.mock('../../services/core/config-manager.js', () => ({
 
 import request from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
-import { createApp, finalizeApp } from '../../app.js';
 import { composedListener } from '../../http/__tests__/composed-listener.js';
 import {
   recordDispatchStart,
@@ -92,9 +91,7 @@ const POISON = {
 
 function buildApp(deps?: DebugDeps) {
   const admission = new MainRequestAdmission();
-  const app = createApp({ admission });
-  finalizeApp(app);
-  return target.mount(composedListener(app, admission, deps ? { debug: deps } : undefined));
+  return target.mount(composedListener(admission, deps ? { debug: deps } : undefined));
 }
 
 beforeEach(() => {

@@ -22,6 +22,15 @@ vi.mock('../../services/core/config-manager.js', () => ({
 }));
 vi.mock('../../env.js', () => ({ env: { DORKOS_PORT: 7777 } }));
 vi.stubEnv('VITE_PORT', '7779');
+// CORS lets this test origin through, so it reaches the routes' own origin
+// bars, which judge against the server's static set and not this list.
+vi.stubEnv('DORKOS_CORS_ORIGIN', 'https://evil.example');
+// The session gate lets every request through: these cases are about the
+// routes' own bars, and each one sets the user the gate would have proved.
+vi.mock('../../services/core/auth/session-gate.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../services/core/auth/session-gate.js')>()),
+  decideSessionGate: vi.fn(async () => ({ allowed: true })),
+}));
 
 /** Two projects under `/repos`; the name holds a dot to prove it round-trips. */
 vi.mock('../../services/projects/project-registry.js', () => {
@@ -47,7 +56,7 @@ vi.mock('../../services/projects/project-registry.js', () => {
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
-import express, { Router } from 'express';
+import { Router } from 'express';
 import request from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
 import { Hono, type MiddlewareHandler } from 'hono';
@@ -56,8 +65,9 @@ import { createExtensionDecisionsRoutes } from '../extension-decisions.js';
 import type { ApiEnv } from '../../http/api-chain.js';
 import { parseRequestBody } from '../../http/request-body.js';
 import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
-import { createExtensionsRouter } from '../extensions.js';
-import { createExtensionRoutesMiddleware } from '../../middleware/extension-routes.js';
+import { createExtensionsRoutes } from '../extensions.js';
+import { createExtensionApiRoutes } from '../extension-api.js';
+import { bridgeExpressRouter } from '../../services/extensions/http/express-bridge.js';
 import { createDataProviderContext } from '../../services/extensions/extension-server-api-factory.js';
 import {
   createInboxFixture,
@@ -100,7 +110,7 @@ beforeEach(() => {
       id === 'flow' || id === 'other'
         ? { id, manifest: { id, name: id === 'flow' ? 'Flow' : 'Other', version: '1.0.0' } }
         : undefined,
-    getServerRouter: (id: string) => (id === 'flow' ? extRouter : null),
+    getServerHandler: (id: string) => (id === 'flow' ? bridgeExpressRouter(extRouter) : null),
     listPublic: () => [],
   };
 
@@ -116,22 +126,22 @@ beforeEach(() => {
   };
   const decisions = createExtensionDecisionsRoutes({ activity });
 
-  const app = express();
-  app.use(express.json());
-  app.use((_req, res, next) => {
-    if (signedInUser) res.locals.user = signedInUser;
-    next();
-  });
-  app.locals.activityService = activity;
-  app.use(
-    '/api/extensions',
-    createExtensionsRouter(manager as never, dorkHome, () => null)
-  );
-  app.use('/api/ext/:id', createExtensionRoutesMiddleware(manager as never));
   target.mount(
     honoGroupListener(
-      { path: '/api/extension-decisions', routes: decisions },
-      { before: signedIn, legacy: app }
+      [
+        { path: '/api/extension-decisions', routes: decisions },
+        {
+          path: '/api/extensions',
+          routes: createExtensionsRoutes({
+            manager: manager as never,
+            dorkHome,
+            getCwd: () => null,
+            activity,
+          }),
+        },
+        { path: '/api/ext', routes: createExtensionApiRoutes(manager as never) },
+      ],
+      { before: signedIn }
     )
   );
   const bare = new Hono<ApiEnv>()

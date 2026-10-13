@@ -1,19 +1,21 @@
 /**
- * The router DorkOS mounts at `/api/ext/<id>` for an isolated extension
+ * What DorkOS answers `/api/ext/<id>` with for an isolated extension
  * (DOR-2686, spec §7): every request is forwarded as real HTTP to the
  * extension's own process over a virtual connection, and the person's
  * credentials never go with it.
  *
- * `getRouter(id)` hands this out like any extension router, so
- * `middleware/extension-routes.ts` and its mount are unchanged.
+ * `getHandler(id)` hands this out like any extension's handler, so
+ * `routes/extension-api.ts` serves it the same way. It works on the raw Node
+ * request and response (`c.env.incoming`, `c.env.outgoing`), because the
+ * reply streams straight through from the child.
  *
  * ## What crosses
  *
- * - **The request.** Method, `req.originalUrl` (so `req.baseUrl`, `req.path`
+ * - **The request.** Method, the URL as sent (so `req.baseUrl`, `req.path`
  *   and `req.params` in the child match the in-process case), and the
- *   headers below. A body `express.json` already read is re-encoded as JSON
- *   with a fresh `content-length`; any other body is streamed as is. Either
- *   way the app-wide 1 MB limit holds.
+ *   headers below. A body the chain's JSON parser already read is re-encoded
+ *   as JSON with a fresh `content-length`; any other body is streamed as is.
+ *   Either way the app-wide 1 MB limit holds.
  * - **Headers going in.** Stripped: `cookie`, `authorization`,
  *   `proxy-authorization`, `x-api-key` (the MCP and per-user key header), every
  *   `x-dorkos-*` header (agent identity, approval tokens), and hop-by-hop
@@ -49,14 +51,19 @@
  * @module services/extensions/isolation/isolated-router
  */
 import http from 'node:http';
-import { Router, type Request, type RequestHandler, type Response } from 'express';
+import { RESPONSE_ALREADY_SENT } from '@hono/node-server/utils/response';
+import type { RequestFacts } from '../../../http/request-facts.js';
+import { honoRequestFacts } from '../../../http/request-facts.js';
 import { assessPerson } from '../../../routes/extensions-person-bar.js';
 import { requirePersonCopy } from '../inbox/extension-inbox-context.js';
+import {
+  firstAnswer,
+  MAX_FORWARDED_BODY_BYTES,
+  TOO_LARGE,
+  type ExtensionHttpHandler,
+} from '../http/extension-http.js';
 import { ISOLATION_LIMITS, PERSON_VERDICT_HEADER, type PersonVerdict } from './ipc-protocol.js';
 import type { IsolatedExtensionHost } from './isolated-host.js';
-
-/** The largest request body forwarded: the app-wide JSON limit (`app.ts`). */
-export const MAX_FORWARDED_BODY_BYTES = 1024 * 1024;
 
 /** Headers that describe one hop, never forwarded either way (RFC 9110 §7.6.1). */
 const HOP_BY_HOP = new Set([
@@ -207,170 +214,193 @@ export function outboundHeaders(
 /**
  * The person bar's verdict on this request, worded for this extension.
  *
- * @param req - The real request (with its cookie and headers).
- * @param res - Its response (read for the signed-in user; never written).
+ * @param request - The real request's facts (its cookie, headers and the
+ *   identity the chain resolved).
  * @param displayName - The extension's name.
  */
-export function personVerdict(req: Request, res: Response, displayName: string): PersonVerdict {
-  const refusal = assessPerson(req, res, requirePersonCopy(displayName));
+export function personVerdict(request: RequestFacts, displayName: string): PersonVerdict {
+  const refusal = assessPerson(request, requirePersonCopy(displayName));
   return refusal ? { ok: false, status: refusal.status, body: refusal.body } : { ok: true };
 }
 
 /** Whether a request carries a body to stream. */
-function hasBody(req: Request): boolean {
+function hasBody(req: http.IncomingMessage): boolean {
   if (req.headers['transfer-encoding'] !== undefined) return true;
   const length = req.headers['content-length'];
   return length !== undefined && length !== '0';
 }
 
-/** What {@link createIsolatedRouter} needs. */
-export interface IsolatedRouterOptions {
+/**
+ * Answer with JSON on the raw response, the bytes Express's `res.json` wrote.
+ *
+ * @param res - The raw response.
+ * @param status - The status.
+ * @param body - The JSON body.
+ */
+function sendJson(res: http.ServerResponse, status: number, body: unknown): void {
+  const text = JSON.stringify(body);
+  res.statusCode = status;
+  res.setHeader('Content-Type', 'application/json; charset=utf-8');
+  res.setHeader('Content-Length', Buffer.byteLength(text));
+  res.end(text);
+}
+
+/** What {@link createIsolatedHandler} needs. */
+export interface IsolatedHandlerOptions {
   /** The extension's display name, for the messages a person reads. */
   displayName: string;
   /** The host running the extension's process. */
   host: Pick<IsolatedExtensionHost, 'openConnection'>;
-  /** A hybrid extension's `dataProxy` routes, tried first. */
-  proxyRouter?: RequestHandler | null;
+  /** A hybrid extension's `dataProxy`, tried first. */
+  proxy?: ExtensionHttpHandler | null;
   /** Idle limit in milliseconds (tests shorten it). */
   idleMs?: number;
 }
 
 /**
- * Build the router for one isolated extension.
+ * Build the handler for one isolated extension.
  *
- * @param options - See {@link IsolatedRouterOptions}.
+ * @param options - See {@link IsolatedHandlerOptions}.
  */
-export function createIsolatedRouter(options: IsolatedRouterOptions): Router {
+export function createIsolatedHandler(options: IsolatedHandlerOptions): ExtensionHttpHandler {
   const { displayName: name, host } = options;
   const idleMs = options.idleMs ?? ISOLATION_LIMITS.httpIdleMs;
 
-  const forward: RequestHandler = (req, res) => {
-    const declared = Number(req.headers['content-length']);
-    if (Number.isFinite(declared) && declared > MAX_FORWARDED_BODY_BYTES) {
-      res.status(413).json({ error: 'That request is too large.' });
-      return;
-    }
+  const forward: ExtensionHttpHandler = ({ c, mount }) =>
+    new Promise<Response>((resolve) => {
+      const req = c.env.incoming;
+      const res = c.env.outgoing;
+      // The exchange is over once the response has closed, as for a request
+      // the front door hands off: the chain's log and audit see all of it.
+      res.once('close', () =>
+        resolve(new Response(null, { headers: RESPONSE_ALREADY_SENT.headers }))
+      );
 
-    let timer: NodeJS.Timeout | null = null;
-    let settled = false;
-    const touch = (): void => {
-      if (settled) return;
-      if (timer) clearTimeout(timer);
-      timer = setTimeout(onIdle, idleMs);
-      timer.unref();
-    };
-
-    // Everything that reads the request is decided before a connection is
-    // opened, so nothing that throws here can leave one counted and open.
-    const headers = inboundHeaders(req.headers);
-    headers[PERSON_VERDICT_HEADER] = JSON.stringify(personVerdict(req, res, name));
-    // One request per virtual connection.
-    headers.connection = 'close';
-
-    let payload: Buffer | null = null;
-    if (req.body !== undefined) {
-      // A body parser already read the stream: send what it produced. JSON
-      // is re-encoded, so its length and encoding are new.
-      payload = Buffer.isBuffer(req.body) ? req.body : Buffer.from(JSON.stringify(req.body));
-      delete headers['transfer-encoding'];
-      delete headers['content-encoding'];
-      headers['content-length'] = String(payload.byteLength);
-    } else if (!hasBody(req)) {
-      delete headers['content-length'];
-    }
-    const mount = req.baseUrl;
-
-    const opened = host.openConnection(touch);
-    if (!opened.ok) {
-      res.status(503).json({
-        error:
-          opened.reason === 'busy'
-            ? `${name} is busy. Try again in a moment.`
-            : `${name} isn't running right now.`,
-      });
-      return;
-    }
-    const socket = opened.socket;
-
-    /**
-     * End this exchange once: answer with an error when nothing was sent yet
-     * (or cut the reply off when something was), cut it off outright, or end
-     * quietly when the person already left. The virtual connection goes in
-     * every case.
-     */
-    const finish = (answer: { status: number; error: string } | 'cut' | 'quiet'): void => {
-      if (settled) return;
-      settled = true;
-      if (timer) clearTimeout(timer);
-      if (answer === 'cut') {
-        res.destroy();
-      } else if (answer !== 'quiet') {
-        if (res.headersSent) res.destroy();
-        else res.status(answer.status).json({ error: answer.error });
+      const declared = Number(req.headers['content-length']);
+      if (Number.isFinite(declared) && declared > MAX_FORWARDED_BODY_BYTES) {
+        sendJson(res, 413, { error: TOO_LARGE });
+        return;
       }
-      socket.destroy();
-    };
-    function onIdle(): void {
-      finish({ status: 504, error: `${name} didn't answer in time.` });
-    }
 
-    let upstream: http.ClientRequest;
-    try {
-      upstream = http.request({
-        method: req.method,
-        path: req.originalUrl,
-        headers,
-        createConnection: () => socket,
-      });
-    } catch {
-      finish({ status: 400, error: `${name} couldn't take that request.` });
-      return;
-    }
+      let timer: NodeJS.Timeout | null = null;
+      let settled = false;
+      const touch = (): void => {
+        if (settled) return;
+        if (timer) clearTimeout(timer);
+        timer = setTimeout(onIdle, idleMs);
+        timer.unref();
+      };
 
-    upstream.on('response', (reply) => {
-      touch();
-      res.status(reply.statusCode ?? 502);
-      for (const [key, value] of Object.entries(outboundHeaders(reply.headers, mount))) {
-        res.setHeader(key, value);
+      // Everything that reads the request is decided before a connection is
+      // opened, so nothing that throws here can leave one counted and open.
+      const headers = inboundHeaders(req.headers);
+      headers[PERSON_VERDICT_HEADER] = JSON.stringify(personVerdict(honoRequestFacts(c), name));
+      // One request per virtual connection.
+      headers.connection = 'close';
+
+      let payload: Buffer | null = null;
+      const parsed = c.get('body');
+      if (parsed !== undefined) {
+        // The chain's body parser already read the stream: send what it
+        // produced. JSON is re-encoded, so its length and encoding are new.
+        payload = Buffer.isBuffer(parsed) ? parsed : Buffer.from(JSON.stringify(parsed));
+        delete headers['transfer-encoding'];
+        delete headers['content-encoding'];
+        headers['content-length'] = String(payload.byteLength);
+      } else if (!hasBody(req)) {
+        delete headers['content-length'];
       }
-      // Headers go now, so a streamed reply (server-sent events) starts
-      // arriving before its first chunk.
-      res.flushHeaders();
-      reply.on('data', touch);
-      reply.on('error', () => finish('cut'));
-      reply.on('aborted', () => finish('cut'));
-      reply.pipe(res);
-    });
-    upstream.on('error', () => finish({ status: 503, error: `${name} stopped while answering.` }));
 
-    // The whole reply went out: the exchange is over.
-    res.on('finish', () => finish('quiet'));
-    // The person's side went away before the reply finished: drop the
-    // connection, so the child's request sees its socket close.
-    res.on('close', () => {
-      if (!res.writableFinished) finish('quiet');
-    });
+      const opened = host.openConnection(touch);
+      if (!opened.ok) {
+        sendJson(res, 503, {
+          error:
+            opened.reason === 'busy'
+              ? `${name} is busy. Try again in a moment.`
+              : `${name} isn't running right now.`,
+        });
+        return;
+      }
+      const socket = opened.socket;
 
-    touch();
-    if (payload) {
-      upstream.end(payload);
-    } else if (hasBody(req)) {
-      let seen = 0;
-      req.on('data', (chunk: Buffer) => {
-        seen += chunk.byteLength;
-        if (seen > MAX_FORWARDED_BODY_BYTES) {
-          req.unpipe(upstream);
-          finish({ status: 413, error: 'That request is too large.' });
+      /**
+       * End this exchange once: answer with an error when nothing was sent yet
+       * (or cut the reply off when something was), cut it off outright, or end
+       * quietly when the person already left. The virtual connection goes in
+       * every case.
+       */
+      const finish = (answer: { status: number; error: string } | 'cut' | 'quiet'): void => {
+        if (settled) return;
+        settled = true;
+        if (timer) clearTimeout(timer);
+        if (answer === 'cut') {
+          res.destroy();
+        } else if (answer !== 'quiet') {
+          if (res.headersSent) res.destroy();
+          else sendJson(res, answer.status, { error: answer.error });
         }
-      });
-      req.pipe(upstream);
-    } else {
-      upstream.end();
-    }
-  };
+        socket.destroy();
+      };
+      function onIdle(): void {
+        finish({ status: 504, error: `${name} didn't answer in time.` });
+      }
 
-  const router = Router();
-  if (options.proxyRouter) router.use(options.proxyRouter);
-  router.use(forward);
-  return router;
+      let upstream: http.ClientRequest;
+      try {
+        upstream = http.request({
+          method: req.method,
+          path: req.url,
+          headers,
+          createConnection: () => socket,
+        });
+      } catch {
+        finish({ status: 400, error: `${name} couldn't take that request.` });
+        return;
+      }
+
+      upstream.on('response', (reply) => {
+        touch();
+        res.statusCode = reply.statusCode ?? 502;
+        for (const [key, value] of Object.entries(outboundHeaders(reply.headers, mount))) {
+          res.setHeader(key, value);
+        }
+        // Headers go now, so a streamed reply (server-sent events) starts
+        // arriving before its first chunk.
+        res.flushHeaders();
+        reply.on('data', touch);
+        reply.on('error', () => finish('cut'));
+        reply.on('aborted', () => finish('cut'));
+        reply.pipe(res);
+      });
+      upstream.on('error', () =>
+        finish({ status: 503, error: `${name} stopped while answering.` })
+      );
+
+      // The whole reply went out: the exchange is over.
+      res.on('finish', () => finish('quiet'));
+      // The person's side went away before the reply finished: drop the
+      // connection, so the child's request sees its socket close.
+      res.on('close', () => {
+        if (!res.writableFinished) finish('quiet');
+      });
+
+      touch();
+      if (payload) {
+        upstream.end(payload);
+      } else if (hasBody(req)) {
+        let seen = 0;
+        req.on('data', (chunk: Buffer) => {
+          seen += chunk.byteLength;
+          if (seen > MAX_FORWARDED_BODY_BYTES) {
+            req.unpipe(upstream);
+            finish({ status: 413, error: TOO_LARGE });
+          }
+        });
+        req.pipe(upstream);
+      } else {
+        upstream.end();
+      }
+    });
+
+  return firstAnswer(options.proxy, forward);
 }

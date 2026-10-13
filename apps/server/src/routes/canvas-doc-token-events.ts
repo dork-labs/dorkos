@@ -1,6 +1,13 @@
-/** Restricted standalone bearer DATA reads; original actor routes remain separate. SOURCE draft. */
-import { json, Router, type Request, type Response, type RequestHandler } from 'express';
+/** Standalone bearer DATA on the native Hono listener, before ordinary cookie/session admission. */
+import bodyParser from 'body-parser';
+import type { IncomingMessage, ServerResponse } from 'node:http';
 import { createHash } from 'node:crypto';
+import { Hono, type Context } from 'hono';
+import type { ApiEnv } from '../http/api-chain.js';
+import { parseRequestBody, readJsonBody } from '../http/request-body.js';
+import { streamToNodeResponse } from '../http/raw-node-stream.js';
+import { refuseStandaloneDocTokenHost } from '../middleware/host-guard.js';
+import type { createDocChannelHttpComposition } from '../services/canvas/doc-channel/http-composition.js';
 import {
   admitServiceOriginalTokenIngress,
   submitServiceOriginalTokenIngress,
@@ -18,33 +25,43 @@ import type {
   OriginalNativeDocTokenPage,
 } from '../services/canvas/doc-channel/current/current-operation-types.js';
 import type { OriginalDocTokenNativeRow } from '../services/canvas/doc-channel/tokens/token-native-facts.js';
+type Source = () => ReturnType<typeof createDocChannelHttpComposition> | undefined;
 const parse = JSON.parse,
   stringify = JSON.stringify;
 const surface = /^\/api\/canvas\/token\/docs\/[^/]+\/(?:channel|stream|events\/[^/]+)\/?$/u;
-/** Only these leaf read endpoints are exempt from ordinary cookie/browser CORS. */
-export function isStandaloneDocTokenReadSurface(req: Pick<Request, 'path' | 'method'>): boolean {
+const ingressSurface = /^\/api\/canvas\/token\/docs\/[^/]+\/events\/?$/u;
+/** Only fixed bearer leaf reads own credential-free CORS. */
+export function isStandaloneDocTokenReadSurface(req: { path: string; method: string }): boolean {
   return (req.method === 'GET' || req.method === 'OPTIONS') && surface.test(req.path);
 }
-const ingressSurface = /^\/api\/canvas\/token\/docs\/[^/]+\/events\/?$/u;
-/** Identify the standalone bearer read or ingress HTTP surface. */
-export function isStandaloneDocTokenSurface(req: Pick<Request, 'path' | 'method'>): boolean {
+/** Fixed read/ingress methods terminate before the ordinary chain; other requests fall through. */
+export function isStandaloneDocTokenSurface(req: { path: string; method: string }): boolean {
   return (
     isStandaloneDocTokenReadSurface(req) ||
     ((req.method === 'POST' || req.method === 'OPTIONS') && ingressSurface.test(req.path))
   );
 }
-function refusal(res: Response, status = 401): void {
-  res.status(status).json({
-    code: status === 400 ? 'INVALID_DOC_TOKEN_QUERY' : 'DOC_TOKEN_UNAVAILABLE',
-    error:
-      status === 400
-        ? 'The document token query is not valid.'
-        : 'The document token is not available.',
-  });
+function refusal(c: Context<ApiEnv>, status: 400 | 401 = 401): Response {
+  return c.json(
+    {
+      code: status === 400 ? 'INVALID_DOC_TOKEN_QUERY' : 'DOC_TOKEN_UNAVAILABLE',
+      error:
+        status === 400
+          ? 'The document token query is not valid.'
+          : 'The document token is not available.',
+    },
+    status
+  );
 }
-function readService(req: Request): DocChannelService {
-  const service = (req.app.locals.docChannelHttp as { service?: DocChannelService } | undefined)
-    ?.service;
+function sendRefusal(res: ServerResponse): void {
+  res.statusCode = 401;
+  res.setHeader('Content-Type', 'application/json; charset=utf-8');
+  res.end(
+    JSON.stringify({ code: 'DOC_TOKEN_UNAVAILABLE', error: 'The document token is not available.' })
+  );
+}
+function readService(source: Source): DocChannelService {
+  const service = source()?.service;
   if (!service) throw new Error('Unavailable');
   return service;
 }
@@ -60,7 +77,7 @@ function cursor(value: unknown, fallback: number): number {
   if (!Number.isSafeInteger(n) || n < 0) throw new Error('Invalid cursor');
   return n;
 }
-function bearerHash(req: Request): string {
+function bearerHash(req: IncomingMessage): string {
   // No session/operator fallback, even when the installation normally permits anonymous local use.
   if (
     req.headers.cookie !== undefined ||
@@ -73,15 +90,20 @@ function bearerHash(req: Request): string {
     throw new Error('Invalid bearer');
   return createHash('sha256').update(credential.slice(7)).digest('hex');
 }
-function query(req: Request, allowed: readonly string[]): void {
-  for (const name of Object.keys(req.query))
+function query(c: Context<ApiEnv>, allowed: readonly string[]): void {
+  for (const name of Object.keys(c.req.queries()))
     if (!allowed.includes(name)) throw new Error('Invalid query');
 }
-function cors(res: Response): void {
-  res.removeHeader('Access-Control-Allow-Credentials');
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Cache-Control', 'no-store');
-  res.setHeader('X-Content-Type-Options', 'nosniff');
+/** Duplicate query values remain invalid, as the original parser's arrays were. */
+function queryValue(c: Context<ApiEnv>, name: string): unknown {
+  const values = c.req.queries(name);
+  return values?.length === 1 ? values[0] : values?.length ? values : undefined;
+}
+function cors(c: Context<ApiEnv>): void {
+  c.header('Access-Control-Allow-Credentials', undefined);
+  c.header('Access-Control-Allow-Origin', '*');
+  c.header('Cache-Control', 'no-store');
+  c.header('X-Content-Type-Options', 'nosniff');
 }
 function projectEvent(row: OriginalDocTokenNativeRow) {
   if (
@@ -118,10 +140,10 @@ function projectPage(page: OriginalNativeDocTokenPage) {
     events: page.rows.map(projectEvent),
   };
 }
-async function bind(req: Request, permission: 'replay' | 'stream') {
-  const hash = bearerHash(req),
-    service = readService(req),
-    id = boundedId(req.params.id);
+async function bind(c: Context<ApiEnv>, source: Source, permission: 'replay' | 'stream') {
+  const hash = bearerHash(c.env.incoming),
+    service = readService(source),
+    id = boundedId(c.req.param('id'));
   const scope = await restoreServiceOriginalTokenScope(service, hash);
   const page = await replayServiceOriginalTokenScope(service, scope, 0, 1, permission);
   if (page.documentId !== id) throw new Error('Wrong document');
@@ -144,7 +166,7 @@ async function currentPage(
   return page;
 }
 /** Both reset and event frames wait on the exact owned response, including stop-triggered close. */
-async function writeFrame(res: Response, wire: string): Promise<void> {
+async function writeFrame(res: ServerResponse, wire: string): Promise<void> {
   if (res.destroyed || res.writableEnded) return;
   if (!res.write(wire))
     await new Promise<void>((resolve) => {
@@ -158,196 +180,220 @@ async function writeFrame(res: Response, wire: string): Promise<void> {
       if (res.destroyed) done();
     });
 }
-const router = Router();
-router.options(
-  ['/:id/channel', '/:id/stream', '/:id/events/:eventId', '/:id/events'],
-  (req, res) => {
-    // Browsers omit the bearer on preflight. This negotiates only headers/method, never authenticates data.
-    const method = req.headers['access-control-request-method'];
-    const headers = req.headers['access-control-request-headers'];
-    const expected = /^\/[^/]+\/events\/?$/u.test(req.path) ? 'POST' : 'GET';
-    if (
-      method !== expected ||
-      req.headers.cookie !== undefined ||
-      req.headers.authorization !== undefined ||
-      (headers !== undefined &&
-        (typeof headers !== 'string' ||
-          headers
-            .split(',')
-            .some((h) => !['authorization', 'content-type'].includes(h.trim().toLowerCase()))))
-    )
-      return refusal(res, 400);
-    cors(res);
-    res.setHeader('Access-Control-Allow-Methods', expected);
-    res.setHeader('Access-Control-Allow-Headers', 'Authorization, Content-Type');
-    res.status(204).end();
-  }
-);
-router.get('/:id/channel', async (req, res) => {
-  try {
-    query(req, ['since', 'limit']);
-    const own = await bind(req, 'replay');
-    const since = cursor(req.query.since, 0),
-      limit = cursor(req.query.limit, 200);
-    if (limit < 1 || limit > 200) return refusal(res, 400);
-    const page = projectPage(await currentPage(own, since, limit, 'replay'));
-    cors(res);
-    res.json(page);
-  } catch {
-    refusal(res);
-  }
-});
-router.get('/:id/events/:eventId', async (req, res) => {
-  try {
-    query(req, []);
-    const own = await bind(req, 'replay'),
-      id = boundedId(req.params.eventId);
-    const raw = await readServiceOriginalTokenEvent(own.service, own.scope, id, 'replay');
-    // Filtered/missing/pruned receipt authority is deliberately unconfirmed, never generic document absence.
-    if (!raw) {
-      cors(res);
-      res
-        .status(409)
-        .json({ code: 'DOC_TOKEN_EVENT_UNCONFIRMED', error: 'The document event is unconfirmed.' });
-      return;
-    }
-    const data = projectEvent(raw);
-    cors(res);
-    res.json(data);
-  } catch {
-    refusal(res);
-  }
-});
-router.get('/:id/stream', async (req, res) => {
-  let owned: Awaited<ReturnType<typeof bind>> | undefined,
-    stream: Awaited<ReturnType<typeof openServiceOriginalTokenStream>> | undefined;
-  let closed = false;
-  const close = () => {
-    closed = true;
-    if (owned && stream) closeServiceOriginalTokenStream(owned.service, stream);
-  };
-  res.once('close', close);
-  req.once('aborted', close);
-  try {
-    query(req, ['since']);
-    const since = cursor(req.query.since, 0);
-    owned = await bind(req, 'stream');
-    stream = await openServiceOriginalTokenStream(owned.service, owned.scope, since);
-    if (closed || res.destroyed) {
-      close();
-      return;
-    }
-    void closedServiceOriginalTokenStream(owned.service, stream).then(() => {
-      if (!res.destroyed) res.destroy();
-    });
-    cors(res);
-    res.setHeader('Content-Type', 'text/event-stream');
-    res.setHeader('X-Accel-Buffering', 'no');
-    res.flushHeaders();
-    while (!closed && !res.destroyed) {
-      const page = await nextServiceOriginalTokenStream(owned.service, stream);
-      if (page === undefined) break;
-      if (page.documentId !== owned.id) throw new Error('Wrong document');
-      if (page.resetRequired) {
-        await currentPage(owned, page.retentionFloor - 1, 1, 'stream');
-        if (closed || res.destroyed) break;
-        // Reset DATA has no unfiltered state, viewer or routing snapshot.
-        await writeFrame(
-          res,
-          'event: reset\ndata: ' +
-            Reflect.apply(stringify, JSON, [
-              {
-                documentId: page.documentId,
-                retentionFloor: page.retentionFloor,
-                highWatermark: page.highWatermark,
-              },
-            ]) +
-            '\n\n'
-        );
-      }
-      for (const raw of page.rows) {
-        if (closed || res.destroyed) break;
-        // Fresh native expiry/revoke/source/permission checks for EACH actual frame, after all waits.
-        const current = await readServiceOriginalTokenEvent(
-          owned.service,
-          owned.scope,
-          String(raw.event_id),
-          'stream'
-        );
-        if (!current) throw new Error('Unconfirmed frame');
-        const data = projectEvent(current);
-        const wire =
-          'id: ' +
-          String(data.docSeq) +
-          '\nevent: doc.event\ndata: ' +
-          Reflect.apply(stringify, JSON, [data]) +
-          '\n\n';
-        await writeFrame(res, wire);
-      }
-    }
-  } catch {
-    // No credential or private native failure is echoed or logged.
-    if (!res.headersSent) refusal(res);
-    else res.end();
-  } finally {
-    close();
-    res.off('close', close);
-    req.off('aborted', close);
-    if (!res.writableEnded && !res.destroyed) res.end();
-  }
-});
+function corsRaw(res: ServerResponse): void {
+  res.removeHeader('Access-Control-Allow-Credentials');
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Cache-Control', 'no-store');
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+}
 const originalIngressRequests = new WeakMap<
-  Request,
+  IncomingMessage,
   { service: DocChannelService; scope: OriginalNativeDocTokenScope; id: string }
 >();
-const parseIngress = json({ limit: '16kb' });
-router.post(
-  '/:id/events',
-  async (req, res, next) => {
-    try {
-      query(req, []);
-      const service = readService(req),
-        id = boundedId(req.params.id),
-        hash = bearerHash(req);
-      const scope = await restoreServiceOriginalTokenScope(service, hash);
-      const admitted = await admitServiceOriginalTokenIngress(service, scope);
-      if (admitted.documentId !== id) throw new Error('Wrong document');
-      originalIngressRequests.set(req, { service, scope, id });
-      next();
-    } catch {
-      refusal(res);
-    }
+const ingressParser = parseRequestBody<ApiEnv>([
+  {
+    matches: () => true,
+    parse: bodyParser.json({ limit: '16kb' }),
+    answerFailure: (error) => ({
+      status: (error as { type?: unknown })?.type === 'entity.too.large' ? 413 : 400,
+      body: { code: 'INVALID_DOC_TOKEN_EVENT', error: 'The document event is not valid.' },
+    }),
   },
-  (req, res, next) => {
-    parseIngress(req, res, (error?: unknown) => {
-      if (error) {
-        originalIngressRequests.delete(req);
-        const status = (error as { type?: unknown })?.type === 'entity.too.large' ? 413 : 400;
-        res
-          .status(status)
-          .json({ code: 'INVALID_DOC_TOKEN_EVENT', error: 'The document event is not valid.' });
-        return;
-      }
-      next();
+]);
+/** Mount at the construction-owned early frontier; service/token engines enforce original private scopes. */
+export function createStandaloneDocTokenRoutes(source: Source): Hono<ApiEnv> {
+  const router = new Hono<ApiEnv>({ strict: false });
+  router.use('*', async (c, next) => {
+    if (isStandaloneDocTokenSurface({ path: c.req.path, method: c.req.method })) {
+      const refused = refuseStandaloneDocTokenHost(c.env.incoming.headers.host);
+      if (refused) return c.json(refused, 403);
+    }
+    await next();
+  });
+  for (const path of ['/:id/channel', '/:id/stream', '/:id/events/:eventId', '/:id/events']) {
+    router.options(path, (c) => {
+      const headers = c.env.incoming.headers;
+      const method = headers['access-control-request-method'];
+      const requested = headers['access-control-request-headers'];
+      const expected = ingressSurface.test(c.req.path) ? 'POST' : 'GET';
+      if (
+        method !== expected ||
+        headers.cookie !== undefined ||
+        headers.authorization !== undefined ||
+        (requested !== undefined &&
+          (typeof requested !== 'string' ||
+            requested
+              .split(',')
+              .some((h) => !['authorization', 'content-type'].includes(h.trim().toLowerCase()))))
+      )
+        return refusal(c, 400);
+      cors(c);
+      c.header('Access-Control-Allow-Methods', expected);
+      c.header('Access-Control-Allow-Headers', 'Authorization, Content-Type');
+      return c.body(null, 204);
     });
-  },
-  async (req, res) => {
-    try {
-      const own = originalIngressRequests.get(req);
-      if (!own) throw new Error('Unavailable');
-      // The original engine repeats full native currentness and closed type/direction/payload/grant gates.
-      const result = await submitServiceOriginalTokenIngress(own.service, own.scope, req.body);
-      const current = await admitServiceOriginalTokenIngress(own.service, own.scope);
-      if (current.documentId !== own.id) throw new Error('Wrong document');
-      cors(res);
-      res.status(result.receipt.status === 'duplicate' ? 200 : 201).json(result);
-    } catch {
-      refusal(res);
-    } finally {
-      originalIngressRequests.delete(req);
-    }
   }
-);
-
-export const standaloneDocTokenRouter: RequestHandler = router;
-export const standaloneDocTokenReadRouter: RequestHandler = router;
+  router.get('/:id/channel', async (c, next) => {
+    if (c.req.method !== 'GET') return next();
+    try {
+      query(c, ['since', 'limit']);
+      const own = await bind(c, source, 'replay');
+      const since = cursor(queryValue(c, 'since'), 0),
+        limit = cursor(queryValue(c, 'limit'), 200);
+      if (limit < 1 || limit > 200) return refusal(c, 400);
+      const page = projectPage(await currentPage(own, since, limit, 'replay'));
+      cors(c);
+      return c.json(page);
+    } catch {
+      return refusal(c);
+    }
+  });
+  router.get('/:id/events/:eventId', async (c, next) => {
+    if (c.req.method !== 'GET') return next();
+    try {
+      query(c, []);
+      const own = await bind(c, source, 'replay'),
+        id = boundedId(c.req.param('eventId'));
+      const raw = await readServiceOriginalTokenEvent(own.service, own.scope, id, 'replay');
+      if (!raw) {
+        cors(c);
+        return c.json(
+          { code: 'DOC_TOKEN_EVENT_UNCONFIRMED', error: 'The document event is unconfirmed.' },
+          409
+        );
+      }
+      const data = projectEvent(raw);
+      cors(c);
+      return c.json(data);
+    } catch {
+      return refusal(c);
+    }
+  });
+  router.get('/:id/stream', async (c, next) => {
+    if (c.req.method !== 'GET') return next();
+    const req = c.env.incoming;
+    return streamToNodeResponse(c, async (res) => {
+      let owned: Awaited<ReturnType<typeof bind>> | undefined,
+        stream: Awaited<ReturnType<typeof openServiceOriginalTokenStream>> | undefined;
+      let closed = false;
+      const close = () => {
+        closed = true;
+        if (owned && stream) closeServiceOriginalTokenStream(owned.service, stream);
+      };
+      res.once('close', close);
+      req.once('aborted', close);
+      try {
+        query(c, ['since']);
+        const since = cursor(queryValue(c, 'since'), 0);
+        owned = await bind(c, source, 'stream');
+        stream = await openServiceOriginalTokenStream(owned.service, owned.scope, since);
+        if (closed || res.destroyed) {
+          close();
+          return;
+        }
+        void closedServiceOriginalTokenStream(owned.service, stream).then(() => {
+          if (!res.destroyed) res.destroy();
+        });
+        corsRaw(res);
+        res.setHeader('Content-Type', 'text/event-stream');
+        res.setHeader('X-Accel-Buffering', 'no');
+        res.flushHeaders();
+        while (!closed && !res.destroyed) {
+          const page = await nextServiceOriginalTokenStream(owned.service, stream);
+          if (page === undefined) break;
+          if (page.documentId !== owned.id) throw new Error('Wrong document');
+          if (page.resetRequired) {
+            await currentPage(owned, page.retentionFloor - 1, 1, 'stream');
+            if (closed || res.destroyed) break;
+            // Reset DATA has no unfiltered state, viewer or routing snapshot.
+            await writeFrame(
+              res,
+              'event: reset\ndata: ' +
+                Reflect.apply(stringify, JSON, [
+                  {
+                    documentId: page.documentId,
+                    retentionFloor: page.retentionFloor,
+                    highWatermark: page.highWatermark,
+                  },
+                ]) +
+                '\n\n'
+            );
+          }
+          for (const raw of page.rows) {
+            if (closed || res.destroyed) break;
+            // Fresh native expiry/revoke/source/permission checks for EACH actual frame, after all waits.
+            const current = await readServiceOriginalTokenEvent(
+              owned.service,
+              owned.scope,
+              String(raw.event_id),
+              'stream'
+            );
+            if (!current) throw new Error('Unconfirmed frame');
+            const data = projectEvent(current);
+            const wire =
+              'id: ' +
+              String(data.docSeq) +
+              '\nevent: doc.event\ndata: ' +
+              Reflect.apply(stringify, JSON, [data]) +
+              '\n\n';
+            await writeFrame(res, wire);
+          }
+        }
+      } catch {
+        // No credential or private native failure is echoed or logged.
+        if (!res.headersSent) sendRefusal(res);
+        else res.end();
+      } finally {
+        close();
+        res.off('close', close);
+        req.off('aborted', close);
+        if (!res.writableEnded && !res.destroyed) res.end();
+      }
+    });
+  });
+  router.post(
+    '/:id/events',
+    async (c, next) => {
+      const req = c.env.incoming;
+      try {
+        query(c, []);
+        const service = readService(source),
+          id = boundedId(c.req.param('id')),
+          hash = bearerHash(req);
+        const scope = await restoreServiceOriginalTokenScope(service, hash);
+        const admitted = await admitServiceOriginalTokenIngress(service, scope);
+        if (admitted.documentId !== id) throw new Error('Wrong document');
+        originalIngressRequests.set(req, { service, scope, id });
+      } catch {
+        return refusal(c);
+      }
+      try {
+        await next();
+      } finally {
+        originalIngressRequests.delete(req);
+      }
+    },
+    ingressParser,
+    async (c) => {
+      try {
+        const own = originalIngressRequests.get(c.env.incoming);
+        if (!own) throw new Error('Unavailable');
+        const result = await submitServiceOriginalTokenIngress(
+          own.service,
+          own.scope,
+          readJsonBody(c)
+        );
+        const current = await admitServiceOriginalTokenIngress(own.service, own.scope);
+        if (current.documentId !== own.id) throw new Error('Wrong document');
+        cors(c);
+        return c.json(result, result.receipt.status === 'duplicate' ? 200 : 201);
+      } catch {
+        return refusal(c);
+      }
+    }
+  );
+  return router;
+}
+/** Original names retained as native constructor factories, with an explicit owning source. */
+export const standaloneDocTokenRouter = createStandaloneDocTokenRoutes;
+export const standaloneDocTokenReadRouter = createStandaloneDocTokenRoutes;

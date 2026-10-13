@@ -7,7 +7,7 @@ import type { OriginalDownstreamRoomEmitter } from '../../../downstream/native-r
 /** One fixed owning installation gate, canonical coordinator and same-Db fence. */
 import { realpath, stat } from 'node:fs/promises';
 import path from 'node:path';
-import type { Request, Response } from 'express';
+import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { Db } from '@dorkos/db';
 import { type WriteFileRequest } from '@dorkos/shared/schemas';
 import { requireDocChannelStoreDatabase, type DocChannelStore } from '../../../store.js';
@@ -449,8 +449,8 @@ export function createIsolatedInstallationFileWriteCustody(): Readonly<Installat
     owner: InstallationFileWrites,
     exactDb: Db,
     exactStore: DocChannelStore,
-    req: Request,
-    res: Response,
+    req: IncomingMessage,
+    res: ServerResponse,
     input: WriteFileRequest
   ): Promise<NormalFileSaveOutcome> {
     requireInstallationFileWritesOwner(owner, exactDb, exactStore);

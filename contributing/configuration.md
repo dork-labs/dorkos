@@ -69,7 +69,7 @@ Adapter-to-agent bindings are persisted to `~/.dork/relay/bindings.json`. The fi
 
 | Key                                              | Type                                                                     | Default              | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
 | ------------------------------------------------ | ------------------------------------------------------------------------ | -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `server.port`                                    | integer (1024--65535)                                                    | `4242`               | Port the Express server listens on                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| `server.port`                                    | integer (1024--65535)                                                    | `4242`               | Port the server listens on                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
 | `server.cwd`                                     | string \| null                                                           | `null`               | Default working directory for sessions                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
 | `server.boundary`                                | string \| null                                                           | `null`               | Directory boundary root (`null` = home directory)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
 | `server.open`                                    | boolean                                                                  | `true`               | Open browser automatically on startup                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
@@ -685,7 +685,7 @@ The one subscriber today is `applyAndWatchConfiguredDefaultRuntime` (`services/c
 
 ### server.port
 
-The TCP port for the Express server. Must be an integer between 1024 and 65535.
+The TCP port for the server. Must be an integer between 1024 and 65535.
 
 ```bash
 dorkos config set server.port 8080
@@ -1238,7 +1238,7 @@ This env var controls process-level Relay initialization and must be set before 
 
 ### DORKOS_CORS_ORIGIN
 
-Configures the `Access-Control-Allow-Origin` header on the Express server. When unset, defaults to localhost on `DORKOS_PORT` and `VITE_PORT` (code default 4241, dev convention 6241), plus the live tunnel origin and same-origin requests. Set a comma-separated list of origins to allow multiple production origins.
+Configures the `Access-Control-Allow-Origin` header on the server. When unset, defaults to localhost on `DORKOS_PORT` and `VITE_PORT` (code default 4241, dev convention 6241), plus the live tunnel origin and same-origin requests. Set a comma-separated list of origins to allow multiple production origins.
 
 Since DOR-1711 the list **adds to** that policy rather than replacing it: your entries join the loopback origins, the live tunnel and the same-origin branch instead of standing in for them. That matters most for the addresses you would never think to list — the port your container is published on, a LAN IP, the host a reverse proxy forwards — all of which are same-origin with their own requests. Replacing the policy left those refused, which showed up as an app that loaded fine (a same-origin GET sends no `Origin`) and failed every write.
 
@@ -1257,15 +1257,15 @@ There is no config file key for this setting. It must be set as an environment v
 
 Whether `X-Forwarded-For` may name the client **for rate limiting**. Off by default (DOR-1711).
 
-Left off, every limiter keys on the TCP peer address, which no header can move. That is the whole point: the header is free for anyone to write, so on a direct bind a caller who rotates it lands in a fresh bucket every request, which silently disables the sign-in brute-force brake. All six inherited that from `app.set('trust proxy', 1)` until this flag existed — sign-in, `/mcp`, the two A2A endpoints, each extension's data proxy, the relay binding probe, and the admin routes, which is the one worth naming out loud: three attempts per five minutes guarding `POST /api/admin/reset`, which deletes the data directory.
+Left off, every limiter keys on the TCP peer address, which no header can move. That is the whole point: the header is free for anyone to write, so on a direct bind a caller who rotates it lands in a fresh bucket every request, which silently disables the sign-in brute-force brake. All six inherited that from the old Express app's `trust proxy, 1` until this flag existed — sign-in, `/mcp`, the two A2A endpoints, each extension's data proxy, the relay binding probe, and the admin routes, which is the one worth naming out loud: three attempts per five minutes guarding `POST /api/admin/reset`, which deletes the data directory.
 
 Turn it on only when a proxy you control is the only way in and you need per-client buckets behind it. Everyone who can reach that proxy's upstream can then write the key.
 
-It also assumes a **single** hop, because `trust proxy` is set to `1`. Express strips one address off the right of the `X-Forwarded-For` chain and takes what is left, so with two proxies in front (a CDN into your own nginx, say) the key becomes your _inner_ proxy's address — one bucket for every client, not one each. Measured, not inferred. If you genuinely run two hops, leave this off: connection keying gives you the same single bucket without pretending otherwise.
+It also assumes a **single** hop: `forwardedClientAddress` (`http/request-facts.ts`) takes the last entry off the right of the `X-Forwarded-For` chain, so with two proxies in front (a CDN into your own nginx, say) the key becomes your _inner_ proxy's address — one bucket for every client, not one each. Measured, not inferred. If you genuinely run two hops, leave this off: connection keying gives you the same single bucket without pretending otherwise.
 
 DorkOS's own tunnel is not a reason to turn it on: the ngrok agent runs inside the server process and forwards to the local port, so tunnel traffic has a loopback peer and shares one bucket. That is the strict direction, and one shared bucket at 60/minute is not a ceiling a single operator's phone and agents meet.
 
-This does **not** change `trust proxy` itself. `req.protocol` and `req.secure` still see through one forwarded hop, so Better Auth keeps setting `Secure` cookies behind a TLS-terminating proxy. Nothing security-relevant reads what that derives: the origin and host decisions read raw headers and the raw socket.
+This does **not** change how the request's scheme is resolved. The `X-Forwarded-Proto` read still sees through one forwarded hop, so Better Auth keeps setting `Secure` cookies behind a TLS-terminating proxy. Nothing security-relevant reads what that derives: the origin and host decisions read raw headers and the raw socket.
 
 ```bash
 export DORKOS_TRUST_PROXY=true
@@ -1902,7 +1902,7 @@ If you must store tunnel credentials in the config (e.g., single-user machine), 
 
 ## Docker
 
-DorkOS provides Docker images for testing and deployment. All Docker images set `DORKOS_HOST=0.0.0.0` so that the Express server binds to all interfaces (required for Docker port forwarding).
+DorkOS provides Docker images for testing and deployment. All Docker images set `DORKOS_HOST=0.0.0.0` so that the server binds to all interfaces (required for Docker port forwarding).
 
 ### Running in Docker
 

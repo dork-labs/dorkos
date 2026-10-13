@@ -1,13 +1,13 @@
+import { originalDocRequestUser } from '../../../../http/original-doc-request.js';
 import {
   originalDocRequestFacts,
   originalDocAuthRequest,
 } from '../../../../http/original-doc-request.js';
-import type { Request, Response } from 'express';
+import type { IncomingMessage, ServerResponse } from 'node:http';
 import { InstallationFileWrites } from '../writes/installation-file-writes.js';
 import { resolveCaller } from '../../../../routes/room-caller.js';
 import { recheckAdmittedRequestAuth } from '../../../core/auth/index.js';
 import { configManager } from '../../../core/config-manager.js';
-import type { RequestUser } from '../../../core/auth/index.js';
 import { requireRoomServiceRepoWriteCurrent } from '../../../rooms/room-service.js';
 import {
   requireRoomRepoServiceOwner,
@@ -67,7 +67,7 @@ export function repoCallerOf(httpCustodyOwner: object, handle: object): Original
     current.req.headers['x-dorkos-agent'] !== current.headers['x-dorkos-agent']
   )
     throw new DocChannelNotFoundError();
-  const user = current.res.locals.user as RequestUser | undefined;
+  const user = originalDocRequestUser(current.req, current.res);
   if (
     (current.login && user !== current.admittedPrincipal) ||
     (current.user ? !sameRoomCredential(httpCustodyOwner, user, current.user) : user !== undefined)
@@ -94,8 +94,8 @@ export async function captureDocHttpRoomRepoCaller(
   httpCustodyOwner: object,
   owner: InstallationFileWrites,
   service: RoomRepoService | RoomMergeService,
-  req: Request,
-  res: Response,
+  req: IncomingMessage,
+  res: ServerResponse,
   roomId: string,
   operation: RoomRepoOperation
 ): Promise<object> {
@@ -114,7 +114,7 @@ export async function captureDocHttpRoomRepoCaller(
   const caller = resolveCaller(originalDocRequestFacts(req, res));
   requireRoomServiceRepoWriteCurrent(binding.rooms, binding.db, roomId, caller.id, operation);
   const login = Boolean(configManager.get('auth')?.enabled);
-  const supplied = res.locals.user as RequestUser | undefined;
+  const supplied = originalDocRequestUser(req, res);
   const user = supplied ? Object.freeze({ ...supplied }) : undefined;
   const headers = Object.freeze({ ...req.headers });
   if (login || user) {

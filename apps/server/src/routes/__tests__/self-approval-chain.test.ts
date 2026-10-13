@@ -39,7 +39,6 @@ import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import express from 'express';
 import request from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
 import { z } from 'zod';
@@ -144,11 +143,10 @@ describe('an agent holding the API key cannot approve its own work', () => {
     initCapabilityTierGate({ approvals });
 
     // The server's own routing (`composeFrontDoor`): Better Auth before the body
-    // parser, then the real gate, then the real routes, with nothing behind them
-    // on Express. No middleware of this test's own, and no `isLoginEnabled`
+    // parser, then the real gate, then the real routes. No middleware of this test's own, and no `isLoginEnabled`
     // override — the route reads the live config, as it does in production.
     fixtureTarget.mount(
-      composedListener(express(), new MainRequestAdmission(), {
+      composedListener(new MainRequestAdmission(), {
         approvals: { service: approvals, options: {} },
       })
     );

@@ -87,7 +87,6 @@
     "src/services/extensions/__tests__/extension-manager-server.test.ts", // 16
     "src/services/extensions/__tests__/extension-manager-test.test.ts", // 9
     "src/services/extensions/__tests__/extension-manager.test.ts", // 38
-    "src/services/extensions/__tests__/extension-proxy.test.ts", // 21
     "src/services/extensions/__tests__/extension-tools.test.ts", // 1
     "src/services/marketplace-mcp/__tests__/confirmation-provider.test.ts", // 5
     "src/services/marketplace-mcp/__tests__/integration.test.ts", // 1

@@ -30,7 +30,6 @@
  *
  * @module services/core/auth/session-gate
  */
-import type { Request, Response, NextFunction } from 'express';
 import { fromNodeHeaders } from 'better-auth/node';
 import { configManager } from '../config-manager.js';
 import { logger } from '../../../lib/logger.js';
@@ -38,10 +37,9 @@ import { logger } from '../../../lib/logger.js';
 // the auth barrel (which re-exports this module) is a safe function-level cycle.
 import { getAuth, captureOriginalRequestAuthReader, type Auth } from './index.js';
 import type { RequestFacts } from '../../../http/request-facts.js';
-import { noteGateAdmitted } from '../remote/ingress-mark.js';
 import { isSessionGatedPath } from './gated-paths.js';
 
-/** The identity resolved from a request's credentials, attached to `res.locals.user`. */
+/** The identity resolved from a request's credentials, set on the request as `c.var.user`. */
 export interface RequestUser {
   /** The Better Auth user id that owns the session cookie or API key. */
   userId: string;
@@ -63,10 +61,10 @@ export interface RequestUser {
 }
 
 interface OriginalRequestAdmission {
-  req: Pick<Request, 'headers'>;
+  req: Pick<RequestFacts, 'headers'>;
   auth: Auth;
   reader: NonNullable<ReturnType<typeof captureOriginalRequestAuthReader>>;
-  headers: Readonly<Request['headers']>;
+  headers: Readonly<RequestFacts['headers']>;
   userId: string;
   credential: RequestUser['credential'];
   credentialId?: string;
@@ -82,8 +80,8 @@ const originalAdmissionCreate = Object.create;
 const originalAdmissionDefine = Object.defineProperty;
 const originalAdmissionKeys = Object.keys;
 const originalAdmissionArray = Array.isArray;
-function admittedHeaders(req: Pick<Request, 'headers'>): Readonly<Request['headers']> {
-  const result: Request['headers'] = originalAdmissionCreate(null);
+function admittedHeaders(req: Pick<RequestFacts, 'headers'>): Readonly<RequestFacts['headers']> {
+  const result: RequestFacts['headers'] = originalAdmissionCreate(null);
   const keys = originalAdmissionKeys(req.headers);
   for (let index = 0; index < keys.length; index++) {
     const key = keys[index],
@@ -100,8 +98,8 @@ function admittedHeaders(req: Pick<Request, 'headers'>): Readonly<Request['heade
   return originalAdmissionFreeze(result);
 }
 function sameAdmittedHeaders(
-  req: Pick<Request, 'headers'>,
-  headers: Readonly<Request['headers']>
+  req: Pick<RequestFacts, 'headers'>,
+  headers: Readonly<RequestFacts['headers']>
 ): boolean {
   const keys = originalAdmissionKeys(headers);
   if (originalAdmissionKeys(req.headers).length !== keys.length) return false;
@@ -123,7 +121,7 @@ function sameAdmittedHeaders(
  * @returns Whether the same credential and initialized authority remain current.
  */
 export async function recheckAdmittedRequestAuth(
-  req: Pick<Request, 'headers'>,
+  req: Pick<RequestFacts, 'headers'>,
   principal: RequestUser | undefined
 ): Promise<boolean> {
   try {
@@ -178,8 +176,9 @@ const GATED_HEALTH_PATHS = ['/api/health/deep'];
 /**
  * Whether a path reaches a gated health route, however it is spelled.
  *
- * Express matches non-strictly and collapses nothing, so `/api/health/deep/`
- * and `/api/health/deep//` reach the same handler as `/api/health/deep`. An
+ * The router matches non-strictly, so `/api/health/deep/` reaches the same
+ * handler as `/api/health/deep`, and a path with doubled slashes must not be
+ * trusted to miss it either. An
  * exact-string carve-out out of a prefix exemption therefore leaks: the
  * trailing-slash spelling misses the carve-out, matches the `/api/health/`
  * exemption, and returns the whole report with no credential. Match the way
@@ -259,13 +258,14 @@ export interface VerifyRequestAuthOptions {
  * invalid/revoked key resolves to `null` (fail closed) so callers can respond
  * with a uniform 401.
  *
- * Shared by {@link sessionGate}, the MCP auth middleware, and the WebSocket
- * upgrade gate so there is exactly one credential-verification path.
+ * Shared by the session gate ({@link decideSessionGate}), the MCP auth
+ * middleware, and the WebSocket upgrade gate so there is exactly one
+ * credential-verification path.
  *
- * It takes only the HEADERS rather than an Express `Request`, because the third
+ * It takes only the HEADERS rather than a framework's request, because the third
  * caller has no request: a WebSocket upgrade arrives on the HTTP server's
  * `upgrade` event as a bare `IncomingMessage`, having bypassed every piece of
- * middleware including {@link sessionGate}. Headers are all this ever read, so
+ * middleware including the session gate. Headers are all this ever read, so
  * narrowing the parameter is what lets the upgrade path reuse this instead of
  * growing a second, drifting copy of the credential check.
  *
@@ -274,7 +274,7 @@ export interface VerifyRequestAuthOptions {
  * and a few writes turn on telling them apart (see {@link RequestUser}).
  *
  * @param req - Anything carrying the request's headers — a request's facts
- *   (`expressRequestFacts` or `honoRequestFacts`), or the raw `IncomingMessage`
+ *   (`honoRequestFacts`), or the raw `IncomingMessage`
  *   of a WebSocket upgrade.
  * @param options - See {@link VerifyRequestAuthOptions}. Omit unless the caller
  *   already knows what the request's bearer is.
@@ -290,7 +290,7 @@ export async function verifyRequestAuth(
   // nothing can be verified, so treat every request as unauthenticated.
   if (!auth) return null;
   const reader = captureOriginalRequestAuthReader(auth);
-  let originalHeaders: Readonly<Request['headers']>;
+  let originalHeaders: Readonly<RequestFacts['headers']>;
   try {
     originalHeaders = admittedHeaders(req);
   } catch {
@@ -378,9 +378,8 @@ export type SessionGateDecision =
 /**
  * Decide whether a request may pass the session gate, and who it is.
  *
- * Shared by the Express middleware below and the Hono chain
- * (`http/api-chain.ts`), so both gate the same paths the same way. When login
- * is disabled it decides nothing and costs nothing. Writes bypass the signed
+ * The chain (`http/api-chain.ts`) asks it for every request, `/mcp` among
+ * them. When login is disabled it decides nothing and costs nothing. Writes bypass the signed
  * cookie cache and check the current server session without renewing it;
  * GET/HEAD/OPTIONS keep cached session reads.
  *
@@ -398,11 +397,11 @@ export async function decideSessionGate(
   // flag can flip at runtime (enable-login flow) without a server restart.
   if (!configManager.get('auth')?.enabled) return { allowed: true };
 
-  // Express matches routes case-insensitively by default ('case sensitive
-  // routing' is off), so `/API/sessions` resolves to the same handler as
-  // `/api/sessions`. Normalize case before the gate checks — otherwise an
-  // uppercased prefix would slip past `isSessionGatedPath` yet still reach the gated
-  // route, bypassing auth entirely.
+  // Normalize case before the gate checks. The router matches case-sensitively
+  // today, but the server ran on Express for years, where `/API/sessions`
+  // reached the same handler as `/api/sessions`; a gate that trusts the router's
+  // case rule is one router change away from letting an uppercased prefix slip
+  // past `isSessionGatedPath` to a gated route.
   const lowered = path.toLowerCase();
 
   // Only the API surface and the MCP endpoint are gated; SPA assets pass so the
@@ -418,30 +417,4 @@ export async function decideSessionGate(
     readOnly ? {} : { sessionFreshness: 'server-store' }
   );
   return user ? { allowed: true, user } : { allowed: false };
-}
-
-/**
- * Express middleware that gates `/api/*` and `/mcp` behind a Better Auth session
- * cookie or a per-user API key when `config.auth.enabled` is `true`
- * ({@link decideSessionGate}).
- *
- * Registered app-wide (before the API routes) so it also covers the mounts
- * added later on the same app; the Hono chain asks the same
- * {@link decideSessionGate} for the routes it serves, `/mcp` among them. On success the resolved identity is attached to
- * `res.locals.user`; on failure it responds `401` with the repo's error shape.
- *
- * @param req - The incoming request.
- * @param res - The response (identity is attached to `res.locals.user` on success).
- * @param next - Passes control to the next handler when the request is allowed.
- */
-export async function sessionGate(req: Request, res: Response, next: NextFunction): Promise<void> {
-  const decision = await decideSessionGate(req.method, req.path, req);
-  if (!decision.allowed) {
-    res.status(401).json(AUTH_REQUIRED_BODY);
-    return;
-  }
-  if (decision.user) res.locals.user = decision.user;
-  // Managed remote access counts a request only once this gate let it through.
-  noteGateAdmitted(req, res);
-  next();
 }

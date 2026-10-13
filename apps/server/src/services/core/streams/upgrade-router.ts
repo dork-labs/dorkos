@@ -1,10 +1,10 @@
 /**
  * The server's single WebSocket upgrade entry point.
  *
- * Node emits `upgrade` on the HTTP server, not through Express, so **no Express
- * middleware runs for an upgrade** — not the CORS policy, not the host guard,
- * and critically not {@link sessionGate}. Anything an upgrade needs from that
- * stack has to be asked for explicitly, which is what a {@link UpgradeRoute}'s
+ * Node emits `upgrade` on the HTTP server, not through the chain, so **no
+ * chain middleware runs for an upgrade** — not the CORS policy, not the host
+ * guard, and critically not the session gate. Anything an upgrade needs from
+ * that stack has to be asked for explicitly, which is what a {@link UpgradeRoute}'s
  * `authorize` does.
  *
  * It is a router rather than a handler because `server.on('upgrade')` is a
@@ -45,8 +45,8 @@ export interface UpgradeAttempt {
   /** The route pattern's match against the pathname, for captured ids. */
   readonly match: RegExpExecArray;
   /**
-   * The identity the router already resolved, `res.locals`-shaped so
-   * `resolveCaller` and `getRequestAgentIdentity` read it unchanged.
+   * The identity the router already resolved, which `upgradeCaller` turns into
+   * the facts `resolveCaller` and the other caller policies read.
    *
    * Empty for a route whose `credential` is `bearer-of-id`.
    */
@@ -100,7 +100,7 @@ export interface UpgradeRoute {
    * `__tests__/upgrade-router.test.ts` pins that `required` really refuses.
    *
    * - `required` — must present a valid session cookie or per-user API key when
-   *   login is enabled, exactly as `sessionGate` demands of a request. The
+   *   login is enabled, exactly as the session gate demands of a request. The
    *   durable streams.
    * - `bearer-of-id` — authorized by holding an unguessable id minted by an
    *   already-gated route, and `authorize` checks that id itself. The terminal
@@ -109,7 +109,7 @@ export interface UpgradeRoute {
   readonly credential: 'required' | 'bearer-of-id';
   /**
    * Authorize the claimed upgrade. Every credential check a route needs lives
-   * here, because none of Express's ran (see the module doc). Returning a
+   * here, because none of the chain's ran (see the module doc). Returning a
    * refusal is how a route answers 401/403/404 — throwing is a bug and returns
    * an HTTP 500 while running (terminal admission takes precedence).
    */
@@ -173,7 +173,7 @@ function originIsTrusted(req: IncomingMessage, credential: UpgradeRoute['credent
         trustedHosts: parseTrustedHosts(env.DORKOS_TRUSTED_HOSTS),
         tunnelHosts: getTunnelHosts(),
       }),
-      // eslint-disable-next-line no-restricted-syntax -- DORKOS_CORS_ORIGIN is not in env.ts; read the same way app.ts reads it
+      // eslint-disable-next-line no-restricted-syntax -- DORKOS_CORS_ORIGIN is not in env.ts; read the same way the chain reads it
       configuredOrigins: process.env.DORKOS_CORS_ORIGIN,
       // Buys exactly one thing here: an IP-literal `Host` satisfies the pairing,
       // which is what makes the shipped container reachable at its LAN address.
@@ -188,7 +188,7 @@ function originIsTrusted(req: IncomingMessage, credential: UpgradeRoute['credent
       // When no proxy names the scheme, the same-origin comparison defaults to
       // the connection's own encryption. The server binds plain HTTP (TLS is
       // terminated upstream), so this is always falsy in practice and the default
-      // resolves to `http` — matching what `buildCors` pins on the HTTP path.
+      // resolves to `http` — matching what the CORS layer pins on the HTTP path.
       connectionEncrypted: Boolean((req.socket as TLSSocket).encrypted),
       hostCheckInert,
     },
@@ -212,7 +212,7 @@ function refuse(socket: Duplex, status: number, message: string): void {
  *
  * @param server - The HTTP server to attach to.
  * @param routes - The claimants, in precedence order.
- * @param admission - The same main-listener gate used by Express.
+ * @param admission - The same main-listener gate the chain uses.
  */
 export function attachUpgradeRouter(
   server: Server,

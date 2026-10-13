@@ -156,7 +156,7 @@ const PROTECTED_EFFECTS: ProtectedEffect[] = [
       'services/shapes/shape-services.ts':
         'records which Shape is active, reachable only through applyShape, which is itself on this list and tier-gated at routes/shapes.ts (DOR-625)',
       'services/heartbeats/triage/triage-mount.ts':
-        'records what a PERSON answered to the one-time "Run cheap checks on DorkOS credits?" offer (spec `heartbeats` §6.3): `heartbeats.triageOnCredits` is operator-only and reached only from `PUT /api/heartbeats/triage-credits` in `routes/heartbeat-triage.ts`, behind refuseErrorUnlessOwner, so no agent can say yes; every answer leaves a `heartbeat.config_changed` audit row',
+        'records what a PERSON answered to the one-time "Run cheap checks on DorkOS credits?" offer (spec `heartbeats` §6.3): `heartbeats.triageOnCredits` is operator-only and reached only from `PUT /api/heartbeats/triage-credits` in `routes/heartbeat-triage.ts`, behind errorRefusalUnlessOwner, so no agent can say yes; every answer leaves a `heartbeat.config_changed` audit row',
       'services/harness/hook-consent.ts':
         'records what a PERSON decided about a package hook — a yes from the approval card or from `dorkos harness sync --fix --allow-hooks`, a no from the card, and a revoke from `dorkos harness hooks --revoke`. Both leaves (`harness.approvedHooks`, `harness.refusedHooks`) are operator-only, and the approval route is the gate in front of the card (DOR-522, DOR-1849)',
       'services/harness/global-scope.ts':

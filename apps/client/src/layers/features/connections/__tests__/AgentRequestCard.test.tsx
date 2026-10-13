@@ -261,10 +261,59 @@ describe('AgentRequestCard — no account yet', () => {
 
     await user.click(await screen.findByRole('button', { name: 'Connect Gmail' }));
     const step = await screen.findByTestId('first-connect-step');
-    // Composio isn't set up, so its key is the choice the step offers.
-    expect(within(step).getByRole('button', { name: /Use my Composio key/ })).toBeInTheDocument();
+    // Nothing is set up, so both ways in are offered (FB-57): the DorkOS
+    // account first, as on the first-run screen, and a Composio key.
+    const account = within(step).getByRole('button', { name: 'Use a DorkOS account' });
+    const key = within(step).getByRole('button', { name: /Use my Composio key/ });
+    expect(step).toHaveTextContent('Sign in or create one.');
+    expect(account.compareDocumentPosition(key) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(account.className).not.toBe(key.className);
     expect(transport.startConnectorAgentRequestAuthentication).not.toHaveBeenCalled();
+    openSettings.mockClear();
+    await user.click(account);
+    expect(openSettings).toHaveBeenCalledWith('account');
   });
+
+  it.each([
+    ['dorkos_account_unavailable', 'unavailable', 'Link my DorkOS account again'],
+    ['own_key_unavailable', null, 'Use a DorkOS account'],
+  ] as const)(
+    'offers the DorkOS account beside the key when the way in is down (%s)',
+    async (reason, accountStatus, accountButton) => {
+      const user = userEvent.setup();
+      const transport = transportWith([]);
+      const appConnections = {
+        ways: accountStatus
+          ? [{ kind: 'dorkos_account', type: 'dorkos-managed', status: accountStatus }]
+          : [{ kind: 'own_key', type: 'composio', status: 'unavailable' }],
+        newApps: { status: 'setup_needed', reason },
+      };
+      vi.mocked(transport.getConnectorCatalog).mockResolvedValue({
+        services: [{ ...GMAIL, intents: [{ ...GMAIL.intents[0], routes: [] }] }],
+        warnings: [],
+        appConnections,
+      } as never);
+      vi.mocked(transport.getConnectorProviders).mockResolvedValue({
+        providers: [
+          {
+            type: 'composio',
+            providerInstanceId: 'composio-1',
+            configured: false,
+            registered: false,
+            custody: 'managed',
+            disclosure: 'Composio keeps sign-ins.',
+          },
+        ],
+        appConnections,
+      } as never);
+      renderWith(transport, <AgentRequestCard request={REQUEST} />);
+
+      await user.click(await screen.findByRole('button', { name: 'Connect Gmail' }));
+      const step = await screen.findByTestId('first-connect-step');
+      expect(within(step).getByRole('button', { name: accountButton })).toBeInTheDocument();
+      expect(within(step).getByRole('button', { name: /Use my Composio key/ })).toBeInTheDocument();
+    }
+  );
 
   it('says the DorkOS account isn’t linked anymore in the one-time step, beside a key as an equal choice', async () => {
     const user = userEvent.setup();

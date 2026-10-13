@@ -1,3 +1,4 @@
+import type { RoomUploadStorageEngine } from './upload/room-upload-storage-contracts.js';
 import { createOriginalRoomEditorPublicOperations } from './file-editor/room-file-editor-public-operations.js';
 import * as editorRequestLifetime from './file-editor/room-file-editor-request-lifetime.js';
 import * as editorUploadStage from './file-editor/room-file-editor-upload-stage.js';
@@ -6,8 +7,7 @@ import * as editorFileMutations from './file-editor/room-file-editor-file-mutati
 import * as editorCommit from './file-editor/room-file-editor-commit.js';
 import * as editorCurrentState from './file-editor/room-file-editor-current-state.js';
 import { AsyncLocalStorage } from 'node:async_hooks';
-import type { Request, Response } from 'express';
-import type multer from 'multer';
+import type { IncomingMessage, ServerResponse } from 'node:http';
 import { restoreRoomFileUploadCause } from './room-file-upload-storage.js';
 import {
   checkDocHttpRoomFileWriteCurrent,
@@ -397,7 +397,7 @@ export class RoomFileEditor {
     readInstallationRoomMutationRoots(operation.context);
     return operation;
   }
-  #capture(roomId: string, req: Request, res: Response): Promise<object> {
+  #capture(roomId: string, req: IncomingMessage, res: ServerResponse): Promise<object> {
     return editorRequestLifetime.capture(this.#methodOwner, roomId, req, res);
   }
   async #dispatch<T>(handle: object, work: () => Promise<T>): Promise<T> {
@@ -424,19 +424,19 @@ export class RoomFileEditor {
   #stage(
     handle: object,
     directory: string,
-    storage: multer.StorageEngine,
-    req?: Request
+    storage: RoomUploadStorageEngine,
+    req?: IncomingMessage
   ): { operation: EditorOperation; stage: UploadStage } {
     return editorUploadStage.stage(this.#methodOwner, handle, directory, storage, req);
   }
-  #storage(handle: object, directory: string): multer.StorageEngine {
+  #storage(handle: object, directory: string): RoomUploadStorageEngine {
     return editorUploadStage.storage(this.#methodOwner, handle, directory);
   }
   #checkStorage(
     handle: object,
     directory: string,
-    storage: multer.StorageEngine,
-    req: Request,
+    storage: RoomUploadStorageEngine,
+    req: IncomingMessage,
     cleanup: boolean
   ): Promise<void> {
     return editorUploadStage.checkStorage(

@@ -1,3 +1,4 @@
+import type { UploadStreamFile, UploadedFile } from '../../../../http/uploads.js';
 /** Genuine HTTP-captured component controls; not a production multipart-parser claim. */
 import { randomUUID } from 'node:crypto';
 import { Readable } from 'node:stream';
@@ -29,6 +30,8 @@ import {
   restoreRoomFileUploadCause,
 } from '../room-file-upload-storage.js';
 import type { OriginalOwnedRoomFixture } from './room-original-owned-fixture.js';
+import { originalDocHonoRequest } from '../../../../http/original-doc-request.js';
+import { streamToNodeResponse } from '../../../../http/raw-node-stream.js';
 
 type Outcome = { failed: false; value: unknown } | { failed: true; cause: unknown };
 type Work =
@@ -123,13 +126,15 @@ export async function createOriginalFileOpsHttpFixture(original: OriginalOwnedRo
       cleanupCause = cause;
     }
   };
-  original.app.post('/api/original-file-ops/:operationId', async (req, res) => {
-    const item = pending.get(req.params.operationId);
+  original.installFileOpsHttpHandler(async (c) => {
+    const { req, res } = originalDocHonoRequest(c);
+    const operationId = c.req.param('operationId');
+    if (!operationId) return c.body(null, 404);
+    const item = pending.get(operationId);
     if (!item || closing) {
-      res.status(404).end();
-      return;
+      return c.body(null, 404);
     }
-    pending.delete(req.params.operationId);
+    pending.delete(operationId);
     let handle: object | undefined;
     let retiring: Promise<void> | undefined;
     let failed = false;
@@ -215,10 +220,10 @@ export async function createOriginalFileOpsHttpFixture(original: OriginalOwnedRo
             handle,
             stage.stagingDir
           );
-          const files: Express.Multer.File[] = [];
+          const files: UploadedFile[] = [];
           try {
             for (const input of inputs) {
-              const file: Express.Multer.File = {
+              const file: UploadStreamFile = {
                 fieldname: 'files',
                 originalname: input.name,
                 encoding: '7bit',
@@ -230,7 +235,7 @@ export async function createOriginalFileOpsHttpFixture(original: OriginalOwnedRo
                 buffer: Buffer.alloc(0),
                 stream: Readable.from(input.bytes),
               };
-              const info = await new Promise<Partial<Express.Multer.File>>((resolve, reject) => {
+              const info = await new Promise<Partial<UploadedFile>>((resolve, reject) => {
                 storage._handleFile(req, file, (cause, acquired) => {
                   if (cause) reject(restoreRoomFileUploadCause(storage, cause));
                   else resolve(acquired ?? {});
@@ -274,7 +279,12 @@ export async function createOriginalFileOpsHttpFixture(original: OriginalOwnedRo
       : { failed: false, value };
     item.prepared(outcome);
     item.finish(outcome);
-    if (!res.destroyed && !res.writableEnded) res.status(204).end();
+    return streamToNodeResponse(c, async (raw) => {
+      if (!raw.destroyed && !raw.writableEnded) {
+        raw.statusCode = 204;
+        raw.end();
+      }
+    });
   });
 
   function start(actor: RoomFileActor, work: Work) {

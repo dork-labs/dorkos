@@ -76,6 +76,7 @@ export function mapHistoryMessage(m: HistoryMessage): ChatMessage {
     commandName: m.commandName,
     commandArgs: m.commandArgs,
     ...(m.chatMessages && m.chatMessages.length > 0 ? { chatMessages: m.chatMessages } : {}),
+    ...(m.roomMessage ? { roomMessage: m.roomMessage } : {}),
   };
 }
 

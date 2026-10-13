@@ -19,6 +19,7 @@ import {
   scriptedRunner,
 } from '../../../rooms/__tests__/room-test-harness.js';
 import { createAgentRuntimeMcpServer } from '../agent-runtime-server.js';
+import { connectorDomain } from '../../../connectors/connector-capabilities.js';
 import { permissionsDomain } from '../../../core/permissions/permission-capabilities.js';
 import { uiDomain } from '../../../session/browser-seat/ui-capabilities.js';
 import { devtoolsCaptureStore } from '../../../session/devtools-capture-store.js';
@@ -395,5 +396,36 @@ describe('request_permission on the Codex and OpenCode listener (spec agent-perm
       )
     ).rejects.toMatchObject({ payload: { code: 'UNKNOWN_ACTION' } });
     expect(ranUnlisted).not.toHaveBeenCalled();
+  });
+});
+
+describe('connector_recommend on the Codex and OpenCode tool server', () => {
+  it('reads connected from exactly this turn’s granted connections', async () => {
+    const listRuntimeConnections = vi.fn(async () => ({
+      connections: [{ connectionId: 'c', toolkit: 'gmail', label: 'Mail', status: 'active' }],
+    }));
+    const registry = composeRegistry([connectorDomain], {
+      logger: noopLogger,
+      connectorDeps: {
+        registry: {
+          assertAvailable: vi.fn(),
+          providersForToolkit: async () => ({ providers: [], warnings: [] }),
+        } as never,
+        catalog: vi.fn() as never,
+      },
+      connectorExecutionDeps: {
+        authorization: {} as never,
+        broker: {} as never,
+        access: { listRuntimeConnections } as never,
+      },
+    });
+    const client = await connect(createAgentRuntimeMcpServer(registry, principal, identity));
+
+    const result = payload(
+      await client.callTool({ name: 'connector_recommend', arguments: { service: 'gmail' } })
+    );
+
+    expect(result.connected).toBe(true);
+    expect(listRuntimeConnections).toHaveBeenCalledWith(principal);
   });
 });

@@ -12,10 +12,15 @@
  * @module services/runtimes/claude-code/mcp-tools/session-start-permission
  */
 import type { PermissionModeDescriptor } from '@dorkos/shared/agent-runtime';
-import { actsWithoutAsking, isNoLooserThan } from '@dorkos/shared/permission-semantics';
+import {
+  actsWithoutAsking,
+  isNoLooserThan,
+  isSilentReadOnly,
+} from '@dorkos/shared/permission-semantics';
 import { logError, logger } from '../../../../lib/logger.js';
 import { runtimeRegistry } from '../../../core/runtime-registry.js';
-import { gatePermissionMode } from '../turn-permission.js';
+import { NEVER_ASK_MODE_ID } from '../runtime-constants.js';
+import { gatePermissionMode, isPersonOnlyMode } from '../turn-permission.js';
 import type { McpToolSession } from './types.js';
 
 /**
@@ -118,6 +123,12 @@ export interface CallingChat {
   permissionMode: string | null;
   /** The runtime it runs on. */
   runtime: string;
+  /**
+   * Whether the chat is SET to "Never ask", whatever its turn runs at. A
+   * stricter ceiling can hold the turn to Plan, which asks; a chat set to never
+   * ask still starts only chats that cannot ask.
+   */
+  neverAsks?: boolean;
 }
 
 /** The highest level a call may start a chat at. */
@@ -140,6 +151,8 @@ interface Ceiling {
   exact: boolean;
   /** Whether the call came from a chat, which decides how a refusal reads. */
   inChat: boolean;
+  /** Whether the calling chat never asks: set to, or running at, "Never ask". */
+  neverAsks: boolean;
 }
 
 /** The modes a registered runtime declares, or an empty list. */
@@ -187,7 +200,7 @@ async function ceilingOf(chat: CallingChat | null): Promise<Ceiling> {
     const found = declaredModes(NO_CHAT_CEILING_RUNTIME).values.find(
       (m) => m.id === NO_CHAT_CEILING_MODE
     );
-    const base = { callerMode: null, exact: false, inChat: false };
+    const base = { callerMode: null, exact: false, inChat: false, neverAsks: false };
     return found
       ? { ...base, level: found, label: found.label, inheritId: null }
       : { ...base, level: FLOOR, label: FLOOR_LABEL, inheritId: null };
@@ -203,10 +216,16 @@ async function ceilingOf(chat: CallingChat | null): Promise<Ceiling> {
       callerMode: own.id,
       exact: true,
       inChat: true,
+      neverAsks: chat.neverAsks === true || isPersonOnlyMode(own.id),
     };
   }
   const fallback = modes.values.find((m) => m.id === modes.default);
-  const base = { callerMode: id ?? null, exact: false, inChat: true };
+  const base = {
+    callerMode: id ?? null,
+    exact: false,
+    inChat: true,
+    neverAsks: chat.neverAsks === true || isPersonOnlyMode(id ?? undefined),
+  };
   return fallback
     ? { ...base, level: fallback, label: fallback.label, inheritId: fallback.id }
     : { ...base, level: FLOOR, label: FLOOR_LABEL, inheritId: null };
@@ -225,6 +244,17 @@ function allowsAuto(ceiling: Ceiling): boolean {
 type Grant =
   { ok: true; mode: PermissionModeDescriptor } | { ok: false; error: string; code: string };
 
+/**
+ * Whether a chat that never asks may start one at this mode: only one that
+ * cannot ask either. "Never ask" refuses what Default would put to a person, so
+ * a chat it starts may not put those same calls to a person instead (DOR-2838):
+ * "Never ask" itself, or a mode that only reads and has nothing to ask about
+ * (`isSilentReadOnly`, Codex's read-only sandbox).
+ */
+function cannotAsk(mode: PermissionModeDescriptor): boolean {
+  return mode.id === NEVER_ASK_MODE_ID || isSilentReadOnly(mode);
+}
+
 /** The refusal for a mode above the ceiling. */
 function aboveRefusal(ceiling: Ceiling, mode: PermissionModeDescriptor): Grant {
   return {
@@ -238,6 +268,17 @@ function aboveRefusal(ceiling: Ceiling, mode: PermissionModeDescriptor): Grant {
   };
 }
 
+/** The refusal for a chat that never asks naming a mode that can ask. */
+function neverAsksRefusal(mode: PermissionModeDescriptor): Grant {
+  return {
+    ok: false,
+    error:
+      `This chat never asks, so it cannot start a chat at ${mode.label}, which can. ` +
+      'Leave permissionMode out to start one that never asks too.',
+    code: 'ABOVE_YOUR_LEVEL',
+  };
+}
+
 /**
  * The mode a start runs at, against the target runtime's declared modes: the one
  * asked for when it is not above the ceiling; with none asked for, the caller's
@@ -247,8 +288,21 @@ function aboveRefusal(ceiling: Ceiling, mode: PermissionModeDescriptor): Grant {
  */
 function grantMode(requested: string | undefined, ceiling: Ceiling, runtimeType: string): Grant {
   const target = declaredModes(runtimeType);
+  const callerNeverAsks = ceiling.neverAsks;
   const fits = (mode: PermissionModeDescriptor) =>
-    isNoLooserThan(ceiling.level, mode) && (mode.id !== AUTO_MODE_ID || allowsAuto(ceiling));
+    isNoLooserThan(ceiling.level, mode) &&
+    (mode.id !== AUTO_MODE_ID || allowsAuto(ceiling)) &&
+    (!callerNeverAsks || cannotAsk(mode));
+  // "Never ask" is a person's choice. An agent may pass it on by starting a chat
+  // from one (inheriting it, or naming it from inside one), never pick it.
+  if (isPersonOnlyMode(requested) && !callerNeverAsks) {
+    return {
+      ok: false,
+      error:
+        'Only a person can set a chat to never ask. Leave permissionMode out, or name another mode.',
+      code: 'PERSON_ONLY_MODE',
+    };
+  }
   if (requested !== undefined) {
     const mode = target.values.find((m) => m.id === requested);
     if (!mode) {
@@ -258,12 +312,20 @@ function grantMode(requested: string | undefined, ceiling: Ceiling, runtimeType:
         code: 'UNKNOWN_PERMISSION_MODE',
       };
     }
-    return fits(mode) ? { ok: true, mode } : aboveRefusal(ceiling, mode);
+    if (fits(mode)) return { ok: true, mode };
+    return callerNeverAsks ? neverAsksRefusal(mode) : aboveRefusal(ceiling, mode);
   }
   const own = ceiling.inheritId ? target.values.find((m) => m.id === ceiling.inheritId) : undefined;
   if (own && fits(own)) return { ok: true, mode: own };
   const fallback = target.values.find((m) => m.id === target.default);
   if (fallback && fits(fallback)) return { ok: true, mode: fallback };
+  if (callerNeverAsks) {
+    return {
+      ok: false,
+      error: `The ${runtimeType} runtime has no mode that never asks, so this chat cannot start one there.`,
+      code: 'NO_MODE_FITS',
+    };
+  }
   return {
     ok: false,
     error:

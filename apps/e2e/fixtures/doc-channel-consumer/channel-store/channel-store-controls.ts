@@ -103,9 +103,6 @@ export async function constructOriginalConsumerControls(ownerKey: object) {
     await import('../../../../server/src/services/canvas/doc-channel/grant-capabilities.js');
   const { createDocChannelManagementCapabilities } =
     await import('../../../../server/src/services/canvas/doc-channel/management/capabilities.js');
-  const { createCanvasDocManagementRouter } =
-    await import('../../../../server/src/routes/canvas-doc-management.js');
-  const { createApprovalsRouter } = await import('../../../../server/src/routes/approvals.js');
   const managementRegistry = composeRegistry(
     [
       {
@@ -123,10 +120,11 @@ export async function constructOriginalConsumerControls(ownerKey: object) {
       docChannelGrantDeps: { service: http.grants, authorization: http.authorization },
     }
   );
-  const managementRouter = createCanvasDocManagementRouter(managementRegistry, http);
-  const approvalRouter = createApprovalsRouter(approvals, {
-    describeCapability: (id) => managementRegistry.get(id),
-  });
+  const approvalOptions: import('../../../../server/src/routes/approvals.js').ApprovalsRouterOptions =
+    {
+      describeCapability: (id) => managementRegistry.get(id),
+    };
+  const approvalRoutes = { service: approvals, options: approvalOptions };
   let privateCanonicalStarted = false,
     privateCanonicalOwnerClosed = true;
   const readRoomScenarioData = createOriginalRoomScenarioDataReader(context, {
@@ -442,11 +440,8 @@ export async function constructOriginalConsumerControls(ownerKey: object) {
     },
     createDocChannelGrantCapabilities,
     createDocChannelManagementCapabilities,
-    createCanvasDocManagementRouter,
-    createApprovalsRouter,
     managementRegistry,
-    managementRouter,
-    approvalRouter,
+    approvalRoutes,
     get privateCanonicalStarted() {
       return privateCanonicalStarted;
     },

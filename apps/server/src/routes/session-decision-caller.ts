@@ -1,4 +1,4 @@
-import { type Request, type Response } from 'express';
+import type { RequestFacts } from '../http/request-facts.js';
 import { logger } from '../lib/logger.js';
 import { resolveDecisionAuthority } from '../services/core/approvals/index.js';
 import {
@@ -7,8 +7,7 @@ import {
   type OperatorCookieRefusal,
 } from '../lib/caller-authority.js';
 import { trustedCaller } from '../services/core/capabilities/index.js';
-import { getRequestAgentIdentity } from '../middleware/agent-identity.js';
-import { getUserById, readOwnerAccount, type RequestUser } from '../services/core/auth/index.js';
+import { getUserById, readOwnerAccount } from '../services/core/auth/index.js';
 import { resolveAnswererName } from '../services/identity/operator-profile.js';
 import { configManager } from '../services/core/config-manager.js';
 
@@ -17,16 +16,14 @@ import { configManager } from '../services/core/config-manager.js';
  * (DOR-2335): a person at this machine, or anyone else, with the name an
  * approval card shows.
  *
- * @param req - The request.
- * @param res - The response, whose locals carry the agent identity.
+ * @param facts - The raw request facts and resolved identity.
  */
 export function workspaceCallerOf(
-  req: Request,
-  res: Response
+  facts: Pick<RequestFacts, 'headers' | 'user' | 'agentIdentity'>
 ): { trusted: boolean; requestedBy?: string } {
-  const identity = getRequestAgentIdentity(res);
+  const identity = facts.agentIdentity;
   return {
-    trusted: trustedCaller(readCallerAuthority(req, res)) !== undefined,
+    trusted: trustedCaller(readCallerAuthority(facts)) !== undefined,
     ...(identity && { requestedBy: identity.displayName || identity.agentPath }),
   };
 }
@@ -84,19 +81,17 @@ const ANSWERING_NEEDS_COCKPIT =
  * the same callers through both and fails if they disagree — so the day a
  * second person exists, one of them cannot quietly widen.
  *
- * @param req - The incoming request.
- * @param res - The response carrying `sessionGate`'s resolved user.
+ * @param facts - The raw request facts carrying the session gate's resolved user.
  * @returns `undefined` when the caller may answer, or the refusal to answer with.
  */
 export function requirePersonToAnswer(
-  req: Request,
-  res: Response
+  facts: Pick<RequestFacts, 'headers' | 'user' | 'agentIdentity'>
 ): OperatorCookieRefusal | undefined {
-  const authority = resolveDecisionAuthority(readCallerAuthority(req, res));
+  const authority = resolveDecisionAuthority(readCallerAuthority(facts));
   if (!authority.allowed) {
     return { status: authority.status, code: authority.code, error: authority.error };
   }
-  const notAPerson = requireOperatorCookieUnderLogin(res, 'whether a tool runs');
+  const notAPerson = requireOperatorCookieUnderLogin(facts, 'whether a tool runs');
   return notAPerson ? { ...notAPerson, error: ANSWERING_NEEDS_COCKPIT } : undefined;
 }
 
@@ -122,12 +117,12 @@ export function requirePersonToAnswer(
  * lookup the day DorkOS has more than one, which is the same day the Ask needs
  * a per-caller entitlement filter.
  *
- * @param res - The response carrying `sessionGate`'s resolved user.
+ * @param facts - The request facts carrying the session gate's resolved user.
  * @returns The name to put on the receipt, or `undefined` when none is known or
  *   the lookup failed.
  */
-export function answeredBy(res: Response): string | undefined {
-  const user = res.locals.user as RequestUser | undefined;
+export function answeredBy(facts: Pick<RequestFacts, 'user'>): string | undefined {
+  const user = facts.user;
   try {
     return resolveAnswererName({
       account: () => (user ? getUserById(user.userId) : readOwnerAccount()),

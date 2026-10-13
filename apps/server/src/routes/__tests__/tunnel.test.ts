@@ -72,7 +72,6 @@ vi.mock('../../services/core/auth/session-gate.js', async (importOriginal) => ({
 
 import request from '@dorkos/test-utils/supertest';
 import { listeningServer, swappableServer } from '@dorkos/test-utils/listening-server';
-import { createApp } from '../../app.js';
 import { composedListener } from '../../http/__tests__/composed-listener.js';
 import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
 import { env } from '../../env.js';
@@ -84,7 +83,7 @@ import { canExpose } from '../../services/core/auth/exposure-guard.js';
 import type { RequestUser } from '../../services/core/auth/session-gate.js';
 
 const admission = new MainRequestAdmission();
-const server = listeningServer(composedListener(createApp({ admission }), admission));
+const server = listeningServer(composedListener(admission));
 const callerTarget = swappableServer();
 
 /**

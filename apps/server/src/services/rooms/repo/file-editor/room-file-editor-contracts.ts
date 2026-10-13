@@ -1,7 +1,7 @@
+import type { RoomUploadStorageEngine } from '../upload/room-upload-storage-contracts.js';
 import path from 'node:path';
 import type { AsyncLocalStorage } from 'node:async_hooks';
-import type { Request, Response } from 'express';
-import type multer from 'multer';
+import type { IncomingMessage, ServerResponse } from 'node:http';
 import {
   type InstallationRoomWrites,
   type InstallationRoomMutationContext,
@@ -174,12 +174,12 @@ export interface UploadStage {
   maxFileBytes: number;
   ancestors: readonly Readonly<{ directory: string; dev: bigint; ino: bigint }>[];
   minting: boolean;
-  storage?: multer.StorageEngine;
+  storage?: RoomUploadStorageEngine;
 }
 /** Original request-local editor operation and its owned drains and staging. */
 export interface EditorOperation {
   editor: RoomFileEditor;
-  request: Request;
+  request: IncomingMessage;
   roomId: string;
   caller: object;
   actor: Readonly<RoomFileActor>;
@@ -193,35 +193,35 @@ export interface EditorOperation {
 /** Original constructor-registered native editor command signatures. */
 export interface EditorCommands {
   requireOwner(owner: InstallationFileWrites): void;
-  storage(handle: object, directory: string): multer.StorageEngine;
+  storage(handle: object, directory: string): RoomUploadStorageEngine;
   storageOwner(handle: object, directory: string): void;
-  storageLimit(handle: object, directory: string, storage: multer.StorageEngine): number;
+  storageLimit(handle: object, directory: string, storage: RoomUploadStorageEngine): number;
   storageCurrent(
     handle: object,
     directory: string,
-    storage: multer.StorageEngine,
-    req: Request
+    storage: RoomUploadStorageEngine,
+    req: IncomingMessage
   ): void;
   storageCheck(
     handle: object,
     directory: string,
-    storage: multer.StorageEngine,
-    req: Request,
+    storage: RoomUploadStorageEngine,
+    req: IncomingMessage,
     cleanup: boolean
   ): Promise<void>;
   storageSourceContext(
     handle: object,
     directory: string,
-    storage: multer.StorageEngine,
+    storage: RoomUploadStorageEngine,
     context: InstallationRoomMutationContext
   ): void;
   storageCleanup(
     handle: object,
     directory: string,
-    storage: multer.StorageEngine,
-    req: Request
+    storage: RoomUploadStorageEngine,
+    req: IncomingMessage
   ): void;
-  capture(roomId: string, req: Request, res: Response): Promise<object>;
+  capture(roomId: string, req: IncomingMessage, res: ServerResponse): Promise<object>;
   current(handle: object): EditorOperation;
   retire(handle: object): Promise<void>;
   save(handle: object, input: Parameters<EditorLegacy['save']>[2]): Promise<RoomFileSaveOutcome>;
@@ -248,22 +248,22 @@ export interface OriginalRoomEditorView {
   readonly owner: InstallationFileWrites | undefined;
   readonly operation: AsyncLocalStorage<EditorOperation>;
   readonly editorOperations: WeakMap<object, EditorOperation>;
-  capture(roomId: string, req: Request, res: Response): Promise<object>;
+  capture(roomId: string, req: IncomingMessage, res: ServerResponse): Promise<object>;
   retire(handle: object): Promise<void>;
   current(handle: object): EditorOperation;
   dispatch<T>(handle: object, work: () => Promise<T>): Promise<T>;
   stage(
     handle: object,
     directory: string,
-    storage: multer.StorageEngine,
-    req?: Request
+    storage: RoomUploadStorageEngine,
+    req?: IncomingMessage
   ): { operation: EditorOperation; stage: UploadStage };
-  storage(handle: object, directory: string): multer.StorageEngine;
+  storage(handle: object, directory: string): RoomUploadStorageEngine;
   checkStorage(
     handle: object,
     directory: string,
-    storage: multer.StorageEngine,
-    req: Request,
+    storage: RoomUploadStorageEngine,
+    req: IncomingMessage,
     cleanup: boolean
   ): Promise<void>;
   checkStageIdentity(operation: EditorOperation, directory: string): Promise<void>;

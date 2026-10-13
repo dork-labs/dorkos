@@ -2,7 +2,7 @@
 
 ## Overview
 
-This guide covers data fetching patterns in DorkOS. The client uses TanStack Query for server-state management, communicating through the Transport abstraction layer (`HttpTransport` for the browser, phone web app, and desktop renderer). The server exposes Express routes that delegate to services.
+This guide covers data fetching patterns in DorkOS. The client uses TanStack Query for server-state management, communicating through the Transport abstraction layer (`HttpTransport` for the browser, phone web app, and desktop renderer). The server exposes Hono routes that delegate to services.
 
 ## Key Files
 
@@ -21,7 +21,7 @@ This guide covers data fetching patterns in DorkOS. The client uses TanStack Que
 | Tasks entity hooks       | `apps/client/src/layers/entities/tasks/`                         |
 | Marketplace entity hooks | `apps/client/src/layers/entities/marketplace/`                   |
 | Chat feature hooks       | `apps/client/src/layers/features/chat/model/use-chat-session.ts` |
-| Express routes           | `apps/server/src/routes/`                                        |
+| Hono routes              | `apps/server/src/routes/`                                        |
 | Zod schemas              | `packages/shared/src/schemas.ts`                                 |
 
 ## When to Use What

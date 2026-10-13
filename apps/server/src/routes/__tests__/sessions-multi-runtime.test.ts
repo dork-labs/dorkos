@@ -77,7 +77,6 @@ vi.mock('@dorkos/shared/manifest', () => ({
 
 import request from '@dorkos/test-utils/supertest';
 import { listeningServer } from '@dorkos/test-utils/listening-server';
-import { createApp, finalizeApp } from '../../app.js';
 import { composedListener } from '../../http/__tests__/composed-listener.js';
 import type { SessionRouteDeps } from '../../routes/sessions.js';
 import { createTestDb } from '@dorkos/test-utils/db';
@@ -92,12 +91,10 @@ import { USER_CONFIG_DEFAULTS } from '@dorkos/shared/config-schema';
 import { isTurnInFlight } from '../../services/session/message-dispatcher.js';
 
 const admission = new MainRequestAdmission();
-const app = createApp({ admission });
-finalizeApp(app);
 /** What the session routes read; the tests change it between requests. */
 const sessionLocals: Record<string, unknown> = {};
 const testServer = listeningServer(
-  composedListener(app, admission, { sessions: sessionLocals as SessionRouteDeps })
+  composedListener(admission, { sessions: sessionLocals as SessionRouteDeps })
 );
 
 /** Base URL for raw SSE collection through the file-scoped listener. */
@@ -473,7 +470,7 @@ describe('sessions route — multi-runtime routing (real registry + real DB)', (
 
       const refused = await request(testServer)
         .patch(`/api/sessions/${TEST_MODE_SESSION}`)
-        .send({ permissionMode: 'dontAsk' });
+        .send({ permissionMode: 'retired-mode' });
       expect(refused.status).toBe(400);
       expect(refused.body.code).toBe('UNSUPPORTED_PERMISSION_MODE');
 

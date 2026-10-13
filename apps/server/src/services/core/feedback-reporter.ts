@@ -119,10 +119,10 @@ export type FeedbackIdentity = NonNullable<FeedbackEventContext['identity']>;
  * Resolve the identity of an authenticated feedback submitter, SERVER-SIDE,
  * from their already-verified session `userId` — never from anything a client
  * sends (ADR 260803-205037). One extra lookup against the `user` table via
- * {@link getUserById}, which the feedback route calls with `res.locals.user.userId`
- * (set by `sessionGate`, only when `auth.enabled`).
+ * {@link getUserById}, which the feedback route calls with the request's
+ * `user.userId` (set by the session gate, only when `auth.enabled`).
  *
- * @param userId - The Better Auth user id `sessionGate` already verified.
+ * @param userId - The Better Auth user id the session gate already verified.
  * @returns The resolved `{ userId, email, name }`, or `undefined` when the id
  *   does not resolve to a user (should not happen for a verified session, but
  *   never throws — a feedback submission must still be deliverable).

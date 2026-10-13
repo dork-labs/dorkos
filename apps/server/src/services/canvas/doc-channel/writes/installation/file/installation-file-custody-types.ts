@@ -7,7 +7,7 @@ import type { TrustedTreeRoot, TreeRootIdentity } from '../../mutation-roots.js'
 import type { DocChannelDownstream } from '../../../downstream/service.js';
 import type { OriginalDownstreamRoomEmitter } from '../../../downstream/native-room-emitter.js';
 /** One fixed owning installation gate, canonical coordinator and same-Db fence. */
-import type { Request, Response } from 'express';
+import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { Db } from '@dorkos/db';
 import type { WriteFileRequest } from '@dorkos/shared/schemas';
 import type { DocChannelStore } from '../../../store.js';
@@ -55,7 +55,11 @@ export interface Assembly {
   checkboxGrantConstruction?: 'constructing' | 'finished';
   checkboxGrantConstructed?: Promise<void>;
   requireAdmission(): void;
-  saveHttp(req: Request, res: Response, input: WriteFileRequest): Promise<NormalFileSaveOutcome>;
+  saveHttp(
+    req: IncomingMessage,
+    res: ServerResponse,
+    input: WriteFileRequest
+  ): Promise<NormalFileSaveOutcome>;
   stop(): Promise<void>;
 }
 /** Original live canonical save obligations retained only by the private scope registry. */
@@ -186,8 +190,8 @@ export interface InstallationFileCustody {
     owner: InstallationFileWrites,
     exactDb: Db,
     exactStore: DocChannelStore,
-    req: Request,
-    res: Response,
+    req: IncomingMessage,
+    res: ServerResponse,
     input: WriteFileRequest
   ): Promise<NormalFileSaveOutcome>;
   stopInstallationFileWrites(

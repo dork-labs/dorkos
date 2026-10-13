@@ -8,11 +8,11 @@ import {
 import { once } from 'node:events';
 import type { AddressInfo } from 'node:net';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import express from 'express';
 import { WebSocket } from 'ws';
 import { MainRequestAdmission } from '../main-request-admission.js';
 import { startMainListener } from '../main-listener.js';
-import { terminalAdmission } from '../../../../middleware/terminal-admission.js';
+import { createApiApp } from '../../../../http/api-chain.js';
+import { frontDoorListener } from '../../../../http/front-door.js';
 import { attachUpgradeRouter } from '../../streams/upgrade-router.js';
 import { WorkspaceReconciler } from '../../../workspace/workspace-reconciler.js';
 import { WorkspaceReconcilerLifecycle } from '../../../workspace/workspace-reconciler-lifecycle.js';
@@ -79,15 +79,15 @@ describe('main listener acquisition under terminal admission', () => {
   // A5 positive control: one real listener announces once; closing admission later preserves active work.
   it('runs the open listener callback once and leaves an already-listening server bound', async () => {
     const admission = new MainRequestAdmission();
-    const app = express();
-    app.use(terminalAdmission(admission));
+    const chain = createApiApp({ admission });
     const entered = deferred<void>();
     const release = deferred<void>();
-    app.get('/held', async (_req, res) => {
+    chain.get('/held', async (c) => {
       entered.resolve();
       await release.promise;
-      res.send('completed');
+      return c.text('completed');
     });
+    const app = frontDoorListener(chain);
     const onListening = vi.fn();
     const listen = vi.fn(() => {
       const server = makeServer(app);
@@ -170,14 +170,13 @@ describe('main listener acquisition under terminal admission', () => {
   it('keeps late HTTP middleware and upgrade attachment closed on the same instance', async () => {
     const admission = new MainRequestAdmission();
     admission.close();
-    const app = express();
-    app.use(terminalAdmission(admission));
+    const chain = createApiApp({ admission });
     const httpHandler = vi.fn();
-    app.get('/probe', (_req, res) => {
+    chain.get('/probe', (c) => {
       httpHandler();
-      res.end();
+      return c.body(null);
     });
-    const server = makeServer(app);
+    const server = makeServer(frontDoorListener(chain));
     const authorize = vi.fn();
     attachUpgradeRouter(
       server,

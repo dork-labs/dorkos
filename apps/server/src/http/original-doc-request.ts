@@ -1,17 +1,21 @@
 /** Hono's actual Node request/response and exact session admission, for original Doc lifetimes. */
 import type { Context } from 'hono';
-import type { Request, Response } from 'express';
+import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { ApiEnv } from './api-chain.js';
-import { expressRequestFacts, honoRequestFacts, type RequestFacts } from './request-facts.js';
+import type { RequestUser } from '../services/core/auth/session-gate.js';
+import { honoRequestFacts, type RequestFacts } from './request-facts.js';
 
-const admittedRequests = new WeakMap<Request, RequestFacts>();
-const responseOwners = new WeakMap<object, Request>();
-const requestContexts = new WeakMap<Request, Context<ApiEnv>>();
+const admittedRequests = new WeakMap<IncomingMessage, RequestFacts>();
+const responseOwners = new WeakMap<object, IncomingMessage>();
+const requestContexts = new WeakMap<IncomingMessage, Context<ApiEnv>>();
 
 /** Capture the genuine raw objects once; authentication remains the original session gate's. */
-export function originalDocHonoRequest(c: Context<ApiEnv>): { req: Request; res: Response } {
-  const req = c.env.incoming as Request;
-  const res = c.env.outgoing as Response;
+export function originalDocHonoRequest(c: Context<ApiEnv>): {
+  req: IncomingMessage;
+  res: ServerResponse;
+} {
+  const req = c.env.incoming;
+  const res = c.env.outgoing;
   const admitted = c.get('originalAdmittedRequest');
   if (!admitted || admitted.headers !== req.headers)
     throw new Error('Original Hono session admission is unavailable.');
@@ -21,17 +25,6 @@ export function originalDocHonoRequest(c: Context<ApiEnv>): { req: Request; res:
   const owner = responseOwners.get(res);
   if (owner && owner !== req) throw new Error('Original response belongs to another request.');
   if (!owner) {
-    if (Object.prototype.hasOwnProperty.call(res, 'locals'))
-      throw new Error('Original Hono response locals cannot be replaced.');
-    const locals = Object.freeze({
-      get user() {
-        return c.get('user');
-      },
-      get agentIdentity() {
-        return c.get('agentIdentity');
-      },
-    });
-    Object.defineProperty(res, 'locals', { value: locals, configurable: false, writable: false });
     responseOwners.set(res, req);
     admittedRequests.set(req, admitted);
     requestContexts.set(req, c);
@@ -40,19 +33,27 @@ export function originalDocHonoRequest(c: Context<ApiEnv>): { req: Request; res:
 }
 
 /** Framework-neutral facts using the SAME raw headers and live admitted identity getters. */
-export function originalDocRequestFacts(req: Request, res: Pick<Response, 'locals'>): RequestFacts {
+export function originalDocRequestFacts(req: IncomingMessage, res: ServerResponse): RequestFacts {
   const context = requestContexts.get(req);
-  if (!context) return expressRequestFacts(req, res);
+  if (!context) throw new Error('Original Hono request ownership is unavailable.');
   if (
     responseOwners.get(res) !== req ||
     context.env.incoming !== req ||
-    context.env.outgoing !== (res as object)
+    context.env.outgoing !== res
   )
     throw new Error('Original Hono request/response ownership changed.');
   return honoRequestFacts(context);
 }
 
 /** Repeat credential verification with the original exact admitted object, never a new DTO. */
-export function originalDocAuthRequest(req: Request): Pick<Request, 'headers'> {
+export function originalDocAuthRequest(req: IncomingMessage): Pick<RequestFacts, 'headers'> {
   return admittedRequests.get(req) ?? req;
+}
+
+/** Read the live principal only through the genuinely owned raw request/response pair. */
+export function originalDocRequestUser(
+  req: IncomingMessage,
+  res: ServerResponse
+): RequestUser | undefined {
+  return originalDocRequestFacts(req, res).user;
 }

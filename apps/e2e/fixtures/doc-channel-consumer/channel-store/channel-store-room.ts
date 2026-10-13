@@ -216,7 +216,7 @@ export async function constructOriginalConsumerRoom(ownerKey: object) {
       return notificationStop;
     };
     setDocScopeNotificationsFactory(
-      (current, req, res) => (signal) => scopes.subscribe(current, http.actor(req, res), signal)
+      (current, caller) => (signal) => scopes.subscribe(current, http.actor(caller), signal)
     );
   }
 

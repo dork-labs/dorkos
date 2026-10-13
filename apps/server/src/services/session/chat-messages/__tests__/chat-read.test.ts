@@ -319,6 +319,42 @@ describe('readChat — messages another chat sent', () => {
   });
 });
 
+describe('readChat — a room post (DOR-2113)', () => {
+  it("reads another member's room post as from the room, and the person's own as theirs", async () => {
+    const author = { id: 'a1', kind: 'agent' as const, displayName: 'Kai', handle: 'kai' };
+    history = [
+      msg(1, 'user', 'the cleanup is done', {
+        roomMessage: {
+          roomId: 'r1',
+          entryId: 'e1',
+          roomLabel: '#dorkos',
+          author: { ...author, you: false },
+        },
+      }),
+      msg(3, 'user', 'ship it', {
+        roomMessage: {
+          roomId: 'r1',
+          entryId: 'e2',
+          roomLabel: '#dorkos',
+          author: { id: 'me', kind: 'human', displayName: 'You', handle: null, you: true },
+        },
+      }),
+    ];
+
+    const result = await readChat(deps, CALLER, { chat: TARGET });
+
+    expect(result.messages).toEqual([
+      expect.objectContaining({
+        id: 'm1',
+        from: 'room',
+        room: { id: 'r1', name: '#dorkos', author: 'Kai' },
+        text: 'the cleanup is done',
+      }),
+      expect.objectContaining({ id: 'm3', from: 'person', text: 'ship it' }),
+    ]);
+  });
+});
+
 describe('chatStateOf', () => {
   const live = (lifecycle: string, extra: { limit?: unknown; needsYou?: boolean } = {}) => ({
     status: { lifecycle, limit: extra.limit ?? null } as unknown as SessionStatus,

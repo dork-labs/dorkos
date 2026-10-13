@@ -4,7 +4,6 @@
  * off again follows the setting.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import express from 'express';
 import { createTestDb } from '@dorkos/test-utils/db';
 
 const config = vi.hoisted(() => ({
@@ -69,7 +68,8 @@ describe('startHeartbeats', () => {
   it('arms nothing with heartbeats off, follows the switch on, and clears everything off again', async () => {
     const observe = vi.fn(() => () => undefined);
     const handle = startHeartbeats({
-      app: express(),
+      routes: {},
+      origins: {},
       db: createTestDb(),
       meshCore: () => undefined,
       rooms: { postFromTool: vi.fn() } as never,
@@ -105,7 +105,8 @@ describe('startHeartbeats', () => {
 
   it("treats a turn started by another message in a beat chat as that message's, not the beat's", () => {
     startHeartbeats({
-      app: express(),
+      routes: {},
+      origins: {},
       db: createTestDb(),
       meshCore: () => undefined,
       rooms: { postFromTool: vi.fn() } as never,
@@ -129,7 +130,8 @@ describe('startHeartbeats', () => {
     config.enabled = true;
     const manifest = { id: 'agent-juno', name: 'juno', runtime: 'claude-code' };
     const handle = startHeartbeats({
-      app: express(),
+      routes: {},
+      origins: {},
       db: createTestDb(),
       meshCore: () =>
         ({

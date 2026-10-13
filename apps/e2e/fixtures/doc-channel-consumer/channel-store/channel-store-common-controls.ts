@@ -46,8 +46,8 @@ export function createOriginalConsumerCommonControls(ownerKey: object) {
     setSessionEventStore,
     pumpLifetime,
     readTestModeOriginalScenarioCounts,
-    managementRouter,
-    approvalRouter,
+    managementRegistry,
+    approvalRoutes,
     readRoomScenarioData,
   } = context;
   return {
@@ -66,8 +66,8 @@ export function createOriginalConsumerCommonControls(ownerKey: object) {
     budget,
     principals,
     http,
-    managementRouter,
-    approvalRouter,
+    managementRegistry,
+    approvalRoutes,
     actor,
     documentId,
     initial,

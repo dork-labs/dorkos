@@ -1,4 +1,3 @@
-import type { Express } from 'express';
 import type { ConnectorRuntimePrincipalService } from '../services/connectors/principal/runtime-principal-service.js';
 import type {
   ConnectorRuntimeExecutionProbe,
@@ -9,10 +8,12 @@ import { connectorRuntimeHeaders } from '../services/runtimes/connector-tools.js
 
 /** Compose the test-only probes at the original guarded startup frontier, using its original principals. */
 export function wireTestConnectorProbes(
-  app: Express,
   connectorRuntimePrincipals: ConnectorRuntimePrincipalService,
   listenerUrl: () => string
-): void {
+): {
+  runtimeRequestProbe: ConnectorRuntimeRequestProbe;
+  runtimeExecutionProbe: ConnectorRuntimeExecutionProbe;
+} {
   const callRuntimeConnectorTool = async (input: {
     readonly sessionId: string;
     readonly agentPath: string;
@@ -83,6 +84,5 @@ export function wireTestConnectorProbes(
       name: 'connectors.execute_read',
       arguments: { ...input.target },
     });
-  app.locals.connectorRuntimeRequestProbe = runtimeRequestProbe;
-  app.locals.connectorRuntimeExecutionProbe = runtimeExecutionProbe;
+  return { runtimeRequestProbe, runtimeExecutionProbe };
 }

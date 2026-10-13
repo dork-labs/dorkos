@@ -64,6 +64,7 @@ const EXPECTED_BLOCKS = [
   'agent_persona',
   'agent_safety_boundaries',
   'session_model',
+  'working_rules',
   'agent_memory',
   'dorkos_context',
   'user_profile',

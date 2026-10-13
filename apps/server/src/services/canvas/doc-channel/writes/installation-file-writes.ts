@@ -1,7 +1,7 @@
 /** One fixed owning installation gate, canonical coordinator and same-Db fence. */
 import { types as utilTypes } from 'node:util';
 import path from 'node:path';
-import type { Request, Response } from 'express';
+import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { Db } from '@dorkos/db';
 import { WriteFileRequestSchema, type WriteFileRequest } from '@dorkos/shared/schemas';
 import { getBoundary } from '../../../../lib/boundary.js';
@@ -199,11 +199,19 @@ export class InstallationFileWrites {
     }
   }
 
-  saveHttp(req: Request, res: Response, raw: WriteFileRequest): Promise<NormalFileSaveOutcome> {
+  saveHttp(
+    req: IncomingMessage,
+    res: ServerResponse,
+    raw: WriteFileRequest
+  ): Promise<NormalFileSaveOutcome> {
     return this.#admit(req, res, raw);
   }
 
-  #admit(req: Request, res: Response, raw: WriteFileRequest): Promise<NormalFileSaveOutcome> {
+  #admit(
+    req: IncomingMessage,
+    res: ServerResponse,
+    raw: WriteFileRequest
+  ): Promise<NormalFileSaveOutcome> {
     if (this.#closed) return Promise.reject(new Error('File writes are stopped.'));
     // Parse/copy all request data before admission; no mutable caller object survives awaits.
     const input = Object.freeze(WriteFileRequestSchema.parse(raw));

@@ -243,7 +243,7 @@ export const SCHEDULE_PERMISSION_MODE_SUMMARY: Record<SchedulePermissionMode, st
   default: 'runs at the most careful setting its agent offers',
   plan: 'can only read and plan, and cannot change anything',
   acceptEdits: 'can change files on its own, and on some agents run commands too',
-  dontAsk: 'runs its tools without a permission prompt',
+  dontAsk: 'runs only the tools it is allowed, and refuses the rest without asking',
   bypassPermissions: 'can run any command without a permission prompt',
   auto: 'decides for itself which actions are safe to take',
 };

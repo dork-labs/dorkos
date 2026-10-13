@@ -51,7 +51,7 @@ Edit `.env` and set `ANTHROPIC_API_KEY=your-key-here`.
 pnpm dev
 ```
 
-This starts both the Express server (port 6242) and the Vite dev server (port 6241). Open [http://localhost:6241](http://localhost:6241) in your browser.
+This starts both the server (port 6242) and the Vite dev server (port 6241). Open [http://localhost:6241](http://localhost:6241) in your browser.
 
 </Step>
 </Steps>
@@ -171,7 +171,7 @@ pnpm vitest run apps/server/src/services/session/__tests__/transcript-reader.tes
 | Directory                    | Package                     | Description                                     |
 | ---------------------------- | --------------------------- | ----------------------------------------------- |
 | `apps/client`                | `@dorkos/client`            | React 19 SPA (Vite 6, Tailwind 4, shadcn/ui)    |
-| `apps/server`                | `@dorkos/server`            | Express API server                              |
+| `apps/server`                | `@dorkos/server`            | Hono API server                                 |
 | `apps/site`                  | `@dorkos/site`              | Marketing site & docs (Next.js 16, Fumadocs)    |
 | `apps/e2e`                   | `@dorkos/e2e`               | Playwright browser tests                        |
 | `packages/cli`               | `dorkos`                    | Publishable npm CLI                             |

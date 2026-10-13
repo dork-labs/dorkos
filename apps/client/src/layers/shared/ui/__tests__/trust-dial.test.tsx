@@ -371,12 +371,12 @@ describe('TrustDial', () => {
 
   describe('a session at a mode the dial has no stop for', () => {
     it('says which mode it is instead of showing an empty dial', () => {
-      render(<TrustDial mode="dontAsk" descriptors={CLAUDE} onChangeMode={vi.fn()} />);
+      render(<TrustDial mode="retired-mode" descriptors={CLAUDE} onChangeMode={vi.fn()} />);
 
       const note = screen.getByTestId('trust-dial-stranded');
-      // Named by the shared fallback label, the same words every other surface
-      // uses for a mode with no descriptor in hand.
-      expect(note).toHaveTextContent(/Don’t ask/);
+      // Named by the shared fallback, the same words every other surface uses
+      // for a mode with no descriptor in hand: an id nobody labelled is itself.
+      expect(note).toHaveTextContent(/retired-mode/);
       expect(note).toHaveAttribute('role', 'status');
       expect(within(dial()).queryAllByRole('radio', { checked: true })).toHaveLength(0);
     });

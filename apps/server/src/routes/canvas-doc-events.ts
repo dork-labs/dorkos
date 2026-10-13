@@ -28,7 +28,6 @@ import {
   type DocChannelService,
 } from '../services/canvas/doc-channel/service.js';
 import { z } from 'zod';
-import type { Request, Response as ExpressResponse } from 'express';
 import {
   toggleOriginalCheckboxWriter,
   type DocCheckboxWriteService,
@@ -77,10 +76,7 @@ export interface DocChannelHttp {
   /** Exact installation-owned native checkbox writer. */
   checkboxWriter?: DocCheckboxWriteService;
   metrics?: DocChannelMetrics;
-  actor(
-    caller: Pick<RequestFacts, 'headers' | 'agentIdentity' | 'user'> | Pick<Request, 'headers'>,
-    res?: Pick<ExpressResponse, 'locals'>
-  ): DocChannelActor;
+  actor(caller: Pick<RequestFacts, 'headers' | 'agentIdentity' | 'user'>): DocChannelActor;
 }
 
 /** The ingest path, `/api/canvas/docs/:id/events`. */

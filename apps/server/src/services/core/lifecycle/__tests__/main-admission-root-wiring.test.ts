@@ -99,12 +99,12 @@ function disposeNext(statement: ts.Statement) {
 }
 
 /**
- * `createFrontDoorServer(composeFrontDoor(app, mainRequestAdmission)).listen(...)`:
- * the main listen. The admission is checked too, because the front door also
- * builds the Hono `/api` app, whose chain refuses on it.
+ * `createFrontDoorServer(composeFrontDoor(mainRequestAdmission, deps)).listen(...)`:
+ * the main listen. The admission is checked, because the chain the front door
+ * serves refuses on it.
  *
  * The door may also be a `start()` variable holding that same
- * `composeFrontDoor(app, mainRequestAdmission)` call, because managed remote
+ * `composeFrontDoor(mainRequestAdmission, deps)` call, because managed remote
  * access serves the very same door (DOR-2086). Only a variable declared at the
  * root of `start()` counts, so the check still reads one door, not any value.
  */
@@ -119,12 +119,9 @@ function isMainListen(node: ts.Node): boolean {
     door = rootVariable(door.text, rootFunction('start').body!.statements).initializer;
   }
   if (!door || !ts.isCallExpression(door) || !ts.isIdentifier(door.expression)) return false;
-  const [legacy, admission] = door.arguments;
+  const [admission] = door.arguments;
   return (
     door.expression.text === 'composeFrontDoor' &&
-    legacy !== undefined &&
-    ts.isIdentifier(legacy) &&
-    legacy.text === 'app' &&
     admission !== undefined &&
     ts.isIdentifier(admission) &&
     admission.text === 'mainRequestAdmission'
@@ -142,18 +139,15 @@ describe('main admission root adoption', () => {
     expect(constructors).toHaveLength(1);
     expect(rootVariable('mainRequestAdmission').initializer).toBe(constructors[0]);
     const statements = rootFunction('start').body!.statements;
-    const app = call(rootVariable('app', statements).initializer!, 'createApp');
-    named(property(options(app.arguments[0]), 'admission'), 'mainRequestAdmission');
     const listener = call(rootVariable('server', statements).initializer!, 'startMainListener');
     const opts = options(listener.arguments[0]);
     named(property(opts, 'admission'), 'mainRequestAdmission');
     const factory = property(opts, 'listen');
     if (!ts.isArrowFunction(factory) || !ts.isCallExpression(factory.body))
       throw new Error('Main listen must be acquired by the guarded factory');
-    // The listen is the Hono front door's, with the Express `app` behind it
-    // (`http/front-door.ts`, DOR-2792) and the Hono `/api` app in front
-    // (`http/hono-api.ts`, DOR-2807):
-    // createFrontDoorServer(composeFrontDoor(app, mainRequestAdmission)).listen(...).
+    // The listen is the front door's (`http/front-door.ts`), serving the one
+    // Hono app (`http/hono-api.ts`):
+    // createFrontDoorServer(composeFrontDoor(mainRequestAdmission, deps)).listen(...).
     expect(isMainListen(factory.body)).toBe(true);
     const callback = property(opts, 'onListening');
     if (!ts.isArrowFunction(callback) || !ts.isBlock(callback.body))

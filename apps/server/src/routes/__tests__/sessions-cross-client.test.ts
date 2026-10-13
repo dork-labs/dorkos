@@ -103,7 +103,6 @@ vi.mock('@dorkos/shared/manifest', () => ({ readManifest: vi.fn(async () => null
 import request from '@dorkos/test-utils/supertest';
 import { createTestDb } from '@dorkos/test-utils/db';
 import { listeningServer } from '@dorkos/test-utils/listening-server';
-import { createApp, finalizeApp } from '../../app.js';
 import { composedListener } from '../../http/__tests__/composed-listener.js';
 import {
   getOrCreateProjector,
@@ -120,8 +119,6 @@ import type { LockActivity } from '../../services/session/session-lock.js';
 import { attachEventStream } from './helpers/trigger-turn-helpers.js';
 
 const admission = new MainRequestAdmission();
-const app = createApp({ admission });
-finalizeApp(app);
 
 /**
  * ONE listener for the whole file (DOR-483). Requests and `/events` attachments
@@ -130,7 +127,7 @@ finalizeApp(app);
  * same, so a pooled keep-alive socket for a reclaimed port could land on the
  * wrong server. See {@link listeningServer}.
  */
-const server = listeningServer(composedListener(app, admission));
+const server = listeningServer(composedListener(admission));
 
 const SESSION_ID = '00000000-0000-4000-8000-0000000000aa';
 

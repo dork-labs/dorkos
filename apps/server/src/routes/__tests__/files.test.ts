@@ -41,16 +41,14 @@ vi.mock('../../services/core/config-manager.js', () => ({
 
 import request from '@dorkos/test-utils/supertest';
 import { listeningServer } from '@dorkos/test-utils/listening-server';
-import { createApp } from '../../app.js';
 import { composedListener } from '../../http/__tests__/composed-listener.js';
 import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
 import fileRoutes from '../files.js';
 import { validateBoundary, BoundaryError } from '../../lib/boundary.js';
 
 const admission = new MainRequestAdmission();
-const app = createApp({ admission });
 // Routed as the running server routes: the moved groups answer from Hono.
-const testServer = listeningServer(composedListener(app, admission));
+const testServer = listeningServer(composedListener(admission));
 
 /** Called with each JSON body the files routes answer, as they issue it. */
 let observeJson: ((method: string, path: string, body: unknown) => void) | undefined;

@@ -1,5 +1,5 @@
 import type { ConnectorRuntimePrincipalService } from '../../../connectors/principal/runtime-principal-service.js';
-import type { Request, Response } from 'express';
+import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { InstallationFileWrites } from '../writes/installation-file-writes.js';
 import type { NormalFileSaveService } from '../writes/normal-file-save.js';
 import type { InstallationHttpFileWrites } from '../writes/installation-http-file-writes.js';
@@ -48,9 +48,9 @@ export interface OriginalHttpRoomFileCaller {
   binding: OriginalHttpFileOwner;
   roomId: string;
   editor: RoomFileEditor;
-  req: Request;
-  res: Response;
-  headers: Readonly<Request['headers']>;
+  req: IncomingMessage;
+  res: ServerResponse;
+  headers: Readonly<IncomingMessage['headers']>;
   login: boolean;
   user?: Readonly<RequestUser>;
   admittedPrincipal?: RequestUser;
@@ -83,9 +83,9 @@ export interface OriginalHttpRoomRepoCaller {
   service: RoomRepoService | RoomMergeService;
   roomId: string;
   operation: RoomRepoOperation;
-  req: Request;
-  res: Response;
-  headers: Readonly<Request['headers']>;
+  req: IncomingMessage;
+  res: ServerResponse;
+  headers: Readonly<IncomingMessage['headers']>;
   login: boolean;
   user?: Readonly<RequestUser>;
   admittedPrincipal?: RequestUser;

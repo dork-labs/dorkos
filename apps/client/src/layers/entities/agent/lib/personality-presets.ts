@@ -118,7 +118,7 @@ export const PERSONALITY_PRESETS: PersonalityPreset[] = [
     id: 'sentinel',
     name: 'The Sentinel',
     emoji: '\u{1F6E1}',
-    tagline: 'Asks before every action.',
+    tagline: 'Checks in before every change.',
     traits: { verbosity: 3, autonomy: 1, chaos: 1, creativity: 2, humor: 1, spice: 2 },
     sampleResponse:
       'Before I make any changes, I want to confirm: should I modify the auth middleware directly, or create a new wrapper? Both approaches have trade-offs I’d like to discuss.',

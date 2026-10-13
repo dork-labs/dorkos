@@ -87,7 +87,7 @@ const RATE_LIMITED_BODY = {
  * Keys through `rateLimitKey`, like every other limiter here: the TCP peer
  * address, which no header can move, unless `DORKOS_TRUST_PROXY` says a proxy is
  * in front. This limiter is why that changed (DOR-1711). It inherited `req.ip`
- * from the Express chain's `trust proxy, 1`, so `X-Forwarded-For` decided the
+ * from the Express app's `trust proxy, 1`, so `X-Forwarded-For` decided the
  * bucket — and
  * a password guesser sending a different value each attempt got a fresh budget
  * every time, which is to say no brake at all on the one surface where a brake

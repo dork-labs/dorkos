@@ -2,7 +2,7 @@
  * An isolated extension through DorkOS's real start and stop paths (DOR-2686
  * task 5.3): real discovery, the real esbuild compile of `server.ts`, the
  * real server lifecycle, a real forked child with the real flags, and its
- * router reached through DorkOS's own `/api/ext/:id` middleware. Only the
+ * router reached through DorkOS's own `/api/ext/:id` routes. Only the
  * config store, the logger, and the agent-send and inbox services (fakes
  * that record what the lifecycle told them) are stand-ins.
  *
@@ -20,7 +20,7 @@ import http from 'node:http';
 import type { AddressInfo } from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
-import express from 'express';
+import { Hono } from 'hono';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ExtensionsConfig } from '../../extension-enable-resolution.js';
 
@@ -38,8 +38,16 @@ vi.mock('../../../core/config-manager.js', () => ({
   },
 }));
 
+// Login off: the chain's session gate lets every request through.
+vi.mock('../../../core/auth/session-gate.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../../core/auth/session-gate.js')>()),
+  decideSessionGate: vi.fn(async () => ({ allowed: true })),
+}));
+
 import { ExtensionManager } from '../../extension-manager.js';
-import { createExtensionRoutesMiddleware } from '../../../../middleware/extension-routes.js';
+import { createExtensionApiRoutes } from '../../../../routes/extension-api.js';
+import { honoGroupListener } from '../../../../http/__tests__/hono-group-listener.js';
+import type { ApiEnv } from '../../../../http/api-chain.js';
 import { setAgentSendService, type AgentSendService } from '../../agent-send/agent-send.js';
 import { setExtensionInbox, type ExtensionInboxService } from '../../inbox/extension-inbox.js';
 
@@ -253,14 +261,20 @@ beforeEach(async () => {
     openProjectCount: () => 0,
   } as unknown as ExtensionInboxService);
 
-  // DorkOS's own order: the app-wide JSON parser, then the extension mount.
-  const app = express();
-  app.use(express.json({ limit: '1mb' }));
-  app.get('/api/health', (_req, res) => res.json({ ok: true }));
-  app.use('/api/ext/:id', (req, res, next) =>
-    createExtensionRoutesMiddleware(manager)(req, res, next)
+  // DorkOS's own order: the `/api` chain, then the extension mount.
+  const health = new Hono<ApiEnv>().get('/', (c) => c.json({ ok: true }));
+  server = http.createServer(
+    honoGroupListener([
+      { path: '/api/health', routes: health },
+      {
+        path: '/api/ext',
+        // Read when a request arrives: `boot()` creates the manager later.
+        routes: createExtensionApiRoutes({
+          getServerHandler: (id) => manager.getServerHandler(id),
+        }),
+      },
+    ])
   );
-  server = http.createServer(app);
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
   base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
 });
@@ -286,7 +300,7 @@ describe('an isolated extension goes live through the real lifecycle', () => {
       expect(ping.status).toBe(200);
       expect(ping.body.version).toBe('v1');
       expect(ping.body.pid).not.toBe(process.pid);
-      expect(manager.getServerRouter(ID)).not.toBeNull();
+      expect(manager.getServerHandler(ID)).not.toBeNull();
       const pid = ping.body.pid as number;
       expect(alive(pid)).toBe(true);
 
@@ -301,9 +315,9 @@ describe('an isolated extension goes live through the real lifecycle', () => {
       // A clean stop ends its process and leaves nothing to restart.
       await manager.shutdownServer(ID);
       expect(alive(pid)).toBe(false);
-      expect(manager.getServerRouter(ID)).toBeNull();
+      expect(manager.getServerHandler(ID)).toBeNull();
       await new Promise((r) => setTimeout(r, 600));
-      expect(manager.getServerRouter(ID)).toBeNull();
+      expect(manager.getServerHandler(ID)).toBeNull();
     },
     TEST_MS
   );
@@ -362,13 +376,13 @@ describe('an isolated extension goes live through the real lifecycle', () => {
         `${NAME} stopped unexpectedly 3 times. Reload it to try again.`
       );
       await new Promise((r) => setTimeout(r, 700));
-      expect(manager.getServerRouter(ID)).toBeNull();
+      expect(manager.getServerHandler(ID)).toBeNull();
       expect((await get(`/api/ext/${ID}/ping`)).status).toBe(404);
 
       // What every page load asks for: refused, still stopped.
       const init = await manager.initializeServer(ID);
       expect(init.ok).toBe(false);
-      expect(manager.getServerRouter(ID)).toBeNull();
+      expect(manager.getServerHandler(ID)).toBeNull();
 
       await manager.reloadExtension(ID);
       expect((await get(`/api/ext/${ID}/ping`)).status).toBe(200);
@@ -459,7 +473,7 @@ describe('an isolated extension goes live through the real lifecycle', () => {
       await manager.disable(ID);
       expect(alive(pid)).toBe(false);
       await new Promise((r) => setTimeout(r, 600));
-      expect(manager.getServerRouter(ID)).toBeNull();
+      expect(manager.getServerHandler(ID)).toBeNull();
       expect(sends.stopped).toContain(ID);
     },
     TEST_MS
@@ -484,7 +498,7 @@ describe('an isolated extension goes live through the real lifecycle', () => {
 
       await install('v2', ['api.example.com']);
       await manager.reload();
-      expect(manager.getServerRouter(ID)).toBeNull();
+      expect(manager.getServerHandler(ID)).toBeNull();
       expect(card().approvedToRun).toBe(false);
       expect(alive(v2.body.pid as number)).toBe(false);
 

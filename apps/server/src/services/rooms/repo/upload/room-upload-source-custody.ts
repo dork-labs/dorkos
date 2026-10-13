@@ -1,7 +1,8 @@
+import type { UploadStreamFile, UploadedFile } from '../../../../http/uploads.js';
+import type { RoomUploadStorageEngine } from './room-upload-storage-contracts.js';
 import type { FileHandle } from 'node:fs/promises';
-import type { Request } from 'express';
+import type { IncomingMessage } from 'node:http';
 import type { Readable } from 'node:stream';
-import type multer from 'multer';
 import type { InstallationRoomMutationContext } from '../../../canvas/doc-channel/writes/installation-room-writes.js';
 
 interface Identity {
@@ -11,8 +12,8 @@ interface Identity {
 export interface AcquiredFile {
   path: string;
   filename: string;
-  file: Express.Multer.File;
-  request: Request;
+  file: UploadStreamFile;
+  request: IncomingMessage;
   identity?: Identity;
   handle?: FileHandle;
   size: number;
@@ -27,8 +28,8 @@ interface StorageCommands {
   complete(error: unknown): Promise<void>;
   retire(): Promise<void>;
   issueSources(
-    request: Request,
-    files: readonly Express.Multer.File[]
+    request: IncomingMessage,
+    files: readonly UploadedFile[]
   ): Promise<readonly Readonly<{ upload: object; size: number }>[]>;
   restoreCause(cause: unknown): unknown;
 }
@@ -39,32 +40,32 @@ export function createIsolatedRoomUploadSourceCustody() {
     object,
     { size: number; open(context: InstallationRoomMutationContext): Promise<Readable> }
   >();
-  function actual(storage: multer.StorageEngine): StorageCommands {
+  function actual(storage: RoomUploadStorageEngine): StorageCommands {
     const engine = engines.get(storage);
     if (!engine) throw new Error('Unknown original Room upload storage.');
     return engine;
   }
   /** Multer's truthy protocol sentinel is resolved to the separately captured original cause. */
   function completeRoomFileUploadStorage(
-    storage: multer.StorageEngine,
+    storage: RoomUploadStorageEngine,
     error: unknown
   ): Promise<void> {
     return actual(storage).complete(error);
   }
   /** Retire the original Room file upload storage custody. */
-  function retireRoomFileUploadStorage(storage: multer.StorageEngine): Promise<void> {
+  function retireRoomFileUploadStorage(storage: RoomUploadStorageEngine): Promise<void> {
     return actual(storage).retire();
   }
   /** Issue upload source handles from the original owned upload operation. */
   function issueRoomFileUploadSources(
-    storage: multer.StorageEngine,
-    request: Request,
-    files: readonly Express.Multer.File[]
+    storage: RoomUploadStorageEngine,
+    request: IncomingMessage,
+    files: readonly UploadedFile[]
   ): Promise<readonly Readonly<{ upload: object; size: number }>[]> {
     return actual(storage).issueSources(request, files);
   }
   /** Restore the original cause retained by a Room file upload. */
-  function restoreRoomFileUploadCause(storage: multer.StorageEngine, cause: unknown): unknown {
+  function restoreRoomFileUploadCause(storage: RoomUploadStorageEngine, cause: unknown): unknown {
     return actual(storage).restoreCause(cause);
   }
   /** Open the original owned Room file upload source. */

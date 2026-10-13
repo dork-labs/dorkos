@@ -5,8 +5,8 @@
  * parsers. The Express chain has both by mount order; these pin that the Hono
  * chain gives a route the same position.
  *
- * Everything else the chain does is held to the Express chain cell for cell
- * by `api-chain-parity.test.ts`.
+ * The wider protocol, credential, attribution and raw-response contract is
+ * covered by the native `api-chain-contract.test.ts` suite.
  *
  * @vitest-environment node
  */

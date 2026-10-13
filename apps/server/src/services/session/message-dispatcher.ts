@@ -6,9 +6,6 @@ import type {
   DispatchLifecycleEvent,
   LadderRung,
   FoldStageOpts,
-  RawQueueUpdate,
-  RawContextStaged,
-  RawTurnInput,
   RawStatusChange,
   DispatchMessageOpts,
   WhenBusy,
@@ -239,6 +236,9 @@ import { runtimeLockHolder } from './session-lock.js';
 import { getStagedContextStore, holdStagedContext } from './staged-context-store.js';
 import { triggerTurn, type TriggerTurnDeps, type TriggerTurnResult } from './trigger-turn.js';
 import { triggerCommandIntent } from './trigger-command-intent.js';
+import { emitContextStaged, emitQueueUpdate, emitTurnInput } from './queue-stream-events.js';
+
+export { emitQueueUpdate };
 import {
   clearOwedContextWarning,
   forgetContextWarning,
@@ -614,114 +614,6 @@ function foldStage(opts: FoldStageOpts): MessageDeliveryOutcome {
   };
   emitQueueUpdate(queueKey, outcome);
   return outcome;
-}
-
-/**
- * Announce a session's queue on its durable stream — the one way a queue change
- * reaches the windows watching it (spec `persistent-session-runtime` §3.2).
- *
- * Reads the store and emits the WHOLE queue, never a diff. The queue is small
- * and bounded, and a full replacement makes every ordering and dedup bug
- * unrepresentable: a window that missed an update is corrected by the next one
- * instead of drifting. The event is ingested like any other, so it is stamped
- * with a `seq`, replayed to a client resuming from `Last-Event-ID`, and covered
- * by the client's existing idempotent-apply-by-seq with no new rules.
- *
- * **Call this after every queue mutation** — enqueue, edit, reorder, remove,
- * dispatch, clear. The dispatcher calls it for the two mutations it owns; the
- * queue routes call it for theirs. A mutation that forgets leaves every other
- * window showing a queue that is no longer true until something else changes.
- *
- * A no-op when no queue store is wired (most unit tests) or when
- * no projector is registered for the session: with nobody listening there is
- * nothing to correct, and the next cold connect reads the queue from the store
- * anyway.
- *
- * @param sessionId - Either id a caller might hold (request uuid or canonical)
- * @param outcome - Present when an accepted message caused this update, so the
- *   sender's window can say what actually happened to it
- */
-export function emitQueueUpdate(sessionId: string, outcome?: MessageDeliveryOutcome): void {
-  const store = getMessageQueueStore();
-  if (!store) return;
-  const sessionKey = queueKeyOf(sessionId);
-  const projector = peekProjector(sessionKey);
-  if (!projector) return;
-  const event: RawQueueUpdate = {
-    type: 'queue_update',
-    queue: store.list(sessionKey).map(toQueuedMessage),
-    ...(outcome !== undefined ? { outcome } : {}),
-  };
-  projector.ingest(event);
-}
-
-/**
- * Carry a delivered steer onto a session's durable stream so it renders inline
- * in the running turn (spec `persistent-session-runtime` §P4, task 4.3).
- *
- * A steer JOINS the open turn — {@link deliverSteer} is the one caller, and it
- * calls this ONLY once the runtime confirmed delivery — so the person's words
- * reached the model but produced no turn-shaped events of their own: the
- * transcript would show the agent changing course with nothing to say why. This
- * mints the carrier for it. Server-authored and ingested straight onto the
- * projector, exactly like {@link emitQueueUpdate}: it is not a runtime
- * `StreamEvent`, so it has no `session-event-normalizer` mapping.
- *
- * Ingested (not opening or closing a turn) it rides the OPEN turn — the
- * projector pushes any non-boundary event onto `inProgressTurn` — so it gets a
- * `seq`, replays gap-free to a client resuming from `Last-Event-ID`, and folds
- * inline in reading order. Ordering holds because this runs synchronously the
- * instant delivery returns, before the model's answer to the steer can stream
- * back, and under the dispatch mutex {@link deliverSteer} holds so no `turn_end`
- * can straddle it.
- *
- * A no-op when no projector is registered for the session (nobody is listening,
- * and a delivered steer with no live turn is not a state that reaches here).
- *
- * @param sessionKey - The session's primary key (the id its projector is under).
- * @param content - The person's words, pristine — the same text handed the model.
- * @param messageId - The steer's server-minted correlation id.
- */
-function emitTurnInput(sessionKey: string, content: string, messageId: string): void {
-  const projector = projectorFor(sessionKey);
-  if (!projector) return;
-  const event: RawTurnInput = { type: 'turn_input', content, disposition: 'steer', messageId };
-  projector.ingest(event);
-}
-
-/**
- * Announce that a person STAGED context — the receipt for a `stage` (spec
- * `persistent-session-runtime` §2.5, task 4.2). A staged message opens no turn,
- * so it mints no `turn_start`; without this event a successful stage would be
- * indistinguishable on the stream from a dropped one, which is the exact failure
- * the receipt exists to prevent.
- *
- * Synthesized server-side and ingested straight into the projector — the same
- * path {@link emitQueueUpdate} takes, so it is stamped with a `seq`, replayed to
- * a client resuming from `Last-Event-ID`, and folded outside the turn transcript
- * (`EVENTS_OUTSIDE_THE_TURN`) rather than as a user turn. Emitted for BOTH the
- * native path (the message reached the runtime's transcript directly) and the
- * fold-into-next fallback (the text is held to ride the next dispatch).
- *
- * A no-op when no projector is registered — nobody is listening, and a cold
- * connect learns the staged text from the runtime's transcript (native) or sees
- * it fold into the next turn (fallback) either way.
- *
- * @param sessionId - Either id a caller might hold (request uuid or canonical)
- * @param content - The person's staged text, pristine
- * @param messageId - The server-minted correlation id for the staged message
- */
-function emitContextStaged(sessionId: string, content: string, messageId: string): void {
-  // `queueKeyOf`, exactly as {@link emitQueueUpdate} resolves it — NOT
-  // `primaryOf`. The filing id is the id the session was BORN with, which after
-  // the canonical-id rename is not what the projector registry is keyed by, so
-  // this receipt reached nobody for every renamed session: the lookup missed and
-  // the early return read as "no listeners" (DOR-1262 review). `queueKeyOf` is
-  // the one resolver that answers "the id the projector is registered under".
-  const projector = peekProjector(queueKeyOf(sessionId));
-  if (!projector) return;
-  const event: RawContextStaged = { type: 'context_staged', content, messageId };
-  projector.ingest(event);
 }
 
 /**
@@ -1179,7 +1071,7 @@ function unwatchedSettle(plan: DispatchPlan): {
  * @param opts.budgetExhausted - The wait bound fired: launch anyway, with no
  *   budget left and WITHOUT claiming the in-flight slot, so this message meets
  *   the write-lock exactly as a stranger would rather than telling the pump the
- *   turn ahead of it had ended
+ *   turn ahead of it had ended. It claims the slot once its turn starts.
  */
 function launchDispatch(
   plan: DispatchPlan,
@@ -1210,8 +1102,8 @@ function launchDispatchInner(
     : Math.max(0, plan.budgetMs - (Date.now() - plan.startedWaitingAt));
   const token = Symbol('dispatcher-turn');
   const releasesAtStart = releases.get(sessionKey) ?? 0;
-  if (!opts.budgetExhausted)
-    inFlight.set(sessionKey, { clientId, token, startedAt: Date.now(), sawTurnStart: false });
+  const claim: InFlightTurn = { clientId, token, startedAt: Date.now(), sawTurnStart: false };
+  if (!opts.budgetExhausted) inFlight.set(sessionKey, claim);
   // Held from here until this launch is done with the message, whichever way it
   // ends. Every exit below routes through `clearIfOurs` — the sync throw, the
   // rejection, the refusal, and the settle — so there is no path that leaves an
@@ -1271,6 +1163,15 @@ function launchDispatchInner(
         } else if (getMessageQueueStore()?.remove(messageId)) {
           emitQueueUpdate(sessionKey);
         }
+        // A launch the wait bound forced claimed no slot, so it met the lock as
+        // a stranger would. Running now, it IS the session's turn, and claims
+        // the slot: otherwise the next message reads the session as idle and
+        // launches into it, waiting out the lock TTL inside its own dispatch.
+        // A turn the agent started keeps its claim, as it does against every
+        // other claimant ({@link noteRuntimeTurnOpen}).
+        const held = inFlight.get(sessionKey);
+        if (opts.budgetExhausted && (!held || held.token !== runtimeTurns.get(sessionKey)))
+          inFlight.set(sessionKey, claim);
         // The turn is on the projector now, so the projector — not this slot —
         // becomes the authority on whether it is still producing
         // ({@link isStillProducing}). Only for OUR launch: a stale settle must
@@ -1288,6 +1189,12 @@ function launchDispatchInner(
       messageId,
       onError: turn.onError,
       onSettled: (turnOutcome) => {
+        // This turn has let go of the write-lock, so whatever the lock refused
+        // may try again now. Its boundary is no substitute: a turn that ends and
+        // then drains background work announces `turn_end` long before it lets
+        // go, and a message refused in between would otherwise wait out its
+        // whole wait bound behind a free session.
+        rearmLockWaiters(sessionKey);
         clearIfOurs();
         if (turn.privateReceiptId !== undefined) {
           getPrivateSessionMessageAcceptanceService()?.settle(turn.privateReceiptId, turnOutcome);
@@ -2351,10 +2258,10 @@ export function isTurnInFlight(
  * write as starting it. So the authorization is the identical gate `sendMessage`
  * passes, asked of the identical authority: the runtime's real write-lock, via
  * {@link AgentRuntime.isLocked}. It is deliberately NOT the dispatcher's
- * {@link inFlight} mirror, which is lossy — a budget-exhausted launch runs its
- * turn holding the real lock WITHOUT ever claiming `inFlight`
- * ({@link launchDispatch} sets it only when `!budgetExhausted`), so `inFlight`
- * can be empty while a steerable turn is live, and gating on it would let ANY
+ * {@link inFlight} mirror, which is lossy — a budget-exhausted launch holds the
+ * real lock from its acquire, but claims `inFlight` only once its turn starts
+ * ({@link launchDispatch}), so `inFlight` can be empty while the lock is held,
+ * and gating on it would let ANY
  * client — including one that could not send right now — steer that turn.
  * `isLocked(key, clientId)` closes that hole: true only when a DIFFERENT client
  * holds the live lock, false for the owner, and false when no turn is open (the
@@ -2625,6 +2532,21 @@ export function noteRuntimeTurnClosed(sessionId: string): void {
   // A turn ending is a turn boundary, whoever ran it: it re-arms every message
   // the write-lock refused and gives the queue its chance to move.
   noteTurnBoundary(sessionKey);
+}
+
+/**
+ * Let every message (and any summary the agent asked for) the write-lock
+ * refused on this session try again, because the lock has just been let go. The pump runs them; this only clears the mark
+ * that makes it step over them.
+ *
+ * @param sessionKey - The resolved session id
+ */
+function rearmLockWaiters(sessionKey: string): void {
+  for (const entry of pending.values()) {
+    if (entry.sessionKey === sessionKey) entry.waitingOnLock = false;
+  }
+  const compaction = pendingCompactions.get(sessionKey);
+  if (compaction) compaction.waitingOnLock = false;
 }
 
 /**

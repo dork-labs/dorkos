@@ -185,8 +185,8 @@ describe('connector discovery capabilities', () => {
   it.each([
     ['nothing_set_up', 'DorkOS is not set up to reach apps yet'],
     ['dorkos_account_unlinked', "DorkOS account isn't linked anymore"],
-    ['dorkos_account_unavailable', 'linked but cannot reach apps right now'],
-    ['own_key_unavailable', "isn't set up or didn't answer"],
+    ['dorkos_account_unavailable', 'linked but cannot connect apps right now'],
+    ['own_key_unavailable', "didn't work when DorkOS last checked it"],
   ] as const)('says plainly why no way reaches a popular app (%s)', async (reason, sentence) => {
     const deps: ConnectorCapabilityDeps = {
       registry,

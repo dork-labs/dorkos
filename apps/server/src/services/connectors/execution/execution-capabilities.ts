@@ -42,7 +42,7 @@ export interface ConnectorExecutionCapabilityDeps {
   /** Durable, owner-reviewed service requests for the authenticated runtime. */
   readonly requests?: Pick<
     ConnectorAgentRequestService,
-    'create' | 'getForRuntime' | 'waitForResolution'
+    'open' | 'getForRuntime' | 'waitForResolution'
   >;
 }
 
@@ -265,7 +265,9 @@ const requestConnection = defineCapability({
     'needs, and say why in reason. Name events only to hear when something new happens there. ' +
     'Asking again for the same service reuses your open request. The owner chooses the account; ' +
     'this call never lists accounts or grants access by itself. It waits a while for their ' +
-    'answer, and every result carries a note saying what happens next. A command-line login in ' +
+    'answer, except when DorkOS cannot reach the service yet: then it answers at once with the ' +
+    'choices to offer the person. Every result carries a note saying what happens next. A ' +
+    'command-line login in ' +
     'a shell does not grant access; only the owner connects services.',
   tier: 'observe',
   area: null,
@@ -278,8 +280,11 @@ const requestConnection = defineCapability({
     const principal = requireRuntimePrincipal(context);
     try {
       const requests = requireRequestService(connectorDeps);
-      const request = await requests.create(principal, input);
-      if (request.status !== 'awaiting_owner' && request.status !== 'access_pending') {
+      const { status: request, waitForOwner } = await requests.open(principal, input);
+      if (
+        !waitForOwner ||
+        (request.status !== 'awaiting_owner' && request.status !== 'access_pending')
+      ) {
         return request;
       }
       return await requests.waitForResolution(principal, request.requestId, context.signal);

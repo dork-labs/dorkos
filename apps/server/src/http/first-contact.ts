@@ -1,5 +1,5 @@
 /**
- * One-shot "first contact" log lines, shared by both chains.
+ * One-shot "first contact" log lines, used by the chain.
  *
  * @module http/first-contact
  */

@@ -14,8 +14,7 @@ import {
 } from '../../session/session-state-projector.js';
 import { readLogBackedHistory } from '../../session/log-backed-history.js';
 import { SessionDiscoveryUnavailableError } from '../../session/resolution/session-lookup-error.js';
-import { overlayModelSubstitutions } from '../../session/overlays/model-substitution-overlay.js';
-import { overlayAgentCompactions } from '../../session/overlays/agent-compaction-overlay.js';
+import { overlayRecordedHistory } from '../../session/overlays/recorded-history.js';
 import { DEFAULT_CWD } from '../../../lib/resolve-root.js';
 import { logger, logError } from '../../../lib/logger.js';
 import { mapOpenCodeTodos } from './events/session-event-mapper.js';
@@ -103,12 +102,9 @@ export async function getMessageHistory(
     // put back from the durable event record, as for Claude Code.
     // Its store keeps no compaction row at all, so a summary the agent asked
     // for (DOR-2732) is drawn back from the same record.
-    return overlayAgentCompactions(
+    return overlayRecordedHistory(
       sessionId,
-      overlayModelSubstitutions(
-        sessionId,
-        await facet.mapper.getMessageHistory(canonicalDirectory(projectDir), sessionId)
-      )
+      await facet.mapper.getMessageHistory(canonicalDirectory(projectDir), sessionId)
     );
   } catch (err) {
     if (

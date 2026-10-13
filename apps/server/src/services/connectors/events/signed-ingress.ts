@@ -6,8 +6,9 @@
  * Registered through the `/api` chain's `beforeBodyParsing` seam
  * (`http/api-chain.ts`), after the host guard and before any body is parsed,
  * the session gate, the request log and the audit fallback, which is where the
- * Express chain mounted it: the signature is checked over the exact bytes that
- * arrived, and nothing about a refused event is logged or recorded as a person.
+ * Express chain used to mount it: the signature is checked over the exact
+ * bytes that arrived, and nothing about a refused event is logged or recorded
+ * as a person.
  *
  * The bytes are read by `body-parser`'s raw reader on the Node request, the
  * reader `express.raw` is, so the ceiling, the early refusal of a declared

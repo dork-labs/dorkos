@@ -9,13 +9,24 @@ import type { PermissionMode, PermissionModeId } from '@dorkos/shared/types';
 import { PermissionModeSchema } from '@dorkos/shared/schemas';
 
 /**
+ * Claude Code's `dontAsk` mode, "Never ask": what the agent's own allow rules
+ * permit runs, and everything the Default mode would ask a person about is
+ * refused instead (the SDK's "deny if not pre-approved"). DorkOS's own gate
+ * refuses it too, should the CLI ever hand it a call (`resolveModeDecision`).
+ *
+ * Only a person sets it: `session_start` will not name it for another chat, and
+ * a chat in it may only start chats that cannot ask either
+ * (`mcp-tools/session-start-permission.ts`).
+ */
+export const NEVER_ASK_MODE_ID = 'dontAsk';
+
+/**
  * Static Claude Code capabilities.
  *
  * `permissionModes.values[].id` mirrors the Claude Agent SDK's `PermissionMode`
- * union (`'default' | 'acceptEdits' | 'plan' | 'bypassPermissions'`). The SDK
- * also exposes a fifth `'dontAsk'` mode, which DorkOS deliberately does not
- * surface yet — see research/20260315_agent_runtime_permission_modes.md for
- * rationale. When the SDK upgrade adopts `'dontAsk'`, add a descriptor here.
+ * union. Every mode the SDK takes is declared, `dontAsk` included since DOR-2838
+ * ({@link NEVER_ASK_MODE_ID}); it was left out until then only because nobody had
+ * needed it (research/20260315_agent_runtime_permission_modes.md recommended it).
  *
  * `features` is the typed extension point for Claude-specific UI metadata.
  * Only keys with an actual consumer (current or planned in task #12 —
@@ -89,6 +100,33 @@ export const CLAUDE_CODE_CAPABILITIES: RuntimeCapabilities = {
         asks: 'always',
         reach: 'edit',
         promise: 'Asks before it edits a file or runs a command.',
+      },
+      {
+        // A setting INSIDE the Ask stop, not a stop of its own: declared after
+        // `default`, so the stop still means Default and this is the switch
+        // beneath it (`resolveTrustStops`, first declared wins).
+        //
+        // `asks: 'always'` and `reach: 'edit'` are Default's level on purpose,
+        // and they are what every power rule reads (`isNoLooserThan`,
+        // `clampModeToCeiling`, the `session_start` ceiling). This mode runs
+        // exactly what Default runs without a person and refuses the rest, so
+        // it must rank no looser than Default anywhere. Declaring the literal
+        // `asks: 'never'` would rank it ABOVE Default: a ceiling recorded from
+        // it would admit Accept edits and Auto on another agent's turn, and a
+        // stranger's ceiling would push it down to Default, which asks. Where
+        // it differs from Default (it refuses instead of asking) is read by
+        // id, in the Claude Code adapter only.
+        //
+        // Declared after Default also keeps it out of a ceiling's substitutes:
+        // the two rank the same, so a mode the ceiling refuses is replaced by
+        // Default, the first declared, and never quietly by this one.
+        id: NEVER_ASK_MODE_ID,
+        label: 'Never ask',
+        description: 'Never prompt; tools not already allowed are refused.',
+        stop: 'ask',
+        asks: 'always',
+        reach: 'edit',
+        promise: 'Runs only what you allowed. Refuses the rest without asking you.',
       },
       {
         id: 'acceptEdits',
@@ -187,8 +225,7 @@ export const CLAUDE_CODE_CAPABILITIES: RuntimeCapabilities = {
  *
  * `PermissionModeSchema` is the right authority here precisely because it is
  * the union of ids the Agent SDK accepts — every id in it is a mode this
- * adapter can send, including `dontAsk`, which the SDK takes and DorkOS does
- * not yet surface in the picker.
+ * adapter can send.
  *
  * An id outside it falls back rather than travelling on, and the fallback can
  * only ever be SAFER: callers pass Claude Code's declared default (`'default'`,

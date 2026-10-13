@@ -64,6 +64,8 @@ import { createTurnBudgetLimits } from './limits/room-limits.js';
 import { RoomService } from './room-service.js';
 import type { RoomMirrorAccess, RoomMirrorWritePolicy } from './service/room-service-deps.js';
 import { RoomStore } from './room-store.js';
+import { createRoomMessageLookup } from './session-bindings/room-message-lookup.js';
+import { setRoomMessageLookup } from '../session/chat-messages/room-message-stamps.js';
 import { RoomBroadcaster } from './room-stream.js';
 import type { RoomTurnRunner } from './room-trigger.js';
 import { RoomTurnBudget } from './limits/turn-budget.js';
@@ -211,6 +213,8 @@ export function createRoomSubsystem(opts: {
   const attachments = new AttachmentRowStore(opts.db);
   const agentLookup = opts.agents ?? createAgentLookup(opts.db);
   const authors = new AuthorRegistry(opts.db, agentLookup);
+  // A room post that reaches a room-attached chat shows its real author there (DOR-2113).
+  setRoomMessageLookup(createRoomMessageLookup(store, authors));
   const mirrorRuntime = opts.createMirrorRuntime?.({ store, authors, attachments });
   const broadcaster = new RoomBroadcaster();
   // **One canvas service per process, built here and registered here.** It is

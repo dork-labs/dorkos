@@ -7,9 +7,12 @@
  *
  * @module routes/heartbeats
  */
-import { Router, type Request, type Response } from 'express';
+import { Hono } from 'hono';
 import { z } from 'zod';
 import type { HeartbeatStatus } from '@dorkos/shared/heartbeat-schemas';
+import type { ApiEnv } from '../http/api-chain.js';
+import { honoRequestFacts } from '../http/request-facts.js';
+import { refuseUnlessAccountOwner } from '../lib/caller-authority.js';
 
 /** `?days=`: the measures' window, 1 to 90 whole days, or absent for the default. */
 const DaysQuerySchema = z.coerce.number().int().min(1).max(90).optional();
@@ -29,34 +32,27 @@ export interface HeartbeatRouterDeps {
     viewerIsOwner: boolean,
     days?: number
   ): Promise<HeartbeatStatus | undefined>;
-  /**
-   * Whether this caller owns this install.
-   *
-   * @param req - The request.
-   * @param res - The response, carrying the resolved caller.
-   */
-  isOwner(req: Request, res: Response): boolean;
 }
 
 /**
- * Build the router, mounted at `/api/agents/:id/heartbeat`.
+ * Build the routes, mounted at `/api/agents/:id/heartbeat`.
  *
  * @param deps - Where the status comes from.
  */
-export function createHeartbeatRouter(deps: HeartbeatRouterDeps): Router {
-  const router = Router({ mergeParams: true });
-  router.get('/', async (req, res) => {
-    const agentId = (req.params as { id?: string }).id ?? '';
-    const days = DaysQuerySchema.safeParse(req.query.days);
+export function createHeartbeatRoutes(deps: HeartbeatRouterDeps): Hono<ApiEnv> {
+  const router = new Hono<ApiEnv>();
+  router.get('/', async (c) => {
+    const days = DaysQuerySchema.safeParse(c.req.query('days'));
     if (!days.success) {
-      return res
-        .status(400)
-        .json({ error: 'days must be a whole number from 1 to 90.', code: 'INVALID_DAYS' });
+      return c.json(
+        { error: 'days must be a whole number from 1 to 90.', code: 'INVALID_DAYS' },
+        400
+      );
     }
-    const status = await deps.status(agentId, deps.isOwner(req, res), days.data);
-    if (!status)
-      return res.status(404).json({ error: 'No agent with that id.', code: 'NOT_FOUND' });
-    return res.json(status);
+    const viewerIsOwner = refuseUnlessAccountOwner(honoRequestFacts(c)) === undefined;
+    const status = await deps.status(c.req.param('id') ?? '', viewerIsOwner, days.data);
+    if (!status) return c.json({ error: 'No agent with that id.', code: 'NOT_FOUND' }, 404);
+    return c.json(status);
   });
   return router;
 }

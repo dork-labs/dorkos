@@ -1,5 +1,5 @@
 ---
-description: Debug API and data flow issues by tracing through Component -> TanStack Query -> Express Route -> Service -> SQLite/JSONL
+description: Debug API and data flow issues by tracing through Component -> TanStack Query -> Hono Route -> Service -> SQLite/JSONL
 argument-hint: '[endpoint-or-feature] [--url <url>]'
 allowed-tools: Read, Write, Edit, Grep, Glob, Bash, Agent, TodoWrite, AskUserQuestion, mcp__plugin_playwright_playwright__browser_snapshot, mcp__plugin_playwright_playwright__browser_navigate, mcp__plugin_playwright_playwright__browser_console_messages, mcp__plugin_playwright_playwright__browser_network_requests, mcp__plugin_context7_context7__resolve-library-id, mcp__plugin_context7_context7__query-docs
 ---
@@ -20,7 +20,7 @@ Debug data-related issues by systematically tracing through the project's data f
 +-------------------+
 |  Transport Layer  |  <- HttpTransport (HTTP and durable streams)
 +-------------------+
-|  Express Route    |  <- HTTP endpoints (Zod validation, boundary checks)
+|  Hono Route       |  <- HTTP endpoints (Zod validation, boundary checks)
 +-------------------+
 |  Service Layer    |  <- Business logic (agent-manager, binding-router, etc.)
 +-------------------+
@@ -31,7 +31,7 @@ Debug data-related issues by systematically tracing through the project's data f
 ### Key Differences from Typical Projects
 
 - **SQLite, not PostgreSQL** — Drizzle ORM (`packages/db`) over SQLite (WAL mode), plus JSON state files
-- **No server actions** — All mutations go through Express REST endpoints
+- **No server actions** — All mutations go through the server's REST endpoints (Hono)
 - **Transport abstraction** — Client uses `Transport` interface, not direct fetch
 - **SDK transcripts** — Sessions are derived from JSONL files on disk, not a database
 - **Feature-flag guarded** — Relay/Mesh/Pulse endpoints return 503 when disabled
@@ -94,7 +94,7 @@ Based on the feature, trace the data flow:
 
 1. **Find the component** displaying/mutating the data (FSD layer structure)
 2. **Find the TanStack Query hook** in `entities/*/model/` or `features/*/model/`
-3. **Find the Express route** in `apps/server/src/routes/`
+3. **Find the Hono route** in `apps/server/src/routes/` (mounted in `apps/server/src/http/hono-api.ts`)
 4. **Find the service** in `apps/server/src/services/`
 5. **Find the data store** (SQLite table, JSONL file, or JSON state file)
 
@@ -134,7 +134,7 @@ Common TanStack Query issues:
 | Infinite loading     | Never resolves          | Check queryFn for errors              |
 | Missing invalidation | Data stale after action | Add `queryClient.invalidateQueries()` |
 
-### 3.3 Express Route Layer
+### 3.3 Hono Route Layer
 
 ```
 Read the route file in apps/server/src/routes/.
@@ -207,7 +207,7 @@ Debugging checklist:
 
 1. [ ] Check network tab for request (is it being made?)
 2. [ ] Check server logs for errors (NDJSON in `.dork/logs/`)
-3. [ ] Verify Express route exists and handles the request method
+3. [ ] Verify the Hono route exists and handles the request method (`apps/server/src/http/__tests__/route-census.baseline.json` lists every route)
 4. [ ] Check feature flag is enabled (relay, mesh, pulse)
 5. [ ] Verify service returns data
 6. [ ] Check TanStack Query is enabled
@@ -320,7 +320,7 @@ mcp__plugin_playwright_playwright__browser_network_requests: { includeStatic: fa
 | TanStack Query hooks | `apps/client/src/layers/entities/*/model/`                              |
 | Zustand store        | `apps/client/src/layers/shared/model/app-store.ts`                      |
 | Transport interface  | `packages/shared/src/transport.ts`                                      |
-| Express routes       | `apps/server/src/routes/`                                               |
+| Hono routes          | `apps/server/src/routes/`                                               |
 | Services             | `apps/server/src/services/`                                             |
 | Zod schemas          | `packages/shared/src/schemas.ts`, `relay-schemas.ts`, `mesh-schemas.ts` |
 | SQLite DB            | `{DORK_HOME}/dork.db`                                                   |
@@ -329,20 +329,22 @@ mcp__plugin_playwright_playwright__browser_network_requests: { includeStatic: fa
 | Server config        | `{DORK_HOME}/config.json`                                               |
 | Server logs          | `{DORK_HOME}/logs/dorkos.log`                                           |
 
-### Common Express Route Patterns
+### Common Hono Route Patterns
 
 ```typescript
-// Zod validation
-const parsed = Schema.safeParse(req.body);
-if (!parsed.success)
-  return res.status(400).json({ error: 'Validation failed', details: parsed.error.format() });
+// Zod validation (the chain parsed the JSON body once; readJsonBody reads it)
+const parsed = Schema.safeParse(readJsonBody(c));
+if (!parsed.success) return c.json(validationFailureBody(parsed.error), 400);
 
 // Boundary check
-if (!validateBoundary(req.body.path))
-  return res.status(403).json({ error: 'Path outside boundary' });
+const refusal = await boundaryRefusal(parsed.data.path);
+if (refusal) return c.json(refusal, 403);
 
 // Feature flag guard
-if (!isRelayEnabled()) return res.status(503).json({ error: 'Relay is not enabled' });
+if (!isRelayEnabled()) return c.json({ error: 'Relay is not enabled' }, 503);
+
+// Who is calling (person, agent, owner): read the facts the chain resolved
+const caller = honoRequestFacts(c);
 ```
 
 ### TanStack Query Patterns

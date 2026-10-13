@@ -38,7 +38,7 @@ function createMockManager(overrides: Partial<ExtensionManager> = {}): Extension
       },
       message: 'Extension activated successfully. Registered 1 contribution(s).',
     })),
-    getServerRouter: vi.fn(() => null),
+    getServerHandler: vi.fn(() => null),
     testServerCompilation: vi.fn(async () => null),
     ...overrides,
   } as unknown as ExtensionManager;

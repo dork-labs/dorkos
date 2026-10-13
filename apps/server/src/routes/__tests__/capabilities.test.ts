@@ -105,15 +105,13 @@ vi.mock('../../services/core/config-manager.js', () => ({
 
 import request from '@dorkos/test-utils/supertest';
 import { listeningServer } from '@dorkos/test-utils/listening-server';
-import { createApp } from '../../app.js';
 import { composedListener } from '../../http/__tests__/composed-listener.js';
 import { runtimeRegistry } from '../../services/core/runtime-registry.js';
 import { CLAUDE_CODE_CAPABILITIES } from '../../services/runtimes/claude-code/runtime-constants.js';
 import { TEST_MODE_CAPABILITIES } from '../../services/runtimes/test-mode/runtime-constants.js';
 
 const admission = new MainRequestAdmission();
-const app = createApp({ admission });
-const testServer = listeningServer(composedListener(app, admission));
+const testServer = listeningServer(composedListener(admission));
 
 describe('Capabilities Route', () => {
   beforeEach(() => {

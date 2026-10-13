@@ -1,8 +1,12 @@
-import type { Request } from 'express';
+import type { UploadStreamFile, UploadedFile } from '../../../../http/uploads.js';
+import type { IncomingMessage } from 'node:http';
 import type { AcquiredFile } from './room-upload-source-custody.js';
 
 /** Create the original fresh upload record before its owning storage registers or launches it. */
-export function createAcquiredRoomUpload(req: Request, file: Express.Multer.File): AcquiredFile {
+export function createAcquiredRoomUpload(
+  req: IncomingMessage,
+  file: UploadStreamFile
+): AcquiredFile {
   return {
     path: '',
     filename: '',
@@ -20,8 +24,8 @@ export function createAcquiredRoomUpload(req: Request, file: Express.Multer.File
 /** Validate the original result projection; this read-only check issues no upload authority. */
 export function requireMatchingAcquiredRoomUpload(
   record: AcquiredFile | undefined,
-  req: Request,
-  file: Express.Multer.File,
+  req: IncomingMessage,
+  file: UploadedFile,
   seen: ReadonlySet<AcquiredFile>
 ): asserts record is AcquiredFile {
   if (

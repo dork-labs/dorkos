@@ -18,7 +18,10 @@ import {
 } from '../../host/communities.js';
 import {
   assignShortName,
+  grantedShortNameSql,
+  hasReservedNameGrant,
   holdShortNames,
+  isGrantableReservedName,
   liftShortNameHold,
   normalizeShortName,
   shortNameAvailability,
@@ -61,14 +64,17 @@ export function registerShortNameRoutes(
     c.header('Cache-Control', 'no-store');
     limitLookup(c);
     const name = normalizeShortName(c.req.param('name'));
-    if (!name || reservedNames.has(name)) throw noCommunity();
+    // A reserved name opens a space only when a host operator gave it to that space.
+    if (!name || (reservedNames.has(name) && !isGrantableReservedName(name, reservedNames)))
+      throw noCommunity();
     const found = await pool.query<{ community_id: string; current: string | null }>(
       `SELECT n.community_id,
               (SELECT m.short_name FROM community_short_names m
                 WHERE m.community_id=n.community_id AND m.state='current') AS current
        FROM community_short_names n JOIN communities c ON c.id=n.community_id
-       WHERE n.short_name=$1 AND c.lifecycle IN ('active','archived','held')`,
-      [name]
+       WHERE n.short_name=$1 AND c.lifecycle IN ('active','archived','held')
+         AND (NOT $2::boolean OR ${grantedShortNameSql})`,
+      [name, reservedNames.has(name)]
     );
     const row = found.rows[0];
     if (!row) throw noCommunity();
@@ -160,6 +166,15 @@ export function registerShortNameRoutes(
       const at = now();
       await assertHostActor(client, actor, at);
       if (!locked.rowCount) throw new ApiError(404, 'NOT_FOUND', 'Space not found.');
+      // Releasing a reserved name a host operator gave this space removes the record of that
+      // grant with it, so it needs the same authority as giving the name out.
+      const granted = name ? await hasReservedNameGrant(client, name, communityId) : false;
+      if (
+        granted &&
+        actor.kind === 'api_key' &&
+        !actor.scopes.includes('communities:reserved_names')
+      )
+        throw new ApiError(403, 'FORBIDDEN', 'This key does not allow that action.');
       const released = name
         ? await client.query(
             `DELETE FROM community_short_names
@@ -172,9 +187,9 @@ export function registerShortNameRoutes(
       }
       await holdShortNames(client, [name!], holds, at);
       await recordHostAudit(client, actor, {
-        action: 'community.short_name.release',
+        action: granted ? 'community.reserved_name.release' : 'community.short_name.release',
         communityId,
-        changedFields: ['short_name'],
+        changedFields: granted ? ['short_name', 'reserved_name_grant'] : ['short_name'],
       });
     });
     return c.body(null, 204);

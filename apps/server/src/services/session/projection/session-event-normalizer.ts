@@ -263,9 +263,7 @@ export function requireOriginalClosedSessionProjectionFeed(
 export async function feedProjector(
   projector: SessionStateProjector,
   events: AsyncIterable<StreamEvent>,
-  opts: {
-    userMessage?: string;
-    origin?: TurnOrigin;
+  opts: Pick<RawOf<'turn_start'>, 'userMessage' | 'roomMessage' | 'origin'> & {
     onTurnStart?: (seq: number) => void;
     originalRoomStream?: object;
   } = {}
@@ -290,6 +288,7 @@ export async function feedProjector(
   const start: RawOf<'turn_start'> = {
     type: 'turn_start',
     ...(opts.userMessage !== undefined ? { userMessage: opts.userMessage } : {}),
+    ...(opts.roomMessage !== undefined ? { roomMessage: opts.roomMessage } : {}),
     ...(opts.origin !== undefined ? { origin: opts.origin } : {}),
   };
   // Two statements, and they must stay two. Folded into

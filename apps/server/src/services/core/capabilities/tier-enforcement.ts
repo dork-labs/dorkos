@@ -46,7 +46,7 @@
  * that agent a bypass needing strictly less capability than the honest path —
  * `env -u DORKOS_AGENT_TOKEN dorkos call marketplace.uninstall …`, or a bare
  * `curl`, since the CLI only attaches `X-DorkOS-Agent` when the token is in its
- * env and `sessionGate` is a pass-through in the default local posture. The
+ * env and the session gate is a pass-through in the default local posture. The
  * destructive operation would run, unapproved and unattributed.
  *
  * Spec §3.1's "absent identity = today's behavior" resolution is about

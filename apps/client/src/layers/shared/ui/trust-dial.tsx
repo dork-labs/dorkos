@@ -19,7 +19,7 @@
  * @module shared/ui/trust-dial
  */
 import { useId, type ReactNode } from 'react';
-import { ClipboardList, Lock, Shield, Sparkles, Zap } from 'lucide-react';
+import { Ban, ClipboardList, Lock, Shield, Sparkles, Zap } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import type { PermissionModeDescriptor, PermissionStop } from '@dorkos/shared/agent-runtime';
 import {
@@ -170,13 +170,23 @@ export function TrustModeIcon({
 /**
  * Research-preview marks, keyed by mode id.
  *
- * The last id-keyed table in this feature, and it stays until a descriptor field
- * carries the fact: "this is a preview" is a promise about the mode's maturity,
+ * One of the two id-keyed tables in this feature (with {@link REFINEMENT_ICONS}),
+ * and it stays until a descriptor field carries the fact: "this is a preview" is a promise about the mode's maturity,
  * not about what it does, so none of the semantics fields answer it. An id
  * nobody listed simply gets no badge.
  */
 const MODE_TAGS: Record<string, string> = {
   auto: 'Preview',
+};
+
+/**
+ * The icon a refinement's switch carries, by its runtime's id, for the same
+ * reason {@link MODE_TAGS} is keyed so: a glyph says something about one mode,
+ * and a mode the table does not know gets the plain one. Claude's "Never ask"
+ * refuses rather than decides, so it does not wear Auto's sparkle.
+ */
+const REFINEMENT_ICONS: Record<string, LucideIcon> = {
+  dontAsk: Ban,
 };
 
 export interface TrustDialProps {
@@ -431,9 +441,10 @@ function RefinementRow({
   disabled?: boolean;
 }) {
   const tag = MODE_TAGS[refinement.id];
+  const Icon = REFINEMENT_ICONS[refinement.id] ?? Sparkles;
   return (
     <label className="flex cursor-pointer items-center gap-2 px-1 text-xs">
-      <Sparkles className="text-muted-foreground size-(--size-icon-xs) shrink-0" aria-hidden />
+      <Icon className="text-muted-foreground size-(--size-icon-xs) shrink-0" aria-hidden />
       <span className="text-foreground truncate">{refinement.label}</span>
       {tag && (
         <span className="bg-muted text-muted-foreground text-3xs rounded px-1 py-px font-medium tracking-wide uppercase">

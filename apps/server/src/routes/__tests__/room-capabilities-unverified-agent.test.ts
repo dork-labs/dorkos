@@ -60,7 +60,11 @@ import request, { type Response, type Test } from '@dorkos/test-utils/supertest'
 import { swappableServer } from '@dorkos/test-utils/listening-server';
 
 vi.mock('../../env.js', () => ({
-  env: { DORKOS_PORT: 4242, MCP_API_KEY: undefined },
+  env: {
+    DORKOS_PORT: 4242,
+    MCP_API_KEY: undefined,
+    DORKOS_OLLAMA_URL: 'http://127.0.0.1:11434',
+  },
 }));
 
 vi.mock('../../lib/version.js', () => ({

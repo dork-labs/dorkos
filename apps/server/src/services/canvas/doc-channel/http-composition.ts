@@ -19,9 +19,6 @@ import { createHash } from 'node:crypto';
 import { agents, eq, type DbTransaction } from '@dorkos/db';
 import type { DocChannelHttp } from '../../../routes/canvas-doc-events.js';
 import { resolveCaller } from '../../../routes/room-caller.js';
-import type { RequestFacts } from '../../../http/request-facts.js';
-import { originalDocRequestFacts } from '../../../http/original-doc-request.js';
-import type { Request } from 'express';
 import {
   createServerPrincipal,
   type ServerPrincipalProof,
@@ -113,9 +110,9 @@ export function captureOriginalDocHttpActor(http: DocChannelHttp): DocChannelHtt
   };
   requireCurrent();
   const captured = binding!;
-  return (caller, res) => {
+  return (caller) => {
     requireCurrent();
-    return Reflect.apply(captured.actor, captured.composition, [caller, res]);
+    return Reflect.apply(captured.actor, captured.composition, [caller]);
   };
 }
 
@@ -333,10 +330,7 @@ export function createDocChannelHttpComposition(
     resolveScope: (scope) => deps.documents.lifecycle.resolveScope(scope),
     revalidateRuntime: (proof) => deps.revalidateRuntime?.(proof) ?? Promise.resolve(false),
   });
-  const resolveOriginalHttpActor: DocChannelHttp['actor'] = (caller, res) => {
-    const facts = res
-      ? originalDocRequestFacts(caller as Request, res)
-      : (caller as Pick<RequestFacts, 'headers' | 'agentIdentity' | 'user'>);
+  const resolveOriginalHttpActor: DocChannelHttp['actor'] = (facts) => {
     resolveCaller(facts); // Refuse unknown/revoked agent headers before minting a principal.
     const identity = facts.agentIdentity;
     const owner = currentOwner();

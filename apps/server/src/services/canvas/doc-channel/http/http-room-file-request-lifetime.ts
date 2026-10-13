@@ -1,9 +1,10 @@
+import { originalDocRequestUser } from '../../../../http/original-doc-request.js';
 import {
   originalDocRequestFacts,
   originalDocAuthRequest,
 } from '../../../../http/original-doc-request.js';
 import { RoomError } from '../../../rooms/data/room-errors.js';
-import type { Request, Response } from 'express';
+import type { IncomingMessage, ServerResponse } from 'node:http';
 import {
   InstallationFileWrites,
   requireInstallationFileWritesOwner,
@@ -93,7 +94,7 @@ export function roomCallerOf(
     current.req.headers['x-dorkos-agent'] !== current.headers['x-dorkos-agent']
   )
     throw new DocChannelNotFoundError();
-  const user = current.res.locals.user as RequestUser | undefined;
+  const user = originalDocRequestUser(current.req, current.res);
   if (
     (current.login && user !== current.admittedPrincipal) ||
     (current.user ? !sameRoomCredential(httpCustodyOwner, user, current.user) : user !== undefined)
@@ -114,8 +115,8 @@ export function roomCallerOf(
 export async function captureDocHttpRoomFileWriteCaller(
   httpCustodyOwner: object,
   owner: InstallationFileWrites,
-  req: Request,
-  res: Response,
+  req: IncomingMessage,
+  res: ServerResponse,
   roomId: string,
   editor: RoomFileEditor
 ): Promise<object> {
@@ -134,7 +135,7 @@ export async function captureDocHttpRoomFileWriteCaller(
   const caller = resolveCaller(originalDocRequestFacts(req, res));
   requireRoomServiceFileWriteCurrent(binding.rooms, binding.db, roomId, caller.id);
   const login = Boolean(configManager.get('auth')?.enabled);
-  const suppliedUser = res.locals.user as RequestUser | undefined;
+  const suppliedUser = originalDocRequestUser(req, res);
   const user = suppliedUser ? Object.freeze({ ...suppliedUser }) : undefined;
   const headers = Object.freeze({ ...req.headers });
   if (login || user) {

@@ -29,15 +29,13 @@ vi.mock('../../services/core/config-manager.js', () => ({
 
 import request from '@dorkos/test-utils/supertest';
 import { listeningServer, swappableServer } from '@dorkos/test-utils/listening-server';
-import { createApp } from '../../app.js';
 import { composedListener } from '../../http/__tests__/composed-listener.js';
 import { env } from '../../env.js';
 import { configManager } from '../../services/core/config-manager.js';
 import { tunnelManager } from '../../services/core/tunnel-manager.js';
 
 const admission = new MainRequestAdmission();
-const app = createApp({ admission });
-const server = listeningServer(composedListener(app, admission));
+const server = listeningServer(composedListener(admission));
 const localTarget = swappableServer();
 
 describe('CORS with tunnel origin', () => {
@@ -67,9 +65,7 @@ describe('CORS with tunnel origin', () => {
   it('sends Access-Control-Allow-Credentials: true for an allowed origin (DORKOS_CORS_ORIGIN env path)', async () => {
     process.env.DORKOS_CORS_ORIGIN = 'http://localhost:5173';
     const envAdmission = new MainRequestAdmission();
-    const envApp = createApp({ admission: envAdmission });
-
-    const res = await request(localTarget.mount(composedListener(envApp, envAdmission)))
+    const res = await request(localTarget.mount(composedListener(envAdmission)))
       .get('/api/health')
       .set('Origin', 'http://localhost:5173');
 

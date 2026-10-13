@@ -35,16 +35,15 @@ describe('audit trail startup wiring', () => {
   });
 
   it('enters the request audit scope after both identity gates, before any route', () => {
-    const app = readFileSync(new URL('../app.ts', import.meta.url), 'utf8');
-    const gate = app.indexOf('app.use(sessionGate);');
-    const identity = app.indexOf('app.use(resolveAgentIdentity);');
-    const scope = app.indexOf('app.use(auditActor);');
-    // Every route group answers from Hono now; what Express still serves after
-    // the scope is the `/api` catch-all, and whatever index.ts mounts later.
-    const firstRoute = app.indexOf("app.use('/api', (_req, res) =>");
+    const chain = readFileSync(new URL('../http/api-chain.ts', import.meta.url), 'utf8');
+    const gate = chain.indexOf('decideSessionGate(c.req.method');
+    const identity = chain.indexOf('resolveAgentIdentityFromHeaders(c.env.incoming.headers');
+    const scope = chain.indexOf('app.use(enterAuditScope);');
+    // Every route is mounted on the app the chain returns, after all of it.
+    const end = chain.indexOf('  return app;\n}');
     expect(gate).toBeGreaterThan(-1);
     expect(identity).toBeGreaterThan(gate);
     expect(scope).toBeGreaterThan(identity);
-    expect(firstRoute).toBeGreaterThan(scope);
+    expect(end).toBeGreaterThan(scope);
   });
 });

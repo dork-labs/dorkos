@@ -12,50 +12,47 @@ vi.mock('../../services/core/tunnel-manager.js', () => ({
   },
 }));
 
-import { REQUEST_FACTS_ADAPTERS } from '../../http/__tests__/request-facts-adapters.js';
+import { requestFactsFor } from '../../http/__tests__/described-request.js';
 import { resolveBrowserOriginFacts } from '../browser-origin.js';
 
-describe.each(REQUEST_FACTS_ADAPTERS)(
-  'resolveBrowserOriginFacts, through the $name adapter',
-  (adapter) => {
-    it('reads the raw Origin and Host, and allows a loopback host', async () => {
-      const facts = resolveBrowserOriginFacts(
-        await adapter.facts({
-          headers: { Origin: 'http://localhost:4242', Host: 'localhost:4242' },
-        }),
-        { hostCheckInert: false }
-      );
-      expect(facts).toMatchObject({
-        origin: 'http://localhost:4242',
-        hostHeader: 'localhost:4242',
-        hostAllowed: true,
-        connectionEncrypted: false,
-        hostCheckInert: false,
-      });
+describe('resolveBrowserOriginFacts', () => {
+  it('reads the raw Origin and Host, and allows a loopback host', async () => {
+    const facts = resolveBrowserOriginFacts(
+      await requestFactsFor({
+        headers: { Origin: 'http://localhost:4242', Host: 'localhost:4242' },
+      }),
+      { hostCheckInert: false }
+    );
+    expect(facts).toMatchObject({
+      origin: 'http://localhost:4242',
+      hostHeader: 'localhost:4242',
+      hostAllowed: true,
+      connectionEncrypted: false,
+      hostCheckInert: false,
     });
+  });
 
-    it('refuses a rebound host, and never trusts X-Forwarded-Host for it', async () => {
-      const facts = resolveBrowserOriginFacts(
-        await adapter.facts({
-          headers: { Host: 'evil.example', 'X-Forwarded-Host': 'localhost' },
-        }),
-        { hostCheckInert: false }
-      );
-      expect(facts.hostHeader).toBe('evil.example');
-      expect(facts.hostAllowed).toBe(false);
-    });
+  it('refuses a rebound host, and never trusts X-Forwarded-Host for it', async () => {
+    const facts = resolveBrowserOriginFacts(
+      await requestFactsFor({
+        headers: { Host: 'evil.example', 'X-Forwarded-Host': 'localhost' },
+      }),
+      { hostCheckInert: false }
+    );
+    expect(facts.hostHeader).toBe('evil.example');
+    expect(facts.hostAllowed).toBe(false);
+  });
 
-    it('takes the scheme from X-Forwarded-Proto and TLS from the socket', async () => {
-      const facts = resolveBrowserOriginFacts(
-        await adapter.facts({
-          headers: { Host: 'localhost', 'X-Forwarded-Proto': 'https' },
-          encrypted: true,
-        }),
-        { hostCheckInert: true }
-      );
-      expect(facts.forwardedProto).toBe('https');
-      expect(facts.connectionEncrypted).toBe(true);
-      expect(facts.hostCheckInert).toBe(true);
-    });
-  }
-);
+  it('takes the scheme from X-Forwarded-Proto and TLS from the socket', async () => {
+    const facts = resolveBrowserOriginFacts(
+      await requestFactsFor({
+        headers: { Host: 'localhost', 'X-Forwarded-Proto': 'https' },
+        encrypted: true,
+      }),
+      { hostCheckInert: true }
+    );
+    expect(facts.forwardedProto).toBe('https');
+    expect(facts.connectionEncrypted).toBe(true);
+    expect(facts.hostCheckInert).toBe(true);
+  });
+});

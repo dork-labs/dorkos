@@ -387,7 +387,7 @@ export const hostApiKeys = pgTable(
     check('host_api_keys_secret_hash', sql`${table.secretHash} ~ '^[a-f0-9]{64}$'`),
     check(
       'host_api_keys_scopes',
-      sql`cardinality(${table.scopes}) BETWEEN 1 AND 9 AND ${table.scopes} <@ ARRAY['communities:read','communities:write','communities:lifecycle','communities:import','communities:legal_hold','communities:takedown','communities:ownership','communities:erasure_journal','accounts:close']::text[]`
+      sql`cardinality(${table.scopes}) BETWEEN 1 AND 10 AND ${table.scopes} <@ ARRAY['communities:read','communities:write','communities:lifecycle','communities:import','communities:legal_hold','communities:takedown','communities:ownership','communities:erasure_journal','accounts:close','communities:reserved_names']::text[]`
     ),
     check(
       'host_api_keys_issuer',

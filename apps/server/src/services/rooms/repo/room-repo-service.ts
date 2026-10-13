@@ -233,8 +233,8 @@ export function executeRoomRepoRepair(
 /** Route captures only through the actual constructor-owned service and verified HTTP composition. */
 export function captureRoomRepoHttpOperation(
   service: RoomRepoService,
-  req: import('express').Request,
-  res: import('express').Response,
+  req: import('node:http').IncomingMessage,
+  res: import('node:http').ServerResponse,
   roomId: string,
   operation: 'enable' | 'repair'
 ): Promise<object> {

@@ -3322,6 +3322,9 @@
             "items": {
               "$ref": "#/components/schemas/ChatMessageStamp"
             }
+          },
+          "roomMessage": {
+            "$ref": "#/components/schemas/RoomMessageStamp"
           }
         },
         "required": [
@@ -4525,6 +4528,71 @@
           "failed"
         ]
       },
+      "RoomMessageStamp": {
+        "type": "object",
+        "properties": {
+          "roomId": {
+            "type": "string"
+          },
+          "entryId": {
+            "type": "string"
+          },
+          "roomLabel": {
+            "type": "string"
+          },
+          "author": {
+            "$ref": "#/components/schemas/RoomMessageAuthor"
+          }
+        },
+        "required": [
+          "roomId",
+          "entryId"
+        ]
+      },
+      "RoomMessageAuthor": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "human",
+              "agent",
+              "system"
+            ]
+          },
+          "displayName": {
+            "type": "string"
+          },
+          "handle": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "emoji": {
+            "type": "string"
+          },
+          "color": {
+            "type": "string"
+          },
+          "agentId": {
+            "type": "string"
+          },
+          "you": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "displayName",
+          "handle",
+          "you"
+        ]
+      },
       "SessionSnapshot": {
         "type": "object",
         "properties": {
@@ -5698,6 +5766,9 @@
                 "items": {
                   "$ref": "#/components/schemas/ChatMessageStamp"
                 }
+              },
+              "roomMessage": {
+                "$ref": "#/components/schemas/RoomMessageStamp"
               }
             },
             "required": [
@@ -31117,6 +31188,9 @@
                           "items": {
                             "$ref": "#/components/schemas/ChatMessageStamp"
                           }
+                        },
+                        "roomMessage": {
+                          "$ref": "#/components/schemas/RoomMessageStamp"
                         }
                       },
                       "required": [

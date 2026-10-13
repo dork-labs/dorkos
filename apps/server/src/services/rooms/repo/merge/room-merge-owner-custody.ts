@@ -181,8 +181,8 @@ export function createIsolatedRoomMergeOwnerCustody() {
   /** Route captures only through the actual constructor-owned service and verified HTTP composition. */
   function captureRoomMergeHttpOperation(
     service: RoomMergeService,
-    req: import('express').Request,
-    res: import('express').Response,
+    req: import('node:http').IncomingMessage,
+    res: import('node:http').ServerResponse,
     roomId: string
   ): Promise<object> {
     const binding = originalMergeServices.get(service);

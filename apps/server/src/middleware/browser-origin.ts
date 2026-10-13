@@ -3,12 +3,13 @@
  * (`isTrustedBrowserOrigin` in `lib/trusted-origins.ts`).
  *
  * The predicate takes resolved FACTS rather than a request, so that it stays
- * pure and the WebSocket upgrade — which has an `IncomingMessage` and no Express
- * around it — can read the same rules. This module is the request half of that
- * split, and it exists so the CORS delegate in `app.ts` and the `/mcp` family's
- * `middleware/mcp-origin.ts` resolve those facts identically instead of each
- * reading a different set of headers. It reads {@link RequestFacts}, so the
- * Express and Hono chains reach the same answer (`http/request-facts.ts`).
+ * pure and the WebSocket upgrade — which has an `IncomingMessage` and no Hono
+ * request around it — can read the same rules. This module is the request half
+ * of that split, and it exists so the CORS delegate (`http/cors-policy.ts`) and
+ * the `/mcp` family's `middleware/mcp-origin.ts` resolve those facts
+ * identically instead of each reading a different set of headers. It reads
+ * {@link RequestFacts}, so every caller reaches the same answer
+ * (`http/request-facts.ts`).
  *
  * @module middleware/browser-origin
  */
@@ -36,8 +37,8 @@ export interface BrowserOriginContext {
  *
  * ## Raw headers, never `req.protocol` or `req.hostname`
  *
- * Both of those getters resolve through `trust proxy`, which `app.ts` sets to
- * `1` so a reverse proxy can report the real scheme. That makes them
+ * Both of those getters resolve through `trust proxy`, which the Express app
+ * set to `1` so a reverse proxy could report the real scheme. That makes them
  * caller-controlled on a direct connection, where the "first proxy" IS the
  * caller: a request carrying `X-Forwarded-Host: localhost` reports
  * `req.hostname === 'localhost'` whatever its real `Host` said (verified against
@@ -46,8 +47,8 @@ export interface BrowserOriginContext {
  * explicitly — the same leftmost-entry rule `req.protocol` applies, written out
  * where it can be seen — and the host is always the raw header.
  *
- * @param request - The request's facts (`expressRequestFacts` or
- *   `honoRequestFacts`); only its headers and connection are read.
+ * @param request - The request's facts (`honoRequestFacts`); only its headers
+ *   and connection are read.
  * @param context - The facts the request cannot supply, see
  *   {@link BrowserOriginContext}.
  */
@@ -65,7 +66,7 @@ export function resolveBrowserOriginFacts(
       trustedHosts: parseTrustedHosts(env.DORKOS_TRUSTED_HOSTS),
       tunnelHosts: getTunnelHosts(),
     }),
-    // eslint-disable-next-line no-restricted-syntax -- DORKOS_CORS_ORIGIN is not in env.ts; read the same way app.ts reads it
+    // eslint-disable-next-line no-restricted-syntax -- DORKOS_CORS_ORIGIN is not in env.ts; read the same way the chain reads it
     configuredOrigins: process.env.DORKOS_CORS_ORIGIN,
     ownsNetworkBoundary: env.DORKOS_ALLOW_INSECURE_BIND === true,
     forwardedProto: Array.isArray(forwardedProto) ? forwardedProto[0] : forwardedProto,

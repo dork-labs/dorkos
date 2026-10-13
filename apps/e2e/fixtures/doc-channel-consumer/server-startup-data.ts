@@ -8,6 +8,7 @@ export const startupPhases = Object.freeze([
   'boundary-init',
   'native-store',
   'app-import',
+  'front-door-import',
   'agents-import',
   'upgrade-import',
   'stream-routes-import',

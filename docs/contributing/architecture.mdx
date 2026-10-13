@@ -9,7 +9,7 @@ description: Architecture overview for DorkOS contributors
 
 This is the engineering reference. For a plain-language introduction, start with [Architecture](/docs/concepts/architecture).
 
-DorkOS has several deployment boundaries. The local React client reaches an Express server through the `Transport` interface. The independent Community server owns shared channels. Cloud is optional and communicates through a public contract. The marketplace website helps people discover packages that the local server installs.
+DorkOS has several deployment boundaries. The local React client reaches a Hono server through the `Transport` interface. The independent Community server owns shared channels. Cloud is optional and communicates through a public contract. The marketplace website helps people discover packages that the local server installs.
 
 Reviewed against public source `996161118a84f938fe76b6e569ba077dfb7a574a` on October 1, 2026. Spaces is the product name; Community remains the service and schema name. Solid diagram edges show implemented public paths, while dashed edges identify unfinished wiring or service-contract relationships. Neither establishes live deployment. Sequence-diagram dashed arrows represent responses and events.
 
@@ -130,7 +130,7 @@ DorkOS is a Turborepo monorepo. The apps and the packages that matter most for t
         <File name="React 19 + Vite 6 + Tailwind 4" />
       </Folder>
       <Folder name="server">
-        <File name="Express + TypeScript" />
+        <File name="Hono + TypeScript" />
       </Folder>
       <Folder name="community">
         <File name="Independent Hono API + React browser + PostgreSQL" />
@@ -208,7 +208,7 @@ The interface extends further to cover Tasks schedules, Relay messaging, Mesh ag
 
 ### HTTP Transport
 
-`HttpTransport` communicates with the Express server over HTTP:
+`HttpTransport` communicates with the Hono server over HTTP:
 
 - Uses `fetch()` for CRUD operations
 - Triggers turns via `postMessage()` (`POST /sessions/:id/messages`, `202` with the canonical chat ID)
@@ -251,7 +251,7 @@ function MyComponent() {
 
 ## Server Architecture
 
-The Express server (`apps/server/`) is organized into routes and services.
+The Hono server (`apps/server/`) is organized into routes and services.
 
 ### Routes
 

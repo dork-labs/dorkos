@@ -23,6 +23,16 @@ vi.mock('../../services/core/config-manager.js', () => ({
 }));
 vi.mock('../../env.js', () => ({ env: { DORKOS_PORT: 7777 } }));
 vi.stubEnv('VITE_PORT', '7779');
+// CORS lets this test origin through, so it reaches the route's own origin
+// bar, which judges against the server's static set and not this list.
+vi.stubEnv('DORKOS_CORS_ORIGIN', 'https://evil.example');
+// The session gate lets every request through: these cases are about the
+// route's own bar, and each one sets the user the gate would have proved
+// (`before` below), as the Express version stubbed `res.locals.user`.
+vi.mock('../../services/core/auth/session-gate.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../services/core/auth/session-gate.js')>()),
+  decideSessionGate: vi.fn(async () => ({ allowed: true })),
+}));
 vi.mock('../../services/session/launch/launch-session.js', () => ({
   AGENT_LAUNCH_CAP_MESSAGE: 'Too many spin-off chats are running (8).',
   isSessionLaunchRefusal: (result: object) => 'refused' in result,
@@ -32,12 +42,12 @@ vi.mock('../../services/session/launch/launch-session.js', () => ({
   }),
 }));
 
-import express from 'express';
 import request from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
 import { createTestDb } from '@dorkos/test-utils/db';
 import type { ProjectInfo } from '@dorkos/extension-api/server';
-import { createExtensionsRouter } from '../extensions.js';
+import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
+import { createExtensionsRoutes } from '../extensions.js';
 import { SessionStartedByStore } from '../../services/session/origin/session-started-by-store.js';
 import { StartWorkService, setStartWorkService } from '../../services/extensions/start-work.js';
 
@@ -96,17 +106,24 @@ beforeEach(() => {
         : undefined,
     listPublic: () => [],
   };
-  const app = express();
-  app.use(express.json());
-  app.use((_req, res, next) => {
-    if (signedInUser) res.locals.user = signedInUser;
-    next();
-  });
-  app.use(
-    '/api/extensions',
-    createExtensionsRouter(manager as never, '/tmp/unused', () => null)
+  target.mount(
+    honoGroupListener(
+      {
+        path: '/api/extensions',
+        routes: createExtensionsRoutes({
+          manager: manager as never,
+          dorkHome: '/tmp/unused',
+          getCwd: () => null,
+        }),
+      },
+      {
+        before: async (c, next) => {
+          if (signedInUser) c.set('user', signedInUser as never);
+          await next();
+        },
+      }
+    )
   );
-  target.mount(app);
 });
 
 afterEach(() => {

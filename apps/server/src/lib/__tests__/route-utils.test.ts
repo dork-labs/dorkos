@@ -1,15 +1,5 @@
-import { describe, it, expect, vi } from 'vitest';
-import { parseSessionId, sendError } from '../route-utils.js';
-import type { Response } from 'express';
-
-function createMockResponse() {
-  const json = vi.fn();
-  const status = vi.fn().mockReturnValue({ json });
-  return { status, json } as unknown as Response & {
-    status: ReturnType<typeof vi.fn>;
-    json: ReturnType<typeof vi.fn>;
-  };
-}
+import { describe, it, expect } from 'vitest';
+import { errorBody, parseSessionId } from '../route-utils.js';
 
 describe('parseSessionId', () => {
   it('accepts and returns a valid UUID', () => {
@@ -34,37 +24,8 @@ describe('parseSessionId', () => {
   });
 });
 
-describe('sendError', () => {
-  it('sends the correct status code and body', () => {
-    const res = createMockResponse();
-    sendError(res, 400, 'Bad request', 'BAD_REQUEST');
-
-    expect(res.status).toHaveBeenCalledWith(400);
-    expect(res.status(400).json).toHaveBeenCalledWith({
-      error: 'Bad request',
-      code: 'BAD_REQUEST',
-    });
-  });
-
-  it('works with 404 status', () => {
-    const res = createMockResponse();
-    sendError(res, 404, 'Not found', 'NOT_FOUND');
-
-    expect(res.status).toHaveBeenCalledWith(404);
-    expect(res.status(404).json).toHaveBeenCalledWith({
-      error: 'Not found',
-      code: 'NOT_FOUND',
-    });
-  });
-
-  it('works with 500 status', () => {
-    const res = createMockResponse();
-    sendError(res, 500, 'Internal server error', 'INTERNAL_ERROR');
-
-    expect(res.status).toHaveBeenCalledWith(500);
-    expect(res.status(500).json).toHaveBeenCalledWith({
-      error: 'Internal server error',
-      code: 'INTERNAL_ERROR',
-    });
+describe('errorBody', () => {
+  it('is the repo error shape', () => {
+    expect(errorBody('Not found', 'NOT_FOUND')).toEqual({ error: 'Not found', code: 'NOT_FOUND' });
   });
 });

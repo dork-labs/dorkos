@@ -39,7 +39,7 @@ import type { PermissionStop } from './agent-runtime.js';
 import { AccountUsageSchema } from './account-usage.js';
 import { ProjectRefSchema } from './project-schemas.js';
 // A leaf module (zod only), so this value import forms no load-time cycle.
-import { ChatMessageStampSchema } from './chat-messages.js';
+import { ChatMessageStampSchema, RoomMessageStampSchema } from './chat-messages.js';
 
 extendZodWithOpenApiOnce();
 
@@ -3675,6 +3675,13 @@ export const HistoryMessageSchema = z
      * and never from the text.
      */
     chatMessages: z.array(ChatMessageStampSchema).optional(),
+    /**
+     * The room post this user message carried into a room-attached chat
+     * (DOR-2113). The runtime records which entry; the server fills in the
+     * room and its author. The app draws the sender from here, never "You"
+     * unless the room says the person wrote it.
+     */
+    roomMessage: RoomMessageStampSchema.optional(),
   })
   .openapi('HistoryMessage');
 

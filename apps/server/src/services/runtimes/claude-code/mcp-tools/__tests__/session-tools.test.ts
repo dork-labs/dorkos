@@ -849,6 +849,16 @@ describe('session_start records who started the new session (spec flow-multiproj
     expect(store.get(result.sessionId)?.reportBack).toBe(false);
     const seed = vi.mocked(dispatchMessage).mock.calls.at(-1)![0].seedContext as string;
     expect(seed).toContain('does not hear from you on its own');
+    // Nor points it at chat_send, which that parent refuses (2026-10-12).
+    expect(seed).not.toContain('chat_send to parent-chat');
+    expect(seed).toContain('post_to_room');
+  });
+
+  it('points a spin-off told reportBack off at chat_send, when its parent takes messages', async () => {
+    wireChats(true);
+    await fromChat('parent-chat')({ ...BASE, reportBack: 'off' });
+    const seed = vi.mocked(dispatchMessage).mock.calls.at(-1)![0].seedContext as string;
+    expect(seed).toContain('chat_send to parent-chat');
   });
 
   it('reports back by default, and not when told reportBack off (spec spin-off-chats §5)', async () => {
@@ -1104,12 +1114,32 @@ describe("session_start runs at the calling chat's level or lower (spec inherite
   });
 
   it('refuses a mode the target runtime does not declare', async () => {
-    // `dontAsk` is a name the input schema knows and Claude Code no longer offers.
+    // `plan` is a name the input schema knows and Codex does not offer.
+    const body = await expectRefused(fromChatAt('bypassPermissions'), {
+      ...BASE,
+      runtime: 'codex',
+      permissionMode: 'plan',
+    });
+    expect(body).toMatchObject({ code: 'UNKNOWN_PERMISSION_MODE' });
+  });
+
+  it('holds a chat SET to Never ask whose turn runs at Plan to chats that cannot ask', async () => {
+    const handler = createSessionStartHandler(makeDeps(), () => ({
+      agentPath: AGENT_HOME,
+      sessionId: 'parent-chat',
+      runtime: 'claude-code',
+      permissionMode: 'plan',
+      neverAsks: true,
+    }));
+    await expectRefused(handler, { ...BASE, permissionMode: 'plan' });
+  });
+
+  it('refuses Never ask by name: only a person picks it (DOR-2838)', async () => {
     const body = await expectRefused(fromChatAt('bypassPermissions'), {
       ...BASE,
       permissionMode: 'dontAsk',
     });
-    expect(body).toMatchObject({ code: 'UNKNOWN_PERMISSION_MODE' });
+    expect(body).toMatchObject({ code: 'PERSON_ONLY_MODE' });
   });
 
   describe('the ceiling', () => {

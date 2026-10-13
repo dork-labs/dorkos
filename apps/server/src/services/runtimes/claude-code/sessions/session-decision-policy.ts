@@ -3,6 +3,7 @@ import type { PermissionMode } from '@dorkos/shared/types';
 import { actsWithoutAsking } from '@dorkos/shared/permission-semantics';
 import type { AgentSession } from '../agent-types.js';
 import { CLAUDE_CODE_CAPABILITIES } from '../runtime-constants.js';
+import { isPersonOnlyMode } from '../turn-permission.js';
 import { SESSIONS } from '../../../../config/constants.js';
 
 /**
@@ -82,6 +83,9 @@ export function sessionScopedMode(suggestions: PermissionUpdate[]): PermissionMo
  * @param mode - The mode an accepted suggestion asks for.
  */
 export function isAdoptableMode(mode: PermissionMode): boolean {
+  // Nor "Never ask": a click that allowed one call is not a person choosing a
+  // chat that refuses everything it would ask about (DOR-2838).
+  if (isPersonOnlyMode(mode)) return false;
   const descriptor = CLAUDE_CODE_CAPABILITIES.permissionModes.values.find((d) => d.id === mode);
   return descriptor !== undefined && !actsWithoutAsking(descriptor);
 }

@@ -2,7 +2,7 @@ flowchart LR
   accTitle: DorkOS replaceable interfaces
   accDescr: Each row names a caller, its port, and implementations. A port is a code boundary, not necessarily a network boundary. Dashed edges identify the unwired Buzz implementation and planned decision-model consumers; decision bridges themselves exist.
   ui["React client"] --> transport{{"Transport"}}
-  transport --> http["HttpTransport<br/>HTTP + WebSocket + Space SSE<br/>Express"]
+  transport --> http["HttpTransport<br/>HTTP + WebSocket + Space SSE<br/>Hono"]
   dispatch["Session dispatcher"] --> agent{{"AgentRuntime"}}
   agent --> runtimes["Claude Code / Codex SDKs<br/>OpenCode HTTP + SSE sidecar<br/>Doe in-process engine"]
   accounts["Account actions"] --> connector{{"ConnectorProvider"}}

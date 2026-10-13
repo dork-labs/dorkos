@@ -1,4 +1,5 @@
-import type { Request, Response } from 'express';
+import { originalDocRequestFacts } from '../../../../http/original-doc-request.js';
+import type { IncomingMessage, ServerResponse } from 'node:http';
 import {
   InstallationFileWrites,
   requireInstallationFileWritesOwner,
@@ -101,15 +102,15 @@ export function requireOriginalHttpRoomWorktreeAdmission(
 export function captureDocHttpFileWriteCaller(
   httpCustodyOwner: object,
   owner: InstallationFileWrites,
-  req: Request,
-  res: Response
+  req: IncomingMessage,
+  res: ServerResponse
 ): object {
   const facet = readOriginalHttpRequestCustody(httpCustodyOwner);
   const binding = facet.originalHttpFileOwners.get(owner);
   if (!binding || binding.closed) throw new DocChannelNotFoundError();
   requireInstallationFileWritesOwner(owner, binding.db, binding.store);
   if (binding.db.$client.inTransaction) throw new DocChannelNotFoundError();
-  const actor = binding.actor(req, res);
+  const actor = binding.actor(originalDocRequestFacts(req, res));
   if (!binding.principalCurrent(actor.principal) || binding.closed)
     throw new DocChannelNotFoundError();
   requireInstallationFileWritesOwner(owner, binding.db, binding.store);

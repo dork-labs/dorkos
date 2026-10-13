@@ -1,4 +1,4 @@
-import type { Request, Response } from 'express';
+import type { IncomingMessage, ServerResponse } from 'node:http';
 import { InstallationFileWrites } from '../writes/installation-file-writes.js';
 import {
   agents,
@@ -173,8 +173,8 @@ export async function checkOriginalHttpRoomSessionPlacement(
 export async function captureOriginalHttpRoomSessionPlacement(
   httpCustodyOwner: object,
   owner: InstallationFileWrites,
-  req: Request,
-  res: Response,
+  req: IncomingMessage,
+  res: ServerResponse,
   sessionId: string
 ): Promise<Readonly<{ place: RoomSessionPlacePort; retire(): void }>> {
   const facet = readOriginalHttpRequestCustody(httpCustodyOwner);

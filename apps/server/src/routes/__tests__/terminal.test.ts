@@ -1,11 +1,19 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import express, { type Express } from 'express';
+
+// The chain these routes run behind reads config and the tunnel per request.
+vi.mock('../../services/core/config-manager.js', () => ({
+  configManager: { get: vi.fn().mockReturnValue(null), set: vi.fn() },
+}));
+vi.mock('../../services/core/tunnel-manager.js', () => ({
+  tunnelManager: { status: { enabled: false, connected: false, url: null } },
+}));
 import request from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
-import { createTerminalRouter } from '../terminal.js';
+import { createTerminalRoutes } from '../terminal.js';
+import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
 import {
   TerminalManager,
   type PtyLike,
@@ -35,7 +43,6 @@ function mockSpawn(_opts: SpawnPtyOptions): PtyLike {
 
 describe('terminal routes', () => {
   let boundary: string;
-  let app: Express;
 
   beforeEach(() => {
     boundary = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'term-route-')));
@@ -45,11 +52,9 @@ describe('terminal routes', () => {
       idleTimeoutMs: 60_000,
       maxTerminals: 1,
     });
-    app = express();
-    app.use(express.json());
-    app.use('/api/terminal', createTerminalRouter(manager));
-
-    fixtureTarget.mount(app);
+    fixtureTarget.mount(
+      honoGroupListener({ path: '/api/terminal', routes: createTerminalRoutes(manager) })
+    );
   });
 
   it('returns 400 for a missing/invalid body', async () => {

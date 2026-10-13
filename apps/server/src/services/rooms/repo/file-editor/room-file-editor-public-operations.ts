@@ -1,6 +1,6 @@
+import type { RoomUploadStorageEngine } from '../upload/room-upload-storage-contracts.js';
 import { readOriginalRoomEditorCommands } from '../room-file-editor.js';
-import type { Request, Response } from 'express';
-import type multer from 'multer';
+import type { IncomingMessage, ServerResponse } from 'node:http';
 import { type InstallationRoomMutationContext } from '../../../canvas/doc-channel/writes/installation-room-writes.js';
 import type { InstallationFileWrites } from '../../../canvas/doc-channel/writes/installation-file-writes.js';
 import type { RoomFileEditor } from '../room-file-editor.js';
@@ -27,7 +27,7 @@ export function createOriginalRoomEditorPublicOperations(publicOwner: object) {
     editor: RoomFileEditor,
     handle: object,
     directory: string
-  ): multer.StorageEngine {
+  ): RoomUploadStorageEngine {
     return readOriginalRoomEditorCommands(publicOwner, editor).storage(handle, directory);
   }
   /** Require the original Room file upload storage owner. */
@@ -43,7 +43,7 @@ export function createOriginalRoomEditorPublicOperations(publicOwner: object) {
     editor: RoomFileEditor,
     handle: object,
     directory: string,
-    storage: multer.StorageEngine
+    storage: RoomUploadStorageEngine
   ): number {
     return readOriginalRoomEditorCommands(publicOwner, editor).storageLimit(
       handle,
@@ -56,8 +56,8 @@ export function createOriginalRoomEditorPublicOperations(publicOwner: object) {
     editor: RoomFileEditor,
     handle: object,
     directory: string,
-    storage: multer.StorageEngine,
-    req: Request
+    storage: RoomUploadStorageEngine,
+    req: IncomingMessage
   ): void {
     readOriginalRoomEditorCommands(publicOwner, editor).storageCurrent(
       handle,
@@ -71,8 +71,8 @@ export function createOriginalRoomEditorPublicOperations(publicOwner: object) {
     editor: RoomFileEditor,
     handle: object,
     directory: string,
-    storage: multer.StorageEngine,
-    req: Request
+    storage: RoomUploadStorageEngine,
+    req: IncomingMessage
   ): Promise<void> {
     return readOriginalRoomEditorCommands(publicOwner, editor).storageCheck(
       handle,
@@ -87,8 +87,8 @@ export function createOriginalRoomEditorPublicOperations(publicOwner: object) {
     editor: RoomFileEditor,
     handle: object,
     directory: string,
-    storage: multer.StorageEngine,
-    req: Request
+    storage: RoomUploadStorageEngine,
+    req: IncomingMessage
   ): void {
     readOriginalRoomEditorCommands(publicOwner, editor).storageCleanup(
       handle,
@@ -102,8 +102,8 @@ export function createOriginalRoomEditorPublicOperations(publicOwner: object) {
     editor: RoomFileEditor,
     handle: object,
     directory: string,
-    storage: multer.StorageEngine,
-    req: Request
+    storage: RoomUploadStorageEngine,
+    req: IncomingMessage
   ): Promise<void> {
     return readOriginalRoomEditorCommands(publicOwner, editor).storageCheck(
       handle,
@@ -118,7 +118,7 @@ export function createOriginalRoomEditorPublicOperations(publicOwner: object) {
     editor: RoomFileEditor,
     handle: object,
     directory: string,
-    storage: multer.StorageEngine,
+    storage: RoomUploadStorageEngine,
     context: InstallationRoomMutationContext
   ): void {
     readOriginalRoomEditorCommands(publicOwner, editor).storageSourceContext(
@@ -132,8 +132,8 @@ export function createOriginalRoomEditorPublicOperations(publicOwner: object) {
   function captureRoomFileEditorHttpOperation(
     editor: RoomFileEditor,
     roomId: string,
-    req: Request,
-    res: Response
+    req: IncomingMessage,
+    res: ServerResponse
   ): Promise<object> {
     return readOriginalRoomEditorCommands(publicOwner, editor).capture(roomId, req, res);
   }

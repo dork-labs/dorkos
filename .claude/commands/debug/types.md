@@ -24,7 +24,7 @@ pnpm --filter @dorkos/client typecheck
 - **Database types come from Drizzle** — schemas in `packages/db` (SQLite). Use Drizzle's inferred types (`$inferSelect` / `$inferInsert`), not manual assertions.
 - **Cross-package imports** use `@dorkos/shared/*` subpaths (`/types`, `/agent-runtime`, `/transport`, ...). "Cannot find module" on these usually means a stale dist (see gotcha) or a missing subpath in `packages/shared/package.json` exports.
 - **Server is NodeNext** — relative imports in `apps/server` need explicit `.js` extensions; TS2307 there is often a missing extension, not a missing file.
-- **Client hooks** are typed TanStack Query wrappers in `apps/client/src/layers/entities/*/model/`; Express routes validate bodies with `Schema.safeParse(req.body)` (Express 5: `req.body` can be undefined on empty POSTs).
+- **Client hooks** are typed TanStack Query wrappers in `apps/client/src/layers/entities/*/model/`; Hono routes validate bodies with `Schema.safeParse(readJsonBody(c))` (an empty POST reads as `undefined` unless the route passes `{ emptyAs: {} }`).
 - **`any` is banned** (project rule) — fix the type, don't silence it. Prefer type guards over assertions.
 
 ## Escalation

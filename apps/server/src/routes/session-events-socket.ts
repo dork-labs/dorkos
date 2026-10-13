@@ -1,3 +1,4 @@
+import { upgradeCaller } from '../services/core/streams/stream-upgrade-auth.js';
 import {
   AmbiguousSessionError,
   SessionDiscoveryUnavailableError,
@@ -77,7 +78,11 @@ export const sessionEventsRoute: UpgradeRoute = {
     if (!sessionId) return refuse(400, 'Invalid session ID');
     // The same read check as the SSE handler: a person's own chat is not an
     // agent's to watch, and reads as not found (spec `audit-trail` §3.4).
-    if (!readableSessionIds(readerOfRequest({ headers }, { locals }), [sessionId]).has(sessionId)) {
+    if (
+      !readableSessionIds(readerOfRequest(upgradeCaller(headers, locals)), [sessionId]).has(
+        sessionId
+      )
+    ) {
       return refuse(404, 'Session not found');
     }
 
@@ -147,13 +152,12 @@ export const sessionEventsRoute: UpgradeRoute = {
           // Same reading as the SSE handler's: the cursor names its seq space
           // by generation, so a rekey is judged by identity rather than by id.
           resume,
-          // `StreamUpgradeLocals` is `res.locals`-shaped precisely so this
-          // reads the same principal an HTTP request would.
-          principal: readCallerPrincipal({ headers }, { locals }),
+          // `StreamUpgradeLocals` carries a request's identity fields precisely
+          // so this reads the same principal an HTTP request would.
+          principal: readCallerPrincipal(upgradeCaller(headers, locals)),
           documentNotifications: docScopeNotifications(
             `session:${sessionId}`,
-            { headers },
-            { locals }
+            upgradeCaller(headers, locals)
           ),
         });
       },

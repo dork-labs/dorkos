@@ -1,8 +1,8 @@
+import type { RoomUploadStorageEngine } from '../upload/room-upload-storage-contracts.js';
 import { readOriginalRoomEditorView } from '../room-file-editor.js';
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
-import type { Request } from 'express';
-import type multer from 'multer';
+import type { IncomingMessage } from 'node:http';
 import { createRoomFileUploadStorage } from '../room-file-upload-storage.js';
 import { checkDocHttpRoomFileWriteCurrent } from '../../../canvas/doc-channel/http-composition.js';
 import {
@@ -16,8 +16,8 @@ export function stage(
   editorOwner: object,
   handle: object,
   directory: string,
-  storage: multer.StorageEngine,
-  req?: Request
+  storage: RoomUploadStorageEngine,
+  req?: IncomingMessage
 ): { operation: EditorOperation; stage: UploadStage } {
   const view = readOriginalRoomEditorView(editorOwner);
   const operation = view.editorOperations.get(handle);
@@ -38,7 +38,7 @@ export function storage(
   editorOwner: object,
   handle: object,
   directory: string
-): multer.StorageEngine {
+): RoomUploadStorageEngine {
   const view = readOriginalRoomEditorView(editorOwner);
   const operation = view.current(handle),
     stage = operation.staging.get(directory);
@@ -59,8 +59,8 @@ export async function checkStorage(
   editorOwner: object,
   handle: object,
   directory: string,
-  storage: multer.StorageEngine,
-  req: Request,
+  storage: RoomUploadStorageEngine,
+  req: IncomingMessage,
   cleanup: boolean
 ): Promise<void> {
   const view = readOriginalRoomEditorView(editorOwner);

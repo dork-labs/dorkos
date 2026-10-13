@@ -85,7 +85,6 @@ vi.mock('@dorkos/shared/manifest', () => ({ readManifest: vi.fn(async () => null
 
 import request from '@dorkos/test-utils/supertest';
 import { listeningServer } from '@dorkos/test-utils/listening-server';
-import { createApp, finalizeApp } from '../../app.js';
 import { composedListener } from '../../http/__tests__/composed-listener.js';
 import {
   getOrCreateProjector,
@@ -99,9 +98,7 @@ import {
 import { collectTriggeredTurn } from './helpers/trigger-turn-helpers.js';
 
 const admission = new MainRequestAdmission();
-const app = createApp({ admission });
-finalizeApp(app);
-const server = listeningServer(composedListener(app, admission));
+const server = listeningServer(composedListener(admission));
 
 const SESSION_ID = '00000000-0000-4000-8000-0000000000f1';
 /** A real one-pixel PNG — the assertion is about bytes, so they have to be bytes. */

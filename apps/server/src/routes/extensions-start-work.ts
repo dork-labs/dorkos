@@ -15,13 +15,16 @@
  *
  * @module routes/extensions-start-work
  */
-import type { Router } from 'express';
+import type { Hono } from 'hono';
+import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import type { ExtensionStatus } from '@dorkos/extension-api';
 import { StartWorkError } from '@dorkos/extension-api/server';
 import type { ExtensionManager } from '../services/extensions/extension-manager.js';
 import { getStartWorkService, StartWorkInputError } from '../services/extensions/start-work.js';
 import { logger } from '../lib/logger.js';
-import { refuseIfNotAPerson, type PersonBarCopy } from './extensions-person-bar.js';
+import type { ApiEnv } from '../http/api-chain.js';
+import { readJsonBody } from '../http/request-body.js';
+import { refusedNotAPerson, type PersonBarCopy } from './extensions-person-bar.js';
 
 /** What the route says when the bar refuses it. */
 const START_WORK_BAR: PersonBarCopy = {
@@ -38,7 +41,7 @@ const START_WORK_BAR: PersonBarCopy = {
 const TURNED_ON: ReadonlySet<ExtensionStatus> = new Set(['enabled', 'compiled', 'active']);
 
 /** The HTTP status for each refusal. */
-const STATUS_FOR: Record<StartWorkError['code'], number> = {
+const STATUS_FOR: Record<StartWorkError['code'], ContentfulStatusCode> = {
   not_a_project: 404,
   account_not_allowed_here: 409,
   start_limit: 429,
@@ -52,39 +55,39 @@ const STATUS_FOR: Record<StartWorkError['code'], number> = {
  * @param safeExtId - The id pattern the parent router validates against.
  */
 export function registerExtensionStartWorkRoute(
-  router: Router,
+  router: Hono<ApiEnv>,
   extensionManager: ExtensionManager,
   safeExtId: RegExp
 ): void {
-  router.post('/:id/start-work', async (req, res) => {
-    const { id } = req.params;
-    if (!safeExtId.test(id)) return res.status(400).json({ error: 'Invalid extension ID' });
-    if (refuseIfNotAPerson(req, res, START_WORK_BAR)) return undefined;
+  router.post('/:id/start-work', async (c) => {
+    const id = c.req.param('id');
+    if (!safeExtId.test(id)) return c.json({ error: 'Invalid extension ID' }, 400);
+    const refused = refusedNotAPerson(c, START_WORK_BAR);
+    if (refused) return refused;
     const record = extensionManager.get(id);
-    if (!record) return res.status(404).json({ error: `Extension '${id}' not found` });
+    if (!record) return c.json({ error: `Extension '${id}' not found` }, 404);
     if (!TURNED_ON.has(record.status)) {
-      return res
-        .status(409)
-        .json({ error: `Turn on ${record.manifest.name} in Settings → Extensions first.` });
+      return c.json(
+        { error: `Turn on ${record.manifest.name} in Settings → Extensions first.` },
+        409
+      );
     }
     const service = getStartWorkService();
     if (!service) {
-      return res
-        .status(503)
-        .json({ error: 'DorkOS cannot start chats yet. Try again in a moment.' });
+      return c.json({ error: 'DorkOS cannot start chats yet. Try again in a moment.' }, 503);
     }
     try {
-      return res.json(await service.start(id, req.body ?? {}, 'api'));
+      return c.json(await service.start(id, readJsonBody(c, { emptyAs: {} }), 'api'));
     } catch (err) {
       if (err instanceof StartWorkError) {
-        return res.status(STATUS_FOR[err.code]).json({ error: err.message, code: err.code });
+        return c.json({ error: err.message, code: err.code }, STATUS_FOR[err.code]);
       }
       if (err instanceof StartWorkInputError) {
-        return res.status(400).json({ error: err.message });
+        return c.json({ error: err.message }, 400);
       }
       // Anything else is the server's own fault: logged, never shown as it is.
       logger.error('[Extensions] Failed to start work in a new chat', err);
-      return res.status(500).json({ error: 'The chat could not be started. Try again.' });
+      return c.json({ error: 'The chat could not be started. Try again.' }, 500);
     }
   });
 }

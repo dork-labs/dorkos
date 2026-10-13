@@ -1,7 +1,10 @@
 /** Real Node routing for original native document tests; no caller facts or authority are supplied. */
 import type { RequestListener } from 'node:http';
+import type { Hono } from 'hono';
+import type { ApiEnv } from '../../../../http/api-chain.js';
+import { createStandaloneDocTokenRoutes } from '../../../../routes/canvas-doc-token-events.js';
 import { createApiApp } from '../../../../http/api-chain.js';
-import { createFrontDoor, frontDoorListener } from '../../../../http/front-door.js';
+import { frontDoorListener } from '../../../../http/front-door.js';
 import { underMount } from '../../../../http/request-body.js';
 import { MainRequestAdmission } from '../../../core/lifecycle/main-request-admission.js';
 import {
@@ -16,8 +19,8 @@ import type { createDocChannelHttpComposition } from '../http-composition.js';
 
 /**
  * Run the production admission/body/session/agent chain on actual raw Node peers,
- * with the exact original constructor-issued composition. The optional legacy
- * listener owns only unmoved test controls, never migrated document/file routes.
+ * with the exact original constructor-issued composition. Additional test controls
+ * are registered on that same native chain, never on a second HTTP application.
  */
 export function originalDocHttpListener(
   source: () =>
@@ -26,13 +29,19 @@ export function originalDocHttpListener(
   options: {
     docMount?: string;
     fileMount?: string;
-    legacy?: RequestListener;
+    standaloneTokens?: boolean;
+    registerRoutes?: (app: Hono<ApiEnv>) => void;
     capabilities?: ReturnType<typeof composeRegistry>;
   } = {}
 ): RequestListener {
   const rule = canvasDocBodyRule(() => source()?.metrics);
   const app = createApiApp({
     admission: new MainRequestAdmission(),
+    beforeCors: options.standaloneTokens
+      ? (early) => {
+          early.route('/api/canvas/token/docs', createStandaloneDocTokenRoutes(source));
+        }
+      : undefined,
     bodyRules: options.docMount
       ? [{ ...rule, matches: (_method, path) => underMount(path, options.docMount!) }]
       : [],
@@ -46,11 +55,6 @@ export function originalDocHttpListener(
     app.route(options.docMount, createCanvasDocEventRoutes(source));
   }
   if (options.fileMount) app.route(options.fileMount, createFileRoutes(source));
-  const legacy: RequestListener =
-    options.legacy ??
-    ((_req, res) => {
-      res.statusCode = 404;
-      res.end();
-    });
-  return frontDoorListener(createFrontDoor(legacy, { api: app }));
+  options.registerRoutes?.(app);
+  return frontDoorListener(app);
 }

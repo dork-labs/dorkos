@@ -70,7 +70,7 @@
  * The invariant above is what makes this escape safe, so it has to keep holding
  * in BOTH directions, and DOR-474 broke one of them. `POST /api/approvals/:id/grant`
  * now refuses a caller holding a per-user API key while login is on, because
- * `sessionGate` accepts that key as the same identity a browser session proves and
+ * the session gate accepts that key as the same identity a browser session proves and
  * agents legitimately hold one. If this module kept minting markers for that same
  * caller, acting without an approval would become STRICTLY MORE powerful than
  * deciding one — the two-step path that justifies the escape would be closed to a

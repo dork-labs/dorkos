@@ -71,7 +71,6 @@ vi.mock('@dorkos/shared/manifest', () => ({ readManifest: vi.fn(async () => null
 
 import request from '@dorkos/test-utils/supertest';
 import { listeningServer } from '@dorkos/test-utils/listening-server';
-import { createApp, finalizeApp } from '../../app.js';
 import { composedListener } from '../../http/__tests__/composed-listener.js';
 import {
   getOrCreateProjector,
@@ -85,9 +84,7 @@ import {
 } from '../../services/observability/dispatch-buffers.js';
 
 const admission = new MainRequestAdmission();
-const app = createApp({ admission });
-finalizeApp(app);
-const testServer = listeningServer(composedListener(app, admission));
+const testServer = listeningServer(composedListener(admission));
 
 const SESSION_ID = '00000000-0000-4000-8000-0000000000d1';
 /** The canonical id the adapter assigns to a brand-new session mid-turn. */

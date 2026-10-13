@@ -1,7 +1,7 @@
+import { UploadLimitError } from '../../../../http/uploads.js';
 import { constants, promises as fs } from 'node:fs';
 import { randomBytes } from 'node:crypto';
 import path from 'node:path';
-import multer from 'multer';
 import type { AcquiredFile } from './room-upload-source-custody.js';
 import {
   checkRoomFileEditorUploadCurrent,
@@ -50,7 +50,7 @@ export async function writeOriginalRoomUploadFile(
         facet.storage
       );
       if (record.size + bytes.length > limit)
-        throw new multer.MulterError('LIMIT_FILE_SIZE', record.file.fieldname);
+        throw new UploadLimitError('LIMIT_FILE_SIZE', record.file.fieldname);
       let offset = 0;
       while (offset < bytes.length) {
         await facet.checkFile(record, true);
@@ -76,4 +76,12 @@ export async function writeOriginalRoomUploadFile(
     }
   }
   if (failed) throw cause;
+}
+
+/** Close the genuinely acquired FD even when its writer/credential authority has retired. */
+export async function closeUpload(record: AcquiredFile): Promise<void> {
+  if (record.handle) {
+    await record.handle.close();
+    record.handle = undefined;
+  }
 }

@@ -30,7 +30,7 @@
  * ## Under login, deciding needs a session cookie (DOR-474)
  *
  * `resolveDecisionAuthority` alone was not enough, and the residual it named is
- * the one this route now closes. `sessionGate` accepts a per-user API key as the
+ * the one this route now closes. The session gate accepts a per-user API key as the
  * same identity a browser session proves, and the key is in an agent's hands
  * LEGITIMATELY — `packages/cli/src/lib/api-client.ts` reads it from
  * `DORKOS_API_KEY` or `<dork home>/api-key`, and without it a Codex or OpenCode
@@ -178,7 +178,7 @@ export interface ApprovalsRouterOptions {
  * as a person" cannot mean one thing at the endpoint that DECIDES an approval and
  * something else at the endpoints that act without one.
  *
- * @param facts - The request's facts, with `sessionGate`'s resolved user.
+ * @param facts - The request's facts, with the session gate's resolved user.
  * @param isLoginEnabled - Optional login-state lookup for tests.
  * @returns Permission with its posture, or a structured refusal.
  */
@@ -217,7 +217,7 @@ const DECIDE_NEEDS_COCKPIT =
  * still hears `AGENT_CANNOT_DECIDE`. That answer is more specific and more useful
  * than "sign in", and an honest agent should be told the thing it did wrong.
  *
- * @param facts - The request's facts, with `sessionGate`'s resolved user.
+ * @param facts - The request's facts, with the session gate's resolved user.
  * @param isLoginEnabled - Optional login-state lookup for tests.
  * @returns `undefined` when the caller may decide, or the refusal to answer with.
  */

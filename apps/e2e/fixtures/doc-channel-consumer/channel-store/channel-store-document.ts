@@ -26,7 +26,7 @@ export async function constructOriginalConsumerDocument(ownerKey: object) {
     approvals,
     http,
   } = context;
-  const actor = http.actor({ headers: {} }, { locals: {} });
+  const actor = http.actor({ headers: {}, user: undefined, agentIdentity: undefined });
   let roomId: string | undefined = resume?.roomId;
   let authorId = resume?.authorId ?? resolveOperatorAuthor(rooms.authors).id;
   let roomAgentAuthorId: string | undefined = resume?.roomAgentAuthorId;

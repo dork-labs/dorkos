@@ -11,28 +11,40 @@
  * @vitest-environment node
  */
 import { describe, it, expect } from 'vitest';
-import type { Request, Response } from 'express';
+import type { RequestFacts } from '../../http/request-facts.js';
 
 import { readCallerPrincipal } from '../caller-principal.js';
 import { AGENT_IDENTITY_HEADER } from '../../middleware/agent-identity.js';
 
-/** A request carrying the headers a caller sent. */
-function requestWith(headers: Record<string, string> = {}): Pick<Request, 'headers'> {
-  return { headers } as unknown as Pick<Request, 'headers'>;
+/** The headers a caller sent. */
+function requestWith(headers: Record<string, string> = {}) {
+  return { headers };
 }
 
-/** A response carrying whatever the gate and the identity middleware resolved. */
-function responseWith(locals: Record<string, unknown> = {}): Pick<Response, 'locals'> {
-  return { locals } as unknown as Pick<Response, 'locals'>;
+/** What the gate and the identity step resolved. */
+function responseWith(locals: Record<string, unknown> = {}) {
+  return locals;
+}
+
+/** A request's facts from what the caller sent and what resolved. */
+function principalOf(
+  req: ReturnType<typeof requestWith>,
+  resolved: ReturnType<typeof responseWith>
+) {
+  return readCallerPrincipal({
+    headers: req.headers,
+    user: resolved.user as RequestFacts['user'],
+    agentIdentity: resolved.agentIdentity as RequestFacts['agentIdentity'],
+  });
 }
 
 describe('readCallerPrincipal', () => {
   it('calls a caller presenting nothing the operator', () => {
-    expect(readCallerPrincipal(requestWith(), responseWith())).toEqual({ kind: 'operator' });
+    expect(principalOf(requestWith(), responseWith())).toEqual({ kind: 'operator' });
   });
 
   it('calls a caller with a session cookie the operator', () => {
-    const principal = readCallerPrincipal(
+    const principal = principalOf(
       requestWith(),
       responseWith({ user: { userId: 'user_owner', credential: 'cookie' } })
     );
@@ -40,7 +52,7 @@ describe('readCallerPrincipal', () => {
   });
 
   it('calls a caller holding a per-user API key a program, and names the user', () => {
-    const principal = readCallerPrincipal(
+    const principal = principalOf(
       requestWith(),
       responseWith({ user: { userId: 'user_owner', credential: 'api-key' } })
     );
@@ -48,7 +60,7 @@ describe('readCallerPrincipal', () => {
   });
 
   it('calls a caller whose agent token resolved an agent', () => {
-    const principal = readCallerPrincipal(
+    const principal = principalOf(
       requestWith({ [AGENT_IDENTITY_HEADER]: 'tok_good' }),
       responseWith({ agentIdentity: { agentId: 'agent_ana' } })
     );
@@ -57,7 +69,7 @@ describe('readCallerPrincipal', () => {
 
   it('calls a caller whose agent token did NOT resolve an agent', () => {
     // A revoked or expired token is still a machine calling.
-    const principal = readCallerPrincipal(
+    const principal = principalOf(
       requestWith({ [AGENT_IDENTITY_HEADER]: 'garbage' }),
       responseWith()
     );
@@ -68,7 +80,7 @@ describe('readCallerPrincipal', () => {
     // The ordering case. Ask the credential question first and this reads as a
     // program — which is how an agent holding the person's own key would slip
     // past a policy written in terms of the principal.
-    const principal = readCallerPrincipal(
+    const principal = principalOf(
       requestWith({ [AGENT_IDENTITY_HEADER]: 'garbage' }),
       responseWith({ user: { userId: 'user_owner', credential: 'api-key' } })
     );
@@ -76,7 +88,7 @@ describe('readCallerPrincipal', () => {
   });
 
   it('calls a caller with BOTH a cookie and a resolved agent header an agent', () => {
-    const principal = readCallerPrincipal(
+    const principal = principalOf(
       requestWith({ [AGENT_IDENTITY_HEADER]: 'tok_good' }),
       responseWith({
         user: { userId: 'user_owner', credential: 'cookie' },

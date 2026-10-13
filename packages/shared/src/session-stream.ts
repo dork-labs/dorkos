@@ -19,7 +19,7 @@
 import { z } from 'zod';
 import { extendZodWithOpenApiOnce } from './zod-openapi.js';
 // A leaf module (zod only), so this value import forms no load-time cycle.
-import { ChatMessageStampSchema } from './chat-messages.js';
+import { ChatMessageStampSchema, RoomMessageStampSchema } from './chat-messages.js';
 
 import { PendingApprovalSchema, CapabilityApprovalOutcomeSchema } from './approval-schemas.js';
 import {
@@ -794,6 +794,12 @@ export const SessionEventSchema = z
        * never written by a runtime.
        */
       chatMessages: z.array(ChatMessageStampSchema).optional(),
+      /**
+       * The room post that opened this turn, when a room did (DOR-2113). The
+       * dispatcher records the room and entry; the server fills in the author
+       * at the wire boundary, as for `chatMessages`.
+       */
+      roomMessage: RoomMessageStampSchema.optional(),
     }),
     // The end of an assistant turn.
     z.object({

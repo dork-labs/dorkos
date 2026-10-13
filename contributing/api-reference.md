@@ -28,12 +28,12 @@ Types in `packages/shared/src/types.ts` re-export from `schemas.ts`, so existing
 
 1. **Define schemas** in the appropriate `packages/shared/src/` file (`schemas.ts`, `relay-schemas.ts`, or `mesh-schemas.ts`) for request/response shapes
 2. **Register the path** in `apps/server/src/services/core/openapi-registry.ts` with tags, request schema, and response schemas
-3. **Add validation** in the route handler using `Schema.safeParse(req.body)`:
+3. **Add validation** in the route handler using `Schema.safeParse(readJsonBody(c))`:
 
 ```typescript
-const parsed = MyRequestSchema.safeParse(req.body);
+const parsed = MyRequestSchema.safeParse(readJsonBody(c));
 if (!parsed.success) {
-  return res.status(400).json({ error: 'Invalid request', details: parsed.error.format() });
+  return c.json({ error: 'Invalid request', details: parsed.error.format() }, 400);
 }
 const { field } = parsed.data;
 ```
@@ -468,7 +468,7 @@ Other relevant environment variables:
 
 | Variable               | Default              | Description                                                                                                                                                                                                                                                                               |
 | ---------------------- | -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `DORKOS_PORT`          | `4242` (dev: `6242`) | Express server port                                                                                                                                                                                                                                                                       |
+| `DORKOS_PORT`          | `4242` (dev: `6242`) | Server port                                                                                                                                                                                                                                                                               |
 | `DORKOS_CORS_ORIGIN`   | (unset)              | Comma-separated list of EXTRA origins, honoured by CORS, the MCP mounts, the WebSocket upgrade check, and Better Auth's CSRF allowlist. Additive (DOR-1711): entries join the per-request policy (loopback + live tunnel + same-origin), never replace it. `*` is ignored with a warning. |
 | `DORKOS_TASKS_ENABLED` | `true`               | `/api/tasks/*` routes (task definitions and runs)                                                                                                                                                                                                                                         |
 
@@ -1539,7 +1539,7 @@ Requests to `/mcp` pass through this middleware chain in order:
 4. `mcpRateLimiter` — per-connection rate limiting
 5. `createMcpRouter(...)` — Streamable HTTP transport handler
 
-The app-wide `sessionGate` sits ahead of all five (mounted in `app.ts`), which is why it, not `honoMcpAuth`, answers an uncredentialed request once login is on.
+The app-wide `sessionGate` sits ahead of all five (one step in the Hono chain, `http/api-chain.ts`), which is why it, not `honoMcpAuth`, answers an uncredentialed request once login is on.
 
 ### Available Tools
 

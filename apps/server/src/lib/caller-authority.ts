@@ -49,44 +49,27 @@
  * They live here for the same anti-divergence reason as the reader above —
  * several routes enforce them and they must not mean different things by it.
  *
- * ## Either chain asks the same questions
+ * ## Every surface asks the same questions
  *
- * Every function here takes a request's {@link RequestFacts}, which the Express
- * and Hono chains each build with their own adapter (`http/request-facts.ts`),
- * so a route moved to Hono is judged by the same lines as one still in Express.
- * The Express request-and-response forms remain for the routes that have not
- * moved; each one only builds the facts and asks the same function.
+ * Every function here takes a request's {@link RequestFacts}
+ * (`http/request-facts.ts`): a route builds them with `honoRequestFacts`, and a
+ * WebSocket upgrade from what it resolved for itself, so each surface is judged
+ * by the same lines.
  *
  * @module lib/caller-authority
  */
-import type { Request, Response } from 'express';
-
 import type {
   DecisionAuthorityRequest,
   LoginEnabledLookup,
 } from '../services/core/approvals/index.js';
 import { APPROVAL_TOKEN_HEADER } from '../services/core/capabilities/index.js';
-import { getRequestAgentIdentity, presentsAgentIdentity } from '../middleware/agent-identity.js';
-import type { RequestUser } from '../services/core/auth/session-gate.js';
+import { presentsAgentIdentity } from '../middleware/agent-identity.js';
 import { isInstallOwner } from '../services/core/auth/install-owner.js';
 import { configManager } from '../services/core/config-manager.js';
 import { env } from '../env.js';
 import { isLocalRequest } from './trusted-origins.js';
-import { isManagedIngress } from '../services/core/remote/ingress-mark.js';
 import { resolveDecisionAuthority } from '../services/core/approvals/decision-authority.js';
-import { expressRequestFacts, type RequestFacts } from '../http/request-facts.js';
-
-/** What a caller-authority function reads: the request's facts, or the Express pair. */
-function factsOf(request: RequestFacts | Request, res: Response | undefined): RequestFacts {
-  return res ? expressRequestFacts(request as Request, res) : (request as RequestFacts);
-}
-
-/** The identity the session gate proved, from facts or from Express's `res.locals`. */
-function userOf(
-  caller: Pick<RequestFacts, 'user'> | Pick<Response, 'locals'>
-): RequestUser | undefined {
-  return 'locals' in caller ? (caller.locals.user as RequestUser | undefined) : caller.user;
-}
+import type { RequestFacts } from '../http/request-facts.js';
 
 /**
  * Build the {@link DecisionAuthorityRequest} for an incoming request.
@@ -98,18 +81,12 @@ function userOf(
  * the module that owns the header because a second surface reads it now
  * (`routes/room-caller.ts`, for every room route) and the two must not diverge.
  *
- * @param req - The request's facts, or the Express request.
- * @param res - With an Express request: the response carrying `sessionGate`'s
- *   resolved user.
+ * @param facts - The request's facts.
  * @returns What the caller presented, for `resolveDecisionAuthority`.
  */
-export function readCallerAuthority(request: RequestFacts): DecisionAuthorityRequest;
-export function readCallerAuthority(req: Request, res: Response): DecisionAuthorityRequest;
 export function readCallerAuthority(
-  req: RequestFacts | Request,
-  res?: Response
+  facts: Pick<RequestFacts, 'headers' | 'user' | 'agentIdentity'>
 ): DecisionAuthorityRequest {
-  const facts = factsOf(req, res);
   return {
     agentIdentityPresented: presentsAgentIdentity(facts),
     approvalTokenPresented: facts.headers[APPROVAL_TOKEN_HEADER] !== undefined,
@@ -134,7 +111,7 @@ export interface OperatorCookieRefusal {
 }
 
 /**
- * Read `auth.enabled` from the live user config, exactly as `sessionGate` does.
+ * Read `auth.enabled` from the live user config, exactly as the session gate does.
  *
  * No defensive branch for an unreadable config: `configManager` is a module
  * singleton that boot initializes long before any router mounts, and a genuine
@@ -159,7 +136,7 @@ function loginEnabledFromConfig(): boolean {
  * and inventing a weaker marker would assert a distinction DorkOS cannot make.
  *
  * Under login-on it also separates a person from a program holding one of their
- * per-user API keys, which `sessionGate` accepts as the same identity (DOR-474).
+ * per-user API keys, which the session gate accepts as the same identity (DOR-474).
  *
  * ## The login-off half is an allow, and that is the residual
  *
@@ -177,8 +154,7 @@ function loginEnabledFromConfig(): boolean {
  * This is a SERVER-side guarantee. The cockpit also hides and disables the
  * controls this refuses, but that is a courtesy; this is the guarantee.
  *
- * @param caller - The request's facts, or the Express response carrying
- *   `sessionGate`'s resolved user.
+ * @param caller - The request's facts, for the session gate's resolved user.
  * @param subject - What the caller tried to change, as the refusal names it, so
  *   one bar can serve several surfaces without any of them inheriting another's
  *   wording. Reads as "Only a person signed in to DorkOS can change {subject}".
@@ -190,13 +166,13 @@ function loginEnabledFromConfig(): boolean {
  *   cookie. Otherwise the refusal to answer with.
  */
 export function requireOperatorCookieUnderLogin(
-  caller: Pick<RequestFacts, 'user'> | Pick<Response, 'locals'>,
+  caller: Pick<RequestFacts, 'user'>,
   subject: string,
   isLoginEnabled?: LoginEnabledLookup
 ): OperatorCookieRefusal | undefined {
   if (!(isLoginEnabled ?? loginEnabledFromConfig)()) return undefined;
 
-  if (userOf(caller)?.credential === 'cookie') return undefined;
+  if (caller.user?.credential === 'cookie') return undefined;
 
   return {
     status: 403,
@@ -274,21 +250,18 @@ export function requireOperatorCookieUnderLogin(
  * forwarded `Host` normally carries the public name and is refused, but an
  * operator who rewrites `Host` to `localhost` re-opens it.
  *
- * @param request - The request's facts, or the Express request, read for its
- *   TCP peer and raw `Host`.
+ * @param request - The request's facts, read for its TCP peer and raw `Host`.
  * @returns True when the request may reach an action reserved for this machine.
  */
 export function isLocalCaller(
-  request: Pick<RequestFacts, 'peerAddress' | 'headers' | 'managedIngress'> | Request
+  request: Pick<RequestFacts, 'peerAddress' | 'headers' | 'managedIngress'>
 ): boolean {
   // Managed remote access arrives from the ngrok agent on loopback, so the
   // socket half would pass; the ingress marks it so nothing it carries is ever
   // taken for a person at this machine, whatever its `Host` says.
-  if ('socket' in request ? isManagedIngress(request) : request.managedIngress) return false;
-  // An Express request carries its socket; facts never do.
-  const peer = 'socket' in request ? request.socket?.remoteAddress : request.peerAddress;
+  if (request.managedIngress) return false;
   return isLocalRequest({
-    peer,
+    peer: request.peerAddress,
     hostHeader: request.headers.host,
     allowInsecureBind: env.DORKOS_ALLOW_INSECURE_BIND,
   });
@@ -306,7 +279,7 @@ export function isLocalCaller(
  * ## Two bars, checked together (DOR-1569)
  *
  * - **The cookie bar, under login-on only** ({@link requireOperatorCookieUnderLogin}).
- *   When login is on, `sessionGate` accepts a per-user API key as the same
+ *   When login is on, the session gate accepts a per-user API key as the same
  *   identity a browser cookie proves (DOR-474). An agent with shell access can
  *   read the operator's key off `~/.dork` and present it while dropping its
  *   `X-DorkOS-Agent` header, so an API key is NOT proof of a person. Only a
@@ -336,17 +309,14 @@ export function isLocalCaller(
  * nobody looked at. This is the DOR-553 question ("should an agent holding the
  * operator's key schedule unattended work?"), answered for tasks: no.
  *
- * @param req - The request's facts, or the Express request.
- * @param res - With an Express request: the response, for `sessionGate`'s
- *   resolved user.
+ * @param facts - The request's facts.
  * @returns True only when a person is positively established — a session cookie
  *   under login-on, or the operator on the login-off local machine — with neither
  *   an agent identity nor an approval token presented.
  */
-export function clearsTheAgentBar(request: RequestFacts): boolean;
-export function clearsTheAgentBar(req: Request, res: Response): boolean;
-export function clearsTheAgentBar(req: RequestFacts | Request, res?: Response): boolean {
-  const facts = factsOf(req, res);
+export function clearsTheAgentBar(
+  facts: Pick<RequestFacts, 'headers' | 'user' | 'agentIdentity'>
+): boolean {
   if (requireOperatorCookieUnderLogin(facts, 'this') !== undefined) return false;
   return resolveDecisionAuthority(readCallerAuthority(facts)).allowed;
 }
@@ -380,21 +350,12 @@ export type AccountOwnerRefusal = 'not-a-person' | 'not-the-owner';
  *   account to compare, so the person bar alone decides, with the DOR-505
  *   residual {@link requireOperatorCookieUnderLogin} names.
  *
- * @param req - The request's facts, or the Express request.
- * @param res - With an Express request: the response carrying `sessionGate`'s
- *   resolved user.
+ * @param facts - The request's facts.
  * @returns `undefined` when the caller may act, otherwise why not.
  */
-export function refuseUnlessAccountOwner(request: RequestFacts): AccountOwnerRefusal | undefined;
 export function refuseUnlessAccountOwner(
-  req: Request,
-  res: Response
-): AccountOwnerRefusal | undefined;
-export function refuseUnlessAccountOwner(
-  req: RequestFacts | Request,
-  res?: Response
+  facts: Pick<RequestFacts, 'headers' | 'user' | 'agentIdentity'>
 ): AccountOwnerRefusal | undefined {
-  const facts = factsOf(req, res);
   if (!clearsTheAgentBar(facts)) return 'not-a-person';
   if (!loginEnabledFromConfig()) return undefined;
   // Login is on, so the agent bar above has already required a browser
@@ -425,36 +386,14 @@ export function refuseUnlessAccountOwner(
  * app. That costs only ordering — a chat floats into Today — never power, which
  * is why a marker is enough here when it is not for {@link clearsTheAgentBar}.
  *
- * @param req - The request's facts, or the Express request, for its headers.
- * @param res - With an Express request: the response carrying the resolved
- *   agent identity and user.
+ * @param caller - The request's facts.
  * @param isLoginEnabled - Optional login-state lookup for tests.
  * @returns True when the touch should be recorded as yours.
  */
 export function isPersonAtTheApp(
-  request: Pick<RequestFacts, 'headers' | 'user' | 'agentIdentity'>,
+  caller: Pick<RequestFacts, 'headers' | 'user' | 'agentIdentity'>,
   isLoginEnabled?: LoginEnabledLookup
-): boolean;
-export function isPersonAtTheApp(
-  req: Pick<Request, 'headers'>,
-  res: Response,
-  isLoginEnabled?: LoginEnabledLookup
-): boolean;
-export function isPersonAtTheApp(
-  req: Pick<Request, 'headers'> | Pick<RequestFacts, 'headers' | 'user' | 'agentIdentity'>,
-  resOrLookup?: Response | LoginEnabledLookup,
-  lookup?: LoginEnabledLookup
 ): boolean {
-  // The Express form passes its response second; the facts form, an optional lookup.
-  const caller =
-    typeof resOrLookup === 'object'
-      ? {
-          headers: req.headers,
-          user: userOf(resOrLookup),
-          agentIdentity: getRequestAgentIdentity(resOrLookup),
-        }
-      : (req as Pick<RequestFacts, 'headers' | 'user' | 'agentIdentity'>);
-  const isLoginEnabled = typeof resOrLookup === 'object' ? lookup : resOrLookup;
   if (presentsAgentIdentity(caller)) return false;
   const clientId = caller.headers['x-client-id'];
   if (typeof clientId !== 'string' || clientId.length === 0) return false;

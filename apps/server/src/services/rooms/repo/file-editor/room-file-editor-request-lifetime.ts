@@ -1,5 +1,5 @@
 import { readOriginalRoomEditorView } from '../room-file-editor.js';
-import type { Request, Response } from 'express';
+import type { IncomingMessage, ServerResponse } from 'node:http';
 import { retireRoomFileUploadStorage } from '../room-file-upload-storage.js';
 import {
   captureDocHttpRoomFileWriteCaller,
@@ -18,8 +18,8 @@ import type { RoomFileActor, EditorOperation } from './room-file-editor-contract
 export async function capture(
   editorOwner: object,
   roomId: string,
-  req: Request,
-  res: Response
+  req: IncomingMessage,
+  res: ServerResponse
 ): Promise<object> {
   const view = readOriginalRoomEditorView(editorOwner);
   const writer = view.deps.installationRoomWrites;

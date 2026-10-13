@@ -694,7 +694,16 @@ describe('the claude-code prompt names tools the way the runtime exposes them', 
     // from naming a tool that only claude-code exposes under that spelling.
     // `<agent_memory>` is absent by construction, like the three below: this
     // fixture's directory holds no `MEMORY.md`.
-    expect(tags).toEqual(['gen_ui', 'agent_identity', 'session_model', 'dorkos_context', 'env']);
+    // `<working_rules>` renders unconditionally beside it, and names no tool on
+    // purpose: "asking DorkOS for the access" is described, never spelled.
+    expect(tags).toEqual([
+      'gen_ui',
+      'agent_identity',
+      'session_model',
+      'working_rules',
+      'dorkos_context',
+      'env',
+    ]);
 
     for (const block of shared) {
       expect(

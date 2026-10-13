@@ -19,7 +19,6 @@ import {
   eq,
   type Db,
 } from '@dorkos/db';
-import { createApp, finalizeApp } from '../../app.js';
 import { composedListener } from '../../http/__tests__/composed-listener.js';
 import type { HonoApiDeps } from '../../http/hono-api.js';
 import {
@@ -50,7 +49,6 @@ vi.mock('../../services/core/tunnel-manager.js', () => ({
 const origin = `http://localhost:${env.DORKOS_PORT}`;
 let dir: string;
 let db: Db;
-let app: ReturnType<typeof createApp>;
 /** What the composed routes read; each test hands over its own document channel. */
 const deps: HonoApiDeps = {};
 const fixture = swappableServer();
@@ -147,9 +145,7 @@ beforeEach(async () => {
   initAuth(db, dir);
   configManager.set('auth', { enabled: false });
   const admission = new MainRequestAdmission();
-  app = createApp({ admission });
-  finalizeApp(app);
-  fixture.mount(composedListener(app, admission, deps));
+  fixture.mount(composedListener(admission, deps));
   const signup = await request(server)
     .post('/api/auth/sign-up/email')
     .set('Origin', origin)

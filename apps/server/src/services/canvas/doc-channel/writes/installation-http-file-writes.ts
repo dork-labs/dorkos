@@ -25,7 +25,7 @@ import { randomBytes } from 'node:crypto';
 import * as fs from 'node:fs/promises';
 import type { FileHandle } from 'node:fs/promises';
 import path from 'node:path';
-import type { Request, Response } from 'express';
+import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { Db } from '@dorkos/db';
 import {
   CreateEntryRequestSchema,
@@ -63,8 +63,8 @@ type Binding = {
   requireOutside(): void;
   execute<K extends keyof Commands>(
     kind: K,
-    req: Request,
-    res: Response,
+    req: IncomingMessage,
+    res: ServerResponse,
     input: Commands[K]
   ): Promise<HttpNamespaceResult>;
   stop(): Promise<void>;
@@ -95,8 +95,8 @@ export function requireInstallationHttpFileWrites(value: unknown): InstallationH
 /** Create a file through the captured installation HTTP writer. */
 export function executeInstallationHttpFileCreate(
   value: unknown,
-  req: Request,
-  res: Response,
+  req: IncomingMessage,
+  res: ServerResponse,
   input: Commands['create']
 ): Promise<HttpNamespaceResult> {
   return recognized(value).execute('create', req, res, input);
@@ -104,8 +104,8 @@ export function executeInstallationHttpFileCreate(
 /** Delete a file through the captured installation HTTP writer. */
 export function executeInstallationHttpFileDelete(
   value: unknown,
-  req: Request,
-  res: Response,
+  req: IncomingMessage,
+  res: ServerResponse,
   input: Commands['delete']
 ): Promise<HttpNamespaceResult> {
   return recognized(value).execute('delete', req, res, input);
@@ -113,8 +113,8 @@ export function executeInstallationHttpFileDelete(
 /** Rename a file through the captured installation HTTP writer. */
 export function executeInstallationHttpFileRename(
   value: unknown,
-  req: Request,
-  res: Response,
+  req: IncomingMessage,
+  res: ServerResponse,
   input: Commands['rename']
 ): Promise<HttpNamespaceResult> {
   return recognized(value).execute('rename', req, res, input);
@@ -122,8 +122,8 @@ export function executeInstallationHttpFileRename(
 /** Copy a file through the captured installation HTTP writer. */
 export function executeInstallationHttpFileCopy(
   value: unknown,
-  req: Request,
-  res: Response,
+  req: IncomingMessage,
+  res: ServerResponse,
   input: Commands['copy']
 ): Promise<HttpNamespaceResult> {
   return recognized(value).execute('copy', req, res, input);
@@ -200,8 +200,8 @@ export class InstallationHttpFileWrites {
   }
   #admit<K extends keyof Commands>(
     kind: K,
-    req: Request,
-    res: Response,
+    req: IncomingMessage,
+    res: ServerResponse,
     raw: Commands[K]
   ): Promise<HttpNamespaceResult> {
     if (this.#closed) return Promise.reject(new CheckboxFenceUnavailableError('missing'));

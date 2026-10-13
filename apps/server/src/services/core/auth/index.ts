@@ -586,7 +586,7 @@ export function initAuth(db: Db, dorkHome: string): Auth {
  * key) — mirroring {@link hasAnyUser} and {@link readOwnerAccount}. The
  * feedback pipeline (feedback-pipeline spec Part 1, ADR 260803-205037) is the
  * first caller: it resolves a reporter's identity server-side, from
- * `sessionGate`'s already-verified `userId`, never from a client-supplied
+ * the session gate's already-verified `userId`, never from a client-supplied
  * field.
  *
  * @param userId - The Better Auth user id to look up.
@@ -697,7 +697,7 @@ export function hasAnyApiKey(): boolean {
  * The initialized Better Auth singleton, or `undefined` when auth has not been
  * initialized (e.g. unit tests that build the app without calling
  * {@link initAuth}). In the running server `initAuth` always runs before
- * `createApp`, so the handler is always mounted.
+ * `composeFrontDoor`, so the handler is always mounted.
  */
 export function getAuth(): Auth | undefined {
   return activeAuth;
@@ -711,9 +711,8 @@ export { toNodeHandler, fromNodeHeaders };
 
 // The session gate + its shared credential verifier. `verifyRequestAuth` is the
 // single verification path reused by the rewritten MCP auth middleware (task
-// 1.4); `sessionGate` is mounted app-wide in `app.ts`.
+// 1.4); the chain asks `decideSessionGate` (`http/api-chain.ts`).
 export {
-  sessionGate,
   verifyRequestAuth,
   recheckAdmittedRequestAuth,
   type RequestUser,

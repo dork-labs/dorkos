@@ -26,6 +26,7 @@ export {
   canonicalDir,
   homeOf,
   turnAgentOf,
+  chatAgentOf,
   readHomeManifest,
   setAgentHomeRegistry,
   replaceAgentHomeRegistry,

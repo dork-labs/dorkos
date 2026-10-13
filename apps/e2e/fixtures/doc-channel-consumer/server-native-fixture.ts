@@ -33,7 +33,9 @@ export async function startNativeConsumerFixture(
   let replacementUnknown = false,
     restartStarted = false;
   let restartFailure: { cause: unknown } | undefined;
-  let app: ReturnType<typeof import('../../../server/src/app.js').createApp> | undefined;
+  let app:
+    ReturnType<typeof import('../../../server/src/http/hono-api.js').composeFrontDoor> | undefined;
+  let listener: import('node:http').RequestListener | undefined;
   let loseWriterResponse = false;
   // Separate temporary writer origin: the real preview listener authorizes its
   // own bootstrap/cookie before proxying, and never forwards operator cookies.
@@ -117,12 +119,12 @@ export async function startNativeConsumerFixture(
     }
   });
   const server = createServer((request, response) => {
-    if (!app) {
+    if (!listener) {
       response.writeHead(503);
       response.end('Native fixture starting');
       return;
     }
-    app(request, response);
+    listener(request, response);
   });
   const apiSockets = new Set<import('node:net').Socket>();
   server.on('connection', (socket) => {
@@ -235,20 +237,21 @@ export async function startNativeConsumerFixture(
       )
     );
     const original = native;
-    const { createApp, finalizeApp } = await startupAwait(
+    const { composeFrontDoor } = await startupAwait(
       'app-import',
-      () => import('../../../server/src/app.js')
+      () => import('../../../server/src/http/hono-api.js')
     );
-    const { createAgentsRouter } = await startupAwait(
-      'agents-import',
-      () => import('../../../server/src/routes/agents.js')
+    const { frontDoorListener } = await startupAwait(
+      'front-door-import',
+      () => import('../../../server/src/http/front-door.js')
     );
-    app = createApp({ admission }); // Retains actual host/session/cookie/parser admission order.
-    app.locals.docChannelHttp = original.http;
-    // Production mounts original agent identity routes after core app admission.
-    app.use('/api/agents', createAgentsRouter());
-    app.use('/api/canvas/docs', original.managementRouter);
-    app.use('/api/approvals', original.approvalRouter);
+    app = composeFrontDoor(admission, {
+      docChannel: original.http,
+      capabilities: original.managementRegistry,
+      approvals: original.approvalRoutes,
+      agents: {},
+    }); // Same actual host/session/cookie/parser admission and native owners.
+    listener = frontDoorListener(app);
     const { attachUpgradeRouter } = await startupAwait(
       'upgrade-import',
       () => import('../../../server/src/services/core/streams/upgrade-router.js')
@@ -258,7 +261,6 @@ export async function startNativeConsumerFixture(
       () => import('../../../server/src/routes/stream-sockets.js')
     );
     attachUpgradeRouter(server, durableStreamRoutes, admission); // Original credential/current-origin gate, no fixture classifier.
-    finalizeApp(app);
     return {
       origin,
       writerOrigin,
@@ -307,6 +309,7 @@ export async function startNativeConsumerFixture(
           // Refuse new API work while the old native boot is retiring. Keep both
           // real listeners and the preview upstream; the physical iframe stays mounted.
           app = undefined;
+          listener = undefined;
           let socketFailed = false,
             socketCause: unknown;
           const rememberSocket = (cause: unknown) => {
@@ -335,12 +338,13 @@ export async function startNativeConsumerFixture(
             const successor = await reopenNativeConsumerStore(prior);
             native = successor;
             replacementUnknown = false;
-            app = createApp({ admission });
-            app.locals.docChannelHttp = successor.http;
-            app.use('/api/agents', createAgentsRouter());
-            app.use('/api/canvas/docs', successor.managementRouter);
-            app.use('/api/approvals', successor.approvalRouter);
-            finalizeApp(app);
+            app = composeFrontDoor(admission, {
+              docChannel: successor.http,
+              capabilities: successor.managementRegistry,
+              approvals: successor.approvalRoutes,
+              agents: {},
+            });
+            listener = frontDoorListener(app);
             return { canonicalId: successor.sessionId, closed: true };
           } catch (cause) {
             restartFailure = { cause };

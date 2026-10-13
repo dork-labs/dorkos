@@ -90,7 +90,7 @@ const SERVE_CONTENT_TYPES: Record<string, string> = {
 
 /**
  * The scheme the caller reached this server on, as Express's `req.protocol`
- * reads it under `trust proxy: 1` (`app.ts`): the first `X-Forwarded-Proto`
+ * read it under `trust proxy: 1`: the first `X-Forwarded-Proto`
  * entry when the header is there, else whether the socket is TLS.
  */
 function requestProtocol(c: Context<ApiEnv>): string {

@@ -30,8 +30,8 @@ DorkOS has one identity core — [Better Auth](https://better-auth.com) — embe
 | You need to…                                         | Use                                                                         |
 | ---------------------------------------------------- | --------------------------------------------------------------------------- |
 | Gate a new `/api/*` route behind login               | Nothing — the app-wide `sessionGate` already covers `/api/*`                |
-| Read the authenticated user in a handler             | `res.locals.user` (`{ userId }`), set by the gate on success                |
-| Verify a credential outside the gate                 | `verifyRequestAuth(req)` (cookie → Bearer API key, one path)                |
+| Read the authenticated user in a handler             | `c.var.user` (`{ userId }`), set by the gate on success                     |
+| Verify a credential outside the gate                 | `verifyRequestAuth(request)` (cookie → Bearer API key, one path)            |
 | Decide whether an instance may be exposed            | `canExpose()` / `isExposureAllowed(state)`                                  |
 | Check whether an owner account exists                | `hasAnyUser()`                                                              |
 | Read who the owner is (id + name)                    | `readOwnerAccount()`                                                        |
@@ -48,29 +48,24 @@ When `config.auth.enabled` is `true`, a single app-wide middleware (`sessionGate
 
 ```typescript
 // apps/server/src/services/core/auth/session-gate.ts (shape)
-export async function sessionGate(req, res, next) {
-  if (!configManager.get('auth')?.enabled) return next(); // zero-config: transparent
+export async function decideSessionGate(method, path, request) {
+  if (!configManager.get('auth')?.enabled) return { allowed: true }; // zero-config: transparent
 
-  const path = req.path.toLowerCase(); // Express routes case-insensitively; normalize BEFORE the check
-  if (!isGatedPath(path)) return next(); // static SPA assets → login screen can load
-  if (isExemptPath(path)) return next(); // /api/auth/* (sign-in) + the /api/health probe
+  const lowered = path.toLowerCase(); // normalize case before the gate checks
+  if (!isSessionGatedPath(lowered) || isExemptPath(lowered)) return { allowed: true }; // static SPA assets + /api/auth/* + /api/health pass
 
-  const user = await verifyRequestAuth(req);
-  if (user) {
-    res.locals.user = user; // downstream handlers read res.locals.user
-    return next();
-  }
-  res.status(401).json({ error: 'Unauthorized', code: 'AUTH_REQUIRED' });
+  const user = await verifyRequestAuth(request);
+  return user ? { allowed: true, user } : { allowed: false }; // chain answers 401 with AUTH_REQUIRED_BODY and sets c.var.user
 }
 ```
 
-The gate is mounted **after** body parsing, **before** the first API route, on both chains during the move to Hono (`app.ts` for Express, `http/api-chain.ts` for Hono; both call `decideSessionGate`). Better Auth answers before it, from the Hono chain (`http/better-auth.ts`). The `/mcp` mount (added in `index.ts`) is on the Express app, so its app-wide gate covers it too.
+The gate runs as one step in the Hono chain (`http/api-chain.ts`), **after** body parsing, **before** the first API route, setting `c.var.user` on success. Better Auth answers before it, from the same chain. Every request runs the chain — `/mcp`, `/a2a`, `/.well-known`, and the app's own files, not only `/api` — so `/mcp`'s auth is covered by the same gate.
 
 #### Health is exempt; deep health is not
 
 `isExemptPath` exempts `/api/health` **and everything under it**, because a load balancer, the desktop shell, and the tunnel all have to reach the liveness probe before anyone can sign in. `GET /api/health/deep` wears the same prefix and is a different thing: it reports how many rooms, chat integrations, and agents this machine has and which of them are broken. So it is carved back out of the exemption by `isGatedHealthPath`, and it needs the owner's credential like any other route.
 
-**A carve-out out of a prefix exemption has to match the way the router matches, not the way the string looks.** Express routes non-strictly and case-insensitively, so `/api/health/deep/`, `/api/health/deep//`, and `/API/health/deep` all reach the same handler. An exact-string carve-out catches only the first spelling; the others miss it, fall through to the `/api/health/` exemption, and return the full report with no credential. `isGatedHealthPath` therefore collapses repeated slashes, strips trailing ones, and compares as a prefix (case is already normalized by the caller). Add a path to `GATED_HEALTH_PATHS` rather than writing a second comparison, and cover the alternate spellings in `session-gate.test.ts`.
+**A carve-out out of a prefix exemption has to match the way the router matches, not the way the string looks.** Hono's router matches case-sensitively, but the server ran on Express for years, where `/api/health/deep/`, `/api/health/deep//`, and `/API/health/deep` all reached the same handler. The gate still normalizes case itself rather than trusting the router's case rule, so an exact-string carve-out would catch only the first spelling while the others miss it, fall through to the `/api/health/` exemption, and return the full report with no credential. `isGatedHealthPath` therefore collapses repeated slashes, strips trailing ones, and compares as a prefix (case is already normalized by the caller). Add a path to `GATED_HEALTH_PATHS` rather than writing a second comparison, and cover the alternate spellings in `session-gate.test.ts`.
 
 ### One verification path
 
@@ -124,11 +119,11 @@ export function isExposureAllowed(state: ExposureState): boolean {
 Two enforcement points consume it:
 
 - **Tunnel start** (`routes/tunnel.ts`) and the boot-time autostart (`index.ts`) call `canExpose()`; on `false` they respond `409 { code: 'AUTH_REQUIRED_FOR_EXPOSURE' }` (and skip the autostart). The client (`features/auth`) matches on `AUTH_REQUIRED_FOR_EXPOSURE` to route the operator into owner-account creation, then retries the tunnel.
-- **Non-loopback bind** (`index.ts`) calls `checkBindAllowed({ host, exposureAllowed, allowInsecureBind })` before `app.listen`. A non-loopback host with the guard failing **refuses to start** (hard gate, non-zero exit) with an actionable message. `DORKOS_ALLOW_INSECURE_BIND=true` is a narrow, loud-logging escape hatch set only by the container images (the `integration` and `runtime` targets of the root `Dockerfile`), which own the network boundary.
+- **Non-loopback bind** (`index.ts`) calls `checkBindAllowed({ host, exposureAllowed, allowInsecureBind })` before the server starts listening. A non-loopback host with the guard failing **refuses to start** (hard gate, non-zero exit) with an actionable message. `DORKOS_ALLOW_INSECURE_BIND=true` is a narrow, loud-logging escape hatch set only by the container images (the `integration` and `runtime` targets of the root `Dockerfile`), which own the network boundary.
 
 ### The `/api` host guard is the login-off complement (DOR-532)
 
-`hostGuard` (`middleware/host-guard.ts`) is mounted at `/api` ahead of body parsing and the Better Auth handler, on both chains (`refuseUntrustedHost`). It 403s (`HOST_NOT_ALLOWED`) any request whose raw `Host` header is not loopback, not in `DORKOS_TRUSTED_HOSTS`, and not the live tunnel host — closing the DNS-rebinding path to `POST /api/sessions/:id/messages`, which CORS structurally cannot see because a rebound request genuinely _is_ same-origin.
+`hostGuard` (`middleware/host-guard.ts`) is one step in the Hono chain (`http/api-chain.ts`), ahead of body parsing and the Better Auth handler (`refuseUntrustedHost`). It 403s (`HOST_NOT_ALLOWED`) any request whose raw `Host` header is not loopback, not in `DORKOS_TRUSTED_HOSTS`, and not the live tunnel host — closing the DNS-rebinding path to `POST /api/sessions/:id/messages`, which CORS structurally cannot see because a rebound request genuinely _is_ same-origin.
 
 **It has two skip conditions, and both matter when you reason about what is actually protected:**
 
@@ -137,7 +132,7 @@ Two enforcement points consume it:
 
 So "the API is behind a `Host` guard" is true only of a login-off, non-container install. Full reasoning, including what this makes load-bearing about cookie scoping: **ADR `260726-232221`**.
 
-Do not confuse it with a locality check. `Host` says which name the caller asked for; only `req.socket.remoteAddress` says where the caller is. The runtime-provisioning routes need both and use `isLocalRequest` (`lib/trusted-origins.ts`) — **ADR `260726-232222`**, which also records why `req.hostname` and `req.ip` are traps under `trust proxy: 1`.
+Do not confuse it with a locality check. `Host` says which name the caller asked for; only the raw TCP peer address says where the caller is. The runtime-provisioning routes need both and use `isLocalRequest` (`lib/trusted-origins.ts`) — **ADR `260726-232222`**, which also records why trusting a forwarded header for either question is a trap.
 
 ### MCP: 4-tier resolution + legacy seeding
 
@@ -158,7 +153,7 @@ The old global `dork_mcp_*` key is folded into a per-user key by `seedLegacyMcpA
 
 ### Cookies, CSRF, and the tunnel hop
 
-Cookies are `httpOnly`, `secure` in production, `sameSite: 'lax'` (the P2 device flow and OAuth callbacks require `lax`). `app.set('trust proxy', 1)` keeps `secure` cookies correct behind the ngrok hop. The CSRF/origin surface is `trustedOrigins`, resolved per request by `resolveTrustedOrigins()` (loopback dev origins + the live tunnel origin) — the same dynamic policy shared with the CORS allowlist. `BETTER_AUTH_SECRET` (or `AUTH_SECRET`) signs sessions; production deployments must set it so sessions survive restarts (`baseURL` is intentionally omitted because the origin is dynamic).
+Cookies are `httpOnly`, `secure` in production, `sameSite: 'lax'` (the P2 device flow and OAuth callbacks require `lax`). Behind the tunnel or a proxy, `http/better-auth.ts` hands Better Auth the scheme `X-Forwarded-Proto` names, which keeps `secure` cookies correct over the ngrok hop. The CSRF/origin surface is `trustedOrigins`, resolved per request by `resolveTrustedOrigins()` (loopback dev origins + the live tunnel origin) — the same dynamic policy shared with the CORS allowlist. `BETTER_AUTH_SECRET` (or `AUTH_SECRET`) signs sessions; production deployments must set it so sessions survive restarts (`baseURL` is intentionally omitted because the origin is dynamic).
 
 ### Client wiring
 
@@ -195,17 +190,17 @@ Machine access equals owner-level trust, so both commands operate directly on th
 // ❌ NEVER add a second credential-verification path
 const session = await auth.api.getSession({ headers }); // duplicates the gate
 // ✅ reuse the one shared resolver
-const user = await verifyRequestAuth(req);
+const user = await verifyRequestAuth(request);
 
 // ❌ NEVER cache config.auth.enabled at module load
 const enabled = configManager.get('auth')?.enabled; // frozen — needs a restart to flip
-// ✅ read it per request inside the middleware so enable-login takes effect live
+// ✅ read it per request inside decideSessionGate so enable-login takes effect live
 
 // ❌ NEVER gate a path by its display name or mixed case
-if (req.path === '/API/Sessions') {
+if (path === '/API/Sessions') {
   /* bypassed by lowercase routes */
 }
-// ✅ normalize first: const path = req.path.toLowerCase()
+// ✅ normalize first: const lowered = path.toLowerCase()
 
 // ❌ NEVER expose an instance on auth.enabled alone
 if (configManager.get('auth')?.enabled) startTunnel(); // open API if no gate + no users

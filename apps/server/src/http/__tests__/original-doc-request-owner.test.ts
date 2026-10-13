@@ -45,6 +45,23 @@ beforeAll(async () => {
       }
       return c.json({ same: exact === admitted, valid, raw, copied, changed });
     }
+    if (operation === 'ownership') {
+      const copiedRequest = Object.create(req);
+      const copiedResponse = Object.create(res);
+      let requestRefused = false;
+      let responseRefused = false;
+      try {
+        originalDocRequestFacts(copiedRequest, res);
+      } catch {
+        requestRefused = true;
+      }
+      try {
+        originalDocRequestFacts(req, copiedResponse);
+      } catch {
+        responseRefused = true;
+      }
+      return c.json({ requestRefused, responseRefused });
+    }
     if (operation === 'facts') {
       const facts = originalDocRequestFacts(req, res);
       const expected = honoRequestFacts(c);
@@ -84,7 +101,7 @@ beforeAll(async () => {
         fileWrites = original.fileWrites;
       try {
         if (operation === 'replace-actor')
-          original.actor = (caller, response) => Reflect.apply(actor, original, [caller, response]);
+          original.actor = (caller) => Reflect.apply(actor, original, [caller]);
         if (operation === 'replace-service') original.service = Object.create(service);
         if (operation === 'replace-writer') original.fileWrites = Object.create(fileWrites);
         try {
@@ -161,6 +178,12 @@ describe('original Hono request admission and owning actor', () => {
     expect(response.body.peer).not.toBe('203.0.113.42');
   });
 
+  it('refuses copied raw request and response objects before reading caller facts', async () => {
+    const response = await probe('ownership');
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual({ requestRefused: true, responseRefused: true });
+  });
+
   it('uses the real installation actor for a genuinely admitted owner', async () => {
     const response = await probe('actor');
     expect(response.status).toBe(200);
@@ -191,6 +214,6 @@ describe('original Hono request admission and owning actor', () => {
     await fixture.stopWrites();
     expect(() => captureOriginalDocHttpActor(fixture.http)).toThrow();
     // The closure must fail at its owning lifetime check, before inspecting caller facts.
-    expect(() => captured({ headers: {} })).toThrow();
+    expect(() => captured({ headers: {}, user: undefined, agentIdentity: undefined })).toThrow();
   });
 });

@@ -23,7 +23,7 @@ const REGISTRY: Record<string, { purpose: string; files: string[] }> = {
       'app.ts',
       'routes/host/owner-claims.ts',
       'routes/host/imports.ts',
-      'routes/host/host.ts',
+      'host/create-community.ts',
     ],
   },
   '77281504': { purpose: 'assigning handles', files: ['handles.ts'] },

@@ -170,13 +170,19 @@ export function composeReport(reason: ReportReason, text: string, detail?: strin
  * started it, and how it reports. Every word is DorkOS's own except the
  * parent's title and agent name, which DorkOS also holds.
  *
- * @param opts - The parent and whether reports go back on their own.
+ * A parent that cannot take chat messages (a room's chat, a bridged chat, a
+ * scheduled run) is never named as a `chat_send` target: every such send is
+ * refused, and the spin-off would conclude the parent is unreachable.
+ *
+ * @param opts - The parent, whether reports go back on their own, and whether
+ *   the parent takes chat messages at all.
  */
 export function spinOffBriefing(opts: {
   parentChatId: string;
   parentTitle: string | null;
   parentAgentName: string;
   reportBack: boolean;
+  parentTakesMessages: boolean;
 }): string {
   const parent = `${opts.parentTitle ? `"${opts.parentTitle}" ` : ''}(chat ${opts.parentChatId}, ${opts.parentAgentName})`;
   const lines = [`This is a spin-off chat. The chat ${parent} started it.`];
@@ -190,9 +196,15 @@ export function spinOffBriefing(opts: {
       'If you are waiting on CI, a timer or a helper, keep your turn alive (for example ' +
         '`gh pr checks --watch` or a short sleep loop). A turn that ends only to wait sends nothing.'
     );
-  } else {
+  } else if (opts.parentTakesMessages) {
     lines.push(
       `It does not hear from you on its own. Send what matters with chat_send to ${opts.parentChatId}.`
+    );
+  } else {
+    lines.push(
+      'It does not hear from you on its own, and it cannot take chat messages. If it works in ' +
+        'a room you are in, report there with post_to_room; otherwise say it in your own last ' +
+        'message.'
     );
   }
   return lines.join(' ');

@@ -1,5 +1,5 @@
 import { performRoomRepoHttpOperation, withRoomFileHttpRequest } from './room-file-http-owner.js';
-import multer from 'multer';
+import { parseUploadForm, UploadLimitError } from '../http/uploads.js';
 import { originalDocHonoRequest } from '../http/original-doc-request.js';
 import {
   requireRoomFileEditorHttpCurrent,
@@ -308,27 +308,35 @@ router.post('/:id/files/upload', async (c) => {
   try {
     caller = resolveRoomCaller(c);
     reply = await withRoomFileHttpRequest(c, async (editor, handle) => {
-      const { req, res } = originalDocHonoRequest(c);
+      const { req } = originalDocHonoRequest(c);
       const prepared = await executeRoomFilePrepareUpload(editor, handle);
       const storage = createRoomFileEditorUploadStorage(editor, handle, prepared.stagingDir);
-      const files = await new Promise<Express.Multer.File[]>((resolve, reject) => {
-        multer({
-          storage,
-          defParamCharset: 'utf8',
-          limits: {
-            fileSize: prepared.maxFileBytes,
-            files: ROOM_UPLOAD_MAX_FILES,
-            fields: 10,
+      let form: Awaited<ReturnType<typeof parseUploadForm>>;
+      try {
+        form = await parseUploadForm(c, {
+          field: ROOM_UPLOAD_FILES_FIELD,
+          maxCount: ROOM_UPLOAD_MAX_FILES,
+          paramCharset: 'utf8',
+          limits: { fileSize: prepared.maxFileBytes, files: ROOM_UPLOAD_MAX_FILES, fields: 10 },
+          storage: {
+            store: (file, done) => storage._handleFile(req, file, done),
+            remove: (file, done) => storage._removeFile(req, file, done),
           },
-        }).array(ROOM_UPLOAD_FILES_FIELD, ROOM_UPLOAD_MAX_FILES)(req, res, (error: unknown) => {
-          void completeRoomFileUploadStorage(storage, error).then(
-            () => resolve((req.files as Express.Multer.File[] | undefined) ?? []),
-            (cause: unknown) => reject(uploadError(cause, prepared.maxFileBytes))
-          );
         });
-      });
+      } catch (cause) {
+        // Restore the original storage cause after all owned writes have settled.
+        try {
+          await completeRoomFileUploadStorage(storage, cause);
+        } catch (original) {
+          throw uploadError(original, prepared.maxFileBytes);
+        }
+        throw uploadError(cause, prepared.maxFileBytes);
+      }
+      await completeRoomFileUploadStorage(storage, undefined);
+      requireRoomFileEditorHttpCurrent(editor, handle);
+      const files = form?.files ?? [];
       const ownedSources = await issueRoomFileUploadSources(storage, req, files);
-      const rawFields = req.body ?? readJsonBody(c) ?? {};
+      const rawFields = form?.fields ?? readJsonBody(c) ?? {};
       const fields = RoomFileUploadFieldsSchema.safeParse(rawFields);
       if (!fields.success) {
         const refusal = parseOrRefuse(c, RoomFileUploadFieldsSchema, rawFields) as Response;
@@ -384,7 +392,7 @@ function isAbortedUpload(err: unknown): boolean {
  * @param maxFileBytes - The room's per-file cap, for the sentence.
  */
 function uploadError(err: unknown, maxFileBytes: number): unknown {
-  if (!(err instanceof multer.MulterError)) return err;
+  if (!(err instanceof UploadLimitError)) return err;
   if (err.code === 'LIMIT_FILE_SIZE') {
     return new RoomError(
       'FILE_TOO_LARGE',

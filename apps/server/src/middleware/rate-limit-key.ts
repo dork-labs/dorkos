@@ -4,8 +4,8 @@
  * Every limiter in the server — sign-in, `/mcp`, the two A2A ones, each
  * extension's data proxy, the admin routes and the relay binding probe — used to
  * take `express-rate-limit`'s default key, `req.ip`. That looks like a
- * network fact and is not one: `app.ts` sets `trust proxy, 1` so a reverse proxy
- * can report the real scheme, and Express then derives `req.ip` from
+ * network fact and is not one: the server ran `trust proxy, 1` so a reverse
+ * proxy could report the real scheme, and Express derived `req.ip` from
  * `X-Forwarded-For`. On a direct connection the "first proxy" IS the caller, so
  * a client that sends a different `X-Forwarded-For` on every request lands in a
  * different bucket every time and is never limited at all. The limiter that
@@ -65,8 +65,8 @@ export function forwardedForIsTrusted(): boolean {
  * full address would let it rotate through them the same way a forged header
  * once did.
  *
- * @param request - The facts of the request being counted (`expressRequestFacts`
- *   or `honoRequestFacts`); only its two addresses are read.
+ * @param request - The facts of the request being counted (`honoRequestFacts`);
+ *   only its two addresses are read.
  * @returns The bucket key.
  */
 export function rateLimitKey(
