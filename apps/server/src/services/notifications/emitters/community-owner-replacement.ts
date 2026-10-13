@@ -165,3 +165,16 @@ export class CommunityOwnerNoticeAnnouncer {
     await writeFileAtomic(this.file(), JSON.stringify(keys));
   }
 }
+
+let shared: CommunityOwnerNoticeAnnouncer | undefined;
+
+/**
+ * The one announcer every path shares: the connection list and the background check
+ * (`community-owner-notice-sweep.ts`). Two would each keep their own copy of the ledger, and could both
+ * announce the same notice.
+ *
+ * @param dorkHome - The data directory, read on the first call only.
+ */
+export function getOwnerNoticeAnnouncer(dorkHome: string): CommunityOwnerNoticeAnnouncer {
+  return (shared ??= new CommunityOwnerNoticeAnnouncer(dorkHome));
+}
