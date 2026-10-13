@@ -62,9 +62,10 @@ describe('RUNTIME_HARNESSES', () => {
       const source = readFileSync(path.join(RUNTIMES_DIR, id, `${id}-runtime.ts`), 'utf8');
       // test-mode takes its type as a constructor argument (e2e registers a
       // second instance under another id), so its declaration is the default.
+      // OpenCode also accepts a computer-local identity; pin its host default.
       expect(source, id).toMatch(
         new RegExp(
-          String.raw`readonly type(?:\s*=\s*|: string;[\s\S]*?constructor\(type = )'${id}'`
+          String.raw`readonly type(?:\s*=\s*|: string;[\s\S]*?constructor\(type = |: ConnectorRuntime;[\s\S]*?this\.type = options\.runtimeId \?\? )'${id}'`
         )
       );
     }

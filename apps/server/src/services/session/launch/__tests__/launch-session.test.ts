@@ -22,6 +22,7 @@ const fakeRuntime = {
 vi.mock('../../../core/runtime-registry.js', () => ({
   runtimeRegistry: {
     getNativeSessionCwd: vi.fn(() => null),
+    computerRuntimeForAgentPath: vi.fn(() => undefined),
     has: vi.fn(() => true),
     getDefaultType: vi.fn(() => 'claude-code'),
     persistSessionRuntime: vi.fn(async () => true),
@@ -62,6 +63,7 @@ import {
   dispatchSessionMessage,
   isAgentLaunchCapFull,
   isSessionLaunchRefusal,
+  resolveRuntimeTypeForNewSession,
 } from '../launch-session.js';
 import {
   clearTestHomes,
@@ -422,4 +424,15 @@ describe('a message for a paused agent (spec audit-trail PR5)', () => {
     expect(runtimeRegistry.persistSessionRuntime).not.toHaveBeenCalled();
     expect(dispatchMessage).not.toHaveBeenCalled();
   });
+});
+
+it('retained computer placement refuses an explicit host runtime hint', async () => {
+  vi.mocked(runtimeRegistry.computerRuntimeForAgentPath).mockReturnValueOnce('computer-local');
+  await expect(
+    resolveRuntimeTypeForNewSession({ agentPath: '/computer', runtimeHint: 'opencode' })
+  ).rejects.toThrow('COMPUTER_RUNTIME_MISMATCH');
+  vi.mocked(runtimeRegistry.computerRuntimeForAgentPath).mockReturnValueOnce('computer-local');
+  await expect(resolveRuntimeTypeForNewSession({ agentPath: '/computer' })).resolves.toBe(
+    'computer-local'
+  );
 });

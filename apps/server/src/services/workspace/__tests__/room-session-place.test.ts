@@ -37,6 +37,7 @@ vi.mock('../../../lib/boundary.js', () => ({
 // or database is composed here.
 vi.mock('../../core/runtime-registry.js', () => ({
   runtimeRegistry: {
+    computerRuntimeForAgentPath: () => undefined,
     resolveForSessionWithOwnership: vi.fn(async () => ({ runtime: {}, bound: false })),
     getSessionAgentPath: vi.fn(async () => null),
   },

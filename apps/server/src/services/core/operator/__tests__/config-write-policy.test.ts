@@ -90,6 +90,7 @@ describe('CONFIG_WRITE_POLICY drift guard', () => {
       'cloud.remote.hosts',
       'cloud.remote.instanceId',
       'cloud.remote.mode',
+      'computers.enabled',
       'connectors.rawMcpServers[].displayName',
       'connectors.rawMcpServers[].slug',
       'connectors.rawMcpServers[].transport',

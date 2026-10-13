@@ -102,6 +102,7 @@ export const TeamAgentFactsSchema = z
      */
     manifestId: z.string().min(1),
     runtime: AgentRuntimeSchema,
+    effectiveRuntimeId: z.string().min(1).max(128).optional(),
     /** The model new sessions start on. Absent = inherit the server default. */
     model: z.string().optional(),
     healthStatus: AgentHealthStatusSchema,

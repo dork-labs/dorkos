@@ -46,6 +46,8 @@ import { runtimeRegistry } from '../../core/runtime-registry.js';
  * @param agentPath - The agent's project directory, the one holding `.dork/agent.json`.
  */
 export async function resolveAgentRuntimeType(agentPath: string): Promise<string> {
+  const placed = runtimeRegistry.computerRuntimeForAgentPath(agentPath);
+  if (placed) return placed;
   try {
     const manifest = await readManifest(agentPath);
     if (manifest?.runtime) {
@@ -74,7 +76,7 @@ export async function resolveAgentRuntimeType(agentPath: string): Promise<string
  * because `persistSessionRuntime` refuses to re-bind (DOR-764). So a manifest
  * change takes effect on the next session — the same OUTCOME every other
  * unattended surface already gives, by its own mechanism rather than this one:
- * the cockpit routes on the binding (`resolveForSession`), a scheduled run pins
+ * the app routes on the binding (`resolveForSession`), a scheduled run pins
  * the runtime it resolved onto `pulse_runs.resolved_runtime` for that run, and
  * the relay keeps a chat subject on the session its first message created.
  * Rooms were the surface with no such memory at all, and an agent-to-agent DM

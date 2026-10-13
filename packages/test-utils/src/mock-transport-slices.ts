@@ -8,6 +8,7 @@
  */
 import { vi } from 'vitest';
 import type { Transport } from '@dorkos/shared/transport';
+import { createMockComputerTransport } from './mock-computer-transport.js';
 import { createMockHeartbeatTransport } from './mock-heartbeat-transport.js';
 
 /** The methods {@link transportSliceMocks} covers. */
@@ -22,9 +23,11 @@ type SliceMethods =
 
 /** Mocks for every method of the split-out `Transport` slices. */
 export function transportSliceMocks(): Pick<Transport, SliceMethods> &
-  ReturnType<typeof createMockHeartbeatTransport> {
+  ReturnType<typeof createMockHeartbeatTransport> &
+  ReturnType<typeof createMockComputerTransport> {
   return {
     ...createMockHeartbeatTransport(),
+    ...createMockComputerTransport(),
     listActivityEvents: vi.fn().mockResolvedValue({ items: [], nextCursor: null }),
     listAuditEvents: vi.fn().mockResolvedValue({ events: [] }),
     getAccountTimeline: vi.fn().mockResolvedValue({ events: [] }),

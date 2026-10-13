@@ -167,7 +167,13 @@ export function ProfileView({
       return;
     }
     try {
-      void navigate(await sessionLocationTarget(transport, target.projectPath));
+      const destination = await sessionLocationTarget(transport, target.projectPath);
+      const effectiveRuntimeId = member.agent?.effectiveRuntimeId;
+      void navigate(
+        effectiveRuntimeId
+          ? { ...destination, search: { ...destination.search, runtime: effectiveRuntimeId } }
+          : destination
+      );
     } catch (error) {
       reportClientError(transport, error);
       notifySessionLookupFailed(target.projectPath);

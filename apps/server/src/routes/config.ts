@@ -504,7 +504,10 @@ function requestConfigWriteAuthority(caller: RequestFacts): ConfigWriteAuthority
       // this DorkOS could do through a settings patch what those routes refuse.
       // `heartbeats.triageOnCredits` spends the same account's credits.
       const cloudPaths = paths.filter(
-        (path) => path.startsWith('cloud.') || path === 'heartbeats.triageOnCredits'
+        (path) =>
+          path.startsWith('cloud.') ||
+          path === 'heartbeats.triageOnCredits' ||
+          path.startsWith('computers.')
       );
       if (cloudPaths.length > 0 && refuseUnlessAccountOwner(caller) !== undefined) {
         return {

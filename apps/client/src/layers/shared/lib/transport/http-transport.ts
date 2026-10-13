@@ -10,6 +10,7 @@
 import type { HistoryMessage } from '@dorkos/shared/types';
 import type { Transport } from '@dorkos/shared/transport';
 import { resolveStableClientId } from './client-id';
+import { createComputerMethods } from './computer-methods';
 import { createTasksMethods } from './task-methods';
 import { createRelayMethods } from './relay-methods';
 import { createMeshMethods } from './mesh-methods';
@@ -58,6 +59,7 @@ import { createAuditMethods } from './audit-methods';
 // eslint-disable-next-line @typescript-eslint/no-unsafe-declaration-merging
 export interface HttpTransport
   extends
+    ReturnType<typeof createComputerMethods>,
     ReturnType<typeof createTasksMethods>,
     ReturnType<typeof createRelayMethods>,
     ReturnType<typeof createMeshMethods>,
@@ -109,6 +111,7 @@ export class HttpTransport implements Transport {
     this.clientId = resolveStableClientId();
     Object.assign(
       this,
+      createComputerMethods(baseUrl, () => this.clientId),
       createTasksMethods(baseUrl),
       createRelayMethods(baseUrl, () => this.clientId),
       createMeshMethods(baseUrl),

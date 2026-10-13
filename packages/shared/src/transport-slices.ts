@@ -13,6 +13,7 @@ import type { ActivityTransport } from './transport-activity.js';
 import type { AgentPauseTransport } from './transport-agent-pause.js';
 import type { HeartbeatTransport } from './transport-heartbeats.js';
 import type { RemoteAccessTransport } from './transport-remote-access.js';
+import type { ComputerTransport } from './transport-computers.js';
 import type { OnboardingTransport } from './transport-onboarding.js';
 
 /** Every Transport slice declared outside `transport.ts`. */
@@ -26,4 +27,5 @@ export interface TransportSlices
     AgentPauseTransport,
     HeartbeatTransport,
     RemoteAccessTransport,
-    OnboardingTransport {}
+    OnboardingTransport,
+    ComputerTransport {}
