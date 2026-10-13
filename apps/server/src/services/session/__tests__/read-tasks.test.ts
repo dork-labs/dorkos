@@ -25,6 +25,7 @@ vi.mock('../../../lib/boundary.js', () => ({
 }));
 
 import fs from 'fs/promises';
+import { serveMockedTranscript } from '../../runtimes/claude-code/sessions/transcripts/__tests__/serve-mocked-transcript.js';
 
 const mockFs = vi.mocked(fs);
 
@@ -71,6 +72,7 @@ describe('TranscriptReader.readTasks', () => {
 
   it('returns empty array when file does not exist', async () => {
     mockFs.readFile.mockRejectedValue(enoentError());
+    serveMockedTranscript(mockFs, enoentError());
     const tasks = await reader.readTasks(vaultRoot, 'nonexistent');
     expect(tasks).toEqual([]);
   });
@@ -88,7 +90,8 @@ describe('TranscriptReader.readTasks', () => {
       toolResultLine('toolu_01UTa6VafF6MD1phwbhw4eAT', 'Task #2 created successfully: Second task'),
     ];
 
-    mockFs.readFile.mockRejectedValueOnce(enoentError()).mockResolvedValueOnce(lines.join('\n'));
+    mockFs.readFile.mockRejectedValueOnce(enoentError());
+    serveMockedTranscript(mockFs, lines.join('\n'));
 
     const tasks = await reader.readTasks(vaultRoot, 'session-1');
     expect(tasks).toHaveLength(2);
@@ -112,7 +115,8 @@ describe('TranscriptReader.readTasks', () => {
       toolResultLine('toolu_fail', 'Error: permission denied', true),
     ];
 
-    mockFs.readFile.mockRejectedValueOnce(enoentError()).mockResolvedValueOnce(lines.join('\n'));
+    mockFs.readFile.mockRejectedValueOnce(enoentError());
+    serveMockedTranscript(mockFs, lines.join('\n'));
 
     const tasks = await reader.readTasks(vaultRoot, 'session-1');
     expect(tasks).toEqual([]);
@@ -130,7 +134,8 @@ describe('TranscriptReader.readTasks', () => {
       toolUseLine('TaskUpdate', 'toolu_c', { taskId: '1', status: 'completed' }),
     ];
 
-    mockFs.readFile.mockRejectedValueOnce(enoentError()).mockResolvedValueOnce(lines.join('\n'));
+    mockFs.readFile.mockRejectedValueOnce(enoentError());
+    serveMockedTranscript(mockFs, lines.join('\n'));
 
     const tasks = await reader.readTasks(vaultRoot, 'session-1');
     expect(tasks).toHaveLength(1);
@@ -159,7 +164,8 @@ describe('TranscriptReader.readTasks', () => {
       toolUseLine('TaskUpdate', 'toolu_update', { taskId: '1', status: 'completed' }),
     ];
 
-    mockFs.readFile.mockRejectedValueOnce(enoentError()).mockResolvedValueOnce(lines.join('\n'));
+    mockFs.readFile.mockRejectedValueOnce(enoentError());
+    serveMockedTranscript(mockFs, lines.join('\n'));
 
     const tasks = await reader.readTasks(vaultRoot, 'session-1');
     expect(tasks).toHaveLength(2);
@@ -190,7 +196,8 @@ describe('TranscriptReader.readTasks', () => {
       }),
     ];
 
-    mockFs.readFile.mockRejectedValueOnce(enoentError()).mockResolvedValueOnce(lines.join('\n'));
+    mockFs.readFile.mockRejectedValueOnce(enoentError());
+    serveMockedTranscript(mockFs, lines.join('\n'));
 
     const tasks = await reader.readTasks(vaultRoot, 'session-1');
     expect(tasks).toEqual([]);
@@ -199,7 +206,8 @@ describe('TranscriptReader.readTasks', () => {
   it('ignores TaskUpdate for nonexistent tasks', async () => {
     const lines = [toolUseLine('TaskUpdate', 'tc1', { taskId: '99', status: 'completed' })];
 
-    mockFs.readFile.mockRejectedValueOnce(enoentError()).mockResolvedValueOnce(lines.join('\n'));
+    mockFs.readFile.mockRejectedValueOnce(enoentError());
+    serveMockedTranscript(mockFs, lines.join('\n'));
 
     const tasks = await reader.readTasks(vaultRoot, 'session-1');
     expect(tasks).toEqual([]);
@@ -212,7 +220,8 @@ describe('TranscriptReader.readTasks', () => {
       toolResultLine('tc1', 'Task #1 created successfully: Valid task'),
     ];
 
-    mockFs.readFile.mockRejectedValueOnce(enoentError()).mockResolvedValueOnce(lines.join('\n'));
+    mockFs.readFile.mockRejectedValueOnce(enoentError());
+    serveMockedTranscript(mockFs, lines.join('\n'));
 
     const tasks = await reader.readTasks(vaultRoot, 'session-1');
     expect(tasks).toHaveLength(1);

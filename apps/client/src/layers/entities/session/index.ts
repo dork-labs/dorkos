@@ -99,6 +99,12 @@ export {
 } from './model/stream/session-stream-store';
 export type { SessionStreamState } from './model/stream/session-stream-store';
 export {
+  useHistoryWindowStore,
+  useHistoryWindow,
+  EMPTY_HISTORY_WINDOW,
+} from './model/stream/history-window-store';
+export type { HistoryWindowState } from './model/stream/history-window-store';
+export {
   useSessionListStore,
   useSessionListSessions,
   useSessionListStatus,

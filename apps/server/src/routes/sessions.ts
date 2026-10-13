@@ -33,8 +33,7 @@ import type {
 import type { MeshCore } from '@dorkos/mesh';
 import { getChatMessageService } from '../services/session/chat-messages/chat-message-service.js';
 import type { ChatActivityResponse } from '@dorkos/shared/chat-messages';
-import { stampHistory } from '../services/session/chat-messages/chat-message-stamps.js';
-import { filterKickoffHistory } from '@dorkos/shared/kickoff';
+import { readHistoryPage } from '../services/session/history/history-window.js';
 import { CREDITS_ACCOUNT_ID } from '@dorkos/shared/account-usage';
 import type { ApiEnv } from '../http/api-chain.js';
 import { readJsonBody } from '../http/request-body.js';
@@ -554,20 +553,12 @@ export function createSessionRoutes(deps: SessionRouteDeps = {}): Hono<ApiEnv> {
       }
     }
 
-    const messages = await runtime.getMessageHistory(cwd, internalSessionId);
-    // The ONE runtime-agnostic suppression seam for the auto-first-turn kickoff
-    // (M4): whatever the runtime stored, the synthetic "introduce yourself"
-    // record never leaves the server as a user message. Role-scoped (user only),
-    // first-user-record-scoped, exact-envelope-shaped — see @dorkos/shared/kickoff.
-    // A message another chat sent carries its sender, stamped here from the
-    // server's own record of the send (spec `spin-off-chats` §2), never read
-    // from the text.
-    return c.json({
-      messages: stampHistory(
-        [...new Set([sessionId, internalSessionId])],
-        filterKickoffHistory(messages)
-      ),
-    });
+    // Whole, or a page of older messages (DOR-2889), through the same kickoff
+    // and sender seams as the stream's snapshot — see `readHistoryPage`.
+    const before = (readQuery(c).before as string) || undefined;
+    const page = await readHistoryPage(runtime, cwd, sessionId, internalSessionId, before);
+    if (!page) return c.json(errorBody('No message has that id.', 'HISTORY_CURSOR_UNKNOWN'), 404);
+    return c.json(page);
   });
 
   // PATCH /api/sessions/:id - Update session settings

@@ -24,7 +24,7 @@ import type {
   BrowseDirectoryResponse,
   CommandRegistry,
   HealthResponse,
-  HistoryMessage,
+  HistoryPage,
   TaskItem,
   ServerConfig,
   ModelOption,
@@ -806,8 +806,12 @@ export interface Transport extends TransportSlices {
     opts?: { upToMessageId?: string; title?: string },
     cwd?: string
   ): Promise<Session>;
-  /** Fetch message history for a session. */
-  getMessages(sessionId: string, cwd?: string): Promise<{ messages: HistoryMessage[] }>;
+  /**
+   * Fetch message history for a session: the whole of it, or with `before`
+   * (a message id) the page of up to `HISTORY_PAGE_LIMIT` messages
+   * directly older than that one, with how many remain before the page.
+   */
+  getMessages(sessionId: string, cwd?: string, before?: string): Promise<HistoryPage>;
   /**
    * Fetch the authoritative current state of a session for hydration: completed
    * messages, the in-progress turn's events, status projection, pending

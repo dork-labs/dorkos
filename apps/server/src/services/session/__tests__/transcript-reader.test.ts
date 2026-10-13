@@ -33,6 +33,7 @@ vi.mock('../../../lib/boundary.js', () => ({
 }));
 
 import fs from 'fs/promises';
+import { serveMockedTranscript } from '../../runtimes/claude-code/sessions/transcripts/__tests__/serve-mocked-transcript.js';
 
 describe('TranscriptReader', () => {
   let transcriptReader: InstanceType<
@@ -171,7 +172,7 @@ describe('TranscriptReader', () => {
         }),
       ].join('\n');
 
-      (fs.readFile as ReturnType<typeof vi.fn>).mockResolvedValue(lines);
+      serveMockedTranscript(fs, lines);
 
       const messages = await transcriptReader.readTranscript('/vault', 'session-123');
 
@@ -205,7 +206,7 @@ describe('TranscriptReader', () => {
         }),
       ].join('\n');
 
-      (fs.readFile as ReturnType<typeof vi.fn>).mockResolvedValue(lines);
+      serveMockedTranscript(fs, lines);
 
       const messages = await transcriptReader.readTranscript('/vault', 'session-456');
 
@@ -253,7 +254,7 @@ describe('TranscriptReader', () => {
         }),
       ].join('\n');
 
-      (fs.readFile as ReturnType<typeof vi.fn>).mockResolvedValue(lines);
+      serveMockedTranscript(fs, lines);
 
       const messages = await transcriptReader.readTranscript('/vault', 'session-result');
 
@@ -281,7 +282,7 @@ describe('TranscriptReader', () => {
         }),
       ].join('\n');
 
-      (fs.readFile as ReturnType<typeof vi.fn>).mockResolvedValue(lines);
+      serveMockedTranscript(fs, lines);
 
       const messages = await transcriptReader.readTranscript('/vault', 'session-interleaved');
 
@@ -317,7 +318,7 @@ describe('TranscriptReader', () => {
         }),
       ].join('\n');
 
-      (fs.readFile as ReturnType<typeof vi.fn>).mockResolvedValue(lines);
+      serveMockedTranscript(fs, lines);
 
       const messages = await transcriptReader.readTranscript('/vault', 'session-789');
 
@@ -339,7 +340,7 @@ describe('TranscriptReader', () => {
         }),
       ].join('\n');
 
-      (fs.readFile as ReturnType<typeof vi.fn>).mockResolvedValue(lines);
+      serveMockedTranscript(fs, lines);
 
       const messages = await transcriptReader.readTranscript('/vault', 's1');
 
@@ -359,7 +360,7 @@ describe('TranscriptReader', () => {
         }),
       ].join('\n');
 
-      (fs.readFile as ReturnType<typeof vi.fn>).mockResolvedValue(lines);
+      serveMockedTranscript(fs, lines);
 
       const messages = await transcriptReader.readTranscript('/vault', 's1');
 
@@ -367,7 +368,7 @@ describe('TranscriptReader', () => {
     });
 
     it('returns empty array when file does not exist', async () => {
-      (fs.readFile as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('ENOENT'));
+      serveMockedTranscript(fs, new Error('ENOENT'));
 
       const messages = await transcriptReader.readTranscript('/vault', 'nonexistent');
 
@@ -389,7 +390,7 @@ describe('TranscriptReader', () => {
         }),
       ].join('\n');
 
-      (fs.readFile as ReturnType<typeof vi.fn>).mockResolvedValue(lines);
+      serveMockedTranscript(fs, lines);
 
       const messages = await transcriptReader.readTranscript('/vault', 's1');
 
@@ -409,7 +410,7 @@ describe('TranscriptReader', () => {
         }),
       ].join('\n');
 
-      (fs.readFile as ReturnType<typeof vi.fn>).mockResolvedValue(lines);
+      serveMockedTranscript(fs, lines);
 
       const messages = await transcriptReader.readTranscript('/vault', 's1');
 
@@ -444,7 +445,7 @@ describe('TranscriptReader', () => {
         }),
       ].join('\n');
 
-      (fs.readFile as ReturnType<typeof vi.fn>).mockResolvedValue(lines);
+      serveMockedTranscript(fs, lines);
       const messages = await transcriptReader.readTranscript('/vault', 'session-cmd');
 
       expect(messages).toHaveLength(1);
@@ -505,7 +506,7 @@ describe('TranscriptReader', () => {
         }),
       ].join('\n');
 
-      (fs.readFile as ReturnType<typeof vi.fn>).mockResolvedValue(lines);
+      serveMockedTranscript(fs, lines);
       const messages = await transcriptReader.readTranscript('/vault', 'session-skill');
 
       // Should have the assistant message + the command message (expansion collapsed)
@@ -548,7 +549,7 @@ describe('TranscriptReader', () => {
         }),
       ].join('\n');
 
-      (fs.readFile as ReturnType<typeof vi.fn>).mockResolvedValue(lines);
+      serveMockedTranscript(fs, lines);
       const messages = await transcriptReader.readTranscript('/vault', 'session-skill-array');
 
       expect(messages).toHaveLength(1);
@@ -574,7 +575,7 @@ describe('TranscriptReader', () => {
         }),
       ].join('\n');
 
-      (fs.readFile as ReturnType<typeof vi.fn>).mockResolvedValue(lines);
+      serveMockedTranscript(fs, lines);
       const messages = await transcriptReader.readTranscript('/vault', 'session-comp');
 
       expect(messages).toHaveLength(1);
@@ -609,7 +610,7 @@ describe('TranscriptReader', () => {
         }),
       ].join('\n');
 
-      (fs.readFile as ReturnType<typeof vi.fn>).mockResolvedValue(lines);
+      serveMockedTranscript(fs, lines);
       const messages = await transcriptReader.readTranscript('/vault', 'session-task');
 
       expect(messages).toHaveLength(2);
@@ -642,7 +643,7 @@ describe('TranscriptReader', () => {
         }),
       ].join('\n');
 
-      (fs.readFile as ReturnType<typeof vi.fn>).mockResolvedValue(lines);
+      serveMockedTranscript(fs, lines);
       const messages = await transcriptReader.readTranscript('/vault', 'session-relay');
 
       const userMessages = messages.filter((m) => m.role === 'user');
@@ -676,7 +677,7 @@ describe('TranscriptReader', () => {
         }),
       ].join('\n');
 
-      (fs.readFile as ReturnType<typeof vi.fn>).mockResolvedValue(lines);
+      serveMockedTranscript(fs, lines);
       const messages = await transcriptReader.readTranscript('/vault', 'session-local');
 
       expect(messages).toHaveLength(1);
@@ -701,7 +702,7 @@ describe('TranscriptReader', () => {
         }),
       ].join('\n');
 
-      (fs.readFile as ReturnType<typeof vi.fn>).mockResolvedValue(lines);
+      serveMockedTranscript(fs, lines);
       const messages = await transcriptReader.readTranscript('/vault', 'session-normal');
 
       expect(messages).toHaveLength(2);

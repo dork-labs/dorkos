@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { TranscriptReader } from '../sessions/transcript-reader.js';
+import { serveMockedTranscript } from '../sessions/transcripts/__tests__/serve-mocked-transcript.js';
 
 vi.mock('fs/promises', () => ({
   default: {
@@ -216,15 +217,16 @@ describe('readTasks() file-first fallback', () => {
     enoent.code = 'ENOENT';
     mockFs.readFile.mockRejectedValueOnce(enoent);
 
-    // Second call: readFile for the JSONL transcript (fallback path)
-    // Return an empty file so parseTasks returns []
-    mockFs.readFile.mockResolvedValueOnce('');
+    // Then the JSONL transcript (fallback path), read through the history
+    // cache. An empty file folds to no tasks.
+    serveMockedTranscript(mockFs, '');
 
     const result = await reader.readTasks(vaultRoot, sessionId);
 
     expect(result).toEqual([]);
-    // Both the todo file and the JSONL file should have been read
-    expect(mockFs.readFile).toHaveBeenCalledTimes(2);
+    // The todo file was tried, then the transcript was opened.
+    expect(mockFs.readFile).toHaveBeenCalledTimes(1);
+    expect(mockFs.open).toHaveBeenCalledTimes(1);
   });
 });
 

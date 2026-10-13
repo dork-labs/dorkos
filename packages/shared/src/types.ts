@@ -65,6 +65,7 @@ export type {
   MessagePart,
   MessageType,
   HistoryMessage,
+  HistoryPage,
   HistoryToolCall,
   SessionTaskStatus,
   TaskItem,

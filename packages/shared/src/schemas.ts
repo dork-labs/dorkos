@@ -3688,6 +3688,31 @@ export const HistoryMessageSchema = z
 
 export type HistoryMessage = z.infer<typeof HistoryMessageSchema>;
 
+/**
+ * How many of a session's newest messages a hydration snapshot carries
+ * (DOR-2889). Older ones are read a page at a time, on request.
+ */
+export const HISTORY_WINDOW_LIMIT = 150;
+
+/** How many earlier messages one page of a session's history holds. */
+export const HISTORY_PAGE_LIMIT = 100;
+
+/**
+ * A run of a session's history, oldest first, and how many messages come
+ * before it. A whole history has nothing before it, so `earlierMessages` is
+ * absent or 0.
+ */
+export const HistoryPageSchema = z
+  .object({
+    messages: z.array(HistoryMessageSchema),
+    /** How many messages precede the first one here. Absent means none. */
+    earlierMessages: z.number().int().nonnegative().optional(),
+  })
+  .openapi('HistoryPage');
+
+/** Inferred type for {@link HistoryPageSchema}. */
+export type HistoryPage = z.infer<typeof HistoryPageSchema>;
+
 // === Command Types ===
 
 export const CommandEntrySchema = z

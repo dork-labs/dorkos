@@ -12,8 +12,16 @@ import {
 } from '../sdk/build-task-event.js';
 import { logger } from '../../../../lib/logger.js';
 
+/** Task state folded from transcript records fed one at a time. */
+export interface TaskParser {
+  /** Fold one parsed transcript record in. */
+  pushRecord(parsed: TranscriptLine): void;
+  /** The tasks as of the records fed so far. */
+  result(): TaskItem[];
+}
+
 /**
- * Parse task state from JSONL transcript lines.
+ * Start a task parser.
  *
  * Walks `TaskCreate`/`TaskUpdate`/`TodoWrite` tool_use blocks (in `assistant`
  * messages) and their tool_result blocks (in `user` messages), applying the
@@ -21,24 +29,17 @@ import { logger } from '../../../../lib/logger.js';
  * input carries no id — only its tool_result does — so a created task is
  * held under a provisional key until its result confirms the SDK's real id
  * (or is dropped, if the call failed). `TodoWrite` replaces the entire list
- * (last call wins).
+ * (last call wins). Fed incrementally, it answers the same as one pass.
  */
-export function parseTasks(lines: string[]): TaskItem[] {
+export function createTaskParser(): TaskParser {
   const state = createTaskFoldState();
   // Tracks TaskCreate tool_use ids awaiting their tool_result, so a later
   // `user`-message result block can be recognized as belonging to one.
   const pendingCreateIds = new Set<string>();
 
-  for (const line of lines) {
-    let parsed: TranscriptLine;
-    try {
-      parsed = JSON.parse(line);
-    } catch {
-      continue;
-    }
-
+  function pushRecord(parsed: TranscriptLine): void {
     const message = parsed.message;
-    if (!message?.content || !Array.isArray(message.content)) continue;
+    if (!message?.content || !Array.isArray(message.content)) return;
 
     if (parsed.type === 'assistant') {
       for (const block of message.content) {
@@ -89,5 +90,25 @@ export function parseTasks(lines: string[]): TaskItem[] {
     }
   }
 
-  return Array.from(state.tasks.values());
+  return { pushRecord, result: () => Array.from(state.tasks.values()) };
+}
+
+/**
+ * Parse task state from JSONL transcript lines in one pass; see
+ * {@link createTaskParser}.
+ *
+ * @param lines - The transcript's JSONL lines.
+ */
+export function parseTasks(lines: string[]): TaskItem[] {
+  const parser = createTaskParser();
+  for (const line of lines) {
+    let parsed: TranscriptLine;
+    try {
+      parsed = JSON.parse(line);
+    } catch {
+      continue;
+    }
+    parser.pushRecord(parsed);
+  }
+  return parser.result();
 }
