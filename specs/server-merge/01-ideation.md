@@ -55,7 +55,7 @@ ADR 261006-235238 says these become one program that runs at every size. This sp
 ## 2) Pre-reading log
 
 - ADRs: `261006-235238` (one server), `261006-235239` (equal accounts), `261006-235240` (one message system), `261006-235241` (Yjs docs), `261006-235242` (plugins), `260727-184933` (community never runs a member's agent), `260916-210001` (community is a Hono service on Postgres), `0319` (account-first identity), `261009-192542` (Hono everywhere).
-- Specs: `official-community-space`, `community-tenancy-contract`, `community-host-operator-api`, `community-launch-acceptance`, `community-adapter`, `community-sign-in-linking`, `agent-computer-mvp` (on branch `codex/agent-computer-mvp`, not yet merged).
+- Specs: `official-community-space`, `community-tenancy-contract`, `community-host-operator-api`, `community-launch-acceptance`, `community-adapter`, `community-sign-in-linking`, `agent-computer-mvp` (merged in #2845).
 - Plans: `plans/2026-10-vision-reset*.md`, `plans/2026-10-express-to-hono.md`.
 - Research: `research/20261006_one-server-sync-publish-identity.md`, `research/20260225_pglite_deep_dive.md`, `research/20260225_embedded_postgres_desktop.md`, `research/20261009_express-to-hono-migration.md`.
 - Linear: DOR-2735 and its children, project "Spaces & One Server", DOR-2742 (Hono move, done), DOR-2764 (official space), DOR-2748 (agent computers), DOR-2639, DOR-2703, DOR-2760, DOR-2835, DOR-2836, DOR-2847, DOR-2872, DOR-2755.
