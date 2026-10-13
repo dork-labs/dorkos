@@ -450,7 +450,7 @@ export function ChannelView({
       const attachmentIds: string[] = [];
       for (const file of files) {
         uploadingFile = file;
-        attachmentIds.push(await uploads.attach(channel.id, file, setProgress));
+        attachmentIds.push(await uploads.attach(channel.id, file, setProgress, !!pendingKey));
       }
       const body = {
         text: text.trim() || 'Shared a file',

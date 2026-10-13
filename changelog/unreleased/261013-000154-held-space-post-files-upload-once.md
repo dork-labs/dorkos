@@ -2,6 +2,7 @@
 covers:
   - 'fix(client): a held space post sends its files once, not twice (DOR-2835)'
   - 'fix: never post a stale upload, and reuse uploads on the space web page too (DOR-2835)'
+  - 'fix: a lost-answer retry keeps its files, and uploads are dated from their first try (DOR-2835)'
 ---
 
 ### Fixed

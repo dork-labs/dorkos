@@ -24,6 +24,13 @@ interface Delivery {
   attachmentIds: string[];
   /** When each of `attachmentIds` was first uploaded, by this device's clock. */
   uploadedAt: number[];
+  /** When each file's current upload was first tried, kept across retries of its key. */
+  triedAt: number[];
+  /**
+   * Whether a post went out. Its key then names those exact files, so a retry must send them
+   * again, even if old: a post that landed answers with its entry, never a conflict.
+   */
+  posted: boolean;
   /** Bumped when stale uploads are dropped, so their replacements get new upload keys. */
   uploadRound: number;
   status: 'sending' | 'failed';
@@ -71,11 +78,14 @@ function reusableUpload(key: string): { attachmentId: string; at: number } | und
   return uploadMemory.get(key);
 }
 
-/** Remember a new upload, stamped once: a reuse never makes it look younger than it is. */
-function rememberUpload(key: string, attachmentId: string): number {
-  const at = Date.now();
+/** The time an upload is first tried, which is never later than the space's own record of it. */
+function uploadClock(): number {
+  return Date.now();
+}
+
+/** Remember an upload stamped when it was first tried, so a reuse never looks younger than it is. */
+function rememberUpload(key: string, attachmentId: string, at: number): void {
   uploadMemory.set(key, { attachmentId, at });
-  return at;
 }
 
 /** Drop a sent message's uploads: they belong to its post now, and none is sent again. */
@@ -247,9 +257,10 @@ export function useRemoteCommunityDrafts({
     publish();
     try {
       // An upload too old for the space to take is replaced, under new keys, not posted.
-      if (job.uploadedAt.some((at) => !uploadFresh(at))) {
+      if (!job.posted && job.uploadedAt.some((at) => !uploadFresh(at))) {
         job.attachmentIds = [];
         job.uploadedAt = [];
+        job.triedAt = [];
         job.uploadRound += 1;
       }
       for (let i = job.attachmentIds.length; i < job.files.length; i++) {
@@ -263,17 +274,20 @@ export function useRemoteCommunityDrafts({
           job.uploadedAt.push(earlier.at);
           continue;
         }
+        const triedAt = (job.triedAt[i] ??= uploadClock());
         const attachment = await transport.uploadRemoteCommunityAttachment(
           job.ref,
           job.roomId,
           staged.file,
           job.uploadRound ? `${job.key}:file:${i}:${job.uploadRound}` : `${job.key}:file:${i}`
         );
-        job.uploadedAt.push(rememberUpload(fileKey, attachment.id));
+        rememberUpload(fileKey, attachment.id, triedAt);
+        job.uploadedAt.push(triedAt);
         job.attachmentIds.push(attachment.id);
       }
       if (!allowed.current || !alive.current || job.address !== authority.current)
         throw new Error('Reconnect to this channel, then try again.');
+      job.posted = true;
       const entry = await transport.postRemoteCommunityEntry(job.ref, job.roomId, {
         text: job.text,
         parentEntryId: job.parentEntryId,
@@ -361,6 +375,8 @@ export function useRemoteCommunityDrafts({
       files,
       attachmentIds: [],
       uploadedAt: [],
+      triedAt: [],
+      posted: false,
       uploadRound: 0,
       status: 'sending',
       origin: { draft: target, typed: held.text, seq: (sent.current += 1) },

@@ -8,8 +8,9 @@ interface FileUpload {
   channelId: string;
   /** Kept until the upload lands, so a retry after a lost answer gets the same upload back. */
   key: string;
+  /** When this key was first tried, never later than the space's own record of the upload. */
+  at: number;
   attachmentId?: string;
-  at?: number;
 }
 
 /**
@@ -31,18 +32,26 @@ export function createUploadReuse(
     async attach(
       channelId: string,
       file: File,
-      progress: (value: number) => void = () => undefined
+      progress: (value: number) => void = () => undefined,
+      /**
+       * Set when retrying a post whose answer was lost: its key names these exact files, so they
+       * go again however old, and a post that landed answers with its entry, never a conflict.
+       */
+      keepOld = false
     ): Promise<string> {
       let held = uploads.get(file);
-      if (held?.channelId === channelId && held.attachmentId && now() - held.at! < UPLOAD_REUSE_MS)
+      if (
+        held?.channelId === channelId &&
+        held.attachmentId &&
+        (keepOld || now() - held.at < UPLOAD_REUSE_MS)
+      )
         return held.attachmentId;
       if (!held || held.channelId !== channelId || held.attachmentId) {
-        held = { channelId, key: crypto.randomUUID() };
+        held = { channelId, key: crypto.randomUUID(), at: now() };
         uploads.set(file, held);
       }
-      const attachmentId = await upload(channelId, file, held.key, progress);
-      Object.assign(held, { attachmentId, at: now() });
-      return attachmentId;
+      held.attachmentId = await upload(channelId, file, held.key, progress);
+      return held.attachmentId;
     },
     /** A posted message's files belong to it now; none is reused. */
     forget(files: readonly File[]): void {
