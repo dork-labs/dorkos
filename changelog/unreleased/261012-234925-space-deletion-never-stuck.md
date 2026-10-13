@@ -1,6 +1,8 @@
 ---
 covers:
   - 'fix(community): a deleted space is never stuck waiting on an unfinished upload (DOR-2872)'
+  - 'fix(community): review fixes for the stuck-deletion fix (DOR-2872)'
+  - 'chore: fold the review fixes into the stuck-deletion changelog fragment (DOR-2872)'
 ---
 
 ### Fixed
