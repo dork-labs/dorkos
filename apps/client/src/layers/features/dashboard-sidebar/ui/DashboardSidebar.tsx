@@ -75,7 +75,7 @@ export function DashboardSidebar() {
           of rows never saw it again — and the three cards it competes with
           stacked in the footer instead. One slot, pinned here between the
           scroller and the footer, one card at a time (spec D4). */}
-      <SidebarBottomSlot />
+      <SidebarBottomSlot model={model} />
     </nav>
   );
 }

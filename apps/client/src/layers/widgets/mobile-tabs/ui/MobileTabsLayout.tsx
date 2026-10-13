@@ -69,7 +69,6 @@ import {
 } from '../model/mobile-tabs';
 import { lowerMobilePanels, useMobilePanelStore } from '../model/mobile-panel-store';
 import { MobileTabBar } from './MobileTabBar';
-import { MobileAddOns } from './MobileAddOns';
 
 /** Props for {@link MobileTabsLayout}. */
 export interface MobileTabsLayoutProps {
@@ -259,7 +258,7 @@ export function MobileTabsLayout({ takeover }: MobileTabsLayoutProps) {
                 the cockpit offers — getting started, an update, the profile
                 prompt, a promo — was desktop-only (spec D4). Home is where it
                 belongs: it is this cockpit's first screen. */}
-            <SidebarBottomSlot />
+            <SidebarBottomSlot model={model} />
           </PageContainer>
         </MobileTabPanel>
 
@@ -286,8 +285,6 @@ export function MobileTabsLayout({ takeover }: MobileTabsLayoutProps) {
                 the `nav-agents` anchor, which would otherwise exist only at
                 desktop width. A phone has room for it as a row of its own. */}
             <SidebarFooterStrip />
-            {/* Pages extensions added — a phone has no palette to find them in. */}
-            <MobileAddOns />
           </PageContainer>
         </MobileTabPanel>
       </div>

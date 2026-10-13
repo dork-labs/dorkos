@@ -16,6 +16,12 @@ import { indexSuppressedDms } from './hand-made-dm';
 import { anchorKey, rowKey } from './targets';
 
 /**
+ * What a chat row says when nothing tells it which agent the chat is with.
+ * "Chat", never "Session": the app's word for a conversation (DOR-2845).
+ */
+const UNPLACED_CHAT_LABEL = 'Chat';
+
+/**
  * The one-line summaries "Jump back in" already computed, by row key.
  *
  * Reused rather than re-derived: that model decides what a quiet channel's
@@ -74,7 +80,8 @@ function sessionRow(
     glyph: agentPath
       ? { kind: 'agent-avatar', agentPath }
       : { kind: 'icon', icon: 'session' as const },
-    primary: state.displayNames[agentPath] ?? (agentPath ? basename(agentPath) : 'Session'),
+    primary:
+      state.displayNames[agentPath] ?? (agentPath ? basename(agentPath) : UNPLACED_CHAT_LABEL),
     secondary: session.title,
     reservesVerbLine: streaming,
     // The phase, for the leaf that says the words (BC-37). `workingSessionIds`
@@ -271,7 +278,8 @@ function anchorRow(
     glyph: agentPath
       ? { kind: 'agent-avatar', agentPath }
       : { kind: 'icon', icon: 'session' as const },
-    primary: state.displayNames[agentPath] ?? (agentPath ? basename(agentPath) : 'Session'),
+    primary:
+      state.displayNames[agentPath] ?? (agentPath ? basename(agentPath) : UNPLACED_CHAT_LABEL),
     reservesVerbLine: streaming,
     ...(streaming ? { lifecycle: 'streaming' as const } : lifecycle ? { lifecycle } : {}),
     unread: { tier: 'none' },

@@ -31,6 +31,7 @@ import {
 } from '../model/build-sidebar-model';
 import { useAllClearBeat } from '../model/use-all-clear-beat';
 import { useGettingStartedReturn } from '../model/holds/use-getting-started-return';
+import { SidebarSection } from './SidebarSection';
 import { SidebarZone } from './SidebarZone';
 import { TodayZone } from './TodayZone';
 
@@ -174,6 +175,20 @@ export function SidebarZones({
     });
   }, [foldable, update]);
 
+  // Inside a space, Add-ons is the one Library section still drawn, so it is
+  // also the only one Alt-click may fold: folding sections nobody can see from
+  // there would be a write the person never sees the effect of.
+  const spaceAddOns = draws('library')
+    ? model.zones
+        .find((zone) => zone.id === 'library')
+        ?.sections.find((section) => section.id === 'addons')
+    : undefined;
+  const spaceAddOnsCollapsed = spaceAddOns?.collapsed ?? false;
+  const onToggleSpaceAddOns = useCallback(
+    () => update((prev) => setSectionCollapsed(prev, 'addons', !spaceAddOnsCollapsed)),
+    [spaceAddOnsCollapsed, update]
+  );
+
   // BC-50. Drawn before the map so the beat sits in Heads up's own slot at the top,
   // and suppressed the moment anything real wants that slot back — a zone the
   // model is emitting always wins over an animation about one it is not.
@@ -209,6 +224,12 @@ export function SidebarZones({
     return (
       <div className="flex min-h-0 flex-col" data-community-context={selectedCommunity}>
         <CommunityChannelGroups />
+        {/* A space's channels replace this machine's Library, but a mini app's
+            pages are not this machine's conversations: they stay one press
+            away inside a space too, where Library is drawn at all. */}
+        {spaceAddOns !== undefined && (
+          <SidebarSection section={spaceAddOns} onToggleAll={onToggleSpaceAddOns} />
+        )}
       </div>
     );
 

@@ -58,9 +58,10 @@ const MemoSectionHeader = memo(SectionHeader);
  * an ungrouped section at all.
  *
  * Three ids and no fallback. Pins is its own container, a hand-made section is
- * its own, and Heads up / Today / Getting started are computed — none of them is
- * "ungrouped", so none of them may borrow Agents' name for a drag announcement
- * that would then say "Over Agents." about a row that is nowhere near it.
+ * its own, and Heads up / Today / Getting started / Add-ons fill themselves —
+ * none of them is "ungrouped", so none of them may borrow Agents' name for a
+ * drag announcement that would then say "Over Agents." about a row that is
+ * nowhere near it.
  *
  * @param id - The section's id.
  */
@@ -73,16 +74,16 @@ function ungroupedSectionId(id: SidebarSectionModel['id']): UngroupedSectionId |
  *
  * Pins is its own container; Channels, Direct messages and Agents are all
  * "ungrouped" — landing in any of them takes a row out of its section — and a
- * hand-made section is its own. Heads up, Today and Getting started are
- * `computed`, which the drop reducer rejects with a sentence rather than in
- * silence (R3).
+ * hand-made section is its own. Heads up, Today, Getting started and Add-ons
+ * fill themselves, so they are `computed`, which the drop reducer rejects with
+ * a sentence rather than in silence (R3).
  *
  * @param id - The section's id.
  */
 export function sectionContainer(id: SidebarSectionModel['id']): SidebarContainer {
   if (id === 'pins') return { kind: 'pinned' };
   if (id.startsWith('group:')) return { kind: 'group', groupId: id.slice('group:'.length) };
-  if (id === 'now' || id === 'today' || id === 'getting-started') {
+  if (id === 'now' || id === 'today' || id === 'getting-started' || id === 'addons') {
     return { kind: 'computed', zone: id };
   }
   const section = ungroupedSectionId(id);

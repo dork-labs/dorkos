@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
 /**
  * The cockpit's bottom-slot PRIORITY: getting started > update > identity
- * prompt > profile prompt > promo (spec `sidebar-simplification` D4).
+ * prompt > profile prompt > the DorkOS community offer > promo (spec
+ * `sidebar-simplification` D4, DOR-2873).
  *
  * `bottom-slot.test.tsx` proves the arbiter picks the first candidate whose
  * `show` is true. That is a mechanism; this is the product decision — that a
@@ -24,6 +25,12 @@ let updateKind: 'command' | 'desktop-install-failed' = 'command';
 let identityVisible = false;
 let profileVisible = false;
 let promoQualifies = false;
+/** The first run's offer to join the official DorkOS space is due (DOR-2873). */
+let spaceOffer = false;
+/** Its connection list is still loading, so it may yet become due. */
+let spaceOfferPending = false;
+/** What the slot told the two prompts about the getting-started card. */
+let promptOptions: Array<{ gettingStartedCardShown?: boolean } | undefined> = [];
 
 // A settled panel, so these cases are about what they are named after rather
 // than about the boot gate. The gate's own behaviour is covered in
@@ -38,11 +45,22 @@ vi.mock('@/layers/features/onboarding', () => ({
     dismiss: vi.fn(),
     isLoading: false,
   }),
-  useIdentityPrompt: () => ({ visible: identityVisible }),
-  useProfilePrompt: () => ({ visible: profileVisible }),
+  useIdentityPrompt: (options?: { gettingStartedCardShown?: boolean }) => {
+    promptOptions.push(options);
+    return { visible: identityVisible };
+  },
+  useProfilePrompt: (options?: { gettingStartedCardShown?: boolean }) => {
+    promptOptions.push(options);
+    return { visible: profileVisible };
+  },
   ProgressCard: () => <div data-testid="card-getting-started" />,
   IdentityPromptCard: () => <div data-testid="card-identity-prompt" />,
   ProfilePromptCard: () => <div data-testid="card-profile-prompt" />,
+  useFirstRunSpaceOffer: () => ({ due: spaceOffer, pending: spaceOfferPending }),
+}));
+
+vi.mock('@/layers/entities/community', () => ({
+  OfficialSpaceOfferCard: () => <div data-testid="card-official-space-offer" />,
 }));
 
 vi.mock('@/layers/features/feature-promos', () => ({
@@ -82,9 +100,20 @@ vi.mock('../ui/bottom-slot/UpdatePill', () => ({
 }));
 
 import { SidebarBottomSlot } from '../ui/bottom-slot/SidebarBottomSlot';
+import type { SidebarModel } from '../model/build-sidebar-model';
+
+/** A panel whose own Getting started zone has nothing left to suggest. */
+const EMPTY_MODEL: SidebarModel = { zones: [] };
 
 /** Every card the slot can draw, in the priority order under test. */
-const RUNGS = ['getting-started', 'update', 'identity-prompt', 'profile-prompt', 'promo'] as const;
+const RUNGS = [
+  'getting-started',
+  'update',
+  'identity-prompt',
+  'profile-prompt',
+  'official-space-offer',
+  'promo',
+] as const;
 
 /** Which card the slot actually drew, or `null`. */
 function drawn(): string | null {
@@ -101,6 +130,9 @@ beforeEach(() => {
   identityVisible = false;
   profileVisible = false;
   promoQualifies = false;
+  spaceOffer = false;
+  spaceOfferPending = false;
+  promptOptions = [];
 });
 
 afterEach(() => cleanup());
@@ -108,43 +140,72 @@ afterEach(() => cleanup());
 describe('SidebarBottomSlot priority', () => {
   it('gives the slot to getting started when every card qualifies', () => {
     gettingStarted = updateReady = identityVisible = profileVisible = promoQualifies = true;
-    render(<SidebarBottomSlot />);
+    render(<SidebarBottomSlot model={EMPTY_MODEL} />);
     expect(drawn()).toBe('getting-started');
+  });
+
+  it('steps the card aside while the panel lists its own Getting started (DOR-2845)', () => {
+    // Two "Getting started" lists at once was the bug: the zone at the top of
+    // the panel and this card at the bottom, side by side on day one.
+    gettingStarted = updateReady = true;
+    render(<SidebarBottomSlot model={{ zones: [], gettingStartedPending: true }} />);
+    expect(drawn()).toBe('update');
+  });
+
+  it('tells the prompts the card is hidden, so they can take the slot (DOR-2845)', () => {
+    // The prompts wait while the card shows. Told the unheld value, they would
+    // wait for a card nobody can see, and the name question went unasked.
+    gettingStarted = true;
+    render(<SidebarBottomSlot model={{ zones: [], gettingStartedPending: true }} />);
+    expect(promptOptions).not.toHaveLength(0);
+    expect(promptOptions.every((o) => o?.gettingStartedCardShown === false)).toBe(true);
+  });
+
+  it('tells the prompts the card is showing when it is', () => {
+    gettingStarted = true;
+    render(<SidebarBottomSlot model={EMPTY_MODEL} />);
+    expect(promptOptions.every((o) => o?.gettingStartedCardShown === true)).toBe(true);
+  });
+
+  it('draws no getting-started card at all while the zone still has suggestions', () => {
+    gettingStarted = true;
+    render(<SidebarBottomSlot model={{ zones: [], gettingStartedPending: true }} />);
+    expect(drawn()).toBeNull();
   });
 
   it('falls to the update pill once getting started is done', () => {
     updateReady = profileVisible = promoQualifies = true;
-    render(<SidebarBottomSlot />);
+    render(<SidebarBottomSlot model={EMPTY_MODEL} />);
     expect(drawn()).toBe('update');
   });
 
   it('gives the slot to a failed desktop install, exactly as to a waiting update', () => {
     updateKind = 'desktop-install-failed';
     updateReady = profileVisible = promoQualifies = true;
-    render(<SidebarBottomSlot />);
+    render(<SidebarBottomSlot model={EMPTY_MODEL} />);
     expect(drawn()).toBe('update');
   });
 
   it('asks who you are before what you do (DOR-677)', () => {
     identityVisible = profileVisible = promoQualifies = true;
-    render(<SidebarBottomSlot />);
+    render(<SidebarBottomSlot model={EMPTY_MODEL} />);
     expect(drawn()).toBe('identity-prompt');
   });
 
   it('falls to the profile prompt once there is no update waiting', () => {
     profileVisible = promoQualifies = true;
-    render(<SidebarBottomSlot />);
+    render(<SidebarBottomSlot model={EMPTY_MODEL} />);
     expect(drawn()).toBe('profile-prompt');
   });
 
   it('offers a promo only when nothing above it wants the slot', () => {
     promoQualifies = true;
-    render(<SidebarBottomSlot />);
+    render(<SidebarBottomSlot model={EMPTY_MODEL} />);
     expect(drawn()).toBe('promo');
   });
 
   it('draws nothing when no card qualifies', () => {
-    render(<SidebarBottomSlot />);
+    render(<SidebarBottomSlot model={EMPTY_MODEL} />);
     expect(drawn()).toBeNull();
   });
 
@@ -159,11 +220,66 @@ describe('SidebarBottomSlot priority', () => {
       updateReady = peeled <= 1;
       identityVisible = peeled <= 2;
       profileVisible = peeled <= 3;
+      spaceOffer = peeled <= 4;
       promoQualifies = true;
-      render(<SidebarBottomSlot />);
+      render(<SidebarBottomSlot model={EMPTY_MODEL} />);
       winners.push(drawn());
       cleanup();
     }
     expect(winners).toEqual([...RUNGS]);
+  });
+
+  describe('the offer to join the DorkOS community (DOR-2873)', () => {
+    /** Day one: the card waits while the panel's own Getting started list has suggestions. */
+    const DAY_ONE: SidebarModel = { zones: [], gettingStartedPending: true };
+
+    it('waits for the name and role prompts on day one, then takes the slot', () => {
+      gettingStarted = identityVisible = profileVisible = spaceOffer = promoQualifies = true;
+      render(<SidebarBottomSlot model={DAY_ONE} />);
+      expect(drawn()).toBe('identity-prompt');
+      cleanup();
+
+      // The name was answered or skipped; the role question is next.
+      identityVisible = false;
+      render(<SidebarBottomSlot model={DAY_ONE} />);
+      expect(drawn()).toBe('profile-prompt');
+      cleanup();
+
+      // Both answered or skipped: the community comes before marketing.
+      profileVisible = false;
+      render(<SidebarBottomSlot model={DAY_ONE} />);
+      expect(drawn()).toBe('official-space-offer');
+    });
+
+    it('rides inside the Getting started card while it shows, never here as well', () => {
+      gettingStarted = spaceOffer = true;
+      render(<SidebarBottomSlot model={EMPTY_MODEL} />);
+      expect(drawn()).toBe('getting-started');
+      expect(screen.queryByTestId('card-official-space-offer')).toBeNull();
+    });
+
+    it('takes its turn once the Getting started card is dismissed', () => {
+      spaceOffer = promoQualifies = true;
+      render(<SidebarBottomSlot model={EMPTY_MODEL} />);
+      expect(drawn()).toBe('official-space-offer');
+    });
+
+    it('holds a promo back while the offer may still arrive, so the two never swap', () => {
+      promoQualifies = spaceOfferPending = true;
+      render(<SidebarBottomSlot model={EMPTY_MODEL} />);
+      expect(drawn()).toBeNull();
+      cleanup();
+
+      // The list answered: joined or skipped elsewhere, so the promo has its turn.
+      spaceOfferPending = false;
+      render(<SidebarBottomSlot model={EMPTY_MODEL} />);
+      expect(drawn()).toBe('promo');
+    });
+
+    it('stays dormant while the offer is not due (no official space, joined or skipped)', () => {
+      gettingStarted = true;
+      render(<SidebarBottomSlot model={DAY_ONE} />);
+      expect(drawn()).toBeNull();
+    });
   });
 });

@@ -46,6 +46,10 @@ export function rowKey(target: SidebarTarget): string {
       return 'digest:today';
     case 'command':
       return `command:${target.commandId}`;
+    case 'add-on':
+      // The page's own contribution id after the prefix, so one page is one
+      // key however many places draw it.
+      return `add-on:${target.extensionId}:${target.path}`;
   }
 }
 
