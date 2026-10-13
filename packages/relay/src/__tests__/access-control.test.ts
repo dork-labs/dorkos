@@ -388,6 +388,21 @@ describe('AccessControl', () => {
       expect(rules[2].priority).toBe(5);
     });
 
+    it('writes nothing when the same rule is asserted again (DOR-2900)', () => {
+      // Mesh re-asserts every agent's default rules on every reconcile pass;
+      // each needless write also woke this file's own watcher into a reload.
+      acl = new AccessControl(tmpDir);
+      acl.addRule(makeRule('relay.a', 'relay.b', 'deny', 10));
+      const file = path.join(tmpDir, 'access-rules.json');
+      const before = fs.statSync(file);
+
+      for (let i = 0; i < 5; i++) acl.addRule(makeRule('relay.a', 'relay.b', 'deny', 10));
+
+      const after = fs.statSync(file);
+      expect([after.ino, after.mtimeMs]).toEqual([before.ino, before.mtimeMs]);
+      expect(acl.listRules()).toHaveLength(1);
+    });
+
     it('replaces duplicate rules with same from/to/priority', () => {
       acl = new AccessControl(tmpDir);
 
