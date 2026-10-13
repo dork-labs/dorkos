@@ -2398,7 +2398,7 @@
         "properties": {
           "id": {
             "type": "string",
-            "minLength": 1
+            "format": "uuid"
           },
           "title": {
             "type": "string"

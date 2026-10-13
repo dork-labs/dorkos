@@ -317,11 +317,17 @@ export function parsePendingInteractionsResponse(data: unknown): PendingInteract
   return retry.data;
 }
 
+/** Reports each unreadable recent session once, not on every poll. */
+const warnUnreadableRecentSession = createOnceWarner(
+  'Transport',
+  'skipped an unreadable recent session'
+);
+
 /**
  * Parse the recent-sessions list so one unreadable session costs only its own
- * row (DOR-2233). Every runtime owns its session ids (ADR-0310), so a single
- * row the client cannot read used to blank the whole list on every poll. The
- * envelope itself is still all-or-nothing.
+ * row (DOR-2233). A single row the client could not read, such as one whose id
+ * is not a UUID, used to blank the whole list on every poll. The envelope
+ * itself is still all-or-nothing.
  *
  * @param data - The raw `GET /sessions/recent` body.
  */
@@ -333,7 +339,7 @@ export function parseRecentSessionsResponse(data: unknown): RecentSessionsRespon
   const sessions = keepValidItems(SessionSchema, data.sessions, 'sessions', unreadable);
   const retry = RecentSessionsResponseSchema.safeParse({ ...data, sessions });
   if (!retry.success) throw retry.error;
-  console.warn('[Transport] skipped unreadable recent sessions', { unreadable });
+  for (const entry of unreadable) warnUnreadableRecentSession(entry.path, { ...entry });
   return retry.data;
 }
 

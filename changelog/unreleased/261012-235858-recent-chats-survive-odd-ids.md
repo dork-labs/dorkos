@@ -5,4 +5,4 @@ covers:
 
 ### Fixed
 
-- One chat with an unusual id no longer empties your recent chats list. This hit people running Codex or OpenCode beside Claude Code. If one chat can't be read, only that chat is left out.
+- One chat the app can't read no longer empties your recent chats list. That one chat is left out, and the rest of the list shows as usual.

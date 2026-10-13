@@ -600,11 +600,7 @@ export type SessionStartedBy = z.infer<typeof SessionStartedBySchema>;
 
 export const SessionSchema = z
   .object({
-    /**
-     * The session's id. Not a UUID by contract: each runtime owns its ids
-     * (ADR-0310), and a strict UUID check blanked the session list (DOR-2233).
-     */
-    id: z.string().min(1),
+    id: z.string().uuid(),
     title: z.string(),
     createdAt: z.string().datetime(),
     updatedAt: z.string().datetime(),

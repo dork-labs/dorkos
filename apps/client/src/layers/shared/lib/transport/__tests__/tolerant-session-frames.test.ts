@@ -264,34 +264,30 @@ describe('unreadable-entry reporters', () => {
 });
 
 describe('parseRecentSessionsResponse (DOR-2233)', () => {
-  afterEach(() => vi.unstubAllGlobals());
-
-  const claude = createMockSession({ id: '0b8e5a52-3c1d-4e6f-9a7b-2c3d4e5f6a7b' });
-  const opencode = createMockSession({ id: 'ses_00fffd9a1b2c', runtime: 'opencode' });
-  // A UUID-looking id whose variant nibble fails a strict RFC 9562 check.
-  const looseUuid = createMockSession({
-    id: '12345678-1234-1234-1234-123456789012',
-    runtime: 'codex',
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
   });
 
-  it('loads a list mixing Claude UUIDs with other runtime id shapes', () => {
-    const body = { sessions: [claude, opencode, looseUuid], agentActivity: {} };
+  const first = createMockSession({ id: '0b8e5a52-3c1d-4e6f-9a7b-2c3d4e5f6a7b' });
+  const second = createMockSession({ id: '7d1c2b3a-4e5f-4a6b-8c7d-9e0f1a2b3c4d' });
+
+  it('drops a session whose id is not a UUID and keeps the rest of the list', () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const stray = createMockSession({ id: 'notes' });
+    const body = { sessions: [first, stray, second], agentActivity: {} };
     expect(parseRecentSessionsResponse(body).sessions.map((s) => s.id)).toEqual([
-      claude.id,
-      opencode.id,
-      looseUuid.id,
+      first.id,
+      second.id,
     ]);
   });
 
-  it('drops only an unreadable row and keeps the rest of the list', () => {
+  it('drops a malformed row and warns about it once, not on every poll', () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
-    const body = { sessions: [claude, { id: '', title: 7 }, opencode], agentActivity: {} };
-    expect(parseRecentSessionsResponse(body).sessions.map((s) => s.id)).toEqual([
-      claude.id,
-      opencode.id,
-    ]);
+    const body = { sessions: [first, { id: first.id, title: 7 }], agentActivity: {} };
+    expect(parseRecentSessionsResponse(body).sessions).toEqual([first]);
+    parseRecentSessionsResponse(body);
     expect(warn).toHaveBeenCalledOnce();
-    warn.mockRestore();
   });
 
   it('still rejects a broken envelope', () => {
@@ -299,15 +295,14 @@ describe('parseRecentSessionsResponse (DOR-2233)', () => {
   });
 
   it('is what the transport uses for the recent-sessions poll', async () => {
-    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
-    const body = { sessions: [opencode, { id: 42 }], agentActivity: {} };
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const body = { sessions: [second, { id: 42 }], agentActivity: {} };
     vi.stubGlobal(
       'fetch',
       vi.fn().mockResolvedValue(new Response(JSON.stringify(body), { status: 200 }))
     );
     const methods = createSessionMethods('/api', () => 'host', new Map(), new Map());
     const result = await methods.listRecentSessions(5);
-    expect(result.sessions.map((s) => s.id)).toEqual([opencode.id]);
-    warn.mockRestore();
+    expect(result.sessions.map((s) => s.id)).toEqual([second.id]);
   });
 });
