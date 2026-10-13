@@ -409,6 +409,8 @@ export const COMMUNITY_MINIMUM_AGE_CEILING = 21;
 export const CommunityWireSignInMarkSchema = z.enum(['dorkos']);
 /** A brand mark a host may name for its OpenID Connect sign-in button. */
 export type CommunityWireSignInMark = z.infer<typeof CommunityWireSignInMarkSchema>;
+/** ISO 3166-1 alpha-2 country codes, at least one: a host's allowed countries. */
+const COUNTRY_CODES = z.array(z.string().regex(/^[A-Z]{2}$/u)).min(1);
 /** Public provider availability, without OAuth IDs, secrets or callback details. */
 export const CommunityWireAuthOptionsSchema = z.strictObject({
   google: z.boolean(),
@@ -428,11 +430,16 @@ export const CommunityWireAuthOptionsSchema = z.strictObject({
    * when the host set none. Signing in to an existing account never asks.
    */
   minimumAge: z
-    .number()
     .int()
     .min(COMMUNITY_MINIMUM_AGE_FLOOR)
     .max(COMMUNITY_MINIMUM_AGE_CEILING)
     .nullable(),
+  /**
+   * The ISO 3166-1 alpha-2 codes of the countries a person must confirm they live in before a new
+   * account is created, or `null` when the host lets everyone sign up. A Community from before
+   * this setting reads as `null`, which is what it does. Signing in never asks.
+   */
+  allowedCountries: COUNTRY_CODES.nullable().default(null),
   /**
    * Whether this space mails reset, sign-in and confirmation links: on exactly when the host set
    * up mail. A Community from before these links reads as `false`, which is what it does.
@@ -442,15 +449,17 @@ export const CommunityWireAuthOptionsSchema = z.strictObject({
 /** Public sign-in options: which buttons the sign-in page shows beside email and password. */
 export type CommunityWireAuthOptions = z.infer<typeof CommunityWireAuthOptionsSchema>;
 
-/** A person's confirmation, before a new account is created, that they meet the minimum age. */
-export const CommunityWireAgeConfirmationRequestSchema = z.strictObject({
+/**
+ * A person's confirmation, before a new account is created, that they meet one of the host's
+ * sign-up rules: the minimum age (`POST /api/v1/age-confirmation`) or living in one of the allowed
+ * countries (`POST /api/v1/country-confirmation`). Both take and return the same shape.
+ */
+export const CommunityWireSignUpConfirmationRequestSchema = z.strictObject({
   confirmed: z.literal(true),
 });
 /** The confirmation holds until `expiresAt`, long enough for a provider's sign-up round trip. */
-export const CommunityWireAgeConfirmationResponseSchema = z.strictObject({
-  confirmed: z.literal(true),
-  expiresAt: timestamp,
-});
+export const CommunityWireSignUpConfirmationResponseSchema =
+  CommunityWireSignUpConfirmationRequestSchema.extend({ expiresAt: timestamp });
 
 const REPORT_MAILBOX = /^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$/;
 

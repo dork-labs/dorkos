@@ -1,12 +1,14 @@
-import type { Hono } from 'hono';
-import type { Context } from 'hono';
+import type { Context, Hono } from 'hono';
 import { deleteCookie, setCookie } from 'hono/cookie';
+import { z } from 'zod';
 import {
-  CommunityWireAgeConfirmationRequestSchema,
-  CommunityWireAgeConfirmationResponseSchema,
+  COMMUNITY_MINIMUM_AGE_CEILING,
+  COMMUNITY_MINIMUM_AGE_FLOOR,
+  CommunityWireSignUpConfirmationRequestSchema,
+  CommunityWireSignUpConfirmationResponseSchema,
 } from '@dorkos/shared/community-wire';
 import type { CommunityConfig } from '../config.js';
-import { ApiError, json, readJson } from '../http.js';
+import { json, readJson } from '../http.js';
 import { readCookie, signValue, verifyValue } from '../security.js';
 
 /** The cookie that carries a person's age confirmation into the request that creates the account. */
@@ -15,9 +17,23 @@ export const AGE_CONFIRMATION_COOKIE = 'community_age_confirmed';
 /**
  * How long one confirmation lasts: long enough to finish a Google, GitHub or single sign-on round
  * trip, short enough that a confirmation left in a shared browser does not speak for the next
- * person to sign up there.
+ * person to sign up there. The country confirmation lasts as long.
  */
 export const AGE_CONFIRMATION_TTL_MS = 30 * 60_000;
+
+/**
+ * `COMMUNITY_MINIMUM_AGE`: the age a person confirms before a new account is created here, a
+ * whole number from 13 to 21. Unset or blank asks nothing; anything else stops the service.
+ */
+export const minimumAgeSetting = z.preprocess(
+  (value) => (typeof value === 'string' && value.trim() === '' ? undefined : value),
+  z.coerce
+    .number()
+    .int()
+    .min(COMMUNITY_MINIMUM_AGE_FLOOR)
+    .max(COMMUNITY_MINIMUM_AGE_CEILING)
+    .optional()
+);
 
 type MinimumAgeConfig = Pick<CommunityConfig, 'minimumAge' | 'authSecret' | 'publicUrl'>;
 
@@ -44,19 +60,6 @@ export function ageConfirmed(
 /** The words every refusal uses, so a person always learns what to do next. */
 export function ageConfirmationMessage(minimumAge: number): string {
   return `Confirm you are at least ${minimumAge} years old to create an account here.`;
-}
-
-/**
- * Refuse, with `403 FORBIDDEN`, a request that would create an account without a live age
- * confirmation. Does nothing when the host set no minimum age.
- */
-export function requireAgeConfirmation(
-  cookieHeader: string | null,
-  config: MinimumAgeConfig,
-  now: Date
-): void {
-  if (config.minimumAge === null || ageConfirmed(cookieHeader, config, now)) return;
-  throw new ApiError(403, 'FORBIDDEN', ageConfirmationMessage(config.minimumAge));
 }
 
 /**
@@ -87,7 +90,7 @@ export function registerMinimumAgeRoutes(
   const minimumAge = config.minimumAge;
   if (minimumAge === null) return;
   app.post('/api/v1/age-confirmation', async (c) => {
-    await readJson(c, CommunityWireAgeConfirmationRequestSchema);
+    await readJson(c, CommunityWireSignUpConfirmationRequestSchema);
     const expiresAt = new Date(now().getTime() + AGE_CONFIRMATION_TTL_MS);
     setCookie(
       c,
@@ -103,7 +106,7 @@ export function registerMinimumAgeRoutes(
       }
     );
     c.header('Cache-Control', 'no-store');
-    return json(c, CommunityWireAgeConfirmationResponseSchema, {
+    return json(c, CommunityWireSignUpConfirmationResponseSchema, {
       confirmed: true,
       expiresAt: expiresAt.toISOString(),
     });

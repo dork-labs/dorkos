@@ -29,7 +29,7 @@ import {
 } from '../sign-in-options.js';
 import { LinkWithPassword } from '../sign-up/LinkWithPassword.js';
 import { SingleSignOnFirst } from '../sign-up/SingleSignOnFirst.js';
-import { confirmMinimumAge, MinimumAgeConfirmation } from '../sign-up/MinimumAgeConfirmation.js';
+import { confirmSignUp, SignUpConfirmation, signUpRules } from '../sign-up/SignUpConfirmation.js';
 
 type Stage =
   'loading' | 'enter' | 'found' | 'account' | 'confirm' | 'claimed' | 'unavailable' | 'taken';
@@ -78,7 +78,7 @@ export function OwnerClaim() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [busy, setBusy] = useState(false);
-  const [ageConfirmed, setAgeConfirmed] = useState(false);
+  const [rulesConfirmed, setRulesConfirmed] = useState(false);
   // A provider round trip that failed returns here with `?error=`; say why once.
   const [returned] = useState(() => returnedSignIn(takeSignInFailure()));
   const [error, setError] = useState(returned.error);
@@ -90,8 +90,8 @@ export function OwnerClaim() {
   // lead with it, so claiming makes no second account. Read as the page loaded.
   const [loadedSearch] = useState(() => window.location.search);
   const lead = singleSignOnLead(loadedSearch, signInOptions);
-  // A new account must first confirm the host's minimum age, when it set one.
-  const minimumAge = mode === 'signup' ? providers.minimumAge : null;
+  // A new account must first confirm the host's sign-up rules, when it set any.
+  const rules = mode === 'signup' ? signUpRules(providers) : null;
   const heading = useRef<HTMLHeadingElement>(null);
   const focusedStage = useRef(stage);
   const resumeOnMount = useRef(stage === 'loading');
@@ -243,7 +243,7 @@ export function OwnerClaim() {
     setBusy(true);
     setError('');
     try {
-      if (minimumAge !== null) await confirmMinimumAge();
+      if (rules) await confirmSignUp(rules);
       await request(
         mode === 'signup' ? '/api/auth/sign-up/email' : '/api/auth/sign-in/email',
         'POST',
@@ -267,13 +267,13 @@ export function OwnerClaim() {
     setBusy(false);
   }
 
-  async function social(provider: SignInProvider, confirmAge = minimumAge !== null) {
+  async function social(provider: SignInProvider, confirmRules = rules) {
     setBusy(true);
     setError('');
     try {
       const here = window.location.origin + OWNER_CLAIM_PATH;
       // The provider's callback creates the account, so the confirmation must be in place first.
-      if (confirmAge) await confirmMinimumAge();
+      if (confirmRules) await confirmSignUp(confirmRules);
       const result = await authClient.signIn.social({
         provider,
         callbackURL: here,
@@ -378,11 +378,11 @@ export function OwnerClaim() {
         {stage === 'account' && (
           <SingleSignOnFirst
             lead={lead}
-            minimumAge={providers.minimumAge}
-            ageConfirmed={ageConfirmed}
-            onAgeConfirmed={setAgeConfirmed}
+            rules={signUpRules(providers)}
+            confirmed={rulesConfirmed}
+            onConfirmed={setRulesConfirmed}
             disabled={busy}
-            onContinue={() => void social('oidc', providers.minimumAge !== null)}
+            onContinue={() => void social('oidc', signUpRules(providers))}
           >
             <>
               <form className="panel" onSubmit={(event) => void submitAccount(event)}>
@@ -449,12 +449,12 @@ export function OwnerClaim() {
                     </span>
                   )}
                 </div>
-                {minimumAge !== null && (
-                  <MinimumAgeConfirmation
+                {rules !== null && (
+                  <SignUpConfirmation
                     id="owner-claim-minimum-age"
-                    minimumAge={minimumAge}
-                    confirmed={ageConfirmed}
-                    onChange={setAgeConfirmed}
+                    rules={rules}
+                    confirmed={rulesConfirmed}
+                    onChange={setRulesConfirmed}
                   />
                 )}
                 <Button type="submit" variant="default" className="w-full" disabled={busy}>
@@ -468,7 +468,7 @@ export function OwnerClaim() {
               </form>
               <ProviderButtons
                 providers={lead !== null ? { ...providers, oidc: null } : providers}
-                disabled={busy || (minimumAge !== null && !ageConfirmed)}
+                disabled={busy || (rules !== null && !rulesConfirmed)}
                 onChoose={(provider) => void social(provider)}
               />
             </>

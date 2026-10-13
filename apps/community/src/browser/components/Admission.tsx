@@ -27,7 +27,7 @@ import {
 import { LinkWithPassword } from '../sign-up/LinkWithPassword.js';
 import { ForgotPassword } from '../email-links/ForgotPassword.js';
 import { SingleSignOnFirst } from '../sign-up/SingleSignOnFirst.js';
-import { confirmMinimumAge, MinimumAgeConfirmation } from '../sign-up/MinimumAgeConfirmation.js';
+import { confirmSignUp, SignUpConfirmation, signUpRules } from '../sign-up/SignUpConfirmation.js';
 
 /**
  * What the clean join URL found on the server before this component mounted: a live join
@@ -92,7 +92,7 @@ export function Admission({
   const [communityName, setCommunityName] = useState('');
   const [channelName, setChannelName] = useState('general');
   const [busy, setBusy] = useState(false);
-  const [ageConfirmed, setAgeConfirmed] = useState(false);
+  const [rulesConfirmed, setRulesConfirmed] = useState(false);
   // A provider round trip that failed returns here with `?error=`; say why once, or ask for the
   // matched account's password when the sign-in is waiting to be linked.
   const [returned] = useState(() => returnedSignIn(takeSignInFailure()));
@@ -117,8 +117,8 @@ export function Admission({
   // the hint, so joining makes no second account. Setting up a host never does.
   const lead = isOwner ? null : singleSignOnLead(loadedSearch, signInOptions);
   const leading = lead !== null && lead !== 'loading';
-  // A new account must first confirm the host's minimum age, when it set one.
-  const minimumAge = mode === 'signup' ? providers.minimumAge : null;
+  // A new account must first confirm the host's sign-up rules, when it set any.
+  const rules = mode === 'signup' ? signUpRules(providers) : null;
 
   // Move focus to the new heading on every step change, so keyboard and screen-reader users
   // land on what changed instead of on a control that just disappeared.
@@ -191,12 +191,12 @@ export function Admission({
     await join(pending, context);
   }
 
-  async function social(provider: SignInProvider, confirmAge = minimumAge !== null) {
+  async function social(provider: SignInProvider, confirmRules = rules) {
     setBusy(true);
     setError('');
     try {
       // The provider's callback creates the account, so the confirmation must be in place first.
-      if (confirmAge) await confirmMinimumAge();
+      if (confirmRules) await confirmSignUp(confirmRules);
       const result = await authClient.signIn.social({ provider, ...returnHere() });
       if (result.error) throw new Error(result.error.message ?? 'Sign in could not start.');
     } catch (cause) {
@@ -255,7 +255,7 @@ export function Admission({
     setError('');
     try {
       const path = mode === 'signup' ? '/api/auth/sign-up/email' : '/api/auth/sign-in/email';
-      if (minimumAge !== null) await confirmMinimumAge();
+      if (rules) await confirmSignUp(rules);
       if (isOwner) {
         await request('/api/v1/bootstrap/complete', 'POST', {
           secret,
@@ -385,7 +385,7 @@ export function Admission({
             {!isOwner && stage === 'account' && (
               <ProviderButtons
                 providers={providers}
-                disabled={busy || (minimumAge !== null && !ageConfirmed)}
+                disabled={busy || (rules !== null && !rulesConfirmed)}
                 onChoose={(provider) => void social(provider)}
               />
             )}
@@ -421,15 +421,13 @@ export function Admission({
         ) : (
           <SingleSignOnFirst
             lead={lead}
-            // Joining with single sign-on may make the account, so a new one confirms the age.
-            minimumAge={pendingAdmission ? providers.minimumAge : null}
-            ageConfirmed={ageConfirmed}
-            onAgeConfirmed={setAgeConfirmed}
+            // Joining with single sign-on may make the account, so a new one confirms the rules.
+            rules={pendingAdmission ? signUpRules(providers) : null}
+            confirmed={rulesConfirmed}
+            onConfirmed={setRulesConfirmed}
             before={leading && invitation}
             disabled={busy}
-            onContinue={() =>
-              void social('oidc', pendingAdmission && providers.minimumAge !== null)
-            }
+            onContinue={() => void social('oidc', pendingAdmission ? signUpRules(providers) : null)}
           >
             <form className="panel" onSubmit={(event) => void submitAccount(event)}>
               {!leading && invitation}
@@ -532,12 +530,12 @@ export function Admission({
                   </Field>
                 </>
               )}
-              {minimumAge !== null && (
-                <MinimumAgeConfirmation
+              {rules !== null && (
+                <SignUpConfirmation
                   id="minimum-age"
-                  minimumAge={minimumAge}
-                  confirmed={ageConfirmed}
-                  onChange={setAgeConfirmed}
+                  rules={rules}
+                  confirmed={rulesConfirmed}
+                  onChange={setRulesConfirmed}
                 />
               )}
               <Button type="submit" className="w-full" disabled={busy}>
@@ -554,7 +552,7 @@ export function Admission({
             {!isOwner && stage === 'account' && (
               <ProviderButtons
                 providers={leading ? { ...providers, oidc: null } : providers}
-                disabled={busy || (minimumAge !== null && !ageConfirmed)}
+                disabled={busy || (rules !== null && !rulesConfirmed)}
                 onChoose={(provider) => void social(provider)}
               />
             )}

@@ -5,11 +5,7 @@ import { COMMUNITY_PASSWORD_MIN_LENGTH } from '@dorkos/shared/community-wire';
 import { authAdvancedOptions } from './sign-in/auth-advanced.js';
 import type { CommunityConfig } from './config.js';
 import { signInRefusal } from './erasure/guards.js';
-import {
-  AGE_CONFIRMATION_COOKIE,
-  ageConfirmationMessage,
-  ageConfirmed,
-} from './sign-up/minimum-age.js';
+import { signUpConfirmationCookies, signUpRefusal } from './sign-up/confirmations.js';
 import { communityOidc, isOidcCallback, OIDC_PROVIDER_ID } from './oidc.js';
 import {
   ownerReplacementAdmission,
@@ -68,17 +64,16 @@ export function createCommunityAuth(
   const canSendNotice = options.canSendNotice ?? (() => false);
   const emailLinksOn = options.emailLinksOn ?? false;
   /**
-   * With a minimum age set, refuse to create an account unless this browser confirmed it first
-   * (`POST /api/v1/age-confirmation`). A provider callback carries the same cookie, so password,
-   * Google, GitHub and single sign-on sign-ups all meet this one check.
+   * With a minimum age or allowed countries set, refuse to create an account unless this browser
+   * confirmed them first (`POST /api/v1/age-confirmation`, `/api/v1/country-confirmation`), and
+   * unless the host's trusted proxy, when it names one, places the request in an allowed country.
+   * A provider callback carries the same cookies, so password, Google, GitHub and single sign-on
+   * sign-ups all meet this one check.
    */
-  const refuseUnconfirmedAge = (cookieHeader: string | null) => {
-    if (config.minimumAge === null || ageConfirmed(cookieHeader, config, now())) return;
-    // The code lets an OAuth or OIDC callback redirect with `?error=age_confirmation_required`.
-    throw new APIError('FORBIDDEN', {
-      code: 'age_confirmation_required',
-      message: ageConfirmationMessage(config.minimumAge),
-    });
+  const refuseUnconfirmedSignUp = (headers: Headers | undefined) => {
+    const refusal = signUpRefusal(headers, config, now());
+    // The code lets an OAuth or OIDC callback redirect with `?error=<code>`.
+    if (refusal) throw new APIError('FORBIDDEN', { ...refusal });
   };
   const checkAdmission = async (cookieHeader: string | null): Promise<Admission | null> => {
     const grant = verifyValue(readCookie(cookieHeader, 'community_bootstrap'), config.authSecret);
@@ -239,7 +234,7 @@ export function createCommunityAuth(
               message: 'Create your account through the sign-in service named in the request.',
             });
           }
-          refuseUnconfirmedAge(ctx.headers?.get('cookie') ?? null);
+          refuseUnconfirmedSignUp(ctx.headers);
         }
       }),
     },
@@ -291,14 +286,14 @@ export function createCommunityAuth(
               ))
             )
               throw admissionRefused();
-            refuseUnconfirmedAge(ctx?.headers?.get('cookie') ?? null);
+            refuseUnconfirmedSignUp(ctx?.headers);
             if (ctx) creatingUser.add(ctx);
             return { data: user };
           },
           // A new account whose email nobody has proven yet (a password sign-up) is mailed a
           // confirmation link. A provider sign-up the issuer vouched for is already confirmed.
-          // One age confirmation makes one account: clear it, so the next person to sign up in
-          // this browser is asked again rather than riding on someone else's tick.
+          // One age or country confirmation makes one account: clear it, so the next person to sign
+          // up in this browser is asked again rather than riding on someone else's tick.
           after: async (user, ctx) => {
             if (emailLinksOn && !user.emailVerified)
               await queueEmailConfirmation(pool, {
@@ -315,14 +310,15 @@ export function createCommunityAuth(
                 sameSite: 'lax',
                 secure: config.publicUrl.startsWith('https:'),
               });
-            if (config.minimumAge === null || !ctx) return;
-            ctx.setCookie(AGE_CONFIRMATION_COOKIE, '', {
-              path: '/',
-              maxAge: 0,
-              httpOnly: true,
-              sameSite: 'lax',
-              secure: config.publicUrl.startsWith('https:'),
-            });
+            if (!ctx) return;
+            for (const cookie of signUpConfirmationCookies(config))
+              ctx.setCookie(cookie, '', {
+                path: '/',
+                maxAge: 0,
+                httpOnly: true,
+                sameSite: 'lax',
+                secure: config.publicUrl.startsWith('https:'),
+              });
           },
         },
         update: {

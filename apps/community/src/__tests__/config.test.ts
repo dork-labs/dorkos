@@ -262,6 +262,47 @@ describe('community startup config', () => {
       );
   });
 
+  it('admits everyone unless the host lists real two-letter country codes', () => {
+    // Purpose: fails if an unset or blank setting limits sign-up, a typo (lowercase, a name, a
+    // three-letter code, a non-country like EU or UK) starts a Community with a rule nobody meant,
+    // or repeats survive.
+    expect(parseConfig(valid).allowedCountries).toBeNull();
+    expect(parseConfig({ ...valid, COMMUNITY_ALLOWED_COUNTRIES: ' ' }).allowedCountries).toBeNull();
+    expect(parseConfig({ ...valid, COMMUNITY_ALLOWED_COUNTRIES: 'US' }).allowedCountries).toEqual([
+      'US',
+    ]);
+    expect(
+      parseConfig({ ...valid, COMMUNITY_ALLOWED_COUNTRIES: 'US, CA,US' }).allowedCountries
+    ).toEqual(['US', 'CA']);
+    for (const value of ['us', 'USA', 'United States', 'US,', 'EU', 'UK', 'ZZ', 'AA', 'U1'])
+      expect(() => parseConfig({ ...valid, COMMUNITY_ALLOWED_COUNTRIES: value }), value).toThrow(
+        'COMMUNITY_ALLOWED_COUNTRIES'
+      );
+  });
+
+  it('trusts a country header only when named, and only beside an allowed-countries list', () => {
+    // Purpose: fails if a country header is read by default, or one named without a list (which
+    // would do nothing) starts silently.
+    expect(parseConfig(valid).countryHeader).toBeNull();
+    expect(
+      parseConfig({
+        ...valid,
+        COMMUNITY_ALLOWED_COUNTRIES: 'US',
+        COMMUNITY_COUNTRY_HEADER: 'CF-IPCountry',
+      }).countryHeader
+    ).toBe('cf-ipcountry');
+    expect(() => parseConfig({ ...valid, COMMUNITY_COUNTRY_HEADER: 'CF-IPCountry' })).toThrow(
+      'COMMUNITY_ALLOWED_COUNTRIES'
+    );
+    expect(() =>
+      parseConfig({
+        ...valid,
+        COMMUNITY_ALLOWED_COUNTRIES: 'US',
+        COMMUNITY_COUNTRY_HEADER: 'bad header',
+      })
+    ).toThrow('COMMUNITY_COUNTRY_HEADER');
+  });
+
   it('refuses a host link that is not HTTPS, or for reports a bare mailto address', () => {
     // Purpose: fails if a link can be plain HTTP, script, carry credentials, or smuggle a
     // pre-filled mail body past the one the Report link writes itself.

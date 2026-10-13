@@ -547,6 +547,7 @@ describe('signed admission over real HTTP and Postgres', () => {
       github: false,
       oidc: null,
       minimumAge: null,
+      allowedCountries: null,
       emailLinks: false,
     });
     // A host that sets no links (every self-hoster) answers three nulls, signed out, untenanted.

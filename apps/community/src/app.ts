@@ -10,7 +10,6 @@ import {
   CommunityWireBootstrapPreflightRequestSchema,
   CommunityWireBootstrapPreflightResponseSchema,
   CommunityWireCommunitySchema,
-  CommunityWireAuthOptionsSchema,
 } from '@dorkos/shared/community-wire';
 import type { CommunityConfig } from './config.js';
 import { createCommunityAuth } from './auth.js';
@@ -54,11 +53,12 @@ import type { NoticeComposers } from './mail/worker.js';
 import type { NoticeKind } from './mail/outbox.js';
 import { registerTakedownNoticeRoutes } from './routes/community/takedown-notices.js';
 import { registerHostLinkRoutes } from './routes/host/host-links.js';
+import { registerAuthOptionsRoute } from './sign-in/auth-options.js';
 import {
-  forgetAgeConfirmation,
-  registerMinimumAgeRoutes,
-  requireAgeConfirmation,
-} from './sign-up/minimum-age.js';
+  forgetSignUpConfirmations,
+  registerSignUpConfirmationRoutes,
+  requireSignUpConfirmations,
+} from './sign-up/confirmations.js';
 import { registerImportRoutes } from './routes/host/imports.js';
 import { UploadSlots } from './imports/upload.js';
 import { registerHistoryOriginRoute } from './routes/community/history-origin.js';
@@ -263,8 +263,8 @@ export function createCommunityApp({
     if (!equalSecret(body.secret, config.bootstrapSecret)) {
       throw new ApiError(403, 'FORBIDDEN', 'The owner secret is incorrect.');
     }
-    // The first owner creates an account here too, so a minimum age asks them the same question.
-    requireAgeConfirmation(c.req.header('cookie') ?? null, config, now());
+    // The first owner creates an account here too, so the sign-up rules ask them the same thing.
+    requireSignUpConfirmations(c.req.raw.headers, config, now());
     const passwordHash = await hashPassword(body.password);
     const email = body.email.toLowerCase();
     const result = await transaction(pool, async (client) => {
@@ -348,7 +348,7 @@ export function createCommunityApp({
       };
     });
     c.header('Cache-Control', 'no-store');
-    forgetAgeConfirmation(c, config);
+    forgetSignUpConfirmations(c, config);
     return json(c, CommunityWireBootstrapCompleteResponseSchema, result, 201);
   });
 
@@ -361,7 +361,7 @@ export function createCommunityApp({
   });
   registerMonitoringRoutes(app, { pool, hub: live, authority, databaseUrl: config.databaseUrl });
   registerHostLinkRoutes(app, { config });
-  registerMinimumAgeRoutes(app, { config, now });
+  registerSignUpConfirmationRoutes(app, { config, now });
   const hostApi = new Hono();
   registerHostRoutes(hostApi, { pool, config, blobStore, authority, now });
   registerOwnerClaimRoutes(hostApi, { pool, auth, config, authority, now });
@@ -504,15 +504,7 @@ export function createCommunityApp({
       createdAt: row.created_at.toISOString(),
     });
   });
-  communityApi.get('/auth-options', (c) =>
-    json(c, CommunityWireAuthOptionsSchema, {
-      google: Boolean(config.oauth.google),
-      github: Boolean(config.oauth.github),
-      oidc: config.oidc ? { label: config.oidc.label, mark: config.oidc.mark } : null,
-      minimumAge: config.minimumAge,
-      emailLinks: linksOn,
-    })
-  );
+  registerAuthOptionsRoute(communityApi, { config, linksOn });
 
   registerChannelRoutes(communityApi, { pool, auth });
   registerEntryRoutes(communityApi, { pool, auth, config, receiptGate });

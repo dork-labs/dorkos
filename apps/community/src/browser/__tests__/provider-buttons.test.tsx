@@ -11,6 +11,7 @@ const ALL: CommunityWireAuthOptions = {
   github: true,
   oidc: { label: 'DorkOS', mark: 'dorkos' },
   minimumAge: null,
+  allowedCountries: null,
   emailLinks: false,
 };
 
@@ -73,6 +74,7 @@ describe('the provider sign-in buttons', () => {
           github: false,
           oidc: null,
           minimumAge: null,
+          allowedCountries: null,
           emailLinks: false,
         }}
         disabled={false}

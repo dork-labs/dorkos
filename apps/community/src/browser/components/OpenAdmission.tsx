@@ -5,7 +5,7 @@ import { describeError, request } from '../api.js';
 import type { Community } from '../types.js';
 import { returnHere, takeSignInError, useSignInOptionsState } from '../sign-in-options.js';
 import { SingleSignOnFirst } from '../sign-up/SingleSignOnFirst.js';
-import { confirmMinimumAge } from '../sign-up/MinimumAgeConfirmation.js';
+import { confirmSignUp, signUpRules } from '../sign-up/SignUpConfirmation.js';
 import { HostPolicyLinks } from './HostLinks.js';
 
 const authClient = createAuthClient({ baseURL: window.location.origin });
@@ -36,17 +36,18 @@ type Props = {
 
 /**
  * The join page of an open space: one "Continue with <single sign-on>" button, the host's
- * minimum age above it when a new account may be made, and other ways to sign in folded away
+ * sign-up rules above it when a new account may be made, and other ways to sign in folded away
  * for people who are already members. Joining happens only after that click.
  */
 export function OpenAdmission({ community, signedIn, onAdmitted, onOtherWays }: Props) {
   const { options, loaded } = useSignInOptionsState();
   const [busy, setBusy] = useState(false);
   const [joining, setJoining] = useState(false);
-  const [ageConfirmed, setAgeConfirmed] = useState(false);
+  const [rulesConfirmed, setRulesConfirmed] = useState(false);
   const [error, setError] = useState(() => takeSignInError() ?? '');
   const resumed = useRef(false);
   const oidc = options.oidc;
+  const rules = signUpRules(options);
 
   async function join() {
     setJoining(true);
@@ -81,7 +82,7 @@ export function OpenAdmission({ community, signedIn, onAdmitted, onOtherWays }: 
     setError('');
     try {
       await request('/api/v1/open-admission/preflight', 'POST', {});
-      if (options.minimumAge !== null) await confirmMinimumAge();
+      if (rules) await confirmSignUp(rules);
       window.sessionStorage.setItem(joinNoteKey(community.id), '1');
       const result = await authClient.signIn.social({ provider: 'oidc', ...returnHere() });
       if (result.error) throw new Error(result.error.message ?? 'Sign in could not start.');
@@ -124,10 +125,10 @@ export function OpenAdmission({ community, signedIn, onAdmitted, onOtherWays }: 
         ) : oidc ? (
           <SingleSignOnFirst
             lead={{ label: oidc.label, mark: oidc.mark ?? null }}
-            // A new account may be made on the way back, so it confirms the age first.
-            minimumAge={signedIn ? null : options.minimumAge}
-            ageConfirmed={ageConfirmed}
-            onAgeConfirmed={setAgeConfirmed}
+            // A new account may be made on the way back, so it confirms the sign-up rules first.
+            rules={signedIn ? null : rules}
+            confirmed={rulesConfirmed}
+            onConfirmed={setRulesConfirmed}
             disabled={busy}
             onContinue={() => void start()}
           >
