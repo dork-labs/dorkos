@@ -10,7 +10,7 @@ status: specified
 **Status:** Specified. Planning only; no code lands from this document.
 **Author:** Claude, for Dorian Collier
 **Date:** 2026-10-12
-**Linear:** umbrella and step tickets in project "Spaces & One Server" (parent DOR-2735)
+**Linear:** DOR-2874 (umbrella, parent DOR-2735); steps DOR-2875 to DOR-2885, project "Spaces & One Server"
 **Carries out:** ADR [261006-235238](../../decisions/261006-235238-one-dorkos-server-in-every-size.md), started before launch on 2026-10-12, go/no-go November 16
 **Ideation:** [01-ideation.md](01-ideation.md) (Dorian's 12 requirements, the codebase summary and the options weighed)
 
@@ -139,6 +139,8 @@ Sizes: **S** under a day, **M** one to three days, **L** three to six days, each
 | 4    | 20,000 streams: fix the posting path, prove the bar on production size | L    | none       | yes          |
 | 5    | The space as a library                                                 | M    | 1          | no (if room) |
 | 6    | Rehearsal on a copy, go/no-go Nov 16, production upgrade by Nov 20     | M    | 2, 3a, 4   | yes          |
+
+**Tickets:** step 1 DOR-2875, step 2 DOR-2876, step 3a DOR-2877, step 3b DOR-2878, step 4 DOR-2879, step 5 DOR-2880, step 6 DOR-2881. After launch: step 7 DOR-2882, step 8 DOR-2883, step 9 DOR-2884, step 10 DOR-2885.
 
 **In parallel:** step 4 runs in its own chat from day one. Steps 2 and 3a can run side by side after step 1, in different files. Space fixes already in flight (DOR-2872, DOR-2847) land first or rebase.
 

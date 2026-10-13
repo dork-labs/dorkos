@@ -10,7 +10,7 @@ status: ideation
 **Slug:** server-merge
 **Author:** Claude (IDEATE for Dorian Collier)
 **Date:** 2026-10-12
-**Linear:** umbrella ticket in project "Spaces & One Server" (parent DOR-2735)
+**Linear:** DOR-2874 (umbrella, parent DOR-2735)
 **Decision being carried out:** ADR [261006-235238](../../decisions/261006-235238-one-dorkos-server-in-every-size.md), moved before launch by Dorian on 2026-10-12
 
 ## 1) Intent and assumptions
