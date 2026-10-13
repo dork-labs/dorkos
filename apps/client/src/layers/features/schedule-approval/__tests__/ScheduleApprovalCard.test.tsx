@@ -979,11 +979,6 @@ describe('ScheduleApprovalCard — granting the operator’s own level', () => {
     return slot('schedule-approve-elevated');
   }
 
-  /** The consent door, by the label `consentActionLabel` builds for a stop. */
-  function consentDoor(stop = 'Full autonomy'): HTMLElement | null {
-    return screen.queryByRole('alertdialog', { name: new RegExp(`Turn on ${stop}`) });
-  }
-
   /**
    * One mode exactly as the capability profile under test declares it.
    *
@@ -1003,16 +998,9 @@ describe('ScheduleApprovalCard — granting the operator’s own level', () => {
     return mode;
   }
 
-  /**
-   * Click the raise and walk through the consent door it opens.
-   *
-   * Every raise the shipped profiles offer is one `actsWithoutAsking` gates,
-   * so this is the ordinary path and the cases below say so by using it. The
-   * two cases about the door ITSELF drive it by hand.
-   */
-  async function grantRaise(stop = 'Full autonomy') {
+  /** Click the raise. It grants straight away: there is no confirm dialog. */
+  async function grantRaise() {
     await userEvent.click(await findSlot('schedule-approve-elevated'));
-    await userEvent.click(await screen.findByRole('button', { name: `Turn on ${stop}` }));
   }
 
   it('offers the raise, named by the stop, when the operator sits above the clamp', async () => {
@@ -1041,30 +1029,18 @@ describe('ScheduleApprovalCard — granting the operator’s own level', () => {
     expect(slot('permission-mode-scope-note')).not.toBeNull();
   });
 
-  // ── The consent door ──────────────────────────────────────────────────────
-  // A scheduled run has nobody to ask, so a level that never asks is something
-  // a person agrees to rather than arrives at. Three other surfaces gate it;
-  // the raise is the fourth and shipped without one (adversarial review).
+  // ── Granting the raise ────────────────────────────────────────────────────
+  // Trusted by default (ADR 261006-225605): a raise to a level that never asks
+  // is sent on the click. It used to open an "unattended" consent dialog first
+  // and send nothing until that was confirmed.
 
-  it('opens the consent door before granting a level that never asks', async () => {
-    const updateTask = vi.fn().mockResolvedValue(proposal({ status: 'active' }));
-    renderCard(proposal(), { getConfig: configAtStop('autonomy'), updateTask });
-
-    await userEvent.click(await findSlot('schedule-approve-elevated'));
-
-    await waitFor(() => expect(consentDoor()).not.toBeNull());
-    // Nothing is sent while the door stands open. This is the assertion the
-    // whole gate exists for.
-    expect(updateTask).not.toHaveBeenCalled();
-    expect(slot('schedule-receipt')).toBeNull();
-  });
-
-  it('sends the raise only once the door is confirmed', async () => {
+  it('sends the raise to Full autonomy on the click, with no confirm dialog', async () => {
     const updateTask = vi.fn().mockResolvedValue(proposal({ status: 'active' }));
     renderCard(proposal(), { getConfig: configAtStop('autonomy'), updateTask });
 
     await grantRaise();
 
+    expect(screen.queryByRole('alertdialog')).toBeNull();
     expect(updateTask).toHaveBeenCalledWith('task-1', {
       status: 'active',
       enabled: true,
@@ -1072,36 +1048,17 @@ describe('ScheduleApprovalCard — granting the operator’s own level', () => {
     });
   });
 
-  it('sends nothing when the door is cancelled, and leaves the card answerable', async () => {
-    const updateTask = vi.fn().mockResolvedValue(proposal({ status: 'active' }));
-    renderCard(proposal(), { getConfig: configAtStop('autonomy'), updateTask });
-
-    await userEvent.click(await findSlot('schedule-approve-elevated'));
-    await userEvent.click(await screen.findByRole('button', { name: 'Cancel' }));
-
-    await waitFor(() => expect(consentDoor()).toBeNull());
-    expect(updateTask).not.toHaveBeenCalled();
-    expect(slot('schedule-receipt')).toBeNull();
-    expect(elevated()).not.toBeNull();
-  });
-
-  it('opens the door for a middle stop whose mode cannot pause to ask', async () => {
-    // The case the narrow reading misses. Codex files `workspace-write` at the
-    // MIDDLE stop and it never asks, so gating the dial's top position alone
-    // let "Approve at Act" hand a schedule a level that cannot pause, with no
-    // dialog anywhere. The rule is `actsWithoutAsking`, not `isAutonomyStop`.
+  it('sends a raise to a middle stop that cannot pause to ask on the click, too', async () => {
+    // Codex files `workspace-write` at the MIDDLE stop and it never asks.
     const updateTask = vi.fn().mockResolvedValue(proposal({ status: 'active' }));
     renderCard(proposal({ runtime: 'codex', permissionMode: 'default' }), {
       getConfig: configAtStop('act'),
       updateTask,
     });
 
-    await userEvent.click(await findSlot('schedule-approve-elevated'));
+    await grantRaise();
 
-    await waitFor(() => expect(consentDoor('Act')).not.toBeNull());
-    expect(updateTask).not.toHaveBeenCalled();
-
-    await userEvent.click(screen.getByRole('button', { name: 'Turn on Act' }));
+    expect(screen.queryByRole('alertdialog')).toBeNull();
     expect(updateTask).toHaveBeenCalledWith('task-1', {
       status: 'active',
       enabled: true,
@@ -1109,41 +1066,10 @@ describe('ScheduleApprovalCard — granting the operator’s own level', () => {
     });
   });
 
-  it('takes the A and D shortcuts away while the consent door stands open', async () => {
-    // The dialog is a React CHILD of the card. Radix portals its DOM, but a
-    // synthetic event bubbles the REACT tree, so a keystroke typed at the
-    // focused Cancel button reached the card's own handler: `a` approved at
-    // the CLAMPED level and drew a receipt behind the modal, `d` armed the
-    // timed delete with its Undo button under the overlay (re-review).
-    const updateTask = vi.fn().mockResolvedValue(proposal({ status: 'active' }));
-    const deleteTask = vi.fn().mockResolvedValue(undefined);
-    renderCard(proposal(), { getConfig: configAtStop('autonomy'), updateTask, deleteTask });
-
-    await userEvent.click(await findSlot('schedule-approve-elevated'));
-    await waitFor(() => expect(consentDoor()).not.toBeNull());
-
-    await userEvent.keyboard('a');
-    await userEvent.keyboard('d');
-
-    // Neither answer was given, nothing was sent, and the question a person is
-    // actually being asked is still on screen.
-    expect(updateTask).not.toHaveBeenCalled();
-    expect(deleteTask).not.toHaveBeenCalled();
-    expect(slot('schedule-receipt')).toBeNull();
-    expect(consentDoor()).not.toBeNull();
-
-    // ...and the shortcut comes back once the door is out of the way.
-    await userEvent.click(screen.getByRole('button', { name: 'Cancel' }));
-    await waitFor(() => expect(consentDoor()).toBeNull());
-    card().focus();
-    await userEvent.keyboard('a');
-    await waitFor(() => expect(updateTask).toHaveBeenCalledOnce());
-  });
-
   it('keeps the A shortcut on the plain Approve even with a raise on offer', async () => {
     // The shortcut must never be the thing that grants power. `AskCard.Root`'s
     // `onAllow` is wired to the plain answer, so a fast hand lands on the safe
-    // level and no door is opened at all.
+    // level.
     const updateTask = vi.fn().mockResolvedValue(proposal({ status: 'active' }));
     renderCard(proposal(), { getConfig: configAtStop('autonomy'), updateTask });
 
@@ -1155,7 +1081,6 @@ describe('ScheduleApprovalCard — granting the operator’s own level', () => {
 
     await waitFor(() => expect(updateTask).toHaveBeenCalled());
     expect(updateTask).toHaveBeenCalledWith('task-1', { status: 'active', enabled: true });
-    expect(consentDoor()).toBeNull();
   });
 
   it('leaves the plain Approve at the level the proposal was clamped to', async () => {
@@ -1170,7 +1095,6 @@ describe('ScheduleApprovalCard — granting the operator’s own level', () => {
     await userEvent.click(screen.getByRole('button', { name: /^Approve Nightly sweep as/ }));
 
     expect(updateTask).toHaveBeenCalledWith('task-1', { status: 'active', enabled: true });
-    expect(consentDoor()).toBeNull();
   });
 
   it('names the level on the plain Approve too, once there are two of them', async () => {

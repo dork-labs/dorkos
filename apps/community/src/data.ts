@@ -3,19 +3,14 @@ import type { Context } from 'hono';
 import type { CommunityAuth } from './auth.js';
 import { hasRequestStart, writtenBeforeClearing } from './sign-in/request-start.js';
 import { ApiError } from './http.js';
-import {
-  bearerCredential,
-  hashSecret,
-  isHostApiKeyBearer,
-  readCookie,
-  verifyValue,
-} from './security.js';
-import type { CommunityConfig } from './config.js';
+import { bearerCredential, hashSecret, isHostApiKeyBearer } from './security.js';
 import {
   isReadOnlyLifecycle,
   resolveCommunityContext,
   type CommunityContext,
 } from './tenant-context.js';
+
+export { bootstrapGrant } from './host/bootstrap-grant.js';
 
 /** Live human identity derived from a session and member row. */
 export interface Member {
@@ -89,11 +84,12 @@ export function bearer(c: Context): string | null {
   return bearerCredential(header);
 }
 
-/** Options for the few removals a host hold still allows. */
+/** Options for the few acts a host hold still allows. */
 export interface HeldRemovalOption {
   /**
-   * Also allow a held community. Only for a removal (an agent, an invitation, a member leaving):
-   * a hold keeps credentials, so taking one away must stay possible while nothing may grow.
+   * Also allow a held community. Only for a removal (an agent, an invitation, a member leaving),
+   * since a hold keeps credentials and taking one away must stay possible while nothing may
+   * grow, or for a person accepting the rules, which changes nothing anyone else sees.
    */
   allowHeld?: boolean;
 }
@@ -202,9 +198,13 @@ export async function requirePrincipal(
   auth: CommunityAuth,
   pool: Pool,
   scope: 'read' | 'post',
-  touch = true
+  touch = true,
+  options: HeldRemovalOption = {}
 ): Promise<Principal> {
   const token = bearer(c);
+  // A person's grant only: an agent never acts on a held community, and a browser session is
+  // checked by the route's own `requireLiveRole`.
+  const heldAllowed = (lifecycle: string) => options.allowHeld === true && lifecycle === 'held';
   if (!token) {
     const member = await requireMember(c, auth, pool);
     const tenant = await resolveCommunityContext(c, pool);
@@ -237,6 +237,7 @@ export async function requirePrincipal(
       throw new ApiError(403, 'FORBIDDEN', 'This connection cannot perform that action.');
     if (
       tenant.lifecycle !== 'active' &&
+      !heldAllowed(tenant.lifecycle) &&
       !archivedReadAllowed(tenant.lifecycle, scope, human.rows[0].scopes)
     )
       throw lifecycleError(tenant.lifecycle);
@@ -308,14 +309,19 @@ export async function assertPrincipalCurrentInTransaction(
   client: PoolClient,
   principal: Principal,
   scope: 'read' | 'post',
-  sessionId?: string
+  sessionId?: string,
+  options: HeldRemovalOption = {}
 ): Promise<void> {
   const lifecycleResult = await client.query<{ lifecycle: string }>(
     'SELECT lifecycle FROM communities WHERE id=$1 FOR SHARE',
     [principal.community_id]
   );
   const lifecycle = lifecycleResult.rows[0]?.lifecycle;
-  if (lifecycle !== 'active' && !(isReadOnlyLifecycle(lifecycle) && scope === 'read'))
+  if (
+    lifecycle !== 'active' &&
+    !(options.allowHeld && lifecycle === 'held' && principal.kind === 'human') &&
+    !(isReadOnlyLifecycle(lifecycle) && scope === 'read')
+  )
     throw lifecycleError(lifecycle ?? 'unavailable');
   if (principal.kind === 'agent') {
     const current = await client.query(
@@ -438,27 +444,6 @@ export async function requireSessionUser(
   const session = await auth.api.getSession({ headers: c.req.raw.headers });
   if (!session) throw new ApiError(401, 'UNAUTHENTICATED', 'Sign in to continue.');
   return { id: session.user.id, name: session.user.name };
-}
-
-/** Assert the bootstrap cookie still maps to an unconsumed live row. */
-export async function bootstrapGrant(
-  c: Context,
-  client: PoolClient,
-  config: CommunityConfig
-): Promise<string> {
-  const token = verifyValue(
-    readCookie(c.req.header('cookie') ?? null, 'community_bootstrap'),
-    config.authSecret
-  );
-  if (!token) throw new ApiError(403, 'FORBIDDEN', 'The owner grant is missing or invalid.');
-  const result = await client.query<{ id: string }>(
-    `SELECT id FROM bootstrap_grants WHERE token_hash=$1 AND purpose='first_install'
-       AND community_id IS NULL AND consumed_at IS NULL AND expires_at>now() FOR UPDATE`,
-    [hashSecret(token)]
-  );
-  if (!result.rows[0])
-    throw new ApiError(403, 'FORBIDDEN', 'The owner grant has expired or was used.');
-  return result.rows[0].id;
 }
 
 /**

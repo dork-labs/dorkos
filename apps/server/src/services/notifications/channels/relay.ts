@@ -6,24 +6,13 @@
  * `relay_notify_user` MCP tool and the DOR-240 task-completion notifier resolved
  * the same binding, honored the same `canInitiate` consent gate and published
  * through the same relay, in two copies that had already drifted (only one of
- * them could fall back to a DorkOS DM; only one of them spent the hourly
- * budget). They are now one path, and the differences between them are
+ * them could fall back to a DorkOS DM). They are now one path, and the differences between them are
  * parameters rather than duplicated code.
  *
  * Nothing about the consent story changes here. The binding still has to exist,
  * be enabled, have a live chat, and have "Agent can start conversations"
  * switched on. A bridged chat still publishes under the bridge principal so it
  * is gated as an INITIATE rather than slipping past under a system exemption.
- *
- * **The per-agent hourly budget changed, and deliberately.** It is spent once a
- * send is a real attempt to reach somebody — after the two refusals that are the
- * operator's own decision, and before any transport is tried — and there is no
- * refund. It used to be charged only for a note that LANDED, which sounded
- * fairer and was: on a stock install nothing external resolves, so every note
- * was refunded, the ceiling could never be reached, and once notes started
- * leaving inbox rows behind (DOR-1383) a looping agent could fill a person's
- * inbox without ever appearing to have spent anything. The allowance bounds how
- * often an agent may interrupt somebody, not how often it succeeds.
  *
  * @module services/notifications/channels/relay
  */
@@ -82,20 +71,6 @@ export interface RelayDeliveryRequest {
   dmFallback?: boolean;
   /** Relay-pipeline budget for the publish itself. */
   publishBudget?: { maxHops?: number; ttl?: number; callBudgetRemaining?: number };
-  /**
-   * Take one off the sender's hourly allowance, or report that it has none left.
-   *
-   * Called once a send is a real attempt to reach somebody — after the two
-   * refusals that are the operator's own decision (`INITIATE_NOT_ALLOWED` and
-   * `NOT_OPTED_IN`) and before any transport is tried, so a note that reaches
-   * nobody still costs the hour and a note the operator switched off costs
-   * nothing. There is no refund; see {@link tryDm}.
-   *
-   * Omitted where the sender is the system rather than an agent — a scheduled
-   * run reporting its own result is not an agent choosing to interrupt
-   * somebody, and DOR-240 never counted it.
-   */
-  reserve?: () => boolean;
 }
 
 /** Where a notification went, or why it could not go anywhere. */
@@ -114,7 +89,6 @@ export type RelayDeliveryOutcome =
   | { ok: false; reason: 'RELAY_DISABLED' }
   | { ok: false; reason: 'BINDINGS_DISABLED' }
   | { ok: false; reason: 'NOT_OPTED_IN'; bindingId: string; adapterId: string }
-  | { ok: false; reason: 'RATE_LIMITED' }
   | { ok: false; reason: 'NO_BINDING'; availableChannels: string[] }
   | { ok: false; reason: 'NO_ACTIVE_SESSIONS'; availableAdapters: string[] }
   | { ok: false; reason: 'INITIATE_NOT_ALLOWED'; bindingId: string; adapterId: string }
@@ -175,9 +149,8 @@ export async function deliverOverRelay(
 
   if (!target.ok) {
     // Somebody turned "Agent can start conversations" OFF. That is a decision,
-    // not a missing integration: it costs the sender nothing, and — because the
-    // pipeline drops the row too — it silences the note on every surface rather
-    // than only on the chat one. Returned before the allowance is touched.
+    // not a missing integration, and — because the pipeline drops the row too —
+    // it silences the note on every surface rather than only on the chat one.
     if (target.reason === 'INITIATE_NOT_ALLOWED') {
       return {
         ok: false,
@@ -186,18 +159,6 @@ export async function deliverOverRelay(
         adapterId: target.adapterId,
       };
     }
-
-    // Everything below here is a REAL attempt to reach somebody, so it costs one
-    // off the hour whether or not it lands.
-    //
-    // This is the opposite of what DOR-1265 originally did, and the reason is a
-    // hole that only appeared once notes started leaving rows behind: on a stock
-    // install nothing external resolves, so every note took this branch, and
-    // refunding each one made the ceiling unreachable. An agent in a loop could
-    // then write unbounded rows into a person's inbox while never appearing to
-    // have said anything at all. The allowance bounds the SAYING, not the
-    // arriving.
-    if (request.reserve && !request.reserve()) return { ok: false, reason: 'RATE_LIMITED' };
 
     if (shouldFallBackToDm(target.reason, request) && deps.notifyDm) {
       const viaDm = tryDm(deps.notifyDm, request);
@@ -218,8 +179,6 @@ export async function deliverOverRelay(
       adapterId: target.adapterId,
     };
   }
-
-  if (request.reserve && !request.reserve()) return { ok: false, reason: 'RATE_LIMITED' };
 
   try {
     // A bridged chat publishes under the bridge delivery principal rather than
@@ -246,9 +205,8 @@ export async function deliverOverRelay(
       deliveredTo: result.deliveredTo,
     };
   } catch (err) {
-    // No refund: the message left this machine, so a throw or a timeout does not
-    // prove it failed to arrive, and giving the allowance back would hand back a
-    // note the person may already have read.
+    // The message may have left this machine: a throw or a timeout does not
+    // prove it failed to arrive.
     return {
       ok: false,
       reason: 'SEND_FAILED',
@@ -260,13 +218,6 @@ export async function deliverOverRelay(
 /**
  * Deliver into the agent's DM with the operator, or answer `null` when the DM
  * refused the write (already logged by `deliverNotifyDm`).
- *
- * The allowance is already spent by the time this runs, and there is no refund:
- * a note the mesh could not place still occupied the hour, because what the
- * ceiling bounds is how often an agent may INTERRUPT a person, not how often it
- * succeeds at it. A refund here is exactly what let a stock install — where
- * nothing external resolves and every note takes this path — produce unbounded
- * inbox rows while never appearing to have spent anything.
  */
 function tryDm(notifyDm: NotifyDmDeps, request: RelayDeliveryRequest): RelayDeliveryOutcome | null {
   const outcome = deliverNotifyDm({ agentId: request.agentId, message: request.message }, notifyDm);

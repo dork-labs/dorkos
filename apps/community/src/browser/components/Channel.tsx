@@ -20,8 +20,10 @@ import type { RemovalRequest } from './EntryRemoval.js';
 import { useChannelChanges } from './channel-changes.js';
 import { mergeEntries, replaceEntries } from './channel-entries.js';
 import { PostingStanding } from '../moderation/PostingStanding.js';
+import { createUploadReuse } from '../uploads/upload-reuse.js';
 
 type Page = { entries: Entry[]; nextCursor: string | null };
+type ErrorAction = 'reload' | 'retry-send' | 'remove-file' | null;
 type MemberDirectoryPage = { members: Member[]; nextCursor: string | null };
 type Post = { entry: Entry; cursor: string };
 type ThreadSummaries = { threads: CommunityWireThreadSummary[] };
@@ -57,10 +59,9 @@ export function ChannelView({
   const [files, setFiles] = useState<File[]>([]);
   const [progress, setProgress] = useState<number | null>(null);
   const [pendingKey, setPendingKey] = useState<string | null>(null);
+  const [uploads] = useState(() => createUploadReuse(upload));
   const [rejectedFile, setRejectedFile] = useState<File | null>(null);
-  const [errorAction, setErrorAction] = useState<'reload' | 'retry-send' | 'remove-file' | null>(
-    null
-  );
+  const [errorAction, setErrorAction] = useState<ErrorAction>(null);
   const [busy, setBusy] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -449,9 +450,7 @@ export function ChannelView({
       const attachmentIds: string[] = [];
       for (const file of files) {
         uploadingFile = file;
-        attachmentIds.push(
-          await upload(channel.id, file, `${key}:${attachmentIds.length}`, setProgress)
-        );
+        attachmentIds.push(await uploads.attach(channel.id, file, setProgress, !!pendingKey));
       }
       const body = {
         text: text.trim() || 'Shared a file',
@@ -464,6 +463,7 @@ export function ChannelView({
         setReplies((previous) => mergeEntries(previous, [posted.entry]));
         seeReplies([posted.entry]);
       } else setEntries((previous) => mergeEntries(previous, [posted.entry]));
+      uploads.forget(files);
       setText('');
       setFiles([]);
       setPendingKey(null);

@@ -70,8 +70,10 @@ export {
   extensionPageHref,
   hasPageParams,
   matchExtensionPage,
+  listedPageAt,
   type ExtensionPagePath,
   type ExtensionPageMatch,
+  type ListedPage,
   type MatchablePage,
 } from './extension-page-path';
 export {

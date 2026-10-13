@@ -1,37 +1,11 @@
 import { useMemo } from 'react';
 import { useMemoryProviderStatus } from '@/layers/entities/memory-provider-status';
 import { useNotifications, type NotificationLens } from '@/layers/entities/notifications';
-import { useUnattendedAutonomy } from '@/layers/entities/unattended-autonomy';
 
 import { deadSigninRuntimes } from '../lib/dead-runtime-signins';
 import { MemoryProviderBenchedBanner } from '../ui/MemoryProviderBenchedBanner';
 import { RuntimeSigninBanner } from '../ui/RuntimeSigninBanner';
-import { UnattendedAutonomyBanner } from '../ui/UnattendedAutonomyBanner';
 import { BANNER_PRIORITY, type BannerDescriptor } from './banner-descriptor';
-
-/**
- * Unattended-autonomy descriptor — info severity, eligible whenever at least one
- * live binding or scheduled task is set to run at full power. Reads the server's
- * single cheap aggregate rather than the binding and task lists, which is what
- * lets a banner about them be app-wide at all.
- *
- * Info and not warning: full power is a chosen, expected state after the
- * defaults flip, and a permanent amber row over a normal setting is how a person
- * learns to stop reading the row (spec `full-power-defaults`, D8). The variant
- * here mirrors the rendered banner's on purpose — the slot ranks descriptors, so
- * the two disagreeing would rank this against other banners at a severity it
- * does not draw.
- */
-function useUnattendedAutonomyDescriptor(): BannerDescriptor | null {
-  const state = useUnattendedAutonomy();
-  if (!state || state.drivers.length === 0) return null;
-  return {
-    id: 'unattended-autonomy',
-    variant: 'info',
-    priority: BANNER_PRIORITY.info,
-    render: () => <UnattendedAutonomyBanner drivers={state.drivers} />,
-  };
-}
 
 /**
  * Memory-provider-benched descriptor — warning severity, eligible whenever the
@@ -46,8 +20,8 @@ function useUnattendedAutonomyDescriptor(): BannerDescriptor | null {
  * single call. Gating on the mismatch instead catches both; the banner's own
  * `benched` prop still carries which one this is, so the copy can say so.
  *
- * Warning rather than info in both cases: unlike unattended autonomy, this is
- * something an operator did not choose.
+ * Warning rather than info in both cases: this is something an operator did
+ * not choose.
  */
 function useMemoryProviderBenchedDescriptor(): BannerDescriptor | null {
   const status = useMemoryProviderStatus();
@@ -121,14 +95,12 @@ function useRuntimeSigninDescriptor(): BannerDescriptor | null {
  * The signal now lives where the setting does: the strip's word and tint, and the
  * per-row glyph in the session list.
  *
- * The case it WAS right about — **unattended** autonomy, an agent left running
- * without asking behind a relay binding or a scheduled task, where nobody is
- * watching a strip — is the descriptor above (DOR-814). It could not simply be
- * narrowed into place: the old banner only ever read the session in front of the
- * person, so the unattended case needed binding and task state this widget must
- * not fetch on every route, plus its own definition of unattended. Both now live
- * on the server (`services/core/unattended-autonomy/`), which is why
- * this hook reads one small aggregate and no lists.
+ * ## The unattended-autonomy banner that used to live here
+ *
+ * A standing info banner named every live binding and scheduled task set to run
+ * at full power. It is gone too: agents are trusted by default (ADR
+ * 261006-225605), so full power is the expected state, and a banner over the
+ * expected state is one people learn to stop reading.
  *
  * ## The telemetry banner that used to live here
  *
@@ -142,10 +114,7 @@ function useRuntimeSigninDescriptor(): BannerDescriptor | null {
  * @param sessionId - The active session id, or null when none is selected.
  */
 export function useAppBanners(_sessionId: string | null): BannerDescriptor[] {
-  const unattended = useUnattendedAutonomyDescriptor();
   const memoryProviderBenched = useMemoryProviderBenchedDescriptor();
   const runtimeSignin = useRuntimeSigninDescriptor();
-  return [unattended, memoryProviderBenched, runtimeSignin].filter(
-    (d): d is BannerDescriptor => d !== null
-  );
+  return [memoryProviderBenched, runtimeSignin].filter((d): d is BannerDescriptor => d !== null);
 }

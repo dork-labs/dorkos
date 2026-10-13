@@ -12,6 +12,8 @@ amends: null
 
 ## Status
 
+Amended by [261006-225605](261006-225605-agents-are-trusted-by-default-outsiders-and-third-party-code-are-not.md) (agents are trusted by default; 2026-10-06 vision reset): retires "bounded by a rate". The hourly per-room reaction ceiling (`ReactionBudget`, `REACTION_RATE_LIMITED`) is removed by DOR-2739; what holds an agent to reacting sparingly is review plus notice. Agents may still react, and a reaction still takes no turn, writes no entry and starts no cascade.
+
 Accepted. It reverses one rule of conduct — `meta/agent-etiquette.md` **E16b**, "agents do not
 send them" — and reverses nothing else in that file. E16b's first half stands unchanged: a
 reaction is an endpoint, not a prompt, and nothing about an agent leaving one turns it into a

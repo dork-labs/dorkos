@@ -99,14 +99,18 @@ export const SIDEBAR_LIBRARY_SECTION_IDS = [
   'channels',
   'dms',
   'agents',
+  // Last, after Agents: the pages mini apps add (spec `mini-app-placement`
+  // Part 2). The operator's own conversations and teammates come first, and a
+  // section that only exists once an extension adds a page sits below them.
+  'addons',
 ] as const satisfies readonly PersistedSectionId[];
 
-/** One Library section's id — the four above, and only those. */
+/** One Library section's id — the five above, and only those. */
 export type LibrarySectionId = (typeof SIDEBAR_LIBRARY_SECTION_IDS)[number];
 
 /**
- * Every section whose fold is remembered, Library's four plus the two computed
- * zones.
+ * Every section whose fold is remembered: Library's five plus the three
+ * computed zones.
  *
  * **The computed zones are in here now, and that is the whole of D1's "every
  * header folds".** BC-2 used to say a zone is a landmark and never an
@@ -245,7 +249,17 @@ export type SidebarTarget =
   | { kind: 'rollup'; rollup: 'now-overflow' | 'working' | 'automated' }
   | { kind: 'suggestion'; suggestionId: SuggestionId }
   | { kind: 'digest' }
-  | { kind: 'command'; commandId: SidebarCommandId };
+  | { kind: 'command'; commandId: SidebarCommandId }
+  /**
+   * A page a mini app added (`api.registerPage`), by the extension that owns it
+   * and the path it registered (`''` for its home).
+   *
+   * What the row MEANS, never its address: `/x/<extensionId>/<path>` is the
+   * router's business, exactly as `open-team` leaves the Team page's address to
+   * it. Never dragged, pinned or muted — the page is the extension's, not a
+   * thing the operator filed.
+   */
+  | { kind: 'add-on'; extensionId: string; path: string };
 
 /** How much of the operator's attention a row's unread state is asking for. */
 export interface SidebarUnread {
@@ -283,10 +297,20 @@ export interface SidebarRowModel {
   glyph:
     | { kind: 'agent-avatar'; agentPath: string }
     | { kind: 'hash' }
-    | { kind: 'icon'; icon: SidebarIconId };
+    | { kind: 'icon'; icon: SidebarIconId }
+    /**
+     * The icon a mini app registered for its page, by the page's contribution
+     * id (`<extensionId>:<path>`). The renderer looks it up, and draws a puzzle
+     * piece when there is none — the model holds no component.
+     */
+    | { kind: 'page-icon'; pageId: string };
   /** The "who": agent name, room name, person name. Never a title. */
   primary: string;
-  /** The "what", rendered after `›`. Present iff this row is a session. */
+  /**
+   * The "what", rendered after `›`. Present on a session row, and on an
+   * Add-ons row whose title another listed page shares — there `primary` names
+   * the extension, so the two rows can be told apart.
+   */
   secondary?: string;
   /** True when the row reserves a second line for a live verb (BC-24). */
   reservesVerbLine: boolean;

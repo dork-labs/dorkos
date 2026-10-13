@@ -253,11 +253,11 @@ export interface ExtensionPageProps {
 
 /** How an extension page is named and listed. */
 export interface ExtensionPageOptions {
-  /** Title for the page bar, tab, palette and phone menu, e.g. "Flow". */
+  /** Title for the page bar, tab, palette and the sidebar's Add-ons section, e.g. "Flow". */
   title: string;
-  /** Icon for the page bar, tab, palette and phone menu; the host sizes it with `className`. */
+  /** Icon for the page bar, tab, palette and Add-ons section; the host sizes it with `className`. */
   icon?: ComponentType<{ className?: string }>;
-  /** List it in the command palette and phone "Add-ons" menu. Default true; param paths are never listed. */
+  /** List it in the command palette and the sidebar's Add-ons section. Default true; param paths are never listed. */
   menu?: boolean;
 }
 
@@ -396,8 +396,8 @@ export interface ExtensionAPI {
   /**
    * Mount a full page at /x/<extensionId>/<path>. `path` is '' or segments with ':param'.
    *
-   * A path with no params is listed in the command palette and the phone's
-   * "Add-ons" menu (unless `options.menu` is false). Registering the same path
+   * A path with no params is listed in the command palette and the sidebar's
+   * Add-ons section (unless `options.menu` is false). Registering the same path
    * twice replaces the first. Returns an unsubscribe function (auto-called on
    * deactivate).
    */

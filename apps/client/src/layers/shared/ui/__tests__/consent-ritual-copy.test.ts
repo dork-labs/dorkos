@@ -1,11 +1,11 @@
 /**
- * The words both consent dialogs put on screen, and the two shapes they must
- * never put them on (spec `trust-dial`, decision 5; DOR-816).
+ * The words the binding's consent dialog puts on screen, and the two shapes it
+ * must never put them on (spec `trust-dial`, decision 5; DOR-816).
  *
  * Tested at the function rather than through a dialog because it is exported
- * from `shared/ui`'s barrel: the four call sites all hand it a mode the door
- * already accepted, so a defect here is invisible from any of them — and stays
- * invisible right up until a fifth caller does the obvious thing.
+ * from `shared/ui`'s barrel: the call site hands it a mode the door already
+ * accepted, so a defect here is invisible from there — and stays invisible
+ * right up until another caller does the obvious thing.
  */
 import { describe, it, expect } from 'vitest';
 import type { PermissionModeDescriptor } from '@dorkos/shared/agent-runtime';

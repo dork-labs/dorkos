@@ -77,7 +77,12 @@ export function registerRemoteCommunityConductRoutes(router: Hono<ApiEnv>): void
     const input = RemoteCommunityRulesAcceptRequestSchema.safeParse(readJsonBody(c));
     if (!input.success) return c.json({ error: 'Read the rules first.' }, 400);
     try {
-      await verifiedConnection(target.ref, target.owner, 'post');
+      // A space its host holds reads as archived, so the connection cannot post, yet a person may
+      // still accept its rules there, which changes nothing anyone sees (DOR-2836). Only reading
+      // is checked here then, and the space decides.
+      const connection = await verifiedConnection(target.ref, target.owner, 'read');
+      if (connection.access?.lastKnown?.lifecycle !== 'archived')
+        await verifiedConnection(target.ref, target.owner, 'post');
       const rules = await getRemoteCommunityAdapter(target.ref, target.owner).acceptRules(
         input.data.version
       );

@@ -24,7 +24,7 @@ import {
 import {
   buildSidebarAnnouncements,
   classifySidebarDrop,
-  COMPUTED_ZONE_REJECTION,
+  computedZoneRejection,
   readSidebarDndData,
   resolveSidebarDrop,
   toDragDescriptor,
@@ -201,7 +201,7 @@ export function SidebarDnd({ children, displayNames, rooms }: SidebarDndProps) {
     // Same mechanism, different reason: Heads up and Today are derived, so a row
     // dropped there has no place to be put (R3).
     if (op.kind === 'reject-computed-zone') {
-      toast.info(COMPUTED_ZONE_REJECTION, { description: itemName(op.ref) });
+      toast.info(computedZoneRejection(op.zone), { description: itemName(op.ref) });
       return;
     }
     // **A drop that changes nothing writes nothing** (DOR-1746). `none` is what

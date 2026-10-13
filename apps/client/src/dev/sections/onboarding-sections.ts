@@ -52,6 +52,6 @@ export const ONBOARDING_SECTIONS: PlaygroundSection[] = [
     title: 'ProgressCard',
     page: 'onboarding',
     category: 'Supporting',
-    keywords: ['progress', 'card', 'sidebar', 'checklist', 'getting started'],
+    keywords: ['progress', 'card', 'sidebar', 'checklist', 'getting started', 'community', 'space'],
   },
 ];

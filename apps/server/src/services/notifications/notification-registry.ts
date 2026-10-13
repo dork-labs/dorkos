@@ -560,8 +560,8 @@ export type EventNotificationKind =
  * successful runs, kept exactly: a failure is worth interrupting somebody for,
  * a success is not unless they said so.
  *
- * Every one of these still passes the binding's `canInitiate` consent gate and
- * the per-agent hourly budget — the channel owns those, not the registry.
+ * Every one of these still passes the binding's `canInitiate` consent gate —
+ * the channel owns that, not the registry.
  */
 export type RelayPolicy = 'never' | 'always' | 'opt-in';
 
@@ -981,7 +981,7 @@ const ENTRIES: NotificationRegistryMap = {
     body: (p) => p.message,
     dedupeKey: (p) => `agent-note:${p.agentId}:${p.message.slice(0, NOTE_DEDUPE_PREFIX)}`,
     // Reaching the person wherever they are IS the verb. The binding's
-    // `canInitiate` switch and the hourly budget still decide whether it may.
+    // `canInitiate` switch still decides whether it may.
     //
     // The `relay_notify_user` tool runs that delivery itself and hands the
     // outcome back through `NotifyOptions.delivered`, because the answer it owes
