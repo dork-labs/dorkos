@@ -58,6 +58,54 @@ function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
   });
 }
 
+/** How often one runtime's identical listing failure is logged. */
+export const DEGRADED_LOG_INTERVAL_MS = 60_000;
+
+/** The most distinct failures remembered at once; older entries are swept past this. */
+const DEGRADED_LOG_MAX_KEYS = 200;
+
+const lastDegradedLog = new Map<string, { at: number; suppressed: number }>();
+
+/** Forget every logged failure. For tests, which share this module's state. */
+export function __resetDegradedLogForTests(): void {
+  lastDegradedLog.clear();
+}
+
+/**
+ * Log a runtime's listing failure, at most once a minute for the same failure.
+ *
+ * A session list fans out across every agent's folder, so one slow runtime fails
+ * every one of those listings at once. Logged each time, that was over twenty
+ * identical warnings a second (2026-10-13): a log too loud to read, and work on a
+ * server that was already struggling. The first is logged, repeats are counted,
+ * and the count rides on the next line.
+ *
+ * @param runtime - The runtime whose listing failed.
+ * @param message - Why it failed.
+ */
+function warnDegradedOnce(runtime: string, message: string): void {
+  const key = `${runtime}\u0000${message}`;
+  const now = Date.now();
+  const last = lastDegradedLog.get(key);
+  if (last && now - last.at < DEGRADED_LOG_INTERVAL_MS) {
+    last.suppressed += 1;
+    return;
+  }
+  logger.warn('[aggregateSessionList] runtime listing degraded', {
+    runtime,
+    error: message,
+    ...(last?.suppressed ? { repeatsSinceLastLog: last.suppressed } : {}),
+  });
+  lastDegradedLog.set(key, { at: now, suppressed: 0 });
+  // A failure message can carry varying detail, so the set of keys is not
+  // bounded by the number of runtimes. Past the cap, drop what is old enough
+  // that it would be logged again anyway.
+  if (lastDegradedLog.size > DEGRADED_LOG_MAX_KEYS) {
+    for (const [k, v] of lastDegradedLog)
+      if (now - v.at >= DEGRADED_LOG_INTERVAL_MS) lastDegradedLog.delete(k);
+  }
+}
+
 /**
  * List sessions across the given runtimes in parallel and merge the results.
  *
@@ -135,10 +183,7 @@ export async function aggregateSessionList(opts: {
     } else {
       const message =
         result.reason instanceof Error ? result.reason.message : String(result.reason);
-      logger.warn('[aggregateSessionList] runtime listing degraded', {
-        runtime: runtime.type,
-        error: message,
-      });
+      warnDegradedOnce(runtime.type, message);
       warnings.push({ runtime: runtime.type, message });
     }
   });

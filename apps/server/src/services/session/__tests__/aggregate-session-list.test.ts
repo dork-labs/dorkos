@@ -11,7 +11,12 @@ import { describe, it, expect, vi } from 'vitest';
 import { FakeAgentRuntime, createMockSessionWithReading } from '@dorkos/test-utils';
 import type { Session } from '@dorkos/shared/types';
 import type { AgentRuntime } from '@dorkos/shared/agent-runtime';
-import { aggregateSessionList } from '../catalog/aggregate-session-list.js';
+import {
+  aggregateSessionList,
+  DEGRADED_LOG_INTERVAL_MS,
+  __resetDegradedLogForTests,
+} from '../catalog/aggregate-session-list.js';
+import { logger } from '../../../lib/logger.js';
 
 function makeSession(overrides: Partial<Session> & Pick<Session, 'id' | 'updatedAt'>): Session {
   return {
@@ -136,6 +141,37 @@ describe('aggregateSessionList', () => {
 
     expect(sessions.map((s) => s.id)).toEqual(['a-1']);
     expect(warnings).toEqual([{ runtime: 'fake-b', message: 'backend exploded' }]);
+  });
+
+  it('logs a repeated listing failure once a minute, but warns every caller', async () => {
+    __resetDegradedLogForTests();
+    const warn = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
+    const failing = new FakeAgentRuntime('fake-flaky');
+    failing.listSessions.mockRejectedValue(new Error('flaky backend for the log test'));
+    const start = Date.now();
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(start);
+    try {
+      for (let i = 0; i < 5; i += 1) {
+        const { warnings } = await aggregateSessionList({ runtimes: [failing], projectDir: '/p' });
+        expect(warnings).toEqual([
+          { runtime: 'fake-flaky', message: 'flaky backend for the log test' },
+        ]);
+      }
+      const degraded = () =>
+        warn.mock.calls.filter(
+          ([msg]) => msg === '[aggregateSessionList] runtime listing degraded'
+        );
+      expect(degraded()).toHaveLength(1);
+
+      clock.mockReturnValue(start + DEGRADED_LOG_INTERVAL_MS + 1);
+      await aggregateSessionList({ runtimes: [failing], projectDir: '/p' });
+      expect(degraded()).toHaveLength(2);
+      expect(degraded()[1]![1]).toMatchObject({ runtime: 'fake-flaky', repeatsSinceLastLog: 4 });
+    } finally {
+      clock.mockRestore();
+      warn.mockRestore();
+      __resetDegradedLogForTests();
+    }
   });
 
   it('times out a hung runtime and reports it as a warning', async () => {
