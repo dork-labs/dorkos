@@ -37,13 +37,6 @@ const UNPLACED = '';
 
 /** Agent home (or {@link UNPLACED}) → how many such turns are running. */
 const running = new Map<string, number>();
-/**
- * Agent home → which stretch of such turns it is in: a number that changes each
- * time the agent goes from none running to one, so a count kept per stretch
- * starts over when a new stranger's turn begins after the last one ended.
- */
-const stretches = new Map<string, number>();
-let nextStretch = 0;
 
 /** The home a folder belongs to, or `undefined` when none can be resolved. */
 function homeKey(dir: string | undefined, forAgent?: string): string | undefined {
@@ -56,7 +49,6 @@ function homeKey(dir: string | undefined, forAgent?: string): string | undefined
 
 function adjust(key: string, by: 1 | -1): void {
   const next = (running.get(key) ?? 0) + by;
-  if (by === 1 && next === 1) stretches.set(key, ++nextStretch);
   if (next > 0) running.set(key, next);
   else running.delete(key);
 }
@@ -98,26 +90,10 @@ export function agentIsReadingOutsider(agentPath: string): boolean {
 }
 
 /**
- * Which stretch of outsider-reading turns the agent at this home is in, or
- * `undefined` when none is running. A stretch runs from the first such turn
- * starting to the last one ending; a turn no agent could be found for puts
- * every agent in its own stretch.
- *
- * @param agentPath - The calling agent's home, from its verified identity.
- */
-export function outsiderStretchOf(agentPath: string): string | undefined {
-  if (!agentIsReadingOutsider(agentPath)) return undefined;
-  const key = homeKey(agentPath) ?? path.resolve(agentPath);
-  const own = (running.get(key) ?? 0) > 0 ? stretches.get(key) : undefined;
-  return own !== undefined ? `${key}#${own}` : `${UNPLACED}#${stretches.get(UNPLACED) ?? 0}`;
-}
-
-/**
  * Forget every running turn.
  *
  * @internal Exported for testing only — the record outlives one test.
  */
 export function resetLiveOutsiderTurns(): void {
   running.clear();
-  stretches.clear();
 }

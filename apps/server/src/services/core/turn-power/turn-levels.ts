@@ -166,6 +166,8 @@ export function noteEntryLevel(entryId: string, level: TurnPermissionLevel | und
 export function aliasTurnLevel(from: string, to: string): void {
   const level = turnLevels.get(from);
   if (level !== undefined && from !== to) remember(turnLevels, to, level);
+  const serial = turnSerials.get(from);
+  if (serial !== undefined && from !== to) turnSerials.set(to, serial);
 }
 
 /**

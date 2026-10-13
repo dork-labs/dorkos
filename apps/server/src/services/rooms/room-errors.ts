@@ -251,7 +251,7 @@ export type RoomErrorCode =
    */
   | 'TURN_WAS_STOPPED'
   /**
-   * A turn that read a stranger's words has already posted as many messages as
+   * A turn a stranger started has already posted as many messages as
    * such a turn may (`OUTSIDER_TURN_LIMIT`, DOR-2739). Our own agents are not
    * counted (ADR 261006-225605); this is the one count left, kept as an
    * outsider protection so one message from someone outside the team cannot

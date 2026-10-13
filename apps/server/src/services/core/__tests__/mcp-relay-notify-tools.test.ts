@@ -11,7 +11,9 @@ import { resolveAgentHome } from '../agent-identity/index.js';
 import { recordTurnLevels } from '../turn-power/turn-levels.js';
 import { OUTSIDER_TURN_LIMIT, resetOutsiderOutput } from '../turn-power/outsider-output.js';
 import { CLAUDE_CODE_CAPABILITIES } from '../../runtimes/claude-code/runtime-constants.js';
-import type { AgentRuntime, MessageOpts } from '@dorkos/shared/agent-runtime';
+import type { AgentRuntime } from '@dorkos/shared/agent-runtime';
+import { noteTurnOrigin, resetOutsiderTurns } from '../../session/origin/outsider-turns.js';
+import type { TurnOrigin } from '../../session/origin/turn-origin.js';
 import type { StreamEvent } from '@dorkos/shared/types';
 import {
   clearTestHomes,
@@ -925,8 +927,9 @@ describe('relay_notify_user, by identity anchor', () => {
 });
 
 describe('relay_notify_user from a turn a stranger started (DOR-2739)', () => {
-  /** Record a turn on `sessionId`, as the registry's wrapper does. */
-  async function ranTurn(sessionId: string, opts?: MessageOpts): Promise<void> {
+  /** Record a turn on `sessionId` and what started it, as the binding call and the registry do. */
+  async function ranTurn(sessionId: string, origin: TurnOrigin): Promise<void> {
+    noteTurnOrigin(sessionId, origin);
     const runtime = recordTurnLevels(
       {
         type: 'claude-code',
@@ -937,15 +940,18 @@ describe('relay_notify_user from a turn a stranger started (DOR-2739)', () => {
       } as unknown as AgentRuntime,
       () => 'bypassPermissions'
     );
-    for await (const _event of runtime.sendMessage(sessionId, 'hi', opts)) {
+    for await (const _event of runtime.sendMessage(sessionId, 'hi')) {
       // drain
     }
   }
 
-  beforeEach(() => resetOutsiderOutput());
+  beforeEach(() => {
+    resetOutsiderOutput();
+    resetOutsiderTurns();
+  });
 
   it('sends a few notes, then refuses the next with TOO_MANY_NOTES_THIS_TURN', async () => {
-    await ranTurn('stranger-note-turn', { permissionCeiling: 'runtime-default' });
+    await ranTurn('stranger-note-turn', { kind: 'relay-binding' });
     const deps = makeMockDeps();
     const handler = makeHandler(deps, { ...NOTIFY, sessionId: () => 'stranger-note-turn' });
     for (let n = 0; n < OUTSIDER_TURN_LIMIT; n += 1) {
@@ -957,7 +963,7 @@ describe('relay_notify_user from a turn a stranger started (DOR-2739)', () => {
   });
 
   it('never counts a turn its own people started', async () => {
-    await ranTurn('own-note-turn');
+    await ranTurn('own-note-turn', { kind: 'interactive' });
     const handler = makeHandler(makeMockDeps(), { ...NOTIFY, sessionId: () => 'own-note-turn' });
     for (let n = 0; n < OUTSIDER_TURN_LIMIT * 3; n += 1) {
       expect(JSON.parse((await handler({ message: `note ${n}` })).content[0].text).sent).toBe(true);

@@ -11,14 +11,14 @@
 import type { TurnPermissionLevel } from '@dorkos/shared/agent-runtime';
 import { postLevelFor } from '../../core/turn-power/turn-levels.js';
 import {
-  chargeOutsiderOutput,
+  outsiderOutputAllowed,
   OUTSIDER_TURN_LIMIT,
+  recordOutsiderOutput,
 } from '../../core/turn-power/outsider-output.js';
 import type { RoomAttachment, RoomMoment } from '@dorkos/shared/room-schemas';
 import { logger } from '../../../lib/logger.js';
 import type { AttachmentRowStore } from '../attachments/attachment-row-store.js';
 import type { RoomCore } from '../service/room-core.js';
-import type { AuthorRegistry } from '../author-registry.js';
 import type { RoomEntryWriter } from './room-entry-writer.js';
 import { RoomError } from '../room-errors.js';
 import type { PostTrigger, PostedEntry } from '../service/room-service-deps.js';
@@ -78,7 +78,6 @@ export class RoomPosting {
   private readonly store: RoomStore;
   private readonly attachments: AttachmentRowStore;
   private readonly triggers: RoomTriggerDispatcher;
-  private readonly authors: AuthorRegistry;
   /** The live `uploads.maxFiles`. Read per post, so a change takes effect. */
   private readonly maxAttachmentsPerEntry: () => number;
 
@@ -90,7 +89,6 @@ export class RoomPosting {
     this.store = core.store;
     this.attachments = core.attachments;
     this.triggers = core.triggers;
-    this.authors = core.authors;
     this.maxAttachmentsPerEntry = core.maxAttachmentsPerEntry;
   }
 
@@ -258,14 +256,12 @@ export class RoomPosting {
       );
     }
     // **A stranger's turn is still counted** (DOR-2739). Our own agents post as
-    // often as they need; a turn that read a stranger's words may post a few
-    // messages and no more, so one message from outside the team cannot make it
-    // talk without end. Asked after the refusals above and before the write.
-    // The author's home comes from its own row, which the caller's verified
-    // identity chose, for a caller that names no session the process recorded.
-    const author = this.authors.getById(input.authorId);
-    const agentPath = author?.kind === 'agent' ? author.naturalKey : undefined;
-    if (!chargeOutsiderOutput('post', input.callerSessionId ?? turn?.sessionId, agentPath)) {
+    // often as they need; a turn a stranger started may post a few messages and
+    // no more, so one message from outside the team cannot make it talk without
+    // end. Asked before the write and counted only once the post landed, so a
+    // post refused for any other reason spends nothing.
+    const countedSession = input.callerSessionId ?? turn?.sessionId;
+    if (!outsiderOutputAllowed('post', countedSession)) {
       logger.info('[rooms] refused a stranger-started turn a further post', {
         roomId,
         authorId: input.authorId,
@@ -310,6 +306,7 @@ export class RoomPosting {
       },
       authorLevel
     );
+    recordOutsiderOutput('post', countedSession);
     this.triggers.noteDeliberatePost(roomId, input.authorId);
     return entry;
   }

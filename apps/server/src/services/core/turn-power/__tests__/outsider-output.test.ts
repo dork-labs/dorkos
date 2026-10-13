@@ -1,16 +1,22 @@
 /**
- * A turn that read a stranger's words may send a few posts and notes, and no
- * more; every other turn is never counted (DOR-2739, ADR 261006-225605).
+ * A turn a stranger started may send a few posts and notes, and no more; every
+ * other turn is never counted (DOR-2739, ADR 261006-225605).
  */
 import { describe, it, expect, beforeEach } from 'vitest';
-import type { AgentRuntime, MessageOpts } from '@dorkos/shared/agent-runtime';
+import type { AgentRuntime } from '@dorkos/shared/agent-runtime';
 import type { StreamEvent } from '@dorkos/shared/types';
 import { CLAUDE_CODE_CAPABILITIES } from '../../../runtimes/claude-code/runtime-constants.js';
-import { recordTurnLevels } from '../turn-levels.js';
-import { countWhileRunning, resetLiveOutsiderTurns } from '../live-outsider-turns.js';
+import { aliasTurnLevel, recordTurnLevels } from '../turn-levels.js';
+import { noteTurnOrigin, resetOutsiderTurns } from '../../../session/origin/outsider-turns.js';
+import type { TurnOrigin } from '../../../session/origin/turn-origin.js';
 import {
-  chargeOutsiderOutput,
+  linkSessionId,
+  resetSessionKeys,
+} from '../../../session/resolution/session-key-registry.js';
+import {
   OUTSIDER_TURN_LIMIT,
+  outsiderOutputAllowed,
+  recordOutsiderOutput,
   resetOutsiderOutput,
 } from '../outsider-output.js';
 
@@ -26,81 +32,91 @@ const runtime = recordTurnLevels(
   () => null
 );
 
-async function send(sessionId: string, opts?: MessageOpts) {
-  for await (const _event of runtime.sendMessage(sessionId, 'hi', opts)) {
+const STRANGER: TurnOrigin = { kind: 'relay-binding' };
+const OWN: TurnOrigin = { kind: 'interactive' };
+
+/** Start a turn on `sessionId`, noting what started it, as the binding call does. */
+async function turn(sessionId: string, origin: TurnOrigin) {
+  noteTurnOrigin(sessionId, origin);
+  for await (const _event of runtime.sendMessage(sessionId, 'hi')) {
     // drain
   }
 }
 
-/** A stranger's message carries the runtime default as its ceiling. */
-const STRANGER: MessageOpts = { permissionCeiling: 'runtime-default' };
-
-/** Charge `kind` until refused; how many landed. */
-function spendAll(kind: 'post' | 'note', sessionId?: string, agentPath?: string): number {
-  let landed = 0;
-  while (chargeOutsiderOutput(kind, sessionId, agentPath) && landed < 50) landed += 1;
-  return landed;
+/** Send `kind` until refused, counting each; how many went out. */
+function sendAll(kind: 'post' | 'note', sessionId: string): number {
+  let sent = 0;
+  while (outsiderOutputAllowed(kind, sessionId) && sent < 50) {
+    recordOutsiderOutput(kind, sessionId);
+    sent += 1;
+  }
+  return sent;
 }
 
-describe('chargeOutsiderOutput', () => {
+describe('outsider output', () => {
   beforeEach(() => {
     resetOutsiderOutput();
-    resetLiveOutsiderTurns();
+    resetOutsiderTurns();
+    resetSessionKeys();
   });
 
-  it('never counts a turn that read no stranger’s words', async () => {
-    await send('own-1');
-    expect(spendAll('post', 'own-1')).toBe(50);
-    expect(spendAll('note', 'own-1')).toBe(50);
+  it('never counts a turn its own people started', async () => {
+    await turn('own-1', OWN);
+    expect(sendAll('post', 'own-1')).toBe(50);
+    expect(sendAll('note', 'own-1')).toBe(50);
   });
 
-  it('lets a stranger’s turn post a few times, then refuses', async () => {
-    await send('stranger-1', STRANGER);
-    expect(spendAll('post', 'stranger-1')).toBe(OUTSIDER_TURN_LIMIT);
-    expect(chargeOutsiderOutput('post', 'stranger-1', undefined)).toBe(false);
+  it('never counts a turn of ours that merely read a stranger’s words', async () => {
+    noteTurnOrigin('room-own', { kind: 'room', externalAuthor: false });
+    for await (const _event of runtime.sendMessage('room-own', 'hi', {
+      permissionCeiling: 'runtime-default',
+    })) {
+      // drain
+    }
+    expect(sendAll('post', 'room-own')).toBe(50);
+  });
+
+  it('lets a stranger’s turn send a few, then refuses', async () => {
+    await turn('stranger-1', STRANGER);
+    expect(sendAll('post', 'stranger-1')).toBe(OUTSIDER_TURN_LIMIT);
+    expect(outsiderOutputAllowed('post', 'stranger-1')).toBe(false);
+  });
+
+  it('counts a bridged room turn an outside author started', async () => {
+    await turn('room-stranger', { kind: 'room', externalAuthor: true });
+    expect(sendAll('post', 'room-stranger')).toBe(OUTSIDER_TURN_LIMIT);
   });
 
   it('counts posts and notes separately', async () => {
-    await send('stranger-2', STRANGER);
-    expect(spendAll('post', 'stranger-2')).toBe(OUTSIDER_TURN_LIMIT);
-    expect(spendAll('note', 'stranger-2')).toBe(OUTSIDER_TURN_LIMIT);
+    await turn('stranger-2', STRANGER);
+    expect(sendAll('post', 'stranger-2')).toBe(OUTSIDER_TURN_LIMIT);
+    expect(sendAll('note', 'stranger-2')).toBe(OUTSIDER_TURN_LIMIT);
+  });
+
+  it('spends nothing until a send is recorded', async () => {
+    await turn('stranger-3', STRANGER);
+    for (let n = 0; n < 10; n += 1) expect(outsiderOutputAllowed('post', 'stranger-3')).toBe(true);
+    expect(sendAll('post', 'stranger-3')).toBe(OUTSIDER_TURN_LIMIT);
   });
 
   it('starts over on the next turn, and stops counting once a person is talking', async () => {
-    await send('mixed-1', STRANGER);
-    expect(spendAll('post', 'mixed-1')).toBe(OUTSIDER_TURN_LIMIT);
-    await send('mixed-1', STRANGER);
-    expect(spendAll('post', 'mixed-1')).toBe(OUTSIDER_TURN_LIMIT);
-    await send('mixed-1');
-    expect(spendAll('post', 'mixed-1')).toBe(50);
+    await turn('mixed-1', STRANGER);
+    expect(sendAll('post', 'mixed-1')).toBe(OUTSIDER_TURN_LIMIT);
+    await turn('mixed-1', STRANGER);
+    expect(sendAll('post', 'mixed-1')).toBe(OUTSIDER_TURN_LIMIT);
+    await turn('mixed-1', OWN);
+    expect(sendAll('post', 'mixed-1')).toBe(50);
   });
 
-  it('gives each conversation’s stranger turn its own count', async () => {
-    await send('a', STRANGER);
-    await send('b', STRANGER);
-    expect(spendAll('post', 'a')).toBe(OUTSIDER_TURN_LIMIT);
-    // Another conversation's stranger turn has its own count.
-    expect(spendAll('post', 'b')).toBe(OUTSIDER_TURN_LIMIT);
+  it('counts one turn under both ids a renamed conversation is known by', async () => {
+    await turn('born-id', STRANGER);
+    linkSessionId('born-id', 'sdk-id');
+    aliasTurnLevel('born-id', 'sdk-id');
+    expect(sendAll('post', 'sdk-id')).toBe(OUTSIDER_TURN_LIMIT);
+    expect(outsiderOutputAllowed('post', 'born-id')).toBe(false);
   });
 
-  it('counts a caller with no session through its agent, while a stranger’s turn runs', async () => {
-    const agentPath = '/tmp/dorkos-outsider-output/agent';
-    // Nothing running: an agent with no outsider turn is never counted.
-    expect(spendAll('note', undefined, agentPath)).toBe(50);
-
-    async function* forever(): AsyncGenerator<StreamEvent> {
-      yield { type: 'done', data: {} } as StreamEvent;
-      await new Promise(() => {});
-    }
-    const running = countWhileRunning({ cwd: agentPath }, forever());
-    await running.next();
-    expect(spendAll('note', undefined, agentPath)).toBe(OUTSIDER_TURN_LIMIT);
-    await running.return(undefined);
-
-    // The stretch ended; the next one starts over.
-    const again = countWhileRunning({ cwd: agentPath }, forever());
-    await again.next();
-    expect(spendAll('note', undefined, agentPath)).toBe(OUTSIDER_TURN_LIMIT);
-    await again.return(undefined);
+  it('never counts a caller that names no session', () => {
+    expect(sendAll('note', '')).toBe(50);
   });
 });
