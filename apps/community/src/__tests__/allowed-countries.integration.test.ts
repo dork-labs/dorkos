@@ -215,7 +215,7 @@ afterAll(async () => {
 describe('allowed countries set by the host', () => {
   it('tells the sign-up page the list, and only accepts an explicit confirmation', async () => {
     // Purpose: fails if the page cannot learn the list, anything short of `true` confirms it, or
-    // the proxy's header is ignored at the confirmation (or counts against a person when absent).
+    // the confirmation refuses on the proxy's header (which would lock out existing accounts).
     const options = await call(countriesUrl, '/api/v1/auth-options', 'GET');
     expect(((await options.json()) as { allowedCountries: unknown }).allowedCountries).toEqual([
       'US',
@@ -234,17 +234,9 @@ describe('allowed countries set by the host', () => {
     expect(set).toContain(`${COUNTRY_CONFIRMATION_COOKIE}=`);
     expect(set).toMatch(/HttpOnly/i);
     expect(set).toMatch(/Max-Age=1800/i);
-    const elsewhere = await call(
-      countriesUrl,
-      '/api/v1/country-confirmation',
-      'POST',
-      { confirmed: true },
-      '',
-      'FR'
-    );
-    expect(elsewhere.status).toBe(403);
-    expect(await elsewhere.json()).toEqual({ code: 'FORBIDDEN', message: CLOSED_MESSAGE });
-    for (const country of ['CA', 'us', 'XX', 'T1'])
+    // The route never reads the proxy's country: the page may send it before a single sign-on
+    // that turns out to be an existing account's. Only account creation refuses it.
+    for (const country of ['FR', 'CA', 'us', 'XX', 'T1'])
       expect(
         (
           await call(

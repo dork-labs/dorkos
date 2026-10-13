@@ -23,7 +23,8 @@ export interface SignInOptionsState {
 
 /**
  * The sign-in buttons this host offers beside email and password, the minimum age and countries
- * a new account must confirm, and whether they have been read yet. A failed read counts as read, with none.
+ * a new account must confirm, and whether they have been read yet. A failed read counts as read,
+ * with none.
  */
 export function useSignInOptionsState(): SignInOptionsState {
   const [state, setState] = useState<SignInOptionsState>({ options: NO_PROVIDERS, loaded: false });
@@ -107,6 +108,8 @@ const SIGN_IN_ONLY_MESSAGES: Record<string, string> = {
     'There is no account here for that sign-in yet, and this page only signs in to existing accounts. Create your account from your invitation link first, then come back.',
   country_confirmation_required:
     'There is no account here for that sign-in yet, and this page only signs in to existing accounts. Create your account from your invitation link first, then come back.',
+  country_not_open:
+    'There is no account here for that sign-in yet, and new accounts are not open in your country.',
 };
 
 /**

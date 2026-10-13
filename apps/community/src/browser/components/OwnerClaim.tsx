@@ -382,7 +382,7 @@ export function OwnerClaim() {
             confirmed={rulesConfirmed}
             onConfirmed={setRulesConfirmed}
             disabled={busy}
-            onContinue={() => void social('oidc', signUpRules(providers))}
+            onContinue={(confirm) => void social('oidc', confirm)}
           >
             <>
               <form className="panel" onSubmit={(event) => void submitAccount(event)}>

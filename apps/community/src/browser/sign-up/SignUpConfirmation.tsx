@@ -44,23 +44,22 @@ function wording({ minimumAge, allowedCountries }: SignUpRules): { rule: string;
   };
 }
 
-/**
- * The host's sign-up rules on a sign-up form: one plain line, and one box the person must tick
- * before the form will create an account. The box is `required`, so the browser stops a password
- * sign-up that skipped it; the provider buttons read `confirmed` to stay off until it is ticked.
- */
-export function SignUpConfirmation({
+/** One rule line and its box; `required` stops a form from sending until it is ticked. */
+function RuleBox({
   id,
-  rules,
+  rule,
+  box,
   confirmed,
   onChange,
+  required,
 }: {
   id: string;
-  rules: SignUpRules;
+  rule: string;
+  box: string;
   confirmed: boolean;
   onChange: (confirmed: boolean) => void;
+  required: boolean;
 }) {
-  const { rule, box } = wording(rules);
   return (
     <div className="mb-4">
       <p className="small muted mb-2" id={`${id}-rule`}>
@@ -74,10 +73,91 @@ export function SignUpConfirmation({
           aria-describedby={`${id}-rule`}
           checked={confirmed}
           onChange={(event) => onChange(event.target.checked)}
-          required
+          required={required}
         />
         <span>{box}</span>
       </Label>
     </div>
+  );
+}
+
+/**
+ * The host's sign-up rules on a form that creates an account: one plain line, and one box the
+ * person must tick first. The box is `required`, so the browser stops a password sign-up that
+ * skipped it; the provider buttons read `confirmed` to stay off until it is ticked.
+ */
+export function SignUpConfirmation({
+  id,
+  rules,
+  confirmed,
+  onChange,
+}: {
+  id: string;
+  rules: SignUpRules;
+  confirmed: boolean;
+  onChange: (confirmed: boolean) => void;
+}) {
+  return <RuleBox id={id} {...wording(rules)} confirmed={confirmed} onChange={onChange} required />;
+}
+
+/**
+ * What a single sign-on round trip confirms before it starts: the minimum age, which the page
+ * already required, and the countries only when the person ticked that they are new here. `null`
+ * when there is nothing to confirm.
+ */
+export function singleSignOnConfirmations(
+  rules: SignUpRules | null,
+  countryConfirmed: boolean
+): SignUpRules | null {
+  if (rules === null) return null;
+  const allowedCountries = countryConfirmed ? rules.allowedCountries : null;
+  if (rules.minimumAge === null && allowedCountries === null) return null;
+  return { minimumAge: rules.minimumAge, allowedCountries };
+}
+
+/**
+ * The host's sign-up rules above a single sign-on button, which cannot tell a new person from an
+ * account that already exists. The minimum age is asked exactly as on a sign-up form, and the
+ * button stays off until it is ticked. The countries get a box of their own that is never
+ * required: someone signing in to an existing account, wherever they are, leaves it alone, and a
+ * new person who skips it comes back with a note asking them to tick it.
+ */
+export function SingleSignOnRules({
+  id,
+  rules,
+  ageConfirmed,
+  onAgeChange,
+  countryConfirmed,
+  onCountryChange,
+}: {
+  id: string;
+  rules: SignUpRules;
+  ageConfirmed: boolean;
+  onAgeChange: (confirmed: boolean) => void;
+  countryConfirmed: boolean;
+  onCountryChange: (confirmed: boolean) => void;
+}) {
+  const countries = rules.allowedCountries === null ? null : countryList(rules.allowedCountries);
+  return (
+    <>
+      {rules.minimumAge !== null && (
+        <SignUpConfirmation
+          id={id}
+          rules={{ minimumAge: rules.minimumAge, allowedCountries: null }}
+          confirmed={ageConfirmed}
+          onChange={onAgeChange}
+        />
+      )}
+      {countries !== null && (
+        <RuleBox
+          id={`${id}-country`}
+          rule={`New accounts are open to people who live in ${countries}.`}
+          box={`I'm new here and live in ${countries}.`}
+          confirmed={countryConfirmed}
+          onChange={onCountryChange}
+          required={false}
+        />
+      )}
+    </>
   );
 }

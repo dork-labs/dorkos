@@ -430,6 +430,7 @@ export const CommunityWireAuthOptionsSchema = z.strictObject({
    * when the host set none. Signing in to an existing account never asks.
    */
   minimumAge: z
+    .number()
     .int()
     .min(COMMUNITY_MINIMUM_AGE_FLOOR)
     .max(COMMUNITY_MINIMUM_AGE_CEILING)

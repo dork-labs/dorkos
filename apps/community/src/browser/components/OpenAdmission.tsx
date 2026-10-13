@@ -5,7 +5,7 @@ import { describeError, request } from '../api.js';
 import type { Community } from '../types.js';
 import { returnHere, takeSignInError, useSignInOptionsState } from '../sign-in-options.js';
 import { SingleSignOnFirst } from '../sign-up/SingleSignOnFirst.js';
-import { confirmSignUp, signUpRules } from '../sign-up/SignUpConfirmation.js';
+import { confirmSignUp, signUpRules, type SignUpRules } from '../sign-up/SignUpConfirmation.js';
 import { HostPolicyLinks } from './HostLinks.js';
 
 const authClient = createAuthClient({ baseURL: window.location.origin });
@@ -73,7 +73,8 @@ export function OpenAdmission({ community, signedIn, onAdmitted, onOtherWays }: 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [signedIn]);
 
-  async function start() {
+  /** Join, or start the single sign-on first, confirming `confirm` before the round trip. */
+  async function start(confirm: SignUpRules | null) {
     if (signedIn) {
       await join();
       return;
@@ -82,7 +83,7 @@ export function OpenAdmission({ community, signedIn, onAdmitted, onOtherWays }: 
     setError('');
     try {
       await request('/api/v1/open-admission/preflight', 'POST', {});
-      if (rules) await confirmSignUp(rules);
+      if (confirm) await confirmSignUp(confirm);
       window.sessionStorage.setItem(joinNoteKey(community.id), '1');
       const result = await authClient.signIn.social({ provider: 'oidc', ...returnHere() });
       if (result.error) throw new Error(result.error.message ?? 'Sign in could not start.');
@@ -130,7 +131,7 @@ export function OpenAdmission({ community, signedIn, onAdmitted, onOtherWays }: 
             confirmed={rulesConfirmed}
             onConfirmed={setRulesConfirmed}
             disabled={busy}
-            onContinue={() => void start()}
+            onContinue={(confirm) => void start(confirm)}
           >
             <div className="panel">
               <p className="small muted">Already a member? Sign in the way you usually do.</p>

@@ -427,7 +427,7 @@ export function Admission({
             onConfirmed={setRulesConfirmed}
             before={leading && invitation}
             disabled={busy}
-            onContinue={() => void social('oidc', pendingAdmission ? signUpRules(providers) : null)}
+            onContinue={(confirm) => void social('oidc', confirm)}
           >
             <form className="panel" onSubmit={(event) => void submitAccount(event)}>
               {!leading && invitation}

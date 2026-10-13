@@ -6,7 +6,7 @@ import {
   CommunityWireSignUpConfirmationResponseSchema,
 } from '@dorkos/shared/community-wire';
 import type { CommunityConfig } from '../config.js';
-import { ApiError, json, readJson } from '../http.js';
+import { json, readJson } from '../http.js';
 import { readCookie, signValue, verifyValue } from '../security.js';
 import { AGE_CONFIRMATION_TTL_MS } from './minimum-age.js';
 
@@ -45,10 +45,8 @@ export const allowedCountriesSetting = z.preprocess(
       const codes = value.split(',').map((code) => code.trim());
       const bad = codes.filter((code) => !isCountryCode(code));
       if (bad.length === 0) return [...new Set(codes)];
-      ctx.addIssue({
-        code: 'custom',
-        message: `not a two-letter capital country code: ${bad.map((code) => JSON.stringify(code)).join(', ')}`,
-      });
+      const named = bad.map((code) => JSON.stringify(code)).join(', ');
+      ctx.addIssue({ code: 'custom', message: `not a two-letter capital country code: ${named}` });
       return z.NEVER;
     })
     .optional()
@@ -155,9 +153,10 @@ export function forgetCountryConfirmation(c: Context, config: AllowedCountriesCo
  * confirmed "I live in <the allowed countries>" before creating an account. It mirrors
  * `POST /api/v1/age-confirmation`: the page sends it when the sign-up form is submitted or a
  * provider button is chosen, the cookie lasts the same 30 minutes, and every sign-up path meets it
- * at account creation. A request the trusted proxy places outside the list is refused here too,
- * so a person learns before going further. Not registered when the host set no allowed countries,
- * so the route answers 404 there.
+ * at account creation. It never reads the trusted proxy's country: the page may send it before a
+ * single sign-on that turns out to be an existing account's, which must not be refused for where
+ * it is. Account creation alone refuses that (`country_not_open`). Not registered when the host
+ * set no allowed countries, so the route answers 404 there.
  */
 export function registerAllowedCountryRoutes(
   app: Hono,
@@ -167,8 +166,6 @@ export function registerAllowedCountryRoutes(
   if (allowedCountries === null) return;
   app.post('/api/v1/country-confirmation', async (c) => {
     await readJson(c, CommunityWireSignUpConfirmationRequestSchema);
-    if (proxyRefuses(c.req.raw.headers, config))
-      throw new ApiError(403, 'FORBIDDEN', COUNTRY_CLOSED_MESSAGE);
     const expiresAt = new Date(now().getTime() + AGE_CONFIRMATION_TTL_MS);
     setCookie(
       c,

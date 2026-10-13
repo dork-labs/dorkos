@@ -17,7 +17,9 @@ import { ProviderButton } from '../sign-up/ProviderButton.js';
 import { ProviderButtons, type SignInProvider } from '../sign-up/ProviderButtons.js';
 import {
   confirmSignUp,
+  singleSignOnConfirmations,
   SignUpConfirmation,
+  SingleSignOnRules,
   signUpRules,
   type SignUpRules,
 } from '../sign-up/SignUpConfirmation.js';
@@ -92,6 +94,7 @@ export function OwnerReplacementClaim() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [rulesConfirmed, setRulesConfirmed] = useState(false);
+  const [countryConfirmed, setCountryConfirmed] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const [busy, setBusy] = useState(false);
   // A sign-in round trip that failed comes back here with `?error=`; say why once.
@@ -313,11 +316,13 @@ export function OwnerReplacementClaim() {
         {stage === 'account' && named && (
           <div className="panel">
             {rules !== null && (
-              <SignUpConfirmation
+              <SingleSignOnRules
                 id="owner-replacement-minimum-age"
                 rules={rules}
-                confirmed={rulesConfirmed}
-                onChange={setRulesConfirmed}
+                ageConfirmed={rulesConfirmed}
+                onAgeChange={setRulesConfirmed}
+                countryConfirmed={countryConfirmed}
+                onCountryChange={setCountryConfirmed}
               />
             )}
             {providers.oidc ? (
@@ -325,9 +330,12 @@ export function OwnerReplacementClaim() {
                 provider="oidc"
                 label={providers.oidc.label}
                 mark={providers.oidc.mark ?? null}
-                // A new account must confirm the host's sign-up rules first, as on the owner claim.
-                disabled={busy || (rules !== null && !rulesConfirmed)}
-                onClick={() => void social('oidc', rules)}
+                // The named account may already exist, so only the minimum age is required here,
+                // as on the owner claim; the countries are confirmed only when ticked.
+                disabled={busy || (rules?.minimumAge != null && !rulesConfirmed)}
+                onClick={() =>
+                  void social('oidc', singleSignOnConfirmations(rules, countryConfirmed))
+                }
               />
             ) : (
               <p role="status" className="mb-0">
