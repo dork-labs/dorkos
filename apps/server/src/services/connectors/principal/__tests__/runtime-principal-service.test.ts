@@ -261,6 +261,22 @@ describe('ConnectorRuntimePrincipalService', () => {
     expect(db.select().from(connectorRuntimeBindings).all()).toHaveLength(0);
   });
 
+  it('passes a no-recorded-agent refusal through, and turns any other failure into a refusal (DOR-2752)', async () => {
+    const service = makeService('boot-a', 'unused-bearer');
+    await service.initializeBoot();
+    const unrecorded = new ConnectorRuntimeAuthorityError('agent_unrecorded', 'no recorded agent');
+    vi.mocked(resolver.authorizeTurn).mockRejectedValueOnce(unrecorded);
+    await expect(openTurn(service)).rejects.toBe(unrecorded);
+
+    vi.mocked(resolver.authorizeTurn).mockRejectedValueOnce(new Error('database is locked'));
+    await expect(openTurn(service)).rejects.toEqual(
+      expect.objectContaining<Partial<ConnectorRuntimeAuthorityError>>({
+        code: 'authority_refused',
+      })
+    );
+    expect(db.select().from(connectorRuntimeBindings).all()).toHaveLength(0);
+  });
+
   it('keeps a binding denied in-process when the durable revoke write fails', async () => {
     const service = makeService('boot-a', 'secret-bearer');
     await service.initializeBoot();

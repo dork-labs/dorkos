@@ -9,6 +9,7 @@
  *
  * @module startup/runtimes
  */
+import { registerComputerRuntime } from './computers.js';
 import type { AgentRuntimeLike } from '@dorkos/relay';
 import type { Db } from '@dorkos/db';
 import { env } from '../env.js';
@@ -259,6 +260,7 @@ export async function registerRuntimes(deps: RuntimeStartupDeps): Promise<Regist
     // in Settings takes effect on the next session rather than the next restart.
     // An unregistered value (disabled runtime, typo) keeps the built-in default
     // rather than failing boot.
+    await registerComputerRuntime(dorkHome, sessionAttachmentStore);
     applyAndWatchConfiguredDefaultRuntime(runtimeRegistry, {
       read: () => configManager.get('runtimes').default,
       onChange: (listener) => configManager.onChange(listener),

@@ -61,6 +61,7 @@ describe('UserConfigSchema', () => {
     expect(result).toEqual({
       version: 1,
       server: { port: 4242, cwd: null, boundary: null, open: true },
+      computers: { enabled: false },
       browser: { enabled: false },
       spaces: { enabled: false, official: { url: '' } },
       tunnel: {
@@ -476,6 +477,7 @@ describe('USER_CONFIG_DEFAULTS', () => {
     expect(USER_CONFIG_DEFAULTS).toEqual({
       version: 1,
       server: { port: 4242, cwd: null, boundary: null, open: true },
+      computers: { enabled: false },
       browser: { enabled: false },
       spaces: { enabled: false, official: { url: '' } },
       tunnel: {

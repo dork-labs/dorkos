@@ -27,15 +27,9 @@ import {
 import { agentRunsOnCredits } from '../../core/cloud/credits-model-gate.js';
 import { creditsRefusalEvent } from '../../core/cloud/credits-protocols.js';
 import { runtimeEnvironment } from '../shared/runtime-environment-config.js';
-import {
-  ConnectorTurnLeaseSupervisor,
-  type ConnectorTurnLeaseSupervisorHandle,
-} from '../connectors/connector-turn-lease-supervisor.js';
-import {
-  connectorRuntimeHeaders,
-  type ConnectorRuntimeTools,
-  type ConnectorRuntimeMcpInjection,
-} from '../connector-tools.js';
+import type { ConnectorTurnLeaseSupervisorHandle } from '../connectors/connector-turn-lease-supervisor.js';
+import { openConnectorTurn } from '../connectors/open-connector-turn.js';
+import type { ConnectorRuntimeTools, ConnectorRuntimeMcpInjection } from '../connector-tools.js';
 import { DOE_CAPABILITIES } from './runtime-constants.js';
 import { DoeEventQueue } from './event-queue.js';
 import { DoeApprovals } from './approvals.js';
@@ -223,38 +217,22 @@ export async function executeDoeTurn(
       }
     };
     let connectorInjection: ConnectorRuntimeMcpInjection | null = null;
-    if (agentPath && hostState.mesh?.getByPath(agentPath) && hostState.connectorTools) {
-      binding = await hostState.connectorTools.principals.openTurn(
-        {
-          runtime: 'doe',
-          canonicalSessionId: id,
-          canonicalCwd: cwd,
-          agentPath,
-          signal: controller.signal,
-        },
-        { isCurrent: () => hostState.active.get(id) === turn }
-      );
-      supervisor = (
-        hostState.connectorTools.createLeaseSupervisor ??
-        ((options) => new ConnectorTurnLeaseSupervisor(options))
-      )({
-        principals: hostState.connectorTools.principals,
-        bindingId: binding.bindingId,
-        permit: binding.renewalPermit,
-        runtime: 'doe',
-        expiresAt: binding.expiresAt,
-        signal: controller.signal,
-        onLost: () => controller.abort(),
-      });
-      connectorInjection = {
-        url: hostState.connectorTools.listenerUrl,
-        agentToolsUrl: hostState.connectorTools.agentToolsUrl,
-        headers: connectorRuntimeHeaders({
-          bearer: binding.bearer,
-          runtime: 'doe',
-          canonicalCwd: cwd,
-        }),
-      };
+    const opened =
+      agentPath && hostState.mesh?.getByPath(agentPath) && hostState.connectorTools
+        ? await openConnectorTurn(hostState.connectorTools, {
+            runtime: 'doe',
+            sessionId: id,
+            agentPath,
+            cwd,
+            signal: controller.signal,
+            isCurrent: () => hostState.active.get(id) === turn,
+            onLost: () => controller.abort(),
+          })
+        : null;
+    if (opened) {
+      binding = opened.binding;
+      supervisor = opened.supervisor;
+      connectorInjection = opened.injection;
     }
     host = await (hostState.options.assembleHost ?? assembleDoeHost)({
       sessionId: id,

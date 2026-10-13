@@ -222,6 +222,12 @@ export async function resolveRuntimeTypeForNewSession(opts: {
   agentPath?: string;
   cwd?: string;
 }): Promise<string> {
+  const placement = runtimeRegistry.computerRuntimeForAgentPath(opts.agentPath ?? opts.cwd ?? '');
+  if (placement) {
+    if (opts.runtimeHint && opts.runtimeHint !== placement)
+      throw new Error('COMPUTER_RUNTIME_MISMATCH');
+    return placement;
+  }
   if (opts.runtimeHint) return opts.runtimeHint;
 
   // Look for an agent manifest in the home the agentPath or cwd resolves to;

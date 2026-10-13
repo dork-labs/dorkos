@@ -53,6 +53,7 @@ vi.mock('../../services/core/config-manager.js', () => ({
 
 vi.mock('../../services/core/runtime-registry.js', () => ({
   runtimeRegistry: {
+    computerRuntimeForAgentPath: () => undefined,
     getNativeSessionCwd: vi.fn(() => null),
     getDefaultType: () => 'claude-code',
     // Codex is registered so the feed label has a SECOND vocabulary to be

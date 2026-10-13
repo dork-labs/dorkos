@@ -44,6 +44,7 @@ vi.mock('../../../../core/cloud/credits-model-gate.js', () => ({
 const storedSettings = vi.hoisted(() => new Map<string, { permissionMode?: string }>());
 vi.mock('../../../../core/runtime-registry.js', () => ({
   runtimeRegistry: {
+    computerRuntimeForAgentPath: () => undefined,
     getNativeSessionCwd: vi.fn(() => null),
     getSessionSettings: vi.fn(async (id: string) => storedSettings.get(id) ?? null),
     has: vi.fn((type: string) => runtimes.has(type)),

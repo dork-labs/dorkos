@@ -1,3 +1,4 @@
+import { projectComputerPlacement } from './computer-placement.js';
 /**
  * The team roster — one read of every identity on this install, and what one of
  * those identities is part of.
@@ -160,7 +161,12 @@ export function createTeamRoutes(deps: TeamRouterDeps): Hono<ApiEnv> {
         defaultAgentName: () => deps.defaultAgentName(),
       });
 
-      return c.json(roster);
+      return c.json({
+        ...roster,
+        members: roster.members.map((member) =>
+          member.agent ? { ...member, agent: projectComputerPlacement(member.agent) } : member
+        ),
+      });
     } catch (err) {
       // Nothing the roster reads reaches here — every source is caught inside
       // the aggregation. This is the backstop for the response itself failing,

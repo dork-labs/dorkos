@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from 'vitest';
 import { SessionDiscoveryUnavailableError } from '../../resolution/session-lookup-error.js';
 vi.mock('../../../core/runtime-registry.js', () => ({
   runtimeRegistry: {
+    computerRuntimeForAgentPath: () => undefined,
     getNativeSessionCwd: vi.fn(() => null),
     resolveForSessionWithOwnership: vi.fn(),
   },

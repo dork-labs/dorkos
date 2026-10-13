@@ -7,7 +7,7 @@
  * @module entities/runtime/config
  */
 import type { ComponentType } from 'react';
-import { FlaskConical } from 'lucide-react';
+import { FlaskConical, Monitor } from 'lucide-react';
 import {
   AnthropicLogo,
   CodexLogo,
@@ -65,6 +65,12 @@ export interface RuntimeDescriptor {
  * `undefined`. Read this map directly only to enumerate known runtimes.
  */
 export const RUNTIME_DESCRIPTORS: Record<string, RuntimeDescriptor> = {
+  'computer-local': {
+    type: 'computer-local',
+    label: 'Computer',
+    icon: Monitor,
+    accent: 'var(--color-violet-500)',
+  },
   doe: {
     type: 'doe',
     label: 'DorkOS',

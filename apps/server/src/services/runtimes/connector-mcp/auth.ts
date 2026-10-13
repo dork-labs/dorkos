@@ -20,7 +20,13 @@ export interface ConnectorRuntimeVariables extends RequestFactsVariables {
 /** The Hono environment of the connector runtime listener. */
 export type ConnectorRuntimeEnv = { Bindings: HttpBindings; Variables: ConnectorRuntimeVariables };
 
-const RUNTIMES = new Set<ConnectorRuntime>(['claude-code', 'codex', 'opencode', 'doe']);
+const RUNTIMES = new Set<ConnectorRuntime>([
+  'claude-code',
+  'codex',
+  'opencode',
+  'doe',
+  'computer-local',
+]);
 
 /** The uniform unauthorized body, which discloses no refusal state. */
 export const CONNECTOR_RUNTIME_REFUSAL = {

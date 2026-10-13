@@ -33,7 +33,6 @@
     "mcp",
     "multi-agent",
     "coding-agents",
-    "mission-control",
     "self-hosted"
   ],
   "type": "module",
@@ -72,7 +71,6 @@
     "@openai/codex-sdk": "~0.154.0",
     "@opencode-ai/sdk": "^1.18.30",
     "better-sqlite3": "^12.11.1",
-    "conf": "^15.1.0",
     "dotenv": "^17.4.2",
     "esbuild": "^0.28.2",
     "express": "^5.2.1",
@@ -99,6 +97,7 @@
     "@types/better-sqlite3": "^7.6.13",
     "@types/qrcode-terminal": "^0.12.2",
     "better-auth": "1.7.6",
+    "conf": "^15.1.0",
     "tsx": "^4.23.15",
     "typescript": "^5.9.3",
     "vitest": "^4.1.11"

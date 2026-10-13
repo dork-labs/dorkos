@@ -43,8 +43,12 @@ export interface ConnectorRuntimeAuthorityResolver {
 
 /** Typed setup refusal mapped by the runtime boundary without exposing private claims. */
 export class ConnectorRuntimeAuthorityError extends Error {
-  /** Stable internal refusal code. */
-  readonly code: 'boot_not_initialized' | 'authority_refused';
+  /**
+   * Stable internal refusal code. `agent_unrecorded` is the one refusal a turn
+   * may run on without connected apps: the chat has no recorded agent, so there
+   * is nothing to grant (DOR-2752). Every other refusal fails the turn.
+   */
+  readonly code: 'boot_not_initialized' | 'authority_refused' | 'agent_unrecorded';
 
   /**
    * Construct a safe runtime authority error.
@@ -164,18 +168,20 @@ export class ConnectorRuntimePrincipalService
     let resolved: ConnectorRuntimeAuthority;
     try {
       resolved = await this.authority.authorizeTurn(input);
-    } catch {
+    } catch (err) {
       input.signal.throwIfAborted();
+      if (err instanceof ConnectorRuntimeAuthorityError && err.code === 'agent_unrecorded')
+        throw err;
       throw new ConnectorRuntimeAuthorityError(
         'authority_refused',
-        'DorkOS couldn’t confirm this chat can use connected apps. Start a new turn and try again.'
+        'DorkOS couldn’t confirm this chat can use connected apps.'
       );
     }
     input.signal.throwIfAborted();
     if (!ownership.isCurrent()) {
       throw new ConnectorRuntimeAuthorityError(
         'authority_refused',
-        'DorkOS couldn’t confirm this chat can use connected apps. Start a new turn and try again.'
+        'A newer message replaced this turn before it could use connected apps.'
       );
     }
 

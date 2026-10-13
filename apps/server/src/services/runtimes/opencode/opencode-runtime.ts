@@ -29,7 +29,7 @@ import { AccountsAccessContext } from '../shared/accounts-access-context.js';
  *
  * @module services/runtimes/opencode/opencode-runtime
  */
-import type { OpencodeClient, ProviderListResponse } from '@opencode-ai/sdk';
+import type { OpencodeClient } from '@opencode-ai/sdk';
 import type {
   StreamEvent,
   ModelOption,
@@ -82,8 +82,6 @@ import {
   checkOpenCodeDependencies,
   getConnectedOpenCodeProvider,
 } from './providers/check-dependencies.js';
-import { detectOllama } from './providers/ollama.js';
-import { fetchOpenRouterCatalog, type OpenRouterCatalog } from './providers/openrouter.js';
 import {
   createOpenCodeEventContext,
   mapOpenCodeTurn,
@@ -97,7 +95,6 @@ import {
   isDerivedOpenCodeSessionId,
   unwrap,
   type OpenCodeClientProvider,
-  type OpenCodeSessionMapStore,
 } from './sessions/session-mapper.js';
 import { OpenCodeGlobalEventHub, TurnEventQueue } from './events/global-event-hub.js';
 import { OpenCodeSessionRegistry, type OpenCodeSessionPatch } from './sessions/session-registry.js';
@@ -117,7 +114,7 @@ import {
 } from './messaging/turn-input.js';
 import { resolveCompactionModel } from './messaging/compaction-model.js';
 import { validatedGrants } from './messaging/directory-grants.js';
-import { projectModelOptions, projectedProviderIds } from './providers/models.js';
+import { discoverOpenCodeModels } from './model-discovery.js';
 import { OpenCodeContextWindows } from './providers/context-windows.js';
 import { OpenCodeMcpManager } from './mcp/mcp-manager.js';
 import { canonicalDirectory } from '@dorkos/shared/canonical-directory';
@@ -152,33 +149,12 @@ import {
   type CreditsModelDecision,
 } from '../../core/cloud/credits-models.js';
 import { creditsModelIdOf, creditsPromptModel, creditsSelection } from './credits-mode.js';
-import {
-  ConnectorTurnLeaseSupervisor,
-  type ConnectorTurnLeaseSupervisorHandle,
-} from '../connectors/connector-turn-lease-supervisor.js';
+import type { ConnectorTurnLeaseSupervisorHandle } from '../connectors/connector-turn-lease-supervisor.js';
+import { openTurnOrSkip, startConnectorLease } from '../connectors/open-connector-turn.js';
 
-/** Constructor dependencies for {@link OpenCodeRuntime} (composition root). */
-export interface OpenCodeRuntimeOptions {
-  /**
-   * Sidecar client source — the `openCodeServerManager` singleton in
-   * production, a mock in tests (the `opencode` binary is never required).
-   */
-  provider: OpenCodeClientProvider;
-  /**
-   * Durable sessionId <-> OpenCode-session-id store (`OpenCodeSessionMap`
-   * over the shared Drizzle handle in production). Keeps DorkOS-facing ids
-   * stable across server restarts (DOR-251); tests that don't exercise
-   * persistence may omit it.
-   */
-  sessionMap?: OpenCodeSessionMapStore;
-  /**
-   * Where images this runtime's turns produce are stored (the local store over
-   * the resolved data directory in production). Omitted, the runtime declares
-   * `mediaOutput: 'none'` and says so per image rather than dropping one
-   * quietly — see {@link OpenCodeRuntime.getCapabilities}.
-   */
-  attachments?: SessionAttachmentStore;
-}
+import type { ConnectorRuntime } from '../../connectors/runtime-principal-port.js';
+import type { OpenCodeRuntimeOptions } from './runtime-options.js';
+export type { OpenCodeRuntimeOptions } from './runtime-options.js';
 
 /** One in-flight turn (identity-matched on teardown, like Codex's controllers). */
 interface ActiveTurn {
@@ -201,7 +177,9 @@ interface SettingUpTurn {
  * OpenCode runtime implementing the universal AgentRuntime interface.
  */
 export class OpenCodeRuntime implements AgentRuntime {
-  readonly type = 'opencode' as const;
+  readonly type: ConnectorRuntime;
+  private readonly runsOnCredits: () => boolean;
+  private readonly modelDirectory: string;
 
   private readonly provider: OpenCodeClientProvider;
   /** Where a turn's images go, or `null` when the composition root wired none. */
@@ -240,6 +218,9 @@ export class OpenCodeRuntime implements AgentRuntime {
   private meshCore: AgentRegistryPort | undefined;
 
   constructor(options: OpenCodeRuntimeOptions) {
+    this.type = options.runtimeId ?? 'opencode';
+    this.runsOnCredits = options.runsOnCredits ?? openCodeRunsOnCredits;
+    this.modelDirectory = options.modelDirectory ?? DEFAULT_CWD;
     this.provider = options.provider;
     this.attachments = options.attachments ?? null;
     this.mapper = new OpenCodeSessionMapper(options.provider, options.sessionMap, this.attachments);
@@ -322,7 +303,7 @@ export class OpenCodeRuntime implements AgentRuntime {
    * @param _sessionId - The session; every OpenCode session answers the same.
    */
   async sessionRunsOnCredits(_sessionId: string): Promise<boolean> {
-    return openCodeRunsOnCredits();
+    return this.runsOnCredits();
   }
 
   /**
@@ -384,7 +365,7 @@ export class OpenCodeRuntime implements AgentRuntime {
     opts?: MessageOpts
   ): AsyncGenerator<StreamEvent> {
     let settings = await this.resolveTurnSettings(sessionId, opts);
-    const cwd = opts?.cwd ?? this.registry.get(sessionId)?.cwd ?? DEFAULT_CWD;
+    const cwd = opts?.cwd ?? this.registry.get(sessionId)?.cwd ?? this.modelDirectory;
     // Who a room turn is for, which every identity decision below is checked
     // against (DOR-2091). Absent on every turn a room did not trigger.
     const forAgent = turnAgentOf(opts);
@@ -394,7 +375,7 @@ export class OpenCodeRuntime implements AgentRuntime {
     // service's suggestion, said once and saved only once said, and a list
     // naming none refuses the turn. While the service says nothing, the
     // session's model stands and the sidecar's own fallback applies, as before.
-    if (openCodeRunsOnCredits()) {
+    if (this.runsOnCredits()) {
       let decided: CreditsModelDecision;
       try {
         decided = await decideCreditsLaunchModel({
@@ -513,7 +494,7 @@ export class OpenCodeRuntime implements AgentRuntime {
     // persisted store), because the model DorkOS would run the next TURN on is
     // the first rung of the compaction model ladder.
     const settings = await this.resolveTurnSettings(sessionId, opts);
-    const cwd = opts?.cwd ?? this.registry.get(sessionId)?.cwd ?? DEFAULT_CWD;
+    const cwd = opts?.cwd ?? this.registry.get(sessionId)?.cwd ?? this.modelDirectory;
     yield* this.runOpenCodeTurn(
       sessionId,
       cwd,
@@ -564,7 +545,7 @@ export class OpenCodeRuntime implements AgentRuntime {
     if (this.provider.prepareTurn) return this.provider.prepareTurn(othersActive);
     // A provider that cannot be made right for credits never runs a turn the
     // person set to credits: refused, not sent on whatever it holds.
-    if (openCodeRunsOnCredits()) throw new CreditsUnavailableError('not-supported', OPENCODE_LABEL);
+    if (this.runsOnCredits()) throw new CreditsUnavailableError('not-supported', OPENCODE_LABEL);
     return OPENCODE_OWN_PLAN;
   }
 
@@ -679,17 +660,22 @@ export class OpenCodeRuntime implements AgentRuntime {
       const agentPath = homeOf(resolveAgentHome(cwd, opts?.forAgent));
       const meshAgent =
         opts?.connectorTurn && agentPath ? this.meshCore?.getByPath(agentPath) : undefined;
-      if (this.connectorRuntimeTools && meshAgent && agentPath) {
-        turn.connectorBinding = await this.connectorRuntimeTools.principals.openTurn(
-          {
-            runtime: this.type,
-            canonicalSessionId: sessionId,
-            agentPath,
-            canonicalCwd: directory,
-            signal: controller.signal,
-          },
-          { isCurrent: () => this.activeTurns.get(sessionId) === turn }
-        );
+      const opened =
+        this.connectorRuntimeTools && meshAgent && agentPath
+          ? await openTurnOrSkip(
+              this.connectorRuntimeTools.principals,
+              {
+                runtime: this.type,
+                canonicalSessionId: sessionId,
+                agentPath,
+                canonicalCwd: directory,
+                signal: controller.signal,
+              },
+              { isCurrent: () => this.activeTurns.get(sessionId) === turn }
+            )
+          : null;
+      if (this.connectorRuntimeTools && opened) {
+        turn.connectorBinding = opened;
         controller.signal.throwIfAborted();
         connectorInjection = {
           url: this.connectorRuntimeTools.listenerUrl,
@@ -716,18 +702,15 @@ export class OpenCodeRuntime implements AgentRuntime {
       if (connectorInjection && !mcpResult.connectorApplied) {
         await this.revokeConnectorTurn(turn, 'setup_failed');
       } else if (turn.connectorBinding && this.connectorRuntimeTools) {
-        const createSupervisor =
-          this.connectorRuntimeTools.createLeaseSupervisor ??
-          ((options) => new ConnectorTurnLeaseSupervisor(options));
-        turn.connectorSupervisor = createSupervisor({
-          principals: this.connectorRuntimeTools.principals,
-          bindingId: turn.connectorBinding.bindingId,
-          permit: turn.connectorBinding.renewalPermit,
-          runtime: this.type,
-          expiresAt: turn.connectorBinding.expiresAt,
-          signal: controller.signal,
-          onLost: (loss) => logger.warn('[OpenCodeRuntime] Connections lease lost', loss),
-        });
+        turn.connectorSupervisor = startConnectorLease(
+          this.connectorRuntimeTools,
+          turn.connectorBinding,
+          {
+            runtime: this.type,
+            signal: controller.signal,
+            onLost: (loss) => logger.warn('[OpenCodeRuntime] Connections lease lost', loss),
+          }
+        );
       }
       controller.signal.throwIfAborted();
 
@@ -1159,7 +1142,7 @@ export class OpenCodeRuntime implements AgentRuntime {
    * instead of 404ing until something else warms the sidecar (DOR-251).
    */
   async findSession(sessionId: string): Promise<Session | null> {
-    return this.mapper.findSession(DEFAULT_CWD, sessionId);
+    return this.mapper.findSession(this.modelDirectory, sessionId);
   }
 
   async getSession(projectDir: string, sessionId: string): Promise<Session | null> {
@@ -1217,7 +1200,9 @@ export class OpenCodeRuntime implements AgentRuntime {
    */
   async getSessionSnapshot(ctx: SessionOpts, sessionId: string): Promise<SessionSnapshot> {
     const projector = getOrCreateProjector(sessionId, ctx.cwd, { persist: 'history' });
-    return projector.buildSnapshot(() => this.getMessageHistory(ctx.cwd ?? DEFAULT_CWD, sessionId));
+    return projector.buildSnapshot(() =>
+      this.getMessageHistory(ctx.cwd ?? this.modelDirectory, sessionId)
+    );
   }
 
   /**
@@ -1342,67 +1327,7 @@ export class OpenCodeRuntime implements AgentRuntime {
    * disabled here would still be offered.
    */
   async getSupportedModels(): Promise<ModelOption[]> {
-    try {
-      const client = await this.provider.getClient(DEFAULT_CWD);
-      const listed = unwrap(
-        // Canonical, like every other directory-scoped read (DOR-695):
-        // `DORKOS_DEFAULT_CWD` is taken verbatim, and on macOS a `/tmp` or
-        // `/var` spelling reaches the sidecar as a directory it never stored.
-        await client.provider.list({ query: { directory: canonicalDirectory(DEFAULT_CWD) } }),
-        'provider.list'
-      );
-      const [installedOllamaTags, openRouterCatalog] = await Promise.all([
-        this.resolveInstalledOllamaTags(listed),
-        this.resolveOpenRouterCatalog(listed),
-      ]);
-      return projectModelOptions(listed, { installedOllamaTags, openRouterCatalog });
-    } catch (err) {
-      logger.warn('[OpenCodeRuntime] provider catalog unavailable', logError(err));
-      return [];
-    }
-  }
-
-  /**
-   * Installed Ollama tags for the honest-local-availability filter (spec §10),
-   * or `null` to skip filtering. Probes Ollama's `/api/tags` only when an
-   * ollama model can actually reach the menu ({@link projectedProviderIds} —
-   * never `payload.all`, which lists every provider models.dev knows and so
-   * gates nothing); an unreachable Ollama
-   * (`running: false`) returns `null` so the menu degrades to the full catalog
-   * rather than emptying. A reachable Ollama returns its installed tag names
-   * (possibly empty — honestly no local models installed yet).
-   */
-  private async resolveInstalledOllamaTags(
-    payload: ProviderListResponse
-  ): Promise<string[] | null> {
-    const OLLAMA_PROVIDER_ID = 'ollama';
-    if (!projectedProviderIds(payload).has(OLLAMA_PROVIDER_ID)) return null;
-    const status = await detectOllama();
-    if (!status.running) return null;
-    return status.models.map((tag) => tag.name);
-  }
-
-  /**
-   * OpenRouter's live public model catalog for the honest-cloud-availability
-   * filter, or `null` to skip it. An unreachable OpenRouter returns `null` so
-   * the menu degrades to the sidecar's own (staler) catalog rather than
-   * emptying — the same rule as {@link resolveInstalledOllamaTags}, for the
-   * same reason.
-   *
-   * Gated on {@link projectedProviderIds}, NOT on `payload.all`. `all` is the
-   * whole models.dev universe — hundreds of providers, openrouter always among
-   * them — so a gate written against it never closes, and an Ollama-only user
-   * who has never touched OpenRouter would pay a network probe (on the model
-   * WRITE path, on a plane) for a provider whose models will not appear in
-   * their menu at all. `projectedProviderIds` asks the question that actually
-   * matters: will any openrouter model be in the list this projection returns?
-   */
-  private async resolveOpenRouterCatalog(
-    payload: ProviderListResponse
-  ): Promise<OpenRouterCatalog | null> {
-    const OPENROUTER_PROVIDER_ID = 'openrouter';
-    if (!projectedProviderIds(payload).has(OPENROUTER_PROVIDER_ID)) return null;
-    return fetchOpenRouterCatalog();
+    return discoverOpenCodeModels(this.provider, this.modelDirectory);
   }
 
   /**
@@ -1423,7 +1348,7 @@ export class OpenCodeRuntime implements AgentRuntime {
    * can hand work to (DOR-2520); empty when the sidecar is not running.
    */
   getSupportedSubagents(): ReturnType<typeof listOpenCodeSubagents> {
-    return listOpenCodeSubagents(this.provider, DEFAULT_CWD);
+    return listOpenCodeSubagents(this.provider, this.modelDirectory);
   }
 
   /**

@@ -1,3 +1,4 @@
+import { listRuntimeTypes } from '../lib/list-runtime-types';
 import { describe, it, expect } from 'vitest';
 import {
   AnthropicLogo,
@@ -10,13 +11,15 @@ import {
   RUNTIME_DESCRIPTORS,
   getRuntimeDescriptor,
   runtimeLabel,
+  SELECTABLE_RUNTIME_TYPES,
 } from '../config/runtime-descriptors';
 
 describe('RUNTIME_DESCRIPTORS', () => {
-  it('registers all five known runtime types', () => {
+  it('registers every known runtime type', () => {
     expect(Object.keys(RUNTIME_DESCRIPTORS).sort()).toEqual([
       'claude-code',
       'codex',
+      'computer-local',
       'doe',
       'opencode',
       'test-mode',
@@ -48,6 +51,14 @@ describe('RUNTIME_DESCRIPTORS', () => {
 });
 
 describe('getRuntimeDescriptor', () => {
+  it('names the computer instance without adding an ordinary runtime choice', () => {
+    const descriptor = getRuntimeDescriptor('computer-local');
+    expect(descriptor.label).toBe('Computer');
+    expect(runtimeLabel('computer-local')).toBe('Computer');
+    expect(descriptor.setup).toBeUndefined();
+    expect(SELECTABLE_RUNTIME_TYPES).not.toContain('computer-local');
+  });
+
   it('returns the OpenCode descriptor for "opencode"', () => {
     const descriptor = getRuntimeDescriptor('opencode');
     expect(descriptor.label).toBe('OpenCode');
@@ -127,5 +138,16 @@ describe('runtimeLabel', () => {
 
   it('never answers with an inherited member', () => {
     expect(runtimeLabel('constructor')).toBe('Constructor');
+  });
+});
+
+describe('listRuntimeTypes', () => {
+  it('keeps placement-only computers out of general runtime setup and settings', () => {
+    expect(listRuntimeTypes(['computer-local', 'test-mode', 'future-runtime'])).toEqual([
+      'claude-code',
+      'codex',
+      'opencode',
+      'future-runtime',
+    ]);
   });
 });
