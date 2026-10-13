@@ -15,6 +15,7 @@ import {
   AGENT_SESSION_FANOUT_FRESH_MS,
   fanOutAgentSessions,
   markAgentSessionsChanged,
+  noteAgentSessionListEvent,
   resetAgentSessionFanoutCache,
   setAgentSessionSources,
 } from '../agent-session-fanout.js';
@@ -173,6 +174,79 @@ describe('fanOutAgentSessions — one scan per burst', () => {
     markAgentSessionsChanged();
     await fanOutAgentSessions({ runtimes: [runtime], agentPaths: ['/agents/a0'] });
     expect(runtime.listSessions).toHaveBeenCalledTimes(2);
+  });
+
+  // DOR-2893: every chat a working agent writes to sends an update every few
+  // seconds; when each one forced a new scan, the list was rescanned back to back.
+  const upsert = (overrides: Partial<Session> = {}) =>
+    noteAgentSessionListEvent({
+      type: 'session_upserted',
+      session: { ...session('/agents/a0', '/agents/a0'), ...overrides },
+    });
+  const ask = (runtime: FakeAgentRuntime) =>
+    fanOutAgentSessions({ runtimes: [runtime], agentPaths: ['/agents/a0'] });
+
+  it('answers an update to a listed session from the fresh scan, update included', async () => {
+    const runtime = countingRuntime();
+    upsert();
+    await ask(runtime);
+    upsert({ title: 'Renamed', updatedAt: '2026-01-02T00:00:00.000Z' });
+
+    const answer = await ask(runtime);
+    expect(runtime.listSessions).toHaveBeenCalledTimes(1);
+    expect(answer.perPath[0]!.members[0]).toMatchObject({
+      title: 'Renamed',
+      updatedAt: '2026-01-02T00:00:00.000Z',
+      cwd: '/agents/a0',
+    });
+  });
+
+  it('lays an update over a scan that was already running when it arrived', async () => {
+    const runtime = countingRuntime();
+    upsert();
+    const running = ask(runtime);
+    upsert({ title: 'Mid-scan title', updatedAt: '2026-01-03T00:00:00.000Z' });
+    const joined = ask(runtime);
+
+    expect((await joined).perPath[0]!.members[0]!.title).toBe('Mid-scan title');
+    expect((await running).perPath[0]!.members[0]!.title).toBe('Mid-scan title');
+    expect(runtime.listSessions).toHaveBeenCalledTimes(1);
+  });
+
+  it('lets a scan that began after an update answer for itself', async () => {
+    // A runtime can announce a row that disagrees with its own listing (Codex's
+    // registry stub has no title). A later scan reads the truth; it must win.
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const runtime = countingRuntime();
+    upsert({ title: '', updatedAt: '2026-02-01T00:00:00.000Z' });
+    vi.advanceTimersByTime(10);
+    const answer = await ask(runtime);
+    expect(answer.perPath[0]!.members[0]!.title).toBe('Session /agents/a0');
+  });
+
+  it('keeps the scanned row when it is newer than the last update', async () => {
+    const runtime = countingRuntime();
+    upsert({ title: 'Older', updatedAt: '2025-12-31T00:00:00.000Z' });
+    const answer = await ask(runtime);
+    expect(answer.perPath[0]!.members[0]!.title).toBe('Session /agents/a0');
+  });
+
+  it('scans again when a session appears or goes away', async () => {
+    const runtime = countingRuntime();
+    await ask(runtime);
+    noteAgentSessionListEvent({ type: 'session_upserted', session: session('new', '/agents/a0') });
+    await ask(runtime);
+    noteAgentSessionListEvent({ type: 'session_removed', sessionId: 'new' });
+    await ask(runtime);
+    expect(runtime.listSessions).toHaveBeenCalledTimes(3);
+  });
+
+  it('ignores a removal of a session it never listed', async () => {
+    const runtime = countingRuntime();
+    await ask(runtime);
+    noteAgentSessionListEvent({ type: 'session_removed', sessionId: 'unknown' });
+    await ask(runtime);
+    expect(runtime.listSessions).toHaveBeenCalledTimes(1);
   });
 
   it('forgets every answer when the sources change', async () => {

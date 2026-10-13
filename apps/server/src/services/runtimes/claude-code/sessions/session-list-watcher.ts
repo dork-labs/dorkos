@@ -43,10 +43,16 @@
  * nothing changed. Emission stays transition-only; the sweep is a source of
  * rescans, never of events.
  *
- * Rescans are debounced PER SLUG DIRECTORY ({@link SESSION_LIST_DEBOUNCE_MS})
- * so a streaming turn's JSONL append burst collapses into one re-scan of just
- * that project, and the resulting `session_upserted` is suppressed when the
- * session's projected metadata is byte-for-byte unchanged.
+ * Rescans are coalesced PER SLUG DIRECTORY: the first event waits
+ * {@link SESSION_LIST_DEBOUNCE_MS}, so a burst collapses into one re-scan of
+ * just that project, and a transcript that keeps CHANGING re-scans its project
+ * at most once per {@link SESSION_LIST_MIN_RESCAN_GAP_MS}. A working agent
+ * appends to its transcript many times a second for minutes on end; with a
+ * debounce alone every pause in that stream was a re-scan, a re-read of the
+ * changed transcript and an upsert broadcast (DOR-2893). A transcript appearing
+ * or going away, or a project folder doing so, skips the gap. The resulting
+ * `session_upserted` is suppressed when the session's projected metadata is
+ * byte-for-byte unchanged.
  *
  * `session_status` events are NOT emitted here — per-session status flows over
  * `subscribeSession`/the projector. The session-list broadcaster fans this
@@ -83,6 +89,13 @@ export const SESSION_LIST_DEBOUNCE_MS = 250;
  * milliseconds even for someone with hundreds of projects.
  */
 export const SESSION_LIST_RECONCILE_MS = 5_000;
+
+/**
+ * The least time between two re-scans of one slug directory while its
+ * transcripts only change (ms). A session being written to updates its row in
+ * the list at most this often; one appearing or going away is not held back.
+ */
+export const SESSION_LIST_MIN_RESCAN_GAP_MS = 3_000;
 
 /**
  * Compare two sessions on the fields that matter to the sidebar/global view.
@@ -192,7 +205,11 @@ export function watchSessionList(
   // blocked on an empty queue). `closed` short-circuits delivery after `return()`.
   const queue: SessionListEvent[] = [];
   let waiter: ((result: IteratorResult<SessionListEvent>) => void) | null = null;
-  const debounceTimers = new Map<string, NodeJS.Timeout>();
+  // The pending re-scan per slug dir and when it fires, and when each dir was
+  // last re-scanned, for the gap between re-scans of a changing transcript. On
+  // the monotonic clock, so a wall-clock step back cannot stretch the gap.
+  const debounceTimers = new Map<string, { timer: NodeJS.Timeout; dueAt: number }>();
+  const lastRescanAt = new Map<string, number>();
   let sweepTimer: NodeJS.Timeout | undefined;
   let closed = false;
 
@@ -227,17 +244,31 @@ export function watchSessionList(
     }
   };
 
-  /** Debounce per slug dir: a burst in one project re-scans only that project. */
-  const scheduleRescan = (transcriptsDir: string): void => {
-    const existing = debounceTimers.get(transcriptsDir);
-    if (existing) clearTimeout(existing);
-    debounceTimers.set(
-      transcriptsDir,
-      setTimeout(() => {
-        debounceTimers.delete(transcriptsDir);
-        void rescanDir(transcriptsDir);
-      }, SESSION_LIST_DEBOUNCE_MS)
-    );
+  /**
+   * Coalesce per slug dir: a burst in one project re-scans only that project,
+   * once. A pending re-scan absorbs every event until it runs, and is only ever
+   * brought forward, never pushed back, so a stream of writes cannot starve it.
+   *
+   * @param transcriptsDir - The slug dir to re-scan.
+   * @param urgent - A transcript or the dir itself appeared or went away, so
+   *   the gap between re-scans of a changing transcript does not apply.
+   */
+  const scheduleRescan = (transcriptsDir: string, urgent = true): void => {
+    const now = performance.now();
+    const gapEnds =
+      (lastRescanAt.get(transcriptsDir) ?? -Infinity) + SESSION_LIST_MIN_RESCAN_GAP_MS;
+    const dueAt = Math.max(now + SESSION_LIST_DEBOUNCE_MS, urgent ? 0 : gapEnds);
+    const pending = debounceTimers.get(transcriptsDir);
+    if (pending) {
+      if (pending.dueAt <= dueAt) return;
+      clearTimeout(pending.timer);
+    }
+    const timer = setTimeout(() => {
+      debounceTimers.delete(transcriptsDir);
+      lastRescanAt.set(transcriptsDir, performance.now());
+      void rescanDir(transcriptsDir);
+    }, dueAt - now);
+    debounceTimers.set(transcriptsDir, { timer, dueAt });
   };
 
   /**
@@ -322,15 +353,18 @@ export function watchSessionList(
    * misattributing each other's events.
    */
   const watchRoot = (projectsRoot: string): FSWatcher => {
-    /** Route a chokidar file event to its slug dir's debounced re-scan. */
-    const onFileEvent = (filePath: string): void => {
+    /**
+     * Route a chokidar file event to its slug dir's re-scan; a `change` waits
+     * out the gap between re-scans, an `add` or `unlink` does not.
+     */
+    const onFileEvent = (filePath: string, urgent: boolean): void => {
       if (!filePath.endsWith('.jsonl')) return;
       const transcriptsDir = dirname(filePath);
       // Transcripts live one level down ({root}/{slug}/{id}.jsonl); a stray
       // .jsonl directly in the root is not a session and must not trigger a
       // re-scan of the root itself as if it were a slug dir.
       if (transcriptsDir === projectsRoot) return;
-      scheduleRescan(transcriptsDir);
+      scheduleRescan(transcriptsDir, urgent);
     };
 
     /** Route a slug dir appearing/disappearing to its debounced re-scan. */
@@ -363,9 +397,9 @@ export function watchSessionList(
         pollInterval: WATCHER.POLL_INTERVAL_MS,
       },
     });
-    watcher.on('add', onFileEvent);
-    watcher.on('change', onFileEvent);
-    watcher.on('unlink', onFileEvent);
+    watcher.on('add', (filePath: string) => onFileEvent(filePath, true));
+    watcher.on('change', (filePath: string) => onFileEvent(filePath, false));
+    watcher.on('unlink', (filePath: string) => onFileEvent(filePath, true));
     watcher.on('addDir', onDirEvent);
     watcher.on('unlinkDir', onDirEvent);
 
@@ -445,7 +479,7 @@ export function watchSessionList(
   const close = async (): Promise<void> => {
     if (closed) return;
     closed = true;
-    for (const timer of debounceTimers.values()) clearTimeout(timer);
+    for (const { timer } of debounceTimers.values()) clearTimeout(timer);
     debounceTimers.clear();
     if (sweepTimer) clearTimeout(sweepTimer);
     sweepTimer = undefined;
