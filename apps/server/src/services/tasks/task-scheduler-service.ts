@@ -635,12 +635,14 @@ export class TaskSchedulerService {
 
   /** Unregister and stop a cron job. */
   unregisterTask(id: string): void {
-    const job = this.cronJobs.get(id);
-    if (job) {
-      job.stop();
-      this.cronJobs.delete(id);
-    }
+    this.cronJobs.get(id)?.stop();
+    this.cronJobs.delete(id);
     this.expectedTicks.delete(id);
+  }
+
+  /** Whether a cron job is on the clock for this task right now. */
+  hasJob(id: string): boolean {
+    return this.cronJobs.has(id);
   }
 
   /** Manually trigger a run for a task. */

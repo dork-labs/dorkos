@@ -141,98 +141,103 @@ export class TaskFileSync {
       this.fileGates.resolve(def, existing, gateOptions);
 
     if (existing) {
+      const patch = {
+        name: def.name,
+        displayName: def.meta['display-name'] ?? null,
+        description: def.meta.description ?? null,
+        prompt: def.body,
+        cron: incomingCron,
+        timezone: schedule.timezone,
+        agentId: agentId ?? null,
+        // The file's switch, unless the row is the only place a person's own
+        // can live: a schedule inside an installed package is one DorkOS
+        // refuses to write, so switching it on is recorded on the row and
+        // this sync must not copy `enabled: false` back over it (FB-26).
+        // `file-sync-gates.ts` owns that condition.
+        ...(keepsRowEnabled ? {} : { enabled: schedule.enabled }),
+        sticky: schedule.sticky,
+        maxRuntime: maxRuntimeMs,
+        permissionMode,
+        // The file is the source of truth for these three, like every other
+        // scheduling column here — so a key REMOVED from the block clears the
+        // row's override rather than leaving a stale one behind (DOR-1615).
+        runtime: schedule.runtime ?? null,
+        model: schedule.model ?? null,
+        effort: schedule.effort ?? null,
+        account: accountLocked ? existing.account : (schedule.account ?? null),
+        // The file is no longer a package's, so it is the one source of
+        // timing again (DOR-2302, `FileSyncGates.dropsTimingOverride`).
+        ...(dropsTimingOverride ? { cronOverride: null, timezoneOverride: null } : {}),
+        // Who owns the file, kept so the next sync can see ownership lapse and
+        // the app can show it (DOR-2272); `file-sync-gates.ts` decides what to
+        // record while a release is still being written. A write that did not
+        // ask leaves it as it was.
+        ...(packageOwned !== undefined ? { packageOwned } : {}),
+        // A `paused` row whose file is back is un-paused here, because
+        // nothing else ever will: the scheduler requires `enabled` AND
+        // `status === 'active'`, and restoring only `enabled` leaves a task
+        // that looks live and never fires.
+        //
+        // Safe because `paused` is a server-owned signal, not a person's
+        // choice. It is written only by this service — file gone
+        // (`markRemovedByFilePath`), agent unregistered
+        // (`disableTasksByAgentId`) — and `SettableTaskStatusSchema` keeps
+        // the update API from setting it, precisely because a DB-only status
+        // cannot survive this line. A person pausing a task sends
+        // `enabled: false`, which lands in the file's frontmatter and is
+        // re-read above, so their choice holds.
+        // `pending_approval` is untouched: that gate is a person's to clear.
+        //
+        // Under the arm gate this un-pausing is the gate's call instead: a
+        // returning file keeps its approval when the content key still
+        // matches (a save is an unlink-and-recreate), and re-parks when it
+        // does not.
+        ...(arm
+          ? {
+              status: arm.status,
+              ...fileProvenance(existing, arm),
+              // Parking withdraws the grant, so the next sync has to ask again
+              // rather than finding a key it left lying around.
+              ...(arm.status === 'pending_approval'
+                ? {
+                    approvedContentKey: null,
+                    // Kept for the card's "what changed" (DOR-2323).
+                    previousApprovalKey:
+                      existing.approvedContentKey ?? existing.previousApprovalKey,
+                  }
+                : { previousApprovalKey: null }),
+            }
+          : existing.status === 'paused'
+            ? {
+                status: 'active' as const,
+                // ...and with a grant, because this branch ARMS the row. An
+                // operator write that un-pauses a schedule is the operator's
+                // approval of it, exactly as the insert branch treats a create;
+                // leaving the key null would put the row live and ungranted
+                // until the next sync noticed and parked it (DOR-1485 review,
+                // R2). Reachable through `shape-schedule-service` and through a
+                // route write over a path whose file had been deleted.
+                // What will RUN, a person's own timing included (DOR-2302).
+                approvedContentKey: effectiveContentKey({
+                  ...existing,
+                  ...fileSettingsOf(def),
+                  prompt: def.body,
+                  cron: incomingCron,
+                  timezone: schedule.timezone,
+                }),
+                previousApprovalKey: null,
+              }
+            : {}),
+        tags: '[]',
+      };
+      // A file read again with nothing new in it writes nothing (DOR-2899). The
+      // reconciler re-reads every task file every five minutes, and rewriting
+      // each row, timestamp and all, made every pass look like an edit of every
+      // task to everything downstream.
+      if (!rowWouldChange(existing, patch)) return this.getTask(existing.id)!;
       this.db
         .update(pulseSchedules)
-        .set({
-          name: def.name,
-          displayName: def.meta['display-name'] ?? null,
-          description: def.meta.description ?? null,
-          prompt: def.body,
-          cron: incomingCron,
-          timezone: schedule.timezone,
-          agentId: agentId ?? null,
-          // The file's switch, unless the row is the only place a person's own
-          // can live: a schedule inside an installed package is one DorkOS
-          // refuses to write, so switching it on is recorded on the row and
-          // this sync must not copy `enabled: false` back over it (FB-26).
-          // `file-sync-gates.ts` owns that condition.
-          ...(keepsRowEnabled ? {} : { enabled: schedule.enabled }),
-          sticky: schedule.sticky,
-          maxRuntime: maxRuntimeMs,
-          permissionMode,
-          // The file is the source of truth for these three, like every other
-          // scheduling column here — so a key REMOVED from the block clears the
-          // row's override rather than leaving a stale one behind (DOR-1615).
-          runtime: schedule.runtime ?? null,
-          model: schedule.model ?? null,
-          effort: schedule.effort ?? null,
-          account: accountLocked ? existing.account : (schedule.account ?? null),
-          // The file is no longer a package's, so it is the one source of
-          // timing again (DOR-2302, `FileSyncGates.dropsTimingOverride`).
-          ...(dropsTimingOverride ? { cronOverride: null, timezoneOverride: null } : {}),
-          // Who owns the file, kept so the next sync can see ownership lapse and
-          // the app can show it (DOR-2272); `file-sync-gates.ts` decides what to
-          // record while a release is still being written. A write that did not
-          // ask leaves it as it was.
-          ...(packageOwned !== undefined ? { packageOwned } : {}),
-          // A `paused` row whose file is back is un-paused here, because
-          // nothing else ever will: the scheduler requires `enabled` AND
-          // `status === 'active'`, and restoring only `enabled` leaves a task
-          // that looks live and never fires.
-          //
-          // Safe because `paused` is a server-owned signal, not a person's
-          // choice. It is written only by this service — file gone
-          // (`markRemovedByFilePath`), agent unregistered
-          // (`disableTasksByAgentId`) — and `SettableTaskStatusSchema` keeps
-          // the update API from setting it, precisely because a DB-only status
-          // cannot survive this line. A person pausing a task sends
-          // `enabled: false`, which lands in the file's frontmatter and is
-          // re-read above, so their choice holds.
-          // `pending_approval` is untouched: that gate is a person's to clear.
-          //
-          // Under the arm gate this un-pausing is the gate's call instead: a
-          // returning file keeps its approval when the content key still
-          // matches (a save is an unlink-and-recreate), and re-parks when it
-          // does not.
-          ...(arm
-            ? {
-                status: arm.status,
-                ...fileProvenance(existing, arm),
-                // Parking withdraws the grant, so the next sync has to ask again
-                // rather than finding a key it left lying around.
-                ...(arm.status === 'pending_approval'
-                  ? {
-                      approvedContentKey: null,
-                      // Kept for the card's "what changed" (DOR-2323).
-                      previousApprovalKey:
-                        existing.approvedContentKey ?? existing.previousApprovalKey,
-                    }
-                  : { previousApprovalKey: null }),
-              }
-            : existing.status === 'paused'
-              ? {
-                  status: 'active' as const,
-                  // ...and with a grant, because this branch ARMS the row. An
-                  // operator write that un-pauses a schedule is the operator's
-                  // approval of it, exactly as the insert branch treats a create;
-                  // leaving the key null would put the row live and ungranted
-                  // until the next sync noticed and parked it (DOR-1485 review,
-                  // R2). Reachable through `shape-schedule-service` and through a
-                  // route write over a path whose file had been deleted.
-                  // What will RUN, a person's own timing included (DOR-2302).
-                  approvedContentKey: effectiveContentKey({
-                    ...existing,
-                    ...fileSettingsOf(def),
-                    prompt: def.body,
-                    cron: incomingCron,
-                    timezone: schedule.timezone,
-                  }),
-                  previousApprovalKey: null,
-                }
-              : {}),
-          tags: '[]',
-          updatedAt: now,
-        })
+        .set({ ...patch, updatedAt: now })
         .where(eq(pulseSchedules.id, existing.id))
         .run();
       return this.getTask(existing.id)!;
@@ -346,4 +351,15 @@ export class TaskFileSync {
       .get();
     return row ? mapTaskRow(row) : null;
   }
+}
+
+/**
+ * Whether writing `patch` over `row` would change any column.
+ *
+ * @param row - The row as stored.
+ * @param patch - The columns a sync would write.
+ */
+function rowWouldChange(row: object, patch: object): boolean {
+  const stored = row as Record<string, unknown>;
+  return Object.entries(patch).some(([column, value]) => stored[column] !== value);
 }
