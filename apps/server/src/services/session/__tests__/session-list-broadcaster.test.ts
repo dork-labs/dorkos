@@ -114,6 +114,7 @@ describe('SessionListBroadcaster — multi-runtime fan-in (ADR-0310)', () => {
   afterEach(async () => {
     await broadcaster.stop();
     vi.restoreAllMocks();
+    resetAgentSessionFanoutCache();
   });
 
   it('survives a MALFORMED upsert even with a retirement check armed', async () => {
@@ -167,7 +168,6 @@ describe('SessionListBroadcaster — multi-runtime fan-in (ADR-0310)', () => {
     );
     await ask();
     expect(lister.listSessions).toHaveBeenCalledTimes(3);
-    resetAgentSessionFanoutCache();
   });
 
   it('suppresses an upsert for an id the runtime has RETIRED', async () => {

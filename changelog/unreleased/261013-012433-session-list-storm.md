@@ -3,6 +3,7 @@ covers:
   - 'fix: stop the chat-list storm that slowed the whole app'
   - 'fix: never hand a caller a scan from before a chat changed'
   - 'chore: fold the review fix into the chat-list storm changelog fragment'
+  - 'fix: a caller in the hand-off gap joins the queued scan'
 ---
 
 ### Fixed

@@ -349,6 +349,9 @@ export async function fanOutAgentSessions(opts: {
         return startScan(owner, runtimes, uniquePaths);
       });
     result = owner.next;
+  } else if (question.next) {
+    // The running scan just settled and the queued one has not started yet.
+    result = question.next;
   } else {
     result = startScan(question, runtimes, uniquePaths);
   }
