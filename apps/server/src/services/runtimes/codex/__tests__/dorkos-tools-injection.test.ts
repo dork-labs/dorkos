@@ -32,6 +32,7 @@ import { CodexRuntime } from '../codex-runtime.js';
 import { CodexThreadMap } from '../thread-map.js';
 import { codexSimpleTurn, makeMockThread } from './codex-scenarios.js';
 import type { ConnectorRuntimePrincipalPort } from '../../../connectors/runtime-principal-port.js';
+import { ConnectorRuntimeAuthorityError } from '../../../connectors/principal/runtime-principal-service.js';
 import type { ConnectorTurnLeaseSupervisorFactory } from '../../connectors/connector-turn-lease-supervisor.js';
 import { createRuntimeTurnRenewalConformanceFixture } from '../../connectors/__tests__/turn-renewal-conformance-fixture.js';
 import {
@@ -469,6 +470,46 @@ describe('the dorkos tool server on a Codex turn', () => {
       expect(principals.revoke).toHaveBeenCalledWith('binding-1', 'turn_terminal');
       expect(stop).toHaveBeenCalledBefore(vi.mocked(principals.revoke));
       expect(vi.mocked(principals.openTurn).mock.calls[0]?.[1].isCurrent()).toBe(false);
+    });
+
+    it('runs the turn without connected apps when the chat has no recorded agent (DOR-2752)', async () => {
+      const principals = connectorPort();
+      vi.mocked(principals.openTurn).mockRejectedValueOnce(
+        new ConnectorRuntimeAuthorityError('agent_unrecorded', 'no recorded agent')
+      );
+      const runtime = makeRuntime();
+      runtime.setConnectorRuntimeTools({
+        principals,
+        listenerUrl: 'http://127.0.0.1:4341/mcp',
+        agentToolsUrl: 'http://127.0.0.1:4341/agent-mcp',
+        isConnectorCapabilityId: () => false,
+      });
+
+      const events: StreamEvent[] = [];
+      for await (const event of runtime.sendMessage('s1', 'hello', { cwd: agentDir })) {
+        events.push(event);
+      }
+
+      expect(events.some((event) => event.type === 'error')).toBe(false);
+      expect(events.at(-1)?.type).toBe('done');
+      expect(lastMcpServers()['dorkos_connections']).toBeUndefined();
+      expect(principals.revoke).not.toHaveBeenCalled();
+    });
+
+    it('still fails the turn when opening connected apps fails for another reason', async () => {
+      const principals = connectorPort();
+      vi.mocked(principals.openTurn).mockRejectedValueOnce(new Error('database is locked'));
+      const runtime = makeRuntime();
+      runtime.setConnectorRuntimeTools({
+        principals,
+        listenerUrl: 'http://127.0.0.1:4341/mcp',
+        agentToolsUrl: 'http://127.0.0.1:4341/agent-mcp',
+        isConnectorCapabilityId: () => false,
+      });
+
+      await expect(drain(runtime.sendMessage('s1', 'hello', { cwd: agentDir }))).rejects.toThrow(
+        'database is locked'
+      );
     });
 
     it('opens fresh authority for a later message on the same Codex thread', async () => {

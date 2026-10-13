@@ -147,19 +147,13 @@ import { buildCodexPrompt, grantedWritableDirectories } from './turn-input.js';
 import { CodexContextGate } from './context-gate.js';
 import { enumerateCodexMcpServers } from './enumerate-mcp-servers.js';
 import { scanSkillCommands } from './scan-skill-commands.js';
-import {
-  connectorRuntimeHeaders,
-  type ConnectorRuntimeMcpInjection,
-  type ConnectorRuntimeTools,
-} from '../connector-tools.js';
+import type { ConnectorRuntimeMcpInjection, ConnectorRuntimeTools } from '../connector-tools.js';
 import type {
   OpenConnectorTurnResult,
   RevokeConnectorTurnReason,
 } from '../../connectors/runtime-principal-port.js';
-import {
-  ConnectorTurnLeaseSupervisor,
-  type ConnectorTurnLeaseSupervisorHandle,
-} from '../connectors/connector-turn-lease-supervisor.js';
+import type { ConnectorTurnLeaseSupervisorHandle } from '../connectors/connector-turn-lease-supervisor.js';
+import { openConnectorTurn } from '../connectors/open-connector-turn.js';
 
 /**
  * How long a warmed Codex MCP-status cache stays fresh before {@link CodexRuntime.getMcpStatus}
@@ -926,39 +920,23 @@ export class CodexRuntime implements AgentRuntime {
     let connectorRuntimeFailed = false;
     try {
       let connectorTools: ConnectorRuntimeMcpInjection | null = null;
-      if (this.connectorRuntimeTools && meshAgent && agentPath) {
-        connectorBinding = await this.connectorRuntimeTools.principals.openTurn(
-          {
-            runtime: this.type,
-            canonicalSessionId: sessionId,
-            agentPath,
-            canonicalCwd: cwd,
-            signal: controller.signal,
-          },
-          { isCurrent: () => this.activeTurns.get(sessionId) === controller }
-        );
-        this.activeConnectorBindings.set(controller, connectorBinding.bindingId);
-        const createSupervisor =
-          this.connectorRuntimeTools.createLeaseSupervisor ??
-          ((options) => new ConnectorTurnLeaseSupervisor(options));
-        connectorSupervisor = createSupervisor({
-          principals: this.connectorRuntimeTools.principals,
-          bindingId: connectorBinding.bindingId,
-          permit: connectorBinding.renewalPermit,
-          runtime: this.type,
-          expiresAt: connectorBinding.expiresAt,
-          signal: controller.signal,
-          onLost: (loss) => logger.warn('[CodexRuntime] Connections lease lost', loss),
-        });
-        connectorTools = {
-          url: this.connectorRuntimeTools.listenerUrl,
-          agentToolsUrl: this.connectorRuntimeTools.agentToolsUrl,
-          headers: connectorRuntimeHeaders({
-            bearer: connectorBinding.bearer,
-            runtime: this.type,
-            canonicalCwd: cwd,
-          }),
-        };
+      const opened =
+        this.connectorRuntimeTools && meshAgent && agentPath
+          ? await openConnectorTurn(this.connectorRuntimeTools, {
+              runtime: this.type,
+              sessionId,
+              agentPath,
+              cwd,
+              signal: controller.signal,
+              isCurrent: () => this.activeTurns.get(sessionId) === controller,
+              onLost: (loss) => logger.warn('[CodexRuntime] Connections lease lost', loss),
+            })
+          : null;
+      if (opened) {
+        connectorBinding = opened.binding;
+        this.activeConnectorBindings.set(controller, opened.binding.bindingId);
+        connectorSupervisor = opened.supervisor;
+        connectorTools = opened.injection;
       }
 
       // Mint this session's agent identity token when this cwd hosts a registered
