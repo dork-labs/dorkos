@@ -31,7 +31,7 @@ import {
 } from '@dorkos/shared/session-stream';
 import type { ChatMessage } from '../chat-types';
 import { deriveFromParts } from './stream-event-helpers';
-import { mapHistoryMessage } from './stream-history-helpers';
+import { mapHistoryMessages } from './stream-history-helpers';
 import { foldCapabilityApproval, foldCapabilityApprovalResolved } from './capability-approval-fold';
 import { foldMcpSignin, foldMcpSigninResolved } from './mcp-signin-fold';
 
@@ -1181,7 +1181,7 @@ function withoutEmptyDuplicateToolCalls(
  *
  * @param messages - Mapped history, in order.
  */
-function trailingAssistantRun(messages: ChatMessage[]): number {
+function trailingAssistantRun(messages: readonly ChatMessage[]): number {
   let start = messages.length;
   while (start > 0 && messages[start - 1].role === 'assistant') start -= 1;
   return start;
@@ -1189,7 +1189,7 @@ function trailingAssistantRun(messages: ChatMessage[]): number {
 
 /**
  * Project the per-session stream store's server state into the rendered
- * {@link ChatMessage}[]: completed history mapped via {@link mapHistoryMessage},
+ * {@link ChatMessage}[]: completed history mapped via {@link mapHistoryMessages},
  * followed by the in-progress turn ({@link projectInProgressSegments}) — one
  * trailing assistant bubble, or, when a steer joined the turn, a sequence of
  * assistant bubbles with the steer's inline user bubble in reading order.
@@ -1228,7 +1228,7 @@ export function projectSessionMessages(
   // The turn is projected FIRST because history is deduped against it.
   const segments = projectInProgressSegments(inProgressTurn, pendingInteractions);
   const liveIds = liveToolCallIds(segments);
-  const mapped = snapshotMessages.map(mapHistoryMessage);
+  const mapped = mapHistoryMessages(snapshotMessages);
   // Only the trailing assistant run is a dedup candidate — see
   // `withoutEmptyDuplicateToolCalls` for why an id match alone proves nothing.
   const dedupFrom = liveIds.size === 0 ? mapped.length : trailingAssistantRun(mapped);

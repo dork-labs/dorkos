@@ -75,7 +75,10 @@ export function AssistantMessageContent({ message }: { message: ChatMessage }) {
     runtimeLabel,
     allowsDenyReason,
   } = useMessageContext();
-  const { expandToolCalls, autoHideToolCalls } = useAppStore();
+  // Two fields, not the whole store: any app-store write used to redraw every
+  // assistant row, memoized or not (DOR-2895).
+  const expandToolCalls = useAppStore((s) => s.expandToolCalls);
+  const autoHideToolCalls = useAppStore((s) => s.autoHideToolCalls);
   const parts = message.parts ?? [];
   // What this chat sent other chats — the Sent cards' live state. One shared
   // read per chat however many messages ask for it.

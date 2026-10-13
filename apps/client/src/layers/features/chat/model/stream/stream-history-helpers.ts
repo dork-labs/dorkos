@@ -11,6 +11,31 @@ import type { HistoryMessage, MessagePart } from '@dorkos/shared/types';
 import type { ChatMessage } from '../chat-types';
 import { deriveFromParts } from './stream-event-helpers';
 
+/** Each history array's mapped copy, kept as long as the array itself lives. */
+const mappedHistory = new WeakMap<readonly HistoryMessage[], ChatMessage[]>();
+
+/**
+ * Map a whole history to `ChatMessage`s, once per history array.
+ *
+ * The stream store keeps the SAME history array across every live event of a
+ * turn (it only replaces it when history itself changes), so the projection
+ * that runs on each event can reuse the last mapping instead of rebuilding
+ * every message of a long chat per streamed word (DOR-2895). Reusing the same
+ * objects also lets rows that did not change keep their identity.
+ *
+ * The result is shared: treat it, and every message in it, as read-only.
+ *
+ * @param history - The server history, as the stream store holds it.
+ */
+export function mapHistoryMessages(history: readonly HistoryMessage[]): readonly ChatMessage[] {
+  let mapped = mappedHistory.get(history);
+  if (!mapped) {
+    mapped = history.map(mapHistoryMessage);
+    mappedHistory.set(history, mapped);
+  }
+  return mapped;
+}
+
 /** Map a server `HistoryMessage` to the client `ChatMessage` format. */
 export function mapHistoryMessage(m: HistoryMessage): ChatMessage {
   const parts: MessagePart[] = m.parts ? [...m.parts] : [];
