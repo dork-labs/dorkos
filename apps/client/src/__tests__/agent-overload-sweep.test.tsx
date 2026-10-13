@@ -52,15 +52,14 @@ vi.mock('@/layers/shared/model', async (importOriginal) => {
   };
 });
 
+// Everything else stays real: `configKeys` is the one `/config` cache key (spec
+// `sidebar-simplification` D6), and the card's community offer reads the config too.
 vi.mock('@/layers/entities/config', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/layers/entities/config')>()),
   useDefaultAgentSession: () => ({
     startSession: vi.fn(),
     defaultAgentDir: '~/.dork/agents/dorkbot',
   }),
-  // Real: it is the one `/config` cache key (spec `sidebar-simplification` D6).
-  configKeys: (await importOriginal<typeof import('@/layers/entities/config')>()).configKeys,
-  CONFIG_STALE_TIME_MS: (await importOriginal<typeof import('@/layers/entities/config')>())
-    .CONFIG_STALE_TIME_MS,
 }));
 
 // Imported after the mocks above so ProgressCard picks up the mocked stores.

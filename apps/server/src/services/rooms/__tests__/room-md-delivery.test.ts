@@ -38,6 +38,7 @@ import type { RoomTurnRequest } from '../room-trigger.js';
 
 vi.mock('../../core/runtime-registry.js', () => ({
   runtimeRegistry: {
+    computerRuntimeForAgentPath: () => undefined,
     getNativeSessionCwd: vi.fn(() => null),
     persistSessionRuntime: () => Promise.resolve(true),
     getSessionSettings: () => Promise.resolve({}),

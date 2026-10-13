@@ -143,6 +143,9 @@
     ],
     "ignoredBuiltDependencies": [
       "electron-winstaller"
-    ]
+    ],
+    "patchedDependencies": {
+      "when-exit@2.1.5": "patches/when-exit@2.1.5.patch"
+    }
   }
 }

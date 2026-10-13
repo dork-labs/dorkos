@@ -3,10 +3,17 @@ import { transaction } from './data.js';
 import { releaseCommunityShortNames, type ShortNameHolds } from './host/short-names.js';
 import { BlobStoreError, reconcileTenantNamespace, type BlobStore } from './storage/index.js';
 import { BLOB_DELETE_TIMEOUT_MS, BLOB_LOCK_TIMEOUT_MS } from './storage/pending-deletions.js';
+import { MANAGED_BLOB_WRITER_ABANDONED_MS } from './storage/managed-blobs.js';
 import { UNSETTLED_EVIDENCE_SQL } from './takedown/takedowns.js';
 import { notifyLive } from './live/notices.js';
 
 const DELETE_BATCH = 25;
+/**
+ * How long past its deletion date a community may wait before the server says so. A writer that
+ * never reported back holds a deletion for at most `MANAGED_BLOB_WRITER_ABANDONED_MS`, so a
+ * deletion still waiting a day after that is stuck for some other reason a person must look at.
+ */
+export const COMMUNITY_DELETION_OVERDUE_MS = MANAGED_BLOB_WRITER_ABANDONED_MS + 24 * 60 * 60 * 1000;
 // An expired export whose sweep already deleted its object and its managed-blob row keeps its
 // archive row (with `deleted_at`) for the audit trail. It owns no object any more, so it is not
 // missing inventory: counting it would refuse the community's deletion forever.
@@ -174,8 +181,11 @@ export async function sweepCommunityDeletions(
       // Both halves are bounded so one slow file never holds the row, and with it a legal hold
       // being placed, for long: the lock read by a statement timeout, the storage call by an
       // abort signal. Either failing counts as a failed attempt and is retried with backoff.
-      const legallyHeld = await transaction(pool, async (client) => {
+      const attempt = await transaction(pool, async (client) => {
         await client.query(`SET LOCAL statement_timeout = '${BLOB_LOCK_TIMEOUT_MS}'`);
+        // The database clock before the storage delete: a writer abandoned by then can no
+        // longer publish behind this delete.
+        const clock = await client.query<{ now: Date }>('SELECT now() AS now');
         await client.query(
           "SELECT pg_advisory_xact_lock(hashtextextended('dorkos:legal-hold:' || $1::text,0))",
           [job.community_id]
@@ -184,18 +194,20 @@ export async function sweepCommunityDeletions(
           'SELECT legal_hold_at FROM communities WHERE id=$1 FOR SHARE',
           [job.community_id]
         );
-        if (!current.rows[0] || current.rows[0].legal_hold_at) return true;
+        if (!current.rows[0] || current.rows[0].legal_hold_at) return null;
+        // Deleting a file that is already gone succeeds, so a missing file counts as deleted.
         await blobStore.delete(candidate.blob_key, {
           signal: AbortSignal.timeout(BLOB_DELETE_TIMEOUT_MS),
         });
-        return false;
+        return { startedAt: clock.rows[0].now };
       });
-      if (legallyHeld) return { claimed: 1, deletedBlobs, completed: 0, failed };
+      if (!attempt) return { claimed: 1, deletedBlobs, completed: 0, failed };
       // An absent object does not settle a writer that still owns this key. Its
-      // delayed put may ignore cancellation and publish after this delete.
+      // delayed put may ignore cancellation and publish after this delete, until the
+      // writer is abandoned (`MANAGED_BLOB_WRITER_ABANDONED_MS` before this delete began).
       const marked = await pool.query(
         `UPDATE community_deletion_blob_progress p
-         SET state='deleted',deleted_at=now(),last_error_class=NULL
+         SET state='deleted',deleted_at=$3,last_error_class=NULL
          WHERE p.community_id=$1 AND p.blob_key=$2 AND p.state<>'deleted'
            AND NOT EXISTS(
              SELECT 1 FROM managed_blobs m
@@ -207,10 +219,11 @@ export async function sweepCommunityDeletions(
                    m.state='pending_delete'
                    AND m.committed_at IS NULL
                    AND (q.blob_key IS NULL OR q.last_error_at IS NULL)
+                   AND m.created_at>$3::timestamptz-($4 * interval '1 millisecond')
                  )
                )
            )`,
-        [job.community_id, candidate.blob_key]
+        [job.community_id, candidate.blob_key, attempt.startedAt, MANAGED_BLOB_WRITER_ABANDONED_MS]
       );
       if (marked.rowCount) {
         deletedBlobs++;
@@ -311,9 +324,10 @@ export async function sweepCommunityDeletions(
            m.state='pending_delete'
            AND m.committed_at IS NULL
            AND (q.blob_key IS NULL OR q.last_error_at IS NULL)
+           AND m.created_at>p.deleted_at-($2 * interval '1 millisecond')
          )
        ) LIMIT 1`,
-      [job.community_id]
+      [job.community_id, MANAGED_BLOB_WRITER_ABANDONED_MS]
     );
     if (incomplete.rowCount) {
       await client.query(
@@ -436,6 +450,45 @@ export async function sweepCommunityDeletions(
     return true;
   });
   return { claimed: 1, deletedBlobs, completed: completed ? 1 : 0, failed: 0 };
+}
+
+/** A community whose deletion is overdue, for the server's log. */
+export interface OverdueCommunityDeletion {
+  communityId: string;
+  state: string;
+  lastErrorClass: string | null;
+  overdueHours: number;
+}
+
+/**
+ * List communities still waiting to be deleted `COMMUNITY_DELETION_OVERDUE_MS` past their
+ * deletion date, oldest first. A legal hold or unsettled takedown evidence is a deliberate
+ * wait, so those are left out.
+ */
+export async function findOverdueCommunityDeletions(
+  pool: Pool,
+  limit = 20
+): Promise<OverdueCommunityDeletion[]> {
+  const result = await pool.query<{
+    community_id: string;
+    state: string;
+    last_error_class: string | null;
+    overdue_hours: number;
+  }>(
+    `SELECT j.community_id,j.state,j.last_error_class,
+            floor(EXTRACT(EPOCH FROM now()-j.delete_after)/3600)::int AS overdue_hours
+     FROM community_deletion_jobs j JOIN communities c ON c.id=j.community_id
+     WHERE j.delete_after<=now()-($1 * interval '1 millisecond') AND c.legal_hold_at IS NULL
+       AND NOT ${UNSETTLED_EVIDENCE_SQL.replaceAll('$1', 'j.community_id')}
+     ORDER BY j.delete_after,j.community_id LIMIT $2`,
+    [COMMUNITY_DELETION_OVERDUE_MS, limit]
+  );
+  return result.rows.map((row) => ({
+    communityId: row.community_id,
+    state: row.state,
+    lastErrorClass: row.last_error_class,
+    overdueHours: row.overdue_hours,
+  }));
 }
 
 /** Remove expired content-free tenant deletion receipts. */

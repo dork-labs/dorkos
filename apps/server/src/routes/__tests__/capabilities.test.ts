@@ -50,6 +50,7 @@ const mockCapabilities = {
 
 vi.mock('../../services/core/runtime-registry.js', () => ({
   runtimeRegistry: {
+    computerRuntimeForAgentPath: () => undefined,
     getNativeSessionCwd: vi.fn(() => null),
     getAllCapabilities: vi.fn(() => ({
       'claude-code': mockCapabilities,

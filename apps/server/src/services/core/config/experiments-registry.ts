@@ -83,6 +83,13 @@ export interface ExperimentEntry {
  */
 export const EXPERIMENTS: readonly ExperimentEntry[] = [
   {
+    path: 'computers.enabled',
+    title: 'Agent computer',
+    description: 'Give an agent its own Linux computer. View it and take control.',
+    costNote: 'Apple Silicon only. Setup downloads Linux. Sign in separately inside the computer.',
+    graduationIssue: 'DOR-2748',
+  },
+  {
     path: 'browser.enabled',
     title: 'Shared browser',
     description: 'View your agents’ browser and share control.',

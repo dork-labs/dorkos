@@ -2,8 +2,8 @@
  * The words the unattended consent dialog uses, written once.
  *
  * {@link UnattendedAutonomyDialog} asks a person to confirm a mode that will
- * not stop to ask on a surface nobody is watching. The copy that is ABOUT THE
- * MODE lives here; the consequence for each surface stays with its caller.
+ * not stop to ask on a chat binding. The copy that is ABOUT THE MODE lives here;
+ * the consequence stays with its caller.
  *
  * Everything is derived from the descriptor the runtime declared. No mode ids,
  * no runtime names (spec `trust-dial`, decision 2A).
@@ -61,27 +61,3 @@ export function consentAsksNote(descriptor: PermissionModeDescriptor): string | 
   if (!actsWithoutAsking(descriptor) || isAutonomyStop(descriptor)) return null;
   return 'This stop never pauses to ask. It acts without checking with you.';
 }
-
-/**
- * What stops happening when a SCHEDULED run is given a mode that never asks.
- *
- * Written once because two surfaces now hand a schedule that mode — the task
- * form's Permissions control, and the SCHEDULE approval card's "Approve at …"
- * (DOR-2100) — and a person meeting the same consequence on two screens must
- * read the same sentence. It is the one part of the dialog that is about the SURFACE rather
- * than the mode, which is why it lives beside the mode copy instead of inside
- * {@link UnattendedAutonomyDialog}: a relay binding's consequence is a different
- * sentence and stays with its own caller.
- */
-export const SCHEDULED_RUN_CONSENT_CONSEQUENCE =
-  'A scheduled run has nobody to ask. Nothing is asked, and nothing is recorded.';
-
-/**
- * The contrast behind {@link SCHEDULED_RUN_CONSENT_CONSEQUENCE}: what the same
- * blocked action does at a stop that asks. Each line is its own short paragraph,
- * shown behind "More details" by {@link ScheduledRunConsequence}.
- */
-export const SCHEDULED_RUN_CONSENT_CONTRAST = [
-  'At a stop that asks, an action it can’t take is refused.',
-  'The run works around it. Here, every action just happens.',
-] as const;

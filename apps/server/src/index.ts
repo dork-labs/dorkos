@@ -23,7 +23,7 @@ import { startRelayAdapters } from './startup/relay-adapters.js';
 import { startTasks } from './startup/tasks.js';
 import { startMarketplace } from './startup/marketplace.js';
 import { ClaudeCodeRuntime } from './services/runtimes/claude-code/claude-code-runtime.js';
-import { shutdownSessionPumps } from './services/runtimes/claude-code/sessions/session-pump-registry.js';
+import { shutdownRuntimes } from './startup/shutdown-runtimes.js';
 import { reapOrphanedWarmProcesses } from './services/runtimes/claude-code/sessions/warm-process-ledger.js';
 import { sharedBackgroundWorkLedger } from './services/runtimes/claude-code/messaging/background-work-ledger.js';
 import { inventorySessionIds } from './services/runtimes/claude-code/sessions/session-inventory.js';
@@ -171,7 +171,6 @@ import { ConnectorProgramPrincipalService } from './services/connectors/principa
 import type { ConnectorOwnerAuthority } from './services/connectors/principal/server-principal.js';
 import { ConnectorRuntimePrincipalService } from './services/connectors/principal/runtime-principal-service.js';
 import { connectorThreadKeys } from './services/connectors/principal/thread-keys.js';
-import { codexAppServerPool } from './services/runtimes/codex/app-server/process-pool.js';
 import { CanonicalConnectorRuntimeAuthorityResolver } from './services/connectors/principal/runtime-authority-resolver.js';
 import {
   ConnectorAgentRequestService,
@@ -213,7 +212,6 @@ import {
 import { AdapterManager } from './services/relay/adapter-manager.js';
 import { createAgentSubjectResolver } from './services/relay/initiate-consent.js';
 import { TraceStore } from './services/relay/trace-store.js';
-import { NotifyBudget } from './services/relay/notify-budget.js';
 import { MeshCore, type AdoptedAgent } from '@dorkos/mesh';
 import { setMeshInitError } from './services/mesh/mesh-state.js';
 import { ensureDorkBot } from './services/mesh/ensure-dorkbot.js';
@@ -1240,12 +1238,6 @@ async function start() {
   });
   setNotificationService(notificationService);
 
-  // The hourly allowance that bounds how often an agent may interrupt a person.
-  // Built HERE rather than beside the MCP tool deps it used to live in, because
-  // two things spend it now: `relay_notify_user` and the escalation ladder. Two
-  // budgets would be two ceilings, which is one ceiling too many.
-  const notifyBudget = new NotifyBudget();
-
   // The escalation ladder (spec `notification-system` task 4.3,
   // ADR 260819-234829): what happens when nobody answers. Built beside the
   // pipeline for the same boot-order reason — a session that errors during
@@ -1263,7 +1255,6 @@ async function start() {
       readDelay: () =>
         configManager.get('notifications')?.escalation?.phoneAfterMinutes ??
         NOTIFICATION_PREFS_DEFAULTS.escalation.phoneAfterMinutes,
-      reserveNote: (agentId) => notifyBudget.tryReserve(agentId),
     })
   );
 
@@ -3563,15 +3554,6 @@ async function start() {
       // The approval primitive the in-session hold (DOR-939) waits on, so a fresh
       // destructive capability call holds inline and resumes on the operator's yes.
       approvals: approvalService,
-      // What bounds `relay_notify_user` now that an identified agent is no longer
-      // asked for a card it could not get answered (DOR-1265). Constructed once
-      // near the top of `start()`, because the tool server below is rebuilt per
-      // session and a budget with that lifetime would be a ceiling an agent
-      // resets by opening a new session — the same reason `ReactionBudget` is
-      // built in the rooms composition root rather than beside a request. It is
-      // the SAME instance the escalation ladder spends, so an agent's hourly
-      // allowance is one ceiling across both ways it can reach a person.
-      notifyBudget,
       ...(taskStore && { taskStore }),
       // A getter, not the registrar: these deps are assembled ~120 lines before
       // `TaskRegistrar` is constructed, so the value read here would be
@@ -4054,30 +4036,6 @@ async function start() {
     transcriptProjectRoots: () => claudeRuntime?.getTranscriptReader().getProjectsRootSet() ?? [],
     ...(relayCore ? { relayTraceStore: traceStore } : {}),
   } satisfies DebugDeps;
-
-  // The standing unattended-autonomy banner's one read. A third narrow bag
-  // rather than a widening of either above, for the reason they are already two:
-  // this one answers a product question ("is anything running without asking
-  // where nobody can see it?") from the same live stores, and it is served on
-  // every install — including one with relay and Tasks both off, where every
-  // reader below answers empty and so does the banner.
-  //
-  // Every reader resolves its store AT REQUEST TIME rather than closing over
-  // one now. The binding store is created inside `adapterManager.initialize()`,
-  // which is awaited on a different path from this one — capturing it here
-  // would bake in whichever of the two happened to run first and leave the
-  // banner permanently blind to integrations on the losing ordering.
-  deps.unattendedAutonomy = {
-    bindings: () => adapterManager?.getBindingStore()?.getAll() ?? [],
-    tasks: () => taskStore?.getTasks() ?? [],
-    adapterName: (adapterId: string) => adapterManager?.resolveAdapterName(adapterId) ?? adapterId,
-    // The REGISTRY, not the config's `enabled` flag — see the reader's doc.
-    // `disable()` clears the flag before it unregisters and warns that a failed
-    // unregister may leave the bot answering, so the registry is the half that
-    // tells the truth about whether a message can still arrive.
-    adapterLive: (adapterId: string) => adapterManager?.getRegistry().get(adapterId) !== undefined,
-    agentLive: (agentId: string) => meshCore?.getProjectPath(agentId) !== undefined,
-  };
 
   // Shape schedule service — file-first schedule creator + re-binder the Shape
   // apply flow and the agent-create seam share. Built here (not just inside the
@@ -5334,18 +5292,8 @@ async function shutdownServices() {
     meshCore.stopPeriodicReconciliation();
     meshCore.close();
   }
-  // Kill the managed OpenCode sidecar (SIGTERM, then SIGKILL after a grace
-  // window) so shutdown never leaves an orphan. No-op when it never booted.
-  await openCodeServerManager.shutdown();
-  // Same for Codex's app-server processes (ADR 261005-113107): end stdin,
-  // then SIGTERM, then SIGKILL, by the PID the pool spawned. No-op on exec.
-  await codexAppServerPool.shutdown();
-  await creditsRelay?.close();
+  await shutdownRuntimes(creditsRelay);
   creditsRelay = null;
-  // Same for any warm claude-code process: close stdin so it drains, then close
-  // the query so the CLI child actually dies. No-op when none was ever warmed,
-  // which is every server until the persistent path is opted into.
-  await shutdownSessionPumps();
   // Stream cancelled, managed access drained within its deadline, what is owed kept (DOR-2086).
   await managedRemoteCommands.shutdown();
   await tunnelManager.stop();

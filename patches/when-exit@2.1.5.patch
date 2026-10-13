@@ -1,0 +1,14 @@
+diff --git a/dist/node/interceptor.js b/dist/node/interceptor.js
+index a0be92635ade17f6fd5ca75c441179d82e455dd9..a657eb7a8e217fa4c84ec05665ab3a13fae05b10 100644
+--- a/dist/node/interceptor.js
++++ b/dist/node/interceptor.js
+@@ -17,7 +17,8 @@ class Interceptor {
+             for (const callback of this.callbacks) {
+                 callback();
+             }
+-            if (signal) {
++            // An application signal handler owns its shutdown; re-sending would invoke it twice.
++            if (signal && process.listenerCount(signal) === 0) {
+                 if (IS_WINDOWS && (signal !== 'SIGINT' && signal !== 'SIGTERM' && signal !== 'SIGKILL')) { // Windows doesn't support POSIX signals, but Node emulates these 3 signals for us
+                     process.kill(process.pid, 'SIGTERM');
+                 }

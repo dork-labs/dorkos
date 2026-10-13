@@ -9,6 +9,14 @@
       "status": "specified"
     },
     {
+      "id": "261012-205009",
+      "slug": "agent-computer-mvp",
+      "title": "Persistent local agent computer experiment",
+      "created": "2026-10-12",
+      "status": "specified",
+      "linearIssue": "DOR-2748"
+    },
+    {
       "id": "261012-191847",
       "slug": "mini-app-placement",
       "title": "Mini-app placement rules and navigation to mini-app pages",

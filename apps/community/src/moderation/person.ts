@@ -6,6 +6,7 @@ import {
   bearer,
   requireMember,
   requirePrincipal,
+  type HeldRemovalOption,
   type Member,
 } from '../data.js';
 import { ApiError } from '../http.js';
@@ -29,16 +30,20 @@ export interface Person {
  * @param auth - The Community's auth.
  * @param pool - The database.
  * @param scope - `read` for the person's standing, `post` for anything that changes it.
+ * @param options - `allowHeld` for the one change a host hold still allows: accepting the rules,
+ *   which changes nothing anyone else sees. A browser session gets the same answer from the
+ *   route's `requireLiveRole`.
  */
 export async function requirePerson(
   c: Context,
   auth: CommunityAuth,
   pool: Pool,
-  scope: 'read' | 'post'
+  scope: 'read' | 'post',
+  options: HeldRemovalOption = {}
 ): Promise<Person> {
   // A browser session: the existing path, with its own clearance check in `requireLiveRole`.
   if (!bearer(c)) return { member: await requireMember(c, auth, pool), recheck: async () => {} };
-  const principal = await requirePrincipal(c, auth, pool, scope);
+  const principal = await requirePrincipal(c, auth, pool, scope, true, options);
   if (principal.kind !== 'human')
     throw new ApiError(403, 'FORBIDDEN', 'Only a person can do this, not an agent.');
   const row = await pool.query<Member>(
@@ -48,6 +53,7 @@ export async function requirePerson(
   if (!row.rows[0]) throw new ApiError(403, 'FORBIDDEN', 'You have not joined this space.');
   return {
     member: row.rows[0],
-    recheck: (client) => assertPrincipalCurrentInTransaction(client, principal, scope),
+    recheck: (client) =>
+      assertPrincipalCurrentInTransaction(client, principal, scope, undefined, options),
   };
 }

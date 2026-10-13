@@ -16,6 +16,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { createMockTransport } from '@dorkos/test-utils';
 import { DORKBOT_ONBOARDING_LINES } from '@dorkos/shared/dorkbot-templates';
 import { mergeDialogSearch, TransportProvider } from '@/layers/shared/model';
+import { resetLegacyPromoImportForTests } from '@/layers/entities/config';
 
 // Only the two stores are stubbed. `useSettingsDeepLink` stays real, because the
 // thing under test is which Settings tab the card actually lands on — a stub
@@ -33,20 +34,33 @@ vi.mock('@/layers/shared/model', async (importOriginal) => {
 });
 
 const mockStartSession = vi.fn();
+// Everything else stays real: `configKeys` is the one `/config` cache key, and a
+// stub would let these hooks read an entry nothing in the app writes (spec
+// `sidebar-simplification` D6). The official-space offer reads its link and its
+// skip from the same config.
 vi.mock('@/layers/entities/config', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/layers/entities/config')>()),
   useDefaultAgentSession: () => ({
     startSession: mockStartSession,
     defaultAgentDir: '~/.dork/agents/dorkbot',
   }),
-  // Real: it is the one `/config` cache key, and a stub would let these hooks
-  // read an entry nothing in the app writes (spec `sidebar-simplification` D6).
-  configKeys: (await importOriginal<typeof import('@/layers/entities/config')>()).configKeys,
-  CONFIG_STALE_TIME_MS: (await importOriginal<typeof import('@/layers/entities/config')>())
-    .CONFIG_STALE_TIME_MS,
+}));
+
+// The connection list sits behind the community owner's authority, which this
+// card has nothing to do with; each case states the connections it is about.
+let mockConnections: Array<{ ref: string; official?: boolean }> = [];
+vi.mock('@/layers/entities/community/model/use-community-connections', async (importOriginal) => ({
+  ...(await importOriginal<
+    typeof import('@/layers/entities/community/model/use-community-connections')
+  >()),
+  useCommunityConnections: () => ({ data: mockConnections, isError: false }),
 }));
 
 import type { TeamMember } from '@dorkos/shared/team-schemas';
+import { OFFICIAL_SPACE_OFFER_ID, useJoinSpaceRequest } from '@/layers/entities/community';
 import { ProgressCard } from '../ui/ProgressCard';
+
+const OFFICIAL_LINK = 'https://space.example.test/c/11111111-1111-4111-8111-111111111111';
 
 /** The operator's own roster row: no name, no handle, unless a case says so. */
 function selfRow(overrides: Partial<TeamMember> = {}): TeamMember {
@@ -70,6 +84,13 @@ interface ProfileOverrides {
   identityPromptDismissedAt?: string | null;
 }
 
+/** The rest of the config a case states: the first run, the official space, past skips. */
+interface ConfigOverrides {
+  firstRunPath?: 'dorkos' | 'own' | 'none' | null;
+  officialSpaceUrl?: string | null;
+  dismissedPromoIds?: string[];
+}
+
 // ── Router harness ───────────────────────────────────────────
 //
 // The card's deep links are URL navigations, so it renders inside a real
@@ -82,7 +103,8 @@ const searchSchema = mergeDialogSearch(z.object({}));
 async function renderCard(
   onDismiss = vi.fn(),
   profile: ProfileOverrides = {},
-  roster: TeamMember[] = []
+  roster: TeamMember[] = [],
+  config: ConfigOverrides = {}
 ) {
   const mockTransport = createMockTransport();
   vi.mocked(mockTransport.getConfig).mockResolvedValue({
@@ -93,6 +115,12 @@ async function renderCard(
       rolePromptDismissedAt: profile.rolePromptDismissedAt ?? null,
       identityPromptDismissedAt: profile.identityPromptDismissedAt ?? null,
     },
+    onboarding: {
+      completedAt: '2026-10-12T00:00:00.000Z',
+      firstRunPath: config.firstRunPath ?? null,
+    },
+    officialSpace: config.officialSpaceUrl ? { url: config.officialSpaceUrl } : null,
+    dismissedPromoIds: config.dismissedPromoIds ?? [],
   } as unknown as Awaited<ReturnType<typeof mockTransport.getConfig>>);
   vi.mocked(mockTransport.getTeamRoster).mockResolvedValue({ members: roster } as Awaited<
     ReturnType<typeof mockTransport.getTeamRoster>
@@ -154,6 +182,10 @@ async function renderCard(
 describe('ProgressCard', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockConnections = [];
+    useJoinSpaceRequest.setState({ url: null });
+    // A Not now is remembered for the page's life; each case starts a fresh page.
+    resetLegacyPromoImportForTests();
   });
 
   afterEach(() => {
@@ -326,6 +358,82 @@ describe('ProgressCard', () => {
       // The same brief thanks the sidebar card gives, in place of the form.
       expect(await screen.findByText(DORKBOT_ONBOARDING_LINES.identityCardSaved)).toBeTruthy();
       expect(screen.queryByTestId('progress-card-identity-form')).toBeNull();
+    });
+  });
+
+  describe('the offer to join the DorkOS community (DOR-2873)', () => {
+    const offer = () => screen.queryByTestId('official-space-offer');
+    const withSpace = (overrides: ConfigOverrides = {}) =>
+      renderCard(vi.fn(), {}, [], { officialSpaceUrl: OFFICIAL_LINK, ...overrides });
+    /**
+     * A positive sign the config this case states has arrived and been read: the role row
+     * shows only once it says no roles are saved. An absent offer before this proves nothing.
+     */
+    const configArrived = () => screen.findByText('Tell DorkBot about your work');
+
+    it.each(['dorkos', 'own'] as const)(
+      'shows once a first run on the %s path set up an AI',
+      async (firstRunPath) => {
+        await withSpace({ firstRunPath });
+        expect(await screen.findByTestId('official-space-offer')).toBeTruthy();
+        expect(screen.getByText('Join the DorkOS community')).toBeTruthy();
+      }
+    );
+
+    it('draws nothing while no official space is configured', async () => {
+      await renderCard(vi.fn(), {}, [], { firstRunPath: 'dorkos', officialSpaceUrl: null });
+      await configArrived();
+      expect(offer()).toBeNull();
+    });
+
+    it('waits for Settings after a first run with no AI', async () => {
+      await withSpace({ firstRunPath: 'none' });
+      await configArrived();
+      expect(offer()).toBeNull();
+    });
+
+    it('stays away once the space is joined', async () => {
+      mockConnections = [{ ref: 'official', official: true }];
+      await withSpace({ firstRunPath: 'own' });
+      await configArrived();
+      expect(offer()).toBeNull();
+    });
+
+    it('stays away once Not now was chosen anywhere', async () => {
+      await withSpace({ firstRunPath: 'own', dismissedPromoIds: [OFFICIAL_SPACE_OFFER_ID] });
+      await configArrived();
+      expect(offer()).toBeNull();
+    });
+
+    it('sits after every row, personal setup included, as a section of the card', async () => {
+      await withSpace({ firstRunPath: 'dorkos' });
+      const section = await screen.findByTestId('official-space-offer');
+      const lastRow = screen.getByText('Connect a service');
+      const roleRow = screen.getByText('Tell DorkBot about your work');
+      for (const row of [lastRow, roleRow]) {
+        expect(
+          row.compareDocumentPosition(section) & Node.DOCUMENT_POSITION_FOLLOWING
+        ).toBeTruthy();
+      }
+      // Its heading sits one level under the card's own "Getting started".
+      expect(
+        screen.getByRole('heading', { level: 4, name: 'Join the DorkOS community' })
+      ).toBeTruthy();
+    });
+
+    it('Not now records the skip and takes the offer away', async () => {
+      const { mockTransport } = await withSpace({ firstRunPath: 'dorkos' });
+      fireEvent.click(await screen.findByRole('button', { name: 'Not now' }));
+
+      await waitFor(() => expect(offer()).toBeNull());
+      expect(mockTransport.updateConfig).toHaveBeenCalled();
+      expect(screen.getByText('Getting started')).toBeTruthy();
+    });
+
+    it('Join opens the Join dialog on the official link', async () => {
+      await withSpace({ firstRunPath: 'dorkos' });
+      fireEvent.click(await screen.findByRole('button', { name: 'Join' }));
+      expect(useJoinSpaceRequest.getState().url).toBe(OFFICIAL_LINK);
     });
   });
 });

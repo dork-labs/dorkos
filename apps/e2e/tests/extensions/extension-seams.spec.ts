@@ -7,7 +7,8 @@ import { PHONE } from '../rooms/room-sheet-helpers.js';
 
 /**
  * The extension seams, seen in a real browser (spec `flow-multiproject` §12,
- * phase 2): an extension's page, its status-bar item and its tab dot.
+ * phase 2): an extension's page, its status-bar item and its tab dot, and the
+ * sidebar's Add-ons section that lists the page (spec `mini-app-placement`).
  *
  * **Two halves, one file.** The first half drives the `hello-world` core
  * extension, which is the worked example of the client seams (DOR-2525). The
@@ -149,18 +150,35 @@ test.describe('Extension seams — hello-world’s page, status item and tab dot
     await expect(panel.header.locator('[data-slot="right-panel-tab-marker"]')).toHaveCount(0);
   });
 
+  test('lists its page under Add-ons in the sidebar, opens it, and marks it open', async ({
+    page,
+  }) => {
+    await page.goto('/');
+    const base = new BasePage(page);
+    await base.ensureSidebarOpen();
+
+    const addOns = page.locator('[data-sidebar-section="addons"]');
+    await expect(addOns.getByRole('heading', { name: 'Add-ons' })).toBeVisible();
+    const row = addOns.getByRole('button', { name: 'Hello', exact: true });
+    await row.click();
+    await expect(page).toHaveURL(/\/x\/hello-world$/);
+    await expect(page.getByRole('heading', { name: 'Hello, there' })).toBeVisible();
+    await expect(row).toHaveAttribute('aria-current', 'page');
+  });
+
   test.describe('on a phone', () => {
     test.use({ viewport: PHONE, hasTouch: true, isMobile: true });
 
-    test('lists its page under Add-ons in the You tab, and opens it', async ({ page }) => {
+    test('lists its page under Add-ons in the Library tab, and opens it', async ({ page }) => {
       await page.goto('/');
       await new BasePage(page).waitForAppReady();
 
-      await page.getByTestId('mobile-tab-you').click();
-      const you = page.getByTestId('mobile-tab-panel-you');
-      await expect(you.getByRole('heading', { name: 'Add-ons' })).toBeVisible();
+      await page.getByTestId('mobile-tab-library').click();
+      const library = page.getByTestId('mobile-tab-panel-library');
+      const addOns = library.locator('[data-sidebar-section="addons"]');
+      await expect(addOns.getByRole('heading', { name: 'Add-ons' })).toBeVisible();
 
-      await you.getByRole('button', { name: 'Hello', exact: true }).click();
+      await addOns.getByRole('button', { name: 'Hello', exact: true }).click();
       await expect(page).toHaveURL(/\/x\/hello-world$/);
       await expect(page.getByRole('heading', { name: 'Hello, there' })).toBeVisible();
     });

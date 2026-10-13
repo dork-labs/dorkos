@@ -40,7 +40,6 @@ import { handRegisteredInSessionTools } from '../../../runtimes/claude-code/mcp-
 import { uiDomain } from '../../../session/browser-seat/ui-capabilities.js';
 import type { McpToolDeps } from '../../../runtimes/claude-code/mcp-tools/types.js';
 import type { MarketplaceMcpDeps } from '../../../marketplace-mcp/marketplace-mcp-tools.js';
-import { NotifyBudget } from '../../../relay/notify-budget.js';
 
 /**
  * Deps with every optional service present.
@@ -52,7 +51,6 @@ import { NotifyBudget } from '../../../relay/notify-budget.js';
 function createFullDeps(): McpToolDeps {
   const stub = {} as never;
   return {
-    notifyBudget: new NotifyBudget(),
     transcriptReader: {
       listSessions: vi.fn().mockResolvedValue([]),
     } as unknown as McpToolDeps['transcriptReader'],

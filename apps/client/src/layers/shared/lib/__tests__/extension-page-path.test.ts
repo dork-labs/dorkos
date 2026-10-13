@@ -3,6 +3,7 @@ import {
   EXTENSION_PAGE_PATH_PATTERN,
   extensionPageHref,
   hasPageParams,
+  listedPageAt,
   matchExtensionPage,
   parseExtensionPagePath,
 } from '../extension-page-path';
@@ -88,6 +89,36 @@ describe('matchExtensionPage', () => {
   it('answers null when no page has that shape', () => {
     expect(matchExtensionPage(pages, 'a/b/c')).toBeNull();
     expect(matchExtensionPage([], '')).toBeNull();
+  });
+});
+
+describe('listedPageAt', () => {
+  const home = { extensionId: 'flow', path: '' };
+  const settings = { extensionId: 'flow', path: 'settings' };
+  const other = { extensionId: 'social-queue', path: '' };
+  const pages = [home, settings, other];
+
+  it('answers the page at the address', () => {
+    expect(listedPageAt(pages, '/x/flow')).toBe(home);
+    expect(listedPageAt(pages, '/x/flow/settings')).toBe(settings);
+    expect(listedPageAt(pages, '/x/social-queue/')).toBe(other);
+  });
+
+  it('answers the deepest page an address sits under', () => {
+    expect(listedPageAt(pages, '/x/flow/settings/accounts')).toBe(settings);
+    expect(listedPageAt(pages, '/x/flow/p/dorkos')).toBe(home);
+    // Order of the list does not decide it.
+    expect(listedPageAt([settings, home], '/x/flow/settings/accounts')).toBe(settings);
+  });
+
+  it('matches whole segments, never a prefix of one', () => {
+    expect(listedPageAt([settings], '/x/flow/settings-old')).toBeNull();
+  });
+
+  it('answers null off an extension page, or for an extension with nothing listed', () => {
+    expect(listedPageAt(pages, '/session')).toBeNull();
+    expect(listedPageAt(pages, '/x/other')).toBeNull();
+    expect(listedPageAt([settings], '/x/flow')).toBeNull();
   });
 });
 

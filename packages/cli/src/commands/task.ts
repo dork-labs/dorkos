@@ -15,8 +15,6 @@
  * @module commands/task
  */
 import { parseArgs } from 'node:util';
-import type { PermissionModeDescriptor } from '@dorkos/shared/agent-runtime';
-import { isUnattendedAutonomy } from '@dorkos/shared/permission-semantics';
 import { apiCall } from '../lib/api-client.js';
 import { printError, printJson, renderTable } from '../lib/operator-output.js';
 import { rethrowUnknownOption } from '../lib/parse-args-error.js';
@@ -65,79 +63,6 @@ interface TaskSchedule {
   enabled: boolean;
   status?: string;
   nextRun?: string | null;
-  /** How much the run may do without asking, as the server resolved it. */
-  permissionMode?: string | null;
-  /**
-   * Which runtime the task's runs execute on, or `null` when it follows its
-   * agent (DOR-1615). Read only to say a permission mode in the right runtime's
-   * vocabulary — see {@link FALLBACK_ADVISORY_RUNTIME}.
-   */
-  runtime?: string | null;
-}
-
-/**
- * The runtime to read a permission mode's meaning in, for a task that named
- * none of its own.
- *
- * This used to be the whole answer, and it was an honest one while the
- * scheduler's runtime was fixed at boot. A task carries its own runtime now
- * (DOR-1615), so the named one is read first and this is only the fallback for a
- * task that follows its agent — which the CLI cannot resolve, because doing so
- * would mean reading the agent's manifest off a machine the CLI may not be on.
- *
- * Getting the fallback wrong costs at most one advisory line that is not printed
- * or is printed about the wrong vocabulary; the mode itself is the server's, and
- * the task runs the same either way.
- */
-const FALLBACK_ADVISORY_RUNTIME = 'claude-code';
-
-/** What `GET /api/capabilities` answers, narrowed to the part read here. */
-interface CapabilitiesResponse {
-  capabilities?: Record<
-    string,
-    { permissionModes?: { values?: readonly PermissionModeDescriptor[] } }
-  >;
-}
-
-/**
- * One plain sentence naming the level a task will run at, when that level never
- * stops to ask — and nothing at all otherwise.
- *
- * `dorkos task create` has no flag for the permission mode, so it ALWAYS omits
- * it and the server always resolves one from the operator's configured trust
- * stop (spec `full-power-defaults`, D6). On an install sitting at full autonomy
- * that quietly arms a cron nothing will ever pause to ask about, and a person
- * who typed six flags about a schedule deserves to be told which of them they
- * did not type mattered most.
- *
- * **The judgement is the runtime's, never this id's.** The mode is looked up in
- * the profile its runtime published and put to `isUnattendedAutonomy` — the same
- * rule the cockpit's standing banner uses — because reading "bypassPermissions"
- * as dangerous by its name is the substrate mistake this codebase keeps
- * refusing to make. A mode the profile does not describe says nothing.
- *
- * Advisory only: any failure reaching the server, and any shape it does not
- * recognise, answers `null`. Telling somebody about a task is not worth failing
- * the create that already succeeded.
- *
- * @param permissionMode - The mode the server stored on the new task.
- * @returns The line to print, or `null` when there is nothing worth saying.
- */
-async function describeUnattendedLevel(
-  permissionMode: string | null | undefined,
-  runtime: string | null | undefined
-): Promise<string | null> {
-  if (!permissionMode) return null;
-  try {
-    const { capabilities } = await apiCall<CapabilitiesResponse>('GET', '/api/capabilities');
-    const declared =
-      capabilities?.[runtime || FALLBACK_ADVISORY_RUNTIME]?.permissionModes?.values ?? [];
-    const descriptor = declared.find((mode) => mode.id === permissionMode);
-    if (!descriptor || !isUnattendedAutonomy(descriptor)) return null;
-    return `Runs at full power — no approval prompts (from your default trust level). Change it in Settings, or per task.`;
-  } catch {
-    return null;
-  }
 }
 
 /** Parsed arguments for `task create`. */
@@ -337,11 +262,6 @@ export async function runTaskCreate(args: TaskCreateArgs): Promise<number> {
       return 0;
     }
     console.log(`Created scheduled task ${created.displayName ?? created.name} (${created.id})`);
-    // Printed after the success line, and only when there is something a person
-    // would want to have been told. `--json` callers get the mode in the payload
-    // and no prose.
-    const level = await describeUnattendedLevel(created.permissionMode, created.runtime);
-    if (level) console.log(level);
     return 0;
   } catch (err) {
     printError(err);

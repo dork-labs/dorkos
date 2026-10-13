@@ -32,7 +32,13 @@ const fixture = vi.hoisted(() => {
     reportEntry: vi.fn(async () => undefined),
     postEntry: vi.fn(),
   };
-  return { ref, full, effective: full as typeof full, adapter };
+  return {
+    ref,
+    full,
+    effective: full as typeof full,
+    lifecycle: 'active' as 'active' | 'archived',
+    adapter,
+  };
 });
 
 vi.mock('../community-connections.js', () => ({
@@ -57,7 +63,7 @@ vi.mock('../../services/communities/remote/state.js', () => ({
         state: 'verified',
         effective: fixture.effective,
         lastKnown: {
-          lifecycle: 'active',
+          lifecycle: fixture.lifecycle,
           capabilities: fixture.effective,
           verifiedAt: '2026-10-01T00:00:00.000Z',
         },
@@ -80,6 +86,7 @@ describe('a person’s own conduct in a space, through this computer', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     fixture.effective = fixture.full;
+    fixture.lifecycle = 'active';
   });
 
   it('reads the person’s standing in one channel', async () => {
@@ -182,6 +189,22 @@ describe('a person’s own conduct in a space, through this computer', () => {
     expect(refused.status).toBe(403);
     expect(refused.body.code).toBe('COMMUNITY_ACCESS_DENIED');
     expect(fixture.adapter.acceptRules).not.toHaveBeenCalled();
+  });
+
+  // Purpose: fails if this computer refuses accepting the rules on a space its host holds (it
+  // reads as archived, so the connection cannot post) before the space can allow it (DOR-2836),
+  // or if that opening lets any other change through.
+  it('lets the person accept the rules of a held space, and nothing else', async () => {
+    fixture.effective = { read: true, post: false, enrollAgent: false, stream: false };
+    fixture.lifecycle = 'archived';
+    const accepted = await request(server).post(`${base}/rules/accept`).send({ version: 3 });
+    expect(accepted.status).toBe(200);
+    expect(fixture.adapter.acceptRules).toHaveBeenCalledWith(3);
+    const renamed = await request(server)
+      .put(`${base}/me/display-name`)
+      .send({ displayName: 'Held Name' });
+    expect(renamed.status).toBe(403);
+    expect(fixture.adapter.setDisplayName).not.toHaveBeenCalled();
   });
 
   it('says what a space’s conflict means for each act', async () => {

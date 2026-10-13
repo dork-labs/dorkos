@@ -19,8 +19,14 @@
  * the next one in line takes the slot, the name and role prompts included. The
  * card comes back once the zone has nothing left to suggest.
  *
+ * **The DorkOS community comes after personal setup** (DOR-2873). After a first
+ * run that set up an AI, the offer to join the official space rides inside the
+ * Getting started card. While that card is held back, the offer takes its own
+ * turn here, after the name and role prompts, so it is never on screen twice.
+ *
  * @module features/dashboard-sidebar/ui/bottom-slot/SidebarBottomSlot
  */
+import { OfficialSpaceOfferCard } from '@/layers/entities/community';
 import { usePromoCandidate } from '@/layers/features/feature-promos';
 import {
   IdentityPromptCard,
@@ -28,6 +34,7 @@ import {
   ProgressCard,
   useIdentityPrompt,
   useOnboarding,
+  useFirstRunSpaceOffer,
   useProfilePrompt,
 } from '@/layers/features/onboarding';
 import { BottomSlot, type BottomSlotCandidate } from '@/layers/shared/ui';
@@ -54,6 +61,7 @@ export function SidebarBottomSlot({ model }: { model: SidebarModel }) {
   // screen — or, held back for the list, it would ask them nowhere.
   const identityPrompt = useIdentityPrompt({ gettingStartedCardShown });
   const prompt = useProfilePrompt({ gettingStartedCardShown });
+  const spaceOffer = useFirstRunSpaceOffer();
   const promo = usePromoCandidate('dashboard-sidebar');
   const boot = useBootState();
 
@@ -78,7 +86,15 @@ export function SidebarBottomSlot({ model }: { model: SidebarModel }) {
       show: prompt.visible,
       render: () => <ProfilePromptCard prompt={prompt} />,
     },
-    promo,
+    {
+      // Inside the card while it shows; here only while it is held back.
+      id: 'official-space-offer',
+      show: spaceOffer.due && !gettingStartedCardShown,
+      render: () => <OfficialSpaceOfferCard className="bg-secondary/60 rounded-lg" />,
+    },
+    // A promo waits while the offer's connection list is still loading, so the
+    // slot never shows a promo and then swaps it for the offer a beat later.
+    { ...promo, show: promo.show && !spaceOffer.pending },
   ];
 
   // **The same fact the panel above paints on** (spec D6). Every candidate here

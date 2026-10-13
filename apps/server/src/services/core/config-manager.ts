@@ -112,11 +112,19 @@ import type { UserConfig, SidebarItemRef } from '@dorkos/shared/config-schema';
 import type { PermissionAreaId } from '@dorkos/shared/permissions';
 import { logger, logError } from '../../lib/logger.js';
 import { SERVER_VERSION } from '../../lib/version.js';
+import {
+  ConfigUnreadableError,
+  ConfigMigrationFailedError,
+  formatConfigLoadError,
+} from './config/boot-errors.js';
+export {
+  ConfigBootError,
+  ConfigUnreadableError,
+  ConfigMigrationFailedError,
+} from './config/boot-errors.js';
 import { browserSettingRefusal } from './config/browser-setting.js';
 import { restoreProtectedState } from './safe-defaults/protected-state.js';
 import { backupConfigFile } from './config/backups.js';
-import { adviceFor } from './config/load-error-advice.js';
-import { unreadableMessage } from './config/unreadable-message.js';
 import { classifyConfigLoadFailure } from './config/load-failure.js';
 import { readStoredConfigForSalvage, sleepSync } from './config/salvage-read.js';
 import {
@@ -127,119 +135,15 @@ import {
 import { preserveUnknownKeys, schemaNodeAt, tolerateUnknownKeys } from './config/version-skew.js';
 import {
   describeWidenedLeaf,
+  findUnreadableLeaves,
   preserveWidenedLeaves,
   relaxWidenedLeaves,
   repairWidenedLeaves,
+  unreadableSettingsWarning,
 } from './config/widened-leaves.js';
 import type { WidenedLeaf, WidenedLeafPolicy } from './config/widened-leaves.js';
 
 export { classifyConfigLoadFailure, type ConfigLoadFailureKind } from './config/load-failure.js';
-
-/**
- * A reason DorkOS stopped instead of touching somebody's settings.
- *
- * Every subclass means the same thing to a caller — print the message, stop —
- * and both entry points (`apps/server/src/index.ts` and the CLI) branch on this
- * base rather than on the individual classes, so a new reason to refuse cannot
- * arrive as an uncaught stack trace.
- *
- * The message is written for the person reading a terminal, because that is
- * where it lands. The underlying failure travels as `cause`.
- */
-export abstract class ConfigBootError extends Error {
-  /** Absolute path of the config file this is about. */
-  readonly configPath: string;
-
-  /**
-   * What the person can actually do about it, as a paragraph of its own.
-   *
-   * Split out so `dorkos doctor` can show the same next step on its checklist
-   * without restating it. Two copies of this advice drifted apart once already.
-   */
-  readonly advice: string;
-
-  /**
-   * Build one, from a message a subclass has already written.
-   *
-   * @param message - The whole terminal message, advice included.
-   * @param configPath - Absolute path of the config file.
-   * @param advice - The next step, repeated on doctor's checklist.
-   * @param cause - The failure being reported.
-   */
-  protected constructor(message: string, configPath: string, advice: string, cause: unknown) {
-    super(message, { cause });
-    this.configPath = configPath;
-    this.advice = advice;
-  }
-}
-
-/**
- * Raised when the operating system would not let DorkOS read the config file,
- * after retrying.
- *
- * @see {@link unreadableMessage} for why there are two of them.
- */
-export class ConfigUnreadableError extends ConfigBootError {
-  /**
-   * Build the message a person sees when their settings could not be read.
-   *
-   * @param configPath - Absolute path of the config file.
-   * @param cause - The last failure from the `Conf` constructor.
-   * @param backupPath - Where the old settings were copied, when this happened
-   *   on the second leg of corrupt-recovery and the original is already gone.
-   */
-  constructor(configPath: string, cause: unknown, backupPath?: string) {
-    const advice = adviceFor(cause, configPath, backupPath);
-    super(
-      unreadableMessage(configPath, describeLoadError(cause), advice, backupPath),
-      configPath,
-      advice,
-      cause
-    );
-    this.name = 'ConfigUnreadableError';
-  }
-}
-
-/**
- * Raised when one of DorkOS's own migration bodies threw while updating a
- * config file to this version.
- *
- * The file is not the problem here, so it is not touched — not backed up, not
- * replaced, not deleted. This is the same rule the errno class follows, applied
- * one layer up: DorkOS's code was wrong, and a person's settings must not pay
- * for that. Whoever ships the fix boots straight back into them.
- */
-export class ConfigMigrationFailedError extends ConfigBootError {
-  /**
-   * Build the message a person sees when an update to their settings failed.
-   *
-   * @param configPath - Absolute path of the config file.
-   * @param cause - The failure `conf` wrapped and rethrew.
-   */
-  constructor(configPath: string, cause: unknown) {
-    const advice =
-      `Nothing you can change in that file will help, because the problem is in\n` +
-      `DorkOS. Start the version you were using before, or install a newer one.\n` +
-      `If you would rather not wait, rename the file: DorkOS will make a new one\n` +
-      `and your settings stay in the file you renamed.`;
-    super(
-      [
-        `DorkOS could not update your settings to this version, so it stopped`,
-        `rather than replacing them.`,
-        ``,
-        `  file: ${configPath}`,
-        `  why:  ${describeLoadError(cause)}`,
-        ``,
-        `DorkOS did not replace or delete your settings.`,
-        advice,
-      ].join('\n'),
-      configPath,
-      advice,
-      cause
-    );
-    this.name = 'ConfigMigrationFailedError';
-  }
-}
 
 /**
  * One line describing a load failure, for a log or an error message.
@@ -251,7 +155,7 @@ export class ConfigMigrationFailedError extends ConfigBootError {
  * @param error - Whatever was thrown.
  */
 function describeLoadError(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
+  return formatConfigLoadError(error);
 }
 
 /**
@@ -872,6 +776,29 @@ export function dropSchedulerTimezone(store: {
 }): void {
   if (store.has('scheduler.timezone')) {
     store.delete('scheduler.timezone');
+  }
+}
+
+/**
+ * Migration body: remove `rooms.maxPostsPerTurn` and `rooms.maxCanvasOpsPerTurn`
+ * (DOR-2739).
+ *
+ * Both capped how often one of our own agents could post into a room, or change
+ * its canvas, inside one turn. ADR 261006-225605 retires agent-only caps on
+ * routine output: etiquette is held by review and the record, not refusal, and
+ * the loop guards (cascade guard, turn budgets) still stop runaway exchanges. So
+ * neither leaf is declared any more, and both are deleted rather than left
+ * riding along in every config.
+ *
+ * Idempotent: only deletes a key when it is present. Nothing else under `rooms`
+ * is touched.
+ *
+ * @internal Exported for testing only.
+ * @param store - The `conf` store instance.
+ */
+export function dropAgentTurnCaps(store: Pick<Conf, 'has' | 'delete'>): void {
+  for (const key of ['rooms.maxPostsPerTurn', 'rooms.maxCanvasOpsPerTurn']) {
+    if (store.has(key)) store.delete(key);
   }
 }
 
@@ -3068,6 +2995,9 @@ export function retireToolOnlyReplies(store: {
   const next: Record<string, unknown> = { ...rest };
   let changed = 'toolOnlyReplies' in current;
   if (current.maxPostsPerTurn == null) {
+    // @ts-expect-error -- `rooms.maxPostsPerTurn` left the schema (DOR-2739). This
+    // shipped body is frozen and still names the default it seeded; that reads
+    // `undefined` now, and the `'0.113.0'` key deletes the leaf either way.
     next.maxPostsPerTurn = USER_CONFIG_DEFAULTS.rooms.maxPostsPerTurn;
     changed = true;
   }
@@ -3358,6 +3288,8 @@ export function seedRoomCanvasOps(store: {
   if (current.maxCanvasOpsPerTurn != null) return;
   store.set('rooms', {
     ...current,
+    // @ts-expect-error -- `rooms.maxCanvasOpsPerTurn` left the schema (DOR-2739).
+    // Same frozen-body note as `retireToolOnlyReplies`: `'0.113.0'` deletes it.
     maxCanvasOpsPerTurn: USER_CONFIG_DEFAULTS.rooms.maxCanvasOpsPerTurn,
   });
 }
@@ -4791,6 +4723,29 @@ export const CONFIG_MIGRATIONS = {
   // Disjoint from every other key here: it adds one nested leaf under `ui`,
   // beside the fields it preserves. See `seedUiPanelTabs`.
   '0.112.0': seedUiPanelTabs,
+  // v0.111.0 is the newest tag and 0.112.0 has merged (panel tabs above), so
+  // this opens 0.113.0. Frozen from merge, for the reason `'0.60.0'` above
+  // states; anything further opens `'0.114.0'`.
+  //
+  // Disjoint from every other key here: it deletes two leaves under `rooms`
+  // and touches nothing beside them.
+  //
+  // `rooms.maxPostsPerTurn` and `rooms.maxCanvasOpsPerTurn` — the per-turn caps
+  // on our own agents, retired (ADR 261006-225605, DOR-2739).
+  '0.113.0': dropAgentTurnCaps,
+  // 0.113.0 has merged; this new key preserves an explicit computer choice.
+  '0.114.0': (store: {
+    get: (key: string) => unknown;
+    set: (key: string, value: unknown) => void;
+  }) => {
+    const computers = store.get('computers');
+    if (computers !== null && typeof computers === 'object' && !Array.isArray(computers)) {
+      store.set('computers', {
+        ...computers,
+        enabled: (computers as { enabled?: unknown }).enabled === true,
+      });
+    }
+  },
 } as const;
 
 /**
@@ -5241,11 +5196,7 @@ export class ConfigManager {
    * server, and a stale "all clear" is the wrong way for this to be wrong.
    */
   unreadableSettings(): readonly WidenedLeaf[] {
-    const found: WidenedLeaf[] = [];
-    for (const [key, value] of Object.entries(this.store.store)) {
-      found.push(...repairWidenedLeaves(key, value, WIDENED_LEAF_POLICY).skewed);
-    }
-    return found;
+    return findUnreadableLeaves(this.store.store, WIDENED_LEAF_POLICY);
   }
 
   /**
@@ -5268,14 +5219,8 @@ export class ConfigManager {
    * same list on demand.
    */
   private announceUnreadableSettings(): void {
-    const unreadable = this.unreadableSettings();
-    if (unreadable.length === 0) return;
-    const what = unreadable.length === 1 ? 'setting holds a value' : 'settings hold values';
-    logger.warn(
-      `[Config] ${unreadable.length} ${what} this build cannot read, so it is running on ` +
-        `the defaults and leaving your values in ${this.store.path}: ` +
-        unreadable.map(describeWidenedLeaf).join(', ')
-    );
+    const warning = unreadableSettingsWarning(this.unreadableSettings(), this.store.path);
+    if (warning) logger.warn(warning);
   }
 
   /**

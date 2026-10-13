@@ -133,7 +133,6 @@ export function createRoomCollaborators(
     canvas: core.canvas,
     visibility,
     broadcaster: core.broadcaster,
-    maxOpsPerTurn: core.maxCanvasOpsPerTurn,
     postCanvasEvent: (roomId, input, bind) => systemPosts.postCanvasEvent(roomId, input, bind),
     // Canvas sentences are stored and read back by the next turn, so they name
     // the operator the way an agent must read them (DOR-2458).

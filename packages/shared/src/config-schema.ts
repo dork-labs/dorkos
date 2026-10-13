@@ -1,3 +1,4 @@
+import { RelaySettingsSchema } from './config-relay.js';
 /**
  * Persistent user-config schema. Zod is authoritative; `ConfigManager` bridges it
  * to `conf` via `z.toJSONSchema`.
@@ -55,6 +56,7 @@ import {
   ExtensionDismissedApprovalSchema,
   ExtensionTrustedSourceSchema,
 } from './extension-config-schemas.js';
+import { ToursStateSchema } from './tours-state.js';
 // Plain id lists, never the named schemas in `permissions/permission-schemas.ts`:
 // the same SRC-alias reason as `HARNESS_IDS` above.
 import {
@@ -65,6 +67,7 @@ import {
 export * from './credential-reference.js';
 export * from './remote-access-settings.js';
 export * from './extension-config-schemas.js';
+export * from './tours-state.js';
 export {
   RuntimeInheritedEnvNamesSchema,
   isReservedRuntimeEnvName,
@@ -235,41 +238,7 @@ export const MAX_CONCURRENT_TURNS_PER_AGENT_BOUNDS = { min: 1, max: 8 } as const
  */
 export const MAX_CONCURRENT_TURNS_PER_AGENT_DEFAULT = 3;
 
-/**
- * The bounds the relay turn ceiling must satisfy.
- *
- * Its own constant rather than a reuse of {@link ROOM_TURN_LIMIT_BOUNDS},
- * because that object's contract is "what a per-room override must satisfy" and
- * these two numbers have no per-room form. `null` — no limit — is expressed by
- * the schema's `.nullable()`, not by a sentinel inside this range, so `0` keeps
- * its literal meaning: start no turns at all.
- */
-export const RELAY_TURN_CEILING_BOUNDS = { min: 0, max: 100_000 } as const;
-
-/**
- * What the relay turn ceiling is before anybody changes it.
- *
- * Deliberately the same pair of numbers the rooms ceiling ships with
- * ({@link ROOM_TURN_LIMIT_DEFAULTS}): a person reasoning about "how much can my
- * agents spend on their own" should not have to hold two different allowances
- * in their head because the traffic took a different pipe. They are separate
- * wallets — a busy hour in rooms does not eat the message bus's allowance — and
- * that is the honest reading of two ceilings, not a doubling of one.
- *
- * Generous but real: 5,000 turns an hour is far more than any working install
- * runs, and an A2A peer pinned at the 60/min ingress cap reaches it in 83
- * minutes instead of never. The per-agent number bites much sooner, which is
- * the point — two agents told to "keep each other posted" trade turns as fast
- * as they finish them, and 1,000 is where that stops.
- *
- * The schema below builds its `.default()` calls from this object AND its
- * object-literal block default, so the shipped value has one definition and a
- * fresh install cannot disagree with an upgraded one.
- */
-export const RELAY_TURN_CEILING_DEFAULTS = {
-  maxAgentTurnsPerAgentPerHour: 1000,
-  maxAgentTurnsTotalPerHour: 5000,
-} as const;
+export { RELAY_TURN_CEILING_BOUNDS, RELAY_TURN_CEILING_DEFAULTS } from './config-relay.js';
 
 /** Sensitive fields that trigger a warning when set via CLI or API */
 export const SENSITIVE_CONFIG_KEYS = [
@@ -357,24 +326,6 @@ export const OnboardingStateSchema = z.object({
 });
 
 export type OnboardingState = z.infer<typeof OnboardingStateSchema>;
-
-/**
- * Persisted state for the DorkBot living tour (DOR-419). Tracks which tours the
- * user has already run (`seen`) and which they declined (`declined`) so an
- * occasion never re-offers a tour the user has finished or waved off. Ids are the
- * tour definition ids (`'tasks' | 'relay' | 'mesh' | 'general'`), stored as free
- * strings so adding a tour never needs a schema migration. Managed automatically
- * by the client; not user-editable.
- */
-export const ToursStateSchema = z.object({
-  seen: z.array(z.string()).default(() => []),
-  declined: z.array(z.string()).default(() => []),
-});
-
-export type ToursState = z.infer<typeof ToursStateSchema>;
-
-/** Frozen defaults for the {@link ToursStateSchema} block (empty on a fresh install). */
-export const TOURS_DEFAULTS: ToursState = ToursStateSchema.parse({});
 
 /**
  * Where the stored {@link UserProfileSchema} `displayName` came from (DOR-1022).
@@ -730,6 +681,9 @@ export type SidebarGroup = z.infer<typeof SidebarGroupSchema>;
  * single bodies, so folding one folds the zone; the id is the zone's own id, so
  * nothing has to translate.
  *
+ * `addons` is the Library section that lists the pages mini apps add (spec
+ * `mini-app-placement` Part 2). It holds a fold flag and nothing else.
+ *
  * **Widening this enum is a non-event, and that is by construction.** The
  * `dropUnknownSectionIds` preprocessor below strips any key a build does not
  * recognise, so a config written by a newer DorkOS loads on an older one — it
@@ -745,6 +699,7 @@ export const SidebarSectionIdSchema = z.enum([
   'channels',
   'dms',
   'agents',
+  'addons',
   'threads',
   'recents',
 ]);
@@ -2364,53 +2319,9 @@ export const UserConfigSchema = z.object({
     maxLogSizeKb: 500,
     maxLogFiles: 14,
   })),
-  relay: z
-    .object({
-      enabled: z.boolean().default(true),
-      dataDir: z.string().nullable().default(null),
-      /**
-       * The most turns any ONE agent may be sent through agent messaging in an
-       * hour, counted whoever asked for them.
-       *
-       * Every way of making an agent answer over the message bus — another
-       * agent's publish, an outside system speaking A2A, a webhook posting
-       * back — ends at the same dispatch, and this counts them all there. It
-       * does not read who is calling, because in the shipped posture DorkOS
-       * cannot reliably tell a program on your machine from you.
-       *
-       * `null` means no limit. `0` stops agent messaging from starting turns
-       * at all.
-       */
-      maxAgentTurnsPerAgentPerHour: z
-        .number()
-        .int()
-        .min(RELAY_TURN_CEILING_BOUNDS.min)
-        .max(RELAY_TURN_CEILING_BOUNDS.max)
-        .nullable()
-        .default(RELAY_TURN_CEILING_DEFAULTS.maxAgentTurnsPerAgentPerHour),
-      /**
-       * The most turns agent messaging may start on this DorkOS in an hour,
-       * across every agent.
-       *
-       * This is the ceiling on what agents messaging each other can cost you.
-       * The per-agent number above keeps one runaway pair from eating the whole
-       * allowance; this one is the allowance. `null` means no limit, `0` stops
-       * agent messaging from starting turns at all.
-       */
-      maxAgentTurnsTotalPerHour: z
-        .number()
-        .int()
-        .min(RELAY_TURN_CEILING_BOUNDS.min)
-        .max(RELAY_TURN_CEILING_BOUNDS.max)
-        .nullable()
-        .default(RELAY_TURN_CEILING_DEFAULTS.maxAgentTurnsTotalPerHour),
-    })
-    .default(() => ({
-      enabled: true,
-      dataDir: null,
-      maxAgentTurnsPerAgentPerHour: RELAY_TURN_CEILING_DEFAULTS.maxAgentTurnsPerAgentPerHour,
-      maxAgentTurnsTotalPerHour: RELAY_TURN_CEILING_DEFAULTS.maxAgentTurnsTotalPerHour,
-    })),
+  relay: RelaySettingsSchema,
+  /** Persistent local Linux computer opt-in. Setup begins only on a person's request. */
+  computers: z.object({ enabled: z.boolean().default(false) }).default(() => ({ enabled: false })),
   /** Shared browser opt-in. A stored choice does not establish mode readiness. */
   browser: z.object({ enabled: z.boolean().default(false) }).default(() => ({ enabled: false })),
   /**
@@ -2673,39 +2584,6 @@ export const UserConfigSchema = z.object({
        */
       responseGate: z.enum(['off', 'routing']).default('routing'),
       /**
-       * How many messages one agent may post into a room inside a single turn.
-       *
-       * Three is room for "on it", the answer, and a correction — and a refusal
-       * for the tenth, so one turn cannot serialise an essay across nine bubbles.
-       * It counts only what an agent posts through the tool while a turn of its
-       * own is running here; nothing you write is ever counted.
-       *
-       * Posting is the only voice an agent has in a room, which is what makes
-       * this a bound worth having. Like every number in this area, it is a
-       * judgement rather than a measurement — see `meta/agent-etiquette.md` §9.
-       *
-       * Every declaration of this value has to agree — here and in the `rooms`
-       * section literal below — for the reason above.
-       */
-      maxPostsPerTurn: z.number().int().min(1).max(10).default(3),
-      /**
-       * How many times one agent may change a room's shared canvas inside a
-       * single turn — opening a document, updating one, closing one.
-       *
-       * Three is the same judgement `maxPostsPerTurn` above makes, for the same
-       * reason: room for the thing you meant to show, a second thing beside it,
-       * and a correction — and a refusal after that, so one turn cannot bury the
-       * table under a dozen tabs nobody asked for. The refusal reaches the agent
-       * in the tool result, so it can put the rest in one change next turn.
-       *
-       * Nothing you do yourself is counted; this bounds agents only.
-       *
-       * Every declaration of this value has to agree — here and in the `rooms`
-       * section literal below — because `conf` merges top-level defaults
-       * shallowly.
-       */
-      maxCanvasOpsPerTurn: z.number().int().min(1).max(10).default(3),
-      /**
        * How many conversations one agent may work in at the same time.
        *
        * An agent's rooms and chats all run in its own folder, so two turns at
@@ -2822,15 +2700,9 @@ export const UserConfigSchema = z.object({
       collectDebounceMs: 500,
       collectMaxEntries: 20,
       responseGate: 'routing' as const,
-      // How much one agent may say in one room turn. Two declarations carry
-      // this value — the per-field one above and this — and both have to agree
-      // or the shallow defaults-merge lands somebody on the other value.
-      maxPostsPerTurn: 3,
-      // How many canvas changes one agent may make in one turn, same judgement
-      // and same both-sites rule as the line above it.
-      maxCanvasOpsPerTurn: 3,
-      // How many conversations one agent may work in at once, same both-sites
-      // rule as the lines above it.
+      // How many conversations one agent may work in at once. Two declarations
+      // carry this value — the per-field one above and this — and both have to
+      // agree or the shallow defaults-merge lands somebody on the other value.
       maxConcurrentTurnsPerAgent: MAX_CONCURRENT_TURNS_PER_AGENT_DEFAULT,
       repo: {
         enabled: true,

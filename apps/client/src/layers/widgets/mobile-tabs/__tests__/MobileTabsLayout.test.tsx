@@ -33,11 +33,12 @@ vi.mock('@/layers/shared/model', async (importOriginal) => {
   };
 });
 
-import { TransportProvider } from '@/layers/shared/model';
+import { createInitialSlots, TransportProvider, useExtensionRegistry } from '@/layers/shared/model';
 import { TooltipProvider } from '@/layers/shared/ui';
 import { buildSidebarModel } from '@/layers/features/dashboard-sidebar/model/build-sidebar-model';
 import type { SidebarState } from '@/layers/features/dashboard-sidebar/model/sidebar-state';
 import {
+  addOn,
   busyFixture,
   powerFixture,
   quietFixture,
@@ -495,6 +496,38 @@ describe('MobileTabsLayout', () => {
     it('puts the four places DorkOS goes in You', () => {
       renderLayout();
       expect(within(panel('you')).getByTestId('sidebar-footer-strip')).toBeInTheDocument();
+    });
+
+    it('lists mini apps’ pages in Library, and only there', () => {
+      // The phone's Library is the same Add-ons section the desktop panel draws
+      // (spec `mini-app-placement` Part 2), so You no longer keeps a second list
+      // of the same pages under the same name. The page is in the REAL
+      // registry too, which is what the old You list read — so a list there
+      // drawing it again would fail the last assertion rather than pass empty.
+      useExtensionRegistry.getState().register('pages', {
+        id: 'flow:',
+        extensionId: 'flow',
+        path: '',
+        component: () => null,
+        title: 'Flow',
+        menu: true,
+      });
+      mockState = { ...busyFixture, addOns: [addOn('flow', '', 'Flow')] };
+      try {
+        renderLayout();
+
+        const addOns = panel('library').querySelector('[data-sidebar-section="addons"]');
+        expect(addOns).not.toBeNull();
+        expect(
+          within(addOns as HTMLElement).getByRole('button', { name: 'Flow' })
+        ).toBeInTheDocument();
+        expect(within(panel('you')).queryByText('Add-ons')).not.toBeInTheDocument();
+        expect(
+          within(panel('you')).queryByRole('button', { name: 'Flow' })
+        ).not.toBeInTheDocument();
+      } finally {
+        useExtensionRegistry.setState({ slots: createInitialSlots() });
+      }
     });
 
     it('mounts the bottom slot at the foot of Home, and nowhere else', () => {

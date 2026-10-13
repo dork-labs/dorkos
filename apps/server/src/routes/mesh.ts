@@ -1,3 +1,4 @@
+import { projectComputerPlacement, projectComputerPlacementById } from './computer-placement.js';
 /**
  * Mesh agent discovery and registry routes — discover agents, manage registrations,
  * maintain the denial list, and query network topology.
@@ -286,6 +287,9 @@ export function createMeshRoutes(deps: MeshRouterDeps): Hono<ApiEnv> {
     const namespace = (readQuery(c).namespace as string) ?? '*';
     const topology = meshCore.getTopology(namespace);
     const enriched = enrichTopology(topology as TopologyView, deps);
+    enriched.namespaces.forEach((ns) => {
+      ns.agents = ns.agents.map(projectComputerPlacement);
+    });
     return c.json(enriched);
   });
 
@@ -329,7 +333,7 @@ export function createMeshRoutes(deps: MeshRouterDeps): Hono<ApiEnv> {
   // GET /agents/paths — Lightweight agent list with projectPath (for onboarding/scheduling)
   // Must come before GET /agents/:id to avoid param capture
   router.get('/agents/paths', (c) => {
-    const agents = meshCore.listWithPaths();
+    const agents = meshCore.listWithPaths().map(projectComputerPlacement);
     return c.json({ agents });
   });
 
@@ -345,7 +349,10 @@ export function createMeshRoutes(deps: MeshRouterDeps): Hono<ApiEnv> {
     if (!result.success) {
       return c.json({ error: 'Validation failed', details: z.flattenError(result.error) }, 400);
     }
-    const agents = meshCore.listWithHealth(result.data ?? {});
+    const paths = meshCore.listWithPaths();
+    const agents = meshCore
+      .listWithHealth(result.data ?? {})
+      .map((agent) => projectComputerPlacementById(agent, paths));
     return c.json({ agents });
   });
 

@@ -831,6 +831,7 @@ export type AgentPauseResult = z.infer<typeof AgentPauseResultSchema>;
 /** Agent manifest enriched with runtime health and relay context for topology views. */
 export const TopologyAgentSchema = AgentManifestSchema.extend({
   projectPath: z.string().optional(),
+  effectiveRuntimeId: z.string().min(1).max(128).optional(),
   healthStatus: AgentHealthStatusSchema.default('stale'),
   relayAdapters: z.array(z.string()).default([]),
   relaySubject: z.string().nullable().default(null),

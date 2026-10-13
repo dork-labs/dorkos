@@ -30,6 +30,7 @@ vi.mock('../../workspace/resolve-session-cwd.js', () => ({ resolveSessionCwd }))
 const getSessionAgentPath = vi.hoisted(() => vi.fn(async () => null as string | null));
 vi.mock('../../core/runtime-registry.js', () => ({
   runtimeRegistry: {
+    computerRuntimeForAgentPath: () => undefined,
     getNativeSessionCwd: vi.fn(() => null),
     getSessionAgentPath,
     getDefaultType: () => 'claude-code',

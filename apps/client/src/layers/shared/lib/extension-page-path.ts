@@ -147,3 +147,39 @@ export function matchExtensionPage<T extends MatchablePage>(
 
   return best?.match ?? null;
 }
+
+/** The two things {@link listedPageAt} needs from a listed page. */
+export interface ListedPage {
+  /** The extension that registered it. */
+  extensionId: string;
+  /** The page path as registered, with no `:param` segment. */
+  path: string;
+}
+
+/**
+ * The listed page a pathname is on: the page at that address, or else the page
+ * whose address it sits under (`/x/flow/p/dorkos` is on the `flow` home when
+ * nothing closer is listed). The deepest one wins, so at most one is ever
+ * "on", and a list that marks it current marks one row.
+ *
+ * For pages a menu lists, which never have `:param` segments: segments are
+ * compared as written.
+ *
+ * @param pages - The listed pages.
+ * @param pathname - A router pathname, without query or hash.
+ */
+export function listedPageAt<T extends ListedPage>(
+  pages: readonly T[],
+  pathname: string
+): T | null {
+  const at = parseExtensionPagePath(pathname);
+  if (at === null) return null;
+  let best: T | null = null;
+  for (const page of pages) {
+    if (page.extensionId !== at.extensionId) continue;
+    const contains =
+      page.path === '' || at.subpath === page.path || at.subpath.startsWith(`${page.path}/`);
+    if (contains && (best === null || page.path.length > best.path.length)) best = page;
+  }
+  return best;
+}

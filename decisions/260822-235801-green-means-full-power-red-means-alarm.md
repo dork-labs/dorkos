@@ -14,7 +14,7 @@ amends: null
 
 Accepted — extracted from spec `full-power-defaults`.
 
-Amended by [261006-225605](261006-225605-agents-are-trusted-by-default-outsiders-and-third-party-code-are-not.md) (agents are trusted by default; 2026-10-06 vision reset): retires "The unattended-autonomy banner survives": full power is the assumed default, so it gets no banner. The tint map (green for full power, red only for alarms) stands. The banner for bindings fed by outsiders stays, per 261006-225605.
+Amended by [261006-225605](261006-225605-agents-are-trusted-by-default-outsiders-and-third-party-code-are-not.md) (agents are trusted by default; 2026-10-06 vision reset): retires "The unattended-autonomy banner survives": full power is the assumed default, so it gets no banner. The tint map (green for full power, red only for alarms) stands. The app-wide unattended banner is retired (DOR-2739); the Full-autonomy confirm on a Telegram or Slack binding, which strangers can message, stays, per 261006-225605.
 
 ## Context
 

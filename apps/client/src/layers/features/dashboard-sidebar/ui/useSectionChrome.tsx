@@ -402,7 +402,8 @@ export function useSectionChrome(section: SidebarSectionModel): SectionChrome {
     };
   }
 
-  // A headerless body — Heads up, Today, Getting started. No chrome at all: a zone
-  // that cannot fold has nothing to toggle and nothing to create into.
+  // Heads up, Today, Getting started and Add-ons. No menu and no `+`: each
+  // fills itself, so there is nothing to sort, filter or create into. They
+  // still fold, through `toggleCollapsed` on the base.
   return base;
 }

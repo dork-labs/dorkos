@@ -13,7 +13,7 @@
  * The approval gate that stops destructive work only means something in the
  * logged-in posture, because that is where deciding an approval requires an
  * authenticated person. With login off, the server cannot tell the person in the
- * cockpit from any process running as the same user, which the threat model
+ * app from any process running as the same user, which the threat model
  * documents and accepts. So `config_patch({ auth: { enabled: false } })` was an
  * ungated path, from inside the capability surface, to removing the precondition
  * that makes every destructive approval enforceable. The safety feature could
@@ -39,7 +39,7 @@
  *
  * The guard runs at the CAPABILITY HANDLER (`createConfigPatchHandler`), which is
  * the layer that knows an agent asked. It deliberately does NOT run inside
- * {@link applyConfigPatch}: the cockpit's own enable-login and disable-login flows
+ * {@link applyConfigPatch}: the app's own enable-login and disable-login flows
  * (`OwnerSetupHost.tsx`, `SecurityPanel.tsx`) reach that shared function through
  * `PATCH /api/config`, and guarding it there would break the legitimate human
  * path this whole feature exists to protect.
@@ -168,7 +168,7 @@
  * - `server.cwd` — a starting directory, and a path field the CLI DOES validate
  *   against the boundary (it falls back to the boundary root when the configured
  *   value sits outside). It picks a spot on ground the agent already has.
- * - `server.port`, `server.open` — moving or not-opening the cockpit is disruptive,
+ * - `server.port`, `server.open` — moving or not-opening the app is disruptive,
  *   not an escalation.
  * - `version` — a `z.literal(1)`, so the only value that validates is the one
  *   already stored.
@@ -378,6 +378,7 @@ export const CONFIG_WRITE_POLICY = {
   'relay.maxAgentTurnsTotalPerHour': 'operator-only',
 
   'browser.enabled': 'operator-only',
+  'computers.enabled': 'operator-only',
   // Whether this DorkOS joins and talks to spaces on other servers (DOR-2740).
   // Another "who can this instance reach" door, so a person opens it, never an
   // agent.
@@ -486,17 +487,8 @@ export const CONFIG_WRITE_POLICY = {
   'rooms.collectDebounceMs': 'operator-only',
   'rooms.collectMaxEntries': 'operator-only',
   'rooms.responseGate': 'operator-only',
-  // How many messages one agent may post into a room in one turn. Operator-only
-  // for the plainest reason in this list: it is a bound on the agent itself, and
-  // an agent that could raise it is voting itself more of the room.
-  'rooms.maxPostsPerTurn': 'operator-only',
-  // How many times one agent may change a room's shared canvas in one turn.
-  // Operator-only for exactly the reason above it: it is a bound on the agent
-  // itself, and an agent that could raise it is voting itself more of the table
-  // everybody else in the room is looking at.
-  'rooms.maxCanvasOpsPerTurn': 'operator-only',
-  // How many conversations one agent may work in at once. Operator-only for the
-  // same reason as the two above: it is a bound on the agents themselves, and an
+  // How many conversations one agent may work in at once. Operator-only: it is
+  // a bound on the agents themselves, and an
   // agent that could raise it is voting itself more turns in a shared folder.
   'rooms.maxConcurrentTurnsPerAgent': 'operator-only',
 
@@ -744,7 +736,7 @@ export const CONFIG_WRITE_POLICY = {
   // different subscription — for the operator this feature was written for, a
   // different paying client. That is the credential axis this module holds, so an
   // agent must not be able to do it, and it never needs to: the person picks their
-  // client in the cockpit. The roster is guarded with it, because an account is
+  // client in the app. The roster is guarded with it, because an account is
   // only selectable once it is registered.
   'runtimes.claudeCode.defaultAccount': 'operator-only',
   'runtimes.claudeCode.accounts[].id': 'operator-only',
@@ -987,6 +979,7 @@ export const OPERATOR_ONLY_STAKES: readonly OperatorOnlyStakeGroup[] = [
       ...CLOUD_REMOTE_REACH_PATHS,
       'mcp.enabled',
       'browser.enabled',
+      'computers.enabled',
       'spaces.enabled',
       'spaces.official.url',
       'a2a.enabled',
@@ -1157,15 +1150,8 @@ export const OPERATOR_ONLY_STAKES: readonly OperatorOnlyStakeGroup[] = [
       'rooms.collectDebounceMs',
       'rooms.collectMaxEntries',
       'rooms.responseGate',
-      // How much one turn may say in a room (spec `tool-only-room-replies`).
-      // It decides how much your agents say on their own, which is this stake
-      // exactly.
-      'rooms.maxPostsPerTurn',
-      // And how much of the room's shared canvas one turn may rearrange. Same
-      // stake: how much your agents do on their own in front of everybody else.
-      'rooms.maxCanvasOpsPerTurn',
-      // And how many conversations one agent may work in at once: how much
-      // your agents do on their own at the same time, and how much that spends.
+      // How many conversations one agent may work in at once: how much your
+      // agents do on their own at the same time, and how much that spends.
       'rooms.maxConcurrentTurnsPerAgent',
       'welcomeBack.enabled',
       'welcomeBack.absenceThresholdMinutes',

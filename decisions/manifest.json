@@ -2,6 +2,21 @@
   "version": 1,
   "decisions": [
     {
+      "id": "261012-211000",
+      "slug": "local-agent-computer",
+      "title": "Local agent computers use a direct Linux VM and an isolated runtime",
+      "status": "proposed",
+      "created": "2026-10-12",
+      "extractedFrom": "specs/agent-computer-mvp/02-specification.md",
+      "specSlug": "agent-computer-mvp",
+      "supersedes": null,
+      "amends": [],
+      "affects": [
+        "apps/server/src/services/computers/**",
+        "apps/server/src/services/runtimes/opencode/computer/**"
+      ]
+    },
+    {
       "id": "261009-192542",
       "slug": "move-the-local-server-to-hono",
       "title": "Move the local server to Hono behind a front door, one route group at a time",
@@ -5528,7 +5543,6 @@
       "specSlug": "room-participation",
       "affects": [
         "apps/server/src/services/rooms/room-service.ts",
-        "apps/server/src/services/rooms/reactions/reaction-budget.ts",
         "apps/server/src/services/rooms/room-capabilities.ts",
         "apps/server/src/services/rooms/room-errors.ts",
         "apps/server/src/routes/room-error-response.ts",
@@ -7566,7 +7580,8 @@
         "260819-022912",
         "260923-223910",
         "260821-190444",
-        "260822-235801"
+        "260822-235801",
+        "260814-195522"
       ],
       "supersedes": ["260822-235759", "0033"],
       "affects": [

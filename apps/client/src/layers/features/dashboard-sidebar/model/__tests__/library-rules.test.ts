@@ -16,6 +16,7 @@ import {
   type SidebarSectionModel,
 } from '../build-sidebar-model';
 import {
+  addOn,
   agent,
   busyFixture,
   firstRunFixture,
@@ -497,7 +498,8 @@ describe('SIDEBAR_LIBRARY_SECTION_IDS is the order', () => {
     // `buildLibrarySections` walks it, so this is that claim, asserted. The
     // operator\u2019s own sections sit above them and are filtered out here: their
     // order is theirs, and the tuple says nothing about it.
-    for (const state of [busyFixture, powerFixture, quietFixture]) {
+    const withAddOns: SidebarState = { ...busyFixture, addOns: [addOn('flow', '', 'Flow')] };
+    for (const state of [busyFixture, powerFixture, quietFixture, withAddOns]) {
       const ids = library(state)
         .map((section) => section.id)
         .filter((id) => !id.startsWith('group:'));

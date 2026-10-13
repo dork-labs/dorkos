@@ -33,7 +33,6 @@ import type {
   SessionQueueResponse,
 } from '@dorkos/shared/schemas';
 import {
-  RecentSessionsResponseSchema,
   SessionDailyCountsResponseSchema,
   SendMessageResponseSchema,
   UpdateQueuedMessageResponseSchema,
@@ -44,7 +43,10 @@ import type { ClientContext } from '@dorkos/shared/additional-context';
 import type { RuntimeCommandIntentId } from '@dorkos/shared/command-intents';
 import { COMMAND_INTENT_REQUEST_TIMEOUT_MS } from '@dorkos/shared/command-intents';
 import { fetchJSON, fetchNoContent, buildQueryString } from './http-client';
-import { parsePendingInteractionsResponse } from './tolerant-session-frames';
+import {
+  parsePendingInteractionsResponse,
+  parseRecentSessionsResponse,
+} from './tolerant-session-frames';
 
 // Interaction requests use a longer timeout (10 min) to match the server-side
 // INTERACTION_TIMEOUT_MS: an approval or a question waits on a person, and the
@@ -95,7 +97,7 @@ export function createSessionMethods(
     ): Promise<RecentSessionsResponse> {
       const qs = buildQueryString({ limit, touchedSince });
       const data = await fetchJSON<unknown>(baseUrl, `/sessions/recent${qs}`);
-      return RecentSessionsResponseSchema.parse(data);
+      return parseRecentSessionsResponse(data);
     },
 
     async getSessionDailyCounts(days?: number): Promise<SessionDailyCountsResponse> {

@@ -226,6 +226,7 @@ export const CONFIG_DISCLOSURE = {
   'relay.maxAgentTurnsTotalPerHour': 'expose',
 
   'browser.enabled': 'expose',
+  'computers.enabled': 'expose',
   // Whether the spaces experiment is on (DOR-2740): a plain boolean, no host.
   'spaces.enabled': 'expose',
   // The official space's public link (spec `official-community-space` D4): a
@@ -274,14 +275,6 @@ export const CONFIG_DISCLOSURE = {
   'rooms.collectDebounceMs': 'expose',
   'rooms.collectMaxEntries': 'expose',
   'rooms.responseGate': 'expose',
-  // How much one agent may say in this person's own rooms. It names no
-  // credential and nowhere one lives, and an agent that can read it can say why
-  // its fourth post in one turn was refused.
-  'rooms.maxPostsPerTurn': 'expose',
-  // The same reasoning one line further: an agent that can read its canvas
-  // ceiling can say why its fourth change to the room's table was refused,
-  // instead of retrying into the same wall.
-  'rooms.maxCanvasOpsPerTurn': 'expose',
   // An agent that can read how many conversations it may work in at once can
   // say why a message is waiting for one of its other turns to finish.
   'rooms.maxConcurrentTurnsPerAgent': 'expose',

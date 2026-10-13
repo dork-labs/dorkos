@@ -1166,32 +1166,10 @@ describe('CreateTaskDialog', () => {
       expect(screen.queryByText(/This covers editing files, running commands/)).toBeNull();
     });
 
-    it('asks before it turns on full autonomy, and says what an unattended run does', async () => {
-      const transport = createMockTransport();
-      const Wrapper = createWrapper(transport);
-
-      render(
-        <Wrapper>
-          <CreateTaskDialog open={true} onOpenChange={vi.fn()} />
-        </Wrapper>
-      );
-      fireEvent.click(screen.getByText('Start from scratch'));
-      await openAdvanced();
-
-      await screen.findByRole('radiogroup', { name: /how much/i });
-      fireEvent.click(screen.getByRole('radio', { name: 'Full autonomy' }));
-
-      const alert = await screen.findByRole('alertdialog');
-      expect(alert).toHaveTextContent(/Turn on Full autonomy/);
-      expect(alert).toHaveTextContent(/never stops to ask|nothing is asked|no approval/i);
-
-      // Not applied until the person says so.
-      fireEvent.click(within(alert).getByRole('button', { name: 'Cancel' }));
-      await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
-      expect(screen.getByRole('radio', { name: 'Act' })).toBeChecked();
-    });
-
-    it('applies full autonomy once confirmed', async () => {
+    it('creates a task at Full autonomy with no confirm dialog', async () => {
+      // Trusted by default (ADR 261006-225605): a schedule at a stop that never
+      // asks saves straight away. This used to open an "unattended" consent
+      // dialog and write nothing until it was confirmed.
       const newSchedule = createMockSchedule({ id: 'sched-new' });
       const transport = createMockTransport({
         createTask: vi.fn().mockResolvedValue(newSchedule),
@@ -1204,25 +1182,37 @@ describe('CreateTaskDialog', () => {
         </Wrapper>
       );
       fireEvent.click(screen.getByText('Start from scratch'));
+      fireEvent.change(screen.getByPlaceholderText('Daily code review'), {
+        target: { value: 'Nightly build' },
+      });
+      fireEvent.change(
+        screen.getByPlaceholderText('Review all pending PRs and summarize findings…'),
+        { target: { value: 'Run the nightly build' } }
+      );
       await openAdvanced();
 
       await screen.findByRole('radiogroup', { name: /how much/i });
       fireEvent.click(screen.getByRole('radio', { name: 'Full autonomy' }));
-      fireEvent.click(
-        within(await screen.findByRole('alertdialog')).getByRole('button', {
-          name: 'Turn on Full autonomy',
-        })
-      );
 
+      expect(screen.queryByRole('alertdialog')).toBeNull();
+      expect(screen.getByRole('radio', { name: 'Full autonomy' })).toBeChecked();
+
+      fireEvent.click(screen.getByText('Create task'));
       await waitFor(() =>
-        expect(screen.getByRole('radio', { name: 'Full autonomy' })).toBeChecked()
+        expect(transport.createTask).toHaveBeenCalledWith(
+          expect.objectContaining({
+            name: 'Nightly build',
+            permissionMode: 'bypassPermissions',
+          })
+        )
       );
+      expect(screen.queryByRole('alertdialog')).toBeNull();
     });
 
-    it('asks before a middle stop that never asks, too (DOR-816)', async () => {
+    it('takes a middle stop that never asks straight away, too', async () => {
       // The scheduler's runtime declares Codex's shape: its Act stop runs
-      // commands and cannot pause to ask. A run nobody is watching is exactly
-      // where that has to be said out loud rather than left to the caption.
+      // commands and cannot pause to ask. That used to open a consent dialog;
+      // trusted by default (ADR 261006-225605), it is just a pick.
       const transport = createMockTransport({
         getCapabilities: vi.fn().mockResolvedValue({
           defaultRuntime: 'claude-code',
@@ -1275,19 +1265,8 @@ describe('CreateTaskDialog', () => {
       await screen.findByRole('radiogroup', { name: /how much/i });
       fireEvent.click(screen.getByRole('radio', { name: 'Act' }));
 
-      const alert = await screen.findByRole('alertdialog');
-      // The dial's own word for what they pressed — not "Full autonomy", which
-      // this mode is not.
-      expect(alert).toHaveTextContent('Turn on Act');
-      expect(alert).not.toHaveTextContent(/Full autonomy/);
-      expect(within(alert).getByTestId('consent-asks-note')).toHaveTextContent(
-        /never pauses to ask/i
-      );
-      // And the unattended consequence the form has always carried.
-      expect(alert).toHaveTextContent(/nobody to ask/i);
-
-      fireEvent.click(within(alert).getByRole('button', { name: 'Turn on Act' }));
-      await waitFor(() => expect(screen.getByRole('radio', { name: 'Act' })).toBeChecked());
+      expect(screen.queryByRole('alertdialog')).toBeNull();
+      expect(screen.getByRole('radio', { name: 'Act' })).toBeChecked();
     });
   });
 

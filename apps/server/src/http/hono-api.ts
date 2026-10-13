@@ -50,6 +50,7 @@ import { createCapabilitiesInvokeRoutes } from '../routes/capabilities-invoke.js
 import commandRoutes from '../routes/commands.js';
 import { createCommunityConnectionsRoutes } from '../routes/community-connections.js';
 import configRoutes from '../routes/config.js';
+import { mountComputerRoutes, type ComputerRoutesService } from '../routes/computers.js';
 import {
   createAgentCommitmentsRoutes,
   createCommitmentsRoutes,
@@ -103,7 +104,7 @@ import { createSessionRoutes, type SessionRouteDeps } from '../routes/sessions.j
 import { createShapesRoutes, type ShapesRouterDeps } from '../routes/shapes.js';
 import subagentRoutes from '../routes/subagents.js';
 import { createTasksRoutes, type TasksRouterDeps } from '../routes/tasks.js';
-import { createSystemRoutes, type SystemRouteDeps } from '../routes/system.js';
+import { createSystemRoutes } from '../routes/system.js';
 import { createTeamRoutes, type TeamRouterDeps } from '../routes/team.js';
 import { createTemplateRoutes } from '../routes/templates.js';
 import { createTerminalRoutes } from '../routes/terminal.js';
@@ -193,6 +194,7 @@ export interface ComposedGroupDeps {
   heartbeatTriage?: HeartbeatTriageRouterDeps;
   /** The embedded terminal's REST half (`/api/terminal`); its socket is an upgrade. */
   terminal?: TerminalManager;
+  computers?: ComputerRoutesService;
   /** Agent identity, by folder (`/api/agents`). */
   agents?: AgentsRouterDeps;
   /** The discovery scan stream (`/api/discovery`). Only handed over when the mesh started. */
@@ -270,7 +272,7 @@ export interface ComposedGroupDeps {
 }
 
 /** What the moved route groups read from the running server, handed over by `index.ts`. */
-export type HonoApiDeps = HealthRouteDeps & SystemRouteDeps & ComposedGroupDeps;
+export type HonoApiDeps = HealthRouteDeps & ComposedGroupDeps;
 
 /** Options for {@link createHonoApi}. */
 export interface HonoApiOptions {
@@ -325,7 +327,7 @@ export function createHonoApi(options: HonoApiOptions): Hono<ApiEnv> {
   app.route('/api/models', modelRoutes);
   app.route('/api/commands', commandRoutes);
   app.route('/api/subagents', subagentRoutes);
-  app.route('/api/system', createSystemRoutes(deps));
+  app.route('/api/system', createSystemRoutes());
   app.route('/api/keep-awake', keepAwakeRoutes);
   app.route('/api/errors', errorRoutes);
   app.route('/api/directory', directoryRoutes);
@@ -461,6 +463,7 @@ export function createHonoApi(options: HonoApiOptions): Hono<ApiEnv> {
     app.route('/api/heartbeats/triage-credits', createHeartbeatTriageRoutes(deps.heartbeatTriage));
   }
   if (deps.terminal) app.route('/api/terminal', createTerminalRoutes(deps.terminal));
+  mountComputerRoutes(app, deps.computers, deps.mesh?.meshCore);
   if (deps.mcp) app.route('/mcp', createMcpRoutes(deps.mcp));
   // Its routes carry their whole paths, two of them outside `/a2a`.
   if (deps.a2a) app.route('/', createA2aRoutes(deps.a2a));

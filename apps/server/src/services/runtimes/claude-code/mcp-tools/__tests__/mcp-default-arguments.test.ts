@@ -41,7 +41,6 @@ vi.mock('@dorkos/shared/manifest', () => ({ readManifest: vi.fn().mockResolvedVa
 
 import { createDorkOsToolServer, handRegisteredInSessionTools } from '../index.js';
 import { capabilityInputObject } from '../../../../core/capabilities/input-projection.js';
-import { NotifyBudget } from '../../../../relay/notify-budget.js';
 import type { McpToolDeps } from '../types.js';
 import { noopLogger } from '@dorkos/shared/logger';
 import {
@@ -78,7 +77,6 @@ function createFullDeps(): McpToolDeps {
     extensionManager: stub,
     runtimeRegistry: stub,
     activityService: stub,
-    notifyBudget: new NotifyBudget(),
   };
 }
 

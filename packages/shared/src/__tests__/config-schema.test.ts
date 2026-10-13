@@ -61,6 +61,7 @@ describe('UserConfigSchema', () => {
     expect(result).toEqual({
       version: 1,
       server: { port: 4242, cwd: null, boundary: null, open: true },
+      computers: { enabled: false },
       browser: { enabled: false },
       spaces: { enabled: false, official: { url: '' } },
       tunnel: {
@@ -129,8 +130,6 @@ describe('UserConfigSchema', () => {
         collectDebounceMs: 500,
         collectMaxEntries: 20,
         responseGate: 'routing',
-        maxPostsPerTurn: 3,
-        maxCanvasOpsPerTurn: 3,
         maxConcurrentTurnsPerAgent: 3,
         repo: {
           enabled: true,
@@ -478,6 +477,7 @@ describe('USER_CONFIG_DEFAULTS', () => {
     expect(USER_CONFIG_DEFAULTS).toEqual({
       version: 1,
       server: { port: 4242, cwd: null, boundary: null, open: true },
+      computers: { enabled: false },
       browser: { enabled: false },
       spaces: { enabled: false, official: { url: '' } },
       tunnel: {
@@ -546,8 +546,6 @@ describe('USER_CONFIG_DEFAULTS', () => {
         collectDebounceMs: 500,
         collectMaxEntries: 20,
         responseGate: 'routing',
-        maxPostsPerTurn: 3,
-        maxCanvasOpsPerTurn: 3,
         maxConcurrentTurnsPerAgent: 3,
         repo: {
           enabled: true,

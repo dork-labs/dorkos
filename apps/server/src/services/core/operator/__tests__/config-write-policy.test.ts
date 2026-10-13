@@ -90,6 +90,7 @@ describe('CONFIG_WRITE_POLICY drift guard', () => {
       'cloud.remote.hosts',
       'cloud.remote.instanceId',
       'cloud.remote.mode',
+      'computers.enabled',
       'connectors.rawMcpServers[].displayName',
       'connectors.rawMcpServers[].slug',
       'connectors.rawMcpServers[].transport',
@@ -169,9 +170,7 @@ describe('CONFIG_WRITE_POLICY drift guard', () => {
       'rooms.maxAgentDepth',
       'rooms.maxAutomaticTurnsPerRoomPerHour',
       'rooms.maxAutomaticTurnsTotalPerHour',
-      'rooms.maxCanvasOpsPerTurn',
       'rooms.maxConcurrentTurnsPerAgent',
-      'rooms.maxPostsPerTurn',
       'rooms.maxTurnsPerAgentPerCascade',
       // A room's own files: whether they exist at all, and the bounds a merge
       // is measured against. `rooms.repo.mergeQueueWaitMs` is deliberately NOT

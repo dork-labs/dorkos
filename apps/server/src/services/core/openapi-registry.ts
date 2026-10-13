@@ -29,15 +29,7 @@ import { CreateAgentOptionsSchema } from '@dorkos/shared/mesh-schemas';
 import { RUNTIME_CREDITS_PROTOCOLS } from '@dorkos/shared/agent-runtime';
 import { OpenAPIRegistry, OpenApiGeneratorV31 } from '@asteasolutions/zod-to-openapi';
 import { env } from '../../env.js';
-import { registerConnectorEventOpenApi } from '../connectors/events/openapi.js';
-import { registerSessionContinueOpenApi } from '../session/fleet/continue-openapi.js';
-import { registerSessionLocationsOpenApi } from '../session/resolution/session-locations-openapi.js';
-import { registerProjectsOpenApi } from '../projects/projects-openapi.js';
-import { registerAccountEligibilityOpenApi } from './usage/account-eligibility-openapi.js';
-import { registerKeepAwakeOpenApi } from './keep-awake/keep-awake-openapi.js';
-import { registerCommitmentsOpenApi } from '../commitments/commitments-openapi.js';
-import { registerHeartbeatsOpenApi } from '../heartbeats/heartbeats-openapi.js';
-import { registerOnboardingOpenApi } from './onboarding/onboarding-openapi.js';
+import { registerDomainOpenApi } from './openapi/domains.js';
 import { registerExtensionDecisionsOpenApi } from '../extensions/inbox/extension-decisions-openapi.js';
 import {
   PermissionModeSchema,
@@ -645,15 +637,6 @@ const LocalUninstallResultSchema = z.object({
 });
 
 const registry = new OpenAPIRegistry();
-registerConnectorEventOpenApi(registry);
-registerSessionContinueOpenApi(registry);
-registerSessionLocationsOpenApi(registry);
-registerProjectsOpenApi(registry);
-registerAccountEligibilityOpenApi(registry);
-registerKeepAwakeOpenApi(registry);
-registerCommitmentsOpenApi(registry);
-registerHeartbeatsOpenApi(registry);
-registerOnboardingOpenApi(registry);
 
 // `relay_flow` is broadcast on the unified `/api/events` WebSocket stream, which
 // (like its `relay_bindings_changed`/`relay_adapters_changed` siblings) has
@@ -664,6 +647,8 @@ registry.register('RelayFlowDirection', RelayFlowDirectionSchema);
 registry.register('RelayFlowEvent', RelayFlowEventSchema);
 
 // --- Health ---
+
+registerDomainOpenApi(registry);
 
 registry.registerPath({
   method: 'get',
@@ -6378,7 +6363,7 @@ registry.registerPath({
   tags: ['Rooms'],
   summary: 'React to an entry, or take a reaction back',
   description:
-    'Keyed on `(you, this entry, this emoji)`, which holds at most one reaction however many times anyone asks. With no `on` in the body this is a TOGGLE — the same emoji again removes it — which is what a click means and is exactly not idempotent, hence POST rather than PUT. **Do not retry a bare toggle**: a timeout does not say whether the write landed, and re-sending the flip undoes it. Send `{"emoji": "👍", "on": true}` or `on: false` instead, which names the state you want and is safe to repeat; `on: true` on a reaction you already have does not restamp it, so the pill keeps its place in a row ordered by first appearance. Returns 202 with which way it went and your recomputed quick row — but **treat the event stream as authoritative, not this body**: the entry\'s new reaction set reaches every reader, this one included, over `GET /api/rooms/{id}/events` as a `reaction` frame carrying the WHOLE current set, while this body says only what YOUR call did and somebody else may have reacted in between. **A reaction is costless by design**: it takes no turn, writes no entry, sends no notice, starts no cascade and does not move the room in the activity order. When it lands on an agent-authored entry the agent is told on its next turn, in its room context, as an acknowledgment it never replies to. **An agent may react too** — ADR 260814-195522 reverses etiquette E16b, so what bounds a machine here is an hourly ceiling per room (`REACTION_RATE_LIMITED`, 429) rather than what kind of author it is, and the pill it leaves carries the AGENT\'s id. A caller presenting an `X-DorkOS-Agent` token this machine cannot verify is refused with 401: a revoked agent has no allowance to spend.',
+    'Keyed on `(you, this entry, this emoji)`, which holds at most one reaction however many times anyone asks. With no `on` in the body this is a TOGGLE — the same emoji again removes it — which is what a click means and is exactly not idempotent, hence POST rather than PUT. **Do not retry a bare toggle**: a timeout does not say whether the write landed, and re-sending the flip undoes it. Send `{"emoji": "👍", "on": true}` or `on: false` instead, which names the state you want and is safe to repeat; `on: true` on a reaction you already have does not restamp it, so the pill keeps its place in a row ordered by first appearance. Returns 202 with which way it went and your recomputed quick row — but **treat the event stream as authoritative, not this body**: the entry\'s new reaction set reaches every reader, this one included, over `GET /api/rooms/{id}/events` as a `reaction` frame carrying the WHOLE current set, while this body says only what YOUR call did and somebody else may have reacted in between. **A reaction is costless by design**: it takes no turn, writes no entry, sends no notice, starts no cascade and does not move the room in the activity order. When it lands on an agent-authored entry the agent is told on its next turn, in its room context, as an acknowledgment it never replies to. **An agent may react too** — ADR 260814-195522 reverses etiquette E16b, and ADR 261006-225605 removes the hourly count it once had, so the pill it leaves carries the AGENT\'s id and nothing caps how many. A caller presenting an `X-DorkOS-Agent` token this machine cannot verify is refused with 401: a revoked agent cannot react.',
   request: {
     params: RoomEntryParams,
     body: { content: { 'application/json': { schema: ToggleReactionRequestSchema } } },
@@ -6399,12 +6384,6 @@ registry.registerPath({
     },
     409: {
       description: 'The room is archived',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
-    429: {
-      description:
-        'This agent has spent its hourly reaction allowance in this room ' +
-        '(`REACTION_RATE_LIMITED`). People are never counted',
       content: { 'application/json': { schema: ErrorResponseSchema } },
     },
   },

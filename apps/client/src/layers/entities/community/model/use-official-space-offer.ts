@@ -24,6 +24,12 @@ export interface OfficialSpaceOffer {
   joined: boolean;
   /** Whether a prompt should show: a link, no connection yet, and never skipped. */
   offered: boolean;
+  /**
+   * The answer is still on its way: a link, never skipped, and the connection list loading.
+   * A surface choosing between the offer and something else can wait on this instead of
+   * showing the other thing and then swapping. False once the list answers or fails.
+   */
+  pending: boolean;
   /** Open the Join dialog on the official link. Does nothing without one. */
   join: () => void;
   /** Hide every prompt for good. The switcher still offers the way in. */
@@ -42,9 +48,13 @@ export function useOfficialSpaceOffer(): OfficialSpaceOffer {
     connections.data !== undefined &&
     !joined &&
     !dismissedIds.includes(OFFICIAL_SPACE_OFFER_ID);
+  const pending =
+    officialLink !== null &&
+    connections.isLoading === true &&
+    !dismissedIds.includes(OFFICIAL_SPACE_OFFER_ID);
   const join = useCallback(() => {
     if (officialLink !== null) ask(officialLink);
   }, [ask, officialLink]);
   const skip = useCallback(() => dismissPromo(OFFICIAL_SPACE_OFFER_ID), [dismissPromo]);
-  return { link: officialLink, joined, offered, join, skip };
+  return { link: officialLink, joined, offered, pending, join, skip };
 }
