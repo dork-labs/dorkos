@@ -2,6 +2,7 @@
 covers:
   - 'feat(trust): a turn a stranger started still posts and sends notes only a few times (DOR-2739)'
   - 'fix(trust): count only turns a stranger started, and only sends that went out (DOR-2739)'
+  - "fix(trust): reserve a stranger turn's send up front, and follow a renamed chat's newest turn (DOR-2739)"
 ---
 
 ### Changed
