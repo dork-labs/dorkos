@@ -168,14 +168,14 @@ export class ConnectorRuntimePrincipalService
       input.signal.throwIfAborted();
       throw new ConnectorRuntimeAuthorityError(
         'authority_refused',
-        'DorkOS couldn’t confirm this chat can use connected apps. Start a new turn and try again.'
+        'DorkOS couldn’t confirm which agent this chat belongs to, so it can’t use connected apps.'
       );
     }
     input.signal.throwIfAborted();
     if (!ownership.isCurrent()) {
       throw new ConnectorRuntimeAuthorityError(
         'authority_refused',
-        'DorkOS couldn’t confirm this chat can use connected apps. Start a new turn and try again.'
+        'DorkOS couldn’t confirm which agent this chat belongs to, so it can’t use connected apps.'
       );
     }
 
