@@ -2,6 +2,8 @@
 covers:
   - 'fix(server): a Codex chat in an agent folder answers instead of failing every turn (DOR-2752)'
   - 'fix(server): only a chat with no recorded agent runs without connected apps; OpenCode too (DOR-2752)'
+  - 'fix(server): plainer wording for a chat not linked to an agent (DOR-2752)'
+  - 'chore: one changelog fragment for DOR-2752'
 ---
 
 ### Fixed
