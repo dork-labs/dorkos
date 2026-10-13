@@ -6,7 +6,7 @@
 
 ## The launch
 
-Launch is late November 2026, holding the cut line in [`research/20261007_dorkos-runtime.md`](../research/20261007_dorkos-runtime.md): our own engine lands around November 23 to 30, and the community space must be solid. The launch is the new story, on today's product, plus DorkOS Cloud, DorkOS's own AI and proactive agents with heartbeats.
+Launch is December 8, 2026 (decided 2026-10-12), holding the cut line in [`research/20261007_dorkos-runtime.md`](../research/20261007_dorkos-runtime.md): our own engine lands around November 23 to 30, and the community space must be solid. The soft launch with current users runs for about two weeks before it. The launch is the new story, on today's product, plus DorkOS Cloud, DorkOS's own AI and proactive agents with heartbeats.
 
 | Before launch                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            | Ticket                                            | State              |
 | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------- | ------------------ |
@@ -29,7 +29,7 @@ A card is required for DorkOS's own AI; there are no free starter credits. There
 
 ## After launch, in order
 
-1. Move the server from Express to Hono, then merge it with the space server: one program, one app. (DOR-2742)
+1. The rest of the server merge: the code folds into one app, agents report where they run, a Mac can host spaces, and the app connects to any DorkOS server directly. ([`specs/server-merge`](../specs/server-merge/02-specification.md), layers 2 and 3)
 2. Equal accounts: access levels, role and responsibilities on profiles, per-account API keys, agents creating agents. (DOR-2743)
 3. Everything programmable: a CLI, an SDK and API, GraphQL queries and live event subscriptions. (DOR-2754)
 4. One message system: Relay folds into conversations, and anyone can message anyone in a space. (DOR-2744)

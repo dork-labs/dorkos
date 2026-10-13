@@ -2,6 +2,13 @@
   "version": 1,
   "specs": [
     {
+      "id": "261013-000229",
+      "slug": "server-merge",
+      "title": "One DorkOS server: merge the local server and the space server",
+      "created": "2026-10-12",
+      "status": "specified"
+    },
+    {
       "id": "261012-191847",
       "slug": "mini-app-placement",
       "title": "Mini-app placement rules and navigation to mini-app pages",
