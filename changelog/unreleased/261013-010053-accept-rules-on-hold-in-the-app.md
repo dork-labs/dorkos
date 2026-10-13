@@ -1,6 +1,7 @@
 ---
 covers:
   - 'fix(community): accept a space’s rules on hold from the app, as on the web page (DOR-2836)'
+  - 'fix(server): let a person accept a held space’s rules through this computer (DOR-2836)'
 ---
 
 ### Fixed

@@ -1089,12 +1089,14 @@ describe('a person’s own DorkOS install', () => {
       await expectStatus(await call(scoped('/rules/accept'), 'POST', install, { version }), 200);
       await expectStatus(await call(scoped('/rules/accept'), 'POST', human(lee), { version }), 200);
       expect(await auditCount('rules.accept', lee.memberId)).toBe(2);
-      expect(
-        (await call(scoped('/rules/accept'), 'POST', agentOf(lee), { version })).status
-      ).not.toBe(200);
-      expect(
-        (await call(scoped('/me'), 'PATCH', install, { displayName: 'Lee Held' })).status
-      ).not.toBe(200);
+      await expectStatus(
+        await call(scoped('/rules/accept'), 'POST', agentOf(lee), { version }),
+        423
+      );
+      await expectStatus(
+        await call(scoped('/me'), 'PATCH', install, { displayName: 'Lee Held' }),
+        423
+      );
     } finally {
       await pool.query(
         `UPDATE communities SET lifecycle='active',held_from_state=NULL,held_at=NULL,
