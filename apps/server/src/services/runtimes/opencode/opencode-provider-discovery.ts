@@ -1,19 +1,17 @@
+import { canonicalDirectory } from '@dorkos/shared/canonical-directory';
+import { discoverOpenCodeModels } from './model-discovery.js';
 import { readOriginalOpenCodeRuntimeView } from './opencode-runtime.js';
 import type { ProviderListResponse } from '@opencode-ai/sdk';
 import type { ModelOption, SubagentInfo, CommandRegistry } from '@dorkos/shared/types';
 import type { DependencyCheck } from '@dorkos/shared/agent-runtime';
 import type { McpServerEntry } from '@dorkos/shared/transport';
-import { DEFAULT_CWD } from '../../../lib/resolve-root.js';
-import { logger, logError } from '../../../lib/logger.js';
 import {
   checkOpenCodeDependencies,
   getConnectedOpenCodeProvider,
 } from './providers/check-dependencies.js';
 import { detectOllama } from './providers/ollama.js';
 import { fetchOpenRouterCatalog, type OpenRouterCatalog } from './providers/openrouter.js';
-import { unwrap } from './sessions/session-mapper.js';
-import { projectModelOptions, projectedProviderIds } from './providers/models.js';
-import { canonicalDirectory } from '@dorkos/shared/canonical-directory';
+import { projectedProviderIds } from './providers/models.js';
 import { listOpenCodeSubagents } from './subagent-list.js';
 
 /**
@@ -37,24 +35,7 @@ import { listOpenCodeSubagents } from './subagent-list.js';
  */
 export async function getSupportedModels(runtimeOwner: object): Promise<ModelOption[]> {
   const facet = readOriginalOpenCodeRuntimeView(runtimeOwner);
-  try {
-    const client = await facet.provider.getClient(DEFAULT_CWD);
-    const listed = unwrap(
-      // Canonical, like every other directory-scoped read (DOR-695):
-      // `DORKOS_DEFAULT_CWD` is taken verbatim, and on macOS a `/tmp` or
-      // `/var` spelling reaches the sidecar as a directory it never stored.
-      await client.provider.list({ query: { directory: canonicalDirectory(DEFAULT_CWD) } }),
-      'provider.list'
-    );
-    const [installedOllamaTags, openRouterCatalog] = await Promise.all([
-      facet.resolveInstalledOllamaTags(listed),
-      facet.resolveOpenRouterCatalog(listed),
-    ]);
-    return projectModelOptions(listed, { installedOllamaTags, openRouterCatalog });
-  } catch (err) {
-    logger.warn('[OpenCodeRuntime] provider catalog unavailable', logError(err));
-    return [];
-  }
+  return discoverOpenCodeModels(facet.provider, facet.modelDirectory);
 }
 
 /**
@@ -121,7 +102,7 @@ export function getConnectedProvider(runtimeOwner: object): string | null {
 /** List Main's named subagent/all agents using this constructor-owned provider. */
 export async function getSupportedSubagents(runtimeOwner: object): Promise<SubagentInfo[]> {
   const facet = readOriginalOpenCodeRuntimeView(runtimeOwner);
-  return listOpenCodeSubagents(facet.provider, DEFAULT_CWD);
+  return listOpenCodeSubagents(facet.provider, facet.modelDirectory);
 }
 
 /** OpenCode exposes no DorkOS-invocable slash commands. */

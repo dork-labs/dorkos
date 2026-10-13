@@ -16,12 +16,7 @@ import {
   type NativeSessionAcquisition,
 } from '../../session/session-lock.js';
 import { homeOf, resolveAgentHome } from '../../core/agent-identity/index.js';
-import {
-  OPENCODE_LABEL,
-  OPENCODE_OWN_PLAN,
-  openCodeRunsOnCredits,
-  type OpenCodeSidecarPlan,
-} from './credits-sidecar.js';
+import { OPENCODE_LABEL, OPENCODE_OWN_PLAN, type OpenCodeSidecarPlan } from './credits-sidecar.js';
 import { CreditsUnavailableError } from '../../core/cloud/credits-protocols.js';
 import type { ActiveTurn, SettingUpTurn, OpenCodeNativeEntry } from './opencode-runtime.js';
 import {
@@ -48,7 +43,7 @@ export async function prepareSidecar(
   if (facet.provider.prepareTurn) return facet.provider.prepareTurn(othersActive);
   // A provider that cannot be made right for credits never runs a turn the
   // person set to credits: refused, not sent on whatever it holds.
-  if (openCodeRunsOnCredits()) throw new CreditsUnavailableError('not-supported', OPENCODE_LABEL);
+  if (facet.runsOnCredits()) throw new CreditsUnavailableError('not-supported', OPENCODE_LABEL);
   return OPENCODE_OWN_PLAN;
 }
 
@@ -125,7 +120,7 @@ export function installNativeTurn(
     entry: turn,
     signal: controller.signal,
     retired: false,
-    runtime: 'opencode' as const,
+    runtime: facet.type,
     cwd: directory,
     client,
     agentPath: undefined as string | undefined,
@@ -201,7 +196,7 @@ export async function prepareRoomResponder(
     turn.connectorBinding = await openOriginalNativeTurn(
       tools.principals,
       {
-        runtime: 'opencode',
+        runtime: facet.type,
         canonicalSessionId: sessionId,
         agentPath,
         canonicalCwd: directory,

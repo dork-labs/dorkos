@@ -8,35 +8,13 @@ import type {
   PreparedRoomResponder,
   OriginalCommittedRoomResponder,
 } from '../../canvas/doc-channel/current/current-operation-types.js';
-import type { OpenCodeClientProvider, OpenCodeSessionMapStore } from './sessions/session-mapper.js';
-import type { SessionAttachmentStore } from '../../session/attachments/index.js';
 import type { OpenConnectorTurnResult } from '../../connectors/runtime-principal-port.js';
 import type { ConnectorTurnLeaseSupervisorHandle } from '../connectors/connector-turn-lease-supervisor.js';
 import type { OpenCodeSidecarPlan } from './credits-sidecar.js';
 import type { MessageOpts } from '@dorkos/shared/agent-runtime';
 
-/** Constructor dependencies for {@link OpenCodeRuntime} (composition root). */
-export interface OpenCodeRuntimeOptions {
-  /**
-   * Sidecar client source — the `openCodeServerManager` singleton in
-   * production, a mock in tests (the `opencode` binary is never required).
-   */
-  provider: OpenCodeClientProvider;
-  /**
-   * Durable sessionId <-> OpenCode-session-id store (`OpenCodeSessionMap`
-   * over the shared Drizzle handle in production). Keeps DorkOS-facing ids
-   * stable across server restarts (DOR-251); tests that don't exercise
-   * persistence may omit it.
-   */
-  sessionMap?: OpenCodeSessionMapStore;
-  /**
-   * Where images this runtime's turns produce are stored (the local store over
-   * the resolved data directory in production). Omitted, the runtime declares
-   * `mediaOutput: 'none'` and says so per image rather than dropping one
-   * quietly — see {@link OpenCodeRuntime.getCapabilities}.
-   */
-  attachments?: SessionAttachmentStore;
-}
+import type { ConnectorRuntime } from '../../connectors/runtime-principal-port.js';
+export type { OpenCodeRuntimeOptions } from './runtime-options.js';
 
 /** Identity-matched original in-flight OpenCode turn DATA. */
 export interface ActiveTurn {
@@ -65,7 +43,7 @@ export type OpenCodeNativeEntry = {
   entry: ActiveTurn;
   signal: AbortSignal;
   retired: boolean;
-  runtime: 'opencode';
+  runtime: ConnectorRuntime;
   agentPath: string | undefined;
   cwd: string;
   client: OpencodeClient;

@@ -1,9 +1,10 @@
+import { readOriginalRuntimePreparedResponder } from './room-operation-responder.js';
+import { agentPause, AgentPausedError } from '../../../mesh/pause/agent-pause.js';
 import { type OriginalDownstreamRoomEmitter } from '../downstream/native-room-emitter.js';
 import { readOriginalRegisteredRuntime } from '../../../core/runtime-registry.js';
 import {
   isOriginalNativeTestModeRuntime,
   prepareTestModeOriginalLockedRoomResponder,
-  readTestModePreparedRoomResponder,
   retireTestModePreparedRoomResponder,
 } from '../../../runtimes/test-mode/test-mode-runtime.js';
 import type { OriginalRoomCommittedData } from '../current/current-operation-types.js';
@@ -24,9 +25,6 @@ import {
   readOriginalPreparedNativePrincipal,
   readOriginalRoomEmissionPrincipalBinding,
 } from '../../../connectors/principal/runtime-principal-service.js';
-import { readClaudePreparedRoomResponder } from '../../../runtimes/claude-code/claude-code-runtime.js';
-import { readCodexPreparedRoomResponder } from '../../../runtimes/codex/codex-runtime.js';
-import { readOpenCodePreparedRoomResponder } from '../../../runtimes/opencode/opencode-runtime.js';
 import { type Db, type DbTransaction } from '@dorkos/db';
 import { type FixedNativeRoomDocFacade } from '@dorkos/db/internal-server';
 import {
@@ -282,13 +280,7 @@ export class OriginalRoomResponderOperation {
     this.#requireOwner();
     const own = readOriginalRoomResponderFrozenSource(this.#helper, this, source);
     const type = own.source.targetRuntime;
-    const read = isOriginalNativeTestModeRuntime(runtime)
-      ? readTestModePreparedRoomResponder(runtime, prepared)
-      : type === 'claude-code'
-        ? readClaudePreparedRoomResponder(runtime, prepared)
-        : type === 'codex'
-          ? readCodexPreparedRoomResponder(runtime, prepared)
-          : readOpenCodePreparedRoomResponder(runtime, prepared);
+    const read = readOriginalRuntimePreparedResponder(runtime, prepared, type);
     if (!read || read.source !== source || this.#db.$client.inTransaction)
       throw new Error('Prepared Room source is not original.');
     this.#requireOwner();
@@ -381,13 +373,7 @@ export class OriginalRoomResponderOperation {
     )
       throw new Error('Room responder lacks original prepared custody.');
     const type = own.own.source.targetRuntime;
-    const read = isOriginalNativeTestModeRuntime(runtime)
-      ? readTestModePreparedRoomResponder(runtime, prepared)
-      : type === 'claude-code'
-        ? readClaudePreparedRoomResponder(runtime, prepared)
-        : type === 'codex'
-          ? readCodexPreparedRoomResponder(runtime, prepared)
-          : readOpenCodePreparedRoomResponder(runtime, prepared);
+    const read = readOriginalRuntimePreparedResponder(runtime, prepared, type);
     if (
       !read ||
       read.source !== own.source ||
@@ -522,6 +508,16 @@ export class OriginalRoomResponderOperation {
     runtime: object,
     prepared: PreparedRoomResponder
   ): OriginalCommittedRoomResponder {
+    const own = this.#readPrepared(runtime, prepared);
+    const paused = agentPause()?.pausedAgentOfTurn({ cwd: own.own.source.targetAgentPath });
+    if (paused) {
+      agentPause()?.recordHeld(paused, {
+        via: 'turn',
+        sessionId: own.own.effectiveTargetSessionId ?? own.own.source.targetSessionId,
+        runtime: own.own.source.targetRuntime,
+      });
+      throw new AgentPausedError(paused);
+    }
     return commitOriginalRoomResponder(this.#commitKey, runtime, prepared);
   }
 }

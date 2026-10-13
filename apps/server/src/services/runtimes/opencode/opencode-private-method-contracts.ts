@@ -1,3 +1,4 @@
+import type { ConnectorRuntime } from '../../connectors/runtime-principal-port.js';
 import type { OriginalRoomDispatchCustody } from '../../rooms/service/room-core.js';
 import type { AccountsAccessContext } from '../shared/accounts-access-context.js';
 import type { OpencodeClient, ProviderListResponse } from '@opencode-ai/sdk';
@@ -57,7 +58,9 @@ export interface OriginalOpenCodeRuntimeView {
   readonly registry: OpenCodeSessionRegistry;
   readonly settingUp: Set<SettingUpTurn>;
   readonly settingsPort: SessionSettingsPort | undefined;
-  readonly type: 'opencode';
+  readonly type: ConnectorRuntime;
+  readonly runsOnCredits: () => boolean;
+  readonly modelDirectory: string;
   createMessage(
     sessionId: string,
     content: string,

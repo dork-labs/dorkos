@@ -42,6 +42,7 @@ let fakeRuntime: FakeAgentRuntime;
 
 vi.mock('../../runtime-registry.js', () => ({
   runtimeRegistry: {
+    computerRuntimeForAgentPath: () => undefined,
     getNativeSessionCwd: vi.fn(() => null),
     getDefault: vi.fn(() => fakeRuntime),
     get: vi.fn(() => fakeRuntime),

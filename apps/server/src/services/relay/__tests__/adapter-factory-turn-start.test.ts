@@ -22,6 +22,7 @@ vi.mock('@dorkos/relay', async (importOriginal) => {
 
 vi.mock('../../core/runtime-registry.js', () => ({
   runtimeRegistry: {
+    computerRuntimeForAgentPath: () => undefined,
     getNativeSessionCwd: vi.fn(() => null),
     getSessionAgentPath: vi.fn(async () => null),
     getDefaultType: () => 'claude-code',

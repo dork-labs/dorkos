@@ -78,6 +78,7 @@ const posture = vi.hoisted(() => ({ authEnabled: false }));
 const liveRuntimes = vi.hoisted(() => ({ list: [] as unknown[] }));
 vi.mock('../../services/core/runtime-registry.js', () => ({
   runtimeRegistry: {
+    computerRuntimeForAgentPath: () => undefined,
     getNativeSessionCwd: vi.fn(() => null),
     listRuntimes: () => liveRuntimes.list,
   },

@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { CanonicalConnectorRuntimeAuthorityResolver } from '../runtime-authority-resolver.js';
+import { ConnectorRuntimeAuthorityError } from '../runtime-principal-service.js';
 
 const OWNER = { kind: 'local_install', installationId: 'install-a' } as const;
 
@@ -49,5 +50,32 @@ describe('CanonicalConnectorRuntimeAuthorityResolver', () => {
         canonicalCwd: '/projects/a',
       })
     ).resolves.toBe(false);
+  });
+
+  it('says a chat has no recorded agent apart from a real failure (DOR-2752)', async () => {
+    const sessions = {
+      resolveSessionRuntime: vi.fn(async () => ({ type: 'codex', bound: true })),
+      getSessionAgentPath: vi.fn(async (): Promise<string | null> => null),
+    };
+    const resolver = new CanonicalConnectorRuntimeAuthorityResolver({
+      sessions,
+      mesh: { getByPath: vi.fn(() => ({ id: 'agent-a' })) },
+      owner: OWNER,
+    });
+    const input = {
+      runtime: 'codex' as const,
+      canonicalSessionId: 'session-a',
+      agentPath: '/projects/a',
+      canonicalCwd: '/projects/a',
+      signal: new AbortController().signal,
+    };
+
+    await expect(resolver.authorizeTurn(input)).rejects.toEqual(
+      expect.objectContaining<Partial<ConnectorRuntimeAuthorityError>>({ code: 'agent_unrecorded' })
+    );
+
+    sessions.getSessionAgentPath.mockRejectedValueOnce(new Error('database is locked'));
+    const failure = await resolver.authorizeTurn(input).catch((err: unknown) => err);
+    expect(failure).not.toBeInstanceOf(ConnectorRuntimeAuthorityError);
   });
 });

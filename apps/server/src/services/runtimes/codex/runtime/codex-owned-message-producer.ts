@@ -1,5 +1,6 @@
 import type { StreamEvent } from '@dorkos/shared/types';
-import type { MessageOpts, SseResponse } from '@dorkos/shared/agent-runtime';
+import type { MessageOpts, SseResponse, LiveSessionRef } from '@dorkos/shared/agent-runtime';
+import { picksSession } from '@dorkos/shared/agent-runtime';
 import type { NativeSessionAcquisition } from '../../../session/session-lock.js';
 import {
   captureNativeSessionActivity,
@@ -37,10 +38,8 @@ import type {
   OpenConnectorTurnResult,
   RevokeConnectorTurnReason,
 } from '../../../connectors/runtime-principal-port.js';
-import {
-  ConnectorTurnLeaseSupervisor,
-  type ConnectorTurnLeaseSupervisorHandle,
-} from '../../connectors/connector-turn-lease-supervisor.js';
+import { type ConnectorTurnLeaseSupervisorHandle } from '../../connectors/connector-turn-lease-supervisor.js';
+import { openTurnOrSkip, startConnectorLease } from '../../connectors/open-connector-turn.js';
 import { resolveDorkosMcpInjection } from '../../shared/dorkos-mcp-injection.js';
 import { resolveManagedMcpServers } from '../mcp-server-config.js';
 import { grantedWritableDirectories, buildCodexPrompt } from '../turn-input.js';
@@ -281,7 +280,8 @@ export function createIsolatedCodexOwnedMessageProducer() {
         if (facet.connectorRuntimeTools && meshAgent && agentPath) {
           connectorBinding =
             lifetime.roomPrepared?.binding ??
-            (await facet.connectorRuntimeTools.principals.openTurn(
+            (await openTurnOrSkip(
+              facet.connectorRuntimeTools.principals,
               {
                 runtime: facet.type,
                 canonicalSessionId: sessionId,
@@ -290,29 +290,29 @@ export function createIsolatedCodexOwnedMessageProducer() {
                 signal: controller.signal,
               },
               { isCurrent: () => facet.activeTurns.get(sessionId) === controller, nativeOperation }
-            ));
-          facet.activeConnectorBindings.set(controller, connectorBinding.bindingId);
-          const createSupervisor =
-            facet.connectorRuntimeTools.createLeaseSupervisor ??
-            ((options) => new ConnectorTurnLeaseSupervisor(options));
-          connectorSupervisor = createSupervisor({
-            principals: facet.connectorRuntimeTools.principals,
-            bindingId: connectorBinding.bindingId,
-            permit: connectorBinding.renewalPermit,
-            runtime: facet.type,
-            expiresAt: connectorBinding.expiresAt,
-            signal: controller.signal,
-            onLost: (loss) => logger.warn('[CodexRuntime] Connections lease lost', loss),
-          });
-          connectorTools = {
-            url: facet.connectorRuntimeTools.listenerUrl,
-            agentToolsUrl: facet.connectorRuntimeTools.agentToolsUrl,
-            headers: connectorRuntimeHeaders({
-              bearer: connectorBinding.bearer,
-              runtime: facet.type,
-              canonicalCwd: cwd,
-            }),
-          };
+            )) ??
+            undefined;
+          if (connectorBinding) {
+            facet.activeConnectorBindings.set(controller, connectorBinding.bindingId);
+            connectorSupervisor = startConnectorLease(
+              facet.connectorRuntimeTools,
+              connectorBinding,
+              {
+                runtime: facet.type,
+                signal: controller.signal,
+                onLost: (loss) => logger.warn('[CodexRuntime] Connections lease lost', loss),
+              }
+            );
+            connectorTools = {
+              url: facet.connectorRuntimeTools.listenerUrl,
+              agentToolsUrl: facet.connectorRuntimeTools.agentToolsUrl,
+              headers: connectorRuntimeHeaders({
+                bearer: connectorBinding.bearer,
+                runtime: facet.type,
+                canonicalCwd: cwd,
+              }),
+            };
+          }
         }
 
         // Mint this session's agent identity token when this cwd hosts a registered
@@ -571,10 +571,34 @@ export function createIsolatedCodexOwnedMessageProducer() {
       await drainOriginalCleanup();
     }
   }
+  async function endOriginalOwnedSessionsWhere(
+    owner: object,
+    belongs: (session: LiveSessionRef) => boolean
+  ): Promise<string[]> {
+    const facet = actual(owner);
+    const ids = new Set([
+      ...facet.activeTurns.keys(),
+      ...(facet.transport.liveSessionIds?.() ?? []),
+    ]);
+    const ended: string[] = [];
+    for (const sessionId of ids) {
+      const cwd = facet.registry.get(sessionId)?.cwd ?? facet.threadMap.get(sessionId)?.cwd;
+      if (!picksSession(belongs, { sessionId, cwd })) continue;
+      const receipt = await facet.runtime.interruptQuery(sessionId).catch(() => undefined);
+      const released = await (
+        facet.transport.endSession?.(sessionId) ?? Promise.resolve(false)
+      ).catch(() => false);
+      if (receipt?.outcome === 'acked' || receipt?.outcome === 'closed' || released) {
+        ended.push(sessionId);
+      }
+    }
+    return ended;
+  }
   return Object.freeze({
     register(owner: object, view: OriginalCodexOwnedMessageView): void {
       apply(set, views, [owner, view]);
     },
     sendOriginalOwnedMessage,
+    endOriginalOwnedSessionsWhere,
   });
 }

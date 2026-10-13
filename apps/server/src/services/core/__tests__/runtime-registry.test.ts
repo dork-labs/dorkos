@@ -409,6 +409,14 @@ describe('RuntimeRegistry', () => {
   });
 
   describe('applyConfiguredDefaultRuntime', () => {
+    it('keeps the host default when the configured runtime is placement-only', () => {
+      registry.register(createMockRuntime('claude-code'));
+      registry.register(createMockRuntime('computer-local'));
+      expect(applyConfiguredDefaultRuntime(registry, 'computer-local')).toBe(false);
+      expect(registry.getDefaultType()).toBe('claude-code');
+      expect(() => registry.setDefault('computer-local')).toThrow('placement-only');
+    });
+
     it('applies a registered configured default and reports success', () => {
       registry.register(createMockRuntime('claude-code'));
       registry.register(createMockRuntime('opencode'));

@@ -44,8 +44,8 @@ export function SessionsPage({ member }: ProfilePageContentProps) {
   const startNew = useCallback(() => {
     if (projectPath === null) return;
     useInteractionStore.getState().recordOpened('agent', projectPath);
-    startNewSession(projectPath);
-  }, [projectPath, startNewSession]);
+    startNewSession(projectPath, { runtime: member.agent?.effectiveRuntimeId });
+  }, [projectPath, startNewSession, member.agent?.effectiveRuntimeId]);
 
   return (
     <ChatList

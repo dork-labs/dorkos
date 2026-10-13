@@ -191,7 +191,7 @@ export interface ConnectorRuntimeAuthorityResolver {
 /** Typed setup refusal mapped by the runtime boundary without exposing private claims. */
 export class ConnectorRuntimeAuthorityError extends Error {
   /** Stable internal refusal code. */
-  readonly code: 'boot_not_initialized' | 'authority_refused';
+  readonly code: 'boot_not_initialized' | 'authority_refused' | 'agent_unrecorded';
 
   /**
    * Construct a safe runtime authority error.
@@ -481,4 +481,14 @@ export interface ConnectorThreadKeyPort {
   revoke(keyId: string, reason: RevokeConnectorThreadKeyReason): void;
   /** Revoke every key minted for one runtime process. Idempotent. */
   revokeProcess(processKey: string, reason: RevokeConnectorThreadKeyReason): void;
+}
+
+/** Preserve abort and typed setup refusal before projecting an authority refusal. */
+export function rethrowRuntimeAuthorityRefusal(err: unknown, signal: AbortSignal): never {
+  signal.throwIfAborted();
+  if (err instanceof ConnectorRuntimeAuthorityError && err.code === 'agent_unrecorded') throw err;
+  throw new ConnectorRuntimeAuthorityError(
+    'authority_refused',
+    'DorkOS couldn’t confirm this chat can use connected apps.'
+  );
 }

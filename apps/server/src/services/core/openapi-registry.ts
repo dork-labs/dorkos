@@ -29,16 +29,7 @@ import { CreateAgentOptionsSchema } from '@dorkos/shared/mesh-schemas';
 import { RUNTIME_CREDITS_PROTOCOLS } from '@dorkos/shared/agent-runtime';
 import { OpenAPIRegistry, OpenApiGeneratorV31 } from '@asteasolutions/zod-to-openapi';
 import { env } from '../../env.js';
-import { registerConnectorEventOpenApi } from '../connectors/events/openapi.js';
-import { registerSessionContinueOpenApi } from '../session/fleet/continue-openapi.js';
-import { registerSessionLocationsOpenApi } from '../session/resolution/session-locations-openapi.js';
-import { registerProjectsOpenApi } from '../projects/projects-openapi.js';
-import { registerDocChannelOpenApi } from '../canvas/doc-channel/openapi.js';
-import { registerAccountEligibilityOpenApi } from './usage/account-eligibility-openapi.js';
-import { registerKeepAwakeOpenApi } from './keep-awake/keep-awake-openapi.js';
-import { registerCommitmentsOpenApi } from '../commitments/commitments-openapi.js';
-import { registerHeartbeatsOpenApi } from '../heartbeats/heartbeats-openapi.js';
-import { registerOnboardingOpenApi } from './onboarding/onboarding-openapi.js';
+import { registerDomainOpenApi } from './openapi/domains.js';
 import { registerExtensionDecisionsOpenApi } from '../extensions/inbox/extension-decisions-openapi.js';
 import {
   PermissionModeSchema,
@@ -646,16 +637,6 @@ const LocalUninstallResultSchema = z.object({
 });
 
 const registry = new OpenAPIRegistry();
-registerConnectorEventOpenApi(registry);
-registerSessionContinueOpenApi(registry);
-registerSessionLocationsOpenApi(registry);
-registerProjectsOpenApi(registry);
-registerDocChannelOpenApi(registry);
-registerAccountEligibilityOpenApi(registry);
-registerKeepAwakeOpenApi(registry);
-registerCommitmentsOpenApi(registry);
-registerHeartbeatsOpenApi(registry);
-registerOnboardingOpenApi(registry);
 
 // `relay_flow` is broadcast on the unified `/api/events` WebSocket stream, which
 // (like its `relay_bindings_changed`/`relay_adapters_changed` siblings) has
@@ -666,6 +647,8 @@ registry.register('RelayFlowDirection', RelayFlowDirectionSchema);
 registry.register('RelayFlowEvent', RelayFlowEventSchema);
 
 // --- Health ---
+
+registerDomainOpenApi(registry);
 
 registry.registerPath({
   method: 'get',

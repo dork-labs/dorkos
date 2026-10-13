@@ -13,7 +13,6 @@ import {
   readNativeSessionAcquisition,
   type NativeSessionAcquisition,
 } from '../../session/session-lock.js';
-import { DEFAULT_CWD } from '../../../lib/resolve-root.js';
 import { homeOf, resolveAgentHome, turnAgentOf } from '../../core/agent-identity/index.js';
 import { buildOpenCodeTurnContext } from './messaging/turn-context.js';
 import {
@@ -22,7 +21,7 @@ import {
   parseModelSelection,
 } from './messaging/turn-input.js';
 import { validatedGrants } from './messaging/directory-grants.js';
-import { OPENCODE_LABEL, openCodeRunsOnCredits } from './credits-sidecar.js';
+import { OPENCODE_LABEL } from './credits-sidecar.js';
 import { creditsRefusalEvent } from '../../core/cloud/credits-protocols.js';
 import {
   catalogNameFor,
@@ -233,7 +232,7 @@ export async function* sendOwnedMessage(
   try {
     lifetime.entered = true;
     let settings = await facet.resolveTurnSettings(sessionId, opts);
-    const cwd = opts?.cwd ?? facet.registry.get(sessionId)?.cwd ?? DEFAULT_CWD;
+    const cwd = opts?.cwd ?? facet.registry.get(sessionId)?.cwd ?? facet.modelDirectory;
     // Who a room turn is for, which every identity decision below is checked
     // against (DOR-2091). Absent on every turn a room did not trigger.
     const forAgent = turnAgentOf(opts);
@@ -243,7 +242,7 @@ export async function* sendOwnedMessage(
     // service's suggestion, said once and saved only once said, and a list
     // naming none refuses the turn. While the service says nothing, the
     // session's model stands and the sidecar's own fallback applies, as before.
-    if (openCodeRunsOnCredits()) {
+    if (facet.runsOnCredits()) {
       let decided: CreditsModelDecision;
       try {
         decided = await decideCreditsLaunchModel({

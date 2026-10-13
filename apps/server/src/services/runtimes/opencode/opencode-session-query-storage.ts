@@ -15,7 +15,6 @@ import {
 import { readLogBackedHistory } from '../../session/log-backed-history.js';
 import { SessionDiscoveryUnavailableError } from '../../session/resolution/session-lookup-error.js';
 import { overlayRecordedHistory } from '../../session/overlays/recorded-history.js';
-import { DEFAULT_CWD } from '../../../lib/resolve-root.js';
 import { logger, logError } from '../../../lib/logger.js';
 import { mapOpenCodeTodos } from './events/session-event-mapper.js';
 import { isDerivedOpenCodeSessionId, unwrap } from './sessions/session-mapper.js';
@@ -63,7 +62,7 @@ export async function findSession(
   sessionId: string
 ): Promise<Session | null> {
   const facet = readOriginalOpenCodeRuntimeView(runtimeOwner);
-  return facet.mapper.findSession(DEFAULT_CWD, sessionId);
+  return facet.mapper.findSession(facet.modelDirectory, sessionId);
 }
 
 /** Run the original guarded getSession operation. */
@@ -136,7 +135,9 @@ export async function getSessionSnapshot(
 ): Promise<SessionSnapshot> {
   const facet = readOriginalOpenCodeRuntimeView(runtimeOwner);
   const projector = getOrCreateProjector(sessionId, ctx.cwd, { persist: 'history' });
-  return projector.buildSnapshot(() => facet.getMessageHistory(ctx.cwd ?? DEFAULT_CWD, sessionId));
+  return projector.buildSnapshot(() =>
+    facet.getMessageHistory(ctx.cwd ?? facet.modelDirectory, sessionId)
+  );
 }
 
 /**

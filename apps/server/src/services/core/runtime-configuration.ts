@@ -30,7 +30,7 @@ export function applyConfiguredDefaultRuntime(
   registry: RuntimeRegistry,
   configured: string
 ): boolean {
-  if (registry.has(configured)) {
+  if (configured !== 'computer-local' && registry.has(configured)) {
     registry.setDefault(configured);
     return true;
   }

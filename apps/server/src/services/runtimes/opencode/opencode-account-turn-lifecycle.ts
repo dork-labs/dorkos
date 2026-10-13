@@ -2,12 +2,13 @@ import { readOriginalOpenCodeRuntimeView } from './opencode-runtime.js';
 import type { StreamEvent, SessionSettings, InterruptReceipt } from '@dorkos/shared/types';
 import type {
   MessageOpts,
+  LiveSessionRef,
   SessionOpts,
   CommandIntentOpts,
   SessionUpdateResult,
 } from '@dorkos/shared/agent-runtime';
+import { picksSession } from '@dorkos/shared/agent-runtime';
 import type { RuntimeCommandIntentId } from '@dorkos/shared/command-intents';
-import { DEFAULT_CWD } from '../../../lib/resolve-root.js';
 import { logger, logError } from '../../../lib/logger.js';
 import { unwrap } from './sessions/session-mapper.js';
 import { type OpenCodeSessionPatch } from './sessions/session-registry.js';
@@ -49,7 +50,7 @@ export async function* executeCommandIntent(
   // persisted store), because the model DorkOS would run the next TURN on is
   // the first rung of the compaction model ladder.
   const settings = await facet.resolveTurnSettings(sessionId, opts);
-  const cwd = opts?.cwd ?? facet.registry.get(sessionId)?.cwd ?? DEFAULT_CWD;
+  const cwd = opts?.cwd ?? facet.registry.get(sessionId)?.cwd ?? facet.modelDirectory;
   yield* facet.runOpenCodeTurn(
     sessionId,
     cwd,
@@ -340,4 +341,28 @@ export function ensureSession(runtimeOwner: object, sessionId: string, opts: Ses
       );
     });
   }
+}
+
+/** End only the sessions selected from this original runtime's active turns. */
+export async function endSessionsWhere(
+  runtimeOwner: object,
+  belongs: (session: LiveSessionRef) => boolean
+): Promise<string[]> {
+  const facet = readOriginalOpenCodeRuntimeView(runtimeOwner);
+  const ended: string[] = [];
+  for (const [sessionId, turn] of [...facet.activeTurns]) {
+    if (!picksSession(belongs, { sessionId, cwd: turn.cwd })) continue;
+    const receipt = await facet.runtime.interruptQuery(sessionId).catch(() => undefined);
+    if (receipt?.outcome === 'acked' || receipt?.outcome === 'closed') ended.push(sessionId);
+  }
+  return ended;
+}
+
+/** Read in-flight and setting-up state through the original runtime's private view. */
+export function isTurnOpen(runtimeOwner: object, sessionId: string): boolean {
+  const facet = readOriginalOpenCodeRuntimeView(runtimeOwner);
+  return (
+    facet.activeTurns.has(sessionId) ||
+    [...facet.settingUp].some((turn) => turn.sessionId === sessionId)
+  );
 }

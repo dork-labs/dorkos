@@ -17,6 +17,7 @@ const CAPS = {
 
 vi.mock('../../../../core/runtime-registry.js', () => ({
   runtimeRegistry: {
+    computerRuntimeForAgentPath: () => undefined,
     has: (type: string) => type in CAPS,
     get: (type: keyof typeof CAPS) => ({ getCapabilities: () => CAPS[type] }),
     getSessionSettings: async () => null,

@@ -61,7 +61,10 @@ import type { RemoteWakePolicy } from '../services/communities/remote/wake/wake-
 import { CommunityNavigationPreferenceService } from '../services/communities/community-navigation-preferences.js';
 import { CommunityAttentionCache } from '../services/communities/remote/community-attention-cache.js';
 import { CommunityOwnerNoticeCache } from '../services/communities/remote/community-owner-notice-cache.js';
-import { CommunityOwnerNoticeAnnouncer } from '../services/notifications/emitters/community-owner-replacement.js';
+import {
+  CommunityOwnerNoticeAnnouncer,
+  getOwnerNoticeAnnouncer,
+} from '../services/notifications/emitters/community-owner-replacement.js';
 import { resolveDorkHome } from '../lib/dork-home.js';
 import { officialOnlyOrigin, spaceReachable } from '../middleware/spaces-enabled.js';
 import { addAnswerInRoutes } from './community-answer-in.js';
@@ -274,7 +277,7 @@ export function createCommunityConnectionsRoutes(
   ),
   attentionCache: CommunityAttentionCache = new CommunityAttentionCache(),
   ownerNoticeCache: CommunityOwnerNoticeCache = new CommunityOwnerNoticeCache(),
-  announcer: CommunityOwnerNoticeAnnouncer = new CommunityOwnerNoticeAnnouncer(resolveDorkHome()),
+  announcer: CommunityOwnerNoticeAnnouncer = getOwnerNoticeAnnouncer(resolveDorkHome()),
   // Looked up per request when not injected, so building the routes reads nothing from disk.
   wakePolicy?: Pick<RemoteWakePolicy, 'get' | 'set' | 'getAnswerIn' | 'setAnswerIn'>
 ): Hono<ApiEnv> {

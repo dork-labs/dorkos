@@ -6,7 +6,7 @@ import { Drawer, DrawerContent, PageHeading, QueryErrorState, Spinner } from '@/
 import { useIsMobile, usePendingRead } from '@/layers/shared/model';
 import { useProfileStore } from '@/layers/features/profile';
 import { useOpenConnections } from '@/layers/shared/model';
-import { useDirectoryState } from '@/layers/entities/session';
+import { useStartNewSession, useDirectoryState } from '@/layers/entities/session';
 import { useTopology } from '@/layers/entities/mesh';
 import { normalizeTeamView } from '@/layers/shared/lib';
 import type { TeamGrouping, TeamKindFilter, TeamRosterFilters } from '@/layers/entities/team';
@@ -58,6 +58,7 @@ function TeamRouteBody() {
   const isMobile = useIsMobile();
   const openConnections = useOpenConnections();
   const [, setDir] = useDirectoryState();
+  const startNew = useStartNewSession();
   const { data: topology, isLoading: isFetchingTopology, isError, refetch } = useTopology();
   // "The read has not settled" is not "the fleet is empty" (DOR-1914): without
   // this the table and topology views swap the whole page for the invitation
@@ -167,7 +168,13 @@ function TeamRouteBody() {
                       onViewProfile={(_agentId, projectPath) => {
                         useProfileStore.getState().openProfileDocked(projectPath);
                       }}
-                      onOpenChat={(projectPath) => setDir(projectPath)}
+                      onOpenChat={(projectPath) => {
+                        const placed = agents.find(
+                          (a) => a.projectPath === projectPath
+                        )?.effectiveRuntimeId;
+                        if (placed) startNew(projectPath, { runtime: placed });
+                        else setDir(projectPath);
+                      }}
                       onOpenAdapterCatalog={() => openConnections()}
                       onGoToDiscovery={() =>
                         void navigate({

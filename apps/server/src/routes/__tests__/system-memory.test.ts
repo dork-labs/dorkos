@@ -21,6 +21,7 @@ import { FakeMemoryProvider } from '@dorkos/test-utils/fake-memory-provider';
 
 vi.mock('../../services/core/runtime-registry.js', () => ({
   runtimeRegistry: {
+    computerRuntimeForAgentPath: () => undefined,
     getNativeSessionCwd: vi.fn(() => null),
     listRuntimes: vi.fn(() => []),
     has: vi.fn(),

@@ -43,6 +43,7 @@ import {
   sameNativeEntryContext,
   requireRuntimeBindingBootData,
   ConnectorRuntimeAuthorityError,
+  rethrowRuntimeAuthorityRefusal,
   projectRuntimeBindingClaims,
   sameRuntimeBindingData,
   runtimeBindingMatchesClaims,
@@ -331,18 +332,14 @@ export class ConnectorRuntimePrincipalService
     let resolved: PrincipalData.ConnectorRuntimeAuthority;
     try {
       resolved = await this.#fixedOpen.authorize(input);
-    } catch {
-      input.signal.throwIfAborted();
-      throw new ConnectorRuntimeAuthorityError(
-        'authority_refused',
-        'DorkOS couldn’t confirm this chat can use connected apps. Start a new turn and try again.'
-      );
+    } catch (err) {
+      rethrowRuntimeAuthorityRefusal(err, input.signal);
     }
     input.signal.throwIfAborted();
     if (!ownership.isCurrent()) {
       throw new ConnectorRuntimeAuthorityError(
         'authority_refused',
-        'DorkOS couldn’t confirm this chat can use connected apps. Start a new turn and try again.'
+        'A newer message replaced this turn before it could use connected apps.'
       );
     }
 

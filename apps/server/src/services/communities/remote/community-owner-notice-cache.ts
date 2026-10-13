@@ -36,14 +36,15 @@ interface Entry {
 }
 
 /**
- * Turn one Community answer into what its owner is told.
+ * Turn one Community answer into what its owner is told, or `undefined` when there is nothing
+ * for the owner.
  *
  * Only the owner's view of an open request becomes a notice: an admin's view becomes nothing.
  * A completion becomes a notice only when the Community says it was this reader's (`wasYours`,
  * the owner it replaced); every other member's view of it becomes nothing. So a non-owner's
  * connection never carries one.
  */
-function project(
+export function ownerNoticeFrom(
   answer: CommunityWireOwnerReplacementNoticeResponse
 ): CommunityConnectionOwnerNotice | undefined {
   const { open, completed } = answer;
@@ -178,7 +179,7 @@ export class CommunityOwnerNoticeCache {
     const pending = Promise.resolve()
       .then(fetchNotice)
       .then((answer) => {
-        const confirmed = { notice: project(answer), at: this.now() };
+        const confirmed = { notice: ownerNoticeFrom(answer), at: this.now() };
         entry.confirmed = confirmed;
         return confirmed;
       })

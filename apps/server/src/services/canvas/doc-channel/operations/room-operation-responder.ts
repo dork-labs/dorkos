@@ -1,7 +1,16 @@
+import {
+  isOriginalNativeTestModeRuntime,
+  readTestModePreparedRoomResponder,
+} from '../../../runtimes/test-mode/test-mode-runtime.js';
+import { readClaudePreparedRoomResponder } from '../../../runtimes/claude-code/claude-code-runtime.js';
+import { readCodexPreparedRoomResponder } from '../../../runtimes/codex/codex-runtime.js';
+import { readOpenCodePreparedRoomResponder } from '../../../runtimes/opencode/opencode-runtime.js';
+import { agentPause } from '../../../mesh/pause/agent-pause.js';
 import type { SseResponse } from '@dorkos/shared/agent-runtime';
 import { type Db } from '@dorkos/db';
 import type {
   OriginalFrozenRoomSource,
+  FrozenRoomSourceData,
   OriginalCommittedRoomResponder,
   PreparedRoomResponder,
 } from '../current/current-operation-types.js';
@@ -54,6 +63,15 @@ export async function prepareFrozenResponder(
     return undefined;
   if (own.engine !== facet.engine || own.db !== facet.db || own.facade !== facet.facade)
     throw new Error('Original frozen Room source is foreign.');
+  const paused = agentPause()?.pausedAgentOfTurn({ cwd: own.source.targetAgentPath });
+  if (paused) {
+    agentPause()?.recordHeld(paused, {
+      via: 'turn',
+      sessionId: key,
+      runtime: own.source.targetRuntime,
+    });
+    return undefined;
+  }
   // Bind facet.originalOwner attempt. Successful preparation consumes the frozen token; thrown setup stays
   // fenced as UNKNOWN. Only a known no-preparation result can choose a new destination later.
   own.effectiveTargetSessionId = key;
@@ -62,6 +80,19 @@ export async function prepareFrozenResponder(
   try {
     prepared = await facet.responder.prepare(runtime, holder, key, token);
     if (!prepared) return undefined;
+    const pausedAfterPreparation = agentPause()?.pausedAgentOfTurn({
+      cwd: own.source.targetAgentPath,
+    });
+    if (pausedAfterPreparation) {
+      agentPause()?.recordHeld(pausedAfterPreparation, {
+        via: 'turn',
+        sessionId: key,
+        runtime: own.source.targetRuntime,
+      });
+      await facet.responder.retirePrepared(runtime, prepared);
+      prepared = undefined;
+      return undefined;
+    }
     if (
       facet.frozen.get(id) !== token ||
       facet.frozenRoomSources.get(token) !== own ||
@@ -93,4 +124,19 @@ export function commitResponder(
 ): OriginalCommittedRoomResponder {
   const facet = readOriginalRoomOperationView(operationOwner);
   return facet.responder.commitResponder(runtime, prepared);
+}
+
+/** Dispatch the same native prepared read; original owner checks remain in the responder. */
+export function readOriginalRuntimePreparedResponder(
+  runtime: object,
+  prepared: PreparedRoomResponder,
+  type: FrozenRoomSourceData['source']['targetRuntime']
+) {
+  return isOriginalNativeTestModeRuntime(runtime)
+    ? readTestModePreparedRoomResponder(runtime, prepared)
+    : type === 'claude-code'
+      ? readClaudePreparedRoomResponder(runtime, prepared)
+      : type === 'codex'
+        ? readCodexPreparedRoomResponder(runtime, prepared)
+        : readOpenCodePreparedRoomResponder(runtime, prepared);
 }

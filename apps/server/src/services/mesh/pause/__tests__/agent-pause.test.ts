@@ -13,6 +13,7 @@ import { AccountIds } from '../../../audit/account-ids.js';
 import { initAuditTrail, resetAuditTrail } from '../../../audit/audit-trail.js';
 import { setAgentHomeRegistry } from '../../../core/agent-identity/agent-home.js';
 import { decorateRuntime } from '../../../core/runtime-seam/decorate-runtime.js';
+import { holdPausedAgents, observeOriginalPausedRuntimeStream } from '../hold-paused-turns.js';
 import {
   AgentPauseService,
   AgentPausedError,
@@ -70,6 +71,7 @@ function fakeRuntime(stop: 'acked' | 'failed' = 'acked') {
     ((sessionId: string, events: AsyncIterable<StreamEvent>) => void) | undefined;
   const runtime = {
     type: 'claude-code',
+    releaseLock: vi.fn(),
     sendMessage: vi.fn(async function* (): AsyncGenerator<StreamEvent> {
       yield { type: 'text_delta', data: { text: 'working' } } as StreamEvent;
       await new Promise<void>((resolve) => {
@@ -170,6 +172,83 @@ describe('AgentPauseService (spec audit-trail PR5)', () => {
     expect(runtime.interruptQuery).toHaveBeenCalledWith('s1');
     expect(result.stoppedTurns).toBe(1);
     await drained;
+  });
+
+  it('refuses an already-opened original stream for a paused agent without entering the public sender', async () => {
+    const runtime = fakeRuntime();
+    const wrapped = holdPausedAgents(runtime as unknown as AgentRuntime);
+    const released = vi.fn();
+    const source = (async function* (): AsyncGenerator<StreamEvent> {
+      try {
+        yield { type: 'text_delta', data: { text: 'already opened' } } as StreamEvent;
+        yield { type: 'text_delta', data: { text: 'must not escape' } } as StreamEvent;
+      } finally {
+        released();
+      }
+    })();
+    await source.next();
+    const next = vi.spyOn(source, 'next');
+    const returned = vi.spyOn(source, 'return');
+    await service.pause(SCOUT.id, PERSON);
+
+    const observed = observeOriginalPausedRuntimeStream(
+      wrapped,
+      'original-paused',
+      { cwd: SCOUT.home },
+      source
+    );
+    await expect(observed.next()).rejects.toBeInstanceOf(AgentPausedError);
+    expect(next).not.toHaveBeenCalled();
+    // The original stream's caller owns closing it after observer refusal.
+    await source.return(undefined);
+    expect(returned).toHaveBeenCalledTimes(1);
+    expect(released).toHaveBeenCalledTimes(1);
+    expect(runtime.sendMessage).not.toHaveBeenCalled();
+    expect(rows(db).at(-1)).toMatchObject({
+      action: 'agent.turn_held',
+      targetId: SCOUT.id,
+      error: 'AGENT_PAUSED',
+    });
+  });
+
+  it('tracks an original supplied stream through a mid-turn pause and forgets it after release', async () => {
+    const runtime = fakeRuntime();
+    const wrapped = holdPausedAgents(runtime as unknown as AgentRuntime);
+    let release!: () => void;
+    const parked = new Promise<void>((resolve) => (release = resolve));
+    const released = vi.fn();
+    const source = (async function* (): AsyncGenerator<StreamEvent> {
+      try {
+        yield { type: 'text_delta', data: { text: 'working' } } as StreamEvent;
+        await parked;
+        yield { type: 'text_delta', data: { text: 'must not escape after pause' } } as StreamEvent;
+      } finally {
+        released();
+      }
+    })();
+    runtime.interruptQuery.mockImplementation(async () => {
+      release();
+      return { outcome: 'acked', runtime: 'claude-code' };
+    });
+    const observed = observeOriginalPausedRuntimeStream(
+      wrapped,
+      'original-running',
+      { cwd: SCOUT.home },
+      source
+    );
+    await expect(observed.next()).resolves.toMatchObject({ done: false });
+    const next = observed.next();
+    const refused = expect(next).rejects.toBeInstanceOf(AgentPausedError);
+    const result = await service.pause(SCOUT.id, PERSON);
+    await refused;
+    expect(result.stoppedTurns).toBe(1);
+    expect(runtime.interruptQuery).toHaveBeenCalledWith('original-running');
+    expect(released).toHaveBeenCalledTimes(1);
+    expect(runtime.sendMessage).not.toHaveBeenCalled();
+    service.resume(SCOUT.id, PERSON);
+    const again = await service.pause(SCOUT.id, PERSON);
+    expect(again.stoppedTurns).toBe(0);
+    expect(released).toHaveBeenCalledTimes(1);
   });
 
   it('counts only the stops the runtime acknowledged', async () => {
@@ -455,6 +534,7 @@ describe('AgentPauseService (spec audit-trail PR5)', () => {
       await service.pause(SCOUT.id, PERSON);
       const runtime = {
         type: 'claude-code',
+        releaseLock: vi.fn(),
         sendMessage: async function* (): AsyncGenerator<StreamEvent> {
           yield { type: 'text_delta', data: { text: 'hi' } } as StreamEvent;
         },

@@ -51,6 +51,9 @@ patchedDependencies:
   '@milkdown/ctx@7.22.1':
     hash: 9b1628cc3835168060b368ddf585e8db748514aa8fb4b06c40a9558c31b2e8d5
     path: patches/@milkdown__ctx@7.22.1.patch
+  when-exit@2.1.5:
+    hash: 48c1b11aefaca5c7e6eb3a1f14521acca528fefa3632fdbaafdfeec77d69ed7d
+    path: patches/when-exit@2.1.5.patch
 
 importers:
 
@@ -1351,9 +1354,6 @@ importers:
       better-sqlite3:
         specifier: ^12.11.1
         version: 12.11.1
-      conf:
-        specifier: ^15.1.0
-        version: 15.1.0
       dotenv:
         specifier: ^17.4.2
         version: 17.4.2
@@ -1427,6 +1427,9 @@ importers:
       better-auth:
         specifier: 1.7.6
         version: 1.7.6(@opentelemetry/api@1.9.1)(@prisma/client@5.22.0)(drizzle-kit@0.31.11)(drizzle-orm@0.45.3(@electric-sql/pglite@0.5.8)(@neondatabase/serverless@1.1.0)(@opentelemetry/api@1.9.1)(@prisma/client@5.22.0)(@types/better-sqlite3@7.6.13)(@types/pg@8.23.1)(better-sqlite3@12.11.1)(kysely@0.29.2)(pg@8.23.0))(next@16.3.8(@opentelemetry/api@1.9.1)(@playwright/test@1.63.0)(@types/node@24.13.5)(react-dom@19.3.0(react@19.3.0))(react@19.3.0))(pg@8.23.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(solid-js@1.9.15)(vitest@4.1.11)(vue@3.5.39(typescript@5.9.3))
+      conf:
+        specifier: ^15.1.0
+        version: 15.1.0
       tsx:
         specifier: ^4.23.15
         version: 4.23.15
@@ -17223,7 +17226,7 @@ snapshots:
   atomically@2.1.1:
     dependencies:
       stubborn-fs: 2.0.0
-      when-exit: 2.1.5
+      when-exit: 2.1.5(patch_hash=48c1b11aefaca5c7e6eb3a1f14521acca528fefa3632fdbaafdfeec77d69ed7d)
 
   attr-accept@2.2.5: {}
 
@@ -23088,7 +23091,7 @@ snapshots:
       tr46: 0.0.3
       webidl-conversions: 3.0.1
 
-  when-exit@2.1.5: {}
+  when-exit@2.1.5(patch_hash=48c1b11aefaca5c7e6eb3a1f14521acca528fefa3632fdbaafdfeec77d69ed7d): {}
 
   which-boxed-primitive@1.1.1:
     dependencies:

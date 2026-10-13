@@ -1,4 +1,9 @@
 import {
+  holdPausedAgents,
+  observeOriginalPausedRuntimeStream,
+} from '../mesh/pause/hold-paused-turns.js';
+import { ComputerAgentBinding, requireRegisteredRuntime } from '../computers/agent-binding.js';
+import {
   moveSessionContext,
   RuntimeNotRegisteredError,
 } from './runtime/runtime-session-identity.js';
@@ -156,6 +161,7 @@ export class RuntimeRegistry {
     return this.runtimes;
   })();
   private defaultType: string = 'claude-code';
+  private readonly computerAgent = new ComputerAgentBinding(this.runtimes, () => this.getDefault());
   private db: Db | undefined;
 
   /**
@@ -183,7 +189,8 @@ export class RuntimeRegistry {
     const traced = traceRuntime(leveled);
     const signed = watchRuntimeSignin(traced);
     const audited = recordToolUse(signed);
-    const wrapped = holdAwakeDuringTurns(audited);
+    const awake = holdAwakeDuringTurns(audited);
+    const wrapped = holdPausedAgents(awake);
     onOriginalSigninRuntimeRelease(signed, () => {
       for (const hint of construction.releaseHints) {
         try {
@@ -208,17 +215,22 @@ export class RuntimeRegistry {
       acquire: runtime.acquireLock.bind(runtime),
       release: wrapped.releaseLock.bind(wrapped),
       observe: (sessionId, stream, opts) =>
-        observeOriginalAwakeRoomRuntimeStream(
+        observeOriginalPausedRuntimeStream(
           wrapped,
           sessionId,
-          observeOriginalRuntimeToolStream(
-            audited,
+          opts,
+          observeOriginalAwakeRoomRuntimeStream(
+            awake,
             sessionId,
-            opts,
-            observeOriginalSigninRuntimeStream(
-              signed,
+            observeOriginalRuntimeToolStream(
+              audited,
               sessionId,
-              traced === leveled ? stream : observeRuntimeTurn(type, sessionId, stream)
+              opts,
+              observeOriginalSigninRuntimeStream(
+                signed,
+                sessionId,
+                traced === leveled ? stream : observeRuntimeTurn(type, sessionId, stream)
+              )
             )
           )
         ),
@@ -247,9 +259,7 @@ export class RuntimeRegistry {
    * @throws If the type is not registered
    */
   get(type: string): AgentRuntime {
-    const runtime = this.runtimes.get(type);
-    if (!runtime) throw new Error(`Runtime '${type}' not registered`);
-    return runtime;
+    return requireRegisteredRuntime(this.runtimes, type);
   }
 
   /** Get the default runtime (claude-code unless changed via setDefault). */
@@ -268,14 +278,17 @@ export class RuntimeRegistry {
     agentId: string,
     meshCore?: { getAgent(id: string): { runtime?: string } | undefined }
   ): AgentRuntime {
-    if (meshCore) {
-      const agent = meshCore.getAgent(agentId);
-      if (agent?.runtime) {
-        const runtime = this.runtimes.get(agent.runtime);
-        if (runtime) return runtime;
-      }
-    }
-    return this.getDefault();
+    return this.computerAgent.resolve(agentId, meshCore);
+  }
+
+  /** Hydrate only the startup-owned persistent computer agent placement. */
+  configureComputerAgentBinding(id: string, canonicalPath: string): void {
+    this.computerAgent.configure(id, canonicalPath);
+  }
+
+  /** Retained placement never falls back to a host runtime when stopped or disabled. */
+  computerRuntimeForAgentPath(canonicalPath: string): 'computer-local' | undefined {
+    return this.computerAgent.forPath(canonicalPath);
   }
 
   /**
@@ -1126,13 +1139,11 @@ export class RuntimeRegistry {
   }
 
   /**
-   * Set the default runtime type.
-   *
-   * @param type - The runtime type to use as default
-   * @throws If the type is not registered
+   * Set the default runtime type; computer placements cannot become the default.
+   * @throws If the type is unregistered or placement-only
    */
   setDefault(type: string): void {
-    if (!this.runtimes.has(type)) throw new Error(`Runtime '${type}' not registered`);
+    requireRegisteredRuntime(this.runtimes, type, { asDefault: true });
     this.defaultType = type;
   }
 

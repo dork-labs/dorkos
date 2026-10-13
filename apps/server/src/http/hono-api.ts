@@ -49,6 +49,7 @@ import { createCapabilitiesInvokeRoutes } from '../routes/capabilities-invoke.js
 import commandRoutes from '../routes/commands.js';
 import { createCommunityConnectionsRoutes } from '../routes/community-connections.js';
 import configRoutes from '../routes/config.js';
+import { mountComputerRoutes, type ComputerRoutesService } from '../routes/computers.js';
 import {
   createAgentCommitmentsRoutes,
   createCommitmentsRoutes,
@@ -193,6 +194,7 @@ export interface ComposedGroupDeps {
   heartbeatTriage?: HeartbeatTriageRouterDeps;
   /** The embedded terminal's REST half (`/api/terminal`); its socket is an upgrade. */
   terminal?: TerminalManager;
+  computers?: ComputerRoutesService;
   /** Agent identity, by folder (`/api/agents`). */
   agents?: AgentsRouterDeps;
   /** The discovery scan stream (`/api/discovery`). Only handed over when the mesh started. */
@@ -474,6 +476,7 @@ export function createHonoApi(options: HonoApiOptions): Hono<ApiEnv> {
     app.route('/api/heartbeats/triage-credits', createHeartbeatTriageRoutes(deps.heartbeatTriage));
   }
   if (deps.terminal) app.route('/api/terminal', createTerminalRoutes(deps.terminal));
+  mountComputerRoutes(app, deps.computers, deps.mesh?.meshCore);
   if (deps.mcp) app.route('/mcp', createMcpRoutes(deps.mcp));
   // Its routes carry their whole paths, two of them outside `/a2a`.
   if (deps.a2a) app.route('/', createA2aRoutes(deps.a2a));

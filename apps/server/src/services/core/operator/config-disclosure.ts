@@ -226,6 +226,7 @@ export const CONFIG_DISCLOSURE = {
   'relay.maxAgentTurnsTotalPerHour': 'expose',
 
   'browser.enabled': 'expose',
+  'computers.enabled': 'expose',
   // Whether the spaces experiment is on (DOR-2740): a plain boolean, no host.
   'spaces.enabled': 'expose',
   // The official space's public link (spec `official-community-space` D4): a

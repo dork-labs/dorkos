@@ -32,7 +32,7 @@ import {
   type OpenCodeSidecarPlan,
 } from './credits-sidecar.js';
 import { asCreditsStopped, creditsRefusalEvent } from '../../core/cloud/credits-protocols.js';
-import { ConnectorTurnLeaseSupervisor } from '../connectors/connector-turn-lease-supervisor.js';
+import { openTurnOrSkip, startConnectorLease } from '../connectors/open-connector-turn.js';
 import type {
   ActiveTurn,
   SettingUpTurn,
@@ -236,7 +236,8 @@ export async function* runOpenCodeTurn(
     if (facet.connectorRuntimeTools && meshAgent && agentPath) {
       turn.connectorBinding =
         turn.connectorBinding ??
-        (await facet.connectorRuntimeTools.principals.openTurn(
+        (await openTurnOrSkip(
+          facet.connectorRuntimeTools.principals,
           {
             runtime: facet.type,
             canonicalSessionId: sessionId,
@@ -245,17 +246,20 @@ export async function* runOpenCodeTurn(
             signal: controller.signal,
           },
           { isCurrent: () => facet.activeTurns.get(sessionId) === turn, nativeOperation }
-        ));
+        )) ??
+        undefined;
       controller.signal.throwIfAborted();
-      connectorInjection = {
-        url: facet.connectorRuntimeTools.listenerUrl,
-        agentToolsUrl: facet.connectorRuntimeTools.agentToolsUrl,
-        headers: connectorRuntimeHeaders({
-          bearer: turn.connectorBinding.bearer,
-          runtime: facet.type,
-          canonicalCwd: directory,
-        }),
-      };
+      if (turn.connectorBinding) {
+        connectorInjection = {
+          url: facet.connectorRuntimeTools.listenerUrl,
+          agentToolsUrl: facet.connectorRuntimeTools.agentToolsUrl,
+          headers: connectorRuntimeHeaders({
+            bearer: turn.connectorBinding.bearer,
+            runtime: facet.type,
+            canonicalCwd: directory,
+          }),
+        };
+      }
     }
 
     // Registration and the lease use the sidecar's canonical directory. The
@@ -276,18 +280,15 @@ export async function* runOpenCodeTurn(
       }
       await facet.revokeConnectorTurn(turn, 'setup_failed');
     } else if (turn.connectorBinding && facet.connectorRuntimeTools) {
-      const createSupervisor =
-        facet.connectorRuntimeTools.createLeaseSupervisor ??
-        ((options) => new ConnectorTurnLeaseSupervisor(options));
-      turn.connectorSupervisor = createSupervisor({
-        principals: facet.connectorRuntimeTools.principals,
-        bindingId: turn.connectorBinding.bindingId,
-        permit: turn.connectorBinding.renewalPermit,
-        runtime: facet.type,
-        expiresAt: turn.connectorBinding.expiresAt,
-        signal: controller.signal,
-        onLost: (loss) => logger.warn('[OpenCodeRuntime] Connections lease lost', loss),
-      });
+      turn.connectorSupervisor = startConnectorLease(
+        facet.connectorRuntimeTools,
+        turn.connectorBinding,
+        {
+          runtime: facet.type,
+          signal: controller.signal,
+          onLost: (loss) => logger.warn('[OpenCodeRuntime] Connections lease lost', loss),
+        }
+      );
     }
     controller.signal.throwIfAborted();
 

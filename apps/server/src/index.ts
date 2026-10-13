@@ -49,7 +49,7 @@ import { startRelayAdapters } from './startup/relay-adapters.js';
 import { startTasks } from './startup/tasks.js';
 import { startMarketplace } from './startup/marketplace.js';
 import { ClaudeCodeRuntime } from './services/runtimes/claude-code/claude-code-runtime.js';
-import { shutdownSessionPumps } from './services/runtimes/claude-code/sessions/session-pump-registry.js';
+import { shutdownRuntimes } from './startup/shutdown-runtimes.js';
 import { reapOrphanedWarmProcesses } from './services/runtimes/claude-code/sessions/warm-process/warm-process-ledger.js';
 import { sharedBackgroundWorkLedger } from './services/runtimes/claude-code/messaging/background-work-ledger.js';
 import { inventorySessionIds } from './services/runtimes/claude-code/sessions/session-inventory.js';
@@ -181,7 +181,6 @@ import { ConnectorProgramPrincipalService } from './services/connectors/principa
 import type { ConnectorOwnerAuthority } from './services/connectors/principal/server-principal.js';
 import { ConnectorRuntimePrincipalService } from './services/connectors/principal/runtime-principal-service.js';
 import { connectorThreadKeys } from './services/connectors/principal/thread-keys.js';
-import { codexAppServerPool } from './services/runtimes/codex/app-server/process-pool.js';
 import { CanonicalConnectorRuntimeAuthorityResolver } from './services/connectors/principal/runtime-authority-resolver.js';
 import {
   ConnectorAgentRequestService,
@@ -382,6 +381,7 @@ import {
   orphanedMirrorSweepDeps,
   sweepOrphanedMirrors,
 } from './services/communities/remote/orphaned-mirror-sweep.js';
+import { ownerNoticeSweep } from './services/notifications/emitters/community-owner-notice-sweep.js';
 import { RemoteRedactionSync } from './services/communities/remote/remote-redaction-sync.js';
 import { registerRemoteCommunityUnregisterCascade } from './services/communities/remote/mesh-unregister-cascade.js';
 import { isCurrentLocalMeshAgent } from './services/communities/remote/local-agent-authority.js';
@@ -1407,8 +1407,7 @@ async function start() {
         authors,
         attachmentRows: attachments,
         attachmentBytes: roomAttachmentBytes,
-        adapters: (communityRef, ownerAuthorId) =>
-          getRemoteCommunityAdapter(communityRef, ownerAuthorId),
+        adapters: getRemoteCommunityAdapter,
         isLocalAgentCurrent: (localAgentId) =>
           meshStartupReconciled && meshCore
             ? isCurrentLocalMeshAgent(meshCore, localAgentId)
@@ -1458,16 +1457,14 @@ async function start() {
   remoteRedactionSync = new RemoteRedactionSync({
     db,
     mirrors: remoteCommunityRuntime.mirrors,
-    readers: (communityRef, ownerAuthorId) =>
-      getRemoteCommunityAdapter(communityRef, ownerAuthorId),
+    readers: getRemoteCommunityAdapter,
     attachmentBytes: roomAttachmentBytes,
     publishRevisions: (localRoomId, seqs) => roomService.publishEntryRevisions(localRoomId, seqs),
   });
   remoteCommunitySubscriptions = new RemoteRoomSubscriptionRuntime({
     bridge: remoteCommunityBridge.current,
     enrollments: remoteCommunityRuntime.enrollments,
-    adapters: (communityRef, ownerAuthorId) =>
-      getRemoteCommunityAdapter(communityRef, ownerAuthorId),
+    adapters: getRemoteCommunityAdapter,
     resolveConnectionAccess: async (communityRef, ownerAuthorId) =>
       (await getRemotePairingService().status(communityRef, ownerAuthorId)).access,
     readOnlyConnections: () => getRemoteConnectionStore().readOnlyConnections(),
@@ -2110,6 +2107,7 @@ async function start() {
     if (meshStartupReconciled) {
       remoteCommunityRuntime?.start();
       remoteCommunitySubscriptions?.start();
+      ownerNoticeSweep.start();
       // Copies left behind by a connection that no longer exists (DOR-2334).
       const subscriptions = remoteCommunitySubscriptions;
       if (remoteCommunityRuntime && subscriptions)
@@ -5090,6 +5088,7 @@ async function shutdownServices() {
   }
   legacyRecordSweep.abort();
   remoteCommunitySubscriptions?.stop();
+  ownerNoticeSweep.stop();
   remoteCommunitySubscriptions = undefined;
   setRemoteCommunitySubscriptionProbe(undefined);
   remoteCommunityRuntime?.stop();
@@ -5166,18 +5165,8 @@ async function shutdownServices() {
     meshCore.stopPeriodicReconciliation();
     meshCore.close();
   }
-  // Kill the managed OpenCode sidecar (SIGTERM, then SIGKILL after a grace
-  // window) so shutdown never leaves an orphan. No-op when it never booted.
-  await openCodeServerManager.shutdown();
-  // Same for Codex's app-server processes (ADR 261005-113107): end stdin,
-  // then SIGTERM, then SIGKILL, by the PID the pool spawned. No-op on exec.
-  await codexAppServerPool.shutdown();
-  await creditsRelay?.close();
+  await shutdownRuntimes(creditsRelay);
   creditsRelay = null;
-  // Same for any warm claude-code process: close stdin so it drains, then close
-  // the query so the CLI child actually dies. No-op when none was ever warmed,
-  // which is every server until the persistent path is opted into.
-  await shutdownSessionPumps();
   // Stream cancelled, managed access drained within its deadline, what is owed kept (DOR-2086).
   await managedRemoteCommands.shutdown();
   await tunnelManager.stop();

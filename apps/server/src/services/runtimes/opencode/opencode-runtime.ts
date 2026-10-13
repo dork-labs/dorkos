@@ -1,3 +1,4 @@
+import type { ConnectorRuntime } from '../../connectors/runtime-principal-port.js';
 import '../../core/turn-power/turn-levels.js';
 import '../../core/runtime-registry.js';
 const originalOpenCodeLockedStreams = new WeakMap<object, OriginalOpenCodeLockedStreamData>();
@@ -104,7 +105,6 @@ import type {
 } from '@dorkos/shared/types';
 import type {
   AgentRuntime,
-  DirectoryGrant,
   RuntimeCapabilities,
   DependencyCheck,
   SessionOpts,
@@ -116,10 +116,8 @@ import type {
   AgentRegistryPort,
   ManagedMcpServerResolver,
   SessionUpdateResult,
-  TurnPermissionCeiling,
   LiveSessionRef,
 } from '@dorkos/shared/agent-runtime';
-import { picksSession } from '@dorkos/shared/agent-runtime';
 import type {
   SessionSnapshot,
   SessionEvent,
@@ -137,7 +135,7 @@ import {
   captureNativeSessionAcquisition,
   type NativeSessionAcquisition,
 } from '../../session/session-lock.js';
-import '../../../lib/resolve-root.js';
+import { DEFAULT_CWD } from '../../../lib/resolve-root.js';
 import '../../core/agent-identity/index.js';
 import { logger, logError } from '../../../lib/logger.js';
 import './messaging/turn-context.js';
@@ -356,7 +354,9 @@ export function readOriginalOpenCodeRuntimeView(runtimeOwner: object): OriginalO
 export class OpenCodeRuntime implements AgentRuntime {
   readonly #originalMethodOwner = originalOpenCodeMethodFreeze({});
   readonly #roomPreparing = new Map<string, { retired: boolean }>();
-  readonly type = 'opencode' as const;
+  readonly type: ConnectorRuntime;
+  private readonly runsOnCredits: () => boolean;
+  private readonly modelDirectory: string;
 
   private readonly provider: OpenCodeClientProvider;
   /** Where a turn's images go, or `null` when the composition root wired none. */
@@ -395,6 +395,12 @@ export class OpenCodeRuntime implements AgentRuntime {
   private meshCore: AgentRegistryPort | undefined;
 
   constructor(options: OpenCodeRuntimeOptions) {
+    this.type = options.runtimeId ?? 'opencode';
+    this.runsOnCredits = options.runsOnCredits ?? (() => openCodeRunsOnCredits());
+    this.modelDirectory = options.modelDirectory ?? DEFAULT_CWD;
+    const originalRuntimeType = this.type;
+    const originalRunsOnCredits = this.runsOnCredits;
+    const originalModelDirectory = this.modelDirectory;
     openCodeNativeConstructors.add(this);
     openCodeOriginalActiveSlots.set(this, this.activeTurns);
     const originalLocks = this.locks;
@@ -486,7 +492,13 @@ export class OpenCodeRuntime implements AgentRuntime {
           return runtime.settingsPort;
         },
         get type() {
-          return runtime.type;
+          return originalRuntimeType;
+        },
+        get runsOnCredits() {
+          return originalRunsOnCredits;
+        },
+        get modelDirectory() {
+          return originalModelDirectory;
         },
         get createMessage() {
           const fn = runtime.#createMessage;
@@ -599,10 +611,7 @@ export class OpenCodeRuntime implements AgentRuntime {
 
   /** @inheritdoc A turn still setting up its sidecar counts: it is about to send. */
   isTurnOpen(sessionId: string): boolean {
-    return (
-      this.activeTurns.has(sessionId) ||
-      [...this.settingUp].some((turn) => turn.sessionId === sessionId)
-    );
+    return openCodeAccountTurnLifecycle.isTurnOpen(this.#originalMethodOwner, sessionId);
   }
 
   /**
@@ -628,7 +637,7 @@ export class OpenCodeRuntime implements AgentRuntime {
    * @param _sessionId - The session; every OpenCode session answers the same.
    */
   async sessionRunsOnCredits(_sessionId: string): Promise<boolean> {
-    return openCodeRunsOnCredits();
+    return this.runsOnCredits();
   }
 
   /**
@@ -705,14 +714,7 @@ export class OpenCodeRuntime implements AgentRuntime {
     sessionId: string,
     content: string,
     opts: MessageOpts | undefined,
-    lifetime: {
-      closed: boolean;
-      entered: boolean;
-      retire?: () => void;
-      acquisition?: NativeSessionAcquisition;
-      roomOrigin?: Readonly<{ holder: SseResponse; custody: OriginalRoomDispatchCustody }>;
-      roomPrepared?: OpenCodePreparedRoomContinuation;
-    }
+    lifetime: Parameters<OriginalOpenCodeRuntimeView['sendOwnedMessage']>[3]
   ): AsyncGenerator<StreamEvent> {
     return openCodeMessageLifetime.sendOwnedMessage(
       this.#originalMethodOwner,
@@ -842,26 +844,8 @@ export class OpenCodeRuntime implements AgentRuntime {
     sessionId: string,
     cwd: string,
     title: string | undefined,
-    trigger: (
-      client: OpencodeClient,
-      ocSessionId: string,
-      dorkosApplied: boolean,
-      connectionsApplied: boolean,
-      plan: OpenCodeSidecarPlan
-    ) => Promise<void>,
-    opts?: {
-      connectorTurn?: boolean;
-      forAgent?: string;
-      grants?: readonly DirectoryGrant[];
-      permissionCeiling?: TurnPermissionCeiling;
-      lifetime?: {
-        closed: boolean;
-        retire?: () => void;
-        acquisition?: NativeSessionAcquisition;
-        roomOrigin?: Readonly<{ holder: SseResponse; custody: OriginalRoomDispatchCustody }>;
-        roomPrepared?: OpenCodePreparedRoomContinuation;
-      };
-    }
+    trigger: Parameters<OriginalOpenCodeRuntimeView['runOpenCodeTurn']>[3],
+    opts?: Parameters<OriginalOpenCodeRuntimeView['runOpenCodeTurn']>[4]
   ): AsyncGenerator<StreamEvent> {
     return openCodeNativeTurnExecution.runOpenCodeTurn(
       this.#originalMethodOwner,
@@ -1025,14 +1009,7 @@ export class OpenCodeRuntime implements AgentRuntime {
    * so stopping the turn ends the session's work.
    */
   async endSessionsWhere(belongs: (session: LiveSessionRef) => boolean): Promise<string[]> {
-    readOriginalOpenCodeRuntimeView(this.#originalMethodOwner);
-    const ended: string[] = [];
-    for (const [sessionId, turn] of [...this.activeTurns]) {
-      if (!picksSession(belongs, { sessionId, cwd: turn.cwd })) continue;
-      const receipt = await this.interruptQuery(sessionId).catch(() => undefined);
-      if (receipt?.outcome === 'acked' || receipt?.outcome === 'closed') ended.push(sessionId);
-    }
-    return ended;
+    return openCodeAccountTurnLifecycle.endSessionsWhere(this.#originalMethodOwner, belongs);
   }
 
   /**

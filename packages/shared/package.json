@@ -512,6 +512,14 @@
     "./heartbeat-schemas": {
       "types": "./src/heartbeat-schemas.ts",
       "default": "./dist/heartbeat-schemas.js"
+    },
+    "./computer-schemas": {
+      "types": "./src/computer-schemas.ts",
+      "default": "./dist/computer-schemas.js"
+    },
+    "./transport-computers": {
+      "types": "./src/transport-computers.ts",
+      "default": "./dist/transport-computers.js"
     }
   },
   "scripts": {

@@ -4,6 +4,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { loadCeilingMs, loadScaledMs } from '@dorkos/shared/test-budget';
 
 // Singleton runtime/Db bindings exist only in the original isolated child.
 // Its fixed scenario asserts real post -> Trigger -> Runner placement and feed.
@@ -125,168 +126,224 @@ export function registerOriginalNativeLaunchCase(
         first = cause;
       }
     };
-    beforeAll(async () => {
-      failed = false;
-      first = undefined;
-      exitSeen = false;
-      closed = false;
-      exitCode = null;
-      closePromise = undefined;
-      output[0] = [];
-      output[1] = [];
-      saved[0] = 0;
-      saved[1] = 0;
-      rootPending = mkdtemp(path.join(tmpdir(), 'original-room-launch-child-'));
-      root = await rootPending;
-      if (closingRequested) {
-        remember(new Error('Original launch child bootstrap was retired before fork'));
-        throw first;
-      }
-      child = fork(
-        fileURLToPath(new URL('./room-original-native-launch-child.ts', import.meta.url)),
-        [caseName],
-        {
-          execPath: process.execPath,
-          execArgv: ['--import', import.meta.resolve('tsx')],
-          stdio: ['ignore', 'pipe', 'pipe', 'ipc'],
-          env: {
-            PATH: process.env.PATH,
-            HOME: root,
-            TMPDIR: root,
-            DORK_HOME: root,
-            NODE_ENV: 'development',
-            DORKOS_TEST_RUNTIME: 'true',
-            DORKOS_BOUNDARY: root,
-            DO_NOT_TRACK: '1',
-            TELEMETRY_DISABLED: 'true',
-            GIT_CONFIG_COUNT: '2',
-            GIT_CONFIG_KEY_0: 'maintenance.auto',
-            GIT_CONFIG_VALUE_0: 'false',
-            GIT_CONFIG_KEY_1: 'gc.auto',
-            GIT_CONFIG_VALUE_1: '0',
-          },
+    beforeAll(
+      async () => {
+        failed = false;
+        first = undefined;
+        exitSeen = false;
+        closed = false;
+        exitCode = null;
+        closePromise = undefined;
+        output[0] = [];
+        output[1] = [];
+        saved[0] = 0;
+        saved[1] = 0;
+        rootPending = mkdtemp(path.join(tmpdir(), 'original-room-launch-child-'));
+        root = await rootPending;
+        if (closingRequested) {
+          remember(new Error('Original launch child bootstrap was retired before fork'));
+          throw first;
         }
-      );
-      let phaseLine = '';
-      let phaseReports = 0;
-      const streams = [child.stdout!, child.stderr!];
-      [stdoutEnded, stderrEnded] = streams.map(
-        (stream, index) =>
-          new Promise<void>((resolve) => {
-            stream.on('data', (chunk: Buffer) => {
-              const room = 65536 - saved[index];
-              if (chunk.length > room)
-                remember(new Error('Original launch child output exceeded 64 KiB'));
-              if (room > 0) {
-                const keep = chunk.subarray(0, room);
-                output[index].push(keep);
-                saved[index] += keep.length;
-              }
-              if (index === 0) {
-                try {
-                  phaseLine += chunk.toString();
-                  let newline: number;
-                  while ((newline = phaseLine.indexOf('\n')) !== -1) {
-                    const line = phaseLine.slice(0, newline);
-                    phaseLine = phaseLine.slice(newline + 1);
-                    const match =
-                      /^ORIGINAL_NATIVE_SETUP_PHASE (module-ready|fixture-start|fixture-ready|setup-start|setup-ready) ([0-9]+)$/.exec(
-                        line
-                      );
-                    if (match && phaseReports < 5) {
-                      const elapsedMs = Number(match[2]);
-                      if (Number.isSafeInteger(elapsedMs)) {
-                        phaseReports++;
-                        console.info('[original-native-setup-cost]', {
-                          pid: child?.pid,
-                          phase: match[1],
-                          elapsedMs,
-                        });
+        child = fork(
+          fileURLToPath(new URL('./room-original-native-launch-child.ts', import.meta.url)),
+          [caseName],
+          {
+            execPath: process.execPath,
+            execArgv: ['--import', import.meta.resolve('tsx')],
+            stdio: ['ignore', 'pipe', 'pipe', 'ipc'],
+            env: {
+              PATH: process.env.PATH,
+              HOME: root,
+              TMPDIR: root,
+              DORK_HOME: root,
+              NODE_ENV: 'development',
+              DORKOS_TEST_RUNTIME: 'true',
+              DORKOS_BOUNDARY: root,
+              DO_NOT_TRACK: '1',
+              TELEMETRY_DISABLED: 'true',
+              GIT_CONFIG_COUNT: '2',
+              GIT_CONFIG_KEY_0: 'maintenance.auto',
+              GIT_CONFIG_VALUE_0: 'false',
+              GIT_CONFIG_KEY_1: 'gc.auto',
+              GIT_CONFIG_VALUE_1: '0',
+            },
+          }
+        );
+        let phaseLine = '';
+        let phaseReports = 0;
+        const streams = [child.stdout!, child.stderr!];
+        [stdoutEnded, stderrEnded] = streams.map(
+          (stream, index) =>
+            new Promise<void>((resolve) => {
+              stream.on('data', (chunk: Buffer) => {
+                const room = 65536 - saved[index];
+                if (chunk.length > room)
+                  remember(new Error('Original launch child output exceeded 64 KiB'));
+                if (room > 0) {
+                  const keep = chunk.subarray(0, room);
+                  output[index].push(keep);
+                  saved[index] += keep.length;
+                }
+                if (index === 0) {
+                  try {
+                    phaseLine += chunk.toString();
+                    let newline: number;
+                    while ((newline = phaseLine.indexOf('\n')) !== -1) {
+                      const line = phaseLine.slice(0, newline);
+                      phaseLine = phaseLine.slice(newline + 1);
+                      const match =
+                        /^ORIGINAL_NATIVE_SETUP_PHASE (module-ready|fixture-start|fixture-ready|setup-start|setup-ready) ([0-9]+)$/.exec(
+                          line
+                        );
+                      if (match && phaseReports < 5) {
+                        const elapsedMs = Number(match[2]);
+                        if (Number.isSafeInteger(elapsedMs)) {
+                          phaseReports++;
+                          console.info('[original-native-setup-cost]', {
+                            pid: child?.pid,
+                            phase: match[1],
+                            elapsedMs,
+                          });
+                        }
                       }
                     }
+                    if (phaseLine.length > 128) phaseLine = '';
+                  } catch (cause) {
+                    remember(cause);
                   }
-                  if (phaseLine.length > 128) phaseLine = '';
-                } catch (cause) {
-                  remember(cause);
                 }
-              }
-              // Keep draining after refusal; a full pipe cannot strand the original child.
-            });
-            stream.once('end', resolve);
-            stream.once('error', (cause) => {
-              remember(cause);
+                // Keep draining after refusal; a full pipe cannot strand the original child.
+              });
+              stream.once('end', resolve);
+              stream.once('error', (cause) => {
+                remember(cause);
+                resolve();
+              });
+            })
+        );
+        ended = new Promise<void>((resolve) => {
+          child!.once('exit', (code, signal) => {
+            exitSeen = true;
+            exitCode = code;
+            if (code !== 0 || signal !== null)
+              remember(new Error(`Original launch child exit ${code}/${signal}`));
+          });
+          child!.once('error', remember);
+          child!.once('close', () => {
+            closed = true;
+            resolve();
+          });
+        });
+        bootstrap = new Promise<void>((resolve, reject) => {
+          child!.on('message', (message) => {
+            if (
+              typeof message === 'object' &&
+              message !== null &&
+              'phase' in message &&
+              message.phase === 'bootstrap-ready'
+            )
               resolve();
-            });
-          })
-      );
-      ended = new Promise<void>((resolve) => {
-        child!.once('exit', (code, signal) => {
-          exitSeen = true;
-          exitCode = code;
-          if (code !== 0 || signal !== null)
-            remember(new Error(`Original launch child exit ${code}/${signal}`));
+          });
+          void ended.then(() =>
+            reject(
+              failed ? first : new Error('Original launch child closed before bootstrap completed')
+            )
+          );
         });
-        child!.once('error', remember);
-        child!.once('close', () => {
-          closed = true;
-          resolve();
+        ready = new Promise<void>((resolve, reject) => {
+          child!.on('message', (message) => {
+            if (
+              typeof message === 'object' &&
+              message !== null &&
+              'phase' in message &&
+              message.phase === 'ready'
+            )
+              resolve();
+          });
+          void ended.then(() =>
+            reject(
+              failed ? first : new Error('Original launch child closed before setup completed')
+            )
+          );
         });
-      });
-      bootstrap = new Promise<void>((resolve, reject) => {
-        child!.on('message', (message) => {
-          if (
-            typeof message === 'object' &&
-            message !== null &&
-            'phase' in message &&
-            message.phase === 'bootstrap-ready'
-          )
-            resolve();
+        result = new Promise<boolean>((resolve, reject) => {
+          child!.on('message', (message) => {
+            if (
+              typeof message === 'object' &&
+              message !== null &&
+              'phase' in message &&
+              message.phase === 'result' &&
+              'ok' in message
+            )
+              resolve(message.ok === true);
+          });
+          void ended.then(() =>
+            reject(
+              failed ? first : new Error('Original launch child closed before scenario result')
+            )
+          );
         });
-        void ended.then(() =>
-          reject(
-            failed ? first : new Error('Original launch child closed before bootstrap completed')
-          )
-        );
-      });
-      ready = new Promise<void>((resolve, reject) => {
-        child!.on('message', (message) => {
-          if (
-            typeof message === 'object' &&
-            message !== null &&
-            'phase' in message &&
-            message.phase === 'ready'
-          )
-            resolve();
+        void ready.catch(() => {});
+        void result.catch(() => {});
+        // Sample platform load when this real child IPC readiness wait starts.
+        const readinessBudget = loadScaledMs(10000);
+        let readinessTimer: ReturnType<typeof setTimeout> | undefined;
+        try {
+          await Promise.race([
+            bootstrap,
+            new Promise<never>((_, reject) => {
+              readinessTimer = setTimeout(
+                () =>
+                  reject(
+                    new Error(
+                      `Original launch child bootstrap readiness exceeded ${readinessBudget} ms`
+                    )
+                  ),
+                readinessBudget
+              );
+            }),
+          ]);
+        } catch (cause) {
+          remember(cause);
+          throw first;
+        } finally {
+          if (readinessTimer) clearTimeout(readinessTimer);
+        }
+      },
+      loadCeilingMs(10000) + 1000
+    );
+    beforeEach(
+      async () => {
+        child!.send('start-setup', (cause) => {
+          if (cause) remember(cause);
         });
-        void ended.then(() =>
-          reject(failed ? first : new Error('Original launch child closed before setup completed'))
-        );
-      });
-      result = new Promise<boolean>((resolve, reject) => {
-        child!.on('message', (message) => {
-          if (
-            typeof message === 'object' &&
-            message !== null &&
-            'phase' in message &&
-            message.phase === 'result' &&
-            'ok' in message
-          )
-            resolve(message.ok === true);
-        });
-        void ended.then(() =>
-          reject(failed ? first : new Error('Original launch child closed before scenario result'))
-        );
-      });
-      void ready.catch(() => {});
-      void result.catch(() => {});
-      await bootstrap;
-    });
-    beforeEach(async () => {
-      child!.send('start-setup', (cause) => {
-        if (cause) remember(cause);
-      });
-      await ready;
-    });
+        // Sample platform load when this real child IPC readiness wait starts.
+        const readinessBudget = loadScaledMs(10000);
+        let readinessTimer: ReturnType<typeof setTimeout> | undefined;
+        try {
+          await Promise.race([
+            ready,
+            new Promise<never>((_, reject) => {
+              readinessTimer = setTimeout(
+                () =>
+                  reject(
+                    new Error(
+                      `Original launch child setup readiness exceeded ${readinessBudget} ms`
+                    )
+                  ),
+                readinessBudget
+              );
+            }),
+          ]);
+        } catch (cause) {
+          remember(cause);
+          throw first;
+        } finally {
+          if (readinessTimer) clearTimeout(readinessTimer);
+        }
+      },
+      loadCeilingMs(10000) + 1000
+    );
     const close = async () => {
       closingRequested = true;
       await (closePromise ??= (async () => {

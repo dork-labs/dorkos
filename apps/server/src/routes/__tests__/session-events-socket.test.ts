@@ -57,6 +57,7 @@ const resolveForSession = vi.fn(async () => fakeRuntime);
 
 vi.mock('../../services/core/runtime-registry.js', () => ({
   runtimeRegistry: {
+    computerRuntimeForAgentPath: () => undefined,
     getNativeSessionCwd: vi.fn(() => null),
     resolveForSession: (...args: unknown[]) =>
       (resolveForSession as unknown as (...a: unknown[]) => Promise<FakeAgentRuntime>)(...args),
