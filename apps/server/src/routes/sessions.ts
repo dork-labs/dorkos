@@ -569,8 +569,8 @@ export function createSessionRoutes(deps: SessionRouteDeps = {}): Hono<ApiEnv> {
     // `?before=`, the page older than a message; with `?newest=1`, the newest
     // window (DOR-2889).
     const ids = [...new Set([sessionId, internalSessionId])];
-    const history = stampHistory(ids, filterKickoffHistory(messages));
-    const read = historyWindow.answerHistory(history, readQuery(c));
+    const stamp: historyWindow.StampHistory = (slice) => stampHistory(ids, slice);
+    const read = historyWindow.answerHistory(filterKickoffHistory(messages), readQuery(c), stamp);
     return read ? c.json(read) : c.json(historyWindow.UNKNOWN_CURSOR, 404);
   });
 

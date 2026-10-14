@@ -3689,14 +3689,6 @@ export const HistoryMessageSchema = z
 export type HistoryMessage = z.infer<typeof HistoryMessageSchema>;
 
 /**
- * A history read: the whole history, or with `since` the tail of it.
- *
- * `tail` is set only when the read asked `since` a message and the server
- * found that message: `messages` then starts at it and runs to the end, so the
- * caller keeps what it already holds before it and replaces the rest. Without
- * `tail` the answer is the whole history, whatever was asked (DOR-2890).
- */
-/**
  * How many of a session's newest messages a hydration snapshot carries
  * (DOR-2889). Older ones are read a page at a time, on request.
  */
@@ -3705,6 +3697,21 @@ export const HISTORY_WINDOW_LIMIT = 150;
 /** How many earlier messages one page of a session's history holds. */
 export const HISTORY_PAGE_LIMIT = 100;
 
+/**
+ * A history read: the whole history, or the part a {@link HistoryReadQuery}
+ * asked for.
+ *
+ * - `since` a message: `tail` is set when the server found that message, and
+ *   `messages` then starts at it and runs to the end, so the caller keeps what
+ *   it already holds before it and replaces the rest. When the server did not
+ *   find it, the answer is the whole history, without `tail` (DOR-2890).
+ * - `before` a message: the page directly older than it, with
+ *   `earlierMessages` (DOR-2889).
+ * - `newest`: the newest {@link HISTORY_WINDOW_LIMIT} messages, with
+ *   `earlierMessages` when older ones exist.
+ *
+ * So only a read that asked for nothing, or a `since` that missed, is whole.
+ */
 export const HistoryReadSchema = z
   .object({
     messages: z.array(HistoryMessageSchema),
@@ -3722,7 +3729,8 @@ export type HistoryRead = z.infer<typeof HistoryReadSchema>;
 /**
  * Which part of a history to read (see `Transport.getMessages`): a tail from a
  * message (`since`), the page older than a message (`before`), or the newest
- * window (`newest`). None of them reads the whole history.
+ * window (`newest`). Each answers less than the whole history, except a
+ * `since` the server cannot find (see {@link HistoryReadSchema}).
  */
 export interface HistoryReadQuery {
   since?: string;

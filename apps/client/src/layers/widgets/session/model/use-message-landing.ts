@@ -62,16 +62,24 @@ export function useMessageLanding(
 
   // Hand a new request to the history window, so older pages are read in
   // before the landing is asked (see the TSDoc).
+  const seekedRef = useRef<string | null>(null);
   useEffect(() => {
     if (sessionId === null || messageId === undefined) return;
+    seekedRef.current = `${sessionId}:${messageId}`;
     useHistoryWindowStore.getState().seek(sessionId, messageId);
   }, [sessionId, messageId]);
 
   const consumedRef = useRef<string | null>(null);
   const landOnRow = useCallback(() => {
     if (request === null || consumedRef.current === request) return undefined;
-    consumedRef.current = request;
     if (messageId === undefined || sessionId === null) return undefined;
+    // Not yet, and NOT consumed: the seek for this request has not started (the
+    // list asks from a layout effect, before the effect above runs) or is still
+    // reading pages. The list asks again once it ends. Consuming here lost the
+    // request for a link followed inside the chat already open.
+    const seeking = useHistoryWindowStore.getState().seeks[sessionId] === messageId;
+    if (seekedRef.current !== request || seeking) return undefined;
+    consumedRef.current = request;
     // A link from another chat names a chat MESSAGE (spec `spin-off-chats` §6):
     // the Sent card or the received message it is drawn in. Asked at landing
     // time, when the history is in, and falling back to the id as given.

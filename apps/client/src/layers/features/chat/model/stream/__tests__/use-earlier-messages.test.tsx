@@ -214,4 +214,27 @@ describe('useEarlierMessages', () => {
     await waitFor(() => expect(result.current.isSeeking).toBe(false));
     expect(transport.getMessages).not.toHaveBeenCalled();
   });
+
+  it('keeps one chat’s page read from showing or blocking the control in the next', async () => {
+    const { wrapper, transport } = setup({});
+    vi.mocked(transport.getMessages).mockImplementation(() => new Promise<HistoryRead>(() => {}));
+    useHistoryWindowStore.getState().noteSnapshot('s1', 'm200', 200);
+    useHistoryWindowStore.getState().noteSnapshot('s2', 'n200', 200);
+    const s1 = chat(200, 350);
+    const s2 = s1.map((m) => ({ ...m, id: m.id.replace('m', 'n') }));
+    let current = { id: 's1', transcript: s1 };
+    const { result, rerender } = renderHook(
+      () => useEarlierMessages(current.id, current.transcript),
+      { wrapper }
+    );
+    act(() => result.current.loadEarlier());
+    expect(result.current.isLoadingEarlier).toBe(true);
+
+    current = { id: 's2', transcript: s2 };
+    rerender();
+
+    expect(result.current.isLoadingEarlier).toBe(false);
+    act(() => result.current.loadEarlier());
+    expect(transport.getMessages).toHaveBeenLastCalledWith('s2', undefined, { before: 'n200' });
+  });
 });

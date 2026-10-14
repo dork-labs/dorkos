@@ -71,6 +71,12 @@ export function useSessionHistory({
     selectedCwdRef.current = selectedCwd;
   }, [selectedCwd]);
 
+  // Read when the history seeds, without re-running the seed when it flips.
+  const streamHydratedRef = useRef(streamHydrated);
+  useEffect(() => {
+    streamHydratedRef.current = streamHydrated;
+  }, [streamHydrated]);
+
   // ---------------------------------------------------------------------------
   // History query (TanStack Query with adaptive polling)
   // ---------------------------------------------------------------------------
@@ -123,11 +129,12 @@ export function useSessionHistory({
       // and would overwrite optimistic messages.
       if (isStreaming) return;
       if (sid) useSessionChatStore.getState().updateSession(sid, { historySeeded: true });
-      // Where this window starts, unless a snapshot already said (DOR-2889):
-      // the "Earlier messages" control and the unread rule count from it.
-      const windows = useHistoryWindowStore.getState();
-      if (sessionId && (windows.sessions[sessionId]?.generation ?? 0) === 0) {
-        windows.noteSnapshot(sessionId, history[0]!.id, historyQuery.data.earlierMessages ?? 0);
+      // Where this window starts, while it is what the chat draws (DOR-2889):
+      // the "Earlier messages" control and the unread rule count from it. Once
+      // the stream's snapshot is in, the snapshot says.
+      if (sessionId && !streamHydratedRef.current) {
+        const earlier = historyQuery.data.earlierMessages ?? 0;
+        useHistoryWindowStore.getState().noteSnapshot(sessionId, history[0]!.id, earlier);
       }
       setMessages(history.map(mapHistoryMessage));
       return;

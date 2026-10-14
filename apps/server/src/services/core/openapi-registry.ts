@@ -856,8 +856,9 @@ registry.registerPath({
     },
     404: {
       description:
-        "Could not determine this session's working directory (SESSION_CWD_REQUIRED). " +
-        'Retry with an explicit `cwd`.',
+        "Could not determine this session's working directory (SESSION_CWD_REQUIRED); " +
+        'retry with an explicit `cwd`. Or `before` names a message the history does ' +
+        'not hold (HISTORY_CURSOR_UNKNOWN).',
       content: { 'application/json': { schema: ErrorResponseSchema } },
     },
   },

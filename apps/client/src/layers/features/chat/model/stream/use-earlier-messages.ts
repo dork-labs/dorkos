@@ -59,9 +59,14 @@ export function useEarlierMessages(sessionId: string, transcript: ChatMessage[])
   const transport = useTransport();
   const historyWindow = useHistoryWindow(sessionId);
   const seekId = useHistoryWindowStore((state) => state.seeks[sessionId]);
-  const [isLoadingEarlier, setLoading] = useState(false);
-  const loadingRef = useRef(false);
-  const seekPages = useRef(0);
+  // Which session a page is being read for. Per session, because the
+  // transcript is not remounted when the chat changes: one chat's read must not
+  // show (or block) the control in the next.
+  const [loadingFor, setLoadingFor] = useState<string | null>(null);
+  const loadingRef = useRef<string | null>(null);
+  const isLoadingEarlier = loadingFor === sessionId;
+  /** Pages read for the current seek, keyed by the seek they belong to. */
+  const seekPages = useRef({ key: '', count: 0 });
 
   const attached =
     historyWindow.windowStartId !== null && transcript[0]?.id === historyWindow.windowStartId;
@@ -77,12 +82,12 @@ export function useEarlierMessages(sessionId: string, transcript: ChatMessage[])
   const messagesBefore = attached ? historyWindow.remaining : 0;
 
   const loadEarlier = useCallback(() => {
-    if (loadingRef.current || !canLoadEarlier) return;
+    if (loadingRef.current === sessionId || !canLoadEarlier) return;
     const { generation } = historyWindow;
     const oldest = historyWindow.earlier[0]?.id ?? historyWindow.windowStartId;
     if (!oldest) return;
-    loadingRef.current = true;
-    setLoading(true);
+    loadingRef.current = sessionId;
+    setLoadingFor(sessionId);
     transport
       .getMessages(sessionId, undefined, { before: oldest })
       .then((page) => {
@@ -97,8 +102,9 @@ export function useEarlierMessages(sessionId: string, transcript: ChatMessage[])
         useHistoryWindowStore.getState().endSeek(sessionId);
       })
       .finally(() => {
-        loadingRef.current = false;
-        setLoading(false);
+        if (loadingRef.current !== sessionId) return;
+        loadingRef.current = null;
+        setLoadingFor(null);
       });
   }, [canLoadEarlier, sessionId, transport, historyWindow]);
 
@@ -116,17 +122,16 @@ export function useEarlierMessages(sessionId: string, transcript: ChatMessage[])
         seekId
       ) !== undefined);
   useEffect(() => {
-    if (seekId === undefined) {
-      seekPages.current = 0;
-      return;
-    }
+    if (seekId === undefined) return;
+    const key = `${sessionId}:${seekId}`;
+    if (seekPages.current.key !== key) seekPages.current = { key, count: 0 };
     // Wait for the snapshot; one that carried no messages ends the seek below.
     if (historyWindow.generation === 0 || isLoadingEarlier) return;
-    if (found || !canLoadEarlier || seekPages.current >= MAX_SEEK_PAGES) {
+    if (found || !canLoadEarlier || seekPages.current.count >= MAX_SEEK_PAGES) {
       useHistoryWindowStore.getState().endSeek(sessionId);
       return;
     }
-    seekPages.current += 1;
+    seekPages.current.count += 1;
     loadEarlier();
   }, [
     seekId,

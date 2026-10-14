@@ -52,6 +52,7 @@ vi.mock('../../services/core/runtime-registry.js', () => ({
     getSessionSettings: vi.fn(async () => null),
     saveSessionSettings: vi.fn(async () => {}),
     getSessionSettingsMany: vi.fn(() => new Map()),
+    getSessionAgentPath: vi.fn(async () => null),
   },
   RuntimeNotRegisteredError: class RuntimeNotRegisteredError extends Error {
     constructor(
@@ -244,4 +245,22 @@ describe('GET /api/sessions/:id/messages?before= reads the page before a message
     expect(res.status).toBe(404);
     expect(res.body.code).toBe('HISTORY_CURSOR_UNKNOWN');
   });
+
+  it.each(['before=m200', 'newest=1'])(
+    'never answers ?%s from the whole history’s ETag',
+    async (query) => {
+      // The tag names the whole transcript: a 304 here would hand the client
+      // its cached whole history in place of a page.
+      fakeRuntime.getMessageHistory.mockResolvedValue(history(300));
+      fakeRuntime.getSessionETag.mockResolvedValue('"whole"');
+
+      const res = await request(testServer)
+        .get(`/api/sessions/${S1}/messages?${query}`)
+        .set('If-None-Match', '"whole"');
+
+      expect(res.status).toBe(200);
+      expect(res.headers.etag).toBeUndefined();
+      expect(res.body.messages.length).toBeGreaterThan(0);
+    }
+  );
 });

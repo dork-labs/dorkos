@@ -10,11 +10,21 @@
  * Deliberately not about scrolling: jsdom lays nothing out, so "did it land" is
  * `Timeline.test.tsx`'s question in this repo and a browser's beyond it.
  */
-import { describe, expect, it, afterEach } from 'vitest';
+import { describe, expect, it, afterEach, beforeEach } from 'vitest';
 import { renderHook, cleanup } from '@testing-library/react';
+import { useHistoryWindowStore } from '@/layers/entities/session';
 import { useMessageLanding } from '../model/use-message-landing';
 
 afterEach(cleanup);
+beforeEach(() => useHistoryWindowStore.setState({ sessions: {}, seeks: {} }));
+
+/**
+ * The transcript's part: the seek for a link ends once the message is loaded
+ * (or nothing older remains). Until then the landing waits (DOR-2889).
+ */
+function seekEnds(session = 'sess-1') {
+  useHistoryWindowStore.getState().endSeek(session);
+}
 
 /**
  * Mount the hook the way `SessionPage` does.
@@ -30,11 +40,13 @@ function landing(overrides: Partial<{ session: string | null; message: string | 
     message: 'uuid-9' as string | undefined,
     ...overrides,
   };
-  return renderHook(
+  const view = renderHook(
     ({ session, message }: { session: string | null; message: string | undefined }) =>
       useMessageLanding(session, message),
     { initialProps }
   );
+  if (initialProps.session !== null) seekEnds(initialProps.session);
+  return view;
 }
 
 describe('what a conversation does with ?message=', () => {
@@ -77,6 +89,7 @@ describe('what a conversation does with ?message=', () => {
     expect(result.current?.()).toBe('msg-uuid-9');
 
     rerender({ session: 'sess-1', message: 'uuid-10' });
+    seekEnds();
 
     expect(result.current?.()).toBe('msg-uuid-10');
   });
@@ -88,7 +101,32 @@ describe('what a conversation does with ?message=', () => {
     expect(result.current?.()).toBe('msg-uuid-9');
 
     rerender({ session: 'sess-2', message: 'uuid-9' });
+    seekEnds('sess-2');
 
     expect(result.current?.()).toBe('msg-uuid-9');
+  });
+
+  it('waits while older pages are read, without spending the request (DOR-2889)', () => {
+    const { result } = renderHook(() => useMessageLanding('sess-1', 'uuid-9'));
+    // The seek this request handed over is still reading pages.
+    expect(useHistoryWindowStore.getState().seeks).toEqual({ 'sess-1': 'uuid-9' });
+    expect(result.current?.()).toBeUndefined();
+
+    seekEnds();
+
+    expect(result.current?.()).toBe('msg-uuid-9');
+  });
+
+  it('waits for its seek to start when asked first, as the list does (DOR-2889)', () => {
+    // The list asks from a layout effect, which runs before this hook hands its
+    // seek over. A link followed inside the chat already open was lost here.
+    let firstAnswer: string | undefined = 'not asked';
+    renderHook(() => {
+      const getter = useMessageLanding('sess-1', 'uuid-9');
+      if (firstAnswer === 'not asked') firstAnswer = getter?.();
+      return getter;
+    });
+    expect(firstAnswer).toBeUndefined();
+    seekEnds();
   });
 });

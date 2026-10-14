@@ -73,20 +73,31 @@ export function isPartialHistoryQuery(query: HistoryQuery): boolean {
   return Boolean(query.since || query.before || query.newest);
 }
 
+/** Stamps a slice of history with what the server knows about its messages. */
+export type StampHistory = (messages: HistoryMessage[]) => HistoryMessage[];
+
 /**
- * Shape a finished whole-history answer to what the query asked for: a page
- * before a message, the newest window, a tail since a message, or the whole.
- * Applied after every filter and stamp, so each shape is a slice of the same
- * answer.
+ * Shape a whole history to what the query asked for: a page before a message,
+ * the newest window, a tail since a message, or the whole. `stamp` runs on the
+ * slice, after slicing, so a page of a long chat stamps 100 messages rather
+ * than every one it ever had. Stamping is per message, so the answer is the
+ * same either way.
  *
- * @param messages - The whole history, filtered and stamped.
+ * @param messages - The whole history, filtered.
  * @param query - The request's query values.
+ * @param stamp - What to stamp the answered messages with.
  * @returns The answer, or `null` when `before` names no message.
  */
-export function answerHistory(messages: HistoryMessage[], query: HistoryQuery): HistoryRead | null {
-  if (typeof query.before === 'string' && query.before.length > 0) {
-    return historyPageBefore(messages, query.before);
-  }
-  if (query.newest === '1') return newestHistoryWindow(messages);
-  return historyRead(messages, query.since);
+export function answerHistory(
+  messages: HistoryMessage[],
+  query: HistoryQuery,
+  stamp: StampHistory = (slice) => slice
+): HistoryRead | null {
+  const read =
+    typeof query.before === 'string' && query.before.length > 0
+      ? historyPageBefore(messages, query.before)
+      : query.newest === '1'
+        ? newestHistoryWindow(messages)
+        : historyRead(messages, query.since);
+  return read && { ...read, messages: stamp(read.messages) };
 }

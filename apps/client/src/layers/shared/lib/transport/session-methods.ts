@@ -4,6 +4,7 @@
  * @module shared/lib/transport/session-methods
  */
 import type { ChatActivityResponse } from '@dorkos/shared/chat-messages';
+import type { HistoryReadQuery } from '@dorkos/shared/schemas';
 import type {
   Session,
   SessionListResponse,
@@ -203,7 +204,7 @@ export function createSessionMethods(
     async getMessages(
       sessionId: string,
       cwd?: string,
-      page?: { since?: string; before?: string; newest?: boolean }
+      page?: HistoryReadQuery
     ): Promise<HistoryRead> {
       const qs = buildQueryString({
         cwd,
