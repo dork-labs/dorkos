@@ -1,6 +1,7 @@
 /**
- * What a schedule's run history says about it: when it last ran (DOR-2914) and
- * how reliably it runs (DOR-166).
+ * What a schedule's run history says about it: when it last ran (DOR-2914),
+ * and the shape of its reliability figures (DOR-166), which
+ * `TaskStore.getScheduleReliability` computes.
  *
  * @module services/tasks/history/run-history
  */

@@ -3,6 +3,7 @@
  */
 import { describe, it, expect } from 'vitest';
 import type { Task } from '@dorkos/shared/types';
+import { applySortAndFilter } from '@/layers/shared/lib';
 import { taskFilterSchema, taskSortOptions } from '../lib/task-filter-schema';
 
 /** A task with only the fields the status column reads. */
@@ -87,9 +88,20 @@ describe('task status filter and sort', () => {
       lastRunAt: '2026-01-05T08:00:00.000Z',
       updatedAt: '2026-10-09T00:00:00.000Z',
     } as Task;
-    const accessor = taskSortOptions.lastRun.accessor;
-    expect(accessor(ranRecently)).toBe('2026-10-05T08:00:00.000Z');
-    expect(accessor(ranLongAgo)).toBe('2026-01-05T08:00:00.000Z');
-    expect(accessor({ ...live, lastRunAt: null } as Task)).toBeNull();
+    const neverRan = { ...live, id: 'never', lastRunAt: null } as Task;
+    const order = (direction: 'asc' | 'desc') =>
+      applySortAndFilter(
+        [ranLongAgo, neverRan, ranRecently],
+        taskFilterSchema,
+        {},
+        taskSortOptions,
+        {
+          field: 'lastRun',
+          direction,
+        }
+      ).map((t) => t.id);
+    expect(order('desc')).toEqual(['recent', 'old', 'never']);
+    // A task that never ran goes last either way.
+    expect(order('asc')).toEqual(['old', 'recent', 'never']);
   });
 });
