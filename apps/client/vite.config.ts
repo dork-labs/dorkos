@@ -171,6 +171,18 @@ export default defineConfig({
   server: {
     port: Number(process.env.VITE_PORT) || 4241,
     allowedHosts: ['.ngrok-free.app'],
+    // **The dialogs fetched on first open are compiled at startup anyway**
+    // (DOR-2901). They left the first download, which also took them out of
+    // what the dev server compiles when the page loads, so their first open in
+    // dev (and in the browser suite, which runs this server) waited on a cold
+    // compile of their whole subtree. Warming them keeps that first open as
+    // quick as it was. Keep this list beside `lazyDialog`'s call sites.
+    warmup: {
+      clientFiles: [
+        './src/layers/features/settings/ui/SettingsDialog.tsx',
+        './src/layers/widgets/app-layout/model/wrappers/TaskDialogWrapper.tsx',
+      ],
+    },
     ...(process.env.TUNNEL_ENABLED === 'true' && { hmr: { clientPort: 443 } }),
     // **The browser suite gets a dev server that never hot-replaces anything**
     // (DOR-1412). Set by both Vite legs in `apps/e2e/playwright.config.ts`, and

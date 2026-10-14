@@ -3,12 +3,13 @@
  *
  * @module features/settings
  */
-export { SettingsDialog } from './ui/SettingsDialog';
+// Loaded the first time it is wanted, not with the app (DOR-2901).
+export { SettingsDialog } from './ui/lazy/settings-dialog';
+export { TunnelDialog } from './ui/TunnelDialog';
 // The Preferences tab on its own. Its "Replay setup" control has to close the
 // dialog it sits in, and only `DialogHost` (widgets) decides that a dialog is
 // open — so the test that proves it lives up there and needs this export.
 export { PreferencesTab } from './ui/tabs/PreferencesTab';
-export { TunnelDialog } from './ui/TunnelDialog';
 export { ServerRestartOverlay } from './ui/ServerRestartOverlay';
 // Shown on its own in the Dev Playground's Keep Awake showcase.
 export { SleepSettings } from './ui/tools/SleepSettings';

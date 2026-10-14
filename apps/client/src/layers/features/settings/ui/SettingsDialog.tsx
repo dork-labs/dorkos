@@ -97,8 +97,11 @@ const SETTINGS_TABS: TabbedDialogTab<SettingsTab>[] = SETTINGS_TAB_DIRECTORY.map
   ...SETTINGS_TAB_PARTS[entry.id],
 }));
 
-interface SettingsDialogProps {
+/** Props of the Settings dialog. */
+export interface SettingsDialogProps {
+  /** Whether the dialog is open. */
   open: boolean;
+  /** Called when the dialog asks to open or close. */
   onOpenChange: (open: boolean) => void;
 }
 
