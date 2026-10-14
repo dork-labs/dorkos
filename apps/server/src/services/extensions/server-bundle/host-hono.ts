@@ -14,8 +14,9 @@
  * read with Node's `fs`, not by esbuild: inside the packaged desktop app the
  * copy sits in an archive only Node can read.
  *
- * Only what `hono`'s own `exports` map offers resolves, and nothing a `hono`
- * file imports may leave its package folder.
+ * Only what `hono`'s own `exports` map offers resolves (its `./utils/*`
+ * pattern only for plain names), and nothing a `hono` file imports may leave
+ * its package folder.
  *
  * @module services/extensions/server-bundle/host-hono
  */
@@ -73,8 +74,26 @@ export function hostHono(): HostHono | null {
 }
 
 /**
+ * The ES module target of one `exports` entry, or `undefined`.
+ *
+ * @param entry - The entry: a path, or conditions.
+ */
+function importTarget(entry: unknown): string | undefined {
+  if (typeof entry === 'string') return entry;
+  if (!entry || typeof entry !== 'object') return undefined;
+  const conditions = entry as Record<string, unknown>;
+  return [conditions.import, conditions.default].find(
+    (value): value is string => typeof value === 'string'
+  );
+}
+
+/** A subpath a `*` pattern may stand for: plain names, no `.`, `..` or empty segments. */
+const PATTERN_MATCH = /^[A-Za-z0-9_-]+(?:\/[A-Za-z0-9_-]+)*$/;
+
+/**
  * The file `hono`'s `exports` map names for an import, preferring the ES
- * module build (so unused parts are left out of the bundle).
+ * module build (so unused parts are left out of the bundle). An exact key
+ * wins; otherwise a key with one `*` (`./utils/*`) matches a plain subpath.
  *
  * @param hono - DorkOS's `hono`.
  * @param specifier - `hono` or `hono/<subpath>`.
@@ -82,16 +101,22 @@ export function hostHono(): HostHono | null {
  */
 function exportedFile(hono: HostHono, specifier: string): string | null {
   const key = specifier === 'hono' ? '.' : `.${specifier.slice('hono'.length)}`;
-  const entry = Object.hasOwn(hono.exports, key) ? hono.exports[key] : undefined;
-  const target =
-    typeof entry === 'string'
-      ? entry
-      : entry && typeof entry === 'object'
-        ? [
-            (entry as Record<string, unknown>).import,
-            (entry as Record<string, unknown>).default,
-          ].find((value): value is string => typeof value === 'string')
-        : undefined;
+  let target = Object.hasOwn(hono.exports, key) ? importTarget(hono.exports[key]) : undefined;
+  if (!target) {
+    for (const [pattern, entry] of Object.entries(hono.exports)) {
+      const star = pattern.indexOf('*');
+      if (star === -1 || pattern.indexOf('*', star + 1) !== -1) continue;
+      const prefix = pattern.slice(0, star);
+      const suffix = pattern.slice(star + 1);
+      if (!key.startsWith(prefix) || !key.endsWith(suffix)) continue;
+      if (key.length < prefix.length + suffix.length) continue;
+      const matched = key.slice(prefix.length, key.length - suffix.length);
+      const template = importTarget(entry);
+      if (!PATTERN_MATCH.test(matched) || !template) continue;
+      target = template.split('*').join(matched);
+      break;
+    }
+  }
   if (!target) return null;
   return inside(hono.root, path.resolve(hono.root, target));
 }

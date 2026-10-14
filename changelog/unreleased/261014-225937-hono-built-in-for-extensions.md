@@ -10,4 +10,4 @@ covers:
 
 ### Changed
 
-- A fetch handler's reply can no longer set cookies or redirect outside its own address. This is the same rule extensions that run in their own process already followed.
+- A fetch handler's reply can no longer set cookies, run scripts in a page it serves, or redirect to another website. This is the same rule extensions that run in their own process already followed. A redirect to one of its own paths, like `/done`, now lands inside the extension.
