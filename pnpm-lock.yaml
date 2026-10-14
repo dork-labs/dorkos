@@ -743,6 +743,9 @@ importers:
       '@dorkos/eslint-config':
         specifier: workspace:*
         version: link:../../packages/eslint-config
+      '@dorkos/extension-api':
+        specifier: workspace:*
+        version: link:../../packages/extension-api
       '@dorkos/test-utils':
         specifier: workspace:*
         version: link:../../packages/test-utils
@@ -773,6 +776,9 @@ importers:
       ffmpeg-static:
         specifier: ^5.3.0
         version: 5.3.0
+      hono:
+        specifier: ^4.13.9
+        version: 4.13.12
       prettier:
         specifier: ^3.9.9
         version: 3.9.9

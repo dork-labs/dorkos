@@ -106,7 +106,10 @@ async function copyDirectory(source: string, destination: string): Promise<void>
  * `fs.cp` overwrites but never deletes, so files the bundle no longer ships stay
  * behind. That is deliberate — a core extension's own `.dork/data` survives an
  * upgrade — and it is safe because nothing loads a file the (also-overwritten)
- * manifest and server entry do not reach.
+ * manifest and entry points do not reach. The entry points are the exception:
+ * DorkOS finds them by name, so one the bundle stopped shipping (the
+ * Marketplace's `server.ts`, say) is removed, or the old code would keep
+ * running ({@link removeDroppedEntries}).
  *
  * @param sourceDir - Absolute path to the bundled source directory.
  * @param dorkHome - Resolved data directory path.
@@ -138,6 +141,7 @@ async function stageCoreExtension(
 
   await removeSymlinkAt(destinationDir);
   await copyDirectory(sourceDir, destinationDir);
+  await removeDroppedEntries(sourceDir, destinationDir);
   logger.debug('[CoreExtensions] %s staged at %s', id, destinationDir);
 
   return {
@@ -145,6 +149,26 @@ async function stageCoreExtension(
     defaultEnabled: manifest.defaultEnabled !== false,
     canDisable: manifest.canDisable !== false,
   };
+}
+
+/** The files DorkOS loads an extension from by name: its page half and its server half. */
+const ENTRY_FILES = ['index.ts', 'index.js', 'server.ts', 'server.js'];
+
+/**
+ * Delete each staged entry point the bundled source no longer ships.
+ *
+ * @param sourceDir - The bundled source directory.
+ * @param destinationDir - The staged copy.
+ */
+async function removeDroppedEntries(sourceDir: string, destinationDir: string): Promise<void> {
+  for (const name of ENTRY_FILES) {
+    const shipped = await fs
+      .access(path.join(sourceDir, name))
+      .then(() => true)
+      .catch(() => false);
+    if (shipped) continue;
+    await fs.rm(path.join(destinationDir, name), { force: true });
+  }
 }
 
 /**

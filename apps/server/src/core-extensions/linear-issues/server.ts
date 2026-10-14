@@ -1,4 +1,5 @@
-import type { ServerExtensionRegister } from '@dorkos/extension-api/server';
+import { Hono } from 'hono';
+import type { DataProviderContext, ServerExtensionRegister } from '@dorkos/extension-api/server';
 
 const LINEAR_API = 'https://api.linear.app/graphql';
 
@@ -194,33 +195,45 @@ interface StoredData {
   updatedAt?: number;
 }
 
-const register: ServerExtensionRegister = async (router, ctx) => {
-  // refreshInterval is read once — changing it requires extension reload
-  const refreshInterval = (await ctx.settings.get<number>('refresh_interval')) ?? 60;
+/**
+ * The extension's API, at `/api/ext/linear-issues/*`.
+ *
+ * @param ctx - The extension's server context.
+ */
+export function createApp(ctx: Pick<DataProviderContext, 'secrets' | 'storage'>): Hono {
+  const app = new Hono();
 
   // Legacy on-demand endpoint — viewer's assigned issues, fresh from Linear
-  router.get('/issues', async (_req, res) => {
+  app.get('/issues', async (c) => {
     const apiKey = await ctx.secrets.get('linear_api_key');
-    if (!apiKey) return res.status(503).json({ error: 'Linear API key not configured' });
+    if (!apiKey) return c.json({ error: 'Linear API key not configured' }, 503);
     try {
-      const data = await gql(apiKey, MY_ISSUES_QUERY);
-      res.json(data);
+      return c.json(await gql(apiKey, MY_ISSUES_QUERY));
     } catch (err) {
-      res.status(502).json({ error: String(err) });
+      return c.json({ error: String(err) }, 502);
     }
   });
 
   // Legacy cached endpoint — returns last polled result
-  router.get('/cached', async (_req, res) => {
+  app.get('/cached', async (c) => {
     const cached = await ctx.storage.loadData<StoredData>();
-    res.json(cached ?? { data: null });
+    return c.json(cached ?? { data: null });
   });
 
   // Loop endpoint — returns categorized data for the Loop dashboard
-  router.get('/loop', async (_req, res) => {
+  app.get('/loop', async (c) => {
     const cached = await ctx.storage.loadData<StoredData>();
-    res.json(cached?.loop ?? null);
+    return c.json(cached?.loop ?? null);
   });
+
+  app.notFound((c) => c.json({ error: 'Not found' }, 404));
+
+  return app;
+}
+
+const register: ServerExtensionRegister = async (_router, ctx) => {
+  // refreshInterval is read once — changing it requires extension reload
+  const refreshInterval = (await ctx.settings.get<number>('refresh_interval')) ?? 60;
 
   // Background polling — fetches Loop data at configurable interval
   // teamKey and maxPerSection are re-read each tick so changes take effect without reload
@@ -248,6 +261,8 @@ const register: ServerExtensionRegister = async (router, ctx) => {
       console.error('[linear-issues] Loop polling error:', err);
     }
   });
+
+  return { fetch: createApp(ctx).fetch };
 };
 
 export default register;

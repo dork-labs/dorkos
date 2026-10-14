@@ -188,6 +188,23 @@ describe('ensureCoreExtensions', () => {
     expect(staged).toBe('export default function register() {}\n');
   });
 
+  it('removes an entry point the bundle stopped shipping, and keeps everything else', async () => {
+    await writeExtension(sourceRoot, 'slim', { version: '2.0.0' });
+    // An older DorkOS staged a server half; this one ships none.
+    await fs.mkdir(path.join(destDir('slim'), '.dork', 'data'), { recursive: true });
+    await fs.writeFile(path.join(destDir('slim'), 'server.ts'), '// old server half\n', 'utf-8');
+    await fs.writeFile(path.join(destDir('slim'), '.dork', 'data', 'state.json'), '{}', 'utf-8');
+
+    await ensureCoreExtensions(dorkHome, sourceRoot);
+
+    const entries = await fs.readdir(destDir('slim'));
+    expect(entries).not.toContain('server.ts');
+    expect(entries).toContain('index.ts');
+    expect(
+      await fs.readFile(path.join(destDir('slim'), '.dork', 'data', 'state.json'), 'utf-8')
+    ).toBe('{}');
+  });
+
   it('replaces a symlink standing where the staged directory belongs', async () => {
     await writeExtension(sourceRoot, 'linked', { version: '1.0.0' });
     // A symlink would let `fs.cp` write THROUGH it, leaving a "core" directory whose
@@ -251,6 +268,9 @@ describe('ensureCoreExtensions', () => {
       defaultEnabled: false,
       canDisable: true,
     });
+
+    // The Marketplace's API is host-mounted, so it ships no server half (DOR-2859).
+    expect(await fs.readdir(destDir('marketplace'))).not.toContain('server.ts');
 
     const manifest = JSON.parse(await fs.readFile(destManifest('marketplace'), 'utf-8')) as {
       id: string;
