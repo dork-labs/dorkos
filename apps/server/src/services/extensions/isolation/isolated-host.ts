@@ -265,6 +265,7 @@ export class IsolatedExtensionHost {
   private dispatcher: CtxDispatcher | null = null;
   private lastDispatchCounts: Record<string, number> = {};
   private registeredCleanup = false;
+  private registeredRouter = false;
   private serving = false;
   private nextCid = 1;
   private readonly connections = new Map<number, VirtualSocket>();
@@ -292,6 +293,11 @@ export class IsolatedExtensionHost {
   /** Whether the running child's `register()` returned a cleanup function. */
   get hasCleanup(): boolean {
     return this.registeredCleanup;
+  }
+
+  /** Whether the running child's `register()` added routes to the old router. */
+  get usesRouter(): boolean {
+    return this.registeredRouter;
   }
 
   /**
@@ -491,6 +497,7 @@ export class IsolatedExtensionHost {
           this.dispatcher = null;
         }
         this.registeredCleanup = false;
+        this.registeredRouter = false;
         // Every open request learns the child is gone: one still waiting for
         // its headers answers 503, one already streaming is cut off.
         this.serving = false;
@@ -648,6 +655,7 @@ export class IsolatedExtensionHost {
           return;
         }
         this.registeredCleanup = message.hasCleanup;
+        this.registeredRouter = message.usesRouter === true;
         // register() finished: from here no tool binds, whatever the child
         // (or code inside it posting its own messages) sends next.
         this.dispatcher?.closeTools();

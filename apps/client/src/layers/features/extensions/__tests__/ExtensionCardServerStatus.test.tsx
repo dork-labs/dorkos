@@ -98,3 +98,24 @@ describe('ExtensionCard: a stopped server half (DOR-2686)', () => {
     expect(screen.queryByText(/Restarting/)).not.toBeInTheDocument();
   });
 });
+
+describe('ExtensionCard: a server half on the old router (DOR-2858)', () => {
+  // Purpose: a person sees the extension needs an update, and what to do.
+  it('says it uses an older server style and to ask an agent', () => {
+    renderCard(makeExtension({ usesOldRouter: true }));
+    expect(screen.getByTestId('extension-old-router-mail')).toHaveTextContent(
+      'Uses an older server style DorkOS will drop soon. Ask an agent to update it.'
+    );
+  });
+
+  // Purpose: one that does not use it, or that has stopped, says nothing of it.
+  it('says nothing when it does not, or when its server half has a problem to show', () => {
+    renderCard(makeExtension());
+    expect(screen.queryByTestId('extension-old-router-mail')).not.toBeInTheDocument();
+    cleanup();
+    renderCard(
+      makeExtension({ usesOldRouter: true, serverError: { code: 'server_crashed', message: '' } })
+    );
+    expect(screen.queryByTestId('extension-old-router-mail')).not.toBeInTheDocument();
+  });
+});

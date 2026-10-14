@@ -55,6 +55,25 @@ import { createIsolatedHandler } from './isolation/isolated-router.js';
 import { RestartPolicy, type RestartPolicyOptions } from './isolation/restart-policy.js';
 import { env } from '../../env.js';
 
+/** Extensions already warned about in this process, so the log says it once. */
+const warnedOldRouter = new Set<string>();
+
+/**
+ * Log once per extension that it serves its API with the old Express router
+ * (DOR-2858), which DorkOS is retiring in favour of a fetch handler.
+ *
+ * @param id - The extension id.
+ * @param name - Its manifest name.
+ */
+function warnOldRouter(id: string, name: string): void {
+  if (warnedOldRouter.has(id)) return;
+  warnedOldRouter.add(id);
+  logger.warn(
+    `[Extensions] ${name} (${id}) serves its API with the old Express router, which DorkOS ` +
+      `will stop running. Serve it with a fetch handler instead: Hono is built in.`
+  );
+}
+
 /**
  * Everything the running instance of an extension was built from, as one
  * comparable string: the directory it was read from, the manifest fields that
@@ -519,8 +538,10 @@ export class ExtensionServerLifecycle {
         disposeCtx: dispose,
         sourceKey,
         agentTools,
+        usesOldRouter: router.stack.length > 0,
       });
       registered = undefined;
+      if (router.stack.length > 0) warnOldRouter(id, record.manifest.name);
 
       // Only now, with the instance active, can agents reach its tools. A
       // refusal leaves the extension running without them and says why on
@@ -751,7 +772,9 @@ export class ExtensionServerLifecycle {
       sourceKey,
       agentTools,
       isolated: host,
+      usesOldRouter: host.usesRouter,
     });
+    if (host.usesRouter) warnOldRouter(id, name);
     // It may have died in the moment between starting and being stored, when
     // nothing could hear it: treat that exactly like any other crash.
     if (!host.running) {
@@ -887,6 +910,16 @@ export class ExtensionServerLifecycle {
    */
   supervisedStatus(id: string): SupervisedServerStatus {
     return this.supervised.get(id) ?? {};
+  }
+
+  /**
+   * Whether the running instance of an extension added routes to the old
+   * Express router (DOR-2858), which its Extensions row says.
+   *
+   * @param id - The extension id.
+   */
+  usesOldRouter(id: string): boolean {
+    return this.serverExtensions.get(id)?.usesOldRouter === true;
   }
 
   /**

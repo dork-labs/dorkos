@@ -86,6 +86,8 @@ export interface RegisteredMessage {
    * offers only the tools it bound itself, through the real ctx.
    */
   handledTools: string[];
+  /** Whether `register()` added routes to the old Express router (DOR-2858). */
+  usesRouter?: boolean;
   /** Why it failed, when it did. */
   error?: string;
 }
@@ -575,6 +577,7 @@ export function isChildMessage(value: unknown): value is ChildMessage {
         typeof value.hasCleanup === 'boolean' &&
         Array.isArray(value.handledTools) &&
         value.handledTools.every((t) => typeof t === 'string') &&
+        (value.usesRouter === undefined || typeof value.usesRouter === 'boolean') &&
         (value.error === undefined || typeof value.error === 'string')
       );
     // The ctx messages are checked for shape only; their meaning (whether a

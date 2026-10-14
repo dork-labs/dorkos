@@ -173,6 +173,8 @@ async function startIsolated(): Promise<void> {
   await fs.writeFile(bundle, code);
   const host = makeHost(h, { id: 'iso', bundle, overrides: { displayName: NAME } });
   await startOk(host);
+  // A fetch handler only: nothing on the old router (DOR-2858).
+  expect(host.usesRouter).toBe(false);
   handlers.set('iso', createIsolatedHandler({ displayName: NAME, host }));
 }
 
@@ -299,6 +301,8 @@ describe('an extension in its own process with a router and a fetch handler', ()
     await fs.writeFile(bundle, MIXED_SOURCE);
     const host = makeHost(h, { id: 'mixed', bundle, overrides: { displayName: NAME } });
     await startOk(host);
+    // It filled the old router, which the host hears from the child (DOR-2858).
+    expect(host.usesRouter).toBe(true);
     handlers.set('mixed', createIsolatedHandler({ displayName: NAME, host }));
   });
 
