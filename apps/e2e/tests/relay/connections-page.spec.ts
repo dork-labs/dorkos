@@ -21,10 +21,12 @@ test.describe('Connections page @smoke', () => {
 
     await expect(connectionsPage.heading).toBeAttached();
     await expect(connectionsPage.allApps).toBeVisible();
-    await expect(connectionsPage.page.getByRole('tablist')).toHaveCount(0);
-    await expect(connectionsPage.page.getByRole('region', { name: 'Messaging' })).toHaveCount(0);
+    // The global inspector has its own tabs; the Connections page is one list.
+    await expect(connectionsPage.content).toBeVisible();
+    await expect(connectionsPage.content.getByRole('tablist')).toHaveCount(0);
+    await expect(connectionsPage.content.getByRole('region', { name: 'Messaging' })).toHaveCount(0);
     await expect(
-      connectionsPage.page.getByRole('region', { name: 'Accounts', exact: true })
+      connectionsPage.content.getByRole('region', { name: 'Accounts', exact: true })
     ).toHaveCount(0);
   });
 

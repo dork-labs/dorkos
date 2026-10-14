@@ -58,8 +58,15 @@ import type { Transport } from '@dorkos/shared/transport';
 import { canvasSourceKey as sourceKey } from '@dorkos/shared/canvas-source-key';
 import { MAX_CANVAS_DOCUMENTS } from '@/layers/shared/lib/constants';
 import { canvasViewForContent, type CanvasView } from '@dorkos/shared/canvas-view';
-import { stableStringify } from '@dorkos/shared/capabilities';
 import type { AppState } from './app-store-types';
+import { fromServer, sourceLabel } from './canvas-document-model';
+import { createCanvasDocumentViews } from './canvas-document-views';
+import {
+  contentFingerprint,
+  isPendingId,
+  observePendingCandidates,
+  prunePendingCandidates,
+} from './canvas-document-candidates';
 
 // ---------------------------------------------------------------------------
 // Document model
@@ -75,6 +82,10 @@ export interface CanvasDocument {
    * `pending:` id instead, for exactly as long as the POST is in flight.
    */
   id: string;
+  /** Server rows present before this unresolved local open; never defer these as its echo. */
+  pendingBaselineIds?: string[];
+  /** Possible stream echoes observed while this open is unresolved; cleared with its pending row. */
+  pendingCandidateIds?: string[];
   /**
    * The row's revision, monotonic per session. What orders two frames racing
    * for one document: a lower `rev` never overwrites a higher one. `0` on a row
@@ -274,6 +285,8 @@ export interface CanvasSlice {
    * session the reader has just left.
    */
   canvasSessionId: string | null;
+  /** Directory captured with the document owner, independent of ambient navigation. */
+  canvasSessionCwd: string | null | undefined;
   /**
    * Whether the bound session's durable stream has delivered its cold snapshot
    * yet — which is the same fact as "the server knows this session" (DOR-2016).
@@ -346,68 +359,6 @@ export interface CanvasSlice {
 // ---------------------------------------------------------------------------
 // Pure helpers
 // ---------------------------------------------------------------------------
-
-/** Base name of a filesystem-ish path, for a tab label. */
-function baseName(pathLike: string): string {
-  const parts = pathLike.split(/[\\/]/).filter(Boolean);
-  return parts[parts.length - 1] ?? pathLike;
-}
-
-const CONTENT_TYPE_FALLBACK_LABELS: Record<UiCanvasContent['type'], string> = {
-  url: 'Web Page',
-  markdown: 'Document',
-  json: 'JSON Data',
-  image: 'Image',
-  pdf: 'PDF',
-  widget: 'Widget',
-  mcp_app: 'App',
-  file: 'File',
-  model3d: '3D Model',
-  audio: 'Audio',
-  video: 'Video',
-  csv: 'CSV',
-  browser: 'Browser',
-  diff: 'Diff',
-};
-
-/** Human label for a document tab — the content title, else a source-derived name. */
-function sourceLabel(content: UiCanvasContent): string {
-  if (content.title) return content.title;
-  switch (content.type) {
-    case 'markdown':
-      return content.sourcePath
-        ? baseName(content.sourcePath)
-        : CONTENT_TYPE_FALLBACK_LABELS.markdown;
-    case 'file':
-      return baseName(content.sourcePath);
-    case 'diff':
-      return baseName(content.sourcePath);
-    case 'image':
-    case 'pdf':
-    case 'model3d':
-    case 'audio':
-    case 'video':
-    case 'csv':
-      return /^(https?:|data:)/.test(content.src)
-        ? CONTENT_TYPE_FALLBACK_LABELS[content.type]
-        : baseName(content.src);
-    case 'url':
-      try {
-        return new URL(content.url).hostname;
-      } catch {
-        return CONTENT_TYPE_FALLBACK_LABELS.url;
-      }
-    case 'browser':
-      try {
-        return new URL(content.url).hostname;
-      } catch {
-        // A bare local file path (not a URL) → use its base name for the tab.
-        return baseName(content.url);
-      }
-    default:
-      return CONTENT_TYPE_FALLBACK_LABELS[content.type];
-  }
-}
 
 /** Generate a stable document id. */
 function makeDocumentId(): string {
@@ -562,16 +513,6 @@ const HELD_WRITE_MAX_WAIT_MS = 30_000;
  */
 const MAX_WRITES_AWAITING_ECHO = 16;
 
-/**
- * One canvas content, reduced to a string two equal contents share.
- *
- * Key-order-insensitive because the server re-parses what it is sent, so the
- * same document can come back with its fields in schema order.
- */
-function contentFingerprint(content: UiCanvasContent): string {
-  return stableStringify(content);
-}
-
 /** The live edit-lock heartbeats, keyed by document id. */
 const editHeartbeats = new Map<string, ReturnType<typeof setInterval>>();
 
@@ -593,11 +534,6 @@ function stopHeartbeat(documentId: string): void {
 function reportWriteFailure(err: unknown): void {
   const message = err instanceof Error ? err.message : 'Try again.';
   toast.error('Couldn’t update the canvas', { description: message });
-}
-
-/** A `pending:` id belongs to a row this window minted and has not heard back about. */
-function isPendingId(id: string): boolean {
-  return id.startsWith('pending:');
 }
 
 /**
@@ -625,33 +561,6 @@ function isSessionNotFound(err: unknown): boolean {
   );
 }
 
-/**
- * Fold one of the server's rows into the shape this slice holds, keeping the
- * per-viewer fields of the row it replaces.
- *
- * `editing` and `heldUpdate` are this window's own and never the server's, so
- * they survive every arrival — a document somebody is typing in must not lose
- * their draft because a frame landed.
- */
-function fromServer(row: ServerCanvasDocument, previous?: CanvasDocument): CanvasDocument {
-  return {
-    id: row.id,
-    rev: row.rev,
-    content: row.content,
-    openedAt: Date.parse(row.openedAt),
-    lastActiveAt: Date.parse(row.lastActiveAt),
-    sourceLabel: row.title || sourceLabel(row.content),
-    pinned: row.pinned,
-    // Kept across arrivals, like `editing` below: the server's row says nothing
-    // about which window a person opened it in, so the answer this window
-    // already had is the only one there is. Absent means it arrived from the
-    // server — a hydrate, or another window's open.
-    openedHere: previous?.openedHere ?? false,
-    editing: previous?.editing ?? false,
-    heldUpdate: previous?.heldUpdate ?? null,
-  };
-}
-
 // ---------------------------------------------------------------------------
 // Slice creator
 // ---------------------------------------------------------------------------
@@ -663,6 +572,7 @@ export const createCanvasSlice: StateCreator<
   [],
   CanvasSlice
 > = (set, get) => {
+  const documentViews = createCanvasDocumentViews({ set, get, fromServer, renameBrowserHistory });
   /**
    * One write the server refused because it did not know the session YET, kept
    * until its stream attaches (DOR-2016).
@@ -680,6 +590,8 @@ export const createCanvasSlice: StateCreator<
     send: (sessionId: string) => Promise<void>;
     /** Put the table back and say so, for a wait that ran out. */
     abandon: () => void;
+    /** Complete only this write's receipt when canceled rather than retried. */
+    finish?: () => void;
     /** The deadline; cleared whenever the entry leaves the queue. */
     timer: ReturnType<typeof setTimeout>;
   }
@@ -694,10 +606,11 @@ export const createCanvasSlice: StateCreator<
   const heldWrites: HeldCanvasWrite[] = [];
 
   /** Take one held write out of the queue and stop its deadline. */
-  function releaseHeld(held: HeldCanvasWrite): void {
+  function releaseHeld(held: HeldCanvasWrite, canceled = true): void {
     const at = heldWrites.indexOf(held);
     if (at >= 0) heldWrites.splice(at, 1);
     clearTimeout(held.timer);
+    if (canceled) held.finish?.();
   }
 
   /**
@@ -712,22 +625,30 @@ export const createCanvasSlice: StateCreator<
    * @param documentId - The row it is about, so a close can cancel a held write.
    * @param write - The request itself, given the transport and the session id.
    * @param revert - Puts the local table back when the write is refused for good.
+   * @param finish - Releases only this write's transient receipt on completion or cancellation.
    */
   function writeThrough(
     sessionId: string | null,
     documentId: string,
     write: (transport: SessionCanvasTransport, sessionId: string) => Promise<unknown>,
-    revert: () => void
+    revert: () => void,
+    finish?: () => void
   ): void {
     const transport = canvasTransport;
     // No transport bound — a test, or a shell with no server. The optimistic
     // apply stands on its own, which is exactly what this slice used to do.
-    if (!transport || sessionId === null) return;
+    if (!transport || sessionId === null) {
+      finish?.();
+      return;
+    }
     const attempt = (target: string, isRetry: boolean, attachedWhenSent: boolean): Promise<void> =>
       write(transport, target).then(
-        () => undefined,
+        () => {
+          finish?.();
+        },
         (err: unknown) => {
           const giveUp = (): void => {
+            finish?.();
             if (get().canvasSessionId === target) revert();
             reportWriteFailure(err);
           };
@@ -757,6 +678,7 @@ export const createCanvasSlice: StateCreator<
               documentId,
               send: (id) => attempt(id, true, true),
               abandon: giveUp,
+              finish,
               timer: setTimeout(() => {
                 releaseHeld(held);
                 held.abandon();
@@ -784,7 +706,7 @@ export const createCanvasSlice: StateCreator<
   function flushHeldWrites(sessionId: string): void {
     const mine = heldWrites.filter((held) => held.sessionId === sessionId);
     if (mine.length === 0) return;
-    for (const held of mine) releaseHeld(held);
+    for (const held of mine) releaseHeld(held, false);
     void mine.reduce<Promise<void>>(
       (previous, held) => previous.then(() => held.send(sessionId)),
       Promise.resolve()
@@ -869,33 +791,6 @@ export const createCanvasSlice: StateCreator<
     return true;
   }
 
-  /**
-   * Replace a pending row with the row the server answered with.
-   *
-   * Matched on the pending id this window minted rather than on the source key:
-   * `json` and `widget` have no key, and two of them opened in the same tick
-   * would otherwise adopt each other's rows.
-   */
-  function settlePending(pendingId: string, row: ServerCanvasDocument): void {
-    set((s) => {
-      const previous = s.openDocuments.find((d) => d.id === pendingId);
-      if (!previous) return {};
-      // Another window may already have delivered this row through the stream.
-      // Adopt rather than duplicate: drop the pending row and keep the real one.
-      const already = s.openDocuments.find((d) => d.id === row.id && d.id !== pendingId);
-      const documents = already
-        ? s.openDocuments.filter((d) => d.id !== pendingId)
-        : s.openDocuments.map((d) => (d.id === pendingId ? fromServer(row, previous) : d));
-      const swapId = (id: string | null) => (id === pendingId ? row.id : id);
-      return {
-        openDocuments: documents,
-        activeCanvasDocumentId: swapId(s.activeCanvasDocumentId),
-        activeBrowserDocumentId: swapId(s.activeBrowserDocumentId),
-        browserHistories: renameBrowserHistory(s.browserHistories, pendingId, row.id),
-      };
-    });
-  }
-
   return {
     canvasOpen: false,
     setCanvasOpen: (open) => set({ canvasOpen: open }),
@@ -923,6 +818,15 @@ export const createCanvasSlice: StateCreator<
         : -1;
       const existing = existingIdx >= 0 ? before.openDocuments[existingIdx] : undefined;
       const pendingId = existing ? existing.id : `pending:${makeDocumentId()}`;
+      const ownerCwd =
+        before.canvasSessionCwd !== undefined ? before.canvasSessionCwd : before.selectedCwd;
+      const receipt = documentViews.beginOpen(
+        pendingId,
+        sessionId,
+        ownerCwd,
+        Boolean(canvasTransport),
+        !existing
+      );
 
       set((s) => {
         const now = Date.now();
@@ -951,6 +855,9 @@ export const createCanvasSlice: StateCreator<
         } else {
           const doc: CanvasDocument = {
             id: pendingId,
+            pendingBaselineIds: s.openDocuments
+              .filter((document) => !isPendingId(document.id))
+              .map((document) => document.id),
             rev: 0,
             content,
             openedAt: now,
@@ -967,9 +874,11 @@ export const createCanvasSlice: StateCreator<
           };
           // Neither view may lose the document it is showing to make room for
           // this one, so both active ids are protected alongside it.
-          documents = evictToCapacity(
-            [...s.openDocuments, doc],
-            [pendingId, s.activeCanvasDocumentId, s.activeBrowserDocumentId]
+          documents = prunePendingCandidates(
+            evictToCapacity(
+              [...s.openDocuments, doc],
+              [pendingId, s.activeCanvasDocumentId, s.activeBrowserDocumentId]
+            )
           );
         }
         // Only the view this content belongs to changes what it is showing; the
@@ -986,6 +895,7 @@ export const createCanvasSlice: StateCreator<
                 activeBrowserDocumentId: s.activeBrowserDocumentId,
               };
         return {
+          canvasSessionCwd: s.canvasSessionCwd !== undefined ? s.canvasSessionCwd : s.selectedCwd,
           openDocuments: documents,
           ...activeIds,
           // LRU eviction may have dropped documents — prune their histories too.
@@ -998,7 +908,7 @@ export const createCanvasSlice: StateCreator<
         pendingId,
         async (transport, id) => {
           const row = await transport.openSessionCanvasDocument(id, content);
-          settlePending(pendingId, row);
+          documentViews.settlePending(pendingId, row, receipt);
         },
         // **Two reverts, because there were two applies.** A refused open of a
         // document that was ALREADY there — a routine 409 while somebody is
@@ -1015,7 +925,12 @@ export const createCanvasSlice: StateCreator<
                   ...reconcileActiveIds(documents, s),
                   browserHistories: pruneBrowserHistories(s.browserHistories, documents),
                 };
-              })
+              }),
+        receipt
+          ? () => {
+              documentViews.finish(receipt);
+            }
+          : undefined
       );
     },
 
@@ -1127,7 +1042,7 @@ export const createCanvasSlice: StateCreator<
       cancelHeldWrites(id);
       writesAwaitingEcho.delete(id);
       set((s) => {
-        const documents = s.openDocuments.filter((d) => d.id !== id);
+        const documents = prunePendingCandidates(s.openDocuments.filter((d) => d.id !== id));
         // Closing the active document hands that view its most-recently-active
         // survivor; the other view is untouched.
         return {
@@ -1163,6 +1078,7 @@ export const createCanvasSlice: StateCreator<
       const before = get();
       const target = before.openDocuments.find((d) => d.id === id);
       if (!target) return;
+      documentViews.captureSelection(id, before);
       // Clicking a tab is a person in this window putting that document in
       // front, which is what the driver seat is about.
       get().noteDocumentShownHere(id);
@@ -1224,6 +1140,7 @@ export const createCanvasSlice: StateCreator<
     setCanvasPreferredWidth: (width) => set({ canvasPreferredWidth: width }),
 
     canvasSessionId: null,
+    canvasSessionCwd: undefined,
     canvasStreamAttached: false,
 
     carryCanvasWritesAcross: (retiredSessionId, canonicalSessionId) => {
@@ -1231,17 +1148,19 @@ export const createCanvasSlice: StateCreator<
       for (const held of heldWrites) {
         if (held.sessionId === retiredSessionId) held.sessionId = canonicalSessionId;
       }
-      // A rekey is the same conversation. Bind before its stream can deliver
-      // the first snapshot, while retaining documents and pending writes.
-      if (get().canvasSessionId === retiredSessionId) {
-        set({ canvasSessionId: canonicalSessionId, canvasStreamAttached: false });
-      }
+      documentViews.carryOwner(retiredSessionId, canonicalSessionId);
     },
 
     loadCanvasForSession: (sessionId) => {
+      documentViews.prepareBinding(sessionId);
       // The route can settle after an early canonical snapshot. Its effect
       // must not clear the already-bound canvas or reset the stream latch.
-      if (get().canvasSessionId === sessionId) return;
+      if (get().canvasSessionId === sessionId) {
+        // Only an explicit binding resolves an unknown owner directory; ambient navigation does not.
+        if (get().canvasSessionCwd === null && get().selectedCwd !== null)
+          set((s) => documentViews.bindResolvedDirectory(sessionId, s));
+        return;
+      }
       for (const documentId of [...editHeartbeats.keys()]) stopHeartbeat(documentId);
       // Whatever is still held for a DIFFERENT session has nothing here to land
       // for any more — this bind empties the table it would have written to.
@@ -1249,10 +1168,13 @@ export const createCanvasSlice: StateCreator<
       // point of `carryCanvasWritesAcross`: a first-turn rename re-binds this
       // slice, and the write it re-aimed a moment ago must not be thrown away by
       // the very rebind the rename causes.
-      for (const held of heldWrites.filter((h) => h.sessionId !== sessionId)) releaseHeld(held);
+      for (const held of heldWrites.filter((h) => h.sessionId !== sessionId)) {
+        releaseHeld(held);
+      }
       // The table is emptied, so no echo still on its way has a row to land on.
       writesAwaitingEcho.clear();
-      set({
+      set((s) => ({
+        ...documentViews.bindResolvedDirectory(sessionId, s),
         canvasOpen: false,
         openDocuments: [],
         activeCanvasDocumentId: null,
@@ -1262,7 +1184,7 @@ export const createCanvasSlice: StateCreator<
         // Browser history is in-memory only; a session switch starts fresh so it
         // never carries the previous session's histories (and never unbounded).
         browserHistories: {},
-      });
+      }));
     },
 
     hydrateCanvasFromSnapshot: (sessionId, documents) => {
@@ -1274,11 +1196,13 @@ export const createCanvasSlice: StateCreator<
         // and a `pending:` row is by definition something it has not been told
         // about yet — dropping it here would take a document off screen and then
         // strand the answer, because the settle looks for a row that is gone.
-        const stillInFlight = s.openDocuments.filter((d) => isPendingId(d.id));
-        const hydrated = [
+        const stillInFlight = observePendingCandidates(s.openDocuments, documents).filter((d) =>
+          isPendingId(d.id)
+        );
+        const hydrated = prunePendingCandidates([
           ...documents.map((row) => fromServer(row, previous.get(row.id))),
           ...stillInFlight,
-        ];
+        ]);
         return {
           openDocuments: hydrated,
           // Re-derived rather than dropped: a reconnect is not a reason to
@@ -1321,11 +1245,21 @@ export const createCanvasSlice: StateCreator<
       // Whether that echo is of the LAST write this window has outstanding. Only
       // then is the frame the whole truth: nothing newer of ours is on its way.
       const newestOwnEcho = ownEcho && !writesAwaitingEcho.has(event.documentId);
-      set((s) => {
+      set((previousState) => {
+        const s = event.document
+          ? {
+              ...previousState,
+              openDocuments: observePendingCandidates(previousState.openDocuments, [
+                event.document,
+              ]),
+            }
+          : previousState;
         if (s.canvasSessionId !== sessionId) return {};
         if (event.closed === true || !event.document) {
           if (!s.openDocuments.some((d) => d.id === event.documentId)) return {};
-          const documents = s.openDocuments.filter((d) => d.id !== event.documentId);
+          const documents = prunePendingCandidates(
+            s.openDocuments.filter((d) => d.id !== event.documentId)
+          );
           return {
             openDocuments: documents,
             ...reconcileActiveIds(documents, s),
@@ -1420,9 +1354,11 @@ export const createCanvasSlice: StateCreator<
         // A document another window opened. It appears in its own view without
         // moving what THIS window is looking at — a shared table that yanked
         // somebody's tab would be over-participation one layer down.
-        const documents = evictToCapacity(
-          [...s.openDocuments, fromServer(row)],
-          [s.activeCanvasDocumentId, s.activeBrowserDocumentId]
+        const documents = prunePendingCandidates(
+          evictToCapacity(
+            [...s.openDocuments, fromServer(row)],
+            [s.activeCanvasDocumentId, s.activeBrowserDocumentId]
+          )
         );
         return {
           openDocuments: documents,

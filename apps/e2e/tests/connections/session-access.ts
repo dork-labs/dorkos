@@ -126,7 +126,7 @@ async function openChatAccess(page: Page, chat: ChatWithAgentAccess) {
   const rightPanel = new RightPanelPage(page);
   const showSessionTab = async () => {
     await rightPanel.open();
-    await page.getByRole('tab', { name: 'Chat', exact: true }).click();
+    await rightPanel.selectView('Chat');
   };
   await showSessionTab();
   const group = page.locator('[data-testid="session-connectors"]');

@@ -97,6 +97,27 @@ export class RightPanelPage {
     );
   }
 
+  /** Select an existing concrete view, or add an eligible view through the + menu. */
+  async selectView(name: string | RegExp) {
+    await this.ensureTabStripOpen();
+    const tab = this.header.getByRole('tab', { name, exact: typeof name === 'string' });
+    const category =
+      typeof name === 'string'
+        ? { Browser: 'browser', Canvas: 'canvas', Terminal: 'terminal' }[name]
+        : undefined;
+    const concrete = category
+      ? this.header.locator(`[role="tab"][data-view-category="${category}"]`).first()
+      : undefined;
+    if (await tab.count()) {
+      await tab.click();
+    } else if (concrete && (await concrete.count())) {
+      await concrete.click();
+    } else {
+      await this.header.getByRole('button', { name: 'Add view', exact: true }).click();
+      await this.page.getByRole('menuitem', { name, exact: typeof name === 'string' }).click();
+    }
+  }
+
   /** Width of the tab strip's scroll box, or 0 when the panel is collapsed or absent. */
   async tabStripWidth(): Promise<number> {
     return this.page.evaluate(() => {
@@ -139,7 +160,6 @@ export class RightPanelPage {
         .then(() => true)
         .catch(() => false);
       if (showing && (await this.tabStripWidth()) > 0) return;
-      await this.page.waitForTimeout(200);
     }
     throw new Error('the right panel never opened wide enough to measure its tab strip');
   }
@@ -195,7 +215,7 @@ export class RightPanelPage {
    * @param contributionId - Id of the contribution whose tab should be selected.
    */
   async activateTabWithoutFocus(contributionId: string) {
-    const tab = this.header.locator(`#right-panel-tab-${contributionId}`);
+    const tab = this.header.locator(`[id="right-panel-tab-${contributionId}"]`);
     await tab.dispatchEvent('mousedown', { button: 0, ctrlKey: false });
     await tab.evaluate((element) => (element as HTMLElement).click());
     await expect(tab, `the ${contributionId} tab must accept synthetic selection`).toHaveAttribute(
@@ -244,6 +264,9 @@ export class RightPanelPage {
 
   /** Open the panel if it is currently closed (idempotent). */
   async open() {
+    // A modal phone sheet hides the top-bar toggle from the accessibility tree.
+    // Its visible header already proves the panel is open.
+    if ((await this.header.isVisible()) && (await this.tabStripWidth()) > 0) return;
     const label = await this.toggle.getAttribute('aria-label');
     if (label?.startsWith('Open')) {
       await this.toggle.click();

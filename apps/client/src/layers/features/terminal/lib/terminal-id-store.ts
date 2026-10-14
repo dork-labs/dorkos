@@ -1,6 +1,6 @@
 /**
  * Per-(session, cwd) persistence of the workbench terminal's OPEN TABS — an
- * ordered list of server-side PTY ids plus the active tab index — so a page
+ * ordered list of server-side PTY ids, closed local views and the active tab index — so a page
  * refresh re-attaches to every live shell (in order, with the same tab active)
  * instead of orphaning them and spawning new ones (DOR-225, generalized to
  * multiple terminals in DOR-226).
@@ -11,7 +11,7 @@
  * absent `sessionStorage` (private mode, storage disabled) or a corrupt value
  * simply degrades to "no stored tabs", i.e. a fresh terminal.
  *
- * Ids are removed only when a shell exits or a tab is explicitly closed (the
+ * Ids are removed only when a shell exits or is explicitly stopped (the
  * panel rewrites the whole list on every change); they are NEVER cleared on
  * unmount or refresh, which is exactly what lets the shells survive a reload.
  *
@@ -28,6 +28,46 @@
  */
 const KEY_PREFIX = 'dork.terminal.tabs';
 
+/** A newly identified shell whose original presenter has already unmounted. */
+interface LateTerminal {
+  id: string;
+  closed: boolean;
+}
+const lateSubscribers = new Map<string, Set<(terminal: LateTerminal) => void>>();
+
+/** Follow late-created PTYs for this scope; ordinary persistence writes never notify. */
+export function subscribeLateTerminals(
+  sessionId: string | null,
+  cwd: string,
+  listener: (terminal: LateTerminal) => void
+): () => void {
+  const key = storageKey(sessionId, cwd);
+  const listeners = lateSubscribers.get(key) ?? new Set();
+  listeners.add(listener);
+  lateSubscribers.set(key, listeners);
+  return () => {
+    listeners.delete(listener);
+    if (!listeners.size) lateSubscribers.delete(key);
+  };
+}
+
+/** Preserve a late spawn and let a replacement owner adopt it before its next write. */
+export function appendLateTerminal(
+  sessionId: string | null,
+  cwd: string,
+  terminal: LateTerminal
+): void {
+  const stored = readTerminalTabs(sessionId, cwd);
+  if (!stored.ids.includes(terminal.id)) {
+    writeTerminalTabs(sessionId, cwd, {
+      ids: [...stored.ids, terminal.id],
+      activeIndex: stored.activeIndex,
+      closedIds: [...(stored.closedIds ?? []), ...(terminal.closed ? [terminal.id] : [])],
+    });
+  }
+  for (const listener of lateSubscribers.get(storageKey(sessionId, cwd)) ?? []) listener(terminal);
+}
+
 /**
  * The persisted terminal-tab state for one (session, cwd): the open PTY ids in
  * tab order and which one is active.
@@ -37,6 +77,8 @@ export interface TerminalTabsState {
   ids: string[];
   /** Index into {@link ids} of the active tab; clamped into range on read. */
   activeIndex: number;
+  /** Live PTYs whose local views are closed; their processes keep running. */
+  closedIds?: string[];
 }
 
 /** The empty state returned when nothing is stored (or storage is unavailable). */
@@ -69,12 +111,21 @@ export function readTerminalTabs(sessionId: string | null, cwd: string): Termina
     if (!raw) return EMPTY;
     const parsed: unknown = JSON.parse(raw);
     if (typeof parsed !== 'object' || parsed === null) return EMPTY;
-    const { ids, activeIndex } = parsed as { ids?: unknown; activeIndex?: unknown };
+    const { ids, activeIndex, closedIds } = parsed as {
+      ids?: unknown;
+      activeIndex?: unknown;
+      closedIds?: unknown;
+    };
     const cleanIds = Array.isArray(ids)
       ? ids.filter((id): id is string => typeof id === 'string' && id.length > 0)
       : [];
     const index = typeof activeIndex === 'number' ? activeIndex : 0;
-    return { ids: cleanIds, activeIndex: clampIndex(index, cleanIds.length) };
+    const closed = Array.isArray(closedIds) ? cleanIds.filter((id) => closedIds.includes(id)) : [];
+    return {
+      ids: cleanIds,
+      activeIndex: clampIndex(index, cleanIds.length),
+      ...(closed.length ? { closedIds: closed } : {}),
+    };
   } catch {
     return EMPTY;
   }
@@ -100,6 +151,8 @@ export function writeTerminalTabs(
       ids: state.ids,
       activeIndex: clampIndex(state.activeIndex, state.ids.length),
     };
+    const closed = state.ids.filter((id) => state.closedIds?.includes(id));
+    if (closed.length) payload.closedIds = closed;
     sessionStorage.setItem(storageKey(sessionId, cwd), JSON.stringify(payload));
   } catch {
     // Non-fatal — re-attach just won't be available on the next mount.

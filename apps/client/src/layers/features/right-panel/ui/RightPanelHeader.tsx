@@ -9,8 +9,12 @@ import {
   TooltipTrigger,
   TooltipContent,
   ContributedIcon,
+  IdentityAvatar,
+  type TabActivationSource,
 } from '@/layers/shared/ui';
 import { cn } from '@/layers/shared/lib/utils';
+import { hashToHslColor, initialOf } from '@/layers/shared/lib';
+import type { AuthorRef } from '@dorkos/shared/room-schemas';
 import {
   revealInScroller,
   useAppStore,
@@ -28,15 +32,25 @@ export function rightPanelTabDomId(contributionId: string): string {
   return `right-panel-tab-${contributionId}`;
 }
 
+interface PanelHeaderContribution extends RightPanelContribution {
+  category?: string;
+  author?: AuthorRef;
+  watchers?: AuthorRef[];
+  unread?: boolean;
+  pinned?: boolean;
+}
 interface RightPanelHeaderProps {
   /**
    * The visible panel contributions, in tab order. The tab strip renders one
    * button per entry when there are 2+; the container is the single source of
    * truth for which contributions are visible (route + transport filtering).
    */
-  contributions: RightPanelContribution[];
+  contributions: PanelHeaderContribution[];
   /** Optional actions rendered to the left of the close button (the active tab's `headerActions`). */
   actions?: ReactNode;
+  activeId?: string | null;
+  onActivate?: (id: string, source?: TabActivationSource) => void;
+  onCloseView?: (id: string) => void;
 }
 
 /**
@@ -49,18 +63,29 @@ interface RightPanelHeaderProps {
  * names that single panel (icon + title) instead of leaving the header a blank
  * bar, and renders the active tab's `headerActions` beside the close button.
  */
-export function RightPanelHeader({ contributions, actions }: RightPanelHeaderProps) {
+export function RightPanelHeader({
+  contributions,
+  actions,
+  activeId,
+  onActivate,
+  onCloseView,
+}: RightPanelHeaderProps) {
   const setRightPanelOpen = useAppStore((s) => s.setRightPanelOpen);
   const activeTab = useAppStore((s) => s.activeRightPanelTab);
   const setActiveTab = useAppStore((s) => s.setActiveRightPanelTab);
 
   return (
     <div
-      className="flex w-full items-center justify-between border-b px-3 py-2"
+      className="flex w-full items-center justify-between px-3 py-2"
       data-slot="right-panel-header"
     >
-      {contributions.length > 1 ? (
-        <TabStrip contributions={contributions} activeTab={activeTab} onActivate={setActiveTab} />
+      {contributions.length > 1 || onActivate ? (
+        <TabStrip
+          contributions={contributions}
+          activeTab={activeId === undefined ? activeTab : activeId}
+          onActivate={onActivate ?? setActiveTab}
+          onCloseView={onCloseView}
+        />
       ) : contributions.length === 1 ? (
         // Single panel: name it (icon + title) instead of a blank bar. Not a
         // tab/tablist — a quiet title — so the "no tab strip with one
@@ -83,7 +108,7 @@ export function RightPanelHeader({ contributions, actions }: RightPanelHeaderPro
           variant="ghost"
           size="icon-md"
           aria-label="Close panel"
-          className="size-7 shrink-0"
+          className="size-11 shrink-0 lg:size-7"
           onClick={() => setRightPanelOpen(false)}
         >
           <X className="size-3.5" />
@@ -124,12 +149,15 @@ function TabStrip({
   contributions,
   activeTab,
   onActivate,
+  onCloseView,
 }: {
-  contributions: RightPanelContribution[];
+  contributions: PanelHeaderContribution[];
   activeTab: string | null;
-  onActivate: (id: string) => void;
+  onActivate: (id: string, source?: TabActivationSource) => void;
+  onCloseView?: (id: string) => void;
 }) {
   const scrollerRef = useRef<HTMLDivElement>(null);
+  const activationSource = useRef<TabActivationSource>('keyboard');
   const tablistRef = useRef<HTMLDivElement>(null);
   // An extension's marker joins its tab's accessible name (spec §6.7).
   const tabMarkers = useExtensionRegistry((s) => s.tabMarkers);
@@ -204,7 +232,14 @@ function TabStrip({
     // never matches a contribution's id, so it keeps Tabs controlled for its
     // whole lifetime and selects nothing during that window instead of
     // handing selection to Radix's own uncontrolled state.
-    <Tabs asChild value={activeTab ?? ''} onValueChange={onActivate}>
+    <Tabs
+      asChild
+      value={activeTab ?? ''}
+      onValueChange={(id) => {
+        onActivate(id, activationSource.current);
+        activationSource.current = 'keyboard';
+      }}
+    >
       <div className="relative min-w-0 flex-1">
         <div
           ref={scrollerRef}
@@ -225,37 +260,138 @@ function TabStrip({
             {contributions.map((contribution) => {
               const isActive = contribution.id === activeTab;
               return (
-                <Tooltip key={contribution.id}>
-                  <TooltipTrigger asChild>
-                    <TabsTrigger
-                      value={contribution.id}
-                      aria-label={tabAccessibleName(
-                        contribution.title,
-                        tabMarkers[contribution.id] ?? null
-                      )}
-                      id={rightPanelTabDomId(contribution.id)}
-                      aria-controls={isActive ? RIGHT_PANEL_PANEL_ID : undefined}
-                      // Driven off `isActive`, not `data-[state=active]`: the
-                      // `TooltipTrigger asChild` wrapping this element
-                      // composes its own `data-state` onto it (Radix's
-                      // Tooltip trigger tracks open/closed the same
-                      // attribute name Tabs uses for selected/unselected),
-                      // which wins the collision and leaves every tab
-                      // stamped `data-state="closed"` regardless of
-                      // selection. A prop the Tooltip cannot overwrite is
-                      // the only reliable signal here.
-                      className={cn(
-                        'text-muted-foreground hover:text-foreground text-3xs shrink-0 gap-1.5 rounded-md px-2.5 py-1',
-                        isActive && 'bg-background text-foreground shadow-sm'
-                      )}
+                <div
+                  key={contribution.id}
+                  className="group/view relative flex shrink-0 items-center py-2 md:py-0"
+                >
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <TabsTrigger
+                        value={contribution.id}
+                        data-view-category={contribution.category ?? contribution.id}
+                        onPointerDown={() => {
+                          activationSource.current = 'pointer';
+                        }}
+                        onKeyDown={(event) => {
+                          activationSource.current = 'keyboard';
+                          if (event.key === 'Delete' && onCloseView) {
+                            event.preventDefault();
+                            const index = contributions.findIndex((c) => c.id === contribution.id);
+                            const neighbor = contributions[index + 1] ?? contributions[index - 1];
+                            const fallback = event.currentTarget
+                              .closest('[data-slot="right-panel-header"]')
+                              ?.querySelector<HTMLButtonElement>('[aria-label="Add view"]');
+                            onCloseView(contribution.id);
+                            requestAnimationFrame(() => {
+                              if (neighbor)
+                                document.getElementById(rightPanelTabDomId(neighbor.id))?.focus();
+                              else fallback?.focus();
+                            });
+                          }
+                        }}
+                        aria-label={[
+                          tabAccessibleName(
+                            contribution.title,
+                            tabMarkers[contribution.id] ?? null
+                          ),
+                          contribution.author && `Posted by ${contribution.author.displayName}`,
+                          contribution.unread && 'Unread',
+                          contribution.watchers?.length &&
+                            `${contribution.watchers.map((w) => w.displayName).join(', ')} ${contribution.watchers.length === 1 ? 'is' : 'are'} looking at this.`,
+                        ]
+                          .filter(Boolean)
+                          .join(', ')}
+                        id={rightPanelTabDomId(contribution.id)}
+                        aria-controls={isActive ? RIGHT_PANEL_PANEL_ID : undefined}
+                        // Driven off `isActive`, not `data-[state=active]`: the
+                        // `TooltipTrigger asChild` wrapping this element
+                        // composes its own `data-state` onto it (Radix's
+                        // Tooltip trigger tracks open/closed the same
+                        // attribute name Tabs uses for selected/unselected),
+                        // which wins the collision and leaves every tab
+                        // stamped `data-state="closed"` regardless of
+                        // selection. A prop the Tooltip cannot overwrite is
+                        // the only reliable signal here.
+                        className={cn(
+                          'text-muted-foreground hover:text-foreground text-3xs shrink-0 gap-1.5 rounded-md px-2.5 py-1',
+                          isActive && 'bg-background text-foreground shadow-sm'
+                        )}
+                      >
+                        <ContributedIcon icon={contribution.icon} className="size-3.5" />
+                        {contribution.author && (
+                          <span title={`Posted by ${contribution.author.displayName}`}>
+                            <IdentityAvatar
+                              size="xs"
+                              kind={contribution.author.kind}
+                              color={
+                                contribution.author.color ?? hashToHslColor(contribution.author.id)
+                              }
+                              emoji={contribution.author.emoji}
+                              imageUrl={contribution.author.imageUrl}
+                              fallback={initialOf(contribution.author.displayName)}
+                            />
+                          </span>
+                        )}
+                        <span className="max-w-28 truncate">{contribution.title}</span>
+                        {contribution.pinned && <span aria-label="Pinned">·</span>}
+                        {contribution.unread && (
+                          <span
+                            data-testid="canvas-tab-unread"
+                            data-slot="canvas-tab-unread"
+                            aria-label="Unread"
+                            className="bg-primary size-1.5 rounded-full"
+                          />
+                        )}
+                        {!!contribution.watchers?.length && (
+                          <>
+                            <span
+                              data-slot="canvas-tab-watchers"
+                              aria-hidden
+                              className="flex shrink-0 -space-x-1"
+                            >
+                              {contribution.watchers.slice(0, 3).map((watcher) => (
+                                <IdentityAvatar
+                                  key={watcher.id}
+                                  size="xs"
+                                  className="ring-background size-3.5 text-[8px] ring-1"
+                                  kind={watcher.kind}
+                                  color={watcher.color ?? hashToHslColor(watcher.id)}
+                                  emoji={watcher.emoji}
+                                  imageUrl={watcher.imageUrl}
+                                  badge={null}
+                                  fallback={initialOf(watcher.displayName)}
+                                />
+                              ))}
+                              {contribution.watchers.length > 3 && (
+                                <span className="text-3xs">
+                                  +{contribution.watchers.length - 3}
+                                </span>
+                              )}
+                            </span>
+                            <span className="sr-only">
+                              {contribution.watchers.map((w) => w.displayName).join(', ')}{' '}
+                              {contribution.watchers.length === 1 ? 'is' : 'are'} looking at this.
+                            </span>
+                          </>
+                        )}
+                        <TabUnreadDot contributionId={contribution.id} />
+                      </TabsTrigger>
+                    </TooltipTrigger>
+                    <TooltipContent side="bottom">{contribution.title}</TooltipContent>
+                  </Tooltip>
+                  {onCloseView && isActive && (
+                    <Button
+                      variant="ghost"
+                      size="icon-sm"
+                      tabIndex={-1}
+                      aria-label={`Close ${contribution.title} view`}
+                      className="relative size-6 after:absolute after:inset-x-0 after:-inset-y-2 md:after:hidden"
+                      onClick={() => onCloseView(contribution.id)}
                     >
-                      <ContributedIcon icon={contribution.icon} className="size-3.5" />
-                      <span>{contribution.title}</span>
-                      <TabUnreadDot contributionId={contribution.id} />
-                    </TabsTrigger>
-                  </TooltipTrigger>
-                  <TooltipContent side="bottom">{contribution.title}</TooltipContent>
-                </Tooltip>
+                      <X className="size-3" />
+                    </Button>
+                  )}
+                </div>
               );
             })}
           </TabsList>

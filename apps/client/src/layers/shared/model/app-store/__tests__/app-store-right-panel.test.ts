@@ -12,6 +12,7 @@ describe('RightPanelSlice', () => {
     localStorage.clear();
     // Reset store to defaults (detached from any agent).
     useAppStore.setState({
+      panelViewPreferences: {},
       rightPanelOpen: false,
       activeRightPanelTab: null,
       rightPanelLayoutKey: null,

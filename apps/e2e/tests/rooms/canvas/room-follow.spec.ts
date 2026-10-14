@@ -76,6 +76,28 @@ async function putPageOnCanvas(
   return id;
 }
 
+/** Add a second person using a complete real membership, without fetches racing teardown. */
+async function showOtherPerson(
+  page: import('@playwright/test').Page,
+  request: import('@playwright/test').APIRequestContext,
+  roomId: string,
+  authorId: string
+): Promise<void> {
+  const response = await request.get(`/api/rooms/${roomId}`);
+  expect(response.ok()).toBe(true);
+  const body = (await response.json()) as {
+    members: Array<Record<string, unknown> & { author: Record<string, unknown> }>;
+  };
+  const person = body.members.find((member) => member.author.kind === 'human');
+  expect(person, 'the fixture needs a real human membership to clone').toBeTruthy();
+  body.members.push({
+    ...person!,
+    authorId,
+    author: { ...person!.author, id: authorId, displayName: 'Kai', handle: 'kai' },
+  });
+  await page.route(`**/api/rooms/${roomId}`, (route) => route.fulfill({ json: body }));
+}
+
 /** Open a room and wait until its masthead is really on screen. */
 async function openRoom(
   page: import('@playwright/test').Page,
@@ -165,7 +187,6 @@ test.describe('Following somebody’s browser in a room', () => {
   }, testInfo) => {
     const tag = roomsApi.runId;
     const room = await roomsApi.createChannel(`watching-move-${tag}`, `Move ${tag}`, []);
-    const me = await viewerAuthorId(request, room.id);
     const first = await putPageOnCanvas(
       request,
       room.id,
@@ -182,17 +203,7 @@ test.describe('Following somebody’s browser in a room', () => {
     // The two fabrications, and the only two: a second person on the roster
     // this window reads, and the claim route answering for them. See the header.
     const OTHER = 'author-kai-e2e';
-    await page.route(`**/api/rooms/${room.id}`, async (route) => {
-      const response = await route.fetch();
-      const body = (await response.json()) as {
-        members: Array<Record<string, unknown>>;
-      };
-      body.members = [
-        ...body.members,
-        { author: { id: OTHER, kind: 'human', displayName: 'Kai', handle: 'kai' } },
-      ];
-      await route.fulfill({ response, json: body });
-    });
+    await showOtherPerson(page, request, room.id, OTHER);
     await page.route(`**/api/rooms/${room.id}/follow`, (route) =>
       route.fulfill({ status: 204, body: '' })
     );
@@ -258,15 +269,7 @@ test.describe('Following somebody’s browser in a room', () => {
     await putPageOnCanvas(request, room.id, `Preview ${tag}`, 'http://localhost:5173/');
 
     const OTHER = 'author-kai-phone';
-    await page.route(`**/api/rooms/${room.id}`, async (route) => {
-      const response = await route.fetch();
-      const body = (await response.json()) as { members: Array<Record<string, unknown>> };
-      body.members = [
-        ...body.members,
-        { author: { id: OTHER, kind: 'human', displayName: 'Kai', handle: 'kai' } },
-      ];
-      await route.fulfill({ response, json: body });
-    });
+    await showOtherPerson(page, request, room.id, OTHER);
 
     await openRoom(page, basePage, roomsPage, room.id);
     await roomsPage.openBrowserTab();

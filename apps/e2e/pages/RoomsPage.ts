@@ -1,5 +1,6 @@
 import { expect, type Page, type Locator } from '@playwright/test';
 import { NewMenuPage } from './NewMenuPage';
+import { RightPanelPage } from './RightPanelPage';
 
 /**
  * The text a sighted reader actually sees inside `element`.
@@ -336,12 +337,16 @@ export class RoomsPage {
 
   /** The right panel's Canvas tab — the room's table of documents. */
   get canvasTab(): Locator {
-    return this.page.getByRole('tab', { name: 'Canvas' });
+    return this.page
+      .locator('[data-slot="right-panel-header"] [role="tab"][data-view-category="canvas"]')
+      .first();
   }
 
   /** The right panel's Browser tab — the pages on the room's table. */
   get browserTab(): Locator {
-    return this.page.getByRole('tab', { name: 'Browser' });
+    return this.page
+      .locator('[data-slot="right-panel-header"] [role="tab"][data-view-category="browser"]')
+      .first();
   }
 
   /**
@@ -351,12 +356,20 @@ export class RoomsPage {
    * strips apart: the Browser tab draws its own over the pages.
    */
   get canvasDocuments(): Locator {
-    return this.page.getByRole('tablist', { name: 'Open canvas documents' });
+    return this.page.getByRole('tablist', { name: 'Right panel tabs' }).filter({
+      has: this.page.locator(
+        '[role="tab"][data-view-category="canvas"][id^="right-panel-tab-resource/"]'
+      ),
+    });
   }
 
   /** The Browser tab's page strip, once that tab is showing. */
   get browserDocuments(): Locator {
-    return this.page.getByRole('tablist', { name: 'Open browser pages' });
+    return this.page.getByRole('tablist', { name: 'Right panel tabs' }).filter({
+      has: this.page.locator(
+        '[role="tab"][data-view-category="browser"][id^="right-panel-tab-resource/"]'
+      ),
+    });
   }
 
   /**
@@ -368,7 +381,11 @@ export class RoomsPage {
    * slot for the same reason the sidebar's rows are.
    */
   get canvasTabUnreadDot(): Locator {
-    return this.canvasTab.locator('[data-slot="right-panel-tab-unread"]');
+    return this.page
+      .locator(
+        '[data-slot="right-panel-header"] [role="tab"][data-view-category="canvas"] [data-slot="canvas-tab-unread"]'
+      )
+      .first();
   }
 
   /**
@@ -384,14 +401,14 @@ export class RoomsPage {
    */
   async openCanvasTab(): Promise<void> {
     await this.ensureRoomPanelOpen();
-    await this.canvasTab.click();
+    await new RightPanelPage(this.page).selectView('Canvas');
     await expect(this.canvasTab).toHaveAttribute('aria-selected', 'true');
   }
 
   /** Open the room's Browser tab and wait for it to be the one showing. */
   async openBrowserTab(): Promise<void> {
     await this.ensureRoomPanelOpen();
-    await this.browserTab.click();
+    await new RightPanelPage(this.page).selectView('Browser');
     await expect(this.browserTab).toHaveAttribute('aria-selected', 'true');
   }
 

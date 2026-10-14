@@ -1,6 +1,7 @@
 import { describe, it, expect, afterEach, vi } from 'vitest';
 import { renderHook, act, cleanup } from '@testing-library/react';
 import { useVisualViewportBottomInset } from '../use-visual-viewport-inset';
+import { useVisualViewportBounds } from '../use-visual-viewport-bounds';
 
 /**
  * A minimal stand-in for `window.visualViewport`: a real EventTarget carrying
@@ -103,5 +104,44 @@ describe('useVisualViewportBottomInset', () => {
     unmount();
     expect(remove).toHaveBeenCalledWith('resize', expect.any(Function));
     expect(remove).toHaveBeenCalledWith('scroll', expect.any(Function));
+  });
+});
+
+// Full-screen sheets must follow both keyboard shrinkage and the browser's focus-driven pan.
+describe('useVisualViewportBounds', () => {
+  it('follows visible height and top without requiring a layout resize', () => {
+    setInnerHeight(844);
+    const viewport = makeFakeViewport(844);
+    setViewport(viewport);
+    const { result, unmount } = renderHook(() => useVisualViewportBounds());
+    act(() => {
+      viewport.height = 420;
+      viewport.offsetTop = 50;
+      viewport.dispatchEvent(new Event('resize'));
+    });
+    expect(result.current).toEqual({ top: 50, height: 420 });
+    act(() => {
+      viewport.offsetTop = 90;
+      viewport.dispatchEvent(new Event('scroll'));
+    });
+    expect(result.current).toEqual({ top: 90, height: 420 });
+    const remove = vi.spyOn(viewport, 'removeEventListener');
+    unmount();
+    expect(remove.mock.calls.map(([event]) => event)).toEqual(['resize', 'scroll']);
+  });
+
+  it('keeps normal layout bounds during pinch zoom and without visualViewport', () => {
+    setInnerHeight(844);
+    setViewport(makeFakeViewport(400, 80, 2));
+    const first = renderHook(() => useVisualViewportBounds());
+    expect(first.result.current).toEqual({ top: 0, height: 844 });
+    first.unmount();
+    setViewport(undefined);
+    const { result } = renderHook(() => useVisualViewportBounds());
+    act(() => {
+      setInnerHeight(390);
+      window.dispatchEvent(new Event('resize'));
+    });
+    expect(result.current).toEqual({ top: 0, height: 390 });
   });
 });

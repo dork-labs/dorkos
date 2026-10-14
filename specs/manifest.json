@@ -2,6 +2,14 @@
   "version": 1,
   "specs": [
     {
+      "id": "261014-142234",
+      "slug": "computer-panel-resources",
+      "title": "Relevant panel resource tabs and computer PiP",
+      "created": "2026-10-14",
+      "status": "implemented",
+      "linearIssue": "DOR-2916"
+    },
+    {
       "id": "261013-000229",
       "slug": "server-merge",
       "title": "One DorkOS server: merge the local server and the space server",
