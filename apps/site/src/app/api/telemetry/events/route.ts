@@ -33,7 +33,9 @@
  * stored, logged, or forwarded to PostHog. The one header read is the client IP,
  * taken by the throttle into a process-local counter holding nothing but a count
  * and a timestamp. `distinct_id` is the payload's own `distinctId` (the app's anonymous
- * per-install `instanceId`), never a user id. Public payload docs:
+ * per-install `instanceId`), never a user id. No event here ever creates an
+ * alias or a person link: the install ref on `first_run_completed` is a plain
+ * property, joined to the site's `hero_install_copy` in queries. Public payload docs:
  * https://dorkos.ai/telemetry
  *
  * @module app/api/telemetry/events
@@ -43,6 +45,7 @@ import { z } from 'zod';
 
 import { env } from '@/env';
 import { consumeEventsTelemetryQuota } from '@/lib/telemetry/events-rate-limit';
+import { INSTALL_REF_TOKEN_PATTERN, INSTALL_REF_UTM_PATTERN } from '@/lib/telemetry/install-ref';
 
 export const runtime = 'edge';
 
@@ -68,6 +71,18 @@ const SessionCreatedProperties = z
   })
   .strict();
 
+/** Mirrors `FirstRunCompletedProperties` in the shared registry (DOR-2862). */
+const FirstRunCompletedProperties = z
+  .object({
+    installRef: z.string().regex(INSTALL_REF_TOKEN_PATTERN).optional(),
+    utmSource: z.string().regex(INSTALL_REF_UTM_PATTERN).optional(),
+    utmCampaign: z.string().regex(INSTALL_REF_UTM_PATTERN).optional(),
+  })
+  .strict();
+
+/** Mirrors `InstanceActiveProperties` in the shared registry (DOR-2862). */
+const InstanceActiveProperties = z.object({}).strict();
+
 /** Mirrors the envelope fields in the shared registry. */
 const envelopeFields = {
   distinctId: z.string().uuid(),
@@ -88,6 +103,20 @@ const TelemetryEventSchema = z.discriminatedUnion('event', [
     .object({
       event: z.literal('session_created'),
       properties: SessionCreatedProperties,
+      ...envelopeFields,
+    })
+    .strict(),
+  z
+    .object({
+      event: z.literal('first_run_completed'),
+      properties: FirstRunCompletedProperties,
+      ...envelopeFields,
+    })
+    .strict(),
+  z
+    .object({
+      event: z.literal('instance_active'),
+      properties: InstanceActiveProperties,
       ...envelopeFields,
     })
     .strict(),

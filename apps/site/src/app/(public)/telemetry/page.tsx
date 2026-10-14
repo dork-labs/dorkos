@@ -36,7 +36,7 @@ export default function TelemetryPage() {
       <article className="space-y-8">
         <header className="space-y-2">
           <h1 className="text-charcoal font-mono text-3xl font-bold">Telemetry</h1>
-          <p className="text-warm-gray text-lg">Last updated: October 2, 2026</p>
+          <p className="text-warm-gray text-lg">Last updated: October 12, 2026</p>
           <p className="text-warm-gray leading-relaxed">
             DorkOS is made by {company.legalName}. It sends us nothing unless you turn it on. If you
             choose to help, you can share a little anonymous data so we can see roughly how many
@@ -152,6 +152,45 @@ export default function TelemetryPage() {
         </section>
 
         <section className="space-y-4">
+          <h2 className="text-charcoal font-mono text-xl font-semibold">Feature-usage events</h2>
+          <p className="text-warm-gray leading-relaxed">
+            This channel is off by default too. Turn it on and DorkOS sends a short list of named
+            events, so we can see which features get used and where people get stuck. Each one
+            carries your random install id, a timestamp, and your DorkOS version, plus only the
+            fields below:
+          </p>
+          <ul className="text-warm-gray ml-5 list-disc space-y-1.5 leading-relaxed">
+            <li>
+              <span className="font-mono">app_started</span>, each time DorkOS starts: your platform
+              and chip type, and how many agent runtimes you have on.
+            </li>
+            <li>
+              <span className="font-mono">session_created</span>, when you start a new chat: which
+              runtime runs it, like Claude Code.
+            </li>
+            <li>
+              <span className="font-mono">first_run_completed</span>, once per install, after you
+              finish or skip setup: the install tag, if your install command carried one.
+            </li>
+            <li>
+              <span className="font-mono">instance_active</span>, at most once a day while DorkOS
+              runs: nothing beyond the id, time, and version.
+            </li>
+          </ul>
+          <p className="text-warm-gray leading-relaxed">
+            The install tag comes from a command copied on dorkos.ai by a visitor who allowed
+            analytics cookies, like <span className="font-mono">--ref=k3j4mnb8x2qa.hn.launch</span>.
+            It is a random code made for that one copy, plus the campaign tag of the link that
+            brought them, if any. It lets us count which copies led to an install that someone
+            actually used, by matching the tag on the two events. Matching it ties that one copy to
+            that one install. Nothing merges the app with a website visitor or an account. DorkOS
+            keeps it in <span className="font-mono">~/.dork/install-ref.json</span> and sends it
+            only with <span className="font-mono">first_run_completed</span>, only when this channel
+            is on.
+          </p>
+        </section>
+
+        <section className="space-y-4">
           <h2 className="text-charcoal font-mono text-xl font-semibold">
             Error reporting (a separate opt-in)
           </h2>
@@ -216,6 +255,7 @@ export default function TelemetryPage() {
   "telemetry": {
     "heartbeat": false,       // the daily ping (off by default)
     "install": false,         // marketplace install counts (off by default)
+    "usage": false,           // feature-usage events (off by default)
     "errorReporting": false,  // scrubbed crash reports to dorkos.ai (off by default)
     "userHasDecided": true
   }

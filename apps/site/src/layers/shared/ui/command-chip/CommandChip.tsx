@@ -16,8 +16,12 @@ const COPIED_COLOR = '#228B22';
 interface CommandChipProps {
   /** The shell command to display and copy (rendered after a `$ ` prompt). */
   command: string;
-  /** Called after the command has successfully landed on the clipboard. */
-  onCopied?: () => void;
+  /**
+   * Called at click time to decide what to copy and what to do once it lands.
+   * Defaults to copying `command` exactly. Install commands use it to add a
+   * per-copy install ref (`prepareInstallCopy` in `lib/analytics.ts`).
+   */
+  prepareCopy?: () => { text: string; onCopied: () => void };
   /** Optional extra classes on the root. */
   className?: string;
 }
@@ -26,26 +30,27 @@ interface CommandChipProps {
  * A refined, copyable terminal-command chip — a one-line command offered
  * quietly, not as a form field. Borderless save for a whisper of warm tint,
  * an orange `$` prompt echoing the marketing terminal mockups, and a copy
- * glyph that stays subtle until hover/focus. Always copies the real command
- * with check confirmation; long commands scroll within the chip rather than
- * overflowing on mobile.
+ * glyph that stays subtle until hover/focus. Copies the real command (or what
+ * `prepareCopy` returns) with check confirmation; long commands scroll within
+ * the chip rather than overflowing on mobile.
  *
- * @param props - Command text, optional copy callback, optional className.
+ * @param props - Command text, optional copy preparation, optional className.
  */
-export function CommandChip({ command, onCopied, className }: CommandChipProps) {
+export function CommandChip({ command, prepareCopy, className }: CommandChipProps) {
   const [copied, setCopied] = useState(false);
 
   const handleCopy = useCallback(() => {
+    const copy = prepareCopy?.() ?? { text: command, onCopied: () => {} };
     // Only confirm once the write lands — insecure contexts reject.
-    navigator.clipboard.writeText(command).then(
+    navigator.clipboard.writeText(copy.text).then(
       () => {
-        onCopied?.();
+        copy.onCopied();
         setCopied(true);
         setTimeout(() => setCopied(false), COPIED_RESET_MS);
       },
       () => {}
     );
-  }, [command, onCopied]);
+  }, [command, prepareCopy]);
 
   return (
     <div

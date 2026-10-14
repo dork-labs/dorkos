@@ -3,11 +3,13 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { prepareInstallCopy } from '@/lib/analytics';
 import { InstallMoment } from '../InstallMoment';
 
 // Keep analytics hermetic — the real module reaches for posthog + env.
+// `prepareInstallCopy` copies the shown command unless a test overrides it.
 vi.mock('@/lib/analytics', () => ({
-  trackHeroInstallCopy: vi.fn(),
+  prepareInstallCopy: vi.fn((command: string) => ({ text: command, onCopied: vi.fn() })),
   trackHeroDownload: vi.fn(),
 }));
 
@@ -114,6 +116,28 @@ describe('InstallMoment — OS-adaptive install hero', () => {
 
       fireEvent.click(copyButton);
       expect(writeText).toHaveBeenCalledWith(CURL_COMMAND);
+    });
+
+    it('copies the per-copy install ref text and reports the copy only after it lands', async () => {
+      const onCopied = vi.fn();
+      vi.mocked(prepareInstallCopy).mockReturnValueOnce({
+        text: `${CURL_COMMAND} -s -- --ref=k3j4mnb8x2qa.hn`,
+        onCopied,
+      });
+      render(<InstallMoment />);
+
+      const copyButton = await waitFor(() => {
+        const found = screen
+          .getAllByRole('button')
+          .find((el) => el.getAttribute('aria-label')?.includes(CURL_COMMAND));
+        expect(found).toBeTruthy();
+        return found!;
+      });
+
+      fireEvent.click(copyButton);
+      expect(prepareInstallCopy).toHaveBeenCalledWith(CURL_COMMAND, 'curl');
+      expect(writeText).toHaveBeenCalledWith(`${CURL_COMMAND} -s -- --ref=k3j4mnb8x2qa.hn`);
+      await waitFor(() => expect(onCopied).toHaveBeenCalledTimes(1));
     });
 
     it('copies the exact npm command from the expanded disclosure', async () => {
