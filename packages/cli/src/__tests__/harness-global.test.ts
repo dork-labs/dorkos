@@ -8,16 +8,7 @@
  * folder, which matters more in this suite than in any other: the sweep it
  * drives is the only code in the repository that removes files from `~`.
  */
-import {
-  describe,
-  it,
-  expect,
-  beforeAll,
-  beforeEach,
-  afterEach,
-  vi,
-  type MockInstance,
-} from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi, type MockInstance } from 'vitest';
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
@@ -25,6 +16,14 @@ import { runHarnessSync } from '../harness-sync-command.js';
 import { runHarnessGlobal, parseHarnessGlobalArgs } from '../harness-global-command.js';
 import { runHarnessDispatcher } from '../commands/harness-dispatcher.js';
 import { createTempDir, pinHome, syncArgs } from './harness-fixtures.js';
+
+// Load the real command dependencies with the test module. This keeps cold
+// module transformation out of lifecycle hooks without replacing the engine
+// or changing the time allowed for any setup, command, or assertion.
+import '../../server/services/harness/global-scope.js';
+import '../../server/services/core/config-manager.js';
+import '../../server/lib/boundary.js';
+import '@dorkos/harness';
 
 describe('dorkos harness global — sharing your all-projects packages', () => {
   let dorkHome: string;
@@ -79,17 +78,6 @@ describe('dorkos harness global — sharing your all-projects packages', () => {
       JSON.stringify({ version: 1, harness: { global: { harnesses, askedAt } } })
     );
   }
-
-  // The commands reach the server through dynamic imports, and loading those
-  // modules the first time costs seconds. Charged to whichever case happens to
-  // run first, that is a per-case timeout somebody eventually raises for the
-  // wrong reason; paid here, every case is measured on its own work.
-  beforeAll(async () => {
-    await import('../../server/services/harness/global-scope.js');
-    await import('../../server/services/core/config-manager.js');
-    await import('../../server/lib/boundary.js');
-    await import('@dorkos/harness');
-  });
 
   beforeEach(() => {
     originalCwd = process.cwd();
