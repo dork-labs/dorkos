@@ -268,7 +268,23 @@ function runOwnedScenario(bodyAdmission: Promise<void>): Promise<void> {
         );
       expect(admissions()).toEqual([]);
       expect(readTestModeOriginalScenarioCounts(runtime)).toEqual({ scenarioStarts: 0 });
-      // Exercise the real burst boundary; no timer, TTL or native clock is replaced.
+      // Observe the real pending producer phase before the second focus can reach its due time.
+      // The original burst window and native clocks remain unchanged.
+      const pendingBatches = actual.db
+        .select()
+        .from(canvasDocBatches)
+        .where(eq(canvasDocBatches.documentId, actual.documentId))
+        .all();
+      expect(pendingBatches).toHaveLength(1);
+      expect(pendingBatches[0]).toMatchObject({
+        routeId: 'approved-focus',
+        grantId: granted.grant.grantId,
+        status: 'pending',
+        inputEventIds: rows()
+          .filter((row) => row.type === 'host.focus')
+          .map((row) => row.eventId),
+      });
+      // Cross the real burst boundary; no timer, TTL or native clock is replaced.
       phase('original-burst-boundary:start');
       await new Promise<void>((resolve) => setTimeout(resolve, 500));
       phase('original-burst-boundary:done');
@@ -292,7 +308,6 @@ function runOwnedScenario(bodyAdmission: Promise<void>): Promise<void> {
       expect(batch).toMatchObject({
         routeId: 'approved-focus',
         grantId: granted.grant.grantId,
-        status: 'pending',
         inputEventIds: focus.map((row) => row.eventId),
       });
       expect(admissions()).toEqual([]);

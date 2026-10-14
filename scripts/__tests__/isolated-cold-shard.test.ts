@@ -489,20 +489,20 @@ describe('isolated Room, cold, checkbox and native whole-file phases', () => {
     expect(() => mergeReports(firstThree, { ...checkbox, unknown: true })).toThrow('schema');
   });
 
-  it('requires all 56 checkbox cases, including failures, and rejects skipped or empty owner reports', () => {
-    validateCheckbox(report('/repo/checkbox.test.ts', false, 56), 1, '/repo/checkbox.test.ts');
-    validateCheckbox(report('/repo/checkbox.test.ts', true, 56), 1, '/repo/checkbox.test.ts');
+  it('requires all 57 checkbox cases, including failures, and rejects skipped or empty owner reports', () => {
+    validateCheckbox(report('/repo/checkbox.test.ts', false, 57), 1, '/repo/checkbox.test.ts');
+    validateCheckbox(report('/repo/checkbox.test.ts', true, 57), 1, '/repo/checkbox.test.ts');
     validateCheckbox(report(null), 8, '/repo/checkbox.test.ts');
     expect(() => validateCheckbox(report(null), 1, '/repo/checkbox.test.ts')).toThrow(
       'singleton shard'
     );
     expect(() =>
-      validateCheckbox(report('/repo/checkbox.test.ts', false, 56), 8, '/repo/checkbox.test.ts')
+      validateCheckbox(report('/repo/checkbox.test.ts', false, 57), 8, '/repo/checkbox.test.ts')
     ).toThrow('singleton shard');
     expect(() =>
       validateCheckbox(report('/repo/checkbox.test.ts'), 1, '/repo/checkbox.test.ts')
     ).toThrow('original assertions');
-    const skipped = report('/repo/checkbox.test.ts', false, 56);
+    const skipped = report('/repo/checkbox.test.ts', false, 57);
     const file = skipped.testResults[0];
     if (!file) throw new Error('missing checkbox fixture file');
     const assertion = file.assertionResults[0];
@@ -513,11 +513,17 @@ describe('isolated Room, cold, checkbox and native whole-file phases', () => {
     );
     expect(() =>
       validateCheckbox(
-        { ...report('/repo/checkbox.test.ts', false, 56), numPassedTests: 0 },
+        { ...report('/repo/checkbox.test.ts', false, 57), numPassedTests: 0 },
         1,
         '/repo/checkbox.test.ts'
       )
     ).toThrow('status accounting');
+  });
+
+  it('rejects the stale 56-case checkbox report after the whole file gained its 57th case', () => {
+    expect(() =>
+      validateCheckbox(report('/repo/checkbox.test.ts', false, 56), 1, '/repo/checkbox.test.ts')
+    ).toThrow('original assertions');
   });
 });
 

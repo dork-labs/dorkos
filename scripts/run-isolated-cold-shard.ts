@@ -176,9 +176,9 @@ export function validateRoom(report: Json, shard: number, expectedPath: string):
   validateIsolated(report, shard, expectedPath, 1, 'Room');
 }
 
-/** Require all 56 checkbox assertions on the owner shard and none on the other seven shards. */
+/** Require all 57 checkbox assertions on the owner shard and none on the other seven shards. */
 export function validateCheckbox(report: Json, shard: number, expectedPath: string): void {
-  validateIsolated(report, shard, expectedPath, 56, 'checkbox');
+  validateIsolated(report, shard, expectedPath, 57, 'checkbox');
 }
 
 /** Run a child command and report its result only after the process has closed. */

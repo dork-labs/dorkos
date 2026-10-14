@@ -289,6 +289,15 @@ export const NATIVE_FILES = [
 ] as const;
 export const NATIVE_COUNTS = [30, 96, 10, 3, 35, 101];
 
+/**
+ * Validate the exact singleton collection and complete assertion results for an isolated phase.
+ *
+ * @param report - The phase's Vitest JSON report.
+ * @param shard - The selected shard; only shard one owns the isolated file.
+ * @param expectedPath - The one file the phase must collect on shard one.
+ * @param count - The complete assertion count for that file.
+ * @param label - The phase name used in refusal messages.
+ */
 export function validateIsolated(
   report: Json,
   shard: number,

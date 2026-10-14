@@ -157,3 +157,14 @@ An extra invocation and collection step add work to each selected server shard.
 Keep the thirty-minute job limit and review actual duration and headroom. Revise
 or revert if readiness failures remain, discovery or report union changes, any
 original assertion is omitted, or the extra phase worsens job completion.
+Current published 1399def required test run 38538702837 completed the whole
+checkbox-service file with all 57 cases passing. The owner shard then refused
+that genuine report because validateCheckbox still required 56 terminal cases;
+the job later reached its unchanged thirty-minute cancellation boundary.
+Update the exact checkbox report admission to 57, and keep zero cases on the
+other seven shards. The whole-file acceptance, status accounting, skipped-case
+rejection, original recovery assertions, retry policy and deadlines remain.
+The script regression accepts complete 57-case passed or failed reports and
+explicitly rejects the obsolete 56-case report. Actual validation of this
+counter repair and a fresh required CI run remain pending; this is no waiver
+or performance verdict. Historical observations above remain unchanged.
