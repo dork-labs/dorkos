@@ -305,7 +305,12 @@ export class ExtensionManager {
             restartingAt: supervised.restartingAt ?? null,
           }
         : record;
-    return toPublic(shown, approvals, this.serverLifecycle.toolStatuses(record));
+    return toPublic(
+      shown,
+      approvals,
+      this.serverLifecycle.toolStatuses(record),
+      this.serverLifecycle.usesOldRouter(record.id)
+    );
   }
 
   /**

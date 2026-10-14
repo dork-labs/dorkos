@@ -591,6 +591,51 @@ describe('ExtensionManager — server lifecycle', () => {
       delete (globalThis as { __fetchExtCleaned?: boolean }).__fetchExtCleaned;
     });
 
+    it('says when a running server half uses the old router, and logs it once', async () => {
+      const records = ['old-style', 'new-style'].map((id) =>
+        makeRecord(id, {
+          status: 'compiled',
+          hasServerEntry: true,
+          serverEntryPath: `/fake/extensions/${id}/server.ts`,
+        })
+      );
+      mockDiscover.mockResolvedValue(records);
+      mockCompile.mockResolvedValue({ code: 'bundle', sourceHash: 'hash' });
+      mockCompileServer.mockImplementation(async (record: ExtensionRecord) => ({
+        code:
+          record.id === 'old-style'
+            ? `module.exports = function register(router) { router.get('/x', (req, res) => res.json({})); };`
+            : `exports.default = { fetch: () => new Response('ok') };`,
+        sourceHash: `srv-${record.id}`,
+      }));
+      mockConfigGet.mockReturnValue({
+        enabled: [],
+        disabled: [],
+        ...approved(['old-style', 'new-style']),
+      });
+      vi.mocked(logger.warn).mockClear();
+
+      await manager.initialize(null);
+      expect(await manager.initializeServer('old-style')).toEqual({ ok: true });
+      expect(await manager.initializeServer('new-style')).toEqual({ ok: true });
+      // Asked again with nothing changed: still one warning.
+      expect(await manager.initializeServer('old-style')).toEqual({ ok: true });
+
+      const byId = Object.fromEntries(manager.listPublic().map((r) => [r.id, r]));
+      expect(byId['old-style']?.usesOldRouter).toBe(true);
+      expect(byId['new-style']).not.toHaveProperty('usesOldRouter');
+      const warnings = vi
+        .mocked(logger.warn)
+        .mock.calls.filter(([line]) => String(line).includes('old Express router'));
+      expect(warnings).toHaveLength(1);
+      expect(String(warnings[0]![0])).toContain('old-style');
+
+      await manager.shutdownServer('old-style');
+      expect(manager.listPublic().find((r) => r.id === 'old-style')).not.toHaveProperty(
+        'usesOldRouter'
+      );
+    });
+
     it('serves a server entry that exports only a fetch handler', async () => {
       const record = makeRecord('fetch-only', {
         status: 'compiled',

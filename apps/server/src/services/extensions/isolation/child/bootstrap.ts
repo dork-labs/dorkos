@@ -271,7 +271,13 @@ function main(): void {
           served.serveFetch(outcome.fetch);
           // register() finished: no more tool handlers, as in-process.
           const handledTools = proxied.sealTools();
-          send({ type: 'registered', ok: true, hasCleanup: cleanup !== null, handledTools });
+          send({
+            type: 'registered',
+            ok: true,
+            hasCleanup: cleanup !== null,
+            handledTools,
+            usesRouter: router.stack.length > 0,
+          });
         },
         (err: unknown) => {
           proxied.sealTools();

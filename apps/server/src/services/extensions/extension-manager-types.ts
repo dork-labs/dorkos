@@ -55,6 +55,11 @@ export interface ActiveServerExtension {
    * child is stopped (and waited for) on shutdown, in place of `cleanup`.
    */
   isolated?: IsolatedExtensionHost;
+  /**
+   * Whether this instance added routes to the old Express router (DOR-2858).
+   * It still serves them, and its Extensions row says it uses the old router.
+   */
+  usesOldRouter?: boolean;
 }
 
 /**
@@ -150,7 +155,8 @@ export interface TestExtensionResult {
 export function toPublic(
   record: ExtensionRecord,
   approvals: ExtensionApprovals,
-  tools?: ExtensionToolStatus[]
+  tools?: ExtensionToolStatus[],
+  usesOldRouter = false
 ): ExtensionRecordPublic {
   return {
     id: record.id,
@@ -170,6 +176,7 @@ export function toPublic(
     ...(record.originProblem ? { originProblem: record.originProblem } : {}),
     ...(record.devLink ? { devLink: { path: record.devLink.path } } : {}),
     ...(tools ? { tools } : {}),
+    ...(usesOldRouter ? { usesOldRouter: true } : {}),
     isolation: record.isolation ?? null,
     ...(record.skillChecks ? { skills: record.skillChecks.map((skill) => ({ ...skill })) } : {}),
   };
