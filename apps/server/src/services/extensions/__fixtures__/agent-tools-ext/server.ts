@@ -3,16 +3,15 @@
  * tier, bound with `ctx.tools.handle`. Tests load it through the real
  * compiler and lifecycle.
  */
-import type { Router } from 'express';
 import type { DataProviderContext } from '@dorkos/extension-api/server';
 
 /**
  * Bind a handler to each declared tool.
  *
- * @param _router - The extension's router; this fixture adds no routes.
+ * @param _router - The old router, which this fixture leaves empty.
  * @param ctx - The extension's server context.
  */
-export default function register(_router: Router, ctx: DataProviderContext): void {
+export default function register(_router: unknown, ctx: DataProviderContext): void {
   let counter = 0;
   ctx.tools.handle('echo', (input) => {
     const { message } = input as { message: string };
