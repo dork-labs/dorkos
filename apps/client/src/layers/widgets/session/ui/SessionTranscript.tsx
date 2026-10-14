@@ -51,7 +51,7 @@ import {
   useChatActivity,
 } from '@/layers/features/chat';
 import { SessionMessage } from './SessionMessage';
-import { useRenderSlot } from '@/layers/shared/lib';
+import { useRenderSlot, useStableCallback } from '@/layers/shared/lib';
 
 /**
  * What the transcript is called when a screen reader lands in it.
@@ -167,12 +167,12 @@ export function SessionTranscript({
   hydrated = false,
   isTextStreaming = false,
   activeToolCallId = null,
-  onToolRef,
+  onToolRef: onToolRefProp,
   focusedOptionIndex = -1,
-  onToolDecided,
-  onRetry,
-  onSigninComplete,
-  onChooseModel,
+  onToolDecided: onToolDecidedProp,
+  onRetry: onRetryProp,
+  onSigninComplete: onSigninCompleteProp,
+  onChooseModel: onChooseModelProp,
   inputZoneToolCallId = null,
   textEffect,
   runtimeLabel,
@@ -180,6 +180,14 @@ export function SessionTranscript({
   landOnRow,
   foldFirstPrompt = false,
 }: SessionTranscriptProps) {
+  // Row handlers keep one identity, so a row whose message did not change can
+  // skip its render: `onRetry` alone used to change on every streamed word, and
+  // with it every visible row re-drew its markdown (DOR-2895).
+  const onToolRef = useStableCallback(onToolRefProp);
+  const onToolDecided = useStableCallback(onToolDecidedProp);
+  const onRetry = useStableCallback(onRetryProp);
+  const onSigninComplete = useStableCallback(onSigninCompleteProp);
+  const onChooseModel = useStableCallback(onChooseModelProp);
   // A "Stopped by" line wherever another chat's agent stopped this one (spec
   // `spin-off-chats` §6), placed by when it happened. The rows are drawn from
   // this list; every rule about MESSAGES — what is new, what is final, where
