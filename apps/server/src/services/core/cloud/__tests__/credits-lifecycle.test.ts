@@ -11,6 +11,7 @@ const state = vi.hoisted(() => ({
   mints: 0,
   attempts: 0,
   refusing: false,
+  outage: false,
   expiresInMs: 60 * 60_000,
   listeners: new Set<(change: { paths: readonly string[] }) => void>(),
 }));
@@ -39,6 +40,8 @@ vi.mock('../v1-client.js', () => ({
             post: async () => {
               state.attempts += 1;
               if (state.refusing) throw new Error('404 Not Found');
+              // No answer: a 5xx or a timeout, which says nothing about the account.
+              if (state.outage) throw new Error('503 Service Unavailable');
               state.mints += 1;
               return {
                 ...tokenFixture,
@@ -68,6 +71,7 @@ describe('the credits token lifecycle', () => {
     state.mints = 0;
     state.attempts = 0;
     state.refusing = false;
+    state.outage = false;
     state.expiresInMs = 60 * 60_000;
     __setCreditsStateForTests({ token: null });
   });
@@ -160,5 +164,22 @@ describe('the credits token lifecycle', () => {
     const afterRelink = state.attempts;
     await vi.advanceTimersByTimeAsync(61_000);
     expect(state.attempts).toBe(afterRelink + 1);
+  });
+
+  it('keeps trying when a refresh gets no answer, before the held token runs out (DOR-2915)', async () => {
+    startCreditsLifecycle();
+    await vi.waitFor(() => expect(state.mints).toBe(1));
+    state.outage = true;
+    // The refresh is due five minutes before the hour, and fails.
+    await vi.advanceTimersByTimeAsync(55 * 60_000 + 1_000);
+    const failed = state.attempts;
+    expect(failed).toBe(2);
+    expect(heldCreditsToken()?.token).toBe('minted-1');
+    // A retry comes a minute later, and the outage is over by then.
+    state.outage = false;
+    await vi.advanceTimersByTimeAsync(61_000);
+    expect(state.attempts).toBe(failed + 1);
+    expect(state.mints).toBe(2);
+    expect(heldCreditsToken()?.token).toBe('minted-2');
   });
 });

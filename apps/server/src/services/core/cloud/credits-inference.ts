@@ -273,11 +273,7 @@ function scheduleRefresh(token: InferenceToken, delayOverride?: number): void {
   const delay = delayOverride ?? Math.max(MIN_REFRESH_DELAY_MS, due);
   refreshTimer = setTimeout(() => {
     refreshTimer = null;
-    void mintOnce().then((ok) => {
-      // Keep trying while the link stands: an outage at refresh time must not
-      // leave the next launch to find an expired token with nothing coming.
-      if (!ok && isCloudLinked() && minted === null) retryLater();
-    });
+    void mintOnce().then(retryIfFailed);
   }, delay);
   refreshTimer.unref?.();
 }
@@ -293,11 +289,20 @@ function retryLater(): void {
   retryDelayMs = Math.min(retryDelayMs * 2, MAX_RETRY_DELAY_MS);
   refreshTimer = setTimeout(() => {
     refreshTimer = null;
-    void mintOnce().then((ok) => {
-      if (!ok && isCloudLinked() && minted === null) retryLater();
-    });
+    void mintOnce().then(retryIfFailed);
   }, delay);
   refreshTimer.unref?.();
+}
+
+/**
+ * After a timed mint: if it failed, try again later while the link stands.
+ *
+ * Whether or not a token is still held. A refresh that got no answer (a 5xx, a
+ * timeout) keeps the held token, which then expires a few minutes later; with
+ * no mint queued, the next credits launch had to mint inline (DOR-2915).
+ */
+function retryIfFailed(ok: boolean): void {
+  if (!ok && isCloudLinked()) retryLater();
 }
 
 let lifecycleRunning = false;
