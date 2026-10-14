@@ -45,7 +45,6 @@ import type {
   BrowseDirectoryResponse,
   CommandRegistry,
   HealthResponse,
-  HistoryRead,
   TaskItem,
   ServerConfig,
   ModelOption,
@@ -635,12 +634,6 @@ export interface Transport extends TransportSupplementalPorts {
     opts?: { upToMessageId?: string; title?: string },
     cwd?: string
   ): Promise<Session>;
-  /**
-   * Fetch message history for a session. With `page.since` (a message id) the
-   * server answers only that message and those after it, marked `tail`, when
-   * it still has that message; otherwise the whole history.
-   */
-  getMessages(sessionId: string, cwd?: string, page?: { since?: string }): Promise<HistoryRead>;
   /**
    * Fetch the authoritative current state of a session for hydration: completed
    * messages, the in-progress turn's events, status projection, pending

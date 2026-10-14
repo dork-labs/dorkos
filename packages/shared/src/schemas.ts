@@ -3689,21 +3689,54 @@ export const HistoryMessageSchema = z
 export type HistoryMessage = z.infer<typeof HistoryMessageSchema>;
 
 /**
- * A history read: the whole history, or with `since` the tail of it.
+ * How many of a session's newest messages a hydration snapshot carries
+ * (DOR-2889). Older ones are read a page at a time, on request.
+ */
+export const HISTORY_WINDOW_LIMIT = 150;
+
+/** How many earlier messages one page of a session's history holds. */
+export const HISTORY_PAGE_LIMIT = 100;
+
+/**
+ * A history read: the whole history, or the part a {@link HistoryReadQuery}
+ * asked for.
  *
- * `tail` is set only when the read asked `since` a message and the server
- * found that message: `messages` then starts at it and runs to the end, so the
- * caller keeps what it already holds before it and replaces the rest. Without
- * `tail` the answer is the whole history, whatever was asked (DOR-2890).
+ * - `since` a message: `tail` is set when the server found that message, and
+ *   `messages` then starts at it and runs to the end, so the caller keeps what
+ *   it already holds before it and replaces the rest. When the server did not
+ *   find it, the answer is the whole history, without `tail` (DOR-2890).
+ * - `before` a message: the page directly older than it, with
+ *   `earlierMessages` (DOR-2889).
+ * - `newest`: the newest {@link HISTORY_WINDOW_LIMIT} messages, with
+ *   `earlierMessages` when older ones exist.
+ *
+ * So only a read that asked for nothing, or a `since` that missed, is whole.
  */
 export const HistoryReadSchema = z
   .object({
     messages: z.array(HistoryMessageSchema),
     tail: z.boolean().optional(),
+    /**
+     * How many messages precede the first one here, on a page (`before`) or the
+     * newest window (`newest`). Absent means none, or that this is a tail.
+     */
+    earlierMessages: z.number().int().nonnegative().optional(),
   })
   .openapi('HistoryRead');
 
 export type HistoryRead = z.infer<typeof HistoryReadSchema>;
+
+/**
+ * Which part of a history to read (see `Transport.getMessages`): a tail from a
+ * message (`since`), the page older than a message (`before`), or the newest
+ * window (`newest`). Each answers less than the whole history, except a
+ * `since` the server cannot find (see {@link HistoryReadSchema}).
+ */
+export interface HistoryReadQuery {
+  since?: string;
+  before?: string;
+  newest?: boolean;
+}
 
 // === Command Types ===
 
@@ -5567,6 +5600,11 @@ export const TaskSchema = z
      */
     reasonSource: z.enum(['dorkos']).nullable().default(null),
     nextRun: z.string().nullable().optional(),
+    /**
+     * When the schedule last started a run (ISO 8601), or null when it never
+     * has. Response-only; ABSENT from an older server.
+     */
+    lastRunAt: z.string().nullable().optional(),
     /**
      * The next few times this cron would fire. ISO 8601 UTC, soonest first.
      *

@@ -221,6 +221,18 @@ describe('Tasks routes', () => {
       expect(res.body[0].nextRun).toBe('2026-03-01T00:00:00.000Z');
     });
 
+    it('says when each schedule last started a run, and null for one that never ran (DOR-2914)', async () => {
+      const ran = store.createTask(taskInput({ name: 'Ran', prompt: 'p', cron: '0 * * * *' }));
+      store.createTask(taskInput({ name: 'Never', prompt: 'p', cron: '0 * * * *' }));
+      const run = store.createRun(ran.id, 'scheduled');
+
+      const res = await request(fixtureServer).get('/api/tasks');
+
+      const byName = new Map(res.body.map((t: { name: string }) => [t.name, t]));
+      expect((byName.get('Ran') as { lastRunAt: string }).lastRunAt).toBe(run.startedAt);
+      expect((byName.get('Never') as { lastRunAt: null }).lastRunAt).toBeNull();
+    });
+
     it('previews a parked schedule’s next runs, from its own cron and timezone (DOR-1394)', async () => {
       const parked = store.createTask(
         taskInput({ name: 'Parked', prompt: 'p', cron: '0 3 * * *', timezone: 'Asia/Tokyo' })

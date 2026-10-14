@@ -15,6 +15,7 @@ import { streamManager } from '@/layers/shared/lib/transport';
 import { clearUiStateSendCache } from '@/layers/shared/lib';
 import { useAgentBirthStore, useAppStore } from '@/layers/shared/model';
 
+import { useHistoryWindowStore } from './history-window-store';
 import { useSessionStreamStore } from './session-stream-store';
 import { useSessionListStore } from './session-list-store';
 import {
@@ -72,6 +73,10 @@ export function initSessionStreamBinding(): void {
   streamManager.setListeners({
     onSnapshot: (sessionId, snapshot) => {
       useSessionStreamStore.getState().applySnapshot(sessionId, snapshot);
+      // Where a long history's window starts, and how much sits before it (DOR-2889).
+      useHistoryWindowStore
+        .getState()
+        .noteSnapshot(sessionId, snapshot.messages[0]?.id ?? null, snapshot.earlierMessages ?? 0);
       useAppStore.getState().hydrateCanvasFromSnapshot(sessionId, snapshot.canvas);
     },
     onSessionEvent: (sessionId, event) => {

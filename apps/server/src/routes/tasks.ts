@@ -58,7 +58,7 @@ import { readQuery } from '../http/request-query.js';
 import { resolveStanding } from '../services/notifications/notification-service.js';
 import { raiseStanding } from '../services/notifications/standing-events.js';
 import { resolveScheduleParkPayload } from '../services/notifications/emitters/schedule-park.js';
-import { withProposerName, withProposerNames } from '../services/tasks/task-provenance.js';
+import { withProposerNames } from '../services/tasks/task-provenance.js';
 import { projectsOfFolders } from '../services/projects/project-registry.js';
 import {
   clampSchedulePermissionMode,
@@ -310,13 +310,20 @@ export function createTasksRoutes(deps: TasksRouterDeps): Hono<ApiEnv> {
 
   /** One task, ready to send: run times attached, its proposer named, its project stamped. */
   async function present(task: Task): Promise<Task> {
-    const [withProject] = await withProjects([withRunTimes(await withProposerName(task))]);
-    return withProject as Task;
+    const [presented] = await presentAll([task]);
+    return presented as Task;
   }
 
-  /** {@link present} for a whole list, with one identity lookup per distinct agent. */
+  /**
+   * {@link present} for a whole list, with one identity lookup per distinct
+   * agent, and when each task last ran (one query for all of them, DOR-2914).
+   */
   async function presentAll(tasks: Task[]): Promise<Task[]> {
-    return withProjects((await withProposerNames(tasks)).map(withRunTimes));
+    const lastRuns = store.lastRunStarts();
+    const named = await withProposerNames(tasks);
+    return withProjects(
+      named.map((task) => ({ ...withRunTimes(task), lastRunAt: lastRuns.get(task.id) ?? null }))
+    );
   }
 
   // === Template endpoints ===

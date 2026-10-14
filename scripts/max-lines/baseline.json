@@ -145,7 +145,7 @@
     "packages/shared/src/community-admin-wire.ts": 618,
     "packages/shared/src/community-wire.ts": 1032,
     "packages/shared/src/config-schema.ts": 1304,
-    "packages/shared/src/transport.ts": 1110,
+    "packages/shared/src/transport.ts": 1108,
     "packages/shared/src/ui-widget.ts": 694,
     "packages/test-utils/src/community-conformance-branched.ts": 603,
     "packages/test-utils/src/community-conformance-universal.ts": 672,

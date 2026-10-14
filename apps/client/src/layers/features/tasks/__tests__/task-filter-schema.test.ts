@@ -3,6 +3,7 @@
  */
 import { describe, it, expect } from 'vitest';
 import type { Task } from '@dorkos/shared/types';
+import { applySortAndFilter } from '@/layers/shared/lib';
 import { taskFilterSchema, taskSortOptions } from '../lib/task-filter-schema';
 
 /** A task with only the fields the status column reads. */
@@ -72,5 +73,35 @@ describe('task status filter and sort', () => {
       'paused',
       'pending_approval',
     ]);
+  });
+
+  it('sorts "Last run" by when each task last ran, not when it was last changed (DOR-2914)', () => {
+    const ranRecently = {
+      ...live,
+      id: 'recent',
+      lastRunAt: '2026-10-05T08:00:00.000Z',
+      updatedAt: '2026-01-01T00:00:00.000Z',
+    } as Task;
+    const ranLongAgo = {
+      ...live,
+      id: 'old',
+      lastRunAt: '2026-01-05T08:00:00.000Z',
+      updatedAt: '2026-10-09T00:00:00.000Z',
+    } as Task;
+    const neverRan = { ...live, id: 'never', lastRunAt: null } as Task;
+    const order = (direction: 'asc' | 'desc') =>
+      applySortAndFilter(
+        [ranLongAgo, neverRan, ranRecently],
+        taskFilterSchema,
+        {},
+        taskSortOptions,
+        {
+          field: 'lastRun',
+          direction,
+        }
+      ).map((t) => t.id);
+    expect(order('desc')).toEqual(['recent', 'old', 'never']);
+    // A task that never ran goes last either way.
+    expect(order('asc')).toEqual(['old', 'recent', 'never']);
   });
 });

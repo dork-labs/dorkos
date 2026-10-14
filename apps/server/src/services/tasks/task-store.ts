@@ -32,6 +32,7 @@ import { TaskApprovals } from './approvals/task-approvals.js';
 import { TaskFileSync } from './sync/task-file-sync.js';
 import { scheduleContentKey } from './schedule-permission-clamp.js';
 import { mapTaskRow, mapRunRow } from './task-row-mappers.js';
+import { lastRunStarts, type ScheduleReliability } from './history/run-history.js';
 import { timingColumnWrites, type TimingLandsOn } from './timing/effective-timing.js';
 
 /** Options for listing runs. */
@@ -75,26 +76,6 @@ export interface CreateTaskStoreInput {
    * so a rename or a revocation is reflected the next time the task is read.
    */
   proposedByAgentPath?: string | null;
-}
-
-/**
- * Per-schedule reliability, computed over terminal runs (the
- * {@link TERMINAL_RUN_STATUSES} set, plus DB-only `timeout` rows).
- * See {@link TaskStore.getScheduleReliability}.
- */
-export interface ScheduleReliability {
-  /** The `pulseSchedules.id` this row covers. */
-  scheduleId: string;
-  /** Count of terminal runs included in this computation. */
-  totalRuns: number;
-  /** Fraction of terminal runs that ended `completed`, in `[0, 1]`. */
-  successRate: number;
-  /**
-   * 95th percentile run duration in ms, over terminal runs with a recorded
-   * `durationMs`. `null` when none do, or the linked better-sqlite3 binary
-   * predates the percentile extension (DOR-166).
-   */
-  p95DurationMs: number | null;
 }
 
 /**
@@ -632,6 +613,11 @@ export class TaskStore {
     }
 
     return query.all().map(mapRunRow);
+  }
+
+  /** When each schedule last started a run, keyed by schedule id (DOR-2914). */
+  lastRunStarts(): Map<string, string> {
+    return lastRunStarts(this.db);
   }
 
   /** Get all currently running runs. */

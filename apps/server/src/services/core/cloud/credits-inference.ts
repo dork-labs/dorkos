@@ -267,17 +267,14 @@ function mintOnce(): Promise<boolean> {
 /** Arm the timer that mints the next token before this one expires. */
 function scheduleRefresh(token: InferenceToken, delayOverride?: number): void {
   if (!lifecycleRunning) return;
+  refreshesArmed += 1;
   retryDelayMs = RETRY_DELAY_MS;
   if (refreshTimer) clearTimeout(refreshTimer);
   const due = Date.parse(token.expiresAt) - CREDITS_REFRESH_MARGIN_MS - now();
   const delay = delayOverride ?? Math.max(MIN_REFRESH_DELAY_MS, due);
   refreshTimer = setTimeout(() => {
     refreshTimer = null;
-    void mintOnce().then((ok) => {
-      // Keep trying while the link stands: an outage at refresh time must not
-      // leave the next launch to find an expired token with nothing coming.
-      if (!ok && isCloudLinked() && minted === null) retryLater();
-    });
+    mintAndRetry();
   }, delay);
   refreshTimer.unref?.();
 }
@@ -293,11 +290,29 @@ function retryLater(): void {
   retryDelayMs = Math.min(retryDelayMs * 2, MAX_RETRY_DELAY_MS);
   refreshTimer = setTimeout(() => {
     refreshTimer = null;
-    void mintOnce().then((ok) => {
-      if (!ok && isCloudLinked() && minted === null) retryLater();
-    });
+    mintAndRetry();
   }, delay);
   refreshTimer.unref?.();
+}
+
+/** How many refreshes a successful mint has armed; see {@link mintAndRetry}. */
+let refreshesArmed = 0;
+
+/**
+ * Mint, and if it fails, try again later while the link stands.
+ *
+ * Whether or not a token is still held. A refresh that got no answer (a 5xx, a
+ * timeout) keeps the held token, which then expires a few minutes later; with
+ * no mint queued, the next credits launch had to mint inline (DOR-2915).
+ *
+ * Unless another mint succeeded while this one was out: its refresh is armed,
+ * and a retry would replace it.
+ */
+function mintAndRetry(): void {
+  const armedBefore = refreshesArmed;
+  void mintOnce().then((ok) => {
+    if (!ok && isCloudLinked() && refreshesArmed === armedBefore) retryLater();
+  });
 }
 
 let lifecycleRunning = false;
@@ -315,7 +330,7 @@ export function startCreditsLifecycle(): () => void {
   if (creditsKilled() || lifecycleRunning) return stopCreditsLifecycle;
   lifecycleRunning = true;
   retryDelayMs = RETRY_DELAY_MS;
-  if (isCloudLinked()) void mintOnce().then((ok) => !ok && isCloudLinked() && retryLater());
+  if (isCloudLinked()) mintAndRetry();
   let seenToken = readCloudInstanceToken();
   stopWatchingLink = configManager.onChange((change) => {
     if (!change.paths.some((path) => path === 'cloud' || path === 'cloud.instanceToken')) return;
@@ -328,7 +343,7 @@ export function startCreditsLifecycle(): () => void {
     if (isCloudLinked()) {
       // A first mint on a new link that fails retries from the start of the
       // waits, and replaces any long wait left over from the old link.
-      void mintOnce().then((ok) => !ok && isCloudLinked() && minted === null && retryLater());
+      mintAndRetry();
     } else {
       minted = null;
       mintRefusal = null;
