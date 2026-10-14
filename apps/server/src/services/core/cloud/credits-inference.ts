@@ -78,8 +78,14 @@ import {
 
 /** Never schedule a refresh sooner than this, so a short token cannot spin. */
 const MIN_REFRESH_DELAY_MS = 30_000;
-/** After a failed refresh, try again this much later. */
+/** After a failed refresh, try again this much later, doubling each time. */
 const RETRY_DELAY_MS = 60_000;
+/**
+ * The longest wait between failed tries. A refusal that will not change on its
+ * own (an unknown instance, a 404) used to be asked again every minute for as
+ * long as the server ran (DOR-2903).
+ */
+const MAX_RETRY_DELAY_MS = 30 * 60_000;
 /** How long a launch waits for one mint before it refuses. */
 const CREDITS_LAUNCH_WAIT_MS = 8_000;
 
@@ -89,6 +95,8 @@ let attemptGeneration = 0;
 /** The one mint in flight, shared by every launch waiting on it. */
 let inflight: Promise<boolean> | null = null;
 let refreshTimer: ReturnType<typeof setTimeout> | null = null;
+/** The wait before the next failed-mint retry; back to the start on a success or a new link. */
+let retryDelayMs = RETRY_DELAY_MS;
 /** The problem code the last mint under the current link was refused with, else `null`. */
 let mintRefusal: string | null = null;
 
@@ -107,6 +115,7 @@ export function __setCreditsStateForTests(state: {
   now?: () => number;
   isCurrent?: () => boolean;
 }): void {
+  retryDelayMs = RETRY_DELAY_MS;
   minted =
     state.token === null
       ? null
@@ -258,6 +267,7 @@ function mintOnce(): Promise<boolean> {
 /** Arm the timer that mints the next token before this one expires. */
 function scheduleRefresh(token: InferenceToken, delayOverride?: number): void {
   if (!lifecycleRunning) return;
+  retryDelayMs = RETRY_DELAY_MS;
   if (refreshTimer) clearTimeout(refreshTimer);
   const due = Date.parse(token.expiresAt) - CREDITS_REFRESH_MARGIN_MS - now();
   const delay = delayOverride ?? Math.max(MIN_REFRESH_DELAY_MS, due);
@@ -272,16 +282,21 @@ function scheduleRefresh(token: InferenceToken, delayOverride?: number): void {
   refreshTimer.unref?.();
 }
 
-/** Try a mint again after {@link RETRY_DELAY_MS}. */
+/**
+ * Try a mint again later: {@link RETRY_DELAY_MS} at first, twice as long after
+ * each failure, at most {@link MAX_RETRY_DELAY_MS}.
+ */
 function retryLater(): void {
   if (!lifecycleRunning) return;
   if (refreshTimer) clearTimeout(refreshTimer);
+  const delay = retryDelayMs;
+  retryDelayMs = Math.min(retryDelayMs * 2, MAX_RETRY_DELAY_MS);
   refreshTimer = setTimeout(() => {
     refreshTimer = null;
     void mintOnce().then((ok) => {
       if (!ok && isCloudLinked() && minted === null) retryLater();
     });
-  }, RETRY_DELAY_MS);
+  }, delay);
   refreshTimer.unref?.();
 }
 
@@ -299,6 +314,7 @@ let stopWatchingLink: (() => void) | null = null;
 export function startCreditsLifecycle(): () => void {
   if (creditsKilled() || lifecycleRunning) return stopCreditsLifecycle;
   lifecycleRunning = true;
+  retryDelayMs = RETRY_DELAY_MS;
   if (isCloudLinked()) void mintOnce().then((ok) => !ok && isCloudLinked() && retryLater());
   let seenToken = readCloudInstanceToken();
   stopWatchingLink = configManager.onChange((change) => {
@@ -308,8 +324,11 @@ export function startCreditsLifecycle(): () => void {
     const token = readCloudInstanceToken();
     if (token === seenToken) return;
     seenToken = token;
+    retryDelayMs = RETRY_DELAY_MS;
     if (isCloudLinked()) {
-      void mintOnce();
+      // A first mint on a new link that fails retries from the start of the
+      // waits, and replaces any long wait left over from the old link.
+      void mintOnce().then((ok) => !ok && isCloudLinked() && minted === null && retryLater());
     } else {
       minted = null;
       mintRefusal = null;

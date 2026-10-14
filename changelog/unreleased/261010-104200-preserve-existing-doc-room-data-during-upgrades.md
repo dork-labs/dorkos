@@ -1,6 +1,7 @@
 ---
 covers:
   - 'fix(db): preserve existing Doc and Room data during migration upgrades'
+  - 'fix(doc): integrate canonical migration and runtime prerequisites'
 ---
 
 ### Fixed

@@ -3216,6 +3216,23 @@
           "dailyCounts"
         ]
       },
+      "HistoryRead": {
+        "type": "object",
+        "properties": {
+          "messages": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/HistoryMessage"
+            }
+          },
+          "tail": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "messages"
+        ]
+      },
       "HistoryMessage": {
         "type": "object",
         "properties": {
@@ -32688,6 +32705,16 @@
             "description": "The session's project directory (boundary-checked). Optional for a session the server can already place; required for a cold session it cannot.",
             "name": "cwd",
             "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "A message id. When the history holds it, only that message and the ones after it come back, with `tail: true`; otherwise the whole history (DOR-2890)."
+            },
+            "required": false,
+            "description": "A message id. When the history holds it, only that message and the ones after it come back, with `tail: true`; otherwise the whole history (DOR-2890).",
+            "name": "since",
+            "in": "query"
           }
         ],
         "responses": {
@@ -32696,18 +32723,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "messages": {
-                      "type": "array",
-                      "items": {
-                        "$ref": "#/components/schemas/HistoryMessage"
-                      }
-                    }
-                  },
-                  "required": [
-                    "messages"
-                  ]
+                  "$ref": "#/components/schemas/HistoryRead"
                 }
               }
             }
