@@ -9,7 +9,7 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { act, renderHook } from '@testing-library/react';
 import type { ReactNode } from 'react';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { QueryClient, QueryClientProvider, focusManager } from '@tanstack/react-query';
 import { createMockTransport } from '@dorkos/test-utils';
 import type { Transport } from '@dorkos/shared/transport';
 import { TransportProvider } from '@/layers/shared/model';
@@ -22,7 +22,7 @@ async function flush(ms = 0) {
   });
 }
 
-function setup() {
+function setup(defaults: { refetchOnWindowFocus?: boolean } = {}) {
   vi.useFakeTimers();
   const transport = createMockTransport();
   vi.mocked(transport.getCloudLinkStatus).mockResolvedValue({ state: 'idle' });
@@ -31,7 +31,9 @@ function setup() {
     verificationUri: 'https://dorkos.ai/activate',
     expiresAt: new Date(Date.now() + 900_000).toISOString(),
   });
-  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false, ...defaults } },
+  });
   const wrapper = ({ children }: { children: ReactNode }) => (
     <QueryClientProvider client={queryClient}>
       <TransportProvider transport={transport}>{children}</TransportProvider>
@@ -159,5 +161,22 @@ describe('the shared link flow', () => {
 
     expect(both.result.current.there.view).toMatchObject({ kind: 'pending', userCode: 'OTHER123' });
     expect(both.result.current.here.origin).toBeNull();
+  });
+
+  it('reads the flow again when the tab is shown, though the app default no longer does (DOR-2896)', async () => {
+    // Another tab can start or finish a link with no event to say so.
+    const { transport } = setup({ refetchOnWindowFocus: false });
+    await flush();
+    const before = vi.mocked(transport.getCloudLinkStatus).mock.calls.length;
+    try {
+      act(() => {
+        focusManager.setFocused(false);
+        focusManager.setFocused(true);
+      });
+      await flush();
+      expect(vi.mocked(transport.getCloudLinkStatus).mock.calls.length).toBeGreaterThan(before);
+    } finally {
+      focusManager.setFocused(undefined);
+    }
   });
 });

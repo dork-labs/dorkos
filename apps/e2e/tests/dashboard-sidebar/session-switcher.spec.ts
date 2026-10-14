@@ -541,6 +541,18 @@ test.describe('session switcher, from ⌘K', { tag: SOLE_SIDEBAR_TAG }, () => {
         });
         return;
       }
+      // Each listed chat exists when asked about by id, as a real one does. The
+      // app checks a chat it opened from a list row in the background, and
+      // drops a row the server says is gone (DOR-2891).
+      const listed = sessions.find((s) => url.pathname.endsWith(`/api/sessions/${s.id}`));
+      if (request.method() === 'GET' && listed) {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify(listed),
+        });
+        return;
+      }
       await route.continue();
     });
 

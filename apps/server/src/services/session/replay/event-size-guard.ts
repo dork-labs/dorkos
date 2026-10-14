@@ -77,11 +77,13 @@ export const RING_BUFFER_MAX_BYTES = 8 * 1024 * 1024;
 /**
  * Total bytes of events one session's log may hold.
  *
- * Thirty-two mebibytes, on top of the 5000-event count cap. Sized four times
- * the ring so the log still spans many turns of replay depth, and low enough
- * that a hundred idle sessions cannot quietly hold gigabytes.
+ * Sixteen mebibytes, on top of the 5000-event count cap. Twice the ring, so the
+ * log still spans several turns of replay depth; a reader further behind takes
+ * a fresh snapshot, which the contract already allows. Halved from 32 MiB
+ * (DOR-2897): every live session may hold this much, and a log-backed
+ * session's whole history is in the durable store anyway.
  */
-export const EVENT_LOG_MAX_BYTES = 32 * 1024 * 1024;
+export const EVENT_LOG_MAX_BYTES = 16 * 1024 * 1024;
 
 /**
  * What the guard leaves behind where an oversized string was.

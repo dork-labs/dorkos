@@ -10,7 +10,8 @@
  * a migration runs, and once a day regardless, DorkOS writes a snapshot it can
  * be pointed back at.
  *
- * **Every snapshot is taken with `VACUUM INTO`, never a file copy.** The
+ * **Every snapshot is taken by SQLite itself, never a file copy:** `VACUUM INTO`,
+ * or for the daily one the online backup ({@link snapshotSqliteInSteps}). The
  * database runs in WAL mode, so committed rows can live in `dork.db-wal` rather
  * than in `dork.db`: copying the main file alone silently loses them, and
  * restoring a stale main file while the `-wal`/`-shm` sidecars persist makes
@@ -166,6 +167,77 @@ export function snapshotSqlite(sqlite: BetterSqlite3.Database, destPath: string)
     throw err;
   }
 }
+
+/**
+ * {@link snapshotSqlite}, a few pages at a time, so a large database does not
+ * hold the event loop for the whole copy (DOR-2906).
+ *
+ * `VACUUM INTO` is one synchronous statement: about 0.35 s for a 131 MB
+ * `dork.db`, during which the server answers nothing. SQLite's online backup
+ * (better-sqlite3's `backup()`) copies the same view of the database, WAL
+ * content included, in steps, and hands the event loop back between them. Its
+ * copy is a page image of the source, so it is switched out of WAL mode
+ * afterwards: a snapshot must open on its own, with no `-wal` beside it.
+ *
+ * Kept for the daily snapshot only. The pre-migration snapshot runs at boot,
+ * before anything is served, and a migration must not start until it is done,
+ * so that one stays synchronous.
+ *
+ * @param sqlite - An open connection to the database being snapshotted
+ * @param destPath - Absolute path of the snapshot file to create
+ * @throws When the destination exists, the directory is not writable, or SQLite
+ *   cannot read the source.
+ */
+export async function snapshotSqliteInSteps(
+  sqlite: BetterSqlite3.Database,
+  destPath: string
+): Promise<void> {
+  fs.mkdirSync(path.dirname(destPath), { recursive: true });
+  // The same refusal `VACUUM INTO` makes: a snapshot never writes over another.
+  if (fs.existsSync(destPath)) throw new Error(`Snapshot already exists: ${destPath}`);
+  // Built under a name no snapshot pattern matches and renamed into place only
+  // when whole, so nothing can mistake a copy in progress for wreckage and
+  // delete it, or for a snapshot and keep it.
+  const partial = `${destPath}.partial`;
+  const removePartial = () => {
+    for (const suffix of ['', '-journal', '-wal', '-shm']) {
+      fs.rmSync(`${partial}${suffix}`, { force: true });
+    }
+  };
+  removePartial();
+  try {
+    // A write from another connection makes SQLite start the copy over. Past
+    // three full passes, give up and let the next attempt try again rather
+    // than copying forever.
+    let copied = 0;
+    await sqlite.backup(partial, {
+      progress: ({ totalPages }) => {
+        copied += BACKUP_PAGES_PER_STEP;
+        if (copied > 3 * totalPages + BACKUP_PAGES_PER_STEP) {
+          throw new Error('The database kept changing while it was being copied');
+        }
+        return BACKUP_PAGES_PER_STEP;
+      },
+    });
+    const copy = new Database(partial);
+    try {
+      copy.pragma('journal_mode = DELETE');
+    } finally {
+      copy.close();
+    }
+    fs.renameSync(partial, destPath);
+  } catch (err) {
+    try {
+      removePartial();
+    } catch {
+      // Best-effort, and never in place of the error naming what to fix.
+    }
+    throw err;
+  }
+}
+
+/** Pages {@link snapshotSqliteInSteps} copies per step, between which the event loop runs. */
+const BACKUP_PAGES_PER_STEP = 100;
 
 /**
  * Is the file at `snapshotPath` a snapshot, rather than the wreckage of one?
@@ -424,18 +496,21 @@ export function snapshotBeforeMigrations(db: Db, options: SnapshotOptions): stri
  * as a day with no snapshot, and is retaken — otherwise one failed write would
  * mark the day permanently done and hold a slot in the week's retention pool.
  *
+ * Written in steps ({@link snapshotSqliteInSteps}), so the server keeps
+ * answering while it is taken.
+ *
  * @param db - The database to snapshot
  * @param options - Destination directory, and an optional clock for tests
  * @returns Absolute path of the snapshot written, or `null` if today's exists
  * @throws {SnapshotFailedError} When the snapshot cannot be written.
  */
-export function snapshotDaily(db: Db, options: SnapshotOptions): string | null {
+export async function snapshotDaily(db: Db, options: SnapshotOptions): Promise<string | null> {
   const now = options.now ?? new Date();
   const dest = path.join(options.dir, `dork-${utcDay(now)}-daily.db`);
   if (reuseOrClear(dest)) return null;
 
   try {
-    snapshotSqlite(db.$client, dest);
+    await snapshotSqliteInSteps(db.$client, dest);
   } catch (err) {
     throw new SnapshotFailedError(options.dir, err);
   }
@@ -454,15 +529,32 @@ export interface SnapshotLog {
  *
  * Best-effort by design, and that is the difference from the pre-migration
  * snapshot: nothing irreversible happens next, so a full disk should cost a
- * warning in the log rather than a server that will not start.
+ * warning in the log rather than a server that will not start. Never rejects.
  *
  * @param db - The consolidated database.
  * @param backupsDir - `<dorkHome>/backups`.
  * @param log - Where to say what happened.
  */
-export function takeDailySnapshot(db: Db, backupsDir: string, log: SnapshotLog): void {
+export async function takeDailySnapshot(
+  db: Db,
+  backupsDir: string,
+  log: SnapshotLog
+): Promise<void> {
+  // One at a time: a tick that lands while a copy is still being written waits
+  // for it rather than starting a second copy of the same day.
+  dailyInFlight ??= runDailySnapshot(db, backupsDir, log).finally(() => {
+    dailyInFlight = null;
+  });
+  return dailyInFlight;
+}
+
+/** The daily snapshot being taken, if one is. */
+let dailyInFlight: Promise<void> | null = null;
+
+/** {@link takeDailySnapshot}'s body, once per call that is not already running. */
+async function runDailySnapshot(db: Db, backupsDir: string, log: SnapshotLog): Promise<void> {
   try {
-    const written = snapshotDaily(db, { dir: backupsDir });
+    const written = await snapshotDaily(db, { dir: backupsDir });
     if (written) log.info(`[DB] Daily snapshot written to ${written}`);
   } catch (err) {
     log.warn('[DB] Daily snapshot failed — your data is fine, the backup is not', {

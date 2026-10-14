@@ -11,7 +11,7 @@ import { isWithinDirectory } from '@dorkos/shared/paths';
 import { resolveCodexHome, codexRolloutRootsIn } from './codex-home.js';
 import { discoverCodexRollouts } from '../../search/codex-discovery.js';
 import { projectCodexLines } from '../../search/projections/codex.js';
-import type { FileContainer } from '../../search/types.js';
+import type { FileContainer, KnownContainer } from '../../search/types.js';
 import {
   MAX_SESSION_ATTACHMENT_BYTES,
   deriveSessionAttachmentId,
@@ -19,23 +19,60 @@ import {
 } from '../../session/attachments/index.js';
 import { validateBoundaryOrDorkHome } from '../../../lib/boundary.js';
 
-/** Read-only native store lookup. Only this machine's selected Codex home is inspected. */
+/**
+ * How long one inventory of the Codex home is reused before the rollout roots
+ * are walked again. Every caller inside the window shares one walk.
+ */
+const INVENTORY_TTL_MS = 1_000;
+
+/** What a rollout's head says. A rollout is append-only, so this never changes for a file. */
+interface RolloutHead {
+  metadata: { timestamp?: unknown; payload: { id: string; cwd: string } } | undefined;
+  firstMessage:
+    { role: 'user' | 'assistant'; content: string; timestamp: string | null } | undefined;
+}
+
+/**
+ * Read-only native store lookup. Only this machine's selected Codex home is inspected.
+ *
+ * **Every read is remembered, because the store is large and listed often.** A
+ * session list fans out across every agent's folder, so one sidebar refresh asks
+ * this reader for many directories at once, and a real Codex home holds hundreds
+ * of rollouts and many gigabytes (13 GB, 367 files measured on 2026-10-13). Before
+ * these caches, every inventory older than a second re-read the head of every
+ * rollout, and every listing re-read the head of every matching one, which kept
+ * the server so busy that each request took seconds. A rollout is append-only and
+ * its head never changes, so its working directory and opening lines are read
+ * once; after that an unchanged file costs one `stat`.
+ */
 export class CodexNativeSessionReader {
   private inventory: { at: number; files: Promise<FileContainer[]> } | undefined;
   private readonly knownNativeSessions = new Set<string>();
+  /** The last inventory's files by container id, so unchanged files skip the head read. */
+  private known = new Map<string, KnownContainer>();
+  /**
+   * Each rollout's head, by file path, with the file size it was read at.
+   * Pruned to the files the last inventory found.
+   */
+  private readonly heads = new Map<
+    string,
+    { sizeBytes: number; mtimeMs: number; complete: boolean; read: Promise<RolloutHead> }
+  >();
+  /** Each rollout's working directory, by file path, once its metadata is written. */
+  private readonly cwds = new Map<string, string>();
   constructor(
     private readonly home: () => string = resolveCodexHome,
     private readonly attachments: SessionAttachmentStore | null = null
   ) {}
 
   private async containers(): Promise<FileContainer[]> {
-    if (this.inventory && Date.now() - this.inventory.at < 1_000) return this.inventory.files;
-    const files = discoverCodexRollouts(
-      codexRolloutRootsIn(this.home()),
-      new Map(),
-      async (filePath) => (await this.head(filePath, false)).metadata?.payload.cwd ?? null
+    if (this.inventory && Date.now() - this.inventory.at < INVENTORY_TTL_MS)
+      return this.inventory.files;
+    const files = discoverCodexRollouts(codexRolloutRootsIn(this.home()), this.known, (filePath) =>
+      this.cachedCwd(filePath)
     ).then((discovered) => {
       if (discovered.failures.length) throw new Error('Codex native history could not be read');
+      this.remember(discovered.files);
       return discovered.files;
     });
     this.inventory = { at: Date.now(), files };
@@ -47,7 +84,84 @@ export class CodexNativeSessionReader {
     }
   }
 
-  private async head(filePath: string, includeFirstMessage: boolean) {
+  /**
+   * Keep what this inventory found for the next one, and forget the heads of
+   * files that are gone, so neither cache grows past the store it describes.
+   *
+   * @param files - The containers the inventory just discovered.
+   */
+  private remember(files: FileContainer[]): void {
+    const known = new Map<string, KnownContainer>();
+    const present = new Set<string>();
+    for (const file of files) {
+      known.set(file.originKey, {
+        sizeBytes: file.sizeBytes,
+        mtimeMs: file.mtimeMs,
+        containerPath: file.containerPath,
+      });
+      present.add(file.filePath);
+    }
+    this.known = known;
+    for (const filePath of this.heads.keys())
+      if (!present.has(filePath)) this.heads.delete(filePath);
+    for (const filePath of this.cwds.keys()) if (!present.has(filePath)) this.cwds.delete(filePath);
+  }
+
+  /**
+   * A rollout's working directory, read from its metadata line once per file.
+   *
+   * Reads only up to the metadata record, as discovery always has. A rollout
+   * whose metadata is not written yet answers `null` and is asked again later.
+   *
+   * @param filePath - The rollout to read.
+   */
+  private async cachedCwd(filePath: string): Promise<string | null> {
+    const known = this.cwds.get(filePath);
+    if (known !== undefined) return known;
+    const cwd = (await this.head(filePath, false)).metadata?.payload.cwd ?? null;
+    if (cwd !== null) this.cwds.set(filePath, cwd);
+    return cwd;
+  }
+
+  /**
+   * A rollout's head (its metadata and first user message), read once per file.
+   *
+   * Concurrent callers share one read. A COMPLETE head (metadata and a first
+   * user message both found) is kept while the file only grows, because a
+   * rollout is append-only. A head missing either is kept only while the file
+   * is unchanged (same size and mtime): a
+   * rollout that is still being written may not hold them yet, and remembering
+   * that half-read answer past the next write would hide the session or its
+   * title for good. A failed read is not kept.
+   *
+   * @param file - The rollout, with its current size.
+   */
+  private cachedHead(file: FileContainer): Promise<RolloutHead> {
+    const cached = this.heads.get(file.filePath);
+    if (cached) {
+      // A complete head holds while the file only grows; a shrink means it was
+      // rewritten, not appended. An incomplete head holds only while the file is
+      // exactly as it was, by the same (size, mtime) test discovery uses.
+      const fresh = cached.complete
+        ? file.sizeBytes >= cached.sizeBytes
+        : cached.sizeBytes === file.sizeBytes && cached.mtimeMs === file.mtimeMs;
+      if (fresh) return cached.read;
+    }
+    const read = this.head(file.filePath, true);
+    const entry = { sizeBytes: file.sizeBytes, mtimeMs: file.mtimeMs, complete: false, read };
+    this.heads.set(file.filePath, entry);
+    read.then(
+      (head) => {
+        if (head.metadata && head.firstMessage) entry.complete = true;
+      },
+      () => {
+        if (this.heads.get(file.filePath) === entry) this.heads.delete(file.filePath);
+      }
+    );
+    return read;
+  }
+
+  private async head(filePath: string, includeFirstMessage: boolean): Promise<RolloutHead> {
     const input = createReadStream(filePath);
     const lines = createInterface({ input, crlfDelay: Infinity });
     let metadata;
@@ -87,7 +201,7 @@ export class CodexNativeSessionReader {
   private async session(file: FileContainer): Promise<Session | null> {
     if (!file.containerPath) return null;
     await validateBoundaryOrDorkHome(file.containerPath);
-    const { metadata, firstMessage } = await this.head(file.filePath, true);
+    const { metadata, firstMessage } = await this.cachedHead(file);
     if (metadata?.payload.id !== file.originKey) return null;
     const history = firstMessage ? [firstMessage] : [];
     const first = history.find((m) => m.role === 'user');

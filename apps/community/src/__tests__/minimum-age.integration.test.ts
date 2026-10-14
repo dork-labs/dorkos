@@ -298,6 +298,7 @@ describe('no minimum age set', () => {
       github: false,
       oidc: null,
       minimumAge: null,
+      allowedCountries: null,
       emailLinks: false,
     });
     expect(

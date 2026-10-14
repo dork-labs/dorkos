@@ -249,7 +249,10 @@ export type SkipReason =
 
 /** One file discovery decided against, and the decision it made. */
 export interface SkippedFile {
-  /** Absolute path to the file that was not indexed. */
+  /**
+   * Absolute path to the file that was not indexed, or to a whole directory
+   * decided against without listing it (a Claude Code `subagents/` folder).
+   */
   path: string;
 
   /** The decision. */
@@ -286,8 +289,9 @@ export interface DiscoveryFailure {
  * globbing one level down, so that subagent transcripts are excluded by a
  * predicate someone can flip rather than by an accident of depth (spec §2.1) —
  * and the only way to tell those two implementations apart is that one of them
- * reports having visited the nested paths. A count-only assertion passes for
- * both.
+ * reports the decision. A count-only assertion passes for both. A Claude Code
+ * `subagents/` folder is decided against whole, without listing it, and
+ * reported once as the folder (DOR-2904).
  *
  * {@link FileDiscovery.failures} is the same argument applied to whole roots.
  */
@@ -295,7 +299,7 @@ export interface FileDiscovery {
   /** Files to index, across every root, in walk order. */
   files: FileContainer[];
 
-  /** Files visited and deliberately not indexed. */
+  /** Files, or whole folders, reached and deliberately not indexed. */
   skipped: SkippedFile[];
 
   /**

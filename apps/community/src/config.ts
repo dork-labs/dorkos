@@ -8,11 +8,9 @@ import { isAbsolute, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseMail } from './mail/config.js';
 import { checkS3Endpoint, directoriesOverlap } from './storage/config-checks.js';
-import {
-  COMMUNITY_MINIMUM_AGE_CEILING,
-  COMMUNITY_MINIMUM_AGE_FLOOR,
-  parseCommunityReportMailto,
-} from '@dorkos/shared/community-wire';
+import { parseCommunityReportMailto } from '@dorkos/shared/community-wire';
+import { minimumAgeSetting } from './sign-up/minimum-age.js';
+import { allowedCountriesSetting, countryHeaderSetting } from './sign-up/allowed-countries.js';
 
 export type { CommunityMailConfig } from './mail/config.js';
 
@@ -22,6 +20,15 @@ const between = (floor: number, fallback: number, ceiling: number) =>
   z.coerce.number().int().min(floor).max(ceiling).default(fallback);
 
 const MIB = 1024 * 1024;
+
+/** An optional HTTP header name a host names for a trusted proxy to fill; off unless named. */
+const headerName = z.preprocess(
+  (value) => (typeof value === 'string' && value.trim() !== '' ? value.trim() : undefined),
+  z
+    .string()
+    .regex(/^[A-Za-z0-9-]{1,64}$/)
+    .optional()
+);
 
 /** An optional setting that Compose may pass through as an empty string. */
 const optionalText = z.preprocess(
@@ -296,13 +303,7 @@ const schema = z.object({
   COMMUNITY_SHORT_NAME_COOLOFF_DAYS: z.coerce.number().int().min(0).max(365).default(90),
   COMMUNITY_NAME_LOOKUPS_PER_MINUTE: integer('COMMUNITY_NAME_LOOKUPS_PER_MINUTE', 60, 600),
   // The header a trusted reverse proxy sets to the caller's address. Off unless named.
-  COMMUNITY_TRUSTED_PROXY_HEADER: z.preprocess(
-    (value) => (typeof value === 'string' && value.trim() !== '' ? value.trim() : undefined),
-    z
-      .string()
-      .regex(/^[A-Za-z0-9-]{1,64}$/)
-      .optional()
-  ),
+  COMMUNITY_TRUSTED_PROXY_HEADER: headerName,
   // Comma-separated short names this host keeps for itself, beside the built-in list.
   COMMUNITY_RESERVED_SHORT_NAMES: z.preprocess(
     (value) => (typeof value === 'string' && value.trim() !== '' ? value : undefined),
@@ -352,15 +353,11 @@ const schema = z.object({
   COMMUNITY_PRIVACY_URL: optionalText,
   COMMUNITY_REPORT_ABUSE_URL: optionalText,
   // The age a person confirms before a new account is created here. Unset asks nothing.
-  COMMUNITY_MINIMUM_AGE: z.preprocess(
-    (value) => (typeof value === 'string' && value.trim() === '' ? undefined : value),
-    z.coerce
-      .number()
-      .int()
-      .min(COMMUNITY_MINIMUM_AGE_FLOOR)
-      .max(COMMUNITY_MINIMUM_AGE_CEILING)
-      .optional()
-  ),
+  COMMUNITY_MINIMUM_AGE: minimumAgeSetting,
+  // The countries a person confirms they live in before a new account is created. Unset admits
+  // everyone. The header is one a trusted proxy sets to the caller's country; off unless named.
+  COMMUNITY_ALLOWED_COUNTRIES: allowedCountriesSetting,
+  COMMUNITY_COUNTRY_HEADER: headerName,
 });
 
 /**
@@ -596,6 +593,19 @@ export function parseConfig(env: Record<string, unknown>) {
      * password, Google, GitHub or single sign-on; `null` when the host set none.
      */
     minimumAge: value.COMMUNITY_MINIMUM_AGE ?? null,
+    /**
+     * The ISO 3166-1 alpha-2 codes of the countries a person must confirm they live in before a
+     * new account is created; `null` when the host lets everyone sign up.
+     */
+    allowedCountries: value.COMMUNITY_ALLOWED_COUNTRIES ?? null,
+    /**
+     * The request header a trusted proxy names the caller's country in, lowercased, or `null`.
+     * A sign-up whose header names a country outside the list is refused; a missing one is not.
+     */
+    countryHeader: countryHeaderSetting(
+      value.COMMUNITY_COUNTRY_HEADER,
+      value.COMMUNITY_ALLOWED_COUNTRIES
+    ),
     /**
      * Whether a space set to `open` admits people who sign in through the host's single sign-on.
      * `COMMUNITY_OPEN_ADMISSION=0` turns every open join off at once; invitations still work.

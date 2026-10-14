@@ -24,6 +24,10 @@ vi.mock('../../services/core/event-fan-out.js', async (importOriginal) => ({
 import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
 import eventsRoutes from '../events.js';
 import { eventFanOut } from '../../services/core/event-fan-out.js';
+import {
+  markSessionListsReset,
+  resetSessionListResetForTests,
+} from '../../services/session/catalog/session-list-reset.js';
 
 let server: http.Server;
 let baseUrl: string;
@@ -102,6 +106,29 @@ describe('GET /api/events (unified SSE stream)', () => {
     const parsed = JSON.parse(dataLine!.replace('data: ', ''));
     expect(parsed.connectedAt).toBeDefined();
     expect(() => new Date(parsed.connectedAt)).not.toThrow();
+  });
+
+  it('states when the session lists were last declared wrong, once they were', async () => {
+    // A window whose stream was down during a Claude account switch never got
+    // `session_list_invalidated`; this is how it learns on reconnect (DOR-2891).
+    resetSessionListResetForTests();
+    const before = JSON.parse(
+      (await collectConnectedEvent()).body
+        .split('\n')
+        .find((line: string) => line.startsWith('data: '))!
+        .replace('data: ', '')
+    );
+    expect(before).not.toHaveProperty('sessionListsResetAt');
+
+    const at = markSessionListsReset();
+    const after = JSON.parse(
+      (await collectConnectedEvent()).body
+        .split('\n')
+        .find((line: string) => line.startsWith('data: '))!
+        .replace('data: ', '')
+    );
+    expect(after.sessionListsResetAt).toBe(at);
+    resetSessionListResetForTests();
   });
 
   it('registers client with eventFanOut.addClient', async () => {

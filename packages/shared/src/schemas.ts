@@ -3688,6 +3688,23 @@ export const HistoryMessageSchema = z
 
 export type HistoryMessage = z.infer<typeof HistoryMessageSchema>;
 
+/**
+ * A history read: the whole history, or with `since` the tail of it.
+ *
+ * `tail` is set only when the read asked `since` a message and the server
+ * found that message: `messages` then starts at it and runs to the end, so the
+ * caller keeps what it already holds before it and replaces the rest. Without
+ * `tail` the answer is the whole history, whatever was asked (DOR-2890).
+ */
+export const HistoryReadSchema = z
+  .object({
+    messages: z.array(HistoryMessageSchema),
+    tail: z.boolean().optional(),
+  })
+  .openapi('HistoryRead');
+
+export type HistoryRead = z.infer<typeof HistoryReadSchema>;
+
 // === Command Types ===
 
 export const CommandEntrySchema = z

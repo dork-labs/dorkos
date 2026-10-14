@@ -33,6 +33,7 @@ import { sessionListBroadcaster } from '../../session/catalog/session-list-broad
 // (and no import cycle): the value comes out of the registry, which keys on
 // `runtime.type`.
 import type { ClaudeCodeRuntime } from './claude-code-runtime.js';
+import { markSessionListsReset } from '../../session/catalog/session-list-reset.js';
 
 /**
  * The only part of the `runtimes` section this module reads — deliberately
@@ -124,7 +125,7 @@ export async function applyClaudeAccountChange(): Promise<void> {
   }
 
   try {
-    eventFanOut.broadcast('session_list_invalidated', { changedAt: new Date().toISOString() });
+    eventFanOut.broadcast('session_list_invalidated', { changedAt: markSessionListsReset() });
   } catch (err) {
     // warn, not debug: without this event every connected cockpit keeps showing
     // the union of the old and new account sets until someone reloads.

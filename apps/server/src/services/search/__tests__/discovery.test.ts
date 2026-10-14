@@ -67,14 +67,17 @@ describe('discovering Claude Code transcripts', () => {
     expect(found.files[0]?.filePath).toBe(main);
     expect(found.files[0]?.containerPath).toBe('/repo/project');
 
-    // The whole point: the nested paths were VISITED and decided against. A
+    // The whole point: the nested paths were reached and decided against. A
     // one-level glob would report an identical `files` array and an empty
-    // `skipped` array.
-    expect(reasonFor(found.skipped, subagent)).toBe('subagent-transcript');
-    expect(reasonFor(found.skipped, nested)).toBe('subagent-transcript');
+    // `skipped` array. A `subagents/` folder is decided against as a whole,
+    // once, without listing what is inside it (DOR-2904).
+    const subagentsDir = path.dirname(subagent);
+    expect(nested.startsWith(subagentsDir + path.sep)).toBe(true);
+    expect(reasonFor(found.skipped, subagentsDir)).toBe('subagent-transcript');
+    expect(reasonFor(found.skipped, subagent)).toBeUndefined();
     expect(reasonFor(found.skipped, plugin)).toBe('plugin-artifact');
     expect(reasonFor(found.skipped, evalRun)).toBe('eval-sandbox');
-    expect(found.skipped).toHaveLength(4);
+    expect(found.skipped).toHaveLength(3);
   });
 
   it('tests the eval sandbox on the head-record cwd, never on the directory slug', async () => {

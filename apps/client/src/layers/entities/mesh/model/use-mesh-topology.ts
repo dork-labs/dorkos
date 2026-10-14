@@ -1,4 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
+import { QUERY_TIMING } from '@/layers/shared/lib';
 import { useTransport } from '@/layers/shared/model';
 
 const TOPOLOGY_KEY = ['mesh', 'topology'] as const;
@@ -17,6 +18,8 @@ export function useTopology(namespace?: string, enabled = true) {
     queryFn: () => transport.getMeshTopology(namespace),
     enabled,
     staleTime: 30_000,
-    refetchInterval: 30_000,
+    // `agents_changed` re-reads everything under `['mesh']`; the timer is only
+    // the safety net (DOR-2909).
+    refetchInterval: QUERY_TIMING.EVENT_BACKSTOP_REFETCH_MS,
   });
 }

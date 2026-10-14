@@ -286,4 +286,51 @@ describe('the wake-up seam over the real store', () => {
     applyBatch([{ type: 'turn_end', seq: 4 }]);
     await waitFor(() => expect(transport.getMessages).toHaveBeenCalledTimes(2));
   });
+
+  it('asks only for what the turn added, and keeps the rest as it was (DOR-2890)', async () => {
+    const earlier: HistoryMessage[] = [
+      { id: 'user-0', role: 'user', content: 'first', parts: [{ type: 'text', text: 'first' }] },
+      { id: 'assistant-0', role: 'assistant', content: 'one', parts: [] },
+      { id: 'user-1', role: 'user', content: 'second', parts: [{ type: 'text', text: 'second' }] },
+      HISTORY[0]!,
+    ];
+    const store = useSessionStreamStore.getState();
+    store.applySnapshot(SESSION_ID, { ...snapshot(), messages: earlier });
+    const held = useSessionStreamStore.getState().getSession(SESSION_ID).messages;
+    const added: HistoryMessage = {
+      id: 'assistant-2',
+      role: 'assistant',
+      content: CONTINUATION,
+      parts: [{ type: 'text', text: CONTINUATION }],
+    };
+    const transport = {
+      getMessages: vi
+        .fn()
+        .mockResolvedValue({ messages: [earlier[2]!, HISTORY[0]!, added], tail: true }),
+    } as unknown as Transport;
+
+    mountOverStore(transport, vi.fn());
+    applyBatch([
+      { type: 'turn_start', seq: 1, userMessage: 'and then?' },
+      { type: 'text_delta', seq: 2, text: CONTINUATION },
+    ]);
+    applyBatch([{ type: 'turn_end', seq: 3 }]);
+
+    await waitFor(() =>
+      expect(useSessionStreamStore.getState().getSession(SESSION_ID).messages).toHaveLength(5)
+    );
+    expect(transport.getMessages).toHaveBeenCalledWith(SESSION_ID, undefined, {
+      since: 'user-1',
+    });
+    const after = useSessionStreamStore.getState().getSession(SESSION_ID).messages;
+    expect(after.map((m) => m.id)).toEqual([
+      'user-0',
+      'assistant-0',
+      'user-1',
+      'assistant-1',
+      'assistant-2',
+    ]);
+    // What came before the anchor is the store's own object, untouched.
+    expect(after[0]).toBe(held[0]);
+  });
 });

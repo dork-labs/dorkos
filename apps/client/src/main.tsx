@@ -427,7 +427,7 @@ const extensionDeps: ExtensionAPIDeps = {
         queryClient,
         transport,
         currentLocation: () => router.state.location,
-        navigate: (search) => void router.navigate(toSession(search)),
+        navigate: (search) => router.navigate(toSession(search)),
       }),
     // Wires the agent's `control_ui apply_layout` command (and the switcher UI's
     // shared action) to the real apply flow (DOR-355 task 3.1). Each restored
@@ -446,7 +446,7 @@ const extensionDeps: ExtensionAPIDeps = {
             queryClient,
             transport,
             currentLocation: () => router.state.location,
-            navigate: (search) => void router.navigate(toSession(search)),
+            navigate: (search) => router.navigate(toSession(search)),
           }),
       }),
   },

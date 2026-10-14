@@ -2,9 +2,11 @@
  * Tells a community's owner, once, that someone asked the host to make someone else the owner,
  * and once more if that request completes (DOR-2543).
  *
- * The seam is the owner's connection list: the local server reads each Community's notice there
- * (`community-owner-notice-cache.ts`), and only the owner's own connection ever carries one. Each
- * notice that list shows is handed here, every read, and this decides whether it is news.
+ * Two paths find notices: the owner's connection list, which reads each Community's notice on
+ * every read (`community-owner-notice-cache.ts`), and an hourly background check that runs even
+ * while spaces are switched off (`community-owner-notice-sweep.ts`, DOR-2760). Only the owner's
+ * own connection ever carries a notice. Each one found is handed here, and this decides whether
+ * it is news.
  *
  * **Why a ledger beside the registry's dedupe.** The registry dedupes against the notifications
  * table, and that table keeps 30 days and 1,000 rows. A request can stay open for months (the
@@ -164,4 +166,18 @@ export class CommunityOwnerNoticeAnnouncer {
     await mkdir(path.dirname(this.file()), { recursive: true });
     await writeFileAtomic(this.file(), JSON.stringify(keys));
   }
+}
+
+let shared: CommunityOwnerNoticeAnnouncer | undefined;
+
+/**
+ * The one announcer every path shares: the connection list and the background check
+ * (`community-owner-notice-sweep.ts`). Two would each keep their own copy of the ledger, and
+ * could both announce the same notice. Process-wide, pinned to the first data directory it is
+ * given: a test that checks announcements passes its own announcer instead.
+ *
+ * @param dorkHome - The data directory, read on the first call only.
+ */
+export function getOwnerNoticeAnnouncer(dorkHome: string): CommunityOwnerNoticeAnnouncer {
+  return (shared ??= new CommunityOwnerNoticeAnnouncer(dorkHome));
 }

@@ -8,6 +8,13 @@ import { AdapterBindingSchema } from '@dorkos/shared/relay-schemas';
 import { resolveSenderIdentity } from '../../runtimes/claude-code/mcp-tools/relay-helpers.js';
 import { createCanUseTool } from '../../runtimes/claude-code/messaging/interactive-handlers.js';
 import { resolveAgentHome } from '../agent-identity/index.js';
+import { recordTurnLevels } from '../turn-power/turn-levels.js';
+import { OUTSIDER_TURN_LIMIT, resetOutsiderOutput } from '../turn-power/outsider-output.js';
+import { CLAUDE_CODE_CAPABILITIES } from '../../runtimes/claude-code/runtime-constants.js';
+import type { AgentRuntime } from '@dorkos/shared/agent-runtime';
+import { noteTurnOrigin, resetOutsiderTurns } from '../../session/origin/outsider-turns.js';
+import type { TurnOrigin } from '../../session/origin/turn-origin.js';
+import type { StreamEvent } from '@dorkos/shared/types';
 import {
   clearTestHomes,
   registerEveryFolderAsHome,
@@ -122,11 +129,6 @@ function makeMockNotifyDm(overrides: Partial<McpToolDeps['notifyDm']> = {}) {
 
 function makeMockDeps(overrides: Partial<McpToolDeps> = {}): McpToolDeps {
   return {
-    // An allowance of its own per deps object (DOR-1265). Every test here sends
-    // as `agent-1`, so one shared budget would make each test depend on how many
-    // notes the tests above it sent — and, past the tenth, fail for a reason that
-    // has nothing to do with what it asserts. The ceiling's own behaviour is the
-    // subject of its own describe block, below.
     transcriptReader: {} as McpToolDeps['transcriptReader'],
     defaultCwd: '/test',
     dorkHome: '/tmp/dorkos-test-home',
@@ -668,6 +670,8 @@ describe('relay_notify_user', () => {
             .mockReturnValue({ subject: 'relay.agent.ns.agent-1', agentId: 'agent-1' }),
           // Read for the inbox row's "who is talking" line (DOR-1383).
           get: vi.fn().mockReturnValue({ name: 'ana', displayName: 'Ana' }),
+          // Read to tell whether a turn of this agent read a stranger's words.
+          getProjectPath: vi.fn().mockReturnValue('/agents/ana'),
         } as unknown as McpToolDeps['meshCore'],
       });
       const identity = resolveSenderIdentity(deps, '/agents/ana');
@@ -889,6 +893,7 @@ describe('relay_notify_user, by identity anchor', () => {
               : undefined
           ),
           get: vi.fn().mockReturnValue({ name: 'ana', displayName: 'Ana' }),
+          getProjectPath: vi.fn().mockReturnValue('/agents/ana'),
         } as unknown as McpToolDeps['meshCore'],
       });
     }
@@ -918,5 +923,50 @@ describe('relay_notify_user, by identity anchor', () => {
       const result = await createRelayNotifyUserHandler(deps, identity)({ message: 'as Ana?' });
       expect(JSON.parse(result.content[0].text).code).toBe('NOT_AN_AGENT');
     });
+  });
+});
+
+describe('relay_notify_user from a turn a stranger started (DOR-2739)', () => {
+  /** Record a turn on `sessionId` and what started it, as the binding call and the registry do. */
+  async function ranTurn(sessionId: string, origin: TurnOrigin): Promise<void> {
+    noteTurnOrigin(sessionId, origin);
+    const runtime = recordTurnLevels(
+      {
+        type: 'claude-code',
+        getCapabilities: () => CLAUDE_CODE_CAPABILITIES,
+        async *sendMessage(): AsyncGenerator<StreamEvent> {
+          yield { type: 'done', data: {} } as StreamEvent;
+        },
+      } as unknown as AgentRuntime,
+      () => 'bypassPermissions'
+    );
+    for await (const _event of runtime.sendMessage(sessionId, 'hi')) {
+      // drain
+    }
+  }
+
+  beforeEach(() => {
+    resetOutsiderOutput();
+    resetOutsiderTurns();
+  });
+
+  it('sends a few notes, then refuses the next with TOO_MANY_NOTES_THIS_TURN', async () => {
+    await ranTurn('stranger-note-turn', { kind: 'relay-binding' });
+    const deps = makeMockDeps();
+    const handler = makeHandler(deps, { ...NOTIFY, sessionId: () => 'stranger-note-turn' });
+    for (let n = 0; n < OUTSIDER_TURN_LIMIT; n += 1) {
+      expect(JSON.parse((await handler({ message: `note ${n}` })).content[0].text).sent).toBe(true);
+    }
+    const refused = JSON.parse((await handler({ message: 'one more' })).content[0].text);
+    expect(refused).toMatchObject({ sent: false, code: 'TOO_MANY_NOTES_THIS_TURN' });
+    expect(deps.relayCore!.publish).toHaveBeenCalledTimes(OUTSIDER_TURN_LIMIT);
+  });
+
+  it('never counts a turn its own people started', async () => {
+    await ranTurn('own-note-turn', { kind: 'interactive' });
+    const handler = makeHandler(makeMockDeps(), { ...NOTIFY, sessionId: () => 'own-note-turn' });
+    for (let n = 0; n < OUTSIDER_TURN_LIMIT * 3; n += 1) {
+      expect(JSON.parse((await handler({ message: `note ${n}` })).content[0].text).sent).toBe(true);
+    }
   });
 });

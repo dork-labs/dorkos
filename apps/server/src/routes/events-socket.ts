@@ -18,6 +18,7 @@ import { upgradeCaller } from '../services/core/streams/stream-upgrade-auth.js';
 import { eventFanOut, encodeBroadcast, type FanOutClient } from '../services/core/event-fan-out.js';
 import { readCallerPrincipal } from '../lib/caller-principal.js';
 import { sendSessionStatusSnapshot } from '../services/session/catalog/session-list-broadcaster.js';
+import { connectedFramePayload } from '../services/session/catalog/session-list-reset.js';
 import { DurableStreamSocket } from '../services/core/streams/stream-socket.js';
 import type {
   UpgradeAttempt,
@@ -89,7 +90,7 @@ export const globalEventsRoute: UpgradeRoute = {
         // blocked still learns about it (DOR-1136). Registration first and no
         // await in between, so a live transition cannot land ahead of the
         // snapshot it supersedes.
-        client.send(encodeBroadcast('connected', { connectedAt: new Date().toISOString() }));
+        client.send(encodeBroadcast('connected', connectedFramePayload()));
         sendSessionStatusSnapshot(client, principal);
       },
     };

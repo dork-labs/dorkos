@@ -53,6 +53,7 @@ import { sessionAudience } from '../../audit/session-visibility.js';
 import { DEFAULT_CWD } from '../../../lib/resolve-root.js';
 import { projectRegistry } from '../../projects/project-registry.js';
 import { logger } from '../../../lib/logger.js';
+import { noteAgentSessionListEvent } from '../agent-session-fanout.js';
 
 /**
  * Permission mode used to build the global subscription context. The
@@ -185,14 +186,13 @@ function carriesBlockedDetail(event: SessionListEvent): boolean {
  * ## What bounds it
  *
  * One frame per non-idle projector, and a projector lives until its session is
- * evicted or the server restarts. **Only claude-code evicts on a timer**
- * (`SESSIONS.TIMEOUT_MS`, 30 minutes idle). Codex, opencode and test-mode all
- * implement `checkSessionHealth` as a no-op — none of them holds a per-session
- * process — so their projectors are dropped only by an explicit act
- * (test-mode's `/api/test/reset`) or by a restart. On a codex- or
- * opencode-heavy machine this set therefore only grows. It is small in every
- * realistic fleet, but "small" is not a guarantee, and this is the one place in
- * the stream that writes N frames in a row.
+ * evicted or the server restarts. Claude-code evicts on a timer
+ * (`SESSIONS.TIMEOUT_MS`, 30 minutes idle), and the idle sweep drops a quiet
+ * Codex, OpenCode or Doe projector (`replay/projector-idle-sweep.ts`, DOR-2897),
+ * but never one in a non-idle lifecycle: those are exactly the ones listed
+ * here, and they stay until dealt with. The set is small in every realistic
+ * fleet, but "small" is not a guarantee, and this is the one place in the
+ * stream that writes N frames in a row.
  *
  * So it stops at the same buffer ceiling the fan-out's own broadcast enforces
  * (`SSE.MAX_BUFFERED_BYTES`), rather than filling process memory for a client
@@ -666,6 +666,8 @@ export class SessionListBroadcaster {
   private broadcast(event: SessionListEvent, runtime?: AgentRuntime): void | Promise<void> {
     const validated = validateListEvent(event);
     if (!validated) return;
+    // A session appearing or going away must not be answered from a scan made before it.
+    if (validated.type !== 'session_status') noteAgentSessionListEvent(validated);
     // Suppress an upsert for an id the runtime has RETIRED, matching
     // `aggregateSessionList`'s drop. Both produce client-visible session rows,
     // so if only one applied the rule they would disagree about whether a

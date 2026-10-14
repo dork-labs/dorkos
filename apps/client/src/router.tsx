@@ -5,6 +5,7 @@ import { RouteErrorFallback, NotFoundFallback } from '@/layers/shared/ui';
 import type { RouteHeader } from '@/layers/widgets/one-bar';
 import { parseAppSearch, stringifyAppSearch } from '@/layers/shared/lib/router-search';
 import { createCommunityRouteMemory } from './app/community-route-memory';
+import { reloadSessionMatches } from './app/session-route-loader';
 import { routeTree } from './routeTree.gen';
 export * from './app/route-search';
 export * from './app/session-route-loader';
@@ -16,9 +17,12 @@ export * from './app/session-route-loader';
  * @param transport - The transport loaders reach the server through
  */
 export function createAppRouter(queryClient: QueryClient, transport: Transport) {
+  // Bound after creation: the router is what reloads, and it does not exist
+  // while its own options are being built.
+  let reloadRoute: (sessionId: string) => void = () => {};
   const router = createRouter({
     routeTree,
-    context: { queryClient, transport },
+    context: { queryClient, transport, reloadRoute: (sessionId) => reloadRoute(sessionId) },
     defaultPreload: 'intent',
     // Exact where TanStack's default is lossy (`?v=1.10` read as 1.1); see
     // `router-search.ts`. The app's own typed params read the same as before.
@@ -27,6 +31,7 @@ export function createAppRouter(queryClient: QueryClient, transport: Transport) 
     defaultErrorComponent: RouteErrorFallback,
     defaultNotFoundComponent: NotFoundFallback,
   });
+  reloadRoute = (sessionId) => reloadSessionMatches(router, sessionId);
   const rememberRoute = createCommunityRouteMemory(queryClient, transport);
   router.subscribe('onLoad', ({ toLocation }) => rememberRoute(toLocation));
   return router;

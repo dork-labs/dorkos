@@ -34,6 +34,9 @@ import {
   useSessionStatus,
   useSessionSettingsOverridesStore,
   resolveSessionForCwd,
+  markSessionListsReset,
+  noteSessionListsResetStamp,
+  resetSessionListResetMarker,
   sessionKeys,
 } from '@/layers/entities/session';
 import { sessionRouteLoader } from '../router';
@@ -251,6 +254,12 @@ describe('session list: one writer, many readers', () => {
  * anyone asks is the cache.
  */
 describe('session resolution for an agent this window has never opened', () => {
+  // A window whose event stream has connected and named no account switch.
+  beforeEach(() => {
+    resetSessionListResetMarker();
+    noteSessionListsResetStamp(null);
+  });
+
   const OTHER_CWD = '/projects/web';
 
   /** A transport whose session list actually depends on which directory is asked for. */
@@ -356,11 +365,50 @@ describe('session resolution for an agent this window has never opened', () => {
     queryClient.setQueryData<Session[]>(sessionKeys.list(OTHER_CWD), [
       makeSession({ id: 'old-account-s1', cwd: OTHER_CWD }),
     ]);
+    // What the binding does when `session_list_invalidated` arrives.
+    markSessionListsReset();
     await queryClient.invalidateQueries({ queryKey: sessionKeys.listRoot });
 
     const resolved = await resolveSessionForCwd({ queryClient, transport }, OTHER_CWD);
 
     expect(resolved?.sessionId).toBe('new-account-s1');
+    expect(listSessions).toHaveBeenCalledWith(OTHER_CWD);
+  });
+
+  it('re-asks when a reconnect names a switch it missed, invalidated or not (DOR-2891)', async () => {
+    // A hidden tab's released stream reopens without invalidating anything, so
+    // the only sign of a switch it missed is the one its first frame names.
+    const { queryClient, transport, listSessions } = createPerDirectoryHarness({
+      [OTHER_CWD]: [makeSession({ id: 'new-account-s1', cwd: OTHER_CWD })],
+    });
+    queryClient.setQueryData<Session[]>(sessionKeys.list(OTHER_CWD), [
+      makeSession({ id: 'old-account-s1', cwd: OTHER_CWD }),
+    ]);
+    noteSessionListsResetStamp('2026-10-13T11:00:00.000Z');
+
+    const resolved = await resolveSessionForCwd({ queryClient, transport }, OTHER_CWD);
+
+    expect(resolved?.sessionId).toBe('new-account-s1');
+    expect(listSessions).toHaveBeenCalledWith(OTHER_CWD);
+  });
+
+  it('opens a list a reconnect marked stale at once, and refreshes it behind (DOR-2891)', async () => {
+    // A stream reconnect invalidates every cache because events may have been
+    // missed — but the list is still this agent's chats. Waiting on the server
+    // for it made every agent click after a wake from sleep hang.
+    const { queryClient, transport, listSessions } = createPerDirectoryHarness({
+      [OTHER_CWD]: [makeSession({ id: 'fresh-s1', cwd: OTHER_CWD })],
+    });
+    queryClient.setQueryData<Session[]>(sessionKeys.list(OTHER_CWD), [
+      makeSession({ id: 'cached-s1', cwd: OTHER_CWD }),
+    ]);
+    await queryClient.invalidateQueries({ queryKey: sessionKeys.listRoot });
+    // Never answer, so a resolver that waited would never resolve.
+    listSessions.mockImplementation(() => new Promise(() => {}));
+
+    const resolved = await resolveSessionForCwd({ queryClient, transport }, OTHER_CWD);
+
+    expect(resolved?.sessionId).toBe('cached-s1');
     expect(listSessions).toHaveBeenCalledWith(OTHER_CWD);
   });
 });

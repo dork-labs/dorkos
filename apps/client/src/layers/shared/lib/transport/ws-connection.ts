@@ -298,8 +298,10 @@ export class WSConnection {
    * A WebSocket does not compete for the HTTP socket pool, so this is no longer
    * a scarcity measure — it is kept because it still stops a backgrounded window
    * holding a server-side subscription (and the projector waiter behind it) open
-   * for hours. The reconnect resumes from the retained cursor, so nothing is
-   * missed.
+   * for hours. A session stream resumes from the retained cursor. The global
+   * `/api/events` stream has no replay, so what it said while parked is gone:
+   * the park reports `reconnecting`, and the reopen is a recovery that callers
+   * re-sync from (DOR-2896).
    *
    * @param graceMs - Grace period before closing when hidden. Default: 30000.
    */
@@ -312,6 +314,12 @@ export class WSConnection {
           this.visibilityGraceTimer = null;
           this.closeSocket();
           this.clearTimers();
+          // A parked socket is down: events sent now are missed. Saying so is
+          // what lets the reopen count as a recovery (`event-stream-context`
+          // re-syncs every cache on one), since `closeSocket` drops `onclose`
+          // and nothing else would report it. A stream that had already given up
+          // keeps saying so.
+          if (this.state !== 'disconnected') this.setState('reconnecting');
         }, graceMs);
         return;
       }

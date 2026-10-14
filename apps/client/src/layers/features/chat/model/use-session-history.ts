@@ -27,6 +27,13 @@ interface UseSessionHistoryParams {
   sessionCwd: SessionScopedCwd;
   enableMessagePolling: boolean;
   isStreaming: boolean;
+  /**
+   * Whether the session's live stream already holds its history (its snapshot
+   * landed, now or on an earlier visit). Then this read is skipped: the stream
+   * is what the chat draws, and asking again re-sent the whole chat on every
+   * revisit (DOR-2890).
+   */
+  streamHydrated: boolean;
   setMessages: (update: ChatMessage[] | ((prev: ChatMessage[]) => ChatMessage[])) => void;
 }
 
@@ -46,6 +53,7 @@ export function useSessionHistory({
   sessionCwd,
   enableMessagePolling,
   isStreaming,
+  streamHydrated,
   setMessages,
 }: UseSessionHistoryParams) {
   const isTabVisible = useTabVisibility();
@@ -70,7 +78,9 @@ export function useSessionHistory({
     refetchOnWindowFocus: false,
     // A null directory is a complete question — the server resolves the
     // session's own (DOR-1444). The URL supplies the scope on the first render.
-    enabled: sessionId !== null,
+    // A read already out when the snapshot lands still finishes; nothing new
+    // goes out after it, polling included.
+    enabled: sessionId !== null && !streamHydrated,
     refetchInterval: () => {
       if (isStreaming) return false;
       if (!enableMessagePolling) return false;
