@@ -146,7 +146,11 @@ describe('GET /api/sessions/:id/events (durable snapshot → replay → live)', 
 
     expect(frames[0]?.event).toBe('snapshot');
     expect((frames[0]?.data as SessionSnapshot).messages).toHaveLength(1);
-    expect(frames[0]?.id).toBeUndefined(); // snapshot carries cursor, not an id
+    // The snapshot carries an id at its own cursor, so a reader that leaves and
+    // comes back resumes from it instead of taking another snapshot (DOR-2913).
+    expect(frames[0]?.id).toBe(
+      `${SESSION_ID}-${STREAM_EPOCH}-g0-${(frames[0]?.data as SessionSnapshot).cursor}`
+    );
 
     const live = frames.slice(1);
     expect(live.map((f) => f.event)).toEqual(['turn_start', 'text_delta']);

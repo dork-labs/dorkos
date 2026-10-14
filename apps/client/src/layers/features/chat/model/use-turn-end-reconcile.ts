@@ -17,7 +17,9 @@ import { useEffect, useRef } from 'react';
 import type { QueryClient } from '@tanstack/react-query';
 import type { useTransport } from '@/layers/shared/model';
 import {
+  takeStreamResume,
   useSessionStreamStore,
+  useStreamResumeGeneration,
   type SessionScopedCwd,
   type SessionStreamState,
 } from '@/layers/entities/session';
@@ -96,6 +98,12 @@ export function useTurnEndReconcile({
   // counter and not an edge.
   const prevUserTurnCountRef = useRef<Map<string, number>>(new Map());
 
+  // Per session: after a resume, the optimistic message held at that moment
+  // (DOR-2913). Turns replayed from the gap re-arm nothing until the person
+  // sends a message of their own from this window, which is a new one.
+  const resumedOptimisticRef = useRef<Map<string, string | null>>(new Map());
+  const resumeGeneration = useStreamResumeGeneration(sessionId);
+
   const lifecycle = streamState.status?.lifecycle ?? null;
   const hydrationGeneration = streamState.hydrationGeneration;
   const userTurnCount = streamState.userTurnCount;
@@ -105,10 +113,25 @@ export function useTurnEndReconcile({
 
     // A turn the person started re-arms the notification, wherever in the batch
     // that `turn_start` happened to land.
+    const optimisticNow =
+      useSessionStreamStore.getState().getSession(sessionId).optimisticUserMessage?.id ?? null;
+    // A resumed stream replays what happened while the chat was closed: its
+    // settles still reload history, but a reply that finished meanwhile is no
+    // news to ring about.
+    if (takeStreamResume(sessionId)) {
+      chimeSpentRef.current.set(sessionId, true);
+      resumedOptimisticRef.current.set(sessionId, optimisticNow);
+    }
     const prevUserTurns = prevUserTurnCountRef.current.get(sessionId);
     prevUserTurnCountRef.current.set(sessionId, userTurnCount);
     if (prevUserTurns !== undefined && userTurnCount !== prevUserTurns) {
-      chimeSpentRef.current.set(sessionId, false);
+      const replayed =
+        resumedOptimisticRef.current.has(sessionId) &&
+        resumedOptimisticRef.current.get(sessionId) === optimisticNow;
+      if (!replayed) {
+        resumedOptimisticRef.current.delete(sessionId);
+        chimeSpentRef.current.set(sessionId, false);
+      }
     }
 
     const prevGen = prevHydrationGenRef.current.get(sessionId);
@@ -227,5 +250,13 @@ export function useTurnEndReconcile({
       chimeSpentRef.current.set(reloadId, true);
       onStreamingDoneRef.current?.();
     }
-  }, [sessionId, lifecycle, hydrationGeneration, userTurnCount, transport, queryClient]);
+  }, [
+    sessionId,
+    lifecycle,
+    hydrationGeneration,
+    userTurnCount,
+    resumeGeneration,
+    transport,
+    queryClient,
+  ]);
 }

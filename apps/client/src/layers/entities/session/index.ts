@@ -189,3 +189,8 @@ export {
 export type { PlacedSession } from './lib/cached-session-row';
 export { sessionDetailQueryOptions } from './api/session-detail-query';
 export type { SessionDetailQueryDeps } from './api/session-detail-query';
+export {
+  markStreamResumed,
+  takeStreamResume,
+  useStreamResumeGeneration,
+} from './model/stream/stream-resume-marks';

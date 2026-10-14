@@ -183,14 +183,20 @@ export async function deliverSessionStream(
       // which is ADR-0310's reasoning in the other direction. A process with no
       // canvas service answers the empty table rather than failing the stream.
       snap.canvas = peekCanvasService()?.list(sessionScope(sessionId)) ?? [];
-      // The snapshot is the hydration frame and carries `cursor`, not a seq, so
-      // it gets no frame id — the first live event after it carries the next.
-      await sink.send({ event: 'snapshot', data: snap });
+      // Subscribed, and its seq space read in the same tick (the reason is given
+      // at the top), BEFORE the snapshot goes out, so the snapshot frame can
+      // carry an id at its own cursor: a chat opened again later resumes from
+      // here instead of taking a fresh snapshot (DOR-2913). The order loses
+      // nothing, since the subscription replays from that same cursor.
       iterator = runtime
         .subscribeSession(ctx, sessionId, snap.cursor, sink.signal)
         [Symbol.asyncIterator]();
-      // Same tick as the subscribe above, for the reason given at the top.
       generation = runtime.streamGeneration(ctx, sessionId);
+      await sink.send({
+        event: 'snapshot',
+        data: snap,
+        id: streamFrameId(sessionId, generation, snap.cursor),
+      });
     }
 
     documents?.start();

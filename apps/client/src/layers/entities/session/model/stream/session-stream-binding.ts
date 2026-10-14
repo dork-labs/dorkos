@@ -12,12 +12,17 @@
  */
 import { AccountUsageSchema } from '@dorkos/shared/account-usage';
 import { streamManager } from '@/layers/shared/lib/transport';
+import {
+  forgetSessionResume,
+  setSessionResumePolicy,
+} from '@/layers/shared/lib/transport/resume/session-resume';
 import { clearUiStateSendCache } from '@/layers/shared/lib';
 import { useAgentBirthStore, useAppStore } from '@/layers/shared/model';
 
 import { useHistoryWindowStore } from './history-window-store';
 import { useSessionStreamStore } from './session-stream-store';
 import { useSessionListStore } from './session-list-store';
+import { markStreamResumed } from './stream-resume-marks';
 import {
   markSessionListsReset,
   markSessionListsStreamDown,
@@ -69,6 +74,15 @@ const SETTLED_LIFECYCLES = new Set(['idle', 'interrupted']);
 export function initSessionStreamBinding(): void {
   if (bound) return;
   bound = true;
+
+  // A chat reopened while this store still holds its state picks its stream
+  // up from the last cursor instead of a fresh snapshot (DOR-2913). Without
+  // the state there is nothing to replay onto, so it takes the snapshot.
+  setSessionResumePolicy({
+    canResume: (sessionId) =>
+      useSessionStreamStore.getState().sessions[sessionId]?.streamReadyCursor != null,
+    onResume: markStreamResumed,
+  });
 
   streamManager.setListeners({
     onSnapshot: (sessionId, snapshot) => {
@@ -140,6 +154,7 @@ export function initSessionStreamBinding(): void {
       if (event.type === 'session_removed') {
         useSessionStreamStore.getState().removeSession(event.sessionId);
         clearUiStateSendCache(event.sessionId);
+        forgetSessionResume(event.sessionId);
       }
     },
   });

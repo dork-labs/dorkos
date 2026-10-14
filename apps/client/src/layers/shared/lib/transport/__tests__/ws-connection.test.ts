@@ -377,4 +377,12 @@ describe('WSConnection', () => {
       conn.destroy();
     }
   });
+
+  it('opens its first socket at the cursor it was told to resume from (DOR-2913)', () => {
+    const conn = new WSConnection(TEST_URL, { eventHandlers: {}, resumeFrom: 'abc-1-g-7' });
+    expect(conn.getLastEventId()).toBe('abc-1-g-7');
+    conn.connect();
+    expect(new URL(latest().url).searchParams.get(STREAM_RESUME_PARAM)).toBe('abc-1-g-7');
+    conn.destroy();
+  });
 });

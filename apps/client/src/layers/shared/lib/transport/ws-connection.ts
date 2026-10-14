@@ -94,10 +94,17 @@ export interface StreamConnectionOptions {
   disconnectedThreshold?: number;
   /** Time connected before the failure count resets. Default: 10000. */
   stabilityWindowMs?: number;
+  /**
+   * A cursor to resume from on the first connect, as if this connection had
+   * already received that frame: a chat opened again picks its stream up
+   * where the last connection left it (DOR-2913). The server answers with a
+   * full snapshot instead when it can no longer replay from there.
+   */
+  resumeFrom?: string;
 }
 
 /** Resolved options with all defaults applied. */
-type ResolvedOptions = Required<StreamConnectionOptions>;
+type ResolvedOptions = Required<Omit<StreamConnectionOptions, 'resumeFrom'>>;
 
 /**
  * Turn a durable stream's HTTP URL into the WebSocket URL for the same
@@ -170,6 +177,7 @@ export class WSConnection {
 
   constructor(url: string, options: StreamConnectionOptions) {
     this.url = url;
+    this.lastEventId = options.resumeFrom ?? null;
     this.options = {
       eventHandlers: options.eventHandlers,
       onStateChange: options.onStateChange ?? ((): void => {}),
@@ -190,6 +198,11 @@ export class WSConnection {
   /** Number of consecutive failed connection attempts. */
   getFailedAttempts(): number {
     return this.failedAttempts;
+  }
+
+  /** The resume cursor: the id of the last frame received, or the one resumed from. */
+  getLastEventId(): string | null {
+    return this.lastEventId;
   }
 
   /** Timestamp of the last received frame, or `null` if none has arrived. */

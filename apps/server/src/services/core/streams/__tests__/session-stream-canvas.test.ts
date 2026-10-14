@@ -29,6 +29,7 @@ import { setCanvasService } from '../../../canvas/index.js';
 import { sessionScope, SESSION_OWNER_AUTHOR } from '../../../canvas/scopes.js';
 import type { DurableStreamSink } from '../durable-stream-sink.js';
 import { deliverSessionStream } from '../session-stream-delivery.js';
+import { streamFrameId } from '../../../../lib/stream-cursor.js';
 
 const SESSION = 'sess-streamed';
 
@@ -138,5 +139,23 @@ describe('the snapshot a cold connect receives', () => {
     });
 
     expect(snapshotFrom(sink).canvas).toEqual([]);
+  });
+
+  it('stamps the snapshot with a resume cursor at its own position (DOR-2913)', async () => {
+    setCanvasService(canvas);
+    const sink = new CollectingSink();
+    await deliverSessionStream(sink, {
+      sessionId: SESSION,
+      runtime,
+      ctx,
+      resume: undefined,
+      principal: { kind: 'operator' },
+    });
+    const frame = sink.frames.find((f) => f.event === 'snapshot')!;
+    // A reader that leaves now and comes back resumes from here, in the seq
+    // space that answered, instead of asking for another snapshot.
+    expect(frame.id).toBe(
+      streamFrameId(SESSION, runtime.streamGeneration(ctx, SESSION), snapshotFrom(sink).cursor)
+    );
   });
 });

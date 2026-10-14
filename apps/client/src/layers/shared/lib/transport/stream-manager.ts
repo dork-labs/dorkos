@@ -56,7 +56,8 @@ import {
   type SessionListEvent,
 } from '@dorkos/shared/session-stream';
 
-import { WSConnection, type StreamConnectionOptions } from './ws-connection';
+import type { StreamConnectionOptions, WSConnection } from './ws-connection';
+import { createResumableWSConnection } from './resume/session-resume';
 import { addBreadcrumb } from '../breadcrumbs';
 import { SESSION_LIST_EVENT_TYPES } from './session-stream-methods';
 import { GENERIC_EVENTS, type GenericEventName } from './generic-events';
@@ -317,8 +318,7 @@ export class StreamManager {
    *   Defaults to constructing a real {@link WSConnection}.
    */
   constructor(options: { createConnection?: CreateConnection } = {}) {
-    this.createConnection =
-      options.createConnection ?? ((url, opts) => new WSConnection(url, opts));
+    this.createConnection = options.createConnection ?? createResumableWSConnection;
   }
 
   /** Replace the listener set. The binding calls this once to wire the store. */

@@ -25,7 +25,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { SessionEvent, SessionSnapshot } from '@dorkos/shared/session-stream';
 import type { HistoryMessage } from '@dorkos/shared/types';
 import type { Transport } from '@dorkos/shared/transport';
-import { useSessionStreamStore } from '@/layers/entities/session';
+import { markStreamResumed, useSessionStreamStore } from '@/layers/entities/session';
 import { useTurnEndReconcile } from '../model/use-turn-end-reconcile';
 import { projectInProgressTurn } from '../model/stream/project-session-turn';
 
@@ -332,5 +332,36 @@ describe('the wake-up seam over the real store', () => {
     ]);
     // What came before the anchor is the store's own object, untouched.
     expect(after[0]).toBe(held[0]);
+  });
+
+  it('rings for nothing a resumed stream replays, and rings again for the next message sent (DOR-2913)', async () => {
+    useSessionStreamStore.getState().applySnapshot(SESSION_ID, snapshot());
+    const transport = {
+      getMessages: vi.fn().mockResolvedValue({ messages: HISTORY }),
+    } as unknown as Transport;
+    const onStreamingDone = vi.fn();
+    mountOverStore(transport, onStreamingDone);
+
+    // The chat was closed while this turn ran; reopening resumed its stream.
+    act(() => markStreamResumed(SESSION_ID));
+    applyBatch([
+      { type: 'turn_start', seq: 1, userMessage: 'asked before leaving' },
+      { type: 'text_delta', seq: 2, text: REPLY },
+    ]);
+    applyBatch([{ type: 'turn_end', seq: 3 }]);
+    // History is still brought up to date for the replayed turn…
+    await waitFor(() => expect(transport.getMessages).toHaveBeenCalled());
+    // …but a reply that finished while the person was elsewhere is no news.
+    expect(onStreamingDone).not.toHaveBeenCalled();
+
+    // A message sent from here now is a new request, and its reply rings.
+    act(() =>
+      useSessionStreamStore
+        .getState()
+        .setOptimisticUserMessage(SESSION_ID, { id: 'sent-now', content: 'and now?' })
+    );
+    applyBatch([{ type: 'turn_start', seq: 4, userMessage: 'and now?' }]);
+    applyBatch([{ type: 'turn_end', seq: 5 }]);
+    await waitFor(() => expect(onStreamingDone).toHaveBeenCalledTimes(1));
   });
 });
