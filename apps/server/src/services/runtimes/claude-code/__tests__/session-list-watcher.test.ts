@@ -457,13 +457,18 @@ describe('watchSessionList', () => {
   // DOR-2907: an append moves no directory's mtime, so a change event the watch
   // dropped used to leave the row stale until the session changed again.
   /**
-   * Run the reconcile sweeps on the fake clock, a few real I/O turns per step,
-   * since each sweep reads the disk before it schedules the next. Stops when
-   * `done` says so, or after `steps` half-seconds (two minutes by default).
+   * Run the reconcile sweeps on the fake clock. Each sweep reads the disk
+   * before it schedules the next, so before each step the REAL loop turns until
+   * a timer is pending again: a sweep still waiting on its `stat`s holds none.
+   * A fixed number of turns was a guess a busy CI runner lost (the merge queue
+   * failed this file twice on one head). Stops when `done` says so, or after
+   * `steps` half-seconds (two minutes by default).
    */
   async function runSweepsUntil(done: () => boolean, steps = 240): Promise<void> {
     for (let step = 0; step < steps && !done(); step++) {
-      for (let turn = 0; turn < 5; turn++) await new Promise((r) => setImmediate(r));
+      for (let turn = 0; turn < 5 || (vi.getTimerCount() === 0 && turn < 2_000); turn++) {
+        await new Promise((r) => setImmediate(r));
+      }
       await vi.advanceTimersByTimeAsync(SESSION_LIST_DEBOUNCE_MS * 2);
     }
   }
