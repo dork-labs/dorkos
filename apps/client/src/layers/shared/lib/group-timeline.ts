@@ -173,6 +173,50 @@ function dayKeyOf(time: number): string {
   return `${date.getFullYear()}-${date.getMonth() + 1}-${date.getDate()}`;
 }
 
+/** A timestamp's epoch ms and local day key, worked out once. */
+interface PlacedTime {
+  time: number | null;
+  dayKey: string | null;
+}
+
+/**
+ * Every timestamp already placed, by its text (DOR-2895 follow-up, DOR-2912).
+ * A streaming reply lays the whole transcript out again on every word, and
+ * parsing every message's date each time was most of that cost on a long chat.
+ * A timestamp names one instant, so its answer never changes; the day key
+ * follows the local time zone, which is why a zone change starts afresh.
+ */
+const placedTimes = new Map<string, PlacedTime>();
+let placedZone = new Date().getTimezoneOffset();
+
+/** The most timestamps kept before starting afresh, so a long-lived tab stays bounded. */
+const PLACED_TIMES_MAX = 50_000;
+
+/**
+ * Start the timestamp cache afresh if the time zone moved since it was filled,
+ * and say so: rows laid out in the old zone hold the old days.
+ * Checked once per layout, not per timestamp: the live message's empty
+ * timestamp is always cached, so a per-miss check could go unnoticed.
+ */
+function checkTimeZone(): boolean {
+  const zone = new Date().getTimezoneOffset();
+  if (zone === placedZone) return false;
+  placedTimes.clear();
+  placedZone = zone;
+  return true;
+}
+
+/** {@link parseTimestamp} and {@link dayKeyOf} for one timestamp, cached. */
+function placeInTime(timestamp: string): PlacedTime {
+  const cached = placedTimes.get(timestamp);
+  if (cached) return cached;
+  if (placedTimes.size >= PLACED_TIMES_MAX) placedTimes.clear();
+  const time = parseTimestamp(timestamp);
+  const placed = { time, dayKey: time === null ? null : dayKeyOf(time) };
+  placedTimes.set(timestamp, placed);
+  return placed;
+}
+
 /** Midnight (local) of the day a timestamp falls in. */
 function startOfDay(time: number): number {
   const date = new Date(time);
@@ -220,25 +264,121 @@ export function buildTimelineRows(
   items: readonly TimelineItem[],
   options: BuildTimelineRowsOptions
 ): TimelineRow[] {
+  checkTimeZone();
+  return layOut(items, options, [], 0, INITIAL_STATE);
+}
+
+/** What the layout pass carries from one item to the next. */
+interface LayoutState {
+  cursorPassed: boolean;
+  unreadPlaced: boolean;
+  previousAuthorId: string | null;
+  previousDayKey: string | null;
+  previousTime: number | null;
+}
+
+const INITIAL_STATE: LayoutState = {
+  cursorPassed: false,
+  unreadPlaced: false,
+  previousAuthorId: null,
+  previousDayKey: null,
+  previousTime: null,
+};
+
+/**
+ * Lay out a transcript again after its tail changed, keeping the rows of the
+ * unchanged part (DOR-2912).
+ *
+ * A streaming reply changes only the last item on every word, and laying out
+ * every row of a long chat again was the largest cost left on that path. The
+ * rows up to the start of the group the first changed item could touch are
+ * reused as they are, the very same objects, and only the rest is built again.
+ * The answer is identical to {@link buildTimelineRows} on the same input.
+ *
+ * @param items - The transcript, oldest first.
+ * @param options - The same options the previous layout used.
+ * @param previous - That layout's rows.
+ * @param from - How many leading items are unchanged since then: same id,
+ *   author and timestamp at the same index. The caller vouches for this, and
+ *   for `options` being the ones `previous` was laid out with; a wrong answer
+ *   gives wrong rows, not an error. Clamped to the items there are.
+ * @returns The rows, and how many leading rows were reused unchanged.
+ */
+export function relayTimelineRows(
+  items: readonly TimelineItem[],
+  options: BuildTimelineRowsOptions,
+  previous: readonly TimelineRow[],
+  from: number
+): { rows: TimelineRow[]; kept: number } {
+  // Rows laid out in another time zone carry its days, so none are kept.
+  if (checkTimeZone()) return { rows: buildTimelineRows(items, options), kept: 0 };
+  from = Math.min(from, items.length);
+  // Restart at the group holding the last unchanged item: its closing depends
+  // on what follows it, which may have changed. Everything before is final.
+  let itemRow = -1;
+  for (let r = previous.length - 1; r >= 0 && from > 0; r--) {
+    const row = previous[r]!;
+    if (row.kind !== 'item' || row.index >= from) continue;
+    if (row.grouping.position === 'first' || row.grouping.position === 'only') {
+      itemRow = r;
+      break;
+    }
+  }
+  // Nothing to keep when the restart is the very first item (dividers may sit
+  // above it, so the row index alone does not say so).
+  const restart = itemRow === -1 ? 0 : (previous[itemRow] as TimelineItemRow).index;
+  if (restart === 0) return { rows: buildTimelineRows(items, options), kept: 0 };
+  // The dividers drawn for the restart item belong to it, so they go too.
+  let kept = itemRow;
+  while (kept > 0 && previous[kept - 1]!.kind !== 'item') kept--;
+  const state: LayoutState = {
+    cursorPassed: options.unreadFromStart ?? false,
+    unreadPlaced: false,
+    previousAuthorId: items[restart - 1]!.authorId,
+    previousDayKey: null,
+    previousTime: null,
+  };
+  // The day and time carry from the nearest earlier item that has one.
+  for (let i = restart - 1; i >= 0 && state.previousTime === null; i--) {
+    const { time, dayKey } = placeInTime(items[i]!.timestamp);
+    state.previousDayKey = dayKey;
+    state.previousTime = time;
+  }
+  if (options.lastSeenId) {
+    for (let i = 0; i < restart && !state.cursorPassed; i++) {
+      if (items[i]!.id === options.lastSeenId) state.cursorPassed = true;
+    }
+  }
+  for (let r = 0; r < kept; r++)
+    if (previous[r]!.kind === 'unread-divider') state.unreadPlaced = true;
+  return { rows: layOut(items, options, previous.slice(0, kept), restart, state), kept };
+}
+
+/** The layout pass itself, from item `start` on, after the rows already laid. */
+function layOut(
+  items: readonly TimelineItem[],
+  options: BuildTimelineRowsOptions,
+  rows: TimelineRow[],
+  start: number,
+  state: LayoutState
+): TimelineRow[] {
   const { now, lastSeenId, unreadFromStart = false } = options;
-  const rows: TimelineRow[] = [];
   let lastItemRow: TimelineItemRow | null = null;
   // Starting "passed" puts the rule above the first item — the reader has a
   // cursor and it sits before everything here.
-  let cursorPassed = unreadFromStart;
-  let unreadPlaced = false;
+  let cursorPassed = start === 0 ? unreadFromStart : state.cursorPassed;
+  let unreadPlaced = state.unreadPlaced;
   // Carried from the previous item. The author id starts null, which no author
   // matches, so the first item always opens a group. The day and time survive
   // items with no usable timestamp, so a later dated item still compares against
   // the last thing actually known.
-  let previousAuthorId: string | null = null;
-  let previousDayKey: string | null = null;
-  let previousTime: number | null = null;
+  let previousAuthorId: string | null = state.previousAuthorId;
+  let previousDayKey: string | null = state.previousDayKey;
+  let previousTime: number | null = state.previousTime;
 
-  for (let i = 0; i < items.length; i++) {
+  for (let i = start; i < items.length; i++) {
     const item = items[i]!;
-    const time = parseTimestamp(item.timestamp);
-    const dayKey = time === null ? null : dayKeyOf(time);
+    const { time, dayKey } = placeInTime(item.timestamp);
     const dayChanged = dayKey !== null && dayKey !== previousDayKey;
 
     if (dayChanged && time !== null) {

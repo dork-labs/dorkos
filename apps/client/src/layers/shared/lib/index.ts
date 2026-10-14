@@ -356,7 +356,12 @@ export {
   type FilterValues,
 } from './filter-engine';
 export { getAgentDisplayName, slugifyAgentName } from '@dorkos/shared/validation';
-export { buildTimelineRows, unreadPlacement, GROUP_GAP_MS } from './group-timeline';
+export {
+  buildTimelineRows,
+  relayTimelineRows,
+  unreadPlacement,
+  GROUP_GAP_MS,
+} from './group-timeline';
 export type {
   TimelineItem,
   TimelineRow,
