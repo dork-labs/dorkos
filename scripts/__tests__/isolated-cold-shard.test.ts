@@ -58,6 +58,16 @@ function report(name: string | null, failed = false, count = 33) {
 }
 
 describe('isolated Room, cold and checkbox whole-file phases', () => {
+  it('loads the real TypeScript runner and dependency exports in native Node', async () => {
+    const entry = new URL('../run-isolated-cold-shard.ts', import.meta.url).href;
+    const code = `const runner = await import(${JSON.stringify(entry)}); if (typeof runner.commands !== 'function' || typeof runner.completedServerDependencies !== 'function' || typeof runner.dependencyOutputSnapshot !== 'function') throw new Error('native runner exports unavailable');`;
+    expect(
+      await native(
+        [process.execPath, '--input-type=module', '--eval', code],
+        path.resolve(import.meta.dirname, '../..')
+      )
+    ).toBe(0);
+  });
   it('awaits a genuine child close before the next phase can observe its final write', async () => {
     const directory = mkdtempSync(path.join(tmpdir(), 'cold-phase-await-'));
     const child = path.join(directory, 'child.cjs');
@@ -491,6 +501,7 @@ describe('completed ordinary prerequisite reuse', () => {
     mkdirSync(path.join(root, 'packages/shared/dist'), { recursive: true });
     const file = path.join(root, 'packages/shared/dist/index.js');
     writeFileSync(file, 'built');
+    chmodSync(file, 0o644);
     const tasks = completedServerDependencies(summary());
     const snapshot = dependencyOutputSnapshot(root, tasks ?? []);
     const command = ['pnpm', 'exec', 'turbo', 'test', '--', '--run'];

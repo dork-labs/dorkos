@@ -2,12 +2,12 @@ import {
   serverSelected,
   completedServerDependencies,
   dependencyOutputSnapshot,
-} from './cold-shard-dependencies.js';
+} from './cold-shard-dependencies.ts';
 export {
   serverSelected,
   completedServerDependencies,
   dependencyOutputSnapshot,
-} from './cold-shard-dependencies.js';
+} from './cold-shard-dependencies.ts';
 /** Keep real Room, cold-import and checkbox recovery files behind completed ordinary task work. */
 import { spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
@@ -30,6 +30,7 @@ export const ROOM_FILE =
   'src/services/canvas/doc-channel/__tests__/original-reviewed-room-replay.test.ts';
 export const CHECKBOX_FILE =
   'src/services/canvas/doc-channel/writes/__tests__/checkbox-service.test.ts';
+const SERVER_TASK = '@dorkos/server#test';
 const COUNTERS = [
   'numTotalTestSuites',
   'numPassedTestSuites',
