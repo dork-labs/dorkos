@@ -11,7 +11,8 @@ import { traceRuntime, watchRuntimeSignin } from '../../observability/index.js';
 import { holdAwakeDuringTurns } from '../keep-awake/hold-during-turn.js';
 import { recordTurnLevels } from '../turn-power/turn-levels.js';
 import { recordToolUse } from '../../audit/record-tool-use.js';
-import { holdPausedAgents } from '../../mesh/pause/hold-paused-turns.js';
+import { holdPausedAgents, isSessionPaused } from '../../mesh/pause/hold-paused-turns.js';
+import { keepAwakeService } from '../keep-awake/keep-awake-service.js';
 
 /**
  * Wrap one runtime in every registration-seam decorator, innermost first:
@@ -30,7 +31,10 @@ import { holdPausedAgents } from '../../mesh/pause/hold-paused-turns.js';
  *    and must see every turn, whoever started it.
  * 5. **Keep-awake** wraps outermost so its hold spans everything inside it: the
  *    computer stays awake for as long as the caller is consuming the turn,
- *    whoever the caller is (spec `keep-awake`).
+ *    whoever the caller is (spec `keep-awake`), and through any background
+ *    work the turn leaves running. It asks the pause service directly for the
+ *    turns the agent starts on its own, which the pause hold outside it cannot
+ *    refuse before they reach it.
  * 6. **The pause hold** wraps everything: a turn for a paused agent is refused
  *    before any decorator inside sees it, so a held turn keeps nothing awake
  *    and records no tool use, and every turn that does run can be stopped by a
@@ -45,7 +49,9 @@ export function decorateRuntime(
 ): AgentRuntime {
   return holdPausedAgents(
     holdAwakeDuringTurns(
-      recordToolUse(watchRuntimeSignin(traceRuntime(recordTurnLevels(runtime, storedModeOf))))
+      recordToolUse(watchRuntimeSignin(traceRuntime(recordTurnLevels(runtime, storedModeOf)))),
+      keepAwakeService,
+      (sessionId) => isSessionPaused(runtime, sessionId)
     )
   );
 }
