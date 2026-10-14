@@ -230,6 +230,19 @@ describe('an extension served with a fetch handler', () => {
     expect(res.headers.location).toBeUndefined();
   });
 
+  it('moves a redirect to one of its own paths under its mount, never onto a DorkOS route', async () => {
+    serve(
+      createFetchHandler(
+        'My Extension',
+        () => new Response(null, { status: 302, headers: { location: '/api/config?x=1' } })
+      )
+    );
+
+    const res = await request(server).get('/api/ext/my-ext/go').redirects(0);
+
+    expect(res.headers.location).toBe('/api/ext/my-ext/api/config?x=1');
+  });
+
   it('keeps a redirect that stays inside its own mount', async () => {
     serve(
       createFetchHandler(
@@ -323,8 +336,8 @@ describe('the headers a fetch handler’s answer may carry', () => {
   it.each([
     ['another site', 'https://evil.example/login'],
     ['a protocol-relative host', '//evil.example/login'],
-    ['another DorkOS route', '/api/config'],
-    ['a sibling extension', '/api/ext/my-ext-two/x'],
+    ['a script', 'javascript:alert(1)'],
+    ['a path with a backslash', '/\\evil.example/login'],
   ])('drops a redirect to %s', async (_label, location) => {
     serve(
       createFetchHandler(

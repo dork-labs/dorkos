@@ -80,6 +80,30 @@ export function sameMountLocation(
 }
 
 /**
+ * A fetch handler's `location` as the person's browser must see it. The
+ * handler lives below its mount (`/items` is `/api/ext/<id>/items`), so a
+ * location on its own origin is moved under the mount, the way a reverse
+ * proxy rewrites one. A location on any other origin is left as it is, for
+ * {@link sameMountLocation} to drop.
+ *
+ * @param value - The `location` the handler set.
+ * @param handlerUrl - The URL of the request the handler was given.
+ * @param mount - The extension's mount, `/api/ext/<id>`.
+ * @returns The location in DorkOS's terms, or `null` when it can't be read.
+ */
+export function mountedLocation(value: string, handlerUrl: string, mount: string): string | null {
+  if (value.includes('\\')) return null;
+  let target: URL;
+  try {
+    target = new URL(value, handlerUrl);
+  } catch {
+    return null;
+  }
+  if (target.origin !== new URL(handlerUrl).origin) return value;
+  return `${mount}${target.pathname}${target.search}${target.hash}`;
+}
+
+/**
  * Whether a reply header other than `location` may pass.
  *
  * @param name - The header's name, lower-case.
@@ -115,16 +139,19 @@ export function outboundHeaders(
 
 /**
  * The same rule for a web `Headers` (a fetch handler's `Response` in the
- * server's process).
+ * server's process), with its `location` first moved under the mount
+ * ({@link mountedLocation}).
  *
  * @param headers - The reply's headers.
  * @param mount - The extension's mount, `/api/ext/<id>`.
+ * @param handlerUrl - The URL of the request the handler was given.
  */
-export function outboundWebHeaders(headers: Headers, mount: string): Headers {
+export function outboundWebHeaders(headers: Headers, mount: string, handlerUrl: string): Headers {
   const out = new Headers();
   headers.forEach((value, key) => {
     if (key === 'location') {
-      const location = sameMountLocation(value, mount);
+      const mounted = mountedLocation(value, handlerUrl, mount);
+      const location = mounted === null ? null : sameMountLocation(mounted, mount);
       if (location !== null) out.set('location', location);
       return;
     }

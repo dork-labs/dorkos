@@ -11,9 +11,11 @@
  *
  * ## What crosses
  *
- * - **The request.** Method, the URL as sent (so `req.baseUrl`, `req.path`
- *   and `req.params` in the child match the in-process case), and the
- *   headers below. A body the chain's JSON parser already read is re-encoded
+ * - **The request.** Method, the path as the route matched it (the mount,
+ *   then the path below it with dot segments resolved, then the query), so
+ *   `req.baseUrl`, `req.path` and `req.params` in the child match the
+ *   in-process case and an absolute-form or `//host` target can't name
+ *   another host there; and the headers below. A body the chain's JSON parser already read is re-encoded
  *   as JSON with a fresh `content-length`; any other body is streamed as is.
  *   Either way the app-wide 1 MB limit holds.
  * - **Headers going in.** Stripped: `cookie`, `authorization`,
@@ -162,7 +164,7 @@ export function createIsolatedHandler(options: IsolatedHandlerOptions): Extensio
   const { displayName: name, host } = options;
   const idleMs = options.idleMs ?? ISOLATION_LIMITS.httpIdleMs;
 
-  const forward: ExtensionHttpHandler = ({ c, mount }) =>
+  const forward: ExtensionHttpHandler = ({ c, mount, subPath }) =>
     new Promise<Response>((resolve) => {
       const req = c.env.incoming;
       const res = c.env.outgoing;
@@ -245,7 +247,7 @@ export function createIsolatedHandler(options: IsolatedHandlerOptions): Extensio
       try {
         upstream = http.request({
           method: req.method,
-          path: req.url,
+          path: `${mount}${subPath}${new URL(c.req.url).search}`,
           headers,
           createConnection: () => socket,
         });

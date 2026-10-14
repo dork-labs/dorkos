@@ -10,7 +10,10 @@
  * origin, the `Host` the chain vetted, whatever the request target named.
  * Everything else is the request as sent, behind the whole `/api` chain:
  *
- * - **Headers** as the caller sent them, as an in-process router sees them.
+ * - **Headers** as the caller sent them, as an in-process router sees them,
+ *   less the header that carries the person verdict to an extension in its
+ *   own process: a caller could forge it here, and the verdict is the
+ *   handler's second argument.
  * - **The body.** A JSON body the chain already parsed is sent again as JSON,
  *   so `request.json()` works; any other body is the caller's bytes. A body
  *   over 1 MB is answered `413` before the handler runs, as for an extension
@@ -25,8 +28,10 @@
  * The answer's status and body are sent as they are. Its headers pass the one
  * reply-header rule (`reply-headers.ts`), so a fetch handler can't set a
  * cookie, a redirect out of its mount, or anything else DorkOS's origin would
- * act on. A handler that throws, or answers with something that is not a
- * `Response`, gets the chain's error answer, as a router that throws does.
+ * act on. A `location` on its own origin (`c.redirect('/done')`) is moved
+ * under the mount, since that is where the handler's paths live. A handler
+ * that throws, or answers with something that is not a `Response`, gets the
+ * chain's error answer, as a router that throws does.
  *
  * @module services/extensions/http/fetch-handler
  */
@@ -36,6 +41,7 @@ import type { Context } from 'hono';
 import type { ApiEnv } from '../../../http/api-chain.js';
 import { honoRequestFacts } from '../../../http/request-facts.js';
 import { personVerdict } from '../inbox/extension-inbox-context.js';
+import { PERSON_VERDICT_HEADER } from '../isolation/ipc-protocol.js';
 import { outboundWebHeaders } from './reply-headers.js';
 import {
   MAX_FORWARDED_BODY_BYTES,
@@ -146,6 +152,7 @@ export async function extensionRequest(
   // which the chain's JSON parser may already have read to the end.
   const { incoming, outgoing } = c.env;
   const headers = new Headers(c.req.raw.headers);
+  headers.delete(PERSON_VERDICT_HEADER);
   const parsed = c.get('body');
   let body: BodyInit | null = null;
   if (parsed !== undefined) {
@@ -199,7 +206,7 @@ export function createFetchHandler(
     return new Response(answer.body, {
       status: answer.status,
       statusText: answer.statusText,
-      headers: outboundWebHeaders(answer.headers, mount),
+      headers: outboundWebHeaders(answer.headers, mount, request.url),
     });
   };
 }

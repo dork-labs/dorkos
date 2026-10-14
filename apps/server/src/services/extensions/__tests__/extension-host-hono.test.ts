@@ -121,6 +121,21 @@ describe('hono, built in', () => {
     );
   });
 
+  it('offers hono’s pattern subpaths for plain names only', async () => {
+    const dir = path.join(tmp, 'extensions', 'hono-ext');
+    await write(
+      path.join(dir, 'server.ts'),
+      "import { parse } from 'hono/utils/cookie';\nexport const cookie = parse('a=1').a;\n"
+    );
+    expect(evaluate(await compiled(record(dir))).cookie).toBe('1');
+
+    for (const escape of ['hono/utils/../../package.json', 'hono/utils/.hidden', 'hono/utils/']) {
+      await write(path.join(dir, 'server.ts'), `import x from '${escape}';\nexport default x;\n`);
+      const result = await compiler.compileServer(record(dir));
+      expect('error' in result && JSON.stringify(result.error)).toContain('is not something hono');
+    }
+  });
+
   it('passes a plugin’s containment, which still refuses everything else from outside', async () => {
     const project = path.join(tmp, 'repo');
     const pluginRoot = path.join(project, '.dork', 'plugins', 'flow');

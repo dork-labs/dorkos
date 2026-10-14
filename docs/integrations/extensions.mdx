@@ -51,7 +51,8 @@ What to know about a fetch handler:
 - **A JSON body is ready to read** with `request.json()`. Any other body arrives as it was sent.
 - **It knows who is asking.** Its second argument says whether a person sent the request. A Hono app reads it as `c.env`.
 - **To keep a route to people only,** put `requirePerson()` in front of it, as above. Agents and other sites get a plain refusal, and the route never runs. A handler written without Hono calls `checkPerson(caller)` from `@dorkos/extension-api/server` and returns the answer it gives back, if any.
-- **Some reply headers are dropped.** It can't set cookies, and a redirect must stay inside `/api/ext/<your-id>/`. Content and caching headers, and your own `x-` headers, go through.
+- **Some reply headers are dropped.** It can't set cookies, and a page it serves can't run scripts. Content and caching headers, and your own `x-` headers, go through.
+- **Redirects stay inside your extension.** `c.redirect('/done')` sends the browser to `/api/ext/<your-id>/done`. A redirect to another website is dropped.
 - **If it throws,** the caller gets an error and DorkOS keeps running.
 
 Nothing in your API runs until you approve the extension, and turning it off stops the API at once.

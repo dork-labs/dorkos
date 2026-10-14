@@ -66,6 +66,11 @@ app.get('/headers', (c) => {
   return c.text('ok');
 });
 
+app.get('/go', (c) => c.redirect('/done?x=1'));
+app.get('/away', (c) => c.redirect('https://evil.example/'));
+
+app.get('*', (c) => c.json({ url: c.req.url }));
+
 export default app;
 `;
 
@@ -125,6 +130,34 @@ afterAll(async () => {
   await cleanup(h);
 });
 
+/**
+ * Send a GET with the target exactly as written, which `fetch` would tidy.
+ *
+ * @param port - The server's port.
+ * @param target - The request target.
+ */
+function rawGet(port: number, target: string): Promise<{ status: number; body: unknown }> {
+  return new Promise((resolve, reject) => {
+    const req = http.request(
+      {
+        host: '127.0.0.1',
+        port,
+        method: 'GET',
+        path: target,
+        headers: { host: `127.0.0.1:${port}` },
+      },
+      (res) => {
+        let text = '';
+        res.setEncoding('utf8');
+        res.on('data', (chunk: string) => (text += chunk));
+        res.on('end', () => resolve({ status: res.statusCode ?? 0, body: JSON.parse(text) }));
+      }
+    );
+    req.on('error', reject);
+    req.end();
+  });
+}
+
 /** Serve the bundle in this process as `inproc`, as the lifecycle does. */
 async function startInProcess(): Promise<void> {
   const file = path.join(h.tmp, 'bundles', 'inproc.js');
@@ -160,7 +193,10 @@ describe.each([
   });
 
   it('gets the path below its mount and the query, and knows a person is asking', async () => {
-    const res = await fetch(`${base}/api/ext/${id}/hello?name=kai`);
+    // A forged verdict header never reaches the handler.
+    const res = await fetch(`${base}/api/ext/${id}/hello?name=kai`, {
+      headers: { [PERSON_VERDICT_HEADER]: JSON.stringify({ ok: false }) },
+    });
 
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({
@@ -169,6 +205,18 @@ describe.each([
       person: true,
       verdictHeader: null,
     });
+  });
+
+  it('never gets another host from a doubled slash or an absolute-form target', async () => {
+    const { port } = server.address() as AddressInfo;
+    const doubled = await rawGet(port, `/api/ext/${id}//evil.com/url?a=1`);
+    const absolute = await rawGet(port, `http://evil.com/api/ext/${id}/url?a=1`);
+
+    expect(doubled).toEqual({
+      status: 200,
+      body: { url: `http://127.0.0.1:${port}//evil.com/url?a=1` },
+    });
+    expect(absolute).toEqual({ status: 200, body: { url: `http://127.0.0.1:${port}/url?a=1` } });
   });
 
   it('lets a person through requirePerson()', async () => {
@@ -210,6 +258,15 @@ describe.each([
     expect(res.status).toBe(403);
   });
 
+  it('redirects to its own paths under its mount, and never off DorkOS', async () => {
+    const own = await fetch(`${base}/api/ext/${id}/go`, { redirect: 'manual' });
+    const away = await fetch(`${base}/api/ext/${id}/away`, { redirect: 'manual' });
+
+    expect(own.headers.get('location')).toBe(`/api/ext/${id}/done?x=1`);
+    expect(away.status).toBe(302);
+    expect(away.headers.get('location')).toBeNull();
+  });
+
   it('answers with the one reply-header rule', async () => {
     const res = await fetch(`${base}/api/ext/${id}/headers`);
 
@@ -219,10 +276,44 @@ describe.each([
     expect(res.headers.get('content-security-policy')).toBe("sandbox; default-src 'none'");
     expect(res.headers.get('x-content-type-options')).toBe('nosniff');
   });
+});
 
-  it('answers a path it has no route for with its own 404', async () => {
-    const res = await fetch(`${base}/api/ext/${id}/nothing-here`);
+/** A router with one route and a fetch handler beside it, as CommonJS. */
+const MIXED_SOURCE = String.raw`
+module.exports = function register(router) {
+  router.get('/from-router', (req, res) => res.json({ from: 'router' }));
+  return {
+    fetch: (request, caller) =>
+      Response.json({
+        from: 'fetch',
+        person: caller.person.ok,
+        verdictHeader: request.headers.get('${PERSON_VERDICT_HEADER}'),
+      }),
+  };
+};
+`;
 
-    expect(res.status).toBe(404);
+describe('an extension in its own process with a router and a fetch handler', () => {
+  beforeEach(async () => {
+    const bundle = path.join(h.tmp, 'bundles', 'mixed.js');
+    await fs.writeFile(bundle, MIXED_SOURCE);
+    const host = makeHost(h, { id: 'mixed', bundle, overrides: { displayName: NAME } });
+    await startOk(host);
+    handlers.set('mixed', createIsolatedHandler({ displayName: NAME, host }));
+  });
+
+  it('asks the router first, and gives the fetch handler the rest with the caller', async () => {
+    const routed = await fetch(`${base}/api/ext/mixed/from-router`);
+    const person = await fetch(`${base}/api/ext/mixed/other`);
+    const agent = await fetch(`${base}/api/ext/mixed/other`, {
+      headers: {
+        'x-dorkos-agent': 'agent-1',
+        [PERSON_VERDICT_HEADER]: JSON.stringify({ ok: true }),
+      },
+    });
+
+    expect(await routed.json()).toEqual({ from: 'router' });
+    expect(await person.json()).toEqual({ from: 'fetch', person: true, verdictHeader: null });
+    expect(await agent.json()).toEqual({ from: 'fetch', person: false, verdictHeader: null });
   });
 });

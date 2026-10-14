@@ -41,6 +41,7 @@ import {
   type ConnMessage,
   type HostMessage,
 } from '../ipc-protocol.js';
+import { mountedLocation } from '../../http/reply-headers.js';
 import { VirtualSocket } from '../virtual-socket.js';
 
 /** What {@link createVirtualServer} needs. */
@@ -84,24 +85,20 @@ const BODILESS = new Set(['GET', 'HEAD']);
  * @param raw - The header's value.
  * @param refusal - The body to refuse with when it cannot be read.
  */
-function callerFrom(raw: unknown, refusal: PersonRefusal['body']): ExtensionCaller {
+export function callerFrom(raw: unknown, refusal: PersonRefusal['body']): ExtensionCaller {
   const verdict = parsePersonVerdict(raw) ?? { ok: false, status: 403, body: refusal };
   return Object.freeze({ person: Object.freeze(verdict) });
 }
 
 /**
- * The path below the mount of a request target, or `null` when the target is
- * not under the mount.
+ * The path below the mount, or `null` when the path is not under the mount.
  *
- * @param target - The request target, `/api/ext/<id>/…?…`.
+ * @param pathname - The request's path, `/api/ext/<id>/…`.
  * @param mount - The mount, `/api/ext/<id>`.
  */
-function belowMount(target: string, mount: string): string | null {
-  if (!target.startsWith(mount)) return null;
-  const rest = target.slice(mount.length);
-  if (rest === '') return '/';
-  if (rest.startsWith('?')) return `/${rest}`;
-  return rest.startsWith('/') ? rest : null;
+function belowMount(pathname: string, mount: string): string | null {
+  if (pathname === mount) return '/';
+  return pathname.startsWith(`${mount}/`) ? pathname.slice(mount.length) : null;
 }
 
 /**
@@ -113,12 +110,14 @@ function belowMount(target: string, mount: string): string | null {
  * @param req - The request, with any JSON body already parsed.
  * @param res - Where the answer goes.
  * @param refusal - What a missing verdict refuses with.
+ * @param mount - The mount, `/api/ext/<id>`.
  */
 async function answerWithFetch(
   handler: ExtensionFetchHandler,
   req: express.Request,
   res: express.Response,
-  refusal: PersonRefusal['body']
+  refusal: PersonRefusal['body'],
+  mount: string
 ): Promise<void> {
   const caller = callerFrom(req.headers[PERSON_VERDICT_HEADER], refusal);
   const headers = new Headers();
@@ -139,19 +138,18 @@ async function answerWithFetch(
   res.once('close', () => {
     if (!res.writableFinished) abort.abort();
   });
-  const answer: unknown = await handler(
-    new Request(`http://${req.headers.host ?? 'localhost'}${req.url}`, {
-      method: req.method,
-      headers,
-      body,
-      signal: abort.signal,
-      duplex: 'half',
-    } as RequestInit),
-    caller
-  );
-  if (!(answer instanceof Response)) {
+  const request = new Request(`http://${req.headers.host ?? 'localhost'}${req.url}`, {
+    method: req.method,
+    headers,
+    body,
+    signal: abort.signal,
+    duplex: 'half',
+  } as RequestInit);
+  const answered: unknown = await handler(request, caller);
+  if (!(answered instanceof Response)) {
     throw new Error('The fetch handler answered with something that is not a Response.');
   }
+  const answer = withMountedLocation(answered, request.url, mount);
   res.status(answer.status);
   // `set-cookie` is left out here: the host drops it from every reply anyway.
   answer.headers.forEach((value, name) => {
@@ -164,6 +162,29 @@ async function answerWithFetch(
   Readable.fromWeb(answer.body as WebReadableStream)
     .on('error', () => res.destroy())
     .pipe(res);
+}
+
+/**
+ * A fetch handler's answer with its `location` moved under the mount
+ * (`mountedLocation`), where the host's reply-header rule expects it. An
+ * answer without one is returned as it is.
+ *
+ * @param answer - The handler's answer.
+ * @param handlerUrl - The URL of the request the handler was given.
+ * @param mount - The mount, `/api/ext/<id>`.
+ */
+function withMountedLocation(answer: Response, handlerUrl: string, mount: string): Response {
+  const location = answer.headers.get('location');
+  if (location === null) return answer;
+  const headers = new Headers(answer.headers);
+  const mounted = mountedLocation(location, handlerUrl, mount);
+  if (mounted === null) headers.delete('location');
+  else headers.set('location', mounted);
+  return new Response(answer.body, {
+    status: answer.status,
+    statusText: answer.statusText,
+    headers,
+  });
 }
 
 /**
@@ -195,14 +216,19 @@ export function createVirtualServer(deps: VirtualServerDeps): VirtualServer {
   const serveFetchOnly = getRequestListener(
     async (incoming) => {
       const sent = new URL(incoming.url);
-      const below = belowMount(`${sent.pathname}${sent.search}`, mount);
+      const below = belowMount(sent.pathname, mount);
       if (below === null) return notFound(sent.pathname);
       const handler = fetchHandler;
-      if (!handler) return notFound(new URL(below, sent.origin).pathname);
+      if (!handler) return notFound(below);
+      // Built field by field, never by resolving the path against an origin,
+      // so a path such as `//evil.com/x` stays a path on this origin.
+      const url = new URL(sent.origin);
+      url.pathname = below;
+      url.search = sent.search;
       const caller = callerFrom(incoming.headers.get(PERSON_VERDICT_HEADER), deps.personRefusal);
       const headers = new Headers(incoming.headers);
       headers.delete(PERSON_VERDICT_HEADER);
-      const request = new Request(new URL(below, sent.origin), {
+      const request = new Request(url, {
         method: incoming.method,
         headers,
         body: BODILESS.has(incoming.method) ? null : incoming.body,
@@ -214,7 +240,7 @@ export function createVirtualServer(deps: VirtualServerDeps): VirtualServer {
         if (!(answer instanceof Response)) {
           throw new Error('The fetch handler answered with something that is not a Response.');
         }
-        return answer;
+        return withMountedLocation(answer, request.url, mount);
       } catch (err) {
         console.error('Route error:', err);
         return errorAnswer(500, err instanceof Error ? err.message : 'Internal error');
@@ -235,7 +261,7 @@ export function createVirtualServer(deps: VirtualServerDeps): VirtualServer {
       next();
       return;
     }
-    answerWithFetch(fetchHandler, req, res, deps.personRefusal).catch(next);
+    answerWithFetch(fetchHandler, req, res, deps.personRefusal, mount).catch(next);
   });
   // Nothing in the router matched.
   app.use((req: express.Request, res: express.Response) => {
