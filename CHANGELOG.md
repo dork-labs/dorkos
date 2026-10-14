@@ -17,6 +17,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 > DorkOS 0.114.1 keeps the app quick and light while your agents work. Chats open and switch without waiting, coming back to the tab is quiet, and DorkOS does far less busywork in the background.
 
+### Added
+
+- If you turn on feature-usage data, DorkOS now also says when you finish or skip setup, and once a day that it is running. Both are off until you turn that channel on, like every other event, and stop the moment you turn it off.
+- An install command copied from dorkos.ai can now end with a short install tag, like `--ref=k3j4mnb8x2qa.hn`. It is a random code made for that one copy, plus the campaign tag of the link you came from. DorkOS keeps it on your computer and sends it only with the "finished setup" event, only when feature-usage data is on. The tag is only a label on two events; it never links the app to a website visitor or an account. The website adds a tag only for visitors who allow analytics cookies and do not send Do Not Track or Global Privacy Control. The privacy and telemetry pages say exactly what it holds.
+
 ### Changed
 
 - Opening a chat you have already seen in the sidebar now shows it straight away, instead of waiting for the server to answer first. DorkOS still checks with the server in the background, and tells you if the chat is gone.
@@ -24,6 +29,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Switching back to the DorkOS tab no longer asks the server again for every list and badge on screen, so coming back is quiet and fast. Live updates keep most of them current. If the tab was hidden for more than half a minute, DorkOS catches up once when you return. Things that change outside DorkOS, like your files, still refresh when you come back.
 - DorkOS asks the server far less often while you just look at the screen. The relay activity list, agent health and your community spaces follow live updates instead of re-asking every few seconds. Most changes show right away. A few can take up to a minute, like a chat app quietly losing its connection.
 - Going back to a chat you opened recently no longer downloads its whole history again; it shows what the app already has. When the agent finishes a reply, DorkOS fetches only that last exchange instead of the entire chat, so long chats stay quick turn after turn.
+- A long chat stays smooth while the agent is replying. Before, every new word redrew every message on screen and rebuilt the whole history. Now only the reply being written redraws, and the history is prepared once.
+- Replies stream more smoothly in very long chats. Each new word used to rearrange every message in the chat; now only the newest messages are rearranged, about 15 times less work in a 3,000-message chat.
 
 ### Fixed
 
@@ -36,6 +43,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - DorkOS no longer pauses for a moment once a day while it saves its daily backup of your data. It now copies the database a little at a time and keeps answering in between (DOR-2906)
 - When DorkOS Cloud is down or doesn't recognize your computer, DorkOS now waits longer between tries, up to 5 minutes for new events and 30 minutes for credits, instead of asking every 30 or 60 seconds for hours and filling the log with the same warning. It goes back to asking often as soon as a try works or you link again (DOR-2903)
 - Building the message search index is lighter on DorkOS. It no longer lists the thousands of helper-agent transcripts it never indexes, and it saves a very long chat to the index a piece at a time instead of all at once. If DorkOS stops partway through a long chat, it carries on from where it got to (DOR-2904)
+- On macOS, DorkOS no longer keeps a file open for every chat on your computer just to notice when one changes. It held hundreds open at once, which could run into the system's limit on open files. Now it watches the folders instead, and checks once a minute for any change it missed (DOR-2907)
+- Stop the experimental Agent computer when you quit the desktop app, keeping its saved files.
+
+save also made DorkOS reload that file. Now it writes only when something actually changed (DOR-2900)
+
+- DorkOS's log files stay a sensible size while it runs. A log file used to be split by size and day only when DorkOS started, so a server that stayed up wrote one file without limit; one reached 53 MB. DorkOS now keeps the last 14 days of logs, up to 200 MB in all, and each log line is about eight times cheaper to write (DOR-2902)
+- DorkOS no longer pauses for a moment once a day while it saves its daily backup of your data. It now copies the database a little at a time and keeps answering in between (DOR-2906)
+- When DorkOS Cloud is down or doesn't recognize your computer, DorkOS now waits longer between tries, up to 5 minutes for new events and 30 minutes for credits, instead of asking every 30 or 60 seconds for hours and filling the log with the same warning. It goes back to asking often as soon as a try works or you link again (DOR-2903)
+- Building the message search index is lighter on DorkOS. It no longer lists the thousands of helper-agent transcripts it never indexes, and it saves a very long chat to the index a piece at a time instead of all at once. If DorkOS stops partway through a long chat, it carries on from where it got to (DOR-2904)
+- On macOS, DorkOS no longer keeps a file open for every chat on your computer just to notice when one changes. It held hundreds open at once, which could run into the system's limit on open files. Now it watches the folders instead, and checks once a minute for any change it missed (DOR-2907)
+- Stop the experimental Agent computer when you quit the desktop app, keeping its saved files.
 
 ## [0.114.0] - 2026-10-13
 
