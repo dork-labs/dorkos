@@ -27,14 +27,15 @@ function runtimes(overrides: Partial<UserConfig['runtimes']> = {}): UserConfig['
 }
 
 describe('resolveScheduledRunPermissionMode', () => {
-  it('is exactly acceptEdits when nothing is configured', () => {
-    // The byte-for-byte regression. Anyone who never answered the power door
-    // gets what every scheduled run has always got, and this is the assertion
-    // that says so — a value, not a variable.
+  it('is exactly acceptEdits when no stop is configured', () => {
+    // The byte-for-byte regression. With no stop at either tier, a scheduled
+    // run gets what every scheduled run has always got, and this is the
+    // assertion that says so — a value, not a variable. A fresh install ships
+    // the global stop at Full autonomy (ADR 261006-225605), so it is unset here.
     expect(
       resolveScheduledRunPermissionMode({
         capabilities: CLAUDE_CODE_CAPABILITIES,
-        runtimes: runtimes(),
+        runtimes: runtimes({ defaultTrustStop: null }),
       })
     ).toBe('acceptEdits');
     expect(SCHEDULED_RUN_FALLBACK_MODE).toBe('acceptEdits');

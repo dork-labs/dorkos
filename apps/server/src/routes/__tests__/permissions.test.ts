@@ -153,13 +153,24 @@ describe('permission routes', () => {
   });
 
   describe('what a write may say', () => {
-    it('refuses Allowed on a floor area with 400 FLOOR_NEVER_ALLOWED', async () => {
+    it.each(['safety', 'reach'])(
+      'refuses Allowed on %s with 400 FLOOR_NEVER_ALLOWED',
+      async (area) => {
+        const { app } = build();
+        const res = await request(app)
+          .patch('/api/permissions/defaults')
+          .send({ areas: { [area]: 'allowed' }, surface: 'settings' });
+        expect(res.status).toBe(400);
+        expect(res.body.code).toBe('FLOOR_NEVER_ALLOWED');
+      }
+    );
+
+    it('accepts Allowed on Permissions, which is no longer a floor', async () => {
       const { app } = build();
       const res = await request(app)
         .patch('/api/permissions/defaults')
-        .send({ areas: { reach: 'allowed' }, surface: 'settings' });
-      expect(res.status).toBe(400);
-      expect(res.body.code).toBe('FLOOR_NEVER_ALLOWED');
+        .send({ areas: { permissions: 'allowed' }, surface: 'settings' });
+      expect(res.status).toBe(200);
     });
 
     it('refuses an unknown area and an unknown action with 400', async () => {

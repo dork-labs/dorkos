@@ -736,6 +736,10 @@ describe('contract: tasks, account rules and model setup, driven by hand (login 
   beforeAll(async () => {
     ollama = await startOllamaStub();
     server = await bootComposedServer({ DORKOS_OLLAMA_URL: ollama.url });
+    // The composed server runs on the test-mode runtime, whose never-ask mode
+    // id a SKILL.md `schedule:` block cannot hold, so no stop of its own here:
+    // schedules take the fallback mode, as they did before Trusted.
+    await setup(server, 'PATCH', '/api/config', { runtimes: { defaultTrustStop: null } });
   }, BOOT_HOOK_TIMEOUT_MS);
   afterAll(async () => {
     await server?.close();
@@ -1061,6 +1065,8 @@ describe('contract: the same groups with login on', () => {
     server = await bootComposedServer(NO_OLLAMA);
     const origin = { origin: server.baseUrl };
     await setup(server, 'POST', '/api/auth/sign-up/email', { ...OWNER, name: 'Owner' }, origin);
+    // No stop of its own, for the test-mode reason the login-off block gives.
+    await setup(server, 'PATCH', '/api/config', { runtimes: { defaultTrustStop: null } });
     await setup(server, 'PATCH', '/api/config', { auth: { enabled: true } });
     const signedIn = await setup(server, 'POST', '/api/auth/sign-in/email', OWNER, origin);
     cookie = {

@@ -41,8 +41,19 @@ export const PERMISSION_AREA_IDS = [
   'reach',
 ] as const;
 
-/** The three presets a person picks from, most careful first. */
-export const PERMISSION_PRESETS = ['careful', 'balanced', 'full'] as const;
+/**
+ * Every preset id, most careful first. `trusted` is the default since ADR
+ * `261006-225605` (agents are trusted by default); `balanced` and `full` stay
+ * parseable for configs that chose them, and the picker shows Trusted and
+ * Careful only.
+ */
+export const PERMISSION_PRESETS = ['careful', 'balanced', 'full', 'trusted'] as const;
+
+/**
+ * The presets a person picks from, in the order the picker shows them. A stored
+ * Balanced or Full power still reads correctly; it is just not offered.
+ */
+export const CHOOSABLE_PERMISSION_PRESETS = ['trusted', 'careful'] as const;
 
 /** A capability id (`domain.verb`) or a hand-registered tool name (no dot). */
 export const PERMISSION_ACTION_ID_PATTERN = /^[a-z0-9_]+(\.[a-z0-9_]+)?$/;

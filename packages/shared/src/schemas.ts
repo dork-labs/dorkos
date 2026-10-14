@@ -24,6 +24,7 @@ import {
   RemoteAccessModeSchema,
 } from './config-schema.js';
 import { SavedPlacementSchema } from './mini-app-placement.js';
+import { PERMISSION_PRESETS } from './permissions/permission-ids.js';
 // The effort ladder itself lives in the dependency-free constants module so this
 // file and `config-schema.ts` (which this file already imports) can both build
 // their enums from ONE list — see `EFFORT_LEVELS` for why it cannot live in either.
@@ -5102,18 +5103,12 @@ export const ServerConfigSchema = z
         // Where each mini app's right-panel tab shows (spec
         // `mini-app-placement`). Also defined in mini-app-placement.ts.
         panelTabs: z.array(SavedPlacementSchema),
-        // The two halves of the power-door answer (spec `full-power-defaults`,
-        // D1). On the wire because the cockpit decides from them whether to put
-        // the door up at all — a curated DTO that omitted them would leave the
-        // one-time modal unable to tell an unanswered install from an answered
-        // one, which is how a "shown once" moment becomes a nag.
-        fullPowerDecidedAt: z.string().nullable().openapi({
+        // Whether this person has seen the one-time "agents now work without
+        // asking" notice (ADR 261006-225605). On the wire because the app
+        // decides from it whether to show the notice at all.
+        trustNoticeSeenAt: z.string().nullable().openapi({
           description:
-            'When this person answered the full-power door, either way (ISO 8601), or null when they have not been asked yet. Non-null means never ask again',
-        }),
-        fullPowerChoice: z.enum(['full', 'supervised']).nullable().openapi({
-          description:
-            "What they chose at the full-power door: 'full' or 'supervised', or null when they have not answered. Records the answer only — it grants nothing on its own",
+            'When this person saw the notice that agents work without asking (ISO 8601), or null when they have not. Gates the notice only; it grants nothing',
         }),
       })
       .optional()
@@ -5122,6 +5117,15 @@ export const ServerConfigSchema = z
       description:
         'The official DorkOS space this install offers to join, even with the spaces experiment off (spec official-community-space D4). Null while no usable link is configured, which hides every official-space prompt',
     }),
+    permissions: z
+      .object({
+        preset: z.enum(PERMISSION_PRESETS).nullable().openapi({
+          description:
+            "The permission preset every area starts from: 'trusted' or 'careful' ('balanced' and 'full' are older choices still read). null reads as 'trusted'",
+        }),
+      })
+      .optional()
+      .openapi({ description: 'The permission preset; the full picture is GET /api/permissions' }),
     experiments: z.array(ExperimentStateSchema).optional().openapi({
       description:
         'The staged opt-ins Settings → Experiments offers, already resolved, in the order to show them. An EMPTY array is a normal answer — it means every experiment has graduated or been withdrawn. A server that omits the block has no Experiments section at all',

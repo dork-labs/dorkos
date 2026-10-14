@@ -91,8 +91,7 @@ describe('UserConfigSchema', () => {
         composer: { richText: true },
         panelTabs: [],
         communityNavigation: { version: 1, owners: [] },
-        fullPowerDecidedAt: null,
-        fullPowerChoice: null,
+        trustNoticeSeenAt: null,
       },
       // How loud DorkOS may be. The knock and the all-clear ship ON; the
       // every-turn chime ships OFF, which is the one that changed (DOR-1385).
@@ -221,7 +220,7 @@ describe('UserConfigSchema', () => {
       workbench: { defaultViewers: {}, terminalGraceTtlMinutes: 10, autoOpenDiff: true },
       runtimes: {
         default: 'claude-code',
-        defaultTrustStop: null,
+        defaultTrustStop: 'autonomy',
         doe: { enabled: true, inference: null, defaultModel: null, defaultTrustStop: null },
         environment: { inherit: { claudeCode: [], codex: [], opencode: [], doe: [] } },
         claudeCode: {
@@ -257,9 +256,10 @@ describe('UserConfigSchema', () => {
       },
       auth: { enabled: false },
       permissions: {
-        preset: null,
+        preset: 'trusted',
         defaults: { areas: {}, actions: {} },
         upgradeSweptVersion: null,
+        trustedStoresAppliedAt: null,
       },
       cloud: {
         instanceToken: null,
@@ -507,8 +507,7 @@ describe('USER_CONFIG_DEFAULTS', () => {
         composer: { richText: true },
         panelTabs: [],
         communityNavigation: { version: 1, owners: [] },
-        fullPowerDecidedAt: null,
-        fullPowerChoice: null,
+        trustNoticeSeenAt: null,
       },
       // How loud DorkOS may be. The knock and the all-clear ship ON; the
       // every-turn chime ships OFF, which is the one that changed (DOR-1385).
@@ -637,7 +636,7 @@ describe('USER_CONFIG_DEFAULTS', () => {
       workbench: { defaultViewers: {}, terminalGraceTtlMinutes: 10, autoOpenDiff: true },
       runtimes: {
         default: 'claude-code',
-        defaultTrustStop: null,
+        defaultTrustStop: 'autonomy',
         doe: { enabled: true, inference: null, defaultModel: null, defaultTrustStop: null },
         environment: { inherit: { claudeCode: [], codex: [], opencode: [], doe: [] } },
         claudeCode: {
@@ -673,9 +672,10 @@ describe('USER_CONFIG_DEFAULTS', () => {
       },
       auth: { enabled: false },
       permissions: {
-        preset: null,
+        preset: 'trusted',
         defaults: { areas: {}, actions: {} },
         upgradeSweptVersion: null,
+        trustedStoresAppliedAt: null,
       },
       cloud: {
         instanceToken: null,
@@ -862,14 +862,15 @@ describe('per-field and section-literal defaults agree', () => {
     runtimes: { claudeCode: {} },
   });
 
-  it('ui.fullPowerDecidedAt is null either way', () => {
-    expect(fromFactory.ui.fullPowerDecidedAt).toBeNull();
-    expect(fromFields.ui.fullPowerDecidedAt).toBeNull();
+  it('ui.trustNoticeSeenAt is null either way', () => {
+    expect(fromFactory.ui.trustNoticeSeenAt).toBeNull();
+    expect(fromFields.ui.trustNoticeSeenAt).toBeNull();
   });
 
-  it('ui.fullPowerChoice is null either way', () => {
-    expect(fromFactory.ui.fullPowerChoice).toBeNull();
-    expect(fromFields.ui.fullPowerChoice).toBeNull();
+  it('runtimes.defaultTrustStop is Full autonomy either way (ADR 261006-225605)', () => {
+    const fromEmpty = UserConfigSchema.parse({ version: 1, runtimes: {} });
+    expect(fromFactory.runtimes.defaultTrustStop).toBe('autonomy');
+    expect(fromEmpty.runtimes.defaultTrustStop).toBe('autonomy');
   });
 
   it('scheduler.maxConcurrentRuns is 4 either way', () => {
@@ -926,34 +927,25 @@ describe('per-field and section-literal defaults agree', () => {
     ).toBe(false);
   });
 
-  it('accepts both answers at the power door and nothing else', () => {
+  it('drops the retired power-door answer, and takes an ISO timestamp for the notice', () => {
+    const ui = UserConfigSchema.parse({
+      version: 1,
+      ui: { fullPowerDecidedAt: '2026-08-22T10:00:00.000Z', fullPowerChoice: 'full' },
+    }).ui;
+    expect(ui).not.toHaveProperty('fullPowerDecidedAt');
+    expect(ui).not.toHaveProperty('fullPowerChoice');
     expect(
-      UserConfigSchema.parse({ version: 1, ui: { fullPowerChoice: 'supervised' } }).ui
-        .fullPowerChoice
-    ).toBe('supervised');
+      UserConfigSchema.parse({ version: 1, ui: { trustNoticeSeenAt: '2026-10-07T10:00:00.000Z' } })
+        .ui.trustNoticeSeenAt
+    ).toBe('2026-10-07T10:00:00.000Z');
     expect(
-      UserConfigSchema.parse({ version: 1, ui: { fullPowerChoice: 'full' } }).ui.fullPowerChoice
-    ).toBe('full');
-    expect(UserConfigSchema.safeParse({ version: 1, ui: { fullPowerChoice: 'yes' } }).success).toBe(
-      false
-    );
-  });
-
-  it('takes an ISO timestamp for the decision, and refuses a loose string', () => {
-    expect(
-      UserConfigSchema.parse({ version: 1, ui: { fullPowerDecidedAt: '2026-08-22T10:00:00.000Z' } })
-        .ui.fullPowerDecidedAt
-    ).toBe('2026-08-22T10:00:00.000Z');
-    expect(
-      UserConfigSchema.safeParse({ version: 1, ui: { fullPowerDecidedAt: 'yesterday' } }).success
+      UserConfigSchema.safeParse({ version: 1, ui: { trustNoticeSeenAt: 'yesterday' } }).success
     ).toBe(false);
   });
 
-  it('leaves every consent-gated default exactly where it was (invariant A1)', () => {
-    // The list a reviewer checks this diff against. Nothing in this program may
-    // move any of them; they are written by the door's accept, with a person
-    // looking at it.
-    expect(fromFactory.runtimes.defaultTrustStop).toBeNull();
+  it('leaves every per-runtime stop and the scan roots where they were', () => {
+    // The global stop moved to Full autonomy with ADR 261006-225605; each
+    // runtime's own stop stays `null`, so it follows the global one.
     expect(fromFactory.runtimes.claudeCode.defaultTrustStop).toBeNull();
     expect(fromFactory.runtimes.codex.defaultTrustStop).toBeNull();
     expect(fromFactory.runtimes.opencode.defaultTrustStop).toBeNull();
@@ -1104,7 +1096,7 @@ describe('UserConfigSchema runtimes', () => {
     const result = UserConfigSchema.parse({ version: 1 });
     expect(result.runtimes).toEqual({
       default: 'claude-code',
-      defaultTrustStop: null,
+      defaultTrustStop: 'autonomy',
       doe: { enabled: true, inference: null, defaultModel: null, defaultTrustStop: null },
       environment: { inherit: { claudeCode: [], codex: [], opencode: [], doe: [] } },
       claudeCode: {
@@ -1145,7 +1137,7 @@ describe('UserConfigSchema runtimes', () => {
     const result = UserConfigSchema.parse({ version: 1, runtimes: {} });
     expect(result.runtimes).toEqual({
       default: 'claude-code',
-      defaultTrustStop: null,
+      defaultTrustStop: 'autonomy',
       doe: { enabled: true, inference: null, defaultModel: null, defaultTrustStop: null },
       environment: { inherit: { claudeCode: [], codex: [], opencode: [], doe: [] } },
       claudeCode: {
@@ -1297,9 +1289,10 @@ describe('UserConfigSchema runtimes.*.defaultModel / defaultEffort (spec executi
 });
 
 describe('UserConfigSchema defaultTrustStop (spec trust-dial, decision 6)', () => {
-  it('ships null everywhere, so every runtime keeps its own starting mode', () => {
+  it('ships Full autonomy globally and null per runtime, so every runtime follows it', () => {
+    // ADR 261006-225605: our own agents work without asking by default.
     const runtimes = UserConfigSchema.parse({ version: 1 }).runtimes;
-    expect(runtimes.defaultTrustStop).toBeNull();
+    expect(runtimes.defaultTrustStop).toBe('autonomy');
     expect(runtimes.claudeCode.defaultTrustStop).toBeNull();
     expect(runtimes.codex.defaultTrustStop).toBeNull();
     expect(runtimes.opencode.defaultTrustStop).toBeNull();
@@ -2219,9 +2212,10 @@ describe('permissions section (spec agent-permissions D4)', () => {
   // feeds fresh installs, the other feeds a stored `permissions: {}` on upgrade.
   // They must agree, and this pins both.
   const EXPECTED = {
-    preset: null,
+    preset: 'trusted',
     defaults: { areas: {}, actions: {} },
     upgradeSweptVersion: null,
+    trustedStoresAppliedAt: null,
   };
 
   it('defaults the whole section from the object-literal default', () => {

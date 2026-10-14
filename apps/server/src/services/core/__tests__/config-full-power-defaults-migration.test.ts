@@ -237,28 +237,7 @@ describe('the 0.67.0 migration on an upgrade boot (real conf + Ajv)', () => {
 
     expect(manager.getDot('scheduler.maxConcurrentRuns')).toBe(4);
     expect(manager.getDot('runtimes.claudeCode.persistentSession')).toBe(true);
-    expect(manager.getDot('ui.fullPowerDecidedAt')).toBeNull();
-    expect(manager.getDot('ui.fullPowerChoice')).toBeNull();
     expect(manager.validate()).toEqual({ valid: true });
-  });
-
-  it('accepts an answered door through a real load, both ways', () => {
-    // The write path the door itself takes: Ajv must ADMIT these values, not
-    // merely tolerate the defaults. A schema that typed either wrong would
-    // condemn the whole file here rather than fail an assertion.
-    const dir = seedUpgradeBoot();
-    const manager = new ConfigManager(dir);
-
-    manager.set('ui', {
-      ...manager.get('ui'),
-      fullPowerDecidedAt: '2026-08-22T12:00:00.000Z',
-      fullPowerChoice: 'full',
-    });
-
-    const reopened = new ConfigManager(dir);
-    expect(reopened.getDot('ui.fullPowerChoice')).toBe('full');
-    expect(reopened.getDot('ui.fullPowerDecidedAt')).toBe('2026-08-22T12:00:00.000Z');
-    expect(reopened.validate()).toEqual({ valid: true });
   });
 });
 

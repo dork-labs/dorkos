@@ -6,7 +6,7 @@
  *
  * @module services/tasks/approvals/__tests__/agent-execution-observer
  */
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -14,7 +14,18 @@ import { createTestDb } from '@dorkos/test-utils/db';
 import { writeManifest, readManifest } from '@dorkos/shared/manifest';
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
 
+import { eq } from 'drizzle-orm';
+import { pulseSchedules, type Db } from '@dorkos/db';
 import { TaskStore } from '../../task-store.js';
+
+/** The install's preset, read through the mocked config. Careful unless a case says otherwise. */
+const posture = vi.hoisted(() => ({ preset: 'careful' as 'careful' | 'trusted' }));
+vi.mock('../../../core/config-manager.js', () => ({
+  configManager: {
+    get: (key: string) => (key === 'permissions' ? { preset: posture.preset } : undefined),
+  },
+}));
+
 import {
   AGENT_EXECUTION_CHANGED_OUTSIDE_EVENT,
   AgentExecutionObserver,
@@ -36,6 +47,7 @@ describe('AgentExecutionObserver', () => {
   let root: string;
   let agentPath: string;
   let store: TaskStore;
+  let db: Db;
   let events: Emitted[];
   let emitFails: boolean;
   let parkedRaised: string[];
@@ -99,7 +111,8 @@ describe('AgentExecutionObserver', () => {
       mcpServers: [],
       workspace: { mode: 'home' },
     } as AgentManifest);
-    store = new TaskStore(createTestDb());
+    db = createTestDb();
+    store = new TaskStore(db);
     events = [];
     emitFails = false;
     parkedRaised = [];
@@ -140,6 +153,38 @@ describe('AgentExecutionObserver', () => {
       { field: 'model', from: 'claude-sonnet-4', to: 'claude-opus-4', via: 'agent' },
     ]);
     expect(parkedRaised).toEqual([task.id]);
+  });
+
+  it('on a Trusted install re-asks only for a schedule made from a file', async () => {
+    // Purpose: our agents' changes no longer wait for a person (ADR
+    // 261006-225605), and an outside edit may be one of theirs, so only code
+    // that came from a file, a Shape or a package is re-asked.
+    posture.preset = 'trusted';
+    try {
+      const own = follower();
+      const fromFile = store.createTask({
+        name: 'from-file',
+        description: 'from-file',
+        prompt: 'Post the file digest.',
+        cron: '0 8 * * *',
+        agentId: AGENT_ID,
+        filePath: '/skills/from-file/SKILL.md',
+      });
+      db.update(pulseSchedules)
+        .set({ origin: 'file' })
+        .where(eq(pulseSchedules.id, fromFile.id))
+        .run();
+      await observer.check(agentPath);
+
+      await editFile({ model: 'claude-opus-4' });
+      await observer.check(agentPath);
+
+      expect(store.getTask(own.id)!.status).toBe('active');
+      expect(store.getTask(fromFile.id)!.status).toBe('pending_approval');
+      expect(parkedRaised).toEqual([fromFile.id]);
+    } finally {
+      posture.preset = 'careful';
+    }
   });
 
   it('never takes DorkOS’s own write for an outside one', async () => {

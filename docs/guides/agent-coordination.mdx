@@ -107,7 +107,7 @@ Rules are one-directional. For two-way communication, add a second rule with the
 
 Pairs add up fast: five namespaces need twenty rules for everyone to reach everyone over Relay. If you'd rather not think about walls at all, Team → Access has a single switch, **Let all my agents talk to each other**. Turn it on and every Relay message between agents on this machine is allowed, whatever project it lives in. Turn it off and you are back to the defaults, with any pairs you added still exactly where you left them.
 
-It is off when you install DorkOS — agents stay in their own project until you say otherwise. Behind the scenes it is one more rule, at the same priority 50, using `*` on both sides:
+It is on when you install DorkOS, so your agents can message each other whatever project they live in. Turn it off and it stays off: DorkOS turns it on once, and never again. Behind the scenes it is one more rule, at the same priority 50, using `*` on both sides:
 
 ```bash
 # The switch, from the command line

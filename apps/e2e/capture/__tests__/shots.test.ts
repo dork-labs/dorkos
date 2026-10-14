@@ -106,14 +106,14 @@ describe('shot registry', () => {
     it('pins the session-list surfaces, the remaining global-state flip, and the accounts pair', () => {
       // The density (multi-session, mobile-sessions) shots must ride one stack's
       // accumulated state; the accounts pair must ride one stack's single linear
-      // device flow; full-power-door flips a global setting every other shot in
+      // device flow; trust-notice flips a global setting every other shot in
       // the stack needs left alone.
       expect(SHARD_0_PINNED_SHOTS).toEqual([
         'multi-session',
         'mobile-sessions',
         'accounts-pending',
         'accounts-linked',
-        'full-power-door',
+        'trust-notice',
       ]);
       for (const id of SHARD_0_PINNED_SHOTS) expect(getShot(id)).toBeDefined();
     });

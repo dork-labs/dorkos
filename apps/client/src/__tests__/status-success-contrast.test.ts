@@ -5,7 +5,7 @@
  *
  * Green carries meaning as TEXT (the dial caption, the status word, session-row
  * marks) and as the inverted white
- * label on a green fill (the full-power door's CTA). At `152 69% 31%` those
+ * label on a green fill (the timeline's done dot). At `152 69% 31%` those
  * surfaces measured 4.2-4.5:1 — under the bar — so two reviews flagged them. The
  * light token was darkened to `152 69% 24%`; this guard is what keeps it there.
  *

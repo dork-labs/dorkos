@@ -1,6 +1,6 @@
 import type { APIRequestContext, Page } from '@playwright/test';
 import { test, expect } from '../../fixtures';
-import { chooseFullPower, readPower, restorePower, type PowerSnapshot } from './full-power-preset';
+import { chooseTrusted, readPower, restorePower, type PowerSnapshot } from './trusted-preset';
 
 /**
  * The request card, phase 2 of agent permissions (spec `agent-permissions` D7,
@@ -107,7 +107,7 @@ async function gotoActivity(basePage: { page: Page; waitForAppReady(): Promise<v
 test.describe('The request card @permissions', () => {
   test.describe.configure({ mode: 'serial' });
 
-  // Full power moves the Files & commands stop too; read it first so it can be
+  // Trusted moves the Files & commands stop too; read it first so it can be
   // put back for the specs after this one.
   let prior: PowerSnapshot;
   test.beforeAll(async ({ playwright }, testInfo) => {
@@ -132,7 +132,7 @@ test.describe('The request card @permissions', () => {
   });
 
   test.beforeEach(async ({ request }) => {
-    await chooseFullPower(request);
+    await chooseTrusted(request);
     const bot = await requester(request);
     // The requester back on the defaults: no area and no action of its own.
     const reset = await request.patch(`/api/agents/${bot.id}/permissions`, {

@@ -134,7 +134,7 @@ Connecting gives a client DorkOS's full external tool surface: 69 tools in total
 
 The last eight rows (operator, memory, commitments, heartbeats, permissions, self-description, document events, marketplace: 32 tools) are generated from the Capability Registry, so they are reachable by id through `dorkos call`. The other 37 are registered directly on this server and are not. `list_capabilities` says which is which, so a client never has to infer it.
 
-Being off the registry does not mean running unasked. All 37 of them carry a permission tier too, and the same approval gate reads it: `tasks_delete` and `mesh_unregister` are `destructive` and answer with a pending approval instead of doing the work. A destructive tool advertises an `approvalToken` argument, so a client can tell one from its own schema without asking.
+Being off the registry does not mean running unchecked. All 37 of them carry a permission tier too, and the same approval gate reads it: `tasks_delete` and `mesh_unregister` are `destructive`. On a **Trusted** install (the default), a registered agent's own token runs them and DorkOS records it, the same as any other in-circle destructive action with an Allowed area; on **Careful**, or from a caller DorkOS cannot verify as one of its own agents, each answers with a pending approval instead of doing the work. A destructive tool advertises an `approvalToken` argument, so a client can tell one from its own schema without asking.
 
 The tools agents use to message each other's chats (`chat_send`, `chat_read`, `chat_stop`) are not on this server. Each one acts as the chat that calls it, and a client connected from outside has no chat to act as.
 
@@ -143,13 +143,15 @@ Inside a DorkOS session, Claude Code is also told which tier a tool sits at and 
 <Callout type="info">
   The 10 `marketplace_*` tools only appear when Relay is enabled and extensions have initialized
   successfully. Without that, the marketplace branch is silently skipped and the server still boots
-  with the other 55. `marketplace_install`, `marketplace_uninstall`, `marketplace_create_package`,
-  and `marketplace_update` with `apply: true` each return a pending approval with a token instead of
-  doing the work; a person decides it in the DorkOS UI, and the client retries with the token.
+  with the other 55. On a **Trusted** install, `marketplace_install`, `marketplace_uninstall`, and
+  `marketplace_update` with `apply: true` run straight through from a source you have already
+  configured, recorded rather than approved; on **Careful**, each returns a pending approval with a
+  token instead, and a person decides it in the DorkOS UI before the client retries with the token.
   Without `apply`, `marketplace_update` only says which packages have a newer version.
-  `marketplace_uninstall` is `destructive`-tier, so the registry's own approval gate stops it as
-  well. `marketplace_link`, which runs a package from a folder on your computer, is
-  `destructive`-tier with no setting that can approve it ahead of time: every call waits for you.
+  `marketplace_create_package` always returns a pending approval, on either preset, since it puts
+  new code on your machine for the first time. `marketplace_link`, which runs a package from a
+  folder on your computer, is `destructive`-tier with no setting that can approve it ahead of time:
+  every call waits for you.
 </Callout>
 
 Every tool's full name, description, and input schema is visible from any connected MCP client's tool list. This table is a map of the territory, not the source of truth.

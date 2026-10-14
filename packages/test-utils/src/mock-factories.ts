@@ -1303,7 +1303,7 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
       changeCount: 0,
       filesAndCommands: {
         stop: null,
-        presetStop: null,
+        presetStop: 'autonomy',
         runtimes: [],
         exceptions: [],
         followingAgentIds: [],

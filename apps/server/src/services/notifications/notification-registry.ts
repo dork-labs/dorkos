@@ -36,6 +36,11 @@ import {
   type NotificationTier,
 } from '@dorkos/shared/notification-schemas';
 import { formatResetTime, limitWindowPhrase, ownerReplacementWhen } from './notification-copy.js';
+import {
+  EXTENSION_DECISION_PUSH_WINDOW_MS,
+  extensionDecisionEscalation,
+  extensionDecisionHistoryBody,
+} from './extension-decision-copy.js';
 
 /**
  * How a run finished, as `run.completed` reports it.
@@ -89,6 +94,22 @@ export interface NotificationPayloads {
     proposedBySessionId?: string;
     /** What to call whoever proposed it. */
     proposedBy: string;
+  };
+  /**
+   * One of our agents made a schedule that runs without asking, because the
+   * install is Trusted (ADR 261006-225605). Told so the person knows it exists
+   * and can pause it; nothing waits on them.
+   */
+  'schedule.armed_by_agent': {
+    taskId: string;
+    taskName: string;
+    agentId?: string;
+    /** The session the agent made it from, when there was one. */
+    proposedBySessionId?: string;
+    /** What to call the agent that made it. */
+    armedBy: string;
+    /** When it runs, as the end of "Runs …", e.g. `every day at 9:00 AM`. */
+    cadence: string;
   };
   /**
    * An agent asked to do something irreversible and is waiting on a yes.
@@ -685,79 +706,6 @@ function subjectIdForCopy(p: NotificationPayload<'extension.approval'>): Notific
   };
 }
 
-/** Counts an extension's projects with open decisions right now, when the inbox is up. */
-let openProjectCounter: ((extensionId: string) => number) | null = null;
-
-/**
- * Let the inbox answer "in how many projects?" live, so a push sent minutes
- * after the first decision counts every project open by then.
- *
- * @param counter - The live count, or null to fall back to the payload's.
- */
-export function setOpenProjectCounter(counter: ((extensionId: string) => number) | null): void {
-  openProjectCounter = counter;
-}
-
-/** One phone push per extension per hour, whatever number of its decisions stand. */
-const EXTENSION_DECISION_PUSH_WINDOW_MS = 60 * 60 * 1000;
-
-/**
- * What a phone is told about an extension's decisions: who, and in how many
- * projects, never the title, key or project name (spec `flow-multiproject`
- * §7.1). The row in the app carries the detail.
- *
- * @param p - That kind's payload.
- */
-export function extensionDecisionEscalation(p: NotificationPayload<'extension.decision'>): {
-  title: string;
-} {
-  const open = openProjectCounter?.(p.extensionId) ?? p.openProjects;
-  if (open <= 0) return { title: `${p.extensionName} needs you` };
-  const projects = open === 1 ? '1 project' : `${open} projects`;
-  return { title: `${p.extensionName} needs you in ${projects}` };
-}
-
-/**
- * Who decided, in the words a history row uses (spec §7.9): "you", "decided by
- * the agent", or the label the extension gave ("the reviewer agent"). The
- * time is added by the surface, in the viewer's zone.
- *
- * @param resolution - How the decision was settled.
- * @param extensionName - The extension's manifest name.
- */
-function decidedByWords(
-  resolution: NonNullable<NotificationPayload<'extension.decision'>['resolution']>,
-  extensionName: string
-): string {
-  switch (resolution.resolvedBy) {
-    case 'person':
-      return 'you';
-    case 'deadline':
-      return 'decided by the agent';
-    case 'extension':
-      return resolution.resolvedByLabel ? `answered ${resolution.resolvedByLabel}` : extensionName;
-    default:
-      return resolution.resolvedByLabel ?? extensionName;
-  }
-}
-
-/**
- * The second part of an `extension.decision` history row (spec §7.4): "Resolved
- * on its own", "No longer needed", or "<what was chosen> · <who>".
- *
- * @param p - That kind's payload, with its resolution.
- */
-function extensionDecisionHistoryBody(
-  p: NotificationPayload<'extension.decision'>
-): string | undefined {
-  const r = p.resolution;
-  if (!r) return p.why;
-  if (r.outcome === 'cleared') return 'Resolved on its own';
-  if (r.outcome === 'cancelled') return 'No longer needed';
-  const who = decidedByWords(r, p.extensionName);
-  return r.choiceLabel ? `${r.choiceLabel} · ${who}` : who;
-}
-
 /** Longest slice of an agent's note that is used to tell two notes apart. */
 const NOTE_DEDUPE_PREFIX = 120;
 
@@ -765,6 +713,16 @@ const NOTE_DEDUPE_PREFIX = 120;
 const SCHEDULE_ACTIONS: NotificationActionDTO[] = [
   { id: 'approve', label: 'Approve', style: 'primary' },
   { id: 'reject', label: 'Reject', style: 'danger' },
+];
+
+/**
+ * What a schedule an agent armed offers: stop it, or go and look at it. Pause
+ * switches it off through the ordinary task update (`enabled: false`), the same
+ * write a person's own switch makes.
+ */
+const ARMED_SCHEDULE_ACTIONS: NotificationActionDTO[] = [
+  { id: 'pause', label: 'Pause', style: 'neutral' },
+  { id: 'open', label: 'Open', style: 'primary' },
 ];
 
 /** The single "take me there" action a standing condition offers. */
@@ -809,6 +767,24 @@ const ENTRIES: NotificationRegistryMap = {
     body: (p) => `${p.taskName} will not run until you approve it.`,
     actions: () => SCHEDULE_ACTIONS,
     dedupeKey: (p) => `schedule:${p.taskId}`,
+    relay: 'never',
+  },
+
+  'schedule.armed_by_agent': {
+    kind: 'schedule.armed_by_agent',
+    // `notable`, not `blocking`: nothing is stopped and nobody is waiting. The
+    // person is told so the schedule never runs unseen, and Pause is one tap.
+    tier: 'notable',
+    storage: 'event',
+    subjectType: 'task',
+    locate: (p) => ({ subjectId: p.taskId, agentId: p.agentId, sessionId: p.proposedBySessionId }),
+    title: (p) => `${p.armedBy} scheduled ${p.taskName}`,
+    body: (p) => `Runs ${p.cadence}. Pause it any time.`,
+    actions: () => ARMED_SCHEDULE_ACTIONS,
+    // Not `schedule:` — that is the parked condition's key, and dedupe and the
+    // escalation ledger are keyed across kinds, so sharing it would let this
+    // row swallow a later park of the same schedule.
+    dedupeKey: (p) => `schedule-armed:${p.taskId}`,
     relay: 'never',
   },
 
@@ -1400,10 +1376,15 @@ export const NOTIFICATION_REGISTRY_KINDS: readonly NotificationKind[] = NOTIFICA
  *
  * `community.owner-replacement` joined them in DOR-2543. It is raised from the owner's
  * connection list, and an hourly background check, by `emitters/community-owner-replacement.ts`.
+ *
+ * `schedule.armed_by_agent` joined them in DOR-2739. It is raised by
+ * `services/tasks/lifecycle/create-task.ts` when one of our agents makes a
+ * schedule on a Trusted install — see `emitters/schedule-armed.ts`.
  */
 export const WIRED_NOTIFICATION_KINDS: readonly NotificationKind[] = [
   'ask.pending',
   'schedule.parked',
+  'schedule.armed_by_agent',
   'approval.pending',
   'session.error',
   'turn.completed',

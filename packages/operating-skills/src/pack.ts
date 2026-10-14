@@ -350,8 +350,14 @@ export interface OperatingSkill {
  *   `connector_list_toolkits` before `request_connection`, and that a shell CLI
  *   sign-in grants DorkOS nothing (DOR-2236), matching what the refusal, the
  *   tool description and the per-turn Accounts guidance already say (DOR-2231).
+ * - 42: agents are trusted by default (ADR 261006-225605, DOR-2739).
+ *   `scheduling-tasks` says a task an agent makes in a session is live at once
+ *   and the person is told, that it waits only on Careful or when made without
+ *   the agent's token, and that an edit re-asks only for a file or package task
+ *   or on Careful. An agent seeded at 41 would tell a person a live schedule is
+ *   waiting on them.
  */
-export const OPERATING_SKILLS_VERSION = 41;
+export const OPERATING_SKILLS_VERSION = 42;
 
 /**
  * The canonical pack, umbrella skill first. Every entry is validated against the

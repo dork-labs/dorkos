@@ -239,7 +239,7 @@ export interface TrustDialProps {
   strandsWorkingMode?: boolean;
   /**
    * Offer a quiet way to leave the ask stop, for a surface that has somewhere to
-   * send them — the Control Center, or the full-power door.
+   * send them, such as the Control Center.
    *
    * When the dial is resting at the ask stop and this is supplied, a neutral
    * "Limited — unlock" affordance appears beneath the caption. It is a shape and

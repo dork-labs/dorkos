@@ -55,6 +55,11 @@ export const NOTIFICATION_KINDS = [
   'ask.pending',
   /** An agent proposed a schedule that only a person can approve. Standing. */
   'schedule.parked',
+  /**
+   * One of our agents made a schedule and it runs without asking, because the
+   * install is Trusted (ADR 261006-225605). An event, with Pause and Open.
+   */
+  'schedule.armed_by_agent',
   /** An agent asked to do something irreversible and is waiting on a yes. Standing. */
   'approval.pending',
   /** A session hit an error and stopped. Standing, per error episode. */

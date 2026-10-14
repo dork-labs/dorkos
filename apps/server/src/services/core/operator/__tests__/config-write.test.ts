@@ -103,7 +103,8 @@ describe('applyGuardedConfigWrite', () => {
           paths: ['permissions'],
         });
       }
-      expect(configManager.get('permissions').preset).toBeNull();
+      // Untouched: still the shipped default (ADR 261006-225605).
+      expect(configManager.get('permissions').preset).toBe('trusted');
     });
   });
 
@@ -421,7 +422,8 @@ describe('applyGuardedConfigWrite', () => {
         expect(heard).toEqual([
           {
             moves: [
-              { before: null, after: 'ask' },
+              // The global stop ships at Full autonomy (ADR 261006-225605).
+              { before: 'autonomy', after: 'ask' },
               { runtime: 'codex', before: null, after: 'act' },
             ],
             source: 'dorkos config set',
