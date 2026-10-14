@@ -77,6 +77,15 @@ const READ_CHUNK_BYTES = 1024 * 1024;
 const PROJECT_BATCH_LINES = 2_000;
 
 /**
+ * How many projected messages one write commits, at most (DOR-2904). A file is
+ * written in pieces of about this many, each in its own transaction that also
+ * moves the file's frontier to just past the lines it holds, so a huge first
+ * read (a Codex rollout runs past a gigabyte) never holds every message in
+ * memory and the database for the whole file in one go.
+ */
+const COMMIT_EVERY_MESSAGES = 5_000;
+
+/**
  * How many bytes may sit unterminated before the reader gives up on a file.
  *
  * A JSONL file whose "line" never ends is either not JSONL or is one record
@@ -286,9 +295,18 @@ export async function sweepFileSource(
       const outcome = await indexFile(db, source, file, frontier.get(file.originKey), {
         indexedTo: indexedOrdinals.get(file.originKey) ?? null,
         at,
+        // A file written in pieces has moved its frontier before it finishes;
+        // a failure later in the same file records against that, not against
+        // where the sweep started, or the next sweep would index the committed
+        // pieces a second time.
+        // Counted as each piece lands, so a file that fails after some of its
+        // pieces still reports the rows it put in the index.
+        onCommit: (row, rows) => {
+          frontier.set(file.originKey, row);
+          sweep.indexed += rows;
+        },
         ...(options.maxCarryBytes === undefined ? {} : { maxCarryBytes: options.maxCarryBytes }),
       });
-      sweep.indexed += outcome.indexed;
       sweep.skipped += outcome.skipped;
       if (outcome.rebuilt) sweep.rebuilt += 1;
     } catch (err) {
@@ -508,7 +526,12 @@ async function indexFile(
   source: FileSource,
   file: FileContainer,
   known: JsonlFrontierRow | undefined,
-  ctx: { indexedTo: number | null; at: string; maxCarryBytes?: number }
+  ctx: {
+    indexedTo: number | null;
+    at: string;
+    maxCarryBytes?: number;
+    onCommit?: (row: JsonlFrontierRow, rows: number) => void;
+  }
 ): Promise<{ indexed: number; skipped: number; rebuilt: boolean }> {
   // **Shrink means rebuild.** A file below its recorded size was truncated or
   // replaced, and a byte offset into a rewritten file points at the middle of a
@@ -550,9 +573,36 @@ async function indexFile(
   // exactly why the rebuild deletes the file's rows first.
   const firstOrdinal = rebuilt ? 0 : (ctx.indexedTo ?? -1) + 1;
 
-  const collected: ProjectedMessage[] = [];
+  let collected: ProjectedMessage[] = [];
   let skipped = 0;
+  let indexed = 0;
   let nextOrdinal = firstOrdinal;
+  let lastOrdinal = rebuilt ? null : (known?.lastOrdinal ?? null);
+  let cleared = false;
+
+  /**
+   * Commit what is collected, with the frontier the commit leaves behind. The
+   * rebuild's delete rides the first commit, so the file is never searchable
+   * twice and never missing what was already committed.
+   */
+  const commit = (frontier: Pick<JsonlFrontierWrite, 'byteOffset' | 'sizeBytes' | 'mtimeMs'>) => {
+    lastOrdinal = collected.at(-1)?.ordinal ?? lastOrdinal;
+    const rows = collected;
+    db.transaction((tx) => {
+      if (rebuilt && !cleared) deleteContainerMessages(tx, source.id, file.originKey);
+      insertMessages(tx, source.id, rows);
+      writeFrontier(tx, source.id, file, {
+        ...frontier,
+        lastOrdinal,
+        lastIndexedAt: ctx.at,
+        lastError: null,
+      });
+    });
+    cleared = true;
+    indexed += rows.length;
+    collected = [];
+    ctx.onCommit?.({ ...frontier, lastOrdinal, containerPath: file.containerPath }, rows.length);
+  };
 
   const read = await readJsonlLines(
     file.filePath,
@@ -566,31 +616,32 @@ async function indexFile(
       skipped += projection.skipped;
       nextOrdinal += projection.messages.length;
     },
-    ctx.maxCarryBytes
+    ctx.maxCarryBytes,
+    {
+      due: () => collected.length >= COMMIT_EVERY_MESSAGES,
+      // A piece of a file still being read: the frontier says how far the rows
+      // go, and a size and mtime no stat will match, so a sweep that finds it
+      // there (this one was cut short) resumes from that offset. One blind
+      // spot: a file REWRITTEN while a row sits mid-file, to at least that
+      // offset, reads as grown rather than shrunk. The same blind spot every
+      // rewrite to a larger size already has; it needs a crash and a rewrite.
+      at: (consumed) => commit({ byteOffset: consumed, sizeBytes: consumed, mtimeMs: 0 }),
+    }
   );
 
-  const lastOrdinal = collected.at(-1)?.ordinal ?? (rebuilt ? null : (known?.lastOrdinal ?? null));
-
-  db.transaction((tx) => {
-    if (rebuilt) deleteContainerMessages(tx, source.id, file.originKey);
-    insertMessages(tx, source.id, collected);
-    writeFrontier(tx, source.id, file, {
-      // Only past the last COMPLETE line. Never `stat.size`.
-      byteOffset: read.nextOffset,
-      // The larger of the two sizes: discovery's stat can be stale by the time
-      // the read reaches EOF, and recording the smaller one would let a later
-      // truncation back to that size read as growth.
-      sizeBytes: Math.max(file.sizeBytes, read.size),
-      // Discovery's mtime deliberately, not the read's: a file that changed
-      // between the two is re-read next sweep rather than recorded as caught up.
-      mtimeMs: file.mtimeMs,
-      lastOrdinal,
-      lastIndexedAt: ctx.at,
-      lastError: null,
-    });
+  commit({
+    // Only past the last COMPLETE line. Never `stat.size`.
+    byteOffset: read.nextOffset,
+    // The larger of the two sizes: discovery's stat can be stale by the time
+    // the read reaches EOF, and recording the smaller one would let a later
+    // truncation back to that size read as growth.
+    sizeBytes: Math.max(file.sizeBytes, read.size),
+    // Discovery's mtime deliberately, not the read's: a file that changed
+    // between the two is re-read next sweep rather than recorded as caught up.
+    mtimeMs: file.mtimeMs,
   });
 
-  return { indexed: collected.length, skipped, rebuilt };
+  return { indexed, skipped, rebuilt };
 }
 
 /** What one incremental read consumed. */
@@ -631,6 +682,9 @@ interface JsonlRead {
  * @param maxCarryBytes - How many unterminated bytes to tolerate before giving
  *   up on the file. A parameter only so a test can prove the cap; production
  *   always takes {@link MAX_CARRY_BYTES}.
+ * @param checkpoint - Asked after each chunk whether to commit; when it says so,
+ *   every pending line is handed on first and `at` gets the offset just past
+ *   them.
  * @returns Where the next read resumes, and the size this read saw.
  * @throws {UnterminatedLineError} When one line exceeds `maxCarryBytes`.
  */
@@ -638,7 +692,8 @@ async function readJsonlLines(
   filePath: string,
   fromOffset: number,
   onBatch: (lines: string[]) => void,
-  maxCarryBytes: number = MAX_CARRY_BYTES
+  maxCarryBytes: number = MAX_CARRY_BYTES,
+  checkpoint?: { due: () => boolean; at: (consumed: number) => void }
 ): Promise<JsonlRead> {
   const handle = await fs.open(filePath, 'r');
   try {
@@ -700,6 +755,14 @@ async function readJsonlLines(
           onBatch(batch);
           batch = [];
         }
+      }
+
+      // Between chunks every line up to `consumed` has been decoded and split,
+      // and nothing after it has; hand the caller that exact boundary.
+      if (checkpoint?.due()) {
+        if (batch.length > 0) onBatch(batch);
+        batch = [];
+        checkpoint.at(consumed);
       }
     }
 
