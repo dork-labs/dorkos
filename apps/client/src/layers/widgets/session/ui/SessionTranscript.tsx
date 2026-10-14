@@ -36,6 +36,7 @@ import {
 } from '@/layers/features/conversation';
 import {
   buildListRows,
+  createListRowsCache,
   ChatEmptyState,
   resolveMessageAuthor,
   StagedContextNote,
@@ -298,33 +299,51 @@ export function SessionTranscript({
     }
   }, [messages]);
 
+  // The layout reuses the rows of everything a streamed word did not change,
+  // so a long chat is not laid out again per word (DOR-2912). That needs the
+  // author resolver to keep its identity until the authors themselves change.
+  const resolveAuthor = useCallback(
+    (message: ChatMessage) => resolveMessageAuthor(message, authorContext),
+    [authorContext]
+  );
+  const [layoutCache] = useState(createListRowsCache);
   const listRows = useMemo(
     () =>
       buildListRows(messages, {
-        resolveAuthor: (message) => resolveMessageAuthor(message, authorContext),
+        resolveAuthor,
         now,
         lastSeenMessageId,
         unreadFromStart,
+        cache: layoutCache,
       }),
-    [messages, authorContext, now, lastSeenMessageId, unreadFromStart]
+    [messages, resolveAuthor, now, lastSeenMessageId, unreadFromStart, layoutCache]
   );
 
+  // One view row per layout row, kept with it, so reused layout rows hand the
+  // timeline the very same objects as last time.
+  const [viewRows] = useState(() => new WeakMap<ListRow, ConversationRow>());
   const rows = useMemo<ConversationRow[]>(
     () =>
       listRows.map((row) => {
-        if (row.kind === 'day-divider')
-          return { kind: 'day-divider', id: row.key, label: row.label };
-        if (row.kind === 'unread-divider') return { kind: 'unread-divider', id: row.key };
-        return {
-          kind: 'message',
-          id: row.key,
-          payload: row.message,
-          grouping: row.grouping,
-          author: row.author,
-          at: row.message.timestamp,
-        };
+        const known = viewRows.get(row);
+        if (known) return known;
+        const view: ConversationRow =
+          row.kind === 'day-divider'
+            ? { kind: 'day-divider', id: row.key, label: row.label }
+            : row.kind === 'unread-divider'
+              ? { kind: 'unread-divider', id: row.key }
+              : {
+                  kind: 'message',
+                  id: row.key,
+                  payload: row.message,
+                  grouping: row.grouping,
+                  author: row.author,
+                  at: row.message.timestamp,
+                };
+        viewRows.set(row, view);
+        return view;
       }),
-    [listRows]
+    [listRows, viewRows]
   );
 
   /**
