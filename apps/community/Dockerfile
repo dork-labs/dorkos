@@ -25,7 +25,11 @@ COPY packages/connector-providers packages/connector-providers
 COPY packages/typescript-config packages/typescript-config
 COPY apps/community apps/community
 RUN pnpm --filter @dork-labs/cloud-api build && pnpm --filter @dork-labs/connector-providers build && pnpm --filter @dorkos/shared build && pnpm --filter @dorkos/decisions build && pnpm --filter @dork-labs/ui build && pnpm --filter @dorkos/community build
-RUN pnpm --filter @dorkos/community deploy --prod --legacy --ignore-scripts /runtime
+# This image copies only the community's slice of the workspace, so a root patch for a
+# package it never installs (when-exit, which the server reaches through conf) is
+# "unused" here, and pnpm deploy refuses unused patches by default. The v0.114.0 and
+# v0.114.1 images failed to build on exactly that.
+RUN pnpm --config.allow-unused-patches=true --filter @dorkos/community deploy --prod --legacy --ignore-scripts /runtime
 RUN cp -R apps/community/dist apps/community/dist-server apps/community/migrations /runtime/
 
 FROM node:24-bookworm-slim
