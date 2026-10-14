@@ -49,7 +49,7 @@ describe('SleepSettings', () => {
     renderWith(status({ enabled: true }));
     expect(await toggle()).toBeChecked();
     expect(screen.getByTestId('sleep-settings-note')).toHaveTextContent(
-      'Closing the lid usually still sleeps. The screen still turns off and locks.'
+      'Closing the lid usually still sleeps. The screen still locks. Uses more battery.'
     );
   });
 
@@ -78,7 +78,7 @@ describe('SleepSettings', () => {
     renderWith(status({ supported: false, reason: 'denied' }));
     expect(await toggle()).toBeEnabled();
     expect(screen.getByTestId('sleep-settings-note')).toHaveTextContent(
-      'This computer refused to stay awake. Trying again shortly.'
+      'This computer refused to stay awake. Tries again while agents work.'
     );
   });
 

@@ -49,7 +49,7 @@ export function isKeepingAwake(status: KeepAwakeStatus | undefined): status is K
 export const UNSUPPORTED_COPY: Record<KeepAwakeUnsupportedReason, string> = {
   container: 'Not available in a container.',
   'tool-missing': 'Not available: this computer has no sleep control tool.',
-  denied: 'This computer refused to stay awake. Trying again shortly.',
+  denied: 'This computer refused to stay awake. Tries again while agents work.',
   platform: 'Not available on this operating system.',
 };
 
@@ -65,10 +65,10 @@ export function canSwitchKeepAwake(status: Pick<KeepAwakeStatus, 'supported' | '
 }
 
 /**
- * What keeping awake cannot do. Shown under the switch and in the cup, on every
- * platform, so it names only what holds everywhere: a closed lid sleeps most
- * laptops (a Mac stays up only on power with a display attached), and the
- * screen keeps its own timer.
+ * What keeping awake cannot do, and what it costs. Shown under the switch and in
+ * the cup, on every platform, so it names only what holds everywhere: a closed
+ * lid sleeps most laptops (the exceptions are in the Sleep and wake guide), and
+ * the screen keeps its own timer.
  */
 export const KEEP_AWAKE_CAVEAT =
-  'Closing the lid usually still sleeps. The screen still turns off and locks.';
+  'Closing the lid usually still sleeps. The screen still locks. Uses more battery.';

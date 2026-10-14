@@ -59,7 +59,8 @@ async function* holdDuring(
   sessionId: string,
   opts: MessageOpts | undefined,
   source: AsyncIterable<StreamEvent>,
-  isPaused: IsPaused | undefined
+  isPaused: IsPaused | undefined,
+  selfStarted = false
 ): AsyncGenerator<StreamEvent> {
   // The service already contains its own failures; this guards the seam as
   // well, because this wrapper sits in the path of every turn and must never
@@ -69,6 +70,7 @@ async function* holdDuring(
     hold = service.holdTurn({
       sessionId,
       room: opts?.roomTurn !== undefined,
+      ...(selfStarted ? { selfStarted } : {}),
       isHelperWorking: () => runtime.isHelperWorking?.(sessionId) === true,
       // A paused agent's background work keeps nothing awake either.
       holdsBackgroundWork: () =>
@@ -115,7 +117,7 @@ async function* holdRuntimeTurn(
     yield* events;
     return;
   }
-  yield* holdDuring(service, runtime, sessionId, undefined, events, isPaused);
+  yield* holdDuring(service, runtime, sessionId, undefined, events, isPaused, true);
 }
 
 /**

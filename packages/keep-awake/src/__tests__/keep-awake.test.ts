@@ -210,9 +210,9 @@ describe('caffeinate holders', () => {
     expect(logger.warn).not.toHaveBeenCalled();
   });
 
-  it('stops, without respawning, when caffeinate exits 0 at once because the owner is gone', () => {
-    // Purpose: `-w` on a dead pid exits 0 immediately; reading that as a `-t`
-    // timeout respawned in a tight loop.
+  it('treats an exit 0 right after starting as a refusal, never a tight respawn loop', () => {
+    // Purpose: `-w` on a pid caffeinate cannot watch exits 0 immediately;
+    // reading that as a `-t` timeout respawned in a tight loop.
     const spawner = fakeSpawner((child) => {
       setTimeout(() => child.exit(0), 5);
     });
@@ -221,7 +221,16 @@ describe('caffeinate holders', () => {
     vi.advanceTimersByTime(1_000);
 
     expect(spawner.calls).toHaveLength(1);
-    expect(keepAwake.status()).toMatchObject({ holds: 1, asserted: false, supported: true });
+    expect(keepAwake.status()).toMatchObject({
+      holds: 1,
+      asserted: false,
+      supported: false,
+      reason: 'denied',
+    });
+
+    // It is retried on the backoff like any refusal.
+    vi.advanceTimersByTime(30_000);
+    expect(spawner.calls).toHaveLength(2);
   });
 
   it('sends SIGKILL when a holder ignores SIGTERM for two seconds', () => {

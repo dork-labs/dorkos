@@ -6,7 +6,12 @@ import { describe, expect, it, vi } from 'vitest';
 import type { AgentRuntime, MessageOpts } from '@dorkos/shared/agent-runtime';
 import type { StreamEvent } from '@dorkos/shared/types';
 import { holdAwakeDuringTurns } from '../hold-during-turn.js';
-import { KeepAwakeService, keepAwakeService, TURN_IDLE_CEILING_MS } from '../keep-awake-service.js';
+import {
+  BACKGROUND_ONLY_CEILING_MS,
+  KeepAwakeService,
+  keepAwakeService,
+  TURN_IDLE_CEILING_MS,
+} from '../keep-awake-service.js';
 import { RuntimeRegistry } from '../../runtime-registry.js';
 
 const EVENT: StreamEvent = { type: 'text_delta', data: { text: 'hi' } } as StreamEvent;
@@ -366,21 +371,55 @@ describe('work that outlives the turn', () => {
     expect(working(service).chats).toBe(0);
   });
 
-  it('stops holding for background work after two hours unless a helper is still working', async () => {
-    // Purpose: a server left in a background shell cannot keep the computer up forever.
+  it('holds for a working helper past twenty minutes, and for only a shell or timer up to twenty', async () => {
+    // Purpose: a server left in a background shell, or a timer, cannot keep
+    // the computer up for hours; a working helper can (the runtime caps it).
     const service = new KeepAwakeService();
     const { runtime, state } = backgroundRuntime();
     state.background = true;
     state.helper = true;
+    const ended = Date.now();
     await drain(holdAwakeDuringTurns(runtime, service).sendMessage('s1', 'hello'));
 
-    const later = Date.now() + TURN_IDLE_CEILING_MS + 1;
-    service.sweepIdleTurns(later);
+    service.sweepIdleTurns(ended + TURN_IDLE_CEILING_MS * 2);
     expect(working(service).chats).toBe(1);
 
     state.helper = false;
-    service.sweepIdleTurns(later);
+    service.sweepIdleTurns(ended + BACKGROUND_ONLY_CEILING_MS - 1);
+    expect(working(service).chats).toBe(1);
+    service.sweepIdleTurns(ended + BACKGROUND_ONLY_CEILING_MS);
     expect(working(service).chats).toBe(0);
+  });
+
+  it('keeps one background hold per session: a newer one replaces the older', async () => {
+    const service = new KeepAwakeService();
+    const { runtime, state } = backgroundRuntime();
+    state.background = true;
+    const wrapped = holdAwakeDuringTurns(runtime, service);
+    await drain(wrapped.sendMessage('s1', 'one'));
+    await drain(wrapped.sendMessage('s1', 'two'));
+    expect(working(service).chats).toBe(1);
+
+    state.background = false;
+    service.sweepIdleTurns();
+    expect(working(service).chats).toBe(0);
+  });
+
+  it('labels a self-started turn in a room session a room', async () => {
+    const service = new KeepAwakeService();
+    const { runtime, state, startTurn } = backgroundRuntime();
+    const wrapped = holdAwakeDuringTurns(runtime, service);
+    let stream: AsyncIterator<StreamEvent> | null = null;
+    wrapped.onRuntimeTurn!((_sessionId, turnEvents) => {
+      stream = turnEvents[Symbol.asyncIterator]();
+    });
+    state.background = true;
+    await drain(wrapped.sendMessage('s1', 'hello', { roomTurn: {} } as unknown as MessageOpts));
+    expect(working(service)).toMatchObject({ chats: 0, rooms: 1 });
+
+    startTurn('s1', events(1));
+    await stream!.next();
+    expect(working(service)).toMatchObject({ chats: 0, rooms: 1 });
   });
 
   it('holds nothing for the background work of a paused agent', async () => {

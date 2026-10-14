@@ -397,10 +397,11 @@ export function createKeepAwake(options: KeepAwakeOptions = {}): KeepAwake {
         record.command.renews &&
         now - record.startedAt < (ttlSec * 1000) / 2
       ) {
-        // caffeinate exits 0 at once when the pid it watches is already gone.
-        // That is the owner ending, not the `-t` running out, and respawning
-        // would only repeat it in a tight loop. Stop; status says nothing is held.
-        logger.warn('[KeepAwake] the process being watched has ended; not holding');
+        // caffeinate exits 0 at once when it cannot watch the pid it was given
+        // (`-w` on a pid it cannot see). The owner is our own live process, so
+        // this is not the `-t` running out, and respawning at once would only
+        // repeat it in a tight loop. It is a refusal: back off and say so.
+        markUnsupported('denied', 'caffeinate could not watch the process');
       } else if (code === 0 && record.command.renews) {
         // caffeinate's own `-t` ran out before renewal fired (the timer was
         // late, typically because the computer slept anyway). Not a failure.
