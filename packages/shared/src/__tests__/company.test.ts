@@ -26,10 +26,22 @@ function read(path: string): string {
   return readFileSync(`${ROOT}/${path}`, 'utf8');
 }
 
-/** Run `git grep` from the repo root; no match is an empty result, not an error. */
+/**
+ * Run `git grep` from the repo root; no match is an empty result, not an error.
+ * The `-c` overrides keep a developer's git config (line numbers or columns
+ * on by default, colour) from changing the `path:match` shape callers parse.
+ */
 function gitGrep(args: string[]): string[] {
+  const config = [
+    '-c',
+    'grep.lineNumber=false',
+    '-c',
+    'grep.column=false',
+    '-c',
+    'color.grep=never',
+  ];
   try {
-    return execFileSync('git', ['grep', ...args], { cwd: ROOT, encoding: 'utf8' })
+    return execFileSync('git', [...config, 'grep', ...args], { cwd: ROOT, encoding: 'utf8' })
       .split('\n')
       .filter(Boolean);
   } catch (error) {
@@ -81,12 +93,11 @@ const LITERAL_NAME_ALLOWED = [
 ];
 
 /**
- * Where a DorkOS email address may be typed outside the company module: a
- * person's own address used as an example, and fixtures that stand in for a
- * real registry. Every other address in source, docs and top-level documents
- * must be one of `company.emails`.
+ * Files that use a person's own DorkOS address as an example; every other
+ * address in source, docs and top-level documents must be one of
+ * `company.emails`.
  */
-const EMAIL_EXAMPLE_ALLOWED = [
+const PERSONAL_EMAIL_EXAMPLES = [
   // Shows that an address does not open the @-mention picker.
   'apps/client/src/layers/features/mentions/model/use-mention-autocomplete.ts',
 ];
@@ -110,22 +121,76 @@ const TEST_PATHS = [
   ':!apps/client/src/dev/mock-samples/**',
 ];
 
+/** Every code file under apps/ and packages/, the scope of the two source guards. */
+const CODE_PATHS = ['ts', 'tsx', 'js', 'mjs', 'cjs'].flatMap((ext) => [
+  `apps/**/*.${ext}`,
+  `packages/**/*.${ext}`,
+]);
+
+/** A line whose code starts as a comment: it documents a value rather than holding one. */
+const COMMENT_LINE = /^\s*(\/\/|\/?\*)/;
+
 /**
- * Source files that may still type a brand URL as a string: Dev Playground
- * showcases and test mocks, whose URLs are sample data rather than links a
- * person follows, and two files at the max-lines ratchet, where the import
- * line would grow a file that may only shrink (scripts/max-lines). Move
- * them to the links module when they are split.
+ * Brand URLs, hosts and repository names that code builds from
+ * `@dorkos/shared/links` (or `COMMUNITY_IMAGE_REPOSITORY`) instead of typing.
+ * Each matches anywhere in a line, so a URL inside a longer string counts.
  */
-const LITERAL_URL_ALLOWED = [
-  'apps/community/src/browser/components/host/HostAdministration.tsx',
-  'apps/server/src/services/core/auth/cloud-link-client.ts',
-  'apps/client/src/dev/showcases/DataDisplayShowcases.tsx',
-  'apps/client/src/dev/showcases/GenUiShowcases.tsx',
-  'apps/client/src/dev/showcases/OnboardingFlowShowcases.tsx',
-  'apps/client/src/dev/showcases/RoomDeliveryShowcases.tsx',
-  'packages/test-utils/src/mock-factories.ts',
+const BRAND_LITERALS = [
+  /https?:\/\/([a-z0-9-]+\.)*dorkos\.ai/,
+  /github\.com\/dork-labs([^A-Za-z0-9_-]|$)/,
+  /raw\.githubusercontent\.com\/dork-labs/,
+  /api\.github\.com\/repos\/dork-labs/,
+  /ghcr\.io\/dork-labs/,
+  /['"`]dork-labs\/(dorkos|marketplace)\b/,
 ];
+
+/**
+ * Code files that may still type a brand URL, host or repository name, each
+ * with the reason it cannot import the links module.
+ */
+const LITERAL_URL_ALLOWED: Record<string, string> = {
+  'packages/shared/src/links.ts': 'the module itself',
+  'packages/shared/src/community-release-manifest.ts':
+    'the one definition of the Community image repository, which the CLI imports',
+  'apps/client/eslint-rules/fsd.js':
+    'an ESLint rule loaded as plain JS before any workspace package is built',
+  'apps/community/acceptance/run.mjs':
+    'a standalone acceptance script that runs without a workspace build',
+  'apps/e2e/reporters/refresh-shard-timings.ts': '@dorkos/e2e does not depend on @dorkos/shared',
+  'packages/cli/scripts/test-community-deploy-package.ts':
+    'a test harness whose fake registry and attestation answers are sample data',
+  'apps/server/src/services/mesh/refresh-untouched-templates.ts':
+    'old template text that has to match what earlier versions wrote, byte for byte',
+  'apps/community/src/browser/components/host/HostAdministration.tsx':
+    'at the max-lines ratchet: the import line would grow a file that may only shrink',
+  'apps/server/src/services/core/auth/cloud-link-client.ts':
+    'at the max-lines ratchet: the import line would grow a file that may only shrink',
+  'packages/cli/src/commands/community-deploy/community-dispatcher.ts':
+    'at the max-lines ratchet: the import line would grow a file that may only shrink',
+  'apps/client/src/dev/showcases/DataDisplayShowcases.tsx': 'Dev Playground sample data',
+  'apps/client/src/dev/showcases/GenUiShowcases.tsx': 'Dev Playground sample data',
+  'apps/client/src/dev/showcases/OnboardingFlowShowcases.tsx': 'Dev Playground sample data',
+  'apps/client/src/dev/showcases/RoomDeliveryShowcases.tsx': 'Dev Playground sample data',
+  'packages/test-utils/src/mock-factories.ts': 'test mock data',
+};
+
+/**
+ * Code files that may type one of the company's email addresses instead of
+ * importing it, each with the reason.
+ */
+const LITERAL_EMAIL_ALLOWED: Record<string, string> = {
+  'packages/shared/src/company.ts': 'the module itself',
+  'apps/e2e/capture/config.ts': '@dorkos/e2e does not depend on @dorkos/shared',
+};
+
+/** Code lines under apps/ and packages/ that mention `needle`, comments dropped, as `path:line:text`. */
+function codeLinesMentioning(needle: string): Array<{ path: string; text: string }> {
+  return gitGrep(['-n', '-I', '-E', needle, '--', ...CODE_PATHS, ...TEST_PATHS])
+    .map((line) => /^([^:]+):\d+:(.*)$/.exec(line))
+    .filter((match): match is RegExpExecArray => match !== null)
+    .map(([, path, text]) => ({ path: path!, text: text! }))
+    .filter(({ text }) => !COMMENT_LINE.test(text));
+}
 
 /** The npm packages this repo publishes, whose metadata must point at the repo. */
 const PUBLISHED_PACKAGES = [
@@ -201,30 +266,38 @@ describe('company facts', () => {
       ...TEST_PATHS,
     ]).filter((line) => {
       const [path, address] = line.split(':');
-      return !known.has(address!) && !EMAIL_EXAMPLE_ALLOWED.includes(path!);
+      return !known.has(address!) && !PERSONAL_EMAIL_EXAMPLES.includes(path!);
     });
     expect(unknown).toEqual([]);
   });
 
-  it('app and package source build brand URLs from the links module', () => {
-    const hits = gitGrep([
-      '-n',
-      '-I',
-      '-E',
-      `['"\`]https://(www\\.)?(dorkos\\.ai|github\\.com/dork-labs/|npmjs\\.com/package/dorkos)`,
-      '--',
-      'apps/**/*.ts',
-      'apps/**/*.tsx',
-      'packages/**/*.ts',
-      'packages/**/*.tsx',
-      ':!packages/shared/src/links.ts',
-      ...TEST_PATHS,
-    ]);
-    // A URL named in a comment documents the link; only code values count.
-    const files = hits
-      .filter((line) => !/^[^:]+:\d+:\s*(\/\/|\/?\*)/.test(line))
-      .map((line) => line.split(':')[0]!);
-    expect([...new Set(files)].sort()).toEqual([...LITERAL_URL_ALLOWED].sort());
+  it('app and package code imports the email addresses instead of typing them', () => {
+    const files = codeLinesMentioning('@dorkos\\.ai').map(({ path }) => path);
+    expect([...new Set(files)].sort()).toEqual(Object.keys(LITERAL_EMAIL_ALLOWED).sort());
+  });
+
+  it('marketplace registry files name the marketplace owner address', () => {
+    const registries = execFileSync(
+      'git',
+      ['ls-files', '--', ':(glob)**/.claude-plugin/marketplace.json'],
+      { cwd: ROOT, encoding: 'utf8' }
+    )
+      .split('\n')
+      .filter(Boolean);
+    expect(registries.length).toBeGreaterThan(0);
+    for (const path of registries) {
+      const registry = JSON.parse(read(path)) as { owner?: { email?: string } };
+      if (registry.owner?.email?.endsWith('@dorkos.ai')) {
+        expect(registry.owner.email, path).toBe(company.emails.marketplace);
+      }
+    }
+  });
+
+  it('app and package code builds brand URLs from the links module', () => {
+    const files = codeLinesMentioning('dorkos\\.ai|dork-labs')
+      .filter(({ text }) => BRAND_LITERALS.some((pattern) => pattern.test(text)))
+      .map(({ path }) => path);
+    expect([...new Set(files)].sort()).toEqual(Object.keys(LITERAL_URL_ALLOWED).sort());
   });
 
   it('published package metadata points at the repository', () => {

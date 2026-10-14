@@ -5,6 +5,7 @@ describe('links', () => {
   it('names the site, docs and repositories', () => {
     expect(links.site).toBe('https://dorkos.ai');
     expect(links.docs).toBe('https://dorkos.ai/docs');
+    expect(links.cloudApi).toBe('https://cloud.dorkos.ai');
     expect(links.repo).toBe('https://github.com/dork-labs/dorkos');
     expect(links.repo).toBe(`https://github.com/${links.repoSlug}`);
     expect(links.marketplaceRepo).toBe(`https://github.com/${links.marketplaceRepoSlug}`);

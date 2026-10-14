@@ -22,8 +22,8 @@ export const links = {
   site: 'https://dorkos.ai',
   /** The root of the published docs. */
   docs: 'https://dorkos.ai/docs',
-  /** The GitHub organization page. */
-  githubOrg: `https://github.com/${GITHUB_ORG}`,
+  /** The origin of the DorkOS Cloud `/v1` API, which the website does not serve. */
+  cloudApi: 'https://cloud.dorkos.ai',
   /** The DorkOS app repository, as `owner/repo`. */
   repoSlug: `${GITHUB_ORG}/dorkos`,
   /** The DorkOS app repository on GitHub. */

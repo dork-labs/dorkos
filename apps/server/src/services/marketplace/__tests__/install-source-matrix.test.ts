@@ -196,7 +196,7 @@ describe('install source matrix — fetchPackage dispatch', () => {
     if (caught instanceof NpmSourceNotSupportedError) {
       expect(caught.package).toBe('@dorkos/example');
       expect(caught.version).toBe('1.0.0');
-      expect(caught.docs).toMatch(/npm/);
+      expect(caught.docs).toBe('https://dorkos.ai/docs/marketplace#marketplace-sources');
     }
   });
 

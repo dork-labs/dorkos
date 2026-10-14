@@ -32,8 +32,9 @@ export const company = {
   governingState: 'Texas',
   /**
    * The company's published email addresses. Files that cannot import this
-   * module (`SECURITY.md`, `CODE_OF_CONDUCT.md`, the marketplace registry
-   * JSON) hold the literal, pinned by the company test.
+   * module hold the literal, and the company test pins each to its entry:
+   * `SECURITY.md` and `CODE_OF_CONDUCT.md` to `security`, every
+   * `.claude-plugin/marketplace.json` owner to `marketplace`.
    */
   emails: {
     /** The general contact address the site and legal pages publish. */
