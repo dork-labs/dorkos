@@ -1,6 +1,7 @@
 ---
 covers:
   - 'fix: keep the computer awake through background work and retry a refused hold (DOR-2919)'
+  - 'fix: cap shell-only background holds and treat an early caffeinate exit as a refusal (DOR-2919)'
 ---
 
 ### Fixed
