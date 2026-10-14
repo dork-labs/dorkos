@@ -5556,6 +5556,11 @@ export const TaskSchema = z
     reasonSource: z.enum(['dorkos']).nullable().default(null),
     nextRun: z.string().nullable().optional(),
     /**
+     * When the schedule last started a run (ISO 8601), or null when it never
+     * has. Response-only; ABSENT from an older server.
+     */
+    lastRunAt: z.string().nullable().optional(),
+    /**
      * The next few times this cron would fire. ISO 8601 UTC, soonest first.
      *
      * **Populated only for a schedule waiting for approval.** That is where the
