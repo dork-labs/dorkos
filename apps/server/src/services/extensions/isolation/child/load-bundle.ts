@@ -1,12 +1,13 @@
 /**
- * Load an isolated extension's compiled server bundle with an injected
- * `require` (DOR-2686, spec §4 step 4).
+ * Load an extension's compiled server bundle with an injected `require`
+ * (DOR-2686, spec §4 step 4), in its own process or in the server's
+ * (`server-bundle/load-in-process.ts`).
  *
  * The compiler bundles everything an extension imports except `express` and
- * `@dorkos/extension-api` (`extension-compiler.ts` marks them external, and
- * the in-process host provides them). Here the bootstrap provides its own
- * bundled copies of those, the `child_process` shim in place of the real
- * module, and Node's built-in modules as they are. Anything else is refused:
+ * `@dorkos/extension-api` (`extension-compiler.ts` marks them external). The
+ * loader's caller provides those: the server its own, the isolated bootstrap
+ * its bundled copies plus the `child_process` shim in place of the real
+ * module. Node's built-in modules come as they are. Anything else is refused:
  * a bundle is self-contained by construction, so a request for another
  * package is a bundle that would not work anyway, and refusing it keeps the
  * child from loading files it was never meant to.

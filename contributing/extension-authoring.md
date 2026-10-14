@@ -988,7 +988,7 @@ if (ctx.inbox !== undefined) {
 
 #### `ctx.requirePerson`
 
-Express middleware that admits only a person: the same bar as approving an extension. Put it in front of every route that changes state on a person's behalf (settings, pause and resume):
+Express middleware that admits only a person: the same bar as approving an extension. Put it in front of every router route that changes state on a person's behalf (settings, pause and resume). A fetch handler uses `requirePerson()` or `checkPerson(caller)` instead (see [Serving with a fetch handler](#serving-with-a-fetch-handler)):
 
 ```typescript
 router.put('/settings', ctx.requirePerson, saveSettings);
@@ -1165,15 +1165,16 @@ router.get('/deep/path', handler); // GET  /api/ext/my-ext/deep/path
 
 #### Serving with a fetch handler
 
-`register` can return `{ fetch, cleanup? }` instead of adding routes (DOR-2687). `fetch` takes a web-standard `Request` and returns a `Response` (or a promise of one), the shape a Hono app exposes, so an app written against the web `Request` and `Response` runs unchanged. It runs on Node inside DorkOS (or its own Node process), so Bun- or Deno-only APIs are not there:
+`register` can return `{ fetch, cleanup? }` instead of adding routes (DOR-2687). `fetch(request, caller)` takes a web-standard `Request` and returns a `Response` (or a promise of one), the shape a Hono app exposes, so an app written against the web `Request` and `Response` runs unchanged. It runs on Node inside DorkOS (or its own Node process), so Bun- or Deno-only APIs are not there. **`hono` is built in** (DOR-2857): the compiler resolves `hono` and every `hono/<subpath>` its `exports` map offers to DorkOS's own copy and bundles it inline (`services/extensions/server-bundle/host-hono.ts`), so it builds from `~/.dork/extensions` with nothing installed, and DorkOS's copy wins over one the extension ships:
 
 ```typescript
 import { Hono } from 'hono';
-import type { ServerExtensionRegister } from '@dorkos/extension-api/server';
+import { requirePerson, type ServerExtensionRegister } from '@dorkos/extension-api/server';
 
 const register: ServerExtensionRegister = (_router, ctx) => {
   const app = new Hono();
   app.get('/status', async (c) => c.json({ data: await ctx.storage.loadData() }));
+  app.put('/settings', requirePerson(), async (c) => c.json(await save(await c.req.json())));
   return { fetch: app.fetch };
 };
 
@@ -1186,9 +1187,11 @@ A server entry that needs nothing from `ctx` can export the handler's owner itse
 - **The request is the caller's.** Headers as sent (in-process; an extension that runs separately gets them stripped, as its router does). A JSON body DorkOS already parsed is sent again as JSON, so `request.json()` works; any other body is the caller's bytes, up to 1 MB (a larger one is answered `413` before `fetch` runs). `request.signal` aborts when the caller leaves.
 - **Order.** In-process, the router answers first; what it passes on goes to the `dataProxy` (for `/proxy/*`, when declared), then to `fetch`. For an extension that runs in its own process, the `dataProxy` is asked first, in DorkOS, and what it passes on goes to the process: its router, then `fetch`. `fetch` answers everything it is given, so a path it does not serve should return its own 404.
 - **Errors.** A `fetch` that throws, or returns something that is not a `Response`, gets the same `500` a throwing route does, and DorkOS keeps serving.
-- **People only.** `ctx.requirePerson` is Express middleware, so a route that must refuse agents and other sites belongs on the router.
+- **Who is asking.** The second argument, `caller` (`ExtensionCaller`), carries the person bar's verdict on this request: `caller.person` is `{ ok: true }` or the refusal to answer with, worded with your extension's name, the same verdict `ctx.requirePerson` acts on. A Hono app reads it as `c.env`. It is decided by DorkOS on the real request, in-process and for an extension in its own process alike; the request your handler sees carries no header a caller could forge it with.
+- **People only.** `requirePerson()` from `@dorkos/extension-api/server` is Hono middleware that answers anyone but a person with that refusal and never runs the route. A handler written without Hono calls `checkPerson(caller)`, which returns the refusal `Response` or `null`. Both fail closed on a caller they cannot read. Same residuals as `ctx.requirePerson`.
+- **Reply headers.** One rule for every fetch reply, in-process or not (`http/reply-headers.ts`): content and caching headers, other `x-` headers (no `x-dorkos-`) and a `location` inside `/api/ext/<id>/` pass; everything else (`set-cookie`, `clear-site-data`, `refresh`, `www-authenticate`, CORS and CSP headers) is dropped, and `content-security-policy: sandbox; default-src 'none'` plus `x-content-type-options: nosniff` are always set. A router's in-process replies still go straight to the socket, which is one reason it is on its way out (DOR-2856).
 
-How the host serves each shape: `services/extensions/http/` (`express-bridge.ts` runs a router on its own private Express app; `fetch-handler.ts` builds the `Request`).
+How the host serves each shape: `services/extensions/http/` (`express-bridge.ts` runs a router on its own private Express app; `fetch-handler.ts` builds the `Request` and passes the caller). In an extension's own process, a fetch-only extension never reaches Express: `@hono/node-server`'s request listener serves it (`isolation/child/virtual-server.ts`). Both runtimes load the bundle with the same injected `require` (`server-bundle/load-in-process.ts`, `isolation/child/load-bundle.ts`), so `@dorkos/extension-api/server`'s helpers resolve from `~/.dork`, where no `node_modules` is.
 
 From the client-side `index.ts`, call your server routes via `fetch`:
 

@@ -17,16 +17,26 @@
  *   in its own process.
  * - **Leaving.** The request's `signal` aborts when the caller goes away.
  *
- * Whatever the handler answers is sent as it is. A handler that throws, or
- * answers with something that is not a `Response`, gets the chain's error
- * answer, as a router that throws does.
+ * The handler's second argument says who is asking (`ExtensionCaller`): the
+ * person bar's verdict on this request, the same verdict an extension in its
+ * own process gets, so `requirePerson()` and `checkPerson` behave the same in
+ * both.
+ *
+ * The answer's status and body are sent as they are. Its headers pass the one
+ * reply-header rule (`reply-headers.ts`), so a fetch handler can't set a
+ * cookie, a redirect out of its mount, or anything else DorkOS's origin would
+ * act on. A handler that throws, or answers with something that is not a
+ * `Response`, gets the chain's error answer, as a router that throws does.
  *
  * @module services/extensions/http/fetch-handler
  */
 import type { IncomingMessage } from 'node:http';
-import type { ExtensionFetchHandler } from '@dorkos/extension-api/server';
+import type { ExtensionCaller, ExtensionFetchHandler } from '@dorkos/extension-api/server';
 import type { Context } from 'hono';
 import type { ApiEnv } from '../../../http/api-chain.js';
+import { honoRequestFacts } from '../../../http/request-facts.js';
+import { personVerdict } from '../inbox/extension-inbox-context.js';
+import { outboundWebHeaders } from './reply-headers.js';
 import {
   MAX_FORWARDED_BODY_BYTES,
   TOO_LARGE,
@@ -164,24 +174,32 @@ export async function extensionRequest(
  * Serve an extension's `fetch` handler behind its mount. It answers every
  * request it is asked; it never passes one on.
  *
- * @param name - The extension's name, for the error when it answers wrongly.
+ * @param name - The extension's name: what the person bar's refusals say,
+ *   and the error when it answers wrongly.
  * @param fetch - The handler `register()` returned.
  */
 export function createFetchHandler(
   name: string,
   fetch: ExtensionFetchHandler
 ): ExtensionHttpHandler {
-  return async ({ c, subPath }) => {
+  return async ({ c, mount, subPath }) => {
     const request = await extensionRequest(c, subPath);
     // The rest of that body is never read, so the connection cannot carry
     // another request: it closes once this answer is out.
     if (!request) return c.json({ error: TOO_LARGE }, 413, { connection: 'close' });
-    const answer: unknown = await fetch(request);
+    const caller: ExtensionCaller = Object.freeze({
+      person: Object.freeze(personVerdict(honoRequestFacts(c), name)),
+    });
+    const answer: unknown = await fetch(request, caller);
     if (!(answer instanceof Response)) {
       throw new Error(`${name} answered with something that is not a Response.`);
     }
-    // A copy, so the chain can still add its own headers (CORS) to an answer
-    // whose headers are locked, as a `fetch()` result's are.
-    return new Response(answer.body, answer);
+    // A new answer with only the headers the rule lets through, which the
+    // chain can still add its own (CORS) to.
+    return new Response(answer.body, {
+      status: answer.status,
+      statusText: answer.statusText,
+      headers: outboundWebHeaders(answer.headers, mount),
+    });
   };
 }
