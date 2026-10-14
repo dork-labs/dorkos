@@ -129,4 +129,13 @@ describe('what a conversation does with ?message=', () => {
     expect(firstAnswer).toBeUndefined();
     seekEnds();
   });
+
+  it('ends its seek when the link is left before it lands (DOR-2889)', () => {
+    const { unmount } = renderHook(() => useMessageLanding('sess-1', 'uuid-9'));
+    expect(useHistoryWindowStore.getState().seeks).toEqual({ 'sess-1': 'uuid-9' });
+
+    unmount();
+
+    expect(useHistoryWindowStore.getState().seeks).toEqual({});
+  });
 });

@@ -122,7 +122,11 @@ export function useEarlierMessages(sessionId: string, transcript: ChatMessage[])
         seekId
       ) !== undefined);
   useEffect(() => {
-    if (seekId === undefined) return;
+    if (seekId === undefined) {
+      // Ended: a later seek for the same message starts counting again.
+      seekPages.current = { key: '', count: 0 };
+      return;
+    }
     const key = `${sessionId}:${seekId}`;
     if (seekPages.current.key !== key) seekPages.current = { key, count: 0 };
     // Wait for the snapshot; one that carried no messages ends the seek below.

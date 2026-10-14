@@ -67,6 +67,12 @@ export function useMessageLanding(
     if (sessionId === null || messageId === undefined) return;
     seekedRef.current = `${sessionId}:${messageId}`;
     useHistoryWindowStore.getState().seek(sessionId, messageId);
+    // A link left before it landed must not keep reading pages for the next
+    // visit to this chat.
+    return () => {
+      const windows = useHistoryWindowStore.getState();
+      if (windows.seeks[sessionId] === messageId) windows.endSeek(sessionId);
+    };
   }, [sessionId, messageId]);
 
   const consumedRef = useRef<string | null>(null);

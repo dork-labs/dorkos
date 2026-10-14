@@ -399,11 +399,12 @@ export function useUnreadCursor(
   // CLAMPED to the end of the transcript first, which is the one thing a session
   // answers differently from a room. A room whose cursor sits above everything
   // loaded has paged past it, so everything on screen is unread; a session's
-  // loaded history always runs to its newest message, so a cursor above it means the transcript has been
-  // trimmed BELOW the cursor — and what was trimmed away had been read. Clamping
-  // says so, and it is also what keeps the placement from anchoring on a message
-  // that is not there. A cursor BELOW what is loaded (a long chat's window,
-  // DOR-2889) is the room's case: the rule goes above the first loaded message.
+  // loaded history always runs to its newest message, so a cursor above it
+  // means the transcript has been trimmed BELOW the cursor — and what was
+  // trimmed away had been read. Clamping says so, and it is also what keeps the
+  // placement from anchoring on a message that is not there. A cursor BELOW
+  // what is loaded (a long chat's window, DOR-2889) is the room's case: the
+  // rule goes above the first loaded message.
   const positions = useMemo(
     () =>
       messages
