@@ -71,53 +71,48 @@ async function waitFor(what: string, check: () => boolean, timeoutMs = 5_000): P
   return Date.now() - started;
 }
 
-/** Whether `pid` still exists. A just-exited child counts until Node reaps it, hence the polling. */
-function isAlive(pid: number): boolean {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch {
-    return false;
-  }
+/** Whether a child has ended. Read from the handle, never by pid, so a reused pid is never mistaken for ours. */
+function hasEnded(child: ChildProcess): boolean {
+  return child.exitCode !== null || child.signalCode !== null;
 }
 
-/** Every pid this file started, so afterEach can stop them even when a check fails. */
-const started = new Set<number>();
+/** Every process this file started, so afterEach can stop them even when a check fails. */
+const started: ChildProcess[] = [];
+/** The holders the engine spawned, by pid, for the checks. */
+const holders = new Map<number, ChildProcess>();
 let keepAwake: KeepAwake | null = null;
 
-/** The real `child_process.spawn`, recording each holder's pid for the checks and the cleanup. */
-const holderPids: number[] = [];
+/** The real `child_process.spawn`, recording each holder for the checks and the cleanup. */
 const recordingSpawn: SpawnLike = (command, args, options) => {
   const child = spawn(command, [...args], options);
-  if (child.pid !== undefined) {
-    holderPids.push(child.pid);
-    started.add(child.pid);
-  }
+  started.push(child);
+  if (child.pid !== undefined) holders.set(child.pid, child);
   return child as unknown as ChildLike;
 };
 
-/** A throwaway owner: a node process that idles until it is killed. */
+/**
+ * A throwaway owner: a node process that idles, and exits on its own once its
+ * parent is gone. If vitest itself is killed, the owner follows within a
+ * second and caffeinate -w follows the owner, so nothing is left holding the Mac.
+ */
+const OWNER_SCRIPT =
+  'const parent = process.ppid; setInterval(() => { try { process.kill(parent, 0); } catch { process.exit(0); } }, 1000);';
+
 function startOwner(): ChildProcess {
-  const owner = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1e9)'], { stdio: 'ignore' });
+  const owner = spawn(process.execPath, ['-e', OWNER_SCRIPT], { stdio: 'ignore' });
+  started.push(owner);
   if (owner.pid === undefined) throw new Error('could not start the owner process');
-  started.add(owner.pid);
   return owner;
 }
 
 afterEach(async () => {
   await keepAwake?.dispose();
   keepAwake = null;
-  for (const pid of started) {
-    if (isAlive(pid)) {
-      try {
-        process.kill(pid, 'SIGKILL');
-      } catch {
-        // Gone between the check and the kill.
-      }
-    }
+  for (const child of started) {
+    if (!hasEnded(child)) child.kill('SIGKILL');
   }
-  started.clear();
-  holderPids.length = 0;
+  started.length = 0;
+  holders.clear();
 });
 
 describe.skipIf(!ARMED)('caffeinate on this Mac (DORKOS_KEEP_AWAKE_SMOKE=1)', () => {
@@ -132,7 +127,7 @@ describe.skipIf(!ARMED)('caffeinate on this Mac (DORKOS_KEEP_AWAKE_SMOKE=1)', ()
     const first = keepAwake.hold('smoke');
     const assertMs = await waitFor('the assertion to appear', () => heldFor(ownerPid).length > 0);
     const [asserted] = heldFor(ownerPid);
-    expect(holderPids).toContain(asserted!.holderPid);
+    expect(holders.has(asserted!.holderPid)).toBe(true);
     expect(keepAwake.status().asserted).toBe(true);
     console.info(
       `[smoke] hold → asserted by caffeinate pid ${asserted!.holderPid} in ${assertMs} ms`
@@ -141,29 +136,29 @@ describe.skipIf(!ARMED)('caffeinate on this Mac (DORKOS_KEEP_AWAKE_SMOKE=1)', ()
     // 2. Release: after the linger the holder is stopped and the assertion is gone.
     first.release();
     const releaseMs = await waitFor('the assertion to clear', () => heldFor(ownerPid).length === 0);
-    await waitFor('the first holder to exit', () => !isAlive(asserted!.holderPid));
+    await waitFor('the first holder to exit', () => hasEnded(holders.get(asserted!.holderPid)!));
     expect(keepAwake.status().asserted).toBe(false);
     console.info(`[smoke] release → assertion gone in ${releaseMs} ms`);
 
     // 3. Hold again, then kill the owner: caffeinate -w ends the assertion.
-    // A dead owner makes every new caffeinate exit 0 at once, which the engine
-    // reads as its -t running out and respawns, until dispose. Unreachable in
-    // DorkOS (the server watches its own pid, so the engine dies with the
-    // owner); the count below makes it visible rather than hiding it.
+    // A dead owner makes every new caffeinate exit 0 at once. Until DOR-2919's
+    // engine fix lands, the engine reads that as its -t running out and
+    // respawns until dispose; after it, the count printed below should be 0.
+    // Unreachable in DorkOS either way: the server watches its own pid.
     keepAwake.hold('smoke again');
     await waitFor('the second assertion to appear', () => heldFor(ownerPid).length > 0);
     const [second] = heldFor(ownerPid);
     expect(second!.holderPid).not.toBe(asserted!.holderPid);
-    const spawnedBeforeKill = holderPids.length;
+    const spawnedBeforeKill = holders.size;
     owner.kill('SIGKILL');
     const ownerGoneMs = await waitFor(
       'the assertion to clear after the owner died',
       () => heldFor(ownerPid).length === 0
     );
-    await waitFor('the second holder to exit', () => !isAlive(second!.holderPid));
+    await waitFor('the second holder to exit', () => hasEnded(holders.get(second!.holderPid)!));
     console.info(
       `[smoke] owner killed → assertion gone in ${ownerGoneMs} ms; ` +
-        `holders spawned after the kill: ${holderPids.length - spawnedBeforeKill}`
+        `holders spawned after the kill: ${holders.size - spawnedBeforeKill}`
     );
   }, 30_000);
 });
