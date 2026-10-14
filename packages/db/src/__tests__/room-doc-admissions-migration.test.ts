@@ -4,6 +4,7 @@ function normalizeBooleanDefault(value: string | null): string | null {
   return lower === 'true' || lower === 'false' ? lower : value;
 }
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { readMigrationFiles } from 'drizzle-orm/migrator';
 import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -777,8 +778,8 @@ it('migrates an existing Room queue without giving private acceptance or claimed
     .prepare('SELECT * FROM __drizzle_migrations ORDER BY id')
     .all();
   expect(upgradedHistory.slice(0, historyBefore.length)).toEqual(historyBefore);
-  // Complete the archived queue fix, then apply shipped Chats and report_back.
-  // Record schema-equivalent Room152 without replaying the existing Room CREATEs.
+  // Complete the archived queue fix, then record every shipped canonical migration.
+  // The consolidated Doc completion is distinct from the immutable published Room receipt.
   expect(
     upgradedHistory.slice(historyBefore.length).map((row) => {
       const entry = row as { hash: string; created_at: number };
@@ -789,22 +790,9 @@ it('migrates an existing Room queue without giving private acceptance or claimed
       hash: 'f85a83fc7fc5adc1764d1c10e089acdd3d0ea874139c5757bbff58ca77ed0825',
       created_at: 1791478834000,
     },
-    {
-      hash: '55b1201b98db390ccf33bb4069645f6c542ef20739f8bd1a2e4c1078275582fc',
-      created_at: 1791565991417,
-    },
-    {
-      hash: 'fff2ecc577b7f440a07aace5577ba21aa0e47817616155d41b6b4f15cee99361',
-      created_at: 1791567432144,
-    },
-    {
-      hash: 'a7f1de118e0678648345368108a441c4ff7d76cf8be40320eca8127b58c9fa04',
-      created_at: 1791626094991,
-    },
-    {
-      hash: '44321f0c067d6ce35619f22ac071fcd08bdddd8dec4a7b099f8ce31998b1324f',
-      created_at: 1791639241501, // 1791639241501,
-    },
+    ...readMigrationFiles({ migrationsFolder: migrationDir })
+      .filter((entry) => entry.folderMillis >= 1791565991417)
+      .map((entry) => ({ hash: entry.hash, created_at: entry.folderMillis })),
   ]);
   insert(db, 'canvas_doc_batches', room('room-second'));
   insert(db, 'canvas_doc_batches', { ...legacy, batch_id: 'private-first' });

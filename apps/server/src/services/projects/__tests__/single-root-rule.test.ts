@@ -17,7 +17,7 @@ const serverSrc = path.resolve(import.meta.dirname, '..', '..', '..');
 /** The only non-test files allowed to name the flag, relative to `apps/server/src`. */
 const ALLOWED = new Set([
   'services/projects/resolve-project-root.ts',
-  'services/rooms/repo/room-repo-git.ts',
+  'services/rooms/repo/git/room-repo-git-history.ts',
 ]);
 
 function sourceFiles(dir: string): string[] {

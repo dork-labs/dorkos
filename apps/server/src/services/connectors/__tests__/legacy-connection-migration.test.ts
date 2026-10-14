@@ -994,7 +994,7 @@ describe('legacy connector application migration', () => {
         const before = recoveryRoomTables.map((table) => rows(db.$client, table));
         const agents = rows(db.$client, 'agents') as Array<Record<string, unknown>>;
         const start = rows(db.$client, 'session_started_by') as Array<Record<string, unknown>>;
-        const oldRoom = history.find((row) => row.hash === consolidatedDoc.hash)!;
+        const oldRoom = history.find((row) => row.hash === publishedRoom.hash)!;
         if (variant !== 'published150') {
           const report = history.find((row) => row.hash === reportBack.hash)!;
           expect(oldRoom.rowIdentity < report.rowIdentity).toBe(variant === 'bridged151');
@@ -1009,14 +1009,16 @@ describe('legacy connector application migration', () => {
             'SELECT rowid AS rowIdentity,id,hash,created_at FROM __drizzle_migrations ORDER BY rowid'
           )
           .all() as typeof history;
-        expect(after.slice(0, history.length)).toEqual(
-          history.map((row) =>
-            row.hash === consolidatedDoc.hash ? { ...row, created_at: consolidatedDoc.when } : row
-          )
-        );
-        expect(after.filter((row) => row.hash === consolidatedDoc.hash)).toEqual([
-          { ...oldRoom, created_at: consolidatedDoc.when },
-        ]);
+        expect(after.slice(0, history.length)).toEqual(history);
+        expect(after.filter((row) => row.hash === publishedRoom.hash)).toEqual([oldRoom]);
+        const completion = after.filter((row) => row.hash === consolidatedDoc.hash);
+        expect(completion).toHaveLength(1);
+        expect(completion[0]).toMatchObject({
+          id: null,
+          hash: consolidatedDoc.hash,
+          created_at: consolidatedDoc.when,
+        });
+        expect(completion[0]!.rowIdentity).toBeGreaterThan(history.at(-1)!.rowIdentity);
         expect(after.filter((row) => row.hash === reportBack.hash)).toHaveLength(1);
         expect(after.filter((row) => row.hash === agentReports.hash)).toHaveLength(1);
         recoveryRoomTables.forEach((table, idx) =>
@@ -1084,16 +1086,16 @@ describe('legacy connector application migration', () => {
         if (fault === 'wrong-stamp')
           db.$client
             .prepare('UPDATE __drizzle_migrations SET created_at=created_at+1 WHERE hash=?')
-            .run(consolidatedDoc.hash);
+            .run(publishedRoom.hash);
         if (fault === 'duplicate-room')
           db.$client
             .prepare(
               'INSERT INTO __drizzle_migrations(hash,created_at) SELECT hash,created_at FROM __drizzle_migrations WHERE hash=?'
             )
-            .run(consolidatedDoc.hash);
+            .run(publishedRoom.hash);
         if (fault === 'bridge-fault')
           db.$client.exec(
-            `CREATE TEMP TRIGGER refuse_room_recovery BEFORE UPDATE OF created_at ON __drizzle_migrations WHEN OLD.hash='${consolidatedDoc.hash}' BEGIN SELECT RAISE(ABORT,'Room recovery bridge rollback'); END`
+            `CREATE TEMP TRIGGER refuse_room_recovery BEFORE INSERT ON __drizzle_migrations WHEN NEW.hash='${consolidatedDoc.hash}' BEGIN SELECT RAISE(ABORT,'Room recovery bridge rollback'); END`
           );
         const schema = db.$client
           .prepare('SELECT type,name,tbl_name,sql FROM sqlite_master ORDER BY type,name')

@@ -6,7 +6,7 @@ import { RoomError } from '../../data/room-errors.js';
 import { logger } from '../../../../lib/logger.js';
 import {
   commitAll,
-  FALLBACK_OPERATOR_GIT_NAME,
+  gitAuthorName,
   GitUnavailableError,
   OPERATOR_GIT_EMAIL,
   pathsInHead,
@@ -108,7 +108,7 @@ export async function keepStrayChanges(
     repoDir,
     facet.strayChangesCommitMessage,
     {
-      name: facet.deps.operatorGitName() ?? FALLBACK_OPERATOR_GIT_NAME,
+      name: gitAuthorName(facet.deps.operatorGitName()),
       email: OPERATOR_GIT_EMAIL,
     },
     ceiling,

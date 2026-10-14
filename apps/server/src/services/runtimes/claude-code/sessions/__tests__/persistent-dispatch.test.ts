@@ -94,14 +94,18 @@ vi.mock('../../messaging/launch-resolver.js', async (importOriginal) => {
 });
 vi.mock('../../../../relay/relay-state.js', () => ({ isRelayEnabled: () => false }));
 vi.mock('../../../../tasks/task-state.js', () => ({ isTasksEnabled: () => false }));
-vi.mock('../../../../core/config-manager.js', () => ({
-  configManager: {
-    get: vi.fn((key: string) => {
-      if (key === 'runtimes') return { claudeCode: { ...optIn } };
-      return { tasksTools: true, relayTools: true, meshTools: true, adapterTools: true };
-    }),
-  },
-}));
+vi.mock('../../../../core/config-manager.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../../../core/config-manager.js')>();
+  return {
+    ...actual,
+    configManager: {
+      get: vi.fn((key: string) => {
+        if (key === 'runtimes') return { claudeCode: { ...optIn } };
+        return { tasksTools: true, relayTools: true, meshTools: true, adapterTools: true };
+      }),
+    },
+  };
+});
 vi.mock('../../../../../lib/boundary.js', () => ({
   validateBoundary: vi.fn().mockResolvedValue('/projects/pump'),
   validateBoundaryOrDorkHome: vi.fn().mockResolvedValue('/projects/pump'),

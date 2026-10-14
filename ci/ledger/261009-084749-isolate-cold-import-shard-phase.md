@@ -121,3 +121,39 @@ fallback and the original30-minute limit. Verify real new CI, output-proof
 availability, exact server selection, MISS, complete reports/union, failure
 ordering and job duration. No actual ordinary-summary artifact survived the
 cancelled run, so that run does not prove the proposed reuse predicate.
+
+Current published commit 4b1c8 required test run reached the real native Room
+children but failed their unchanged bootstrap-readiness deadlines. Closed shard 6
+recorded module-ready at 11,871, 12,104, 11,284 and 11,919 ms; shard 8 also recorded
+about 11.6–12.1 seconds. This marker follows static dependency loading and precedes
+fixture setup. Successful children on another shard reached the same marker
+around 9.2 seconds. These are observed startup costs, not proof of a missing module
+or a measured CPU cause. Preserve the failed checks and their original output.
+
+Test a fifth phase after ordinary, Room, cold and checkbox have closed. Ordinary
+excludes the exact six whole files that register original native launch cases:
+sessions-cwd-resolution, room-turn-runner, room-original-native-launch,
+room-worktree-refresh.integration, room-worktree-refresh and message-dispatcher.
+Run that family through the same server task with the original eight-way shard,
+reporters, passWithNoTests and event-specific retry flags. Only this family uses
+one worker and fileParallelism=false. Keep every original child deadline, load
+scaling, setup/body bound, scenario, teardown and native ownership check.
+
+Use the current Vitest configuration and its actual collection/sequencer API to
+record selected files before the command. Refuse an unknown or incomplete
+six-file collection. Require the selected whole file's original assertion count;
+the family contains 275 assertions across its six files. Preserve the original
+four raw reports and compose a disjoint fifth report and retry record. Keep the
+ordinary task-selection, prerequisite/output reuse, uncached execution and global
+file-union checks. Earlier failures still run all selected later phases and stay
+failed; an empty shard receives no assertion credit.
+
+The immediate experiment target is zero native bootstrap-readiness failures with
+all 275 original assertions executed and no skipped or pending cases, under the
+unchanged deadlines. The existing failure-rate/seven-day hypothesis stays in
+place. Actual API parity, whole-script regressions, native family execution and
+new CI are still pending; this proposal has no observed improvement or verdict.
+An extra invocation and collection step add work to each selected server shard.
+Keep the thirty-minute job limit and review actual duration and headroom. Revise
+or revert if readiness failures remain, discovery or report union changes, any
+original assertion is omitted, or the extra phase worsens job completion.

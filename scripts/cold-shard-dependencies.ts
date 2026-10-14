@@ -278,3 +278,157 @@ export function dependencyOutputSnapshot(root: string, tasks: Json[]): Json[] {
     };
   });
 }
+
+export const NATIVE_FILES = [
+  'src/routes/__tests__/sessions-cwd-resolution.test.ts',
+  'src/services/rooms/__tests__/room-turn-runner.test.ts',
+  'src/services/rooms/repo/__tests__/room-original-native-launch.test.ts',
+  'src/services/rooms/repo/__tests__/room-worktree-refresh.integration.test.ts',
+  'src/services/rooms/repo/__tests__/room-worktree-refresh.test.ts',
+  'src/services/session/__tests__/message-dispatcher.test.ts',
+] as const;
+export const NATIVE_COUNTS = [30, 96, 10, 3, 35, 101];
+
+export function validateIsolated(
+  report: Json,
+  shard: number,
+  expectedPath: string,
+  count: number,
+  label: string
+): void {
+  if (!Array.isArray(report.testResults)) throw new Error(`${label} phase did not write a report`);
+  const expected = shard === 1 ? [expectedPath] : [];
+  if (
+    JSON.stringify(report.testResults.map((file: Json) => file.name)) !== JSON.stringify(expected)
+  )
+    throw new Error(`${label} phase did not collect its exact singleton shard`);
+  const assertions = report.testResults.flatMap((file: Json) => file.assertionResults ?? []);
+  if (
+    assertions.length !== (shard === 1 ? count : 0) ||
+    assertions.some((assertion: Json) => !['passed', 'failed'].includes(assertion.status))
+  ) {
+    throw new Error(`${label} phase did not execute all original assertions`);
+  }
+  if (
+    report.numPendingTests !== 0 ||
+    report.numTodoTests !== 0 ||
+    report.numPassedTests !==
+      assertions.filter((assertion: Json) => assertion.status === 'passed').length ||
+    report.numFailedTests !==
+      assertions.filter((assertion: Json) => assertion.status === 'failed').length
+  )
+    throw new Error(`${label} phase assertion status accounting is inconsistent`);
+  if (report.numTotalTests !== (shard === 1 ? count : 0))
+    throw new Error(`${label} whole-file assertions changed or were not executed`);
+}
+
+/** Collect exact native files and shard them with the actual configured Vitest sequencer. */
+export async function nativeSelection(server: string, shard: number): Promise<string[]> {
+  const { createVitest } = await import('vitest/node');
+  const context = await createVitest('test', {
+    root: server,
+    run: true,
+    watch: false,
+    shard: `${shard}/8`,
+  });
+  try {
+    const specifications = await context.globTestSpecifications(
+      NATIVE_FILES.map((file) => path.join(server, file))
+    );
+    const collected = specifications.map((specification) => specification.moduleId).sort();
+    if (
+      JSON.stringify(collected) !==
+      JSON.stringify(NATIVE_FILES.map((file) => path.join(server, file)).sort())
+    )
+      throw new Error('native family collection differs from the exact six whole files');
+    const sequencer = new context.config.sequence.sequencer(context);
+    return (await sequencer.shard(specifications)).map((specification) => specification.moduleId);
+  } finally {
+    await context.close();
+  }
+}
+
+/** Require the actually selected native whole file and every original assertion. */
+export function validateNative(report: Json, selected: readonly string[], server: string): void {
+  if (selected.length > 1) throw new Error('native shard selected multiple files');
+  const index = selected.length
+    ? NATIVE_FILES.findIndex((file) => path.join(server, file) === selected[0])
+    : -1;
+  if (selected.length && index < 0) throw new Error('native shard selected an unowned file');
+  validateIsolated(
+    report,
+    selected.length ? 1 : 0,
+    selected[0] ?? '',
+    index < 0 ? 0 : NATIVE_COUNTS[index]!,
+    'native'
+  );
+}
+
+const COUNTERS = [
+  'numTotalTestSuites',
+  'numPassedTestSuites',
+  'numFailedTestSuites',
+  'numPendingTestSuites',
+  'numTotalTests',
+  'numPassedTests',
+  'numFailedTests',
+  'numPendingTests',
+  'numTodoTests',
+];
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- Snapshot metadata is recursively type-checked; unknown unequal values fail closed.
+function combineMetadata(a: any, b: any): any {
+  if (typeof a === 'number' && typeof b === 'number') return a + b;
+  if (typeof a === 'boolean' && typeof b === 'boolean') return a || b;
+  if (Array.isArray(a) && Array.isArray(b)) return [...a, ...b];
+  if (a && b && typeof a === 'object' && typeof b === 'object') {
+    if (Object.keys(a).sort().join('|') !== Object.keys(b).sort().join('|'))
+      throw new Error('phase metadata schema mismatch');
+    return Object.fromEntries(Object.keys(a).map((key) => [key, combineMetadata(a[key], b[key])]));
+  }
+  if (a === b) return a;
+  throw new Error('unmergeable phase metadata');
+}
+
+/** Merge disjoint native phase reports while retaining assertion results and shared metadata. */
+export function mergeReports(ordinary: Json, cold: Json): Json {
+  if (!Array.isArray(ordinary.testResults) || !Array.isArray(cold.testResults))
+    throw new Error('missing real phase test results');
+  const names = [...ordinary.testResults, ...cold.testResults].map((file: Json) => file.name);
+  if (names.some((name) => typeof name !== 'string') || new Set(names).size !== names.length)
+    throw new Error('duplicate phase file');
+  if (Object.keys(ordinary).sort().join('|') !== Object.keys(cold).sort().join('|'))
+    throw new Error('phase report schema mismatch');
+  const merged: Json = { ...ordinary };
+  for (const key of COUNTERS) {
+    if (
+      !Number.isInteger(ordinary[key]) ||
+      !Number.isInteger(cold[key]) ||
+      ordinary[key] < 0 ||
+      cold[key] < 0
+    )
+      throw new Error(`invalid ${key}`);
+    merged[key] = ordinary[key] + cold[key];
+  }
+  if (typeof ordinary.success !== 'boolean' || typeof cold.success !== 'boolean')
+    throw new Error('missing phase success status');
+  merged.success = ordinary.success && cold.success;
+  merged.startTime = Math.min(ordinary.startTime, cold.startTime);
+  merged.testResults = [...ordinary.testResults, ...cold.testResults];
+  merged.snapshot = combineMetadata(ordinary.snapshot, cold.snapshot);
+  if (
+    (ordinary.coverageMap && Object.keys(ordinary.coverageMap).length) ||
+    (cold.coverageMap && Object.keys(cold.coverageMap).length)
+  )
+    throw new Error('coverage needs its own supported merge; this workflow runs no coverage');
+  // Retain any other original JSON metadata exactly, rather than silently discarding it.
+  for (const key of Object.keys(ordinary)) {
+    if (
+      !COUNTERS.includes(key) &&
+      !['success', 'startTime', 'testResults', 'snapshot', 'coverageMap'].includes(key) &&
+      JSON.stringify(ordinary[key]) !== JSON.stringify(cold[key])
+    )
+      throw new Error(`unknown differing report field ${key}`);
+  }
+  return merged;
+}

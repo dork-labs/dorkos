@@ -6,12 +6,7 @@ import path from 'node:path';
 import type { Room } from '@dorkos/shared/room-schemas';
 import { logger } from '../../../../lib/logger.js';
 import { rollbackOriginalRoomRepoStoreWrite } from '../room-repo-store.js';
-import {
-  commitAll,
-  FALLBACK_OPERATOR_GIT_NAME,
-  initRepo,
-  OPERATOR_GIT_EMAIL,
-} from '../room-repo-git.js';
+import { commitAll, gitAuthorName, initRepo, OPERATOR_GIT_EMAIL } from '../room-repo-git.js';
 import { ROOM_MD_FILENAME, ROOM_MD_SEED_COMMIT_MESSAGE, seedRoomMd } from '../room-md.js';
 import {
   readInstallationRoomMutationRoots,
@@ -44,7 +39,7 @@ export async function seedRepo(
     ceiling = roots.homePath;
   const seed = seedRoomMd({ title: room.title, topic: room.topic });
   const gitAuthor = {
-    name: facet.deps.operatorGitName() ?? FALLBACK_OPERATOR_GIT_NAME,
+    name: gitAuthorName(facet.deps.operatorGitName()),
     email: OPERATOR_GIT_EMAIL,
   };
   await checkInstallationRoomMutationTarget(context, repoDir);

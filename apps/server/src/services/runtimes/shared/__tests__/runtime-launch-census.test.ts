@@ -6,7 +6,7 @@ import ts from 'typescript';
 
 const root = fileURLToPath(new URL('../../', import.meta.url));
 const expected: Record<string, number> = {
-  'claude-code/claude-code-runtime.ts': 1,
+  'claude-code/custody/claude-command-cache-custody.ts': 1,
   'claude-code/messaging/message-sender.ts': 1,
   'claude-code/messaging/relay/relay-sdk-launch.ts': 1,
   'claude-code/messaging/runtime-cache.ts': 1,

@@ -152,7 +152,7 @@ function mountPaths() {
         ts.isCallExpression(node) &&
         ts.isPropertyAccessExpression(node.expression) &&
         ts.isIdentifier(node.expression.expression) &&
-        node.expression.expression.text === 'app' &&
+        ['app', 'early'].includes(node.expression.expression.text) &&
         ['use', 'get', 'post', 'all', 'route'].includes(node.expression.name.text) &&
         node.arguments[0] &&
         ts.isStringLiteral(node.arguments[0])
@@ -292,7 +292,8 @@ describe('main HTTP admission through the real app', () => {
     expect(mounts).toContain('/api/agents/admission-fixture/heartbeat');
     expect(mounts).toContain('/api/heartbeats/triage-credits');
     expect(mounts).toContain('/api/terminal');
-    expect(mounts).toHaveLength(71);
+    // The pre-CORS document-token mount uses the same admitted early app.
+    expect(mounts).toHaveLength(72);
     const byHand = [
       '/',
       '/x/fixture',

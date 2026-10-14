@@ -10,7 +10,7 @@ import {
 } from '../../../core/runtime-registry.js';
 import { CodexRuntime } from '../../../runtimes/codex/codex-runtime.js';
 import { CodexThreadMap } from '../../../runtimes/codex/thread-map.js';
-import { lastTurnLevelOf } from '../../../core/turn-power/turn-levels.js';
+import { lastTurnLevelOf, turnSerialOf } from '../../../core/turn-power/turn-levels.js';
 import { interactionGate } from '../../../runtimes/test-mode/interaction-gate.js';
 import { readTestModeOriginalActiveStream } from '../../../runtimes/test-mode/test-mode-runtime.js';
 import { isTurnInFlight } from '../../../session/message-dispatcher.js';
@@ -148,6 +148,8 @@ export function makeOriginalRunnerCanonicalHaltControl() {
           assert.ok(currentStream);
           const capturedLevel = lastTurnLevelOf(actual.sessionId);
           assert.deepEqual(capturedLevel, { asks: 'always', reach: 'read' });
+          const capturedSerial = turnSerialOf(actual.sessionId);
+          assert.equal(typeof capturedSerial, 'number');
           const originalStoredModeOf = runtimeRegistry.storedPermissionModeOf;
           try {
             runtimeRegistry.storedPermissionModeOf = () => 'always-allow';
@@ -163,10 +165,12 @@ export function makeOriginalRunnerCanonicalHaltControl() {
               ])
             );
             assert.deepEqual(lastTurnLevelOf(actual.sessionId), capturedLevel);
+            assert.equal(turnSerialOf(actual.sessionId), capturedSerial);
             assert.ok(
               observeOriginalRegisteredRuntimeStream(selected, actual.sessionId, currentStream)
             );
             assert.deepEqual(lastTurnLevelOf(actual.sessionId), capturedLevel);
+            assert.equal(turnSerialOf(actual.sessionId), capturedSerial);
           } finally {
             runtimeRegistry.storedPermissionModeOf = originalStoredModeOf;
           }

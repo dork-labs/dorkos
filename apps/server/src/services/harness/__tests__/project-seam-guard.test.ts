@@ -83,7 +83,7 @@ function isTest(file: string): boolean {
 }
 
 /** The package specifier, either quote style. */
-const SPEC = String.raw`['"]@dorkos/harness['"]`;
+const SPEC = String.raw`['"]@dorkos/harness(?:/server-workspace)?['"]`;
 
 /**
  * Every brace list that binds names out of `@dorkos/harness`, in each of the
@@ -228,6 +228,12 @@ describe('harness projection consent seam', () => {
     // Four forms, all of them real here: the CLI's whole `harness` namespace is
     // written in `await import(...)`, and a re-export or a `* as` binding hands
     // the same function on just as effectively as a static named import.
+    expect(
+      engineProjectBindings(`import { project } from '@dorkos/harness/server-workspace';`)
+    ).toEqual(['project']);
+    expect(
+      engineProjectBindings(`const { project } = await import('@dorkos/harness/server-workspace');`)
+    ).toEqual(['project']);
     expect(engineProjectBindings(`import { applyPlan, project } from '@dorkos/harness';`)).toEqual([
       'project',
     ]);

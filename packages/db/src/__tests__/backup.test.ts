@@ -1,5 +1,6 @@
 import { describe, it, expect, afterEach, vi } from 'vitest';
 import Database from 'better-sqlite3';
+import { openServerDatabase, consumeServerNativeRoomConstruction } from '../server-database.js';
 import {
   chmodSync,
   copyFileSync,
@@ -547,6 +548,78 @@ describe('snapshotDaily', () => {
   });
 });
 
+describe('daily snapshots preserve protected native Room readers', () => {
+  it('keeps an already constructed Room reader usable after a real daily backup', async () => {
+    const home = tempDir();
+    const opened = openServerDatabase(path.join(home, 'dork.db'));
+    const { db } = opened;
+    try {
+      runMigrations(db);
+      const room = consumeServerNativeRoomConstruction(opened.serverNativeRoomConstruction, db);
+      const owner = room.readCurrentOwnerAccount();
+      const schema = () =>
+        db.$client.prepare('SELECT * FROM sqlite_master ORDER BY type, name').all();
+      const before = schema();
+      const log = { info: vi.fn(), warn: vi.fn() };
+      await takeDailySnapshot(db, path.join(home, 'backups'), log);
+      expect(log.warn).not.toHaveBeenCalled();
+      expect(log.info).toHaveBeenCalledTimes(1);
+      expect(schema()).toEqual(before);
+      expect(room.readCurrentOwnerAccount()).toEqual(owner);
+    } finally {
+      db.$client.close();
+    }
+  });
+
+  it('still invalidates native Room custody after an opaque public backup', async () => {
+    const home = tempDir();
+    const opened = openServerDatabase(path.join(home, 'dork.db'));
+    const { db } = opened;
+    try {
+      runMigrations(db);
+      const room = consumeServerNativeRoomConstruction(opened.serverNativeRoomConstruction, db);
+      expect(() => room.readCurrentOwnerAccount()).not.toThrow();
+      await db.$client.backup(path.join(home, 'public-copy.db'));
+      expect(() => room.readCurrentOwnerAccount()).toThrow('Unrecognized native Room schema');
+    } finally {
+      db.$client.close();
+    }
+  });
+
+  it('constructs the original Room reader after backing up a persisted reopened database', async () => {
+    const home = tempDir();
+    const filename = path.join(home, 'dork.db');
+    const first = openServerDatabase(filename);
+    try {
+      runMigrations(first.db);
+      const room = consumeServerNativeRoomConstruction(
+        first.serverNativeRoomConstruction,
+        first.db
+      );
+      expect(() => room.readCurrentOwnerAccount()).not.toThrow();
+    } finally {
+      first.db.$client.close();
+    }
+    const reopened = openServerDatabase(filename);
+    const { db } = reopened;
+    try {
+      runMigrations(db);
+      const schema = () =>
+        db.$client.prepare('SELECT * FROM sqlite_master ORDER BY type, name').all();
+      const before = schema();
+      const log = { info: vi.fn(), warn: vi.fn() };
+      await takeDailySnapshot(db, path.join(home, 'backups'), log);
+      expect(log.warn).not.toHaveBeenCalled();
+      expect(log.info).toHaveBeenCalledTimes(1);
+      expect(schema()).toEqual(before);
+      const room = consumeServerNativeRoomConstruction(reopened.serverNativeRoomConstruction, db);
+      expect(() => room.readCurrentOwnerAccount()).not.toThrow();
+    } finally {
+      db.$client.close();
+    }
+  });
+});
+
 describe('snapshotSqliteInSteps (DOR-2906)', () => {
   /** A migrated database with enough rows for the copy to take many steps. */
   function bigDb() {
@@ -601,21 +674,105 @@ describe('snapshotSqliteInSteps (DOR-2906)', () => {
     expect(readdirSync(home).filter((name) => name.startsWith('copy.db'))).toEqual([]);
   });
 
+  it.each(['progress', 'completion'] as const)(
+    'aborts and closes its owned reader if the original closes during %s',
+    async (when) => {
+      const { home, db } = bigDb();
+      const readers: Database.Database[] = [];
+      const original = Database.prototype.backup;
+      const backup = vi.spyOn(Database.prototype, 'backup').mockImplementation(function (
+        this: Database.Database,
+        filename,
+        options
+      ) {
+        readers.push(this);
+        return original
+          .call(this, filename, {
+            ...options,
+            progress: (info) => {
+              if (when === 'progress' && db.$client.open) db.$client.close();
+              return options!.progress!(info);
+            },
+          })
+          .then((info) => {
+            if (when === 'completion') db.$client.close();
+            return info;
+          });
+      });
+      const dir = path.join(home, 'backups');
+      try {
+        await expect(snapshotDaily(db, { dir })).rejects.toThrow(/closed while copying/);
+        expect(readers).toHaveLength(1);
+        expect(readers[0].readonly).toBe(true);
+        expect(readers[0].open).toBe(false);
+        expect(readdirSync(dir)).toEqual([]);
+      } finally {
+        backup.mockRestore();
+        if (db.$client.open) db.$client.close();
+      }
+    }
+  );
+
+  it('retains the original source view for an already active read transaction', async () => {
+    const { home, db } = bigDb();
+    db.$client.exec('BEGIN');
+    const rows = db.$client.prepare('SELECT count(*) AS count FROM filler').get();
+    try {
+      const dest = await snapshotDaily(db, { dir: path.join(home, 'backups') });
+      expect(dest).not.toBeNull();
+      expect(db.$client.inTransaction).toBe(true);
+      const copy = new Database(dest!, { readonly: true });
+      try {
+        expect(copy.prepare('SELECT count(*) AS count FROM filler').get()).toEqual(rows);
+      } finally {
+        copy.close();
+      }
+    } finally {
+      db.$client.exec('ROLLBACK');
+      db.$client.close();
+    }
+  });
+
+  it('refuses to reopen a closed source for a daily snapshot', async () => {
+    const { home, db } = bigDb();
+    db.$client.close();
+    const dir = path.join(home, 'backups');
+    await expect(snapshotDaily(db, { dir })).rejects.toThrow(/source database is closed/);
+    expect(existsSync(dir)).toBe(false);
+  });
+
   it('runs one daily snapshot at a time', async () => {
     const { home, db } = bigDb();
-    const backup = vi.spyOn(db.$client, 'backup');
+    const readers: Database.Database[] = [];
+    const original = Database.prototype.backup;
+    const backup = vi.spyOn(Database.prototype, 'backup').mockImplementation(function (
+      this: Database.Database,
+      filename,
+      options
+    ) {
+      readers.push(this);
+      return original.call(this, filename, options);
+    });
     const log = { info: vi.fn(), warn: vi.fn() };
     const dir = path.join(home, 'backups');
+    try {
+      await Promise.all([
+        takeDailySnapshot(db, dir, log),
+        takeDailySnapshot(db, dir, log),
+        takeDailySnapshot(db, dir, log),
+      ]);
 
-    await Promise.all([
-      takeDailySnapshot(db, dir, log),
-      takeDailySnapshot(db, dir, log),
-      takeDailySnapshot(db, dir, log),
-    ]);
-
-    expect(backup).toHaveBeenCalledTimes(1);
-    expect(readdirSync(dir).filter((name) => /-daily\.db$/.test(name))).toHaveLength(1);
-    expect(log.warn).not.toHaveBeenCalled();
+      expect(backup).toHaveBeenCalledTimes(1);
+      expect(readers).toHaveLength(1);
+      expect(readers[0]).not.toBe(db.$client);
+      expect(readers[0].name).toBe(db.$client.name);
+      expect(readers[0].readonly).toBe(true);
+      expect(readers[0].open).toBe(false);
+      expect(readdirSync(dir).filter((name) => /-daily\.db$/.test(name))).toHaveLength(1);
+      expect(log.warn).not.toHaveBeenCalled();
+    } finally {
+      backup.mockRestore();
+    }
   });
 });
 

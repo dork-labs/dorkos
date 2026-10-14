@@ -277,6 +277,18 @@ export function captureTurnLevelOptions(opts: MessageOpts | undefined): Readonly
   });
 }
 
+/** Record one original turn under both names of its conversation. */
+function rememberTurnSerial(sessionId: string): void {
+  const serial = ++nextTurnSerial;
+  for (const id of new Set([sessionId, primaryOf(sessionId)])) {
+    turnSerials.delete(id);
+    turnSerials.set(id, serial);
+  }
+  while (turnSerials.size > TURN_LEVEL_MEMORY) {
+    turnSerials.delete(turnSerials.keys().next().value!);
+  }
+}
+
 /**
  * Record one genuine turn's permission DATA without opening another runtime stream.
  * The registry uses this for captured original native sends; ordinary sends use
@@ -297,6 +309,7 @@ export function recordRuntimeTurnLevel(
   const level = levelForTurn(runtime, stored, opts);
   beforeRecord?.();
   remember(turnLevels, sessionId, level);
+  rememberTurnSerial(sessionId);
   return level;
 }
 
@@ -371,16 +384,7 @@ export function recordTurnLevels(
           }
           const level = levelForTurn(target, stored, opts);
           remember(turnLevels, sessionId, level);
-          // Under the id the turn was sent with AND the conversation's first
-          // id, so a turn sent under a renamed id is the newest by either.
-          const serial = ++nextTurnSerial;
-          for (const id of new Set([sessionId, primaryOf(sessionId)])) {
-            turnSerials.delete(id);
-            turnSerials.set(id, serial);
-          }
-          while (turnSerials.size > TURN_LEVEL_MEMORY) {
-            turnSerials.delete(turnSerials.keys().next().value!);
-          }
+          rememberTurnSerial(sessionId);
           const events = target.sendMessage(sessionId, content, opts);
           if (!level.outsider) return events;
           // A caller that cannot name this session can still name its agent.

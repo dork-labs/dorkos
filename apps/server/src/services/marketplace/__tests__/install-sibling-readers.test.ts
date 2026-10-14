@@ -54,6 +54,8 @@ const NOT_READING_INSTALLS: Record<string, string> = {
   'packages/marketplace/src/package-validator.ts': 'reads the contents of a package',
   'packages/marketplace/src/agent-workspace-config.ts':
     'reads the contents of an agent package being validated, never an install root',
+  'apps/server/src/services/rooms/repo/worktree/room-worktree-retirement-reads.ts':
+    'lists a room worktree directory, and names skills only to recognise original projection symlinks',
   'apps/server/src/services/rooms/repo/room-worktree-manager.ts':
     'reads a room worktree, and names the skills dir only to recognise projection symlinks',
   'apps/server/src/services/shapes/shape-schedule-service.ts':

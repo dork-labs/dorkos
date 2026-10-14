@@ -339,7 +339,7 @@ describe('RoomRepoService', () => {
       // commit failed. It now goes through the same gitAuthorName people's
       // saves use.
       operatorName = '<"">';
-      await service.enable(ROOM_ID, OPERATOR);
+      await enableRepo(ROOM_ID, OPERATOR);
       expect(await git(['log', '--format=%an'], store.repoPath(ROOM_ID))).toBe('DorkOS operator');
     });
 
@@ -697,7 +697,7 @@ describe('RoomRepoService', () => {
       operatorName = '<"">';
       await writeFile(path.join(repoDir, 'notes.md'), 'jotted down\n', 'utf-8');
 
-      const result = await service.repairMainCheckout(ROOM_ID, OPERATOR, { action: 'commit' });
+      const result = await repairRepo(ROOM_ID, OPERATOR, { action: 'commit' });
 
       expect(result).toMatchObject({ action: 'commit', paths: 1, clean: true });
       expect(await git(['log', '--format=%an', '-n', '1'], repoDir)).toBe('DorkOS operator');
