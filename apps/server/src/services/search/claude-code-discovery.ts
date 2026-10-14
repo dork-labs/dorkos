@@ -12,7 +12,9 @@
  * wants them, the change has to be a predicate rather than a rewrite. That is
  * also why every exclusion is reported: the two implementations produce an
  * identical indexed count, and the skipped set is the only thing that tells them
- * apart.
+ * apart. The predicate for subagents is asked of the folder rather than of each
+ * file in it (DOR-2904): they were 84% of the files walked, every one skipped,
+ * so the walk passes a `subagents/` folder by and reports the folder once.
  *
  * **And there is more than one root.** An operator running one Claude Code
  * account per client runs one config directory per account, and all of them hold
@@ -150,8 +152,15 @@ export async function discoverClaudeCodeTranscripts(
   const failures: DiscoveryFailure[] = [];
 
   for (const projectsRoot of await collapseRoots(projectsRoots)) {
-    const walked = await walkJsonlFiles(projectsRoot);
+    // A subagent directory is decided against as a whole, without listing it:
+    // every file in one would be skipped for the same reason anyway.
+    const walked = await walkJsonlFiles(projectsRoot, {
+      skipDirectory: (name) => name === SUBAGENTS_DIR,
+    });
     if (walked.failure !== null) failures.push({ root: projectsRoot, message: walked.failure });
+    for (const dir of walked.skippedDirectories) {
+      skipped.push({ path: dir, reason: 'subagent-transcript' });
+    }
 
     for (const candidate of walked.files) {
       const decision = await classifyTranscript(candidate, known, readCwd);
@@ -236,8 +245,10 @@ async function classifyTranscript(
  * Why this path is not a main session, or `null` when it is one.
  *
  * The order is the decision order, and it matters: the subagent predicate is
- * asked before the depth check, so including subagent transcripts one day is a
- * change to one branch rather than a rewrite of the classifier.
+ * asked before the depth check. The walk no longer enters a `subagents/` folder
+ * at all (DOR-2904), so for Claude Code that branch is a backstop; including
+ * subagent transcripts one day means dropping the walk's `skipDirectory` and
+ * this branch together.
  */
 function classifyByPath(segments: string[]): SkippedFile['reason'] | null {
   const directories = segments.slice(0, -1);

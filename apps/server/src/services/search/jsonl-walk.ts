@@ -30,6 +30,9 @@ export interface WalkedRoot {
 
   /** Why the root itself could not be enumerated, or `null`. */
   failure: string | null;
+
+  /** Directories the caller's predicate said not to enter, absolute, in walk order. */
+  skippedDirectories: string[];
 }
 
 /**
@@ -53,11 +56,23 @@ export interface WalkedRoot {
  * unreadable project must not cost the other 240, and its absence narrows the
  * corpus by a knowable amount.
  *
+ * **A caller may name directories not to enter** (`skipDirectory`), and
+ * learns which it passed over, so a decision against a whole directory is
+ * still reported, once, rather than once per file inside it. Claude Code's
+ * `subagents/` directories hold 84% of its `.jsonl` files on the machine this
+ * was measured on, every one of them excluded (DOR-2904).
+ *
  * @param root - The directory to walk.
- * @returns The files, and the root's own failure if it had one.
+ * @param options - `skipDirectory` names a directory, by its own name, not to enter.
+ * @returns The files, the directories passed over, and the root's own failure
+ *   if it had one.
  */
-export async function walkJsonlFiles(root: string): Promise<WalkedRoot> {
+export async function walkJsonlFiles(
+  root: string,
+  options: { skipDirectory?: (name: string) => boolean } = {}
+): Promise<WalkedRoot> {
   const found: WalkedFile[] = [];
+  const skippedDirectories: string[] = [];
   let failure: string | null = null;
 
   async function visit(dir: string, segments: string[], isRoot: boolean): Promise<void> {
@@ -73,14 +88,15 @@ export async function walkJsonlFiles(root: string): Promise<WalkedRoot> {
 
     for (const entry of entries) {
       const full = path.join(dir, entry.name);
-      if (entry.isDirectory()) await visit(full, [...segments, entry.name], false);
+      if (entry.isDirectory() && options.skipDirectory?.(entry.name)) skippedDirectories.push(full);
+      else if (entry.isDirectory()) await visit(full, [...segments, entry.name], false);
       else if (entry.isFile() && entry.name.endsWith('.jsonl'))
         found.push({ filePath: full, segments: [...segments, entry.name] });
     }
   }
 
   await visit(root, [], true);
-  return { files: found, failure };
+  return { files: found, failure, skippedDirectories };
 }
 
 /**
