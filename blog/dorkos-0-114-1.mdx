@@ -1,0 +1,46 @@
+---
+title: DorkOS 0.114.1
+description: DorkOS stays quick and light while your agents work. Chats open without waiting, coming back to the tab is quiet, and less happens in the background.
+date: 2026-10-14
+author: DorkOS Team
+category: release
+tags: [release, performance]
+---
+
+DorkOS 0.114.1 keeps the app quick and light while your agents work. Chats open and switch without waiting, coming back to the tab is quiet, and DorkOS does far less busywork in the background.
+
+## Highlights
+
+### Chats open without waiting
+
+A chat you have seen before opens straight away, and going back to one no longer downloads its whole history again. When an agent finishes a reply, DorkOS fetches only that last exchange.
+
+### Quiet when you are just looking
+
+Coming back to the DorkOS tab no longer re-asks the server for everything on screen. Lists follow live updates instead of asking every few seconds.
+
+### Less work in the background
+
+DorkOS frees memory from chats nobody is using, keeps its logs small, and no longer freezes for its daily backup.
+
+## All Changes
+
+### Changed
+
+- Opening a chat you have already seen in the sidebar now shows it straight away, instead of waiting for the server to answer first. DorkOS still checks with the server in the background, and tells you if the chat is gone.
+- When you click an agent, its row lights up at once, even while DorkOS is still finding out which chat to open. After your computer wakes from sleep, clicking an agent no longer waits for a fresh list either.
+- Switching back to the DorkOS tab no longer asks the server again for every list and badge on screen, so coming back is quiet and fast. Live updates keep most of them current. If the tab was hidden for more than half a minute, DorkOS catches up once when you return. Things that change outside DorkOS, like your files, still refresh when you come back.
+- DorkOS asks the server far less often while you just look at the screen. The relay activity list, agent health and your community spaces follow live updates instead of re-asking every few seconds. Most changes show right away. A few can take up to a minute, like a chat app quietly losing its connection.
+- Going back to a chat you opened recently no longer downloads its whole history again; it shows what the app already has. When the agent finishes a reply, DorkOS fetches only that last exchange instead of the entire chat, so long chats stay quick turn after turn.
+
+### Fixed
+
+- Long chats open fast. DorkOS used to read a chat's whole history from disk every time you opened it, and after every reply. A very long chat could freeze the whole app for a moment each time and use hundreds of megabytes of memory. Now DorkOS remembers what it already read and only reads what is new (DOR-2889)
+- DorkOS uses less memory the longer it runs. Every Codex, OpenCode or Doe chat you opened stayed in memory until DorkOS restarted. Now a chat nobody has used for 10 to 20 minutes lets go of that memory, and comes back as normal when you open it again. Each chat's replay buffer is also half the size it was (DOR-2897)
+- DorkOS answers a little faster everywhere. It used to read and check your whole settings file from disk every time it looked up a setting, several times for every request. Now it keeps the last copy in memory and reads the file again only when it changed, including when you edit it by hand or with `dorkos config set` (DOR-2898)
+- DorkOS does less busywork in the background. Every five minutes it checked all your scheduled tasks against their files, and rewrote every one of them and reset its timer, even when nothing had changed. Now it only touches a task whose file changed, or whose timer had gone missing (DOR-2899)
+- DorkOS no longer rewrites its agent list and message rules every five minutes for nothing. Its regular check of your agents rewrote each agent's record and saved the message rules file about 30 times in a row, even when nothing had changed. Each save also made DorkOS reload that file. Now it writes only when something actually changed (DOR-2900)
+- DorkOS's log files stay a sensible size while it runs. A log file used to be split by size and day only when DorkOS started, so a server that stayed up wrote one file without limit; one reached 53 MB. DorkOS now keeps the last 14 days of logs, up to 200 MB in all, and each log line is about eight times cheaper to write (DOR-2902)
+- DorkOS no longer pauses for a moment once a day while it saves its daily backup of your data. It now copies the database a little at a time and keeps answering in between (DOR-2906)
+- When DorkOS Cloud is down or doesn't recognize your computer, DorkOS now waits longer between tries, up to 5 minutes for new events and 30 minutes for credits, instead of asking every 30 or 60 seconds for hours and filling the log with the same warning. It goes back to asking often as soon as a try works or you link again (DOR-2903)
+- Building the message search index is lighter on DorkOS. It no longer lists the thousands of helper-agent transcripts it never indexes, and it saves a very long chat to the index a piece at a time instead of all at once. If DorkOS stops partway through a long chat, it carries on from where it got to (DOR-2904)

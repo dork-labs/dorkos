@@ -520,3 +520,80 @@ describe('POST /api/telemetry/events — rate limiting', () => {
     expect(bystander.status).toBe(200);
   });
 });
+
+describe('install funnel events (DOR-2862)', () => {
+  const FIRST_RUN = {
+    event: 'first_run_completed' as const,
+    properties: { installRef: 'k3j4mnb8x2qa', utmSource: 'hn', utmCampaign: 'launch' },
+    distinctId: '7c6d2b9a-9f44-4f3a-bf67-3f3aa6bbf7c4',
+    timestamp: '2026-10-12T12:00:00.000Z',
+    dorkosVersion: '0.112.0',
+  };
+  const INSTANCE_ACTIVE = {
+    event: 'instance_active' as const,
+    properties: {},
+    distinctId: '7c6d2b9a-9f44-4f3a-bf67-3f3aa6bbf7c4',
+    timestamp: '2026-10-12T12:00:01.000Z',
+    dorkosVersion: '0.112.0',
+  };
+
+  type SentBatch = {
+    batch: Array<{ event: string; distinct_id: string; properties: Record<string, unknown> }>;
+  };
+
+  async function forward(events: unknown[]): Promise<SentBatch> {
+    env.POSTHOG_PROJECT_KEY = 'phc_test_key';
+    await POST(makeRequest({ events }));
+    const [, init] = fetchSpy.mock.calls[0] as [string, RequestInit];
+    return JSON.parse(init.body as string) as SentBatch;
+  }
+
+  it('accepts first_run_completed and instance_active', async () => {
+    const res = await POST(makeRequest({ events: [FIRST_RUN, INSTANCE_ACTIVE] }));
+    expect((await readJson(res)).accepted).toBe(2);
+  });
+
+  it('forwards the ref as plain properties and never sends an alias', async () => {
+    const sent = await forward([FIRST_RUN, { ...FIRST_RUN, properties: {} }, INSTANCE_ACTIVE]);
+    expect(sent.batch.map((e) => e.event)).toEqual([
+      'first_run_completed',
+      'first_run_completed',
+      'instance_active',
+    ]);
+    expect(sent.batch[0]).toMatchObject({
+      distinct_id: FIRST_RUN.distinctId,
+      properties: { installRef: 'k3j4mnb8x2qa', utmSource: 'hn', utmCampaign: 'launch' },
+    });
+    expect(JSON.stringify(sent)).not.toContain('$create_alias');
+    expect(JSON.stringify(sent)).not.toContain('"alias"');
+  });
+
+  it('forwards other events unchanged alongside a first run', async () => {
+    const sent = await forward([
+      { ...FIRST_RUN, properties: {} },
+      INSTANCE_ACTIVE,
+      VALID_APP_STARTED,
+    ]);
+    expect(sent.batch.map((e) => e.event)).toEqual([
+      'first_run_completed',
+      'instance_active',
+      'app_started',
+    ]);
+  });
+
+  it.each([
+    { installRef: 'someone@example.com' },
+    { installRef: 'k3j4mnb8x2qa', hostname: 'kais-macbook' },
+    { installRef: 'k3j4mnb8x2qa', utmSource: 'has space' },
+  ])('drops a first_run_completed carrying %j', async (properties) => {
+    const res = await POST(makeRequest({ events: [{ ...FIRST_RUN, properties }] }));
+    expect((await readJson(res)).accepted).toBe(0);
+  });
+
+  it('drops an instance_active that carries any property', async () => {
+    const res = await POST(
+      makeRequest({ events: [{ ...INSTANCE_ACTIVE, properties: { os: 'darwin-arm64' } }] })
+    );
+    expect((await readJson(res)).accepted).toBe(0);
+  });
+});

@@ -175,7 +175,9 @@ test.describe('Space channel view', () => {
     page,
   }) => {
     // The local server re-checks every Community connection each time the app
-    // lists them — every 30 seconds — and stamps the answer with the time. The
+    // lists them — on the app's one-minute safety-net poll
+    // (`QUERY_TIMING.EVENT_BACKSTOP_REFETCH_MS`, DOR-2909) — and stamps the
+    // answer with the time. The
     // channel must treat an unchanged answer as unchanged: rebuilding itself
     // restarted the stream, emptied the list and dropped the receipt of a post
     // in flight, which is how a person's own message took ~20 seconds to show.
@@ -225,7 +227,7 @@ test.describe('Space channel view', () => {
     const recheck = page.waitForResponse(
       (response) => new URL(response.url()).pathname === '/api/community-connections'
     );
-    await page.clock.fastForward('00:31');
+    await page.clock.fastForward('01:01');
     await recheck;
     expect(listings).toBeGreaterThan(before);
     // A window for the regression to show in, not a wait for the fix: when the

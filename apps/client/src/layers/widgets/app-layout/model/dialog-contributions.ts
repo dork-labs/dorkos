@@ -1,11 +1,17 @@
 import type { DialogContribution } from '@/layers/shared/model';
+import { lazyDialog } from '@/layers/shared/ui/lazy/lazy-dialog';
 import { ShapeSwitcherDialog } from '@/layers/features/shapes';
-import { ProfileSheetContainer } from '@/layers/features/profile';
 import { TunnelDialog } from '@/layers/features/settings';
+import { ProfileSheetContainer } from '@/layers/features/profile';
 import { SettingsDialogWrapper } from './wrappers/SettingsDialogWrapper';
 import { DirectoryPickerWrapper } from './wrappers/DirectoryPickerWrapper';
-import { TasksDialogWrapper } from './wrappers/TaskDialogWrapper';
 import { ServerRestartOverlayWrapper } from './wrappers/ServerRestartOverlayWrapper';
+
+// Scheduled tasks is fetched the first time it is wanted, not with the app
+// (DOR-2901); Settings comes lazily from its own slice.
+const TasksDialogWrapper = lazyDialog('TasksDialog', () =>
+  import('./wrappers/TaskDialogWrapper').then((m) => m.TasksDialogWrapper)
+);
 
 /** Built-in dialog contributions for the root dialog host. */
 export const DIALOG_CONTRIBUTIONS: DialogContribution[] = [

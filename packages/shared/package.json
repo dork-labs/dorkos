@@ -125,6 +125,10 @@
       "types": "./src/telemetry-events.ts",
       "default": "./dist/telemetry-events.js"
     },
+    "./install-ref": {
+      "types": "./src/install-ref.ts",
+      "default": "./dist/install-ref.js"
+    },
     "./extension-id": {
       "types": "./src/extension-id.ts",
       "default": "./dist/extension-id.js"

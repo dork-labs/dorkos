@@ -15,6 +15,8 @@ vi.mock('@/env', () => ({
 vi.mock('posthog-js', () => ({
   default: {
     capture: vi.fn(),
+    alias: vi.fn(),
+    get_property: vi.fn(() => undefined),
     identify: vi.fn(),
     reset: vi.fn(),
     has_opted_out_capturing: vi.fn(() => false),
@@ -30,10 +32,14 @@ import {
   identifyAccount,
   optInCapturing,
   optOutCapturing,
+  prepareInstallCopy,
   resetIdentity,
 } from '../analytics';
 
 const mockPosthog = posthog as unknown as {
+  capture: ReturnType<typeof vi.fn>;
+  alias: ReturnType<typeof vi.fn>;
+  get_property: ReturnType<typeof vi.fn>;
   identify: ReturnType<typeof vi.fn>;
   reset: ReturnType<typeof vi.fn>;
   has_opted_out_capturing: ReturnType<typeof vi.fn>;
@@ -44,6 +50,7 @@ const mockPosthog = posthog as unknown as {
 beforeEach(() => {
   vi.clearAllMocks();
   mockPosthog.has_opted_out_capturing.mockReturnValue(false);
+  mockPosthog.get_property.mockReturnValue(undefined);
 });
 
 afterEach(() => {
@@ -93,5 +100,87 @@ describe('consent-change notification', () => {
     expect(listener).toHaveBeenCalledTimes(2);
 
     window.removeEventListener(CONSENT_CHANGED_EVENT, listener);
+  });
+});
+
+describe('prepareInstallCopy (DOR-2862)', () => {
+  const CURL = 'curl -fsSL https://dorkos.ai/install | bash';
+  const REF_SUFFIX =
+    /^curl -fsSL https:\/\/dorkos\.ai\/install \| bash -s -- --ref=([a-z0-9]{12})(\..*)?$/;
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('adds a fresh ref for an opted-in visitor and records it as a plain property on copy', () => {
+    mockPosthog.get_property.mockReturnValue({
+      u: 'https://dorkos.ai/blog/post?utm_source=HN&utm_campaign=launch%20week',
+    });
+    const copy = prepareInstallCopy(CURL, 'curl');
+
+    const match = REF_SUFFIX.exec(copy.text);
+    expect(match).not.toBeNull();
+    const token = match![1]!;
+    expect(copy.text.endsWith(`--ref=${token}.hn.launch-week`)).toBe(true);
+    // Nothing is captured until the clipboard write has landed.
+    expect(mockPosthog.capture).not.toHaveBeenCalled();
+
+    copy.onCopied();
+    expect(mockPosthog.capture).toHaveBeenCalledWith('hero_install_copy', {
+      method: 'curl',
+      install_ref: token,
+    });
+  });
+
+  it('never aliases or identifies anyone, even a signed-in (identified) visitor', () => {
+    identifyAccount('acct-uuid-123');
+    mockPosthog.identify.mockClear();
+    const copy = prepareInstallCopy(CURL, 'curl');
+    copy.onCopied();
+
+    expect(mockPosthog.alias).not.toHaveBeenCalled();
+    expect(mockPosthog.identify).not.toHaveBeenCalled();
+    const events = mockPosthog.capture.mock.calls.map(([event]) => event);
+    expect(events).toEqual(['hero_install_copy']);
+    expect(events).not.toContain('$create_alias');
+  });
+
+  it('mints a different ref for every copy', () => {
+    expect(prepareInstallCopy(CURL, 'curl').text).not.toBe(prepareInstallCopy(CURL, 'curl').text);
+  });
+
+  it('adds a ref to npx, which runs the CLI that records it', () => {
+    expect(prepareInstallCopy('npx dorkos@latest', 'npm').text).toMatch(
+      /^npx dorkos@latest --ref=[a-z0-9]{12}$/
+    );
+  });
+
+  it('copies the plain command for a cookieless or declined visitor', () => {
+    mockPosthog.has_opted_out_capturing.mockReturnValue(true);
+    const copy = prepareInstallCopy(CURL, 'curl');
+    expect(copy.text).toBe(CURL);
+
+    copy.onCopied();
+    expect(mockPosthog.capture).toHaveBeenCalledWith('hero_install_copy', { method: 'curl' });
+  });
+
+  it.each([
+    ['Global Privacy Control', { globalPrivacyControl: true }],
+    ['Do Not Track', { doNotTrack: '1' }],
+  ])(
+    'copies the plain command under %s, even before the banner has opted the visitor out',
+    (_name, signal) => {
+      // PostHog still reads as opted in: the banner has not reconciled yet.
+      mockPosthog.has_opted_out_capturing.mockReturnValue(false);
+      vi.stubGlobal('navigator', { ...signal });
+      expect(prepareInstallCopy(CURL, 'curl').text).toBe(CURL);
+    }
+  );
+
+  it('copies `npm install -g` unchanged: it runs no DorkOS code that could record a ref', () => {
+    const copy = prepareInstallCopy('npm install -g dorkos', 'npm');
+    expect(copy.text).toBe('npm install -g dorkos');
+    copy.onCopied();
+    expect(mockPosthog.capture).toHaveBeenCalledWith('hero_install_copy', { method: 'npm' });
   });
 });

@@ -8,7 +8,8 @@ import {
   formatFirstRunTelemetryNotice,
 } from '../services/core/telemetry-first-run.js';
 import { registerDorkosCommunityTelemetry } from '../services/marketplace/telemetry/telemetry-reporter.js';
-import { registerUsageReporter, reportUsageEvent } from '../services/core/usage-reporter.js';
+import { registerUsageReporter } from '../services/core/usage-reporter.js';
+import { startInstallFunnel } from '../services/core/telemetry/install-funnel.js';
 import { registerServerErrorReporting } from '../services/core/error-reporter.js';
 import { registerAiMetadataReporter } from '../services/core/ai-metadata-reporter.js';
 import { registerHeartbeat } from '../services/core/heartbeat-reporter.js';
@@ -89,28 +90,23 @@ export function wireStartupTelemetry(dorkHome: string, version: string) {
   // `?? false`, matching the install and heartbeat gates above and below. A
   // config block that is present but missing this key is not a person saying
   // yes to it, and absence is never read as consent.
-  const usageConsent =
-    resolveTelemetryConsent(telemetryConfig?.usage ?? false, telemetryEnv) && tier1SendGate;
+  // `isConsentLive` re-reads the setting on every send, so turning usage off
+  // mid-run stops the reporter at once (DOR-2862).
+  const usageOn = () =>
+    resolveTelemetryConsent(configManager.get('telemetry')?.usage ?? false, telemetryEnv);
+  const usageConsent = usageOn() && tier1SendGate;
   registerUsageReporter({
     enabled: usageConsent,
+    isConsentLive: usageOn,
     debug: telemetryDebug,
     dorkHome,
     dorkosVersion: version,
   });
   if (usageConsent) {
-    // Emit `app_started` once at boot: coarse platform-arch + how many runtimes
-    // are configured (a count, never their names or anything identifying).
-    const startupRuntimes = configManager.get('runtimes');
-    const runtimesConfiguredCount =
-      1 + (startupRuntimes.codex.enabled ? 1 : 0) + (startupRuntimes.opencode.enabled ? 1 : 0);
-    reportUsageEvent({
-      event: 'app_started',
-      properties: {
-        os: `${process.platform}-${process.arch}`,
-        runtimesConfigured: runtimesConfiguredCount,
-      },
-    });
-    logger.info('[Telemetry] Usage reporter active (consent: opt-out, notice-gated)');
+    // `app_started` now, `first_run_completed` once per install (with the
+    // dorkos.ai install ref, if any) and `instance_active` once a day (DOR-2862).
+    startInstallFunnel({ dorkHome, config: configManager });
+    logger.info('[Telemetry] Usage reporter active (consent: opt-in, notice-gated)');
   }
 
   // Opt-in error reporting (DOR-293, consolidated in DOR-318). A SEPARATE

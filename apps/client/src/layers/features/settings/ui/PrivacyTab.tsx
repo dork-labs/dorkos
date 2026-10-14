@@ -71,7 +71,7 @@ export function PrivacyTab() {
           />
           <SwitchSettingRow
             label="Share anonymous feature-usage events"
-            description="Counts events like app start, to see which features get used."
+            description="Counts events like app start and finished setup, plus any install tag."
             checked={telemetry?.usage ?? false}
             onCheckedChange={(v) => setChannel('usage', v)}
             disabled={updateConfig.isPending}

@@ -124,7 +124,7 @@
     "packages/ci-steward/src/daily-report.ts": 501,
     "packages/cli/scripts/test-community-deploy-live.ts": 631,
     "packages/cli/scripts/test-community-deploy-package.ts": 639,
-    "packages/cli/src/cli.ts": 685,
+    "packages/cli/src/cli.ts": 654,
     "packages/cli/src/commands/community-deploy/community-dispatcher.ts": 581,
     "packages/cli/src/commands/community-deploy/fly-graphql-contract.ts": 578,
     "packages/cli/src/commands/permissions.ts": 542,

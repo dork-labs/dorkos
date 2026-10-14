@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
 
 /**
  * A mutable slot one component instance owns.
@@ -63,4 +63,31 @@ export function useLatest<T>(value: T): RenderSlot<T> {
   const slot = useRenderSlot(value);
   slot.write(value);
   return slot;
+}
+
+/**
+ * A callback whose identity never changes, that always calls the newest one.
+ *
+ * For handing a handler down to memoized rows: a parent whose handler closes
+ * over state that moves on every streamed word (`onRetry` reads the messages)
+ * would otherwise give every row a new prop on every word, and no row could
+ * skip its render (DOR-2895). Built on {@link useLatest}, so the newest handler
+ * is in place before any child's effect or ref callback can call it.
+ *
+ * Absent stays absent: `undefined` in gives `undefined` out, because a missing
+ * handler often means "offer no such action", and a stable stub would offer it.
+ *
+ * The handler is stored as each render runs, so a render React later throws
+ * away (a transition, a suspended tree) can leave its handler in place until
+ * the next commit. For event handlers that means, at worst, one that saw
+ * slightly newer state; do not use it for anything that must match the screen.
+ *
+ * @param callback - The handler to keep stable, or undefined.
+ */
+export function useStableCallback<Args extends unknown[], Result>(
+  callback: ((...args: Args) => Result) | undefined
+): ((...args: Args) => Result) | undefined {
+  const latest = useLatest(callback);
+  const stable = useCallback((...args: Args) => latest.read()!(...args), [latest]);
+  return callback ? stable : undefined;
 }

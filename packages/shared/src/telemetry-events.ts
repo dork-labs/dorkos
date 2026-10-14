@@ -1,6 +1,7 @@
 /**
  * The curated catalog of first-party product-usage events DorkOS may send to
- * dorkos.ai (Plane 1, Tier 1 — anonymous, opt-out; ADR 260713-143958 Phase 3).
+ * dorkos.ai (Plane 1, Tier 1 — anonymous, opt-in since ADR 260727-182651; ADR
+ * 260713-143958 Phase 3).
  *
  * This module is the **single source of truth for event names and their exact
  * property shapes**. No event name lives anywhere else in the app: the server
@@ -35,7 +36,12 @@ const MAX_STRING_LEN = 64;
  * exist. Kept as a `const` tuple so it doubles as the {@link TelemetryEventName}
  * union.
  */
-export const TELEMETRY_EVENT_NAMES = ['app_started', 'session_created'] as const;
+export const TELEMETRY_EVENT_NAMES = [
+  'app_started',
+  'session_created',
+  'first_run_completed',
+  'instance_active',
+] as const;
 
 /** One of the curated {@link TELEMETRY_EVENT_NAMES}. */
 export type TelemetryEventName = (typeof TELEMETRY_EVENT_NAMES)[number];
@@ -63,6 +69,37 @@ export const SessionCreatedProperties = z
     runtime: z.string().min(1).max(MAX_STRING_LEN),
   })
   .strict();
+
+/** The random part of an install ref: 12 lowercase base-36 characters. */
+export const INSTALL_REF_TOKEN_PATTERN = /^[a-z0-9]{12}$/;
+
+/** A campaign tag carried by an install ref: short, and only plain characters. */
+export const INSTALL_REF_UTM_PATTERN = /^[a-z0-9_-]{1,32}$/;
+
+/**
+ * Properties for `first_run_completed`: emitted once per install, the first
+ * time the usage channel is on after onboarding has finished (DOR-2862). All
+ * three properties come from the install ref the dorkos.ai install command
+ * carried, when it carried one (`@dorkos/shared/install-ref`): `installRef` is
+ * the ref's random token, which names one copy of the install command and
+ * nothing else; `utmSource` / `utmCampaign` are the first-touch campaign tags
+ * shared by everyone who followed the same link. An install without a ref sends
+ * the event with no properties.
+ */
+export const FirstRunCompletedProperties = z
+  .object({
+    installRef: z.string().regex(INSTALL_REF_TOKEN_PATTERN).optional(),
+    utmSource: z.string().regex(INSTALL_REF_UTM_PATTERN).optional(),
+    utmCampaign: z.string().regex(INSTALL_REF_UTM_PATTERN).optional(),
+  })
+  .strict();
+
+/**
+ * Properties for `instance_active`: emitted at most once per UTC day while
+ * DorkOS runs with the usage channel on (DOR-2862). Carries nothing: the
+ * envelope's anonymous `instanceId` and timestamp are the whole signal.
+ */
+export const InstanceActiveProperties = z.object({}).strict();
 
 /**
  * The shared wire-envelope fields every event carries. `distinctId` is the
@@ -96,6 +133,20 @@ export const TelemetryEventSchema = z.discriminatedUnion('event', [
       ...envelopeFields,
     })
     .strict(),
+  z
+    .object({
+      event: z.literal('first_run_completed'),
+      properties: FirstRunCompletedProperties,
+      ...envelopeFields,
+    })
+    .strict(),
+  z
+    .object({
+      event: z.literal('instance_active'),
+      properties: InstanceActiveProperties,
+      ...envelopeFields,
+    })
+    .strict(),
 ]);
 
 /** A single fully-enveloped, registry-validated telemetry event. */
@@ -126,6 +177,10 @@ export type TelemetryEventBatch = z.infer<typeof TelemetryEventBatchSchema>;
 export const TelemetryEventInputSchema = z.discriminatedUnion('event', [
   z.object({ event: z.literal('app_started'), properties: AppStartedProperties }).strict(),
   z.object({ event: z.literal('session_created'), properties: SessionCreatedProperties }).strict(),
+  z
+    .object({ event: z.literal('first_run_completed'), properties: FirstRunCompletedProperties })
+    .strict(),
+  z.object({ event: z.literal('instance_active'), properties: InstanceActiveProperties }).strict(),
 ]);
 
 /** The caller-supplied `{ event, properties }` half of a telemetry event. */

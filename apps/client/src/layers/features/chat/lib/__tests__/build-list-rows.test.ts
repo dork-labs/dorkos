@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import type { ChatMessage, MessageAuthor } from '@/layers/shared/model';
-import { buildListRows, GROUP_GAP_MS, type ListRow } from '../build-list-rows';
+import { buildListRows, createListRowsCache, GROUP_GAP_MS, type ListRow } from '../build-list-rows';
 
 /** Fixed "now": 2026-07-25 12:00 local, so day 25 reads as Today and 24 as Yesterday. */
 const NOW = new Date(2026, 6, 25, 12, 0).getTime();
@@ -229,5 +229,52 @@ describe('buildListRows', () => {
     expect(kinds(rows)).toEqual(['message', 'message', 'day-divider', 'message']);
     // The two undated messages still group together; the dated one opens a day.
     expect(positions(rows)).toEqual(['first', 'last', 'only']);
+  });
+});
+
+describe('buildListRows with a layout cache (DOR-2912)', () => {
+  it('reuses the rows a streamed word did not change, and answers exactly as a fresh layout', () => {
+    const settled = Array.from({ length: 30 }, (_, i) =>
+      msg(`m${i}`, at(24 + Math.floor(i / 20), 9, i))
+    );
+    const options = { resolveAuthor: authorsFrom({ m3: 'agent', m4: 'agent' }), now: NOW };
+    const cache = createListRowsCache();
+    const first = buildListRows([...settled, msg('live', at(25, 10))], { ...options, cache });
+    const after = [...settled, { ...msg('live', at(25, 10)), content: 'more' }];
+    const next = buildListRows(after, { ...options, cache });
+    expect(next).toEqual(buildListRows(after, options));
+    // Every row before the live message's group is the very same object.
+    expect(next[0]).toBe(first[0]);
+    expect(next.at(-1)).not.toBe(first.at(-1));
+  });
+
+  it('lays out from scratch when what the layout depends on changes', () => {
+    const messages = [msg('a', at(25, 9)), msg('b', at(25, 9, 1))];
+    const cache = createListRowsCache();
+    const options = { resolveAuthor: authorsFrom(), now: NOW, cache };
+    const first = buildListRows(messages, options);
+    const moved = buildListRows(messages, { ...options, lastSeenMessageId: 'a' });
+    expect(moved[0]).not.toBe(first[0]);
+    expect(moved.map((row) => row.kind)).toContain('unread-divider');
+  });
+
+  it('answers exactly after a removal, after an older array, and for a new author resolver', () => {
+    const messages = Array.from({ length: 12 }, (_, i) => msg(`m${i}`, at(25, 9, i)));
+    const resolveAuthor = authorsFrom({ m5: 'agent-b' });
+    const cache = createListRowsCache();
+    buildListRows(messages, { resolveAuthor, now: NOW, cache });
+    // A message removed.
+    const removed = [...messages.slice(0, 6), ...messages.slice(7)];
+    expect(buildListRows(removed, { resolveAuthor, now: NOW, cache })).toEqual(
+      buildListRows(removed, { resolveAuthor, now: NOW })
+    );
+    // A discarded render's older array, after a newer one filled the cache.
+    expect(buildListRows(messages, { resolveAuthor, now: NOW, cache })).toEqual(
+      buildListRows(messages, { resolveAuthor, now: NOW })
+    );
+    // A different resolver means different authors: nothing is reused.
+    const other = authorsFrom({ m1: 'agent-c' });
+    const fresh = buildListRows(messages, { resolveAuthor: other, now: NOW, cache });
+    expect(fresh).toEqual(buildListRows(messages, { resolveAuthor: other, now: NOW }));
   });
 });

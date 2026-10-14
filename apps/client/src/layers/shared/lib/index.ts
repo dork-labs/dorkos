@@ -302,7 +302,7 @@ export { useCopyFeedback } from './use-copy-feedback';
 // Close the modal flyout an action was pressed in BEFORE the action runs — the
 // `pointer-events: none` hazard, in one place. See the module's own doc.
 export { createModalHandoff } from './modal-handoff';
-export { useRenderSlot, useLatest, type RenderSlot } from './use-render-slot';
+export { useRenderSlot, useLatest, useStableCallback, type RenderSlot } from './use-render-slot';
 export {
   executeUiCommand,
   isLocalUiOnlyCommand,
@@ -356,7 +356,12 @@ export {
   type FilterValues,
 } from './filter-engine';
 export { getAgentDisplayName, slugifyAgentName } from '@dorkos/shared/validation';
-export { buildTimelineRows, unreadPlacement, GROUP_GAP_MS } from './group-timeline';
+export {
+  buildTimelineRows,
+  relayTimelineRows,
+  unreadPlacement,
+  GROUP_GAP_MS,
+} from './group-timeline';
 export type {
   TimelineItem,
   TimelineRow,

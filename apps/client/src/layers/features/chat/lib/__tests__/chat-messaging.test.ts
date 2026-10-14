@@ -208,6 +208,14 @@ describe('placing and finding chat messages in a transcript', () => {
     expect(out[1]!._chatStop?.id).toBe('s1');
   });
 
+  it('hands back the same line for a stop on every call, so the layout can keep it (DOR-2912)', () => {
+    const stops = [{ id: 's1', by: STAMP.from, at: '2026-10-09T10:02:00Z' }];
+    const before = [msg('a', '2026-10-09T10:00:00Z'), msg('b', '2026-10-09T10:05:00Z')];
+    const first = interleaveStopNotices(before, stops);
+    const second = interleaveStopNotices([...before, msg('live', '')], stops);
+    expect(second[1]).toBe(first[1]);
+  });
+
   it('never places a stop below the live turn: rows with no time are newest', () => {
     const out = interleaveStopNotices(
       [msg('a', '2026-10-09T10:00:00Z'), msg('live', ''), msg('steer', '')],
