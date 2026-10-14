@@ -8,6 +8,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import type { AgentRuntime } from '@dorkos/shared/agent-runtime';
 import type { StreamEvent } from '@dorkos/shared/types';
 import { decorateRuntime } from '../decorate-runtime.js';
+import { RuntimeRegistry } from '../../runtime-registry.js';
 import { keepAwakeService } from '../../keep-awake/keep-awake-service.js';
 import {
   initAgentPause,
@@ -40,6 +41,8 @@ function fakeRuntime(type: string) {
     type,
     sendMessage: () => events(1),
     isHelperWorking: () => false,
+    acquireLock: () => false,
+    releaseLock: () => {},
     holdsBackgroundWork: () => state.background,
     getSessionCwd: () => undefined,
     onRuntimeTurn: (l: (sessionId: string, events: AsyncIterable<StreamEvent>) => void) => {
@@ -109,5 +112,49 @@ describe('isSessionPaused', () => {
     expect(isSessionPaused(runtime, 's1')).toBe(false);
     pause.paused = true;
     expect(isSessionPaused(runtime, 's1')).toBe(true);
+  });
+});
+
+describe('RuntimeRegistry: the actual registration seam', () => {
+  it('releases registered runtime background work when its agent is paused', async () => {
+    const pause = { paused: false };
+    initAgentPause(stubPauses(pause));
+    const { runtime, state } = fakeRuntime('fake-registry-paused-background');
+    const registry = new RuntimeRegistry();
+    registry.register(runtime);
+    const registered = registry.get(runtime.type);
+    const before = chats();
+    state.background = true;
+    try {
+      for await (const _event of registered.sendMessage('s-registry-bg', 'hello')) {
+        // drain the genuine registered decorator chain
+      }
+      expect(chats()).toBe(before + 1);
+      pause.paused = true;
+      keepAwakeService.sweepIdleTurns();
+      expect(chats()).toBe(before);
+    } finally {
+      state.background = false;
+      keepAwakeService.sweepIdleTurns();
+    }
+  });
+
+  it('does not hold a paused agent self-started turn through the registered chain', async () => {
+    const pause = { paused: true };
+    initAgentPause(stubPauses(pause));
+    const { runtime, startTurn } = fakeRuntime('fake-registry-paused-late');
+    const registry = new RuntimeRegistry();
+    registry.register(runtime);
+    const before = chats();
+    const seen: number[] = [];
+    let done!: Promise<void>;
+    registry.get(runtime.type).onRuntimeTurn!((_sessionId, turn) => {
+      done = (async () => {
+        for await (const _event of turn) seen.push(chats());
+      })();
+    });
+    startTurn('s-registry-paused', events(2));
+    await done;
+    expect(seen).toEqual([before, before]);
   });
 });

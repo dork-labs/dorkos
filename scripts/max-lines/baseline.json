@@ -73,7 +73,7 @@
     "apps/server/src/services/core/config-manager.ts": 2085,
     "apps/server/src/services/core/operator/operator-capabilities.ts": 622,
     "apps/server/src/services/core/permissions/permission-service.ts": 838,
-    "apps/server/src/services/core/runtime-registry.ts": 584,
+    "apps/server/src/services/core/runtime-registry.ts": 582,
     "apps/server/src/services/core/usage/account-usage-store.ts": 517,
     "apps/server/src/services/extensions/extension-manager.ts": 894,
     "apps/server/src/services/extensions/extension-server-lifecycle.ts": 548,

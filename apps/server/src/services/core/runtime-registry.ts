@@ -94,10 +94,8 @@ import { moveDurableSessionIdentity } from '../session/turn-identity/durable-rek
 import { traceRuntime, watchRuntimeSignin } from '../observability/index.js';
 import { recordToolUse, observeOriginalRuntimeToolStream } from '../audit/record-tool-use.js';
 import { recordTurnLevels } from './turn-power/turn-levels.js';
-import {
-  holdAwakeDuringTurns,
-  observeOriginalAwakeRoomRuntimeStream,
-} from './keep-awake/hold-during-turn.js';
+import { observeOriginalAwakeRoomRuntimeStream } from './keep-awake/hold-during-turn.js';
+import { holdAwakeForRegisteredRuntime } from './runtime-seam/decorate-runtime.js';
 
 const {
   originalRegisteredRuntimes,
@@ -189,7 +187,7 @@ export class RuntimeRegistry {
     const traced = traceRuntime(leveled);
     const signed = watchRuntimeSignin(traced);
     const audited = recordToolUse(signed);
-    const awake = holdAwakeDuringTurns(audited);
+    const awake = holdAwakeForRegisteredRuntime(runtime, audited);
     const wrapped = holdPausedAgents(awake);
     onOriginalSigninRuntimeRelease(signed, () => {
       for (const hint of construction.releaseHints) {
