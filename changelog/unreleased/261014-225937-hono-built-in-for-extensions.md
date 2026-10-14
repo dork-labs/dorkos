@@ -1,6 +1,7 @@
 ---
 covers:
   - 'feat(extensions): Hono built in, the caller and requirePerson for fetch handlers, one reply-header rule (DOR-2857)'
+  - 'fix(extensions): address review of the fetch-handler work (DOR-2857)'
 ---
 
 ### Added
