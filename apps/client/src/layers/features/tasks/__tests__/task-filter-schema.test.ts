@@ -73,4 +73,23 @@ describe('task status filter and sort', () => {
       'pending_approval',
     ]);
   });
+
+  it('sorts "Last run" by when each task last ran, not when it was last changed (DOR-2914)', () => {
+    const ranRecently = {
+      ...live,
+      id: 'recent',
+      lastRunAt: '2026-10-05T08:00:00.000Z',
+      updatedAt: '2026-01-01T00:00:00.000Z',
+    } as Task;
+    const ranLongAgo = {
+      ...live,
+      id: 'old',
+      lastRunAt: '2026-01-05T08:00:00.000Z',
+      updatedAt: '2026-10-09T00:00:00.000Z',
+    } as Task;
+    const accessor = taskSortOptions.lastRun.accessor;
+    expect(accessor(ranRecently)).toBe('2026-10-05T08:00:00.000Z');
+    expect(accessor(ranLongAgo)).toBe('2026-01-05T08:00:00.000Z');
+    expect(accessor({ ...live, lastRunAt: null } as Task)).toBeNull();
+  });
 });

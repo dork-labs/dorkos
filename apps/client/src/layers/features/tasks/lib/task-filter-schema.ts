@@ -69,7 +69,7 @@ export const taskFilterSchema = createFilterSchema<Task>({
 /** Sort options for the tasks list. */
 export const taskSortOptions = createSortOptions<Task>({
   name: { label: 'Name', accessor: (t) => t.name },
-  lastRun: { label: 'Last run', accessor: (t) => t.updatedAt, direction: 'desc' },
+  lastRun: { label: 'Last run', accessor: (t) => t.lastRunAt ?? null, direction: 'desc' },
   nextRun: { label: 'Next run', accessor: (t) => t.nextRun ?? null },
   status: {
     label: 'Status',

@@ -9435,6 +9435,12 @@
               "null"
             ]
           },
+          "lastRunAt": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "nextRuns": {
             "type": "array",
             "items": {
