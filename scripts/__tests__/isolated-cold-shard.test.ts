@@ -89,7 +89,7 @@ describe('isolated Room, cold, checkbox and native whole-file phases', () => {
     }
   });
   it('requires every original assertion from the actual native whole-file selection', () => {
-    const counts = [30, 96, 10, 3, 35, 101];
+    const counts = [30, 48, 48, 10, 3, 35, 101];
     for (const [index, file] of NATIVE_FILES.entries()) {
       const selected = [path.join('/server', file)];
       const actual = report(selected[0]!, false, counts[index]);

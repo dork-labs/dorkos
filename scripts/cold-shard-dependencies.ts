@@ -282,12 +282,13 @@ export function dependencyOutputSnapshot(root: string, tasks: Json[]): Json[] {
 export const NATIVE_FILES = [
   'src/routes/__tests__/sessions-cwd-resolution.test.ts',
   'src/services/rooms/__tests__/room-turn-runner.test.ts',
+  'src/services/rooms/__tests__/room-turn-runner-launch.test.ts',
   'src/services/rooms/repo/__tests__/room-original-native-launch.test.ts',
   'src/services/rooms/repo/__tests__/room-worktree-refresh.integration.test.ts',
   'src/services/rooms/repo/__tests__/room-worktree-refresh.test.ts',
   'src/services/session/__tests__/message-dispatcher.test.ts',
 ] as const;
-export const NATIVE_COUNTS = [30, 96, 10, 3, 35, 101];
+export const NATIVE_COUNTS = [30, 48, 48, 10, 3, 35, 101];
 
 /**
  * Validate the exact singleton collection and complete assertion results for an isolated phase.
@@ -349,7 +350,7 @@ export async function nativeSelection(server: string, shard: number): Promise<st
       JSON.stringify(collected) !==
       JSON.stringify(NATIVE_FILES.map((file) => path.join(server, file)).sort())
     )
-      throw new Error('native family collection differs from the exact six whole files');
+      throw new Error('native family collection differs from the exact seven whole files');
     const sequencer = new context.config.sequence.sequencer(context);
     return (await sequencer.shard(specifications)).map((specification) => specification.moduleId);
   } finally {

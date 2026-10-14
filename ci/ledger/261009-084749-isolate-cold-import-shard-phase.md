@@ -168,3 +168,84 @@ The script regression accepts complete 57-case passed or failed reports and
 explicitly rejects the obsolete 56-case report. Actual validation of this
 counter repair and a fresh required CI run remain pending; this is no waiver
 or performance verdict. Historical observations above remain unchanged.
+
+### Held native whole-file balance experiment
+
+The completed dec374 shard-one job reached its 30-minute job ceiling. Checkbox completed57 assertions before native work began; native work then had about597 seconds remaining. The original96-case Room runner file previously took roughly474–478 seconds locally and constructs95 separate original native children. This does not establish an internal stall or a hosted performance result.
+
+The held candidate moves48 unchanged registrations into one sibling whole file. Both halves keep their original scenario identities, titles, callbacks, private child homes and temporary directories, cold module graphs, assertions and deadlines. The native family becomes seven whole files with the same275 assertions. Actual configured eight-shard selection and disjoint identity union must be checked after adoption; no hash approximation replaces Vitest.
+
+The target is a lower maximum native-file wall time and completion of the full original pipeline inside the unchanged30-minute job limit. All original child readiness/drain and test/hook limits remain. No child pool, partial-file filter, skipped assertion or increased timeout is proposed. Current hosted results, benchmark effect and adoption remain pending.
+
+### Native compiler-cache follow-up (local evidence; hosted outcome pending)
+
+The first post-Main local validation (Source 6) reported 258 passed, 7 failed and
+10 pending cases out of the original 275 native assertions. Its inherited worker
+environment did not establish the requested one-worker execution. The corrected
+Source 7 selected one worker through the actual configured API and reported
+264 passed, 2 failed and 9 pending cases. Both runs failed; neither report is
+whole-family acceptance. Preserve these reports and their original failures.
+
+Each original child used a fresh private TMPDIR, which also gave the normal tsx
+loader a fresh transformation-cache directory. A bounded diagnostic tested a
+separate creator-owned compiler-cache root while restoring each child's private
+TMPDIR before application imports. Five fresh finite DATA processes passed the
+ordering, independent module evaluation, changed-source, changed-compiler-options,
+distinct-source-root/relative-import and source-map identity checks. Two separate
+original native launch cases then passed, cold first and warm second, with an
+empty native compiler cache before the first launch. The full two-case command took
+10.678 seconds including runner startup; the file report spans 5.449 seconds. This is diagnostic evidence, not the 275-case benchmark or a
+hosted CI result.
+
+The implemented candidate shares only compiler artifacts within one isolated
+whole test file. Every native case still forks a fresh process and retains its
+private HOME, TMPDIR, DORK_HOME, database, constructor bindings and fixture
+lifetime. The normal tsx bootstrap restores the private environment before any
+application import. Cache leases close only after the original child exit and
+both pipe EOFs, the unchanged drain check, and private fixture cleanup. Failed or
+unresolved leases retain the creator-owned cache. Retirement checks prevent a
+late asynchronous acquisition from forking after fixture closure.
+
+All original registrations, readiness/load scaling, test-body, hook and drain
+clocks remain unchanged. The existing cold-import regression remains unchanged.
+The separate Source 7 refresh-story failure crossed its original five-second
+body deadline. Its cause was not isolated by the cache diagnostic.
+
+The completed Source 8 local validation used the worktree based on merge commit
+5d86340 with the ten pending split/cache files, against Main f35d7bb. All seven
+commands exited zero: actual configured eight-shard selection, normal server and
+scripts typechecks, the whole 24-case script regression, the whole seven-file
+275-case native family, both whole upstream Search files (36 assertions), and
+normal max-lines against f35d7bb. Every selected assertion passed with zero
+failures, pending or TODO cases. The actual sequencer selected one whole native
+file on each of shards 1–7 and none on shard 8; this is local API evidence.
+
+Actual native file-report wall times (including that file's setup and teardown):
+
+| Whole native file                                                                         | Passed assertions | Wall seconds |
+| ----------------------------------------------------------------------------------------- | ----------------: | -----------: |
+| `apps/server/src/routes/__tests__/sessions-cwd-resolution.test.ts`                        |                30 |       22.775 |
+| `apps/server/src/services/rooms/__tests__/room-turn-runner-launch.test.ts`                |                48 |      154.053 |
+| `apps/server/src/services/rooms/__tests__/room-turn-runner.test.ts`                       |                48 |      147.910 |
+| `apps/server/src/services/session/__tests__/message-dispatcher.test.ts`                   |               101 |       27.502 |
+| `apps/server/src/services/rooms/repo/__tests__/room-original-native-launch.test.ts`       |                10 |       35.933 |
+| `apps/server/src/services/rooms/repo/__tests__/room-worktree-refresh.integration.test.ts` |                 3 |       11.170 |
+| `apps/server/src/services/rooms/repo/__tests__/room-worktree-refresh.test.ts`             |                35 |       37.114 |
+
+The full seven-file native command took 462.122 seconds including runner startup.
+The two unchanged 48-case runner halves took 154.053 and 147.910 seconds in their
+file reports. The earlier unsplit 96-case runner file took 469.113 seconds in a
+separate historical local run. These are different source epochs, and split and
+compiler-cache changes were combined; the comparison does not isolate either
+change or establish a hosted CI improvement.
+
+The original refresh-story assertion also passed in this run (3.015 seconds of
+reported test-body duration) under its unchanged five-second deadline. Its real
+Git/HTTP steps and assertions were not moved, removed or replaced. This single
+successful run does not isolate why the earlier body deadline was exceeded.
+
+The complete hosted required checks on a new published head remain pending.
+Keep the unchanged thirty-minute job limit and existing seven-day hypothesis.
+Local correctness and timing evidence do not establish hosted job completion,
+required-check acceptance, or a release verdict. The earlier held proposal and
+failed-run chronology above remain historical evidence.

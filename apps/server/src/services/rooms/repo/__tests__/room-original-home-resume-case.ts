@@ -5,6 +5,10 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { loadCeilingMs, loadScaledMs } from '@dorkos/shared/test-budget';
+import {
+  acquireOriginalNativeTransformCache,
+  type OriginalNativeTransformCacheLease,
+} from './room-original-transform-cache.js';
 
 // Singleton runtime/Db bindings exist only in the original isolated child.
 // Its fixed scenario asserts real post -> Trigger -> Runner placement and feed.
@@ -19,6 +23,8 @@ export function registerOriginalNativeHomeResumeCase(
 ): void {
   describe('original native Room home/resume (' + caseName + ')', () => {
     let child: ChildProcess | undefined;
+    let closingRequested = false;
+    let transformCache: OriginalNativeTransformCacheLease | undefined;
     let root: string;
     let failed: boolean;
     let first: unknown;
@@ -52,17 +58,27 @@ export function registerOriginalNativeHomeResumeCase(
         saved[0] = 0;
         saved[1] = 0;
         root = await mkdtemp(path.join(tmpdir(), 'original-room-launch-child-'));
+        transformCache = await acquireOriginalNativeTransformCache();
+        if (closingRequested) {
+          remember(new Error('Original child compiler-cache acquisition was retired before fork'));
+          transformCache.failed(first);
+          throw first;
+        }
         child = fork(
           fileURLToPath(new URL('./room-original-home-resume-child.ts', import.meta.url)),
           [caseName],
           {
             execPath: process.execPath,
-            execArgv: ['--import', import.meta.resolve('tsx')],
+            execArgv: [
+              '--import',
+              fileURLToPath(new URL('./room-original-transform-bootstrap.mjs', import.meta.url)),
+            ],
             stdio: ['ignore', 'pipe', 'pipe', 'ipc'],
             env: {
               PATH: process.env.PATH,
               HOME: root,
               TMPDIR: root,
+              DORK_ORIGINAL_TRANSFORM_TMP: transformCache.root,
               DORK_HOME: root,
               NODE_ENV: 'development',
               DORKOS_TEST_RUNTIME: 'true',
@@ -174,6 +190,7 @@ export function registerOriginalNativeHomeResumeCase(
       loadCeilingMs(10000) + 1000
     );
     afterEach(async () => {
+      closingRequested = true;
       await (closePromise ??= (async () => {
         try {
           if (child?.connected)
@@ -211,10 +228,12 @@ export function registerOriginalNativeHomeResumeCase(
         if (!exitSeen || !closed || exitCode !== 0)
           remember(new Error('Original launch child closure remains unresolved'));
         if (failed) {
+          transformCache?.failed(first);
           console.error(Buffer.concat(output[0]).toString(), Buffer.concat(output[1]).toString());
           throw first; // Keep root/native files on every unresolved or failed child.
         }
         await rm(root, { recursive: true, force: true });
+        transformCache?.closed();
       })());
     });
     it(title, async () => {
