@@ -120,10 +120,14 @@ export default function PricingPage() {
           . DorkOS is made by {company.legalName}. See also{' '}
           <Link href="/security" className={LINK}>
             Security
-          </Link>{' '}
-          and{' '}
+          </Link>
+          ,{' '}
           <Link href="/privacy" className={LINK}>
             Privacy
+          </Link>{' '}
+          and the{' '}
+          <Link href="/cloud/terms" className={LINK}>
+            Terms for DorkOS Cloud
           </Link>
           .
         </p>

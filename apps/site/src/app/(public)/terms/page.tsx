@@ -62,6 +62,13 @@ export default function TermsOfServicePage() {
             The MIT license is the real agreement for the software itself. These terms only cover
             this website and the services we host on it.
           </p>
+          <p className="text-warm-gray leading-relaxed">
+            The paid DorkOS Cloud services have their own{' '}
+            <Link href="/cloud/terms" className="text-charcoal hover:text-brand-orange underline">
+              Terms for DorkOS Cloud
+            </Link>
+            .
+          </p>
         </section>
 
         <section className="space-y-4">
