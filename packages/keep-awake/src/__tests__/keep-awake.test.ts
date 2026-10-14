@@ -70,6 +70,18 @@ describe('reference counting', () => {
     expect(keepAwake.status()).toMatchObject({ holds: 0, asserted: false });
   });
 
+  it('lingers three minutes by default, so gaps between turns stay awake', () => {
+    // Purpose: an agent's next turn often starts a minute or two after the last.
+    const spawner = fakeSpawner();
+    const { keepAwake } = mac(spawner);
+
+    keepAwake.hold('chat').release();
+    vi.advanceTimersByTime(3 * 60_000 - 1);
+    expect(keepAwake.status().asserted).toBe(true);
+    vi.advanceTimersByTime(1);
+    expect(keepAwake.status().asserted).toBe(false);
+  });
+
   it('keeps the same holder when a hold arrives during the linger', () => {
     // Purpose: back-to-back turns must not flap the assertion.
     const spawner = fakeSpawner();
@@ -116,7 +128,7 @@ describe('reference counting', () => {
     keepAwake.onChange((s) => seen.push([s.holds, s.asserted]));
 
     keepAwake.hold('chat').release();
-    vi.advanceTimersByTime(30_000);
+    vi.advanceTimersByTime(3 * 60_000);
 
     expect(seen).toEqual([
       [1, true],
@@ -188,12 +200,28 @@ describe('caffeinate holders', () => {
     const spawner = fakeSpawner();
     const { keepAwake, logger } = mac(spawner);
     keepAwake.hold('chat');
-    vi.advanceTimersByTime(5_000);
+    // The computer slept: the wall clock passed the 300 s `-t` before the
+    // 240 s renewal timer could fire.
+    vi.setSystemTime(Date.now() + 301_000);
 
     spawner.calls[0]!.child.exit(0);
     expect(spawner.calls).toHaveLength(2);
     expect(keepAwake.status()).toMatchObject({ supported: true, asserted: true });
     expect(logger.warn).not.toHaveBeenCalled();
+  });
+
+  it('stops, without respawning, when caffeinate exits 0 at once because the owner is gone', () => {
+    // Purpose: `-w` on a dead pid exits 0 immediately; reading that as a `-t`
+    // timeout respawned in a tight loop.
+    const spawner = fakeSpawner((child) => {
+      setTimeout(() => child.exit(0), 5);
+    });
+    const { keepAwake } = mac(spawner, { watchPid: 999_999 });
+    keepAwake.hold('chat');
+    vi.advanceTimersByTime(1_000);
+
+    expect(spawner.calls).toHaveLength(1);
+    expect(keepAwake.status()).toMatchObject({ holds: 1, asserted: false, supported: true });
   });
 
   it('sends SIGKILL when a holder ignores SIGTERM for two seconds', () => {
@@ -255,7 +283,7 @@ describe('failures', () => {
     });
   });
 
-  it('restarts an unexpected exit once, then gives up on a second within a minute', () => {
+  it('restarts an unexpected exit once, then reports denied on a second within a minute', () => {
     // Purpose: no restart storms.
     const spawner = fakeSpawner();
     const { keepAwake } = mac(spawner, { platform: 'linux' });
@@ -285,6 +313,18 @@ describe('failures', () => {
     expect(keepAwake.status().supported).toBe(true);
   });
 
+  it('never retries a missing tool', () => {
+    // Purpose: what the environment rules out stays ruled out.
+    const spawner = fakeSpawner((child) => child.failToSpawn('ENOENT'));
+    const { keepAwake } = mac(spawner);
+    keepAwake.hold('chat');
+
+    vi.advanceTimersByTime(60 * 60_000);
+    keepAwake.hold('another');
+    expect(spawner.calls).toHaveLength(1);
+    expect(keepAwake.status()).toMatchObject({ supported: false, reason: 'tool-missing' });
+  });
+
   it('holds nothing in a container but still counts', () => {
     const spawner = fakeSpawner();
     const { keepAwake } = mac(spawner, {
@@ -300,6 +340,109 @@ describe('failures', () => {
       mechanism: 'none',
       holds: 1,
     });
+  });
+});
+
+/** A spawner whose holders refuse: each exits 1 fifty milliseconds after starting. */
+function refusingSpawner(): FakeSpawner {
+  return fakeSpawner((child) => {
+    setTimeout(() => child.exit(1), 50);
+  });
+}
+
+describe('retrying a denial', () => {
+  it('tries a denied holder again after 30 s and recovers when it holds', () => {
+    // Purpose: a passing refusal does not leave the computer unheld until restart.
+    let refuse = true;
+    const spawner = fakeSpawner((child) => {
+      if (refuse) setTimeout(() => child.exit(1), 50);
+    });
+    const { keepAwake } = mac(spawner, { platform: 'linux' });
+    keepAwake.hold('chat');
+    vi.advanceTimersByTime(50);
+    expect(keepAwake.status()).toMatchObject({ supported: false, reason: 'denied' });
+
+    refuse = false;
+    vi.advanceTimersByTime(30_000 - 1);
+    expect(spawner.calls).toHaveLength(1);
+    vi.advanceTimersByTime(1);
+    expect(spawner.calls).toHaveLength(2);
+    expect(keepAwake.status()).toMatchObject({ supported: true, asserted: true });
+    expect(keepAwake.status().reason).toBeUndefined();
+  });
+
+  it('backs off 30 s, 1 m, 2 m, 5 m, then every 10 m', () => {
+    // Purpose: a refusal that persists is retried, but never in a storm.
+    const spawner = refusingSpawner();
+    const { keepAwake } = mac(spawner, { platform: 'linux' });
+    keepAwake.hold('chat');
+    vi.advanceTimersByTime(50);
+
+    const waits = [30_000, 60_000, 120_000, 300_000, 600_000, 600_000];
+    for (const [i, wait] of waits.entries()) {
+      vi.advanceTimersByTime(wait - 1);
+      expect(spawner.calls).toHaveLength(i + 1);
+      vi.advanceTimersByTime(1);
+      expect(spawner.calls).toHaveLength(i + 2);
+      // The retried holder refuses too; the next wait is measured from here.
+      vi.advanceTimersByTime(50);
+      expect(keepAwake.status()).toMatchObject({ supported: false, reason: 'denied' });
+    }
+  });
+
+  it('does not retry while nothing is held, then tries at once on the next hold', () => {
+    const spawner = refusingSpawner();
+    const { keepAwake } = mac(spawner, { platform: 'linux' });
+    const hold = keepAwake.hold('chat');
+    vi.advanceTimersByTime(50);
+    hold.release();
+
+    vi.advanceTimersByTime(60 * 60_000);
+    expect(spawner.calls).toHaveLength(1);
+
+    keepAwake.hold('next');
+    expect(spawner.calls).toHaveLength(2);
+  });
+
+  it('waits out the backoff when a hold opens before it ends', () => {
+    const spawner = refusingSpawner();
+    const { keepAwake } = mac(spawner, { platform: 'linux' });
+    keepAwake.hold('chat');
+    vi.advanceTimersByTime(50);
+
+    vi.advanceTimersByTime(10_000);
+    keepAwake.hold('another');
+    expect(spawner.calls).toHaveLength(1);
+  });
+
+  it('re-arms at once, with the backoff reset, when the setting is turned off and on', () => {
+    // Purpose: the switch is how a person asks for another try.
+    const spawner = refusingSpawner();
+    const { keepAwake } = mac(spawner, { platform: 'linux' });
+    keepAwake.hold('chat');
+    vi.advanceTimersByTime(50);
+    vi.advanceTimersByTime(30_000 + 50); // second refusal: the next wait is 1 m
+    expect(spawner.calls).toHaveLength(2);
+
+    keepAwake.setEnabled(false);
+    expect(keepAwake.status()).toMatchObject({ supported: true, asserted: false });
+    keepAwake.setEnabled(true);
+    expect(spawner.calls).toHaveLength(3);
+
+    // Refused again: back to the first step, 30 s.
+    vi.advanceTimersByTime(50);
+    vi.advanceTimersByTime(30_000);
+    expect(spawner.calls).toHaveLength(4);
+  });
+
+  it('stops retrying once disposed', async () => {
+    const spawner = refusingSpawner();
+    const { keepAwake } = mac(spawner, { platform: 'linux' });
+    keepAwake.hold('chat');
+    vi.advanceTimersByTime(50);
+    await keepAwake.dispose();
+    vi.advanceTimersByTime(60 * 60_000);
+    expect(spawner.calls).toHaveLength(1);
   });
 });
 

@@ -42,14 +42,33 @@ export function isKeepingAwake(status: KeepAwakeStatus | undefined): status is K
   return status?.asserted === true && describeKeepAwakeWork(status.working) !== null;
 }
 
-/** The one line Settings shows when this computer cannot be held awake. */
+/**
+ * The one line Settings shows when this computer cannot be held awake. A
+ * `denied` refusal is the one that passes: the server tries again on its own.
+ */
 export const UNSUPPORTED_COPY: Record<KeepAwakeUnsupportedReason, string> = {
   container: 'Not available in a container.',
   'tool-missing': 'Not available: this computer has no sleep control tool.',
-  denied: 'This computer refused the request to stay awake.',
+  denied: 'This computer refused to stay awake. Trying again shortly.',
   platform: 'Not available on this operating system.',
 };
 
-/** What keeping awake cannot do, and what it costs. Shown under the switch and in the cup. */
+/**
+ * Whether the keep-awake switch can do anything here. A refusal is retried, and
+ * switching off and on retries at once, so only what the environment rules out
+ * (a container, no sleep tool, no adapter for this system) greys the switch.
+ *
+ * @param status - The keep-awake status.
+ */
+export function canSwitchKeepAwake(status: Pick<KeepAwakeStatus, 'supported' | 'reason'>): boolean {
+  return status.supported || status.reason === 'denied';
+}
+
+/**
+ * What keeping awake cannot do. Shown under the switch and in the cup, on every
+ * platform, so it names only what holds everywhere: a closed lid sleeps most
+ * laptops (a Mac stays up only on power with a display attached), and the
+ * screen keeps its own timer.
+ */
 export const KEEP_AWAKE_CAVEAT =
-  'A closed lid on battery, or a low battery, still sleeps. Uses more battery.';
+  'Closing the lid usually still sleeps. The screen still turns off and locks.';

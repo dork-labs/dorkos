@@ -190,6 +190,20 @@ async function* holdRuntimeTurn(
 }
 
 /**
+ * Whether the agent a session belongs to is paused right now. For decorators
+ * inside this one that act on a turn the agent started itself, or on work left
+ * running after a turn, which this hold has no dispatch to refuse.
+ *
+ * @param runtime - The runtime the session runs on.
+ * @param sessionId - The session, in any id it answers to.
+ */
+export function isSessionPaused(runtime: AgentRuntime, sessionId: string): boolean {
+  return (
+    agentPause()?.pausedAgentOfSession(sessionId, storedCwdOf(runtime, sessionId)) !== undefined
+  );
+}
+
+/**
  * Wrap a runtime so no turn starts for a paused agent, and every running turn
  * can be stopped by a pause.
  *

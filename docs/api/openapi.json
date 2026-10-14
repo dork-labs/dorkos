@@ -1565,7 +1565,7 @@
           },
           "supported": {
             "type": "boolean",
-            "description": "Whether this computer can be held awake at all."
+            "description": "Whether this computer can be held awake right now. False with reason `denied` is temporary: it is retried."
           },
           "reason": {
             "$ref": "#/components/schemas/KeepAwakeUnsupportedReason"
@@ -1662,7 +1662,7 @@
           "platform",
           null
         ],
-        "description": "Why not, when `supported` is false; null otherwise."
+        "description": "Why not, when `supported` is false; null otherwise. `denied` is retried on a backoff and when the setting is switched off and on; the others last until restart."
       },
       "ListCommitmentsResponse": {
         "type": "object",

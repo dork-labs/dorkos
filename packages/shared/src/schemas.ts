@@ -7222,10 +7222,12 @@ export const KeepAwakeStatusSchema = z
       description: 'The `keepAwake.whileAgentsWork` setting.',
     }),
     supported: z.boolean().openapi({
-      description: 'Whether this computer can be held awake at all.',
+      description:
+        'Whether this computer can be held awake right now. False with reason `denied` is temporary: it is retried.',
     }),
     reason: KeepAwakeUnsupportedReasonSchema.nullable().openapi({
-      description: 'Why not, when `supported` is false; null otherwise.',
+      description:
+        'Why not, when `supported` is false; null otherwise. `denied` is retried on a backoff and when the setting is switched off and on; the others last until restart.',
     }),
     asserted: z.boolean().openapi({
       description: 'Whether the operating system is being told to stay awake right now.',

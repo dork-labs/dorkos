@@ -151,6 +151,42 @@ describe('the setting', () => {
     expect(service.status()).toMatchObject({ enabled: true, asserted: true });
   });
 
+  it('re-arms a refused holder when the setting is switched off and on', () => {
+    // Purpose: a refusal is not final, and the switch is how a person asks again.
+    const spawned: number[] = [];
+    const { service, writeSettings } = started({
+      spawn: () => {
+        spawned.push(spawned.length);
+        const child = new FakeChild();
+        queueMicrotask(() => child.emit('exit', 1, null));
+        return child as never;
+      },
+    });
+    service.holdTurn({ sessionId: 'a', room: false });
+    return Promise.resolve().then(() => {
+      expect(service.status()).toMatchObject({ supported: false, reason: 'denied' });
+
+      writeSettings({ whileAgentsWork: false });
+      writeSettings({ whileAgentsWork: true });
+      expect(spawned).toHaveLength(2);
+    });
+  });
+
+  it('keeps holding through background work, then lets go once it is done', () => {
+    const { service } = started();
+    let background = true;
+    service
+      .holdTurn({ sessionId: 'a', room: false, holdsBackgroundWork: () => background })
+      .release();
+    expect(service.status()).toMatchObject({ asserted: true, working: { chats: 1 } });
+
+    vi.advanceTimersByTime(60_000);
+    expect(service.status().working.chats).toBe(1);
+    background = false;
+    vi.advanceTimersByTime(60_000);
+    expect(service.status().working.chats).toBe(0);
+  });
+
   it('ignores writes to other sections', () => {
     const { service, writeSettings } = started();
     writeSettings({ whileAgentsWork: false }, ['scheduler']);

@@ -9,6 +9,7 @@
  */
 export { useKeepAwake, useKeepAwakeSync, KEEP_AWAKE_KEY } from './model/use-keep-awake';
 export {
+  canSwitchKeepAwake,
   describeKeepAwakeWork,
   isKeepingAwake,
   KEEP_AWAKE_CAVEAT,

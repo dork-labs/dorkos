@@ -4,7 +4,7 @@
 /**
  * The Sleep card: the switch reflects the server's setting, writes only the one
  * key it changes, and is disabled with the reason on a computer that cannot be
- * held awake.
+ * held awake (but not on a refusal, which is retried).
  */
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, screen, cleanup, fireEvent, waitFor } from '@testing-library/react';
@@ -49,7 +49,7 @@ describe('SleepSettings', () => {
     renderWith(status({ enabled: true }));
     expect(await toggle()).toBeChecked();
     expect(screen.getByTestId('sleep-settings-note')).toHaveTextContent(
-      'A closed lid on battery, or a low battery, still sleeps. Uses more battery.'
+      'Closing the lid usually still sleeps. The screen still turns off and locks.'
     );
   });
 
@@ -67,11 +67,19 @@ describe('SleepSettings', () => {
   it.each([
     ['container', 'Not available in a container.'],
     ['tool-missing', 'Not available: this computer has no sleep control tool.'],
-    ['denied', 'This computer refused the request to stay awake.'],
   ] as const)('is disabled and says why when %s', async (reason, line) => {
     renderWith(status({ supported: false, reason }));
     expect(await toggle()).toBeDisabled();
     expect(screen.getByTestId('sleep-settings-note')).toHaveTextContent(line);
+  });
+
+  it('says so on a refusal but keeps the switch, which retries when turned off and on', async () => {
+    // Purpose: a passing refusal must never grey the switch until a restart.
+    renderWith(status({ supported: false, reason: 'denied' }));
+    expect(await toggle()).toBeEnabled();
+    expect(screen.getByTestId('sleep-settings-note')).toHaveTextContent(
+      'This computer refused to stay awake. Trying again shortly.'
+    );
   });
 
   it('offers no switch for waking the computer yet', async () => {
