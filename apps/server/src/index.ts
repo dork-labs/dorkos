@@ -3558,6 +3558,11 @@ async function start() {
       bridgeStore: roomBridges,
       ...(traceStore && { traceStore }),
       ...(meshCore && { meshCore }),
+      // `create_extension`, `reload_extensions`, `test_extension` and the rest:
+      // without it an agent gets only `get_extension_api` in a chat, and every
+      // extension tool on `/mcp` answers that the system is not available, so
+      // no agent can build a mini app.
+      ...(extensionManager && { extensionManager }),
       // The DorkOS-DM fallback, hoisted above so the notification pipeline's
       // relay channel shares this one seam rather than building a second.
       ...(notifyDm && { notifyDm }),
