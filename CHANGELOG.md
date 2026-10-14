@@ -13,6 +13,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Only /system:release compiles fragments into a version section below.
 -->
 
+## [0.114.1] - 2026-10-14
+
+> DorkOS 0.114.1 keeps the app quick and light while your agents work. Chats open and switch without waiting, coming back to the tab is quiet, and DorkOS does far less busywork in the background.
+
+### Changed
+
+- Opening a chat you have already seen in the sidebar now shows it straight away, instead of waiting for the server to answer first. DorkOS still checks with the server in the background, and tells you if the chat is gone.
+- When you click an agent, its row lights up at once, even while DorkOS is still finding out which chat to open. After your computer wakes from sleep, clicking an agent no longer waits for a fresh list either.
+- Switching back to the DorkOS tab no longer asks the server again for every list and badge on screen, so coming back is quiet and fast. Live updates keep most of them current. If the tab was hidden for more than half a minute, DorkOS catches up once when you return. Things that change outside DorkOS, like your files, still refresh when you come back.
+- DorkOS asks the server far less often while you just look at the screen. The relay activity list, agent health and your community spaces follow live updates instead of re-asking every few seconds. Most changes show right away. A few can take up to a minute, like a chat app quietly losing its connection.
+- Going back to a chat you opened recently no longer downloads its whole history again; it shows what the app already has. When the agent finishes a reply, DorkOS fetches only that last exchange instead of the entire chat, so long chats stay quick turn after turn.
+
+### Fixed
+
+- Long chats open fast. DorkOS used to read a chat's whole history from disk every time you opened it, and after every reply. A very long chat could freeze the whole app for a moment each time and use hundreds of megabytes of memory. Now DorkOS remembers what it already read and only reads what is new (DOR-2889)
+- DorkOS uses less memory the longer it runs. Every Codex, OpenCode or Doe chat you opened stayed in memory until DorkOS restarted. Now a chat nobody has used for 10 to 20 minutes lets go of that memory, and comes back as normal when you open it again. Each chat's replay buffer is also half the size it was (DOR-2897)
+- DorkOS answers a little faster everywhere. It used to read and check your whole settings file from disk every time it looked up a setting, several times for every request. Now it keeps the last copy in memory and reads the file again only when it changed, including when you edit it by hand or with `dorkos config set` (DOR-2898)
+- DorkOS does less busywork in the background. Every five minutes it checked all your scheduled tasks against their files, and rewrote every one of them and reset its timer, even when nothing had changed. Now it only touches a task whose file changed, or whose timer had gone missing (DOR-2899)
+- DorkOS no longer rewrites its agent list and message rules every five minutes for nothing. Its regular check of your agents rewrote each agent's record and saved the message rules file about 30 times in a row, even when nothing had changed. Each save also made DorkOS reload that file. Now it writes only when something actually changed (DOR-2900)
+- DorkOS's log files stay a sensible size while it runs. A log file used to be split by size and day only when DorkOS started, so a server that stayed up wrote one file without limit; one reached 53 MB. DorkOS now keeps the last 14 days of logs, up to 200 MB in all, and each log line is about eight times cheaper to write (DOR-2902)
+- DorkOS no longer pauses for a moment once a day while it saves its daily backup of your data. It now copies the database a little at a time and keeps answering in between (DOR-2906)
+- When DorkOS Cloud is down or doesn't recognize your computer, DorkOS now waits longer between tries, up to 5 minutes for new events and 30 minutes for credits, instead of asking every 30 or 60 seconds for hours and filling the log with the same warning. It goes back to asking often as soon as a try works or you link again (DOR-2903)
+- Building the message search index is lighter on DorkOS. It no longer lists the thousands of helper-agent transcripts it never indexes, and it saves a very long chat to the index a piece at a time instead of all at once. If DorkOS stops partway through a long chat, it carries on from where it got to (DOR-2904)
+
 ## [0.114.0] - 2026-10-13
 
 > DorkOS 0.114.0 makes the app fast again when your agents are busy: switching agents and tabs no longer freezes, and messages send without timing out. Mini apps can now show only where you choose, and agents work without the old posting limits, while turns started by strangers stay limited.
@@ -521,49 +545,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Preview pages keep every script restriction sent by their web server.
 - DorkOS adds its preview scripts only when the page format and script rules safely allow them.
 
-## [0.95.0] - 2026-10-01
+Older releases (v0.1.0 – v0.95.0) are archived in [changelog/archive/CHANGELOG-v0.1.0-to-v0.95.0.md](changelog/archive/CHANGELOG-v0.1.0-to-v0.95.0.md).
 
-> DorkOS 0.95.0 gives your DorkOS account its own home in Settings, and calls communities spaces. You can start and join a space on DorkOS with your DorkOS account, Settings is shorter, and when your account has a problem the app now says what went wrong and how to fix it.
-
-### Added
-
-- Replacing a Community owner who has left can now finish on the server. The owner can keep ownership with one click from the email, with no sign-in, or from the community while signed in. The person the host asked for can then take ownership, signing up first if they need to. When the host uses single sign-on, only the exact account the host named can do this. Asking for a replacement is still turned off for now. It will open up in a later release (DOR-2541)
-- If someone asks to make someone else the owner of a space you own, DorkOS now tells you. The space's row in the switcher gets a warning dot, and its page shows when the change could happen, only what you can do about it, and an **Open space** button to keep ownership. Your Inbox gets one notification when DorkOS first sees the request and one if it goes through, even after DorkOS restarts or updates. DorkOS checks while the app is open, and a finished request is only shown for a week. Admins and members see nothing (DOR-2543)
-- The Community site now has every page for replacing an owner who has left. Hosts get an Owner part on each community's record: ask to replace the owner, see each request's progress in plain words, cancel it, or send the claim link again. The owner sees a banner with Keep ownership and only the choices they really have, and an owner without a password is no longer told a password would let them hand on a community that is archived or on hold. Admins see that a request is open. Everyone sees a note for a week after a new owner takes over. The emailed link opens a page with one Keep ownership button and no sign-in, and the new owner's link opens a page that says when they can take over. Asking for a replacement is still turned off for now. It will open up in a later release (DOR-2542)
-- Change your plan, add credits and see your invoices on the DorkOS website, one click from Settings › DorkOS account. Each button opens the page in your browser, and every plan name and price you see comes from your DorkOS account. If you're already on a plan, changing it happens on your billing page. If something isn't available on your account yet, the app says so (DOR-2632)
-- Download a copy of everything your DorkOS account holds, from the same place (DOR-2632)
-- Where a space's site signs people in with your DorkOS account, starting or joining it no longer asks for a second account. The pages DorkOS opens for you there (making the space yours, an invitation, approving this DorkOS) lead with **Continue with** your DorkOS account, and every other way to sign in stays one step away. Everywhere else, including a space you run on your own server, nothing changes. (DOR-2634)
-
-### Changed
-
-- On the pricing page, the paid plans now have a **Request early access** button in place of **Create your account**. It opens the early-access page. The free plan's button is the same as before.
-- Your DorkOS account has one home now: a **DorkOS account** tab in Settings, right after Profile. Before you link, it says plainly what an account adds on this computer and offers one button. Once you link, it shows your plan, your credits (what is included this period and what you added), which runtimes run on your credits, what is on your account, your seats if you have any, and **Unlink this computer** at the bottom (DOR-2628)
-- The team-name menu at the top of the sidebar now opens with you (your face and name, onto your profile), then **DorkOS account**, which says whether this computer is signed in, then **Settings**. "Workspace settings" is now just "Settings", and the extra "Account" row that opened your profile is gone. The You tab on a phone starts with the same two rows (DOR-2628)
-- The Access tab in Settings is gone. Its login half is now **Login & security**, under **This computer**. Old links to `?settings=account`, `?settings=security` and `?settings=access` still open the right tab (DOR-2628)
-- What the app called a community is now a space, everywhere you read it: menus, dialogs, messages and the docs. The menu at the top left now offers **Add a space**. **Join a space** is there for everyone. With a DorkOS account you also get **Start a space**, and **Your spaces**, where you can move a space you run elsewhere over to DorkOS. Running a space on your own server now sits under **Advanced** (DOR-2631)
-- **Join a space** is now one dialog. Paste a space's address to connect, or paste an invitation link: it opens on the space's own site so you can join, and the dialog stays open with the space's address filled in, ready to connect when you come back. A join link that is incomplete or not secure is refused with a plain message instead of being sent anywhere (DOR-2631)
-- Settings is shorter. You see the tabs you use day to day, in three groups: You, Agents, and This computer. Server, Tools, Room limits, Experiments and Danger zone now sit under **Advanced** at the bottom, folded until you open it. Settings remembers whether you left it open, and a link to any of those tabs opens it for you. Each built-in Settings tab is also in the command palette now, so typing "danger" or "room limits" takes you straight there. Room limits holds the defaults every room follows; a room can still set its own limits in its own panel. (DOR-2629)
-- The docs now give your DorkOS account its own section. It says what linking gives you today and what still works without an account, with fresh screenshots of the DorkOS account tab. Old links to the account page still work. The pages for running DorkOS yourself (Docker, tunnels, your own server) now sit together under "Advanced: running DorkOS yourself". **Run your own space server** in the app now opens a page just for that. (DOR-2635)
-
-### Fixed
-
-- When an app connected through your DorkOS account can't load, the app now says where the problem is. It tells you whether DorkOS's servers aren't answering, or whether this computer needs to be linked to your account again (DOR-2622).
-- When the link needs to be made again, a "Link my DorkOS account again" button opens Settings and starts a new link for you. Your computer stays linked until you approve the new one (DOR-2622).
-- A computer whose DorkOS account link needed updating can now pick up the update by linking again. Before, the app never recognized the message DorkOS's servers send for that case, and a linked computer had no way to link again (DOR-2622).
-- If a new link is turned down, its code times out, or it can't finish, Settings keeps showing this computer as linked, with a short note you can dismiss. Before, it showed an error until the next check, up to 15 minutes later. You can also cancel a new link while its code is showing. If the new link finishes at the moment you cancel, it is kept rather than lost, and Settings shows this computer as linked (DOR-2622).
-- The dorkos.ai fallback that lists apps and their actions for a DorkOS account no longer fails the whole list when an app sends extra details, such as a logo or an action's display name. It now leaves those details out (DOR-2622).
-- When `dorkos community deploy --remove-uncertain` removes a Tigris bucket, it no longer says the bucket's access key was removed. Fly deletes the bucket but leaves its access key working in Tigris, so DorkOS now tells you, and shows you how to delete it: in the Tigris console, or with the Tigris command-line tool (run `tigris login oauth` and choose "Sign in with Fly", then find the key named after the bucket, usually `<bucket>_access_key`, and delete it by its id, which starts with `tid_`) (DOR-2646)
-- The app no longer swaps itself out for "DorkOS can't reach its server" about 15 seconds after a quick reload when the server is fine. That brief swap could clear what you had open, like a channel mid-conversation, before putting it back. If the server really is down or stuck, you still see the message. (DOR-2649)
-
-### Security
-
-- A few spots that tidy up text, like the end of a web address, an error report or a model name, could slow to a crawl on a very long, oddly repeated piece of text. They now take the same short time on any input, and give the same results as before.
-- A log line about an agent's conversation no longer lets the conversation's id change how the rest of the line is written.
-- The link in the "your report shipped" email is now escaped so that no web address can break out of it.
-
-Older releases (v0.1.0 – v0.94.0) are archived in [changelog/archive/CHANGELOG-v0.1.0-to-v0.94.0.md](changelog/archive/CHANGELOG-v0.1.0-to-v0.94.0.md).
-
-[Unreleased]: https://github.com/dork-labs/dorkos/compare/v0.114.0...HEAD
+[Unreleased]: https://github.com/dork-labs/dorkos/compare/v0.114.1...HEAD
+[0.114.1]: https://github.com/dork-labs/dorkos/compare/v0.114.0...v0.114.1
 [0.114.0]: https://github.com/dork-labs/dorkos/compare/v0.111.0...v0.114.0
 [0.111.0]: https://github.com/dork-labs/dorkos/compare/v0.110.0...v0.111.0
 [0.110.0]: https://github.com/dork-labs/dorkos/compare/v0.109.0...v0.110.0
@@ -573,4 +558,3 @@ Older releases (v0.1.0 – v0.94.0) are archived in [changelog/archive/CHANGELOG
 [0.98.0]: https://github.com/dork-labs/dorkos/compare/v0.97.0...v0.98.0
 [0.97.0]: https://github.com/dork-labs/dorkos/compare/v0.96.0...v0.97.0
 [0.96.0]: https://github.com/dork-labs/dorkos/compare/v0.95.0...v0.96.0
-[0.95.0]: https://github.com/dork-labs/dorkos/compare/v0.94.0...v0.95.0
