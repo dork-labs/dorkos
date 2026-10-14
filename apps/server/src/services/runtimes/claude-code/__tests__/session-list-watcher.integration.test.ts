@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdtemp, mkdir, rm, writeFile, unlink } from 'fs/promises';
+import { mkdtemp, mkdir, rm, writeFile, unlink, appendFile } from 'fs/promises';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import type { SessionListEvent } from '@dorkos/shared/session-stream';
@@ -65,7 +65,9 @@ async function nextEvent(
   }
 }
 
-describe('watchSessionList (real chokidar integration)', () => {
+// Real files and the platform's own watch: one recursive fs.watch on macOS,
+// chokidar elsewhere (DOR-2907).
+describe('watchSessionList (real filesystem integration)', () => {
   let projectsRoot: string;
   let iterator: AsyncIterator<SessionListEvent> | undefined;
 
@@ -111,6 +113,22 @@ describe('watchSessionList (real chokidar integration)', () => {
     expect(removed).toEqual({ type: 'session_removed', sessionId: 'session-b1' });
     // Overall budget covers three sequential 45s fs-watch guards under load.
   }, 140_000);
+
+  // The one case the reconcile sweep's directory pass cannot see: an append
+  // moves no directory's mtime, so only the watch (or the minute check) can.
+  it('updates a session when its existing transcript is appended to', async () => {
+    const dir = join(projectsRoot, '-work-delta');
+    await mkdir(dir);
+    const file = join(dir, 'session-d1.jsonl');
+    await writeFile(file, jsonlLine('/work/delta', 'First words'));
+    iterator = watchSessionList(new TranscriptReader(), [projectsRoot])[Symbol.asyncIterator]();
+    await nextEvent(iterator, 'initial inventory');
+
+    await new Promise((resolve) => setTimeout(resolve, 1_100)); // a later mtime, to the ms
+    await appendFile(file, jsonlLine('/work/delta', 'More words'));
+    const updated = await nextEvent(iterator, 'session_upserted after an append');
+    expect(updated).toMatchObject({ type: 'session_upserted', session: { id: 'session-d1' } });
+  }, 60_000);
 
   // The DOR-577 scenario at full scale: a project that comes into existence in
   // the SAME TICK the watcher starts, which is what a Claude Code CLI session
