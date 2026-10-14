@@ -14,6 +14,7 @@
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
+    "smoke": "DORKOS_KEEP_AWAKE_SMOKE=1 vitest run src/__tests__/caffeinate.smoke.test.ts --silent=false --reporter=verbose",
     "lint": "eslint ."
   },
   "devDependencies": {
