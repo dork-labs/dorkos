@@ -15,7 +15,7 @@
 import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { COPYRIGHT_NOTICE, company } from '../company.js';
+import { COPYRIGHT_NOTICE, company, formatCompanyAddress } from '../company.js';
 
 /** Repo root, so the test does not depend on the directory vitest runs from. */
 const ROOT = execFileSync('git', ['rev-parse', '--show-toplevel'], { encoding: 'utf8' }).trim();
@@ -80,12 +80,31 @@ const LITERAL_NAME_ALLOWED = [
 ];
 
 describe('company facts', () => {
-  it('carries exactly the published facts, and no postal address', () => {
+  it('carries exactly the published facts', () => {
     // A new field is a deliberate decision about what this public repo
     // publishes, so it has to be named here too.
     expect(Object.keys(company).sort()).toEqual(
-      ['contactEmail', 'entityType', 'jurisdiction', 'legalName', 'shortName'].sort()
+      [
+        'address',
+        'contactEmail',
+        'entityType',
+        'governingState',
+        'jurisdiction',
+        'legalName',
+        'shortName',
+      ].sort()
     );
+  });
+
+  it('formats the postal address on one line', () => {
+    expect(formatCompanyAddress()).toBe('6028 Toscana Ave, Austin, TX 78724, United States');
+    expect(formatCompanyAddress(company.address, { country: false })).toBe(
+      '6028 Toscana Ave, Austin, TX 78724'
+    );
+  });
+
+  it('the governing state is the one the company is formed in', () => {
+    expect(company.jurisdiction.startsWith(company.governingState)).toBe(true);
   });
 
   it('the desktop build copyright and publisher match the module', () => {

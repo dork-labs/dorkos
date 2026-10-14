@@ -8,10 +8,9 @@
  * `packages/shared/src/__tests__/company.test.ts` fails when any of them
  * disagrees with this module.
  *
- * The company's postal address is intentionally not published in this public
- * repository, because no page here needs one yet. If a published legal page
- * comes to need it, that work adds it here as a field and the page reads it
- * from this module.
+ * The postal address is published because the DorkOS Cloud terms name it
+ * (DOR-2556). Pages render it with {@link formatCompanyAddress}, never by
+ * typing it.
  *
  * @module shared/company
  */
@@ -26,12 +25,41 @@ export const company = {
   jurisdiction: 'Texas, United States',
   /** The kind of legal entity it is. */
   entityType: 'limited liability company',
+  /** The state whose law governs the legal terms, and whose courts hear disputes. */
+  governingState: 'Texas',
   /** The general contact address the site and legal pages publish. */
   contactEmail: 'hey@dorkos.ai',
+  /** The company's registered postal address. */
+  address: {
+    street: '6028 Toscana Ave',
+    city: 'Austin',
+    /** The two-letter state code. */
+    region: 'TX',
+    postalCode: '78724',
+    country: 'United States',
+  },
 } as const;
 
 /** The shape of {@link company}. */
 export type Company = typeof company;
+
+/** The shape of {@link company}'s postal address. */
+export type CompanyAddress = Company['address'];
+
+/**
+ * The postal address on one line, as a legal page prints it:
+ * "6028 Toscana Ave, Austin, TX 78724, United States".
+ *
+ * @param address - The address to format; defaults to the company's own.
+ * @param options - Set `country: false` to leave the country off.
+ */
+export function formatCompanyAddress(
+  address: CompanyAddress = company.address,
+  options: { country?: boolean } = {}
+): string {
+  const line = `${address.street}, ${address.city}, ${address.region} ${address.postalCode}`;
+  return options.country === false ? line : `${line}, ${address.country}`;
+}
 
 /** The year the copyright notices name. */
 export const COPYRIGHT_YEAR = 2026;
