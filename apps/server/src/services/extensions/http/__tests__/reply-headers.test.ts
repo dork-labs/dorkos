@@ -15,6 +15,13 @@ describe('mountedLocation', () => {
     ['a parent path', '../all', '/api/ext/my-ext/all'],
     ['a full URL on its own origin', 'http://localhost:4242/done', '/api/ext/my-ext/done'],
     ['a climb past its root', '/../../api/config', '/api/ext/my-ext/api/config'],
+    ['a path that already names the mount', '/api/ext/my-ext/done', '/api/ext/my-ext/done'],
+    ['the mount itself', '/api/ext/my-ext', '/api/ext/my-ext'],
+    [
+      'a sibling extension’s mount',
+      '/api/ext/my-ext-two/x',
+      '/api/ext/my-ext/api/ext/my-ext-two/x',
+    ],
   ])('moves %s under the mount', (_label, value, expected) => {
     expect(mountedLocation(value, HANDLER_URL, MOUNT)).toBe(expected);
   });

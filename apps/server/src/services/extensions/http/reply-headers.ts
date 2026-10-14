@@ -83,7 +83,7 @@ export function sameMountLocation(
  * A fetch handler's `location` as the person's browser must see it. The
  * handler lives below its mount (`/items` is `/api/ext/<id>/items`), so a
  * location on its own origin is moved under the mount, the way a reverse
- * proxy rewrites one. A location on any other origin is left as it is, for
+ * proxy rewrites one, unless it already names the mount. A location on any other origin is left as it is, for
  * {@link sameMountLocation} to drop.
  *
  * @param value - The `location` the handler set.
@@ -100,7 +100,10 @@ export function mountedLocation(value: string, handlerUrl: string, mount: string
     return null;
   }
   if (target.origin !== new URL(handlerUrl).origin) return value;
-  return `${mount}${target.pathname}${target.search}${target.hash}`;
+  // A path that already names the mount is the full path, not one of the
+  // handler's own: leave it.
+  const inMount = target.pathname === mount || target.pathname.startsWith(`${mount}/`);
+  return `${inMount ? '' : mount}${target.pathname}${target.search}${target.hash}`;
 }
 
 /**
