@@ -517,6 +517,14 @@
       ]
     },
     {
+      "guide": "keep-awake.md",
+      "description": "Keep-awake on a real Mac: the opt-in caffeinate smoke (`pnpm --filter @dorkos/keep-awake smoke`), why it is not in CI, and the manual battery, background-helper, lid and denied-recovery scenarios with their `pmset` commands",
+      "patterns": [
+        "packages/keep-awake/",
+        "services/core/keep-awake/"
+      ]
+    },
+    {
       "guide": "docker-testing.md",
       "description": "Docker-based CLI/server testing: 3 build targets × 2 install modes, smoke/integration scripts, CI's 3-leg workflow",
       "patterns": [

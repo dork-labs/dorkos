@@ -7,8 +7,10 @@
  * The server applies it at once, without a restart, and pushes the new status,
  * which is what moves the switch and the top-bar cup.
  *
- * On a computer that cannot be held awake (a container, no sleep control tool,
- * or a refusal) the switch is disabled and the one line says why.
+ * On a computer that cannot be held awake (a container, no sleep control tool)
+ * the switch is disabled and the one line says why. A refusal says so too, but
+ * leaves the switch working: the server keeps trying, and switching it off and
+ * on tries again at once.
  *
  * "Wake for scheduled tasks" is not offered here yet: the setting exists, but
  * nothing reads it until waking is built, and a switch that does nothing is
@@ -22,6 +24,7 @@ import { FieldCard, FieldCardContent, SwitchSettingRow } from '@/layers/shared/u
 import { useTransport } from '@/layers/shared/model';
 import { configKeys } from '@/layers/entities/config';
 import {
+  canSwitchKeepAwake,
   KEEP_AWAKE_CAVEAT,
   KEEP_AWAKE_KEY,
   SLEEP_SETTINGS,
@@ -65,7 +68,7 @@ export function SleepSettings() {
             }
             checked={status.enabled}
             onCheckedChange={(next) => void setWhileAgentsWork(next)}
-            disabled={unsupported !== null}
+            disabled={!canSwitchKeepAwake(status)}
           />
         </FieldCardContent>
       </FieldCard>
