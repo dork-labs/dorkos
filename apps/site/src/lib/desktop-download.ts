@@ -13,8 +13,8 @@
  * @module lib/desktop-download
  */
 
-const OWNER = 'dork-labs';
-const REPO = 'dorkos';
+import { links } from '@dorkos/shared/links';
+
 const REVALIDATE_SECONDS = 300;
 
 interface GitHubReleaseAsset {
@@ -50,7 +50,7 @@ interface GitHubRelease {
 async function findLatestReleaseAssetUrl(assetSuffix: string): Promise<string | null> {
   let res: Response;
   try {
-    res = await fetch(`https://api.github.com/repos/${OWNER}/${REPO}/releases?per_page=30`, {
+    res = await fetch(`https://api.github.com/repos/${links.repoSlug}/releases?per_page=30`, {
       headers: { Accept: 'application/vnd.github+json' },
       next: { revalidate: REVALIDATE_SECONDS },
     });

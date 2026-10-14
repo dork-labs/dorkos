@@ -115,10 +115,10 @@ export default function CookiePolicyPage() {
             </Link>
             . Questions? Email us at{' '}
             <a
-              href={`mailto:${company.contactEmail}`}
+              href={`mailto:${company.emails.contact}`}
               className="text-charcoal hover:text-brand-orange underline"
             >
-              {company.contactEmail}
+              {company.emails.contact}
             </a>
             .
           </p>

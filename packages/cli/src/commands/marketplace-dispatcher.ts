@@ -28,6 +28,7 @@
  *
  * @module commands/marketplace-dispatcher
  */
+import { links } from '@dorkos/shared/links';
 import {
   OUTDATED_EXIT,
   parseMarketplaceOutdatedArgs,
@@ -85,7 +86,7 @@ Examples:
   dorkos marketplace link ~/code/my-plugin
   dorkos marketplace add https://github.com/acme/plugins --name acme
   dorkos marketplace refresh dorkos-community
-  dorkos marketplace validate https://github.com/dork-labs/marketplace
+  dorkos marketplace validate ${links.marketplaceRepo}
 
 Exit codes for \`validate\`:
   0  All checks pass

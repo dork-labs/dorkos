@@ -3,6 +3,7 @@
  *
  * @module commands/community-deploy/runtime/default-deploy
  */
+import { COMMUNITY_IMAGE_REPOSITORY } from '@dorkos/shared/community-release-manifest';
 import {
   deployFlyImage,
   stageFlySecrets,
@@ -33,8 +34,6 @@ import {
   readFlyMachineLease,
   waitForFlyMachineLeases,
 } from './fly-lease.js';
-
-const COMMUNITY_IMAGE_REPOSITORY = 'ghcr.io/dork-labs/dorkos-community';
 
 /**
  * Settle which digest Fly will report for the attested release (DOR-2586).

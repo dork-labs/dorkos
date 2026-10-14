@@ -1,3 +1,4 @@
+import { repoUrl } from '@dorkos/shared/links';
 import type { Metadata } from 'next';
 
 import { FeedbackForm } from '@/layers/shared/ui/feedback-form';
@@ -24,7 +25,7 @@ export default function FeedbackPage() {
         <p className="text-warm-gray-light font-mono text-sm leading-relaxed">
           Prefer a public thread? You can also{' '}
           <a
-            href="https://github.com/dork-labs/dorkos/issues/new"
+            href={repoUrl('/issues/new')}
             target="_blank"
             rel="noopener noreferrer"
             className="text-brand-orange hover:underline"

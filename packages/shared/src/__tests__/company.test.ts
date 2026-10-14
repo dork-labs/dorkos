@@ -16,6 +16,7 @@ import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { COPYRIGHT_NOTICE, company, formatCompanyAddress } from '../company.js';
+import { links, repoUrl } from '../links.js';
 
 /** Repo root, so the test does not depend on the directory vitest runs from. */
 const ROOT = execFileSync('git', ['rev-parse', '--show-toplevel'], { encoding: 'utf8' }).trim();
@@ -79,6 +80,61 @@ const LITERAL_NAME_ALLOWED = [
   'packages/ui/LICENSE',
 ];
 
+/**
+ * Where a DorkOS email address may be typed outside the company module: a
+ * person's own address used as an example, and fixtures that stand in for a
+ * real registry. Every other address in source, docs and top-level documents
+ * must be one of `company.emails`.
+ */
+const EMAIL_EXAMPLE_ALLOWED = [
+  // Shows that an address does not open the @-mention picker.
+  'apps/client/src/layers/features/mentions/model/use-mention-autocomplete.ts',
+];
+
+/** History and working notes, which keep the addresses they were written with. */
+const HISTORY_PATHS = [
+  ':!CHANGELOG.md',
+  ':!changelog',
+  ':!research',
+  ':!plans',
+  ':!specs',
+  ':!decisions',
+  ':!meta',
+];
+
+/** Test code and the client's sample data, which may use made-up addresses and URLs. */
+const TEST_PATHS = [
+  ':!**/__tests__/**',
+  ':!**/*.test.*',
+  ':!**/*.spec.*',
+  ':!apps/client/src/dev/mock-samples/**',
+];
+
+/**
+ * Source files that may still type a brand URL as a string: Dev Playground
+ * showcases and test mocks, whose URLs are sample data rather than links a
+ * person follows, and two files at the max-lines ratchet, where the import
+ * line would grow a file that may only shrink (scripts/max-lines). Move
+ * them to the links module when they are split.
+ */
+const LITERAL_URL_ALLOWED = [
+  'apps/community/src/browser/components/host/HostAdministration.tsx',
+  'apps/server/src/services/core/auth/cloud-link-client.ts',
+  'apps/client/src/dev/showcases/DataDisplayShowcases.tsx',
+  'apps/client/src/dev/showcases/GenUiShowcases.tsx',
+  'apps/client/src/dev/showcases/OnboardingFlowShowcases.tsx',
+  'apps/client/src/dev/showcases/RoomDeliveryShowcases.tsx',
+  'packages/test-utils/src/mock-factories.ts',
+];
+
+/** The npm packages this repo publishes, whose metadata must point at the repo. */
+const PUBLISHED_PACKAGES = [
+  'packages/cli',
+  'packages/cloud-api',
+  'packages/connector-providers',
+  'packages/ui',
+];
+
 describe('company facts', () => {
   it('carries exactly the published facts', () => {
     // A new field is a deliberate decision about what this public repo
@@ -86,7 +142,7 @@ describe('company facts', () => {
     expect(Object.keys(company).sort()).toEqual(
       [
         'address',
-        'contactEmail',
+        'emails',
         'entityType',
         'governingState',
         'jurisdiction',
@@ -94,6 +150,15 @@ describe('company facts', () => {
         'shortName',
       ].sort()
     );
+  });
+
+  it('publishes exactly the named email addresses, all on the company domain', () => {
+    expect(company.emails).toEqual({
+      contact: 'hey@dorkos.ai',
+      support: 'support@dorkos.ai',
+      security: 'security@dorkos.ai',
+      marketplace: 'hello@dorkos.ai',
+    });
   });
 
   it('formats the postal address on one line', () => {
@@ -113,6 +178,72 @@ describe('company facts', () => {
     // electron-builder names the Windows publisher from package.json `author`.
     const pkg = JSON.parse(read('apps/desktop/package.json')) as { author?: unknown };
     expect(pkg.author).toBe(company.legalName);
+  });
+
+  it('SECURITY.md and the code of conduct send reports to the security address', () => {
+    for (const path of ['SECURITY.md', 'CODE_OF_CONDUCT.md']) {
+      const addresses = read(path).match(/[\w.+-]+@dorkos\.ai/g) ?? [];
+      expect(addresses.length, path).toBeGreaterThan(0);
+      expect(new Set(addresses), path).toEqual(new Set([company.emails.security]));
+    }
+  });
+
+  it('every DorkOS email address in the repo is one the company module names', () => {
+    const known = new Set<string>(Object.values(company.emails));
+    const unknown = gitGrep([
+      '-o',
+      '-I',
+      '-E',
+      '[A-Za-z0-9._+-]+@dorkos\\.ai',
+      '--',
+      '.',
+      ...HISTORY_PATHS,
+      ...TEST_PATHS,
+    ]).filter((line) => {
+      const [path, address] = line.split(':');
+      return !known.has(address!) && !EMAIL_EXAMPLE_ALLOWED.includes(path!);
+    });
+    expect(unknown).toEqual([]);
+  });
+
+  it('app and package source build brand URLs from the links module', () => {
+    const hits = gitGrep([
+      '-n',
+      '-I',
+      '-E',
+      `['"\`]https://(www\\.)?(dorkos\\.ai|github\\.com/dork-labs/|npmjs\\.com/package/dorkos)`,
+      '--',
+      'apps/**/*.ts',
+      'apps/**/*.tsx',
+      'packages/**/*.ts',
+      'packages/**/*.tsx',
+      ':!packages/shared/src/links.ts',
+      ...TEST_PATHS,
+    ]);
+    // A URL named in a comment documents the link; only code values count.
+    const files = hits
+      .filter((line) => !/^[^:]+:\d+:\s*(\/\/|\/?\*)/.test(line))
+      .map((line) => line.split(':')[0]!);
+    expect([...new Set(files)].sort()).toEqual([...LITERAL_URL_ALLOWED].sort());
+  });
+
+  it('published package metadata points at the repository', () => {
+    for (const dir of PUBLISHED_PACKAGES) {
+      const pkg = JSON.parse(read(`${dir}/package.json`)) as {
+        repository?: { url?: string; directory?: string };
+        homepage?: string;
+        bugs?: string;
+      };
+      expect(pkg.repository?.url?.replace(/^git\+/, ''), dir).toBe(`${links.repo}.git`);
+      expect(pkg.repository?.directory, dir).toBe(dir);
+      if (pkg.homepage !== undefined) {
+        expect(
+          pkg.homepage === links.site || pkg.homepage.startsWith(`${links.repo}/`),
+          `${dir} homepage ${pkg.homepage}`
+        ).toBe(true);
+      }
+      if (pkg.bugs !== undefined) expect(pkg.bugs, dir).toBe(repoUrl('/issues'));
+    }
   });
 
   it('every license file names the company, except the listed personal ones', () => {

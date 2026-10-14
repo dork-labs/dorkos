@@ -1,5 +1,6 @@
 'use client';
 
+import { links } from '@dorkos/shared/links';
 import { Suspense, lazy, type ComponentType } from 'react';
 
 interface HeroProps {
@@ -31,7 +32,7 @@ const heroProps: HeroProps = {
   subhead:
     'DorkOS is an open-source operating system for autonomous AI agents. Built on Claude Code. Powered by a heartbeat. Connected through an agent mesh.',
   ctaText: 'npm install -g dorkos',
-  ctaHref: 'https://www.npmjs.com/package/dorkos',
+  ctaHref: links.npmPackage,
 };
 
 const variants = [

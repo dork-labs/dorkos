@@ -3,6 +3,8 @@
  *
  * @module commands/community-deploy/runtime/default-owner
  */
+import { COMMUNITY_IMAGE_REPOSITORY } from '@dorkos/shared/community-release-manifest';
+import { repoUrl } from '@dorkos/shared/links';
 import { access, constants, stat } from 'node:fs/promises';
 import { platform } from 'node:os';
 import { delimiter, join } from 'node:path';
@@ -28,7 +30,8 @@ import type { CommunityServiceOptions } from './default-services.js';
 import type { LaunchJournal } from '../journal.js';
 import type { LaunchPlan } from '../plan.js';
 
-const COMMUNITY_IMAGE_REPOSITORY = 'ghcr.io/dork-labs/dorkos-community';
+/** Where the owner handoff steps are written up, for errors that send the person there. */
+const FLY_GUIDE_URL = repoUrl('/blob/main/apps/community/FLY.md');
 
 async function ask(question: string, signal?: AbortSignal): Promise<string> {
   if (!stdin.isTTY || !stdout.isTTY) throw new Error('An interactive terminal is required');
@@ -82,9 +85,7 @@ export async function assertOwnerHandoffPrerequisites(
   system: NodeJS.Platform = platform()
 ): Promise<void> {
   if (!(['darwin', 'linux', 'win32'] as const).includes(system as HandoffPlatform)) {
-    throw new Error(
-      'Owner handoff is unsupported on this platform. See https://github.com/dork-labs/dorkos/blob/main/apps/community/FLY.md'
-    );
+    throw new Error(`Owner handoff is unsupported on this platform. See ${FLY_GUIDE_URL}`);
   }
   const commands = handoffCommands(system);
   const path = env.PATH ?? '';
@@ -98,7 +99,7 @@ export async function assertOwnerHandoffPrerequisites(
   ).filter(({ found }) => !found);
   if (missing.length > 0) {
     throw new Error(
-      `Owner handoff needs ${missing.map(({ executable }) => executable).join(' and ')} before setup can create resources. See https://github.com/dork-labs/dorkos/blob/main/apps/community/FLY.md`
+      `Owner handoff needs ${missing.map(({ executable }) => executable).join(' and ')} before setup can create resources. See ${FLY_GUIDE_URL}`
     );
   }
   if (system === 'linux') {
@@ -106,7 +107,7 @@ export async function assertOwnerHandoffPrerequisites(
     const display = env.WAYLAND_DISPLAY;
     if (!runtimeDirectory || !display || display.includes('/')) {
       throw new Error(
-        'Owner handoff needs an active Wayland clipboard session before setup can create resources. See https://github.com/dork-labs/dorkos/blob/main/apps/community/FLY.md'
+        `Owner handoff needs an active Wayland clipboard session before setup can create resources. See ${FLY_GUIDE_URL}`
       );
     }
     const socketAvailable = await stat(join(runtimeDirectory, display)).then(
@@ -115,7 +116,7 @@ export async function assertOwnerHandoffPrerequisites(
     );
     if (!socketAvailable) {
       throw new Error(
-        'Owner handoff needs an active Wayland clipboard session before setup can create resources. See https://github.com/dork-labs/dorkos/blob/main/apps/community/FLY.md'
+        `Owner handoff needs an active Wayland clipboard session before setup can create resources. See ${FLY_GUIDE_URL}`
       );
     }
     return;
@@ -158,7 +159,7 @@ export async function confirmOwnerClipboardWrite(
   }
   await clipboard('DorkOS clipboard capability check', env, system).catch(() => {
     throw new Error(
-      'Owner handoff could not write to this clipboard session. No new provider write occurred. See https://github.com/dork-labs/dorkos/blob/main/apps/community/FLY.md'
+      `Owner handoff could not write to this clipboard session. No new provider write occurred. See ${FLY_GUIDE_URL}`
     );
   });
 }

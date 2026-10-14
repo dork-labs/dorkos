@@ -31,6 +31,7 @@
  *
  * @module services/runtimes/opencode/providers/openrouter
  */
+import { links } from '@dorkos/shared/links';
 import { createHash, randomBytes } from 'node:crypto';
 import type { UserConfig } from '@dorkos/shared/config-schema';
 import type { OpenRouterOAuthStatus, StoreCredentialResult } from '@dorkos/shared/runtime-connect';
@@ -410,7 +411,7 @@ export async function exchangeCodeForKey(
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'HTTP-Referer': 'https://dorkos.ai',
+      'HTTP-Referer': links.site,
       'X-Title': 'DorkOS',
     },
     body: JSON.stringify({

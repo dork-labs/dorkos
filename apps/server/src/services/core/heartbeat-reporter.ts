@@ -26,13 +26,14 @@
  * @module services/core/heartbeat-reporter
  */
 
+import { siteUrl } from '@dorkos/shared/links';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { getOrCreateInstanceId } from '../../lib/instance-id.js';
 import { logger } from '../../lib/logger.js';
 
 /** Where the daily heartbeat is delivered. */
-export const HEARTBEAT_ENDPOINT = 'https://dorkos.ai/api/telemetry/heartbeat';
+export const HEARTBEAT_ENDPOINT = siteUrl('/api/telemetry/heartbeat');
 
 /** Minimum gap between heartbeats: one day in milliseconds. */
 export const HEARTBEAT_INTERVAL_MS = 24 * 60 * 60 * 1000;

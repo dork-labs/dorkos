@@ -12,6 +12,9 @@
  * (DOR-2556). Pages render it with {@link formatCompanyAddress}, never by
  * typing it.
  *
+ * Brand URLs (the site, docs, GitHub and npm) live beside this module in
+ * `@dorkos/shared/links`.
+ *
  * @module shared/company
  */
 
@@ -27,8 +30,21 @@ export const company = {
   entityType: 'limited liability company',
   /** The state whose law governs the legal terms, and whose courts hear disputes. */
   governingState: 'Texas',
-  /** The general contact address the site and legal pages publish. */
-  contactEmail: 'hey@dorkos.ai',
+  /**
+   * The company's published email addresses. Files that cannot import this
+   * module (`SECURITY.md`, `CODE_OF_CONDUCT.md`, the marketplace registry
+   * JSON) hold the literal, pinned by the company test.
+   */
+  emails: {
+    /** The general contact address the site and legal pages publish. */
+    contact: 'hey@dorkos.ai',
+    /** Where customers reach support about DorkOS Cloud and their account. */
+    support: 'support@dorkos.ai',
+    /** Where security vulnerabilities and conduct reports go. */
+    security: 'security@dorkos.ai',
+    /** The owner contact the Dork Labs marketplace registry publishes. */
+    marketplace: 'hello@dorkos.ai',
+  },
   /** The company's registered postal address. */
   address: {
     street: '6028 Toscana Ave',
@@ -42,6 +58,9 @@ export const company = {
 
 /** The shape of {@link company}. */
 export type Company = typeof company;
+
+/** The shape of {@link company}'s email addresses. */
+export type CompanyEmails = Company['emails'];
 
 /** The shape of {@link company}'s postal address. */
 export type CompanyAddress = Company['address'];

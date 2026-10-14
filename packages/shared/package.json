@@ -73,6 +73,10 @@
       "types": "./src/company.ts",
       "default": "./dist/company.js"
     },
+    "./links": {
+      "types": "./src/links.ts",
+      "default": "./dist/links.js"
+    },
     "./bounded-read": {
       "types": "./src/bounded-read.ts",
       "default": "./dist/bounded-read.js"
