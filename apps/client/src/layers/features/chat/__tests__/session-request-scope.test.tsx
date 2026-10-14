@@ -173,6 +173,6 @@ describe('session-scoped queries and the working directory', () => {
     // never arrives for a session URL that omitted `&dir=`, which is the blank
     // "Start a conversation" the second window showed (DOR-1444).
     await waitFor(() => expect(transport.getMessages).toHaveBeenCalledTimes(1));
-    expect(transport.getMessages).toHaveBeenCalledWith(SESSION_ID, undefined);
+    expect(transport.getMessages).toHaveBeenCalledWith(SESSION_ID, undefined, { newest: true });
   });
 });

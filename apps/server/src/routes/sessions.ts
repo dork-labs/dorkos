@@ -34,7 +34,7 @@ import type { MeshCore } from '@dorkos/mesh';
 import { getChatMessageService } from '../services/session/chat-messages/chat-message-service.js';
 import type { ChatActivityResponse } from '@dorkos/shared/chat-messages';
 import { stampHistory } from '../services/session/chat-messages/chat-message-stamps.js';
-import { historyRead } from '../services/session/chat-messages/history-read.js';
+import * as historyWindow from '../services/session/history/history-window.js';
 import { filterKickoffHistory } from '@dorkos/shared/kickoff';
 import { CREDITS_ACCOUNT_ID } from '@dorkos/shared/account-usage';
 import type { ApiEnv } from '../http/api-chain.js';
@@ -549,7 +549,7 @@ export function createSessionRoutes(deps: SessionRouteDeps = {}): Hono<ApiEnv> {
 
     const etag = await runtime.getSessionETag(cwd, internalSessionId);
     // Only a whole read answers by ETag: the tag names the whole transcript.
-    if (etag && !readQuery(c).since) {
+    if (etag && !historyWindow.isPartialHistoryQuery(readQuery(c))) {
       c.header('ETag', etag);
       if (c.req.header('if-none-match') === etag) {
         return c.body(null, 304);
@@ -565,11 +565,13 @@ export function createSessionRoutes(deps: SessionRouteDeps = {}): Hono<ApiEnv> {
     // server's own record of the send (spec `spin-off-chats` §2), never read
     // from the text.
     // With `?since=` and that message found, only it and what follows go back
-    // (DOR-2890): the end-of-turn refresh keeps everything before it.
+    // (DOR-2890): the end-of-turn refresh keeps everything before it. With
+    // `?before=`, the page older than a message; with `?newest=1`, the newest
+    // window (DOR-2889).
     const ids = [...new Set([sessionId, internalSessionId])];
-    return c.json(
-      historyRead(stampHistory(ids, filterKickoffHistory(messages)), readQuery(c).since)
-    );
+    const stamp: historyWindow.StampHistory = (slice) => stampHistory(ids, slice);
+    const read = historyWindow.answerHistory(filterKickoffHistory(messages), readQuery(c), stamp);
+    return read ? c.json(read) : c.json(historyWindow.UNKNOWN_CURSOR, 404);
   });
 
   // PATCH /api/sessions/:id - Update session settings

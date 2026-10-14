@@ -3128,6 +3128,10 @@
           },
           "tail": {
             "type": "boolean"
+          },
+          "earlierMessages": {
+            "type": "integer",
+            "minimum": 0
           }
         },
         "required": [
@@ -4519,6 +4523,10 @@
             "items": {
               "$ref": "#/components/schemas/HistoryMessage"
             }
+          },
+          "earlierMessages": {
+            "type": "integer",
+            "minimum": 0
           },
           "inProgressTurn": {
             "type": [
@@ -24492,6 +24500,29 @@
             "description": "A message id. When the history holds it, only that message and the ones after it come back, with `tail: true`; otherwise the whole history (DOR-2890).",
             "name": "since",
             "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "A message id. Answers the page of up to 100 messages directly older than it, with `earlierMessages` counting what remains before the page. An id no message has answers 404 HISTORY_CURSOR_UNKNOWN (DOR-2889)."
+            },
+            "required": false,
+            "description": "A message id. Answers the page of up to 100 messages directly older than it, with `earlierMessages` counting what remains before the page. An id no message has answers 404 HISTORY_CURSOR_UNKNOWN (DOR-2889).",
+            "name": "before",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "1"
+              ],
+              "description": "Answers only the newest 150 messages, as the stream snapshot carries them, with `earlierMessages` counting the rest (DOR-2889)."
+            },
+            "required": false,
+            "description": "Answers only the newest 150 messages, as the stream snapshot carries them, with `earlierMessages` counting the rest (DOR-2889).",
+            "name": "newest",
+            "in": "query"
           }
         ],
         "responses": {
@@ -24506,7 +24537,7 @@
             }
           },
           "404": {
-            "description": "Could not determine this session's working directory (SESSION_CWD_REQUIRED). Retry with an explicit `cwd`.",
+            "description": "Could not determine this session's working directory (SESSION_CWD_REQUIRED); retry with an explicit `cwd`. Or `before` names a message the history does not hold (HISTORY_CURSOR_UNKNOWN).",
             "content": {
               "application/json": {
                 "schema": {
