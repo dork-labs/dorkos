@@ -1,6 +1,7 @@
 ---
 covers:
   - 'feat(site): publish the Terms for DorkOS Cloud (DOR-2556)'
+  - 'fix(site): keep the approved Cloud terms wording past the vocab gate, date the terms pages'
 ---
 
 ### Added

@@ -15,7 +15,7 @@ import { rssFeedAlternateTypes, twitterFromOpenGraph } from '@/lib/metadata';
 const description = 'The terms for DorkOS Cloud, the paid services we run for you.';
 
 /** The date shown at the top; the terms promise every change is posted with its date. */
-const LAST_UPDATED = 'October 15, 2026';
+const LAST_UPDATED = 'October 14, 2026';
 
 /** The address questions about these terms go to. */
 const SUPPORT_EMAIL = company.emails.support;
@@ -209,8 +209,8 @@ export default function CloudTermsPage() {
 
         <Section title="Changes to these terms">
           <P>
-            We may change these terms. We post each change with its date. A change that is worse
-            for a paid account takes effect <strong>30 days</strong> after we post it and email the
+            We may change these terms. We post each change with its date. A change that is worse for
+            a paid account takes effect <strong>30 days</strong> after we post it and email the
             account; any other change takes effect when posted. Using DorkOS Cloud after a change
             takes effect means you accept it.
           </P>
