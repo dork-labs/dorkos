@@ -207,3 +207,22 @@ export function tolerateRetiredRoomKeys(schema: { properties?: Record<string, un
   properties['maxPostsPerTurn'] = { type: 'integer' };
   properties['maxCanvasOpsPerTurn'] = { type: 'integer' };
 }
+
+/**
+ * Declare the retired `keepAwake.whileAgentsWork` key, for the same reason and
+ * with the same limits as {@link tolerateRetiredRuntimeKeys}: `'0.116.0'` turns
+ * it into `keepAwake.mode` and deletes it where that key runs, and this makes a
+ * write drop it on an install the key never reaches (a dev tree runs none). No
+ * `default`, so Ajv's `useDefaults` never writes it back.
+ *
+ * @param schema - The generated JSON Schema for the whole config, mutated in place.
+ */
+export function tolerateRetiredKeepAwakeKeys(schema: {
+  properties?: Record<string, unknown>;
+}): void {
+  const keepAwake = schema.properties?.['keepAwake'];
+  if (keepAwake == null || typeof keepAwake !== 'object') return;
+  const properties = (keepAwake as { properties?: Record<string, unknown> }).properties;
+  if (properties == null || typeof properties !== 'object') return;
+  properties['whileAgentsWork'] = { type: 'boolean' };
+}

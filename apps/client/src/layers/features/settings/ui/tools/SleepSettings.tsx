@@ -3,7 +3,9 @@
  * agents work (spec `keep-awake`).
  *
  * The switch shows the setting as the server reports it on the keep-awake
- * status, and writes `keepAwake.whileAgentsWork` through `PATCH /api/config`.
+ * status (on for any mode but `off`), and writes `keepAwake.mode` through
+ * `PATCH /api/config`: on is `agents`, off is `off`. The other modes, timed
+ * sessions, the screen and the battery rules are set elsewhere for now.
  * The server applies it at once, without a restart, and pushes the new status,
  * which is what moves the switch and the top-bar cup.
  *
@@ -39,9 +41,9 @@ export function SleepSettings() {
   const queryClient = useQueryClient();
 
   const setWhileAgentsWork = useCallback(
-    async (whileAgentsWork: boolean) => {
+    async (on: boolean) => {
       // The one key it changes: `PATCH /api/config` deep-merges.
-      await transport.updateConfig({ keepAwake: { whileAgentsWork } });
+      await transport.updateConfig({ keepAwake: { mode: on ? 'agents' : 'off' } });
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: [...KEEP_AWAKE_KEY] }),
         queryClient.invalidateQueries({ queryKey: configKeys.all }),

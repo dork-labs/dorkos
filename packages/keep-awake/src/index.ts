@@ -8,13 +8,28 @@
  * through PowerShell on Windows), always tied to the owning process so a crash
  * can never leave the computer held awake. In a container, or on an operating
  * system with no adapter, holds are still counted and status says why nothing
- * is held.
+ * is held. A hold may ask for the screen too, and {@link readPower} reads the
+ * power source so a caller can stop holding on battery.
  *
  * @module keep-awake
  */
 export { createKeepAwake } from './keep-awake.js';
-export type { Hold, KeepAwake, KeepAwakeOptions, KeepAwakeStatus } from './keep-awake.js';
-export { detectEnvironment, isContainer, holderCommandFor } from './environment.js';
+export type {
+  Hold,
+  HoldOptions,
+  KeepAwake,
+  KeepAwakeLevel,
+  KeepAwakeOptions,
+  KeepAwakeStatus,
+} from './keep-awake.js';
+export { detectEnvironment, isContainer, holderCommandFor, holdsDisplay } from './environment.js';
+export {
+  readPower,
+  parsePmsetBatt,
+  parseWindowsPowerStatus,
+  readLinuxPowerSupplies,
+} from './power.js';
+export type { PowerOptions, PowerReading } from './power.js';
 export type { EnvironmentOptions, EnvironmentReport } from './environment.js';
 export type {
   ChildLike,

@@ -113,7 +113,15 @@ describe('UserConfigSchema', () => {
       // until a person opens that door (DOR-1304).
       a2a: { enabled: false },
       scheduler: { enabled: true, maxConcurrentRuns: 4, retentionCount: 100 },
-      keepAwake: { whileAgentsWork: true, wakeForScheduledTasks: false },
+      keepAwake: {
+        mode: 'agents',
+        manualUntil: null,
+        keepDisplayAwake: false,
+        stopBelowBatteryPercent: null,
+        onlyOnPower: false,
+        wakeForScheduledTasks: false,
+        closedLid: false,
+      },
       heartbeats: { enabled: true, triageOnCredits: null },
       activity: { retentionDays: 365 },
       mesh: { scanRoots: [] },
@@ -529,7 +537,15 @@ describe('USER_CONFIG_DEFAULTS', () => {
       // until a person opens that door (DOR-1304).
       a2a: { enabled: false },
       scheduler: { enabled: true, maxConcurrentRuns: 4, retentionCount: 100 },
-      keepAwake: { whileAgentsWork: true, wakeForScheduledTasks: false },
+      keepAwake: {
+        mode: 'agents',
+        manualUntil: null,
+        keepDisplayAwake: false,
+        stopBelowBatteryPercent: null,
+        onlyOnPower: false,
+        wakeForScheduledTasks: false,
+        closedLid: false,
+      },
       heartbeats: { enabled: true, triageOnCredits: null },
       activity: { retentionDays: 365 },
       mesh: { scanRoots: [] },
@@ -877,9 +893,33 @@ describe('per-field and section-literal defaults agree', () => {
     expect(fromFields.scheduler.maxConcurrentRuns).toBe(4);
   });
 
-  it('keepAwake is on while agents work, and wake is off, either way', () => {
-    expect(fromFactory.keepAwake).toEqual({ whileAgentsWork: true, wakeForScheduledTasks: false });
-    expect(fromFields.keepAwake).toEqual({ whileAgentsWork: true, wakeForScheduledTasks: false });
+  it('keepAwake holds while agents work, with no session, screen or battery rule, and wake off, either way', () => {
+    const expected = {
+      mode: 'agents',
+      manualUntil: null,
+      keepDisplayAwake: false,
+      stopBelowBatteryPercent: null,
+      onlyOnPower: false,
+      wakeForScheduledTasks: false,
+      closedLid: false,
+    };
+    expect(fromFactory.keepAwake).toEqual(expected);
+    expect(fromFields.keepAwake).toEqual(expected);
+  });
+
+  it('keepAwake refuses a mode, a session end or a battery floor it does not know', () => {
+    const parse = (keepAwake: Record<string, unknown>) =>
+      UserConfigSchema.safeParse({ version: 1, keepAwake }).success;
+    expect(parse({ mode: 'always' })).toBe(true);
+    expect(parse({ mode: 'sometimes' })).toBe(false);
+    expect(parse({ manualUntil: '2026-10-14T18:00:00.000Z' })).toBe(true);
+    expect(parse({ manualUntil: '2026-10-14T18:00:00+02:00' })).toBe(true);
+    expect(parse({ manualUntil: 'tomorrow' })).toBe(false);
+    expect(parse({ stopBelowBatteryPercent: 5 })).toBe(true);
+    expect(parse({ stopBelowBatteryPercent: 95 })).toBe(true);
+    expect(parse({ stopBelowBatteryPercent: 4 })).toBe(false);
+    expect(parse({ stopBelowBatteryPercent: 96 })).toBe(false);
+    expect(parse({ stopBelowBatteryPercent: 20.5 })).toBe(false);
   });
 
   it('heartbeats are on, and nobody has chosen credits for checks, either way', () => {

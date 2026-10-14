@@ -14,6 +14,10 @@ const IDLE: KeepAwakeStatus = {
   supported: true,
   reason: null,
   asserted: false,
+  mode: 'agents',
+  manual: null,
+  level: null,
+  blocked: null,
   working: { chats: 0, rooms: 0, tasks: 0, waking: false },
   wake: { enabled: false, setup: 'unsupported', nextWakeAt: null, setupCommand: null },
 };
@@ -35,7 +39,7 @@ const STATES: { label: string; status: KeepAwakeStatus }[] = [
   },
   {
     label: 'Setting off',
-    status: { ...IDLE, enabled: false, working: { ...IDLE.working, chats: 1 } },
+    status: { ...IDLE, enabled: false, mode: 'off', working: { ...IDLE.working, chats: 1 } },
   },
   { label: 'Container', status: { ...IDLE, supported: false, reason: 'container' } },
   { label: 'Tool missing', status: { ...IDLE, supported: false, reason: 'tool-missing' } },

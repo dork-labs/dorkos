@@ -1,6 +1,6 @@
 ---
 title: Sleep and wake
-description: DorkOS keeps your computer awake while agents work, then lets it sleep as usual. What it can stop, what it can't, and how to turn it off
+description: DorkOS keeps your computer awake while agents work, then lets it sleep as usual. When it stays awake, for how long, what it can stop, what it can't, and how to turn it off
 ---
 
 # Sleep and wake
@@ -24,11 +24,36 @@ Background work counts too. When an agent hands a job to a background helper and
 
 About 3 minutes after the last one ends, DorkOS lets go. The wait covers the gap between one reply and the next, so a run of replies doesn't let the computer doze off in between.
 
+## When it stays awake
+
+You choose one of three modes:
+
+- **While agents work.** The default. Awake while any agent works, as above.
+- **Always.** Awake the whole time DorkOS is running, whether agents work or not.
+- **Off.** DorkOS never keeps the computer awake on its own.
+
+You can also keep it awake **for a while**: for the next two hours, say, or until 6 pm. This works in any mode, even Off, and ends on its own at the time you set. It lasts at most a day, and it keeps going if DorkOS restarts before then.
+
+## The screen
+
+Normally only the computer stays awake. The screen turns off on its usual timer and usually locks.
+
+You can ask for the screen to stay on too. That applies whenever DorkOS is keeping the computer awake. On a Mac this also stops the screen from locking on its own. Windows keeps the screen on too. On Linux, DorkOS can't promise the screen, so it keeps only the computer awake there.
+
+## On battery
+
+Keeping a computer awake uses more battery. Two settings let DorkOS step back when that matters:
+
+- **Only when plugged in.** On battery, DorkOS lets the computer sleep as usual.
+- **Stop below a battery level.** On battery, DorkOS lets go once the charge drops below the level you pick, between 5% and 95%.
+
+DorkOS checks the battery about once a minute while it's keeping the computer awake. When you plug back in, it picks up again on its own. If DorkOS can't read the battery, as on a desktop with none, these settings change nothing.
+
 ## How to tell
 
-While DorkOS is keeping your computer awake, a small cup shows in the top bar. Click it to see why, for example "Keeping awake: 2 chats running". The Control Center says the same thing.
+While DorkOS is keeping your computer awake for agents at work, a small cup shows in the top bar. Click it to see why, for example "Keeping awake: 2 chats running". The Control Center says the same thing.
 
-When nothing is running, the cup goes away.
+When nothing is running, the cup goes away. For now it doesn't show when the computer is kept awake only by the Always mode or for a while.
 
 ## What it can't stop
 
@@ -38,15 +63,37 @@ Keeping your computer awake only stops it from falling asleep on its own. Some t
 - **A low battery.** When the battery runs low, the computer sleeps to protect itself. Nothing can stop that.
 - **Choosing Sleep yourself.** If you put it to sleep, it sleeps.
 
-The screen still turns off on its usual timer, and usually locks. Only the computer stays on, so agents keep working behind the lock screen.
+Unless you asked for the screen to stay on, the screen still turns off on its usual timer, and usually locks. Only the computer stays on, so agents keep working behind the lock screen.
 
-Keeping a computer awake uses more battery. If that matters more to you than finishing the work, turn it off.
+Keeping a computer awake uses more battery. If that matters more to you than finishing the work, turn it off, or use the battery settings above.
 
-## Turn it off
+## Change it
 
-Open **Settings → Tools → Sleep** and switch off **Keep this computer awake while agents work**. You can also get there from the cup in the top bar.
+Open **Settings → Tools → Sleep** and switch off **Keep this computer awake while agents work** to set the mode to Off. Switching it back on sets it to While agents work. You can also get there from the cup in the top bar.
 
 The change takes effect at once. If agents are working when you switch it back on, DorkOS keeps the computer awake right away.
+
+The other choices on this page don't have a place in Settings yet. Until they do, set them from the command line, then restart DorkOS:
+
+```bash
+dorkos config set keepAwake.mode always        # or: agents, off
+dorkos config set keepAwake.keepDisplayAwake true
+dorkos config set keepAwake.onlyOnPower true
+dorkos config set keepAwake.stopBelowBatteryPercent 20   # or: null for never
+```
+
+To keep the computer awake for a while without a restart, ask the running app. Use your own port if you changed it:
+
+```bash
+curl -X POST http://localhost:4242/api/keep-awake/session \
+  -H 'Content-Type: application/json' -d '{"minutes": 120}'
+
+curl -X DELETE http://localhost:4242/api/keep-awake/session   # end it early
+```
+
+If you turned on Require login, the app only takes this from a signed-in browser. Use `dorkos config set keepAwake.manualUntil` with a time instead, such as `2026-10-14T18:00:00Z`, then restart.
+
+DorkOS refuses agents that try to change any of these. They can still see them, so an agent can tell you how long the computer will stay awake. [Action approvals](/docs/guides/action-approvals) explains the limits of that refusal and how Require login closes them.
 
 ## Where it works
 

@@ -71,6 +71,11 @@ export interface HolderCommand {
    * then. Only caffeinate does: its `-t` bounds an orphan, so it is renewed.
    */
   renews: boolean;
+  /**
+   * Whether this holder keeps the screen on as well as the system. False on
+   * Linux even when asked, because nothing there can promise it.
+   */
+  display: boolean;
 }
 
 /** Minimal logger keep-awake writes to. */

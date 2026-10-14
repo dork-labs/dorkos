@@ -98,6 +98,8 @@ const PROTECTED_EFFECTS: ProtectedEffect[] = [
         'the cockpit REST route — builds its authority from the request, refusing operator-only paths for any caller that is not a trusted caller (DOR-467), and with login on for any caller without a session cookie (DOR-505)',
       'services/core/operator/operator-tool-handlers.ts':
         'the agent capability — OPERATOR_TOOL_AUTHORITY refuses operator-only paths unconditionally (DOR-488)',
+      'routes/keep-awake.ts':
+        'POST/DELETE /api/keep-awake/session — writes only `keepAwake.manualUntil`, with the authority `routes/config-write-authority.ts` builds for `PATCH /api/config`, so the operator-only bars are the same ones (DOR-2920)',
       'services/core/operator/config-write.ts': 'the definition itself',
     },
   },
@@ -682,7 +684,8 @@ const PROTECTED_EFFECTS: ProtectedEffect[] = [
         'a person making a workspace over HTTP (DOR-2335). It does not skip a gate: a person is SHOWN what a new workspace brings (409 `workspace_needs_review`) and makes it with the review hash they saw; everyone else gets an approval card',
       'routes/sessions.ts':
         'a turn that names a workspaceKey (DOR-2335): a person is shown a new workspace, never let through unseen (one that needs review is skipped and the turn runs where it would have); everyone else gets a remembered card',
-      'routes/config.ts': 'a person changing their own settings in their own cockpit',
+      'routes/config-write-authority.ts':
+        'a person changing their own settings in their own app: the request authority `PATCH /api/config` and the keep-awake timer routes hand `applyGuardedConfigWrite`, moved out of `routes/config.ts` unchanged so both doors run the same cookie, agent and owner bars (DOR-2920)',
       'routes/shapes.ts':
         'a person clicking a Shape in their own cockpit — applying one writes files, rewrites config and creates and deletes scheduled work, so an agent is asked first (DOR-625)',
       'routes/extensions-person-bar.ts':

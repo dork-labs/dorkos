@@ -8,6 +8,7 @@ import { EventEmitter } from 'node:events';
 import { createKeepAwake, type KeepAwakeOptions } from '@dorkos/keep-awake';
 import type { KeepAwakeStatus } from '@dorkos/shared/schemas';
 import { KeepAwakeService, TURN_IDLE_CEILING_MS } from '../keep-awake-service.js';
+import type { KeepAwakeSettings } from '../keep-awake-policy.js';
 
 /** A spawned-process stand-in: exits when signalled. */
 class FakeChild extends EventEmitter {
@@ -41,7 +42,7 @@ function started(overrides: Partial<KeepAwakeOptions> = {}) {
   const service = new KeepAwakeService();
   const { factory, spawned } = fakeFactory(overrides);
   const broadcasts: KeepAwakeStatus[] = [];
-  let settings = { whileAgentsWork: true };
+  let settings: Partial<KeepAwakeSettings> = { mode: 'agents' };
   let settingsListener: ((sections: readonly string[]) => void) | null = null;
   service.start({
     readSettings: () => settings,
@@ -54,7 +55,7 @@ function started(overrides: Partial<KeepAwakeOptions> = {}) {
     broadcast: (status) => broadcasts.push(status),
     createKeepAwake: factory,
   });
-  const writeSettings = (next: { whileAgentsWork: boolean }, sections = ['keepAwake']) => {
+  const writeSettings = (next: Partial<KeepAwakeSettings>, sections = ['keepAwake']) => {
     settings = next;
     settingsListener?.(sections);
   };
@@ -110,7 +111,7 @@ describe('start', () => {
     service.holdTurn({ sessionId: 'early', room: false });
     const { factory, spawned } = fakeFactory();
     service.start({
-      readSettings: () => ({ whileAgentsWork: true }),
+      readSettings: () => ({ mode: 'agents' as const }),
       onSettingsChange: () => () => {},
       broadcast: () => {},
       createKeepAwake: factory,
@@ -140,14 +141,14 @@ describe('the setting', () => {
     service.holdTurn({ sessionId: 'a', room: false });
     expect(service.status()).toMatchObject({ enabled: true, asserted: true });
 
-    writeSettings({ whileAgentsWork: false });
+    writeSettings({ mode: 'off' as const });
     expect(service.status()).toMatchObject({
       enabled: false,
       asserted: false,
       working: { chats: 1 },
     });
 
-    writeSettings({ whileAgentsWork: true });
+    writeSettings({ mode: 'agents' as const });
     expect(service.status()).toMatchObject({ enabled: true, asserted: true });
   });
 
@@ -166,8 +167,8 @@ describe('the setting', () => {
     return Promise.resolve().then(() => {
       expect(service.status()).toMatchObject({ supported: false, reason: 'denied' });
 
-      writeSettings({ whileAgentsWork: false });
-      writeSettings({ whileAgentsWork: true });
+      writeSettings({ mode: 'off' as const });
+      writeSettings({ mode: 'agents' as const });
       expect(spawned).toHaveLength(2);
     });
   });
@@ -189,7 +190,7 @@ describe('the setting', () => {
 
   it('ignores writes to other sections', () => {
     const { service, writeSettings } = started();
-    writeSettings({ whileAgentsWork: false }, ['scheduler']);
+    writeSettings({ mode: 'off' as const }, ['scheduler']);
     expect(service.status().enabled).toBe(true);
   });
 
@@ -198,7 +199,7 @@ describe('the setting', () => {
 
     const { service, writeSettings } = started();
     expect(service.preventsIdleSleep()).toBe(true);
-    writeSettings({ whileAgentsWork: false });
+    writeSettings({ mode: 'off' as const });
     expect(service.preventsIdleSleep()).toBe(false);
 
     expect(started({ env: { container: 'docker' } }).service.preventsIdleSleep()).toBe(false);

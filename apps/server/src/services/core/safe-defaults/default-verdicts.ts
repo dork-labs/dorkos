@@ -170,8 +170,14 @@ export const NO_RISK_DEFAULTS: readonly string[] = [
   // Keeping the computer awake while agents work (spec `keep-awake`). It moves
   // no data and widens no access: it stops idle sleep through the OS's own
   // tool, ends with the server's process, and costs battery, which the Sleep
-  // setting says in plain words.
-  'keepAwake.whileAgentsWork',
+  // setting says in plain words. The rest of the section ships at its quietest:
+  // no timed session, the screen left to its own timer, and no battery rule
+  // (which only ever stops holding, never starts it).
+  'keepAwake.mode',
+  'keepAwake.manualUntil',
+  'keepAwake.keepDisplayAwake',
+  'keepAwake.stopBelowBatteryPercent',
+  'keepAwake.onlyOnPower',
   // How long the Activity feed keeps its rows (spec `audit-trail` §3.5). It
   // holds no message content, moves nothing off the machine and grants
   // nothing, and the audit log keeps every action whatever it says.
@@ -517,6 +523,9 @@ export const SAFE_DEFAULTS: Readonly<Record<string, unknown>> = {
   // Waking the computer for scheduled runs starts off: it powers the machine up
   // while nobody is there and needs a one-time admin grant (spec `keep-awake`).
   'keepAwake.wakeForScheduledTasks': false,
+  // Keeping a Mac awake with the lid closed starts off: a shut laptop that never
+  // sleeps can overheat in a bag, and it needs a one-time admin grant (DOR-2923).
+  'keepAwake.closedLid': false,
 };
 
 /**

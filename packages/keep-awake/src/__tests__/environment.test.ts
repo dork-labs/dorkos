@@ -4,7 +4,7 @@
  * must be interpolated as an integer and nothing may pass through a shell.
  */
 import { describe, expect, it } from 'vitest';
-import { detectEnvironment, holderCommandFor, isContainer } from '../environment.js';
+import { detectEnvironment, holderCommandFor, holdsDisplay, isContainer } from '../environment.js';
 import { windowsExecutionStateScript } from '../holders/windows-execution-state.js';
 
 const bare = { fileExists: () => false, readFile: () => null, env: {} };
@@ -71,6 +71,14 @@ describe('holder command lines', () => {
       command: '/usr/bin/caffeinate',
       args: ['-i', '-w', '321', '-t', '300'],
       renews: true,
+      display: false,
+    });
+  });
+
+  it('macOS: adds -d when the screen is kept on too', () => {
+    expect(holderCommandFor('caffeinate', 321, 300, true)).toMatchObject({
+      args: ['-i', '-d', '-w', '321', '-t', '300'],
+      display: true,
     });
   });
 
@@ -81,7 +89,7 @@ describe('holder command lines', () => {
       args: [
         '--what=idle:sleep',
         '--who=DorkOS',
-        '--why=Agents are working',
+        '--why=Keeping this computer awake for agents',
         '--mode=block',
         'tail',
         '--pid=321',
@@ -89,7 +97,19 @@ describe('holder command lines', () => {
         '/dev/null',
       ],
       renews: false,
+      display: false,
     });
+  });
+
+  it('Linux: never claims the screen, so a display request gets the same holder', () => {
+    // Purpose: status must not say `display` where nothing can keep the screen on.
+    expect(holderCommandFor('systemd-inhibit', 321, 300, true)).toEqual(
+      holderCommandFor('systemd-inhibit', 321, 300)
+    );
+    expect(holdsDisplay('systemd-inhibit')).toBe(false);
+    expect(holdsDisplay('caffeinate')).toBe(true);
+    expect(holdsDisplay('windows-execution-state')).toBe(true);
+    expect(holdsDisplay('none')).toBe(false);
   });
 
   it('Windows: an encoded PowerShell script that sets 0x80000001 and waits on the pid', () => {
@@ -108,6 +128,15 @@ describe('holder command lines', () => {
     expect(script).toContain('0x80000001');
     expect(script).toContain('Wait-Process -Id 321');
     expect(command.renews).toBe(false);
+    expect(command.display).toBe(false);
+  });
+
+  it('Windows: adds ES_DISPLAY_REQUIRED (0x80000003) when the screen is kept on too', () => {
+    const command = holderCommandFor('windows-execution-state', 321, 300, true);
+    const script = Buffer.from(command.args[5]!, 'base64').toString('utf16le');
+    expect(script).toContain('[uint32]0x80000003L');
+    expect(script).not.toContain('0x80000001');
+    expect(command.display).toBe(true);
   });
 
   it('interpolates the pid as an integer, never as text', () => {

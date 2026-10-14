@@ -24,6 +24,7 @@ import {
   RemoteAccessModeSchema,
 } from './config-schema.js';
 import { SavedPlacementSchema } from './mini-app-placement.js';
+import { KeepAwakeModeSchema as KeepAwakeModeConfigSchema } from './config-sections.js';
 // The effort ladder itself lives in the dependency-free constants module so this
 // file and `config-schema.ts` (which this file already imports) can both build
 // their enums from ONE list — see `EFFORT_LEVELS` for why it cannot live in either.
@@ -7209,6 +7210,28 @@ export const KeepAwakeUnsupportedReasonSchema = z
 /** Why this computer cannot be held awake. */
 export type KeepAwakeUnsupportedReason = z.infer<typeof KeepAwakeUnsupportedReasonSchema>;
 
+/** When DorkOS keeps this computer awake on its own: the `keepAwake.mode` setting. */
+export const KeepAwakeModeSchema = z
+  .enum(KeepAwakeModeConfigSchema.options)
+  .openapi('KeepAwakeMode');
+
+/** When DorkOS keeps this computer awake on its own. */
+export type KeepAwakeMode = z.infer<typeof KeepAwakeModeSchema>;
+
+/** What the assertion covers: idle system sleep only, or the screen too. */
+export const KeepAwakeLevelSchema = z.enum(['system', 'display']).openapi('KeepAwakeLevel');
+
+/** What the assertion covers. */
+export type KeepAwakeLevel = z.infer<typeof KeepAwakeLevelSchema>;
+
+/** Why a power rule has paused keeping the computer awake. */
+export const KeepAwakeBlockedSchema = z
+  .enum(['on-battery', 'low-battery'])
+  .openapi('KeepAwakeBlocked');
+
+/** Why a power rule has paused keeping the computer awake. */
+export type KeepAwakeBlocked = z.infer<typeof KeepAwakeBlockedSchema>;
+
 /**
  * Whether DorkOS is keeping this computer awake right now, and for what.
  *
@@ -7219,7 +7242,29 @@ export type KeepAwakeUnsupportedReason = z.infer<typeof KeepAwakeUnsupportedReas
 export const KeepAwakeStatusSchema = z
   .object({
     enabled: z.boolean().openapi({
-      description: 'The `keepAwake.whileAgentsWork` setting.',
+      description:
+        'Whether the mode is anything but `off`. Kept beside `mode` for readers that only need on or off.',
+    }),
+    mode: KeepAwakeModeSchema.openapi({
+      description:
+        'The `keepAwake.mode` setting: never on its own (`off`), while agents work (`agents`), or all the time while DorkOS runs (`always`).',
+    }),
+    manual: z
+      .object({
+        until: z.string().openapi({ description: 'When the timer ends (ISO 8601).' }),
+      })
+      .nullable()
+      .openapi({
+        description:
+          'The timer in force, if any: the computer is held until `until`, whatever the mode. Null when none is running (a past one is over).',
+      }),
+    level: KeepAwakeLevelSchema.nullable().openapi({
+      description:
+        'What is held right now: `system` (idle sleep), `display` (the screen too), or null when nothing is. Linux holds `system` even when the screen was asked for.',
+    }),
+    blocked: KeepAwakeBlockedSchema.nullable().openapi({
+      description:
+        'Why a power rule has paused keeping awake while it is wanted: `on-battery` (only on power) or `low-battery` (below the set charge). Null otherwise. It resumes on its own when the rule clears.',
     }),
     supported: z.boolean().openapi({
       description:
@@ -7264,3 +7309,33 @@ export const KeepAwakeStatusSchema = z
 
 /** Whether DorkOS is keeping this computer awake right now, and for what. */
 export type KeepAwakeStatus = z.infer<typeof KeepAwakeStatusSchema>;
+
+/** The longest timer `POST /api/keep-awake/session` starts: one day. */
+export const KEEP_AWAKE_SESSION_MAX_MINUTES = 24 * 60;
+
+/**
+ * Start (or replace) a timer: keep this computer awake for `minutes`,
+ * or until `until`. Either way it ends at most a day from now, and `until` must
+ * be in the future.
+ */
+export const KeepAwakeSessionRequestSchema = z
+  .union([
+    z
+      .object({
+        minutes: z.number().int().min(1).max(KEEP_AWAKE_SESSION_MAX_MINUTES).openapi({
+          description: 'How long to keep the computer awake from now, in minutes (1 to 1440).',
+        }),
+      })
+      .strict(),
+    z
+      .object({
+        until: z.iso.datetime({ offset: true }).openapi({
+          description: 'When to stop (ISO 8601): in the future, and at most a day from now.',
+        }),
+      })
+      .strict(),
+  ])
+  .openapi('KeepAwakeSessionRequest');
+
+/** Start (or replace) a timer. */
+export type KeepAwakeSessionRequest = z.infer<typeof KeepAwakeSessionRequestSchema>;

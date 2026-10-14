@@ -412,8 +412,21 @@ export const CONFIG_WRITE_POLICY = {
   // is the person's call: it spends their battery and, with the lid open on a
   // desk, decides whether the computer is on while they are away. An agent
   // asked to keep it awake can say where the switch is.
-  'keepAwake.whileAgentsWork': 'operator-only',
+  //
+  // A timed session (`manualUntil`) is the same call with an end date, so it
+  // is operator-only too: it holds the machine awake even when the mode is
+  // `off`, which is exactly what the mode exists to refuse. An agent that needs
+  // the computer awake for its work is already covered by `mode: 'agents'`.
+  // The screen and the two battery rules spend the same battery.
+  'keepAwake.mode': 'operator-only',
+  'keepAwake.manualUntil': 'operator-only',
+  'keepAwake.keepDisplayAwake': 'operator-only',
+  'keepAwake.stopBelowBatteryPercent': 'operator-only',
+  'keepAwake.onlyOnPower': 'operator-only',
   'keepAwake.wakeForScheduledTasks': 'operator-only',
+  // Keeping a Mac awake with the lid shut (DOR-2923, read by nothing yet): a
+  // closed laptop in a bag that never sleeps is the person's call alone.
+  'keepAwake.closedLid': 'operator-only',
 
   // Whether agents wake on their own (spec `heartbeats` §3.6). It decides
   // whether an agent acts unbidden at all, which is the person's call; an agent
@@ -1183,8 +1196,13 @@ export const OPERATOR_ONLY_STAKES: readonly OperatorOnlyStakeGroup[] = [
       'scheduler.maxConcurrentRuns',
       // Whether the computer stays awake for the work, and whether it is woken
       // for it: battery, and whether the machine is on while nobody is there.
-      'keepAwake.whileAgentsWork',
+      'keepAwake.mode',
+      'keepAwake.manualUntil',
+      'keepAwake.keepDisplayAwake',
+      'keepAwake.stopBelowBatteryPercent',
+      'keepAwake.onlyOnPower',
       'keepAwake.wakeForScheduledTasks',
+      'keepAwake.closedLid',
       // How much Activity history this machine keeps on disk, and how much a
       // person can still look back over.
       'activity.retentionDays',

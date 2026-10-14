@@ -37,6 +37,10 @@ const IDLE: KeepAwakeStatus = {
   supported: true,
   reason: null,
   asserted: false,
+  mode: 'agents',
+  manual: null,
+  level: null,
+  blocked: null,
   working: { chats: 0, rooms: 0, tasks: 0, waking: false },
   wake: { enabled: false, setup: 'unsupported', nextWakeAt: null, setupCommand: null },
 };

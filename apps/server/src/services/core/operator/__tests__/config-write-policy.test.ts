@@ -113,11 +113,16 @@ describe('CONFIG_WRITE_POLICY drift guard', () => {
       'heartbeats.enabled',
       // Whether cheap checks spend DorkOS credits: the owner's money (spec `heartbeats` §6.3).
       'heartbeats.triageOnCredits',
-      // Whether this computer sleeps while agents work, and whether it may be
-      // woken for a schedule: the person's battery and the person's machine
-      // (spec `keep-awake`).
+      // When this computer stays awake (the mode, a timed session, the screen,
+      // the battery rules), and whether it may be woken for a schedule: the
+      // person's battery and the person's machine (spec `keep-awake`).
+      'keepAwake.closedLid',
+      'keepAwake.keepDisplayAwake',
+      'keepAwake.manualUntil',
+      'keepAwake.mode',
+      'keepAwake.onlyOnPower',
+      'keepAwake.stopBelowBatteryPercent',
       'keepAwake.wakeForScheduledTasks',
-      'keepAwake.whileAgentsWork',
       'mcp.apiKey',
       'mcp.enabled',
       'mcp.rateLimit.enabled',

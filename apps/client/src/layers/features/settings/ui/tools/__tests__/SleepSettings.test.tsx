@@ -22,6 +22,10 @@ const status = (overrides: Partial<KeepAwakeStatus>): KeepAwakeStatus => ({
   supported: true,
   reason: null,
   asserted: false,
+  mode: 'agents',
+  manual: null,
+  level: null,
+  blocked: null,
   working: { chats: 0, rooms: 0, tasks: 0, waking: false },
   wake: { enabled: false, setup: 'unsupported', nextWakeAt: null, setupCommand: null },
   ...overrides,
@@ -53,15 +57,23 @@ describe('SleepSettings', () => {
     );
   });
 
-  it('writes only keepAwake.whileAgentsWork, and re-reads the status', async () => {
+  it('writes only keepAwake.mode off, and re-reads the status', async () => {
     const transport = renderWith(status({ enabled: true }));
     fireEvent.click(await toggle());
     await waitFor(() =>
       expect(transport.updateConfig).toHaveBeenCalledWith({
-        keepAwake: { whileAgentsWork: false },
+        keepAwake: { mode: 'off' },
       })
     );
     await waitFor(() => expect(transport.getKeepAwake).toHaveBeenCalledTimes(2));
+  });
+
+  it('turns back on as "while agents work"', async () => {
+    const transport = renderWith(status({ enabled: false, mode: 'off' }));
+    fireEvent.click(await toggle());
+    await waitFor(() =>
+      expect(transport.updateConfig).toHaveBeenCalledWith({ keepAwake: { mode: 'agents' } })
+    );
   });
 
   it.each([

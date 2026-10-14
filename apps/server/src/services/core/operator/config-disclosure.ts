@@ -241,11 +241,17 @@ export const CONFIG_DISCLOSURE = {
   'scheduler.maxConcurrentRuns': 'expose',
   'scheduler.retentionCount': 'expose',
 
-  // Whether this computer stays awake while agents work, and whether it may be
-  // woken for scheduled runs. Plain booleans: an agent may know the computer
-  // stays awake (spec `keep-awake`).
-  'keepAwake.whileAgentsWork': 'expose',
+  // When this computer stays awake, whether it is held for a timed session,
+  // the screen and battery rules, and whether it may be woken for scheduled
+  // runs. Plain values naming no credential: an agent may know the computer
+  // stays awake, and until when (spec `keep-awake`).
+  'keepAwake.mode': 'expose',
+  'keepAwake.manualUntil': 'expose',
+  'keepAwake.keepDisplayAwake': 'expose',
+  'keepAwake.stopBelowBatteryPercent': 'expose',
+  'keepAwake.onlyOnPower': 'expose',
   'keepAwake.wakeForScheduledTasks': 'expose',
+  'keepAwake.closedLid': 'expose',
   // Whether agents wake on their own (spec `heartbeats` §3.6): a plain on/off.
   'heartbeats.enabled': 'expose',
   // Whether cheap checks may run on DorkOS credits (spec `heartbeats` §6.3): a

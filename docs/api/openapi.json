@@ -1561,7 +1561,32 @@
         "properties": {
           "enabled": {
             "type": "boolean",
-            "description": "The `keepAwake.whileAgentsWork` setting."
+            "description": "Whether the mode is anything but `off`. Kept beside `mode` for readers that only need on or off."
+          },
+          "mode": {
+            "$ref": "#/components/schemas/KeepAwakeMode"
+          },
+          "manual": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "properties": {
+              "until": {
+                "type": "string",
+                "description": "When the timer ends (ISO 8601)."
+              }
+            },
+            "required": [
+              "until"
+            ],
+            "description": "The timer in force, if any: the computer is held until `until`, whatever the mode. Null when none is running (a past one is over)."
+          },
+          "level": {
+            "$ref": "#/components/schemas/KeepAwakeLevel"
+          },
+          "blocked": {
+            "$ref": "#/components/schemas/KeepAwakeBlocked"
           },
           "supported": {
             "type": "boolean",
@@ -1643,12 +1668,49 @@
         },
         "required": [
           "enabled",
+          "mode",
+          "manual",
+          "level",
+          "blocked",
           "supported",
           "reason",
           "asserted",
           "working",
           "wake"
         ]
+      },
+      "KeepAwakeMode": {
+        "type": "string",
+        "enum": [
+          "off",
+          "agents",
+          "always"
+        ],
+        "description": "The `keepAwake.mode` setting: never on its own (`off`), while agents work (`agents`), or all the time while DorkOS runs (`always`)."
+      },
+      "KeepAwakeLevel": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "enum": [
+          "system",
+          "display",
+          null
+        ],
+        "description": "What is held right now: `system` (idle sleep), `display` (the screen too), or null when nothing is. Linux holds `system` even when the screen was asked for."
+      },
+      "KeepAwakeBlocked": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "enum": [
+          "on-battery",
+          "low-battery",
+          null
+        ],
+        "description": "Why a power rule has paused keeping awake while it is wanted: `on-battery` (only on power) or `low-battery` (below the set charge). Null otherwise. It resumes on its own when the rule clears."
       },
       "KeepAwakeUnsupportedReason": {
         "type": [
@@ -1663,6 +1725,39 @@
           null
         ],
         "description": "Why not, when `supported` is false; null otherwise. `denied` is retried on a backoff and when the setting is switched off and on; the others last until restart."
+      },
+      "KeepAwakeSessionRequest": {
+        "anyOf": [
+          {
+            "type": "object",
+            "properties": {
+              "minutes": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 1440,
+                "description": "How long to keep the computer awake from now, in minutes (1 to 1440)."
+              }
+            },
+            "required": [
+              "minutes"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "until": {
+                "type": "string",
+                "format": "date-time",
+                "description": "When to stop (ISO 8601): in the future, and at most a day from now."
+              }
+            },
+            "required": [
+              "until"
+            ],
+            "additionalProperties": false
+          }
+        ]
       },
       "ListCommitmentsResponse": {
         "type": "object",
@@ -20726,7 +20821,7 @@
           "Keep awake"
         ],
         "summary": "Whether this computer is being kept awake",
-        "description": "Whether DorkOS is keeping this computer from idle-sleeping right now, what is keeping it awake (chats, room replies and task runs, each counted once), the setting, and why it cannot when it cannot (a container, a missing tool, or a refusal). The same payload is pushed as `keep_awake_status` on `GET /api/events` whenever it changes.",
+        "description": "Whether DorkOS is keeping this computer from idle-sleeping right now, what is keeping it awake (chats, room replies and task runs, each counted once), the mode, any timer, whether the screen is held too, whether a power rule has paused it, and why it cannot when it cannot (a container, a missing tool, or a refusal). The same payload is pushed as `keep_awake_status` on `GET /api/events` whenever it changes.",
         "responses": {
           "200": {
             "description": "The keep-awake status",
@@ -20734,6 +20829,145 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/KeepAwakeStatus"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/keep-awake/session": {
+      "post": {
+        "tags": [
+          "Keep awake"
+        ],
+        "summary": "Keep this computer awake for a while",
+        "description": "Starts a timer, or replaces the one running: the computer is held awake for `minutes` from now, or until `until`, whatever the mode says. At most a day. Stored in `keepAwake.manualUntil`, so it survives a restart, and simply ends when it runs out. Guarded like `PATCH /api/config`: agents are refused.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/KeepAwakeSessionRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The timer started; the new keep-awake status",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KeepAwakeStatus"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Not `{ minutes }` or `{ until }`, or an end in the past or over a day away",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "paths": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller identifies as an agent, or Require login is on and the request carries no sign-in cookie. A timer is a person’s choice, like the mode.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "paths": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Keep awake"
+        ],
+        "summary": "End the timer",
+        "description": "Ends the timer now, so the mode decides again. Answers the same when none was running. Guarded like `PATCH /api/config`: agents are refused.",
+        "responses": {
+          "200": {
+            "description": "The timer ended; the new keep-awake status",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KeepAwakeStatus"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller identifies as an agent, or Require login is on and the request carries no sign-in cookie. A timer is a person’s choice, like the mode.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "paths": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
                 }
               }
             }

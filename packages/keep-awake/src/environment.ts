@@ -97,18 +97,33 @@ export function detectEnvironment(options: EnvironmentOptions = {}): Environment
  * @param mechanism - Which mechanism, from {@link detectEnvironment}.
  * @param watchPid - The process whose death must end the assertion.
  * @param ttlSec - caffeinate only: how long one holder lives before renewal.
+ * @param display - Whether the screen should be kept on too. Ignored where the
+ *   mechanism cannot promise it ({@link holdsDisplay}).
  */
 export function holderCommandFor(
   mechanism: Exclude<Mechanism, 'none'>,
   watchPid: number,
-  ttlSec: number
+  ttlSec: number,
+  display = false
 ): HolderCommand {
   switch (mechanism) {
     case 'caffeinate':
-      return caffeinateCommand(watchPid, ttlSec);
+      return caffeinateCommand(watchPid, ttlSec, display);
     case 'systemd-inhibit':
       return systemdInhibitCommand(watchPid);
     case 'windows-execution-state':
-      return windowsExecutionStateCommand(watchPid);
+      return windowsExecutionStateCommand(watchPid, display);
   }
+}
+
+/**
+ * Whether a mechanism can keep the screen on as well as the system: caffeinate
+ * (`-d`) and `SetThreadExecutionState` (`ES_DISPLAY_REQUIRED`) can;
+ * systemd-inhibit cannot promise it, so a hold asking for the screen there is
+ * held at system level and status says so.
+ *
+ * @param mechanism - The mechanism in use.
+ */
+export function holdsDisplay(mechanism: Mechanism): boolean {
+  return mechanism === 'caffeinate' || mechanism === 'windows-execution-state';
 }

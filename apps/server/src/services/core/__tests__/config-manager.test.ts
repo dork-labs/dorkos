@@ -313,7 +313,15 @@ describe('ConfigManager', () => {
       keepAwake?: unknown;
       ui?: { theme?: string };
     };
-    expect(onDisk.keepAwake).toEqual({ whileAgentsWork: true, wakeForScheduledTasks: false });
+    expect(onDisk.keepAwake).toEqual({
+      mode: 'agents',
+      manualUntil: null,
+      keepDisplayAwake: false,
+      stopBelowBatteryPercent: null,
+      onlyOnPower: false,
+      wakeForScheduledTasks: false,
+      closedLid: false,
+    });
     expect(onDisk.ui?.theme).toBe('dark');
     expect(configManager.get('keepAwake')).toEqual(USER_CONFIG_DEFAULTS.keepAwake);
   });
@@ -4322,7 +4330,7 @@ describe('CONFIG_MIGRATIONS append-only pins (DOR-1222 regression guard)', () =>
     // pass this having scanned nothing. The count is the knowable bound; the
     // table is append-only, so raising it is the deliberate act of adding a
     // migration, which is exactly when this check should be re-read.
-    expect(Object.keys(bodies)).toHaveLength(54);
+    expect(Object.keys(bodies)).toHaveLength(55);
 
     const reaching = Object.keys(bodies).filter((key) =>
       reachedDeclarations(bodies[key]!, pool).includes('describeLoadError')

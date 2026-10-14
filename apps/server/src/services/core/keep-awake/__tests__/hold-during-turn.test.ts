@@ -221,7 +221,7 @@ describe('every other way a turn can end', () => {
     const service = new KeepAwakeService();
     let open = 0;
     service.start({
-      readSettings: () => ({ whileAgentsWork: true }),
+      readSettings: () => ({ mode: 'agents' as const }),
       onSettingsChange: () => () => {},
       broadcast: () => {},
       createKeepAwake: () =>
@@ -378,16 +378,19 @@ describe('work that outlives the turn', () => {
     const { runtime, state } = backgroundRuntime();
     state.background = true;
     state.helper = true;
-    const ended = Date.now();
+    // The turn ends somewhere between these two real-clock readings; a slow
+    // drain must not move the boundary the assertions below lean on.
+    const before = Date.now();
     await drain(holdAwakeDuringTurns(runtime, service).sendMessage('s1', 'hello'));
+    const after = Date.now();
 
-    service.sweepIdleTurns(ended + TURN_IDLE_CEILING_MS * 2);
+    service.sweepIdleTurns(after + TURN_IDLE_CEILING_MS * 2);
     expect(working(service).chats).toBe(1);
 
     state.helper = false;
-    service.sweepIdleTurns(ended + BACKGROUND_ONLY_CEILING_MS - 1);
+    service.sweepIdleTurns(before + BACKGROUND_ONLY_CEILING_MS - 1);
     expect(working(service).chats).toBe(1);
-    service.sweepIdleTurns(ended + BACKGROUND_ONLY_CEILING_MS);
+    service.sweepIdleTurns(after + BACKGROUND_ONLY_CEILING_MS);
     expect(working(service).chats).toBe(0);
   });
 

@@ -6,6 +6,7 @@ import { roomFileTransportMocks } from './mock-room-files.js';
 import { remoteCommunityTransportMocks } from './mock-remote-community.js';
 import { remoteAccessTransportMocks } from './mock-remote-access.js';
 import { doeTransportMocks } from './doe-transport-mocks.js';
+import { IDLE_KEEP_AWAKE_STATUS } from './mock-keep-awake.js';
 import type {
   Session,
   StreamEvent,
@@ -1022,14 +1023,7 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
         },
       },
     }),
-    getKeepAwake: vi.fn().mockResolvedValue({
-      enabled: true,
-      supported: true,
-      reason: null,
-      asserted: false,
-      working: { chats: 0, rooms: 0, tasks: 0, waking: false },
-      wake: { enabled: false, setup: 'unsupported', nextWakeAt: null, setupCommand: null },
-    }),
+    getKeepAwake: vi.fn().mockResolvedValue({ ...IDLE_KEEP_AWAKE_STATUS }),
     getMemoryProviderStatus: vi.fn().mockResolvedValue({
       configuredId: BUILTIN_MEMORY_PROVIDER_ID,
       activeId: BUILTIN_MEMORY_PROVIDER_ID,

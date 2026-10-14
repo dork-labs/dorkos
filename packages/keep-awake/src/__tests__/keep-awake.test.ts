@@ -455,6 +455,110 @@ describe('retrying a denial', () => {
   });
 });
 
+describe('display level', () => {
+  it('raises to display while a screen hold is open, new holder first, then drops back', () => {
+    // Purpose: the level is the union of open holds, and a swap never leaves a gap.
+    const spawner = fakeSpawner();
+    const { keepAwake } = mac(spawner);
+
+    const work = keepAwake.hold('chat');
+    expect(spawner.calls[0]!.args).toEqual(['-i', '-w', String(PID), '-t', '300']);
+    expect(keepAwake.status().level).toBe('system');
+
+    const screen = keepAwake.hold('display', { display: true });
+    expect(spawner.calls).toHaveLength(2);
+    expect(spawner.calls[1]!.args).toEqual(['-i', '-d', '-w', String(PID), '-t', '300']);
+    // The new holder was spawned before the old one was signalled.
+    expect(spawner.log).toEqual(['spawn:0', 'spawn:1', 'kill:0:SIGTERM']);
+    expect(spawner.alive()).toHaveLength(1);
+    expect(keepAwake.status()).toMatchObject({ level: 'display', asserted: true, holds: 2 });
+
+    screen.release();
+    expect(spawner.calls).toHaveLength(3);
+    expect(spawner.calls[2]!.args).toEqual(['-i', '-w', String(PID), '-t', '300']);
+    expect(spawner.log.slice(3)).toEqual(['spawn:2', 'kill:1:SIGTERM']);
+    expect(keepAwake.status().level).toBe('system');
+    work.release();
+  });
+
+  it('does not swap when a second screen hold opens or one of two closes', () => {
+    // Purpose: only a real level change costs a process.
+    const spawner = fakeSpawner();
+    const { keepAwake } = mac(spawner);
+
+    const a = keepAwake.hold('a', { display: true });
+    const b = keepAwake.hold('b', { display: true });
+    keepAwake.hold('c');
+    a.release();
+    expect(spawner.calls).toHaveLength(1);
+    expect(keepAwake.status().level).toBe('display');
+    b.release();
+    expect(spawner.calls).toHaveLength(2);
+    expect(keepAwake.status().level).toBe('system');
+  });
+
+  it('keeps the level through the linger, then lets go', () => {
+    // Purpose: the last release never spawns a holder only to stop it minutes later.
+    const spawner = fakeSpawner();
+    const { keepAwake } = mac(spawner, { lingerMs: 30_000 });
+
+    keepAwake.hold('display', { display: true }).release();
+    expect(spawner.calls).toHaveLength(1);
+    expect(keepAwake.status()).toMatchObject({ level: 'display', asserted: true });
+    vi.advanceTimersByTime(30_000);
+    expect(keepAwake.status()).toMatchObject({ level: null, asserted: false });
+  });
+
+  it('renews at the same level', () => {
+    const spawner = fakeSpawner();
+    const { keepAwake } = mac(spawner);
+
+    const screen = keepAwake.hold('display', { display: true });
+    vi.advanceTimersByTime(240_000);
+    expect(spawner.calls).toHaveLength(2);
+    expect(spawner.calls[1]!.args).toContain('-d');
+    screen.release();
+  });
+
+  it('starts at display when the first hold asks for the screen', () => {
+    const spawner = fakeSpawner();
+    const { keepAwake } = mac(spawner);
+    const screen = keepAwake.hold('display', { display: true });
+    expect(spawner.calls).toHaveLength(1);
+    expect(spawner.calls[0]!.args).toContain('-d');
+    expect(screen.display).toBe(true);
+    screen.release();
+  });
+
+  it('stays at system on Linux, where the screen cannot be promised', () => {
+    // Purpose: status never claims a level the mechanism cannot hold.
+    const spawner = fakeSpawner();
+    const keepAwake = createKeepAwake({
+      platform: 'linux',
+      watchPid: PID,
+      fileExists: () => false,
+      readFile: () => null,
+      env: {},
+      spawn: spawner.spawn,
+    });
+    keepAwake.hold('chat');
+    keepAwake.hold('display', { display: true });
+    expect(spawner.calls).toHaveLength(1);
+    expect(keepAwake.status().level).toBe('system');
+  });
+
+  it('reports no level while disabled, and opens at the wanted level when enabled', () => {
+    const spawner = fakeSpawner();
+    const { keepAwake } = mac(spawner, { enabled: false });
+    keepAwake.hold('display', { display: true });
+    expect(spawner.calls).toHaveLength(0);
+    expect(keepAwake.status().level).toBeNull();
+    keepAwake.setEnabled(true);
+    expect(spawner.calls[0]!.args).toContain('-d');
+    expect(keepAwake.status().level).toBe('display');
+  });
+});
+
 describe('dispose', () => {
   it('stops the holder, is idempotent, and makes later holds inert', async () => {
     const spawner = fakeSpawner();

@@ -22,6 +22,12 @@
  * its dispatch path picks one ({@link TaskAwakeHold.attachSession}); until then
  * the label can lag for an instant, but the assertion is already held.
  *
+ * Beside the work, the service owns two holds of its own (DOR-2920): `manual`,
+ * open while a timed session runs or the mode is `always`, and `display`, a
+ * screen-level companion open while anything else is held and the person asked
+ * for the screen too. The rules for both, and for the power rules that pause
+ * everything on battery, are pure functions in `keep-awake-policy.ts`.
+ *
  * **The service is a singleton constructed before boot finishes**, counting
  * only, so turns on runtimes registered early are counted. {@link start} creates
  * the holder once the config exists; holds already open carry over.
@@ -32,9 +38,25 @@
  * @module services/core/keep-awake/keep-awake-service
  */
 import { outsideAuditScope } from '../../audit/audit-context.js';
-import { createKeepAwake, type Hold, type KeepAwake } from '@dorkos/keep-awake';
-import type { KeepAwakeStatus } from '@dorkos/shared/schemas';
+import {
+  createKeepAwake,
+  readPower,
+  type Hold,
+  type KeepAwake,
+  type PowerReading,
+} from '@dorkos/keep-awake';
+import type { KeepAwakeBlocked, KeepAwakeStatus } from '@dorkos/shared/schemas';
 import { logger } from '../../../lib/logger.js';
+import {
+  activeSessionUntil,
+  DEFAULT_KEEP_AWAKE_SETTINGS,
+  hasPowerRule,
+  holdsForWork,
+  holdsWithoutWork,
+  powerBlock,
+  readKeepAwakeSettings,
+  type KeepAwakeSettings,
+} from './keep-awake-policy.js';
 
 /** The hold a turn keeps open while its stream runs. */
 export interface TurnAwakeHold {
@@ -83,21 +105,18 @@ export interface TurnDescriptor {
   holdsBackgroundWork?: () => boolean;
 }
 
-/** The `keepAwake` config section, as far as this service reads it. */
-interface KeepAwakeSettings {
-  whileAgentsWork: boolean;
-}
-
 /** What {@link KeepAwakeService.start} needs from the server. */
 export interface KeepAwakeStartDeps {
   /** Reads the current `keepAwake` section. */
-  readSettings: () => KeepAwakeSettings;
+  readSettings: () => Partial<KeepAwakeSettings>;
   /** Subscribes to settings writes; returns the unsubscribe. */
   onSettingsChange: (listener: (sections: readonly string[]) => void) => () => void;
   /** Pushes status to the app (`keep_awake_status` on the global stream). */
   broadcast: (status: KeepAwakeStatus) => void;
   /** Builds the package handle. A test seam; production uses the real one. */
   createKeepAwake?: typeof createKeepAwake;
+  /** Reads the power source. A test seam; production uses the package's. */
+  readPower?: () => Promise<PowerReading | null>;
 }
 
 /** A turn idle this long, with no helper working, is released by the sweep. */
@@ -117,6 +136,8 @@ export const BACKGROUND_ONLY_CEILING_MS = 20 * 60 * 1000;
 const SWEEP_EVERY_MS = 60_000;
 /** At most one status broadcast per this many milliseconds. */
 const BROADCAST_COALESCE_MS = 500;
+/** The longest `setTimeout` accepts; a later timer end is re-armed when it fires. */
+const MAX_TIMER_MS = 2_147_483_647;
 
 interface TurnRecord {
   kind: 'turn';
@@ -174,7 +195,21 @@ function holdReason(record: WorkRecord): string {
 export class KeepAwakeService {
   private readonly records = new Set<WorkRecord>();
   private keepAwake: KeepAwake | null = null;
+  private settings: KeepAwakeSettings = { ...DEFAULT_KEEP_AWAKE_SETTINGS };
+  /** What the package was last told: hold when work or a session wants it. */
   private enabled = true;
+  /** The service's own hold for a timed session or mode `always`. */
+  private manualHold: Hold | null = null;
+  /** The screen-level companion, open while anything else is held. */
+  private displayHold: Hold | null = null;
+  /** Fires when a timed session ends. */
+  private sessionTimer: ReturnType<typeof setTimeout> | null = null;
+  /** The last power reading, while a power rule is set. */
+  private power: PowerReading | null = null;
+  private blocked: KeepAwakeBlocked | null = null;
+  private powerReadInFlight = false;
+  /** Whether anything was wanted at the last reconcile, to read power on the turn to wanted. */
+  private wasWanted = false;
   private deps: KeepAwakeStartDeps | null = null;
   private unsubscribeSettings: (() => void) | null = null;
   private unsubscribeStatus: (() => void) | null = null;
@@ -191,25 +226,32 @@ export class KeepAwakeService {
   start(deps: KeepAwakeStartDeps): void {
     if (this.keepAwake) return;
     this.deps = deps;
-    this.enabled = this.readEnabled();
+    this.settings = readKeepAwakeSettings(deps.readSettings);
+    this.enabled = this.wantsEnabled(Date.now());
     const factory = deps.createKeepAwake ?? createKeepAwake;
     this.keepAwake = factory({
       watchPid: process.pid,
       enabled: this.enabled,
       logger: { info: (msg) => logger.debug(msg), warn: (msg) => logger.warn(msg) },
     });
+    // The service's own holds first, so a screen-level start is not swapped up
+    // to a moment after the work holds open at system level.
+    this.reconcile();
     for (const record of this.records) record.hold = this.keepAwake.hold(holdReason(record));
     this.unsubscribeStatus = this.keepAwake.onChange(() => this.scheduleBroadcast());
     this.unsubscribeSettings = deps.onSettingsChange((sections) => {
       if (!sections.includes('keepAwake')) return;
-      const next = this.readEnabled();
-      if (next === this.enabled) return;
-      this.enabled = next;
-      this.keepAwake?.setEnabled(next);
+      this.settings = readKeepAwakeSettings(deps.readSettings);
+      if (!hasPowerRule(this.settings)) this.power = null;
+      this.reconcile();
+      void this.refreshPower();
       this.scheduleBroadcast();
     });
     this.sweepTimer = setInterval(
-      outsideAuditScope(() => this.sweepIdleTurns()),
+      outsideAuditScope(() => {
+        this.sweepIdleTurns();
+        void this.refreshPower();
+      }),
       SWEEP_EVERY_MS
     );
     this.sweepTimer.unref?.();
@@ -232,6 +274,13 @@ export class KeepAwakeService {
     if (this.broadcastTimer) clearTimeout(this.broadcastTimer);
     this.broadcastTimer = null;
     this.broadcastPending = false;
+    if (this.sessionTimer) clearTimeout(this.sessionTimer);
+    this.sessionTimer = null;
+    this.manualHold = null;
+    this.displayHold = null;
+    this.power = null;
+    this.blocked = null;
+    this.wasWanted = false;
     const keepAwake = this.keepAwake;
     this.keepAwake = null;
     this.deps = null;
@@ -328,10 +377,120 @@ export class KeepAwakeService {
 
   /**
    * Whether Codex should turn on its own `prevent_idle_sleep` as a second
-   * layer: the setting is on and this computer can be held awake.
+   * layer: work would be held right now (the mode, or a timed session, and no
+   * power rule pausing it) and this computer can be held awake.
    */
   preventsIdleSleep(): boolean {
     return this.keepAwake !== null && this.enabled && this.keepAwake.status().supported;
+  }
+
+  /**
+   * Bring the service's own holds, the package's on/off, and the session timer
+   * in line with the settings, the clock and the last power reading. Called
+   * after every change to any of them. Never throws.
+   */
+  private reconcile(): void {
+    const keepAwake = this.keepAwake;
+    if (!keepAwake) return;
+    try {
+      const now = Date.now();
+      const manual = holdsWithoutWork(this.settings, now);
+      const wanted = this.isWanted(now);
+      this.blocked = hasPowerRule(this.settings) ? powerBlock(this.settings, this.power) : null;
+      const enabled = this.wantsEnabled(now);
+      if (enabled !== this.enabled) {
+        this.enabled = enabled;
+        keepAwake.setEnabled(enabled);
+      }
+      // The companion opens before the hold it accompanies, so the holder
+      // starts at screen level instead of being swapped up a moment later.
+      const display = this.settings.keepDisplayAwake && (manual || this.records.size > 0);
+      if (display && !this.displayHold) {
+        this.displayHold = keepAwake.hold('display', { display: true });
+      }
+      if (manual && !this.manualHold) this.manualHold = keepAwake.hold('manual');
+      if (!manual && this.manualHold) {
+        this.manualHold.release();
+        this.manualHold = null;
+      }
+      if (!display && this.displayHold) {
+        this.displayHold.release();
+        this.displayHold = null;
+      }
+      this.armSessionTimer(now);
+      if (wanted && !this.wasWanted) void this.refreshPower();
+      this.wasWanted = wanted;
+    } catch (err) {
+      logger.warn('[KeepAwake] could not apply the settings', { err: String(err) });
+    }
+  }
+
+  /**
+   * Whether anything wants the computer held right now: a timer or mode
+   * `always`, or open work the mode (or a timer) allows. A power rule may still
+   * be pausing it; this is the wish, not the outcome.
+   *
+   * @param now - The current time in milliseconds.
+   */
+  private isWanted(now: number): boolean {
+    return (
+      holdsWithoutWork(this.settings, now) ||
+      (holdsForWork(this.settings, now) && this.records.size > 0)
+    );
+  }
+
+  /**
+   * Whether the package may hold at all: a timed session or the mode allows it
+   * and no power rule is pausing it.
+   *
+   * @param now - The current time in milliseconds.
+   */
+  private wantsEnabled(now: number): boolean {
+    return holdsForWork(this.settings, now) && this.blocked === null;
+  }
+
+  /** Re-arm the timer that ends the running timed session, if any. */
+  private armSessionTimer(now: number): void {
+    if (this.sessionTimer) clearTimeout(this.sessionTimer);
+    this.sessionTimer = null;
+    const until = activeSessionUntil(this.settings, now);
+    if (!until) return;
+    const wait = Math.min(Math.max(Date.parse(until) - now, 0) + 1, MAX_TIMER_MS);
+    this.sessionTimer = setTimeout(() => {
+      this.sessionTimer = null;
+      this.reconcile();
+      this.scheduleBroadcast();
+    }, wait);
+    this.sessionTimer.unref?.();
+  }
+
+  /**
+   * Read the power source while a power rule is set and something is wanted,
+   * then apply what it says. One read at a time; never throws.
+   */
+  async refreshPower(): Promise<void> {
+    if (!this.keepAwake || this.powerReadInFlight || !hasPowerRule(this.settings)) return;
+    if (!this.isWanted(Date.now())) return;
+    this.powerReadInFlight = true;
+    try {
+      const reading = await (this.deps?.readPower ?? readPower)();
+      if (!this.keepAwake || !hasPowerRule(this.settings)) return;
+      this.power = reading;
+      const before = this.blocked;
+      this.reconcile();
+      if (this.blocked !== before) {
+        logger.info(
+          this.blocked
+            ? `[KeepAwake] letting this computer sleep: ${this.blocked === 'on-battery' ? 'it is on battery' : 'the battery is low'}`
+            : '[KeepAwake] power is back within the rules; keeping this computer awake again'
+        );
+        this.scheduleBroadcast();
+      }
+    } catch (err) {
+      logger.warn('[KeepAwake] could not read the power source', { err: String(err) });
+    } finally {
+      this.powerReadInFlight = false;
+    }
   }
 
   /** The status the app reads. */
@@ -359,8 +518,14 @@ export class KeepAwakeService {
       if (record.room) rooms += 1;
       else chats += 1;
     }
+    const now = Date.now();
+    const until = activeSessionUntil(this.settings, now);
     return {
-      enabled: this.enabled,
+      enabled: this.settings.mode !== 'off',
+      mode: this.settings.mode,
+      manual: until ? { until } : null,
+      level: packageStatus?.level ?? null,
+      blocked: this.isWanted(now) ? this.blocked : null,
       supported: packageStatus?.supported ?? true,
       reason: packageStatus?.reason ?? null,
       asserted: packageStatus?.asserted ?? false,
@@ -417,18 +582,14 @@ export class KeepAwakeService {
     return false;
   }
 
-  private readEnabled(): boolean {
-    try {
-      return this.deps?.readSettings().whileAgentsWork !== false;
-    } catch {
-      return true;
-    }
-  }
-
   private open(record: WorkRecord): void {
     this.records.add(record);
-    if (this.keepAwake) record.hold = this.keepAwake.hold(holdReason(record));
-    else this.scheduleBroadcast();
+    if (!this.keepAwake) {
+      this.scheduleBroadcast();
+      return;
+    }
+    this.reconcile();
+    record.hold = this.keepAwake.hold(holdReason(record));
   }
 
   private close(record: WorkRecord): void {
@@ -441,6 +602,7 @@ export class KeepAwakeService {
     } catch (err) {
       logger.warn('[KeepAwake] could not release a hold', { err: String(err) });
     }
+    this.reconcile();
   }
 
   /**

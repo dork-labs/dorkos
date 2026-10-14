@@ -1,8 +1,10 @@
 /**
- * macOS: `caffeinate -i -w <pid> -t <ttl>`.
+ * macOS: `caffeinate -i [-d] -w <pid> -t <ttl>`.
  *
  * - `-i` prevents idle SYSTEM sleep only. The display still sleeps on its own
  *   timer, which is what a person walking away wants.
+ * - `-d` is added only when a hold asks for the screen too: it keeps the
+ *   display from sleeping, which on macOS also keeps the idle lock away.
  * - `-w <pid>` ends the assertion the moment the owning process dies, so a
  *   crashed server can never keep the Mac awake.
  * - `-t <ttl>` bounds an orphan anyway. The holder is renewed before it
@@ -23,12 +25,25 @@ export const CAFFEINATE_PATH = '/usr/bin/caffeinate';
  *
  * @param watchPid - The process whose death must end the assertion.
  * @param ttlSec - How long this holder lives before it must be renewed.
+ * @param display - Whether the screen is kept on too (`-d`).
  */
-export function caffeinateCommand(watchPid: number, ttlSec: number): HolderCommand {
+export function caffeinateCommand(
+  watchPid: number,
+  ttlSec: number,
+  display = false
+): HolderCommand {
   return {
     mechanism: 'caffeinate',
     command: CAFFEINATE_PATH,
-    args: ['-i', '-w', String(Math.trunc(watchPid)), '-t', String(Math.trunc(ttlSec))],
+    args: [
+      '-i',
+      ...(display ? ['-d'] : []),
+      '-w',
+      String(Math.trunc(watchPid)),
+      '-t',
+      String(Math.trunc(ttlSec)),
+    ],
     renews: true,
+    display,
   };
 }

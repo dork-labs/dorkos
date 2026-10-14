@@ -17,6 +17,12 @@
  * - **A holder can never outlive its owner.** Every adapter watches the owner's
  *   pid, holders are killed through the handle that spawned them (SIGTERM, then
  *   SIGKILL after two seconds), and nothing is ever spawned through a shell.
+ * - **The level is the union of the open holds.** A hold may ask for the screen
+ *   too (`{ display: true }`); while any open hold does, the holder keeps the
+ *   display on as well as the system, where the mechanism can promise it
+ *   ({@link holdsDisplay}). When the level changes, the new holder starts
+ *   before the old one stops, so there is never a gap. The linger keeps the
+ *   level the last hold had.
  * - **No restart storms.** A holder that dies unexpectedly is restarted once;
  *   a second unexpected death within a minute, or a refusal as it starts, is a
  *   `denied` failure. A denial is not permanent: while a hold is wanted it is
@@ -28,7 +34,12 @@
  * @module keep-awake/keep-awake
  */
 import { spawn as nodeSpawn } from 'node:child_process';
-import { detectEnvironment, holderCommandFor, type EnvironmentOptions } from './environment.js';
+import {
+  detectEnvironment,
+  holderCommandFor,
+  holdsDisplay,
+  type EnvironmentOptions,
+} from './environment.js';
 import type {
   ChildLike,
   HolderCommand,
@@ -52,20 +63,39 @@ export interface KeepAwakeStatus {
   asserted: boolean;
   /** Open hold reasons, in acquisition order. Duplicates allowed. */
   reasons: string[];
+  /**
+   * What the assertion covers right now: `system` (idle sleep only), `display`
+   * (the screen too), or null when nothing is asserted.
+   */
+  level: KeepAwakeLevel | null;
+}
+
+/** What an assertion covers: idle system sleep only, or the screen too. */
+export type KeepAwakeLevel = 'system' | 'display';
+
+/** Options for one {@link KeepAwake.hold}. */
+export interface HoldOptions {
+  /** Keep the screen on too, not only the system. Default false. */
+  display?: boolean;
 }
 
 /** One open hold. `release()` is idempotent; a second call is a no-op. */
 export interface Hold {
   /** What the hold was opened for. */
   readonly reason: string;
+  /** Whether it asked for the screen too. */
+  readonly display: boolean;
   /** End this hold. Safe to call more than once and from more than one `finally`. */
   release(): void;
 }
 
 /** The keep-awake handle {@link createKeepAwake} returns. */
 export interface KeepAwake {
-  /** Open a hold. The first open hold starts the OS assertion (when enabled). */
-  hold(reason: string): Hold;
+  /**
+   * Open a hold. The first open hold starts the OS assertion (when enabled); a
+   * hold asking for the screen raises the level while it is open.
+   */
+  hold(reason: string, options?: HoldOptions): Hold;
   /** Turn the OS assertion on or off without losing the count. */
   setEnabled(enabled: boolean): void;
   /** The current state. */
@@ -134,6 +164,8 @@ const FAILURE_MESSAGES: Record<UnsupportedReason, string> = {
 interface HolderRecord {
   child: ChildLike;
   command: HolderCommand;
+  /** Whether this holder was asked to keep the screen on. */
+  display: boolean;
   startedAt: number;
   /** Set when keep-awake itself is stopping it, so its exit is not a failure. */
   retiring: boolean;
@@ -163,7 +195,8 @@ export function createKeepAwake(options: KeepAwakeOptions = {}): KeepAwake {
   const logger = options.logger ?? SILENT_LOGGER;
   const environment = detectEnvironment(options);
 
-  const holds = new Map<symbol, string>();
+  const holds = new Map<symbol, { reason: string; display: boolean }>();
+  const displayCapable = holdsDisplay(environment.mechanism);
   const listeners = new Set<(status: KeepAwakeStatus) => void>();
   const warned = new Set<UnsupportedReason>();
   let enabled = options.enabled ?? true;
@@ -188,13 +221,14 @@ export function createKeepAwake(options: KeepAwakeOptions = {}): KeepAwake {
     mechanism: environment.mechanism,
     holds: holds.size,
     asserted: current !== null,
-    reasons: [...holds.values()],
+    reasons: [...holds.values()].map((open) => open.reason),
+    level: current === null ? null : current.command.display ? 'display' : 'system',
   });
 
   /** Tell listeners, once per real change; a throwing listener is logged, never propagated. */
   const notify = (): void => {
     const snapshot = status();
-    const key = `${snapshot.holds}|${snapshot.asserted}|${snapshot.supported}|${snapshot.reason ?? ''}|${snapshot.reasons.join('\u0000')}`;
+    const key = `${snapshot.holds}|${snapshot.asserted}|${snapshot.level ?? ''}|${snapshot.supported}|${snapshot.reason ?? ''}|${snapshot.reasons.join('\u0000')}`;
     if (key === lastEmittedKey) return;
     lastEmittedKey = key;
     for (const listener of listeners) {
@@ -322,10 +356,24 @@ export function createKeepAwake(options: KeepAwakeOptions = {}): KeepAwake {
     unref(renewTimer);
   };
 
+  /**
+   * Whether the holder should keep the screen on: any open hold asks for it.
+   * With none open (the linger) the level stays what it was, so the last
+   * release never swaps holders just to let go a few minutes later.
+   *
+   * @param fallback - The level to keep when no hold is open.
+   */
+  const wantsDisplay = (fallback: boolean): boolean => {
+    if (!displayCapable) return false;
+    if (holds.size === 0) return fallback;
+    for (const open of holds.values()) if (open.display) return true;
+    return false;
+  };
+
   /** Spawn a holder and make it current. Never throws. */
-  const startHolder = (): void => {
+  const startHolder = (display: boolean = wantsDisplay(false)): void => {
     if (environment.mechanism === 'none') return;
-    const command = holderCommandFor(environment.mechanism, watchPid, ttlSec);
+    const command = holderCommandFor(environment.mechanism, watchPid, ttlSec, display);
     let child: ChildLike;
     try {
       child = spawn(command.command, command.args, {
@@ -347,6 +395,7 @@ export function createKeepAwake(options: KeepAwakeOptions = {}): KeepAwake {
     const record: HolderRecord = {
       child,
       command,
+      display,
       startedAt: Date.now(),
       retiring: false,
       ended: false,
@@ -357,7 +406,24 @@ export function createKeepAwake(options: KeepAwakeOptions = {}): KeepAwake {
     child.once('error', (err) => onHolderEnd(record, err, null));
     child.once('exit', (code) => onHolderEnd(record, null, code));
     scheduleRenew(record);
-    logger.info(`[KeepAwake] holding this computer awake (${command.mechanism})`);
+    logger.info(
+      `[KeepAwake] holding this computer awake (${command.mechanism}${display ? ', screen on' : ''})`
+    );
+  };
+
+  /**
+   * Swap to a holder at the level the open holds want, when the current one is
+   * at another: the new one starts first, then the old one stops, so the
+   * computer is never left unheld in between. A spawn that fails at once keeps
+   * the old holder.
+   */
+  const syncLevel = (): void => {
+    const previous = current;
+    if (!previous || holds.size === 0) return;
+    const display = wantsDisplay(previous.display);
+    if (display === previous.display) return;
+    startHolder(display);
+    if (current !== previous) void retire(previous);
   };
 
   /** Replace the current caffeinate holder before its `-t` runs out: new one first, then the old. */
@@ -369,7 +435,7 @@ export function createKeepAwake(options: KeepAwakeOptions = {}): KeepAwake {
       // A holder that lived to be renewed worked: a later denial backs off from
       // the first step again.
       denials = 0;
-      startHolder();
+      startHolder(wantsDisplay(previous.display));
       void retire(previous);
       notify();
     } catch (err) {
@@ -405,13 +471,13 @@ export function createKeepAwake(options: KeepAwakeOptions = {}): KeepAwake {
       } else if (code === 0 && record.command.renews) {
         // caffeinate's own `-t` ran out before renewal fired (the timer was
         // late, typically because the computer slept anyway). Not a failure.
-        if (shouldHold()) startHolder();
+        if (shouldHold()) startHolder(wantsDisplay(record.display));
       } else if (lastUnexpectedExitAt !== null && now - lastUnexpectedExitAt < RESTART_WINDOW_MS) {
         markUnsupported('denied', 'the holder kept exiting');
       } else {
         lastUnexpectedExitAt = now;
         logger.warn('[KeepAwake] the sleep holder exited unexpectedly; restarting it once');
-        if (shouldHold()) startHolder();
+        if (shouldHold()) startHolder(wantsDisplay(record.display));
       }
       notify();
     } catch (caught) {
@@ -434,21 +500,24 @@ export function createKeepAwake(options: KeepAwakeOptions = {}): KeepAwake {
     }
   };
 
-  const hold = (holdReason: string): Hold => {
-    if (disposed) return { reason: holdReason, release: () => {} };
+  const hold = (holdReason: string, holdOptions: HoldOptions = {}): Hold => {
+    const display = holdOptions.display === true;
+    if (disposed) return { reason: holdReason, display, release: () => {} };
     const token = Symbol(holdReason);
     let released = false;
     try {
-      holds.set(token, holdReason);
+      holds.set(token, { reason: holdReason, display });
       clearLinger();
       if (enabled && supported && !current) startHolder();
       else if (enabled && retryDue && !current) retryNow();
+      else syncLevel();
       notify();
     } catch (err) {
       logger.warn(`[KeepAwake] could not open a hold: ${String(err)}`);
     }
     return {
       reason: holdReason,
+      display,
       release: () => {
         if (released) return;
         released = true;
@@ -458,6 +527,8 @@ export function createKeepAwake(options: KeepAwakeOptions = {}): KeepAwake {
             clearLinger();
             lingerTimer = setTimeout(onLingerEnd, lingerMs);
             unref(lingerTimer);
+          } else if (!disposed) {
+            syncLevel();
           }
           notify();
         } catch (err) {
