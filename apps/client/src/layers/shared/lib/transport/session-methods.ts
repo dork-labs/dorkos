@@ -203,9 +203,14 @@ export function createSessionMethods(
     async getMessages(
       sessionId: string,
       cwd?: string,
-      page?: { since?: string }
+      page?: { since?: string; before?: string; newest?: boolean }
     ): Promise<HistoryRead> {
-      const qs = buildQueryString({ cwd, since: page?.since });
+      const qs = buildQueryString({
+        cwd,
+        since: page?.since,
+        before: page?.before,
+        newest: page?.newest ? '1' : undefined,
+      });
       const url = `/sessions/${sessionId}/messages${qs}`;
       // The ETag names the whole transcript, so only a whole read may use it or
       // fill the cache behind it: a tail (or any later page) answered 304 would

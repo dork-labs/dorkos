@@ -32,6 +32,8 @@ export { RoomPostMark } from './ui/messaging/RoomPostMark';
 export { SentChatCard } from './ui/messaging/SentChatCard';
 export { ChatStopLine } from './ui/messaging/ChatStopLine';
 export { useChatActivity } from './model/messaging/use-chat-activity';
+export { useEarlierMessages } from './model/stream/use-earlier-messages';
+export type { EarlierMessages } from './model/stream/use-earlier-messages';
 export { interleaveStopNotices, transcriptIdForChatMessage } from './lib/chat-messaging';
 export { CelebrationOverlay } from './ui/CelebrationOverlay';
 export { FirstLight } from './ui/FirstLight';

@@ -826,6 +826,23 @@ registry.registerPath({
             'A message id. When the history holds it, only that message and the ones after ' +
             'it come back, with `tail: true`; otherwise the whole history (DOR-2890).',
         }),
+      before: z
+        .string()
+        .optional()
+        .openapi({
+          description:
+            'A message id. Answers the page of up to 100 messages directly older than it, ' +
+            'with `earlierMessages` counting what remains before the page. An id no message ' +
+            'has answers 404 HISTORY_CURSOR_UNKNOWN (DOR-2889).',
+        }),
+      newest: z
+        .enum(['1'])
+        .optional()
+        .openapi({
+          description:
+            'Answers only the newest 150 messages, as the stream snapshot carries them, ' +
+            'with `earlierMessages` counting the rest (DOR-2889).',
+        }),
     }),
   },
   responses: {

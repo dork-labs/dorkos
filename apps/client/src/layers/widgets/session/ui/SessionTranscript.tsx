@@ -50,8 +50,10 @@ import {
   ChatStopLine,
   interleaveStopNotices,
   useChatActivity,
+  useEarlierMessages,
 } from '@/layers/features/chat';
 import { SessionMessage } from './SessionMessage';
+import { LoadEarlierRow } from './LoadEarlierRow';
 import { useRenderSlot, useStableCallback } from '@/layers/shared/lib';
 
 /**
@@ -61,6 +63,14 @@ import { useRenderSlot, useStableCallback } from '@/layers/shared/lib';
  * inventing one would name the feed after something the reader cannot see.
  */
 const TRANSCRIPT_FEED_LABEL = 'Conversation';
+
+/** The "Earlier messages" control's row: one object, so it is never a new row. */
+const LOAD_EARLIER_ROW: ConversationRow = {
+  kind: 'notice',
+  id: 'session-load-earlier',
+  at: '',
+  body: null,
+};
 
 /**
  * Stable empty part list. A fresh `[]` per render would re-run the approval
@@ -162,7 +172,7 @@ interface SessionTranscriptProps {
  * @param props - The transcript and everything a row needs to be interactive.
  */
 export function SessionTranscript({
-  messages: transcript,
+  messages: windowTranscript,
   sessionId,
   isLoadingHistory = false,
   hydrated = false,
@@ -195,6 +205,10 @@ export function SessionTranscript({
   // a message sits in the feed, what has been read — counts the transcript
   // itself, because a stop line is not a message and one arriving late must
   // not shift any of them.
+  // A long conversation opens on its newest messages; older pages the reader
+  // asked for go in front (DOR-2889). Everything below counts them as messages.
+  const earlier = useEarlierMessages(sessionId, windowTranscript);
+  const transcript = earlier.messages;
   const { stops } = useChatActivity(sessionId);
   const messages = useMemo(() => interleaveStopNotices(transcript, stops), [transcript, stops]);
   // Each row's position among the messages, or -1 for a stop line.
@@ -206,20 +220,25 @@ export function SessionTranscript({
   // history and what arrived since, which decides which rows animate. Latched in
   // a slot rather than state: it is read in the same render that captures it, and
   // capturing it must not cause a render of its own.
+  // Counted in the whole conversation (`messagesBefore`), so neither an older
+  // page read in front nor a whole-history reload shifts the line (DOR-2889).
   const historyCount = useRenderSlot<number | null>(null);
-  if (historyCount.read() === null && transcript.length > 0) historyCount.write(transcript.length);
+  if (historyCount.read() === null && transcript.length > 0)
+    historyCount.write(earlier.messagesBefore + transcript.length);
   const lastWidgetFenceIndex = useMemo(() => findLastWidgetFenceIndex(messages), [messages]);
   // The first message a person would have typed, when it is folded: the first
   // plain user turn. -1 when nothing is folded.
+  // Only when the loaded messages start at the beginning: in a long chat's
+  // window, the first user message is not the one that started it.
   const foldedPromptIndex = useMemo(
     () =>
-      foldFirstPrompt
+      foldFirstPrompt && !earlier.canLoadEarlier
         ? messages.findIndex(
             (m) =>
               m.role === 'user' && m.messageType === undefined && !m._stagedContext && !m._chatStop
           )
         : -1,
-    [foldFirstPrompt, messages]
+    [foldFirstPrompt, earlier.canLoadEarlier, messages]
   );
   const birthRecord = useAgentBirthRecord(sessionId);
 
@@ -269,7 +288,8 @@ export function SessionTranscript({
 
   const { lastSeenMessageId, unreadFromStart, markSeen, isHydrated } = useUnreadCursor(
     sessionId,
-    transcript
+    transcript,
+    earlier.messagesBefore
   );
 
   // Rows, not messages, are what the list virtualizes: dividers are real rows so
@@ -322,29 +342,30 @@ export function SessionTranscript({
   // One view row per layout row, kept with it, so reused layout rows hand the
   // timeline the very same objects as last time.
   const [viewRows] = useState(() => new WeakMap<ListRow, ConversationRow>());
-  const rows = useMemo<ConversationRow[]>(
-    () =>
-      listRows.map((row) => {
-        const known = viewRows.get(row);
-        if (known) return known;
-        const view: ConversationRow =
-          row.kind === 'day-divider'
-            ? { kind: 'day-divider', id: row.key, label: row.label }
-            : row.kind === 'unread-divider'
-              ? { kind: 'unread-divider', id: row.key }
-              : {
-                  kind: 'message',
-                  id: row.key,
-                  payload: row.message,
-                  grouping: row.grouping,
-                  author: row.author,
-                  at: row.message.timestamp,
-                };
-        viewRows.set(row, view);
-        return view;
-      }),
-    [listRows, viewRows]
-  );
+  const rows = useMemo<ConversationRow[]>(() => {
+    const built = listRows.map((row) => {
+      const known = viewRows.get(row);
+      if (known) return known;
+      const view: ConversationRow =
+        row.kind === 'day-divider'
+          ? { kind: 'day-divider', id: row.key, label: row.label }
+          : row.kind === 'unread-divider'
+            ? { kind: 'unread-divider', id: row.key }
+            : {
+                kind: 'message',
+                id: row.key,
+                payload: row.message,
+                grouping: row.grouping,
+                author: row.author,
+                at: row.message.timestamp,
+              };
+      viewRows.set(row, view);
+      return view;
+    });
+    // Above everything, as the ceiling of what is loaded (see `LoadEarlierRow`).
+    return earlier.canLoadEarlier ? [LOAD_EARLIER_ROW, ...built] : built;
+  }, [listRows, viewRows, earlier.canLoadEarlier]);
+  const rowOffset = earlier.canLoadEarlier ? 1 : 0;
 
   /**
    * Render one row by kind.
@@ -355,7 +376,10 @@ export function SessionTranscript({
    */
   const renderRow = useCallback<ConversationRowRenderer>(
     (_row, ctx) => {
-      const row: ListRow = listRows[ctx.index]!;
+      if (rowOffset === 1 && ctx.index === 0) {
+        return <LoadEarlierRow loading={earlier.isLoadingEarlier} onLoad={earlier.loadEarlier} />;
+      }
+      const row: ListRow = listRows[ctx.index - rowOffset]!;
       if (row.kind === 'day-divider') return <DayDivider label={row.label} />;
       if (row.kind === 'unread-divider') return <UnreadDivider />;
 
@@ -408,7 +432,7 @@ export function SessionTranscript({
           grouping={row.grouping}
           author={row.author}
           sessionId={sessionId}
-          isNew={history !== null && position >= history}
+          isNew={history !== null && earlier.messagesBefore + position >= history}
           isStreaming={isLastAssistant && isTextStreaming}
           isLatestWidgetMessage={isLatestWidgetMessage}
           isFinalMessage={isFinalMessage}
@@ -433,6 +457,10 @@ export function SessionTranscript({
     },
     [
       listRows,
+      rowOffset,
+      earlier.isLoadingEarlier,
+      earlier.loadEarlier,
+      earlier.messagesBefore,
       transcript.length,
       transcriptIndex,
       lastWidgetFenceIndex,
@@ -484,7 +512,8 @@ export function SessionTranscript({
       // is a round trip, so anchoring before it lands would put every
       // conversation at the end, and being at the end is what marks it read.
       landOn="unread"
-      landingReady={isHydrated}
+      // A link to an old message waits until the pages holding it are read.
+      landingReady={isHydrated && !earlier.isSeeking}
       {...(landOnRow === undefined ? {} : { landOnRow })}
       onReachedBottom={markSeen}
       transcriptAnnouncement={announcement}

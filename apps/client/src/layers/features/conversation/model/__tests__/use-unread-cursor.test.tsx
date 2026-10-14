@@ -530,4 +530,49 @@ describe('useUnreadCursor', () => {
     expect(window.localStorage.getItem('dorkos:chat:last-seen:s-other')).toBeNull();
     expect(window.localStorage.getItem('dorkos:ui:theme')).toBe('dark');
   });
+
+  describe('a long chat that opened on its newest messages (DOR-2889)', () => {
+    /** Messages m251…m400 of a 400-message chat: 250 sit before the window. */
+    function windowed(transport: Transport) {
+      const messages = Array.from({ length: 150 }, (_, i) => ({ id: `m${251 + i}` }));
+      return renderHook(() => useUnreadCursor('s-1', messages, 250), {
+        wrapper: ({ children }: { children: ReactNode }) => (
+          <TransportProvider transport={transport}>{children}</TransportProvider>
+        ),
+      });
+    }
+
+    it('places the rule by the position in the whole chat', async () => {
+      const transport = createMockTransport({
+        getReadCursor: vi.fn().mockResolvedValue(cursor('s-1', 380)),
+      });
+      const { result } = windowed(transport);
+
+      await waitFor(() => expect(result.current.isHydrated).toBe(true));
+      expect(result.current.lastSeenMessageId).toBe('m380');
+    });
+
+    it('draws the rule above the window when the reader stopped before it', async () => {
+      const transport = createMockTransport({
+        getReadCursor: vi.fn().mockResolvedValue(cursor('s-1', 50)),
+      });
+      const { result } = windowed(transport);
+
+      await waitFor(() => expect(result.current.isHydrated).toBe(true));
+      expect(result.current.unreadFromStart).toBe(true);
+    });
+
+    it('records the whole chat as seen, not just the window', async () => {
+      const setReadCursor = vi.fn().mockResolvedValue(cursor('s-1', 400));
+      const transport = createMockTransport({
+        getReadCursor: vi.fn().mockResolvedValue(cursor('s-1', 50)),
+        setReadCursor,
+      });
+      const { result } = windowed(transport);
+
+      await waitFor(() => expect(result.current.isHydrated).toBe(true));
+      act(() => result.current.markSeen());
+      await waitFor(() => expect(setReadCursor).toHaveBeenCalledWith('session', 's-1', 400));
+    });
+  });
 });

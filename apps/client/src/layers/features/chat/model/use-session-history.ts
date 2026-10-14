@@ -11,7 +11,11 @@ import { useEffect, useRef } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useTabVisibility, useTransport } from '@/layers/shared/model';
 import { QUERY_TIMING } from '@/layers/shared/lib';
-import { useSessionChatStore, type SessionScopedCwd } from '@/layers/entities/session';
+import {
+  useHistoryWindowStore,
+  useSessionChatStore,
+  type SessionScopedCwd,
+} from '@/layers/entities/session';
 import { mapHistoryMessage, reconcileTaggedMessages } from './stream/stream-history-helpers';
 import type { ChatMessage } from './chat-types';
 
@@ -73,7 +77,9 @@ export function useSessionHistory({
 
   const historyQuery = useQuery({
     queryKey: ['messages', sessionId, selectedCwd],
-    queryFn: () => transport.getMessages(sessionId!, selectedCwd ?? undefined),
+    // The newest messages only, as the snapshot carries them (DOR-2889): a
+    // first visit to a long chat must not download all of it.
+    queryFn: () => transport.getMessages(sessionId!, selectedCwd ?? undefined, { newest: true }),
     staleTime: QUERY_TIMING.MESSAGE_STALE_TIME_MS,
     refetchOnWindowFocus: false,
     // A null directory is a complete question — the server resolves the
@@ -117,6 +123,12 @@ export function useSessionHistory({
       // and would overwrite optimistic messages.
       if (isStreaming) return;
       if (sid) useSessionChatStore.getState().updateSession(sid, { historySeeded: true });
+      // Where this window starts, unless a snapshot already said (DOR-2889):
+      // the "Earlier messages" control and the unread rule count from it.
+      const windows = useHistoryWindowStore.getState();
+      if (sessionId && (windows.sessions[sessionId]?.generation ?? 0) === 0) {
+        windows.noteSnapshot(sessionId, history[0]!.id, historyQuery.data.earlierMessages ?? 0);
+      }
       setMessages(history.map(mapHistoryMessage));
       return;
     }
@@ -128,7 +140,7 @@ export function useSessionHistory({
         setMessages
       );
     }
-  }, [historyQuery.data, isStreaming, sid, setMessages]);
+  }, [historyQuery.data, isStreaming, sessionId, sid, setMessages]);
 
   return { historyQuery };
 }
