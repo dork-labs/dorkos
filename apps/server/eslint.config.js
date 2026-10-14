@@ -58,6 +58,7 @@ const EXPRESS_BAN = {
 const EXPRESS_HOSTS = [
   'src/services/extensions/http/express-bridge.ts',
   'src/services/extensions/extension-server-lifecycle.ts',
+  'src/services/extensions/server-bundle/load-in-process.ts',
   'src/services/extensions/inbox/extension-inbox-context.ts',
   'src/services/extensions/isolation/child/**/*.ts',
   'src/services/extensions/__fixtures__/**/*.ts',

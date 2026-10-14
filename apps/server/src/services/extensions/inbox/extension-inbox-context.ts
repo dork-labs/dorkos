@@ -10,7 +10,8 @@
  * @module services/extensions/extension-inbox-context
  */
 import type { RequestHandler } from 'express';
-import type { InboxApi, ProjectSettingsReader } from '@dorkos/extension-api/server';
+import type { InboxApi, PersonCheck, ProjectSettingsReader } from '@dorkos/extension-api/server';
+import type { RequestFacts } from '../../../http/request-facts.js';
 import { assessPerson, type PersonBarCopy } from '../../../routes/extensions-person-bar.js';
 import { expressRequestFacts } from '../http/express-bridge.js';
 import { projectRegistry } from '../../projects/project-registry.js';
@@ -93,6 +94,21 @@ export function requirePersonCopy(extensionName: string): PersonBarCopy {
       `DorkOS changed nothing. Only a person can change ${extensionName}'s settings. ` +
       `Ask them to do it in DorkOS.`,
   };
+}
+
+/**
+ * The person bar's verdict on one request, worded for one extension: what a
+ * fetch handler is told about its caller (`ExtensionCaller.person`), and what
+ * the host sends an extension in its own process, whose request carries no
+ * cookie to decide it from.
+ *
+ * @param request - The real request's facts (its cookie, headers and the
+ *   identity the chain resolved).
+ * @param extensionName - The extension's manifest name.
+ */
+export function personVerdict(request: RequestFacts, extensionName: string): PersonCheck {
+  const refusal = assessPerson(request, requirePersonCopy(extensionName));
+  return refusal ? { ok: false, status: refusal.status, body: refusal.body } : { ok: true };
 }
 
 /**

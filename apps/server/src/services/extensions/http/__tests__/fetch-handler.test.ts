@@ -11,7 +11,9 @@ import { Router } from 'express';
 import { Hono } from 'hono';
 import {
   readRegisterResult,
+  requirePerson,
   serverEntryRegister,
+  type ExtensionCaller,
   type ExtensionFetchHandler,
 } from '@dorkos/extension-api/server';
 
@@ -223,8 +225,23 @@ describe('an extension served with a fetch handler', () => {
 
     const res = await request(server).get('/api/ext/my-ext/go').redirects(0);
 
+    // An absolute redirect leaves the mount, so the rule drops it.
     expect(res.status).toBe(302);
-    expect(res.headers.location).toBe('http://localhost/x');
+    expect(res.headers.location).toBeUndefined();
+  });
+
+  it('keeps a redirect that stays inside its own mount', async () => {
+    serve(
+      createFetchHandler(
+        'My Extension',
+        () => new Response(null, { status: 303, headers: { location: 'next?step=2' } })
+      )
+    );
+
+    const res = await request(server).get('/api/ext/my-ext/go').redirects(0);
+
+    expect(res.status).toBe(303);
+    expect(res.headers.location).toBe('/api/ext/my-ext/next?step=2');
   });
 
   it('answers a handler that throws with the chain’s error, and keeps serving', async () => {
@@ -250,7 +267,160 @@ describe('an extension served with a fetch handler', () => {
   });
 });
 
+describe('the headers a fetch handler’s answer may carry', () => {
+  it('keeps content and caching headers and other x- headers', async () => {
+    serve(
+      createFetchHandler(
+        'My Extension',
+        () =>
+          new Response('{}', {
+            headers: {
+              'content-type': 'application/json',
+              'cache-control': 'no-store',
+              etag: '"v1"',
+              'x-ext': 'kept',
+            },
+          })
+      )
+    );
+
+    const res = await request(server).get('/api/ext/my-ext/data');
+
+    expect(res.headers['content-type']).toBe('application/json');
+    expect(res.headers['cache-control']).toBe('no-store');
+    expect(res.headers.etag).toBe('"v1"');
+    expect(res.headers['x-ext']).toBe('kept');
+  });
+
+  it('drops anything DorkOS’s origin would act on, and always sandboxes the answer', async () => {
+    const headers = new Headers({
+      'clear-site-data': '"cookies"',
+      refresh: '0;url=https://evil.example',
+      'www-authenticate': 'Basic realm="x"',
+      'access-control-allow-origin': 'https://evil.example',
+      'content-security-policy': "default-src *; script-src 'unsafe-inline'",
+      'strict-transport-security': 'max-age=0',
+      'x-dorkos-agent': 'agent-1',
+    });
+    headers.append('set-cookie', 'dorkos.session=stolen; Path=/');
+    headers.append('set-cookie', 'other=1; Path=/');
+    serve(createFetchHandler('My Extension', () => new Response('ok', { headers })));
+
+    const res = await request(server).get('/api/ext/my-ext/data');
+
+    expect(res.text).toBe('ok');
+    expect(res.headers['set-cookie']).toBeUndefined();
+    expect(res.headers['clear-site-data']).toBeUndefined();
+    expect(res.headers.refresh).toBeUndefined();
+    expect(res.headers['www-authenticate']).toBeUndefined();
+    expect(res.headers['access-control-allow-origin']).not.toBe('https://evil.example');
+    expect(res.headers['strict-transport-security']).toBeUndefined();
+    expect(res.headers['x-dorkos-agent']).toBeUndefined();
+    expect(res.headers['content-security-policy']).toBe("sandbox; default-src 'none'");
+    expect(res.headers['x-content-type-options']).toBe('nosniff');
+  });
+
+  it.each([
+    ['another site', 'https://evil.example/login'],
+    ['a protocol-relative host', '//evil.example/login'],
+    ['another DorkOS route', '/api/config'],
+    ['a sibling extension', '/api/ext/my-ext-two/x'],
+  ])('drops a redirect to %s', async (_label, location) => {
+    serve(
+      createFetchHandler(
+        'My Extension',
+        () => new Response(null, { status: 302, headers: { location } })
+      )
+    );
+
+    const res = await request(server).get('/api/ext/my-ext/go').redirects(0);
+
+    expect(res.status).toBe(302);
+    expect(res.headers.location).toBeUndefined();
+  });
+});
+
+describe('who is asking, as a fetch handler is told', () => {
+  /** A handler that answers with the caller it was given. */
+  const describeCaller: ExtensionFetchHandler = (_req, caller) =>
+    Response.json({ caller, frozen: Object.isFrozen(caller) && Object.isFrozen(caller.person) });
+
+  beforeEach(() => {
+    serve(createFetchHandler('My Extension', describeCaller));
+  });
+
+  it('tells it a person is asking', async () => {
+    const res = await request(server).get('/api/ext/my-ext/who');
+
+    expect(res.body).toEqual({ caller: { person: { ok: true } }, frozen: true });
+  });
+
+  it('tells it an agent is not a person, with the refusal worded for this extension', async () => {
+    const res = await request(server).get('/api/ext/my-ext/who').set('x-dorkos-agent', 'agent-1');
+
+    expect(res.body.caller).toEqual({
+      person: {
+        ok: false,
+        status: 403,
+        body: {
+          error: "Only a person can change My Extension's settings.",
+          code: 'extension_person_required',
+          message: expect.stringContaining('Only a person can change My Extension'),
+        },
+      },
+    });
+  });
+});
+
 describe('a Hono app as the fetch handler', () => {
+  /** A Hono app with one open route and one only a person may use. */
+  function settingsApp(): Hono<{ Bindings: ExtensionCaller }> {
+    const app = new Hono<{ Bindings: ExtensionCaller }>();
+    app.get('/settings', (c) => c.json({ theme: 'dark', person: c.env.person.ok }));
+    app.put('/settings', requirePerson(), async (c) => c.json({ saved: await c.req.json() }));
+    return app;
+  }
+
+  it('lets a person through requirePerson()', async () => {
+    serve(createFetchHandler('My Extension', settingsApp().fetch));
+
+    const res = await request(server).put('/api/ext/my-ext/settings').send({ theme: 'light' });
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ saved: { theme: 'light' } });
+  });
+
+  it('answers an agent at requirePerson() with the extension’s own words, and never runs the route', async () => {
+    const app = settingsApp();
+    const route = vi.fn();
+    app.put('/other', requirePerson(), (c) => {
+      route();
+      return c.json({});
+    });
+    serve(createFetchHandler('My Extension', app.fetch));
+
+    const settings = await request(server)
+      .put('/api/ext/my-ext/settings')
+      .set('x-dorkos-agent', 'agent-1')
+      .send({ theme: 'light' });
+    const other = await request(server)
+      .put('/api/ext/my-ext/other')
+      .set('x-dorkos-agent', 'agent-1');
+    const read = await request(server)
+      .get('/api/ext/my-ext/settings')
+      .set('x-dorkos-agent', 'agent-1');
+
+    expect(settings.status).toBe(403);
+    expect(settings.body).toMatchObject({
+      error: "Only a person can change My Extension's settings.",
+      code: 'extension_person_required',
+    });
+    expect(other.status).toBe(403);
+    expect(route).not.toHaveBeenCalled();
+    // A route without the bar still answers, and can read the caller itself.
+    expect(read.body).toEqual({ theme: 'dark', person: false });
+  });
+
   it('serves its routes below the mount, exported as the entry’s default', async () => {
     const app = new Hono();
     app.get('/status', (c) => c.json({ ok: true, q: c.req.query('q') }));
