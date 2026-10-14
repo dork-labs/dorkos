@@ -43,6 +43,13 @@ import type {
   SessionInfo,
   SessionsApi,
 } from '../server-extension-api.js';
+import type {
+  ExtensionCaller,
+  ExtensionFetchHandler,
+  PersonCheck,
+  PersonRefusal,
+  ServerExtensionHandlers,
+} from '../server-entry.js';
 import type * as Contract from '../__fixtures__/seam-contract/seams.contract.js';
 
 describe('extension seam contract', () => {
@@ -52,6 +59,14 @@ describe('extension seam contract', () => {
       'utf8'
     ).trim();
     expect(version).toMatch(/^\d+\.\d+\.\d+$/);
+  });
+
+  it('matches serving with a fetch handler both ways (1.5.0)', () => {
+    expectTypeOf<PersonRefusal>().toEqualTypeOf<Contract.PersonRefusal>();
+    expectTypeOf<PersonCheck>().toEqualTypeOf<Contract.PersonCheck>();
+    expectTypeOf<ExtensionCaller>().toEqualTypeOf<Contract.ExtensionCaller>();
+    expectTypeOf<ExtensionFetchHandler>().toEqualTypeOf<Contract.ExtensionFetchHandler>();
+    expectTypeOf<ServerExtensionHandlers>().toEqualTypeOf<Contract.ServerExtensionHandlers>();
   });
 
   it('matches the project and tracker-item types both ways', () => {

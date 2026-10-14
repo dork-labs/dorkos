@@ -15,13 +15,49 @@
  * `requirePerson`, per-project settings and `requireLogin` (1.2.0). Starting
  * work in a new chat adds `api.startWork`, `ctx.sessions`, `StartWorkInput` and
  * `StartWorkError` (1.3.0). Dialogs that really open add `registerDialog`,
- * `ExtensionDialogProps` and `ExtensionDialogControls` (1.4.0). Each later
+ * `ExtensionDialogProps` and `ExtensionDialogControls` (1.4.0). Serving the
+ * API with a fetch handler adds `ExtensionCaller`, `PersonCheck`,
+ * `PersonRefusal`, `ExtensionFetchHandler` and `ServerExtensionHandlers`
+ * (1.5.0, DOR-2856). Each later
  * phase adds its own members here.
  *
  * @module extension-api/__fixtures__/seam-contract
  */
 import type { ComponentType } from 'react';
 import type { RequestHandler } from 'express';
+
+/** What DorkOS answers a caller who is not a person with. */
+export interface PersonRefusal {
+  /** Not a person. */
+  readonly ok: false;
+  /** The HTTP status to answer with. */
+  readonly status: number;
+  /** The JSON body to answer with. */
+  readonly body: { readonly error: string; readonly code: string; readonly message: string };
+}
+
+/** Whether the caller passed the person bar. */
+export type PersonCheck = { readonly ok: true } | PersonRefusal;
+
+/** Who sent a request: the fetch handler's second argument, a Hono app's `c.env`. */
+export interface ExtensionCaller {
+  /** Whether the caller is a person. */
+  readonly person: PersonCheck;
+}
+
+/** A web-standard request handler, given the path below the extension's mount. */
+export type ExtensionFetchHandler = (
+  request: Request,
+  caller: ExtensionCaller
+) => Response | Promise<Response>;
+
+/** What `register()` returns to serve its API with a fetch handler. */
+export interface ServerExtensionHandlers {
+  /** Answers every request under `/api/ext/<id>/` the router does not. */
+  fetch?: ExtensionFetchHandler;
+  /** Called when the extension stops. */
+  cleanup?: () => void | Promise<void>;
+}
 
 /** A project as core knows it: a git main checkout. */
 export interface ProjectRef {
