@@ -89,7 +89,7 @@ describe('isolated Room, cold, checkbox and native whole-file phases', () => {
     }
   });
   it('requires every original assertion from the actual native whole-file selection', () => {
-    const counts = [30, 48, 48, 10, 3, 35, 101];
+    const counts = [30, 48, 48, 10, 3, 35, 101, 55, 1];
     for (const [index, file] of NATIVE_FILES.entries()) {
       const selected = [path.join('/server', file)];
       const actual = report(selected[0]!, false, counts[index]);
@@ -105,6 +105,21 @@ describe('isolated Room, cold, checkbox and native whole-file phases', () => {
     expect(() =>
       validateNative(report('/server/foreign.test.ts'), ['/server/foreign.test.ts'], '/server')
     ).toThrow();
+  });
+  it('accounts for two native whole files without losing or duplicating either collection', () => {
+    const selected = [path.join('/server', NATIVE_FILES[0]), path.join('/server', NATIVE_FILES[7])];
+    const actual = mergeReports(report(selected[0]!, false, 30), report(selected[1]!, false, 55));
+    expect(() => validateNative(actual, selected, '/server')).not.toThrow();
+    expect(() => validateNative(actual, [selected[0]!], '/server')).toThrow();
+    expect(() => validateNative(actual, [selected[0]!, selected[0]!], '/server')).toThrow();
+    const missing = { ...actual, testResults: actual.testResults.slice(0, 1) };
+    expect(() => validateNative(missing, selected, '/server')).toThrow();
+    const duplicate = { ...actual, testResults: [actual.testResults[0], actual.testResults[0]] };
+    expect(() => validateNative(duplicate, selected, '/server')).toThrow();
+    const pending = mergeReports(report(selected[0]!, false, 30), report(selected[1]!, false, 55));
+    pending.testResults[1]!.assertionResults[0]!.status = 'pending';
+    expect(() => validateNative(pending, selected, '/server')).toThrow();
+    expect(() => validateNative({ ...actual, numTotalTests: 84 }, selected, '/server')).toThrow();
   });
   it('merges native whole assertions once and refuses a duplicate ordinary file', () => {
     const ordinary = report('/server/ordinary.test.ts', false, 2);

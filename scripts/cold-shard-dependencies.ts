@@ -287,8 +287,10 @@ export const NATIVE_FILES = [
   'src/services/rooms/repo/__tests__/room-worktree-refresh.integration.test.ts',
   'src/services/rooms/repo/__tests__/room-worktree-refresh.test.ts',
   'src/services/session/__tests__/message-dispatcher.test.ts',
+  'src/services/rooms/repo/__tests__/room-merge-service.test.ts',
+  'src/services/canvas/doc-channel/__tests__/original-native-canonical-recovery.test.ts',
 ] as const;
-export const NATIVE_COUNTS = [30, 48, 48, 10, 3, 35, 101];
+export const NATIVE_COUNTS = [30, 48, 48, 10, 3, 35, 101, 55, 1];
 
 /**
  * Validate the exact singleton collection and complete assertion results for an isolated phase.
@@ -350,7 +352,7 @@ export async function nativeSelection(server: string, shard: number): Promise<st
       JSON.stringify(collected) !==
       JSON.stringify(NATIVE_FILES.map((file) => path.join(server, file)).sort())
     )
-      throw new Error('native family collection differs from the exact seven whole files');
+      throw new Error('native family collection differs from the exact nine whole files');
     const sequencer = new context.config.sequence.sequencer(context);
     return (await sequencer.shard(specifications)).map((specification) => specification.moduleId);
   } finally {
@@ -360,18 +362,44 @@ export async function nativeSelection(server: string, shard: number): Promise<st
 
 /** Require the actually selected native whole file and every original assertion. */
 export function validateNative(report: Json, selected: readonly string[], server: string): void {
-  if (selected.length > 1) throw new Error('native shard selected multiple files');
-  const index = selected.length
-    ? NATIVE_FILES.findIndex((file) => path.join(server, file) === selected[0])
-    : -1;
-  if (selected.length && index < 0) throw new Error('native shard selected an unowned file');
-  validateIsolated(
-    report,
-    selected.length ? 1 : 0,
-    selected[0] ?? '',
-    index < 0 ? 0 : NATIVE_COUNTS[index]!,
-    'native'
+  const allowed = new Map(
+    NATIVE_FILES.map((file, index) => [path.join(server, file), NATIVE_COUNTS[index]!])
   );
+  if (new Set(selected).size !== selected.length || selected.some((file) => !allowed.has(file)))
+    throw new Error('native shard selected an unowned or duplicate file');
+  if (!Array.isArray(report.testResults) || report.testResults.length !== selected.length)
+    throw new Error('native phase did not collect its exact selected whole files');
+  const seen = new Set<string>();
+  let passed = 0,
+    failed = 0,
+    total = 0;
+  for (const file of report.testResults) {
+    if (
+      !selected.includes(file.name) ||
+      seen.has(file.name) ||
+      !['passed', 'failed'].includes(file.status)
+    )
+      throw new Error('native phase collected an unselected, duplicate or pending file');
+    seen.add(file.name);
+    const assertions = file.assertionResults;
+    if (
+      !Array.isArray(assertions) ||
+      assertions.length !== allowed.get(file.name) ||
+      assertions.some((assertion: Json) => !['passed', 'failed'].includes(assertion.status))
+    )
+      throw new Error('native phase did not execute every original whole-file assertion');
+    total += assertions.length;
+    passed += assertions.filter((assertion: Json) => assertion.status === 'passed').length;
+    failed += assertions.filter((assertion: Json) => assertion.status === 'failed').length;
+  }
+  if (
+    report.numPendingTests !== 0 ||
+    report.numTodoTests !== 0 ||
+    report.numTotalTests !== total ||
+    report.numPassedTests !== passed ||
+    report.numFailedTests !== failed
+  )
+    throw new Error('native phase assertion status accounting is inconsistent');
 }
 
 const COUNTERS = [

@@ -249,3 +249,11 @@ Keep the unchanged thirty-minute job limit and existing seven-day hypothesis.
 Local correctness and timing evidence do not establish hosted job completion,
 required-check acceptance, or a release verdict. The earlier held proposal and
 failed-run chronology above remain historical evidence.
+
+### Hosted native admission follow-up, 2026-10-14
+
+The genuine `f1ff48f03cc59d154e0da6b5d2834628d2fbf584` test run `38630174353`, attempt 1, failed in the ordinary parallel server phase on shards 5 and 7. Shard 5 recorded two original merge-fixture admission failures at the unchanged one-second wait. Shard 7 recorded the original canonical recovery test's unchanged five-second failure and a separate config fixture cold-import hook failure. Both failed shards still executed their original isolated phases: the shard 5 native launch file passed all 48 cases and shard 7's original cwd file passed all 30 cases. These are scoped observations, not a green hosted run.
+
+The native phase now also owns the complete 55-case merge-service file and the complete one-case canonical recovery file. These fixtures perform real native Room startup, admission and cleanup, so they belong beside the existing seven native files rather than competing with ordinary server workers. The nine-file family contains 331 original assertions. The actual configured Vitest sequencer still assigns whole files across eight shards; its first shard can select two files, which execute with the existing one-worker, nonparallel-file flags. The phase validator requires the exact selected file set, each file's full original case count, no pending/todo cases, and matching aggregate pass/fail counts.
+
+No test deadline, job ceiling, child lifetime, native identity, assertion or retry policy changes. The original ledger history and cold-import 33-case phase remain intact. Fresh whole-file execution, actual nine-file/eight-shard collection proof, unchanged source guards and hosted CI remain required; the captured negative run does not supply that acceptance. The separate config fixture failure requires its own source-backed correction.

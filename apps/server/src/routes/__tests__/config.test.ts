@@ -12,18 +12,18 @@ import {
   ROOM_TURN_LIMIT_DEFAULTS,
 } from '@dorkos/shared/config-schema';
 
-/** The account that owns this install, as `readOwnerAccount` answers (DOR-2652). */
+/** No Better Auth instance is initialized; only the install owner is declared. */
 const owner = vi.hoisted(() => ({ account: { id: 'user_cockpit', name: 'Owner' } as unknown }));
-// The session gate lets every request through: with login off it is a
-// pass-through anyway, and the cases that turn login on present the identity it
-// would have proved (`configApp` below) to reach the route's own bars.
+// The gate already admits requests; the real route still enforces its own caller policy.
 vi.mock('../../services/core/auth/session-gate.js', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../services/core/auth/session-gate.js')>()),
   decideSessionGate: vi.fn(async () => ({ allowed: true })),
 }));
-vi.mock('../../services/core/auth/index.js', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('../../services/core/auth/index.js')>()),
+vi.mock('../../services/core/auth/index.js', () => ({
   readOwnerAccount: () => owner.account,
+  hasAnyApiKey: () => false,
+  getAuth: () => undefined,
+  captureOriginalRequestAuthReader: () => undefined,
 }));
 
 // Mock tunnel-manager and agent-manager to avoid side effects
