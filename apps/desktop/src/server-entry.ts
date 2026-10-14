@@ -84,14 +84,19 @@ async function main() {
   sendToParent({ type: 'ready' });
 
   // Listen for shutdown signal from main process
+  let shutdownRequested = false;
   onParentMessage((msg) => {
     if (
       msg &&
       typeof msg === 'object' &&
       'type' in msg &&
-      (msg as { type: string }).type === 'shutdown'
+      (msg as { type: string }).type === 'shutdown' &&
+      !shutdownRequested
     ) {
-      process.exit(0);
+      // The server's signal handler joins runtime/computer cleanup before exit.
+      // Repeated IPC must not become the second signal that forces an early exit.
+      shutdownRequested = true;
+      process.emit('SIGTERM');
     }
   });
 }
