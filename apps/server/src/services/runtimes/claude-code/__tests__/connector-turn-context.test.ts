@@ -249,11 +249,12 @@ describe('ClaudeConnectorTurnContext', () => {
       cwd: '/repo',
     });
     await context.resolvePrincipal();
+    const resolutionsBeforeLoss = vi.mocked(principals.resolve).mock.calls.length;
 
     leaseLost = true;
     await expect(context.resolvePrincipal()).rejects.toThrow('Start a new turn');
     expect(principals.openTurn).toHaveBeenCalledOnce();
-    expect(principals.resolve).toHaveBeenCalledOnce();
+    expect(principals.resolve).toHaveBeenCalledTimes(resolutionsBeforeLoss);
   });
 
   it('keeps the real turn principal renewable for 72 hours and closes it at terminal', async () => {
@@ -277,5 +278,73 @@ describe('ClaudeConnectorTurnContext', () => {
       await context.revoke('turn_cancelled').catch(() => undefined);
       fixture.close();
     }
+  });
+});
+
+describe('Claude runtime authority remains current for document tools', () => {
+  it('does not open a binding after the turn was retired before its first tool call', async () => {
+    const principals = port();
+    const context = new ClaudeConnectorTurnContext({
+      tools: tooling(principals),
+      canonicalSessionId: () => 'session-1',
+      agentPath: '/repo',
+      cwd: '/repo',
+    });
+    await context.revoke('turn_terminal');
+    await expect(context.resolvePrincipal()).rejects.toThrow(/retired/);
+    expect(principals.openTurn).not.toHaveBeenCalled();
+  });
+
+  it('revalidates a previously resolved principal and refuses changed authority', async () => {
+    const principals = port();
+    const context = new ClaudeConnectorTurnContext({
+      tools: tooling(principals),
+      canonicalSessionId: () => 'session-1',
+      agentPath: '/repo',
+      cwd: '/repo',
+    });
+    await context.resolvePrincipal();
+    vi.mocked(principals.resolve).mockResolvedValue({
+      status: 'refused',
+      reason: 'authority_changed',
+    });
+    await expect(context.resolvePrincipal()).rejects.toThrow(/unavailable/);
+    expect(principals.openTurn).toHaveBeenCalledTimes(1);
+    expect(principals.revoke).toHaveBeenCalledWith('binding-1', 'setup_failed');
+  });
+
+  it('does not create a lease supervisor if terminal retirement races initial principal resolution', async () => {
+    const principals = port();
+    let entered!: () => void;
+    const started = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+    let finish!: (value: Awaited<ReturnType<ConnectorRuntimePrincipalPort['resolve']>>) => void;
+    vi.mocked(principals.resolve).mockImplementation(() => {
+      entered();
+      return new Promise((resolve) => {
+        finish = resolve;
+      });
+    });
+    const createLeaseSupervisor = vi.fn(() => ({
+      state: 'active' as const,
+      stop: vi.fn(),
+      assertUsable: vi.fn(),
+    }));
+    const context = new ClaudeConnectorTurnContext({
+      tools: { ...tooling(principals), createLeaseSupervisor },
+      canonicalSessionId: () => 'session-1',
+      agentPath: '/repo',
+      cwd: '/repo',
+    });
+    const resolving = context.resolvePrincipal();
+    const refusal = expect(resolving).rejects.toThrow(/retired/);
+    await started;
+    const retiring = context.revoke('turn_terminal');
+    finish({ status: 'resolved', principal });
+    await refusal;
+    await retiring;
+    expect(createLeaseSupervisor).not.toHaveBeenCalled();
+    expect(principals.revoke).toHaveBeenCalledTimes(1);
   });
 });

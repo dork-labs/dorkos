@@ -246,3 +246,30 @@ The app's HTML itself is never trusted from the tool-call text the model sees. D
     Full interactive API documentation, including the MCP App resource endpoint.
   </Card>
 </Cards>
+
+## Document tools inside a runtime turn
+
+A DorkOS-hosted Claude Code turn supplies its verified, live runtime identity to
+`configure_doc_channel`, `approve_doc_route`, `revoke_doc_route`,
+`canvas_patch_state` and `canvas_send`. Codex and OpenCode use the authenticated internal runtime MCP
+listener for the same five operations. A tool argument cannot choose the agent,
+session, installation or permissions.
+
+An agent may configure its own document route and approve its own route where
+the existing document policy permits it. It may patch state or send a downstream
+event only on a document it may write, including a room canvas while it is a
+current room member. Other targets still require their existing exact approval;
+this identity projection grants no new route, operator permission or file-write
+approval. Missing or retired turn authority and lost membership are refused. The recorded opener may also call
+`revoke_doc_route` to stop its own route; another member cannot revoke a
+different opener’s grant.
+
+Room app acknowledgments remain unavailable in this delivery. A room-scoped
+`canvas_send` with type `app.ack` returns
+`ROOM_APP_ACK_RESPONDER_UNAVAILABLE` (409 at the document service); it does not
+record an acknowledgment or mark inputs handled. Membership and a successful
+state patch do not prove which active room turn was admitted to respond to an
+app event. Until that correlation is installed and verified, consumers must keep
+those inputs unacknowledged rather than report them handled or automatically
+repeat the effect. Ordinary downstream sends and state patches do not settle
+app inputs or start a new turn.
