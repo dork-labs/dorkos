@@ -52,7 +52,6 @@
     "apps/server/src/services/browser/egress/broker/issuer.ts": 595,
     "apps/server/src/services/canvas/canvas-service.ts": 617,
     "apps/server/src/services/canvas/doc-channel/store.ts": 552,
-    "apps/server/src/services/communities/remote/mirror-store.ts": 1345,
     "apps/server/src/services/communities/remote/pairing-service.ts": 704,
     "apps/server/src/services/communities/remote/remote-community-adapter.ts": 1015,
     "apps/server/src/services/communities/remote/remote-room-subscription-runtime.ts": 579,
