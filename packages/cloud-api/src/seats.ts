@@ -182,7 +182,7 @@ export const AgentClaimRequestSchema = z
       .boolean()
       .optional()
       .describe(
-        'Whether the reporting instance has a local sign-in. The server reads absent as false; the parsed value is still undefined, because a default here would be a claim about what the client sent.'
+        'Whether the reporting instance requires a signed-in person for every request that does not come from this computer itself. With `hasUsers`, this is the exposure predicate: other devices must sign in, and there is an owner to sign in as. An instance reports this fact, never a single global login switch. The server reads absent as false; the parsed value is still undefined, because a default here would be a claim about what the client sent.'
       ),
     hasUsers: z
       .boolean()

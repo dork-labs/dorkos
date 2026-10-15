@@ -2,6 +2,14 @@
   "version": 1,
   "specs": [
     {
+      "id": "261015-144648",
+      "slug": "request-classifier",
+      "title": "One request classifier and the registration-policy seam (F0)",
+      "created": "2026-10-15",
+      "status": "specified",
+      "linearIssue": "DOR-2965"
+    },
+    {
       "id": "261015-042934",
       "slug": "everything-is-a-space",
       "title": "Everything is a space: hubs, space servers and agent computers",
