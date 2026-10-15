@@ -37,6 +37,9 @@ import log from 'electron-log';
  *   `navigator.clipboard.writeText` (`shared/lib/use-copy-feedback.ts`, the file
  *   explorer's copy-path action, and the boot panel's "Copy details").
  *
+ * One more is granted only in part, by {@link isReadOfAHandedOverFile}: reading
+ * a file the person dropped on the app (`fileSystem`, readable, not a folder).
+ *
  * Everything else is denied, and the two worth naming are denied on purpose:
  * `media` (camera and microphone) because nothing in the product captures
  * either — `electron-builder.yml` strips the camera and microphone usage
@@ -50,6 +53,44 @@ export const GRANTED_PERMISSIONS: ReadonlySet<string> = new Set([
 ]);
 
 /**
+ * What Chromium says about a `fileSystem` ask; absent for every other
+ * permission. Both handlers receive these two fields under the same names.
+ */
+interface FileAccessDetails {
+  fileAccessType?: 'writable' | 'readable';
+  isDirectory?: boolean;
+}
+
+/**
+ * Whether a `fileSystem` ask is only to read one file the person handed over.
+ *
+ * Dropping a file on the composer is that ask. The drop library the composer
+ * uses (react-dropzone, through `file-selector`) reads a dropped file through
+ * its File System Access handle whenever the page is a secure context, and the
+ * app's localhost origin is one, so Chromium checks `fileSystem` before
+ * handing over the bytes. Denying it made every drop fail with `NotAllowedError`
+ * while the paperclip, which never touches a handle, kept working (DOR-2870).
+ *
+ * Granting it gives the page nothing new: a handle exists only for a file the
+ * person dropped or picked themselves, and the page can read that file through
+ * `DataTransfer.files` anyway. The one widening: a page that saved a handle
+ * from an earlier drop can read that same file again later without asking,
+ * where Chrome would ask again. Never a file the person did not hand over.
+ * Writing and whole folders stay denied — nothing in the product asks for
+ * either.
+ *
+ * @param permission - Chromium's name for what was asked for.
+ * @param details - The file fields of the ask, when it is a `fileSystem` one.
+ */
+function isReadOfAHandedOverFile(permission: string, details: FileAccessDetails): boolean {
+  return (
+    permission === 'fileSystem' &&
+    details.fileAccessType === 'readable' &&
+    details.isDirectory === false
+  );
+}
+
+/**
  * Decide one permission, for logging and for both handlers below.
  *
  * @param permission - Chromium's name for what was asked for.
@@ -58,14 +99,17 @@ export const GRANTED_PERMISSIONS: ReadonlySet<string> = new Set([
  *   knowing who is asking is itself a reason to say no.
  * @param isTrustedOrigin - Whether a URL belongs to the app's own renderer; see
  *   {@link applyPermissionPolicy}.
+ * @param details - The file fields of a `fileSystem` ask; see
+ *   {@link isReadOfAHandedOverFile}.
  */
 function decide(
   permission: string,
   requestingUrl: string | undefined,
-  isTrustedOrigin: (url: string) => boolean
+  isTrustedOrigin: (url: string) => boolean,
+  details: FileAccessDetails
 ): boolean {
   if (!requestingUrl || !isTrustedOrigin(requestingUrl)) return false;
-  return GRANTED_PERMISSIONS.has(permission);
+  return GRANTED_PERMISSIONS.has(permission) || isReadOfAHandedOverFile(permission, details);
 }
 
 /**
@@ -99,7 +143,9 @@ export function applyPermissionPolicy(
   isTrustedOrigin: (url: string) => boolean
 ): void {
   target.setPermissionRequestHandler((_webContents, permission, callback, details) => {
-    const granted = decide(permission, details.requestingUrl, isTrustedOrigin);
+    // Only the `fileSystem` member of the union carries the file fields.
+    const fileDetails = 'fileAccessType' in details ? details : {};
+    const granted = decide(permission, details.requestingUrl, isTrustedOrigin, fileDetails);
     if (!granted) {
       log.info(
         `[permissions] Denied "${permission}" to ${details.requestingUrl || 'an unnamed frame'}.`
@@ -108,8 +154,8 @@ export function applyPermissionPolicy(
     callback(granted);
   });
 
-  target.setPermissionCheckHandler((_webContents, permission, requestingOrigin) =>
-    decide(permission, requestingOrigin, isTrustedOrigin)
+  target.setPermissionCheckHandler((_webContents, permission, requestingOrigin, details) =>
+    decide(permission, requestingOrigin, isTrustedOrigin, details)
   );
 
   // Screen capture, denied outright — nothing in the product records a screen.
