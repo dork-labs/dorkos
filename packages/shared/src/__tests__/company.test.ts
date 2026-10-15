@@ -200,7 +200,9 @@ const PUBLISHED_PACKAGES = [
   'packages/ui',
 ];
 
-describe('company facts', () => {
+// Several checks scan the whole repository with git grep, which took over
+// 5 seconds on a loaded merge-queue runner; the default timeout is too tight.
+describe('company facts', { timeout: 30_000 }, () => {
   it('carries exactly the published facts', () => {
     // A new field is a deliberate decision about what this public repo
     // publishes, so it has to be named here too.

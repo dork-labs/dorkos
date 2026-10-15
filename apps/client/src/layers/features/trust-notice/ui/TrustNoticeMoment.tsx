@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { toast } from 'sonner';
+import { docsUrl } from '@dorkos/shared/links';
 
 import { useUpdateConfig } from '@/layers/entities/config';
 import { useSetPermission } from '@/layers/entities/permissions';
@@ -13,7 +14,7 @@ import {
 } from '@/layers/shared/ui';
 
 /** The docs section that walks through the change, linked as "What changed". */
-export const TRUST_NOTICE_DOCS_URL = 'https://dorkos.ai/docs/guides/permissions#what-changed';
+export const TRUST_NOTICE_DOCS_URL = docsUrl('/guides/permissions#what-changed');
 
 /** The two lines under the opening sentence, one block each. */
 const NOTICE_LINES = [
