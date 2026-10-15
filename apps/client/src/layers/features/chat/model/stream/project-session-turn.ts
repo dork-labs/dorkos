@@ -34,6 +34,7 @@ import { deriveFromParts } from './stream-event-helpers';
 import { mapHistoryMessages } from './stream-history-helpers';
 import { foldCapabilityApproval, foldCapabilityApprovalResolved } from './capability-approval-fold';
 import { foldMcpSignin, foldMcpSigninResolved } from './mcp-signin-fold';
+import { isPromptResolution, settledInteractionIds } from './turn-resolutions';
 
 /** Stable id for the synthesized trailing in-progress assistant bubble. */
 const IN_PROGRESS_ASSISTANT_ID = '__in_progress_turn__';
@@ -871,15 +872,6 @@ function markParked(parts: MessagePart[], dto: PendingInteractionDTO): void {
   if (toolCall) toolCall.approvalParked = true;
 }
 
-/** The interaction ids an `interaction_resolved` in this turn already answered. */
-function settledInteractionIds(events: SessionEvent[]): Set<string> {
-  const ids = new Set<string>();
-  for (const event of events) {
-    if (event.type === 'interaction_resolved') ids.add(event.id);
-  }
-  return ids;
-}
-
 /**
  * Fold the in-progress turn's {@link SessionEvent}s into the renderable
  * {@link MessagePart}[] for the trailing assistant bubble.
@@ -1038,7 +1030,7 @@ function projectInProgressSegments(
   const out: ChatMessage[] = [];
   let run: SessionEvent[] = [];
   let precedingSegments = 0;
-  for (const event of inProgressTurn) {
+  for (const [index, event] of inProgressTurn.entries()) {
     // Both a steer (`turn_input`) and a staged note (`context_staged`) arrive
     // mid-turn and split it: the run of assistant events before them closes as
     // its own bubble, then the person's entry renders in reading order — a user
@@ -1050,7 +1042,12 @@ function projectInProgressSegments(
     // Close the assistant run that arrived before this entry as its own bubble.
     // No pending-interaction fold here — those belong to the turn's OPEN tail,
     // which is a later segment.
-    const parts = projectInProgressTurn(run);
+    // A prompt in this run can be answered after the entry: fold those later
+    // answers here too, or its card stays pending with nothing left to answer.
+    const parts = projectInProgressTurn([
+      ...run,
+      ...inProgressTurn.slice(index + 1).filter(isPromptResolution),
+    ]);
     const bubble = buildInProgressMessage(
       parts,
       `${IN_PROGRESS_ASSISTANT_ID}-${precedingSegments}`

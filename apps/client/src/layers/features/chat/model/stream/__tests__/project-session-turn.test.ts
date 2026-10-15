@@ -985,6 +985,43 @@ describe('projectSessionMessages', () => {
     expect(messages[4].id).toBe('__in_progress_turn__');
   });
 
+  it('settles an approval whose answer landed after a steer split the turn', () => {
+    // Purpose: a steer arriving between an approval and its answer closes the
+    // approval's bubble before the answer folds. Left there, the card stayed
+    // "waiting on you" forever, its buttons answered nothing, and the composer
+    // stayed hidden behind it until the turn ended.
+    const messages = projectSessionMessages(history, [
+      { seq: 1, type: 'turn_start', userMessage: 'go' },
+      { seq: 2, type: 'tool_call', toolCallId: 'tc-1', toolName: 'Bash', status: 'running' },
+      {
+        seq: 3,
+        type: 'approval_required',
+        id: 'tc-1',
+        toolName: 'Bash',
+        input: '{}',
+        startedAt: 1000,
+        remainingMs: 600000,
+        hasSuggestions: false,
+      },
+      { seq: 4, type: 'turn_input', content: 'also do X', disposition: 'steer', messageId: 'm-5' },
+      {
+        seq: 5,
+        type: 'interaction_resolved',
+        id: 'tc-1',
+        resolution: 'approved',
+        at: 2000,
+        kind: 'approval',
+      },
+      { seq: 6, type: 'tool_result', toolCallId: 'tc-1', toolName: 'Bash', status: 'complete' },
+    ]);
+    const parts = messages.flatMap((m) => m.parts ?? []);
+    expect(parts.some((p) => p.type === 'tool_call' && p.status === 'pending')).toBe(false);
+    const gated = parts.find(
+      (p) => p.type === 'tool_call' && p.toolCallId === 'tc-1' && p.interactiveType === 'approval'
+    );
+    expect(gated).toMatchObject({ approvalOutcome: expect.anything() });
+  });
+
   it('does not tag an ordinary steer as staged context', () => {
     // Guards the split's discriminator: a steer is a user bubble, a stage is a
     // quiet note — the projector must not confuse the two.
