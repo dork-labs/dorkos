@@ -27,6 +27,7 @@ import {
   parseHostname,
   getTunnelHosts,
 } from '../../../lib/trusted-origins.js';
+import { getLanAccessHosts } from '../lan-access/lan-trust.js';
 import { isHostAllowed, parseTrustedHosts } from '../../../middleware/host-guard.js';
 import { bypassesManagedIngress } from '../../../middleware/managed-host-guard.js';
 import { noteUpgradeAdmitted } from '../remote/ingress-mark.js';
@@ -172,6 +173,7 @@ function originIsTrusted(req: IncomingMessage, credential: UpgradeRoute['credent
         hostname: parseHostname(headers.host),
         trustedHosts: parseTrustedHosts(env.DORKOS_TRUSTED_HOSTS),
         tunnelHosts: getTunnelHosts(),
+        lanHosts: getLanAccessHosts(),
       }),
       // eslint-disable-next-line no-restricted-syntax -- DORKOS_CORS_ORIGIN is not in env.ts; read the same way the chain reads it
       configuredOrigins: process.env.DORKOS_CORS_ORIGIN,

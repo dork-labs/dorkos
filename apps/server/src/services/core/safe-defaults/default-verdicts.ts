@@ -339,6 +339,8 @@ export const SAFE_DEFAULTS: Readonly<Record<string, unknown>> = {
   'permissions.defaults.actions': {},
   // Public exposure starts off, with no hostname, token, or edge passcode.
   'tunnel.enabled': false,
+  // Devices on the same network stay out until a person lets them in (DOR-2930).
+  'server.lanAccess': false,
   'browser.enabled': false,
   // The computer experiment is off until a person enables it.
   'computers.enabled': false,

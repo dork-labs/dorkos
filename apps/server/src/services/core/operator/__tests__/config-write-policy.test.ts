@@ -225,6 +225,8 @@ describe('CONFIG_WRITE_POLICY drift guard', () => {
       'runtimes.opencode.provider',
       'scheduler.maxConcurrentRuns',
       'server.boundary',
+      // Opens DorkOS to every device on the same network (DOR-2930).
+      'server.lanAccess',
       'spaces.enabled',
       'spaces.official.url',
       'telemetry.aiMetadata',

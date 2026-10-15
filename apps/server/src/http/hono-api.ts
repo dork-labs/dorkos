@@ -116,6 +116,7 @@ import {
 } from '../routes/unclaimed-chats.js';
 import { createTestControlRoutes, type TestControlDeps } from '../routes/test-control.js';
 import tunnelRoutes from '../routes/tunnel.js';
+import { createLanAccessRoutes } from '../routes/lan-access.js';
 import eventsRoutes from '../routes/events.js';
 import uploadRoutes from '../routes/uploads.js';
 import workbenchServeRoutes from '../routes/workbench-serve.js';
@@ -355,6 +356,7 @@ export function createHonoApi(options: HonoApiOptions): Hono<ApiEnv> {
   // the Owner-only front-door settings, behind the same chain as every route.
   app.route('/api/tunnel', tunnelRoutes);
   app.route('/api/remote-access', createRemoteAccessRoutes());
+  app.route('/api/lan-access', createLanAccessRoutes());
   app.route('/api/cloud', cloudRoutes);
   app.route('/api/config', configRoutes);
   app.route('/api/mcp-config', mcpConfigRoutes);

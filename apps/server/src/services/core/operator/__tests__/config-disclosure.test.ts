@@ -92,7 +92,13 @@ function fullyPopulatedConfig(): Record<string, unknown> {
   const base = UserConfigSchema.parse({ version: 1 }) as unknown as Record<string, unknown>;
   return {
     ...base,
-    server: { port: 4242, cwd: '/Users/me/code', boundary: '/Users/me', open: true },
+    server: {
+      port: 4242,
+      cwd: '/Users/me/code',
+      boundary: '/Users/me',
+      open: true,
+      lanAccess: false,
+    },
     ui: {
       theme: 'dark',
       dismissedUpgradeVersions: ['0.55.0'],

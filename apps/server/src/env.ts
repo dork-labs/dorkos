@@ -434,6 +434,13 @@ if (!result.success) {
 export const env = result.data;
 export type ServerEnv = typeof env;
 
+/**
+ * `DORKOS_HOST` as the environment set it, or `null` when nothing did and the
+ * `localhost` default applies. Set, it decides where DorkOS listens, so the
+ * Wi-Fi access switch stands down and Settings says why (DOR-2930).
+ */
+export const hostFromEnvironment: string | null = process.env.DORKOS_HOST?.trim() || null;
+
 // The marketplace auto-approve environment variable was retired (DOR-501):
 // marketplace installs always need a person's approval now, and nothing reads
 // it any more. Zod silently strips unknown keys rather than rejecting them, so
