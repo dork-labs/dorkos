@@ -100,6 +100,19 @@ export class AuthPage {
     await this.ownerDialog.getByRole('button', { name: /create account/i }).click();
   }
 
+  // ---------- Turn-on-login dialog (an owner already exists) ----------
+
+  /** The dialog that asks the existing owner to sign in before login turns on (DOR-2964). */
+  get turnOnLoginDialog() {
+    return this.page.getByRole('dialog', { name: /turn on login/i });
+  }
+
+  /** Type the owner's password into the turn-on-login dialog and submit it. */
+  async confirmOwnerPassword(password: string) {
+    await this.turnOnLoginDialog.getByLabel('Password', { exact: true }).fill(password);
+    await this.turnOnLoginDialog.getByRole('button', { name: /sign in & require login/i }).click();
+  }
+
   // ---------- LoginScreen (AuthGuard) ----------
 
   /** Heading unique to the full-bleed sign-in screen. */

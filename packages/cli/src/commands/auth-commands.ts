@@ -214,9 +214,10 @@ export async function runAuthEnable(deps: AuthEnableDeps): Promise<number> {
   }
 
   try {
-    // `name` is required by Better Auth; the owner can be renamed later, so the
-    // email doubles as the initial display name.
-    await auth.api.signUpEmail({ body: { name: email, email, password } });
+    // Better Auth requires `name` but accepts an empty one. It stays empty so
+    // the app asks what to call the owner; an email sent here showed up as
+    // their name everywhere (DOR-2964).
+    await auth.api.signUpEmail({ body: { name: '', email, password } });
   } catch (err) {
     io.error(`Could not create the owner account: ${errorMessage(err)}`);
     return 1;

@@ -135,6 +135,8 @@ describe('auth-commands', () => {
       const owner = db.select().from(user).get();
       expect(owner?.email).toBe(OWNER_EMAIL);
       expect(owner?.role).toBe('owner');
+      // No name yet, so the app asks for one; the email is never stored as it (DOR-2964).
+      expect(owner?.name).toBe('');
 
       // Flag persisted to the real temp config.json.
       const persisted = JSON.parse(fs.readFileSync(path.join(tmpDir, 'config.json'), 'utf8'));

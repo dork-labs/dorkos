@@ -87,10 +87,11 @@ vi.mock('../../services/core/auth/session-gate.js', async (importOriginal) => ({
   decideSessionGate: vi.fn(async () => ({ allowed: true })),
 }));
 
-// The auth barrel pulls in Better Auth + the DB adapter; mock the single reader
+// The auth barrel pulls in Better Auth + the DB adapter; mock the readers
 // the config route uses so the router imports cleanly without a live auth instance.
 vi.mock('../../services/core/auth/index.js', () => ({
   hasAnyApiKey: vi.fn(() => false),
+  readOwnerEmail: vi.fn(() => null),
 }));
 
 // The local-token module reads env/fs at import; mock the two accessors the

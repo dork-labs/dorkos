@@ -92,8 +92,12 @@ export interface OperatorAccount {
  * address can still ask for a name without inventing one.
  */
 export interface AnswererNameSources {
-  /** The account that owns this install, or `null` when nobody has registered. */
-  account: () => { name: string | null } | null;
+  /**
+   * The account that owns this install, or `null` when nobody has registered.
+   * Its email, when the caller has it, lets the account rung ignore a name that
+   * is only the email again (see {@link accountNameForDisplay}).
+   */
+  account: () => { name: string | null; email?: string | null } | null;
   /** `config.profile.displayName` — "what the user likes to be called". */
   configDisplayName: () => string | null;
 }
@@ -204,13 +208,39 @@ function resolveAnswererRung(
   // Each rung is sanitized BEFORE the precedence runs, not after it picks. A
   // name made entirely of control characters is not a name, so it has to fall
   // through to the next source rather than winning and then vanishing.
-  const account = firstNamed(asLabel(sources.account()?.name));
+  const owner = sources.account();
+  const account = firstNamed(asLabel(accountNameForDisplay(owner?.name, owner?.email)));
   if (account) return { name: account, rung: 'account' };
 
   const profile = firstNamed(asLabel(sources.configDisplayName()));
   if (profile) return { name: profile, rung: 'profile' };
 
   return undefined;
+}
+
+/**
+ * An account's name as a display source: `null` when it is only the account's
+ * email again.
+ *
+ * Sign-up used to send the email as the name, because Better Auth requires the
+ * field, so many owner accounts carry `name = email`. Shown as a name, that put
+ * an address all over the sidebar and kept the name rung winning, so the
+ * profile's own name and the "what should I call you?" prompt never got a turn
+ * (DOR-2964). Compared trimmed and case-insensitively, the way Better Auth
+ * stores emails lowercased.
+ *
+ * @param name - The account's `user.name`.
+ * @param email - The account's email, when the caller has it.
+ * @returns The name, or `null` when it is empty or equals the email.
+ */
+export function accountNameForDisplay(
+  name: string | null | undefined,
+  email: string | null | undefined
+): string | null {
+  const trimmed = name?.trim();
+  if (!trimmed) return null;
+  const address = email?.trim().toLowerCase();
+  return address && trimmed.toLowerCase() === address ? null : trimmed;
 }
 
 /** One name source, sanitized for a line DorkOS wrote. `undefined` if empty after. */

@@ -262,9 +262,11 @@ export function ProfileEmailField({ member }: ProfileFieldProps) {
       <FieldCardContent>
         <SettingRow
           label="Email"
+          // Nothing in the app changes the email, so the hint names no setting
+          // to change it in (DOR-2964).
           description={
             member.person?.email
-              ? 'From your sign-in. Change it in Settings › Login & security.'
+              ? 'Your sign-in email. It stays fixed.'
               : 'No login on this machine. Turn one on in Settings › Login & security.'
           }
           orientation="vertical"

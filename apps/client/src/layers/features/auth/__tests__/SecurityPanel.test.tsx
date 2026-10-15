@@ -39,12 +39,32 @@ const KEY: ApiKeyRecord = {
   enabled: true,
 };
 
-function setup(opts: { authEnabled: boolean; client?: AuthClient }) {
+/** Better Auth's answer to a sign-up with the owner's own email — the DOR-2964 dead end. */
+const DUPLICATE_EMAIL = {
+  data: null,
+  error: {
+    message: 'User already exists. Use another email.',
+    status: 422,
+    code: 'USER_ALREADY_EXISTS_USE_ANOTHER_EMAIL',
+  },
+};
+
+/** Better Auth's answer to a wrong password. */
+const WRONG_PASSWORD = {
+  data: null,
+  error: { message: 'Invalid email or password', status: 401, code: 'INVALID_EMAIL_OR_PASSWORD' },
+};
+
+function configWith(authEnabled: boolean, ownerEmail: string | null): ServerConfig {
+  return { auth: { enabled: authEnabled, ownerEmail } } as unknown as ServerConfig;
+}
+
+function setup(opts: { authEnabled: boolean; ownerEmail?: string | null; client?: AuthClient }) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   const transport = createMockTransport();
-  vi.mocked(transport.getConfig).mockResolvedValue({
-    auth: { enabled: opts.authEnabled },
-  } as unknown as ServerConfig);
+  vi.mocked(transport.getConfig).mockResolvedValue(
+    configWith(opts.authEnabled, opts.ownerEmail ?? null)
+  );
   const client = opts.client ?? createFakeAuthClient();
 
   render(
@@ -129,11 +149,170 @@ describe('SecurityPanel', () => {
       expect(signUpEmail).toHaveBeenCalledWith({
         email: 'owner@example.com',
         password: 'sup3rsecret',
-        name: 'owner@example.com',
+        // Never the email: an empty name lets the app ask what to call them (DOR-2964).
+        name: '',
       });
     });
     await waitFor(() => {
       expect(transport.updateConfig).toHaveBeenCalledWith({ auth: { enabled: true } });
+    });
+  });
+
+  it('no owner yet: the create form starts with an empty email', async () => {
+    const user = userEvent.setup();
+    setup({ authEnabled: false, ownerEmail: null });
+
+    await user.click(await screen.findByRole('switch', { name: /require login/i }));
+
+    expect(screen.getByRole('dialog', { name: /create an owner account/i })).toBeInTheDocument();
+    expect(screen.getByLabelText('Email')).toHaveValue('');
+  });
+
+  describe('an owner already exists (DOR-2964)', () => {
+    it('asks the owner to sign in instead of offering a create form', async () => {
+      const user = userEvent.setup();
+      setup({ authEnabled: false, ownerEmail: 'dorian@example.com' });
+
+      await user.click(await screen.findByRole('switch', { name: /require login/i }));
+
+      const dialog = screen.getByRole('dialog', { name: /turn on login/i });
+      expect(dialog).toHaveTextContent('Sign in as dorian@example.com');
+      expect(screen.queryByLabelText('Confirm password')).not.toBeInTheDocument();
+      expect(screen.queryByRole('dialog', { name: /create an owner/i })).not.toBeInTheDocument();
+    });
+
+    it('a wrong password is refused and login stays off', async () => {
+      const user = userEvent.setup();
+      const signInEmail = vi.fn().mockResolvedValue(WRONG_PASSWORD);
+      const { transport } = setup({
+        authEnabled: false,
+        ownerEmail: 'dorian@example.com',
+        client: createFakeAuthClient({ signInEmail }),
+      });
+
+      await user.click(await screen.findByRole('switch', { name: /require login/i }));
+      await user.type(screen.getByLabelText('Password'), 'not-it');
+      await user.click(screen.getByRole('button', { name: /sign in & require login/i }));
+
+      expect(await screen.findByRole('alert')).toHaveTextContent(
+        'Wrong password. Login is still off.'
+      );
+      expect(signInEmail).toHaveBeenCalledWith({
+        email: 'dorian@example.com',
+        password: 'not-it',
+      });
+      expect(transport.updateConfig).not.toHaveBeenCalled();
+    });
+
+    it('the right password signs in first, then turns login on', async () => {
+      const user = userEvent.setup();
+      const order: string[] = [];
+      const signInEmail = vi.fn().mockImplementation(async () => {
+        order.push('sign-in');
+        return { data: SIGNED_IN_SESSION, error: null };
+      });
+      const { transport } = setup({
+        authEnabled: false,
+        ownerEmail: 'dorian@example.com',
+        client: createFakeAuthClient({ signInEmail }),
+      });
+      vi.mocked(transport.updateConfig).mockImplementation(async () => {
+        order.push('enable');
+      });
+
+      await user.click(await screen.findByRole('switch', { name: /require login/i }));
+      await user.type(screen.getByLabelText('Password'), 'sup3rsecret');
+      await user.click(screen.getByRole('button', { name: /sign in & require login/i }));
+
+      await waitFor(() =>
+        expect(transport.updateConfig).toHaveBeenCalledWith({ auth: { enabled: true } })
+      );
+      expect(order).toEqual(['sign-in', 'enable']);
+      await waitFor(() =>
+        expect(screen.queryByRole('dialog', { name: /turn on login/i })).not.toBeInTheDocument()
+      );
+    });
+
+    it('"Forgot it?" shows the reset command', async () => {
+      const user = userEvent.setup();
+      setup({ authEnabled: false, ownerEmail: 'dorian@example.com' });
+
+      await user.click(await screen.findByRole('switch', { name: /require login/i }));
+      expect(screen.queryByText('dorkos auth reset-password')).not.toBeInTheDocument();
+      await user.click(screen.getByRole('button', { name: /forgot it\?/i }));
+
+      expect(screen.getByText('dorkos auth reset-password')).toBeInTheDocument();
+    });
+
+    it.each([
+      ['the owner’s own email', 'dorian@example.com', DUPLICATE_EMAIL],
+      [
+        'another email',
+        'someone-else@example.com',
+        {
+          data: null,
+          error: {
+            message: 'Registration is closed.',
+            status: 403,
+            code: 'REGISTRATION_CLOSED',
+          },
+        },
+      ],
+    ])(
+      'a sign-up with %s lands on the sign-in step, never turning login on unverified',
+      async (_label, typedEmail, refusal) => {
+        // The exact dead end: the panel's config read had not seen the owner,
+        // so the create form opened, and sign-up refused.
+        const user = userEvent.setup();
+        const signUpEmail = vi.fn().mockResolvedValue(refusal);
+        const { transport } = setup({
+          authEnabled: false,
+          ownerEmail: null,
+          client: createFakeAuthClient({ signUpEmail }),
+        });
+
+        await user.click(await screen.findByRole('switch', { name: /require login/i }));
+        vi.mocked(transport.getConfig).mockResolvedValue(configWith(false, 'dorian@example.com'));
+        await user.type(screen.getByLabelText('Email'), typedEmail);
+        await user.type(screen.getByLabelText('Password'), 'sup3rsecret');
+        await user.type(screen.getByLabelText('Confirm password'), 'sup3rsecret');
+        await user.click(screen.getByRole('button', { name: /create account & require login/i }));
+
+        // Always the owner's address from the fresh read, never just what was typed.
+        const dialog = await screen.findByRole('dialog', { name: /turn on login/i });
+        expect(dialog).toHaveTextContent('Sign in as dorian@example.com');
+        expect(screen.queryByText(/user already exists/i)).not.toBeInTheDocument();
+        expect(transport.updateConfig).not.toHaveBeenCalled();
+      }
+    );
+    it('a closed registration with no owner email found stays put and says why', async () => {
+      const user = userEvent.setup();
+      const signUpEmail = vi.fn().mockResolvedValue({
+        data: null,
+        error: {
+          message: 'Registration is closed.',
+          status: 403,
+          code: 'REGISTRATION_CLOSED',
+        },
+      });
+      const { transport } = setup({
+        authEnabled: false,
+        ownerEmail: null,
+        client: createFakeAuthClient({ signUpEmail }),
+      });
+
+      await user.click(await screen.findByRole('switch', { name: /require login/i }));
+      await user.type(screen.getByLabelText('Email'), 'someone-else@example.com');
+      await user.type(screen.getByLabelText('Password'), 'sup3rsecret');
+      await user.type(screen.getByLabelText('Confirm password'), 'sup3rsecret');
+      await user.click(screen.getByRole('button', { name: /create account & require login/i }));
+
+      expect(await screen.findByRole('alert')).toHaveTextContent(
+        'This computer already has an owner.'
+      );
+      expect(screen.queryByRole('dialog', { name: /turn on login/i })).not.toBeInTheDocument();
+      expect(screen.queryByText(/registration is closed/i)).not.toBeInTheDocument();
+      expect(transport.updateConfig).not.toHaveBeenCalled();
     });
   });
 });

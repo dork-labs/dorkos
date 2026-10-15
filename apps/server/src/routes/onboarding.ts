@@ -23,7 +23,8 @@ import { isLocalCaller, refuseUnlessAccountOwner } from '../lib/caller-authority
 import { resolveDorkHome } from '../lib/dork-home.js';
 import { logger, logError } from '../lib/logger.js';
 import { configManager } from '../services/core/config-manager.js';
-import { readOwnerAccount } from '../services/core/auth/index.js';
+import { getUserById, readOwnerAccount } from '../services/core/auth/index.js';
+import { accountNameForDisplay } from '../services/identity/operator-profile.js';
 import { isCloudLinked } from '../services/core/cloud/v1-client.js';
 import { runtimeRegistry } from '../services/core/runtime-registry.js';
 import { AgentUpdateError, updateAgentManifest } from '../services/core/operator/agent-updater.js';
@@ -100,8 +101,15 @@ export function productionOnboardingDeps(
       config: configManager,
       rooms: getRoomService(),
       dorkbotPath: dorkbotPath(),
-      personName: () =>
-        configManager.get('profile').displayName ?? readOwnerAccount()?.name ?? null,
+      // An account name that is only the email is no name to greet (DOR-2964).
+      personName: () => {
+        const owner = readOwnerAccount();
+        const account = owner ? getUserById(owner.id) : null;
+        return (
+          configManager.get('profile').displayName ??
+          accountNameForDisplay(account?.name, account?.email)
+        );
+      },
     }),
   };
 }

@@ -360,8 +360,9 @@ export function setUserImage(userId: string, image: string | null): void {
  * caller is `PATCH /api/profile`, which writes it beside
  * `config.profile.displayName` so the two rungs cannot disagree.
  *
- * Nullable is deliberately not offered: Better Auth's column is `NOT NULL`, and
- * "no name" is not a thing the profile form can ask for.
+ * Nullable is deliberately not offered: Better Auth's column is `NOT NULL`.
+ * Sign-up stores an empty string until the person names themselves (DOR-2964),
+ * but clearing a name back to empty is not a thing the profile form can ask for.
  *
  * A no-op when auth was never initialized — an install with login off has a
  * roster and no `user` row, which is a supported state rather than a failure.
@@ -404,6 +405,18 @@ export function hasAnyUser(): boolean {
 export function readOwnerAccount(): Account | null {
   if (!activeDb) return null;
   return findOwnerAccount(activeDb);
+}
+
+/**
+ * The owner account's email, or `null` when nobody has registered yet (or auth
+ * was never initialized).
+ *
+ * `GET /api/config` reads this so turning login on can ask the existing owner
+ * to sign in rather than offering a create form that can only fail (DOR-2964).
+ */
+export function readOwnerEmail(): string | null {
+  const owner = readOwnerAccount();
+  return owner ? (getUserById(owner.id)?.email ?? null) : null;
 }
 
 /**
