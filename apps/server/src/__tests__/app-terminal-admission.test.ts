@@ -295,7 +295,9 @@ describe('main HTTP admission through the real app', () => {
     expect(mounts).toContain('/api/terminal');
     // 71 -> 72: `/api/lan-access`, the Wi-Fi access switch (DOR-2930).
     expect(mounts).toContain('/api/lan-access');
-    expect(mounts).toHaveLength(72);
+    // 72 -> 73: the scoped local browser routes (DOR-2929).
+    expect(mounts).toContain('/api/local-browser');
+    expect(mounts).toHaveLength(73);
     const byHand = [
       '/',
       '/x/fixture',

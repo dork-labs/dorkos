@@ -507,7 +507,9 @@ describe('the claude-code prompt names tools the way the runtime exposes them', 
     // 130 -> 131 for `connectors_cancel_held_action` (spec
     // `trusted-by-default-flip` §5.6): no prompt block names it, so it stays
     // deferred and unprefixed.
-    expect(advertised.size).toBe(131);
+    // 131 -> 135 for the four scoped local-browser tools (DOR-2929).
+    // Their qualified surface is explicit page use, so all four stay deferred.
+    expect(advertised.size).toBe(135);
     for (const name of [
       'configure_doc_channel',
       'approve_doc_route',

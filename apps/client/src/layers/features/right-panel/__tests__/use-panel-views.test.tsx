@@ -2,6 +2,7 @@
 import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, renderHook } from '@testing-library/react';
 import { createMockTransport } from '@dorkos/test-utils';
+import type { LocalBrowserState } from '@dorkos/shared/local-browser';
 import type { CanvasDocument as ServerCanvasDocument } from '@dorkos/shared/room-schemas';
 import {
   useAppStore,
@@ -19,6 +20,13 @@ vi.mock('@/layers/shared/model', async (importOriginal) => ({
   useTransport: () => ({}),
 }));
 
+const routeSession = vi.hoisted(() => ({ id: 'one' as string | null }));
+vi.mock('@/layers/entities/session', () => ({
+  useSessionId: () => [routeSession.id, vi.fn()],
+}));
+
+const localBrowser = vi.hoisted(() => ({ data: undefined as LocalBrowserState | undefined }));
+vi.mock('@/layers/entities/local-browser', () => ({ useLocalBrowserState: () => localBrowser }));
 const computer = vi.hoisted(() => ({
   data: { id: 'local', cwd: '/agents/computer/workspace', phase: 'ready' },
 }));
@@ -32,6 +40,7 @@ const contributions = [
   'computer',
   'canvas',
   'browser',
+  'local-browser',
   'terminal',
 ].map((id) => ({
   id,
@@ -54,6 +63,8 @@ function document(id: string): CanvasDocument {
   };
 }
 beforeEach(() => {
+  routeSession.id = 'one';
+  localBrowser.data = undefined;
   localStorage.clear();
   useTerminalResourceChrome.setState({ chrome: null, createRequest: null });
   useAppStore.setState({
@@ -104,7 +115,137 @@ function serverDocument(id: string, scope = 'session:one'): ServerCanvasDocument
   };
 }
 
+function liveBrowser(
+  connectionId = 'connection-one',
+  sessionId: string | null = 'one'
+): LocalBrowserState {
+  return {
+    connectionId,
+    sessionId,
+    mode: 'new-window',
+    status: 'connected',
+    paused: false,
+    selectedTabId: 'chosen',
+    revision: 1,
+    preparation: null,
+    tabs: [{ id: 'chosen', title: 'Signed-in report', url: 'https://example.com/report' }],
+  };
+}
+
 describe('relevant panel views', () => {
+  it('keeps browser controls optional until opened, even without contextual defaults', () => {
+    const browser = contributions.find((view) => view.id === 'local-browser')!;
+    const { result } = renderHook(() =>
+      usePanelViews([{ ...browser, isGlobal: true }], '/session')
+    );
+    expect(result.current.visible).toEqual([]);
+    act(() => result.current.activate('local-browser'));
+    expect(result.current.activeId).toBe('local-browser');
+  });
+  it.each([null, 'stale-legacy'])(
+    'scopes a connected Browser to the route chat when legacy session is %s',
+    (legacySessionId) => {
+      routeSession.id = 'current';
+      useAppStore.setState({ sessionId: legacySessionId });
+      localBrowser.data = liveBrowser('connection-current', 'current');
+      const { result } = renderHook(() => usePanelViews(contributions, '/session'));
+      expect(
+        result.current.allViews.find((view) => view.category === 'local-browser')
+      ).toMatchObject({
+        id: 'resource/browser/chat/current/connection-current',
+        resource: 'browser',
+        title: 'Signed-in report',
+      });
+    }
+  );
+  it('never exposes a legacy chat connection when the route has no chat', () => {
+    routeSession.id = null;
+    localBrowser.data = liveBrowser('legacy-connection', 'one');
+    const { result, rerender } = renderHook(() => usePanelViews(contributions, '/session'));
+    expect(result.current.allViews.find((view) => view.category === 'local-browser')).toMatchObject(
+      {
+        id: 'local-browser',
+        title: 'Browser',
+      }
+    );
+    localBrowser.data = liveBrowser('human-connection', null);
+    rerender();
+    expect(result.current.allViews.find((view) => view.category === 'local-browser')?.id).toBe(
+      'resource/browser/human/human-connection'
+    );
+  });
+  it('closes and reopens one titled browser resource without changing its connection', () => {
+    localBrowser.data = liveBrowser();
+    const { result } = renderHook(() => usePanelViews(contributions, '/session'));
+    const resource = result.current.allViews.find((view) => view.category === 'local-browser')!;
+    expect(resource).toMatchObject({
+      id: 'resource/browser/chat/one/connection-one',
+      resource: 'browser',
+      title: 'Signed-in report',
+    });
+    act(() => result.current.activate(resource.id));
+    expect(result.current.activeId).toBe(resource.id);
+    act(() => result.current.closeView(resource.id));
+    expect(result.current.visible.some((view) => view.id === resource.id)).toBe(false);
+    expect(localBrowser.data.connectionId).toBe('connection-one');
+    expect(localBrowser.data.status).toBe('connected');
+    expect(
+      result.current.allViews.filter((view) => view.category === 'local-browser')
+    ).toHaveLength(1);
+    act(() => result.current.activate(resource.id));
+    expect(result.current.activeId).toBe(resource.id);
+    expect(result.current.visible.some((view) => view.id === resource.id)).toBe(true);
+  });
+  it('uses a fresh browser resource for a new connection and never a retained canvas owner', () => {
+    localBrowser.data = liveBrowser();
+    useAppStore.setState({
+      canvasSessionId: 'retained-canvas',
+      canvasSessionCwd: '/agents/retained',
+    });
+    const { result, rerender } = renderHook(() => usePanelViews(contributions, '/session'));
+    const first = 'resource/browser/chat/one/connection-one';
+    act(() => result.current.closeView(first));
+    expect(useAppStore.getState().panelViewPreferences['browsers:chat/one'].closed).toContain(
+      first
+    );
+    expect(
+      Object.keys(useAppStore.getState().panelViewPreferences).some((key) =>
+        key.startsWith('documents:')
+      )
+    ).toBe(false);
+    localBrowser.data = liveBrowser('connection-two');
+    rerender();
+    expect(
+      result.current.visible.some((view) => view.id === 'resource/browser/chat/one/connection-two')
+    ).toBe(true);
+    act(() => {
+      localBrowser.data = liveBrowser('connection-three', 'two');
+      routeSession.id = 'two';
+    });
+    rerender();
+    const secondChat = 'resource/browser/chat/two/connection-three';
+    act(() => result.current.closeView(secondChat));
+    const preferences = useAppStore.getState().panelViewPreferences;
+    expect(preferences['browsers:chat/two'].closed).toContain(secondChat);
+    expect(preferences['browsers:chat/one'].closed).toContain(first);
+    expect(preferences['browsers:chat/one'].closed).not.toContain(secondChat);
+  });
+  it.each(['/team', '/rooms/room-one'])(
+    'keeps human browsing separate from the remembered chat on %s and hides foreign live titles',
+    (pathname) => {
+      localBrowser.data = liveBrowser('human-connection', null);
+      const { result, rerender } = renderHook(() => usePanelViews(contributions, pathname));
+      expect(result.current.allViews.find((view) => view.category === 'local-browser')?.id).toBe(
+        'resource/browser/human/human-connection'
+      );
+      localBrowser.data = liveBrowser('foreign-connection', 'one');
+      rerender();
+      expect(
+        result.current.allViews.find((view) => view.category === 'local-browser')
+      ).toMatchObject({ id: 'local-browser', title: 'Browser' });
+      expect(result.current.allViews.some((view) => view.title === 'Signed-in report')).toBe(false);
+    }
+  );
   it('keeps the original keyed-open receipt when a second write sharing its pending ID is refused', async () => {
     const { resolve, transport } = deferredDocument();
     useAppStore.getState().loadCanvasForSession('one');

@@ -62,6 +62,7 @@ import type { ServerRefs } from '../server-refs.js';
 
 /** What {@link composeCapabilities} reads from the startup steps before it. */
 export interface ComposeCapabilitiesInput {
+  localBrowserService: WireMcpTasksAndSkillsResult['localBrowserService'];
   docChannelHttp: WireConnectorEventsAndApprovalsResult['docChannelHttp'];
   permissionService: MountCoreRoutesResult['permissionService'];
   connectorRegistry: WireCoreStoresResult['connectorRegistry'];
@@ -99,6 +100,7 @@ export interface ComposeCapabilitiesInput {
  */
 export async function composeCapabilities(refs: ServerRefs, built: ComposeCapabilitiesInput) {
   const {
+    localBrowserService,
     docChannelHttp,
     permissionService,
     connectorRegistry,
@@ -195,6 +197,7 @@ export async function composeCapabilities(refs: ServerRefs, built: ComposeCapabi
           }),
         ...(refs.adapterManager && { relay: refs.adapterManager }),
       },
+      localBrowserDeps: localBrowserService,
       connectorExecutionDeps: {
         authorization: connectorAuthorization,
         broker: connectorBroker,

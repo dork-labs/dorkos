@@ -1,5 +1,7 @@
-import { RESPONSE_ALREADY_SENT } from '@hono/node-server/utils/response';
-import { Hono, type Context } from 'hono';
+import { configureLocalBrowserDriving } from '../services/runtimes/test-mode/local-browser-driving-scenario.js';
+import type { LocalBrowserService } from '../services/session/local-browser/service.js';
+import { holdWhileTheCallerWaits } from './test-control-probe.js';
+import { Hono } from 'hono';
 import path from 'path';
 import { promises as fs } from 'node:fs';
 import { z } from 'zod';
@@ -62,6 +64,8 @@ export interface TestControlMesh {
  * never composes answers its route's own "unavailable" refusal.
  */
 export interface TestControlDeps {
+  /** The same live browser service handed to the human routes and runtime tools. */
+  localBrowser?: () => LocalBrowserService | undefined;
   /** The agent registry. */
   meshCore?: () => TestControlMesh | undefined;
   /** The request cards. */
@@ -125,41 +129,6 @@ const remoteCommunitySubscriptionQuerySchema = z
   .strict();
 
 /**
- * Run a connector probe for as long as its caller waits, and answer with what
- * it returned. A caller that leaves aborts the probe, and gets no answer.
- *
- * @param c - The request.
- * @param failure - The message for a probe that failed without a message.
- * @param run - The probe, handed the signal that says the caller left.
- */
-async function holdWhileTheCallerWaits(
-  c: Context<ApiEnv>,
-  failure: string,
-  run: (signal: AbortSignal) => Promise<unknown>
-): Promise<Response> {
-  const { incoming, outgoing } = c.env;
-  const controller = new AbortController();
-  const abort = () => controller.abort();
-  // Nothing is written to the response until the probe answers, so a close
-  // before then is the caller leaving.
-  const abortClosedResponse = () => {
-    if (!outgoing.writableEnded) controller.abort();
-  };
-  incoming.once('aborted', abort);
-  outgoing.once('close', abortClosedResponse);
-  try {
-    return c.json(await run(controller.signal));
-  } catch (error) {
-    if (controller.signal.aborted)
-      return new Response(null, { headers: RESPONSE_ALREADY_SENT.headers });
-    return c.json({ error: error instanceof Error ? error.message : failure }, 500);
-  } finally {
-    incoming.off('aborted', abort);
-    outgoing.off('close', abortClosedResponse);
-  }
-}
-
-/**
  * Control routes for TestModeRuntime. Only mounted when DORKOS_TEST_RUNTIME=true
  * (`http/hono-api.ts`), so every `/api/test/*` path is the `/api` 404 in
  * production.
@@ -168,6 +137,7 @@ async function holdWhileTheCallerWaits(
  */
 export function createTestControlRoutes(deps: TestControlDeps = {}): Hono<ApiEnv> {
   const router = new Hono<ApiEnv>();
+  configureLocalBrowserDriving(() => deps.localBrowser?.());
 
   /** Test-only owner-qualified replay barrier. Production never mounts these routes. */
   router.get('/community-subscription', (c) => {

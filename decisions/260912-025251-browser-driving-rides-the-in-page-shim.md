@@ -14,6 +14,8 @@ amends: null
 
 Accepted (extracted from spec `canvas-agent-seat`).
 
+Amended by [ADR261014-120000](261014-120000-playwright-controls-the-same-local-browser-page.md) for the local Browser panel. The “never a server-side browser” restriction and the “No headless browser, no CDP, no second rendering” consequence govern instrumented previews, not the two local native browser modes. The shim protocol, preview targeting and opaque-frame boundary below remain active for previews.
+
 ## Context
 
 DorkOS can show an agent a page and let it read what happened — console, network, a screenshot

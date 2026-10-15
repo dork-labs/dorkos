@@ -11,6 +11,7 @@ import type { HistoryMessage } from '@dorkos/shared/types';
 import type { Transport } from '@dorkos/shared/transport';
 import { resolveStableClientId } from './client-id';
 import { createComputerMethods } from './computer-methods';
+import { createLocalBrowserMethods } from './local-browser-methods';
 import { createTasksMethods } from './task-methods';
 import { createRelayMethods } from './relay-methods';
 import { createMeshMethods } from './mesh-methods';
@@ -60,6 +61,7 @@ import { createAuditMethods } from './audit-methods';
 export interface HttpTransport
   extends
     ReturnType<typeof createComputerMethods>,
+    ReturnType<typeof createLocalBrowserMethods>,
     ReturnType<typeof createTasksMethods>,
     ReturnType<typeof createRelayMethods>,
     ReturnType<typeof createMeshMethods>,
@@ -112,6 +114,7 @@ export class HttpTransport implements Transport {
     Object.assign(
       this,
       createComputerMethods(baseUrl, () => this.clientId),
+      createLocalBrowserMethods(baseUrl),
       createTasksMethods(baseUrl),
       createRelayMethods(baseUrl, () => this.clientId),
       createMeshMethods(baseUrl),

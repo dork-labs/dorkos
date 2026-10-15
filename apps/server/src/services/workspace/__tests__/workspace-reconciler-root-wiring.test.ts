@@ -152,6 +152,13 @@ describe('workspace reconciler root wiring (AST, not a full server boot)', () =>
     // No unrelated work or await may separate admission close from the workspace fence.
     expectAdmissionClose(shutdown!.body!.statements[0]);
     expectAwaitedDisposal(shutdown!.body!.statements[1], owner);
+    const browser = shutdown!.body!.statements[2];
+    expect(
+      ts.isExpressionStatement(browser) &&
+        ts.isAwaitExpression(browser.expression) &&
+        namedCall(browser.expression.expression, 'localBrowserHost', 'close'),
+      'close the browser only after the workspace admission fence settles'
+    ).toBe(true);
   });
 
   it('awaits the same owner first in startup failure and contains only that disposal failure', () => {
@@ -213,6 +220,7 @@ describe('workspace reconciler root wiring (AST, not a full server boot)', () =>
       const logError = vi.fn((error: unknown) => error);
       const exit = vi.fn();
       const fixtureClose = vi.fn().mockResolvedValue(undefined);
+      const browserClose = vi.fn().mockResolvedValue(undefined);
       const stopDocDelivery = vi.fn().mockResolvedValue(undefined);
       const docNotificationCleanup = vi.fn();
       const callback = startupCatch();
@@ -226,6 +234,7 @@ describe('workspace reconciler root wiring (AST, not a full server boot)', () =>
         logError,
         process: { exit },
         testComposioFixture: { close: fixtureClose },
+        localBrowserHost: { close: browserClose },
         stopDocDelivery,
         docNotificationCleanup,
         DatabaseOpenError: class extends Error {},
@@ -238,7 +247,14 @@ describe('workspace reconciler root wiring (AST, not a full server boot)', () =>
           cleanupError
         );
         expect(fixtureClose).toHaveBeenCalledTimes(1);
+        expect(browserClose).toHaveBeenCalledTimes(1);
+        expect(browserClose.mock.invocationCallOrder[0]).toBeGreaterThan(
+          fixtureClose.mock.invocationCallOrder[0]
+        );
         expect(stopDocDelivery).toHaveBeenCalledTimes(1);
+        expect(stopDocDelivery.mock.invocationCallOrder[0]).toBeGreaterThan(
+          browserClose.mock.invocationCallOrder[0]
+        );
         expect(stopDocDelivery.mock.invocationCallOrder[0]).toBeGreaterThan(
           fixtureClose.mock.invocationCallOrder[0]
         );

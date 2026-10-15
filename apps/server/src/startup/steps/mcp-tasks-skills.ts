@@ -1,3 +1,4 @@
+import { localBrowserHost } from '../local-browser.js';
 /**
  * Managed MCP servers, the external MCP server, the route dependency bag,
  * Tasks, and the skills projection watcher.
@@ -323,7 +324,9 @@ export async function wireMcpTasksAndSkills(refs: ServerRefs, built: WireMcpTask
 
   // `deps` is what the route groups read (`http/hono-api.ts`), each set where
   // the service it hands over is ready.
+  const localBrowserService = localBrowserHost.start(dorkHome);
   const deps: HonoApiDeps = {
+    localBrowser: localBrowserService,
     connectorEventIngress: connectorSignedIngress,
     mcp: mcpServerFactory,
     docChannel: { ...docChannelHttp, metrics: docChannelMetrics },
@@ -333,6 +336,7 @@ export async function wireMcpTasksAndSkills(refs: ServerRefs, built: WireMcpTask
   // seam (DOR-952) dials a managed server through, to prove the bearer gate.
   if (env.DORKOS_TEST_RUNTIME) {
     deps.testControl = {
+      localBrowser: () => localBrowserService,
       meshCore: () => refs.meshCore,
       approvals: () => approvalService,
       agentMcpServers: () => refs.agentMcpServerService,
@@ -422,7 +426,7 @@ export async function wireMcpTasksAndSkills(refs: ServerRefs, built: WireMcpTask
         // rather than anything a person can act on.
       });
   }
-  return { deps };
+  return { deps, localBrowserService };
 }
 
 /** What {@link wireMcpTasksAndSkills} hands the steps after it. */

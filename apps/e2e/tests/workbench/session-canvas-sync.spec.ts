@@ -240,7 +240,7 @@ test.describe('A canvas survives the first-turn rename @smoke', () => {
     // Both documents came with it — the table the window is holding now is the
     // one the rekey moved, hydrated from the canonical id's own snapshot.
     await expect(page.getByRole('tab', { name: DOCUMENT_TAB })).toBeVisible({ timeout: 20_000 });
-    await rightPanel.selectView('Browser');
+    await rightPanel.selectView('Page previews');
     await expect(page.getByRole('tab', { name: /^Web Page$/ })).toBeVisible({ timeout: 20_000 });
 
     // And a reload under the canonical id finds them on the server, not in this
@@ -249,7 +249,7 @@ test.describe('A canvas survives the first-turn rename @smoke', () => {
     await rightPanel.ensureTabStripOpen();
     await rightPanel.selectView('Canvas');
     await expect(page.getByRole('tab', { name: DOCUMENT_TAB })).toBeVisible({ timeout: 20_000 });
-    await rightPanel.selectView('Browser');
+    await rightPanel.selectView('Page previews');
     await expect(page.getByRole('tab', { name: /^Web Page$/ })).toBeVisible({ timeout: 20_000 });
   });
 

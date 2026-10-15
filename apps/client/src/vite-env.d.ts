@@ -64,6 +64,17 @@ declare global {
 
   /** API exposed by the Electron preload script via contextBridge. */
   interface ElectronAPI {
+    /** Position the scoped native browser guest; hiding keeps its live page and sign-ins. */
+    localBrowser?: {
+      setBounds(input: {
+        connectionId: string;
+        x: number;
+        y: number;
+        width: number;
+        height: number;
+        visible: boolean;
+      }): Promise<void>;
+    };
     /**
      * Get the port the Express server is listening on, or `null` when it is
      * not serving — during startup, after a crash, between restarts. Mirrors

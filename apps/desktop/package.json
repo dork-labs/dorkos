@@ -48,7 +48,9 @@
     "hono": "^4.13.9",
     "node-pty": "^1.1.0",
     "uuid": "^13.0.2",
-    "zod": "^4.6.2"
+    "zod": "^4.6.2",
+    "playwright-core": "1.63.0",
+    "ws": "^8.22.0"
   },
   "devDependencies": {
     "@dorkos/client": "workspace:*",
@@ -68,6 +70,7 @@
     "typescript": "^5.9.3",
     "vite": "^7.3.6",
     "vitest": "^4.1.11",
-    "yaml": "^2.9.1"
+    "yaml": "^2.9.1",
+    "@types/ws": "^8.18.1"
   }
 }

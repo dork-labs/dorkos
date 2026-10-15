@@ -19,6 +19,4 @@ export { McpServerCard } from './ui/McpServerCard';
 export { McpServerCardDetails } from './ui/McpServerCardDetails';
 export type { McpToolSummary } from './ui/McpServerCardDetails';
 export { McpSigninPanel } from './ui/McpSigninPanel';
-// The signed-in browser card, for the playground's agent-browser section.
-export { SignedInBrowserCard } from './ui/SignedInBrowserCard';
 export type { McpCardStatus } from './lib/mcp-server-state';

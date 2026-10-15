@@ -15,12 +15,22 @@ import {
 } from '@/layers/shared/lib/font-loader';
 import { readBool, writeBool, BOOL_KEYS, BOOL_DEFAULTS } from './app-store-helpers';
 import type { AppState } from './app-store-types';
+import {
+  LocalBrowserChoiceSchema,
+  readLocalBrowserChoice,
+  writeLocalBrowserChoice,
+  type LocalBrowserChoice,
+  type LocalBrowserChoiceIssue,
+} from './local-browser-preference';
 
 // ---------------------------------------------------------------------------
 // Slice interface
 // ---------------------------------------------------------------------------
 
 export interface PreferencesSlice {
+  localBrowserChoice: LocalBrowserChoice | null;
+  localBrowserChoiceIssue: LocalBrowserChoiceIssue;
+  setLocalBrowserChoice: (choice: LocalBrowserChoice | null) => void;
   showTimestamps: boolean;
   setShowTimestamps: (v: boolean) => void;
   expandToolCalls: boolean;
@@ -41,6 +51,15 @@ export interface PreferencesSlice {
   setPromoEnabled: (enabled: boolean) => void;
 }
 
+/** Restore the validated browser choice when the preference slice is created. */
+function initialBrowserChoice(): Pick<
+  PreferencesSlice,
+  'localBrowserChoice' | 'localBrowserChoiceIssue'
+> {
+  const browser = readLocalBrowserChoice();
+  return { localBrowserChoice: browser.choice, localBrowserChoiceIssue: browser.issue };
+}
+
 // ---------------------------------------------------------------------------
 // Slice creator
 // ---------------------------------------------------------------------------
@@ -52,6 +71,19 @@ export const createPreferencesSlice: StateCreator<
   [],
   PreferencesSlice
 > = (set) => ({
+  ...initialBrowserChoice(),
+  setLocalBrowserChoice: (choice) => {
+    const parsed = choice === null ? null : LocalBrowserChoiceSchema.safeParse(choice);
+    if (parsed && !parsed.success) {
+      set({ localBrowserChoiceIssue: 'invalid' });
+      return;
+    }
+    const next = parsed?.success ? parsed.data : null;
+    set({
+      localBrowserChoice: next,
+      localBrowserChoiceIssue: writeLocalBrowserChoice(next) ? null : 'unsaved',
+    });
+  },
   showTimestamps: readBool(BOOL_KEYS.showTimestamps, BOOL_DEFAULTS.showTimestamps),
   setShowTimestamps: (v) => {
     writeBool(BOOL_KEYS.showTimestamps, v);
