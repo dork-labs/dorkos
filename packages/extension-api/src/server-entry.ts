@@ -1,23 +1,23 @@
 /**
- * The two ways an extension's server half can serve its API at
- * `/api/ext/<id>/*`, and how the host reads which one a server entry uses.
+ * How an extension's server half serves its API at `/api/ext/<id>/*`, and how
+ * the host reads a server entry.
  *
- * - **An Express router.** `register(router, ctx)` adds routes to the router
- *   it is handed, as it always has.
- * - **A fetch handler.** `register` returns `{ fetch }`: a function that takes
- *   a web-standard `Request` and returns a `Response`, the shape a Hono app
- *   exposes. It runs on Node, so Bun- or Deno-only APIs are not there. A server entry that needs nothing from `ctx` can
- *   export that object itself (`export default app` for a Hono app). `hono`
- *   is built in: an extension imports it with nothing installed.
+ * `register` returns `{ fetch }`: a function that takes a web-standard
+ * `Request` and returns a `Response`, the shape a Hono app exposes. `hono` is
+ * built in: an extension imports it with nothing installed. It runs on Node,
+ * so Bun- or Deno-only APIs are not there. A server entry that needs nothing
+ * from `ctx` can export that object itself (`export default app`).
  *
  * A fetch handler gets who is asking as its second argument
  * ({@link ExtensionCaller}), which a Hono app reads as `c.env`. To keep a
  * route to people only, put {@link requirePerson} in front of it, or call
  * {@link checkPerson} in a handler written without Hono.
  *
- * Both work together: a request the router does not answer goes to the
- * `dataProxy` when the request is for `/proxy/*` and the manifest declares
- * one, then to `fetch`.
+ * The `router` `register` is handed is the old Express router, deprecated
+ * (DOR-2856): routes added to it still run, ahead of `fetch`, until DorkOS
+ * stops running it. A request it does not answer goes to the `dataProxy`
+ * when the request is for `/proxy/*` and the manifest declares one, then to
+ * `fetch`.
  *
  * @module server-entry
  */
@@ -73,8 +73,12 @@ export interface ServerExtensionHandlers {
 /** What `register()` may return: nothing, a cleanup function, or handlers. */
 export type ServerExtensionRegisterResult = void | (() => void) | ServerExtensionHandlers;
 
-/** Server-side extension entry point signature. */
+/**
+ * Server-side extension entry point signature. Leave `router` empty: serve
+ * the API by returning `{ fetch }`.
+ */
 export type ServerExtensionRegister = (
+  /** @deprecated The old Express router. Return `{ fetch }` instead (DOR-2856). */
   router: import('express').Router,
   ctx: DataProviderContext
 ) => ServerExtensionRegisterResult | Promise<ServerExtensionRegisterResult>;

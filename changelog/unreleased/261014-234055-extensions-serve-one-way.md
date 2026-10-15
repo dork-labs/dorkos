@@ -10,4 +10,4 @@ covers:
 
 ### Deprecated
 
-- The old Express router for an extension's server half. It still works for now. An extension that uses it says "Uses an older server style DorkOS will drop soon" in **Settings > Extensions**, and an agent can update it in one request.
+- The old Express router for an extension's server half. It still works for now. An extension that uses it says "Uses an older server style DorkOS will stop running" in **Settings > Extensions**, and an agent can update it in one request.

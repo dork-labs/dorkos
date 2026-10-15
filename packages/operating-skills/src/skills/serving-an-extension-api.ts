@@ -11,8 +11,8 @@ export const servingAnExtensionApi: OperatingSkill = {
   name: 'serving-an-extension-api',
   description:
     "Use when writing or changing an extension's server half (server.ts), when an extension " +
-    'needs its own API at /api/ext/<id>/, or when asked to update an extension whose Extensions ' +
-    'row says it uses an older server style. Covers the Hono fetch handler, requirePerson(), ' +
+    'needs its own API at /api/ext/<id>/, or when asked to update an extension whose card in ' +
+    'Settings > Extensions says it uses an older server style. Covers the Hono fetch handler, requirePerson(), ' +
     'what replies may carry, and moving routes off the old Express router.',
   body: `# Serving an extension's API
 
@@ -54,8 +54,8 @@ export default function register(_router: unknown, ctx: DataProviderContext) {
 ## Update an extension that uses the old router
 
 An extension whose \`register(router, ctx)\` adds routes with \`router.get(...)\`
-uses the old Express router, which DorkOS will stop running. Its Extensions
-row says so. To update it:
+uses the old Express router, which DorkOS will stop running. Its card in
+Settings > Extensions says so. To update it:
 
 1. Read its \`server.ts\`. List every \`router.<method>(path, ...)\` route.
 2. Make a Hono app. Move each route across:
@@ -64,9 +64,13 @@ row says so. To update it:
    - \`req.body\` → \`await c.req.json()\`
    - \`res.json(body)\` → \`return c.json(body)\`; \`res.status(404).json(b)\` →
      \`return c.json(b, 404)\`; \`res.send(text)\` → \`return c.text(text)\`
+   - \`req.get('x')\` or \`req.headers['x']\` → \`c.req.header('x')\`
    - \`ctx.requirePerson\` before a handler → \`requirePerson()\` from
      \`@dorkos/extension-api/server\`
-   - A \`'*'\` path stays \`'*'\` in Hono.
+   - \`router.use(mw)\` → \`app.use(...)\` with Hono middleware
+   - A catch-all \`'/*splat'\` → \`'/*'\`; read the path with \`c.req.path\`
+   - Hono treats a trailing slash as a different path: \`new Hono({ strict: false })\`
+     keeps \`/x/\` working like \`/x\`.
 3. Stop adding routes to \`router\`, and return \`{ fetch: app.fetch }\` (keep any
    cleanup: \`{ fetch: app.fetch, cleanup }\`). Remove \`import ... from 'express'\`.
 4. Reload the extension and call each route once to check it answers as before.

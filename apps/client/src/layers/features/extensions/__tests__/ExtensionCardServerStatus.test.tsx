@@ -104,7 +104,7 @@ describe('ExtensionCard: a server half on the old router (DOR-2858)', () => {
   it('says it uses an older server style and to ask an agent', () => {
     renderCard(makeExtension({ usesOldRouter: true }));
     expect(screen.getByTestId('extension-old-router-mail')).toHaveTextContent(
-      'Uses an older server style DorkOS will drop soon. Ask an agent to update it.'
+      'Uses an older server style DorkOS will stop running. Ask an agent to update it.'
     );
   });
 

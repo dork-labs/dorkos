@@ -229,13 +229,15 @@ export function ExtensionCard({
           )}
           {/* Its server half still uses the Express router DorkOS is retiring
               (DOR-2856). It works today; an agent can move it over in one
-              request (the `serving-an-extension-api` operating skill). */}
+              request (the `serving-an-extension-api` operating skill). Held
+              back while a server problem shows, so the card says one thing
+              at a time. */}
           {extension.usesOldRouter && !serverError && (
             <p
               className="text-muted-foreground text-sm"
               data-testid={`extension-old-router-${extension.id}`}
             >
-              Uses an older server style DorkOS will drop soon. Ask an agent to update it.
+              Uses an older server style DorkOS will stop running. Ask an agent to update it.
             </p>
           )}
 

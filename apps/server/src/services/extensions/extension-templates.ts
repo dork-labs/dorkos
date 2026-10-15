@@ -162,7 +162,8 @@ export default function register(_router: unknown, ctx: DataProviderContext) {
 
   // PUT /api/ext/${name}/data — replace it (people only)
   app.put('/data', requirePerson(), async (c) => {
-    const data = await c.req.json();
+    const data: unknown = await c.req.json().catch(() => undefined);
+    if (data === undefined) return c.json({ error: 'Send the data as JSON.' }, 400);
     await ctx.storage.saveData(data);
     ctx.emit('data-updated', { at: Date.now() });
     return c.json({ ok: true });

@@ -314,8 +314,10 @@ export interface DataProviderContext {
    * local caller that does not name itself an agent passes, and in any posture
    * this extension's own page code passes). Put it in front of every route
    * that changes state on a person's behalf:
-   * `router.put('/settings', ctx.requirePerson, handler)`. A fetch handler uses
-   * `requirePerson()` or `checkPerson(caller)` from this module instead.
+   * `router.put('/settings', ctx.requirePerson, handler)`.
+   *
+   * @deprecated For the old Express router. A fetch handler uses
+   * `requirePerson()` or `checkPerson(caller)` from this module (DOR-2856).
    */
   readonly requirePerson: import('express').RequestHandler;
   /**

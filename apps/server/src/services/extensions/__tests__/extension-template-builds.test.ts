@@ -87,7 +87,13 @@ describe('the data-provider server template', () => {
       person
     );
 
+    const garbled = await fetch!(
+      new Request('http://x/data', { method: 'PUT', body: '{not json' }),
+      person
+    );
+
     expect(await read.json()).toEqual({ data: ['sunny'] });
+    expect(garbled.status).toBe(400);
     expect(refused.status).toBe(403);
     expect(saved.status).toBe(200);
     expect(stored).toEqual(['rain']);
