@@ -1,10 +1,13 @@
+import { links, siteUrl } from '@dorkos/shared/links';
 import { company } from '@dorkos/shared/company';
 
 /**
  * Site-wide configuration for the DorkOS marketing site.
  *
  * Centralizes branding, URLs, and metadata so changes propagate
- * to layout metadata, JSON-LD, sitemap, robots, and OG images.
+ * to layout metadata, JSON-LD, sitemap, robots, and OG images. Company
+ * facts and brand URLs come from `@dorkos/shared/company` and
+ * `@dorkos/shared/links`; this object only adds what is the site's own.
  */
 export const siteConfig = {
   name: 'DorkOS',
@@ -24,11 +27,16 @@ export const siteConfig = {
    */
   description:
     'Your agents join your team chat, take on real work, and build the custom tools your company runs on. Made for founders, and yours to keep.',
-  url: 'https://dorkos.ai',
+  /** The site origin; owned by `@dorkos/shared/links`. */
+  url: links.site,
   /** The company's published contact address; owned by `@dorkos/shared/company`. */
-  contactEmail: company.contactEmail,
-  github: 'https://github.com/dork-labs/dorkos',
-  npm: 'https://www.npmjs.com/package/dorkos',
+  contactEmail: company.emails.contact,
+  /** The DorkOS repository on GitHub; owned by `@dorkos/shared/links`. */
+  github: links.repo,
+  /** The `dorkos` package on npm; owned by `@dorkos/shared/links`. */
+  npm: links.npmPackage,
+  /** The one-line installer the install page and the homepage hand out. */
+  installCommand: `curl -fsSL ${siteUrl('/install')} | bash`,
   /**
    * Disable the cookie consent banner across the entire site.
    * Set to `true` to hide the banner completely.

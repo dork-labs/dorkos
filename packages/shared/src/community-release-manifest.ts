@@ -8,6 +8,7 @@
  * @module community-release-manifest
  */
 import { z } from 'zod';
+import { links } from './links.js';
 
 /** Current machine-readable Community release manifest format. */
 export const COMMUNITY_RELEASE_MANIFEST_FORMAT_VERSION = 1 as const;
@@ -16,11 +17,11 @@ export const COMMUNITY_RELEASE_MANIFEST_FORMAT_VERSION = 1 as const;
 export const COMMUNITY_IMAGE_REPOSITORY = 'ghcr.io/dork-labs/dorkos-community' as const;
 
 /** Repository that is allowed to attest Community releases. */
-export const COMMUNITY_RELEASE_REPOSITORY = 'dork-labs/dorkos' as const;
+export const COMMUNITY_RELEASE_REPOSITORY = links.repoSlug;
 
 /** Workflow that is allowed to attest Community releases. */
 export const COMMUNITY_RELEASE_WORKFLOW =
-  'dork-labs/dorkos/.github/workflows/publish-community.yml' as const;
+  `${COMMUNITY_RELEASE_REPOSITORY}/.github/workflows/publish-community.yml` as const;
 
 /** Configuration contract understood by the first guided launcher. */
 export const COMMUNITY_CONFIG_SCHEMA_VERSION = 1 as const;

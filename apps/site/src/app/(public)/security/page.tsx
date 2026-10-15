@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { company } from '@dorkos/shared/company';
+import { repoUrl } from '@dorkos/shared/links';
 import { siteConfig } from '@/config/site';
 import { rssFeedAlternateTypes, twitterFromOpenGraph } from '@/lib/metadata';
 
@@ -47,10 +48,10 @@ export default function SecurityPage() {
             <li>
               Found a security problem? Email{' '}
               <a
-                href="mailto:security@dorkos.ai"
+                href={`mailto:${company.emails.security}`}
                 className="text-charcoal hover:text-brand-orange underline"
               >
-                security@dorkos.ai
+                {company.emails.security}
               </a>
               . Please do not post it publicly until it is fixed.
             </li>
@@ -140,14 +141,14 @@ export default function SecurityPage() {
           <p className="text-warm-gray leading-relaxed">
             If you think you have found a security issue, please tell us privately first. Email{' '}
             <a
-              href="mailto:security@dorkos.ai"
+              href={`mailto:${company.emails.security}`}
               className="text-charcoal hover:text-brand-orange underline"
             >
-              security@dorkos.ai
+              {company.emails.security}
             </a>{' '}
             or use the private “Report a vulnerability” button on our{' '}
             <a
-              href="https://github.com/dork-labs/dorkos/security"
+              href={repoUrl('/security')}
               target="_blank"
               rel="noopener noreferrer"
               className="text-charcoal hover:text-brand-orange underline"
@@ -160,7 +161,7 @@ export default function SecurityPage() {
           <p className="text-warm-gray leading-relaxed">
             The full policy lives in{' '}
             <a
-              href="https://github.com/dork-labs/dorkos/blob/main/SECURITY.md"
+              href={repoUrl('/blob/main/SECURITY.md')}
               target="_blank"
               rel="noopener noreferrer"
               className="text-charcoal hover:text-brand-orange underline"

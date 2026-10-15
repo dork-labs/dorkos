@@ -8,11 +8,12 @@
  *
  * @module services/core/cloud/cloud-api-origin
  */
+import { links } from '@dorkos/shared/links';
 import { DEFAULT_CLOUD_URL } from '../auth/cloud-link-client.js';
 import { env } from '../../../env.js';
 
 /** The `/v1` origin when neither `DORKOS_CLOUD_API_URL` nor a custom `DORKOS_CLOUD_URL` is set. */
-export const DEFAULT_CLOUD_API_URL = 'https://cloud.dorkos.ai';
+export const DEFAULT_CLOUD_API_URL = links.cloudApi;
 
 const trimSlashes = (url: string): string => url.replace(/\/+$/, '');
 

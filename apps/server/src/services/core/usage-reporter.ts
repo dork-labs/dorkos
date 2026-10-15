@@ -26,6 +26,7 @@
  * @module services/core/usage-reporter
  */
 
+import { siteUrl } from '@dorkos/shared/links';
 import {
   TelemetryEventSchema,
   TelemetryEventInputSchema,
@@ -37,7 +38,7 @@ import { getOrCreateInstanceId } from '../../lib/instance-id.js';
 import { logger } from '../../lib/logger.js';
 
 /** Where usage-event batches are delivered. */
-export const USAGE_ENDPOINT = 'https://dorkos.ai/api/telemetry/events';
+export const USAGE_ENDPOINT = siteUrl('/api/telemetry/events');
 
 /** Default gap between automatic flushes (60s). */
 export const USAGE_FLUSH_INTERVAL_MS = 60_000;

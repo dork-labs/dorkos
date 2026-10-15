@@ -8,6 +8,7 @@
  * @module shared/dorkbot-templates
  */
 
+import { siteUrl } from './links.js';
 import type { Traits } from './mesh-schemas.js';
 
 /**
@@ -37,7 +38,7 @@ export function dorkbotClaudeMdTemplate(): string {
     // baked into the file forever rather than resolved per boot. Consequence to
     // know about: on an instance that sets DORKOS_DOCS_BASE_URL, DorkBot carries
     // two docs pointers that disagree — this one, and the server's per-turn one.
-    'For full documentation: https://dorkos.ai/llms.txt',
+    `For full documentation: ${siteUrl('/llms.txt')}`,
     '',
     '## Your job',
     '',

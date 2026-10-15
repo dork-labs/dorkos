@@ -33,6 +33,7 @@
  *
  * @module services/notifications/channels/web-push
  */
+import { links } from '@dorkos/shared/links';
 import fs from 'node:fs';
 import path from 'node:path';
 import webpush, { WebPushError } from 'web-push';
@@ -49,7 +50,7 @@ import type { PushSubscriptionStore, StoredPushSubscription } from '../push-subs
  * person's machine — so this names the product, which is both true and the only
  * thing a push service could usefully do anything with.
  */
-const VAPID_SUBJECT = 'https://dorkos.ai';
+const VAPID_SUBJECT = links.site;
 
 /**
  * How long a push service should hold a message for a browser that is offline.

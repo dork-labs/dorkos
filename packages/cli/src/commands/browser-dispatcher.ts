@@ -8,6 +8,7 @@
  *
  * @module commands/browser-dispatcher
  */
+import { docsUrl } from '@dorkos/shared/links';
 
 /** Help for `dorkos browser` with no subcommand or `--help`. */
 const HELP_TEXT = `
@@ -39,7 +40,7 @@ Examples:
 
 Then give an agent the browser: open the agent's profile, then Tools & MCP,
 then Signed-in browser. Setup for the claude, codex and opencode CLIs:
-https://dorkos.ai/docs/guides/agent-browser
+${docsUrl('/guides/agent-browser')}
 `;
 
 /**

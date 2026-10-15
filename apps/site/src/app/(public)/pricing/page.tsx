@@ -114,8 +114,8 @@ export default function PricingPage() {
       <footer className="text-warm-gray mx-auto mt-16 max-w-3xl text-center text-sm">
         <p>
           Questions?{' '}
-          <a href={`mailto:${company.contactEmail}`} className={LINK}>
-            {company.contactEmail}
+          <a href={`mailto:${company.emails.contact}`} className={LINK}>
+            {company.emails.contact}
           </a>
           . DorkOS is made by {company.legalName}. See also{' '}
           <Link href="/security" className={LINK}>

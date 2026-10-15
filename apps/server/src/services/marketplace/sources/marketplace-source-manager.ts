@@ -8,6 +8,7 @@
  *
  * @module services/marketplace/sources/marketplace-source-manager
  */
+import { links } from '@dorkos/shared/links';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { withFileLock } from '@dorkos/shared/atomic-write';
@@ -86,7 +87,7 @@ const MARKETPLACES_FILENAME = 'marketplaces.json';
  * Kept as a module-level constant so the migration (see
  * {@link migrateKnownBadSources}) and the default seed stay in sync.
  */
-const DORKOS_COMMUNITY_URL = 'https://github.com/dork-labs/marketplace';
+const DORKOS_COMMUNITY_URL = links.marketplaceRepo;
 
 /**
  * Map of legacy marketplace source URLs that shipped in earlier DorkOS
