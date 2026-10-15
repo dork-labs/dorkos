@@ -111,11 +111,22 @@ export function projectComposioAuthenticationConfigPolicy(
       : policy
   ).safeParse(raw);
   if (!parsed.success) return undefined;
+  const scopeList = scopes(parsed.data.credentials?.scopes);
+  const userScopeList = scopes(parsed.data.credentials?.user_scopes);
+  // Composio stores `scopes: []` on every API-key, bearer, basic and no-auth
+  // config it creates, so an empty scope list holds no credential. Any other
+  // key, or any scope at all, still counts as one.
+  const credentialsEmpty = Object.keys(parsed.data.credentials ?? {}).every(
+    (key) =>
+      (key === 'scopes' || key === 'user_scopes') &&
+      scopeList.length === 0 &&
+      userScopeList.length === 0
+  );
   return {
     type: parsed.data.type,
-    scopes: scopes(parsed.data.credentials?.scopes),
-    userScopes: scopes(parsed.data.credentials?.user_scopes),
-    credentialsEmpty: Object.keys(parsed.data.credentials ?? {}).length === 0,
+    scopes: scopeList,
+    userScopes: userScopeList,
+    credentialsEmpty,
     routerEnabled: parsed.data.is_enabled_for_tool_router,
   };
 }

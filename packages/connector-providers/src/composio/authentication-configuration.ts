@@ -117,7 +117,13 @@ const rawField = z
     legacy_template_name: z.string().optional(),
   })
   .strict();
-const providerOwnedOAuthAppSetupField = rawField.strip();
+// OAuth app setup fields belong to the provider app, and only their count is read.
+// Their defaults can be any scalar (Monday declares `use_oauth2_1: false`), so
+// accept one and drop it rather than refusing the whole service.
+const providerOwnedOAuthAppSetupField = rawField
+  .extend({ default: z.union([z.string(), z.number(), z.boolean()]).nullable().optional() })
+  .strip()
+  .transform(({ default: _default, ...setupField }) => setupField);
 const fieldGroup = z.object({
   required: z.array(rawField).max(64),
   optional: z.array(rawField).max(64),

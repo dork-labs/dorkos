@@ -110,6 +110,34 @@ describe('exact Composio authentication selection', () => {
       'account-field constraints'
     );
   });
+  it('accepts any scalar default on an OAuth app setup field, as Monday declares', () => {
+    const value = raw(['OAUTH2']);
+    const setup = value.auth_config_details[0].fields.auth_config_creation;
+    setup.required.push({ ...field, name: 'client_id' });
+    for (const [name, fallback] of [
+      ['use_oauth2_1', false],
+      ['retries', 3],
+      ['webhook_signing_secret', null],
+    ] as const)
+      setup.optional.push({ ...field, name, required: false, default: fallback as never });
+
+    const normalized = normalizeComposioToolkitAuthentication(value);
+    expect(selectComposioAuthentication(normalized)).toMatchObject({
+      kind: 'oauth',
+      source: 'managed',
+    });
+    expect(normalized.methods).toEqual([
+      { scheme: 'OAUTH2', needsDeveloperConfiguration: true, descriptor: expect.anything() },
+    ]);
+    expect(JSON.stringify(normalized)).not.toContain('SECRET_DEFAULT');
+
+    const accountField = raw(['API_KEY']);
+    accountField.auth_config_details[0].fields.connected_account_initiation.required[0].default =
+      false as never;
+    expect(() => normalizeComposioToolkitAuthentication(accountField)).toThrow(
+      'invalid authentication metadata'
+    );
+  });
   it('preserves an explicit supported custom choice and refuses broken overrides without fallback', () => {
     const normalized = normalizeComposioToolkitAuthentication(raw());
     expect(selectComposioAuthentication(normalized, config)).toMatchObject({

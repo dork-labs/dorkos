@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { projectComposioAuthenticationConfigPolicy } from '../authentication-config-policy.js';
+import {
+  matchesComposioAutomaticAuthenticationPolicy,
+  normalizeComposioAuthenticationConfiguration,
+} from '../authentication-configuration.js';
 
 const canonical = () => ({
   id: 'ac_synthetic',
@@ -135,5 +139,87 @@ describe('managed Slack OAuth policy envelope', () => {
         credentials: { ...raw.credentials, signing_secret: 'PRIVATE_SENTINEL' },
       })
     ).toBeUndefined();
+  });
+});
+
+// The exact envelope Composio returned on 2026-10-15 for the API-key configs
+// DorkOS created (PostHog, 1Password, Replicate): `credentials` is not empty,
+// it holds an empty scope list. Reading that as "has credentials" refused
+// every account-field service at sign-in with a policy mismatch.
+describe('custom account-field policy envelope', () => {
+  const custom = (credentials: Record<string, unknown>) => ({
+    id: 'ac_synthetic',
+    name: 'dorkos-default-v1-posthog-synthetic',
+    toolkit: { slug: 'posthog' },
+    auth_scheme: 'API_KEY',
+    is_composio_managed: false,
+    type: 'custom',
+    status: 'ENABLED',
+    is_enabled_for_tool_router: false,
+    credentials,
+    tool_access_config: {},
+  });
+  const blueprint = (scheme: 'API_KEY' | 'NO_AUTH') => ({
+    toolkit: 'posthog',
+    scheme,
+    kind: scheme === 'NO_AUTH' ? ('none' as const) : ('fields' as const),
+    source: 'account-fields' as const,
+    fields: [],
+  });
+  const toolkit = {
+    toolkit: 'posthog',
+    enabled: true,
+    managedOAuth2: false,
+    managedScopes: [],
+    managedUserScopes: [],
+    methods: [],
+  };
+
+  it.each([{}, { scopes: [] }, { scopes: '' }, { scopes: [], user_scopes: [] }])(
+    'reads %j as holding no credential',
+    (credentials) => {
+      expect(projectComposioAuthenticationConfigPolicy(custom(credentials))).toEqual({
+        type: 'custom',
+        scopes: [],
+        userScopes: [],
+        credentialsEmpty: true,
+        routerEnabled: false,
+      });
+    }
+  );
+
+  it.each([{ scopes: ['read'] }, { scopes: 'read' }, { user_scopes: ['read'] }])(
+    'reads %j as holding a credential',
+    (credentials) => {
+      expect(projectComposioAuthenticationConfigPolicy(custom(credentials))?.credentialsEmpty).toBe(
+        false
+      );
+    }
+  );
+
+  it('still refuses any credential key other than scopes', () => {
+    expect(
+      projectComposioAuthenticationConfigPolicy(custom({ scopes: [], api_key: 'PRIVATE_SENTINEL' }))
+    ).toBeUndefined();
+  });
+
+  it.each(['API_KEY', 'NO_AUTH'] as const)(
+    'lets the automatic %s blueprint Composio created be reused',
+    (scheme) => {
+      const config = normalizeComposioAuthenticationConfiguration({
+        ...custom({ scopes: [] }),
+        auth_scheme: scheme,
+      });
+      expect(matchesComposioAutomaticAuthenticationPolicy(config, toolkit, blueprint(scheme))).toBe(
+        true
+      );
+    }
+  );
+
+  it('keeps refusing a blueprint that holds a scope', () => {
+    const config = normalizeComposioAuthenticationConfiguration(custom({ scopes: ['read'] }));
+    expect(
+      matchesComposioAutomaticAuthenticationPolicy(config, toolkit, blueprint('API_KEY'))
+    ).toBe(false);
   });
 });
