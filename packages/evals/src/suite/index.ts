@@ -29,6 +29,7 @@ import { heartbeatCases } from './heartbeat.js';
 import { unblockCases } from './unblock.js';
 import { unblockSmokeCases } from './unblock-smoke.js';
 import { discoveryCases } from './discovery.js';
+import { extensionCases } from './extensions/data-provider.js';
 
 /** Every registered eval case, across all suites. */
 export const ALL_CASES: EvalCase[] = [
@@ -54,6 +55,7 @@ export const ALL_CASES: EvalCase[] = [
   ...unblockCases,
   ...unblockSmokeCases,
   ...discoveryCases,
+  ...extensionCases,
 ];
 
 /** The tag values a `--suite` name may select. */
@@ -88,6 +90,7 @@ export function selectSuite(name: string): EvalCase[] {
 }
 
 export { selfTestCase } from './selftest.js';
+export { extensionDataProviderCase, extensionCases } from './extensions/data-provider.js';
 export { widgetRoundTripCase } from './ui.js';
 export { designYourOwnInterviewCase } from './agents.js';
 export { connectorGmailCase, connectorSlackCase } from './connectors.js';

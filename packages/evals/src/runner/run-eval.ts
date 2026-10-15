@@ -435,6 +435,8 @@ export async function runEval(evalCase: EvalCase, opts: RunEvalOptions): Promise
     // sees it at its container mount point and reports that as `projectCwd`.
     // Oracles are unaffected — they always read the host sandbox.
     const driveCwd = server.projectCwd ?? sandbox.projectCwd;
+    // The run's guard wins over the case's own, so a caller can always bound a turn.
+    const turnTimeoutMs = opts.timeoutMs ?? evalCase.turnTimeoutMs;
     const ceiling = evalCase.perEvalCeilingUsd;
     const abortWhen =
       ceiling !== undefined ? (fs: SseFrame[]) => evalCostUsd(fs) > ceiling : undefined;
@@ -470,7 +472,7 @@ export async function runEval(evalCase: EvalCase, opts: RunEvalOptions): Promise
         cwd: driveCwd,
         prompts: turns,
         clientId,
-        timeoutMs: opts.timeoutMs,
+        timeoutMs: turnTimeoutMs,
         abortWhen,
         onFrames,
         ...(opts.runtime ? { runtime: opts.runtime } : {}),
@@ -490,7 +492,7 @@ export async function runEval(evalCase: EvalCase, opts: RunEvalOptions): Promise
         action: evalCase.widgetAction,
         cwd: driveCwd,
         clientId,
-        timeoutMs: opts.timeoutMs,
+        timeoutMs: turnTimeoutMs,
         abortWhen,
         onFrames,
       });
@@ -510,7 +512,7 @@ export async function runEval(evalCase: EvalCase, opts: RunEvalOptions): Promise
         baseUrl: server.baseUrl,
         sandbox,
         cwd: driveCwd,
-        ...(opts.timeoutMs !== undefined ? { timeoutMs: opts.timeoutMs } : {}),
+        ...(turnTimeoutMs !== undefined ? { timeoutMs: turnTimeoutMs } : {}),
       });
       frames = scripted.frames;
       room = scripted.room;

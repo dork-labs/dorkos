@@ -759,6 +759,14 @@ export const EvalCaseMetaSchema = z.object({
   /** Per-eval cost ceiling in USD; a single turn exceeding this fails the eval. */
   perEvalCeilingUsd: z.number().nonnegative().optional(),
   /**
+   * This case's per-turn timeout guard in ms, for a case whose one turn is
+   * honestly longer than the 90-second default: building an extension means
+   * scaffolding it, editing its files and compiling them, several tool calls
+   * deep. A run-level timeout (`RunEvalOptions.timeoutMs`) still wins, so a
+   * test that drives a case with a short guard keeps it.
+   */
+  turnTimeoutMs: z.number().int().positive().optional(),
+  /**
    * This case prefers the hardened DOCKER isolation tier when one is available
    * (`--isolation auto`, the default). Set it on cases whose turns actually
    * EXECUTE tools and mutate a filesystem — the destructive scenarios and the
