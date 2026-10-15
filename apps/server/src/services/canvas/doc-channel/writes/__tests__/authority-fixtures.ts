@@ -872,6 +872,12 @@ export async function nativeCommittedCodexRoomFixture(
         throw new Error('Original acceptance identity changed.');
       await new Promise<void>((resolve) => setTimeout(resolve, 110));
       wakeAuthorizedRoomDue(h.http.authorization);
+      // Constructor observation alone does not mean the SDK transport registered its release.
+      if (observed.isProducerHeld)
+        await vi.waitFor(() => {
+          if (!observed.isProducerHeld!())
+            throw new Error('Original SDK producer is not held before release.');
+        });
       observed.releaseProducer();
       await producerDone;
       prepared = await prepareServiceOriginalRoomResponder(

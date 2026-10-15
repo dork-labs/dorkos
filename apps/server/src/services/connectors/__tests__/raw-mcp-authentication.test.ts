@@ -397,10 +397,44 @@ describe('raw MCP durable authentication', () => {
       nodeCode: string | null;
       httpStatus: number | null;
     } = { reasonClass: 'not-observed', nodeCode: null, httpStatus: null };
+    const fetchFailureCodes: string[] = [];
+    const probeFetch: typeof fetch = async (...args) => {
+      try {
+        return await fetch(...args);
+      } catch (cause) {
+        // Preserve the real fetch error; retain no URLs, headers, or arbitrary messages.
+        try {
+          const pending: unknown[] = [cause];
+          for (let i = 0; i < pending.length && i < 8; i++) {
+            const error = pending[i];
+            if (!error || typeof error !== 'object') continue;
+            const code = Reflect.get(error, 'code');
+            if (
+              typeof code === 'string' &&
+              /^(ECONNREFUSED|ECONNRESET|EPIPE|ENOTFOUND|EAI_AGAIN|ETIMEDOUT|ABORT_ERR|UND_ERR_(SOCKET|CLOSED|ABORTED|CONNECT_TIMEOUT|HEADERS_TIMEOUT|BODY_TIMEOUT))$/.test(
+                code
+              ) &&
+              !fetchFailureCodes.includes(code) &&
+              fetchFailureCodes.length < 2
+            )
+              fetchFailureCodes.push(code);
+            if (pending.length < 8) pending.push(Reflect.get(error, 'cause'));
+            if (error instanceof AggregateError)
+              pending.push(...error.errors.slice(0, 8 - pending.length));
+          }
+        } catch {
+          /* Failure DATA must preserve the original fetch rejection. */
+        }
+        throw cause;
+      }
+    };
     const context = boot({
       probe: async (connection) => {
         // Same real default probe and header normalization; retain only bounded DATA.
-        const outcome = await runProbe({ ...connection, headers: connection.headers ?? {} });
+        const outcome = await runProbe(
+          { ...connection, headers: connection.headers ?? {} },
+          probeFetch
+        );
         if (outcome.kind === 'failed') {
           const message = outcome.error;
           const nodeCode =
@@ -447,6 +481,7 @@ describe('raw MCP durable authentication', () => {
             tag: 'raw-mcp-initial-connect-failure',
             probeClass,
             ...probeFailureData,
+            fetchFailureCodes,
             listenerListening: target.server.listening,
             listenerBoundIpv4:
               (target.server.address() as AddressInfo | null)?.address === '127.0.0.1',
