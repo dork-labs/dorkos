@@ -60,20 +60,18 @@ const TABLE: ReadonlyArray<readonly [TurnOrigin, OriginPermissionSeed]> = [
   // the operator's stop was set for, so power comes only from the tool's own
   // clamped mode.
   [{ kind: 'agent-launch' }, 'none'],
-  // Another chat sent this one a message (spec `spin-off-chats`): the sender's
-  // own level is the ceiling, applied at launch, and the operator's stop is a
-  // promise to a person, not to the sending chat.
-  [{ kind: 'chat-message' }, 'none'],
+  // Another chat sent this one a message (spec `spin-off-chats`): a chat it
+  // opens starts at the operator's stop, and the sender's level is the
+  // ceiling applied at launch, so the turn runs at the stricter of the two.
+  // Seeding nothing made that always Default, so two Full autonomy agents
+  // held each other to asking.
+  [{ kind: 'chat-message' }, 'configured-stop-on-insert'],
   // An extension started work in a brand-new chat in the person's project:
   // the new-session default a person's own chat gets, on the row it inserts.
   [{ kind: 'extension-start' }, 'configured-stop-on-insert'],
   // An extension sent an agent a message: app data, not a person's request,
   // so the chat it opens seeds no operator stop.
   [{ kind: 'extension-message' }, 'none'],
-  // Another chat sent this one a message (spec `spin-off-chats` §2): the
-  // sending chat's work, held to its level by the launch ceiling, so the
-  // operator's stop (a promise to a person) is not seeded for it.
-  [{ kind: 'chat-message' }, 'none'],
   // A limited session's work carried over to another account: the settings
   // row copied from the source session is its power, and the origin adds none.
   [{ kind: 'account-handoff' }, 'none'],
