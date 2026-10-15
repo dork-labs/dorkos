@@ -42,6 +42,7 @@ export const COMMUNITY_MIGRATIONS = [
   [36, '0036_decision_checks.sql'],
   [37, '0037_entry_number_at_commit.sql'],
   [38, '0038_reserved_name_grants.sql'],
+  [39, '0039_agent_availability.sql'],
 ] as const;
 
 /**

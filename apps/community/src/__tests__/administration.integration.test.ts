@@ -1188,6 +1188,7 @@ it('rejects foreign objects on every id-taking community route, even for an owne
   // foreign to pass them.
   const exempt: Record<string, string> = {
     'GET /community': 'reads the URL community only',
+    'GET /features': 'describes the server; takes no id',
     'GET /auth-options': 'deployment sign-in options, no object',
     'GET /settings': 'reads the URL community only',
     'PATCH /settings': 'edits the URL community only',
@@ -1246,7 +1247,7 @@ it('rejects foreign objects on every id-taking community route, even for an owne
   expect(registered.length).toBeGreaterThan(50);
   // Routes whose foreign-id call legitimately succeeds, so they cannot share
   // the refusal comparison; each has its own check after the matrix.
-  const separately = ['POST /agents'];
+  const separately = ['POST /agents', 'POST /agents/availability'];
   const probed = new Set(probes.map((probe) => probe.route));
   expect([...probed].filter((route) => route in exempt || separately.includes(route))).toEqual([]);
   expect(separately.filter((route) => route in exempt)).toEqual([]);
@@ -1348,6 +1349,25 @@ it('rejects foreign objects on every id-taking community route, even for an owne
   ).toEqual({ community_id: communityId });
   expect(await isolationSnapshot([otherId])).toEqual(otherBefore);
   checked.add('POST /agents');
+
+  // POST /agents/availability answers 200 and lists what it refused, so it cannot share the
+  // refusal comparison. B's agent, named at A's URL, comes back refused exactly as an id that
+  // exists nowhere does, and B's agent row keeps no report (DOR-2877).
+  const reportFor = async (agentId: string) => {
+    const response = await request(`${own}/agents/availability`, {
+      method: 'POST',
+      headers: { authorization: `Bearer ${ownGrantToken}`, 'content-type': 'application/json' },
+      body: JSON.stringify({ agents: [{ agentId, runsOn: 'computer' }] }),
+    });
+    expect(response.status, 'POST /agents/availability').toBe(200);
+    return (await response.json()) as { accepted: string[]; refused: string[] };
+  };
+  expect(await reportFor(agent)).toMatchObject({ accepted: [], refused: [agent] });
+  expect(await reportFor(missing.agent)).toMatchObject({ accepted: [], refused: [missing.agent] });
+  expect(
+    (await pool.query('SELECT runs_on,last_seen_at FROM agents WHERE id=$1', [agent])).rows
+  ).toEqual([{ runs_on: null, last_seen_at: null }]);
+  checked.add('POST /agents/availability');
   expect([...checked]).toEqual(separately);
 });
 

@@ -9,7 +9,6 @@ import {
   CommunityWireBootstrapCompleteResponseSchema,
   CommunityWireBootstrapPreflightRequestSchema,
   CommunityWireBootstrapPreflightResponseSchema,
-  CommunityWireCommunitySchema,
 } from '@dorkos/shared/community-wire';
 import type { CommunityConfig } from './config.js';
 import { createCommunityAuth } from './auth.js';
@@ -30,7 +29,9 @@ import { registerOpenAdmissionRoutes } from './routes/community/open-admission.j
 import { registerPairingRoutes } from './routes/community/pairings.js';
 import { registerRedactionRoutes } from './routes/community/redactions.js';
 import { registerRemovalRoutes } from './routes/community/removals.js';
-import { registerAgentRoutes } from './routes/community/agents.js';
+import { registerAgentRoutes } from './routes/community/agents/enrollment.js';
+import { registerAgentAvailabilityRoutes } from './routes/community/agents/availability.js';
+import { registerSpaceInfoRoutes } from './routes/community/space-info.js';
 import { registerAttachmentRoutes } from './routes/community/attachments.js';
 import { registerExportRoutes } from './routes/community/exports.js';
 import { registerHostRoutes } from './routes/host/host.js';
@@ -486,24 +487,7 @@ export function createCommunityApp({
     }
     await next();
   });
-  communityApi.get('/community', async (c) => {
-    const tenant = await resolveCommunityContext(c, pool, {
-      allowPendingOwner: true,
-    });
-    const result = await pool.query<{
-      id: string;
-      name: string;
-      description: string | null;
-      created_at: Date;
-    }>('SELECT id,name,description,created_at FROM communities WHERE id=$1', [tenant.communityId]);
-    const row = result.rows[0];
-    return json(c, CommunityWireCommunitySchema, {
-      id: row.id,
-      name: row.name,
-      description: row.description,
-      createdAt: row.created_at.toISOString(),
-    });
-  });
+  registerSpaceInfoRoutes(communityApi, { pool });
   registerAuthOptionsRoute(communityApi, { config, linksOn });
 
   registerChannelRoutes(communityApi, { pool, auth });
@@ -550,6 +534,7 @@ export function createCommunityApp({
     limitStart: (c) => limitAttempts(`pairing:${peer(c)}`, config.limits.pairingAttemptsPerMinute),
   });
   registerAgentRoutes(communityApi, { pool, auth, config });
+  registerAgentAvailabilityRoutes(communityApi, { pool });
   registerAttachmentRoutes(communityApi, {
     pool,
     auth,

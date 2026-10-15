@@ -17,6 +17,7 @@ import { ConductSettings } from '../moderation/ConductSettings.js';
 import { ChannelPanel } from '../moderation/ChannelPanel.js';
 import { DisplayNamePanel } from '../moderation/DisplayNamePanel.js';
 import type { Agent, Channel, Member } from '../types.js';
+import { RosterDetail } from './members/RosterDetail.js';
 import type { CommunitySettingsSection } from '@dorkos/shared/community-wire';
 
 type Invite = {
@@ -149,9 +150,9 @@ export function Manage({
         }
         if (selectedChannel?.joined && !readOnly)
           requests.push(
-            request<{ members: Member[] }>(`/api/v1/channels/${selectedChannel!.id}/members`).then(
-              (body) => setRoster(body.members)
-            )
+            request<{ members: Member[] }>(
+              `/api/v1/channels/${selectedChannel!.id}/members?include=availability`
+            ).then((body) => setRoster(body.members))
           );
         await Promise.all(requests);
       } catch (cause) {
@@ -501,10 +502,7 @@ export function Manage({
                     key={member.memberId}
                   >
                     <div>
-                      <strong>{member.displayName}</strong>{' '}
-                      <span className="small muted">
-                        @{member.handle} · {member.kind === 'agent' ? 'agent' : member.role}
-                      </span>
+                      <strong>{member.displayName}</strong> <RosterDetail member={member} />
                     </div>
                     {moderator && member.memberId !== me.memberId && (
                       <Button

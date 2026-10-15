@@ -1,10 +1,22 @@
 import type { Pool, PoolClient } from 'pg';
+import {
+  COMMUNITY_AGENT_AVAILABLE_WITHIN_SECONDS,
+  type CommunityWireAgentAvailability,
+} from '@dorkos/shared/community-wire';
 import type { Member } from '../data.js';
 
 /**
+ * An agent's availability from its last report, read on the database clock, the clock that
+ * dated the report: `communityAgentAvailability` in the shared wire, in SQL.
+ */
+const AGENT_AVAILABILITY_SQL = `CASE WHEN a.last_seen_at IS NULL THEN 'unknown'
+      WHEN a.last_seen_at >= now() - make_interval(secs => ${COMMUNITY_AGENT_AVAILABLE_WITHIN_SECONDS})
+        THEN 'available' ELSE 'offline' END`;
+
+/**
  * Everyone who can be addressed in one channel: its active joined members, then its active
- * joined agents whose owners are active, oldest join first. `$1` is the channel, `$2` its
- * community.
+ * joined agents whose owners are active, oldest join first, each agent with its last
+ * availability report. `$1` is the channel, `$2` its community.
  *
  * Every join names the community, so each table is read through its `(community_id, …)` index.
  * Joined only on `id`, the planner hashed every membership on the host, all 46,200 at the
@@ -12,13 +24,15 @@ import type { Member } from '../data.js';
  * (DOR-2572).
  */
 export const CHANNEL_ROSTER_SQL = `SELECT m.id,m.display_name,m.handle,m.role,NULL::uuid AS owner_member_id,
-    NULL::text AS owner_display_name,'human'::text AS kind,cm.joined_at
+    NULL::text AS owner_display_name,'human'::text AS kind,cm.joined_at,
+    NULL::text AS runs_on,NULL::timestamptz AS last_seen_at,NULL::text AS availability
   FROM channel_members cm
   JOIN members m ON m.community_id=cm.community_id AND m.id=cm.member_id
   WHERE cm.channel_id=$1 AND cm.community_id=$2 AND m.community_id=$2 AND m.active
   UNION ALL
   SELECT a.id,a.display_name,a.handle,NULL::text AS role,a.owner_member_id,
-    owner.display_name AS owner_display_name,'agent'::text AS kind,acm.joined_at
+    owner.display_name AS owner_display_name,'agent'::text AS kind,acm.joined_at,
+    a.runs_on,a.last_seen_at,${AGENT_AVAILABILITY_SQL} AS availability
   FROM agent_channel_members acm
   JOIN agents a ON a.community_id=acm.community_id AND a.id=acm.agent_id
   JOIN members owner ON owner.community_id=a.community_id AND owner.id=a.owner_member_id
@@ -45,6 +59,11 @@ export interface ChannelRosterRow {
   owner_display_name: string | null;
   kind: 'human' | 'agent';
   joined_at: Date;
+  /** An agent's last availability report (0039); always NULL for a person. */
+  runs_on: 'computer' | 'agent-computer' | null;
+  last_seen_at: Date | null;
+  /** Derived from `last_seen_at` on the database clock; always NULL for a person. */
+  availability: CommunityWireAgentAvailability | null;
 }
 
 /**
