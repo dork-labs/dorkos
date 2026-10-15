@@ -13,7 +13,7 @@ const source = readFileSync(new URL('../index.ts', import.meta.url), 'utf8');
 
 describe('extension tools startup wiring', () => {
   it('builds the session tool deps with the extension manager, after it starts', () => {
-    const start = source.indexOf('await extensionManager.initialize(');
+    const start = source.indexOf('extensionManager = await startExtensions(');
     const depsOpen = source.indexOf('mcpToolDeps = {');
     const depsClose = source.indexOf('\n    };', depsOpen);
     const deps = source.slice(depsOpen, depsClose);
