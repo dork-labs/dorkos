@@ -22,6 +22,7 @@ import { aggregateTeamRoster } from '../aggregate-team.js';
 import { IDENTITY_MAX_LENGTH } from '@dorkos/shared/untrusted-text';
 import {
   OPERATOR_FALLBACK_DISPLAY_NAME,
+  accountNameForDisplay,
   resolveAnswererName,
   resolveOperatorProfile,
 } from '../operator-profile.js';
@@ -167,6 +168,44 @@ describe('resolveOperatorProfile', () => {
     ).toBe('dorian@dorkos.ai');
     expect(
       resolveOperatorProfile({ account: () => null, configDisplayName: () => 'Dork' }, null).email
+    ).toBeUndefined();
+  });
+});
+
+/**
+ * Sign-up used to store the email as the account name, which then won the top
+ * rung everywhere: the sidebar showed an address, and the profile's own name and
+ * the "what should I call you?" prompt never got a turn (DOR-2964).
+ */
+describe('an account name that is only its email is ignored', () => {
+  const EMAIL = 'dorian@dorkos.ai';
+
+  it('treats name = email (any case, any padding) as no name', () => {
+    expect(accountNameForDisplay(EMAIL, EMAIL)).toBeNull();
+    expect(accountNameForDisplay(' Dorian@DorkOS.ai ', EMAIL)).toBeNull();
+    expect(accountNameForDisplay('', EMAIL)).toBeNull();
+    expect(accountNameForDisplay('Dorian', EMAIL)).toBe('Dorian');
+    // Without the email to compare, a name is still a name.
+    expect(accountNameForDisplay(EMAIL, undefined)).toBe(EMAIL);
+  });
+
+  it('falls through to the profile name, then to the fallback the identity prompt reads', () => {
+    const account = () => ({ id: OWNER_USER_ID, name: EMAIL, email: EMAIL });
+
+    const named = resolveOperatorProfile({ account, configDisplayName: () => 'Dorian' }, null);
+    expect(named).toMatchObject({ displayName: 'Dorian', nameRung: 'profile', email: EMAIL });
+
+    const unnamed = resolveOperatorProfile({ account, configDisplayName: () => null }, null);
+    expect(unnamed.nameRung).toBe('fallback');
+    expect(unnamed.displayName).toBe(OPERATOR_FALLBACK_DISPLAY_NAME);
+  });
+
+  it('never prints the email on an answer receipt', () => {
+    expect(
+      resolveAnswererName({
+        account: () => ({ name: EMAIL, email: EMAIL }),
+        configDisplayName: () => null,
+      })
     ).toBeUndefined();
   });
 });

@@ -126,7 +126,12 @@ function answeredBy(facts: RequestFacts): { answeredBy?: string } {
   const { user } = facts;
   try {
     const name = resolveAnswererName({
-      account: () => (user ? getUserById(user.userId) : readOwnerAccount()),
+      // Read with its email either way, so a name that is only the email is
+      // ignored rather than printed (DOR-2964).
+      account: () => {
+        const id = user?.userId ?? readOwnerAccount()?.id;
+        return id ? getUserById(id) : null;
+      },
       configDisplayName: () => configManager.get('profile')?.displayName ?? null,
     });
     return name ? { answeredBy: name } : {};

@@ -407,6 +407,18 @@ export function readOwnerAccount(): Account | null {
 }
 
 /**
+ * The owner account's email, or `null` when nobody has registered yet (or auth
+ * was never initialized).
+ *
+ * `GET /api/config` reads this so turning login on can ask the existing owner
+ * to sign in rather than offering a create form that can only fail (DOR-2964).
+ */
+export function readOwnerEmail(): string | null {
+  const owner = readOwnerAccount();
+  return owner ? (getUserById(owner.id)?.email ?? null) : null;
+}
+
+/**
  * Whether at least one Better Auth API key exists (any owner-owned or seeded key).
  *
  * Returns `false` when auth was never initialized. Uses a synchronous

@@ -58,7 +58,7 @@ import { getMeshInitError } from '../services/mesh/mesh-state.js';
 import { getBoundary } from '../lib/boundary.js';
 import { SERVER_VERSION, IS_DEV_BUILD } from '../lib/version.js';
 import { logger, logError } from '../lib/logger.js';
-import { hasAnyApiKey } from '../services/core/auth/index.js';
+import { hasAnyApiKey, readOwnerEmail } from '../services/core/auth/index.js';
 import { getMcpLocalToken, rotateMcpLocalToken } from '../services/core/auth/mcp-local-token.js';
 import { resolveDorkHome } from '../lib/dork-home.js';
 import { resolveAgentsDirectory } from '../lib/agents-home.js';
@@ -306,7 +306,11 @@ router.get('/', async (c) => {
       linkAnalyticsToAccount: false,
       aiMetadata: false,
     },
-    auth: configManager.get('auth') ?? { enabled: false },
+    // The owner's email rides with the flag so Settings › Login & security can
+    // tell "sign in as the owner" from "create one" before the switch flips.
+    // Turning login on for an install that already has an owner used to open
+    // the create form and dead-end on a duplicate email (DOR-2964).
+    auth: { ...(configManager.get('auth') ?? { enabled: false }), ownerEmail: readOwnerEmail() },
     // The two engaged-window ceilings, and the five automatic-reply limits.
     //
     // The ceilings are READ-ONLY here: the cockpit prints them inside the

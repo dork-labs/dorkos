@@ -13,7 +13,10 @@ import {
 } from '@dorkos/shared/config-schema';
 
 /** The account that owns this install, as `readOwnerAccount` answers (DOR-2652). */
-const owner = vi.hoisted(() => ({ account: { id: 'user_cockpit', name: 'Owner' } as unknown }));
+const owner = vi.hoisted(() => ({
+  account: { id: 'user_cockpit', name: 'Owner' } as unknown,
+  email: null as string | null,
+}));
 // The session gate lets every request through: with login off it is a
 // pass-through anyway, and the cases that turn login on present the identity it
 // would have proved (`configApp` below) to reach the route's own bars.
@@ -24,6 +27,7 @@ vi.mock('../../services/core/auth/session-gate.js', async (importOriginal) => ({
 vi.mock('../../services/core/auth/index.js', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../services/core/auth/index.js')>()),
   readOwnerAccount: () => owner.account,
+  readOwnerEmail: () => owner.email,
 }));
 
 // Mock tunnel-manager and agent-manager to avoid side effects
@@ -1271,6 +1275,18 @@ describe('GET /api/config', () => {
     vi.resetModules();
   });
 
+  it('names the owner’s email so turning login on can ask them to sign in (DOR-2964)', async () => {
+    const none = await request(server).get('/api/config').expect(200);
+    expect(none.body.auth).toMatchObject({ ownerEmail: null });
+
+    owner.email = 'dorian@example.com';
+    try {
+      const res = await request(server).get('/api/config').expect(200);
+      expect(res.body.auth).toMatchObject({ enabled: false, ownerEmail: 'dorian@example.com' });
+    } finally {
+      owner.email = null;
+    }
+  });
   it('includes boundary field in response', async () => {
     const res = await request(server).get('/api/config');
 

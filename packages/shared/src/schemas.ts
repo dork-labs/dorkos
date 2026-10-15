@@ -5036,6 +5036,10 @@ export const ServerConfigSchema = z
         enabled: z.boolean().openapi({
           description: 'Whether local owner login is required to reach the API and MCP endpoints',
         }),
+        ownerEmail: z.string().nullable().optional().openapi({
+          description:
+            "The owner account's email, or `null` when nobody has registered yet. Turning login on asks the owner to sign in as this address when an owner exists, and offers to create one when it is `null`",
+        }),
       })
       .optional()
       .openapi({ description: 'Local login (Better Auth) state' }),

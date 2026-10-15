@@ -160,9 +160,11 @@ export interface ProfileCommitmentsSummary {
  */
 const SYSTEM_LOCK_REASON = 'DorkBot’s name, face and description are part of DorkOS.';
 
-/** Why your email is not editable here. */
-const EMAIL_LOCK_REASON =
-  'Your email comes from your sign-in. Change it in Settings › Login & security.';
+/**
+ * Why your email is not editable. It used to point at Settings › Login &
+ * security, which has no such control (DOR-2964).
+ */
+const EMAIL_LOCK_REASON = 'Your email is how you sign in, so it stays fixed.';
 
 /**
  * One room, written the way the rest of the cockpit writes it.

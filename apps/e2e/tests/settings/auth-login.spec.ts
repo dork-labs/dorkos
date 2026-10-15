@@ -13,7 +13,11 @@ import { test, expect } from '../../fixtures';
  *   4. signing out returns to the login screen, and signing back in restores
  *      access; the run then disables login again to restore zero-config — and
  *      the key is still listed afterwards, because turning login off revokes
- *      nothing (DOR-1885).
+ *      nothing (DOR-1885);
+ *   5. turning login back on with that owner still there asks for the owner's
+ *      password instead of a create form that can only fail: a wrong one leaves
+ *      login off, the right one turns it on (DOR-2964). Login goes off again
+ *      at the end, so the instance is back to zero-config.
  *
  * The API-key coverage lives in this file rather than a spec of its own on
  * purpose: Playwright runs spec FILES in parallel, and a second file would race
@@ -146,5 +150,43 @@ test.describe('Auth — local login lifecycle @auth', () => {
     await expect(
       authPage.settingsDialog.getByText(/keys still work with login off/i)
     ).toBeVisible();
+  });
+
+  test('turning login on with an owner asks for their password (DOR-2964)', async ({
+    basePage,
+    authPage,
+  }) => {
+    await basePage.goto();
+    await basePage.waitForAppReady();
+    await authPage.openLoginSecurityTab();
+
+    // The owner from the earlier tests still exists and login is off: the dead
+    // end. Turning it on must not offer to create a second account.
+    await authPage.requireLoginSwitch.click();
+    await expect(authPage.turnOnLoginDialog).toBeVisible();
+    await expect(authPage.ownerDialog).toBeHidden();
+    await expect(authPage.turnOnLoginDialog.getByText(OWNER_EMAIL)).toBeVisible();
+
+    // A wrong password is refused and login stays off.
+    await authPage.confirmOwnerPassword('not-the-owner-password');
+    await expect(authPage.turnOnLoginDialog.getByRole('alert')).toContainText(
+      'Wrong password. Login is still off.'
+    );
+    await authPage.turnOnLoginDialog.getByRole('button', { name: /^cancel$/i }).click();
+    await expect(authPage.requireLoginSwitch).not.toBeChecked();
+
+    // The right password turns it on, signed in: a reload stays in the app.
+    await authPage.requireLoginSwitch.click();
+    await authPage.confirmOwnerPassword(OWNER_PASSWORD);
+    await expect(authPage.turnOnLoginDialog).toBeHidden();
+    await expect(authPage.requireLoginSwitch).toBeChecked();
+    await basePage.page.reload();
+    await basePage.waitForAppReady();
+    await expect(authPage.loginHeading).toBeHidden();
+
+    // Restore zero-config for the shared instance.
+    await authPage.openLoginSecurityTab();
+    await authPage.requireLoginSwitch.click();
+    await expect(authPage.requireLoginSwitch).not.toBeChecked();
   });
 });

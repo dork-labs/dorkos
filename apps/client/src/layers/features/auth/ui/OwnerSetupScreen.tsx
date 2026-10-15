@@ -6,6 +6,17 @@ import { useSignUp } from '../model/use-auth-session';
 /** Better Auth's default minimum password length (scrypt, no verification). */
 const MIN_PASSWORD_LENGTH = 8;
 
+/**
+ * The two ways a sign-up says "this install already has an owner". Better
+ * Auth's duplicate-email check runs before the registration hook, so typing the
+ * owner's own email answers `USER_ALREADY_EXISTS_USE_ANOTHER_EMAIL`, and any
+ * other email answers `REGISTRATION_CLOSED` (DOR-2964).
+ */
+const OWNER_EXISTS_CODES = new Set([
+  'REGISTRATION_CLOSED',
+  'USER_ALREADY_EXISTS_USE_ANOTHER_EMAIL',
+]);
+
 interface OwnerSetupScreenProps {
   /** Heading for the form; omit (or pass empty) when a wrapping Dialog owns the title. */
   title?: string;
@@ -16,14 +27,20 @@ interface OwnerSetupScreenProps {
   /** Called after the owner account is created. */
   onCreated: () => void | Promise<void>;
   /**
-   * Called when sign-up is rejected because an owner already exists
-   * (`REGISTRATION_CLOSED`). Lets the enable-login flow proceed to flip the flag
-   * without minting a second account. When omitted, the closed-registration
-   * message is shown instead.
+   * Called when sign-up is rejected because an owner already exists, with the
+   * email that was typed. The host must then ask the owner to sign in
+   * (`OwnerSignInScreen`) and turn login on only after that succeeds: this
+   * proves nothing about who is at the keyboard. When omitted, a "sign in
+   * instead" message is shown.
    */
-  onOwnerExists?: () => void | Promise<void>;
+  onOwnerExists?: (email: string) => void | Promise<void>;
   /** Optional cancel affordance. */
   onCancel?: () => void;
+}
+
+/** Whether a sign-up error code means an owner account already exists. */
+function isOwnerExists(code: string | undefined): boolean {
+  return code !== undefined && OWNER_EXISTS_CODES.has(code);
 }
 
 /**
@@ -62,19 +79,21 @@ export function OwnerSetupScreen({
       return;
     }
 
-    // name is required by Better Auth email sign-up; the email doubles as the label.
-    const result = await run(email, password, email);
+    // Better Auth requires a name but accepts an empty one. Left empty so the
+    // app asks what to call the owner; the email used to go here and then
+    // showed up as their name everywhere (DOR-2964).
+    const result = await run(email, password, '');
     if (result.ok) {
       await onCreated();
       return;
     }
-    // An owner already exists: let the enable-login flow proceed to flip the flag.
-    if (result.error.code === 'REGISTRATION_CLOSED' && onOwnerExists) {
-      await onOwnerExists();
+    // An owner already exists: hand over to the host's sign-in step.
+    if (isOwnerExists(result.error.code) && onOwnerExists) {
+      await onOwnerExists(email);
     }
   }
 
-  const registrationClosed = error?.code === 'REGISTRATION_CLOSED' && !onOwnerExists;
+  const registrationClosed = isOwnerExists(error?.code) && !onOwnerExists;
   const localCopy: AuthErrorCopy | null = localError ? { message: localError, detail: null } : null;
   const errorCopy =
     localCopy ??
