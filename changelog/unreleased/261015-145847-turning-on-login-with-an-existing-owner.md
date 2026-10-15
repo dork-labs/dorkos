@@ -3,6 +3,7 @@ covers:
   - 'fix(auth): turning on login with an existing owner asks them to sign in (DOR-2964)'
   - 'fix(auth): put the password first so the turn-on-login dialog focuses it (DOR-2964)'
   - 'fix(auth): name the owner everywhere a login label shows, and never sign in as a guess (DOR-2964)'
+  - 'fix(auth): drop the sign-in pointer where the owner form has no sign-in (DOR-2964)'
 ---
 
 ### Fixed
