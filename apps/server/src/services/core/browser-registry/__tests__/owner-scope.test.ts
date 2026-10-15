@@ -72,7 +72,7 @@ function facts(req: RawRequest, res: Resolved): RequestFacts {
     ...req,
     forwardedAddress: req.peerAddress,
     connectionEncrypted: false,
-    managedIngress: false,
+    ingress: 'direct',
     user: res.locals.user,
     agentIdentity: res.locals.agentIdentity,
   } as RequestFacts;

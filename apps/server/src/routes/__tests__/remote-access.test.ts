@@ -31,7 +31,7 @@ import type { RemoteAccessReport } from '@dorkos/shared/types';
 
 import { configManager } from '../../services/core/config-manager.js';
 import type { RequestUser } from '../../services/core/auth/session-gate.js';
-import { markManagedIngress } from '../../services/core/remote/ingress-mark.js';
+import { markIngress } from '../../services/core/remote/ingress-mark.js';
 import { createRemoteAccessRoutes, REMOTE_SETUP_NEEDS_THIS_COMPUTER } from '../remote-access.js';
 import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
 
@@ -71,7 +71,7 @@ function app(options: { user?: RequestUser; managed?: boolean } = {}) {
       {
         before: async (c, next) => {
           if (options.user) c.set('user', options.user);
-          if (options.managed) markManagedIngress(c.env.incoming);
+          if (options.managed) markIngress(c.env.incoming, 'managed');
           await next();
         },
       }

@@ -39,7 +39,7 @@ import { RESPONSE_ALREADY_SENT } from '@hono/node-server/utils/response';
 import type { RequestFacts } from '../../../http/request-facts.js';
 import type { AgentIdentity } from '../../core/agent-identity/agent-identity-service.js';
 import type { RequestUser } from '../../core/auth/session-gate.js';
-import { isManagedIngress } from '../../core/remote/ingress-mark.js';
+import { ingressOf } from '../../core/remote/ingress-mark.js';
 import type { ExtensionHttpHandler } from './extension-http.js';
 
 /**
@@ -58,7 +58,7 @@ export function expressRequestFacts(req: Request, res: ExpressResponse): Request
     peerAddress: req.socket?.remoteAddress,
     forwardedAddress: req.ip,
     connectionEncrypted: Boolean((req.socket as TLSSocket | undefined)?.encrypted),
-    managedIngress: isManagedIngress(req),
+    ingress: ingressOf(req),
     user: res.locals.user as RequestUser | undefined,
     agentIdentity: res.locals.agentIdentity as AgentIdentity | undefined,
   };
