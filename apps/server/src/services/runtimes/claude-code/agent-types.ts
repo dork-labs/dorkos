@@ -259,6 +259,12 @@ export interface AgentSession {
    */
   lastRequestUsage?: RequestUsage;
   /**
+   * The model the most recent main-thread `assistant` message named. The
+   * `result`'s `modelUsage` lists helper models beside it, so this picks the
+   * entry whose context window the conversation actually has.
+   */
+  lastRequestModel?: string;
+  /**
    * Last subscription usage observed on a `rate_limit_event` (utilization,
    * window label, reset time, health). Held so a cost-only `result`
    * `session_status` can re-attach the known subscription fields and the merged

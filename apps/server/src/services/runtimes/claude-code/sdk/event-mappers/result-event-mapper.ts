@@ -8,7 +8,7 @@ import {
   isStoppedTurnResult,
   mapErrorCategory,
 } from '../sdk-error-mapping.js';
-import { sumContextTokens } from '../context-tokens.js';
+import { mainModelContextWindow, sumContextTokens } from '../context-tokens.js';
 import { advanceUsageLedger, readModelUsageTotals, type TurnUsage } from '../turn-usage.js';
 import type { LedgerWindowObservation } from '@dorkos/shared/account-usage';
 import { recordSessionUsage, sessionSubscriptionUsage } from '../../accounts/account-usage-feed.js';
@@ -216,7 +216,6 @@ export async function* mapResultEvent(
   if (message.type === 'result') {
     const result = message as Record<string, unknown>;
     const modelUsageMap = result.modelUsage as Record<string, Record<string, unknown>> | undefined;
-    const firstModelUsage = modelUsageMap ? Object.values(modelUsageMap)[0] : undefined;
     const terminalReason = result.terminal_reason as TerminalReason | undefined;
 
     // Context/cache figures describe the CURRENT window, which is the size of the
@@ -225,13 +224,17 @@ export async function* mapResultEvent(
     // balloons far past the real window (e.g. 3 requests over a ~250k context
     // report ~750k). Use the last main-thread request's usage captured during
     // streaming; all three fields come from one source so they stay coherent (the
-    // cache hit-rate and "uncached" breakdown derive from them). `contextWindow`
-    // is a per-model constant, so it's safe to read from the aggregate.
+    // cache hit-rate and "uncached" breakdown derive from them). The window is
+    // the SDK's own measurement when it answered at turn end, else the main
+    // model's `contextWindow` from the aggregate (never entry [0]: that is
+    // usually a 200k helper model, see `mainModelContextWindow`).
     const last = session.lastRequestUsage;
     const contextTokens = last ? sumContextTokens(last) : undefined;
     const cacheReadTokens = last?.cacheReadTokens;
     const cacheCreationTokens = last?.cacheCreationTokens;
-    const contextMaxTokens = firstModelUsage?.contextWindow as number | undefined;
+    const contextMaxTokens =
+      session.contextBreakdown?.maxTokens ||
+      mainModelContextWindow(modelUsageMap, session.lastRequestModel);
     const costUsd = result.total_cost_usd as number | undefined;
 
     // Turn TOTALS for AI observability (gen_ai.* spans + the opt-in
