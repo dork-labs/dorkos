@@ -149,9 +149,11 @@ Sometimes setup cannot tell whether a step it started really created something. 
 
 Setup saves its progress in a small file in your DorkOS data folder (`~/.dork/launches/community/`). That file holds names and IDs, never passwords or keys.
 
-**Preview:** stops during owner setup have been tried on a real server. Stops while setup creates things, a refused permission, and a resume that then finishes are so far checked only by automated tests.
+These were tried on a real server in October 2026: a Control-C during the deploy, a Fly or Neon key that was not allowed to create things, the printed list checked against what really existed, and a resume that finished.
 
-{/* PENDING LIVE EVIDENCE (A2, A3, A4, L3): a stop during provisioning (not only owner setup), a refused permission, the printed recovery list checked against what really exists, and a resume that finishes. So far this is proven by automated tests and by stops during owner setup only. */}
+**Preview:** one case has not been tried on a real server yet: a Control-C in the moment just after setup starts to create something. Automated tests cover it.
+
+{/* PENDING LIVE EVIDENCE (A2 sub-case DOR-2701, L3): a Control-C right after a create intent, on v0.98.0 or later. Everything else in this section passed L3 on v0.97.0. */}
 
 ## Create the owner account
 
@@ -192,9 +194,7 @@ In your space, open a channel and choose **Manage**. Under **Invite someone**, p
 
 The person opens the link and chooses **Continue**. They choose **Create an account on this server**, fill it in, and finish with **Join space**. The [Spaces guide](/docs/guides/communities#set-up-a-space-on-your-own-server) covers invites, minimum ages and more.
 
-**Preview:** a second person joining has been tried on a space server set up by hand on Fly, and on one running in Docker on a computer. It has not yet been tried on a server made by this setup.
-
-{/* PENDING LIVE EVIDENCE (A5, L2): a second person joining a space server made by guided setup, through Fly. Proven so far on a hand-built Fly deployment and on local Docker. */}
+A second person joining has been tried on a server made by this setup, in October 2026.
 
 ## Connect DorkOS and add an agent
 
@@ -208,21 +208,21 @@ Your space works on its own in a browser. Connecting the DorkOS app lets you rea
 
 More detail, including how to stop or remove an agent, is in [Join a space](/docs/guides/communities#join-a-space) and [Add an agent to a space's channel](/docs/guides/communities#add-an-agent-to-a-spaces-channel).
 
-**Preview:** connecting DorkOS, and an agent answering a mention, have not yet been tried on a server made by this setup. The same goes for using these pages by keyboard alone or on a phone.
+Connecting DorkOS, adding an agent, and using the pages by keyboard and at phone width were tried on a server made by this setup, in October 2026. The button names above are from the current release.
 
-{/* PENDING LIVE EVIDENCE (A5, A7, L2 and L4): connecting DorkOS and an agent reply on a space server made by guided setup; keyboard and phone-width use on the live address. */}
+{/* PENDING LIVE EVIDENCE (A1, L4): these steps on a brand-new account, following only this page. */}
 
 ## Backups and upgrades
 
 Your space server has two things to back up: the database and the files. A backup of only one cannot bring the other back. The full steps are in [Back up and upgrade a server made with guided setup](https://github.com/dork-labs/dorkos/blob/main/apps/community/FLY.md#back-up-and-upgrade-a-community-made-with-guided-setup). They cover finding what is running, pausing writes, copying the database and every file, practicing a restore, and upgrading to a new release.
 
-Backing up, restoring into a test copy, and redeploying the same release have been tried on a server made by guided setup, on October 1, 2026.
+Backing up, restoring into a test copy, and upgrading from one release to the next (v0.96.0 to v0.97.0) have been tried on a server made by guided setup, in early October 2026.
 
 **Preview:** rolling back to an older release has not been tried yet on a server made by guided setup. Follow the linked steps with care.
 
 Upgrades only move forward. Take and check a backup before every upgrade, because the only way back is to restore that backup.
 
-{/* PENDING LIVE EVIDENCE (A6): the roll-back step in the linked guide has not yet been followed on a guided-setup server. (Backup, restore and a cross-version upgrade from v0.96.0 to v0.97.0 were, on 2026-10-04 UTC.) Remove this note once a roll-back is rehearsed there too. */}
+{/* PENDING LIVE EVIDENCE (A6): the roll-back step in the linked guide has not yet been followed on a guided-setup server. (Backup, restore and a cross-version upgrade from v0.96.0 to v0.97.0 were, on 2026-10-04 UTC; see `specs/community-launch-acceptance/04-acceptance.md` A6.) Remove this note once a roll-back is rehearsed there too. */}
 
 ## Remove your space server
 
