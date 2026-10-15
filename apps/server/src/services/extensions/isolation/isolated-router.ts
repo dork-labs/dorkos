@@ -11,26 +11,27 @@
  *
  * ## What crosses
  *
- * - **The request.** Method, the URL as sent (so `req.baseUrl`, `req.path`
- *   and `req.params` in the child match the in-process case), and the
- *   headers below. A body the chain's JSON parser already read is re-encoded
+ * - **The request.** Method, the path as the route matched it (the mount,
+ *   then the path below it with dot segments resolved, then the query), so
+ *   `req.baseUrl`, `req.path` and `req.params` in the child match the
+ *   in-process case and an absolute-form or `//host` target can't name
+ *   another host there; and the headers below. A body the chain's JSON parser already read is re-encoded
  *   as JSON with a fresh `content-length`; any other body is streamed as is.
  *   Either way the app-wide 1 MB limit holds.
  * - **Headers going in.** Stripped: `cookie`, `authorization`,
  *   `proxy-authorization`, `x-api-key` (the MCP and per-user key header), every
  *   `x-dorkos-*` header (agent identity, approval tokens), and hop-by-hop
  *   headers. Added: {@link PERSON_VERDICT_HEADER}, the person bar's verdict
- *   on the real request (`assessPerson`), which `ctx.requirePerson` reads in
- *   the child. A client-sent copy of that header is stripped with the rest,
- *   so it cannot be forged. The session cookie stays here, which matters
- *   because a cookie that left the machine works through the tunnel.
- * - **Headers coming out.** An allowlist ({@link OUTBOUND_ALLOWED}): content
- *   and caching headers, other `x-` headers, and a `location` only back into
- *   the extension's own mount. Everything else, `set-cookie` and
- *   `clear-site-data` included, is dropped. Always set:
- *   `content-security-policy: sandbox; default-src 'none'` and
- *   `x-content-type-options: nosniff`, so a reply opened as a page cannot
- *   run script on DorkOS's origin.
+ *   on the real request (`assessPerson`), which `ctx.requirePerson` and a
+ *   fetch handler's caller read in the child. A client-sent copy of that
+ *   header is stripped with the rest, so it cannot be forged. The session
+ *   cookie stays here, which matters because a cookie that left the machine
+ *   works through the tunnel.
+ * - **Headers coming out.** The one rule for every extension reply DorkOS
+ *   sees (`http/reply-headers.ts`): content and caching headers, other `x-`
+ *   headers, and a `location` only back into the extension's own mount.
+ *   Everything else, `set-cookie` included, is dropped, and a sandboxing CSP
+ *   is always set.
  *
  * ## When it goes wrong
  *
@@ -52,17 +53,16 @@
  */
 import http from 'node:http';
 import { RESPONSE_ALREADY_SENT } from '@hono/node-server/utils/response';
-import type { RequestFacts } from '../../../http/request-facts.js';
 import { honoRequestFacts } from '../../../http/request-facts.js';
-import { assessPerson } from '../../../routes/extensions-person-bar.js';
-import { requirePersonCopy } from '../inbox/extension-inbox-context.js';
+import { personVerdict } from '../inbox/extension-inbox-context.js';
 import {
   firstAnswer,
   MAX_FORWARDED_BODY_BYTES,
   TOO_LARGE,
   type ExtensionHttpHandler,
 } from '../http/extension-http.js';
-import { ISOLATION_LIMITS, PERSON_VERDICT_HEADER, type PersonVerdict } from './ipc-protocol.js';
+import { outboundHeaders } from '../http/reply-headers.js';
+import { ISOLATION_LIMITS, PERSON_VERDICT_HEADER } from './ipc-protocol.js';
 import type { IsolatedExtensionHost } from './isolated-host.js';
 
 /** Headers that describe one hop, never forwarded either way (RFC 9110 §7.6.1). */
@@ -86,69 +86,6 @@ const INBOUND_STRIPPED = new Set([
   // nothing in an extension needs it.
   'x-client-id',
 ]);
-
-/**
- * The reply headers an extension may set, by exact name. Everything else is
- * dropped: an allowlist, because the dangerous ones are an open set
- * (`set-cookie`, `clear-site-data` signing the person out, `refresh`,
- * `www-authenticate` raising a password prompt on DorkOS's origin,
- * `service-worker-allowed`, `strict-transport-security`, CORS and CSP
- * overrides). `location` is allowed separately, only back into the
- * extension's own mount ({@link sameMountLocation}); other `x-` headers
- * (but no `x-dorkos-`) pass, since browsers give none of them a meaning
- * that crosses the CSP set below.
- */
-const OUTBOUND_ALLOWED = new Set([
-  'content-type',
-  'content-length',
-  'content-encoding',
-  'content-language',
-  'content-disposition',
-  'content-range',
-  'accept-ranges',
-  'cache-control',
-  'expires',
-  'pragma',
-  'etag',
-  'last-modified',
-  'vary',
-  'retry-after',
-  'date',
-]);
-
-/**
- * A `location` the reply may carry: one that, resolved against the request,
- * stays on the same origin and inside the extension's own mount. Anything
- * else (another site, another DorkOS route, `//host`) is dropped, so an
- * extension can't make DorkOS's origin an open redirect or send the person's
- * browser to a DorkOS route with their cookie.
- *
- * @param value - The `location` header.
- * @param mount - The extension's mount, `/api/ext/<id>`.
- * @returns The header to send, or `null` to drop it.
- */
-export function sameMountLocation(
-  value: string | string[] | undefined,
-  mount: string
-): string | null {
-  if (typeof value !== 'string' || value.includes('\\')) return null;
-  const base = new URL(`http://dorkos.invalid${mount}/`);
-  let target: URL;
-  try {
-    target = new URL(value, base);
-  } catch {
-    return null;
-  }
-  if (target.origin !== base.origin) return null;
-  if (target.pathname !== mount && !target.pathname.startsWith(`${mount}/`)) return null;
-  return `${target.pathname}${target.search}${target.hash}`;
-}
-
-/** Set on every reply from an isolated extension. */
-export const OUTBOUND_FORCED: Readonly<Record<string, string>> = {
-  'content-security-policy': "sandbox; default-src 'none'",
-  'x-content-type-options': 'nosniff',
-};
 
 /**
  * The names a `Connection` header lists, which are hop-by-hop too.
@@ -182,45 +119,6 @@ export function inboundHeaders(headers: http.IncomingHttpHeaders): http.Outgoing
     out[key] = value;
   }
   return out;
-}
-
-/**
- * The reply headers passed back to the person: only {@link OUTBOUND_ALLOWED}
- * names, other `x-` headers, and a `location` inside the extension's mount,
- * plus the forced pair.
- *
- * @param headers - The child's reply headers (lower-case names).
- * @param mount - The extension's mount, `/api/ext/<id>`.
- */
-export function outboundHeaders(
-  headers: http.IncomingHttpHeaders,
-  mount: string
-): Record<string, string | string[]> {
-  const out: Record<string, string | string[]> = {};
-  for (const [name, value] of Object.entries(headers)) {
-    if (value === undefined) continue;
-    const key = name.toLowerCase();
-    if (key === 'location') {
-      const location = sameMountLocation(value, mount);
-      if (location !== null) out.location = location;
-      continue;
-    }
-    const xHeader = key.startsWith('x-') && !key.startsWith('x-dorkos-');
-    if (OUTBOUND_ALLOWED.has(key) || xHeader) out[key] = value;
-  }
-  return { ...out, ...OUTBOUND_FORCED };
-}
-
-/**
- * The person bar's verdict on this request, worded for this extension.
- *
- * @param request - The real request's facts (its cookie, headers and the
- *   identity the chain resolved).
- * @param displayName - The extension's name.
- */
-export function personVerdict(request: RequestFacts, displayName: string): PersonVerdict {
-  const refusal = assessPerson(request, requirePersonCopy(displayName));
-  return refusal ? { ok: false, status: refusal.status, body: refusal.body } : { ok: true };
 }
 
 /** Whether a request carries a body to stream. */
@@ -266,7 +164,7 @@ export function createIsolatedHandler(options: IsolatedHandlerOptions): Extensio
   const { displayName: name, host } = options;
   const idleMs = options.idleMs ?? ISOLATION_LIMITS.httpIdleMs;
 
-  const forward: ExtensionHttpHandler = ({ c, mount }) =>
+  const forward: ExtensionHttpHandler = ({ c, mount, subPath }) =>
     new Promise<Response>((resolve) => {
       const req = c.env.incoming;
       const res = c.env.outgoing;
@@ -349,7 +247,7 @@ export function createIsolatedHandler(options: IsolatedHandlerOptions): Extensio
       try {
         upstream = http.request({
           method: req.method,
-          path: req.url,
+          path: `${mount}${subPath}${new URL(c.req.url).search}`,
           headers,
           createConnection: () => socket,
         });

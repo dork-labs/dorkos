@@ -18,6 +18,7 @@
  *
  * @module services/extensions/isolation/ipc-protocol
  */
+import type { PersonCheck, PersonRefusal } from '@dorkos/extension-api/server';
 import type { ToolHandleCheck } from '../agent-tools/tool-handle-rules.js';
 
 /** What the child reports about Node's permission model before any extension code runs. */
@@ -297,25 +298,17 @@ export interface InitMessage {
    * missing or unreadable: the in-process refusal of an agent, word for word
    * (fail closed).
    */
-  personRefusal: PersonVerdictRefusal['body'];
+  personRefusal: PersonRefusal['body'];
 }
 
 /**
  * The header the host sets on every request it forwards to an isolated
- * extension's router: the person bar's verdict ({@link PersonVerdict}), as
- * JSON. A client-sent header of the same name is replaced, never forwarded.
+ * extension: the person bar's verdict (a `PersonCheck`), as JSON. A
+ * client-sent header of the same name is replaced, never forwarded. The
+ * child reads it for `ctx.requirePerson` and for a fetch handler's caller,
+ * and takes it off the request a fetch handler sees.
  */
 export const PERSON_VERDICT_HEADER = 'x-dorkos-ext-person';
-
-/** A refusal the host decided on (`assessPerson`), to be answered as is. */
-export interface PersonVerdictRefusal {
-  ok: false;
-  status: number;
-  body: { error: string; code: string; message: string };
-}
-
-/** The person bar's verdict on one request, as the host computed it. */
-export type PersonVerdict = { ok: true } | PersonVerdictRefusal;
 
 /**
  * Read the verdict header in the child. Anything that is not a well-formed
@@ -323,7 +316,7 @@ export type PersonVerdict = { ok: true } | PersonVerdictRefusal;
  *
  * @param raw - The header's value.
  */
-export function parsePersonVerdict(raw: unknown): PersonVerdict | null {
+export function parsePersonVerdict(raw: unknown): PersonCheck | null {
   if (typeof raw !== 'string') return null;
   let value: unknown;
   try {
@@ -509,7 +502,7 @@ export const SYNC_RUN_REFUSAL =
  * @param name - The module the bundle asked for.
  */
 export function bundleDependencyRefusal(name: string): string {
-  return `Isolated extensions must bundle their dependencies: ${name}`;
+  return `Extensions must bundle their dependencies: ${name}`;
 }
 
 /**

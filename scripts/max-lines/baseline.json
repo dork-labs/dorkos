@@ -77,7 +77,7 @@
     "apps/server/src/services/core/runtime-registry.ts": 659,
     "apps/server/src/services/core/usage/account-usage-store.ts": 517,
     "apps/server/src/services/extensions/extension-manager.ts": 883,
-    "apps/server/src/services/extensions/extension-server-lifecycle.ts": 548,
+    "apps/server/src/services/extensions/extension-server-lifecycle.ts": 543,
     "apps/server/src/services/extensions/inbox/extension-inbox.ts": 1033,
     "apps/server/src/services/extensions/isolation/isolated-host.ts": 677,
     "apps/server/src/services/harness/status.ts": 520,
