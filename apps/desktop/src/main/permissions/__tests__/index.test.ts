@@ -56,29 +56,57 @@ function ownOriginOnly(url: string): boolean {
   return url.startsWith(OWN_ORIGIN);
 }
 
+/** The file fields Chromium attaches to a `fileSystem` ask. */
+interface FileFields {
+  fileAccessType?: 'readable' | 'writable';
+  isDirectory?: boolean;
+  filePath?: string;
+}
+
+/** A person dropping one ordinary file on the window, exactly as the real app reports it. */
+const DROPPED_FILE: FileFields = {
+  fileAccessType: 'readable',
+  isDirectory: false,
+  filePath: '/Users/someone/Desktop/notes.pdf',
+};
+
 /** Ask the registered request handler about one permission; returns what it answered. */
-function ask(permission: string, requestingUrl = `${OWN_ORIGIN}/session`): boolean {
+function ask(
+  permission: string,
+  requestingUrl = `${OWN_ORIGIN}/session`,
+  fileFields: FileFields = {}
+): boolean {
   const handler = session.defaultSession.setPermissionRequestHandler.mock.calls.at(-1)?.[0] as (
     webContents: unknown,
     permission: string,
     callback: (granted: boolean) => void,
-    details: { requestingUrl: string; isMainFrame: boolean }
+    details: { requestingUrl: string; isMainFrame: boolean } & FileFields
   ) => void;
   let answer: boolean | undefined;
-  handler(null, permission, (granted) => (answer = granted), { requestingUrl, isMainFrame: true });
+  handler(null, permission, (granted) => (answer = granted), {
+    requestingUrl,
+    isMainFrame: true,
+    ...fileFields,
+  });
   if (answer === undefined) throw new Error('the permission handler never answered');
   return answer;
 }
 
 /** Ask the registered check handler about one permission. */
-function check(permission: string, requestingOrigin = OWN_ORIGIN): boolean {
+function check(
+  permission: string,
+  requestingOrigin = OWN_ORIGIN,
+  fileFields: FileFields = {}
+): boolean {
   const handler = session.defaultSession.setPermissionCheckHandler.mock.calls.at(-1)?.[0] as (
     webContents: unknown,
     permission: string,
     requestingOrigin: string,
-    details: { isMainFrame: boolean }
+    details: { isMainFrame: boolean } & FileFields
   ) => boolean;
-  return handler(null, permission, requestingOrigin, { isMainFrame: true });
+  // The real drop check arrives with `isMainFrame: false` even from the top
+  // frame (seen in the packaged app, DOR-2870), so the policy must not lean on it.
+  return handler(null, permission, requestingOrigin, { isMainFrame: false, ...fileFields });
 }
 
 beforeEach(() => {
@@ -136,6 +164,47 @@ describe('applyPermissionPolicy', () => {
     expect(check('serial')).toBe(false);
     expect(check('usb')).toBe(false);
     expect(check('deprecated-sync-clipboard-read')).toBe(false);
+  });
+
+  // DOR-2870. The composer's drop library reads a dropped file through its File
+  // System Access handle, and Chromium checks `fileSystem` before it hands the
+  // bytes over. Denying that check is what made every desktop drop fail.
+  describe('reading a file the person dropped', () => {
+    it('lets the app read a dropped file, through both doors', () => {
+      expect(check('fileSystem', OWN_ORIGIN, DROPPED_FILE)).toBe(true);
+      expect(ask('fileSystem', `${OWN_ORIGIN}/session`, DROPPED_FILE)).toBe(true);
+    });
+
+    it('never lets the app write to a file', () => {
+      const write = { ...DROPPED_FILE, fileAccessType: 'writable' as const };
+      expect(check('fileSystem', OWN_ORIGIN, write)).toBe(false);
+      expect(ask('fileSystem', `${OWN_ORIGIN}/session`, write)).toBe(false);
+    });
+
+    it('never opens a whole folder', () => {
+      const folder = { ...DROPPED_FILE, isDirectory: true };
+      expect(check('fileSystem', OWN_ORIGIN, folder)).toBe(false);
+      expect(ask('fileSystem', `${OWN_ORIGIN}/session`, folder)).toBe(false);
+    });
+
+    it('says no when Chromium does not say what kind of access it is', () => {
+      expect(check('fileSystem', OWN_ORIGIN, {})).toBe(false);
+      expect(check('fileSystem', OWN_ORIGIN, { fileAccessType: 'readable' })).toBe(false);
+      expect(ask('fileSystem', `${OWN_ORIGIN}/session`, {})).toBe(false);
+      expect(ask('fileSystem', `${OWN_ORIGIN}/session`, { fileAccessType: 'readable' })).toBe(
+        false
+      );
+    });
+
+    it('refuses a page that is not ours, even for a dropped file', () => {
+      expect(check('fileSystem', 'https://evil.example', DROPPED_FILE)).toBe(false);
+      expect(ask('fileSystem', 'https://evil.example/page', DROPPED_FILE)).toBe(false);
+    });
+
+    it('only opens the file door: other permissions ignore the file fields', () => {
+      expect(check('media', OWN_ORIGIN, DROPPED_FILE)).toBe(false);
+      expect(ask('clipboard-read', `${OWN_ORIGIN}/session`, DROPPED_FILE)).toBe(false);
+    });
   });
 
   it('refuses screen capture by handing back no stream at all', () => {

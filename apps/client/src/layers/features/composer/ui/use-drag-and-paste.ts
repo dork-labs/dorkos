@@ -17,6 +17,9 @@ export function useDragAndPaste({ onFilesSelected }: UseDragAndPasteOptions) {
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
+    // Reading a dropped file can fail (the desktop app once refused it,
+    // DOR-2870); without this the drop just vanished with no trace.
+    onError: (error) => console.error('[composer] Could not read the dropped files.', error),
     noClick: true,
     noKeyboard: true,
   });
