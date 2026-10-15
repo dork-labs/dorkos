@@ -69,7 +69,9 @@ describe.skipIf(process.platform !== 'linux')('actual Linux Bash compiler-step l
         if (!wrapper.includes(marker)) throw new Error('Missing sampler control capture seam');
         wrapper = wrapper.replace(
           marker,
-          'export SAMPLER_TEST_CONTROL_PIPE="$(readlink "/proc/$$/fd/$sampler_control")"\n' + marker
+          () =>
+            'export SAMPLER_TEST_CONTROL_PIPE="$(readlink "/proc/$$/fd/$sampler_control")"\n' +
+            marker
         );
         if (controlWriterProbe === 'leaked') {
           const closeWriter =
