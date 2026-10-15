@@ -103,7 +103,10 @@ export function OwnerSetupScreen({
     localCopy ??
     (isOwnerExists(error?.code)
       ? {
-          message: 'This computer already has an owner. Sign in instead.',
+          // With a host, the next step is its sign-in; without one, say where to go.
+          message: onOwnerExists
+            ? 'This computer already has an owner.'
+            : 'This computer already has an owner. Sign in instead.',
           detail: null,
         }
       : describeAuthError(error, window.location.origin));
