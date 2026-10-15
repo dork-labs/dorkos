@@ -1,6 +1,7 @@
 ---
 covers:
   - 'fix(connectors): run actions that offer an optional file when none is sent'
+  - 'refactor(connectors): keep both changed files under the size ratchet'
 ---
 
 ### Fixed
