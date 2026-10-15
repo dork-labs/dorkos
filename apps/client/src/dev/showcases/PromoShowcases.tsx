@@ -11,8 +11,8 @@ import { PROMO_REGISTRY, PromoCard, usePromoSlot } from '@/layers/features/featu
 import type { PromoPlacement } from '@/layers/features/feature-promos';
 import { PromoDialog } from '@/layers/features/feature-promos/ui/PromoDialog';
 import { UpdatePill } from '@/layers/features/dashboard-sidebar';
-import { ProfilePromptCard, ProgressCard } from '@/layers/features/onboarding';
-import type { ProfilePromptApi } from '@/layers/features/onboarding';
+import { IdentityPromptCard, ProfilePromptCard, ProgressCard } from '@/layers/features/onboarding';
+import type { IdentityPromptApi, ProfilePromptApi } from '@/layers/features/onboarding';
 
 // ---------------------------------------------------------------------------
 // Mock context used for the shouldShow column in the registry table
@@ -115,8 +115,15 @@ function LiveSlotPreview({ placement }: { placement: PromoPlacement }) {
 // The bottom slot, in a real 272px panel with a list that overflows it
 // ---------------------------------------------------------------------------
 
-/** The slot's four candidates, in priority order, as the playground names them. */
-const SLOT_STATES = ['getting-started', 'update', 'profile-prompt', 'promo', 'empty'] as const;
+/** The slot's candidates, in priority order, as the playground names them. */
+const SLOT_STATES = [
+  'getting-started',
+  'update',
+  'identity-prompt',
+  'profile-prompt',
+  'promo',
+  'empty',
+] as const;
 
 type SlotState = (typeof SLOT_STATES)[number];
 
@@ -129,6 +136,14 @@ const MOCK_PROMPT: ProfilePromptApi = {
   confirmLabel: 'Save',
   errorMessage: null,
   save: () => {},
+  skip: () => {},
+};
+
+/** An identity prompt frozen mid-ask; the form inside is the real one. */
+const MOCK_IDENTITY_PROMPT: IdentityPromptApi = {
+  visible: true,
+  phase: 'ask',
+  markSaved: () => {},
   skip: () => {},
 };
 
@@ -152,6 +167,11 @@ function BottomSlotInPanel() {
           update={{ kind: 'command', latestVersion: '9.9.9', dismiss: () => setState('empty') }}
         />
       ),
+    },
+    {
+      id: 'identity-prompt',
+      show: state === 'identity-prompt',
+      render: () => <IdentityPromptCard prompt={MOCK_IDENTITY_PROMPT} />,
     },
     {
       id: 'profile-prompt',
@@ -423,7 +443,7 @@ export function PromoShowcases() {
 
       <PlaygroundSection
         title="Bottom slot in a 272px panel with an overflowing list"
-        description="The real slot, pinned between a scroller and the footer, cycling through its four candidates in priority order: getting-started progress > update pill > profile prompt > promo. Scroll the list — the card does not move."
+        description="The real slot, pinned between a scroller and the footer, cycling through its candidates in priority order: getting-started progress > update pill > identity prompt > profile prompt > promo. Scroll the list — the card does not move."
       >
         <ShowcaseDemo>
           <BottomSlotInPanel />
