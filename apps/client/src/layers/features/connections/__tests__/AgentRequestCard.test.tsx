@@ -405,6 +405,61 @@ describe('AgentRequestCard — an account exists', () => {
     });
   });
 
+  it('connects another account from the card when the agent needs one not connected yet', async () => {
+    const user = userEvent.setup();
+    const transport = transportWith([account('connection-1')]);
+    vi.mocked(transport.startConnectorAgentRequestAuthentication).mockResolvedValue({
+      flowId: 'flow-1',
+      providerInstanceId: 'composio-1',
+      toolkit: 'gmail',
+      state: 'connected',
+      connectionId: 'connection-2',
+    } as never);
+    vi.mocked(transport.pollConnectorAgentRequestAuthentication).mockResolvedValue({
+      flowId: 'flow-1',
+      providerInstanceId: 'composio-1',
+      toolkit: 'gmail',
+      state: 'connected',
+      connectionId: 'connection-2',
+    } as never);
+    renderWith(transport, <AgentRequestCard request={REQUEST} />);
+
+    expect(await screen.findByRole('heading', { name: 'Let Bo use Gmail?' })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Connect another Gmail account' }));
+
+    expect(await screen.findByRole('heading', { name: 'Connect Gmail' })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Connect Gmail' }));
+    expect(transport.startConnectorAgentRequestAuthentication).toHaveBeenCalledWith('request-1', {
+      providerInstanceId: 'composio-1',
+    });
+
+    // The new account is the one the access question is now about.
+    expect(await screen.findByRole('heading', { name: 'Let Bo use Gmail?' })).toBeInTheDocument();
+    await waitFor(() =>
+      expect(transport.previewConnectorReconciliation).toHaveBeenLastCalledWith(
+        expect.objectContaining({ connectionId: 'connection-2' })
+      )
+    );
+    expect(
+      screen.queryByRole('button', { name: 'Connect another Gmail account' })
+    ).not.toBeInTheDocument();
+    // Connecting answers nothing on its own.
+    expect(transport.resolveConnectorAgentRequest).not.toHaveBeenCalled();
+  });
+
+  it('goes back to the connected accounts without answering', async () => {
+    const user = userEvent.setup();
+    const transport = transportWith([account('connection-1')]);
+    renderWith(transport, <AgentRequestCard request={REQUEST} />);
+
+    await user.click(await screen.findByRole('button', { name: 'Connect another Gmail account' }));
+    await user.click(await screen.findByRole('button', { name: 'Back' }));
+
+    expect(await screen.findByRole('heading', { name: 'Let Bo use Gmail?' })).toBeInTheDocument();
+    expect(transport.startConnectorAgentRequestAuthentication).not.toHaveBeenCalled();
+    expect(transport.resolveConnectorAgentRequest).not.toHaveBeenCalled();
+  });
+
   it('never says "nothing changed" once the access landed, and Try again re-sends the answer', async () => {
     const user = userEvent.setup();
     const transport = transportWith([account('connection-1')]);
