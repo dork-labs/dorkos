@@ -1,6 +1,7 @@
 ---
 covers:
   - 'fix(auth): turning on login with an existing owner asks them to sign in (DOR-2964)'
+  - 'fix(auth): put the password first so the turn-on-login dialog focuses it (DOR-2964)'
 ---
 
 ### Fixed
