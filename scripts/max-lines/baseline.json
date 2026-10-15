@@ -143,7 +143,6 @@
     "packages/shared/src/account-usage.ts": 577,
     "packages/shared/src/community-admin-wire.ts": 618,
     "packages/shared/src/community-wire.ts": 1032,
-    "packages/shared/src/config-schema.ts": 1274,
     "packages/shared/src/transport.ts": 1109,
     "packages/shared/src/ui-widget.ts": 694,
     "packages/test-utils/src/community-conformance-branched.ts": 603,
