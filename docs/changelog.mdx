@@ -5,6 +5,32 @@ description: All notable changes to DorkOS, following Keep a Changelog format an
 
 All notable changes to DorkOS are documented here. This project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.116.0] - 2026-10-15
+
+> DorkOS 0.116.0 lets you open DorkOS on your phone or tablet over your Wi-Fi, keeps the side panel focused, and lets mini apps your agent builds use Hono with nothing installed.
+
+### Added
+
+- On a Mac, open DorkOS on your phone or tablet over your home or office Wi-Fi, with no tunnel. Turn on **Let devices on my Wi-Fi in** in Settings → Remote access, then scan the QR code it shows.
+- The switch takes effect right away, with no restart, and turning it off shuts the door at once.
+- It needs a login. If login is off, DorkOS walks you through creating your account first, and turning login off later turns Wi-Fi access off too.
+- Only devices on the same network as your computer get in.
+- The connection between your devices is not encrypted yet, so use it on a network you trust.
+- Watch the experimental agent computer beside its chat or in picture-in-picture while switching chats. Moving or closing its view keeps the computer running and returns control. (DOR-2916)
+- An extension's server half can now use Hono with nothing installed. `import { Hono } from 'hono'` used to fail to build for an extension your agent made.
+- A fetch handler now knows whether a person sent the request. Put `requirePerson()` in front of a route to keep agents and other websites out of it, or call `checkPerson()` in a handler written without Hono.
+
+### Changed
+
+- Keep the right panel focused on relevant views. Add pages, documents and shells from the + menu. (DOR-2916)
+- Close a resource view without stopping its work. Remove shared documents or stop shells through separate menu actions. (DOR-2916)
+- Use larger controls on phones. Panels stay usable when the keyboard opens. (DOR-2916)
+- A fetch handler's reply can no longer set cookies, run scripts in a page it serves, or redirect to another website. This is the same rule extensions that run in their own process already followed. A redirect to one of its own paths, like `/done`, now lands inside the extension.
+
+### Fixed
+
+- An extension's server half now starts when DorkOS's data folder sits inside a project set up for modern JavaScript modules. Before, it could stop at startup with "module is not defined".
+
 ## [0.115.0] - 2026-10-15
 
 > DorkOS 0.115.0 lets your agents work without asking first, opens long chats on their newest messages, and keeps your computer awake while background helpers work.
@@ -497,39 +523,4 @@ save also made DorkOS reload that file. Now it writes only when something actual
 
 - The managed browser is still experimental and stays turned off while its safety checks finish. Chrome support for every kind of page, including frames and background workers, is not yet confirmed.
 
-## [0.97.0] - 2026-10-03
-
-> DorkOS 0.97.0 lets you try a plugin or skill pack straight from a folder on your computer, after you approve it. Long agent replies no longer get cut off at 30 minutes, and the app's wording is shorter and plainer everywhere.
-
-### Added
-
-- Let an extension send one of your agents a message. A busy agent holds it until its current turn ends, and the extension hears when the agent starts on it, finishes, or will never get to it (DOR-2683)
-- An agent can ask to run a plugin or skill pack from a folder on your computer instead of an installed copy (DOR-2696). You approve it on a card, and nothing runs from the folder until you do.
-- The card shows the folder's full path and the extensions it would run. No permission setting can approve it ahead of time, and a folder that changes before you answer is asked about again.
-- If you already have that package installed, the installed copy is set aside, not deleted.
-- A plugin or skill pack you run from a folder now reaches your agent tools like an installed copy (DOR-2696). Linked for one project, its skills, commands and hooks are set up in that project for Claude Code, Codex and the other tools you use there. Linked for every project, its skills are shared the same way an installed copy's are. Commands and hooks it sets up say which folder they came from.
-- The approval card for a folder now lists every command it runs and when it runs. Approving the card covers exactly those, so the package loads without a second card. Anything new the folder adds later asks first.
-- When the installed copy comes back, so do its approvals, exactly as they were.
-
-### Changed
-
-- The app's wording is shorter and plainer everywhere. No label, message or button runs past 15 words, and longer explanations sit behind an info button or a "More details" link next to what they explain
-- Buttons say exactly what they do ("Delete agent", "Remove app"), and dialogs for things you can't undo ask a question that names the thing
-- Approval buttons now read **Allow**, **Always allow** and **Don’t allow**, on chat cards and in the inbox
-- Error messages say what didn't happen and what to do next
-
-### Fixed
-
-- Settings › Privacy no longer says DorkOS shares anonymous data by default. It now says nothing is shared unless a switch on that page is on
-- Fix late message failures allowing agents to exceed their hourly turn limits.
-- Long replies no longer get cut off at the 30-minute mark. DorkOS used to tidy away a session it thought was idle, even while the agent was still answering, and the reply ended with "Request interrupted".
-- An agent that hands work to a helper now waits for the helper to finish, even when one step takes more than ten minutes, like a long build. Before, the reply was ended after ten quiet minutes and the helper's report never showed up.
-- A Neon organization key, the kind the setup guide asks for, now gets past setup's checks. Before, setup always stopped with "Neon preflight is unavailable", because Neon won't let that kind of key read its list of regions. Setup now checks your region against a saved copy of that list. If your region isn't on it, setup tells you why and what to do (DOR-2700).
-- A Neon project key that can't see your organization now gets the same clear message every time, naming the key and the organization. Before, the message changed from run to run, and most runs gave the vague "preflight is unavailable" instead. A Fly token that Fly turns away is reported the same steady way (DOR-2700).
-- If you press Control-C while `dorkos community deploy` is deploying your space server, you can now run the resume command it prints straight away. Fly keeps the server's Machine locked for a few minutes after a stopped deploy, so setup now says it is waiting and carries on when Fly lets go, instead of failing after a minute and a half. A setup stopped this way now ends with a plain line that matches what it saved and says how to carry on. When a change on Fly, Neon or Tigris fails, setup now explains it in plain words instead of a code like `CREATION_OUTCOME_UNCERTAIN`, and saves the code with its progress. The recovery list also names the storage bucket by its name and reminds you that its Tigris access key outlives the bucket (DOR-2702)
-
-### Security
-
-- A Community server no longer starts its test-only controls just because `COMMUNITY_TEST_RUNTIME=true` is set. Those controls let anyone pause or refuse agents' posts without signing in, so the server now refuses to start unless `COMMUNITY_TEST_RUNTIME_ACKNOWLEDGEMENT` also holds an exact phrase, and it prints a warning when both are set. A real host should set neither (DOR-2655)
-
-Older releases (v0.1.0 – v0.96.0) live in the [Changelog archive](/changelog-archive).
+Older releases (v0.1.0 – v0.97.0) live in the [Changelog archive](/changelog-archive).
