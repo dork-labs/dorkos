@@ -47,23 +47,41 @@ describe('typecheck resource sampler lifecycle', () => {
 });
 
 describe.skipIf(process.platform !== 'linux')('actual Linux Bash compiler-step lifecycle', () => {
-  async function fixture(primary: string, observer: string) {
+  async function fixture(
+    primary: string,
+    observer: string,
+    controlWriterProbe?: 'closed' | 'leaked'
+  ) {
     const directory = await mkdtemp(join(tmpdir(), 'typecheck-observation-'));
     try {
       await mkdir(join(directory, 'scripts'));
       const workflow = await readFile(join(root, '.github/workflows/typecheck.yml'), 'utf8');
-      const wrapper = workflow
+      let wrapper = workflow
         .split('        run: |\n')
         .at(-1)
         ?.split('\n')
         .map((line) => line.slice(10))
         .join('\n');
-      if (!wrapper?.includes('pnpm exec turbo typecheck --continue'))
+      if (!wrapper?.includes('pnpm exec turbo typecheck --continue --concurrency=2'))
         throw new Error('Missing real compiler wrapper');
+      if (controlWriterProbe) {
+        const marker = 'finish_observation() {';
+        if (!wrapper.includes(marker)) throw new Error('Missing sampler control capture seam');
+        wrapper = wrapper.replace(
+          marker,
+          'export SAMPLER_TEST_CONTROL_PIPE="$(readlink "/proc/$$/fd/$sampler_control")"\n' + marker
+        );
+        if (controlWriterProbe === 'leaked') {
+          const closeWriter =
+            '  if [[ -n "$sampler_control" ]]; then exec {sampler_control}>&-; fi\n';
+          if (!wrapper.includes(closeWriter)) throw new Error('Missing compiler writer close');
+          wrapper = wrapper.replace(closeWriter, '');
+        }
+      }
       await writeFile(join(directory, 'scripts/typecheck-resource-sampler.mjs'), observer);
       await writeFile(
         join(directory, 'pnpm'),
-        `#!/bin/bash\n[[ "$*" == 'exec turbo typecheck --continue' ]] || exit 88\n${primary}\n`,
+        `#!/bin/bash\n[[ "$*" == 'exec turbo typecheck --continue --concurrency=2' ]] || exit 88\n${primary}\n`,
         { mode: 0o755 }
       );
       return await run('/bin/bash', ['-e', '-o', 'pipefail', '-c', wrapper], directory, {
@@ -92,10 +110,27 @@ describe.skipIf(process.platform !== 'linux')('actual Linux Bash compiler-step l
     expect(result.stdout).toContain('sampler-clean-exit');
   });
   it('does not pass sampler control writers to compiler descendants', async () => {
-    const probe = `bash -c 'for descriptor in /proc/$$/fd/*; do number=\${descriptor##*/}; if (( number >= 10 )); then target=$(readlink "$descriptor" || true); [[ "$target" != pipe:* ]] || exit 89; fi; done'`;
-    const result = await fixture(probe, observer);
+    const probe = `node <<'CONTROL_WRITER_PROBE'
+const { readFileSync, readdirSync, readlinkSync } = require('node:fs');
+const target = process.env.SAMPLER_TEST_CONTROL_PIPE;
+if (!target || !target.startsWith('pipe:[')) process.exit(88);
+for (const descriptor of readdirSync('/proc/self/fd')) {
+  try {
+    if (readlinkSync('/proc/self/fd/' + descriptor) !== target) continue;
+    const flags = readFileSync('/proc/self/fdinfo/' + descriptor, 'utf8').match(/^flags:\\s+([0-7]+)$/m);
+    if (!flags) process.exit(88);
+    if ((parseInt(flags[1], 8) & 3) !== 0) process.exit(89);
+  } catch (error) {
+    if (error.code !== 'ENOENT') throw error;
+  }
+}
+CONTROL_WRITER_PROBE`;
+    const result = await fixture(probe, observer, 'closed');
     expect(result.code).toBe(0);
     expect(result.stdout).toContain('sampler-clean-exit');
+    const leaked = await fixture(probe, observer, 'leaked');
+    expect(leaked.code).toBe(89);
+    expect(leaked.stdout).toContain('sampler-clean-exit');
   });
   it('fails visibly when only observation fails', async () => {
     const result = await fixture(

@@ -476,5 +476,5 @@ jobs:
             # Compiler descendants must not retain a writer to the sampler control pipe.
             if [[ -n "$sampler_original_control" ]]; then exec {sampler_original_control}>&-; fi
             if [[ -n "$sampler_control" ]]; then exec {sampler_control}>&-; fi
-            pnpm exec turbo typecheck --continue
+            pnpm exec turbo typecheck --continue --concurrency=2
           )
