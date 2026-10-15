@@ -530,3 +530,65 @@ describe('mapResultEvent — a turn a person stopped is not an error (DOR-1320)'
     expect(errorData(events)?.category).toBe('max_turns');
   });
 });
+
+describe('mapResultEvent — context window of a 1M model', () => {
+  /** A result shaped like SDK 0.3.280's for `claude-opus-5-5[1m]`: Haiku first. */
+  const opus1mResult = msg({
+    type: 'result',
+    subtype: 'success',
+    total_cost_usd: 0.1,
+    modelUsage: {
+      'claude-haiku-4-5-20251001': {
+        inputTokens: 10,
+        outputTokens: 1,
+        contextWindow: 200_000,
+        canonicalModel: 'claude-haiku-4-5',
+      },
+      'claude-opus-5-5[1m]': {
+        inputTokens: 300_000,
+        outputTokens: 50,
+        contextWindow: 1_000_000,
+        canonicalModel: 'claude-opus-5-5',
+      },
+    },
+  });
+  const lastRequestUsage = { inputTokens: 1, cacheReadTokens: 299_999, cacheCreationTokens: 0 };
+
+  function statusData(events: StreamEvent[]): Record<string, unknown> {
+    return events.find((e) => e.type === 'session_status')!.data as Record<string, unknown>;
+  }
+
+  it('reports the main model window, not the helper listed first', async () => {
+    const events = await drain(
+      mapResultEvent(
+        opus1mResult,
+        makeSession({ lastRequestUsage, lastRequestModel: 'claude-opus-5-5' }),
+        SESSION_ID
+      )
+    );
+    expect(statusData(events).contextMaxTokens).toBe(1_000_000);
+    const usage = events.find((e) => e.type === 'context_usage')!.data as { percentage: number };
+    expect(usage.percentage).toBe(30);
+  });
+
+  it("prefers the SDK's own turn-end measurement when it answered", async () => {
+    const events = await drain(
+      mapResultEvent(
+        opus1mResult,
+        makeSession({
+          lastRequestUsage,
+          lastRequestModel: 'claude-haiku-4-5-20251001',
+          contextBreakdown: {
+            totalTokens: 300_000,
+            maxTokens: 1_000_000,
+            percentage: 30,
+            model: 'claude-opus-5-5[1m]',
+            categories: [],
+          },
+        }),
+        SESSION_ID
+      )
+    );
+    expect(statusData(events).contextMaxTokens).toBe(1_000_000);
+  });
+});
