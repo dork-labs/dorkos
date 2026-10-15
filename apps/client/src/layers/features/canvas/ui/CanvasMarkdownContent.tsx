@@ -77,6 +77,7 @@ export function CanvasMarkdownContent({
   const editing = isEditing && documentEditing;
 
   const fileSave = useCanvasFileSave({
+    documentId,
     sourcePath: content.sourcePath,
     cwd,
     loadedContent: content.content,
@@ -92,11 +93,14 @@ export function CanvasMarkdownContent({
   const contentRef = useRef(content);
   const onContentChangeRef = useRef(onContentChange);
   const saveRef = useRef(fileSave.save);
+  const prepareFinalRef = useRef(fileSave.prepareFinalSave);
+  const finalSaveRef = useRef<ReturnType<typeof fileSave.prepareFinalSave>>(null);
   useEffect(() => {
     draftRef.current = draft;
     contentRef.current = content;
     onContentChangeRef.current = onContentChange;
     saveRef.current = fileSave.save;
+    prepareFinalRef.current = fileSave.prepareFinalSave;
   });
 
   // Persist the edited document: sync the rendered view and write through to the
@@ -111,6 +115,9 @@ export function CanvasMarkdownContent({
   const handleChange = useCallback(
     (markdown: string) => {
       setDraft(markdown);
+      draftRef.current = markdown;
+      finalSaveRef.current?.cancel();
+      finalSaveRef.current = prepareFinalRef.current(markdown);
       if (timerRef.current) clearTimeout(timerRef.current);
       timerRef.current = setTimeout(() => {
         // Null the ref before persisting so the exit/unmount flush does not
@@ -149,6 +156,8 @@ export function CanvasMarkdownContent({
         clearTimeout(timerRef.current);
         timerRef.current = null;
       }
+      finalSaveRef.current?.cancel();
+      finalSaveRef.current = null;
       // Dropping edit mode when the active canvas session changes — the
       // reset-on-key-change contract the app's debounced inputs follow.
       setIsEditing(false);
@@ -162,10 +171,12 @@ export function CanvasMarkdownContent({
   // it flush a draft the person just gave up. Every other exit path has already
   // nulled the timer, so this is a no-op on all of them.
   useEffect(() => {
-    if (editing || !timerRef.current) return;
-    clearTimeout(timerRef.current);
+    if (!isEditing || editing) return;
+    if (timerRef.current) clearTimeout(timerRef.current);
     timerRef.current = null;
-  }, [editing]);
+    finalSaveRef.current?.cancel();
+    finalSaveRef.current = null;
+  }, [editing, isEditing]);
 
   // Flush a pending save AND release this document's edit-protection on unmount
   // (e.g. the canvas closed or a tab switched mid-edit). The id-scoped clear
@@ -177,8 +188,13 @@ export function CanvasMarkdownContent({
       if (timerRef.current) {
         clearTimeout(timerRef.current);
         timerRef.current = null;
-        persist(draftRef.current);
+        if (useAppStore.getState().canvasSessionId === owningSessionRef.current)
+          onContentChangeRef.current({ ...contentRef.current, content: draftRef.current });
       }
+      if (useAppStore.getState().canvasSessionId === owningSessionRef.current)
+        void finalSaveRef.current?.flush();
+      else finalSaveRef.current?.cancel();
+      finalSaveRef.current = null;
       setDocumentEditing(documentId, false);
     };
   }, [persist, documentId, setDocumentEditing]);

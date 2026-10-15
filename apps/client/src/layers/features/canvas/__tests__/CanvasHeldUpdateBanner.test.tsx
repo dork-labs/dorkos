@@ -37,6 +37,7 @@ vi.mock('../model/use-canvas-file-save', () => ({
     conflict: null,
     canSave: true,
     save: vi.fn().mockResolvedValue('saved'),
+    prepareFinalSave: () => ({ cancel: vi.fn(), flush: vi.fn() }),
     overwrite: vi.fn(),
     adoptDisk: vi.fn(),
     getConfirmedBase: () => ({ content: '', hash: null }),

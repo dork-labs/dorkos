@@ -44,6 +44,10 @@ const mockFileSave = {
   conflict: null as { currentHash: string; currentContent: string } | null,
   canSave: true,
   save: vi.fn(),
+  prepareFinalSave: (content: string) => ({
+    cancel: vi.fn(),
+    flush: () => mockFileSave.save(content),
+  }),
   overwrite: vi.fn(),
   adoptDisk: vi.fn(),
 };
