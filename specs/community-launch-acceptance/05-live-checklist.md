@@ -20,7 +20,7 @@ Some steps depend on work that is not on `main` yet. Do not start a run until ev
 | L3         | A plain refusal for a Fly token or Neon key that can't create, and a Neon organization key that passes setup                     | DOR-2656, DOR-2657 (#2447); DOR-2700 (#2526) | done: in v0.96.0 and v0.97.0                                     |
 | L3         | Resuming right after a stopped `fly deploy` waits for Fly's Machine lease                                                        | DOR-2702 (#2529)                             | done: in v0.97.0                                                 |
 | L3         | Resuming after a Control-C that lands right after a create intent (the (c) sub-case)                                             | DOR-2701 (#2528)                             | pending: fix released in v0.98.0, run not done yet               |
-| L4         | The draft guide `docs/self-hosting/community.mdx`                                                                                | task 1.6 (DOR-2596, PR #2387)                | pending: PR open                                                 |
+| L4         | The guide `docs/self-hosting/space-server-setup.mdx`                                                                             | task 1.6 (DOR-2596, PR #2387)                | pending: published as Preview                                    |
 
 ## Rules for every run
 
@@ -263,7 +263,7 @@ Covers A1 (a new person following only the guide). Estimate: under $0.25, billed
 - [ ] Operator approval recorded, and the $2.50 check done (L4 bills the new accounts; add them to the total).
 - [ ] **Operator only:** new Fly and Neon accounts on an email the operator controls, each with a payment method. No apps or projects on them. Tigris terms not yet accepted.
 - [ ] **Operator only:** a new macOS user account on the Apple Silicon Mac, with no DorkOS data (`~/.dork` absent) and no `fly`, `neonctl` or `gh` sign-ins.
-- [ ] Only the draft guide `docs/self-hosting/community.mdx` is open, rendered from the task 1.6 branch. No other help, and no agent answering questions during the run.
+- [ ] Only the guide `docs/self-hosting/space-server-setup.mdx` is open. No other help, and no agent answering questions during the run.
 - [ ] An agent may sit alongside to take notes only.
 
 ### L4 steps
