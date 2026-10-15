@@ -147,6 +147,10 @@ const SERVICE_NOT_READY_CODES: ReadonlySet<string> = new Set([
  * `undefined` for anything trying again could fix: no answer, a timeout, a
  * bare 5xx from something in front of the service, an answer that made no sense.
  *
+ * `connection_setup_conflict` means the service has a sign-in setup for the
+ * app but it failed the service's own safety check: also permanent until the
+ * service side is fixed, but a fault rather than a gap, so it is told apart.
+ *
  * A bare `unavailable` cloud code (sent with a 503) means the service hit a
  * transient failure — a network error or timeout — while looking up its own
  * sign-in setup; that is temporary, so it maps to `service_unavailable`
@@ -163,6 +167,9 @@ function finalStartRefusal(error: unknown): ConnectStartRefusedError | undefined
   if (error.code === 'unavailable' && error.cloudCode !== undefined) {
     if (SERVICE_NOT_READY_CODES.has(error.cloudCode)) {
       return new ConnectStartRefusedError('service_not_ready', { cause: error });
+    }
+    if (error.cloudCode === MANAGED_CONNECTOR_ERROR_CODES.connectionSetupConflict) {
+      return new ConnectStartRefusedError('setup_needs_fix', { cause: error });
     }
     if (error.cloudCode === 'unavailable') {
       return new ConnectStartRefusedError('service_unavailable', { cause: error });

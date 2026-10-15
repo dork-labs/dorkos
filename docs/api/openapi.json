@@ -41287,6 +41287,7 @@
                           "type": "string",
                           "enum": [
                             "service_not_ready",
+                            "setup_needs_fix",
                             "account_link_required",
                             "service_unavailable"
                           ]
@@ -41651,6 +41652,7 @@
                           "type": "string",
                           "enum": [
                             "service_not_ready",
+                            "setup_needs_fix",
                             "account_link_required",
                             "service_unavailable"
                           ]
@@ -43548,6 +43550,7 @@
                           "type": "string",
                           "enum": [
                             "service_not_ready",
+                            "setup_needs_fix",
                             "account_link_required",
                             "service_unavailable"
                           ]

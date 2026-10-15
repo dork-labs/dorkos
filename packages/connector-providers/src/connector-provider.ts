@@ -226,6 +226,9 @@ export type ConnectPoll = z.infer<typeof ConnectPollSchema>;
  *
  * - `service_not_ready`: the service that handles sign-in is not set up to
  *   connect this app. Nothing the person does in DorkOS changes that.
+ * - `setup_needs_fix`: the service has a sign-in setup for this app, but it
+ *   failed its own safety check. Nothing the person does changes that until
+ *   the service side is fixed.
  * - `account_link_required`: this computer has to be linked to its DorkOS
  *   account (again) before the service will start anything.
  * - `service_unavailable`: the service couldn't start sign-in right now.
@@ -233,6 +236,7 @@ export type ConnectPoll = z.infer<typeof ConnectPollSchema>;
  */
 export const ConnectStartRefusalSchema = z.enum([
   'service_not_ready',
+  'setup_needs_fix',
   'account_link_required',
   'service_unavailable',
 ]);

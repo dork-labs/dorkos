@@ -42,6 +42,12 @@ export function connectRefusalCopy(
         description: 'This isn’t something you can fix here.',
         canRetry: false,
       };
+    case 'setup_needs_fix':
+      return {
+        title: `${serviceName} can’t be connected right now`,
+        description: 'Its sign-in setup in DorkOS has a problem. Use Send feedback to report it.',
+        canRetry: false,
+      };
     case 'account_link_required':
       return {
         title: 'This computer isn’t linked to DorkOS',

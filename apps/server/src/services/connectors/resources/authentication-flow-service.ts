@@ -28,6 +28,7 @@ import {
   type ConnectStartRefusal,
 } from '@dorkos/shared/connector-provider';
 import {
+  CONNECT_REFUSAL_COPY,
   CONNECTOR_AUTHENTICATION_FLOW_TTL_MS,
   SIGN_IN_COPY,
 } from '@dorkos/shared/connector-schemas';
@@ -56,13 +57,6 @@ export class ConnectorAuthenticationFlowError extends Error {
     this.code = code;
   }
 }
-
-/** What a flow refused for good says, for every surface that shows its reason. */
-const REFUSAL_COPY: Readonly<Record<ConnectStartRefusal, string>> = {
-  service_not_ready: SIGN_IN_COPY.serviceNotReady,
-  account_link_required: SIGN_IN_COPY.accountLinkRequired,
-  service_unavailable: SIGN_IN_COPY.serviceUnavailable,
-};
 
 /** Construction options for restart-safe local authentication flows. */
 export interface ConnectorAuthenticationFlowServiceOptions {
@@ -602,7 +596,7 @@ export class ConnectorAuthenticationFlowService {
       if (error instanceof ConnectStartRefusedError) {
         // The service said no, and why, before anything started: say so, and
         // let the person see that starting again would end the same way.
-        this.finishStarting(flowId, 'failed', this.now(), REFUSAL_COPY[error.refusal], {
+        this.finishStarting(flowId, 'failed', this.now(), CONNECT_REFUSAL_COPY[error.refusal], {
           failureCode: error.refusal,
         });
       } else {
