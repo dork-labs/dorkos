@@ -872,6 +872,104 @@ describe('ComposioSdkClient', () => {
     });
   });
 
+  describe('an operation that offers a file field', () => {
+    const SEND_EMAIL_SCHEMA = {
+      type: 'object',
+      properties: {
+        recipient_email: { type: 'string' },
+        attachment: {
+          type: 'object',
+          file_uploadable: true,
+          properties: { name: { type: 'string' }, s3key: { type: 'string' } },
+        },
+      },
+      required: ['recipient_email'],
+    };
+
+    async function sendEmail(inputSchema: Record<string, unknown>, args: Record<string, unknown>) {
+      const local = await fixture((request, response) => {
+        if (request.path === '/api/v3.1/tools/GMAIL_SEND_EMAIL') {
+          return json(response, 200, {
+            ...tool('GMAIL_SEND_EMAIL', ['destructiveHint']),
+            input_parameters: inputSchema,
+          });
+        }
+        if (request.path === '/api/v3.1/tools/execute/GMAIL_SEND_EMAIL') {
+          return json(response, 200, {
+            data: { sent: true },
+            error: null,
+            successful: true,
+            log_id: 'log_send',
+          });
+        }
+        return json(response, 599, { error: `unexpected ${request.method} ${request.path}` });
+      });
+      const result = await client(local.baseUrl).execute({
+        connectedAccountId: 'ca_private_exact',
+        authorizeDispatch: () => true,
+        operation: operation({ operationSlug: 'GMAIL_SEND_EMAIL', inputSchema }),
+        arguments: args,
+        signal: new AbortController().signal,
+      });
+      const dispatched = local.requests.filter(
+        (request) => request.path === '/api/v3.1/tools/execute/GMAIL_SEND_EMAIL'
+      );
+      return { result, dispatched };
+    }
+
+    it('sends the call when the optional file is left out', async () => {
+      const { result, dispatched } = await sendEmail(SEND_EMAIL_SCHEMA, {
+        recipient_email: 'a@example.com',
+      });
+      expect(result).toMatchObject({ status: 'success' });
+      expect(dispatched).toHaveLength(1);
+    });
+
+    it('sends the call when the optional file is null', async () => {
+      const { result, dispatched } = await sendEmail(SEND_EMAIL_SCHEMA, {
+        recipient_email: 'a@example.com',
+        attachment: null,
+      });
+      expect(result).toMatchObject({ status: 'success' });
+      expect(dispatched).toHaveLength(1);
+    });
+
+    it('refuses before any request when a file is filled in', async () => {
+      const { result, dispatched } = await sendEmail(SEND_EMAIL_SCHEMA, {
+        recipient_email: 'a@example.com',
+        attachment: { name: 'a.txt', s3key: 'private/key' },
+      });
+      expect(result).toMatchObject({ status: 'error', code: 'UNSUPPORTED_FILE_INPUT' });
+      expect(dispatched).toEqual([]);
+    });
+
+    it('refuses a file nested in an array of objects', async () => {
+      const schema = {
+        type: 'object',
+        properties: {
+          parts: {
+            type: 'array',
+            items: { type: 'object', properties: { file: { type: 'string', format: 'path' } } },
+          },
+        },
+      };
+      const { result, dispatched } = await sendEmail(schema, {
+        parts: [{}, { file: '/private/operator/file.txt' }],
+      });
+      expect(result).toMatchObject({ status: 'error', code: 'UNSUPPORTED_FILE_INPUT' });
+      expect(dispatched).toEqual([]);
+    });
+
+    it('refuses before any request when the schema requires a file', async () => {
+      const { result, dispatched } = await sendEmail(
+        { ...SEND_EMAIL_SCHEMA, required: ['recipient_email', 'attachment'] },
+        { recipient_email: 'a@example.com' }
+      );
+      expect(result).toMatchObject({ status: 'error', code: 'UNSUPPORTED_FILE_INPUT' });
+      expect(dispatched).toEqual([]);
+    });
+  });
+
   it('rejects repeated cursors, oversized catalogs, and pre-aborted discovery', async () => {
     const local = await fixture((request, response) => {
       if (request.path === '/api/v3.1/tools') {

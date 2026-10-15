@@ -529,6 +529,18 @@ describe('ConnectorExecutionBroker', () => {
     expect(provider.dispatchedCommands.map((command) => command.arguments)).toEqual([sent]);
   });
 
+  it('drops a null on an optional field instead of refusing the call', async () => {
+    await expect(
+      execute(principal(), 'connectors.execute_write', undefined, {
+        ...target,
+        arguments: { message: 'hello', label_ids: null },
+      })
+    ).resolves.toMatchObject({ result: { status: 'success' } });
+    expect(provider.dispatchedCommands.map((command) => command.arguments)).toEqual([
+      { message: 'hello' },
+    ]);
+  });
+
   it('names the field an agent got wrong without echoing what it sent', async () => {
     const refusal = await authorization
       .prepare({
