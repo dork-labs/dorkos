@@ -162,6 +162,8 @@ files:
 
 asar: true
 asarUnpack:
+  # The pinned browser installer must execute from a real filesystem path.
+  - '**/node_modules/playwright-core/**'
   - '**/node_modules/better-sqlite3/**'
   # node-pty backs the embedded terminal (services/terminal/); like
   # better-sqlite3 its .node binary must be a real file for dlopen.

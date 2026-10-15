@@ -5,8 +5,15 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, cleanup, fireEvent } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import { useTerminalResourceChrome, type RightPanelContribution } from '@/layers/shared/model';
+vi.mock('@/layers/entities/session', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/layers/entities/session')>()),
+  useSessionId: () => [null, vi.fn()],
+}));
 vi.mock('@/layers/entities/room', () => ({ useRoom: () => ({ data: undefined }) }));
 vi.mock('@/layers/entities/computer', () => ({ useComputer: () => ({ data: undefined }) }));
+vi.mock('@/layers/entities/local-browser', () => ({
+  useLocalBrowserState: () => ({ data: undefined }),
+}));
 
 // Spy on the imperative expand so tests can assert the open-floor argument
 // (DOR-388). Hoisted because the vi.mock factory below closes over it.

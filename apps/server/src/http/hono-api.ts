@@ -1,3 +1,5 @@
+import { createLocalBrowserRoutes } from '../routes/local-browser.js';
+import type { LocalBrowserService } from '../services/session/local-browser/service.js';
 /**
  * The server's routing: the chain (`http/api-chain.ts`) with every route group
  * mounted on it, and the client build behind them in production.
@@ -196,6 +198,7 @@ export interface ComposedGroupDeps {
   /** The embedded terminal's REST half (`/api/terminal`); its socket is an upgrade. */
   terminal?: TerminalManager;
   computers?: ComputerRoutesService;
+  localBrowser?: LocalBrowserService;
   /** Agent identity, by folder (`/api/agents`). */
   agents?: AgentsRouterDeps;
   /** The discovery scan stream (`/api/discovery`). Only handed over when the mesh started. */
@@ -465,6 +468,8 @@ export function createHonoApi(options: HonoApiOptions): Hono<ApiEnv> {
     app.route('/api/heartbeats/triage-credits', createHeartbeatTriageRoutes(deps.heartbeatTriage));
   }
   if (deps.terminal) app.route('/api/terminal', createTerminalRoutes(deps.terminal));
+  if (deps.localBrowser)
+    app.route('/api/local-browser', createLocalBrowserRoutes(deps.localBrowser));
   mountComputerRoutes(app, deps.computers, deps.mesh?.meshCore);
   if (deps.mcp) app.route('/mcp', createMcpRoutes(deps.mcp));
   // Its routes carry their whole paths, two of them outside `/a2a`.

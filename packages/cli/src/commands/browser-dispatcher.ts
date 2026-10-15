@@ -2,7 +2,7 @@
  * Top-level dispatcher for `dorkos browser <subcommand>`.
  *
  * Intercepted at the top of `cli.ts`, before the global flag parser and before
- * any server or config setup: the agent browser needs neither. Owns the help
+ * any server or config setup: these maintenance commands need neither. Owns the help
  * text, the dynamic import of the handlers, and uniform error rendering; the
  * handlers return exit codes and `cli.ts` exits.
  *
@@ -14,9 +14,8 @@ import { docsUrl } from '@dorkos/shared/links';
 const HELP_TEXT = `
 Usage: dorkos browser <subcommand> [options]
 
-Sign in to websites once, in a separate "agent browser", so your agents'
-browsers start already signed in. Agents get the saved sign-ins, never your
-passwords.
+These commands manage the older saved-sign-in browser.
+For live browsing, open Browser from the DorkOS app’s add-view menu.
 
 Subcommands:
   login [site]        Open the agent browser, sign in, press Enter to save
@@ -38,8 +37,7 @@ Examples:
   dorkos browser status
   dorkos browser forget github.com
 
-Then give an agent the browser: open the agent's profile, then Tools & MCP,
-then Signed-in browser. Setup for the claude, codex and opencode CLIs:
+Live browsing and older command-line setup:
 ${docsUrl('/guides/agent-browser')}
 `;
 

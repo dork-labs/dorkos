@@ -88,7 +88,8 @@
     "ulidx": "^2.4.1",
     "web-push": "^3.6.7",
     "ws": "^8.22.0",
-    "zod": "^4.6.2"
+    "zod": "^4.6.2",
+    "playwright-core": "1.63.0"
   },
   "devDependencies": {
     "@better-auth/core": "1.7.6",

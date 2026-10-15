@@ -137,3 +137,6 @@ scripts/.flake-fixture-*/
 # `ESLint` constructed with `ignore: false`.
 apps/client/src/layers/entities/__dag-fixture-*__/
 apps/client/src/layers/*/__slice-fixture-*__/
+
+# Isolated local browser proof bundles and installed-package receipts.
+.dork/local-browser/

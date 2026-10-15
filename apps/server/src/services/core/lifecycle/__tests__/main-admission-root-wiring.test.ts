@@ -243,7 +243,11 @@ describe('main admission root adoption', () => {
     const docDeliveryDrain = new Promise<void>((resolve) => {
       releaseDocDelivery = resolve;
     });
-    const stopDocDelivery = vi.fn(() => docDeliveryDrain);
+    const browserClose = vi.fn(async () => undefined);
+    const stopDocDelivery = vi.fn(() => {
+      expect(browserClose).toHaveBeenCalledOnce();
+      return docDeliveryDrain;
+    });
     const laterCleanup = vi.fn(() => {
       throw stopAfterPrefix;
     });
@@ -254,6 +258,7 @@ describe('main admission root adoption', () => {
     const cleanup = runInNewContext(compiled, {
       mainRequestAdmission: admission,
       workspaceReconcilerLifecycle: owner,
+      localBrowserHost: { close: browserClose },
       stopDocDelivery,
       logger: { info: laterCleanup },
       docNotificationCleanup,
@@ -261,6 +266,7 @@ describe('main admission root adoption', () => {
     try {
       const completion = cleanup();
       expect(admission.isClosed).toBe(true);
+      expect(browserClose).not.toHaveBeenCalled();
       expect(stopDocDelivery).not.toHaveBeenCalled();
       expect(docNotificationCleanup).not.toHaveBeenCalled();
       expect(() => reconciler.start()).toThrow(/disposed/i);

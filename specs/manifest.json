@@ -18,6 +18,14 @@
       "linearIssue": "DOR-2932"
     },
     {
+      "id": "261014-190000",
+      "slug": "local-playwright-browser",
+      "title": "Local Playwright browser in two modes",
+      "created": "2026-10-14",
+      "status": "implemented",
+      "linearIssue": "DOR-2929"
+    },
+    {
       "id": "261014-142234",
       "slug": "computer-panel-resources",
       "title": "Relevant panel resource tabs and computer PiP",

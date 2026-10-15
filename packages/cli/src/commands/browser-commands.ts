@@ -1,11 +1,11 @@
 /**
- * `dorkos browser login | status | forget` — the agent browser.
+ * `dorkos browser login | status | forget` compatibility commands for older browser tools.
  *
  * The operator signs in to websites once, in a dedicated and unmistakably
  * orange Chrome profile where their password manager works as usual. The
- * signed-in session is saved as a Playwright storage-state file, and every
- * agent given the signed-in browser starts from it. Agents never see a
- * password; they only get cookies the site already issued.
+ * signed-in session is saved as a Playwright storage-state file for explicitly
+ * configured older browser tools. The live Browser choices keep their own
+ * sign-ins and never import this file.
  *
  * Every handler returns an exit code; `cli.ts` is the only place that exits.
  * Everything that touches the machine arrives through `BrowserDeps`
@@ -86,10 +86,10 @@ export const WELCOME_PAGE = `data:text/html;charset=utf-8,${encodeURIComponent(
   [
     '<!doctype html><title>DorkOS agent browser</title>',
     '<body style="font:16px/1.5 system-ui;max-width:36rem;margin:4rem auto;padding:0 1rem">',
-    '<h1 style="color:#c2410c">This is the DorkOS agent browser</h1>',
+    '<h1 style="color:#c2410c">Saved sign-ins for older browser tools</h1>',
     '<p>Sign in here to the sites you want your agents to use. Your password manager works as usual.</p>',
     '<p>When you are done, leave the tabs open, go back to your terminal and press <b>Enter</b>.</p>',
-    '<p>Agents get the saved sign-ins, never your passwords.</p>',
+    '<p>For live browsing, open Browser from the + menu in your DorkOS chat.</p>',
     '</body>',
   ].join('')
 )}`;
@@ -123,8 +123,7 @@ function printSiteNames(deps: BrowserDeps, sites: AgentBrowserSite[]): void {
 }
 
 /** The line that tells the operator how an agent gets the browser. */
-const NEXT_STEP =
-  "To give an agent the browser: open the agent's profile, then Tools & MCP, then Signed-in browser.";
+const NEXT_STEP = 'For live browsing, open Browser from the + menu in your DorkOS chat.';
 
 /** Map a failure of the Chrome lookup or launch to a message, or rethrow. */
 function chromeProblem(err: unknown): string {
@@ -195,7 +194,7 @@ async function saveAndReport(
   printSiteNames(deps, sites);
   deps.log('');
   if (note) deps.log(note);
-  deps.log('Agents with the signed-in browser start with these the next time they open one.');
+  deps.log('Saved for older browser tools. Live Browser choices keep their own sign-ins.');
   deps.log(`Saved to ${stateFile} (only you can read it).`);
   deps.log(NEXT_STEP);
   return 0;

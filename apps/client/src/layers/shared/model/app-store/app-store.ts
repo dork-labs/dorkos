@@ -222,9 +222,12 @@ export const useAppStore = create<AppState>()(
             localStorage.removeItem(PANEL_VIEW_PREFERENCES_STORAGE_KEY);
             localStorage.removeItem(STORAGE_KEYS.PIP_PANEL_STATE);
             localStorage.removeItem(STORAGE_KEYS.SETTINGS_ADVANCED_OPEN);
+            localStorage.removeItem(STORAGE_KEYS.LOCAL_BROWSER_CHOICE);
           } catch {}
           set({
             ...BOOL_DEFAULTS,
+            localBrowserChoice: null,
+            localBrowserChoiceIssue: null,
             ...restoreDefaultTypography(),
             devtoolsOpen: false,
             routerDevtoolsOpen: false,

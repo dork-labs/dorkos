@@ -71,6 +71,17 @@ describe('browser runtime dispatcher cold branch', () => {
   });
   afterEach(() => vi.restoreAllMocks());
 
+  it('directs live browsing to the app without the removed sign-in sharing setup', async () => {
+    const { runBrowserDispatcher } = await import('../browser-dispatcher.js');
+    expect(await runBrowserDispatcher('--help', [])).toBe(0);
+    const help = vi.mocked(console.log).mock.calls.flat().join('\n');
+    expect(help).toContain('open Browser from the DorkOS app');
+    expect(help).toContain('older saved-sign-in browser');
+    expect(help).not.toContain('Tools & MCP');
+    expect(help).not.toContain('Signed-in browser');
+    expect(help).not.toContain('never your');
+  });
+
   it('routes explicit repair to the real handler without loading legacy sign-in dependencies', async () => {
     const { runBrowserDispatcher } = await import('../browser-dispatcher.js');
     expect(await runBrowserDispatcher('install', ['--repair', '--json'])).toBe(1);

@@ -563,8 +563,19 @@ describe('in-session tool exposure', () => {
     // 130 -> 131 for `connectors_cancel_held_action` (spec
     // `trusted-by-default-flip` §5.6), DEFERRED: cancelling another agent's
     // held action is a deliberate step a turn can search for.
-    expect(tools).toHaveLength(131);
-    expect(deferred).toHaveLength(120);
+    // 131 -> 135 total, 120 -> 124 deferred: the four scoped local-browser
+    // tools (DOR-2929), reached when an agent explicitly uses the shared page.
+    expect(tools).toHaveLength(135);
+    expect(deferred).toHaveLength(124);
+    for (const name of [
+      'local_browser_state',
+      'local_browser_observe',
+      'local_browser_screenshot',
+      'local_browser_act',
+      'connectors_cancel_held_action',
+    ]) {
+      expect(deferred.map((tool) => tool.name)).toContain(name);
+    }
     for (const name of [
       'configure_doc_channel',
       'approve_doc_route',

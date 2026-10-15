@@ -405,10 +405,10 @@ export class RoomsPage {
     await expect(this.canvasTab).toHaveAttribute('aria-selected', 'true');
   }
 
-  /** Open the room's Browser tab and wait for it to be the one showing. */
+  /** Open the room's Page previews view and wait for it to be the one showing. */
   async openBrowserTab(): Promise<void> {
     await this.ensureRoomPanelOpen();
-    await new RightPanelPage(this.page).selectView('Browser');
+    await new RightPanelPage(this.page).selectView('Page previews');
     await expect(this.browserTab).toHaveAttribute('aria-selected', 'true');
   }
 

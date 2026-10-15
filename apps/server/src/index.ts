@@ -1,3 +1,4 @@
+import { localBrowserHost } from './startup/local-browser.js';
 import { startMainListener } from './services/core/lifecycle/main-listener.js';
 import { MainRequestAdmission } from './services/core/lifecycle/main-request-admission.js';
 import { createFrontDoorServer, frontDoorListener } from './http/front-door.js';
@@ -373,6 +374,7 @@ let docNotificationCleanup: (() => void) | undefined;
 async function shutdownServices() {
   mainRequestAdmission.close();
   await workspaceReconcilerLifecycle.dispose();
+  await localBrowserHost.close();
   await stopDocDelivery?.();
   stopDocDelivery = undefined;
   docNotificationCleanup?.();
@@ -537,6 +539,7 @@ start().catch(async (err) => {
   // A later startup failure must not leave the owned offline listener running.
   await testComposioFixture?.close();
   testComposioFixture = undefined;
+  await localBrowserHost.close();
   await stopDocDelivery?.();
   stopDocDelivery = undefined;
   docNotificationCleanup?.();

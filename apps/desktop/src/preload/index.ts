@@ -186,6 +186,16 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.invoke(SHELL_LOG_EXCERPT_CHANNEL),
   /** The current platform (darwin, win32, linux). */
   platform: process.platform,
+  localBrowser: {
+    setBounds: (bounds: {
+      connectionId: string;
+      x: number;
+      y: number;
+      width: number;
+      height: number;
+      visible: boolean;
+    }): Promise<void> => ipcRenderer.invoke('local-browser:set-bounds', bounds),
+  },
   /**
    * Open a URL in the system browser.
    *

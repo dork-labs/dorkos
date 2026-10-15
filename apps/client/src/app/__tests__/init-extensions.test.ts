@@ -126,15 +126,15 @@ describe('initializeExtensions — right-panel contributions', () => {
     expect(canvas?.visibleWhen?.({ pathname: '/marketplace' })).toBe(false);
   });
 
-  it('shows the Browser tab on /session under a transport that can serve a page', () => {
+  it('shows Page previews on /session under a transport that can serve a page', () => {
     const browser = getRightPanelContribution('browser');
-    expect(browser?.title).toBe('Browser');
+    expect(browser?.title).toBe('Page previews');
     const httpTransport = createMockTransport({ supportsWorkbenchServe: true });
     expect(browser?.visibleWhen?.({ pathname: '/session', transport: httpTransport })).toBe(true);
   });
 
-  it('shows the Browser tab on a room route too, and nowhere else', () => {
-    // A room's Browser tab shows the pages on that room's table, and its
+  it('shows Page previews on a room route too, and nowhere else', () => {
+    // A room's Page previews tab shows the pages on that room's table, and its
     // address bar puts one there as the person who typed it (§9.5). Everywhere
     // that is neither a session nor a room, there is nothing for it to show.
     const browser = getRightPanelContribution('browser');
@@ -147,7 +147,7 @@ describe('initializeExtensions — right-panel contributions', () => {
     }
   });
 
-  it('still hides the Browser tab on a room route under a transport that cannot serve a page', () => {
+  it('still hides Page previews on a room route under a transport that cannot serve a page', () => {
     const browser = getRightPanelContribution('browser');
     const directTransport = createMockTransport({ supportsWorkbenchServe: false });
     expect(browser?.visibleWhen?.({ pathname: '/channels', transport: directTransport })).toBe(
@@ -155,11 +155,30 @@ describe('initializeExtensions — right-panel contributions', () => {
     );
   });
 
-  it('orders Browser (22) between Canvas (20) and Terminal (25)', () => {
+  it('orders page previews (22) and Browser (23) between Canvas and Terminal', () => {
     // Documents, then pages, then a shell.
     expect(getRightPanelContribution('canvas')?.priority).toBe(20);
     expect(getRightPanelContribution('browser')?.priority).toBe(22);
+    expect(getRightPanelContribution('local-browser')?.priority).toBe(23);
     expect(getRightPanelContribution('terminal')?.priority).toBe(25);
+  });
+
+  it('shows the distinct Browser contribution only on chat routes with page support', () => {
+    const browser = getRightPanelContribution('local-browser');
+    expect(browser?.title).toBe('Browser');
+    const transport = createMockTransport({ supportsWorkbenchServe: true });
+    for (const pathname of ['/session', '/channels', '/']) {
+      expect(browser?.visibleWhen?.({ pathname, transport })).toBe(true);
+      expect(
+        browser?.visibleWhen?.({
+          pathname,
+          transport: createMockTransport({ supportsWorkbenchServe: false }),
+        })
+      ).toBe(false);
+    }
+    for (const pathname of ['/team', '/tasks', '/marketplace']) {
+      expect(browser?.visibleWhen?.({ pathname, transport })).toBe(false);
+    }
   });
 
   it('registers the Terminal contribution', () => {

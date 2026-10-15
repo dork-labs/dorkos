@@ -3,6 +3,7 @@
 export const STORAGE_KEYS = {
   FONT_SIZE: 'dorkos-font-size',
   FONT_FAMILY: 'dorkos-font-family',
+  LOCAL_BROWSER_CHOICE: 'dorkos-local-browser-choice-v1',
   RECENT_CWDS: 'dorkos-recent-cwds',
   PICKER_VIEW: 'dorkos-picker-view',
   PLACEHOLDER_HINT_CYCLES: 'dorkos-placeholder-hint-cycles',
