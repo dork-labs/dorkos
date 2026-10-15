@@ -49,10 +49,10 @@ describe('reserved short names', () => {
     const paths = [
       ...topLevelPaths(appSource),
       ...registrars.flatMap((path) => topLevelPaths(source(path))),
-      ...topLevelPaths(source('../main.ts')),
+      ...topLevelPaths(source('../pages/register.ts')),
       ...topLevelPaths(source('../browser/BrowserRoot.tsx')),
       OWNER_CLAIM_PATH.slice(1),
-      // The pages a mailed link opens; main.ts serves them from this one list.
+      // The pages a mailed link opens; pages/register.ts serves them from this one list.
       ...Object.values(COMMUNITY_EMAIL_LINK_PAGES).map((page) => page.slice(1)),
     ];
     // The scanner itself must find the paths each file really routes on.
