@@ -102,7 +102,7 @@ DorkOS supports ngrok tunnels (a service that gives your local machine a public 
 
 ### Wi-Fi access
 
-`server.lanAccess` (default `false`) is the **Let devices on my Wi-Fi in** switch in **Settings → Remote access**. On, other devices on the same network can open DorkOS at this computer's `.local` name, with no restart. It needs a login, and it stays off while `DORKOS_HOST` is set, because that variable already decides where DorkOS listens. See [Securing your instance](/docs/self-hosting/securing-your-instance#on-your-own-wi-fi).
+`server.lanAccess` (default `false`) is the **Let devices on my Wi-Fi in** switch in **Settings → Remote access**. On a Mac, other devices on the same network can open DorkOS at this computer's `.local` name, with no restart. It needs a login, and it stays off while `DORKOS_HOST` or `DORKOS_ALLOW_INSECURE_BIND` is set, because either already decides where DorkOS listens. See [Securing your instance](/docs/self-hosting/securing-your-instance#on-your-own-wi-fi).
 
 ### Relay Configuration
 

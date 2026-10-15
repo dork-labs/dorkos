@@ -56,7 +56,7 @@ function setup(overrides: Partial<LanAccessDeps> = {}) {
       setting = enabled;
     }),
     canExpose: () => true,
-    envHost: null,
+    setByEnvironment: () => null,
     readLocalName: async () => 'studio.local',
     readAddresses: () => ['192.168.1.20'],
     onSettingsChange: (next) => {
@@ -67,6 +67,8 @@ function setup(overrides: Partial<LanAccessDeps> = {}) {
     },
     secureCookies: true,
     bindHost: '127.0.0.1',
+    isLocalPeer: () => true,
+    platform: 'darwin',
     ...overrides,
   };
   const controller = new LanAccess(deps);
@@ -154,11 +156,15 @@ describe('LanAccess', () => {
 
   it('stands down while DORKOS_HOST is set, and says so', async () => {
     const port = await freePort();
-    const { controller, turn } = setup({ envHost: '0.0.0.0' });
+    const { controller, turn } = setup({ setByEnvironment: () => 'DORKOS_HOST=0.0.0.0' });
     await controller.attach({ port, createServer: okServer });
     turn(true);
     const status = await controller.reconcile();
-    expect(status).toMatchObject({ enabled: true, listening: false, envHost: '0.0.0.0' });
+    expect(status).toMatchObject({
+      enabled: true,
+      listening: false,
+      setByEnvironment: 'DORKOS_HOST=0.0.0.0',
+    });
     expect(await get(port)).toBe('ECONNREFUSED');
   });
 
@@ -194,5 +200,38 @@ describe('LanAccess', () => {
     await controller.reconcile();
     await ended;
     expect(socket.destroyed).toBe(true);
+  });
+
+  it('cuts a peer that is not on this computer’s own networks before answering it', async () => {
+    const port = await freePort();
+    const { controller, turn } = setup({ isLocalPeer: () => false });
+    await controller.attach({ port, createServer: okServer });
+    turn(true);
+    expect((await controller.reconcile()).listening).toBe(true);
+    expect(await get(port)).toBe('ECONNRESET');
+  });
+
+  it('says plainly where the switch does not work yet, instead of blaming another program', async () => {
+    const port = await freePort();
+    const { controller, turn } = setup({ platform: 'linux' });
+    await controller.attach({ port, createServer: okServer });
+    turn(true);
+    const status = await controller.reconcile();
+    expect(status.listening).toBe(false);
+    expect(status.error).toMatch(/works on a Mac for now/);
+    expect(await get(port)).toBe('ECONNREFUSED');
+  });
+
+  it('answers the status instead of rejecting when applying the setting throws', async () => {
+    const port = await freePort();
+    const { controller, turn } = setup({
+      writeSetting: () => {
+        throw new Error('disk full');
+      },
+      canExpose: () => false,
+    });
+    await controller.attach({ port, createServer: okServer });
+    turn(true);
+    await expect(controller.reconcile()).resolves.toMatchObject({ listening: false });
   });
 });

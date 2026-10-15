@@ -3,9 +3,12 @@
  * and the switch that lets devices on the same network open DorkOS.
  *
  * Turning it ON is a person's decision about who can reach this computer, so it
- * clears the same bars as opening a tunnel or managed remote access, in the
- * same order: the operator cookie under login, a person rather than an agent,
- * this computer rather than a device already reaching in, then a real login.
+ * clears the same bars as opening the person's own tunnel
+ * (`POST /api/tunnel/start`), in the same order: the operator cookie under
+ * login, a person rather than an agent, then a real login. There is no "at this
+ * computer" bar, as the tunnel has none: `server.lanAccess` is operator-only,
+ * and `PATCH /api/config` (which a signed-in owner reaches from anywhere) can
+ * already write it, so a bar here would only look like one.
  * The login refusal carries `AUTH_REQUIRED_FOR_EXPOSURE`, which walks the
  * client into owner-account setup. Turning it OFF runs no bars, as stopping a
  * tunnel does not: it only ever narrows who can reach in.
@@ -18,11 +21,7 @@ import { z } from 'zod';
 import type { ApiEnv } from '../http/api-chain.js';
 import { readJsonBody } from '../http/request-body.js';
 import { honoRequestFacts } from '../http/request-facts.js';
-import {
-  isLocalCaller,
-  readCallerAuthority,
-  requireOperatorCookieUnderLogin,
-} from '../lib/caller-authority.js';
+import { readCallerAuthority, requireOperatorCookieUnderLogin } from '../lib/caller-authority.js';
 import { logger } from '../lib/logger.js';
 import {
   AUTH_REQUIRED_FOR_EXPOSURE,
@@ -37,14 +36,15 @@ import {
 import {
   lanAccess,
   writeLanAccessSetting,
+  LAN_ACCESS_UNSUPPORTED_MESSAGE,
   type LanAccess,
 } from '../services/core/lan-access/index.js';
 
 /** Refusal code: `DORKOS_HOST` is set, so it decides where DorkOS listens. */
 export const LAN_ACCESS_SET_BY_ENVIRONMENT = 'LAN_ACCESS_SET_BY_ENVIRONMENT';
 
-/** Refusal code: the switch was flipped from a device other than this computer. */
-export const LAN_ACCESS_NEEDS_THIS_COMPUTER = 'LAN_ACCESS_NEEDS_THIS_COMPUTER';
+/** Refusal code: the switch does not work on this kind of computer yet. */
+export const LAN_ACCESS_UNSUPPORTED = 'LAN_ACCESS_UNSUPPORTED';
 
 /** The body `POST /api/lan-access` takes. */
 const SwitchRequestSchema = z.object({ enabled: z.boolean() });
@@ -73,19 +73,13 @@ function refuseOpening(c: Context<ApiEnv>, deps: LanAccessRouteDeps): Response |
     logger.warn('[LanAccess] Refused to open Wi-Fi access for an agent');
     return c.json({ error: OPERATOR_ONLY_CONFIG_ERROR, code: OPERATOR_ONLY_CONFIG_CODE }, 403);
   }
-  if (!isLocalCaller(caller)) {
-    return c.json(
-      {
-        error: 'Wi-Fi access can only be turned on at the computer DorkOS runs on.',
-        code: LAN_ACCESS_NEEDS_THIS_COMPUTER,
-      },
-      403
-    );
+  if (!deps.lanAccess.status().supported) {
+    return c.json({ error: LAN_ACCESS_UNSUPPORTED_MESSAGE, code: LAN_ACCESS_UNSUPPORTED }, 409);
   }
-  if (deps.lanAccess.status().envHost !== null) {
+  if (deps.lanAccess.status().setByEnvironment !== null) {
     return c.json(
       {
-        error: 'DORKOS_HOST is set, so it decides where DorkOS listens.',
+        error: `${deps.lanAccess.status().setByEnvironment} is set, so it decides where DorkOS listens.`,
         code: LAN_ACCESS_SET_BY_ENVIRONMENT,
       },
       409

@@ -31,8 +31,8 @@ import { configManager } from '../../services/core/config-manager.js';
 import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
 import {
   createLanAccessRoutes,
-  LAN_ACCESS_NEEDS_THIS_COMPUTER,
   LAN_ACCESS_SET_BY_ENVIRONMENT,
+  LAN_ACCESS_UNSUPPORTED,
 } from '../lan-access.js';
 
 const target = swappableServer();
@@ -91,11 +91,20 @@ describe('POST /api/lan-access { enabled: true }', () => {
     expect(current.writeSetting).not.toHaveBeenCalled();
   });
 
-  it('refuses while DORKOS_HOST decides where DorkOS listens', async () => {
-    current = deps({ envHost: '0.0.0.0' });
+  it('refuses while an environment setting decides where DorkOS listens', async () => {
+    current = deps({ setByEnvironment: 'DORKOS_HOST=0.0.0.0' });
     const res = await request(app()).post('/api/lan-access').send({ enabled: true });
     expect(res.status).toBe(409);
     expect(res.body.code).toBe(LAN_ACCESS_SET_BY_ENVIRONMENT);
+    expect(res.body.error).toContain('DORKOS_HOST=0.0.0.0');
+    expect(current.writeSetting).not.toHaveBeenCalled();
+  });
+
+  it('refuses on a computer the switch does not work on yet', async () => {
+    current = deps({ supported: false });
+    const res = await request(app()).post('/api/lan-access').send({ enabled: true });
+    expect(res.status).toBe(409);
+    expect(res.body.code).toBe(LAN_ACCESS_UNSUPPORTED);
     expect(current.writeSetting).not.toHaveBeenCalled();
   });
 
@@ -109,14 +118,13 @@ describe('POST /api/lan-access { enabled: true }', () => {
     expect(current.writeSetting).not.toHaveBeenCalled();
   });
 
-  it('refuses a device that is already reaching in from elsewhere', async () => {
+  it('lets the signed-in owner turn it on from another device, as the tunnel does', async () => {
     const res = await request(app())
       .post('/api/lan-access')
       .set('Host', 'box.ngrok.app')
       .send({ enabled: true });
-    expect(res.status).toBe(403);
-    expect(res.body.code).toBe(LAN_ACCESS_NEEDS_THIS_COMPUTER);
-    expect(current.writeSetting).not.toHaveBeenCalled();
+    expect(res.status).toBe(200);
+    expect(current.writeSetting).toHaveBeenCalledWith(true);
   });
 
   it('refuses a body that is not a yes or a no', async () => {

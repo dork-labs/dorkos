@@ -7,6 +7,7 @@
  * @module services/core/lan-access/lan-addresses
  */
 import { execFile } from 'node:child_process';
+import { BlockList, isIPv4, isIPv6 } from 'node:net';
 import os from 'node:os';
 
 /** One label of a host name: letters, digits and inner hyphens. */
@@ -78,4 +79,46 @@ export async function readLocalName(
     if (named) return named;
   }
   return toLocalName(os.hostname().split('.')[0] ?? '');
+}
+
+/**
+ * Whether a connecting peer is on one of this computer's own networks: inside
+ * the subnet of one of its interfaces, IPv6 link-local, or this computer.
+ *
+ * The listener binds every interface, which on a Mac with a public IPv6
+ * address, a VPN, or a public IPv4 address includes the internet. "Devices on my
+ * Wi-Fi" means a peer that shares a subnet with this computer, so anything else
+ * is refused at the socket, before a byte of the sign-in page goes out over
+ * plain `http`.
+ *
+ * @param peer - `socket.remoteAddress`.
+ * @param interfaces - The interface table; defaults to the live one.
+ */
+export function isLocalNetworkPeer(
+  peer: string | undefined,
+  interfaces: NodeJS.Dict<os.NetworkInterfaceInfo[]> = os.networkInterfaces()
+): boolean {
+  if (!peer) return false;
+  let address = peer.toLowerCase();
+  const zone = address.indexOf('%');
+  if (zone !== -1) address = address.slice(0, zone);
+  if (address.startsWith('::ffff:') && isIPv4(address.slice(7))) address = address.slice(7);
+  const family = isIPv4(address) ? 'ipv4' : isIPv6(address) ? 'ipv6' : null;
+  if (!family) return false;
+
+  const local = new BlockList();
+  local.addSubnet('127.0.0.0', 8, 'ipv4');
+  local.addAddress('::1', 'ipv6');
+  local.addSubnet('fe80::', 10, 'ipv6');
+  for (const entries of Object.values(interfaces)) {
+    for (const entry of entries ?? []) {
+      const prefix = Number(entry.cidr?.split('/')[1]);
+      // A subnet wider than a /8 (or an IPv6 /32) is no one's home network, and a
+      // `/0` would let the whole internet in.
+      const narrowest = entry.family === 'IPv4' ? 8 : 32;
+      if (!entry.cidr || !Number.isInteger(prefix) || prefix < narrowest) continue;
+      local.addSubnet(entry.address, prefix, entry.family === 'IPv4' ? 'ipv4' : 'ipv6');
+    }
+  }
+  return local.check(address, family);
 }

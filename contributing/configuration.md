@@ -743,7 +743,7 @@ Equivalent env var: `DORKOS_BOUNDARY`
 
 ### server.lanAccess
 
-The **Let devices on my Wi-Fi in** switch in Settings → Remote access (DOR-2930). On, the server opens a second listener on every network interface, beside the loopback one, on the same port, with no restart; off closes it at once. It opens only while login is on and an owner exists, and turning login off writes it back to `false`. While `DORKOS_HOST` is set in the environment, the switch does nothing and Settings says why. Agents may read it but not change it (`operator-only`). Code: `apps/server/src/services/core/lan-access/`.
+The **Let devices on my Wi-Fi in** switch in Settings → Remote access (DOR-2930). On, the server opens a second listener on every network interface, beside the loopback one, on the same port, with no restart; off closes it at once. It opens only while login is on and an owner exists, and turning login off writes it back to `false`. Peers outside this computer's own subnets are cut at the socket. While `DORKOS_HOST` or `DORKOS_ALLOW_INSECURE_BIND` is set in the environment, the switch does nothing and Settings says why. macOS only for now: Linux refuses a wildcard bind beside the loopback one on the same port, and Windows is unverified. Agents may read it but not change it (`operator-only`). Code: `apps/server/src/services/core/lan-access/`.
 
 ```bash
 dorkos config set server.lanAccess true

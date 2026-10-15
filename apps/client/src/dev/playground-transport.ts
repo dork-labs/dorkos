@@ -306,7 +306,8 @@ export function createPlaygroundTransport(): Transport {
         return async (enabled?: boolean) => ({
           enabled: enabled ?? false,
           listening: enabled ?? false,
-          envHost: null,
+          supported: true,
+          setByEnvironment: null,
           port: 4242,
           localName: 'studio.local',
           addresses: ['192.168.1.20'],

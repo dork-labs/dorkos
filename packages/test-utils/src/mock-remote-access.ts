@@ -55,7 +55,8 @@ export function createLanAccessStatus(overrides: Partial<LanAccessStatus> = {}):
   return {
     enabled: false,
     listening: false,
-    envHost: null,
+    supported: true,
+    setByEnvironment: null,
     port: 4242,
     localName: 'studio.local',
     addresses: ['192.168.1.20'],

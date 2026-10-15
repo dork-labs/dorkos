@@ -58,7 +58,10 @@ export function LanAccessSection({ className }: { className?: string }) {
   const { status, busy, error, setEnabled } = useLanAccess();
   if (!status) return null;
 
-  const lockedByEnv = status.envHost !== null;
+  // Off and greyed out where the switch cannot work: an environment setting
+  // decides instead, or this is not a Mac yet (the reason shows below).
+  const lockedByEnv = status.setByEnvironment !== null;
+  const locked = lockedByEnv || !status.supported;
   const shownError = error ?? status.error;
 
   return (
@@ -72,19 +75,19 @@ export function LanAccessSection({ className }: { className?: string }) {
             Let devices on my Wi-Fi in
           </p>
           <p className="text-muted-foreground text-xs">
-            For home or office Wi-Fi. The connection isn’t encrypted yet.
+            For home or office Wi-Fi. It isn’t encrypted yet.
           </p>
         </div>
         <Switch
           aria-labelledby="lan-access-title"
-          checked={lockedByEnv ? false : status.enabled}
+          checked={locked ? false : status.enabled}
           onCheckedChange={(checked) => void setEnabled(checked)}
-          disabled={busy || lockedByEnv}
+          disabled={busy || locked}
         />
       </div>
       {lockedByEnv && (
         <p className="text-muted-foreground text-xs">
-          DORKOS_HOST is set to {status.envHost}, so it decides where DorkOS listens.
+          {status.setByEnvironment} is set, so it decides where DorkOS listens.
         </p>
       )}
       {shownError && <p className="text-destructive text-xs">{shownError}</p>}

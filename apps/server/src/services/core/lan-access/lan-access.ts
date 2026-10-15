@@ -19,8 +19,12 @@
  * 2. Login is on and an owner account exists (`canExpose`), the same bar the
  *    tunnel meets. Turning login off later turns the switch off, in config too,
  *    so it cannot spring open again when login comes back.
- * 3. `DORKOS_HOST` is not set in the environment. When it is, it already decides
- *    where DorkOS listens, and Settings says so instead of offering the switch.
+ * 3. Neither `DORKOS_HOST` nor `DORKOS_ALLOW_INSECURE_BIND` is set in the
+ *    environment. Either already decides where DorkOS listens and who counts as
+ *    local, so Settings names it instead of offering the switch.
+ *
+ * And it opens only on a Mac for now: see {@link SUPPORTED_PLATFORMS}. Every
+ * connection it takes must come from one of this computer's own networks.
  *
  * ## When it closes
  *
@@ -43,6 +47,18 @@ import { setLanTrust } from './lan-trust.js';
  */
 const ALL_INTERFACES = ['::', '0.0.0.0'] as const;
 
+/**
+ * Where a second listener can share the main listener's port. On macOS a
+ * wildcard bind beside a loopback one on the same port works; Linux refuses it
+ * with `EADDRINUSE` (measured in review), and Windows is unverified. Elsewhere
+ * the switch says so instead of blaming "another program".
+ */
+const SUPPORTED_PLATFORMS: readonly NodeJS.Platform[] = ['darwin'];
+
+/** What Settings shows on a computer the switch does not work on yet. */
+export const LAN_ACCESS_UNSUPPORTED_MESSAGE =
+  'Wi-Fi access works on a Mac for now. Elsewhere, set DORKOS_HOST.';
+
 /** How long open connections may finish before a close cuts them, in milliseconds. */
 const CLOSE_GRACE_MS = 1_000;
 
@@ -54,8 +70,11 @@ export interface LanAccessDeps {
   writeSetting: (enabled: boolean) => void;
   /** Login is on and an owner exists (`canExpose`). */
   canExpose: () => boolean;
-  /** `DORKOS_HOST` when set in the environment, else `null`. */
-  envHost: string | null;
+  /**
+   * The environment setting that decides where DorkOS listens instead, e.g.
+   * `DORKOS_HOST=0.0.0.0`, else `null` (`lanAccessEnvironmentLock`).
+   */
+  setByEnvironment: () => string | null;
   /** This computer's Bonjour name (`readLocalName`). */
   readLocalName: () => Promise<string | null>;
   /** This computer's current IPv4 addresses (`readLanAddresses`). */
@@ -66,6 +85,13 @@ export interface LanAccessDeps {
   secureCookies: boolean;
   /** Interface to bind; tests pass loopback. Defaults to every interface. */
   bindHost?: string;
+  /**
+   * Whether a connecting peer is on this computer's own networks
+   * (`isLocalNetworkPeer`). Anyone else is cut at the socket.
+   */
+  isLocalPeer: (address: string | undefined) => boolean;
+  /** The operating system; defaults to this one. See {@link SUPPORTED_PLATFORMS}. */
+  platform?: NodeJS.Platform;
 }
 
 /** What {@link LanAccess.attach} needs once the main listener is up. */
@@ -133,9 +159,21 @@ export class LanAccess {
    * answer the status. Safe to call any number of times; calls run in order.
    */
   reconcile(): Promise<LanAccessStatus> {
-    const run = this.queue.then(() => this.reconcileNow());
-    this.queue = run.catch(() => undefined);
+    // Never rejects: a failure is logged and the status answered as it stands,
+    // so a settings listener or the boot call cannot leave a rejection unhandled.
+    const run = this.queue
+      .then(() => this.reconcileNow())
+      .catch((error: unknown) => {
+        logger.warn('[LanAccess] Could not apply the Wi-Fi access setting', logError(error));
+        return this.status();
+      });
+    this.queue = run;
     return run;
+  }
+
+  /** Whether the switch works on this computer at all (see {@link SUPPORTED_PLATFORMS}). */
+  get supported(): boolean {
+    return SUPPORTED_PLATFORMS.includes(this.deps.platform ?? process.platform);
   }
 
   /** Where Wi-Fi access stands right now. */
@@ -144,11 +182,15 @@ export class LanAccess {
     return {
       enabled: this.deps.readSetting(),
       listening,
-      envHost: this.deps.envHost,
+      supported: this.supported,
+      setByEnvironment: this.deps.setByEnvironment(),
       port: this.source?.port ?? 0,
       localName: this.localName,
       addresses: this.deps.readAddresses(),
-      error: listening ? null : this.error,
+      // Where the switch cannot work, say so even before anyone flips it.
+      error: listening
+        ? null
+        : (this.error ?? (this.supported ? null : LAN_ACCESS_UNSUPPORTED_MESSAGE)),
     };
   }
 
@@ -169,7 +211,7 @@ export class LanAccess {
       this.deps.writeSetting(false);
       wanted = false;
     }
-    const shouldListen = wanted && this.deps.envHost === null && this.source !== null;
+    const shouldListen = wanted && this.deps.setByEnvironment() === null && this.source !== null;
     if (shouldListen && !this.server) await this.open(this.source!);
     if (!shouldListen && this.server) this.shut();
     if (!wanted) this.error = null;
@@ -177,14 +219,23 @@ export class LanAccess {
   }
 
   private async open(source: LanListenerSource): Promise<void> {
+    if (!this.supported) {
+      this.error = LAN_ACCESS_UNSUPPORTED_MESSAGE;
+      return;
+    }
     this.localName ??= await this.deps.readLocalName().catch(() => null);
     const hosts = this.deps.bindHost ? [this.deps.bindHost] : ALL_INTERFACES;
     let server: Server | null = null;
     let failure: unknown = null;
     for (const host of hosts) {
       const candidate = source.createServer();
-      // Tracked from the first connection, so a close can cut every one of them.
+      // Checked and tracked from the first connection: a peer off this computer's
+      // own networks is cut before it is answered, and a close can cut the rest.
       candidate.on('connection', (socket: Socket) => {
+        if (!this.deps.isLocalPeer(socket.remoteAddress)) {
+          socket.destroy();
+          return;
+        }
         this.sockets.add(socket);
         socket.once('close', () => this.sockets.delete(socket));
       });

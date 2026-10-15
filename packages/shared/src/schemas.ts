@@ -4331,11 +4331,13 @@ export const LanAccessStatusSchema = z
     enabled: z.boolean(),
     /** Whether the network listener is open right now. */
     listening: z.boolean(),
+    /** Whether the switch works on this computer at all (a Mac, for now). */
+    supported: z.boolean(),
     /**
-     * `DORKOS_HOST` when it is set in the environment. It decides where DorkOS
-     * listens, so the switch does nothing while it is set.
+     * The environment setting that decides where DorkOS listens instead, e.g.
+     * `DORKOS_HOST=0.0.0.0`, or `null`. While one is set the switch does nothing.
      */
-    envHost: z.string().nullable(),
+    setByEnvironment: z.string().nullable(),
     /** The port other devices use, the same one this computer uses. */
     port: z.number().int(),
     /** This computer's Bonjour name, e.g. `studio.local`, when it has one. */

@@ -78,15 +78,34 @@ describe('LanAccessSection', () => {
     expect(await screen.findByTestId('qr-code')).toBeInTheDocument();
   });
 
-  it('disables the switch and says why while DORKOS_HOST is set', async () => {
+  it('greys out the switch and says why on a computer it does not work on yet', async () => {
     const transport = createMockTransport({
-      getLanAccess: vi
-        .fn()
-        .mockResolvedValue(createLanAccessStatus({ enabled: true, envHost: '0.0.0.0' })),
+      getLanAccess: vi.fn().mockResolvedValue(
+        createLanAccessStatus({
+          supported: false,
+          error: 'Wi-Fi access works on a Mac for now. Elsewhere, set DORKOS_HOST.',
+        })
+      ),
     });
     renderWith(transport);
     const toggle = await screen.findByRole('switch', { name: 'Let devices on my Wi-Fi in' });
     expect(toggle).toBeDisabled();
-    expect(screen.getByText(/DORKOS_HOST is set to 0\.0\.0\.0/)).toBeInTheDocument();
+    expect(screen.getByText(/works on a Mac for now/)).toBeInTheDocument();
+  });
+
+  it('disables the switch and says why while DORKOS_HOST is set', async () => {
+    const transport = createMockTransport({
+      getLanAccess: vi
+        .fn()
+        .mockResolvedValue(
+          createLanAccessStatus({ enabled: true, setByEnvironment: 'DORKOS_HOST=0.0.0.0' })
+        ),
+    });
+    renderWith(transport);
+    const toggle = await screen.findByRole('switch', { name: 'Let devices on my Wi-Fi in' });
+    expect(toggle).toBeDisabled();
+    expect(
+      screen.getByText('DORKOS_HOST=0.0.0.0 is set, so it decides where DorkOS listens.')
+    ).toBeInTheDocument();
   });
 });

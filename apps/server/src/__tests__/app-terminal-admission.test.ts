@@ -291,7 +291,9 @@ describe('main HTTP admission through the real app', () => {
     expect(mounts).toContain('/api/agents/admission-fixture/heartbeat');
     expect(mounts).toContain('/api/heartbeats/triage-credits');
     expect(mounts).toContain('/api/terminal');
-    expect(mounts).toHaveLength(71);
+    // 71 -> 72: `/api/lan-access`, the Wi-Fi access switch (DOR-2930).
+    expect(mounts).toContain('/api/lan-access');
+    expect(mounts).toHaveLength(72);
     const byHand = [
       '/',
       '/x/fixture',

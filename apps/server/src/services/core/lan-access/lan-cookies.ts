@@ -26,6 +26,8 @@
  * Dropping `Secure` here adds no exposure the listener does not already have:
  * every byte on it is plain `http`, which the switch says out loud. The cookie
  * stays scoped to the name the device used and is never sent to `localhost`.
+ * Cookies ignore ports, so it also reaches any other plain-`http` service the
+ * device opens on that same name, the same as a `localhost` cookie does today.
  *
  * @module services/core/lan-access/lan-cookies
  */
