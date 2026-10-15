@@ -1,3 +1,4 @@
+import { localBrowserHost } from './startup/local-browser.js';
 import { DocChannelMetrics } from './services/observability/doc-channel-metrics.js';
 import { subscribeCommittedDocEvents } from './services/canvas/doc-channel/committed-events.js';
 import { DocChannelLiveBuffer } from './services/canvas/doc-channel/streams/live-buffer.js';
@@ -537,7 +538,6 @@ import {
 } from './services/commitments/commitment-wiring.js';
 import * as heartbeats from './services/heartbeats/index.js';
 import { flushRestoredAgents } from './services/marketplace/restored-agents.js';
-import { registeredAgentRoots } from './services/mesh/roots/registered-agent-roots.js';
 import {
   SessionStartedByStore,
   getSessionStartedByStore,
@@ -3631,7 +3631,9 @@ async function start() {
 
   // `deps` is what the route groups read (`http/hono-api.ts`), each set where
   // the service it hands over is ready.
+  const localBrowserService = localBrowserHost.start(dorkHome);
   const deps: HonoApiDeps = {
+    localBrowser: localBrowserService,
     connectorEventIngress: connectorSignedIngress,
     mcp: mcpServerFactory,
     docChannel: { ...docChannelHttp, metrics: docChannelMetrics },
@@ -3641,6 +3643,7 @@ async function start() {
   // seam (DOR-952) dials a managed server through, to prove the bearer gate.
   if (env.DORKOS_TEST_RUNTIME) {
     deps.testControl = {
+      localBrowser: () => localBrowserService,
       meshCore: () => meshCore,
       approvals: () => approvalService,
       agentMcpServers: () => agentMcpServerService,
@@ -4504,6 +4507,7 @@ async function start() {
   capabilityRegistry = composeDorkOsCapabilityRegistry(
     {
       logger,
+      localBrowserDeps: localBrowserService,
       docChannelDownstream: docChannelHttp.downstream,
       docChannelGrantDeps: {
         service: docChannelHttp.grants,
@@ -5132,6 +5136,7 @@ let docNotificationCleanup: (() => void) | undefined;
 
 async function shutdownServices() {
   mainRequestAdmission.close();
+  await localBrowserHost.close();
   await workspaceReconcilerLifecycle.dispose();
   await stopDocDelivery?.();
   stopDocDelivery = undefined;
@@ -5162,15 +5167,9 @@ async function shutdownServices() {
   testComposioFixture = undefined;
   await connectorRuntimeMcpListener?.close();
   connectorRuntimeMcpListener = undefined;
-  if (healthCheckInterval) {
-    clearInterval(healthCheckInterval);
-  }
-  if (dailySnapshotInterval) {
-    clearInterval(dailySnapshotInterval);
-  }
-  if (sessionAttachmentSweepInterval) {
-    clearInterval(sessionAttachmentSweepInterval);
-  }
+  clearInterval(healthCheckInterval);
+  clearInterval(dailySnapshotInterval);
+  clearInterval(sessionAttachmentSweepInterval);
   managedAuthorityRecoveryInterval?.stop();
   managedUsageMirrorRecoveryInterval?.stop();
   if (stopApprovalExpirySweep) {
@@ -5285,6 +5284,7 @@ process.on('unhandledRejection', (reason) => {
 
 start().catch(async (err) => {
   mainRequestAdmission.close();
+  await localBrowserHost.close();
   try {
     await workspaceReconcilerLifecycle.dispose();
   } catch (cleanupError) {

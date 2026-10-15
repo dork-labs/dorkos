@@ -2,6 +2,21 @@
   "version": 1,
   "decisions": [
     {
+      "id": "261014-120000",
+      "slug": "playwright-controls-the-same-local-browser-page",
+      "title": "Playwright controls the same local browser page",
+      "status": "draft",
+      "created": "2026-10-14",
+      "extractedFrom": "specs/local-playwright-browser/02-specification.md",
+      "specSlug": "local-playwright-browser",
+      "supersedes": null,
+      "amends": ["260912-025251"],
+      "affects": [
+        "apps/desktop/src/main/local-browser/**",
+        "apps/server/src/services/session/local-browser/**"
+      ]
+    },
+    {
       "id": "261014-142234",
       "slug": "panel-resource-views",
       "title": "Panel tabs represent resource views and share computer control ownership",

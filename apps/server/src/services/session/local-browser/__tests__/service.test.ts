@@ -1,0 +1,1019 @@
+import { EventEmitter } from 'node:events';
+import { mkdtemp, rm, readFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import type { Browser, BrowserContext, Page } from 'playwright-core';
+import {
+  ACTION_EFFECT_RESPONSE_TIMEOUT_MS,
+  PAGE_READ_RESPONSE_TIMEOUT_MS,
+  CLOSE_RESPONSE_TIMEOUT_MS,
+} from '../lifecycle.js';
+import { AUDIT_WRITE_RESPONSE_TIMEOUT_MS } from '../page-action.js';
+import { LocalBrowserService } from '../service.js';
+import { MAX_BROWSER_SNAPSHOT_BYTES, MAX_BROWSER_SCREENSHOT_EDGE } from '../observation-limits.js';
+import type { LocalBrowserBackend } from '../playwright-backend.js';
+
+function fixture() {
+  const events = new EventEmitter();
+  const contextEvents = new EventEmitter();
+  const browserEvents = new EventEmitter();
+  let url = 'http://fixture.test/';
+  let snapshot = '- button "Save"';
+  const click = vi.fn(async () => undefined);
+  const fill = vi.fn(async () => undefined);
+  const handle = {
+    click,
+    fill,
+    isEditable: vi.fn(async () => true),
+    evaluate: vi.fn(async () => false),
+    dispose: vi.fn(async (): Promise<void> => undefined),
+  };
+  const locator = {
+    elementHandle: vi.fn(async () => handle),
+    ariaSnapshot: vi.fn(async () => snapshot),
+    count: vi.fn(async () => 1),
+    click,
+    fill,
+    isEditable: vi.fn(async () => true),
+  };
+  let isOriginalNode = true;
+  const observedNodeSets: {
+    evaluate: ReturnType<typeof vi.fn>;
+    dispose: ReturnType<typeof vi.fn>;
+  }[] = [];
+  const pixels = Buffer.alloc(24);
+  Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]).copy(pixels);
+  pixels.write('IHDR', 12, 'ascii');
+  pixels.writeUInt32BE(100, 16);
+  pixels.writeUInt32BE(100, 20);
+  const frame = {};
+  const page = {
+    on: events.on.bind(events),
+    off: events.off.bind(events),
+    context: () => context,
+    url: () => url,
+    title: async () => 'Fixture',
+    isClosed: () => false,
+    mainFrame: () => frame,
+    keyboard: { press: vi.fn(async () => undefined) },
+    mouse: { wheel: vi.fn(async () => undefined) },
+    screenshot: vi.fn(async () => Buffer.from(pixels)),
+    evaluateHandle: vi.fn(async () => {
+      const nodes = {
+        evaluate: vi.fn(async () => isOriginalNode),
+        dispose: vi.fn(async (): Promise<void> => undefined),
+      };
+      observedNodeSets.push(nodes);
+      return nodes;
+    }),
+    locator: () => locator,
+    getByRole: vi.fn(() => locator),
+    bringToFront: vi.fn(async () => undefined),
+    goto: vi.fn(async (next: string) => {
+      url = next;
+      events.emit('framenavigated', frame);
+    }),
+  } as unknown as Page;
+  const cdp = {
+    send: vi.fn(async (): Promise<void> => undefined),
+    detach: vi.fn(async () => undefined),
+  };
+  const context = {
+    browser: () => null,
+    newCDPSession: vi.fn(async () => cdp),
+    pages: () => [page],
+    on: contextEvents.on.bind(contextEvents),
+    once: contextEvents.once.bind(contextEvents),
+    off: contextEvents.off.bind(contextEvents),
+    close: vi.fn(async () => undefined),
+    newPage: vi.fn(async () => page),
+  } as unknown as BrowserContext;
+  const browser = {
+    version: () => '153.0.0.0',
+    contexts: () => [context],
+    on: browserEvents.on.bind(browserEvents),
+    once: browserEvents.once.bind(browserEvents),
+    off: browserEvents.off.bind(browserEvents),
+    close: vi.fn(async () => undefined),
+  } as unknown as Browser;
+  const backend: LocalBrowserBackend = {
+    launch: vi.fn(async () => context),
+    connect: vi.fn(async () => browser),
+  };
+  return {
+    page,
+    handle,
+    contextEvents,
+    browserEvents,
+    events,
+    cdp,
+    backend,
+    context,
+    browser,
+    locator,
+    click,
+    fill,
+    observedNodeSets,
+    pixels,
+    replaceNode: () => {
+      isOriginalNode = false;
+    },
+    navigate: (next: string) => {
+      url = next;
+      events.emit('framenavigated', frame);
+    },
+    change: (next: string) => {
+      snapshot = next;
+    },
+  };
+}
+const directories: string[] = [];
+afterEach(async () => {
+  vi.useRealTimers();
+  await Promise.all(directories.splice(0).map((dir) => rm(dir, { recursive: true, force: true })));
+});
+async function create() {
+  const dir = await mkdtemp(path.join(tmpdir(), 'local-browser-unit-'));
+  directories.push(dir);
+  const f = fixture();
+  return { ...f, dir, service: new LocalBrowserService(dir, undefined, f.backend) };
+}
+async function selectPersonal(service: LocalBrowserService) {
+  const state = await service.open({ mode: 'existing', channel: 'chrome', consent: true });
+  await service.selectTab(state.tabs[0].id);
+}
+
+describe('local browser ownership and observations', () => {
+  it('changes focus only after an exact shared personal-tab choice', async () => {
+    const { service, cdp, context, page } = await create();
+    const human = await service.open({ mode: 'existing', consent: true });
+    await service.selectTab(human.tabs[0].id);
+    expect(context.newCDPSession).not.toHaveBeenCalled();
+    expect(page.bringToFront).not.toHaveBeenCalled();
+    const shared = await service.open({ mode: 'existing', consent: true, sessionId: 'chat-one' });
+    expect(context.newCDPSession).not.toHaveBeenCalled();
+    await service.selectTab(shared.tabs[0].id);
+    expect(context.newCDPSession).toHaveBeenCalledExactlyOnceWith(page);
+    expect(cdp.send).toHaveBeenLastCalledWith('Emulation.setFocusEmulationEnabled', {
+      enabled: true,
+    });
+    await service.disconnect();
+    expect(cdp.send).toHaveBeenLastCalledWith('Emulation.setFocusEmulationEnabled', {
+      enabled: false,
+    });
+    expect(cdp.detach).toHaveBeenCalledOnce();
+  });
+  it('an explicit existing URL shares only its newly selected page', async () => {
+    const { service, context, page } = await create();
+    await service.open({
+      mode: 'existing',
+      consent: true,
+      sessionId: 'chat-one',
+      url: 'http://fixture.test/new',
+    });
+    expect(context.newPage).toHaveBeenCalledOnce();
+    expect(context.newCDPSession).toHaveBeenCalledExactlyOnceWith(page);
+    await service.disconnect();
+  });
+  it('fences observation and late focus attachment when a person selects another tab', async () => {
+    const { service, context, cdp, page } = await create();
+    const other = fixture();
+    vi.spyOn(context, 'pages').mockReturnValue([page, other.page]);
+    const state = await service.open({ mode: 'existing', consent: true, sessionId: 'chat-one' });
+    let attach!: (session: typeof cdp) => void;
+    vi.mocked(context.newCDPSession).mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          attach = resolve as unknown as typeof attach;
+        })
+    );
+    const first = service.selectTab(state.tabs[0].id);
+    const firstRefusal = expect(first).rejects.toMatchObject({ code: 'stale_page' });
+    const observing = service.observe();
+    const observationRefusal = expect(observing).rejects.toMatchObject({ code: 'stale_page' });
+    const second = service.selectTab(state.tabs[1].id);
+    attach(cdp);
+    await Promise.all([firstRefusal, observationRefusal, second]);
+    expect(page.evaluateHandle).not.toHaveBeenCalled();
+    expect(cdp.send).not.toHaveBeenCalledWith('Emulation.setFocusEmulationEnabled', {
+      enabled: true,
+    });
+    expect(cdp.detach).toHaveBeenCalledOnce();
+    expect((await service.state()).selectedTabId).toBe(state.tabs[1].id);
+    await service.disconnect();
+  });
+  it('waits for a background navigation reset before observing', async () => {
+    const { service, cdp, page, navigate } = await create();
+    const state = await service.open({ mode: 'existing', consent: true, sessionId: 'chat-one' });
+    await service.selectTab(state.tabs[0].id);
+    let reset!: () => void;
+    cdp.send.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          reset = resolve;
+        })
+    );
+    navigate('http://fixture.test/next');
+    const observing = service.observe();
+    await vi.waitFor(() => expect(cdp.send).toHaveBeenCalledTimes(3));
+    expect(page.evaluateHandle).not.toHaveBeenCalled();
+    reset();
+    await observing;
+    expect(page.evaluateHandle).toHaveBeenCalledOnce();
+    await service.disconnect();
+  });
+
+  it('never polls unselected documents or waits for them on agent state/action completion', async () => {
+    const { service, context, page } = await create();
+    const unrelated = fixture();
+    vi.spyOn(context, 'pages').mockReturnValue([page, unrelated.page]);
+    const unrelatedTitle = vi
+      .spyOn(unrelated.page, 'title')
+      .mockImplementation(() => new Promise<string>(() => {}));
+    const state = await service.open({ mode: 'existing', consent: true, sessionId: 'chat-one' });
+    await service.selectTab(state.tabs[0].id);
+    unrelatedTitle.mockClear();
+    const selectedTitle = vi.spyOn(page, 'title');
+    selectedTitle.mockClear();
+    await service.state();
+    await service.state();
+    const agent = await service.agentState();
+    expect(agent.tabs.map((tab) => tab.id)).toEqual([state.tabs[0].id]);
+    const observed = await service.observe();
+    const result = await service.action({
+      kind: 'click',
+      role: 'button',
+      name: 'Save',
+      revision: observed.revision,
+    });
+    expect(result.tabs.map((tab) => tab.id)).toEqual([state.tabs[0].id]);
+    expect(unrelatedTitle).not.toHaveBeenCalled();
+    expect(selectedTitle).toHaveBeenCalled();
+    await service.disconnect();
+  });
+  it('refreshes cached labels on document events without reading titles on polling', async () => {
+    const { service, page, events } = await create();
+    let finishInitialTitle!: (title: string) => void;
+    const title = vi.spyOn(page, 'title').mockResolvedValue('Loaded document');
+    title.mockImplementationOnce(
+      () =>
+        new Promise<string>((resolve) => {
+          finishInitialTitle = resolve;
+        })
+    );
+    const state = await service.open({ mode: 'existing', consent: true, sessionId: 'chat-one' });
+    // Opening must finish even when an unselected document never answers its title request.
+    expect(state.tabs[0].title).toBe('');
+    events.emit('domcontentloaded');
+    await Promise.resolve();
+    const count = title.mock.calls.length;
+    expect((await service.state()).tabs[0].title).toBe('Loaded document');
+    finishInitialTitle('Old document');
+    await Promise.resolve();
+    expect((await service.state()).tabs[0].title).toBe('Loaded document');
+    expect(title).toHaveBeenCalledTimes(count);
+    await service.disconnect();
+  });
+  it('refreshes a selected same-document title after polling and action completion', async () => {
+    const { service, page, fill } = await create();
+    let current = 'Before input';
+    vi.spyOn(page, 'title').mockImplementation(async () => current);
+    const state = await service.open({ mode: 'existing', consent: true, sessionId: 'chat-one' });
+    await service.selectTab(state.tabs[0].id);
+    current = 'Human input';
+    await service.state();
+    expect((await service.agentState()).tabs[0].title).toBe('Human input');
+    const observed = await service.observe();
+    fill.mockImplementationOnce(async () => {
+      current = 'Agent input';
+    });
+    await service.action({
+      kind: 'fill',
+      role: 'textbox',
+      name: 'Title',
+      text: 'Agent input',
+      revision: observed.revision,
+    });
+    expect((await service.agentState()).tabs[0].title).toBe('Agent input');
+    await service.disconnect();
+  });
+  it('captures state identity atomically across selection and disconnect changes', async () => {
+    const { service, context, page } = await create();
+    const other = fixture();
+    vi.spyOn(context, 'pages').mockReturnValue([page, other.page]);
+    const state = await service.open({ mode: 'existing', consent: true, sessionId: 'chat-one' });
+    await service.selectTab(state.tabs[0].id);
+    const first = service.agentState();
+    await service.selectTab(state.tabs[1].id);
+    const captured = await first;
+    expect(captured.connectionId).toBe(state.connectionId);
+    expect(captured.selectedTabId).toBe(state.tabs[0].id);
+    expect(captured.tabs.map((tab) => tab.id)).toEqual([state.tabs[0].id]);
+    const second = service.agentState();
+    await service.disconnect();
+    const prior = await second;
+    expect(prior.connectionId).toBe(state.connectionId);
+    expect(prior.selectedTabId).toBe(state.tabs[1].id);
+    expect(prior.tabs.map((tab) => tab.id)).toEqual([state.tabs[1].id]);
+    expect((await service.agentState()).tabs).toEqual([]);
+  });
+  it('rejects an oversized UTF-8 observation without granting a revision or retaining node handles', async () => {
+    const { service, change, click, observedNodeSets } = await create();
+    await selectPersonal(service);
+    await service.observe();
+    change('界'.repeat(Math.ceil(MAX_BROWSER_SNAPSHOT_BYTES / 3)));
+    await expect(service.observe()).rejects.toMatchObject({ code: 'page_too_large' });
+    expect(observedNodeSets[1].dispose).toHaveBeenCalledOnce();
+    const state = await service.state();
+    await expect(
+      service.action({ kind: 'click', role: 'button', name: 'Save', revision: state.revision })
+    ).rejects.toMatchObject({ code: 'stale_page' });
+    expect(click).not.toHaveBeenCalled();
+    change('- button "Save"');
+    await service.observe();
+    await service.disconnect();
+  });
+  it('rejects screenshot dimensions without resizing the live page or granting an action revision', async () => {
+    const { service, page, pixels } = await create();
+    await selectPersonal(service);
+    const revision = (await service.state()).revision;
+    const large = Buffer.from(pixels);
+    large.writeUInt32BE(MAX_BROWSER_SCREENSHOT_EDGE + 1, 16);
+    vi.mocked(page.screenshot).mockResolvedValueOnce(large);
+    await expect(service.screenshot()).rejects.toMatchObject({ code: 'image_too_large' });
+    expect(page.screenshot).toHaveBeenCalledExactlyOnceWith({
+      type: 'png',
+      fullPage: false,
+      timeout: 750,
+    });
+    expect((await service.state()).revision).toBe(revision);
+    await expect(
+      service.action({ kind: 'click', role: 'button', name: 'Save', revision })
+    ).rejects.toMatchObject({ code: 'stale_page' });
+    await service.disconnect();
+  });
+  it('requires consent and explicit personal-tab choice', async () => {
+    const { service, backend } = await create();
+    await expect(service.open({ mode: 'existing' })).rejects.toMatchObject({
+      code: 'consent_required',
+    });
+    expect(backend.connect).not.toHaveBeenCalled();
+    const state = await service.open({ mode: 'existing', channel: 'msedge', consent: true });
+    expect(backend.connect).toHaveBeenCalledWith('msedge');
+    expect(state.selectedTabId).toBeNull();
+    await expect(service.observe()).rejects.toMatchObject({ code: 'no_tab' });
+  });
+  it('scopes keys, scrolling, and screenshots to the selected live page', async () => {
+    const { service, page, pixels } = await create();
+    await selectPersonal(service);
+    const first = await service.observe();
+    await service.action({ kind: 'press', revision: first.revision, key: 'Enter' });
+    expect(page.keyboard.press).toHaveBeenCalledExactlyOnceWith('Enter');
+    const second = await service.observe();
+    await service.action({ kind: 'scroll', revision: second.revision, deltaX: 0, deltaY: 600 });
+    expect(page.mouse.wheel).toHaveBeenCalledExactlyOnceWith(0, 600);
+    const image = await service.screenshot();
+    expect(image).toMatchObject({
+      data: pixels.toString('base64'),
+      mimeType: 'image/png',
+    });
+  });
+  it('journals outcomes without typed values or URL queries and refuses when recording is unavailable', async () => {
+    const { service, dir, click, navigate, backend, page } = await create();
+    await selectPersonal(service);
+    navigate('http://fixture.test/path?private_query=hidden');
+    const first = await service.observe();
+    await service.action({
+      kind: 'fill',
+      revision: first.revision,
+      role: 'textbox',
+      name: 'Email',
+      text: 'private typed secret',
+    });
+    vi.spyOn(page, 'title').mockResolvedValue('private typed secret in page title');
+    const second = await service.observe();
+    click
+      .mockImplementationOnce(async () => undefined)
+      .mockImplementationOnce(async () => {
+        throw new Error('timeout after dispatch');
+      });
+    await expect(
+      service.action({ kind: 'click', revision: second.revision, role: 'button', name: 'Save' })
+    ).rejects.toMatchObject({ code: 'uncertain' });
+    const journal = await readFile(path.join(dir, 'local-browser', 'actions.jsonl'), 'utf8');
+    expect(journal).not.toContain('private typed secret');
+    expect(journal).not.toContain('private_query');
+    expect(journal).not.toContain('/path');
+    const records = journal
+      .trim()
+      .split('\n')
+      .map((line) => JSON.parse(line));
+    expect(records.map((record) => record.outcome)).toEqual([
+      'unknown',
+      'succeeded',
+      'unknown',
+      'unknown',
+    ]);
+    expect(records[0].operationId).toBe(records[1].operationId);
+    expect(records[0].tabId).toEqual(expect.any(String));
+    expect(records.every((record) => !('title' in record))).toBe(true);
+    const noAudit = new LocalBrowserService(dir, undefined, backend, async () => {
+      throw new Error('disk unavailable');
+    });
+    await selectPersonal(noAudit);
+    const fresh = await noAudit.observe();
+    await expect(
+      noAudit.action({ kind: 'click', revision: fresh.revision, role: 'button', name: 'Save' })
+    ).rejects.toMatchObject({ code: 'audit_unavailable' });
+    expect(click).toHaveBeenCalledTimes(2);
+  });
+  it('refuses observed actions after a person navigates', async () => {
+    const { service, navigate, click } = await create();
+    await selectPersonal(service);
+    const { revision } = await service.observe();
+    navigate('http://fixture.test/other');
+    await expect(
+      service.action({ kind: 'click', role: 'button', name: 'Save', revision })
+    ).rejects.toMatchObject({ code: 'stale_page' });
+    expect(click).not.toHaveBeenCalled();
+  });
+  it('checks current page content and never reuses a consumed revision', async () => {
+    const { service, change, click } = await create();
+    await selectPersonal(service);
+    const old = await service.observe();
+    change('- button "Delete"');
+    await expect(
+      service.action({ kind: 'click', role: 'button', name: 'Save', revision: old.revision })
+    ).rejects.toMatchObject({ code: 'stale_page' });
+    expect(click).not.toHaveBeenCalled();
+    const current = await service.observe();
+    await service.action({
+      kind: 'click',
+      role: 'button',
+      name: 'Delete',
+      revision: current.revision,
+    });
+    await expect(
+      service.action({ kind: 'click', role: 'button', name: 'Delete', revision: current.revision })
+    ).rejects.toMatchObject({ code: 'stale_page' });
+    expect(click).toHaveBeenCalledTimes(2); // trial plus exactly one real click
+  });
+  it('pause during actionability wait prevents effect dispatch', async () => {
+    const { service, click } = await create();
+    await selectPersonal(service);
+    const { revision } = await service.observe();
+    let release!: () => void;
+    let trialStarted!: () => void;
+    const started = new Promise<void>((resolve) => {
+      trialStarted = resolve;
+    });
+    click.mockImplementationOnce(async () => {
+      trialStarted();
+      await new Promise<void>((resolve) => {
+        release = resolve;
+      });
+    });
+    const action = service.action({ kind: 'click', role: 'button', name: 'Save', revision });
+    const rejection = expect(action).rejects.toMatchObject({ code: 'paused' });
+    await started;
+    const pause = service.pause();
+    release();
+    await pause;
+    await rejection;
+    expect(click).toHaveBeenCalledTimes(1);
+    expect((await service.state()).paused).toBe(true);
+    await service.resume();
+    await expect(
+      service.action({ kind: 'click', role: 'button', name: 'Save', revision })
+    ).rejects.toMatchObject({ code: 'stale_page' });
+  });
+  it('refuses an identical accessible replacement node at the same address', async () => {
+    const { service, click, replaceNode, observedNodeSets } = await create();
+    await selectPersonal(service);
+    const { revision } = await service.observe();
+    replaceNode();
+    await expect(
+      service.action({ kind: 'click', revision, role: 'button', name: 'Save' })
+    ).rejects.toMatchObject({ code: 'stale_page' });
+    expect(click).not.toHaveBeenCalled();
+    expect(observedNodeSets[0].dispose).toHaveBeenCalledOnce();
+  });
+  it('disposes observation identity on new observations, navigation, and disconnect', async () => {
+    const { service, observedNodeSets, navigate } = await create();
+    await selectPersonal(service);
+    const first = await service.observe();
+    const second = await service.observe();
+    expect(second.revision).toBeGreaterThan(first.revision);
+    expect(observedNodeSets[0].dispose).toHaveBeenCalledOnce();
+    navigate('http://fixture.test/other');
+    expect(observedNodeSets[1].dispose).toHaveBeenCalledOnce();
+    await service.observe();
+    await service.disconnect();
+    expect(observedNodeSets[2].dispose).toHaveBeenCalledOnce();
+  });
+  it('navigation during the trial never dispatches an effect into the new page', async () => {
+    const { service, click, navigate } = await create();
+    await selectPersonal(service);
+    const { revision } = await service.observe();
+    click.mockImplementationOnce(async () => {
+      navigate('http://fixture.test/replacement');
+    });
+    await expect(
+      service.action({ kind: 'click', role: 'button', name: 'Save', revision })
+    ).rejects.toMatchObject({ code: 'stale_page' });
+    expect(click).toHaveBeenCalledTimes(1);
+  });
+  it('shares only with the chosen chat and exposes only its selected tab to tools', async () => {
+    const { service } = await create();
+    const state = await service.open({ mode: 'existing', consent: true, sessionId: 'chat-one' });
+    expect(() => service.requireSharedSession('chat-two')).toThrow();
+    expect(() => service.requireSharedSession('chat-one')).not.toThrow();
+    expect((await service.agentState()).tabs).toEqual([]);
+    await service.selectTab(state.tabs[0].id);
+    expect((await service.agentState()).tabs).toHaveLength(1);
+    await service.disconnect();
+    expect(() => service.requireSharedSession('chat-one')).toThrow();
+  });
+  it.each(['143.0.0.0', '156.0.0.0'])(
+    'refuses unsupported browser %s without closing its tabs',
+    async (version) => {
+      const { service, browser, context } = await create();
+      vi.spyOn(browser, 'version').mockReturnValue(version);
+      await expect(service.open({ mode: 'existing', consent: true })).rejects.toMatchObject({
+        code: 'unsupported_version',
+      });
+      expect(browser.close).toHaveBeenCalledOnce();
+      expect(context.close).not.toHaveBeenCalled();
+    }
+  );
+  it('restores focus before detaching a responsive personal transport', async () => {
+    const { service, cdp, browser } = await create();
+    const state = await service.open({ mode: 'existing', consent: true, sessionId: 'chat-one' });
+    await service.selectTab(state.tabs[0].id);
+    vi.mocked(browser.close).mockImplementationOnce(async () => {
+      expect(cdp.send).toHaveBeenLastCalledWith('Emulation.setFocusEmulationEnabled', {
+        enabled: false,
+      });
+      expect(cdp.detach).toHaveBeenCalledOnce();
+    });
+    await service.disconnect();
+    expect(browser.close).toHaveBeenCalledOnce();
+  });
+  it('bounds focus restoration before transport detach unblocks a pending reset', async () => {
+    const { service, cdp, browser, context, navigate, events } = await create();
+    const state = await service.open({ mode: 'existing', consent: true, sessionId: 'chat-one' });
+    await service.selectTab(state.tabs[0].id);
+    let abort!: (error: Error) => void;
+    cdp.send.mockImplementationOnce(
+      () =>
+        new Promise<void>((_, reject) => {
+          abort = reject;
+        })
+    );
+    navigate('http://fixture.test/pending');
+    await vi.waitFor(() => expect(cdp.send).toHaveBeenCalledTimes(3));
+    vi.useFakeTimers();
+    try {
+      vi.mocked(browser.close).mockImplementationOnce(async () => {
+        abort(new Error('transport closed'));
+      });
+      const disconnecting = service.disconnect();
+      await vi.advanceTimersByTimeAsync(749);
+      expect(browser.close).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(1);
+      await disconnecting;
+      expect(browser.close).toHaveBeenCalledOnce();
+      expect(cdp.detach).toHaveBeenCalledOnce();
+      expect(context.close).not.toHaveBeenCalled();
+      expect(events.listenerCount('framenavigated')).toBe(1);
+      expect((await service.state()).status).toBe('disconnected');
+    } finally {
+      abort(new Error('test cleanup'));
+      vi.useRealTimers();
+    }
+  });
+  it('detaches personal transport without closing its context or tabs', async () => {
+    const { service, browser, context } = await create();
+    await selectPersonal(service);
+    await service.disconnect();
+    expect(browser.close).toHaveBeenCalledOnce();
+    expect(context.close).not.toHaveBeenCalled();
+    expect((await service.state()).status).toBe('disconnected');
+  });
+  it('reports managed preparation while opening and fences callbacks after cancellation', async () => {
+    const { service, backend, context } = await create();
+    let progress!: NonNullable<Parameters<LocalBrowserBackend['launch']>[2]>;
+    let finish!: (context: BrowserContext) => void;
+    vi.mocked(backend.launch).mockImplementationOnce(async (_storage, _signal, report) => {
+      progress = report!;
+      return new Promise<BrowserContext>((resolve) => {
+        finish = resolve;
+      });
+    });
+    const opening = service.open({ mode: 'new-window', sessionId: 'chat-one' });
+    const cancelled = expect(opening).rejects.toMatchObject({ code: 'cancelled' });
+    await vi.waitFor(() => expect(backend.launch).toHaveBeenCalledOnce());
+    expect((await service.state()).preparation).toEqual({
+      stage: 'checking',
+      component: null,
+      percent: null,
+    });
+    progress({ stage: 'downloading', component: 'chromium', percent: 30 });
+    expect((await service.state()).preparation?.percent).toBe(30);
+    const disconnecting = service.disconnect();
+    progress({ stage: 'downloading', component: 'chromium', percent: 80 });
+    expect((await service.state()).preparation).toBeNull();
+    finish(context);
+    await Promise.all([cancelled, disconnecting]);
+    const next = await service.open({ mode: 'new-window', sessionId: 'chat-two' });
+    expect(next.preparation).toBeNull();
+    progress({ stage: 'downloading', component: 'chromium', percent: 100 });
+    expect((await service.state()).preparation).toBeNull();
+    await service.disconnect();
+  });
+  it('disconnect during startup never leaves a late owned window connected', async () => {
+    const { service, backend, context } = await create();
+    let release!: (context: BrowserContext) => void;
+    let started!: () => void;
+    const launching = new Promise<void>((resolve) => {
+      started = resolve;
+    });
+    vi.mocked(backend.launch).mockImplementationOnce(async () => {
+      started();
+      return new Promise<BrowserContext>((resolve) => {
+        release = resolve;
+      });
+    });
+    const opening = service.open({ mode: 'new-window' });
+    const refusal = expect(opening).rejects.toMatchObject({ code: 'cancelled' });
+    await launching;
+    const disconnecting = service.disconnect();
+    release(context);
+    await Promise.all([refusal, disconnecting]);
+    expect(context.close).toHaveBeenCalledOnce();
+    expect((await service.state()).status).toBe('disconnected');
+  });
+  it('reuses DorkOS saved logins and closes only its owned window', async () => {
+    const { service, backend, context, dir } = await create();
+    await service.open({ mode: 'new-window' });
+    await service.disconnect();
+    await service.open({ mode: 'new-window' });
+    expect(backend.launch).toHaveBeenNthCalledWith(
+      1,
+      path.join(dir, 'local-browser', 'saved-logins'),
+      expect.any(AbortSignal),
+      expect.any(Function)
+    );
+    expect(backend.launch).toHaveBeenNthCalledWith(
+      2,
+      path.join(dir, 'local-browser', 'saved-logins'),
+      expect.any(AbortSignal),
+      expect.any(Function)
+    );
+    expect(context.close).toHaveBeenCalledOnce();
+  });
+  it('does not replay an action whose effect may already have happened', async () => {
+    const { service, click } = await create();
+    await selectPersonal(service);
+    const { revision } = await service.observe();
+    click
+      .mockImplementationOnce(async () => undefined)
+      .mockImplementationOnce(async () => {
+        throw new Error('timeout after dispatch');
+      });
+    await expect(
+      service.action({ kind: 'click', role: 'button', name: 'Save', revision })
+    ).rejects.toMatchObject({ code: 'uncertain' });
+    await expect(
+      service.action({ kind: 'click', role: 'button', name: 'Save', revision })
+    ).rejects.toMatchObject({ code: 'stale_page' });
+    expect(click).toHaveBeenCalledTimes(2);
+  });
+});
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((done) => {
+    resolve = done;
+  });
+  return { promise, resolve };
+}
+async function lifecycleFixture() {
+  const fixture = await create();
+  const audit = vi.fn(
+    async (_record: import('../action-audit.js').LocalBrowserAuditRecord): Promise<void> =>
+      undefined
+  );
+  return {
+    ...fixture,
+    audit,
+    service: new LocalBrowserService(fixture.dir, undefined, fixture.backend, audit),
+  };
+}
+
+describe('bounded browser lifecycle ownership', () => {
+  it('returns pause immediately and retains pre-dispatch ownership after its response expires', async () => {
+    const { service, observedNodeSets, click } = await lifecycleFixture();
+    await service.open({ mode: 'new-window' });
+    const observed = await service.observe();
+    const stalled = deferred<boolean>();
+    observedNodeSets[0].evaluate.mockReturnValueOnce(stalled.promise);
+    vi.useFakeTimers();
+    const acting = service.action({
+      kind: 'click',
+      role: 'button',
+      name: 'Save',
+      revision: observed.revision,
+    });
+    const refused = expect(acting).rejects.toMatchObject({ code: 'stale_page' });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(observedNodeSets[0].evaluate).toHaveBeenCalledOnce();
+    expect((await service.pause()).paused).toBe(true);
+    await vi.advanceTimersByTimeAsync(ACTION_EFFECT_RESPONSE_TIMEOUT_MS);
+    await refused;
+    await service.resume();
+    const fresh = await service.observe();
+    await expect(
+      service.action({ kind: 'click', role: 'button', name: 'Save', revision: fresh.revision })
+    ).rejects.toMatchObject({ code: 'busy' });
+    stalled.resolve(true);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(click).not.toHaveBeenCalled();
+    await service.disconnect();
+  });
+
+  it('starts actual shutdown without awaiting a stalled action and fences its late continuation', async () => {
+    const { service, observedNodeSets, context, click } = await lifecycleFixture();
+    await service.open({ mode: 'new-window' });
+    const observed = await service.observe();
+    const stalled = deferred<boolean>();
+    observedNodeSets[0].evaluate.mockReturnValueOnce(stalled.promise);
+    vi.useFakeTimers();
+    const acting = service.action({
+      kind: 'click',
+      role: 'button',
+      name: 'Save',
+      revision: observed.revision,
+    });
+    const refused = expect(acting).rejects.toMatchObject({ code: 'paused' });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(observedNodeSets[0].evaluate).toHaveBeenCalledOnce();
+    expect((await service.disconnect()).status).toBe('disconnected');
+    expect(context.close).toHaveBeenCalledOnce();
+    await expect(service.open({ mode: 'new-window' })).rejects.toMatchObject({ code: 'busy' });
+    stalled.resolve(true);
+    await vi.advanceTimersByTimeAsync(0);
+    await refused;
+    expect(click).not.toHaveBeenCalled();
+  });
+
+  it('reports a late input acknowledgement as unknown and never releases its pending lease on timeout', async () => {
+    const { service, page, audit } = await lifecycleFixture();
+    await service.open({ mode: 'new-window' });
+    const observed = await service.observe();
+    const acknowledgement = deferred<void>();
+    vi.mocked(page.keyboard.press).mockReturnValueOnce(acknowledgement.promise);
+    vi.useFakeTimers();
+    const acting = service.action({ kind: 'press', key: 'Enter', revision: observed.revision });
+    const uncertain = expect(acting).rejects.toMatchObject({ code: 'uncertain' });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(page.keyboard.press).toHaveBeenCalledOnce();
+    await service.pause();
+    await vi.advanceTimersByTimeAsync(ACTION_EFFECT_RESPONSE_TIMEOUT_MS);
+    await uncertain;
+    await service.resume();
+    const fresh = await service.observe();
+    await expect(
+      service.action({ kind: 'press', key: 'Enter', revision: fresh.revision })
+    ).rejects.toMatchObject({ code: 'busy' });
+    acknowledgement.resolve();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(
+      audit.mock.calls.some(
+        ([record]) =>
+          record.phase === 'finished' && record.kind === 'press' && record.outcome === 'succeeded'
+      )
+    ).toBe(false);
+    expect(page.keyboard.press).toHaveBeenCalledOnce();
+    await service.disconnect();
+  });
+
+  it('does not let nonmutating handle disposal hold action completion or pause', async () => {
+    const { service, handle } = await lifecycleFixture();
+    await service.open({ mode: 'new-window' });
+    const observed = await service.observe();
+    handle.dispose.mockImplementationOnce(() => new Promise<void>(() => {}));
+    await service.action({
+      kind: 'click',
+      role: 'button',
+      name: 'Save',
+      revision: observed.revision,
+    });
+    expect((await service.pause()).paused).toBe(true);
+    await service.disconnect();
+  });
+
+  it('retains the owned profile after a protocol-close event until its close request settles', async () => {
+    const { service, context, contextEvents, backend } = await lifecycleFixture();
+    const state = await service.open({ mode: 'new-window' });
+    const closing = deferred<void>();
+    vi.mocked(context.close).mockReturnValueOnce(closing.promise);
+    vi.useFakeTimers();
+    const first = expect(service.disconnect()).rejects.toMatchObject({
+      code: 'busy',
+      message: 'The browser is still closing. Wait before opening it again.',
+    });
+    const second = expect(service.disconnect()).rejects.toMatchObject({ code: 'busy' });
+    await vi.advanceTimersByTimeAsync(CLOSE_RESPONSE_TIMEOUT_MS);
+    await Promise.all([first, second]);
+    expect(context.close).toHaveBeenCalledOnce();
+    await expect(service.open({ mode: 'new-window' })).rejects.toMatchObject({ code: 'busy' });
+    await expect(service.resume()).rejects.toMatchObject({ code: 'busy' });
+    await expect(service.navigate('http://fixture.test/new')).rejects.toMatchObject({
+      code: 'busy',
+    });
+    await expect(service.selectTab(state.tabs[0].id)).rejects.toMatchObject({ code: 'busy' });
+    expect(backend.launch).toHaveBeenCalledOnce();
+    expect((await service.state()).paused).toBe(true);
+    contextEvents.emit('close');
+    await vi.advanceTimersByTimeAsync(0);
+    expect((await service.state()).status).not.toBe('disconnected');
+    await expect(service.open({ mode: 'new-window' })).rejects.toMatchObject({ code: 'busy' });
+    await expect(service.resume()).rejects.toMatchObject({ code: 'busy' });
+    expect(backend.launch).toHaveBeenCalledOnce();
+    const completed = service.disconnect();
+    closing.resolve();
+    await completed;
+    expect((await service.state()).status).toBe('disconnected');
+    await service.open({ mode: 'new-window' });
+    expect(backend.launch).toHaveBeenCalledTimes(2);
+  });
+
+  it('retains a failed owned close despite a later protocol-close event', async () => {
+    const { service, context, contextEvents, backend } = await lifecycleFixture();
+    await service.open({ mode: 'new-window' });
+    vi.mocked(context.close).mockRejectedValueOnce(new Error('owned close request rejected'));
+    await expect(service.disconnect()).rejects.toMatchObject({
+      code: 'busy',
+      message: 'Restart DorkOS to finish closing this browser.',
+    });
+    contextEvents.emit('close');
+    expect((await service.state()).status).not.toBe('disconnected');
+    await expect(service.disconnect()).rejects.toMatchObject({
+      code: 'busy',
+      message: 'Restart DorkOS to finish closing this browser.',
+    });
+    await expect(service.open({ mode: 'new-window' })).rejects.toMatchObject({ code: 'busy' });
+    await expect(service.resume()).rejects.toMatchObject({ code: 'busy' });
+    expect(context.close).toHaveBeenCalledOnce();
+    expect(backend.launch).toHaveBeenCalledOnce();
+  });
+
+  it('keeps late acquisition and its actual close owned after bounded cancellation', async () => {
+    const { service, context, backend } = await lifecycleFixture();
+    const acquisition = deferred<BrowserContext>();
+    vi.mocked(backend.launch).mockReturnValueOnce(acquisition.promise);
+    const opening = service.open({ mode: 'new-window' });
+    const cancelled = expect(opening).rejects.toMatchObject({ code: 'cancelled' });
+    await vi.waitFor(() => expect(backend.launch).toHaveBeenCalledOnce());
+    const closing = deferred<void>();
+    vi.mocked(context.close).mockReturnValueOnce(closing.promise);
+    vi.useFakeTimers();
+    const disconnecting = expect(service.disconnect()).rejects.toMatchObject({ code: 'busy' });
+    await vi.advanceTimersByTimeAsync(CLOSE_RESPONSE_TIMEOUT_MS);
+    await disconnecting;
+    await expect(service.open({ mode: 'new-window' })).rejects.toMatchObject({ code: 'busy' });
+    acquisition.resolve(context);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(context.close).toHaveBeenCalledOnce();
+    await expect(service.open({ mode: 'new-window' })).rejects.toMatchObject({ code: 'busy' });
+    closing.resolve();
+    await vi.advanceTimersByTimeAsync(0);
+    await cancelled;
+    expect((await service.state()).status).toBe('disconnected');
+    expect(backend.launch).toHaveBeenCalledOnce();
+  });
+
+  it('bounds node observation and disposes a late handle without granting a revision', async () => {
+    const { service, page } = await lifecycleFixture();
+    await service.open({ mode: 'new-window' });
+    const nodes = deferred<Awaited<ReturnType<Page['evaluateHandle']>>>();
+    vi.mocked(page.evaluateHandle).mockReturnValueOnce(nodes.promise);
+    vi.useFakeTimers();
+    const reading = expect(service.observe()).rejects.toMatchObject({ code: 'stale_page' });
+    await vi.advanceTimersByTimeAsync(PAGE_READ_RESPONSE_TIMEOUT_MS);
+    await reading;
+    const late = { dispose: vi.fn(async (): Promise<void> => undefined) };
+    nodes.resolve(late as unknown as Awaited<ReturnType<Page['evaluateHandle']>>);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(late.dispose).toHaveBeenCalledOnce();
+    await expect(
+      service.action({ kind: 'press', key: 'Enter', revision: (await service.state()).revision })
+    ).rejects.toMatchObject({ code: 'stale_page' });
+    await service.disconnect();
+  });
+
+  it('bounds a human tab focus wait without keeping the UI request pending forever', async () => {
+    const { service, page } = await lifecycleFixture();
+    const state = await service.open({ mode: 'new-window' });
+    vi.mocked(page.bringToFront).mockReturnValueOnce(new Promise<void>(() => {}));
+    vi.useFakeTimers();
+    const selecting = expect(service.selectTab(state.tabs[0].id)).rejects.toMatchObject({
+      code: 'stale_page',
+    });
+    await vi.advanceTimersByTimeAsync(PAGE_READ_RESPONSE_TIMEOUT_MS);
+    await selecting;
+    await service.disconnect();
+  });
+  it('retains a failed embedded close tombstone and reports busy on every repeat', async () => {
+    const fixture = await lifecycleFixture();
+    const close = vi.fn(async () => {
+      throw new Error('private bridge unavailable');
+    });
+    const service = new LocalBrowserService(
+      fixture.dir,
+      {
+        open: async () => ({ endpoint: 'http://owned.test', headers: {}, close }),
+      },
+      fixture.backend,
+      fixture.audit
+    );
+    await service.open({ mode: 'embedded' });
+    await expect(service.disconnect()).rejects.toMatchObject({
+      code: 'busy',
+      message: 'Restart DorkOS to finish closing this browser.',
+    });
+    await expect(service.disconnect()).rejects.toMatchObject({
+      code: 'busy',
+      message: 'Restart DorkOS to finish closing this browser.',
+    });
+    await expect(service.open({ mode: 'embedded' })).rejects.toMatchObject({
+      code: 'busy',
+      message: 'Restart DorkOS to finish closing this browser.',
+    });
+    expect(close).toHaveBeenCalledOnce();
+    expect(fixture.browser.close).toHaveBeenCalledOnce();
+  });
+  it('bounds the durable start wait and never dispatches after that write eventually finishes', async () => {
+    const { service, audit, click } = await lifecycleFixture();
+    await service.open({ mode: 'new-window' });
+    const observed = await service.observe();
+    const started = deferred<void>();
+    audit.mockImplementationOnce(() => started.promise);
+    vi.useFakeTimers();
+    const action = service.action({
+      kind: 'click',
+      role: 'button',
+      name: 'Save',
+      revision: observed.revision,
+    });
+    const refused = expect(action).rejects.toMatchObject({ code: 'audit_unavailable' });
+    await vi.advanceTimersByTimeAsync(AUDIT_WRITE_RESPONSE_TIMEOUT_MS);
+    await refused;
+    expect(click).not.toHaveBeenCalled();
+    started.resolve();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(click).not.toHaveBeenCalled();
+    expect(audit).toHaveBeenCalledOnce();
+    await service.disconnect();
+  });
+
+  it('bounds a stalled success receipt and journals unknown after its late success write settles', async () => {
+    const { service, audit, click } = await lifecycleFixture();
+    await service.open({ mode: 'new-window' });
+    const observed = await service.observe();
+    const finish = deferred<void>();
+    const journal: import('../action-audit.js').LocalBrowserAuditRecord[] = [];
+    audit.mockImplementation(async (record) => {
+      if (record.phase === 'finished' && record.outcome === 'succeeded') await finish.promise;
+      journal.push({ ...record });
+    });
+    vi.useFakeTimers();
+    const action = service.action({
+      kind: 'click',
+      role: 'button',
+      name: 'Save',
+      revision: observed.revision,
+    });
+    const uncertain = expect(action).rejects.toMatchObject({ code: 'uncertain' });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(click).toHaveBeenCalledTimes(2);
+    expect(audit).toHaveBeenCalledTimes(2);
+    await vi.advanceTimersByTimeAsync(AUDIT_WRITE_RESPONSE_TIMEOUT_MS * 2);
+    await uncertain;
+    expect(journal.map((record) => record.phase)).toEqual(['started']);
+    // The correcting record cannot overtake the writer that is still serializing success.
+    expect(audit).toHaveBeenCalledTimes(2);
+    finish.resolve();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(journal.map((record) => [record.phase, record.outcome])).toEqual([
+      ['started', 'unknown'],
+      ['finished', 'succeeded'],
+      ['finished', 'unknown'],
+    ]);
+    expect(new Set(journal.map((record) => record.operationId)).size).toBe(1);
+    expect(click).toHaveBeenCalledTimes(2);
+    await service.disconnect();
+  });
+});

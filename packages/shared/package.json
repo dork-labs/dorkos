@@ -524,6 +524,14 @@
     "./transport-computers": {
       "types": "./src/transport-computers.ts",
       "default": "./dist/transport-computers.js"
+    },
+    "./local-browser": {
+      "types": "./src/local-browser.ts",
+      "default": "./dist/local-browser.js"
+    },
+    "./transport-local-browser": {
+      "types": "./src/transport-local-browser.ts",
+      "default": "./dist/transport-local-browser.js"
     }
   },
   "scripts": {

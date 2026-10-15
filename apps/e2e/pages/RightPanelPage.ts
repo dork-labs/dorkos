@@ -265,11 +265,17 @@ export class RightPanelPage {
   /** Open the panel if it is currently closed (idempotent). */
   async open() {
     // A modal phone sheet hides the top-bar toggle from the accessibility tree.
-    // Its visible header already proves the panel is open.
-    if ((await this.header.isVisible()) && (await this.tabStripWidth()) > 0) return;
-    const label = await this.toggle.getAttribute('aria-label');
-    if (label?.startsWith('Open')) {
-      await this.toggle.click();
+    // Its accessible close action proves it is open, even before tabs finish layout.
+    const close = this.header
+      .getByRole('button', { name: 'Close panel', exact: true })
+      .and(this.page.locator(':not([inert], [inert] *)'));
+    if (await close.isVisible()) return;
+    try {
+      const label = await this.toggle.getAttribute('aria-label', { timeout: 1_000 });
+      if (label?.startsWith('Open')) await this.toggle.click({ timeout: 1_000 });
+    } catch (error) {
+      // Layout restoration can open the sheet between reading and clicking the toggle.
+      if (!(await close.isVisible())) throw error;
     }
   }
 }

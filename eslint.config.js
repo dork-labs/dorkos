@@ -43,7 +43,7 @@ export default defineConfig([
       // existed. What every entry IS, is runtime or machine-local output —
       // written by a tool, not authored here.
       //
-      // The three `.dork/` entries are deliberately the subdirectories rather
+      // The named `.dork/` entries are deliberately the subdirectories rather
       // than `.dork/**`. Nothing lintable is tracked under `.dork/` today, and
       // naming the runtime dirs means that if something lintable ever is, it
       // gets linted instead of silently skipped.
@@ -52,6 +52,7 @@ export default defineConfig([
       '.dork/plugins/**',
       '.dork/flow/**',
       '.dork/visual-companion/**',
+      '.dork/local-browser/**',
       '.turbo/**',
       '.temp/**',
       '.worktrees/**',

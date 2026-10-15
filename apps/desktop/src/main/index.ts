@@ -1,3 +1,4 @@
+import { startLocalBrowserBridge } from './local-browser';
 import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron';
 import log from 'electron-log';
 import { createWindow, isWebLink, makeRendererUrlAccessor } from './window-manager';
@@ -47,6 +48,7 @@ import { GET_FOCUS_STATE_CHANNEL } from './window-focus';
 const DEEP_LINK_PROTOCOL = 'dorkos';
 
 let mainWindow: BrowserWindow | null = null;
+let localBrowserBridge: Awaited<ReturnType<typeof startLocalBrowserBridge>> | undefined;
 
 /**
  * The app's own origin, re-read on every use. The port comes from the
@@ -256,7 +258,11 @@ if (!gotTheLock) {
   armQuitGuard({
     countActiveAgents: getActiveAgentCount,
     getWindow: getMainWindow,
-    shutdown: stopServer,
+    shutdown: async () => {
+      await stopServer();
+      await localBrowserBridge?.close();
+      localBrowserBridge = undefined;
+    },
     consumeUpdateRestart,
     recordUpdateInstallIntent,
   });
@@ -399,8 +405,11 @@ if (!gotTheLock) {
     try {
       // The accessor lets the supervisor anchor its crash dialog to whichever
       // window is current, the same way setupAutoUpdater does.
+      localBrowserBridge = await startLocalBrowserBridge(getRendererUrl, getMainWindow);
       await startServer(getMainWindow);
     } catch (err) {
+      await localBrowserBridge?.close();
+      localBrowserBridge = undefined;
       dialog.showErrorBox("DorkOS couldn't start", startupFailureMessage(err));
       app.quit();
       return;

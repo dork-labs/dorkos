@@ -2,6 +2,8 @@ import { useEffect, useMemo, useState } from 'react';
 import { FileText, Globe, SquareTerminal } from 'lucide-react';
 import { useComputer } from '@/layers/entities/computer';
 import { useRoom } from '@/layers/entities/room';
+import { useSessionId } from '@/layers/entities/session';
+import { useLocalBrowserState } from '@/layers/entities/local-browser';
 import { toast } from 'sonner';
 import type { AuthorRef } from '@dorkos/shared/room-schemas';
 import type { UiCanvasContent } from '@dorkos/shared/types';
@@ -21,12 +23,12 @@ import {
 import type { TabActivationSource } from '@/layers/shared/ui';
 
 const DEFAULTS = new Set(['agent-profile', 'profile', 'files', 'room', 'computer']);
-const OPTIONAL = new Set(['pulse', 'session', 'canvas', 'browser', 'terminal']);
+const OPTIONAL = new Set(['pulse', 'session', 'canvas', 'browser', 'local-browser', 'terminal']);
 const EMPTY_PREFERENCES: PanelViewPreferences = {};
 /** One concrete view presented by the shared panel row. */
 export interface PanelView extends RightPanelContribution {
   category: string;
-  resource?: 'document' | 'terminal';
+  resource?: 'document' | 'terminal' | 'browser';
   closed?: boolean;
   activate?: (source: TabActivationSource) => void;
   author?: AuthorRef;
@@ -43,6 +45,21 @@ export function usePanelViews(contributions: RightPanelContribution[], pathname:
   const cwd = useAppStore((s) => s.selectedCwd);
   const explicitAgentPath = useAppStore((s) => s.explicitAgentPath);
   const sessionId = useAppStore((s) => s.sessionId);
+  const [routeSessionId] = useSessionId();
+  const directSessionId = pathname === '/session' ? routeSessionId : null;
+  const browserScope = directSessionId ? `chat/${encodeURIComponent(directSessionId)}` : 'human';
+  const { data: localBrowser } = useLocalBrowserState(
+    contributions.some((view) => view.id === 'local-browser')
+  );
+  const browserConnection =
+    localBrowser?.status === 'connected' &&
+    localBrowser.connectionId &&
+    localBrowser.sessionId === directSessionId
+      ? localBrowser
+      : null;
+  const localBrowserViewId = browserConnection
+    ? `resource/browser/${browserScope}/${encodeURIComponent(browserConnection.connectionId!)}`
+    : 'local-browser';
   const roomId = useAppStore((s) => s.roomCanvasLiveRoomId);
   const sessionDocuments = useAppStore((s) => s.openDocuments);
   const roomDocuments = useAppStore((s) => (roomId ? s.roomCanvasDocuments[roomId] : undefined));
@@ -105,8 +122,13 @@ export function usePanelViews(contributions: RightPanelContribution[], pathname:
 
   const save = (update: (entry: PanelViewPreference) => PanelViewPreference) =>
     updatePreference?.(key, update);
+  const isBrowser = (id: string) => allViews.find((view) => view.id === id)?.resource === 'browser';
   const closedKey = (id: string) =>
-    allViews.find((view) => view.id === id)?.resource ? `${resourceScope}:${id}` : id;
+    isBrowser(id)
+      ? id
+      : allViews.find((view) => view.id === id)?.resource
+        ? `${resourceScope}:${id}`
+        : id;
   const closedKeys = (id: string) =>
     allViews.find((view) => view.id === id)?.resource === 'document'
       ? [closedKey(id), `${legacyScope}:${id}`]
@@ -115,10 +137,36 @@ export function usePanelViews(contributions: RightPanelContribution[], pathname:
     allViews.find((view) => view.id === id)?.resource === 'document';
   const viewClosed = (id: string) =>
     closedKeys(id).some((closedId) =>
-      isDocument(id) ? ownerClosures.has(closedId) : preference.closed.includes(closedId)
+      isDocument(id) || isBrowser(id)
+        ? ownerClosures.has(closedId)
+        : preference.closed.includes(closedId)
     );
   const allViews: PanelView[] = available.flatMap((contribution): PanelView[] => {
     const category = contribution.id;
+    if (category === 'local-browser') {
+      if (!browserConnection) return [{ ...contribution, category, title: 'Browser' }];
+      const selected = browserConnection.tabs.find(
+        (tab) => tab.id === browserConnection.selectedTabId
+      );
+      const browserName =
+        browserConnection.mode === 'existing'
+          ? browserConnection.channel === 'msedge'
+            ? 'Microsoft Edge'
+            : 'Google Chrome'
+          : browserConnection.mode === 'embedded'
+            ? 'DorkOS browser'
+            : 'Browser window';
+      return [
+        {
+          ...contribution,
+          category,
+          resource: 'browser',
+          id: localBrowserViewId,
+          title: selected?.title || browserName,
+          icon: Globe,
+        },
+      ];
+    }
     if (category === 'browser' || category === 'canvas') {
       const documents = roomId
         ? roomDocumentsInView(roomDocuments ?? [], category)
@@ -167,7 +215,9 @@ export function usePanelViews(contributions: RightPanelContribution[], pathname:
         icon: SquareTerminal,
         activate: (source) => terminal.activate(tab.id, source),
       }));
-    return [{ ...contribution, category }];
+    return [
+      { ...contribution, category, ...(category === 'browser' ? { title: 'Page previews' } : {}) },
+    ];
   });
   // A stream may publish the server row before POST identifies it. Defer only possible
   // echoes of a closed unresolved open; existing twins and explicit selections stay visible.
@@ -198,7 +248,7 @@ export function usePanelViews(contributions: RightPanelContribution[], pathname:
         view.extensionId ||
         preference.opened.includes(view.category) ||
         view.category === activeCategory ||
-        (!contextual && view.isGlobal))
+        (!contextual && view.isGlobal && view.category !== 'local-browser'))
   );
   // Keep a new-shell request visible until its owner publishes the newly created tab.
   if (
@@ -213,11 +263,13 @@ export function usePanelViews(contributions: RightPanelContribution[], pathname:
   const selectedResourceId =
     activeCategory === 'terminal'
       ? `resource/terminal/${terminal?.activeId}`
-      : activeCategory === 'browser'
-        ? `resource/${browserId}`
-        : activeCategory === 'canvas'
-          ? `resource/${canvasId}`
-          : activeCategory;
+      : activeCategory === 'local-browser'
+        ? localBrowserViewId
+        : activeCategory === 'browser'
+          ? `resource/${browserId}`
+          : activeCategory === 'canvas'
+            ? `resource/${canvasId}`
+            : activeCategory;
   const activeId =
     visible.find((v) => v.id === selectedResourceId)?.id ??
     visible.find((v) => v.category === activeCategory)?.id ??
@@ -236,7 +288,8 @@ export function usePanelViews(contributions: RightPanelContribution[], pathname:
       opened: [...new Set([...entry.opened, view.category])].slice(-100),
       closed: entry.closed.filter((v) => !closedKeys(id).includes(v)),
     }));
-    if (view.resource === 'document') reopenResource?.(closedKeys(id));
+    if (view.resource === 'document' || view.resource === 'browser')
+      reopenResource?.(closedKeys(id));
     setTerminalIntent(view.resource === 'terminal' ? { scope: terminalScope, id: view.id } : null);
     view.activate?.(source);
     setCategory(view.category);
@@ -269,6 +322,7 @@ export function usePanelViews(contributions: RightPanelContribution[], pathname:
         closed: [...new Set([...entry.closed, closedKey(id)])].slice(-100),
       });
       if (view?.resource === 'document') updatePreference?.(`documents:${resourceScope}`, update);
+      else if (view?.resource === 'browser') updatePreference?.(`browsers:${browserScope}`, update);
       else save(update);
     }
     if (id === activeId) {
@@ -290,10 +344,19 @@ export function usePanelViews(contributions: RightPanelContribution[], pathname:
       ...entry,
       closed: entry.closed.filter((id) => id !== activeCategory && !resourceKeys.includes(id)),
     }));
-    if (selectedResourceId && isDocument(selectedResourceId)) reopenResource?.(resourceKeys);
+    if (selectedResourceId && (isDocument(selectedResourceId) || isBrowser(selectedResourceId)))
+      reopenResource?.(resourceKeys);
     // Only a new category request, not a local close, reopens a view.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeCategory, selectedResourceId, selectedVersion, requested, resourceScope, key]);
+  }, [
+    activeCategory,
+    selectedResourceId,
+    selectedVersion,
+    requested,
+    resourceScope,
+    browserScope,
+    key,
+  ]);
 
   const activeDocumentId =
     activeCategory === 'browser' ? browserId : activeCategory === 'canvas' ? canvasId : null;

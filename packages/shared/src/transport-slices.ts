@@ -14,6 +14,7 @@ import type { AgentPauseTransport } from './transport-agent-pause.js';
 import type { HeartbeatTransport } from './transport-heartbeats.js';
 import type { RemoteAccessTransport } from './transport-remote-access.js';
 import type { ComputerTransport } from './transport-computers.js';
+import type { LocalBrowserTransport } from './transport-local-browser.js';
 import type { OnboardingTransport } from './transport-onboarding.js';
 import type { HistoryTransport } from './transport-history.js';
 
@@ -30,4 +31,5 @@ export interface TransportSlices
     RemoteAccessTransport,
     OnboardingTransport,
     ComputerTransport,
+    LocalBrowserTransport,
     HistoryTransport {}

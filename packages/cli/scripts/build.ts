@@ -422,6 +422,7 @@ async function buildCLI() {
       '@openai/codex-sdk',
       '@opencode-ai/sdk',
       '@ngrok/ngrok',
+      'playwright-core',
       '@asteasolutions/zod-to-openapi',
       'better-sqlite3',
       // node-pty is a native addon (.node + a spawn-helper binary) that esbuild
@@ -540,6 +541,7 @@ async function buildCLI() {
       '../server/index.js',
       '@inquirer/prompts',
       '@ngrok/ngrok',
+      'playwright-core',
       // better-sqlite3 is a native addon (.node) that esbuild cannot bundle.
       // Pulled into this bundle via `@dorkos/db` → the `dorkos auth` commands
       // (auth-instance.ts opens the local DB); resolves at runtime from the

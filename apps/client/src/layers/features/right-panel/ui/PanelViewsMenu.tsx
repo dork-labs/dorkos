@@ -35,6 +35,10 @@ export function PanelViewsMenu({
   onPinDocument?: () => void;
   documentPinned?: boolean;
 }) {
+  const browser =
+    views.find((view) => view.resource === 'browser') ??
+    views.find((view) => view.category === 'local-browser');
+  const menuViews = views.filter((view) => view.category !== 'local-browser' || view === browser);
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -52,14 +56,23 @@ export function PanelViewsMenu({
         className="max-h-[70dvh] min-w-48 overflow-y-auto [&_[role=menuitem]]:min-h-11 lg:[&_[role=menuitem]]:min-h-0"
       >
         <DropdownMenuLabel>Views</DropdownMenuLabel>
-        {views.map((view) => (
+        {menuViews.map((view) => (
           <DropdownMenuItem
             key={view.id}
             aria-current={view.id === activeId ? 'true' : undefined}
+            data-view-category={view.category}
+            aria-label={view.category === 'local-browser' ? 'Browser' : undefined}
             onSelect={() => onActivate(view.id)}
           >
             <ContributedIcon icon={view.icon} />
-            <span className="max-w-64 truncate">{view.title}</span>
+            <span className="max-w-64 truncate">
+              {view.category === 'local-browser' ? 'Browser' : view.title}
+            </span>
+            {view.category === 'local-browser' && view.resource === 'browser' && (
+              <span aria-hidden="true" className="text-muted-foreground max-w-40 truncate">
+                {view.title}
+              </span>
+            )}
             {view.id === activeId && (
               <span aria-hidden="true" className="ml-auto">
                 ✓
@@ -77,7 +90,7 @@ export function PanelViewsMenu({
           </>
         )}
         {onCreateBrowser && (
-          <DropdownMenuItem onSelect={onCreateBrowser}>New browser page</DropdownMenuItem>
+          <DropdownMenuItem onSelect={onCreateBrowser}>New page preview</DropdownMenuItem>
         )}
         {onCreateDocument && (
           <DropdownMenuItem onSelect={onCreateDocument}>New document</DropdownMenuItem>

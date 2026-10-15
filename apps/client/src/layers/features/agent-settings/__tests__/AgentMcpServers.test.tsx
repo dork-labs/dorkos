@@ -1399,15 +1399,21 @@ describe('AgentMcpServers', () => {
     expect(within(container).queryByText('Connecting…')).not.toBeInTheDocument();
   });
 
-  it('offers the signed-in browser until the agent has one, whatever it is named', async () => {
+  it('keeps configured browser servers without offering the superseded browser setup', async () => {
     const offered = createMockTransport({
       listAgentMcpServers: vi.fn().mockResolvedValue([managedServer]),
       getMcpConfig: vi.fn().mockResolvedValue({ servers: [] }),
     });
     const first = renderComponent(offered);
     await waitFor(() =>
-      expect(within(first.container).getByText('Signed-in browser')).toBeInTheDocument()
+      expect(within(first.container).getByText(managedServer.name)).toBeInTheDocument()
     );
+    expect(within(first.container).queryByText('Signed-in browser')).not.toBeInTheDocument();
+    expect(
+      within(first.container).queryByRole('button', { name: 'Give it the browser' })
+    ).not.toBeInTheDocument();
+    expect(offered.getAgentBrowserPreset).not.toHaveBeenCalled();
+    expect(offered.addAgentMcpServer).not.toHaveBeenCalled();
     first.unmount();
 
     const alreadyHas = createMockTransport({
@@ -1430,5 +1436,9 @@ describe('AgentMcpServers', () => {
       expect(within(second.container).getByText('my-browser')).toBeInTheDocument()
     );
     expect(within(second.container).queryByText('Signed-in browser')).not.toBeInTheDocument();
+    expect(alreadyHas.getAgentBrowserPreset).not.toHaveBeenCalled();
+    expect(alreadyHas.addAgentMcpServer).not.toHaveBeenCalled();
+    expect(alreadyHas.removeAgentMcpServer).not.toHaveBeenCalled();
+    expect(alreadyHas.disableAgentMcpServer).not.toHaveBeenCalled();
   });
 });

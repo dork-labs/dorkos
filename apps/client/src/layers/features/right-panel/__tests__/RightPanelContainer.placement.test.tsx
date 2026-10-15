@@ -28,8 +28,15 @@ const mockSetPlacement = vi.fn();
 vi.mock('../model/use-placement-here', () => ({
   usePlacementHere: () => mockHereState,
 }));
+vi.mock('@/layers/entities/session', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/layers/entities/session')>()),
+  useSessionId: () => [null, vi.fn()],
+}));
 vi.mock('@/layers/entities/room', () => ({ useRoom: () => ({ data: undefined }) }));
 vi.mock('@/layers/entities/computer', () => ({ useComputer: () => ({ data: undefined }) }));
+vi.mock('@/layers/entities/local-browser', () => ({
+  useLocalBrowserState: () => ({ data: undefined }),
+}));
 vi.mock('@/layers/entities/config', () => ({
   useConfig: () => ({ data: {} }),
   usePanelTabPlacements: () => mockSaved,

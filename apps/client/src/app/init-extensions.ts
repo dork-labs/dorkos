@@ -247,7 +247,7 @@ export function registerRightPanelTabs(register: RegisterFn): void {
 
   register('right-panel', {
     id: 'browser',
-    title: 'Browser',
+    title: 'Page previews',
     icon: Globe,
     component: lazy(() =>
       import('@/layers/features/canvas').then((m) => ({ default: m.BrowserContent }))
@@ -256,6 +256,19 @@ export function registerRightPanelTabs(register: RegisterFn): void {
       (pathname === '/session' || routeShowsRoom(pathname)) &&
       transport?.supportsWorkbenchServe === true,
     priority: 22,
+  });
+
+  register('right-panel', {
+    id: 'local-browser',
+    title: 'Browser',
+    icon: Globe,
+    component: lazy(() =>
+      import('@/layers/features/local-browser').then((m) => ({ default: m.LocalBrowserContent }))
+    ),
+    visibleWhen: ({ pathname, transport }) =>
+      (pathname === '/session' || routeShowsRoom(pathname)) &&
+      transport?.supportsWorkbenchServe === true,
+    priority: 23,
   });
 
   register('right-panel', {

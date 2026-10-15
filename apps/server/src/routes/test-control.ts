@@ -1,3 +1,5 @@
+import { configureLocalBrowserDriving } from '../services/runtimes/test-mode/local-browser-driving-scenario.js';
+import type { LocalBrowserService } from '../services/session/local-browser/service.js';
 import { RESPONSE_ALREADY_SENT } from '@hono/node-server/utils/response';
 import { Hono, type Context } from 'hono';
 import path from 'path';
@@ -62,6 +64,8 @@ export interface TestControlMesh {
  * never composes answers its route's own "unavailable" refusal.
  */
 export interface TestControlDeps {
+  /** The same live browser service handed to the human routes and runtime tools. */
+  localBrowser?: () => LocalBrowserService | undefined;
   /** The agent registry. */
   meshCore?: () => TestControlMesh | undefined;
   /** The request cards. */
@@ -168,6 +172,7 @@ async function holdWhileTheCallerWaits(
  */
 export function createTestControlRoutes(deps: TestControlDeps = {}): Hono<ApiEnv> {
   const router = new Hono<ApiEnv>();
+  configureLocalBrowserDriving(() => deps.localBrowser?.());
 
   /** Test-only owner-qualified replay barrier. Production never mounts these routes. */
   router.get('/community-subscription', (c) => {

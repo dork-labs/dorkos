@@ -511,7 +511,7 @@ Commands:
   uninstall <name>     Shorthand for marketplace uninstall
   update [<name>]      Shorthand for marketplace update (check; --apply to install)
   cache <sub>          Inspect the marketplace cache (list|prune|clear)
-  browser <sub>        Sign in once for your agents' browsers (login|status|forget)
+  browser <sub>        Inspect older saved sign-ins (status|forget)
   agent <sub>          Manage agents (list|show|create|update|permissions) — add --json for machine output
   permissions <sub>    See and change what agents may do (list|set|reset|history)
   task <sub>           Manage scheduled tasks (list|create|trigger|runs)

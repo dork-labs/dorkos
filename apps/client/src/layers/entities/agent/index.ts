@@ -20,7 +20,7 @@ export type { ExecutionException, ExecutionExceptions } from './model/use-execut
 export { useAgentVisual, resolveAgentVisual } from './model/use-agent-visual';
 export type { AgentVisual, AgentVisualSource } from './model/use-agent-visual';
 export { useMcpConfig } from './model/use-mcp-config';
-export { useAgentMcpServers, useAgentBrowserPreset } from './model/use-agent-mcp-servers';
+export { useAgentMcpServers } from './model/use-agent-mcp-servers';
 export {
   useAddAgentMcpServer,
   useImportAgentMcpServer,
