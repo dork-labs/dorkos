@@ -179,6 +179,7 @@ function FileEditor({
   const [draft, setDraft] = useState(loaded);
 
   const fileSave = useCanvasFileSave({
+    documentId,
     sourcePath: content.sourcePath,
     cwd,
     loadedContent: loaded,

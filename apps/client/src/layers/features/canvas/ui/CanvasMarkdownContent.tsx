@@ -77,6 +77,7 @@ export function CanvasMarkdownContent({
   const editing = isEditing && documentEditing;
 
   const fileSave = useCanvasFileSave({
+    documentId,
     sourcePath: content.sourcePath,
     cwd,
     loadedContent: content.content,
