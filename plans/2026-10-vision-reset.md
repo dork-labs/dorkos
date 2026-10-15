@@ -136,7 +136,7 @@ These replace most of the earlier headline copy. Ownership is said as "yours", n
 - Apart from the official community space, every space feature sits behind an experimental switch.
 - The rewrite takes about one to two weeks of doc, site and README work.
 
-**Changed 2026-10-15** (ADR `261015-042933`, spec `specs/everything-is-a-space/`): launch moves to late January 2027, with the Community Space soft launch kept on December 8, 2026. Cloud agent computers, web sign-up with the full app on the web, and team spaces on DorkOS Cloud are now launch scope; creating team spaces comes out from behind the experimental switch at the launch.
+**Changed 2026-10-15** (ADR `261015-042933`, spec `specs/everything-is-a-space/`): launch moves to late January 2027 (then to early February 2027, ADR `261015-125850`), with the Community Space soft launch kept on December 8, 2026. Cloud agent computers, web sign-up with the full app on the web, and team spaces on DorkOS Cloud are now launch scope; creating team spaces comes out from behind the experimental switch at the launch.
 
 ## Before launch: trust steps 1 to 3
 
