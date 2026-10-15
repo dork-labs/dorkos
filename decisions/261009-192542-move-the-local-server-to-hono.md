@@ -14,6 +14,8 @@ amends: [260916-210001]
 
 Accepted
 
+(2026-10-15) Amended by [261015-015818](261015-015818-extensions-serve-with-define-server-and-a-fetch-handler.md): Express left the extension host too (DOR-2861). The sentences below about the extension bridge describe the state before that.
+
 (2026-10-12) Implemented in full: the last route groups moved and Express left the server in DOR-2818. Every request now enters one Hono app (`apps/server/src/http/hono-api.ts`) through the front door (`http/front-door.ts`), and requests no route claims are answered by the chain itself (`http/unclaimed.ts`). Express runs only in the extension host's bridge (`services/extensions/http/express-bridge.ts`), and an ESLint rule keeps it there. The chain-parity matrix lives on as `http/__tests__/api-chain-matrix.test.ts`, holding the Hono chain to answers recorded from the Express chain before it was deleted.
 
 **Amends** [260916-210001](260916-210001-community-is-independent-hono-node-service.md): supersedes its sentence "Do not migrate the local Express server as part of this decision". [261006-235238](261006-235238-one-dorkos-server-in-every-size.md) already retired that clause as a direction; this ADR records how the move is done. Everything else in 260916-210001 (Hono on persistent Node, Better Auth, Drizzle/Postgres and the blob store for `apps/community`) stands.

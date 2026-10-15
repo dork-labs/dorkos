@@ -59,7 +59,6 @@ vi.mock('../extension-server-lifecycle.js', () => ({
       getHandler: vi.fn().mockReturnValue(null),
       toolStatuses: vi.fn().mockReturnValue(undefined),
       supervisedStatus: vi.fn().mockReturnValue({}),
-      usesOldRouter: vi.fn().mockReturnValue(false),
       resetRestarts: vi.fn(),
     };
   }),

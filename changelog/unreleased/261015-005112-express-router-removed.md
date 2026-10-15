@@ -5,8 +5,8 @@ covers:
 
 ### Removed
 
-- DorkOS no longer runs the old Express router for an extension's server part. An extension that still adds routes to it doesn't start, and its card in **Settings > Extensions** says "uses an old server style". Its page, settings and data are untouched. Ask an agent to update it: the change is small, and the agent knows how.
-- DorkOS no longer installs Express, so a fresh install is smaller.
+- DorkOS no longer runs the old Express router for an extension's server part. An extension that still adds routes to it, or imports Express itself, doesn't start, and its card in **Settings > Extensions** says "uses an old server style". Its page, settings and data are untouched. Ask an agent to update it: the change is small, and the agent knows how.
+- The part of DorkOS that runs an extension in its own process is about 1 MB smaller.
 
 ### Changed
 

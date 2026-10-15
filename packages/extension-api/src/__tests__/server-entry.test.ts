@@ -7,6 +7,7 @@ import {
   OLD_ROUTER_MESSAGE,
   OldRouterError,
   serverEntryStart,
+  UNWRAPPED_SERVER_MESSAGE,
   type ExtensionCaller,
 } from '../server-entry.js';
 
@@ -97,6 +98,19 @@ describe('serverEntryStart', () => {
     expect(failure).toBeInstanceOf(OldRouterError);
     expect((failure as OldRouterError).message).toBe(OLD_ROUTER_MESSAGE);
     expect((failure as OldRouterError).code).toBe('old_router');
+  });
+
+  it('tells a bare (ctx) => … entry to wrap itself, not that it uses the old router', async () => {
+    const start = serverEntryStart({
+      default: (ctx: { storage: unknown }) => ({ fetch: echo, storage: ctx.storage }),
+    })!;
+
+    const failure = await Promise.resolve()
+      .then(() => start(ctx))
+      .catch((err: unknown) => err);
+
+    expect(failure).toBeInstanceOf(TypeError);
+    expect((failure as Error).message).toBe(UNWRAPPED_SERVER_MESSAGE);
   });
 
   it('finds nothing in an entry with none', () => {

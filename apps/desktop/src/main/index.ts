@@ -389,7 +389,7 @@ if (!gotTheLock) {
       log.warn('[install] The install-location check failed; starting anyway.', err);
     }
 
-    // 1. Start Express in a UtilityProcess. On 4242 whenever that is free, so
+    // 1. Start the server in a UtilityProcess. On 4242 whenever that is free, so
     // the address stays the one the docs name; on a port someone pinned, or not
     // at all (see server-port.ts). A rejection here previously vanished
     // silently — Electron doesn't surface a rejected async 'ready' handler

@@ -15,6 +15,8 @@ Accepted
 
 Amended by [261005-105209](261005-105209-isolated-extension-server-halves-run-as-a-permission-model-subprocess.md) (DOR-2686): an extension may now ask to run its server half in its own process (`serverCapabilities.runtime: "subprocess"`), so the clause "runs in-process with no isolation boundary" no longer holds for every extension. This ADR is not superseded. In-process remains the default: an extension that does not ask to run separately is loaded exactly as described here, with full authority.
 
+Amended by [261015-015818](261015-015818-extensions-serve-with-define-server-and-a-fetch-handler.md) (DOR-2861): the Express router is retired. A server half default-exports `defineServer((ctx) => ({ fetch }))` and serves a web fetch handler; `register(router, ctx)` and the router injection described here no longer run. The optional `server.ts`, the scoped `DataProviderContext`, the `/api/ext/{id}/*` mount and in-process loading still stand.
+
 ## Context
 
 Extensions need server-side capabilities (external API calls, secrets, background tasks) but the current system is browser-only. Seven extension architectures were evaluated: VS Code (Extension Host process), Grafana (Go binary per plugin), Raycast (worker threads), Backstage (YAML proxy), Directus (Express router injection), Chrome (service worker), and Obsidian (Electron full access). DorkOS is a single-user local Express server with file-based extensions — the simplest model that provides full capability is the right choice.

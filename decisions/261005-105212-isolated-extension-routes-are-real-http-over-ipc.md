@@ -14,6 +14,8 @@ amends: null
 
 Accepted
 
+(2026-10-15) Since [261015-015818](261015-015818-extensions-serve-with-define-server-and-a-fetch-handler.md) (DOR-2861) the child serves the extension's fetch handler, not a router, and the person verdict reaches it as the handler's caller (`requirePerson()` or `checkPerson`): `ctx.requirePerson` is gone. The transport this ADR decides stands unchanged.
+
 ## Context
 
 The extension's Express router must stay at `/api/ext/<id>/*` with streaming intact. A Unix socket or named pipe needs a listen permission and a filesystem path and differs on Windows; serializing requests by hand reimplements HTTP badly. A request forwarded as-is would hand the person's session cookie to extension code, and through the tunnel a leaked cookie works from anywhere.

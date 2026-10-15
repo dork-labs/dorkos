@@ -76,7 +76,7 @@ let closeTabSubscriptions = 0;
  */
 contextBridge.exposeInMainWorld('electronAPI', {
   /**
-   * Get the port the Express server is listening on (synchronous), or `null`
+   * Get the port the DorkOS server is listening on (synchronous), or `null`
    * when it is not serving — during startup, after a crash, between restarts.
    * The main process answers with exactly what `getServerPort()` in
    * `server-process.ts` holds, so `null` is a normal answer and every caller

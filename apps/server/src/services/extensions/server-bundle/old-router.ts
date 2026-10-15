@@ -11,6 +11,24 @@ import type { ExtensionRecord } from '@dorkos/extension-api';
 import { OLD_ROUTER_MESSAGE, OldRouterError } from '@dorkos/extension-api/server';
 import { extensionServerErrorCopy } from '@dorkos/shared/extension-server-status';
 import { logger } from '../../../lib/logger.js';
+import type { CompilationError } from '../extension-build-cache.js';
+
+/**
+ * Turn a build that failed because the code imports `express`, which DorkOS
+ * no longer provides, into the old-router refusal; `null` for any other
+ * build failure. Nothing of that code ran.
+ *
+ * @param error - The compiler's failure.
+ * @param record - The extension's record, whose card the refusal is written to.
+ */
+export function refuseOldRouterBuild(
+  error: CompilationError,
+  record: ExtensionRecord
+): { ok: false; error: string } | null {
+  const texts = [error.message, ...error.errors.map((e) => e.text)];
+  const importsExpress = texts.some((text) => /Could not resolve "express(\/[^"]*)?"/.test(text));
+  return importsExpress ? refuseOldRouter(new OldRouterError(), record) : null;
+}
 
 /**
  * Turn a start failure into the old-router refusal, or `null` when it is any

@@ -40,6 +40,8 @@ export default defineServer((ctx) => {
 });
 \`\`\`
 
+- Always wrap the function in \`defineServer\`. A bare
+  \`export default (ctx) => ...\` does not start: DorkOS says to wrap it.
 - Routes are the path after \`/api/ext/<id>\`: \`app.get('/items')\` answers
   \`GET /api/ext/<id>/items\`.
 - \`requirePerson()\` keeps a route to people. Put it on every route that

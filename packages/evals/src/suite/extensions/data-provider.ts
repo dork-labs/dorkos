@@ -3,12 +3,12 @@
  * extension with its own small API, does an agent build a server half that
  * actually compiles, starts and answers?
  *
- * It exists to compare the two ways an extension's server half can serve HTTP:
- * an Express router (`register(router, ctx)` adds routes) and a fetch handler
- * (`register` returns `{ fetch }`, a Hono app works as is). The `data-provider`
- * template and the `get_extension_api` text teach one of them, and the SAME case
- * is run against each, so the prompt never names either. What the agent was
- * taught is the only thing that changes between the two runs.
+ * It was built to compare the two ways an extension's server half could serve
+ * HTTP before DorkOS dropped the Express router (DOR-2861): a router
+ * (`register(router, ctx)` added routes) and a fetch handler (a Hono app
+ * returned as `{ fetch }`). It now guards the one way. The prompt never names
+ * either, so what the `data-provider` template and the `get_extension_api`
+ * text teach was the only thing that changed between the runs below.
  *
  * **Why the approval is seeded, not decided.** A server half runs only after a
  * person approves that copy of the extension (`extension-load-policy.ts`): its id
@@ -32,7 +32,7 @@
  *    two strings;
  * 4. the same `PUT` sent as an agent (`x-dorkos-agent`) is refused with 403. The
  *    `/api` chain refuses nothing on that header, so a 403 can only come from the
- *    extension itself (`ctx.requirePerson` or `requirePerson()`);
+ *    extension itself (`requirePerson()`);
  * 5. the `PUT` sent as the person (no agent header; a credentialed eval server
  *    runs with login off, where that caller is the local operator) succeeds;
  * 6. a second `GET` returns exactly the list the person saved, so "saves" means

@@ -10,7 +10,7 @@ import { createStderrTail, type StderrTail } from './server-output';
 import { resolveChildPath } from './shell-path';
 
 /**
- * Spawning the desktop app's Express server as a child process.
+ * Spawning the desktop app's DorkOS server as a child process.
  *
  * This module knows how to *start* a server child — which runtime to use, what
  * entry script to run, and what environment to hand it. It deliberately knows

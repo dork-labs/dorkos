@@ -618,11 +618,14 @@ describe('ExtensionManager — server lifecycle', () => {
       const old = await manager.initializeServer('old-style');
       const fresh = await manager.initializeServer('new-style');
 
+      // Boot already tried it once; this start answers from that refusal.
       expect(old).toEqual({
         ok: false,
-        error:
-          'This extension uses the old router, which DorkOS no longer runs. Ask an agent to update it.',
+        error: 'old-style uses an old server style. Ask an agent to update it.',
       });
+      expect(vi.mocked(logger.warn).mock.calls.flat().join('\n')).toContain(
+        'This extension uses the old router, which DorkOS no longer runs. Ask an agent to update it.'
+      );
       expect(manager.getServerHandler('old-style')).toBeNull();
       const card = manager.listPublic().find((r) => r.id === 'old-style');
       expect(card?.serverError).toEqual({
@@ -633,6 +636,73 @@ describe('ExtensionManager — server lifecycle', () => {
       expect(card?.error).toBeUndefined();
       // An older entry that leaves the router alone still starts.
       expect(fresh).toEqual({ ok: true });
+    });
+
+    it('says an extension that imports express uses an old server style', async () => {
+      const record = makeRecord('express-import', {
+        status: 'compiled',
+        hasServerEntry: true,
+        serverEntryPath: '/fake/extensions/express-import/server.ts',
+      });
+      mockDiscover.mockResolvedValue([record]);
+      mockCompile.mockResolvedValue({ code: 'bundle', sourceHash: 'hash' });
+      mockCompileServer.mockResolvedValue({
+        error: {
+          code: 'compilation_failed',
+          message: 'Server compilation failed for express-import',
+          errors: [{ text: 'Could not resolve "express"' }],
+        },
+        sourceHash: 'srvhash',
+      });
+      mockConfigGet.mockReturnValue({ enabled: [], disabled: [], ...approved(['express-import']) });
+
+      await manager.initialize(null);
+
+      expect(await manager.initializeServer('express-import')).toEqual({
+        ok: false,
+        error:
+          'This extension uses the old router, which DorkOS no longer runs. Ask an agent to update it.',
+      });
+      expect(manager.listPublic().find((r) => r.id === 'express-import')?.serverError).toEqual({
+        code: 'server_old_router',
+        message: 'express-import uses an old server style. Ask an agent to update it.',
+      });
+    });
+
+    it('runs refused old-router code only once until the code changes', async () => {
+      const record = makeRecord('old-once', {
+        status: 'compiled',
+        hasServerEntry: true,
+        serverEntryPath: '/fake/extensions/old-once/server.ts',
+      });
+      mockDiscover.mockResolvedValue([record]);
+      mockCompile.mockResolvedValue({ code: 'bundle', sourceHash: 'hash' });
+      const ran = vi.fn();
+      (globalThis as { __oldOnceRan?: () => void }).__oldOnceRan = ran;
+      mockCompileServer.mockResolvedValue({
+        code: `module.exports = function register(router) { globalThis.__oldOnceRan(); router.get('/x', () => {}); };`,
+        sourceHash: 'old-hash',
+      });
+      mockConfigGet.mockReturnValue({ enabled: [], disabled: [], ...approved(['old-once']) });
+
+      await manager.initialize(null);
+      await manager.initializeServer('old-once');
+      const again = await manager.initializeServer('old-once');
+
+      expect(ran).toHaveBeenCalledTimes(1);
+      expect(again).toEqual({
+        ok: false,
+        error: 'old-once uses an old server style. Ask an agent to update it.',
+      });
+
+      // New code is a fresh start: it runs, and the old card goes.
+      mockCompileServer.mockResolvedValue({
+        code: `module.exports = { default: { fetch: () => new Response('ok') } };`,
+        sourceHash: 'new-hash',
+      });
+      expect(await manager.initializeServer('old-once')).toEqual({ ok: true });
+      expect(manager.listPublic().find((r) => r.id === 'old-once')?.serverError).toBeUndefined();
+      delete (globalThis as { __oldOnceRan?: () => void }).__oldOnceRan;
     });
 
     it('serves a server entry that exports only a fetch handler', async () => {

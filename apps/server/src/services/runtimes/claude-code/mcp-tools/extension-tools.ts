@@ -293,8 +293,8 @@ Proxy routes are auto-mounted at \`/api/ext/{id}/proxy/*\`.
 }
 \`\`\`
 
-Bind each tool in \`register()\`: \`ctx.tools.handle('send_message', async (input, call) => ({ sent: true }))\`.
-Agents see \`ext_<id, - as _>__<name>\` once register() finishes; it goes when the extension stops.
+Bind each tool while \`defineServer\` starts: \`ctx.tools.handle('send_message', async (input, call) => ({ sent: true }))\`.
+Agents see \`ext_<id, - as _>__<name>\` once it has started; it goes when the extension stops.
 Name tools by that bare name in skills. \`name\`: lowercase words joined by single underscores;
 \`mcp__dorkos__ext_<id>__<name>\` fits 64 chars. \`tier\`: observe | act (can be set to ask) |
 destructive (asks every call). \`inputSchema\`: closed JSON Schema; every object sets

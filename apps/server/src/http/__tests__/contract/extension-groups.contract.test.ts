@@ -1202,13 +1202,19 @@ export default defineServer(() => ({ fetch: ${DESCRIBE_REQUEST}, cleanup() {} })
   });
 
   it('does not start an extension that touches the old router, and still loads its page', async () => {
+    // Approving starts it once, which is refused; asking again answers from
+    // that refusal and runs none of its code.
     await setup(server, 'POST', `/api/extensions/${OLD_ROUTER}/approve`, {});
     await check(server, {
       method: 'POST',
       path: `/api/extensions/${OLD_ROUTER}/init-server`,
       body: {},
-      expect: { status: 400, body: { error: OLD_ROUTER_MESSAGE } },
+      expect: {
+        status: 400,
+        body: { error: `${OLD_ROUTER} uses an old server style. Ask an agent to update it.` },
+      },
     });
+    expect(server?.log()).toContain(OLD_ROUTER_MESSAGE);
     // Neither the router it filled nor the fetch handler it returned is served.
     for (const below of ['/from-router', '/items']) {
       await check(server, {

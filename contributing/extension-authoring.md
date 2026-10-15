@@ -736,7 +736,7 @@ export default defineServer((ctx) => {
 });
 ```
 
-`ctx` is a `DataProviderContext` with secrets, settings, storage, scheduling, and event emission (see below). The function returns nothing, a cleanup function, or `{ fetch, cleanup }`; see [Route Conventions](#route-conventions).
+`ctx` is a `DataProviderContext` with secrets, settings, storage, scheduling, and event emission (see below). Wrap the function in `defineServer`: a bare `export default (ctx) => …` is read as an older `register(router, ctx)`, so it does not start and says "This server entry takes ctx directly. Wrap it: …". The function returns nothing, a cleanup function, or `{ fetch, cleanup }`; see [Route Conventions](#route-conventions).
 
 Server-side code is compiled to CommonJS (Node.js target) by the host using esbuild. TypeScript is supported out of the box.
 

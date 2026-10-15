@@ -141,9 +141,40 @@ export class OldRouterError extends Error {
   }
 }
 
+/**
+ * The `ctx` members, so a server entry written as a bare `(ctx) => …` that
+ * reads one from the router it is handed is told to wrap itself in
+ * {@link defineServer}, not that it uses the old router.
+ */
+const CTX_MEMBERS = new Set([
+  'secrets',
+  'settings',
+  'storage',
+  'schedule',
+  'emit',
+  'extensionId',
+  'extensionDir',
+  'dorkHome',
+  'filesDir',
+  'accounts',
+  'projects',
+  'inbox',
+  'projectSettings',
+  'sessions',
+  'agent',
+  'tools',
+]);
+
+/** What a bare `(ctx) => …` server entry stops with. */
+export const UNWRAPPED_SERVER_MESSAGE =
+  'This server entry takes ctx directly. Wrap it: export default defineServer((ctx) => { ... }).';
+
 /** The router an older `register(router, ctx)` is handed: touching it throws. */
 const RETIRED_ROUTER: unknown = new Proxy(Object.freeze({}), {
-  get() {
+  get(_target, key) {
+    if (typeof key === 'string' && CTX_MEMBERS.has(key)) {
+      throw new TypeError(UNWRAPPED_SERVER_MESSAGE);
+    }
     throw new OldRouterError();
   },
   set() {

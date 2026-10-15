@@ -38,8 +38,6 @@ import type { CapabilityRegistry } from '../core/capabilities/registry.js';
 import { checkDeclaredTools } from '@dorkos/extension-api/tool-check';
 import { readRegisterResult, serverEntryStart } from '@dorkos/extension-api/server';
 import { RunningExtensionTools, type ToolBinding } from './agent-tools/tool-binding.js';
-import { extensionDeclarationDigest } from './agent-tools/declaration-digest.js';
-import { isolationKeyOf } from './isolation/isolation-view.js';
 import { extensionServerErrorCopy } from '@dorkos/shared/extension-server-status';
 import {
   IsolatedExtensionHost,
@@ -49,53 +47,11 @@ import {
 import type { IsolatedStartErrorCode } from './isolation/start-refusal.js';
 import { resolveChildEntry } from './isolation/child-entry.js';
 import { loadInProcessBundle } from './server-bundle/load-in-process.js';
-import { refuseOldRouter } from './server-bundle/old-router.js';
+import { refuseOldRouter, refuseOldRouterBuild } from './server-bundle/old-router.js';
+import { buildSourceKey, runsSeparately } from './server-bundle/source-key.js';
 import { createIsolatedHandler } from './isolation/isolated-router.js';
 import { RestartPolicy, type RestartPolicyOptions } from './isolation/restart-policy.js';
 import { env } from '../../env.js';
-
-/**
- * Everything the running instance of an extension was built from, as one
- * comparable string: the directory it was read from, the manifest fields that
- * decide what gets mounted, and — for an extension with a server entry — the
- * content hash of its compiled server bundle.
- *
- * This is what makes {@link ExtensionServerLifecycle.initialize} idempotent. The
- * client asks the server to initialize every server-side extension on every page
- * load and every tab, and before this each of those tore the extension down and
- * re-evaluated its module (DOR-1336).
- *
- * The server bundle's hash is the one that matters, not `record.sourceHash` —
- * that field is the CLIENT bundle's hash, which answers a different question and
- * would have missed an edited `server.ts`.
- *
- * The manifest's tool and skill declarations are covered too
- * ({@link extensionDeclarationDigest}): a running instance's tools are the
- * ones its manifest declared when it started, so a changed declaration needs
- * a restart to take effect (DOR-2685).
- *
- * The bundle hash covers everything `server.ts` imports, because it is the
- * hash of the bundled output (`ExtensionCompiler.compileServer`, DOR-2491): an
- * edit to a helper module changes the bundle and so restarts the extension,
- * while an edit that leaves the output identical does not.
- *
- * @param record - The extension's discovery record.
- * @param serverSourceHash - Content hash of the compiled server bundle, or
- *   `null` for a proxy-only extension (there is no server source to hash).
- */
-function buildSourceKey(record: ExtensionRecord, serverSourceHash: string | null): string {
-  return JSON.stringify({
-    path: path.resolve(record.path),
-    runPath: record.runPath ?? null,
-    version: record.manifest.version,
-    serverEntryPath: record.serverEntryPath ?? null,
-    dataProxy: record.manifest.dataProxy ?? null,
-    declarations: extensionDeclarationDigest(record.manifest),
-    isolation: isolationKeyOf(record),
-    separate: runsSeparately(record),
-    serverSourceHash,
-  });
-}
 
 /**
  * How long an extension's server `register()` may take to finish.
@@ -364,6 +320,9 @@ export class ExtensionServerLifecycle {
     // Compile server bundle
     const compiled = await this.compiler.compileServer(record);
     if ('error' in compiled) {
+      // Imports `express`, which DorkOS no longer provides (DOR-2861).
+      const oldRouter = refuseOldRouterBuild(compiled.error, record);
+      if (oldRouter) return oldRouter;
       // The compile now happens before the teardown, so a broken `server.ts`
       // leaves the previous version answering requests. Say so on the record —
       // an extension quietly serving code that no longer matches its source must
@@ -398,11 +357,12 @@ export class ExtensionServerLifecycle {
     }
 
     // An isolated extension that stopped on its own waits for its restart,
-    // or, after too many, for a person: the client asks every page load to
-    // start every server half, and that must not undo either. New code or a
-    // new manifest is a fresh start; so is a reload, enable or approval
-    // (`resetRestarts`).
-    if (runsSeparately(record) && !active) {
+    // or, after too many, for a person; one refused for the old router waits
+    // for new code (DOR-2861). The client asks every page load to start every
+    // server half, and that must not undo either, nor run refused code again.
+    // New code or a new manifest is a fresh start; so is a reload, enable or
+    // approval (`resetRestarts`).
+    if (!active) {
       const name = record.manifest.name;
       if (this.restartTimers.has(id)) {
         return { ok: false, error: `Restarting ${name}…` };
@@ -410,6 +370,8 @@ export class ExtensionServerLifecycle {
       if (this.gaveUp.get(id) === sourceKey) {
         return { ok: false, error: this.supervised.get(id)?.serverError?.message ?? 'Stopped' };
       }
+      // New code: what was said about the old code no longer holds.
+      if (this.gaveUp.has(id)) this.resetRestarts(id);
     }
 
     // Shut down the stale instance before its replacement takes over
@@ -423,6 +385,8 @@ export class ExtensionServerLifecycle {
 
     if (runsSeparately(record)) return this.startIsolated(id, record, tempFile, sourceKey);
 
+    // Whatever the card said about an earlier attempt; this one says its own.
+    record.serverError = undefined;
     let registered: (() => void) | undefined;
     let closeTools: (() => void) | undefined;
     try {
@@ -542,7 +506,7 @@ export class ExtensionServerLifecycle {
       closeTools?.();
       // Written for the Express router DorkOS no longer runs (DOR-2861).
       const oldRouter = refuseOldRouter(err, record);
-      if (oldRouter) return oldRouter;
+      if (oldRouter) return this.holdRefused(id, sourceKey, record, oldRouter);
       logger.error(`[Extensions] Server init failed for ${id}:`, err);
       return { ok: false, error: err instanceof Error ? err.message : String(err) };
     }
@@ -723,7 +687,10 @@ export class ExtensionServerLifecycle {
       logger.warn(
         `[Extensions] Isolated start refused for ${id}: ${result.code}: ${result.message}`
       );
-      return { ok: false, error: record.serverError.message };
+      const refused = { ok: false as const, error: record.serverError.message };
+      return result.code === 'server_old_router'
+        ? this.holdRefused(id, sourceKey, record, refused)
+        : refused;
     }
 
     // Starting waited; a turn-off or revoke meanwhile wins.
@@ -879,6 +846,22 @@ export class ExtensionServerLifecycle {
   }
 
   /**
+   * Keep a start refused for the old router until the code changes, so the
+   * client's start on every page load answers from here and never runs that
+   * code again; a reload, enable or approval lifts it (`resetRestarts`).
+   *
+   * @param id - The extension id.
+   * @param sourceKey - What the refused instance was built from.
+   * @param record - Its record, carrying the card's `serverError`.
+   * @param refused - The answer to give.
+   */
+  private holdRefused<T>(id: string, sourceKey: string, record: ExtensionRecord, refused: T): T {
+    this.gaveUp.set(id, sourceKey);
+    if (record.serverError) this.supervised.set(id, { serverError: record.serverError });
+    return refused;
+  }
+
+  /**
    * What an isolated extension's card says between starts (a pending
    * restart, or the stop after too many crashes), laid over its record by
    * `ExtensionManager`. Empty for everything else.
@@ -940,17 +923,6 @@ async function settleWithin<T>(
   } finally {
     if (timer) clearTimeout(timer);
   }
-}
-
-/**
- * Whether an extension's server half runs in its own process: its manifest
- * asks for it, or discovery says so. Either one is enough, so a record
- * missing its isolation view is refused rather than run inside DorkOS.
- *
- * @param record - The extension's discovery record.
- */
-function runsSeparately(record: ExtensionRecord): boolean {
-  return record.manifest.serverCapabilities?.runtime === 'subprocess' || !!record.isolation;
 }
 
 /**

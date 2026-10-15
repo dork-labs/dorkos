@@ -15,8 +15,10 @@
  * The `serverError` codes that mean an extension's server half is stopped
  * and nothing of it is serving: it stopped on its own (an extension that runs
  * separately), it can't run with its limits here, it never finished
- * starting, or it is written for the Express router DorkOS no longer runs. The card shows the sentence with a Reload action. A failed
- * rebuild while the old version keeps serving is not one of these.
+ * starting, or it is written for the Express router DorkOS no longer runs.
+ * The card shows the sentence with a Reload action (for the old router,
+ * Reload helps once its code is updated). A failed rebuild while the old
+ * version keeps serving is not one of these.
  */
 export const EXTENSION_SERVER_ERROR_CODES = [
   'server_crashed',

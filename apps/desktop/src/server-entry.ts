@@ -10,7 +10,7 @@
  * Ambient shadow for `@dorkos/server`.
  *
  * The dynamic `import('@dorkos/server')` below exists purely to trigger the
- * module's side effect (starting the Express server) — its exports are
+ * module's side effect (starting the DorkOS server) — its exports are
  * never used. `@dorkos/server`'s package.json maps its `.` export straight
  * to TypeScript source, so without this shadow `tsc` traces the entire
  * server source tree as part of this program, which compiles under a

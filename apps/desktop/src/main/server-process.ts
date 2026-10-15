@@ -8,7 +8,7 @@ import { recoverFromCrash } from './server-crash-recovery';
 import { describeLogLocation } from './log-location';
 
 /**
- * Supervisor for the Express server the desktop shell runs as a child process.
+ * Supervisor for the DorkOS server the desktop shell runs as a child process.
  *
  * Everything about the child's liveness lives in one place here, because the
  * previous arrangement inferred it three different ways — a `child` reference,
@@ -234,7 +234,7 @@ function reportCrash(code: number | null, output: string[], uptimeMs: number): v
 }
 
 /**
- * Start the Express server in an isolated process and wait for it to report
+ * Start the DorkOS server in an isolated process and wait for it to report
  * itself ready.
  *
  * Once ready, the child is supervised: any exit that {@link stopServer} did

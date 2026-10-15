@@ -624,6 +624,7 @@ export {
   OLD_ROUTER_MESSAGE,
   OldRouterError,
   readRegisterResult,
+  UNWRAPPED_SERVER_MESSAGE,
   requirePerson,
   serverEntryStart,
 } from './server-entry.js';
