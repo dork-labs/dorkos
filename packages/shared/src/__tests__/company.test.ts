@@ -86,6 +86,7 @@ const LITERAL_NAME_ALLOWED = [
   'apps/desktop/electron-builder.yml',
   'apps/desktop/package.json',
   'apps/desktop/src/main/__tests__/about.test.ts',
+  'apps/site/src/app/(public)/cloud/terms/__tests__/page.test.tsx', // Pins the published legal page.
   'packages/connector-providers/LICENSE',
   'packages/doe/LICENSE', // Standalone license text cannot import the company module.
   'packages/shared/src/company.ts',
