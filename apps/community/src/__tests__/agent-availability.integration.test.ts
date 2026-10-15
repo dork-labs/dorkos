@@ -14,6 +14,7 @@ import {
   CommunityWireMemberListResponseSchema,
 } from '@dorkos/shared/community-wire';
 import { readUsage } from '../host/limits.js';
+import { hashSecret } from '../security.js';
 import {
   admit,
   bootstrapHost,
@@ -23,6 +24,7 @@ import {
   type TenancyHarness,
   type TenancyMember,
 } from './tenancy-test-harness.js';
+import { AVAILABILITY_RECORD_AFTER_SECONDS } from '../routes/community/agents/availability.js';
 
 let h: TenancyHarness;
 let communityId = '';
@@ -161,6 +163,31 @@ describe('reporting', () => {
     await reported(laptop, [{ agentId, runsOn: 'computer' }]);
   });
 
+  it('writes no agent row and no grant row for reports inside the window', async () => {
+    // Purpose: fails if a report sooner than half the interval after the last recorded one
+    // rewrites the agent's row, or if every call rewrites the grant's last-used time.
+    const versions = async () => ({
+      agent: (await h.pool.query('SELECT xmin::text FROM agents WHERE id=$1', [agentId])).rows[0],
+      grant: (
+        await h.pool.query('SELECT xmin::text FROM connection_grants WHERE token_hash=$1', [
+          hashSecret(laptop),
+        ])
+      ).rows[0],
+    });
+    // Recorded inside the window; this report may still date the grant's last use.
+    await lastReportedSecondsAgo(agentId, AVAILABILITY_RECORD_AFTER_SECONDS / 2);
+    await reported(laptop, [{ agentId, runsOn: 'computer' }]);
+    const before = await versions();
+    await reported(laptop, [{ agentId, runsOn: 'computer' }]);
+    await reported(laptop, [{ agentId, runsOn: 'computer' }]);
+    expect(await versions()).toEqual(before);
+    // Past the window, the next report writes again.
+    await lastReportedSecondsAgo(agentId, AVAILABILITY_RECORD_AFTER_SECONDS + 5);
+    const stale = await versions();
+    await reported(laptop, [{ agentId, runsOn: 'computer' }]);
+    expect((await versions()).agent).not.toEqual(stale.agent);
+  });
+
   it('carries availability only: a report with anything more is refused whole', async () => {
     // Purpose: fails if a report could carry names, runtime or model details into the space.
     const before = await stored(agentId);
@@ -182,6 +209,25 @@ describe('reporting', () => {
       body: { agents: [{ agentId, runsOn: 'computer' }] },
     });
     expect(signedIn.status).toBe(401);
+  });
+});
+
+describe('overlapping reports', () => {
+  it('naming the same agents in opposite orders all succeed', async () => {
+    // Purpose: fails if two reports lock the same agents in different orders and one dies in a
+    // deadlock. Timing-dependent, so it can pass by luck without the id-order lock; it is here so
+    // a regression that makes the deadlock likely shows up.
+    const many = await pairInstall(h, communityId, owner.cookie);
+    const ids: string[] = [];
+    for (let i = 0; i < 12; i++) ids.push(await enroll(many, `crowd-${i}`));
+    for (let round = 0; round < 5; round++) {
+      await h.pool.query('UPDATE agents SET last_seen_at=NULL WHERE id=ANY($1::uuid[])', [ids]);
+      const forward = ids.map((id) => ({ agentId: id, runsOn: 'computer' }));
+      const answers = await Promise.all(
+        Array.from({ length: 6 }, (_, i) => report(many, i % 2 ? [...forward].reverse() : forward))
+      );
+      expect(answers.map((answer) => answer.status)).toEqual(Array(6).fill(200));
+    }
   });
 });
 
@@ -237,6 +283,69 @@ describe('a report for an agent the installation did not enroll', () => {
     const back = await enroll(laptop, 'leaving');
     expect(back).toBe(leaving);
     expect(await rowOf(back)).toMatchObject({ lastSeenAt: null, availability: 'unknown' });
+  });
+});
+
+describe('an agent of the same person whose installation was disconnected', () => {
+  it('is accepted from their new installation, without being taken over', async () => {
+    // Purpose: fails if an orphaned agent (its enrolling grant revoked) cannot be reported by the
+    // person's reconnected installation, which would show it offline after every reconnect.
+    const old = await pairInstall(h, communityId, owner.cookie);
+    const orphan = await enroll(old, 'orphaned');
+    const oldGrant = (
+      await h.pool.query<{ id: string }>('SELECT id FROM connection_grants WHERE token_hash=$1', [
+        hashSecret(old),
+      ])
+    ).rows[0]!.id;
+    await expectStatus(
+      await h.call(`${tenant()}/me/grants/${oldGrant}`, { method: 'DELETE', cookie: owner.cookie }),
+      204,
+      'disconnect the old installation'
+    );
+    const fresh = await pairInstall(h, communityId, owner.cookie);
+    expect(await reported(fresh, [{ agentId: orphan, runsOn: 'computer' }])).toMatchObject({
+      accepted: [orphan],
+    });
+    const row = await h.pool.query('SELECT enrolled_by_grant_id FROM agents WHERE id=$1', [orphan]);
+    expect(row.rows[0].enrolled_by_grant_id).toBe(oldGrant);
+    expect((await rowOf(orphan)).availability).toBe('available');
+  });
+});
+
+describe('the space’s lifecycle', () => {
+  async function setLifecycle(sql: string) {
+    await h.pool.query(`UPDATE communities SET ${sql} WHERE id=$1`, [communityId]);
+  }
+  const active =
+    "lifecycle='active',held_from_state=NULL,held_at=NULL,suspended_from_state=NULL,suspended_at=NULL";
+
+  it('still takes reports while the host holds the space', async () => {
+    // Purpose: fails if a hold, which stops growth, also stops presence, so every agent in a held
+    // space would show offline.
+    await setLifecycle("lifecycle='held',held_from_state='active',held_at=now()");
+    try {
+      await lastReportedSecondsAgo(agentId, AVAILABILITY_RECORD_AFTER_SECONDS + 5);
+      const before = (await stored(agentId)).last_seen_at!;
+      expect(await reported(laptop, [{ agentId, runsOn: 'computer' }])).toMatchObject({
+        accepted: [agentId],
+      });
+      expect((await stored(agentId)).last_seen_at!.getTime()).toBeGreaterThan(before.getTime());
+    } finally {
+      await setLifecycle(active);
+    }
+  });
+
+  it('refuses reports while the space is suspended', async () => {
+    // Purpose: fails if a suspended space, which answers nothing else, still records presence.
+    await setLifecycle("lifecycle='suspended',suspended_from_state='active',suspended_at=now()");
+    try {
+      const before = await stored(agentId);
+      const response = await report(laptop, [{ agentId, runsOn: 'agent-computer' }]);
+      expect(response.status).toBe(503);
+      expect(await stored(agentId)).toEqual(before);
+    } finally {
+      await setLifecycle(active);
+    }
   });
 });
 

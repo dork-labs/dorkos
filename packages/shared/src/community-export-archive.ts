@@ -66,6 +66,12 @@ export const CommunityExportAgentRowSchema = z.strictObject({
   active: z.boolean(),
   created_at: timestamp,
   revoked_at: timestamp.nullable(),
+  /**
+   * Where the agent last ran and when its app last reported it (DOR-2877); null before a report,
+   * absent from archives written before availability. An import does not restore them.
+   */
+  runs_on: z.enum(['computer', 'agent-computer']).nullable().optional(),
+  last_seen_at: timestamp.nullable().optional(),
 });
 /** One `channel-members/NNNNNN.ndjson` line: a person's membership of a channel. */
 export const CommunityExportChannelMemberRowSchema = z.strictObject({

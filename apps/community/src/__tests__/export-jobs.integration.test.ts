@@ -83,8 +83,9 @@ describe('version 2 archive', () => {
       [community.communityId, icon.key]
     );
     const agent = await h.pool.query<{ id: string }>(
-      `INSERT INTO agents(community_id,owner_member_id,display_name,handle)
-       VALUES($1,$2,'Manifest Bot','manifest-bot') RETURNING id`,
+      `INSERT INTO agents(community_id,owner_member_id,display_name,handle,runs_on,last_seen_at)
+       VALUES($1,$2,'Manifest Bot','manifest-bot','agent-computer',
+         '2026-10-15T12:00:00Z') RETURNING id`,
       [community.communityId, bob.memberId]
     );
     await h.pool.query(
@@ -185,6 +186,14 @@ describe('version 2 archive', () => {
         .rows<{ channel_id: string; member_id: string }>('channelMembers')
         .map(({ channel_id, member_id }) => ({ channel_id, member_id }))
     ).toEqual(memberships.rows);
+    // Where the agent ran and when it was last there go with it, as erasure clears them (DOR-2877).
+    expect(archive.rows('agents')).toEqual([
+      expect.objectContaining({
+        id: agent.rows[0].id,
+        runs_on: 'agent-computer',
+        last_seen_at: '2026-10-15T12:00:00.000Z',
+      }),
+    ]);
     expect(archive.rows<{ agent_id: string }>('agentChannelMembers')).toEqual([
       expect.objectContaining({ agent_id: agent.rows[0].id, channel_id: community.channelId }),
     ]);

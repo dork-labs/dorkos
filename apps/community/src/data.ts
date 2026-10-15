@@ -138,9 +138,12 @@ export async function requireConnectionGrant(
     !archivedReadAllowed(tenant.lifecycle, scope, member.scopes)
   )
     throw lifecycleError(tenant.lifecycle);
-  await pool.query('UPDATE connection_grants SET last_used_at=now() WHERE id=$1', [
-    member.grant_id,
-  ]);
+  // At most once a minute, as on the bearer path below: an app's heartbeat calls this every
+  // few minutes per space, and a write per call bought nothing a minute's precision does not.
+  await pool.query(
+    "UPDATE connection_grants SET last_used_at=now() WHERE id=$1 AND (last_used_at IS NULL OR last_used_at<now()-interval '1 minute')",
+    [member.grant_id]
+  );
   return {
     member,
     tokenHash,

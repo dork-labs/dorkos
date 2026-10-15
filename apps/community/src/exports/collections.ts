@@ -119,7 +119,8 @@ function specs(scope: ExportJobScope): CollectionSpec[] {
     {
       key: 'agents',
       prefix: 'agents',
-      select: `SELECT a.id,a.owner_member_id,a.display_name,a.handle,a.active,a.created_at,a.revoked_at
+      select: `SELECT a.id,a.owner_member_id,a.display_name,a.handle,a.active,a.created_at,a.revoked_at,
+          a.runs_on,a.last_seen_at
         FROM agents a WHERE a.community_id=$1 ${owner ? '' : 'AND a.owner_member_id=$2'}`,
       keys: [uuidKey('a.id', 'id')],
       line: (row) =>
@@ -131,6 +132,8 @@ function specs(scope: ExportJobScope): CollectionSpec[] {
           active: row.active,
           created_at: iso(row.created_at),
           revoked_at: iso(row.revoked_at),
+          runs_on: row.runs_on,
+          last_seen_at: iso(row.last_seen_at),
         }),
     },
     {

@@ -11,7 +11,6 @@ import {
   CommunityWireMemberListResponseSchema,
   CommunityWireMemberResponseSchema,
   CommunityWireMemberRoleUpdateRequestSchema,
-  communityAgentAvailability,
   type CommunityWireChannel,
 } from '@dorkos/shared/community-wire';
 import type { CommunityAuth } from '../../auth.js';
@@ -236,7 +235,6 @@ export function registerChannelRoutes(
     if (!channel.joined) throw new ApiError(403, 'FORBIDDEN', 'Join this channel first.');
     const rows = await channelRoster(pool, channel.id, member.community_id);
     await assertPrincipalCurrent(c, auth, pool, member, 'read');
-    const now = new Date();
     return json(c, CommunityWireMemberListResponseSchema, {
       members: rows.map((row) => ({
         memberId: row.id,
@@ -251,7 +249,7 @@ export function registerChannelRoutes(
           ? {
               runsOn: row.runs_on,
               lastSeenAt: row.last_seen_at?.toISOString() ?? null,
-              availability: communityAgentAvailability(row.last_seen_at, now),
+              availability: row.availability ?? 'unknown',
             }
           : {}),
       })),
