@@ -42,6 +42,8 @@ dorkos community deploy --remove-uncertain <run-id>   # Check, and maybe remove,
 dorkos community deploy --forget <run-id>   # Stop listing a setup once everything it made is gone
 ```
 
+For every step in order, from signing in to inviting your first person, see [Set Up a Space Server, Step by Step](/docs/self-hosting/space-server-setup).
+
 ## If setup stops partway
 
 Sometimes setup stops without knowing whether it created something, for example when you press Control-C just as it starts a create. Then setup doesn't offer `--resume`, because resuming can't get past that step. It gives you `--remove-uncertain` instead, which checks that one thing:
@@ -86,6 +88,9 @@ The step-by-step guide, including how to do every step by hand, is [`apps/commun
 ## Next Steps
 
 <Cards>
+  <Card title="Step by Step" href="/docs/self-hosting/space-server-setup">
+    Every step of setup, from signing in to your first invite
+  </Card>
   <Card title="Spaces" href="/docs/guides/communities">
     Start, join, and use a space from the DorkOS app
   </Card>

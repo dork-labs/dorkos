@@ -808,6 +808,14 @@
       ]
     },
     {
+      "doc": "docs/self-hosting/space-server-setup.mdx",
+      "description": "Step-by-step `dorkos community deploy` walkthrough: plan, consent, stops and resume, owner setup, first invite, connecting DorkOS, removal",
+      "patterns": [
+        "packages/cli/src/commands/community-deploy/",
+        "apps/community/src/browser/components/(Admission|Manage)"
+      ]
+    },
+    {
       "doc": "docs/account/index.mdx",
       "description": "DorkOS accounts + device-linking self-hosted instances",
       "patterns": [
