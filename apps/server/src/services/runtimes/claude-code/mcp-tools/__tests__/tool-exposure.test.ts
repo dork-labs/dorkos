@@ -560,8 +560,11 @@ describe('in-session tool exposure', () => {
     // turn calls it, and the beat prompt names it so that turn can search.
     // 129 -> 130 for `heartbeat_status` (spec `heartbeats` §10 PR 6), DEFERRED:
     // reading an agent's heartbeat is a deliberate step a turn can search for.
-    expect(tools).toHaveLength(130);
-    expect(deferred).toHaveLength(119);
+    // 130 -> 131 for `connectors_cancel_held_action` (spec
+    // `trusted-by-default-flip` §5.6), DEFERRED: cancelling another agent's
+    // held action is a deliberate step a turn can search for.
+    expect(tools).toHaveLength(131);
+    expect(deferred).toHaveLength(120);
     for (const name of [
       'configure_doc_channel',
       'approve_doc_route',

@@ -63,6 +63,8 @@ export const notifications = sqliteTable(
         'extension.decision',
         'community.owner-replacement',
         'heartbeat.credits-offer',
+        'connector.destructive_pending',
+        'connector.destructive_executed',
       ],
     }).notNull(),
 

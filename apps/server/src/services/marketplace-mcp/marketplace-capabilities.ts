@@ -147,6 +147,8 @@ function allowedUnderTrusted(approval: CapabilityHandlerContext['approval']): bo
 function personAlreadySaidYes(approval: CapabilityHandlerContext['approval']): boolean {
   if (!approval) return false;
   if (approval.via === 'approval') return true;
+  // A cancel window is only ever a connected-app action's, never a package's.
+  if (approval.via !== 'permission') return false;
   return approval.source === 'agent-action' || approval.source === 'default-action';
 }
 

@@ -213,6 +213,19 @@ function notificationDto(overrides: Partial<NotificationDTO> = {}): Notification
 }
 
 describe('notificationDeepLink', () => {
+  it('opens the Inbox on a held action that is still waiting, where Cancel is', () => {
+    const dto = notificationDto({
+      kind: 'connector.destructive_pending',
+      subject: { type: 'system', id: 'hold-1' },
+      sessionId: 'session-42',
+      actions: [
+        { id: 'cancel', label: 'Cancel', style: 'danger' },
+        { id: 'open', label: 'Open', style: 'primary' },
+      ],
+    });
+    expect(notificationDeepLink(dto)).toBe('/?inbox=hold-1');
+  });
+
   it('addresses a session subject via the sessionId lens', () => {
     const dto = notificationDto({
       sessionId: 'session-42',

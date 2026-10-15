@@ -1,7 +1,7 @@
 /**
  * Every `/api/connectors` group, in the one order they answer in.
  *
- * Five groups share the prefix, and the order is part of what they answer:
+ * Six groups share the prefix, and the order is part of what they answer:
  *
  * 1. **Provider keys** (`/providers`), behind their own migration gate.
  * 2. **Notifications** (`/connections/:id/events/*`): any path under one
@@ -12,6 +12,8 @@
  * 4. **Connections resources** (the catalog, accounts, sign-in flows).
  * 5. **Program execution and usage**, added once the capability registry
  *    exists.
+ * 6. **Held actions** (`/holds/:id/cancel`): cancelling an agent's action in
+ *    a connected app while it waits out its cancel window.
  *
  * No route in one group shares a method and path with a route in another, so
  * a `:param` in one never claims a literal path another group answers. The
@@ -39,6 +41,7 @@ import {
   createConnectorResourcesRoutes,
   type ConnectorResourcesRouterDeps,
 } from './connector-resources.js';
+import { createConnectorHoldRoutes, type ConnectorHoldRouterDeps } from './connector-holds.js';
 
 /** What the connector groups read, one entry per group. */
 export interface ConnectorRoutesDeps {
@@ -52,6 +55,8 @@ export interface ConnectorRoutesDeps {
   resources: ConnectorResourcesRouterDeps;
   /** Program execution and usage; set once the capability registry is composed. */
   execution?: ConnectorExecutionRouterDeps;
+  /** Cancelling an agent's action while it waits out its cancel window (`/holds`). */
+  holds?: ConnectorHoldRouterDeps;
 }
 
 /**
@@ -67,5 +72,6 @@ export function createConnectorRoutes(deps: ConnectorRoutesDeps): Hono<ApiEnv> {
   app.route('/', createConnectorManagementRoutes(deps.management));
   app.route('/', createConnectorResourcesRoutes(deps.resources));
   if (deps.execution) app.route('/', createConnectorExecutionRoutes(deps.execution));
+  if (deps.holds) app.route('/', createConnectorHoldRoutes(deps.holds));
   return app;
 }

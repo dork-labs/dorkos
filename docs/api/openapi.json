@@ -2309,6 +2309,43 @@
           "content"
         ]
       },
+      "CancelHeldActionResponse": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "cancelled"
+            ]
+          },
+          "holdId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "holdId"
+        ]
+      },
+      "CancelHeldActionError": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "type": "string"
+          },
+          "code": {
+            "type": "string",
+            "enum": [
+              "HOLD_NOT_FOUND",
+              "HOLD_REQUESTER"
+            ]
+          }
+        },
+        "required": [
+          "error",
+          "code"
+        ]
+      },
       "HealthResponse": {
         "type": "object",
         "properties": {
@@ -17214,7 +17251,9 @@
           "extension.approval",
           "extension.decision",
           "community.owner-replacement",
-          "heartbeat.credits-offer"
+          "heartbeat.credits-offer",
+          "connector.destructive_pending",
+          "connector.destructive_executed"
         ]
       },
       "NotificationTier": {
@@ -24308,6 +24347,58 @@
                   "required": [
                     "error"
                   ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/connectors/holds/{holdId}/cancel": {
+      "post": {
+        "tags": [
+          "Connectors"
+        ],
+        "summary": "Cancel an agent's action before it runs",
+        "description": "On a Trusted install, an agent's high-risk action in a connected app waits 60 seconds before it runs, and everyone is told. This cancels it, so it never runs. A person may cancel, and so may any agent except the one that asked for the action. It cannot undo an action that already ran.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": true,
+            "name": "holdId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Cancelled. The action will not run.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CancelHeldActionResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller is the agent that asked for the action (`HOLD_REQUESTER`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CancelHeldActionError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No action is waiting under that id: it already ran, was already cancelled, or DorkOS restarted (`HOLD_NOT_FOUND`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CancelHeldActionError"
                 }
               }
             }

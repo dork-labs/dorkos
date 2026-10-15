@@ -27,6 +27,8 @@ import { InboxGroupRow } from './InboxGroupRow';
 import { ExtensionApprovalHistoryRow } from './ExtensionApprovalHistoryRow';
 import { ExtensionDecisionHistoryRow } from './ExtensionDecisionHistoryRow';
 import { InboxAwayGroupRow } from './InboxAwayGroupRow';
+import { HeldActionRow } from './HeldActionRow';
+import { endedHoldIds, offersCancel } from '../lib/held-actions';
 
 /**
  * The stagger the rows inherit — each row declares the child half.
@@ -54,6 +56,11 @@ export interface InboxListProps {
    * bell closes. The Activity page leaves it out.
    */
   inBell?: boolean;
+  /**
+   * The id a link asked to single out (`?inbox=<id>`). A held connected-app
+   * action with this hold id rings and focuses its Cancel.
+   */
+  focusId?: string;
 }
 
 /**
@@ -94,6 +101,7 @@ export function InboxList({
   emptyLabel = 'Nothing yet',
   onOpened,
   inBell = false,
+  focusId,
 }: InboxListProps) {
   const { notifications, isLoading, isError, hasMore, loadMore, isLoadingMore } =
     useNotifications(lens);
@@ -123,6 +131,8 @@ export function InboxList({
   );
 
   const items = useMemo(() => groupActivityRows(notifications), [notifications]);
+  // Held connected-app actions some later row says have ended: no Cancel there.
+  const endedHolds = useMemo(() => endedHoldIds(notifications), [notifications]);
 
   // Which groups are open, keyed by each group's own `stateKey` (the fold
   // stamps it, disambiguated by occurrence — see `InboxGroupItem.stateKey`'s
@@ -198,6 +208,16 @@ export function InboxList({
               expanded={expandedGroups.has(item.stateKey)}
               onToggleExpanded={() => toggleGroup(item.stateKey)}
               onOpenNotification={handleOpen}
+            />
+          ) : offersCancel(item.notification) ? (
+            // An agent's high-risk action waiting to run: the row offers Cancel.
+            <HeldActionRow
+              key={item.notification.id}
+              notification={item.notification}
+              ended={endedHolds.has(item.notification.subject.id)}
+              focused={focusId === item.notification.subject.id}
+              index={index}
+              agent={resolveAgent(item.notification.agentId)}
             />
           ) : item.notification.kind === 'extension.approval' ? (
             // An answered extension approval reads as the same row the question

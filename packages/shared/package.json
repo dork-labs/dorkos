@@ -17,6 +17,10 @@
       "types": "./src/app-route-paths.ts",
       "default": "./dist/app-route-paths.js"
     },
+    "./connector-hold-schemas": {
+      "types": "./src/connector-hold-schemas.ts",
+      "default": "./dist/connector-hold-schemas.js"
+    },
     "./approval-schemas": {
       "types": "./src/approval-schemas.ts",
       "default": "./dist/approval-schemas.js"

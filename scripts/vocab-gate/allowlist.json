@@ -675,6 +675,12 @@
       "reason": "DOR-2789. The requires_confirmation message the marketplace install route returns to the calling agent, telling it to resend with the token once a person approves; not shown in the app. `contains` pins the one string."
     },
     {
+      "path": "apps/server/src/services/connectors/execution/hold-capabilities.ts",
+      "terms": ["connector"],
+      "contains": "the resourceId of its connector.destructive_held event in t",
+      "reason": "DOR-2739. The cancel tool's description, which only an agent reads, names the Activity event type `connector.destructive_held` an agent looks the hold id up by. An identifier, not prose a person sees. `contains` pins this one string."
+    },
+    {
       "path": "apps/server/src/services/connectors/execution/execution-capabilities.ts",
       "terms": ["session"],
       "contains": "Check one service request created by this exact agent sessio",

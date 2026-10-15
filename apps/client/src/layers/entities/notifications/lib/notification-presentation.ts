@@ -99,6 +99,9 @@ export const NOTIFICATION_ICONS: Record<NotificationKind, LucideIcon> = {
   // Someone asked to take over a community this person owns (DOR-2543).
   'community.owner-replacement': TriangleAlert,
   'heartbeat.credits-offer': Sparkles,
+  // An agent's high-risk action in a connected app, waiting or done.
+  'connector.destructive_pending': Hourglass,
+  'connector.destructive_executed': CheckCircle2,
 };
 
 /** How loudly a notification draws. */
@@ -313,6 +316,15 @@ export function notificationLink(notification: NotificationDTO): NotificationLin
     // The subject is the owner's connection ref: the community's own page, where the banner
     // says what is happening and opens the community to keep ownership.
     return { ...appRoutes.channels(), search: { community: subject.id } };
+  }
+  if (kind === 'connector.destructive_pending' || kind === 'connector.destructive_executed') {
+    // A held action still waiting opens the Inbox on its own row, where Cancel
+    // is: the same place its phone push and desktop banner open. Once it ended,
+    // the chat the agent asked from.
+    if (notification.actions?.some((action) => action.id === 'cancel')) {
+      return { ...appRoutes.home(), search: { inbox: subject.id } };
+    }
+    return sessionId === undefined ? null : toSession({ session: sessionId });
   }
   // An extension's decision history row carries no link of its own (the
   // title and body say what happened); "Watch" on the row opens its chat.

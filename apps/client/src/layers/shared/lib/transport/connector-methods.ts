@@ -45,6 +45,7 @@ import type {
   ConnectorReconciliationPreviewRequest,
   ConnectorUsagePage,
 } from '@dorkos/shared/connector-schemas';
+import type { CancelHeldActionResponse } from '@dorkos/shared/connector-hold-schemas';
 import { fetchJSON, fetchNoContent, buildQueryString } from './http-client';
 import type {
   ConnectorAgentConnections,
@@ -455,6 +456,14 @@ export function createConnectorMethods(baseUrl: string) {
       return fetchJSON<ConnectorAuthenticationFlowState>(
         baseUrl,
         `/connectors/agent-requests/${encodeURIComponent(requestId)}/authentication-flows/${encodeURIComponent(flowId)}`
+      );
+    },
+
+    cancelHeldConnectorAction(holdId: string): Promise<CancelHeldActionResponse> {
+      return fetchJSON<CancelHeldActionResponse>(
+        baseUrl,
+        `/connectors/holds/${encodeURIComponent(holdId)}/cancel`,
+        { method: 'POST', body: '{}' }
       );
     },
   };

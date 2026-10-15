@@ -163,7 +163,7 @@ import { ManagedAuthoritySyncService } from './services/connectors/resources/man
 import { ManagedCloudConnectorProvider } from './services/connectors/providers/managed/managed-cloud.js';
 import { legacyDefaultProviderInstanceId } from './services/connectors/legacy-connection-migration.js';
 import { ConnectorExecutionAuthorizationService } from './services/connectors/execution/authorization-service.js';
-import { ConnectorExecutionBroker } from './services/connectors/execution/execution-broker.js';
+import { createConnectorExecution } from './services/connectors/execution/create-execution.js';
 import { ManagedConnectorExecutionContextStore } from './services/connectors/execution/managed-execution-context.js';
 import { ManagedUsageMirrorService } from './services/connectors/execution/managed-usage-mirror-service.js';
 import { ConnectorUsageStore } from './services/connectors/execution/usage-store.js';
@@ -3364,24 +3364,15 @@ async function start() {
     },
     (providerInstanceId, toolkit) => connectorBootstrapper.wayHealth(providerInstanceId, toolkit)
   );
-  const connectorBroker = new ConnectorExecutionBroker(
-    connectorAuthorization,
-    connectorUsage,
-    {
-      revalidate: (principal) => {
-        if (principal.claims.kind === 'runtime') {
-          return connectorRuntimePrincipals?.revalidatePrincipal(principal) ?? false;
-        }
-        if (principal.claims.kind === 'program') {
-          return connectorProgramPrincipals.revalidate(principal);
-        }
-        return false;
-      },
-    },
-    undefined,
+  const { broker: connectorBroker, holds: connectorHolds } = createConnectorExecution({
+    authorization: connectorAuthorization,
+    usage: connectorUsage,
+    runtimePrincipals: () => connectorRuntimePrincipals,
+    programPrincipals: connectorProgramPrincipals,
     managedExecutionContexts,
-    connectorRegistry
-  );
+    signIns: connectorRegistry,
+    activity: activityService,
+  });
   // A brand-new session is rekeyed to its canonical id mid-first-turn. Move any
   // connector attach set across the same remap so tools attached under the
   // request id are not stranded on the pre-remap id (mirrors the projector +
@@ -3758,6 +3749,7 @@ async function start() {
       }),
       ...connectorOwnerBoundary,
     },
+    holds: { holds: connectorHolds },
   };
   deps.connectors = connectorRoutes;
   mountedRouters.push('connectors');
@@ -4524,6 +4516,7 @@ async function start() {
         broker: connectorBroker,
         access: connectorAccess,
         ...(connectorAgentRequests && { requests: connectorAgentRequests }),
+        holds: connectorHolds,
       },
       // The MCP-server-management domain — its deps are built above so the
       // `mcp.import` fallback closure narrows `meshCore`.

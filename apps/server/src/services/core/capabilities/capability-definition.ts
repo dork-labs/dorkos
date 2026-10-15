@@ -43,6 +43,7 @@ import type {
 import type { InSessionCardKind } from './in-session-card.js';
 import type { PermissionAreaId } from '@dorkos/shared/permissions';
 import type { ApprovalSubjectDeclaration } from '../approvals/approval-subject.js';
+import type { GrantedApproval } from './tier-enforcement.js';
 
 /**
  * The service-dependency bag threaded into every capability's `invoke` at boot,
@@ -287,6 +288,23 @@ export interface CapabilityDefinition<
     input: z.infer<In>,
     context: CapabilityInvocationContext
   ) => Promise<CapabilityPreflightResult>;
+  /**
+   * A cancel window this call may wait out INSTEAD of the approval card (spec
+   * `trusted-by-default-flip` §5.6). Only `connectors.execute_destructive`
+   * declares one.
+   *
+   * Asked by the registry after the preflight, for a call that presented no
+   * approval token. `undefined` means the call is not eligible, and the tier
+   * gate decides it exactly as before. A function means it is: the registry
+   * runs it in place of the gate, and it resolves with the `hold` approval the
+   * handler runs on once nobody cancelled, or throws when somebody did.
+   */
+  cancelWindow?: (
+    deps: CapabilityDeps,
+    input: z.infer<In>,
+    context: CapabilityInvocationContext,
+    preflight: CapabilityPreflightResult
+  ) => Promise<(() => Promise<Extract<GrantedApproval, { via: 'hold' }>>) | undefined>;
   /**
    * Where this capability came from, set only on a definition the host built
    * for a running extension (`buildExtensionDefinitions`, DOR-2685).

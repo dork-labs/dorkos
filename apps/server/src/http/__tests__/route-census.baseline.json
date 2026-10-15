@@ -373,6 +373,7 @@
     "POST /api/connectors/connections/:connectionId/remove",
     "POST /api/connectors/connections/:connectionId/resume",
     "POST /api/connectors/executions",
+    "POST /api/connectors/holds/:holdId/cancel",
     "POST /api/connectors/reconciliation/apply",
     "POST /api/connectors/reconciliation/previews",
     "POST /api/connectors/reviews",

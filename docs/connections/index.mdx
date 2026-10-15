@@ -66,6 +66,26 @@ You can skip this and come back later: click the app's row in **Yours**, and the
 
 You can connect several accounts for one service: each account is its own row. To add another, open the app's side panel, open **More** and choose **Connect another** account (for Gmail, **Connect another Gmail account**). Labels keep a personal account separate from a work account. Access always belongs to the exact connection you selected.
 
+## High-risk actions wait 60 seconds
+
+Some actions can't be taken back, like deleting an email or sending one. On **Trusted**, when one of your agents takes such an action from a chat where it works on its own, DorkOS holds it for 60 seconds before it runs.
+
+While it waits, everyone is told. A notification appears in the Inbox (the bell) in every open DorkOS window, and on your phone if you turned on phone alerts. It says which agent, which action and which app, for example "Scout will run “Delete message” in Gmail". Clicking the phone or desktop alert opens the Inbox on that notification, where **Cancel** is.
+
+- **Cancel** stops it. The action never runs, and the agent is told who cancelled it.
+- Any other agent can cancel it too. The agent that asked can't cancel its own.
+- Stopping the chat cancels it.
+- When the minute is up, DorkOS checks again. If the action no longer qualifies to run without asking you (say you switched to **Careful**, or the agent was switched off), it doesn't run. You can still cancel while it checks.
+- If DorkOS restarts while it waits, the action is dropped and never runs. The notification says so.
+- If DorkOS restarts just as the action is being sent, it may have run. The notification says so and names the app to check.
+- If nobody cancels, it runs exactly as it was asked, on the same account, and a second notification says it ran.
+- If DorkOS can't show the notification or record the action, there is no wait: you get an approval card instead.
+- If DorkOS can't confirm the outcome, the second notification says it may have run and names the app to check.
+
+This is a cancel, not an undo. Once an action has run, DorkOS can't take it back.
+
+Everything else still asks you first with an approval card: on **Careful**, in a chat that asks before acting, when someone outside your team started the chat (a Telegram or Slack message, say), and when the request doesn't come from an agent's chat.
+
 ## Agents can ask, but you decide
 
 An agent can ask for a service and explain why it needs access. It asks for one of the same two levels you choose from: **Read** (look at things there) or **Read and write** (also change things there). The request does not reveal your private account list and does not grant anything.
