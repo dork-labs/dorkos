@@ -45,6 +45,7 @@ import { getRequestListener, RequestError, type HttpBindings } from '@hono/node-
 import type { Hono } from 'hono';
 import type { ApiEnv } from './api-chain.js';
 import { adaptLanCookies } from '../services/core/lan-access/lan-cookies.js';
+import { markIngress, type IngressKind } from '../services/core/remote/ingress-mark.js';
 
 /**
  * The origin a request the adapter cannot read is given, so it has a URL at
@@ -125,17 +126,43 @@ function unreadableRequest(incoming: IncomingMessage): Request {
   } as RequestInit);
 }
 
+/** Options for {@link createFrontDoorServer}. */
+export interface FrontDoorServerOptions {
+  /**
+   * Mark every request and upgrade this server takes as having come through
+   * this listener (`services/core/remote/ingress-mark.ts`). The main listener
+   * marks nothing; the Wi-Fi listener marks `wifi`.
+   */
+  ingress?: IngressKind;
+}
+
 /**
  * Create the Node HTTP server for the server's Hono app. It does not listen
  * yet; the caller decides the port and host, as `startMainListener` does.
  *
  * @param app - The app every request enters.
+ * @param options - See {@link FrontDoorServerOptions}.
  * @returns A Node `http.Server` the upgrade router can attach to.
  */
-export function createFrontDoorServer(app: Hono<ApiEnv>): Server {
-  const server = createServer(frontDoorListener(app));
-  // First in line, so the upgrade router authorizes with the cookie names the
-  // auth stack set (see `adaptLanCookies`).
-  server.prependListener('upgrade', (req: IncomingMessage) => adaptLanCookies(req));
+export function createFrontDoorServer(
+  app: Hono<ApiEnv>,
+  options: FrontDoorServerOptions = {}
+): Server {
+  const { ingress } = options;
+  const listener = frontDoorListener(app);
+  const server = createServer(
+    ingress
+      ? (req, res) => {
+          markIngress(req, ingress);
+          return listener(req, res);
+        }
+      : listener
+  );
+  // First in line, so the upgrade router sees the mark and authorizes with the
+  // cookie names the auth stack set (see `adaptLanCookies`).
+  server.prependListener('upgrade', (req: IncomingMessage) => {
+    if (ingress) markIngress(req, ingress);
+    adaptLanCookies(req);
+  });
   return server;
 }

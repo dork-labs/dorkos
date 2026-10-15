@@ -35,7 +35,7 @@ import { authorizeStreamUpgrade } from '../stream-upgrade-auth.js';
 import { resolveTrustedOrigins } from '../../../../lib/trusted-origins.js';
 import { env } from '../../../../env.js';
 import { configManager } from '../../config-manager.js';
-import { markManagedIngress, setManagedUpgradeListener } from '../../remote/ingress-mark.js';
+import { markIngress, setManagedUpgradeListener } from '../../remote/ingress-mark.js';
 
 const gate = vi.mocked(authorizeStreamUpgrade);
 const loginEnabled = (enabled: boolean): void => {
@@ -390,7 +390,7 @@ describe('attachUpgradeRouter', () => {
       );
       await listen([acceptingRoute, closeFrameRefusalRoute, gatedRoute]);
       // Stand in for the managed ingress, which marks before handing upgrades on.
-      server.prependListener('upgrade', (req) => markManagedIngress(req));
+      server.prependListener('upgrade', (req) => markIngress(req, 'managed'));
 
       expect((await attempt('/api/accept')).opened).toBe(true);
       expect((await attempt('/api/refuse-close')).closeCode).toBe(STREAM_CLOSE_CODE_BASE + 401);

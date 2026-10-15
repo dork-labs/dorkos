@@ -1,14 +1,19 @@
 /**
- * Which requests arrived through the managed remote-access ingress.
+ * Which listener a request came in on, when it was not the main one.
  *
- * The managed ingress hands its requests to the same front door (and its
- * upgrades to the same upgrade router) that serve this machine, and its TCP
- * peer is the ngrok agent on loopback. So the socket alone would make a phone
- * on managed remote access look like a person at this machine. The ingress
- * marks every request it admits, and `isLocalCaller` refuses a marked request
- * whatever its `Host` says.
+ * Three listeners besides the main one hand their requests to the same front
+ * door (and their upgrades to the same upgrade router): the managed
+ * remote-access ingress, the person's own-tunnel ingress, and the Wi-Fi
+ * listener. The first two forward from an ngrok agent on loopback, so the
+ * socket alone would make a phone on either look like a person at this
+ * machine. Each listener marks every request it admits, and the request
+ * classifier (`lib/request-classifier.ts`) and `isLocalCaller` read the mark,
+ * so a marked request is never taken for this computer whatever its `Host` says.
  *
- * Kept on the request object itself (a `WeakSet`, so nothing outlives it) rather
+ * `relay` is reserved for the session relay (B2, DOR-2946), which marks what
+ * it carries. Nothing sets it yet.
+ *
+ * Kept on the request object itself (a `WeakMap`, so nothing outlives it) rather
  * than on a framework's context, because a WebSocket upgrade has no response
  * and runs no chain.
  *
@@ -16,24 +21,42 @@
  */
 import type { IncomingMessage, ServerResponse } from 'node:http';
 
-const managedRequests = new WeakSet<IncomingMessage>();
+/** A listener that marks what it admits: everything except the main one. */
+export type IngressKind = 'managed' | 'own-tunnel' | 'wifi' | 'relay';
+
+/** Where a request came in: a marked listener, or `direct` for the main one. */
+export type RequestIngress = IngressKind | 'direct';
+
+const marks = new WeakMap<IncomingMessage, IngressKind>();
 
 /**
- * Mark a request as having arrived through the managed ingress.
+ * Mark a request as having arrived through one of the marked listeners.
  *
- * @param req - The request the ingress admitted.
+ * @param req - The request the listener admitted.
+ * @param kind - Which listener.
  */
-export function markManagedIngress(req: IncomingMessage): void {
-  managedRequests.add(req);
+export function markIngress(req: IncomingMessage, kind: IngressKind): void {
+  marks.set(req, kind);
 }
 
 /**
- * Whether a request arrived through the managed ingress.
+ * Which listener a request arrived through.
+ *
+ * @param req - Any incoming request (an Express request is one too).
+ * @returns The marking listener, or `direct` for the main listener.
+ */
+export function ingressOf(req: IncomingMessage): RequestIngress {
+  return marks.get(req) ?? 'direct';
+}
+
+/**
+ * Whether a request arrived through the managed ingress: the question the
+ * managed activity count and the managed host guard ask.
  *
  * @param req - Any incoming request (an Express request is one too).
  */
 export function isManagedIngress(req: IncomingMessage): boolean {
-  return managedRequests.has(req);
+  return marks.get(req) === 'managed';
 }
 
 /** Hears each managed request the session gate let through. See {@link noteGateAdmitted}. */

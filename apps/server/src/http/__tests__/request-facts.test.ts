@@ -71,6 +71,6 @@ describe('honoRequestFacts', () => {
     expect(facts.user).toBeUndefined();
     expect(facts.agentIdentity).toBeUndefined();
     expect(facts.connectionEncrypted).toBe(false);
-    expect(facts.managedIngress).toBe(false);
+    expect(facts.ingress).toBe('direct');
   });
 });

@@ -11,8 +11,10 @@
  * they never run together (`getMode()`: `off | byo | managed`):
  *
  * - **BYO** — the person's own ngrok account: {@link TunnelManager.start} /
- *   {@link TunnelManager.stop}, one `ngrok.forward` listener at the main port.
- *   Unchanged by managed access.
+ *   {@link TunnelManager.stop}, one `ngrok.forward` listener. Aimed at the main
+ *   port, it forwards into the own-tunnel ingress instead
+ *   (`services/core/remote/own-tunnel-ingress.ts`), which marks every request
+ *   as the tunnel's before the front door sees it. Unchanged by managed access.
  * - **Managed** — DorkOS remote access: {@link TunnelManager.startManaged} hands
  *   it to `services/core/remote/managed-forwarding.ts`, which holds its OWN
  *   ngrok session (never the SDK's global one BYO uses), one listener per
@@ -33,6 +35,8 @@ import type { Config as NgrokForwardOpts } from '@ngrok/ngrok';
 import type { TunnelStatus } from '@dorkos/shared/types';
 import type { RemoteAccessMode } from '@dorkos/shared/config-schema';
 import type { ManagedIngress } from './remote/managed-ingress.js';
+import type { OwnTunnelIngress } from './remote/own-tunnel-ingress.js';
+import type { TunnelIngresses } from './remote/tunnel-ingresses.js';
 import {
   ManagedForwarding,
   type ManagedCloseOptions,
@@ -87,6 +91,8 @@ export class TunnelManager extends EventEmitter {
    * closed — and the mode stays `byo` — until a later close of it succeeds.
    */
   private byoUnclosed: ByoListener | null = null;
+  /** Where an own tunnel aimed at the main port forwards; see {@link attachIngresses}. */
+  private ownTunnelIngress: OwnTunnelIngress | null = null;
   private _status: StoredStatus = { ...DEFAULT_STATUS };
   private readonly managedForwarding = new ManagedForwarding({
     exposureAllowed: () => this.exposureAllowed(),
@@ -161,6 +167,26 @@ export class TunnelManager extends EventEmitter {
   }
 
   /**
+   * Attach the ingress an own tunnel aimed at the main port forwards into.
+   * Until one is attached, an own tunnel forwards straight to its port.
+   *
+   * @param ingress - The own-tunnel ingress listener.
+   */
+  attachOwnTunnelIngress(ingress: OwnTunnelIngress): void {
+    this.ownTunnelIngress = ingress;
+  }
+
+  /**
+   * Attach both ngrok ingresses. Called once, by `index.ts`, after the app exists.
+   *
+   * @param ingresses - The managed and own-tunnel ingresses (`tunnelIngressesFor`).
+   */
+  attachIngresses(ingresses: TunnelIngresses): void {
+    this.attachManagedIngress(ingresses.managed);
+    this.attachOwnTunnelIngress(ingresses.ownTunnel);
+  }
+
+  /**
    * Whether a listener is open — the question {@link start} itself answers when
    * it refuses a second one.
    *
@@ -200,9 +226,9 @@ export class TunnelManager extends EventEmitter {
     return this.enqueue(() => this.openByo(config, epoch));
   }
 
-  private byoForwardOptions(config: TunnelConfig): NgrokForwardOpts {
+  private byoForwardOptions(config: TunnelConfig, addr: number | string): NgrokForwardOpts {
     const forwardOpts: NgrokForwardOpts = {
-      addr: config.port,
+      addr,
       authtoken_from_env: true,
     };
 
@@ -233,7 +259,15 @@ export class TunnelManager extends EventEmitter {
     if (epoch !== this.byoEpoch) throw new Error('The tunnel was closed while it was opening.');
 
     const ngrok = await import('@ngrok/ngrok');
-    const listener = await ngrok.forward(this.byoForwardOptions(config));
+    const ingress = this.ownTunnelIngress?.fronts(config.port) ? this.ownTunnelIngress : null;
+    let listener: ByoListener;
+    try {
+      const addr = ingress ? await ingress.open() : config.port;
+      listener = await ngrok.forward(this.byoForwardOptions(config, addr));
+    } catch (err) {
+      await ingress?.close();
+      throw err;
+    }
     const url = listener.url();
 
     // A listener with no URL is not a tunnel anyone can reach, and reporting it
@@ -242,11 +276,13 @@ export class TunnelManager extends EventEmitter {
     // unusable was already "running". Close it and say so.
     if (!url) {
       await listener.close().catch(() => {});
+      await ingress?.close();
       throw new Error('ngrok returned no public URL for the tunnel');
     }
     // A stop() while ngrok was answering wins: the tunnel it stopped stays shut.
     if (epoch !== this.byoEpoch || this.managedForwarding.isOpen) {
       await listener.close().catch(() => {});
+      await ingress?.close();
       throw new Error('The tunnel was closed while it was opening.');
     }
 
@@ -322,6 +358,9 @@ export class TunnelManager extends EventEmitter {
     } finally {
       this.listener = null;
       this.byoUnclosed = unclosed;
+      // Closed even when ngrok would not close its listener: whatever it still
+      // forwards then finds nothing to reach.
+      await this.ownTunnelIngress?.close();
       this.updateStatus({ ...DEFAULT_STATUS });
     }
     if (failure !== null) throw failure;

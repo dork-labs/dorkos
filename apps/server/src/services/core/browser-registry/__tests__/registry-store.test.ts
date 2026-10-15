@@ -40,7 +40,7 @@ function scope(account = 'account-one') {
     peerAddress: '127.0.0.1',
     forwardedAddress: '127.0.0.1',
     connectionEncrypted: false,
-    managedIngress: false,
+    ingress: 'direct',
     user: { userId: account, credential: 'cookie' },
     agentIdentity: undefined,
   } satisfies RequestFacts);

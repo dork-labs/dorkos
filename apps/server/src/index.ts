@@ -458,7 +458,7 @@ import { spaceReachable } from './middleware/spaces-enabled.js';
 import { SearchIndexer, selectSearchSources } from './services/search/index.js';
 import { TerminalManager, terminalUpgradeRoute } from './services/terminal/index.js';
 import { attachUpgradeRouter } from './services/core/streams/upgrade-router.js';
-import { managedIngressFor } from './services/core/remote/managed-ingress.js';
+import { tunnelIngressesFor } from './services/core/remote/tunnel-ingresses.js';
 import { durableStreamRoutes } from './routes/stream-sockets.js';
 import { registerDorkosCommunityTelemetry } from './services/marketplace/telemetry/telemetry-reporter.js';
 import { registerHeartbeat, type HeartbeatCounts } from './services/core/heartbeat-reporter.js';
@@ -4857,15 +4857,15 @@ async function start() {
       // closed live by its switch, into the same front door and upgrade router.
       void lanAccess.attach({
         port: PORT,
-        createServer: () => createFrontDoorServer(frontDoor),
+        createServer: () => createFrontDoorServer(frontDoor, { ingress: 'wifi' }),
         attachUpgrades: (lan) => attachUpgradeRouter(lan, upgradeRoutes, mainRequestAdmission),
       });
 
-      // The managed remote-access ingress: a loopback listener of its own that
-      // managed forwarding targets. It runs the edge-proof and host checks, then
-      // hands requests to the same front door and upgrades to the router above.
-      // Nothing listens until managed access opens.
-      tunnelManager.attachManagedIngress(managedIngressFor(frontDoorListener(frontDoor), server));
+      // The two ngrok ingresses, each a loopback listener of its own: managed
+      // access (edge-proof and host checks first) and the person's own tunnel.
+      // Each marks what it admits, then hands requests to the same front door
+      // and upgrades to the router above. Nothing listens until a tunnel opens.
+      tunnelManager.attachIngresses(tunnelIngressesFor(frontDoorListener(frontDoor), server));
       // Reconnect Cloud's command stream when the boot rule allows it (DOR-2086); opens nothing.
       managedRemoteCommands.boot(db, currentRemoteBootPlan(env));
 

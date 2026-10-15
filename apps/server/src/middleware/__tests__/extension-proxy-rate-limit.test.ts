@@ -34,7 +34,7 @@ const CALLER: RequestFacts = {
   peerAddress: '127.0.0.1',
   forwardedAddress: '127.0.0.1',
   connectionEncrypted: false,
-  managedIngress: false,
+  ingress: 'direct',
   user: undefined,
   agentIdentity: undefined,
 };

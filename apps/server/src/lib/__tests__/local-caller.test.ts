@@ -14,6 +14,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { Hono } from 'hono';
 import request from '@dorkos/test-utils/supertest';
 import type { RequestFactsEnv } from '../../http/request-facts.js';
+import type { IngressKind } from '../../services/core/remote/ingress-mark.js';
 import { honoListener, listeningServer } from '@dorkos/test-utils/listening-server';
 
 // Mutable stand-in so the container flag can be moved one test at a time — the
@@ -24,7 +25,7 @@ vi.mock('../../env.js', () => ({ env: mockEnv }));
 
 const { isLocalCaller } = await import('../caller-authority.js');
 const { honoRequestFacts } = await import('../../http/request-facts.js');
-const { markManagedIngress } = await import('../../services/core/remote/ingress-mark.js');
+const { markIngress } = await import('../../services/core/remote/ingress-mark.js');
 
 /**
  * The TCP peer the app reports for the current test. `null` spells "the socket
@@ -34,8 +35,8 @@ const { markManagedIngress } = await import('../../services/core/remote/ingress-
  */
 let currentPeer: string | null = '127.0.0.1';
 
-/** Whether the current test's request arrived through the managed ingress. */
-let viaManagedIngress = false;
+/** The marked listener the current test's request arrived through, if any. */
+let viaIngress: IngressKind | null = null;
 
 // One app, one listener: the peer is rewritten per request so a LAN caller can
 // be simulated without a second network interface, exactly as the runtime
@@ -46,7 +47,7 @@ honoApp.get('/probe', (c) => {
     value: currentPeer ?? undefined,
     configurable: true,
   });
-  if (viaManagedIngress) markManagedIngress(c.env.incoming);
+  if (viaIngress) markIngress(c.env.incoming, viaIngress);
   return c.json({ local: isLocalCaller(honoRequestFacts(c)) });
 });
 
@@ -55,7 +56,7 @@ const server = listeningServer(honoListener(honoApp));
 beforeEach(() => {
   mockEnv.DORKOS_ALLOW_INSECURE_BIND = false;
   currentPeer = '127.0.0.1';
-  viaManagedIngress = false;
+  viaIngress = null;
 });
 
 describe('isLocalCaller', () => {
@@ -102,9 +103,21 @@ describe('isLocalCaller', () => {
   it('refuses a request the managed ingress admitted, under any Host and any flag', async () => {
     // The forwarding agent is on loopback, so peer and Host could both read
     // local; the ingress mark is what says a person is on another device.
-    viaManagedIngress = true;
+    viaIngress = 'managed';
     expect(await probe('localhost:4242')).toBe(false);
     mockEnv.DORKOS_ALLOW_INSECURE_BIND = true;
     expect(await probe('localhost:4242')).toBe(false);
   });
+
+  it.each(['own-tunnel', 'wifi'] as const)(
+    'refuses a request the %s listener admitted, even with Host rewritten to localhost',
+    async (ingress) => {
+      // The own tunnel's ngrok agent is on loopback too; a tunnel that rewrites
+      // `Host` (`--host-header=rewrite`) would otherwise read as this machine.
+      viaIngress = ingress;
+      expect(await probe('localhost:4242')).toBe(false);
+      mockEnv.DORKOS_ALLOW_INSECURE_BIND = true;
+      expect(await probe('localhost:4242')).toBe(false);
+    }
+  );
 });

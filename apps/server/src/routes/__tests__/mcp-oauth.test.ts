@@ -12,7 +12,7 @@ import { swappableServer } from '@dorkos/test-utils/listening-server';
 import { createMcpOAuthRoutes } from '../mcp-oauth.js';
 import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
 import { getLocalCockpitOrigin } from '../../lib/trusted-origins.js';
-import { markManagedIngress } from '../../services/core/remote/ingress-mark.js';
+import { markIngress } from '../../services/core/remote/ingress-mark.js';
 import type { AgentMcpOAuthService } from '../../services/mesh/agent-mcp-oauth-service.js';
 
 // The `/api` chain reads config (login, the host allowlist); nothing is set.
@@ -108,7 +108,7 @@ describe('GET /api/agents/mcp-oauth/callback', () => {
     const spy = vi.fn();
     const listener = appWith(stubOAuth({ connected: true }, spy));
     const server = fixtureTarget.mount((req, res) => {
-      markManagedIngress(req);
+      markIngress(req, 'managed');
       listener(req, res);
     });
     const res = await request(server).get('/api/agents/mcp-oauth/callback?state=s1&code=c1');
