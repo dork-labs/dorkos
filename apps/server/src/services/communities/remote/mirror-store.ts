@@ -12,183 +12,63 @@ import {
   and,
   communityMirrorAccess,
   communityMirrorEntries,
-  communityMirrorRedactions,
-  communityOutbox,
   communityRoomMirrors,
   eq,
-  gt,
-  inArray,
-  isNull,
-  readCursors,
   roomAttachments,
-  roomEntries,
   roomMembers,
-  roomSessions,
   rooms,
-  sql,
   type Db,
-  type DbTransaction,
 } from '@dorkos/db';
-import {
-  CommunityEntrySchema,
-  type CommunityAttachment,
-  type CommunityEntry,
-  type CommunityRef,
-} from '@dorkos/shared/community-adapter';
-import type { ResponseMode } from '@dorkos/shared/mesh-schemas';
+import type { CommunityEntry, CommunityRef } from '@dorkos/shared/community-adapter';
 import type { Room, RoomEntry } from '@dorkos/shared/room-schemas';
-import {
-  deleteRoomNotifications,
-  rewriteRoomEntryNotifications,
-} from '../../notifications/room-entry-notifications.js';
 import type { AuthorRegistry } from '../../rooms/author-registry.js';
 import type { RoomStore } from '../../rooms/room-store.js';
-import { toEntry } from '../../rooms/room-rows.js';
+import { claimRemoteDispatchIn, importMirrorEntries } from './mirror-store/entry-import.js';
+import { forgetMapping, purgeContent, refreshAccess } from './mirror-store/lifecycle.js';
+import {
+  applyRedactionPage,
+  attachmentsNeedingChecksumIn,
+  plannedAttachmentDropsIn,
+  resetRedactionCursorIn,
+} from './mirror-store/redactions.js';
+import {
+  cachedEntriesIn,
+  cachedEntryIn,
+  cachedEntryWithAuthorIn,
+  mirroredConnectionsIn,
+} from './mirror-store/cached-reads.js';
+import {
+  markStaleIn,
+  removeAgentMembershipIn,
+  revokeAbsentMirrors,
+  revokeAgentAccessIn,
+  revokeOwnerMirrors,
+} from './mirror-store/revocation.js';
+import { dedupeAccessors, findMirror } from './mirror-store/rows.js';
+import type {
+  AppliedRedactions,
+  CachedRemoteEntry,
+  MirrorAttachmentFile,
+  MirrorPurge,
+  MirrorRoomAccess,
+  MirrorRoomInput,
+  NativeMirrorEntry,
+  RevokedRemoteMirrorRoom,
+} from './mirror-store/types.js';
 
-/** The current remote authorization state represented by a local cache row. */
-export type MirrorState = 'authorized' | 'stale' | 'revoked';
-
-/** A local principal allowed to read an imported room. */
-export interface MirrorAccessor {
-  authorId: string;
-  responseMode?: ResponseMode;
-}
-
-/** Remote room data that is safe to project into the local cache. */
-export interface MirrorRoomInput {
-  communityRef: CommunityRef;
-  remoteRoomId: string;
-  title: string;
-  topic: string | null;
-  ownerAuthorId: string;
-  accessors: readonly MirrorAccessor[];
-  authorizedAt: string;
-}
-
-/** The native-only sequence retained beside an opaque generic community entry. */
-export interface NativeMirrorEntry {
-  entry: CommunityEntry;
-  /** The authoritative sequence emitted by the native community wire. */
-  remoteSeq: number;
-  /** The raw remote author id and display label; it is always external locally. */
-  author: { memberId: string; displayName: string; kind: 'human' | 'agent' | 'system' };
-}
-
-/** One owner-authorized cached entry with its native provenance metadata. */
-export interface CachedRemoteEntry {
-  entry: CommunityEntry;
-  remoteSeq: number;
-  /** Null only for rows cached before native author metadata was retained. */
-  author: { memberId: string; displayName: string; kind: 'human' | 'agent' | 'system' } | null;
-}
-
-/** What a revocation removed from this machine, for the stores beside the room log. */
-export interface MirrorPurge {
-  /** Local rooms whose entries were deleted. */
-  localRoomIds: readonly string[];
-  /** Files that belonged to those entries; their bytes are the caller's to delete. */
-  attachments: readonly { roomId: string; attachmentId: string; extension: string }[];
-}
-
-/** One stored file of a local room: where its bytes live. */
-export interface MirrorAttachmentFile {
-  roomId: string;
-  attachmentId: string;
-  extension: string;
-}
-
-/** What one page of the redaction feed changed in a mirror. */
-export interface AppliedRedactions {
-  localRoomId: string;
-  /** Local `seq` of every room entry rewritten, for re-indexing. */
-  changedSeqs: readonly number[];
-  /**
-   * Files whose rows this page deleted, because the Community no longer has them on the entry
-   * (DOR-2549). Their bytes are the caller's to delete, after the commit.
-   */
-  droppedAttachments: readonly MirrorAttachmentFile[];
-}
-
-/**
- * The local files of one rewritten entry that the Community no longer carries on it.
- *
- * Matched on identity, never on the name: the Community cleans names on upload, and two files
- * may share a name and a size, so a name match can both delete a file the message still has and
- * keep the one that was removed.
- *
- * - A message with no files left on the Community (deleted, removed, erased) drops every local
- *   file of it: there is nothing left for any of them to be.
- * - A file delivered with its Community id recorded is dropped exactly when the Community no
- *   longer lists that id on the message.
- * - A file delivered before ids were recorded is matched on its bytes' SHA-256, which the
- *   Community lists as the checksum: `checksums` carries it, read by the caller outside the
- *   transaction. Each remaining Community file vouches for at most one local file.
- * - A file with neither an id nor a known checksum is KEPT. A file wrongly kept is still the
- *   owner's to remove; one wrongly deleted is gone from everywhere they could reach it.
- *
- * @param db - The database or open transaction to read from.
- * @param localRoomId - The mirror's local room.
- * @param localEntryId - The rewritten local entry.
- * @param remaining - The files the entry still has on the Community.
- * @param checksums - SHA-256 of the local bytes, by local attachment id, for files without a
- *   recorded Community id.
- */
-function attachmentsToDrop(
-  db: Pick<Db, 'select'> | Pick<DbTransaction, 'select'>,
-  localRoomId: string,
-  localEntryId: string,
-  remaining: readonly CommunityAttachment[],
-  checksums: ReadonlyMap<string, string>
-): Array<MirrorAttachmentFile & { id: string }> {
-  const rows = (db as Db)
-    .select({
-      id: roomAttachments.id,
-      extension: roomAttachments.extension,
-      communityAttachmentId: roomAttachments.communityAttachmentId,
-    })
-    .from(roomAttachments)
-    .where(and(eq(roomAttachments.roomId, localRoomId), eq(roomAttachments.entryId, localEntryId)))
-    .all();
-  const file = (row: (typeof rows)[number]) => ({
-    id: row.id,
-    roomId: localRoomId,
-    attachmentId: row.id,
-    extension: row.extension,
-  });
-  if (remaining.length === 0) return rows.map(file);
-  const listed = new Set(remaining.map((item) => item.id));
-  const claimed = new Set(rows.map((row) => row.communityAttachmentId).filter(Boolean));
-  // Community files no identified local file accounts for, for the legacy files to match on.
-  const unclaimed = remaining.filter((item) => !claimed.has(item.id));
-  const dropped: Array<MirrorAttachmentFile & { id: string }> = [];
-  for (const row of rows) {
-    if (row.communityAttachmentId) {
-      if (!listed.has(row.communityAttachmentId)) dropped.push(file(row));
-      continue;
-    }
-    const checksum = checksums.get(row.id);
-    if (checksum === undefined) continue;
-    const match = unclaimed.findIndex((item) => item.checksum === checksum);
-    if (match === -1) dropped.push(file(row));
-    else unclaimed.splice(match, 1);
-  }
-  return dropped;
-}
-
-/** One persisted mirror invalidated because no active enrolled agent still sees it. */
-export interface RevokedRemoteMirrorRoom {
-  localRoomId: string;
-  remoteRoomId: string;
-}
-
-export interface MirrorRoomAccess {
-  /** `null` means the local room is not a remote mirror. */
-  canRead(roomId: string, authorId: string): boolean | null;
-  /** Whether owner-wide search/listing needs the mirror-aware path. */
-  hasMirrors(): boolean;
-  /** Whether this room is a revoked mirror of this owner's connection. */
-  isRevokedMirrorOf(roomId: string, ownerAuthorId: string): boolean;
-}
+// The value shapes live in ./mirror-store/types; every name stays importable from here.
+export type {
+  AppliedRedactions,
+  CachedRemoteEntry,
+  MirrorAccessor,
+  MirrorAttachmentFile,
+  MirrorPurge,
+  MirrorRoomAccess,
+  MirrorRoomInput,
+  MirrorState,
+  NativeMirrorEntry,
+  RevokedRemoteMirrorRoom,
+} from './mirror-store/types.js';
 
 /**
  * The local SQLite half of a remote community mirror.
@@ -230,10 +110,10 @@ export class RemoteMirrorStore implements MirrorRoomAccess {
     // room with a fresh id, so no reader resumes from a position in the old one.
     const existing =
       found && !this.roomsStore.getRoom(found.localRoomId)
-        ? this.forgetMapping(found.localRoomId)
+        ? forgetMapping(this.db, found.localRoomId)
         : found;
     if (existing) {
-      this.refreshAccess(existing.localRoomId, input);
+      refreshAccess(this.db, existing.localRoomId, input);
       const room = this.roomsStore.getRoom(existing.localRoomId);
       if (!room) throw new Error('A community mirror mapping points to a missing local room');
       this.roomsStore.registerRemoteTimelineRoom(existing.localRoomId);
@@ -283,7 +163,7 @@ export class RemoteMirrorStore implements MirrorRoomAccess {
       // therefore leaves no stray local room; adopt the mapping that won.
       const raced = this.findRoom(input.communityRef, input.remoteRoomId);
       if (!raced) throw error;
-      this.refreshAccess(raced.localRoomId, input);
+      refreshAccess(this.db, raced.localRoomId, input);
       const room = this.roomsStore.getRoom(raced.localRoomId);
       if (!room) throw error;
       this.roomsStore.registerRemoteTimelineRoom(raced.localRoomId);
@@ -305,80 +185,7 @@ export class RemoteMirrorStore implements MirrorRoomAccess {
   ): RoomEntry[] {
     const mirror = this.findRoom(communityRef, remoteRoomId);
     if (!mirror || mirror.state === 'revoked') return [];
-    const ordered = [...entries].sort((a, b) => a.remoteSeq - b.remoteSeq);
-    // The whole page is checked before anything is written: it is stored in one transaction, so
-    // a bad entry refuses the page rather than leaving part of it cached.
-    for (const item of ordered) {
-      if (!Number.isSafeInteger(item.remoteSeq) || item.remoteSeq <= 0) {
-        throw new Error('A native community entry needs a positive integer sequence');
-      }
-      if (item.entry.community !== communityRef || item.entry.roomId !== remoteRoomId) {
-        throw new Error('A native community entry does not belong to this mirror');
-      }
-    }
-    // A change the redaction feed reported before an entry was cached wins over the frame, which
-    // may have been read before the change. Resolved before the write transaction, as the author
-    // registry writes on its own.
-    const items = ordered.map((frame) => {
-      const item = this.withKnownRedaction(communityRef, remoteRoomId, frame);
-      const external = this.authors.resolveExternal({
-        platformType: 'community',
-        instanceId: communityRef,
-        platformUserId: item.author.memberId,
-        displayName: item.author.displayName,
-      });
-      return { item, authorId: external.id };
-    });
-    if (!items.length) return [];
-    // One transaction per page, and every statement in it an index lookup: the cost of a page
-    // no longer grows with the room it lands in (DOR-2573).
-    return this.db.transaction(
-      (tx) => {
-        const imported: RoomEntry[] = [];
-        let nextSeq: number | null = null;
-        let newest: string | null = null;
-        for (const { item, authorId } of items) {
-          const existing = tx
-            .select({ localEntryId: communityMirrorEntries.localEntryId })
-            .from(communityMirrorEntries)
-            .where(
-              and(
-                eq(communityMirrorEntries.communityRef, communityRef),
-                eq(communityMirrorEntries.remoteRoomId, remoteRoomId),
-                eq(communityMirrorEntries.remoteEntryId, item.entry.id)
-              )
-            )
-            .get();
-          if (existing) {
-            const row = this.localRow(tx, mirror.localRoomId, existing.localEntryId);
-            if (row) imported.push(row);
-            continue;
-          }
-          nextSeq ??= this.nextLocalSeq(tx, mirror.localRoomId);
-          const saved = this.insertEntry(tx, mirror.localRoomId, communityRef, remoteRoomId, {
-            item,
-            authorId,
-            localSeq: nextSeq,
-          });
-          nextSeq += 1;
-          if (newest === null || item.entry.createdAt > newest) newest = item.entry.createdAt;
-          if (saved) imported.push(saved);
-        }
-        if (newest !== null) {
-          tx.update(rooms)
-            // A late history page may be older than the snapshot already cached.
-            // Keep the newest server timestamp only for sidebar activity; remote
-            // sequence remains the authoritative order everywhere else.
-            .set({
-              lastActivityAt: sql`CASE WHEN ${rooms.lastActivityAt} > ${newest} THEN ${rooms.lastActivityAt} ELSE ${newest} END`,
-            })
-            .where(eq(rooms.id, mirror.localRoomId))
-            .run();
-        }
-        return imported;
-      },
-      { behavior: 'immediate' }
-    );
+    return importMirrorEntries(this.db, this.authors, mirror, communityRef, remoteRoomId, entries);
   }
 
   /**
@@ -396,19 +203,7 @@ export class RemoteMirrorStore implements MirrorRoomAccess {
     remoteEntryId: string,
     claimedAt: string
   ): boolean {
-    const result = this.db
-      .update(communityMirrorEntries)
-      .set({ dispatchClaimedAt: claimedAt })
-      .where(
-        and(
-          eq(communityMirrorEntries.communityRef, communityRef),
-          eq(communityMirrorEntries.remoteRoomId, remoteRoomId),
-          eq(communityMirrorEntries.remoteEntryId, remoteEntryId),
-          isNull(communityMirrorEntries.dispatchClaimedAt)
-        )
-      )
-      .run();
-    return result.changes === 1;
+    return claimRemoteDispatchIn(this.db, communityRef, remoteRoomId, remoteEntryId, claimedAt);
   }
 
   /**
@@ -424,21 +219,7 @@ export class RemoteMirrorStore implements MirrorRoomAccess {
     remoteEntryId: string,
     ownerAuthorId: string
   ): CommunityEntry | null {
-    const mirror = this.findRoom(communityRef, remoteRoomId);
-    if (!mirror || mirror.ownerAuthorId !== ownerAuthorId || mirror.state === 'revoked')
-      return null;
-    const row = this.db
-      .select({ entryJson: communityMirrorEntries.entryJson })
-      .from(communityMirrorEntries)
-      .where(
-        and(
-          eq(communityMirrorEntries.communityRef, communityRef),
-          eq(communityMirrorEntries.remoteRoomId, remoteRoomId),
-          eq(communityMirrorEntries.remoteEntryId, remoteEntryId)
-        )
-      )
-      .get();
-    return row?.entryJson ? CommunityEntrySchema.parse(JSON.parse(row.entryJson)) : null;
+    return cachedEntryIn(this.db, communityRef, remoteRoomId, remoteEntryId, ownerAuthorId);
   }
 
   /**
@@ -453,26 +234,13 @@ export class RemoteMirrorStore implements MirrorRoomAccess {
     remoteEntryId: string,
     ownerAuthorId: string
   ): CachedRemoteEntry | null {
-    const mirror = this.findRoom(communityRef, remoteRoomId);
-    if (!mirror || mirror.ownerAuthorId !== ownerAuthorId || mirror.state === 'revoked')
-      return null;
-    const row = this.db
-      .select({
-        entryJson: communityMirrorEntries.entryJson,
-        remoteSeq: communityMirrorEntries.remoteSeq,
-        authorDisplayName: communityMirrorEntries.authorDisplayName,
-        authorKind: communityMirrorEntries.authorKind,
-      })
-      .from(communityMirrorEntries)
-      .where(
-        and(
-          eq(communityMirrorEntries.communityRef, communityRef),
-          eq(communityMirrorEntries.remoteRoomId, remoteRoomId),
-          eq(communityMirrorEntries.remoteEntryId, remoteEntryId)
-        )
-      )
-      .get();
-    return row ? toCachedEntry(row) : null;
+    return cachedEntryWithAuthorIn(
+      this.db,
+      communityRef,
+      remoteRoomId,
+      remoteEntryId,
+      ownerAuthorId
+    );
   }
 
   /**
@@ -488,38 +256,7 @@ export class RemoteMirrorStore implements MirrorRoomAccess {
     ownerAuthorId: string,
     opts: { afterRemoteSeq?: number; limit: number }
   ): readonly CommunityEntry[] {
-    const mirror = this.findRoom(communityRef, remoteRoomId);
-    if (!mirror || mirror.ownerAuthorId !== ownerAuthorId || mirror.state === 'revoked') return [];
-    const limit = Math.min(Math.max(0, opts.limit), 200);
-    if (limit === 0) return [];
-    return (
-      this.db
-        .select({ entryJson: communityMirrorEntries.entryJson })
-        .from(communityMirrorEntries)
-        // The mirror's local room names the same rows as (communityRef, remoteRoomId), one
-        // to one, and it is what `(local_room_id, remote_seq)` is keyed by: with it the page
-        // is read in order from the index; without it every cached entry of the room was
-        // read and sorted to return 200 (0.55 ms to 0.09 ms at 2,000 entries, growing with
-        // the room).
-        .where(
-          and(
-            eq(communityMirrorEntries.communityRef, communityRef),
-            eq(communityMirrorEntries.remoteRoomId, remoteRoomId),
-            eq(communityMirrorEntries.localRoomId, mirror.localRoomId),
-            ...(opts.afterRemoteSeq === undefined
-              ? []
-              : [gt(communityMirrorEntries.remoteSeq, opts.afterRemoteSeq)])
-          )
-        )
-        .orderBy(communityMirrorEntries.remoteSeq)
-        .limit(limit)
-        .all()
-        // Older rows predate opaque projection storage and are refreshed from the
-        // remote adapter rather than pretending an incomplete value is complete.
-        .flatMap((row) =>
-          row.entryJson ? [CommunityEntrySchema.parse(JSON.parse(row.entryJson))] : []
-        )
-    );
+    return cachedEntriesIn(this.db, communityRef, remoteRoomId, ownerAuthorId, opts);
   }
 
   /**
@@ -541,52 +278,7 @@ export class RemoteMirrorStore implements MirrorRoomAccess {
 
   /** Forget the redaction feed position, so the next read starts from the beginning. */
   resetRedactionCursor(communityRef: CommunityRef, remoteRoomId: string): void {
-    this.db
-      .update(communityRoomMirrors)
-      .set({ redactionCursor: null })
-      .where(
-        and(
-          eq(communityRoomMirrors.communityRef, communityRef),
-          eq(communityRoomMirrors.remoteRoomId, remoteRoomId)
-        )
-      )
-      .run();
-  }
-
-  /**
-   * The local entries that copy one Community entry: a local agent's post the outbox delivered
-   * as it, and a cached copy of it.
-   */
-  private localCopiesOf(
-    communityRef: CommunityRef,
-    remoteRoomId: string,
-    ownerAuthorId: string,
-    remoteEntryId: string
-  ): string[] {
-    const delivered = this.db
-      .select({ localEntryId: communityOutbox.localEntryId })
-      .from(communityOutbox)
-      .where(
-        and(
-          eq(communityOutbox.communityRef, communityRef),
-          eq(communityOutbox.remoteRoomId, remoteRoomId),
-          eq(communityOutbox.ownerAuthorId, ownerAuthorId),
-          eq(communityOutbox.remoteEntryId, remoteEntryId)
-        )
-      )
-      .all();
-    const cached = this.db
-      .select({ localEntryId: communityMirrorEntries.localEntryId })
-      .from(communityMirrorEntries)
-      .where(
-        and(
-          eq(communityMirrorEntries.communityRef, communityRef),
-          eq(communityMirrorEntries.remoteRoomId, remoteRoomId),
-          eq(communityMirrorEntries.remoteEntryId, remoteEntryId)
-        )
-      )
-      .all();
-    return [...delivered, ...cached].map((row) => row.localEntryId);
+    resetRedactionCursorIn(this.db, communityRef, remoteRoomId);
   }
 
   /** This owner's live mirror of a remote room, or `null`. */
@@ -616,39 +308,14 @@ export class RemoteMirrorStore implements MirrorRoomAccess {
   ): Array<MirrorAttachmentFile & { mimeType: string }> {
     const mirror = this.applicableMirror(communityRef, remoteRoomId, ownerAuthorId);
     if (!mirror) return [];
-    const needed: Array<MirrorAttachmentFile & { mimeType: string }> = [];
-    for (const item of items) {
-      if (!item.entry.attachments?.length) continue;
-      for (const localEntryId of this.localCopiesOf(
-        communityRef,
-        remoteRoomId,
-        ownerAuthorId,
-        item.entry.id
-      )) {
-        for (const row of this.db
-          .select({
-            id: roomAttachments.id,
-            extension: roomAttachments.extension,
-            mimeType: roomAttachments.mimeType,
-          })
-          .from(roomAttachments)
-          .where(
-            and(
-              eq(roomAttachments.roomId, mirror.localRoomId),
-              eq(roomAttachments.entryId, localEntryId),
-              isNull(roomAttachments.communityAttachmentId)
-            )
-          )
-          .all())
-          needed.push({
-            roomId: mirror.localRoomId,
-            attachmentId: row.id,
-            extension: row.extension,
-            mimeType: row.mimeType,
-          });
-      }
-    }
-    return needed;
+    return attachmentsNeedingChecksumIn(
+      this.db,
+      mirror,
+      communityRef,
+      remoteRoomId,
+      ownerAuthorId,
+      items
+    );
   }
 
   /**
@@ -669,26 +336,15 @@ export class RemoteMirrorStore implements MirrorRoomAccess {
   ): MirrorAttachmentFile[] {
     const mirror = this.applicableMirror(communityRef, remoteRoomId, ownerAuthorId);
     if (!mirror) return [];
-    const planned: MirrorAttachmentFile[] = [];
-    for (const item of items) {
-      if (item.entry.community !== communityRef || item.entry.roomId !== remoteRoomId) continue;
-      for (const localEntryId of this.localCopiesOf(
-        communityRef,
-        remoteRoomId,
-        ownerAuthorId,
-        item.entry.id
-      )) {
-        for (const { roomId, attachmentId, extension } of attachmentsToDrop(
-          this.db,
-          mirror.localRoomId,
-          localEntryId,
-          item.entry.attachments ?? [],
-          checksums
-        ))
-          planned.push({ roomId, attachmentId, extension });
-      }
-    }
-    return planned;
+    return plannedAttachmentDropsIn(
+      this.db,
+      mirror,
+      communityRef,
+      remoteRoomId,
+      ownerAuthorId,
+      items,
+      checksums
+    );
   }
 
   /**
@@ -740,171 +396,16 @@ export class RemoteMirrorStore implements MirrorRoomAccess {
     const mirror = this.findRoom(communityRef, remoteRoomId);
     if (!mirror || mirror.ownerAuthorId !== ownerAuthorId || mirror.state === 'revoked')
       return null;
-    for (const item of items) {
-      if (item.entry.community !== communityRef || item.entry.roomId !== remoteRoomId) {
-        throw new Error('A changed community entry does not belong to this mirror');
-      }
-    }
-    const localRoomId = mirror.localRoomId;
-    return this.db.transaction(
-      (tx) => {
-        const changedSeqs: number[] = [];
-        const droppedAttachments: MirrorAttachmentFile[] = [];
-        const rewrite = (
-          localEntryId: string,
-          item: NativeMirrorEntry,
-          keepMentions: boolean,
-          renamedTo?: string
-        ) => {
-          const row = tx
-            .update(roomEntries)
-            .set({
-              body: JSON.stringify({ text: item.entry.text }),
-              // A local post's mentions are local author ids; a change only ever removes them.
-              ...(keepMentions && item.entry.mentions.length
-                ? {}
-                : { mentions: JSON.stringify(item.entry.mentions), mentionSpans: '[]' }),
-            })
-            .where(and(eq(roomEntries.roomId, localRoomId), eq(roomEntries.id, localEntryId)))
-            .returning({ seq: roomEntries.seq })
-            .get();
-          if (!row) return;
-          changedSeqs.push(row.seq);
-          // Its files are copies too: a file the Community no longer has on the entry stops
-          // being offered here, in this transaction (DOR-2549). The bytes go after the commit.
-          const drop = attachmentsToDrop(
-            tx,
-            localRoomId,
-            localEntryId,
-            item.entry.attachments ?? [],
-            checksums
-          );
-          if (drop.length) {
-            tx.delete(roomAttachments)
-              .where(
-                and(
-                  eq(roomAttachments.roomId, localRoomId),
-                  inArray(
-                    roomAttachments.id,
-                    drop.map((file) => file.id)
-                  )
-                )
-              )
-              .run();
-            for (const { roomId, attachmentId, extension } of drop)
-              droppedAttachments.push({ roomId, attachmentId, extension });
-          }
-          // An inbox notification that quoted the entry is a copy too.
-          rewriteRoomEntryNotifications(tx, localRoomId, localEntryId, {
-            text: item.entry.text,
-            ...(renamedTo ? { fromName: renamedTo } : {}),
-          });
-        };
-        for (const item of items) {
-          const entryJson = JSON.stringify(CommunityEntrySchema.parse(item.entry));
-          const delivered = tx
-            .select({ localEntryId: communityOutbox.localEntryId })
-            .from(communityOutbox)
-            .where(
-              and(
-                eq(communityOutbox.communityRef, communityRef),
-                eq(communityOutbox.remoteRoomId, remoteRoomId),
-                eq(communityOutbox.ownerAuthorId, ownerAuthorId),
-                eq(communityOutbox.remoteEntryId, item.entry.id)
-              )
-            )
-            .all();
-          for (const post of delivered) rewrite(post.localEntryId, item, true);
-          const cached = tx
-            .select({
-              localEntryId: communityMirrorEntries.localEntryId,
-              entryJson: communityMirrorEntries.entryJson,
-              authorDisplayName: communityMirrorEntries.authorDisplayName,
-              authorKind: communityMirrorEntries.authorKind,
-            })
-            .from(communityMirrorEntries)
-            .where(
-              and(
-                eq(communityMirrorEntries.communityRef, communityRef),
-                eq(communityMirrorEntries.remoteRoomId, remoteRoomId),
-                eq(communityMirrorEntries.remoteEntryId, item.entry.id)
-              )
-            )
-            .get();
-          if (!cached) {
-            // Remembered even when a local post was rewritten above: the post's own echo may
-            // still arrive from the stream, and must be stored as it is now.
-            tx.insert(communityMirrorRedactions)
-              .values({
-                communityRef,
-                remoteRoomId,
-                remoteEntryId: item.entry.id,
-                entryJson,
-                authorDisplayName: item.author.displayName,
-                authorKind: item.author.kind,
-              })
-              .onConflictDoUpdate({
-                target: [
-                  communityMirrorRedactions.communityRef,
-                  communityMirrorRedactions.remoteRoomId,
-                  communityMirrorRedactions.remoteEntryId,
-                ],
-                set: {
-                  entryJson,
-                  authorDisplayName: item.author.displayName,
-                  authorKind: item.author.kind,
-                },
-              })
-              .run();
-            continue;
-          }
-          if (
-            cached.entryJson === entryJson &&
-            cached.authorDisplayName === item.author.displayName &&
-            cached.authorKind === item.author.kind
-          ) {
-            continue;
-          }
-          if (cached.authorDisplayName !== item.author.displayName) {
-            // Only erasure changes the name a message shows. Its handle was derived from the
-            // erased name, so it is re-derived too.
-            this.authors.renameErasedExternal({
-              platformType: 'community',
-              instanceId: communityRef,
-              platformUserId: item.author.memberId,
-              displayName: item.author.displayName,
-            });
-          }
-          rewrite(
-            cached.localEntryId,
-            item,
-            false,
-            cached.authorDisplayName !== item.author.displayName
-              ? item.author.displayName
-              : undefined
-          );
-          tx.update(communityMirrorEntries)
-            .set({
-              entryJson,
-              authorDisplayName: item.author.displayName,
-              authorKind: item.author.kind,
-            })
-            .where(
-              and(
-                eq(communityMirrorEntries.communityRef, communityRef),
-                eq(communityMirrorEntries.remoteRoomId, remoteRoomId),
-                eq(communityMirrorEntries.remoteEntryId, item.entry.id)
-              )
-            )
-            .run();
-        }
-        tx.update(communityRoomMirrors)
-          .set({ redactionCursor: nextCursor })
-          .where(eq(communityRoomMirrors.localRoomId, localRoomId))
-          .run();
-        return { localRoomId, changedSeqs, droppedAttachments };
-      },
-      { behavior: 'immediate' }
+    return applyRedactionPage(
+      this.db,
+      this.authors,
+      mirror,
+      communityRef,
+      remoteRoomId,
+      ownerAuthorId,
+      items,
+      nextCursor,
+      checksums
     );
   }
 
@@ -914,65 +415,17 @@ export class RemoteMirrorStore implements MirrorRoomAccess {
    * against the connection records (DOR-2334).
    */
   mirroredConnections(): { communityRef: CommunityRef; ownerAuthorId: string }[] {
-    const pairs = new Map<string, { communityRef: CommunityRef; ownerAuthorId: string }>();
-    for (const row of this.db
-      .select({
-        communityRef: communityRoomMirrors.communityRef,
-        ownerAuthorId: communityRoomMirrors.ownerAuthorId,
-        state: communityRoomMirrors.state,
-        room: rooms.id,
-      })
-      .from(communityRoomMirrors)
-      .leftJoin(rooms, eq(rooms.id, communityRoomMirrors.localRoomId))
-      .all()) {
-      if (row.state === 'revoked' && row.room === null) continue;
-      const communityRef = row.communityRef as CommunityRef;
-      pairs.set(`${communityRef}\0${row.ownerAuthorId}`, {
-        communityRef,
-        ownerAuthorId: row.ownerAuthorId,
-      });
-    }
-    return [...pairs.values()];
+    return mirroredConnectionsIn(this.db);
   }
 
   /** Mark a temporary outage: only the owner may read their last authorized rooms. */
   markStale(communityRef: CommunityRef, ownerAuthorId: string): void {
-    this.db
-      .update(communityRoomMirrors)
-      .set({ state: 'stale' })
-      .where(
-        and(
-          eq(communityRoomMirrors.communityRef, communityRef),
-          eq(communityRoomMirrors.ownerAuthorId, ownerAuthorId),
-          eq(communityRoomMirrors.state, 'authorized')
-        )
-      )
-      .run();
+    markStaleIn(this.db, communityRef, ownerAuthorId);
   }
 
   /** Invalidate one owner's mirrors of a community after a remote `not-admitted` result. */
   revoke(communityRef: CommunityRef, ownerAuthorId: string): void {
-    this.db.transaction((tx) => {
-      const owned = and(
-        eq(communityRoomMirrors.communityRef, communityRef),
-        eq(communityRoomMirrors.ownerAuthorId, ownerAuthorId)
-      );
-      const mirrored = tx
-        .select({
-          localRoomId: communityRoomMirrors.localRoomId,
-          remoteRoomId: communityRoomMirrors.remoteRoomId,
-        })
-        .from(communityRoomMirrors)
-        .where(owned)
-        .all();
-      tx.update(communityRoomMirrors).set({ state: 'revoked' }).where(owned).run();
-      for (const row of mirrored) {
-        tx.update(communityMirrorAccess)
-          .set({ state: 'revoked' })
-          .where(eq(communityMirrorAccess.localRoomId, row.localRoomId))
-          .run();
-      }
-    });
+    revokeOwnerMirrors(this.db, communityRef, ownerAuthorId);
   }
 
   /**
@@ -985,34 +438,7 @@ export class RemoteMirrorStore implements MirrorRoomAccess {
     ownerAuthorId: string,
     allowedRemoteRoomIds: ReadonlySet<string>
   ): readonly RevokedRemoteMirrorRoom[] {
-    return this.db.transaction((tx) => {
-      const absent = tx
-        .select({
-          localRoomId: communityRoomMirrors.localRoomId,
-          remoteRoomId: communityRoomMirrors.remoteRoomId,
-          state: communityRoomMirrors.state,
-        })
-        .from(communityRoomMirrors)
-        .where(
-          and(
-            eq(communityRoomMirrors.communityRef, communityRef),
-            eq(communityRoomMirrors.ownerAuthorId, ownerAuthorId)
-          )
-        )
-        .all()
-        .filter((row) => row.state !== 'revoked' && !allowedRemoteRoomIds.has(row.remoteRoomId));
-      for (const room of absent) {
-        tx.update(communityRoomMirrors)
-          .set({ state: 'revoked' })
-          .where(eq(communityRoomMirrors.localRoomId, room.localRoomId))
-          .run();
-        tx.update(communityMirrorAccess)
-          .set({ state: 'revoked' })
-          .where(eq(communityMirrorAccess.localRoomId, room.localRoomId))
-          .run();
-      }
-      return absent;
-    });
+    return revokeAbsentMirrors(this.db, communityRef, ownerAuthorId, allowedRemoteRoomIds);
   }
 
   /**
@@ -1021,7 +447,7 @@ export class RemoteMirrorStore implements MirrorRoomAccess {
    */
   purgeRevoked(communityRef: CommunityRef, ownerAuthorId: string): void {
     const purge = this.db.transaction((tx) =>
-      this.purgeContent(
+      purgeContent(
         tx,
         communityRef,
         tx
@@ -1041,79 +467,6 @@ export class RemoteMirrorStore implements MirrorRoomAccess {
       )
     );
     if (purge.localRoomIds.length) this.purged?.(purge);
-  }
-
-  /**
-   * Delete what a revoked mirror held, down to its local room: entries (their reactions cascade),
-   * files, members, agent sessions, read positions, inbox notifications about it, cached remote
-   * entries, and remembered changes. A revoked mirror is unreadable here and no longer reads the redaction feed, so a
-   * later deletion, removal, or erasure on the server could never reach its copy; keeping none
-   * is the only way that copy cannot outlive one. The mapping row stays, revoked, so a late
-   * stream frame cannot recreate the room; readmission gives it a fresh local room
-   * ({@link RemoteMirrorStore.ensureRoom}). A room already deleted is skipped.
-   */
-  private purgeContent(
-    tx: DbTransaction,
-    communityRef: CommunityRef,
-    mirrored: readonly { localRoomId: string; remoteRoomId: string }[]
-  ): MirrorPurge {
-    const present = mirrored.filter(
-      (room) =>
-        tx.select({ id: rooms.id }).from(rooms).where(eq(rooms.id, room.localRoomId)).get() !==
-        undefined
-    );
-    const localRoomIds = present.map((room) => room.localRoomId);
-    if (!localRoomIds.length) return { localRoomIds, attachments: [] };
-    const attachments = tx
-      .select({
-        roomId: roomAttachments.roomId,
-        attachmentId: roomAttachments.id,
-        extension: roomAttachments.extension,
-      })
-      .from(roomAttachments)
-      .where(inArray(roomAttachments.roomId, localRoomIds))
-      .all();
-    tx.delete(roomAttachments).where(inArray(roomAttachments.roomId, localRoomIds)).run();
-    tx.delete(roomEntries).where(inArray(roomEntries.roomId, localRoomIds)).run();
-    tx.delete(roomMembers).where(inArray(roomMembers.roomId, localRoomIds)).run();
-    tx.delete(roomSessions).where(inArray(roomSessions.roomId, localRoomIds)).run();
-    tx.delete(readCursors)
-      .where(and(eq(readCursors.threadKind, 'room'), inArray(readCursors.threadId, localRoomIds)))
-      .run();
-    tx.delete(rooms).where(inArray(rooms.id, localRoomIds)).run();
-    deleteRoomNotifications(tx, localRoomIds);
-    tx.delete(communityMirrorEntries)
-      .where(inArray(communityMirrorEntries.localRoomId, localRoomIds))
-      .run();
-    tx.delete(communityMirrorRedactions)
-      .where(
-        and(
-          eq(communityMirrorRedactions.communityRef, communityRef),
-          inArray(
-            communityMirrorRedactions.remoteRoomId,
-            present.map((room) => room.remoteRoomId)
-          )
-        )
-      )
-      .run();
-    tx.update(communityRoomMirrors)
-      .set({ redactionCursor: null })
-      .where(inArray(communityRoomMirrors.localRoomId, localRoomIds))
-      .run();
-    return { localRoomIds, attachments };
-  }
-
-  /** Drop a mapping whose local room was purged, so readmission can create a fresh one. */
-  private forgetMapping(localRoomId: string): undefined {
-    this.db.transaction((tx) => {
-      tx.delete(communityMirrorAccess)
-        .where(eq(communityMirrorAccess.localRoomId, localRoomId))
-        .run();
-      tx.delete(communityRoomMirrors)
-        .where(eq(communityRoomMirrors.localRoomId, localRoomId))
-        .run();
-    });
-    return undefined;
   }
 
   /** Return a mirror-local authorization answer before RoomVisibility checks owner power. */
@@ -1224,29 +577,7 @@ export class RemoteMirrorStore implements MirrorRoomAccess {
 
   /** Revoke one local agent's access without changing other enrolled agents' grants. */
   revokeAgentAccess(communityRef: CommunityRef, ownerAuthorId: string, authorId: string): void {
-    const rooms = this.db
-      .select({ localRoomId: communityRoomMirrors.localRoomId })
-      .from(communityRoomMirrors)
-      .where(
-        and(
-          eq(communityRoomMirrors.communityRef, communityRef),
-          eq(communityRoomMirrors.ownerAuthorId, ownerAuthorId)
-        )
-      )
-      .all();
-    this.db.transaction((tx) => {
-      for (const room of rooms) {
-        tx.update(communityMirrorAccess)
-          .set({ state: 'revoked' })
-          .where(
-            and(
-              eq(communityMirrorAccess.localRoomId, room.localRoomId),
-              eq(communityMirrorAccess.authorId, authorId)
-            )
-          )
-          .run();
-      }
-    });
+    revokeAgentAccessIn(this.db, communityRef, ownerAuthorId, authorId);
   }
 
   /** Revoke one agent's access to one qualified mirror without touching other grants. */
@@ -1291,23 +622,7 @@ export class RemoteMirrorStore implements MirrorRoomAccess {
    * cannot reopen a live-dispatch window while the halt awaits.
    */
   removeAgentMembership(communityRef: CommunityRef, ownerAuthorId: string, authorId: string): void {
-    const rooms = this.db
-      .select({ localRoomId: communityRoomMirrors.localRoomId })
-      .from(communityRoomMirrors)
-      .where(
-        and(
-          eq(communityRoomMirrors.communityRef, communityRef),
-          eq(communityRoomMirrors.ownerAuthorId, ownerAuthorId)
-        )
-      )
-      .all();
-    this.db.transaction((tx) => {
-      for (const room of rooms) {
-        tx.delete(roomMembers)
-          .where(and(eq(roomMembers.roomId, room.localRoomId), eq(roomMembers.authorId, authorId)))
-          .run();
-      }
-    });
+    removeAgentMembershipIn(this.db, communityRef, ownerAuthorId, authorId);
   }
 
   /** Resolve a qualified remote room to its opaque local mirror id for local-only Stop. */
@@ -1367,316 +682,6 @@ export class RemoteMirrorStore implements MirrorRoomAccess {
   }
 
   private findRoom(communityRef: CommunityRef, remoteRoomId: string) {
-    return this.db
-      .select()
-      .from(communityRoomMirrors)
-      .where(
-        and(
-          eq(communityRoomMirrors.communityRef, communityRef),
-          eq(communityRoomMirrors.remoteRoomId, remoteRoomId)
-        )
-      )
-      .get();
+    return findMirror(this.db, communityRef, remoteRoomId);
   }
-
-  private refreshAccess(localRoomId: string, input: MirrorRoomInput): void {
-    const accessors = dedupeAccessors(input.ownerAuthorId, input.accessors);
-    this.db.transaction((tx) => {
-      tx.update(communityRoomMirrors)
-        .set({
-          ownerAuthorId: input.ownerAuthorId,
-          state: 'authorized',
-          authorizedAt: input.authorizedAt,
-        })
-        .where(eq(communityRoomMirrors.localRoomId, localRoomId))
-        .run();
-      for (const accessor of accessors) {
-        tx.insert(communityMirrorAccess)
-          .values({ localRoomId, authorId: accessor.authorId, state: 'authorized' })
-          .onConflictDoUpdate({
-            target: [communityMirrorAccess.localRoomId, communityMirrorAccess.authorId],
-            set: { state: 'authorized' },
-          })
-          .run();
-        tx.insert(roomMembers)
-          .values({
-            roomId: localRoomId,
-            authorId: accessor.authorId,
-            responseMode: accessor.responseMode ?? 'silent',
-            joinedAt: input.authorizedAt,
-            joinedSeq: 0,
-            lastReadSeq: 0,
-          })
-          .onConflictDoNothing()
-          .run();
-      }
-      const permitted = new Set(accessors.map((accessor) => accessor.authorId));
-      const existing = tx
-        .select({ authorId: communityMirrorAccess.authorId })
-        .from(communityMirrorAccess)
-        .where(eq(communityMirrorAccess.localRoomId, localRoomId))
-        .all();
-      for (const row of existing) {
-        if (permitted.has(row.authorId)) continue;
-        tx.update(communityMirrorAccess)
-          .set({ state: 'revoked' })
-          .where(
-            and(
-              eq(communityMirrorAccess.localRoomId, localRoomId),
-              eq(communityMirrorAccess.authorId, row.authorId)
-            )
-          )
-          .run();
-      }
-    });
-  }
-
-  /** The local room log's next `seq`, read once per page inside its write transaction. */
-  private nextLocalSeq(tx: DbTransaction, localRoomId: string): number {
-    const allocated = tx
-      .select({ next: sql<number>`COALESCE(MAX(${roomEntries.seq}), 0) + 1` })
-      .from(roomEntries)
-      .where(eq(roomEntries.roomId, localRoomId))
-      .get();
-    return allocated?.next ?? 1;
-  }
-
-  /** One local room entry as the room store returns it. */
-  private localRow(tx: DbTransaction, localRoomId: string, localEntryId: string): RoomEntry | null {
-    const row = tx
-      .select()
-      .from(roomEntries)
-      .where(and(eq(roomEntries.roomId, localRoomId), eq(roomEntries.id, localEntryId)))
-      .get();
-    return row ? toEntry(row) : null;
-  }
-
-  /**
-   * Store one entry not cached yet: its room log row, its cache row, and the links of any reply
-   * that arrived before it.
-   */
-  private insertEntry(
-    tx: DbTransaction,
-    localRoomId: string,
-    communityRef: CommunityRef,
-    remoteRoomId: string,
-    { item, authorId, localSeq }: { item: NativeMirrorEntry; authorId: string; localSeq: number }
-  ): RoomEntry | null {
-    const colliding = tx
-      .select({ remoteEntryId: communityMirrorEntries.remoteEntryId })
-      .from(communityMirrorEntries)
-      .where(
-        and(
-          eq(communityMirrorEntries.localRoomId, localRoomId),
-          eq(communityMirrorEntries.remoteSeq, item.remoteSeq)
-        )
-      )
-      .get();
-    if (colliding) throw new Error('Two remote entries cannot share a remote sequence');
-
-    const parentEntryId = this.localEntryId(
-      tx,
-      communityRef,
-      remoteRoomId,
-      item.entry.parentEntryId
-    );
-    const threadRootEntryId = this.localEntryId(
-      tx,
-      communityRef,
-      remoteRoomId,
-      item.entry.threadRootEntryId
-    );
-    const localEntryId = ulid();
-    tx.insert(roomMembers)
-      .values({
-        roomId: localRoomId,
-        authorId,
-        responseMode: 'silent',
-        joinedAt: item.entry.createdAt,
-        joinedSeq: 0,
-        lastReadSeq: 0,
-      })
-      .onConflictDoNothing()
-      .run();
-    tx.insert(roomEntries)
-      .values({
-        roomId: localRoomId,
-        seq: localSeq,
-        // Remote history reads in the Community's order (`room_entries.timeline_band`).
-        timelineBand: 0,
-        timelinePos: item.remoteSeq,
-        id: localEntryId,
-        authorId,
-        kind: 'post',
-        body: JSON.stringify({ text: item.entry.text }),
-        mentions: JSON.stringify(item.entry.mentions),
-        mentionSpans: '[]',
-        sessionId: null,
-        cascadeRoot: localEntryId,
-        cascadeDepth: 0,
-        dispatchId: null,
-        parentEntryId,
-        threadRootEntryId,
-        signature: null,
-        createdAt: item.entry.createdAt,
-      })
-      .run();
-    tx.delete(communityMirrorRedactions)
-      .where(
-        and(
-          eq(communityMirrorRedactions.communityRef, communityRef),
-          eq(communityMirrorRedactions.remoteRoomId, remoteRoomId),
-          eq(communityMirrorRedactions.remoteEntryId, item.entry.id)
-        )
-      )
-      .run();
-    tx.insert(communityMirrorEntries)
-      .values({
-        communityRef,
-        remoteRoomId,
-        remoteEntryId: item.entry.id,
-        localRoomId,
-        localEntryId,
-        remoteSeq: item.remoteSeq,
-        entryJson: JSON.stringify(CommunityEntrySchema.parse(item.entry)),
-        authorDisplayName: item.author.displayName,
-        authorKind: item.author.kind,
-        remoteParentEntryId: item.entry.parentEntryId,
-        remoteThreadRootEntryId: item.entry.threadRootEntryId,
-      })
-      .run();
-    this.linkWaitingReplies(tx, localRoomId, item.entry.id, localEntryId);
-    return this.localRow(tx, localRoomId, localEntryId);
-  }
-
-  /** The entry as the redaction feed last reported it, when it changed before it was cached. */
-  private withKnownRedaction(
-    communityRef: CommunityRef,
-    remoteRoomId: string,
-    item: NativeMirrorEntry
-  ): NativeMirrorEntry {
-    const known = this.db
-      .select()
-      .from(communityMirrorRedactions)
-      .where(
-        and(
-          eq(communityMirrorRedactions.communityRef, communityRef),
-          eq(communityMirrorRedactions.remoteRoomId, remoteRoomId),
-          eq(communityMirrorRedactions.remoteEntryId, item.entry.id)
-        )
-      )
-      .get();
-    if (!known || !isNativeAuthorKind(known.authorKind)) return item;
-    return {
-      entry: CommunityEntrySchema.parse(JSON.parse(known.entryJson)),
-      remoteSeq: item.remoteSeq,
-      author: {
-        memberId: item.author.memberId,
-        displayName: known.authorDisplayName,
-        kind: known.authorKind,
-      },
-    };
-  }
-
-  private localEntryId(
-    tx: Db | DbTransaction,
-    communityRef: CommunityRef,
-    remoteRoomId: string,
-    remoteEntryId: string | null
-  ): string | null {
-    if (remoteEntryId === null) return null;
-    return (
-      tx
-        .select({ localEntryId: communityMirrorEntries.localEntryId })
-        .from(communityMirrorEntries)
-        .where(
-          and(
-            eq(communityMirrorEntries.communityRef, communityRef),
-            eq(communityMirrorEntries.remoteRoomId, remoteRoomId),
-            eq(communityMirrorEntries.remoteEntryId, remoteEntryId)
-          )
-        )
-        .get()?.localEntryId ?? null
-    );
-  }
-
-  /**
-   * Link the replies cached before the entry they answer, now that it has arrived.
-   *
-   * A history page read backwards brings replies before their parents, so a reply is stored
-   * with no local parent and linked here, when its parent lands. Only the replies that name this
-   * entry are touched, found through their stored Community relation; this once re-read every
-   * cached entry of the room on every import, which made filling a room quadratic (DOR-2573).
-   */
-  private linkWaitingReplies(
-    tx: DbTransaction,
-    localRoomId: string,
-    remoteEntryId: string,
-    localEntryId: string
-  ): void {
-    const waiting = (
-      relation:
-        | typeof communityMirrorEntries.remoteParentEntryId
-        | typeof communityMirrorEntries.remoteThreadRootEntryId
-    ) =>
-      tx
-        .select({ localEntryId: communityMirrorEntries.localEntryId })
-        .from(communityMirrorEntries)
-        .where(
-          and(eq(communityMirrorEntries.localRoomId, localRoomId), eq(relation, remoteEntryId))
-        );
-    tx.update(roomEntries)
-      .set({ parentEntryId: localEntryId })
-      .where(
-        and(
-          eq(roomEntries.roomId, localRoomId),
-          inArray(roomEntries.id, waiting(communityMirrorEntries.remoteParentEntryId))
-        )
-      )
-      .run();
-    tx.update(roomEntries)
-      .set({ threadRootEntryId: localEntryId })
-      .where(
-        and(
-          eq(roomEntries.roomId, localRoomId),
-          inArray(roomEntries.id, waiting(communityMirrorEntries.remoteThreadRootEntryId))
-        )
-      )
-      .run();
-  }
-}
-
-/** Keep the owner and every explicitly enrolled agent exactly once. */
-function dedupeAccessors(
-  ownerAuthorId: string,
-  accessors: readonly MirrorAccessor[]
-): MirrorAccessor[] {
-  const values = new Map<string, MirrorAccessor>();
-  values.set(ownerAuthorId, { authorId: ownerAuthorId, responseMode: 'silent' });
-  for (const accessor of accessors) values.set(accessor.authorId, accessor);
-  return [...values.values()];
-}
-
-/** Rehydrate optional native provenance without inferring anything from a label. */
-function toCachedEntry(row: {
-  entryJson: string | null;
-  remoteSeq: number;
-  authorDisplayName: string | null;
-  authorKind: string | null;
-}): CachedRemoteEntry | null {
-  if (!row.entryJson) return null;
-  const entry = CommunityEntrySchema.parse(JSON.parse(row.entryJson));
-  const author = isNativeAuthorKind(row.authorKind)
-    ? {
-        memberId: entry.authorId,
-        displayName: row.authorDisplayName ?? entry.authorId,
-        kind: row.authorKind,
-      }
-    : null;
-  return { entry, remoteSeq: row.remoteSeq, author };
-}
-
-/** The three native member kinds the remote server vouches for on its wire. */
-function isNativeAuthorKind(value: string | null): value is 'human' | 'agent' | 'system' {
-  return value === 'human' || value === 'agent' || value === 'system';
 }
