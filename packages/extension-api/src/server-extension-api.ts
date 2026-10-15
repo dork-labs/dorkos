@@ -314,7 +314,8 @@ export interface DataProviderContext {
    * local caller that does not name itself an agent passes, and in any posture
    * this extension's own page code passes). Put it in front of every route
    * that changes state on a person's behalf:
-   * `router.put('/settings', ctx.requirePerson, handler)`.
+   * `router.put('/settings', ctx.requirePerson, handler)`. A fetch handler uses
+   * `requirePerson()` or `checkPerson(caller)` from this module instead.
    */
   readonly requirePerson: import('express').RequestHandler;
   /**
@@ -616,10 +617,18 @@ export interface ProjectsApi {
 }
 
 export type {
+  ExtensionCaller,
   ExtensionFetchHandler,
+  PersonCheck,
+  PersonRefusal,
   RegisterOutcome,
   ServerExtensionHandlers,
   ServerExtensionRegister,
   ServerExtensionRegisterResult,
 } from './server-entry.js';
-export { readRegisterResult, serverEntryRegister } from './server-entry.js';
+export {
+  checkPerson,
+  readRegisterResult,
+  requirePerson,
+  serverEntryRegister,
+} from './server-entry.js';

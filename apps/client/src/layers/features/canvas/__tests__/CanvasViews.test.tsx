@@ -101,6 +101,7 @@ vi.mock('@/layers/shared/model', async () => {
   (useAppStore as unknown as { getState: () => typeof mockState }).getState = () => mockState;
   return {
     useAppStore,
+    useUnifiedPanelChrome: () => false,
     documentsInView: (docs: MockDoc[], view: string) =>
       docs.filter((d) => viewFor(d.content as UiCanvasContent) === view),
     useIsMobile: () => false,

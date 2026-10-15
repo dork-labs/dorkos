@@ -119,7 +119,7 @@ export async function openInCanvasBrowser(
         : '/session'
   );
   await rightPanel.ensureTabStripOpen();
-  await rightPanel.browserTab.click();
+  await rightPanel.selectView('Browser');
 
   // The empty state's web-page action opens a browser document; its address bar
   // is how any page after the first one is reached. `^Web page` is anchored so

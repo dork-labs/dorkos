@@ -4,6 +4,7 @@ import { FloatingPanel, type FloatingPanelGeometry } from '@/layers/shared/ui';
 import { useAppStore, useIsMobile, type PipContent } from '@/layers/shared/model';
 import { McpAppFrame } from '@/layers/features/mcp-apps';
 import { LiveSessionWidget } from '@/layers/features/gen-ui';
+import { ComputerPipView } from '@/layers/features/agent-computer';
 import { DemoPipContent } from './DemoPipContent';
 import { PipMiniBar } from './PipMiniBar';
 import { PipSheet } from './PipSheet';
@@ -79,7 +80,7 @@ const DEV_PIP_TITLE = 'Demo panel';
  *
  * **Why this exists.** Every real way to open a PIP needs a live model turn: an
  * agent emits a `dorkos-ui` fence or an MCP app and somebody pops it out. So the
- * one state where PIP touches the rest of the cockpit — a mini-bar docked at the
+ * one state where PIP touches the rest of the app — a mini-bar docked at the
  * bottom of a phone, beside four destinations it must not cover — had no way to
  * be reached in a test at all, and the occlusion it caused was found by reading
  * CSS rather than by anything red (DOR-1177). A fix with no seam leaves the next
@@ -130,6 +131,8 @@ function renderPipContent(content: PipContent): React.ReactNode {
       const Renderer = PIP_RENDERERS.mcp_app;
       return <Renderer content={content} />;
     }
+    case 'computer':
+      return <ComputerPipView content={content} />;
     case 'widget': {
       const Renderer = PIP_RENDERERS.widget;
       return <Renderer content={content} />;
@@ -196,7 +199,18 @@ function DesktopPip({
     return () => window.removeEventListener('resize', repin);
   }, [pipGeometry]);
 
-  const geometry = pipGeometry ?? dockGeometry;
+  const geometry = React.useMemo(() => {
+    if (pipGeometry) return pipGeometry;
+    if (content?.kind !== 'computer') return dockGeometry;
+    // Computer pixels need a useful viewport; leave the bottom toast lane clear.
+    return {
+      ...dockGeometry,
+      width: 480,
+      height: 360,
+      x: Math.max(0, window.innerWidth - 480 - DEFAULT_MARGIN),
+      y: Math.max(0, window.innerHeight - 360 - 80),
+    };
+  }, [pipGeometry, dockGeometry, content?.kind]);
 
   return (
     <AnimatePresence>
@@ -207,6 +221,8 @@ function DesktopPip({
           geometry={geometry}
           onGeometryChange={setPipGeometry}
           onClose={onClose}
+          minWidth={content.kind === 'computer' ? 360 : undefined}
+          minHeight={content.kind === 'computer' ? 300 : undefined}
           // onRestore is intentionally omitted for every v1 kind. `demo` has no
           // restore target; `mcp_app` and `widget` both keep their inline block
           // live in the transcript (popping out never removes it, dual-live

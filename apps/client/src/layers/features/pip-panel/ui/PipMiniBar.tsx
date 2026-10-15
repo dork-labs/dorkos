@@ -29,7 +29,7 @@ interface PipMiniBarProps {
  * consume it as bottom padding so ROUTED page content — including the session
  * composer — lifts above the bar. That is the whole of what this variable
  * covers, and saying more than that is what let a docked PIP swallow the phone's
- * whole cockpit for a release (DOR-1177, below): the chrome AROUND the routed
+ * whole app for a release (DOR-1177, below): the chrome AROUND the routed
  * page reads no padding, so anything else that docks to the bottom has to be
  * cleared on its own terms. (The sheet deliberately sets no dock padding at all:
  * it is an overlay state entered on purpose, and it does cover the tab bar while
@@ -89,7 +89,7 @@ export function PipMiniBar({ content, onRestore, onClose }: PipMiniBarProps): Re
         type="button"
         aria-label="Close"
         onClick={onClose}
-        className="text-muted-foreground hover:bg-muted hover:text-foreground focus-ring mr-3 shrink-0 rounded-md p-2 transition-colors"
+        className="text-muted-foreground hover:bg-muted hover:text-foreground focus-ring mr-3 flex size-11 shrink-0 items-center justify-center rounded-md transition-colors"
       >
         <X className="size-4" />
       </button>

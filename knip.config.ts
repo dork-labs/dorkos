@@ -67,13 +67,16 @@ const config: KnipConfig = {
       // Build- and bundle-time deps the Electron build needs but no source file
       // imports statically: the renderer (`@dorkos/client` + `tailwindcss`), the
       // native-module rebuild step (`@electron/rebuild`), and the bundled server
-      // runtime (`@dorkos/shared`, `@dorkos/db`, `better-sqlite3`).
+      // runtime (`@dorkos/shared`, `@dorkos/db`, `better-sqlite3`), and `hono`,
+      // which the extension compiler reads from disk to bundle into extensions
+      // (`apps/server/src/services/extensions/server-bundle/host-hono.ts`).
       ignoreDependencies: [
         '@dorkos/client',
         '@dorkos/db',
         '@dorkos/shared',
         '@electron/rebuild',
         'better-sqlite3',
+        'hono',
         'tailwindcss',
       ],
     },
@@ -105,6 +108,9 @@ const config: KnipConfig = {
         '@ngrok/ngrok',
         'conf',
         'express',
+        // Read from disk by the extension compiler, which bundles DorkOS's own
+        // copy into every extension's server half (`server-bundle/host-hono.ts`).
+        'hono',
         'uuid',
       ],
       // No `ignoreUnresolved: [/^\.\.\/server\//]` any more. The CLI still

@@ -31,6 +31,7 @@ import { createCanvasSlice } from './app-store-canvas';
 import { createRoomCanvasSlice } from './app-store-room-canvas';
 import { createRightPanelSlice } from './app-store-right-panel';
 import { createPipSlice } from './app-store-pip';
+import { PANEL_VIEW_PREFERENCES_STORAGE_KEY } from '../panel-resources/preferences';
 import type { AppState } from './app-store-types';
 
 export type { AppState } from './app-store-types';
@@ -218,6 +219,7 @@ export const useAppStore = create<AppState>()(
             // reset their local preferences first.
             localStorage.removeItem(STORAGE_KEYS.RIGHT_PANEL_STATE);
             localStorage.removeItem(STORAGE_KEYS.RIGHT_PANEL_LAYOUTS);
+            localStorage.removeItem(PANEL_VIEW_PREFERENCES_STORAGE_KEY);
             localStorage.removeItem(STORAGE_KEYS.PIP_PANEL_STATE);
             localStorage.removeItem(STORAGE_KEYS.SETTINGS_ADVANCED_OPEN);
           } catch {}
@@ -229,6 +231,7 @@ export const useAppStore = create<AppState>()(
             rightPanelOpen: false,
             activeRightPanelTab: null,
             rightPanelLayoutKey: null,
+            panelViewPreferences: {},
             inheritedRightPanelTab: null,
             pipContent: null,
             pipGeometry: null,

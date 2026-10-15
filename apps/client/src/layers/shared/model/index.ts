@@ -268,3 +268,16 @@ export {
 } from './interaction/use-roving-focus';
 export type { SidebarDragActivatorProps } from './interaction/use-roving-focus';
 export { useRovingGrid } from './interaction/use-roving-grid';
+export {
+  PanelResourceChrome,
+  PanelResourceVisible,
+  useUnifiedPanelChrome,
+  useTerminalResourceChrome,
+} from './panel-resources/chrome';
+export { useVisualViewportBounds } from './viewport/use-visual-viewport-bounds';
+export {
+  documentPanelScope,
+  legacyDocumentPanelScope,
+  readPanelViewPreferences,
+} from './panel-resources/preferences';
+export type { PanelViewPreference, PanelViewPreferences } from './panel-resources/preferences';

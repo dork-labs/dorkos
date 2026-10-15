@@ -24,6 +24,13 @@ import {
   migrateLegacyRightPanelLayouts,
 } from './app-store-helpers';
 import type { RightPanelStateEntry } from './app-store-helpers';
+import {
+  readPanelViewPreferences,
+  reopenPanelResourcePreferences,
+  writePanelViewPreferences,
+  type PanelViewPreference,
+  type PanelViewPreferences,
+} from '../panel-resources/preferences';
 
 /** Read the persisted layout for the active surface (per-agent map, or global when detached). */
 function readLayoutForKey(key: string | null): RightPanelStateEntry | null {
@@ -35,6 +42,13 @@ function readLayoutForKey(key: string | null): RightPanelStateEntry | null {
 // ---------------------------------------------------------------------------
 
 export interface RightPanelSlice {
+  /** Shared viewer preferences so resource-ID changes and closures commit atomically. */
+  panelViewPreferences: PanelViewPreferences;
+  updatePanelViewPreference: (
+    key: string,
+    update: (entry: PanelViewPreference) => PanelViewPreference
+  ) => void;
+  reopenPanelResourceView: (keys: string[]) => void;
   /** Whether the right panel is open. */
   rightPanelOpen: boolean;
   /** Set right panel open/closed state, persisting it under the current agent key. */
@@ -182,6 +196,29 @@ export const createRightPanelSlice: StateCreator<
   [],
   RightPanelSlice
 > = (set, get) => ({
+  panelViewPreferences: readPanelViewPreferences(),
+  reopenPanelResourceView: (keys) =>
+    set((state) => {
+      const panelViewPreferences = reopenPanelResourcePreferences(state.panelViewPreferences, keys);
+      writePanelViewPreferences(panelViewPreferences);
+      return { panelViewPreferences };
+    }),
+  updatePanelViewPreference: (key, update) =>
+    set((state) => {
+      const entry = update(state.panelViewPreferences[key] ?? { opened: [], closed: [] });
+      const bounded = {
+        opened: [...new Set(entry.opened)].slice(-100),
+        closed: [...new Set(entry.closed)].slice(-100),
+      };
+      const panelViewPreferences = Object.fromEntries(
+        [
+          ...Object.entries(state.panelViewPreferences).filter(([existing]) => existing !== key),
+          [key, bounded],
+        ].slice(-50)
+      );
+      writePanelViewPreferences(panelViewPreferences);
+      return { panelViewPreferences };
+    }),
   rightPanelOpen: false,
   setRightPanelOpen: (open) =>
     set((s) => {

@@ -51,7 +51,7 @@ test.describe('The session canvas is the same in every window @smoke', () => {
     const draftUrl = await draftSessionUrl(page, sessionId);
     await rightPanel.goto(draftUrl);
     await rightPanel.ensureTabStripOpen();
-    await rightPanel.canvasTab.click();
+    await rightPanel.selectView('Canvas');
     await page.getByRole('button', { name: /^Markdown/ }).click();
     await expect(page.getByRole('tab', { name: DOCUMENT_TAB })).toBeVisible();
 
@@ -70,7 +70,7 @@ test.describe('The session canvas is the same in every window @smoke', () => {
       const secondPanel = new RightPanelPage(secondPage);
       await secondPanel.goto(draftUrl);
       await secondPanel.ensureTabStripOpen();
-      await secondPanel.canvasTab.click();
+      await secondPanel.selectView('Canvas');
       // Straight off the cold snapshot — no reload, no second click.
       await expect(secondPage.getByRole('tab', { name: DOCUMENT_TAB })).toBeVisible({
         timeout: 20_000,
@@ -79,13 +79,14 @@ test.describe('The session canvas is the same in every window @smoke', () => {
       // --- A reload of window one still has it. ----------------------------
       await page.reload();
       await rightPanel.ensureTabStripOpen();
-      await rightPanel.canvasTab.click();
+      await rightPanel.selectView('Canvas');
       await expect(page.getByRole('tab', { name: DOCUMENT_TAB })).toBeVisible({ timeout: 20_000 });
 
       // --- A close in one window is a close in the other, live. ------------
       // The close control is a SIBLING of the tab, not a child of it (a button
       // inside a button is invalid HTML), so it is addressed by its own label.
-      await page.getByRole('button', { name: /^Close Document/i }).click();
+      await rightPanel.header.getByRole('button', { name: 'Add view', exact: true }).click();
+      await page.getByRole('menuitem', { name: 'Remove document', exact: true }).click();
       await expect(secondPage.getByRole('tab', { name: DOCUMENT_TAB })).toHaveCount(0, {
         timeout: 20_000,
       });
@@ -218,7 +219,7 @@ test.describe('A canvas survives the first-turn rename @smoke', () => {
     await expect(page.getByRole('tab', { name: /^Web Page$/ })).toBeVisible();
 
     // And a document in the Canvas tab, both before a single message is sent.
-    await rightPanel.canvasTab.click();
+    await rightPanel.selectView('Canvas');
     await page.getByRole('button', { name: /^Markdown/ }).click();
     await expect(page.getByRole('tab', { name: DOCUMENT_TAB })).toBeVisible();
 
@@ -239,16 +240,16 @@ test.describe('A canvas survives the first-turn rename @smoke', () => {
     // Both documents came with it — the table the window is holding now is the
     // one the rekey moved, hydrated from the canonical id's own snapshot.
     await expect(page.getByRole('tab', { name: DOCUMENT_TAB })).toBeVisible({ timeout: 20_000 });
-    await rightPanel.browserTab.click();
+    await rightPanel.selectView('Browser');
     await expect(page.getByRole('tab', { name: /^Web Page$/ })).toBeVisible({ timeout: 20_000 });
 
     // And a reload under the canonical id finds them on the server, not in this
     // window's memory.
     await page.reload();
     await rightPanel.ensureTabStripOpen();
-    await rightPanel.canvasTab.click();
+    await rightPanel.selectView('Canvas');
     await expect(page.getByRole('tab', { name: DOCUMENT_TAB })).toBeVisible({ timeout: 20_000 });
-    await rightPanel.browserTab.click();
+    await rightPanel.selectView('Browser');
     await expect(page.getByRole('tab', { name: /^Web Page$/ })).toBeVisible({ timeout: 20_000 });
   });
 
@@ -265,7 +266,7 @@ test.describe('A canvas survives the first-turn rename @smoke', () => {
     await seedRetiredCanvas(page, sessionId);
     await rightPanel.goto(await draftSessionUrl(page, sessionId, agentDir));
     await rightPanel.ensureTabStripOpen();
-    await rightPanel.canvasTab.click();
+    await rightPanel.selectView('Canvas');
     await expect(page.getByRole('tab', { name: IMPORTED_TAB })).toBeVisible({ timeout: 20_000 });
 
     await declareRename(page, sessionId, canonicalId);
@@ -274,7 +275,7 @@ test.describe('A canvas survives the first-turn rename @smoke', () => {
 
     await page.reload();
     await rightPanel.ensureTabStripOpen();
-    await rightPanel.canvasTab.click();
+    await rightPanel.selectView('Canvas');
     await expect(page.getByRole('tab', { name: IMPORTED_TAB })).toBeVisible({ timeout: 20_000 });
   });
 
@@ -312,7 +313,7 @@ test.describe('A canvas survives the first-turn rename @smoke', () => {
 
     await rightPanel.goto(await draftSessionUrl(page, sessionId, agentDir));
     await rightPanel.ensureTabStripOpen();
-    await rightPanel.canvasTab.click();
+    await rightPanel.selectView('Canvas');
     await page.getByRole('button', { name: /^Markdown/ }).click();
     await expect(page.getByRole('tab', { name: DOCUMENT_TAB })).toBeVisible();
     await expect.poll(() => canvasPosts.length, { timeout: 15_000 }).toBeGreaterThan(0);
@@ -332,7 +333,7 @@ test.describe('A canvas survives the first-turn rename @smoke', () => {
 
     await page.reload();
     await rightPanel.ensureTabStripOpen();
-    await rightPanel.canvasTab.click();
+    await rightPanel.selectView('Canvas');
     await expect(page.getByRole('tab', { name: DOCUMENT_TAB })).toBeVisible({ timeout: 20_000 });
   });
 
@@ -350,7 +351,7 @@ test.describe('A canvas survives the first-turn rename @smoke', () => {
     await seedRetiredCanvas(page, canonicalId);
     await rightPanel.goto(await draftSessionUrl(page, sessionId, agentDir));
     await rightPanel.ensureTabStripOpen();
-    await rightPanel.canvasTab.click();
+    await rightPanel.selectView('Canvas');
     await expect(page.getByRole('tab', { name: IMPORTED_TAB })).toHaveCount(0);
 
     await declareRename(page, sessionId, canonicalId);
@@ -358,13 +359,13 @@ test.describe('A canvas survives the first-turn rename @smoke', () => {
     await expect.poll(() => page.url(), { timeout: 30_000 }).toContain(canonicalId);
 
     await rightPanel.ensureTabStripOpen();
-    await rightPanel.canvasTab.click();
+    await rightPanel.selectView('Canvas');
     await expect(page.getByRole('tab', { name: IMPORTED_TAB })).toBeVisible({ timeout: 20_000 });
 
     // On the server, not just on screen: a reload finds it under the new id.
     await page.reload();
     await rightPanel.ensureTabStripOpen();
-    await rightPanel.canvasTab.click();
+    await rightPanel.selectView('Canvas');
     await expect(page.getByRole('tab', { name: IMPORTED_TAB })).toBeVisible({ timeout: 20_000 });
   });
 });
@@ -415,7 +416,7 @@ test.describe('A file opened before the session stream attaches @smoke', () => {
 
     await rightPanel.goto(await draftSessionUrl(page, sessionId, agentDir));
     await rightPanel.ensureTabStripOpen();
-    await rightPanel.canvasTab.click();
+    await rightPanel.selectView('Canvas');
     await page.getByRole('button', { name: /^Markdown/ }).click();
 
     // The document is on screen, and the refusal was not made the person's
@@ -434,7 +435,7 @@ test.describe('A file opened before the session stream attaches @smoke', () => {
     // On the SERVER, not just on screen — and still there after a reload.
     await page.reload();
     await rightPanel.ensureTabStripOpen();
-    await rightPanel.canvasTab.click();
+    await rightPanel.selectView('Canvas');
     await expect(page.getByRole('tab', { name: DOCUMENT_TAB })).toBeVisible({ timeout: 20_000 });
   });
 });

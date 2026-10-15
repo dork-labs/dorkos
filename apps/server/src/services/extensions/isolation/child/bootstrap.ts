@@ -19,9 +19,10 @@
  *    every member is decided by the protocol table; report `registered`,
  *    with the tools it bound. The host measures how long it takes.
  *
- * The router `register()` filled is served by a virtual HTTP server that
- * never listens (`virtual-server.ts`): the host opens connections to it over
- * the IPC channel.
+ * The fetch handler `register()` returned, and the router while it still has
+ * routes, are served by a virtual HTTP server that never listens
+ * (`virtual-server.ts`): the host opens connections to it over the IPC
+ * channel.
  *
  * On `stop`: cancel every scheduled task, drop open connections, run the
  * cleanup `register()` returned, then exit. A test seam (`init.testSeams`) lets the host call the
@@ -250,7 +251,13 @@ function main(): void {
     const router = express.Router();
     // Requests reach the router over virtual connections the host opens once
     // `registered` says it is ready (spec §7).
-    const served = createVirtualServer({ extensionId: init.extensionId, express, router, send });
+    const served = createVirtualServer({
+      extensionId: init.extensionId,
+      express,
+      router,
+      send,
+      personRefusal: init.personRefusal,
+    });
     virtual = served;
     const ctx = proxy.ctx;
     const proxied = proxy;

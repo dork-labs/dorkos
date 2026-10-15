@@ -31,27 +31,23 @@ import {
   EXTENSION_NOT_APPROVED_CODE,
 } from '../extension-load-policy.js';
 
-// Stand in for the `require()` of the compiled server entry, evaluating whatever
+// Stand in for loading the compiled server entry, evaluating whatever
 // the lifecycle "wrote" to its temp file — the same rig as
 // `extension-manager-server.test.ts`, so a mounted router here means the real
 // load path ran end to end rather than being stubbed past.
-const { mockRequireFn, lastWrittenCodeRef } = vi.hoisted(() => {
-  const codeRef = { value: '' };
-  const resolveImpl = Object.assign((p: string) => p, { resolve: (p: string) => p });
-  const cacheObj: Record<string, unknown> = {};
-  const requireImpl = Object.assign(
-    (_path: string) => {
-      const mod = { exports: {} as Record<string, unknown> };
-      const fn = new Function('module', 'exports', 'require', codeRef.value);
-      fn(mod, mod.exports, requireImpl);
-      return mod.exports;
-    },
-    { resolve: resolveImpl, cache: cacheObj }
-  );
-  return { mockRequireFn: requireImpl, lastWrittenCodeRef: codeRef };
-});
+const { lastWrittenCodeRef } = vi.hoisted(() => ({ lastWrittenCodeRef: { value: '' } }));
 
-vi.mock('node:module', () => ({ createRequire: () => mockRequireFn }));
+vi.mock('../server-bundle/load-in-process.js', () => ({
+  loadInProcessBundle: () => {
+    const mod = { exports: {} as Record<string, unknown> };
+    new Function('module', 'exports', 'require', lastWrittenCodeRef.value)(
+      mod,
+      mod.exports,
+      () => ({})
+    );
+    return mod.exports;
+  },
+}));
 
 vi.mock('../extension-server-api-factory.js', () => ({
   createDataProviderContext: () => ({

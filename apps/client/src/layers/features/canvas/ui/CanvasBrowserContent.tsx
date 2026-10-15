@@ -249,7 +249,7 @@ export function CanvasBrowserContent({ documentId, content }: CanvasBrowserConte
 
   return (
     <div className="flex h-full flex-col">
-      <div className="border-border/60 flex h-9 items-center gap-1 border-b px-2">
+      <div className="border-border/60 flex shrink-0 flex-wrap items-center gap-1 border-b px-2 py-1 lg:h-9 lg:flex-nowrap lg:py-0">
         <ChromeButton label="Back" disabled={!canBack} onClick={() => setCursor((c) => c - 1)}>
           <ArrowLeft className="size-4" />
         </ChromeButton>
@@ -266,12 +266,14 @@ export function CanvasBrowserContent({ documentId, content }: CanvasBrowserConte
         {/* Keyed on the refusal so a failed post remounts the bar in edit mode,
             seeded with what was typed rather than with the page still on
             screen. */}
-        <AddressBar
-          key={refusedAddress === null ? 'address' : `retry:${refusedAddress.url}`}
-          url={refusedAddress?.url ?? currentUrl}
-          startEditing={refusedAddress !== null}
-          onSubmit={submitAddress}
-        />
+        <div className="order-first flex w-full min-w-0 lg:order-none lg:w-auto lg:flex-1">
+          <AddressBar
+            key={refusedAddress === null ? 'address' : `retry:${refusedAddress.url}`}
+            url={refusedAddress?.url ?? currentUrl}
+            startEditing={refusedAddress !== null}
+            onSubmit={submitAddress}
+          />
+        </div>
         <ChromeButton label="Open in system browser" onClick={openExternally}>
           <ExternalLink className="size-4" />
         </ChromeButton>
@@ -368,7 +370,7 @@ function AddressBar({
         spellCheck={false}
         autoCapitalize="off"
         autoCorrect="off"
-        className="h-7 w-full text-sm"
+        className="h-11 w-full text-base lg:h-7 lg:text-sm"
       />
     </form>
   );
@@ -394,7 +396,7 @@ function AddressDisplay({ url, onActivate }: { url: string; onActivate: () => vo
       // signed token URL.
       aria-label={`Address: ${locationLabel(display)}`}
       onClick={onActivate}
-      className="text-muted-foreground hover:bg-muted focus-ring flex h-7 min-w-0 flex-1 items-center gap-1.5 rounded-md px-2 text-left text-sm transition-colors"
+      className="text-muted-foreground hover:bg-muted focus-ring flex h-11 min-w-0 flex-1 items-center gap-1.5 rounded-md px-2 text-left text-sm transition-colors lg:h-7"
     >
       {display.kind === 'local' && (
         <>
@@ -680,7 +682,7 @@ function ChromeButton({
       disabled={disabled}
       onClick={onClick}
       className={cn(
-        'text-muted-foreground hover:text-foreground hover:bg-muted focus-ring rounded-md p-1.5 transition-colors',
+        'text-muted-foreground hover:text-foreground hover:bg-muted focus-ring flex size-11 shrink-0 items-center justify-center rounded-md transition-colors lg:size-7',
         disabled && 'pointer-events-none opacity-40'
       )}
     >

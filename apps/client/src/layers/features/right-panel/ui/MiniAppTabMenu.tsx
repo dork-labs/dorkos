@@ -24,6 +24,7 @@ import {
   useMenuExtensionPages,
   useSafeNavigate,
   useSettingsDeepLink,
+  useIsBelowDesktop,
   type RightPanelContribution,
 } from '@/layers/shared/model';
 import {
@@ -59,6 +60,8 @@ export function MiniAppTabMenu({ active, hidden, here, saved }: MiniAppTabMenuPr
   const setActiveTab = useAppStore((s) => s.setActiveRightPanelTab);
   const settings = useSettingsDeepLink();
   const navigate = useSafeNavigate();
+  const overlay = useIsBelowDesktop();
+  const closePanel = useAppStore((s) => s.setRightPanelOpen);
   const pages = useMenuExtensionPages();
 
   // Where "here" is too broad to name (a chat with no agent, a room from a
@@ -84,20 +87,24 @@ export function MiniAppTabMenu({ active, hidden, here, saved }: MiniAppTabMenuPr
           variant="ghost"
           size="icon-md"
           aria-label="Add-on tab options"
-          className="size-7 shrink-0"
+          className="size-11 shrink-0 lg:size-7"
           data-testid="mini-app-tab-menu"
         >
           <Ellipsis className="size-3.5" />
         </Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="min-w-48">
+      <DropdownMenuContent
+        align="end"
+        className="max-h-[70dvh] min-w-48 overflow-y-auto [&_[role=menuitem]]:min-h-11 lg:[&_[role=menuitem]]:min-h-0"
+      >
         {active && (
           <>
             {fullPage && navigate && (
               <DropdownMenuItem
-                onSelect={() =>
-                  void navigate({ href: extensionPageHref(fullPage.extensionId, fullPage.path) })
-                }
+                onSelect={() => {
+                  if (overlay) closePanel(false);
+                  void navigate({ href: extensionPageHref(fullPage.extensionId, fullPage.path) });
+                }}
               >
                 <Maximize2 />
                 Open full page

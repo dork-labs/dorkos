@@ -49,7 +49,15 @@ import type { AppState } from './app-store-types';
 export type PipContent =
   | { kind: 'demo'; title: string }
   | { kind: 'mcp_app'; sessionId: string; serverName: string; uri: string; title: string }
-  | { kind: 'widget'; sessionId: string; title: string };
+  | { kind: 'widget'; sessionId: string; title: string }
+  | {
+      kind: 'computer';
+      computerId: 'local';
+      generation: number;
+      cwd: string;
+      agentPath: string;
+      title: string;
+    };
 
 // ---------------------------------------------------------------------------
 // Slice interface

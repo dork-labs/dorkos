@@ -11,6 +11,8 @@ import { useAppStore } from '../app-store';
 function resetCanvas(sessionId: string | null = 'sess-1') {
   localStorage.clear();
   useAppStore.setState({
+    panelViewPreferences: {},
+    canvasSessionCwd: undefined,
     canvasOpen: false,
     openDocuments: [],
     activeCanvasDocumentId: null,

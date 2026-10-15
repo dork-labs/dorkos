@@ -141,6 +141,58 @@ test.describe('Mini app tab placement — hide here, show here, open full page',
     await expect(helloTab(tasks)).toBeVisible();
   });
 
+  test('closes only the local view and restores it through + without changing placement', async ({
+    page,
+    request,
+  }) => {
+    const panel = await openPanelOn(page, '/activity');
+    await helloTab(panel).click();
+    await expect(helloTab(panel)).toHaveAttribute('aria-selected', 'true');
+    const body = page.getByRole('tabpanel').filter({ hasText: 'Toggle Tab Dot' });
+    await expect(body).toBeVisible();
+    const placementBefore = await savedPlacements(request);
+
+    await panel.header.getByRole('button', { name: 'Close Hello view', exact: true }).click();
+    await expect(helloTab(panel)).toHaveCount(0);
+    await expect(body).toHaveCount(0);
+    expect(await savedPlacements(request)).toEqual(placementBefore);
+
+    await panel.header.getByRole('button', { name: 'Add view', exact: true }).click();
+    await page.getByRole('menuitem', { name: 'Hello', exact: true }).click();
+    await expect(helloTab(panel)).toHaveAttribute('aria-selected', 'true');
+    await expect(body).toBeVisible();
+    expect(await savedPlacements(request)).toEqual(placementBefore);
+  });
+
+  test('unloads the active mini app live and falls back to a working built-in view', async ({
+    page,
+    request,
+  }) => {
+    const panel = await openPanelOn(page, '/activity');
+    await helloTab(panel).click();
+    await expect(helloTab(panel)).toHaveAttribute('aria-selected', 'true');
+    const body = page.getByRole('tabpanel').filter({ hasText: 'Toggle Tab Dot' });
+    await expect(body).toBeVisible();
+
+    try {
+      await setEnabled(request, HELLO, false);
+      // The live extension reload must unregister its contribution, without navigation/reload.
+      await expect(helloTab(panel)).toHaveCount(0);
+      await expect(body).toHaveCount(0);
+      await expect(panel.pulseTab).toHaveAttribute('aria-selected', 'true');
+      await expect(panel.pulsePanel).toBeVisible();
+      await panel.header.getByRole('button', { name: 'Add view', exact: true }).click();
+      await expect(page.getByRole('menu')).toBeVisible();
+      await expect(page.getByRole('menuitem', { name: 'Hello', exact: true })).toHaveCount(0);
+      await page.keyboard.press('Escape');
+      await expect(page).toHaveURL(/\/activity$/);
+    } finally {
+      // Preserve the shared serial fixture even when an assertion fails.
+      await setEnabled(request, HELLO, true);
+    }
+    await expect(helloTab(panel)).toBeVisible();
+  });
+
   test('opens the mini app’s full page from its tab', async ({ page }) => {
     const panel = await openPanelOn(page, '/activity');
     await helloTab(panel).click();
@@ -151,5 +203,33 @@ test.describe('Mini app tab placement — hide here, show here, open full page',
 
     await expect(page).toHaveURL(/\/x\/hello-world$/);
     await expect(page.getByRole('heading', { name: 'Hello, there' })).toBeVisible();
+  });
+
+  test.describe('on a phone', () => {
+    test.use({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
+
+    test('reaches +, mini-app options and its full page by touch', async ({ page, request }) => {
+      const panel = await openPanelOn(page, '/activity');
+      await helloTab(panel).tap();
+      await expect(helloTab(panel)).toHaveAttribute('aria-selected', 'true');
+      await expect(page.getByRole('tabpanel').filter({ hasText: 'Toggle Tab Dot' })).toBeVisible();
+
+      const add = panel.header.getByRole('button', { name: 'Add view', exact: true });
+      await expect(add).toBeInViewport();
+      await add.tap();
+      await expect(page.getByRole('menuitem', { name: 'Hello', exact: true })).toBeVisible();
+      await page.getByRole('menuitem', { name: 'Hello', exact: true }).tap();
+      await expect(helloTab(panel)).toHaveAttribute('aria-selected', 'true');
+
+      const options = panel.header.getByRole('button', { name: 'Add-on tab options' });
+      await expect(options).toBeInViewport();
+      await options.tap();
+      const fullPage = page.getByRole('menuitem', { name: 'Open full page' });
+      await expect(fullPage).toBeInViewport();
+      await fullPage.tap();
+      await expect(page).toHaveURL(/\/x\/hello-world$/);
+      await expect(page.getByRole('heading', { name: 'Hello, there' })).toBeVisible();
+      expect(await savedPlacements(request)).toEqual([]);
+    });
   });
 });

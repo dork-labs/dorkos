@@ -2,6 +2,23 @@
   "version": 1,
   "decisions": [
     {
+      "id": "261014-142234",
+      "slug": "panel-resource-views",
+      "title": "Panel tabs represent resource views and share computer control ownership",
+      "status": "accepted",
+      "created": "2026-10-14",
+      "extractedFrom": "specs/computer-panel-resources/02-specification.md",
+      "specSlug": "computer-panel-resources",
+      "supersedes": null,
+      "amends": [],
+      "affects": [
+        "apps/client/src/layers/features/right-panel/**",
+        "apps/client/src/layers/entities/computer/**",
+        "apps/client/src/layers/features/agent-computer/**",
+        "apps/client/src/layers/features/pip-panel/**"
+      ]
+    },
+    {
       "id": "261012-211000",
       "slug": "local-agent-computer",
       "title": "Local agent computers use a direct Linux VM and an isolated runtime",
