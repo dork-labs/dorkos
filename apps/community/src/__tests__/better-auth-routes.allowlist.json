@@ -1,5 +1,5 @@
 {
-  "//": "Every Better Auth route a space answers over HTTP, with why it is on (specs/spaces-email T17, DOR-2710; frozen by specs/server-merge step 1, DOR-2875). promises/route-census.test.ts compares it with the live routes. A deliberate change updates this file in the same PR and says so in the PR description.",
+  "$comment": "Every Better Auth route a space answers over HTTP, with why it is on (specs/spaces-email T17, DOR-2710; frozen by specs/server-merge step 1, DOR-2875). promises/route-census.test.ts compares it with the live routes. A deliberate change updates this file in the same PR and says so in the PR description.",
   "GET /callback/:id": "Provider callbacks (Google, GitHub, single sign-on).",
   "POST /callback/:id": "Provider callbacks that post their answer (form_post).",
   "GET /get-session": "The browser reads its own session.",

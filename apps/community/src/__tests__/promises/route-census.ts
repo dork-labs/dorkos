@@ -233,11 +233,11 @@ export async function readBetterAuthRoutes(
 
 /**
  * The reviewed Better Auth routes and why each is on (`../better-auth-routes.allowlist.json`).
- * Keys starting `//` are the file's own notes.
+ * The `$comment` key is the file's own note.
  */
 export function betterAuthAllowlist(): Record<string, string> {
   const file = JSON.parse(
     readFileSync(new URL('../better-auth-routes.allowlist.json', import.meta.url), 'utf8')
   ) as Record<string, string>;
-  return Object.fromEntries(Object.entries(file).filter(([route]) => !route.startsWith('//')));
+  return Object.fromEntries(Object.entries(file).filter(([route]) => route !== '$comment'));
 }
