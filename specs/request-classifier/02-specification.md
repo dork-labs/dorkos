@@ -75,12 +75,12 @@ export function ingressOf(req: IncomingMessage): IngressKind | 'direct';
 
 - **`managed`**: set by the managed ingress, as today.
 - **`own-tunnel`**: set by the new own-tunnel ingress (section 3).
-- **`wifi`**: set for every request and upgrade the Wi-Fi listener (`services/core/lan-access`) hands to the front door.
+- **`wifi`**: set for every request and upgrade the Wi-Fi listener (`services/core/lan-access`) takes from a non-loopback peer. A loopback peer is never marked: the Wi-Fi listener binds every interface while the main one binds `localhost` (`::1` alone on macOS), so a client dialing `127.0.0.1` lands on the Wi-Fi listener and is still this computer.
 - **`relay`**: reserved for B2 (DOR-2946), which marks what the session relay carries. Nothing sets it in F0.
 
 ### 2. `RequestFacts` (`http/request-facts.ts`)
 
-`managedIngress: boolean` becomes `ingress: IngressKind | 'direct'`, read by `honoRequestFacts` through `ingressOf`. Every reader moves (`isLocalCaller`, the extension bridge, tests); the managed check reads `facts.ingress === 'managed'`. A WebSocket upgrade builds the same field from its own request.
+`managedIngress: boolean` becomes `ingress: IngressKind | 'direct'`, read by `honoRequestFacts` through `ingressOf`. Every reader moves (`isLocalCaller`, the extension bridge, tests); the managed check reads `facts.ingress === 'managed'`. Upgrades are not classified in F0; F1 builds the same facts for them when the gate moves onto the classifier.
 
 ### 3. The own-tunnel ingress (`services/core/remote/own-tunnel-ingress.ts`)
 
@@ -88,7 +88,8 @@ A loopback listener of its own, like the managed ingress but with no edge proof 
 
 - listens on `127.0.0.1` at a free port, opened when the own tunnel starts, closed when it stops;
 - marks every request and upgrade `own-tunnel`, then hands requests to the front door's listener and upgrades to the main server's upgrade router;
-- `TunnelManager` points `ngrok.forward({ addr })` at this port **when the tunnel targets this server's own port** (production, where the server serves the app).
+- `TunnelManager` points `ngrok.forward({ addr })` at this port **when the tunnel targets this server's configured port** (`DORKOS_PORT`; production, where the server serves the app). Both ngrok ingresses are attached once the main listener is up; boot starts the own tunnel after that.
+- While an own ngrok listener refused to close (`byoUnclosed`), the ingress stays open: closing it would free its port for whatever binds there next, and make that public. Every close goes through one guard.
 
 When the tunnel targets another port (the Vite dev server in development, or an operator's `TUNNEL_PORT`), the front door cannot serve that target, so the tunnel forwards there directly, as today. Those requests still classify as `other-device` because ngrok adds `X-Forwarded-For` (rule 4 in section 4). The spec names this, so nobody reads the ingress as covering dev.
 
@@ -135,11 +136,9 @@ Rules, in order (first match wins):
 
 "Loopback" reuses `isLoopbackPeer`, `isLoopbackHostHeader` and `isLoopbackHost` from `lib/trusted-origins.ts`, so the classifier and today's guards cannot disagree on what loopback is. A desktop window's own origin (`app://`, `file://` or the dev renderer) needs a check: the classifier must not call the desktop shell another device. Section 7's tests pin each origin the shell sends today.
 
-`describeRequestClass(class)` returns a short log label (`other-device via network (forwarded)`), for logs and the audit only.
-
 ### 5. The one warning (`lib/request-classifier.ts`)
 
-`noteForeignOrigin(class)`: the first time in a process that a request classifies `other-device` for reason `foreign-origin`, log one `warn` line: DorkOS looks like it is behind a proxy that forwards no headers, and other-device rules will apply to it once F1 ships. Called from the session gate's existing read of the request; it changes no answer. F1 adds the banner and the setting.
+`noteForeignOrigin(facts, class)`: the first time in a process that a request classifies `other-device` for reason `foreign-origin`, log one `warn` line naming only the page's origin (never a `Referer`'s path or query, where an invite link or an OAuth code can sit): DorkOS looks like it is behind a proxy that forwards no headers, and other-device rules will apply to it once F1 ships. Called from the session gate's existing read of the request; it changes no answer. F1 adds the banner and the setting.
 
 ### 6. The registration-policy seam (`services/core/auth/registration-policy.ts`)
 
@@ -147,32 +146,36 @@ Rules, in order (first match wins):
 export type RegistrationMode = 'local-open' | 'setup-code' | 'provisioned' | 'closed';
 
 export interface RegistrationFacts {
-  /** The request's class, or `'in-process'` for a call no network request made. */
-  caller: RequestClass | 'in-process';
+  /** The request's class; hub provisioning (A2); or other code in this process. */
+  caller: RequestClass | 'provisioning' | 'in-process';
   /** Whether any account exists. */
   hasUsers: boolean;
   role: ServerRole;
 }
 
 export function decideRegistration(facts: RegistrationFacts): RegistrationMode;
+export function registrationAllowed(mode: RegistrationMode, caller: RegistrationCaller): boolean;
 ```
 
 Rules, in order:
 
-1. `role === 'hub'` ⇒ `provisioned`. The owner comes from provisioning; A2 decides how that path creates it, and every sign-up request is refused.
-2. `hasUsers` ⇒ `closed` (today's rule).
-3. `caller === 'in-process'` or `caller.kind === 'this-computer'` ⇒ `local-open`.
-4. `caller.kind === 'relayed'` ⇒ `closed`. A relayed caller is never a person and cannot create the owner.
-5. Otherwise (`other-device`) ⇒ `setup-code`.
+1. `hasUsers` ⇒ `closed` (today's rule), on a hub too.
+2. `role === 'hub'` ⇒ `provisioned`. Only hub provisioning may create the owner; every sign-up request is refused.
+3. `caller === 'provisioning'` (anywhere but a hub) ⇒ `closed`.
+4. `caller === 'in-process'` or `caller.kind === 'this-computer'` ⇒ `local-open`.
+5. `caller.kind === 'other-device'` ⇒ `setup-code`.
+6. Otherwise (the relay, which is never a person; a hub-kind request on a computer) ⇒ `closed`.
 
-**Carrying the class to the hook.** Better Auth's `user.create.before` hook sees no socket. `http/better-auth.ts` classifies the request and runs `auth.handler` inside `withRegistrationCaller(class, fn)`, an `AsyncLocalStorage` scope; the hook reads `currentRegistrationCaller()`. With no scope the call came from no network request (a test, or server code calling `auth.api` directly) and is `'in-process'`. Every network path into Better Auth goes through that one mount, and a test pins that the mount sets the scope. The CLI's `dorkos auth` uses its own instance and hook (`packages/cli/src/commands/auth-instance.ts`) and is untouched.
+**How A2 creates a hub's owner.** Provisioning runs `withRegistrationCaller('provisioning', () => auth.api.signUpEmail(…))`. `registrationAllowed('provisioned', 'provisioning')` is the one allow in that mode, so the owner goes through Better Auth (password and account records included) with no table writes by hand. A2 decides the provisioning inputs; the seam is ready.
+
+**Carrying the class to the hook.** Better Auth's `user.create.before` hook sees no socket. `http/better-auth.ts` classifies the request and runs `auth.handler` inside `withRegistrationCaller(class, fn)`, an `AsyncLocalStorage` scope (which also takes `'provisioning'`); the hook reads `currentRegistrationCaller()`. With no scope the call came from no network request (a test, or server code calling `auth.api` directly) and is `'in-process'`. Every network path into Better Auth goes through that one mount, and a test pins that the mount sets the scope. The CLI's `dorkos auth` uses its own instance and hook (`packages/cli/src/commands/auth-instance.ts`) and is untouched.
 
 **Enforcement in F0 keeps today's behavior:**
 
 | Mode          | The hook in F0                                                                                                        |
 | ------------- | --------------------------------------------------------------------------------------------------------------------- |
 | `closed`      | refuse with `REGISTRATION_CLOSED`, exactly as today                                                                   |
-| `provisioned` | refuse with `REGISTRATION_CLOSED` (no hub exists in F0, so nothing reaches it)                                        |
+| `provisioned` | refuse with `REGISTRATION_CLOSED`, except the `provisioning` caller (no hub exists in F0, so nothing reaches it)      |
 | `local-open`  | allow, stamp `owner`                                                                                                  |
 | `setup-code`  | allow, stamp `owner`, as today. F5 (DOR-2968) requires the code here, after ADR rule 11's one release of loud warning |
 
@@ -180,20 +183,21 @@ Rules, in order:
 
 ### 7. Code structure
 
-| File                                                         | Change                                                  |
-| ------------------------------------------------------------ | ------------------------------------------------------- |
-| `apps/server/src/lib/request-classifier.ts`                  | new: classifier, labels, one warning                    |
-| `apps/server/src/lib/server-role.ts`                         | new: `ServerRole`, `currentServerRole`                  |
-| `apps/server/src/services/core/remote/ingress-mark.ts`       | `IngressKind`, `markIngress`, `ingressOf`               |
-| `apps/server/src/services/core/remote/own-tunnel-ingress.ts` | new: the marked loopback listener                       |
-| `apps/server/src/services/core/tunnel-manager.ts`            | forward to the own-tunnel ingress for the server's port |
-| `apps/server/src/services/core/lan-access/*`                 | mark Wi-Fi requests and upgrades                        |
-| `apps/server/src/http/request-facts.ts`                      | `ingress` replaces `managedIngress`                     |
-| `apps/server/src/lib/caller-authority.ts`                    | reads `facts.ingress === 'managed'`; no meaning change  |
-| `apps/server/src/services/core/auth/registration-policy.ts`  | new: the mode, the scope, the reader                    |
-| `apps/server/src/services/core/auth/index.ts`                | the hook asks `decideRegistration`                      |
-| `apps/server/src/http/better-auth.ts`                        | runs the handler inside the scope                       |
-| `packages/cloud-api/src/seats.ts`                            | `authEnabled` description                               |
+| File                                                         | Change                                                               |
+| ------------------------------------------------------------ | -------------------------------------------------------------------- |
+| `apps/server/src/lib/request-classifier.ts`                  | new: classifier, labels, one warning                                 |
+| `apps/server/src/lib/server-role.ts`                         | new: `ServerRole`, `currentServerRole`                               |
+| `apps/server/src/services/core/remote/ingress-mark.ts`       | `IngressKind`, `markIngress`, `ingressOf`                            |
+| `apps/server/src/services/core/remote/own-tunnel-ingress.ts` | new: the marked loopback listener                                    |
+| `apps/server/src/services/core/remote/tunnel-ingresses.ts`   | new: builds both ngrok ingresses for `TunnelManager.attachIngresses` |
+| `apps/server/src/services/core/tunnel-manager.ts`            | forward to the own-tunnel ingress for the server's port              |
+| `apps/server/src/services/core/lan-access/*`                 | mark Wi-Fi requests and upgrades                                     |
+| `apps/server/src/http/request-facts.ts`                      | `ingress` replaces `managedIngress`                                  |
+| `apps/server/src/lib/caller-authority.ts`                    | reads `facts.ingress === 'managed'`; no meaning change               |
+| `apps/server/src/services/core/auth/registration-policy.ts`  | new: the mode, the scope, the reader                                 |
+| `apps/server/src/services/core/auth/index.ts`                | the hook asks `decideRegistration`                                   |
+| `apps/server/src/http/better-auth.ts`                        | runs the handler inside the scope                                    |
+| `packages/cloud-api/src/seats.ts`                            | `authEnabled` description                                            |
 
 `apps/server/src/index.ts` is over the 500-line ratchet and must not grow: wiring there replaces lines, never adds them.
 
