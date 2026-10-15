@@ -111,7 +111,7 @@ describe('Files Routes', () => {
     let file: string;
 
     beforeEach(async () => {
-      dir = await fs.mkdtemp(path.join(os.tmpdir(), 'dork-write-'));
+      dir = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'dork-write-')));
       file = path.join(dir, 'doc.md');
       await fs.writeFile(file, original, 'utf8');
     });
@@ -122,7 +122,7 @@ describe('Files Routes', () => {
     });
 
     it('writes new content when expectedHash matches and returns the new hash', async () => {
-      const write = vi.spyOn(fs, 'writeFile');
+      const write = vi.spyOn(fs, 'open');
       const rename = vi.spyOn(fs, 'rename');
       const next = '# Title\n\nbody edited\n';
       const res = await request(testServer)
@@ -254,7 +254,7 @@ describe('Files Routes', () => {
     });
 
     it('treats identical content as a successful no-op', async () => {
-      const write = vi.spyOn(fs, 'writeFile');
+      const write = vi.spyOn(fs, 'open');
       const rename = vi.spyOn(fs, 'rename');
       const res = await request(testServer)
         .put('/api/files/content')
@@ -284,18 +284,23 @@ describe('Files Routes', () => {
     });
 
     it('cleans up a partial temporary file when the write fails', async () => {
-      const actualWrite = fs.writeFile;
-      vi.spyOn(fs, 'writeFile').mockImplementation(async (...args) => {
+      const actualOpen = fs.open;
+      vi.spyOn(fs, 'open').mockImplementation(async (...args: Parameters<typeof fs.open>) => {
+        const handle = await actualOpen(...args);
         if (
           typeof args[0] === 'string' &&
           args[0].startsWith(`${file}.`) &&
           args[0].endsWith('.tmp') &&
-          typeof args[1] === 'string'
+          args[1] === 'wx'
         ) {
-          await actualWrite(args[0], args[1].slice(0, 1), args[2]);
-          throw Object.assign(new Error('temporary write failed'), { code: 'EACCES' });
+          const actualWrite = handle.writeFile.bind(handle);
+          vi.spyOn(handle, 'writeFile').mockImplementation(async (data, options) => {
+            if (typeof data !== 'string') return actualWrite(data, options);
+            await actualWrite(data.slice(0, 1), options);
+            throw Object.assign(new Error('temporary write failed'), { code: 'EACCES' });
+          });
         }
-        await actualWrite(...args);
+        return handle;
       });
       const rename = vi.spyOn(fs, 'rename');
       const res = await request(testServer)

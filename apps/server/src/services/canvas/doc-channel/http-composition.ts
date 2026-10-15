@@ -1,3 +1,4 @@
+import { InstallationFileWrites } from './writes/installation-file-writes.js';
 /** Production HTTP composition over the existing canvas, room, owner and approval services. */
 import fs from 'node:fs';
 import path from 'node:path';
@@ -65,6 +66,7 @@ export function createDocChannelHttpComposition(deps: {
   runtimePrincipalCurrent?: (proof: ServerPrincipalProof) => boolean;
   revalidateRuntime?: (proof: ServerPrincipalProof) => Promise<boolean>;
 }): DocChannelHttp & {
+  fileWrites: InstallationFileWrites;
   grants: DocChannelGrants;
   downstream: DocChannelDownstream;
   channels: DocChannelStore;
@@ -296,6 +298,7 @@ export function createDocChannelHttpComposition(deps: {
     })
   );
   return {
+    fileWrites: new InstallationFileWrites(deps.db),
     grants,
     downstream,
     channels,
