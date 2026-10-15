@@ -2,6 +2,14 @@
   "version": 1,
   "specs": [
     {
+      "id": "261015-042934",
+      "slug": "everything-is-a-space",
+      "title": "Everything is a space: hubs, space servers and agent computers",
+      "created": "2026-10-15",
+      "status": "specified",
+      "linearIssue": "DOR-2932"
+    },
+    {
       "id": "261014-142234",
       "slug": "computer-panel-resources",
       "title": "Relevant panel resource tabs and computer PiP",
