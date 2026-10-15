@@ -81,7 +81,7 @@ describe.skipIf(process.platform !== 'linux')('actual Linux Bash compiler-step l
       await writeFile(join(directory, 'scripts/typecheck-resource-sampler.mjs'), observer);
       await writeFile(
         join(directory, 'pnpm'),
-        `#!/bin/bash\n[[ "$*" == 'exec turbo typecheck --continue --concurrency=2' ]] || exit 88\n${primary}\n`,
+        `#!/bin/bash\n[[ "$*" == 'exec turbo typecheck --continue --concurrency=2' ]] || { echo '[sampler-fixture] stage=compiler-argv' >&2; exit 88; }\n${primary}\n`,
         { mode: 0o755 }
       );
       return await run('/bin/bash', ['-e', '-o', 'pipefail', '-c', wrapper], directory, {
@@ -113,12 +113,19 @@ describe.skipIf(process.platform !== 'linux')('actual Linux Bash compiler-step l
     const probe = `node <<'CONTROL_WRITER_PROBE'
 const { readFileSync, readdirSync, readlinkSync } = require('node:fs');
 const target = process.env.SAMPLER_TEST_CONTROL_PIPE;
-if (!target || !target.startsWith('pipe:[')) process.exit(88);
+if (!target || !target.startsWith('pipe:[')) {
+  console.error('[sampler-fixture] stage=control-target value=' + JSON.stringify(target ?? null).slice(0, 96));
+  process.exit(88);
+}
 for (const descriptor of readdirSync('/proc/self/fd')) {
   try {
     if (readlinkSync('/proc/self/fd/' + descriptor) !== target) continue;
-    const flags = readFileSync('/proc/self/fdinfo/' + descriptor, 'utf8').match(/^flags:\\s+([0-7]+)$/m);
-    if (!flags) process.exit(88);
+    const info = readFileSync('/proc/self/fdinfo/' + descriptor, 'utf8');
+    const flags = info.match(/^flags:\\s+([0-7]+)$/m);
+    if (!flags) {
+      console.error('[sampler-fixture] stage=fd-flags descriptor=' + descriptor + ' value=' + JSON.stringify(info).slice(0, 256));
+      process.exit(88);
+    }
     if ((parseInt(flags[1], 8) & 3) !== 0) process.exit(89);
   } catch (error) {
     if (error.code !== 'ENOENT') throw error;
@@ -126,10 +133,10 @@ for (const descriptor of readdirSync('/proc/self/fd')) {
 }
 CONTROL_WRITER_PROBE`;
     const result = await fixture(probe, observer, 'closed');
-    expect(result.code).toBe(0);
+    expect(result.code, result.stderr).toBe(0);
     expect(result.stdout).toContain('sampler-clean-exit');
     const leaked = await fixture(probe, observer, 'leaked');
-    expect(leaked.code).toBe(89);
+    expect(leaked.code, leaked.stderr).toBe(89);
     expect(leaked.stdout).toContain('sampler-clean-exit');
   });
   it('fails visibly when only observation fails', async () => {
