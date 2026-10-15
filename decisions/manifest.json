@@ -2,6 +2,24 @@
   "version": 1,
   "decisions": [
     {
+      "id": "261015-042933",
+      "slug": "everything-is-a-space-hubs-space-servers-and-agent-computers",
+      "title": "Everything is a space; one program plays three roles (hub, space server, agent computer), and your account is the door",
+      "status": "accepted",
+      "created": "2026-10-15",
+      "extractedFrom": null,
+      "specSlug": "everything-is-a-space",
+      "supersedes": null,
+      "amends": ["261006-235238", "260727-184933", 319],
+      "affects": [
+        "apps/server/**",
+        "apps/community/**",
+        "apps/client/**",
+        "packages/cloud-api/**",
+        "packages/shared/src/community-adapter.ts"
+      ]
+    },
+    {
       "id": "261014-142234",
       "slug": "panel-resource-views",
       "title": "Panel tabs represent resource views and share computer control ownership",

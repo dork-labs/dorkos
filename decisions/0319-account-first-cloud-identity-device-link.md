@@ -15,6 +15,8 @@ Accepted
 
 Amended by [261006-235238](261006-235238-one-dorkos-server-in-every-size.md) (one DorkOS server in every size; 2026-10-06 vision reset): narrows "identities are never migrated between local and cloud databases" to people: an agent, with its identity, can be pushed from one DorkOS server to another. Local logins stay instance-scoped, and the DorkOS account and the device link stand.
 
+Amended by [261015-042933](261015-042933-everything-is-a-space-hubs-space-servers-and-agent-computers.md) (everything is a space, 2026-10-15): the DorkOS account becomes the door to a person's whole DorkOS on the web, through their own DorkOS in the cloud. The device link stands and also pins that cloud DorkOS when a Mac is linked.
+
 ## Context
 
 DorkOS Cloud will be both a coordination layer over local instances (remote access, relay/mesh, notifications, marketplace identity) and, possibly later, hosted instances. Agents run on the user's machine with the user's Claude subscription, so the local instance is not going away; identity must span machines. Treating cloud identity as "hosted multi-user DorkOS" (the n8n model) would leave local and cloud identities as unrelated systems and pose a painful SQLite-to-Postgres user-migration problem the moment a self-hoster adopts Cloud.

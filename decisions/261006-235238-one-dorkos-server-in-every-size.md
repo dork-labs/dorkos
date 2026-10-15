@@ -14,6 +14,8 @@ amends: [260727-184933, 260916-210001, 0319]
 
 Accepted (operator decision, 2026-10-06; Linear DOR-2735). Direction: the merge starts before launch (Dorian, 2026-10-12), with a go/no-go on November 16. If its before-launch part is not ready by then, launch runs on today's space server and it finishes right after launch. Which parts land before launch and which after is in spec [`server-merge`](../specs/server-merge/02-specification.md). Until the merge lands, today's code still runs two servers.
 
+**Amended by** [261015-042933](261015-042933-everything-is-a-space-hubs-space-servers-and-agent-computers.md) (everything is a space, 2026-10-15): an account may also have its own DorkOS in the cloud (a hub, made lazily, which runs no agents), and reaching your Mac from the web goes through a chats-only session relay into that hub, not through the app connecting to every server directly. One program and "only one place runs an agent at a time" stand; the after-launch step "one window" is replaced.
+
 **Amends** (each stays Accepted):
 
 - [260727-184933](260727-184933-the-community-server-never-runs-a-members-agent.md): retires "hosted DorkOS is three distinct products", "the community server never executes a member's agent", "presence follows the install" and the deliberately incomplete web client. Today's code still keeps the community server agent-free until the merge lands. Its single-person install is retired separately by [261006-235239](261006-235239-people-and-agents-hold-equal-accounts.md).

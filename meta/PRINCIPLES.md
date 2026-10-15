@@ -8,13 +8,13 @@ Agents are trusted professionals. People are colleagues, not babysitters. Full p
 
 _Status: decided, not built yet. Today the caps exist and the loop guards count turns; see [`ROADMAP.md`](ROADMAP.md)._
 
-- **No asking permission for routine work.** No posting caps, no notification caps, no ask-first presets, and no "running at full power" warnings. Full power is assumed.
+- **No asking permission for routine work.** No posting caps, no notification caps, no ask-first presets, and no "running at full power" warnings. Full power is assumed. A teammate from a shared space is not the agent's own person: anything past the stranger tier that a teammate asks for goes to the agent's owner as "ask the owner", showing the exact action (ADR `261015-042933`).
 - **The safety net is a record, not a prompt.** An audit trail anyone in the space can read shows every action, plus agent transcripts. If someone does not trust an agent, people and agents read the record and act: pause, suspend, change its access level, revoke access, rotate a secret.
 - **Strangers do not get that trust.** These protections stay:
   - Messages from outsiders (Telegram or Slack strangers, incoming email, webhooks, other people's agents) never give an agent full power.
   - Code from strangers (marketplace hooks, plugins, extensions) still needs a yes.
   - The front-door settings are Owner-only: login, remote access, credentials and package sources.
-- **Privacy comes from access levels.** People and agents get different default access levels, and both can be edited. Both can read every agent's chats. A person's own private chats stay private. What an agent did still shows in the record.
+- **Privacy comes from access levels.** People and agents get different default access levels, and both can be edited. Both can read every agent's chats inside their own DorkOS. A teammate in a shared space reads the space's conversation, never an agent's working chats, and a turn a teammate starts runs at the stranger tier at launch. A person's own private chats stay private. What an agent did still shows in the record.
 - **Irreversible actions in outside accounts just happen when a person asked or it is the agent's job.** Everyone is told, there is an undo window where the service allows one, and the action is recorded. This is how we read ADR `261006-225605` item 7, not a change to it: item 7 is about the platform's approval cards, and this clause is the agent's own judgment about when to act.
 - **A few things always need a yes, even inside an agent's job.** A promise to an outsider (a date, price, refund or discount), signing up or agreeing to terms, spending past its limit, and giving anyone new access. The yes comes from the Owner or the agent's manager. For anything else, a member's request is enough, except acting in someone else's name, which needs that person. A guest can ask, and the agent passes it to its manager.
 - **Blocked is never a dead end.** When only a person can unblock an agent, it does every step it can, recommends one way through, and finishes once they choose. The core of these rules is the `<working_rules>` block every agent gets, whatever its settings.
@@ -46,6 +46,7 @@ A founder's agents, tools, files and data stay theirs, wherever they run. That s
 - The app is open source (MIT) and complete without DorkOS Cloud. It clones, builds, tests and runs on its own.
 - When a person brings their own model sign-in, it stays theirs, through each vendor's own flow. DorkOS never holds or passes on a Claude login.
 - DorkOS depends on no one agent vendor. That is enforced in code, not promised in copy.
+- The protocol that lets you chat with your computer's agents from the web is part of the open program, so a self-hoster runs it with no DorkOS account. Your computer decides whether it is on and how far it reaches, and only at that computer.
 - Nothing a person makes is trapped. They can move it, push it elsewhere, or leave.
 
 ## 5. DorkOS first, ready in under a minute
@@ -64,10 +65,11 @@ _Status: decided 2026-10-07. Built: the new first run, every own-AI choice (an A
 
 This is the architecture principle. Marketing says "ownership" instead (see [`VOICE.md`](VOICE.md)).
 
-_Status: the local app is built. One program for local and hosted, and pushing to another DorkOS, are roadmap._
+_Status: the local app is built. Your own DorkOS in the cloud, cloud agent computers and team spaces ship at launch; one program for local and hosted, and pushing to another DorkOS, are after launch._
 
 - Running DorkOS on your own computer is a one-person space. It is free forever, with no required account or fee.
-- A space is just a DorkOS server with a public web address. Local and hosted are the same program and the same app.
+- Everything is a space. A DorkOS server holds one or many spaces, private ones included: your account's private space lives on your own DorkOS, and team spaces live on a space server. Local and hosted are the same program and the same app (ADR `261015-042933`).
+- A DorkOS account adds your own DorkOS in the cloud, made only when you first open the full app on the web. It sleeps when idle and never runs agents; agents run on your computers or on cloud agent computers.
 - Anything made locally can be pushed to another DorkOS, ours or one you host, the way git pushes to a remote. Only one place runs an agent at a time.
 - DorkOS Cloud is an optional layer on top. The app talks to it only through the public contract in `packages/cloud-api`, and never depends on the private side.
 
