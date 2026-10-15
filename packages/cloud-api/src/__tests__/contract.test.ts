@@ -711,6 +711,17 @@ describe('the seat reconciliation additions', () => {
     expect(Object.keys(contract.AgentClaimRequestSchema.shape)).not.toContain('naturalKeyHash');
   });
 
+  it('defines authEnabled by whether other devices must sign in, not by one login switch', () => {
+    // ADR 261015-125850 retired the global "Require login" switch: this
+    // computer may be trusted with no password while every other device still
+    // signs in. The exposure predicate Cloud re-checks is about other devices,
+    // so the field's published meaning must say so, or an instance and Cloud
+    // would read the same `true` two ways.
+    const description = contract.AgentClaimRequestSchema.shape.authEnabled.description ?? '';
+    expect(description).toContain('every request that does not come from this computer');
+    expect(description).toContain('never a single global login switch');
+  });
+
   it('says who a new address is for, and makes accepting the exposure explicit', () => {
     const request = {
       seatId: 'seat_0001',
