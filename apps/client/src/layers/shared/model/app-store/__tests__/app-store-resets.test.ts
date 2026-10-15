@@ -15,6 +15,7 @@ const CROSS_SLICE_KEYS = [
   'dorkos-promo-enabled',
   'dorkos-right-panel-state',
   'dorkos-right-panel-layouts-v2',
+  'dorkos-panel-views-v1',
   'dorkos-pip-panel-state',
   'dorkos-dismissed-promo-ids',
   'dorkos-settings-advanced-open',
@@ -27,6 +28,7 @@ function seed() {
   s.setAutoHideToolCalls(false);
   s.setPromoEnabled(false);
   s.setPipGeometry({ x: 1, y: 2, width: 300, height: 200 });
+  s.updatePanelViewPreference('agent:reset', () => ({ opened: ['canvas'], closed: ['files'] }));
   localStorage.setItem('dorkos-right-panel-state', '{"open":true,"activeTab":"profile"}');
   localStorage.setItem('dorkos-right-panel-layouts-v2', '{"a1":{"open":true}}');
   localStorage.setItem('dorkos-dismissed-promo-ids', '["welcome"]');
@@ -80,6 +82,10 @@ describe('CoreSlice — resets', () => {
       expect(s.autoHideToolCalls).toBe(false);
       expect(s.promoEnabled).toBe(false);
       expect(s.pipGeometry).toEqual({ x: 1, y: 2, width: 300, height: 200 });
+      expect(s.panelViewPreferences['agent:reset']).toEqual({
+        opened: ['canvas'],
+        closed: ['files'],
+      });
     });
   });
 
@@ -109,6 +115,7 @@ describe('CoreSlice — resets', () => {
       expect(s.autoHideToolCalls).toBe(true);
       expect(s.promoEnabled).toBe(true);
       expect(s.pipGeometry).toBeNull();
+      expect(s.panelViewPreferences).toEqual({});
     });
   });
 

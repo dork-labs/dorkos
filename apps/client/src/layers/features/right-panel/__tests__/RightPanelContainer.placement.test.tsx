@@ -28,6 +28,8 @@ const mockSetPlacement = vi.fn();
 vi.mock('../model/use-placement-here', () => ({
   usePlacementHere: () => mockHereState,
 }));
+vi.mock('@/layers/entities/room', () => ({ useRoom: () => ({ data: undefined }) }));
+vi.mock('@/layers/entities/computer', () => ({ useComputer: () => ({ data: undefined }) }));
 vi.mock('@/layers/entities/config', () => ({
   useConfig: () => ({ data: {} }),
   usePanelTabPlacements: () => mockSaved,
@@ -167,8 +169,8 @@ describe('RightPanelContainer — mini-app placement', () => {
     mockHereState = { status: 'ready', here: R2 };
     renderPanel();
     expect(screen.queryByRole('tab', { name: 'Queue' })).not.toBeInTheDocument();
-    // Pulse is the only visible tab, so the header names it rather than drawing a strip.
-    expect(screen.queryByRole('tablist')).not.toBeInTheDocument();
+    // A single view can still be closed and reopened through the unified row.
+    expect(screen.getByRole('tab', { name: 'Pulse' })).toBeInTheDocument();
     expect(screen.getByTestId('tab-content-pulse')).toBeInTheDocument();
   });
 

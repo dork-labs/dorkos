@@ -158,9 +158,7 @@ test.describe('Touch reach — the surfaces batch 07 fixed @smoke', () => {
 
     // The outcome, not a settle time: the strip only exists once a document is
     // open, so waiting for the close button IS waiting for the document.
-    const close = page
-      .locator('[role="tablist"][aria-label="Open browser pages"] button[aria-label^="Close "]')
-      .first();
+    const close = rightPanel.header.getByRole('button', { name: /^Close .+ view$/ }).first();
     await expect(
       close,
       'opening a web page must put a closable tab in the Browser tab’s strip'
@@ -170,19 +168,29 @@ test.describe('Touch reach — the surfaces batch 07 fixed @smoke', () => {
       minTouch: TAB_CLOSE_MIN_TOUCH_PX,
       minReach: TAB_CLOSE_MIN_REACH_PX,
     });
+    const reload = page.getByRole('button', { name: 'Reload', exact: true });
+    await expect(reload).toHaveCSS('width', '44px');
+    await expect(reload).toHaveCSS('height', '44px');
+    const address = page.getByRole('button', { name: /^Address:/ });
+    await expect(address).toHaveCSS('height', '44px');
+    await address.click();
+    expect(
+      await page
+        .getByRole('textbox', { name: 'Address' })
+        .evaluate((element) => parseFloat(getComputedStyle(element).fontSize))
+    ).toBeGreaterThanOrEqual(16);
+    await page.keyboard.press('Escape');
   });
 
-  test('a terminal tab can be closed by a thumb', async ({ page, rightPanel }) => {
+  test('a terminal tab can be closed by a thumb', async ({ rightPanel }) => {
     await rightPanel.goto('/session');
     await rightPanel.ensureTabStripOpen();
-    await rightPanel.header.getByRole('tab', { name: 'Terminal' }).click();
+    await rightPanel.selectView('Terminal');
 
     // The panel spawns its first terminal on open, so the tab arriving is the
     // PTY having been created — an outcome to wait for rather than a guess at
     // how long the round trip takes.
-    const close = page
-      .locator('[role="tablist"][aria-label="Open terminals"] button[aria-label^="Close "]')
-      .first();
+    const close = rightPanel.header.getByRole('button', { name: /^Close .+ view$/ }).first();
     await expect(close, 'opening the Terminal tab must spawn a closable terminal').toBeVisible({
       timeout: 20_000,
     });

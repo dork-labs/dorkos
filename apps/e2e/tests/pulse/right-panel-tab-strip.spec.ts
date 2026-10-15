@@ -1,32 +1,20 @@
 import { test, expect } from '../../fixtures';
 import type { RightPanelPage } from '../../pages/RightPanelPage';
 
-/**
- * The right panel's tab strip when seven tabs do not fit.
- *
- * `/session` registers seven contributions (Pulse, Profile, Session, Files,
- * Canvas, Browser, Terminal). Measured: they are ~530px of tabs, and a 45% panel
- * at this window width gives the strip ~370px — so the strip overflows by ~160px
- * and scrolls, and two things have to hold once it does: the selected tab is on
- * screen, and an edge with tabs behind it says so. (Figures to the nearest ten:
- * the panel settles a few pixels either way depending on when the per-agent
- * layout restore lands, and nothing here turns on the exact number — the
- * assertions measure the strip themselves.)
- *
- * Clicking a tab got the first one for free, because the browser scrolls what it
- * focuses — which is why nothing a person did by hand ever showed the bug.
- * Everything else did: a tab selected by a server `ui_command` (the agent opening
- * the canvas), or by a restored per-agent layout, was left cut off at the strip's
- * edge with its label half-drawn (DOR-471). So the selection here is dispatched
- * programmatically without focus or native scrolling, and the reveal has to do
- * the work on its own.
- *
- * Every reading is taken inside a poll that first re-opens the panel and re-selects
- * the tab. That is not the assertion going soft: the panel restores its own
- * per-agent layout as soon as the agent query settles, and on a cold cache that
- * restore lands a second late, closing the panel and resetting the selection. The
- * poll absorbs that; it still fails — and did fail — when the reveal never runs.
- */
+/** Relevant defaults remain compact; added views retain the overflow reveal contract. */
+async function addOptionalViews(rightPanel: RightPanelPage) {
+  for (const name of ['Pulse', 'Chat', 'Canvas', 'Browser', 'Terminal']) {
+    await rightPanel.selectView(name);
+  }
+  // Terminal is a concrete PTY view once its creation settles.
+  await expect(rightPanel.header.getByRole('tab', { name: /^Shell 1$/ })).toHaveAttribute(
+    'id',
+    /^right-panel-tab-resource\/terminal\/[0-9a-f-]{36}$/
+  );
+  return (await rightPanel.header
+    .getByRole('tab', { name: /^Shell 1$/ })
+    .getAttribute('id'))!.replace('right-panel-tab-', '');
+}
 
 /** The split the product bug was filed at — 45% of the window to the right panel. */
 const RIGHT_PANEL_PCT = 45;
@@ -47,9 +35,6 @@ const WINDOW = { width: 1280, height: 800 } as const;
  * a value sitting on the boundary would go red on a pixel of rounding.
  */
 const ROOMY_WINDOW_WIDTH = 1800;
-
-/** The tab at the far end of the strip — the one a 45% split cannot show at rest. */
-const FAR_TAB_ID = 'terminal';
 
 /** Sub-pixel layout rounding is not a clipped tab. */
 const SLACK_PX = 1;
@@ -74,17 +59,17 @@ interface FarTabReading {
  * window between "where the strip is scrolled" and "which fades are drawn" for the
  * two to disagree in.
  */
-async function readFarTab(rightPanel: RightPanelPage): Promise<FarTabReading> {
+async function readFarTab(rightPanel: RightPanelPage, farTabId: string): Promise<FarTabReading> {
   await rightPanel.ensureTabStripOpen();
   const before = await rightPanel.measureTabStrip();
-  if (before.selectedId !== FAR_TAB_ID) await rightPanel.activateTabWithoutFocus(FAR_TAB_ID);
+  if (before.selectedId !== farTabId) await rightPanel.activateTabWithoutFocus(farTabId);
 
   const strip = await rightPanel.measureTabStrip();
   const start = strip.fadeStart === strip.scrollLeft > SLACK_PX ? 'ok' : 'wrong';
   const end = strip.fadeEnd === strip.scrollLeft < strip.deficit - SLACK_PX ? 'ok' : 'wrong';
   return {
     overhang:
-      strip.selectedId === FAR_TAB_ID
+      strip.selectedId === farTabId
         ? Math.round(Math.max(strip.selectedPastStart, strip.selectedPastEnd))
         : Number.POSITIVE_INFINITY,
     fades: `start:${start} end:${end}`,
@@ -101,6 +86,8 @@ test.describe('Right panel — a tab strip that never hides the tab you are on @
     await rightPanel.seedSplit(RIGHT_PANEL_PCT);
     await rightPanel.goto('/session');
     await rightPanel.ensureTabStripOpen();
+    await expect(rightPanel.header.getByRole('tab')).toHaveCount(2);
+    const farTabId = await addOptionalViews(rightPanel);
     await expect(rightPanel.header.getByRole('tab')).toHaveCount(7);
 
     // Precondition, not decoration: with room for every tab nothing below could
@@ -127,12 +114,12 @@ test.describe('Right panel — a tab strip that never hides the tab you are on @
     await expect
       .poll(
         async () => {
-          reading = await readFarTab(rightPanel);
+          reading = await readFarTab(rightPanel, farTabId);
           const overhang = reading.overhang <= SLACK_PX ? 'ok' : reading.overhang;
           return `overhang:${overhang} ${reading.fades}`;
         },
         {
-          message: `the ${FAR_TAB_ID} tab must be selected, fully in view, and its fades settled`,
+          message: `the ${farTabId} tab must be selected, fully in view, and its fades settled`,
           timeout: SETTLE_TIMEOUT_MS,
         }
       )
@@ -156,6 +143,7 @@ test.describe('Right panel — a tab strip that never hides the tab you are on @
     await rightPanel.seedSplit(RIGHT_PANEL_PCT);
     await rightPanel.goto('/session');
     await rightPanel.ensureTabStripOpen();
+    await addOptionalViews(rightPanel);
     await expect(rightPanel.header.getByRole('tab')).toHaveCount(7);
 
     let fades = '';

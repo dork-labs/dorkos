@@ -277,18 +277,22 @@ test.describe('A room has a canvas everybody shares @smoke', () => {
     await expect(roomsPage.canvasDocuments).toContainText(second, {
       timeout: SERVER_ROUND_TRIP_MS,
     });
-    const tabs = () => roomsPage.canvasDocuments.getByRole('tab');
+    const tabs = () =>
+      roomsPage.canvasDocuments.locator('[role="tab"][data-view-category="canvas"]');
     await expect(tabs().first()).toContainText(first);
 
     // Pinned from the tab's own control, as a member — nothing here is
     // owner-only.
-    await roomsPage.canvasDocumentTab(second).hover();
-    await page.getByRole('button', { name: `Pin ${second}` }).click();
+    await roomsPage.canvasDocumentTab(second).click();
+    await page.getByRole('button', { name: 'Add view', exact: true }).click();
+    await page.getByRole('menuitem', { name: 'Pin document', exact: true }).click();
 
     await expect(tabs().first()).toContainText(second, { timeout: SERVER_ROUND_TRIP_MS });
     // The control now offers the way back, which is how the tab says it is
     // pinned without a tooltip nobody opens.
-    await expect(page.getByRole('button', { name: `Unpin ${second}` })).toBeVisible();
+    await page.getByRole('button', { name: 'Add view', exact: true }).click();
+    await expect(page.getByRole('menuitem', { name: 'Unpin document', exact: true })).toBeVisible();
+    await page.keyboard.press('Escape');
 
     // **A pin is a row.** This window has stored nothing, so a reload that still
     // draws it first can only have got it from the server.
@@ -296,7 +300,9 @@ test.describe('A room has a canvas everybody shares @smoke', () => {
     await basePage.waitForAppReady();
     await roomsPage.openCanvasTab();
     await expect(tabs().first()).toContainText(second, { timeout: SERVER_ROUND_TRIP_MS });
-    await expect(page.getByRole('button', { name: `Unpin ${second}` })).toBeVisible();
+    await page.getByRole('button', { name: 'Add view', exact: true }).click();
+    await expect(page.getByRole('menuitem', { name: 'Unpin document', exact: true })).toBeVisible();
+    await page.keyboard.press('Escape');
   });
 
   test('an agent’s face appears while its turn is reading, and goes when the turn ends', async ({

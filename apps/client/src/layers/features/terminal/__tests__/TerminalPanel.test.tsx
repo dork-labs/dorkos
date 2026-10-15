@@ -2,13 +2,18 @@
  * @vitest-environment jsdom
  */
 import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from 'vitest';
-import { render, screen, cleanup, fireEvent, waitFor, within } from '@testing-library/react';
+import { act, render, screen, cleanup, fireEvent, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import '@testing-library/jest-dom/vitest';
 import type { TerminalHandle } from '@dorkos/shared/transport';
 import { TERMINAL_CLOSE_SUPERSEDED } from '@dorkos/shared/terminal-schemas';
 import { createMockTransport } from '@dorkos/test-utils';
-import { TransportProvider, useAppStore } from '@/layers/shared/model';
+import {
+  TransportProvider,
+  useAppStore,
+  PanelResourceChrome,
+  useTerminalResourceChrome,
+} from '@/layers/shared/model';
 import { readTerminalTabs, writeTerminalTabs } from '../lib/terminal-id-store';
 
 // Shared, hoist-safe capture of everything written to the stubbed xterm, so
@@ -92,6 +97,7 @@ beforeEach(() => {
   document.documentElement.style.removeProperty('--font-mono');
   resizeCallbacks.length = 0;
   sessionStorage.clear();
+  useTerminalResourceChrome.setState({ chrome: null, createRequest: null });
   useAppStore.setState({ selectedCwd: CWD, sessionId: null });
 });
 
@@ -152,12 +158,194 @@ function renderTerminal(transport = createMockTransport({ supportsTerminal: true
   );
 }
 
+function renderUnifiedTerminal(transport: ReturnType<typeof createMockTransport>) {
+  return render(
+    <TransportProvider transport={transport}>
+      <PanelResourceChrome value>
+        <TerminalPanel />
+      </PanelResourceChrome>
+    </TransportProvider>
+  );
+}
+
 /** Count the mounted xterm instance containers (one per tab, hidden or visible). */
 function instanceCount(container: HTMLElement): number {
   return container.querySelectorAll('.bg-sidebar.h-full').length;
 }
 
 describe('TerminalPanel', () => {
+  it('adopts a hidden late PTY after a replacement owner mounted and preserves it through later writes', async () => {
+    const transport = liveTransport();
+    const oldCreate = deferredCreate();
+    vi.mocked(transport.openTerminal).mockImplementationOnce(() => oldCreate.promise);
+    transport.attachTerminal = vi.fn(async (id, signal) => ({ id, output: liveOutput(signal!) }));
+    const oldOwner = renderUnifiedTerminal(transport);
+    await waitFor(() => expect(transport.openTerminal).toHaveBeenCalledTimes(1));
+    const oldPendingId = useTerminalResourceChrome.getState().chrome!.tabs[0].id;
+    act(() => useTerminalResourceChrome.getState().chrome!.hide!(oldPendingId));
+    oldOwner.unmount();
+
+    renderUnifiedTerminal(transport);
+    await waitFor(() =>
+      expect(useTerminalResourceChrome.getState().chrome!.activeId).toBe('pty-1')
+    );
+    oldCreate.resolve({ id: 'late-old-hidden', output: exitedOutput() });
+    await waitFor(() =>
+      expect(useTerminalResourceChrome.getState().chrome!.tabs).toContainEqual({
+        id: 'late-old-hidden',
+        title: 'Shell 2',
+        closed: true,
+      })
+    );
+    expect(useTerminalResourceChrome.getState().chrome!.activeId).toBe('pty-1');
+    expect(transport.closeTerminal).not.toHaveBeenCalled();
+    act(() => useTerminalResourceChrome.getState().chrome!.create());
+    await waitFor(() =>
+      expect(useTerminalResourceChrome.getState().chrome!.activeId).toBe('pty-2')
+    );
+    expect(readTerminalTabs(null, CWD).ids).toEqual(['pty-1', 'late-old-hidden', 'pty-2']);
+    expect(readTerminalTabs(null, CWD).closedIds).toEqual(['late-old-hidden']);
+    act(() => useTerminalResourceChrome.getState().chrome!.activate('late-old-hidden', 'keyboard'));
+    expect(useTerminalResourceChrome.getState().chrome!.activeId).toBe('late-old-hidden');
+    expect(readTerminalTabs(null, CWD).closedIds).toBeUndefined();
+  });
+
+  it('adds a fresh shell for an explicit scoped request while restoring existing hidden shells', async () => {
+    writeTerminalTabs(null, CWD, {
+      ids: ['restored-pty'],
+      activeIndex: 0,
+      closedIds: ['restored-pty'],
+    });
+    const transport = liveTransport();
+    transport.attachTerminal = vi.fn(async (id, signal) => ({ id, output: liveOutput(signal!) }));
+    useTerminalResourceChrome.getState().requestCreate(`:${CWD}`);
+    const mounted = renderUnifiedTerminal(transport);
+    await waitFor(() => expect(transport.openTerminal).toHaveBeenCalledTimes(1));
+    await waitFor(() =>
+      expect(useTerminalResourceChrome.getState().chrome!.activeId).toBe('pty-1')
+    );
+    expect(transport.attachTerminal).toHaveBeenCalledWith('restored-pty', expect.any(AbortSignal));
+    expect(useTerminalResourceChrome.getState().chrome!.tabs).toEqual([
+      { id: 'restored-pty', title: 'Shell 1', closed: true },
+      { id: 'pty-1', title: 'Shell 2', closed: false },
+    ]);
+    expect(useTerminalResourceChrome.getState().createRequest).toBeNull();
+    mounted.unmount();
+    renderUnifiedTerminal(transport);
+    await waitFor(() =>
+      expect(transport.attachTerminal).toHaveBeenCalledWith('pty-1', expect.any(AbortSignal))
+    );
+    expect(transport.openTerminal).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not add a shell for another scope and does not consume a newer request', async () => {
+    writeTerminalTabs(null, CWD, { ids: ['restored-pty'], activeIndex: 0 });
+    const transport = liveTransport();
+    transport.attachTerminal = vi.fn(async (id, signal) => ({ id, output: liveOutput(signal!) }));
+    const store = useTerminalResourceChrome.getState();
+    store.requestCreate('other-session:/other');
+    const wrongScope = useTerminalResourceChrome.getState().createRequest!;
+    renderUnifiedTerminal(transport);
+    await waitFor(() =>
+      expect(transport.attachTerminal).toHaveBeenCalledWith('restored-pty', expect.any(AbortSignal))
+    );
+    expect(transport.openTerminal).not.toHaveBeenCalled();
+    expect(useTerminalResourceChrome.getState().createRequest).toEqual(wrongScope);
+    act(() => store.requestCreate(`:${CWD}`));
+    const newer = useTerminalResourceChrome.getState().createRequest!;
+    act(() => store.consumeCreate(wrongScope.scope, wrongScope.id));
+    expect(useTerminalResourceChrome.getState().createRequest).toEqual(newer);
+    expect(newer.id).toBeGreaterThan(wrongScope.id);
+  });
+
+  it('seeds only one shell for a new-shell request when there are no stored PTYs', async () => {
+    const transport = liveTransport();
+    useTerminalResourceChrome.getState().requestCreate(`:${CWD}`);
+    renderUnifiedTerminal(transport);
+    await waitFor(() =>
+      expect(useTerminalResourceChrome.getState().chrome!.activeId).toBe('pty-1')
+    );
+    expect(transport.openTerminal).toHaveBeenCalledTimes(1);
+    expect(useTerminalResourceChrome.getState().chrome!.tabs).toHaveLength(1);
+    expect(useTerminalResourceChrome.getState().createRequest).toBeNull();
+  });
+
+  it('preserves a closed pending view through PTY resolution and remount, then restores or stops explicitly', async () => {
+    const transport = liveTransport();
+    const create = deferredCreate();
+    let signal!: AbortSignal;
+    transport.openTerminal = vi.fn((_cwd, currentSignal) => {
+      signal = currentSignal!;
+      return create.promise;
+    });
+    transport.attachTerminal = vi.fn(async (id, currentSignal) => ({
+      id,
+      output: liveOutput(currentSignal!),
+    }));
+    const first = renderUnifiedTerminal(transport);
+    await waitFor(() => expect(transport.openTerminal).toHaveBeenCalledTimes(1));
+    const pendingId = useTerminalResourceChrome.getState().chrome!.tabs[0].id;
+    act(() => useTerminalResourceChrome.getState().chrome!.hide!(pendingId));
+    expect(useTerminalResourceChrome.getState().chrome!.tabs[0].closed).toBe(true);
+    expect(useTerminalResourceChrome.getState().chrome!.activeId).toBeNull();
+    create.resolve({ id: 'hidden-pty', output: liveOutput(signal) });
+    await waitFor(() => expect(readTerminalTabs(null, CWD).closedIds).toEqual(['hidden-pty']));
+    expect(useTerminalResourceChrome.getState().chrome!.tabs).toEqual([
+      { id: 'hidden-pty', title: 'Shell 1', closed: true },
+    ]);
+    expect(transport.closeTerminal).not.toHaveBeenCalled();
+    first.unmount();
+
+    renderUnifiedTerminal(transport);
+    await waitFor(() =>
+      expect(transport.attachTerminal).toHaveBeenCalledWith('hidden-pty', expect.any(AbortSignal))
+    );
+    expect(useTerminalResourceChrome.getState().chrome!.tabs[0].closed).toBe(true);
+    expect(useTerminalResourceChrome.getState().chrome!.activeId).toBeNull();
+    expect(transport.openTerminal).toHaveBeenCalledTimes(1);
+    act(() => useTerminalResourceChrome.getState().chrome!.activate('hidden-pty', 'keyboard'));
+    expect(useTerminalResourceChrome.getState().chrome!.tabs[0].closed).toBe(false);
+    expect(useTerminalResourceChrome.getState().chrome!.activeId).toBe('hidden-pty');
+    expect(readTerminalTabs(null, CWD).closedIds).toBeUndefined();
+    act(() => useTerminalResourceChrome.getState().chrome!.stop('hidden-pty', 'pointer'));
+    expect(transport.closeTerminal).toHaveBeenCalledWith('hidden-pty');
+  });
+
+  it('persists a hidden late spawn after its owner unmounts without destroying or reopening it', async () => {
+    const transport = liveTransport();
+    const create = deferredCreate();
+    transport.openTerminal = vi.fn(() => create.promise);
+    transport.attachTerminal = vi.fn(async (id, signal) => ({ id, output: liveOutput(signal!) }));
+    const first = renderUnifiedTerminal(transport);
+    await waitFor(() => expect(transport.openTerminal).toHaveBeenCalledTimes(1));
+    const pendingId = useTerminalResourceChrome.getState().chrome!.tabs[0].id;
+    act(() => useTerminalResourceChrome.getState().chrome!.hide!(pendingId));
+    first.unmount();
+    create.resolve({ id: 'late-hidden-pty', output: exitedOutput() });
+    await waitFor(() =>
+      expect(readTerminalTabs(null, CWD)).toEqual({
+        ids: ['late-hidden-pty'],
+        activeIndex: 0,
+        closedIds: ['late-hidden-pty'],
+      })
+    );
+    expect(transport.closeTerminal).not.toHaveBeenCalled();
+
+    renderUnifiedTerminal(transport);
+    await waitFor(() =>
+      expect(transport.attachTerminal).toHaveBeenCalledWith(
+        'late-hidden-pty',
+        expect.any(AbortSignal)
+      )
+    );
+    expect(useTerminalResourceChrome.getState().chrome!.tabs[0]).toMatchObject({
+      id: 'late-hidden-pty',
+      closed: true,
+    });
+    expect(useTerminalResourceChrome.getState().chrome!.activeId).toBeNull();
+    expect(transport.openTerminal).toHaveBeenCalledTimes(1);
+  });
+
   it('renders content + its own tab strip, but never the container-owned close button', () => {
     renderTerminal(liveTransport());
     // The panel owns an in-panel tab strip (mirrors the Canvas document tabs)…

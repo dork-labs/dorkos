@@ -25,7 +25,7 @@
     "apps/client/src/layers/features/settings/ui/runtimes/sections/ClaudeAccountsSection.tsx": 585,
     "apps/client/src/layers/shared/lib/transport/stream-manager.ts": 533,
     "apps/client/src/layers/shared/lib/transport/system-methods.ts": 598,
-    "apps/client/src/layers/shared/model/app-store/app-store-canvas.ts": 739,
+    "apps/client/src/layers/shared/model/app-store/app-store-canvas.ts": 709,
     "apps/client/src/layers/shared/ui/index.ts": 506,
     "apps/client/src/layers/shared/ui/navigation-layout.tsx": 570,
     "apps/client/src/layers/shared/ui/sidebar-menu-node.tsx": 617,

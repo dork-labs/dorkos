@@ -32,7 +32,12 @@ import {
   useRoomViewPublish,
 } from '@/layers/entities/room';
 import type { CanvasView } from '@/layers/shared/lib';
-import { roomDocumentsInView, useAppStore, useTransport } from '@/layers/shared/model';
+import {
+  roomDocumentsInView,
+  useAppStore,
+  useTransport,
+  useUnifiedPanelChrome,
+} from '@/layers/shared/model';
 import {
   CanvasHeader,
   canvasPanelId,
@@ -131,6 +136,7 @@ export interface RoomCanvasBodyProps {
  * @param props - The room and the view.
  */
 export function RoomCanvasBody({ roomId, view }: RoomCanvasBodyProps) {
+  const unified = useUnifiedPanelChrome();
   const documents = useAppStore((s) => s.roomCanvasDocuments[roomId]);
   const activeDocumentId = useAppStore((s) => s.roomCanvasActive[roomId]?.[view] ?? null);
   const unreadIds = useAppStore((s) => s.roomCanvasUnread[roomId]?.[view]);
@@ -333,20 +339,22 @@ export function RoomCanvasBody({ roomId, view }: RoomCanvasBodyProps) {
 
   return (
     <>
-      <CanvasHeader
-        view={view}
-        documents={headerDocs}
-        activeDocumentId={activeDocumentId}
-        onActivate={(id) => activate(roomId, id)}
-        onClose={(id) =>
-          void attempt('Couldn’t take that off the canvas.', () => actions.close(id))
-        }
-        onPin={(id, pinned) =>
-          void attempt(pinned ? 'Couldn’t pin that.' : 'Couldn’t unpin that.', () =>
-            actions.pin(id, pinned)
-          )
-        }
-      />
+      {!unified && (
+        <CanvasHeader
+          view={view}
+          documents={headerDocs}
+          activeDocumentId={activeDocumentId}
+          onActivate={(id) => activate(roomId, id)}
+          onClose={(id) =>
+            void attempt('Couldn’t take that off the canvas.', () => actions.close(id))
+          }
+          onPin={(id, pinned) =>
+            void attempt(pinned ? 'Couldn’t pin that.' : 'Couldn’t unpin that.', () =>
+              actions.pin(id, pinned)
+            )
+          }
+        />
+      )}
       <RoomCanvasChrome
         sourceLabel={active?.sourceLabel}
         people={view === 'browser' ? people : []}
@@ -361,7 +369,9 @@ export function RoomCanvasBody({ roomId, view }: RoomCanvasBodyProps) {
         ref={panel}
         tabIndex={-1}
         className="min-h-0 flex-1 overflow-auto focus-visible:outline-none"
-        {...(active ? { role: 'tabpanel', 'aria-labelledby': canvasTabDomId(active.id) } : {})}
+        {...(!unified && active
+          ? { role: 'tabpanel', 'aria-labelledby': canvasTabDomId(active.id) }
+          : {})}
       >
         {active ? (
           <CanvasErrorBoundary key={active.id} documentId={active.id}>

@@ -5,6 +5,7 @@ import {
   Gauge,
   Globe,
   PanelRight,
+  Monitor,
   Puzzle,
   SquareTerminal,
   User,
@@ -179,6 +180,18 @@ export function registerRightPanelTabs(register: RegisterFn): void {
       return explicitAgentPath != null;
     },
     priority: 10,
+  });
+
+  register('right-panel', {
+    id: 'computer',
+    title: 'Computer',
+    icon: Monitor,
+    component: lazy(() =>
+      import('@/layers/features/agent-computer').then((m) => ({ default: m.ComputerPanelView }))
+    ),
+    visibleWhen: ({ pathname, explicitAgentPath }) =>
+      pathname === '/session' || explicitAgentPath != null,
+    priority: 16,
   });
 
   register('right-panel', {

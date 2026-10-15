@@ -2,7 +2,7 @@ import * as React from 'react';
 import { createPortal } from 'react-dom';
 import { motion, useAnimationControls, useDragControls, type PanInfo } from 'motion/react';
 import { ChevronDown, X } from 'lucide-react';
-import type { PipContent } from '@/layers/shared/model';
+import { useVisualViewportBounds, type PipContent } from '@/layers/shared/model';
 
 /**
  * Snap positions as fractions of the viewport height: `peek` (half screen —
@@ -46,7 +46,7 @@ interface PipSheetProps {
  * desktop `FloatingPanel` shows, docked instead into a non-modal snap-point
  * bottom sheet below 768px. Opens at the peek snap and drags up to expand.
  *
- * Cockpit-native by decision (spec Amendment 1): a plain `motion.div` portalled
+ * App-native by decision (spec Amendment 1): a plain `motion.div` portalled
  * to `document.body` with `role="complementary"` — the exact semantics of
  * `FloatingPanel` — and **no** dialog/portal-modality machinery. vaul was
  * rejected at the validation gate because it never forwards `modal` to its
@@ -89,13 +89,9 @@ export function PipSheet({
   const [snap, setSnap] = React.useState<Snap>('peek');
   // Tracked in state so snap offsets recompute while open (rotation, keyboard,
   // browser chrome), mirroring how FloatingPanel reclamps on window resize.
-  const [viewportHeight, setViewportHeight] = React.useState(() => window.innerHeight);
-
-  React.useEffect(() => {
-    const onResize = () => setViewportHeight(window.innerHeight);
-    window.addEventListener('resize', onResize);
-    return () => window.removeEventListener('resize', onResize);
-  }, []);
+  const viewport = useVisualViewportBounds();
+  const viewportHeight = viewport.height;
+  const bottom = Math.max(0, window.innerHeight - viewport.top - viewport.height);
 
   const sheetHeight = SNAP_POINTS.expanded * viewportHeight;
   const peekY = (SNAP_POINTS.expanded - SNAP_POINTS.peek) * viewportHeight;
@@ -161,8 +157,8 @@ export function PipSheet({
       dragElastic={0.1}
       dragMomentum={false}
       onDragEnd={handleDragEnd}
-      style={{ height: sheetHeight }}
-      className="bg-background border-border shadow-modal fixed inset-x-0 bottom-0 z-40 flex flex-col rounded-t-lg border-t"
+      style={{ height: sheetHeight, bottom }}
+      className="bg-background border-border shadow-modal fixed inset-x-0 z-40 flex flex-col rounded-t-lg border-t"
     >
       {/* Handle + header form the sole drag surface; everything below scrolls. */}
       <div
@@ -170,13 +166,13 @@ export function PipSheet({
         className="cursor-grab touch-none select-none active:cursor-grabbing"
       >
         <div className="bg-muted mx-auto mt-4 h-2 w-[100px] rounded-full" />
-        <div className="flex items-center justify-between gap-2 border-b px-4 pt-1 pb-2">
+        <div className="flex items-center justify-between gap-2 border-b pt-1 pr-[max(1rem,env(safe-area-inset-right))] pb-2 pl-[max(1rem,env(safe-area-inset-left))]">
           <span className="min-w-0 flex-1 truncate text-sm font-medium">{content.title}</span>
           <button
             type="button"
             aria-label="Minimize"
             onClick={onMinimize}
-            className="text-muted-foreground hover:bg-muted hover:text-foreground focus-ring shrink-0 rounded-md p-1 transition-colors"
+            className="text-muted-foreground hover:bg-muted hover:text-foreground focus-ring flex size-11 shrink-0 items-center justify-center rounded-md transition-colors"
           >
             <ChevronDown className="size-4" />
           </button>
@@ -184,13 +180,19 @@ export function PipSheet({
             type="button"
             aria-label="Close"
             onClick={onClose}
-            className="text-muted-foreground hover:bg-muted hover:text-foreground focus-ring shrink-0 rounded-md p-1 transition-colors"
+            className="text-muted-foreground hover:bg-muted hover:text-foreground focus-ring flex size-11 shrink-0 items-center justify-center rounded-md transition-colors"
           >
             <X className="size-4" />
           </button>
         </div>
       </div>
-      <div className="min-h-0 flex-1 overflow-y-auto p-3">{children}</div>
+      <div
+        data-slot="pip-sheet-content"
+        style={{ marginBottom: targetY }}
+        className="min-h-0 flex-1 overflow-y-auto pt-3 pr-[max(0.75rem,env(safe-area-inset-right))] pb-[max(0.75rem,env(safe-area-inset-bottom))] pl-[max(0.75rem,env(safe-area-inset-left))]"
+      >
+        {children}
+      </div>
     </motion.div>,
     document.body
   );

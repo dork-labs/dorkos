@@ -2,7 +2,12 @@
  * @vitest-environment jsdom
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { readTerminalTabs, writeTerminalTabs } from '../lib/terminal-id-store';
+import {
+  readTerminalTabs,
+  writeTerminalTabs,
+  appendLateTerminal,
+  subscribeLateTerminals,
+} from '../lib/terminal-id-store';
 
 const CWD = '/repo';
 
@@ -10,6 +15,46 @@ beforeEach(() => sessionStorage.clear());
 afterEach(() => vi.restoreAllMocks());
 
 describe('terminal-id-store', () => {
+  it('notifies only scoped late spawns and leaves ordinary persistence free of feedback', () => {
+    const listener = vi.fn();
+    const unsubscribe = subscribeLateTerminals('sess', CWD, listener);
+    try {
+      writeTerminalTabs('sess', CWD, { ids: ['existing'], activeIndex: 0 });
+      appendLateTerminal('other', CWD, { id: 'other-shell', closed: false });
+      expect(listener).not.toHaveBeenCalled();
+      appendLateTerminal('sess', CWD, { id: 'late-hidden', closed: true });
+      expect(listener).toHaveBeenCalledExactlyOnceWith({ id: 'late-hidden', closed: true });
+      expect(readTerminalTabs('sess', CWD)).toEqual({
+        ids: ['existing', 'late-hidden'],
+        activeIndex: 0,
+        closedIds: ['late-hidden'],
+      });
+      writeTerminalTabs('sess', CWD, readTerminalTabs('sess', CWD));
+      expect(listener).toHaveBeenCalledTimes(1);
+    } finally {
+      unsubscribe();
+    }
+    appendLateTerminal('sess', CWD, { id: 'after-unmount', closed: false });
+    expect(listener).toHaveBeenCalledTimes(1);
+  });
+  it('persists closed live views and filters malformed or orphaned closure IDs', () => {
+    writeTerminalTabs('sess', CWD, { ids: ['a', 'b'], activeIndex: 1, closedIds: ['a', 'gone'] });
+    expect(readTerminalTabs('sess', CWD)).toEqual({
+      ids: ['a', 'b'],
+      activeIndex: 1,
+      closedIds: ['a'],
+    });
+    sessionStorage.setItem(
+      `dork.terminal.tabs:sess:${CWD}`,
+      JSON.stringify({ ids: ['a', 'b'], activeIndex: 0, closedIds: [null, 'b', 'gone'] })
+    );
+    expect(readTerminalTabs('sess', CWD).closedIds).toEqual(['b']);
+    writeTerminalTabs('sess', CWD, { ids: ['a', 'b'], activeIndex: 0, closedIds: [] });
+    expect(JSON.parse(sessionStorage.getItem(`dork.terminal.tabs:sess:${CWD}`)!)).toEqual({
+      ids: ['a', 'b'],
+      activeIndex: 0,
+    });
+  });
   it('round-trips the ordered id list and active index', () => {
     writeTerminalTabs('sess', CWD, { ids: ['a', 'b', 'c'], activeIndex: 2 });
     expect(readTerminalTabs('sess', CWD)).toEqual({ ids: ['a', 'b', 'c'], activeIndex: 2 });
