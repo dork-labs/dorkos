@@ -44,7 +44,7 @@
  *
  * The one place the two rules read a different amount of code is the import
  * boundary. This rule walks into `packages/shared/src/config-schema.ts` as well;
- * the tag rule stops at `config-manager.ts` (DOR-1732). Ten keys reach across
+ * the tag rule stops at `config-manager.ts` and `config-migrations/` (DOR-1732). Ten keys reach across
  * that edge and two of them reach behavior — `0.57.0` calls `toSidebarItemRef`,
  * `0.65.0` calls `claudeAccountId` — so before DOR-1732 either could be
  * rewritten under a shipped key with every guard green. They are pinned HERE
@@ -80,7 +80,7 @@ const HASH_LENGTH = 16;
  * top-level declaration it reaches across the allowlisted files, in name order.
  *
  * @param key - The migration key, as written in `CONFIG_MIGRATIONS`.
- * @param sources - `config-manager.ts` and `config-schema.ts`, as text.
+ * @param sources - `config-manager.ts` plus `config-migrations/*.ts` (joined) and `config-schema.ts`, as text.
  * @returns The concatenated closure text.
  * @throws When the key is not in the table.
  */
@@ -105,7 +105,7 @@ export function migrationClosure(key: string, sources: ClosureSources): string {
  * The pinned hash of one migration key's closure.
  *
  * @param key - The migration key, as written in `CONFIG_MIGRATIONS`.
- * @param sources - `config-manager.ts` and `config-schema.ts`, as text.
+ * @param sources - `config-manager.ts` plus `config-migrations/*.ts` (joined) and `config-schema.ts`, as text.
  * @returns A truncated SHA-256 of the normalized closure. Truncated because a
  *   pin is read by people in a diff and this is an accident guard, not a
  *   security boundary.
@@ -120,7 +120,7 @@ export function migrationHash(key: string, sources: ClosureSources): string {
 /**
  * Every migration key in the table, mapped to its closure hash.
  *
- * @param sources - `config-manager.ts` and `config-schema.ts`, as text.
+ * @param sources - `config-manager.ts` plus `config-migrations/*.ts` (joined) and `config-schema.ts`, as text.
  * @returns Each migration key mapped to the hash of its reachable closure.
  */
 function migrationHashes(sources: ClosureSources): Record<string, string> {
@@ -169,7 +169,8 @@ const SHARED_SYMBOL =
 /**
  * Decide whether every migration key still matches the hash it was pinned at.
  *
- * @param sources - The working tree's `config-manager.ts` and `config-schema.ts`.
+ * @param sources - The working tree's `config-manager.ts` plus `config-migrations/*.ts` (joined) and
+ *   `config-schema.ts`.
  * @param pinned - The recorded hash per merged migration key.
  * @returns The verdict, naming every drift and how to answer it.
  */

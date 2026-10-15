@@ -124,6 +124,7 @@
       "description": "Config file system, settings reference, CLI commands, precedence",
       "patterns": [
         "config-manager",
+        "config-migrations",
         "config-schema",
         "packages/cli/"
       ]

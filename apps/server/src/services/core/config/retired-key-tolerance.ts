@@ -277,8 +277,8 @@ export function tolerateRetiredUiKeys(schema: { properties?: Record<string, unkn
  * (`safe-defaults/protected-state.ts`).
  *
  * The retired names arrive as `retired` because the migration bodies in
- * `config-manager.ts` share them, and a migration's constants stay there, where
- * the append-only pins can see them.
+ * `config-migrations/` share them, and a migration's constants stay beside its
+ * body, where the append-only pins can see them.
  *
  * @param ctx - The `z.toJSONSchema` override context for one schema node.
  * @param retired - The retired collapse keys and the legacy group members key.

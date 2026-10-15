@@ -105,14 +105,15 @@ Verify that any changes to the user-config schema since the last release have a 
 LAST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
 SCHEMA_DIFF=$(git diff "$LAST_TAG"..HEAD -- \
   packages/shared/src/config-schema.ts \
-  apps/server/src/services/core/config-manager.ts)
+  apps/server/src/services/core/config-manager.ts \
+  apps/server/src/services/core/config-migrations/)
 ```
 
 If `SCHEMA_DIFF` is empty → skip the rest of this check.
 
 #### Step 2: Analyze the diff
 
-Read `apps/server/src/services/core/config-manager.ts` and extract the current `migrations` block keys (semver strings) and the current `projectVersion`.
+Read `apps/server/src/services/core/config-migrations/index.ts` and extract the current `CONFIG_MIGRATIONS` keys (semver strings; the newest is the last entry in the table). `projectVersion` is set in `apps/server/src/services/core/config-manager.ts` from `SERVER_VERSION`.
 
 Classify each hunk of `SCHEMA_DIFF`:
 
@@ -137,7 +138,7 @@ Report: files changed, per-hunk classifications with reasons, whether a migratio
 Draft a scaffolded migration based on the detected changes. Keep it idempotent (always guard with `store.has()`). Example shape:
 
 ```typescript
-// Proposed migration (append to migrations block in apps/server/src/services/core/config-manager.ts)
+// Proposed migration (append to CONFIG_MIGRATIONS in apps/server/src/services/core/config-migrations/index.ts)
 '[next_version]': (store) => {
   // Auto-scaffolded during /system:release for v[next_version]
   // Review carefully before accepting.
@@ -156,9 +157,9 @@ header: "Config Migration"
 question: "Schema changes detected without a matching migration. What would you like to do?"
 options:
   - label: "Yes, add the scaffolded migration (Recommended)"
-    description: "Appends to CONFIG_MIGRATIONS in config-manager.ts and stages for the release commit"
+    description: "Appends to CONFIG_MIGRATIONS in config-migrations/index.ts and stages for the release commit"
   - label: "Let me write it myself"
-    description: "Pauses the release so you can edit config-manager.ts manually, then re-run"
+    description: "Pauses the release so you can edit config-migrations/ manually, then re-run"
   - label: "No migration needed (I know what I'm doing)"
     description: "Skip. Use only for type-only or no-op schema changes"
   - label: "Cancel release"
@@ -167,9 +168,9 @@ options:
 
 **On "Yes, add the scaffolded migration":**
 
-1. Append the migration entry to the module-level `CONFIG_MIGRATIONS` constant in `apps/server/src/services/core/config-manager.ts`, keyed to `[next_version]`. Do NOT touch `projectVersion` — it's sourced from `SERVER_VERSION` (see `lib/version.ts`) and updates automatically when `VERSION` and `package.json` are bumped in Phase 6.
+1. Append the migration entry to the bottom of the `CONFIG_MIGRATIONS` table in `apps/server/src/services/core/config-migrations/index.ts`, keyed to `[next_version]`. A named helper it calls goes at the bottom of `config-migrations/v0-90-onward.ts`, imported into `index.ts`. Do NOT touch `projectVersion` — it's sourced from `SERVER_VERSION` (see `lib/version.ts`) and updates automatically when `VERSION` and `package.json` are bumped in Phase 6.
 2. **Pin the new key.** A new migration is unpinned until it is listed in `apps/server/src/services/core/__tests__/merged-migration-hashes.ts`, and CI fails while it is (DOR-1222 — a merged body is frozen, so it is recorded the moment it exists). Run `pnpm vitest run apps/server/src/services/core/__tests__/config-manager.test.ts -t 'hashes to what it was pinned at'`; the failure prints the exact `'[next_version]': '<hash>'` line to add. Add it, then re-run until green.
-3. Add `apps/server/src/services/core/config-manager.ts` and `apps/server/src/services/core/__tests__/merged-migration-hashes.ts` to the Phase 6 `git add` list — both must be staged alongside VERSION/CHANGELOG/package.json.
+3. Add `apps/server/src/services/core/config-migrations/` and `apps/server/src/services/core/__tests__/merged-migration-hashes.ts` to the Phase 6 `git add` list — both must be staged alongside VERSION/CHANGELOG/package.json.
 4. Log the scaffold action for the final report: `✓ Auto-scaffolded config migration for v[next_version]`.
 
 **On "Let me write it myself":** exit cleanly, telling the user to add a migration entry keyed to `'[next_version]'` in `CONFIG_MIGRATIONS` and its pin in `__tests__/merged-migration-hashes.ts` (no need to touch `projectVersion`; see `.claude/skills/adding-config-fields/SKILL.md`), then re-run `/system:release`.
@@ -489,7 +490,8 @@ git worktree add .claude/worktrees/release-vX.Y.Z -b release/vX.Y.Z origin/main
 cd .claude/worktrees/release-vX.Y.Z && pnpm install   # or the pre-push hook dies on missing dotenv
 
 # Stage all version-related changes. If Check 6 scaffolded a config migration,
-# also stage apps/server/src/services/core/config-manager.ts (and
+# also stage apps/server/src/services/core/config-migrations/ and
+# apps/server/src/services/core/__tests__/merged-migration-hashes.ts (and
 # packages/shared/src/config-schema.ts if it was part of the drift).
 git add VERSION CHANGELOG.md docs/changelog.mdx docs/changelog-archive.mdx changelog/ packages/cli/package.json packages/cloud-api/package.json packages/connector-providers/package.json package.json apps/desktop/package.json blog/ apps/site/public/product/archive/vX.Y.Z/
 

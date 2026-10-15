@@ -1,5 +1,12 @@
 /**
- * How both migration guards read `config-manager.ts` as text.
+ * How both migration guards read the migration table and its helpers as text.
+ *
+ * The table and its helpers live in `config-migrations/`, beside
+ * `config-manager.ts`. The guards read `config-manager.ts` and every file in that
+ * folder joined into one text (see `readMigrationSource` in
+ * `config-manager.test.ts`), so "`config-manager.ts`" below means that joined
+ * text. Which of those files holds a declaration never enters a hash: the
+ * closure sorts what it reaches by name.
  *
  * A migration key's line in `CONFIG_MIGRATIONS` is usually just a call — half
  * the table is a bare reference (`'0.50.0': backfillSidebarDefaults`) — so the
@@ -41,7 +48,8 @@
  * stops meaning anything.
  *
  * **The boundary, stated so nobody over-trusts it.** The walk spans exactly two
- * files — `config-manager.ts` and `packages/shared/src/config-schema.ts` (see
+ * sources — `config-manager.ts` with `config-migrations/`, and
+ * `packages/shared/src/config-schema.ts` (see
  * {@link declarationPool}) — and stops at the edge of the second. It used to
  * stop at the first, which left ten of the table's keys reaching code no guard
  * could see, two of them behavior-bearing: `0.57.0` calls `toSidebarItemRef`,
@@ -481,7 +489,10 @@ function endOfStatement(masked: string, from: number): number {
  * shared package, and a pin that moves for unrelated work stops being read.
  */
 export interface ClosureSources {
-  /** The full `apps/server/src/services/core/config-manager.ts` source text. */
+  /**
+   * The full `apps/server/src/services/core/config-manager.ts` source text,
+   * joined with every file in `config-migrations/` beside it.
+   */
   configManager: string;
   /** The full `packages/shared/src/config-schema.ts` source text. */
   configSchema: string;

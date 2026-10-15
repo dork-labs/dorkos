@@ -15,7 +15,7 @@ DorkOS uses the [`conf`](https://github.com/sindresorhus/conf) library (v15.1.0)
 ## When to use
 
 - You're about to edit `packages/shared/src/config-schema.ts` (adding, renaming, removing, or retyping a field in `UserConfigSchema`).
-- You're about to edit `apps/server/src/services/core/config-manager.ts` for any reason related to the `migrations` block or `projectVersion`.
+- You're about to edit the `CONFIG_MIGRATIONS` table or a migration helper in `apps/server/src/services/core/config-migrations/`, or `projectVersion` in `apps/server/src/services/core/config-manager.ts`.
 - (Future) You're about to edit `MarketplacesFileSchema` once `apps/server/src/services/marketplace/sources/marketplace-source-manager.ts` is refactored onto `conf`.
 - A user asks "how do I add a setting to DorkOS?" or "how do config migrations work here?"
 - `/system:release` Phase 2 flags a config schema drift and you need to write the migration.
@@ -24,14 +24,15 @@ DorkOS uses the [`conf`](https://github.com/sindresorhus/conf) library (v15.1.0)
 
 ### The authoritative files
 
-| File                                                             | Role                                                                           |
-| ---------------------------------------------------------------- | ------------------------------------------------------------------------------ |
-| `packages/shared/src/config-schema.ts`                           | **Authoritative.** Zod schema + defaults constant. Change this first.          |
-| `apps/server/src/services/core/config-manager.ts`                | The `conf` wrapper. Holds `projectVersion` + `migrations`. Change this second. |
-| `contributing/configuration.md`                                  | User-facing settings reference. Update the table + narrative.                  |
-| `docs/getting-started/configuration.mdx`                         | External Fumadocs mirror of the same reference. Keep in sync.                  |
-| `apps/server/src/services/core/__tests__/config-manager.test.ts` | Migration + upgrade-path tests.                                                |
-| `packages/cli/src/cli.ts`                                        | CLI flag wiring (only if the field needs a flag).                              |
+| File                                                             | Role                                                                                                                    |
+| ---------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| `packages/shared/src/config-schema.ts`                           | **Authoritative.** Zod schema + defaults constant. Change this first.                                                   |
+| `apps/server/src/services/core/config-manager.ts`                | The `conf` wrapper. Holds `projectVersion` and hands `CONFIG_MIGRATIONS` to conf.                                       |
+| `apps/server/src/services/core/config-migrations/`               | The `CONFIG_MIGRATIONS` table (`index.ts`) and the helpers its keys call, grouped by version range. Change this second. |
+| `contributing/configuration.md`                                  | User-facing settings reference. Update the table + narrative.                                                           |
+| `docs/getting-started/configuration.mdx`                         | External Fumadocs mirror of the same reference. Keep in sync.                                                           |
+| `apps/server/src/services/core/__tests__/config-manager.test.ts` | Migration + upgrade-path tests.                                                                                         |
+| `packages/cli/src/cli.ts`                                        | CLI flag wiring (only if the field needs a flag).                                                                       |
 
 ### `conf`'s migration model
 
@@ -86,7 +87,7 @@ If this fails, your field is required without a default. Fix before proceeding.
 
 ### 3. Append a migration to `CONFIG_MIGRATIONS`
 
-Edit `apps/server/src/services/core/config-manager.ts`. You do **not** need to bump `projectVersion` — it's sourced from `SERVER_VERSION` via `lib/version.ts`, which updates automatically every release. Your only job is to append a new entry to the module-level `CONFIG_MIGRATIONS` constant, keyed to the app version that will ship your change.
+Edit `apps/server/src/services/core/config-migrations/index.ts`, and put any helper the new key calls at the bottom of `config-migrations/v0-90-onward.ts` (`config-manager.ts` re-exports every helper, so tests keep importing from `../config-manager.js`). You do **not** need to bump `projectVersion` — it's sourced from `SERVER_VERSION` via `lib/version.ts`, which updates automatically every release. Your only job is to append a new entry to the module-level `CONFIG_MIGRATIONS` constant, keyed to the app version that will ship your change.
 
 **Pick that key as strictly greater than the newest `v*` tag** (`git tag -l 'v*' | sort -V | tail -1`), and never extend a key that already exists. `conf` runs a key only in `(storedVersion, projectVersion]`, so a key at or below a released version — or a body appended to one — never runs for anybody already on it. A guard enforces both (`apps/server/src/services/core/__tests__/migration-safety.ts`), so getting this wrong reddens CI rather than shipping silently.
 
@@ -150,7 +151,7 @@ documentation:
   a fresh read and is about to hand back, and that copy is discarded.
 
 Full account: the "Which of these bodies is a real no-op, and which only looks like one" section
-above `CONFIG_MIGRATIONS` in `config-manager.ts`.
+above `CONFIG_MIGRATIONS` in `config-migrations/index.ts`.
 
 For **removed fields**:
 
@@ -350,12 +351,12 @@ Also add the flag to the `dorkos config set` shell-completion list if one exists
 
 When you run `/system:release`, its Phase 2 pre-flight runs a **config schema migration drift check**:
 
-1. Git-diffs `packages/shared/src/config-schema.ts` and `apps/server/src/services/core/config-manager.ts` against the last tag.
+1. Git-diffs `packages/shared/src/config-schema.ts`, `apps/server/src/services/core/config-manager.ts` and `apps/server/src/services/core/config-migrations/` against the last tag.
 2. If changes exist, analyzes them inline (no subagent) to classify: added-with-default (usually fine) vs removed/renamed/retyped (migration needed).
 3. Checks whether the existing `migrations` block already has an entry keyed to the target release version.
 4. If drift is detected without a matching migration, the release command offers four options:
    - **Scaffold inline** — drafts the migration, presents it for your review, applies it on approval, stages the file into the release commit.
-   - **Let me write it manually** — exits cleanly; you edit `config-manager.ts` using this skill, commit, re-run `/system:release`.
+   - **Let me write it manually** — exits cleanly; you edit `config-migrations/` using this skill, commit, re-run `/system:release`.
    - **No migration needed** — for type-only/TSDoc changes. You take responsibility, release continues.
    - **Cancel release** — exits.
 
@@ -370,6 +371,7 @@ A pending refactor will move `marketplaces.json` onto `conf` with the same wrapp
 ## References
 
 - `apps/server/src/services/core/config-manager.ts` — the canonical `conf` wrapper.
+- `apps/server/src/services/core/config-migrations/` — the `CONFIG_MIGRATIONS` table and its helpers.
 - `packages/shared/src/config-schema.ts` — the Zod schema and defaults constant.
 - `contributing/configuration.md` — Schema Migrations section + Settings Reference table.
 - `docs/getting-started/configuration.mdx` — external Fumadocs mirror.
