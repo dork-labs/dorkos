@@ -34,7 +34,7 @@
  * @module evals/runner/opencode-sandbox
  */
 import { existsSync } from 'node:fs';
-import { mkdir, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import path from 'node:path';
 import { USER_CONFIG_DEFAULTS, type UserConfig } from '@dorkos/shared/config-schema';
@@ -167,6 +167,8 @@ export function buildOpenCodeSandboxConfig(
 /**
  * Write the sandbox's `config.json` BEFORE its server boots, so the config store
  * reads these values on its first load rather than being patched afterwards.
+ * Merged over what a case's `seed` already wrote there (an approved
+ * extension, say), section by section, so booting OpenCode keeps it.
  *
  * Ordering matters: `runtimes.opencode.enabled` is consulted at REGISTRATION
  * time (`apps/server/src/index.ts`), and a runtime that was not registered at
@@ -182,6 +184,10 @@ export async function writeSandboxConfig(
 ): Promise<string> {
   await mkdir(dorkHome, { recursive: true });
   const file = path.join(dorkHome, 'config.json');
-  await writeFile(file, JSON.stringify(sections, null, 2) + '\n', 'utf8');
+  const seeded = await readFile(file, 'utf8').then(
+    (text) => JSON.parse(text) as Record<string, unknown>,
+    () => ({})
+  );
+  await writeFile(file, JSON.stringify({ ...seeded, ...sections }, null, 2) + '\n', 'utf8');
   return file;
 }

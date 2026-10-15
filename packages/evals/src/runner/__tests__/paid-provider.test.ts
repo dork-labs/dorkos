@@ -18,7 +18,7 @@
  */
 import { describe, it, expect } from 'vitest';
 import { readFile } from 'node:fs/promises';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -244,6 +244,31 @@ describe('the OpenCode sandbox config', () => {
       const parsed = JSON.parse(await readFile(file, 'utf8')) as typeof sections;
       expect(parsed.runtimes.opencode.defaultModel).toBe(DEFAULT_OPENROUTER_MODEL);
       expect(parsed.providers[OPENROUTER_PROVIDER_ID]).toBe(`env:${OPENROUTER_API_KEY_VAR}`);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('writeSandboxConfig over a seeded config', () => {
+  it('keeps the sections a case seeded, and writes its own over them', async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), 'evals-sandbox-seeded-'));
+    const dorkHome = path.join(dir, '.dork');
+    try {
+      await mkdir(dorkHome, { recursive: true });
+      const seeded = { extensions: { approvedToRun: ['quote-board'] }, runtimes: { stale: true } };
+      await writeFile(path.join(dorkHome, 'config.json'), JSON.stringify(seeded));
+      const sections = buildOpenCodeSandboxConfig({
+        binaryPath: '/bin/opencode',
+        provider: OPENROUTER_PROVIDER_ID,
+        model: DEFAULT_OPENROUTER_MODEL,
+      });
+
+      const file = await writeSandboxConfig(dorkHome, sections);
+      const parsed = JSON.parse(await readFile(file, 'utf8')) as Record<string, unknown>;
+
+      expect(parsed.extensions).toEqual(seeded.extensions);
+      expect(parsed.runtimes).toEqual(sections.runtimes);
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
