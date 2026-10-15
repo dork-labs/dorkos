@@ -194,20 +194,24 @@ await api.saveData({ count: (data?.count ?? 0) + 1 });
 
 ## Server-Side: DataProviderContext
 
-Extensions with server-side capabilities export a \`register\` function from \`server.ts\`:
+Extensions with server-side capabilities export \`register\` from \`server.ts\`. The API is a Hono app (built in), returned as \`{ fetch }\`; \`app.get('/data')\` answers \`GET /api/ext/<id>/data\`:
 
 \`\`\`typescript
-import type { ServerExtensionRegister } from '@dorkos/extension-api/server';
+import { Hono } from 'hono';
+import { requirePerson, type DataProviderContext } from '@dorkos/extension-api/server';
 
-const register: ServerExtensionRegister = (router, ctx) => {
-  router.get('/data', async (req, res) => {
-    const apiKey = await ctx.secrets.get('my_api_key');
-    res.json({ data: 'from server' });
+export default function register(_router: unknown, ctx: DataProviderContext) {
+  const app = new Hono();
+  app.get('/data', async (c) => c.json(await ctx.storage.loadData()));
+  app.put('/data', requirePerson(), async (c) => { // people only: agents are refused
+    await ctx.storage.saveData(await c.req.json());
+    return c.json({ ok: true });
   });
-};
-
-export default register;
+  return { fetch: app.fetch };
+}
 \`\`\`
+
+Read keys with \`ctx.secrets.get(name)\`. Replies can't set cookies. \`router.get(...)\` is the old Express router: don't use it.
 
 ### DataProviderContext Interface
 

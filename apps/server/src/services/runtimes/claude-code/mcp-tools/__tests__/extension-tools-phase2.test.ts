@@ -63,7 +63,7 @@ function parseResponse(result: {
 // --- Phase 2 supplementary tests ---
 
 describe('get_extension_api handler (Phase 2 constraints)', () => {
-  it('response is under 10KB to stay within MCP response limits', async () => {
+  it('response is under 11KB to stay within MCP response limits', async () => {
     const handler = createGetExtensionApiHandler(createDeps(undefined));
 
     const result = await handler();
@@ -72,8 +72,10 @@ describe('get_extension_api handler (Phase 2 constraints)', () => {
     const sizeBytes = new TextEncoder().encode(text).byteLength;
     // Increased from 4KB to 8KB to accommodate server-side API documentation,
     // then to 10KB for the tools and skills manifest fields (DOR-2685): the
-    // reference sat within 60 bytes of 8KB before them.
-    expect(sizeBytes).toBeLessThan(10240);
+    // reference sat within 60 bytes of 8KB before them. Then to 11KB for the
+    // one way to serve an extension's API, a Hono app with its person check
+    // (DOR-2858), which is longer than the router example it replaced.
+    expect(sizeBytes).toBeLessThan(11264);
   });
 
   it('contains all ExtensionPointId slot names', async () => {
@@ -125,7 +127,9 @@ describe('get_extension_api handler (Phase 2 constraints)', () => {
     const text = result.content[0].text;
 
     expect(text).toContain('DataProviderContext');
-    expect(text).toContain('ServerExtensionRegister');
+    // One way to serve it: a Hono app behind requirePerson() for its writes.
+    expect(text).toContain("from 'hono'");
+    expect(text).toContain('requirePerson()');
     expect(text).toContain('ctx.secrets');
     expect(text).toContain('schedule');
     expect(text).toContain('emit');

@@ -716,33 +716,32 @@ The three tiers of server-side capability, from simplest to most powerful:
 
 ### Creating `server.ts`
 
-Create a `server.ts` file in your extension directory that default-exports a `register` function:
+Create a `server.ts` file in your extension directory that default-exports a `register` function. Its API is a Hono app (built in, nothing to install), returned as `{ fetch }`:
 
 ```typescript
-import type { ServerExtensionRegister } from '@dorkos/extension-api/server';
+import { Hono } from 'hono';
+import { requirePerson, type DataProviderContext } from '@dorkos/extension-api/server';
 
-const register: ServerExtensionRegister = (router, ctx) => {
-  // Register routes on the scoped Express router
-  router.get('/data', async (_req, res) => {
-    const items = await ctx.storage.loadData();
-    res.json({ data: items ?? [] });
+export default function register(_router: unknown, ctx: DataProviderContext) {
+  const app = new Hono();
+  app.get('/data', async (c) => c.json({ data: (await ctx.storage.loadData()) ?? [] }));
+  app.put('/data', requirePerson(), async (c) => {
+    await ctx.storage.saveData(await c.req.json());
+    return c.json({ ok: true });
   });
 
-  // Optionally return a cleanup function
-  return () => {
-    // Called when the extension is disabled or reloaded
-  };
-};
-
-export default register;
+  // `cleanup` is called when the extension is disabled or reloaded.
+  const cancel = ctx.schedule(60, async () => {});
+  return { fetch: app.fetch, cleanup: () => cancel() };
+}
 ```
 
 The `register` function receives two arguments:
 
-- **`router`** — A scoped Express `Router` mounted at `/api/ext/{id}/`. A route registered as `router.get('/data', ...)` is reachable at `GET /api/ext/my-extension/data`.
+- **`router`** — The old Express router ([deprecated](#the-old-router)). Leave it empty.
 - **`ctx`** — A `DataProviderContext` with secrets, settings, storage, scheduling, and event emission (see below).
 
-`register` returns nothing, a cleanup function, or `{ fetch, cleanup }` to serve the API with a fetch handler instead of (or beside) the router; see [Route Conventions](#route-conventions).
+`register` returns nothing, a cleanup function, or `{ fetch, cleanup }`; see [Route Conventions](#route-conventions).
 
 Server-side code is compiled to CommonJS (Node.js target) by the host using esbuild. TypeScript is supported out of the box.
 
@@ -988,7 +987,7 @@ if (ctx.inbox !== undefined) {
 
 #### `ctx.requirePerson`
 
-Express middleware that admits only a person: the same bar as approving an extension. Put it in front of every router route that changes state on a person's behalf (settings, pause and resume). A fetch handler uses `requirePerson()` or `checkPerson(caller)` instead (see [Serving with a fetch handler](#serving-with-a-fetch-handler)):
+Express middleware for the [old router](#the-old-router) that admits only a person: the same bar as approving an extension. A fetch handler uses `requirePerson()` or `checkPerson(caller)` from `@dorkos/extension-api/server` instead (see [Serving with a fetch handler](#serving-with-a-fetch-handler)), which apply the same bar. The rest of this section holds for both. Put it in front of every route that changes state on a person's behalf (settings, pause and resume):
 
 ```typescript
 router.put('/settings', ctx.requirePerson, saveSettings);
@@ -1155,17 +1154,17 @@ Probe for a seam instead of checking the host version, so one build runs on host
 
 ### Route Conventions
 
-Routes registered on the `router` are mounted at `/api/ext/{id}/`:
+An extension's API is mounted at `/api/ext/{id}/`, and its routes are the path below that:
 
 ```typescript
-router.get('/status', handler); // GET  /api/ext/my-ext/status
-router.post('/action', handler); // POST /api/ext/my-ext/action
-router.get('/deep/path', handler); // GET  /api/ext/my-ext/deep/path
+app.get('/status', handler); // GET  /api/ext/my-ext/status
+app.post('/action', handler); // POST /api/ext/my-ext/action
+app.get('/deep/path', handler); // GET  /api/ext/my-ext/deep/path
 ```
 
 #### Serving with a fetch handler
 
-`register` can return `{ fetch, cleanup? }` instead of adding routes (DOR-2687). `fetch(request, caller)` takes a web-standard `Request` and returns a `Response` (or a promise of one), the shape a Hono app exposes, so an app written against the web `Request` and `Response` runs unchanged. It runs on Node inside DorkOS (or its own Node process), so Bun- or Deno-only APIs are not there. **`hono` is built in** (DOR-2857): the compiler resolves `hono` and every `hono/<subpath>` its `exports` map offers to DorkOS's own copy and bundles it inline (`services/extensions/server-bundle/host-hono.ts`), so it builds from `~/.dork/extensions` with nothing installed, and DorkOS's copy wins over one the extension ships:
+`register` returns `{ fetch, cleanup? }` (DOR-2687). `fetch(request, caller)` takes a web-standard `Request` and returns a `Response` (or a promise of one), the shape a Hono app exposes, so an app written against the web `Request` and `Response` runs unchanged. It runs on Node inside DorkOS (or its own Node process), so Bun- or Deno-only APIs are not there. **`hono` is built in** (DOR-2857): the compiler resolves `hono` and every `hono/<subpath>` its `exports` map offers to DorkOS's own copy and bundles it inline (`services/extensions/server-bundle/host-hono.ts`), so it builds from `~/.dork/extensions` with nothing installed, and DorkOS's copy wins over one the extension ships:
 
 ```typescript
 import { Hono } from 'hono';
@@ -1192,6 +1191,10 @@ A server entry that needs nothing from `ctx` can export the handler's owner itse
 - **Reply headers.** One rule for every fetch reply, in-process or not (`http/reply-headers.ts`): content and caching headers, other `x-` headers (no `x-dorkos-`) and a `location` inside `/api/ext/<id>/` pass; everything else (`set-cookie`, `clear-site-data`, `refresh`, `www-authenticate`, CORS and CSP headers) is dropped, and `content-security-policy: sandbox; default-src 'none'` plus `x-content-type-options: nosniff` are always set, so an HTML page a handler serves never runs script (an OAuth callback page that calls `window.close()` does not work; finish the flow in your extension's own page instead). A `location` on the handler's own origin is moved under the mount first, since that is where its paths live: `c.redirect('/done')` sends the browser to `/api/ext/<id>/done`. A `location` on any other origin is dropped. A router's in-process replies still go straight to the socket, which is one reason it is on its way out (DOR-2856).
 
 How the host serves each shape: `services/extensions/http/` (`express-bridge.ts` runs a router on its own private Express app; `fetch-handler.ts` builds the `Request` and passes the caller). In an extension's own process, a fetch-only extension never reaches Express: `@hono/node-server`'s request listener serves it (`isolation/child/virtual-server.ts`). Both runtimes load the bundle with the same injected `require` (`server-bundle/load-in-process.ts`, `isolation/child/load-bundle.ts`), so `@dorkos/extension-api/server`'s helpers resolve from `~/.dork`, where no `node_modules` is. That `require` offers `express`, `@dorkos/extension-api`, `@dorkos/extension-api/server` and Node's built-ins, and nothing else: no `require.resolve`, `require.cache` or `require.main`, and any other module name is refused. Bundle what you use.
+
+#### The old router
+
+Before DOR-2856, `register(router, ctx)` added routes to the Express `router` it is handed (`router.get('/status', (req, res) => res.json(...))`), with `ctx.requirePerson` as Express middleware. That still runs, beside a fetch handler (the router answers first), but it is deprecated and DorkOS will stop running it: Express replies go straight to the socket, past the reply-header rule, and the router cannot leave Node. An extension that adds a route to it is logged once (`serves its API with the old Express router`) and its Extensions card says "Uses an older server style DorkOS will drop soon. Ask an agent to update it." (`usesOldRouter` on the public record, set from the running instance: in-process from the router, isolated from the child's `registered` message). The `serving-an-extension-api` operating skill gives an agent the move, route by route: `req.params.x` → `c.req.param('x')`, `req.query.q` → `c.req.query('q')`, `req.body` → `await c.req.json()`, `res.json(b)` → `return c.json(b)`, `res.status(n).json(b)` → `return c.json(b, n)`, `ctx.requirePerson` → `requirePerson()`.
 
 From the client-side `index.ts`, call your server routes via `fetch`:
 
@@ -1454,17 +1457,19 @@ A manifest declaring both secrets (with placeholder and group) and settings:
 Read and write settings values via `ctx.settings`:
 
 ```typescript
-const register: ServerExtensionRegister = (router, ctx) => {
-  router.get('/config', async (_req, res) => {
+const register: ServerExtensionRegister = (_router, ctx) => {
+  const app = new Hono();
+  app.get('/config', async (c) => {
     const interval = await ctx.settings.get<number>('refresh_interval');
     const all = await ctx.settings.getAll();
-    res.json({ interval: interval ?? 60, all });
+    return c.json({ interval: interval ?? 60, all });
   });
 
   ctx.schedule(60, async () => {
     const showArchived = await ctx.settings.get<boolean>('show_archived');
     // Fetch data with the user's configured preferences...
   });
+  return { fetch: app.fetch };
 };
 
 export default register;
@@ -1573,7 +1578,7 @@ Both can coexist in the same extension — use the proxy for simple endpoints an
 Background tasks use `ctx.schedule()` to poll external APIs, detect changes, and notify clients. The canonical pattern is **poll, compare, store, emit**:
 
 ```typescript
-const register: ServerExtensionRegister = (router, ctx) => {
+const register: ServerExtensionRegister = (_router, ctx) => {
   ctx.schedule(60, async () => {
     // 1. Poll — fetch fresh data from the external API
     const apiKey = await ctx.secrets.get('api_key');
