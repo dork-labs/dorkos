@@ -196,14 +196,15 @@ export function checkConnectorArguments(
  * still holds for it. A `null` the schema does accept, or one on a required
  * field, is left alone for the check to judge.
  *
- * @param providerSchema - The operation's input schema, as stored.
+ * @param providerSchema - The operation's input schema, as stored; anything but an object removes nothing.
  * @param value - The arguments the agent sent.
  * @returns The same object when nothing was removed, otherwise a copy without those keys.
  */
 export function withoutOptionalNulls(
-  providerSchema: Record<string, unknown>,
+  providerSchema: unknown,
   value: Record<string, unknown>
 ): Record<string, unknown> {
+  if (!isRecord(providerSchema)) return value;
   const properties = isRecord(providerSchema.properties) ? providerSchema.properties : {};
   const required = new Set(
     Array.isArray(providerSchema.required) ? providerSchema.required.map(String) : []

@@ -648,16 +648,13 @@ export class ConnectorExecutionAuthorizationService {
     try {
       inputSchema = JSON.parse(inputSchemaJson);
     } catch {
-      inputSchema = undefined;
+      // Unreadable: left undefined, and refused as such below.
     }
-    const schema =
+    const cleaned = withoutOptionalNulls(inputSchema, argumentsValue);
+    const check =
       inputSchema !== null && typeof inputSchema === 'object' && !Array.isArray(inputSchema)
-        ? (inputSchema as Record<string, unknown>)
-        : undefined;
-    const cleaned = schema ? withoutOptionalNulls(schema, argumentsValue) : argumentsValue;
-    const check = schema
-      ? checkConnectorArguments(schema, cleaned)
-      : ({ ok: false, reason: 'schema_unreadable' } as const);
+        ? checkConnectorArguments(inputSchema as Record<string, unknown>, cleaned)
+        : ({ ok: false, reason: 'schema_unreadable' } as const);
     if (check.ok) return cleaned;
     if (check.reason === 'schema_unreadable') {
       return refuse(
