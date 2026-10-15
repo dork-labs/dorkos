@@ -64,7 +64,7 @@ To open DorkOS on a phone or tablet in the same home or office, you don't need a
 - With login off, DorkOS walks you into creating the owner account first, the same way the tunnel does.
 - It takes effect right away, with no restart. Settings then shows this computer's address, like `http://studio.local:4242`, a QR code to scan, and its current IP address as a backup.
 - Turning it off closes the door at once. Turning login off turns it off too.
-- The connection between the two devices is **not encrypted yet** (plain `http`), so use it on a network you trust, not on café or hotel Wi-Fi.
+- The connection between the two devices is **not encrypted yet** (plain `http`). Someone else on the same Wi-Fi could read what passes between them, including your sign-in, and use it to get in. So use it on a network you trust, never on café or hotel Wi-Fi. Encrypted connections are planned.
 - Only devices on the same networks as your computer get in, including a VPN it is connected to. A connection from anywhere else is turned away.
 - If `DORKOS_HOST` or `DORKOS_ALLOW_INSECURE_BIND` is set, it decides where DorkOS listens, and the switch stays off.
 - The first time, your computer may ask whether DorkOS may accept incoming connections. Say yes.
