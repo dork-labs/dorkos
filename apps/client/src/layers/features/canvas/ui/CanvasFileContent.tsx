@@ -190,10 +190,13 @@ function FileEditor({
   const editRevisionRef = useRef(0);
   const finishAttemptRef = useRef(0);
   const saveRef = useRef(fileSave.save);
+  const prepareFinalRef = useRef(fileSave.prepareFinalSave);
+  const finalSaveRef = useRef<ReturnType<typeof fileSave.prepareFinalSave>>(null);
   const onEditingChangeRef = useRef(onEditingChange);
   useEffect(() => {
     draftRef.current = draft;
     saveRef.current = fileSave.save;
+    prepareFinalRef.current = fileSave.prepareFinalSave;
     onEditingChangeRef.current = onEditingChange;
   });
 
@@ -201,6 +204,8 @@ function FileEditor({
     editRevisionRef.current += 1;
     draftRef.current = next;
     setDraft(next);
+    finalSaveRef.current?.cancel();
+    finalSaveRef.current = prepareFinalRef.current(next);
     if (timerRef.current) clearTimeout(timerRef.current);
     timerRef.current = setTimeout(() => {
       timerRef.current = null;
@@ -269,9 +274,11 @@ function FileEditor({
   // the person just gave up. Every other exit path has already nulled the timer,
   // so this is a no-op on all of them.
   useEffect(() => {
-    if (isEditing || !timerRef.current) return;
-    clearTimeout(timerRef.current);
+    if (isEditing) return;
+    if (timerRef.current) clearTimeout(timerRef.current);
     timerRef.current = null;
+    finalSaveRef.current?.cancel();
+    finalSaveRef.current = null;
   }, [isEditing]);
 
   // Flush a pending save AND release this document's edit-protection on unmount
@@ -282,8 +289,10 @@ function FileEditor({
     return () => {
       if (timerRef.current) {
         clearTimeout(timerRef.current);
-        void saveRef.current(draftRef.current);
+        timerRef.current = null;
       }
+      void finalSaveRef.current?.flush();
+      finalSaveRef.current = null;
       setDocumentEditing(documentId, false);
       // Unpin the parent's mount key too — without this, an unmount that isn't
       // exit-edit (e.g. the document's sourcePath changing mid-edit) would leave

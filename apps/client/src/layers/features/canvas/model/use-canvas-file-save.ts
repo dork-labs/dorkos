@@ -57,6 +57,7 @@ export function useCanvasFileSave({
     baseHash: string | null;
     baseContent: string;
     active: boolean;
+    finalToken?: { content: string; id: symbol };
   } | null>(null);
   // Keep one dispatch tail across owners: a new incarnation cannot race a
   // previously dispatched write against the server's conditional file write.
@@ -118,13 +119,13 @@ export function useCanvasFileSave({
       expected: { expectedHash?: string; expectedContent?: string }
     ): Promise<CanvasSaveOutcome> => {
       if (!currentOwner()) return { status: 'idle' };
+      const record = ownerRef.current!;
       const result = await transport.writeFile(
         cwd as string,
         sourcePath as string,
         fullContent,
         expected
       );
-      if (!currentOwner()) return { status: 'idle' };
       if (result.ok) {
         if (
           typeof result.hash !== 'string' ||
@@ -133,12 +134,16 @@ export function useCanvasFileSave({
         ) {
           throw new Error('Invalid file save acknowledgement');
         }
-        ownerRef.current!.baseHash = result.hash;
-        ownerRef.current!.baseContent = fullContent;
+        // A late ACK may still condition this owner's explicit unmount drain.
+        // It must never advance a replacement owner's base or publish stale UI.
+        record.baseHash = result.hash;
+        record.baseContent = fullContent;
+        if (!currentOwner()) return { status: 'idle' };
         setConflict(null);
         setStatus('saved');
         return { status: result.effect, confirmed: { hash: result.hash, content: fullContent } };
       }
+      if (!currentOwner()) return { status: 'idle' };
       setConflict(result.conflict);
       setStatus('conflict');
       return { status: 'conflict' };
@@ -157,10 +162,16 @@ export function useCanvasFileSave({
   const save = useCallback(
     (fullContent: string): Promise<CanvasSaveOutcome> => {
       if (!canSave || !currentOwner()) return Promise.resolve({ status: 'idle' });
+      const admittedFinalToken =
+        ownerRef.current!.finalToken?.content === fullContent
+          ? ownerRef.current!.finalToken
+          : undefined;
       const next = inFlightRef.current
         .catch(() => {})
         .then(async (): Promise<CanvasSaveOutcome> => {
           if (!currentOwner()) return { status: 'idle' };
+          if (ownerRef.current!.finalToken === admittedFinalToken)
+            ownerRef.current!.finalToken = undefined;
           setStatus('saving');
           try {
             const expected =
@@ -181,15 +192,79 @@ export function useCanvasFileSave({
     [canSave, writeThrough, currentOwner, setStatus]
   );
 
+  /** Prepare the latest buffered draft for one explicit passive-unmount drain.
+   * Ordinary callbacks remain retired. This handle cannot cross an owner change,
+   * replace a newer draft, or dispatch twice; it shares the normal save queue.
+   */
+  const prepareFinalSave = useCallback(
+    (fullContent: string) => {
+      if (!canSave || !currentOwner()) return null;
+      const record = ownerRef.current!;
+      const token = { content: fullContent, id: Symbol('buffered canvas draft') };
+      record.finalToken = token;
+      return {
+        cancel() {
+          if (record.finalToken === token) record.finalToken = undefined;
+        },
+        flush(): Promise<CanvasSaveOutcome> {
+          if (record.finalToken !== token || ownerRef.current !== record || record.active)
+            return Promise.resolve({ status: 'idle' });
+          record.finalToken = undefined;
+          const next = inFlightRef.current
+            .catch(() => {})
+            .then(async (): Promise<CanvasSaveOutcome> => {
+              if (ownerRef.current !== record || record.active) return { status: 'idle' };
+              try {
+                const expected =
+                  record.baseHash !== null
+                    ? { expectedHash: record.baseHash }
+                    : { expectedContent: record.baseContent };
+                const result = await transport.writeFile(
+                  cwd as string,
+                  sourcePath as string,
+                  fullContent,
+                  expected
+                );
+                if (!result.ok) return { status: 'conflict' };
+                if (
+                  typeof result.hash !== 'string' ||
+                  result.hash.length === 0 ||
+                  (result.effect !== 'changed' && result.effect !== 'no_op')
+                )
+                  return { status: 'error' };
+                record.baseHash = result.hash;
+                record.baseContent = fullContent;
+                return {
+                  status: result.effect,
+                  confirmed: { hash: result.hash, content: fullContent },
+                };
+              } catch {
+                return { status: 'error' };
+              }
+            });
+          inFlightRef.current = next.then(() => {});
+          return next;
+        },
+      };
+    },
+    [canSave, currentOwner, transport, cwd, sourcePath]
+  );
+
   /** Reconcile a conflict by overwriting disk with the local draft. */
   const overwrite = useCallback(
     (fullContent: string): Promise<CanvasSaveOutcome> => {
       if (!canSave || !conflict || !currentOwner()) return Promise.resolve({ status: 'idle' });
       const expectedHash = conflict.currentHash;
+      const admittedFinalToken =
+        ownerRef.current!.finalToken?.content === fullContent
+          ? ownerRef.current!.finalToken
+          : undefined;
       const next = inFlightRef.current
         .catch(() => {})
         .then(async (): Promise<CanvasSaveOutcome> => {
           if (!currentOwner()) return { status: 'idle' };
+          if (ownerRef.current!.finalToken === admittedFinalToken)
+            ownerRef.current!.finalToken = undefined;
           setStatus('saving');
           try {
             return await writeThrough(fullContent, { expectedHash });
@@ -222,6 +297,7 @@ export function useCanvasFileSave({
   /** Reconcile a conflict by adopting the on-disk version as the new base. */
   const adoptDisk = useCallback(() => {
     if (!conflict || !currentOwner()) return null;
+    ownerRef.current!.finalToken = undefined;
     const adopted = conflict.currentContent;
     ownerRef.current!.baseHash = conflict.currentHash;
     ownerRef.current!.baseContent = adopted;
@@ -230,5 +306,14 @@ export function useCanvasFileSave({
     return adopted;
   }, [conflict, currentOwner, setConflict, setStatus]);
 
-  return { status, conflict, canSave, save, overwrite, adoptDisk, getConfirmedBase };
+  return {
+    status,
+    conflict,
+    canSave,
+    save,
+    overwrite,
+    adoptDisk,
+    getConfirmedBase,
+    prepareFinalSave,
+  };
 }
