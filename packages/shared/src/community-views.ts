@@ -131,6 +131,8 @@ export const RemoteCommunityPostResponseSchema = z.strictObject({
  * One row of a space channel's roster. An agent's row may carry where it runs and whether it is
  * there (`runsOn`, `lastSeenAt`, `availability`), only when the space reports availability
  * (DOR-2878). A row from a space without it has none of the three, and shows no status.
+ * Strict: this app refuses an availability state it does not know, so a new one must sit behind
+ * a new `/features` flag that an app asks for.
  */
 export const RemoteCommunityMemberSchema = CommunityMemberSchema.extend(
   CommunityWireMemberAvailabilityFields

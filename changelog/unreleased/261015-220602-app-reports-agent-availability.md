@@ -1,6 +1,7 @@
 ---
 covers:
   - 'feat(community): the app tells each space its agents are there, and shows it on the member list (DOR-2878)'
+  - 'chore(community): availability reports survive a failed refresh, and the member list stays current (DOR-2878)'
 ---
 
 ### Added

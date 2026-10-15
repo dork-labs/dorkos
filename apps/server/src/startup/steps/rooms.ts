@@ -216,6 +216,8 @@ export async function wireRooms(refs: ServerRefs, built: WireRoomsInput) {
     // computer (specs/everything-is-a-space A8, DOR-2748) answers 'agent-computer' here.
     runsOn: () => 'computer',
     reachable: spaceReachable,
+    resolveConnectionAccess: async (communityRef, ownerAuthorId) =>
+      (await getRemotePairingService().status(communityRef, ownerAuthorId)).access,
     onConnectionChange: (listener) => getRemoteConnectionStore().onChange(listener),
     onFailing: (communityRef, error) =>
       logger.debug('[Communities] Agent availability reports are failing', {

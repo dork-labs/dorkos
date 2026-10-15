@@ -116,6 +116,18 @@ describe('AgentAvailabilityReporter', () => {
     unit.dispose();
   });
 
+  it('holds a space asking for a huge interval to the ceiling', async () => {
+    const fake = fakeSpace({ answers: [{ reportEverySeconds: 1_000_000 }] });
+    const unit = reporter(fake.space, () => one);
+    unit.start();
+    await vi.advanceTimersByTimeAsync(FIRST_MS);
+    await vi.advanceTimersByTimeAsync(REPORT_SECONDS_BOUNDS.max * 1_000 - 1);
+    expect(fake.sent).toHaveLength(1);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(fake.sent).toHaveLength(2);
+    unit.dispose();
+  });
+
   it('never reports to a space without the feature', async () => {
     const fake = fakeSpace({ feature: false });
     const unit = reporter(fake.space, () => one);

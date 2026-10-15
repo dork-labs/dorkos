@@ -5,25 +5,34 @@
  */
 import type { RemoteCommunityMember } from '@dorkos/shared/community-views';
 
-/** What a roster row says about an agent being there, and the exact time behind it. */
+/** What a roster row says about an agent being there. */
 export interface RemoteAgentAvailabilityLabel {
-  /** "Available", or "Offline since 3:04 PM". */
+  /** "Available", or "Offline since" followed by {@link RemoteAgentAvailabilityLabel.since}. */
   text: string;
-  /** The last report's full date and time, for the row's hover; absent when there is none. */
-  title?: string;
+  /**
+   * When an offline agent was last there: the machine-readable instant and the words shown.
+   * Shown in full, never only on hover, so keyboard, touch and screen-reader users get it too.
+   */
+  since?: { dateTime: string; label: string };
 }
 
 /**
- * When an agent went offline, short: the time of day when it was today, otherwise the date.
+ * When an agent went offline: the time of day when it was today, otherwise the date and time,
+ * with the year when it was not this year.
  *
  * @param iso - The agent's last report.
  * @param now - The time it is read at.
  */
-function formatSince(iso: string, now: Date): string {
+export function formatOfflineSince(iso: string, now: Date): string {
   const since = new Date(iso);
-  return since.toDateString() === now.toDateString()
-    ? since.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
-    : since.toLocaleDateString([], { month: 'short', day: 'numeric' });
+  const time = since.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  if (since.toDateString() === now.toDateString()) return time;
+  const date = since.toLocaleDateString([], {
+    month: 'short',
+    day: 'numeric',
+    ...(since.getFullYear() === now.getFullYear() ? {} : { year: 'numeric' }),
+  });
+  return `${date}, ${time}`;
 }
 
 /**
@@ -40,9 +49,14 @@ export function remoteAgentAvailabilityLabel(
   now: Date = new Date()
 ): RemoteAgentAvailabilityLabel | null {
   if (member.kind !== 'agent') return null;
-  const title = member.lastSeenAt ? new Date(member.lastSeenAt).toLocaleString() : undefined;
-  if (member.availability === 'available') return { text: 'Available', title };
+  if (member.availability === 'available') return { text: 'Available' };
   if (member.availability === 'offline' && member.lastSeenAt)
-    return { text: `Offline since ${formatSince(member.lastSeenAt, now)}`, title };
+    return {
+      text: 'Offline since',
+      since: {
+        dateTime: new Date(member.lastSeenAt).toISOString(),
+        label: formatOfflineSince(member.lastSeenAt, now),
+      },
+    };
   return null;
 }

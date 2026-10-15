@@ -5,7 +5,11 @@
  * @module services/communities/remote/availability/agent-availability-runtime
  */
 import type { CommunityRef } from '@dorkos/shared/community-adapter';
-import type { CommunityWireAgentRunsOn } from '@dorkos/shared/community-wire';
+import type {
+  CommunityConnectionAccess,
+  CommunityWireAgentRunsOn,
+} from '@dorkos/shared/community-wire';
+import { logError, logger } from '../../../../lib/logger.js';
 import type { CommunityAgentEnrollmentStore } from '../agent-enrollment-store.js';
 import type { RemoteConnectionChangeListener } from '../connection-changes.js';
 import {
@@ -27,6 +31,14 @@ export interface AgentAvailabilityRuntimeDeps {
    * so: an app running as one answers `agent-computer`.
    */
   runsOn: (localAgentId: string) => CommunityWireAgentRunsOn;
+  /**
+   * The connection's current access, checked before a reporter starts; one reports only when it
+   * is verified with enroll-agent. Every connection may report when not given.
+   */
+  resolveConnectionAccess?: (
+    communityRef: CommunityRef,
+    ownerAuthorId: string
+  ) => Promise<CommunityConnectionAccess | null>;
   /** Whether a space may be reached now. Every space is reachable when not given. */
   reachable?: (communityRef: CommunityRef) => boolean;
   /** Committed connection changes, so a disconnect stops its reporter at once. */
@@ -54,6 +66,10 @@ export class AgentAvailabilityRuntime {
   private timer: ReturnType<typeof setInterval> | undefined;
   private unsubscribe: (() => void) | undefined;
   private running = false;
+  private reconciling: Promise<void> | undefined;
+  private refreshQueued = false;
+  /** Bumped by every connection change that drops a reporter, so an older pass cannot revive it. */
+  private generation = 0;
 
   constructor(private readonly deps: AgentAvailabilityRuntimeDeps) {}
 
@@ -65,7 +81,10 @@ export class AgentAvailabilityRuntime {
     // starts on this refresh rather than the next reconcile.
     this.unsubscribe = this.deps.onConnectionChange?.((changes) => {
       for (const change of changes)
-        if (change.status !== 'connected') this.drop(key(change.ref, change.ownerKey));
+        if (change.status !== 'connected') {
+          this.generation += 1;
+          this.drop(key(change.ref, change.ownerKey));
+        }
       if (changes.some((change) => change.status === 'connected')) this.refresh();
     });
     this.timer = setInterval(
@@ -86,9 +105,38 @@ export class AgentAvailabilityRuntime {
     for (const id of [...this.reporters.keys()]) this.drop(id);
   }
 
-  /** Re-read which connections report, now: after an enrollment or a disconnect. */
+  /**
+   * Re-read which connections report: after an enrollment or a disconnect, and on every reconcile
+   * tick. Never throws: a failed read (the local database, a reachability check, an access check)
+   * is logged at debug and the next tick tries again, since a throw from a timer would end the
+   * process.
+   */
   refresh(): void {
     if (!this.running) return;
+    if (this.reconciling) {
+      this.refreshQueued = true;
+      return;
+    }
+    this.reconciling = this.reconcile()
+      .catch((error: unknown) =>
+        logger.debug('[Communities] Could not refresh agent availability reports', logError(error))
+      )
+      .finally(() => {
+        this.reconciling = undefined;
+        if (this.refreshQueued) {
+          this.refreshQueued = false;
+          this.refresh();
+        }
+      });
+  }
+
+  /** Settles once the refresh in progress, if any, has finished; for tests. */
+  async idle(): Promise<void> {
+    while (this.reconciling) await this.reconciling;
+  }
+
+  private async reconcile(): Promise<void> {
+    const generation = this.generation;
     const wanted = new Map<string, { communityRef: CommunityRef; ownerAuthorId: string }>();
     for (const connection of this.deps.enrollments.activeConnections()) {
       if (this.deps.reachable && !this.deps.reachable(connection.communityRef)) continue;
@@ -97,10 +145,22 @@ export class AgentAvailabilityRuntime {
     for (const id of [...this.reporters.keys()]) if (!wanted.has(id)) this.drop(id);
     for (const [id, connection] of wanted) {
       if (this.reporters.has(id)) continue;
+      // A new reporter only for a connection whose access is verified with enroll-agent, so a
+      // revoke that failed halfway (enrollments still active here) never brings one back.
+      if (!(await this.mayReport(connection.communityRef, connection.ownerAuthorId))) continue;
+      // A stop, or a connection change, while the check was out: that pass decides instead.
+      if (!this.running || generation !== this.generation || this.reporters.has(id)) continue;
       const reporter = this.reporterFor(connection.communityRef, connection.ownerAuthorId);
       this.reporters.set(id, reporter);
       reporter.start();
     }
+  }
+
+  private async mayReport(communityRef: CommunityRef, ownerAuthorId: string): Promise<boolean> {
+    const resolve = this.deps.resolveConnectionAccess;
+    if (!resolve) return true;
+    const access = await resolve(communityRef, ownerAuthorId).catch(() => null);
+    return access?.state === 'verified' && access.effective.enrollAgent;
   }
 
   /** The connections reporting now, each as its ref and owner joined by a NUL; for tests. */

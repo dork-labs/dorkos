@@ -11,7 +11,7 @@ import type {
   RemoteCommunityMembersResponse,
 } from '@dorkos/shared/community-views';
 import type { CommunityRef } from '@dorkos/shared/community-adapter';
-import { remoteAgentAvailabilityLabel } from '../lib/remote-agent-availability';
+import { formatOfflineSince, remoteAgentAvailabilityLabel } from '../lib/remote-agent-availability';
 import { RemoteCommunityRoster } from '../ui/RemoteCommunityRoster';
 
 afterEach(cleanup);
@@ -66,30 +66,43 @@ function renderRoster(members: RemoteCommunityMember[]) {
 }
 
 describe('remoteAgentAvailabilityLabel', () => {
-  it('says Available, with the last report on hover', () => {
-    const label = remoteAgentAvailabilityLabel(
-      { ...agent, availability: 'available', lastSeenAt: earlierToday },
-      now
-    );
-    expect(label?.text).toBe('Available');
-    expect(label?.title).toBe(new Date(earlierToday).toLocaleString());
+  const clock = (iso: string) =>
+    new Date(iso).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+
+  it('says Available', () => {
+    expect(
+      remoteAgentAvailabilityLabel(
+        { ...agent, availability: 'available', lastSeenAt: earlierToday },
+        now
+      )
+    ).toEqual({ text: 'Available' });
   });
 
-  it('says Offline since the time today, or the date before today', () => {
+  it('says Offline since the time today, or the date and time before today', () => {
     const today = remoteAgentAvailabilityLabel(
       { ...agent, availability: 'offline', lastSeenAt: earlierToday },
       now
     );
-    expect(today?.text).toBe(
-      `Offline since ${new Date(earlierToday).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`
-    );
+    expect(today).toEqual({
+      text: 'Offline since',
+      since: { dateTime: earlierToday, label: clock(earlierToday) },
+    });
     const before = remoteAgentAvailabilityLabel(
       { ...agent, availability: 'offline', lastSeenAt: lastWeek },
       now
     );
-    expect(before?.text).toBe(
-      `Offline since ${new Date(lastWeek).toLocaleDateString([], { month: 'short', day: 'numeric' })}`
+    expect(before?.since?.label).toBe(
+      `${new Date(lastWeek).toLocaleDateString([], { month: 'short', day: 'numeric' })}, ${clock(lastWeek)}`
     );
+    expect(before?.since?.label).not.toContain('2026');
+  });
+
+  it('adds the year to a date from another year', () => {
+    const lastYear = new Date(2025, 11, 30, 9, 0).toISOString();
+    expect(formatOfflineSince(lastYear, now)).toBe(
+      `${new Date(lastYear).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' })}, ${clock(lastYear)}`
+    );
+    expect(formatOfflineSince(lastYear, now)).toContain('2025');
   });
 
   it('says nothing for an unknown agent, an old space, or a person', () => {
@@ -109,9 +122,14 @@ describe('RemoteCommunityRoster availability', () => {
     expect(screen.getAllByText(/Available|Offline/)).toHaveLength(1);
   });
 
-  it('shows an offline agent with when it was last there', () => {
+  it('shows when an offline agent was last there as visible text in a time element', () => {
     renderRoster([{ ...agent, availability: 'offline', lastSeenAt: lastWeek }]);
     expect(screen.getByText(/· Offline since/)).toBeInTheDocument();
+    const time = document.querySelector('time');
+    expect(time).toHaveAttribute('dateTime', lastWeek);
+    expect(time?.textContent).toBe(formatOfflineSince(lastWeek, new Date()));
+    // Nothing is hover-only.
+    expect(document.querySelector('[title]')).toBeNull();
   });
 
   it('shows no status at all for a roster from a space without availability', () => {

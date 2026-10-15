@@ -1,11 +1,15 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { CommunityRef } from '@dorkos/shared/community-adapter';
-import type { CommunityWireAgentAvailabilityReport } from '@dorkos/shared/community-wire';
+import type {
+  CommunityConnectionAccess,
+  CommunityWireAgentAvailabilityReport,
+} from '@dorkos/shared/community-wire';
 import type { CommunityAgentEnrollment } from '../../agent-enrollment-store.js';
 import type {
   RemoteConnectionChange,
   RemoteConnectionChangeListener,
 } from '../../connection-changes.js';
+import { logger } from '../../../../../lib/logger.js';
 import {
   AVAILABILITY_RECONCILE_MS,
   AgentAvailabilityRuntime,
@@ -120,6 +124,7 @@ describe('AgentAvailabilityRuntime', () => {
       random: () => 0.5,
     });
     runtime.start();
+    await runtime.idle();
     await vi.advanceTimersByTimeAsync(FIRST_MS);
     expect(fake.sent.get('ref-alpha:owner')).toEqual([
       {
@@ -152,6 +157,7 @@ describe('AgentAvailabilityRuntime', () => {
       random: () => 0.5,
     });
     runtime.start();
+    await runtime.idle();
     await vi.advanceTimersByTimeAsync(FIRST_MS);
     expect(fake.sent.get('ref-alpha:owner')?.[0]?.agents[0]?.runsOn).toBe('agent-computer');
     runtime.stop();
@@ -176,6 +182,7 @@ describe('AgentAvailabilityRuntime', () => {
       random: () => 0.5,
     });
     runtime.start();
+    await runtime.idle();
     expect(runtime.reporting()).toHaveLength(1);
     events.emit({ ref: alpha, ownerKey: 'owner', status: 'removed' });
     expect(runtime.reporting()).toHaveLength(0);
@@ -203,6 +210,7 @@ describe('AgentAvailabilityRuntime', () => {
       random: () => 0.5,
     });
     runtime.start();
+    await runtime.idle();
     store.rows.length = 0;
     store.rows.push({
       communityRef: beta,
@@ -237,6 +245,7 @@ describe('AgentAvailabilityRuntime', () => {
       reachable: () => false,
     });
     runtime.start();
+    await runtime.idle();
     expect(runtime.reporting()).toHaveLength(0);
     runtime.stop();
   });
@@ -266,6 +275,7 @@ describe('AgentAvailabilityRuntime', () => {
       random: () => 0.5,
     });
     runtime.start();
+    await runtime.idle();
     // One reconcile interval and one reporter timer per connection.
     expect(vi.getTimerCount()).toBe(3);
     await vi.advanceTimersByTimeAsync(FIRST_MS);
@@ -278,5 +288,147 @@ describe('AgentAvailabilityRuntime', () => {
     // A refresh after stop starts nothing.
     runtime.refresh();
     expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('reports each owner’s own agents over that owner’s own connection to one space', async () => {
+    const store = enrollmentsOf([
+      {
+        communityRef: alpha,
+        ownerAuthorId: 'dana',
+        localAgentId: 'scout',
+        remoteMemberId: 'dana-scout',
+      },
+      {
+        communityRef: alpha,
+        ownerAuthorId: 'eli',
+        localAgentId: 'atlas',
+        remoteMemberId: 'eli-atlas',
+      },
+      {
+        communityRef: alpha,
+        ownerAuthorId: 'eli',
+        localAgentId: 'bolt',
+        remoteMemberId: 'eli-bolt',
+      },
+    ]);
+    const fake = spaces();
+    const runtime = new AgentAvailabilityRuntime({
+      enrollments: store,
+      spaces: fake.of,
+      runsOn: () => 'computer',
+      random: () => 0.5,
+    });
+    runtime.start();
+    await runtime.idle();
+    await vi.advanceTimersByTimeAsync(FIRST_MS);
+    expect(fake.sent.get('ref-alpha:dana')).toEqual([
+      { agents: [{ agentId: 'dana-scout', runsOn: 'computer' }] },
+    ]);
+    expect(fake.sent.get('ref-alpha:eli')).toEqual([
+      {
+        agents: [
+          { agentId: 'eli-atlas', runsOn: 'computer' },
+          { agentId: 'eli-bolt', runsOn: 'computer' },
+        ],
+      },
+    ]);
+    runtime.stop();
+  });
+
+  it('starts a reporter only for a connection verified with enroll-agent access', async () => {
+    const store = enrollmentsOf([
+      {
+        communityRef: alpha,
+        ownerAuthorId: 'owner',
+        localAgentId: 'scout',
+        remoteMemberId: 'a-scout',
+      },
+      {
+        communityRef: beta,
+        ownerAuthorId: 'owner',
+        localAgentId: 'scout',
+        remoteMemberId: 'b-scout',
+      },
+    ]);
+    const capabilities = { read: true, post: true, enrollAgent: true, stream: true };
+    const verified: CommunityConnectionAccess = {
+      state: 'verified',
+      effective: capabilities,
+      lastKnown: { lifecycle: 'active', capabilities, verifiedAt: '2026-10-15T00:00:00.000Z' },
+    };
+    let betaAccess: CommunityConnectionAccess | null = {
+      ...verified,
+      effective: { ...capabilities, enrollAgent: false },
+    };
+    const runtime = new AgentAvailabilityRuntime({
+      enrollments: store,
+      spaces: spaces().of,
+      runsOn: () => 'computer',
+      resolveConnectionAccess: async (communityRef) =>
+        communityRef === alpha ? verified : betaAccess,
+    });
+    runtime.start();
+    await runtime.idle();
+    expect(runtime.reporting()).toEqual(['ref-alpha\0owner']);
+    // A half-failed revoke: enrollments still active, but the connection must reconnect.
+    betaAccess = null;
+    await vi.advanceTimersByTimeAsync(AVAILABILITY_RECONCILE_MS);
+    await runtime.idle();
+    expect(runtime.reporting()).toEqual(['ref-alpha\0owner']);
+    betaAccess = verified;
+    await vi.advanceTimersByTimeAsync(AVAILABILITY_RECONCILE_MS);
+    await runtime.idle();
+    expect(runtime.reporting()).toEqual(['ref-alpha\0owner', 'ref-beta\0owner']);
+    runtime.stop();
+  });
+
+  it('survives a failed local read on a tick, and recovers on the next', async () => {
+    const store = enrollmentsOf([
+      {
+        communityRef: alpha,
+        ownerAuthorId: 'owner',
+        localAgentId: 'scout',
+        remoteMemberId: 'a-scout',
+      },
+    ]);
+    const reads = store.activeConnections;
+    let calls = 0;
+    store.activeConnections = () => {
+      calls += 1;
+      if (calls === 2) throw new Error('SQLITE_BUSY: database is locked');
+      return reads();
+    };
+    const runtime = new AgentAvailabilityRuntime({
+      enrollments: store,
+      spaces: spaces().of,
+      runsOn: () => 'computer',
+    });
+    runtime.start();
+    await runtime.idle();
+    expect(runtime.reporting()).toHaveLength(1);
+    store.rows.push({
+      communityRef: beta,
+      ownerAuthorId: 'owner',
+      localAgentId: 'atlas',
+      remoteMemberId: 'b-atlas',
+      state: 'active',
+      createdAt: '',
+      updatedAt: '',
+    });
+    // The throwing tick: nothing escapes the timer, and what was reporting keeps reporting.
+    const debug = vi.spyOn(logger, 'debug').mockImplementation(() => undefined);
+    await vi.advanceTimersByTimeAsync(AVAILABILITY_RECONCILE_MS);
+    await runtime.idle();
+    expect(calls).toBe(2);
+    expect(debug).toHaveBeenCalledWith(
+      '[Communities] Could not refresh agent availability reports',
+      expect.objectContaining({ error: expect.stringContaining('SQLITE_BUSY') })
+    );
+    debug.mockRestore();
+    expect(runtime.reporting()).toEqual(['ref-alpha\0owner']);
+    await vi.advanceTimersByTimeAsync(AVAILABILITY_RECONCILE_MS);
+    await runtime.idle();
+    expect(runtime.reporting()).toEqual(['ref-alpha\0owner', 'ref-beta\0owner']);
+    runtime.stop();
   });
 });

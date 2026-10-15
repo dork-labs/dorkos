@@ -45,8 +45,14 @@ export function RemoteCommunityRoster({
               {member.ownerMemberId &&
                 ` · owned by ${roster.members.find((owner) => owner.memberId === member.ownerMemberId)?.displayName ?? 'a space member'}`}
               {availability && (
-                <span className="text-muted-foreground" title={availability.title}>
+                <span className="text-muted-foreground">
                   {` · ${availability.text}`}
+                  {availability.since && (
+                    <>
+                      {' '}
+                      <time dateTime={availability.since.dateTime}>{availability.since.label}</time>
+                    </>
+                  )}
                 </span>
               )}
             </span>
