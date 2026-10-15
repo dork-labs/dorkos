@@ -7,8 +7,9 @@
  */
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
+import { compositionRootSource } from './composition-root.js';
 
-const source = readFileSync(new URL('../index.ts', import.meta.url), 'utf8');
+const source = compositionRootSource();
 
 describe('audit trail startup wiring', () => {
   it('builds the trail right after the Activity feed, before anything can emit', () => {

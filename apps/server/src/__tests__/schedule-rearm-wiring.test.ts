@@ -15,10 +15,10 @@
  *
  * @module __tests__/schedule-rearm-wiring
  */
-import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
+import { compositionRootSource } from './composition-root.js';
 
-const source = readFileSync(new URL('../index.ts', import.meta.url), 'utf8');
+const source = compositionRootSource();
 
 describe('schedule boot re-arm wiring', () => {
   it('imports needsScheduleApprovalAttention from the module the client mirrors', () => {

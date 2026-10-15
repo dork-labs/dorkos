@@ -65,7 +65,7 @@ const EXPECTED: Readonly<Record<string, readonly string[]>> = {
   // `heartbeats` §7.2).
   'services/heartbeats/beat-launch.ts': ['heartbeat'],
   // The in-process end-to-end harness, behind `DORKOS_TEST_RUNTIME`.
-  'index.ts': ['test-harness'],
+  'startup/steps/capabilities.ts': ['test-harness'],
 };
 
 /**

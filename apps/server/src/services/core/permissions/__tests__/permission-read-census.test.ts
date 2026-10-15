@@ -27,7 +27,8 @@ const ALLOWED: Record<string, string> = {
     'wires the raw reader under the narrowing reader and hands the arrival screen what it narrows',
   'services/core/permissions/permission-upgrade-sweep.ts':
     'the boot fold reads the raw file to see retired fields the schema drops',
-  'index.ts': 'the observer reads the raw file to compare it with what DorkOS last saw',
+  'startup/steps/session-services.ts':
+    'the observer reads the raw file to compare it with what DorkOS last saw (moved out of index.ts unchanged)',
 };
 
 const PATTERNS = [

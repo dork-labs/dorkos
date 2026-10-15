@@ -6,10 +6,10 @@
  * create, test or reload an extension. Boot builds that object in `index.ts`,
  * after the extension system has started, which is what this pins.
  */
-import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
+import { compositionRootSource } from './composition-root.js';
 
-const source = readFileSync(new URL('../index.ts', import.meta.url), 'utf8');
+const source = compositionRootSource();
 
 describe('extension tools startup wiring', () => {
   it('builds the session tool deps with the extension manager, after it starts', () => {
@@ -20,6 +20,8 @@ describe('extension tools startup wiring', () => {
 
     expect(start).toBeGreaterThan(-1);
     expect(depsOpen).toBeGreaterThan(start);
-    expect(deps).toContain('...(extensionManager && { extensionManager })');
+    expect(deps).toContain(
+      '...(refs.extensionManager && { extensionManager: refs.extensionManager })'
+    );
   });
 });

@@ -43,9 +43,9 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { compositionRootSource } from './composition-root.js';
 
-const INDEX_PATH = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../index.ts');
-const source = readFileSync(INDEX_PATH, 'utf-8');
+const source = compositionRootSource();
 /** Runtime registration, which assigns `relayAgentRuntime`, moved here from `index.ts` (DOR-2821). */
 const RUNTIMES_PATH = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
@@ -141,7 +141,7 @@ describe('the Tasks scheduler asks the relay which runtimes it holds', () => {
       source,
       'index.ts must hand Tasks a getter onto the live adapterManager, never the value it ' +
         'holds at that line: Phase C resets it to undefined when its init throws.'
-    ).toMatch(/currentAdapterManager: \(\) => adapterManager\b/);
+    ).toMatch(/currentAdapterManager: \(\) => refs\.adapterManager\b/);
     expect(
       construction,
       'hasAgentRuntime is the map-only reading DOR-1636 removed; asking it again reinstates ' +

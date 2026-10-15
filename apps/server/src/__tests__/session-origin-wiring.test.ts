@@ -31,18 +31,13 @@
  * @vitest-environment node
  */
 import { describe, it, expect } from 'vitest';
-import { readFileSync } from 'node:fs';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { COMPOSITION_ROOT_PATH, compositionRootSource } from './composition-root.js';
 
 import { lexWithoutComments } from '../../../../scripts/lib/code-only.mjs';
 
-/** The composition root, resolved from this file rather than from the cwd. */
-const INDEX_TS = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../index.ts');
-
-/** `index.ts` as source text. A read failure throws rather than passing empty. */
+/** The composition root (`index.ts` with its `startup/` steps), in boot order. A read failure throws rather than passing empty. */
 function compositionRoot(): string {
-  return readFileSync(INDEX_TS, 'utf-8');
+  return compositionRootSource();
 }
 
 /**
@@ -65,7 +60,7 @@ function compositionRoot(): string {
  * @returns One entry per source line, comment spans replaced by spaces.
  */
 function codeLines(): string[] {
-  const { code, parseErrors } = lexWithoutComments(compositionRoot(), INDEX_TS);
+  const { code, parseErrors } = lexWithoutComments(compositionRoot(), COMPOSITION_ROOT_PATH);
   // The honesty channel the module's own docs ask callers to assert. A file the
   // parser could not read has a comment map made of guesses, and it fails
   // SILENTLY — `lineOf` returns -1 for everything and "the call is missing"

@@ -31,7 +31,7 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
-import path, { join } from 'node:path';
+import { join } from 'node:path';
 import request from '@dorkos/test-utils/supertest';
 import { listeningServer } from '@dorkos/test-utils/listening-server';
 
@@ -56,9 +56,7 @@ import { honoGroupListener } from '../../../http/__tests__/hono-group-listener.j
 import { createAgentWorkspace } from '../../core/agent-creator.js';
 import { notifyAgentCreated, setOnAgentCreated } from '../../core/agent-created-hook.js';
 import { runAgentCreatedProjection } from '../project-on-agent-created.js';
-
-/** The repo root, six levels above this file. */
-const ROOT = path.resolve(import.meta.dirname, '../../../../../..');
+import { compositionRootSource } from '../../../__tests__/composition-root.js';
 
 let boundaryRoot = '';
 let dorkHome = '';
@@ -241,7 +239,7 @@ describe('an agent pointed at a project, end to end', () => {
     // call with a no-op left 130 files / 2373 tests green — every case above
     // included, since they register the reaction themselves. This reads the
     // source, the way the projection seam guard beside it does.
-    const source = readFileSync(join(ROOT, 'apps/server/src/index.ts'), 'utf8');
+    const source = compositionRootSource();
     const listener = source.slice(source.indexOf('setOnAgentCreated(async'));
     expect(listener).not.toBe('');
     expect(listener.slice(0, listener.indexOf('\n  });'))).toContain(
