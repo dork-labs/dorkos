@@ -1,4 +1,3 @@
-import { requiresDocPrincipal } from './doc-principal-policy.js';
 /**
  * MCP tool server — composition root that assembles domain-specific tools
  * into a single SDK MCP server instance.
@@ -6,6 +5,7 @@ import { requiresDocPrincipal } from './doc-principal-policy.js';
  * @module services/runtimes/claude-code/mcp-tools
  */
 import { createSdkMcpServer, tool } from '@anthropic-ai/claude-agent-sdk';
+import { requiresDocPrincipal } from './doc-principal-policy.js';
 import type { McpToolDeps, McpToolSession } from './types.js';
 import {
   DORKOS_MCP_SERVER_NAME,
