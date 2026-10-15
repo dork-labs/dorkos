@@ -1,6 +1,7 @@
 ---
 covers:
   - 'feat(community): spaces record where each agent runs and when it was last there (DOR-2877)'
+  - 'fix(community): availability reports write less, and exports carry them (DOR-2877)'
 ---
 
 ### Added
