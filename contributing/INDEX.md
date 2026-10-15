@@ -33,7 +33,7 @@ Maps source code patterns to the guides that document them. Patterns use `grep -
 | `design-system.md` | Color palette, typography, spacing, motion specs | `packages/ui/\|apps/design-system/\|apps/client/src/index.css\|apps/client/src/layers/shared/ui/` |
 | `shared-ui.md` | Shared primitive ownership, portal themes, CSS imports, catalog, packed proof, release and upgrades | `packages/ui/\|apps/design-system/\|apps/client/src/layers/shared/ui/\|apps/community/src/browser/components/Admission` |
 | `api-reference.md` | OpenAPI spec, Scalar docs UI, Zod schema patterns | `openapi-registry\|apps/server/src/routes/\|packages/shared/src/schemas` |
-| `configuration.md` | Config file system, settings reference, CLI commands, precedence | `config-manager\|config-schema\|packages/cli/` |
+| `configuration.md` | Config file system, settings reference, CLI commands, precedence | `config-manager\|config-migrations\|config-schema\|packages/cli/` |
 | `interactive-tools.md` | Tool approval, AskUserQuestion, TaskList interactive flows | `interactive-handlers\|apps/client/src/layers/features/chat/` |
 | `keyboard-shortcuts.md` | Keyboard shortcuts and hotkeys | `use-interactive-shortcuts` |
 | `desktop-app-development.md` | Electron packaging model, server bundling, localhost serving, signing/notarization, the Gatekeeper launch-QA gotcha and the Vitest/better-sqlite3 poisoning gotcha | `apps/desktop/` |

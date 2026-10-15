@@ -85,7 +85,11 @@ import {
 import { applyConfigPatch } from '../operator/config-patch.js';
 import { checkMigrationSafety, extractMigrationBodies } from './migration-safety.js';
 import { checkAppendOnly, migrationClosure } from './migration-append-only.js';
-import { declarationPool, reachedDeclarations } from './migration-closure.js';
+import {
+  declarationPool,
+  extractTopLevelDeclarations,
+  reachedDeclarations,
+} from './migration-closure.js';
 import type { ClosureSources } from './migration-closure.js';
 import { MERGED_MIGRATION_HASHES } from './merged-migration-hashes.js';
 import fs from 'fs';
@@ -4156,6 +4160,79 @@ describe('migrateSidebarMembersToItemRefs migration (sidebar-groups, DOR-579)', 
   });
 });
 
+/**
+ * Join `config-manager.ts` and the files of `config-migrations/` into the one
+ * source text the migration guards read.
+ *
+ * The table and the helpers its keys call live in `config-migrations/`, while
+ * the guards parse text. Joining is exact rather than approximate: a pin sorts
+ * the declarations it reaches by name, so which file a declaration sits in
+ * never enters the hash, and the table slice is read whole wherever it lives.
+ *
+ * Refuses a name declared in two of the files. The declaration reader keeps the
+ * last one it sees, so a duplicate would silently drop the other from every
+ * closure that reaches it — a pin with a hole in it.
+ *
+ * @param files - Each file's path and source text.
+ * @returns The files joined in the order given.
+ */
+function joinMigrationSources(files: { file: string; text: string }[]): string {
+  const declaredIn = new Map<string, string>();
+  for (const { file, text } of files) {
+    for (const name of Object.keys(extractTopLevelDeclarations(text))) {
+      const other = declaredIn.get(name);
+      if (other !== undefined) {
+        throw new Error(
+          `${name} is declared in both ${other} and ${file}. The migration guards read these ` +
+            'files as one, so one of the two would vanish from every closure. Rename one.'
+        );
+      }
+      declaredIn.set(name, file);
+    }
+  }
+  return files.map(({ text }) => text).join('\n');
+}
+
+/**
+ * Why a folder inside `config-migrations/` is refused rather than read.
+ *
+ * The guards read the folder's own files only. A helper in a nested folder would
+ * be reached by no closure, so every key calling it would be pinned with a hole
+ * where that helper's body should be.
+ *
+ * @param nested - The nested folder names found.
+ */
+function nestedMigrationDirsMessage(nested: readonly string[]): string {
+  return (
+    `config-migrations/ holds a folder (${nested.join(', ')}). The migration guards read ` +
+    'only the files directly in it, so a helper in a folder would escape every pin. Keep ' +
+    'migration helpers flat in config-migrations/.'
+  );
+}
+
+/** The working tree's `config-manager.ts` and `config-migrations/*.ts`, joined. */
+function readMigrationSource(): string {
+  const core = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+  const dir = path.join(core, 'config-migrations');
+  const entries = fs.readdirSync(dir, { withFileTypes: true });
+  const nested = entries.filter((entry) => entry.isDirectory()).map((entry) => entry.name);
+  if (nested.length > 0) throw new Error(nestedMigrationDirsMessage(nested));
+  const names = entries
+    .filter((entry) => entry.isFile() && entry.name.endsWith('.ts'))
+    .map((entry) => entry.name)
+    .sort();
+  return joinMigrationSources([
+    {
+      file: 'config-manager.ts',
+      text: fs.readFileSync(path.join(core, 'config-manager.ts'), 'utf-8'),
+    },
+    ...names.map((name) => ({
+      file: `config-migrations/${name}`,
+      text: fs.readFileSync(path.join(dir, name), 'utf-8'),
+    })),
+  ]);
+}
+
 describe('CONFIG_MIGRATIONS key invariant (DOR-339 regression guard)', () => {
   // Bit once (0.47.0 -> 0.48.0, see config-manager.ts around the '0.48.0' entry)
   // and again later (a '0.54.0' key drafted as "the next unreleased version"
@@ -4190,6 +4267,7 @@ describe('CONFIG_MIGRATIONS key invariant (DOR-339 regression guard)', () => {
   // answers; CI checks out with `fetch-depth: 0` for exactly this reason
   // (.github/workflows/test.yml).
   const CONFIG_MANAGER_PATH = 'apps/server/src/services/core/config-manager.ts';
+  const MIGRATIONS_PATH = 'apps/server/src/services/core/config-migrations';
 
   /** Run a git command from the repo root, or return null when it fails. */
   const git = (args: string): string | null => {
@@ -4207,18 +4285,12 @@ describe('CONFIG_MIGRATIONS key invariant (DOR-339 regression guard)', () => {
   it('parses the real migration table into exactly the keys the module exports', () => {
     // Guard the guard: the rule below compares source slices, so a parser that
     // silently matched nothing would report every migration safe.
-    const source = fs.readFileSync(
-      path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../config-manager.ts'),
-      'utf-8'
-    );
+    const source = readMigrationSource();
     expect(Object.keys(extractMigrationBodies(source))).toEqual(Object.keys(CONFIG_MIGRATIONS));
   });
 
   it('every migration key is unreleased-and-newer, or matches its release in body and in what it calls', () => {
-    const source = fs.readFileSync(
-      path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../config-manager.ts'),
-      'utf-8'
-    );
+    const source = readMigrationSource();
     const tags = (git('tag -l "v*"') ?? '')
       .split('\n')
       .map((t) => t.trim().replace(/^v/, ''))
@@ -4229,7 +4301,37 @@ describe('CONFIG_MIGRATIONS key invariant (DOR-339 regression guard)', () => {
       tags,
       // `refs/tags/` rather than a bare `v<version>`, so a branch that happens to
       // share a release's name cannot shadow the tag and be read as the release.
-      readAtTag: (version) => git(`show refs/tags/v${version}:${CONFIG_MANAGER_PATH}`),
+      //
+      // A release cut after the table moved carries it in `config-migrations/`, so
+      // that folder is read too wherever the tag has it; an older tag has no such
+      // folder and reads exactly as before, `config-manager.ts` alone.
+      readAtTag: (version) => {
+        const ref = `refs/tags/v${version}`;
+        const manager = git(`show ${ref}:${CONFIG_MANAGER_PATH}`);
+        if (manager === null) return null;
+        const listed = git(`ls-tree --full-tree ${ref} -- ${MIGRATIONS_PATH}/`);
+        if (listed === null) return null;
+        // `<mode> <type> <object>\t<path>` per line; a `tree` is a folder.
+        const rows = listed
+          .split('\n')
+          .filter((line) => line.includes('\t'))
+          .map((line) => {
+            const [meta, file] = line.split('\t') as [string, string];
+            return { type: meta.split(' ')[1], file };
+          });
+        const nested = rows.filter((row) => row.type === 'tree').map((row) => row.file);
+        if (nested.length > 0) throw new Error(nestedMigrationDirsMessage(nested));
+        const files = [{ file: CONFIG_MANAGER_PATH, text: manager }];
+        for (const file of rows
+          .filter((row) => row.type === 'blob' && row.file.endsWith('.ts'))
+          .map((row) => row.file)
+          .sort()) {
+          const text = git(`show ${ref}:${file}`);
+          if (text === null) return null;
+          files.push({ file, text });
+        }
+        return joinMigrationSources(files);
+      },
     });
 
     expect(result.ok, result.problems.join('\n')).toBe(true);
@@ -4254,7 +4356,7 @@ describe('CONFIG_MIGRATIONS append-only pins (DOR-1222 regression guard)', () =>
   // `migration-append-only.ts` / `migration-append-only.test.ts`.
   const here = path.dirname(fileURLToPath(import.meta.url));
   const readSources = (): ClosureSources => ({
-    configManager: fs.readFileSync(path.resolve(here, '../config-manager.ts'), 'utf-8'),
+    configManager: readMigrationSource(),
     configSchema: fs.readFileSync(
       path.resolve(here, '../../../../../../packages/shared/src/config-schema.ts'),
       'utf-8'

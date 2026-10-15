@@ -1,5 +1,5 @@
 ---
-paths: packages/shared/src/config-schema.ts, packages/shared/src/*-schemas.ts, apps/server/src/services/core/config-manager.ts, apps/server/src/services/core/safe-defaults/**/*.ts, packages/marketplace/src/manifest-schema.ts, packages/skills/src/task-schema.ts
+paths: packages/shared/src/config-schema.ts, packages/shared/src/*-schemas.ts, apps/server/src/services/core/config-manager.ts, apps/server/src/services/core/config-migrations/**/*.ts, apps/server/src/services/core/safe-defaults/**/*.ts, packages/marketplace/src/manifest-schema.ts, packages/skills/src/task-schema.ts
 ---
 
 # User-Safe Defaults
