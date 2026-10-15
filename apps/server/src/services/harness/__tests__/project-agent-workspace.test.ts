@@ -63,7 +63,7 @@ import { logger } from '../../../lib/logger.js';
  * to end a beat with `end_beat` and how loudly to say what it found.
  */
 const PACK_NAMES = OPERATING_SKILLS_PACK.map((skill) => skill.name).sort();
-const PACK_SIZE = 10;
+const PACK_SIZE = 11;
 
 let tmpRoot: string;
 

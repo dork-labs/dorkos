@@ -136,39 +136,42 @@ export function generateServerTemplate(name: string, description: string): strin
 //   ctx.extensionId                 — This extension's unique identifier
 //   ctx.extensionDir                — Absolute path to this extension's directory
 //   ctx.filesDir                    — A folder only this extension writes to
+//
+// Your API lives at /api/ext/${name}/. It is a Hono app (built in, nothing to
+// install): a route for '/data' answers GET /api/ext/${name}/data. Put
+// requirePerson() in front of any route that changes something, so only a
+// person can use it, never an agent or another website.
 
-// Your API lives at /api/ext/${name}/. Serve it one of two ways:
-//   - Router: add Express routes to \`router\`, as below.
-//   - Fetch handler: return { fetch } from register(). It gets a web-standard
-//     Request and returns a Response, so a Hono app works as is (it runs on
-//     Node, so Bun- or Deno-only APIs are not there). See the commented example at the end of register().
-
-import type { Router } from 'express';
-import type { DataProviderContext, ServerExtensionRegisterResult } from '@dorkos/extension-api/server';
+import { Hono } from 'hono';
+import { requirePerson, type DataProviderContext } from '@dorkos/extension-api/server';
 
 /**
- * Register server-side routes and background tasks for ${titleName}.
+ * Register the API and background tasks for ${titleName}.
  *
- * @param router - Express router mounted at /api/ext/${name}/
+ * @param _router - Unused: the API is the Hono app below
  * @param ctx - Isolated context with secrets, storage, scheduling, and SSE emission
- * @returns A cleanup function called on shutdown, or { fetch, cleanup }
  */
-export default function register(router: Router, ctx: DataProviderContext): ServerExtensionRegisterResult {
-  // --- Routes ---
+export default function register(_router: unknown, ctx: DataProviderContext) {
+  const app = new Hono();
 
-  // GET /api/ext/${name}/data — Fetch cached data
-  router.get('/data', async (_req, res) => {
+  // GET /api/ext/${name}/data — the cached data
+  app.get('/data', async (c) => {
     const data = await ctx.storage.loadData();
-    res.json({ data: data ?? [] });
+    return c.json({ data: data ?? [] });
+  });
+
+  // PUT /api/ext/${name}/data — replace it (people only)
+  app.put('/data', requirePerson(), async (c) => {
+    const data = await c.req.json();
+    await ctx.storage.saveData(data);
+    ctx.emit('data-updated', { at: Date.now() });
+    return c.json({ ok: true });
   });
 
   // --- Background sync ---
 
   // Poll every 60 seconds (edit interval and logic to suit your data source)
   const cancel = ctx.schedule(60, async () => {
-    // Read the refresh interval from settings (configured in the settings panel)
-    // const refreshInterval = await ctx.settings.get<number>('refresh_interval') ?? 60;
-
     // TODO: Replace with real API call using ctx.secrets.get('api_key')
     const apiKey = await ctx.secrets.get('api_key');
     if (!apiKey) return;
@@ -182,26 +185,7 @@ export default function register(router: Router, ctx: DataProviderContext): Serv
     // ctx.emit('data-updated', { count: items.length });
   });
 
-  // Return cleanup function to cancel the scheduled task on shutdown
-  return () => {
-    cancel();
-  };
-
-  // --- Or serve the same API with a fetch handler ---
-  // Delete the router route above and return this instead. The request's path
-  // is the part after /api/ext/${name}, so GET /api/ext/${name}/data arrives as /data.
-  //
-  // return {
-  //   fetch: async (request) => {
-  //     const { pathname } = new URL(request.url);
-  //     if (request.method === 'GET' && pathname === '/data') {
-  //       const data = await ctx.storage.loadData();
-  //       return Response.json({ data: data ?? [] });
-  //     }
-  //     return Response.json({ error: 'Not found' }, { status: 404 });
-  //   },
-  //   cleanup: () => cancel(),
-  // };
+  return { fetch: app.fetch, cleanup: () => cancel() };
 }
 `;
 }

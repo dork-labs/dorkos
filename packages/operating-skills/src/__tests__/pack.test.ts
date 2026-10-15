@@ -46,7 +46,7 @@ function listedSiblings(body: string): string[] {
 }
 
 describe('OPERATING_SKILLS_PACK', () => {
-  it('ships the ten canonical skills, umbrella first', () => {
+  it('ships the eleven canonical skills, umbrella first', () => {
     expect(OPERATING_SKILLS_PACK.map((s) => s.name)).toEqual([
       'operating-dorkos',
       'managing-agents',
@@ -58,6 +58,7 @@ describe('OPERATING_SKILLS_PACK', () => {
       'using-the-agent-browser',
       'working-with-spin-off-chats',
       'working-on-a-heartbeat',
+      'serving-an-extension-api',
     ]);
   });
 

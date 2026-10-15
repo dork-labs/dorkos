@@ -15,6 +15,7 @@ import { workingInRoomRepos } from './skills/working-in-room-repos.js';
 import { usingTheAgentBrowser } from './skills/using-the-agent-browser.js';
 import { workingWithSpinOffChats } from './skills/working-with-spin-off-chats.js';
 import { workingOnAHeartbeat } from './skills/working-on-a-heartbeat.js';
+import { servingAnExtensionApi } from './skills/serving-an-extension-api.js';
 
 /** One authored skill in the pack: its kebab-case name, discovery description, and body. */
 export interface OperatingSkill {
@@ -350,8 +351,14 @@ export interface OperatingSkill {
  *   `connector_list_toolkits` before `request_connection`, and that a shell CLI
  *   sign-in grants DorkOS nothing (DOR-2236), matching what the refusal, the
  *   tool description and the per-turn Accounts guidance already say (DOR-2231).
+ * - 42: `serving-an-extension-api` joins the pack (DOR-2858). An extension's
+ *   API is now one shape, a Hono app returned as `{ fetch }` with
+ *   `requirePerson()` on its writes, and the Express router is deprecated; an
+ *   agent asked to "update my mini app" needs the move. The new skill seeds
+ *   without a bump; the bump is for the sibling lists in `operating-dorkos`
+ *   and `answering-dorkos-questions`.
  */
-export const OPERATING_SKILLS_VERSION = 41;
+export const OPERATING_SKILLS_VERSION = 42;
 
 /**
  * The canonical pack, umbrella skill first. Every entry is validated against the
@@ -368,4 +375,5 @@ export const OPERATING_SKILLS_PACK: readonly OperatingSkill[] = [
   usingTheAgentBrowser,
   workingWithSpinOffChats,
   workingOnAHeartbeat,
+  servingAnExtensionApi,
 ];
