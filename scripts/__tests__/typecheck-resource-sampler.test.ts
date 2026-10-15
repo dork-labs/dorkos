@@ -77,7 +77,10 @@ describe.skipIf(process.platform !== 'linux')('actual Linux Bash compiler-step l
           const closeWriter =
             '  if [[ -n "$sampler_control" ]]; then exec {sampler_control}>&-; fi\n';
           if (!wrapper.includes(closeWriter)) throw new Error('Missing compiler writer close');
-          wrapper = wrapper.replace(closeWriter, '');
+          wrapper = wrapper.replace(
+            closeWriter,
+            () => '  exec 9>"/proc/$BASHPID/fd/$sampler_control"\n' + closeWriter
+          );
         }
       }
       await writeFile(join(directory, 'scripts/typecheck-resource-sampler.mjs'), observer);
