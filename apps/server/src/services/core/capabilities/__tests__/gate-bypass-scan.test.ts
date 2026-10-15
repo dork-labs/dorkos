@@ -145,6 +145,8 @@ const PROTECTED_EFFECTS: ProtectedEffect[] = [
         'start/stop — `tunnel.*` IS operator-only, so start runs the cookie bar then the agent bar before reaching here; stop runs neither on purpose, because stopping only narrows exposure (DOR-1738)',
       'routes/remote-access.ts':
         '`POST /api/remote-access/mode` with `off` writes `tunnel.enabled: false`, exactly as `POST /api/tunnel/stop` does, and only after the cookie, trusted-caller and local-caller bars; it only ever narrows (logConfigWrite: "turning remote access off")',
+      'services/core/lan-access/index.ts':
+        '`writeLanAccessSetting`, the one writer of `server.lanAccess` (DOR-2930), operator-only. Two callers: `POST /api/lan-access`, which runs the cookie bar, the trusted-caller bar, the environment bar and `canExpose` before writing `true` and no bar for `false` (it only narrows, as `/api/tunnel/stop`); and the controller, which only ever writes `false` when login is off. logConfigWrite: "Wi-Fi access"',
       'routes/runtimes-doe-setup.ts':
         'PUT /api/runtimes/doe/inference writes only the fixed DorkOS inference metadata leaf after the loopback and refuseUnlessAccountOwner bars: identified agents and approval-token requesters are refused in every posture; under login an install-owner cookie is required. logConfigWrite records the before/after runtimes section as the DorkOS model setup. Moved with its routes from services/runtimes/connect/doe-setup-router.ts when they left Express (DOR-2802); the bars run on the request facts the Hono chain resolved, the same ones the Express pair carried',
       'services/core/agent-creator.ts':
@@ -701,6 +703,8 @@ const PROTECTED_EFFECTS: ProtectedEffect[] = [
         'a person turning Remote Access on in their own cockpit, which publishes this machine and writes `tunnel.enabled` (DOR-1738). Gated: both bars from `PATCH /api/config` for an operator-only setting, in the same order — the cookie bar under login, then this one — because `tunnel.*` IS operator-only in config-write-policy and this route writes the flag straight through `configManager`, around the door that enforces that. `POST /api/tunnel/stop` deliberately runs neither bar and reaches no effect on this list: stopping only ever narrows exposure, and gating it stranded a running tunnel once already (DOR-574)',
       'routes/remote-access.ts':
         'a person starting DorkOS remote access setup or choosing a remote access mode on this computer (DOR-2086). Gated: the cookie bar under login, then this one, then `isLocalCaller` (a phone over a tunnel or managed access is not at this computer), then `canExpose` for anything managed. `POST /withdraw` runs the cookie, trusted-caller and local-caller bars but never `canExpose`, so it works with login or Cloud down; `POST /close` runs no bar on purpose: it only narrows',
+      'routes/lan-access.ts':
+        'a person turning on "Let devices on my Wi-Fi in", which opens this computer to its network and writes `server.lanAccess` (DOR-2930). Gated like `routes/tunnel.ts`: the cookie bar under login, then this one, because `server.lanAccess` IS operator-only and this route writes it around the door that enforces that, then the environment bar and `canExpose`. Turning it off runs no bar: it only narrows',
       'services/core/capabilities/trusted-caller.ts': 'the definition itself',
     },
   },

@@ -27,6 +27,10 @@
  * WebSocket upgrades never pass through here: Node emits `upgrade` on the
  * server, not as a request, and `attachUpgradeRouter` claims it there.
  *
+ * One thing it adds: a request that names this computer on the network while
+ * Wi-Fi access is open has its sign-in cookies adapted to plain `http`, on the
+ * way in and out, upgrades included (`adaptLanCookies`, DOR-2930).
+ *
  * @module http/front-door
  */
 import { AsyncLocalStorage } from 'node:async_hooks';
@@ -40,6 +44,7 @@ import {
 import { getRequestListener, RequestError, type HttpBindings } from '@hono/node-server';
 import type { Hono } from 'hono';
 import type { ApiEnv } from './api-chain.js';
+import { adaptLanCookies } from '../services/core/lan-access/lan-cookies.js';
 
 /**
  * The origin a request the adapter cannot read is given, so it has a URL at
@@ -76,6 +81,7 @@ export function frontDoorListener(app: Hono<ApiEnv>): RequestListener {
     // Host names ignore case, but the adapter refuses a `Host` in capitals.
     const host = incoming.headers.host;
     if (host) incoming.headers.host = host.toLowerCase();
+    adaptLanCookies(incoming, outgoing);
     return raw.run([incoming, outgoing], () => viaHono(incoming, outgoing));
   };
 }
@@ -127,5 +133,9 @@ function unreadableRequest(incoming: IncomingMessage): Request {
  * @returns A Node `http.Server` the upgrade router can attach to.
  */
 export function createFrontDoorServer(app: Hono<ApiEnv>): Server {
-  return createServer(frontDoorListener(app));
+  const server = createServer(frontDoorListener(app));
+  // First in line, so the upgrade router authorizes with the cookie names the
+  // auth stack set (see `adaptLanCookies`).
+  server.prependListener('upgrade', (req: IncomingMessage) => adaptLanCookies(req));
+  return server;
 }

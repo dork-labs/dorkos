@@ -27,7 +27,9 @@
  *    boundary; the official Docker image sets this, and its behaviour is
  *    unchanged.
  * 3. **Otherwise enforce.** The request's host name must be loopback, listed in
- *    `DORKOS_TRUSTED_HOSTS`, or the live tunnel host. Anything else gets a 403.
+ *    `DORKOS_TRUSTED_HOSTS`, the live tunnel host, or, while Wi-Fi access is
+ *    open, this computer's own `.local` name or network address. Anything else
+ *    gets a 403.
  *
  * Matching is on the host NAME only, never the port: the Vite dev proxy, `ssh
  * -L` forwards, and `docker run -p 4300:4242` all legitimately carry a port the
@@ -42,6 +44,7 @@
 import { env } from '../env.js';
 import { logger } from '../lib/logger.js';
 import { getTunnelHosts, isLoopbackHost, parseHostname } from '../lib/trusted-origins.js';
+import { getLanAccessHosts } from '../services/core/lan-access/lan-trust.js';
 import { configManager } from '../services/core/config-manager.js';
 
 /**
@@ -78,6 +81,11 @@ export interface HostPolicy {
    * hostname managed remote access serves. Empty when no tunnel is open.
    */
   tunnelHosts: readonly string[];
+  /**
+   * This computer's own Bonjour names and network addresses while Wi-Fi access
+   * is open (DOR-2930), from `getLanAccessHosts`. Empty while it is closed.
+   */
+  lanHosts: readonly string[];
 }
 
 /**
@@ -90,6 +98,7 @@ export function isHostAllowed(policy: HostPolicy): boolean {
   if (!hostname) return false;
   if (isLoopbackHost(hostname)) return true;
   if (policy.trustedHosts.includes(hostname)) return true;
+  if (policy.lanHosts.includes(hostname)) return true;
   return policy.tunnelHosts.includes(hostname);
 }
 
@@ -146,6 +155,7 @@ export function refuseUntrustedHost(
     hostname,
     trustedHosts: parseTrustedHosts(env.DORKOS_TRUSTED_HOSTS),
     tunnelHosts: getTunnelHosts(),
+    lanHosts: getLanAccessHosts(),
   });
   if (allowed) return null;
 
@@ -168,6 +178,7 @@ export function refuseStandaloneDocTokenHost(
       hostname,
       trustedHosts: parseTrustedHosts(env.DORKOS_TRUSTED_HOSTS),
       tunnelHosts: getTunnelHosts(),
+      lanHosts: getLanAccessHosts(),
     })
   )
     return null;

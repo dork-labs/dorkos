@@ -102,6 +102,7 @@ export type {
   WorkbenchProbeResponse,
   HealthResponse,
   TunnelStatus,
+  LanAccessStatus,
   RemoteAccessAvailability,
   RemoteAccessEnrolment,
   RemoteAccessReport,

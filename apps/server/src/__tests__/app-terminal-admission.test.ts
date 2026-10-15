@@ -293,7 +293,9 @@ describe('main HTTP admission through the real app', () => {
     expect(mounts).toContain('/api/heartbeats/triage-credits');
     expect(mounts).toContain('/api/terminal');
     // The pre-CORS document-token mount uses the same admitted early app.
-    expect(mounts).toHaveLength(72);
+    // 72 -> 73: `/api/lan-access`, the Wi-Fi access switch (DOR-2930).
+    expect(mounts).toContain('/api/lan-access');
+    expect(mounts).toHaveLength(73);
     const byHand = [
       '/',
       '/x/fixture',

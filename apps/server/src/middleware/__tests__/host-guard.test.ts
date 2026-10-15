@@ -23,7 +23,13 @@ vi.mock('../../lib/logger.js', () => ({
   logger: { warn: vi.fn(), info: vi.fn(), error: vi.fn(), debug: vi.fn() },
 }));
 
-import { isHostAllowed, parseTrustedHosts, refuseUntrustedHost } from '../host-guard.js';
+import {
+  isHostAllowed,
+  parseTrustedHosts,
+  refuseStandaloneDocTokenHost,
+  refuseUntrustedHost,
+} from '../host-guard.js';
+import { setLanTrust } from '../../services/core/lan-access/lan-trust.js';
 import { createApiApp } from '../../http/api-chain.js';
 import { frontDoorListener } from '../../http/front-door.js';
 import { MainRequestAdmission } from '../../services/core/lifecycle/main-request-admission.js';
@@ -74,6 +80,25 @@ describe('the host guard in the chain', () => {
     it('is case-insensitive', async () => {
       const res = await request(fixtureServer).get('/api/health').set('Host', 'LOCALHOST:4242');
       expect(res.status).toBe(200);
+    });
+  });
+
+  describe('Wi-Fi access (DOR-2930)', () => {
+    it('answers this computer’s .local name only while Wi-Fi access is open', async () => {
+      setLanTrust({ port: 4242, names: ['studio.local'], secureCookies: false });
+      try {
+        const open = await request(fixtureServer)
+          .get('/api/health')
+          .set('Host', 'studio.local:4242');
+        expect(open.status).toBe(200);
+      } finally {
+        setLanTrust(null);
+      }
+      const closed = await request(fixtureServer)
+        .get('/api/health')
+        .set('Host', 'studio.local:4242');
+      expect(closed.status).toBe(403);
+      expect(closed.body.code).toBe('HOST_NOT_ALLOWED');
     });
   });
 
@@ -177,6 +202,38 @@ describe('the host guard in the chain', () => {
   });
 });
 
+describe('standalone Doc token hosts', () => {
+  it('reads live Wi-Fi trust without inheriting the login-enabled Host waiver', () => {
+    mockEnv.DORKOS_ALLOW_INSECURE_BIND = false;
+    mockEnv.DORKOS_TRUSTED_HOSTS = undefined;
+    mockTunnelManager.status.url = null;
+    mockAuthConfig.enabled = true;
+    setLanTrust(null);
+    try {
+      expect(refuseStandaloneDocTokenHost('studio.local:4242')).toMatchObject({
+        code: 'HOST_NOT_ALLOWED',
+      });
+      setLanTrust({ port: 4242, names: ['studio.local'], secureCookies: false });
+      expect(refuseStandaloneDocTokenHost('studio.local:4242')).toBeNull();
+      expect(refuseStandaloneDocTokenHost('evil.com:4242')).toMatchObject({
+        code: 'HOST_NOT_ALLOWED',
+      });
+      setLanTrust({ port: 4242, names: ['office.local'], secureCookies: false });
+      expect(refuseStandaloneDocTokenHost('studio.local:4242')).toMatchObject({
+        code: 'HOST_NOT_ALLOWED',
+      });
+      expect(refuseStandaloneDocTokenHost('office.local:4242')).toBeNull();
+      setLanTrust(null);
+      expect(refuseStandaloneDocTokenHost('office.local:4242')).toMatchObject({
+        code: 'HOST_NOT_ALLOWED',
+      });
+    } finally {
+      setLanTrust(null);
+      mockAuthConfig.enabled = false;
+    }
+  });
+});
+
 describe('parseTrustedHosts', () => {
   it('returns an empty list when unset', () => {
     expect(parseTrustedHosts(undefined)).toEqual([]);
@@ -192,7 +249,11 @@ describe('parseTrustedHosts', () => {
 });
 
 describe('isHostAllowed', () => {
-  const base = { trustedHosts: [] as readonly string[], tunnelHosts: [] as readonly string[] };
+  const base = {
+    trustedHosts: [] as readonly string[],
+    tunnelHosts: [] as readonly string[],
+    lanHosts: [] as readonly string[],
+  };
 
   it('rejects a missing host name', () => {
     expect(isHostAllowed({ ...base, hostname: null })).toBe(false);
@@ -217,5 +278,16 @@ describe('isHostAllowed', () => {
     expect(isHostAllowed({ ...base, hostname: 'a.example.dev', tunnelHosts })).toBe(true);
     expect(isHostAllowed({ ...base, hostname: 'custom.example.com', tunnelHosts })).toBe(true);
     expect(isHostAllowed({ ...base, hostname: 'b.example.dev', tunnelHosts })).toBe(false);
+  });
+
+  it('answers to this computer’s own Wi-Fi names while Wi-Fi access is open (DOR-2930)', () => {
+    const lanHosts = ['studio.local', '192.168.1.20'];
+    expect(isHostAllowed({ ...base, hostname: 'studio.local', lanHosts })).toBe(true);
+    expect(isHostAllowed({ ...base, hostname: '192.168.1.20', lanHosts })).toBe(true);
+    // Another machine's name or address on the same network is not this one.
+    expect(isHostAllowed({ ...base, hostname: 'printer.local', lanHosts })).toBe(false);
+    expect(isHostAllowed({ ...base, hostname: '192.168.1.21', lanHosts })).toBe(false);
+    // Closed: the same names are strangers again.
+    expect(isHostAllowed({ ...base, hostname: 'studio.local' })).toBe(false);
   });
 });

@@ -104,6 +104,11 @@ const LOWEST_UNPRIVILEGED_PORT = 1024;
  * meaningful: a wildcard probe would report a port busy because some unrelated
  * interface holds it, and a probe of one fixed address could miss a holder that
  * `localhost` happens to resolve to.
+ *
+ * Wi-Fi access (DOR-2930) adds a second listener on every interface at run
+ * time, from a switch in Settings. It is not probed here on purpose: a port
+ * busy only on the network must not stop the app from opening. If that bind
+ * fails, Settings says so and the app keeps working on this computer.
  */
 const PROBE_HOST = 'localhost';
 

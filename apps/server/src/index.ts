@@ -71,6 +71,8 @@ import {
   checkA2aExposure,
 } from './services/core/auth/exposure-guard.js';
 import { tunnelManager } from './services/core/tunnel-manager.js';
+import { lanAccess } from './services/core/lan-access/index.js';
+import { exitOnPortConflict } from './services/core/lifecycle/port-conflict.js';
 import { scheduleJittered, type JitteredSchedule } from './lib/lifecycle/jittered-schedule.js';
 import { createSignalShutdown } from './lib/lifecycle/shutdown-signal.js';
 import { getCloudLinkManager } from './services/core/auth/cloud-link.js';
@@ -4707,12 +4709,16 @@ async function start() {
       // `server.on('upgrade')` listener beside this one would not work — every
       // listener sees every upgrade, and any that does not recognize a path
       // destroys the socket out from under the one that does.
-      attachUpgradeRouter(
-        server,
-        [...durableStreamRoutes, terminalUpgradeRoute(terminalManager!)],
-        mainRequestAdmission
-      );
+      const upgradeRoutes = [...durableStreamRoutes, terminalUpgradeRoute(terminalManager!)];
+      attachUpgradeRouter(server, upgradeRoutes, mainRequestAdmission);
       logger.info('[DorkOS] WebSocket upgrade router attached');
+      // Wi-Fi access (DOR-2930): a second listener on the network, opened and
+      // closed live by its switch, into the same front door and upgrade router.
+      void lanAccess.attach({
+        port: PORT,
+        createServer: () => createFrontDoorServer(frontDoor),
+        attachUpgrades: (lan) => attachUpgradeRouter(lan, upgradeRoutes, mainRequestAdmission),
+      });
 
       // The managed remote-access ingress: a loopback listener of its own that
       // managed forwarding targets. It runs the edge-proof and host checks, then
@@ -4745,16 +4751,7 @@ async function start() {
   if (!server) return;
 
   // Surface port conflicts with an actionable message instead of a raw EADDRINUSE stack trace
-  server.on('error', (err: NodeJS.ErrnoException) => {
-    if (err.code === 'EADDRINUSE') {
-      logger.error(
-        `Port ${PORT} is already in use. ` +
-          `Run \`lsof -i :${PORT}\` to find the process, or start with \`--port ${PORT + 1}\`.`
-      );
-      process.exit(1);
-    }
-    throw err;
-  });
+  exitOnPortConflict(server, PORT);
 
   /** The canvas sweep, listing the default folder only when a session is marked gone. */
   const sweepCanvases = (): Promise<number> =>
@@ -5117,6 +5114,7 @@ async function shutdownServices() {
   // Stream cancelled, managed access drained within its deadline, what is owed kept (DOR-2086).
   await managedRemoteCommands.shutdown();
   await tunnelManager.stop();
+  await lanAccess.close();
   // After every runtime and the scheduler: nothing is left to hold awake.
   await keepAwakeService.stop();
   getCloudLinkManager().stop();

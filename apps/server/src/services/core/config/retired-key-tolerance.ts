@@ -3,12 +3,19 @@
  *
  * Each one DECLARES a key an older build wrote, with its real type, so a file
  * still carrying it loads and the first write that goes through Zod drops it.
- * They live beside `config-manager.ts` rather than in it; the sidebar's sibling
- * stays there because it reads constants the migration bodies share.
+ * They live beside `config-manager.ts` rather than in it. The sidebar's is
+ * handed the retired names it declares, because the migration bodies share
+ * those constants and they stay where the append-only pins can see them.
  *
  * @module services/core/config/retired-key-tolerance
  */
-import { ClaudeCodeAccountSchema, ClaudeCodeSettingsSchema } from '@dorkos/shared/config-schema';
+import {
+  ClaudeCodeAccountSchema,
+  ClaudeCodeSettingsSchema,
+  SidebarGroupSchema,
+  SidebarItemRefSchema,
+  SidebarPrefsSchema,
+} from '@dorkos/shared/config-schema';
 
 /**
  * Widen the generated JSON Schema so conf's Ajv ACCEPTS a Claude account
@@ -16,7 +23,7 @@ import { ClaudeCodeAccountSchema, ClaudeCodeSettingsSchema } from '@dorkos/share
  * file (spec `billing-account-ladder`, ADR 260821-205324).
  *
  * The second rename in this file's history, and the same hazard
- * `tolerateRetiredSidebarKeys` (in `config-manager.ts`) exists for — with one difference worth
+ * `tolerateRetiredSidebarKeys` (below) exists for — with one difference worth
  * naming, because it is why the unknown-key tolerance already in place does not
  * cover it. `tolerateUnknownKeys` REOPENS objects, so a key this build does not
  * know is survivable. Nothing reopens a `required` list. `accounts[].id` is
@@ -116,7 +123,7 @@ export function tolerateLegacyClaudeAccountEncoding(ctx: {
  * output drops it genuinely removes it** rather than having it carried straight
  * back from disk.
  *
- * The same mechanism `tolerateRetiredSidebarKeys` (in `config-manager.ts`) explains at length, and
+ * The same mechanism `tolerateRetiredSidebarKeys` (below) explains at length, and
  * the same two halves: `'0.80.0'` moves what the key MEANT (nothing — the
  * experiment graduated and every runtime carries the tools now), and this is
  * what makes the husk go away on an install that key never reaches. A dev tree
@@ -232,4 +239,98 @@ export function tolerateRetiredUiKeys(schema: { properties?: Record<string, unkn
   properties['fullPowerDecidedAt'] = timestamp;
   properties['fullPowerChoice'] = { anyOf: [{ type: 'string' }, { type: 'null' }] };
   properties['autonomyAcknowledgedAt'] = timestamp;
+}
+
+/**
+ * Declare the eight `ui.sidebar` keys the P2 redesign retired, so that a file
+ * still carrying them CONVERGES on the first write instead of keeping them for
+ * ever.
+ *
+ * ## What this is not
+ *
+ * It is no longer about loading such a file. `tolerateUnknownKeys` below already
+ * accepts any key this build does not declare — that is the version-skew rule,
+ * and it is what keeps a config written by a newer DorkOS from being condemned
+ * by an older one. A retired key rides in on the same tolerance.
+ *
+ * ## What it is
+ *
+ * `ConfigManager.write` carries UNKNOWN keys across from disk, deliberately: an
+ * older build saving a theme must not delete a newer build's settings one
+ * section at a time. A retired key is the opposite case — it belongs to
+ * yesterday rather than to tomorrow, and carrying it across means it never
+ * leaves the file. Naming it here puts it back inside "what this build knows
+ * about", so Zod's strip on the write path is final and the first write after an
+ * upgrade cleans it up. `migrateSidebarSectionPrefs` moves what the keys MEANT;
+ * this is what makes the husks go away on an install the migration never
+ * reached.
+ *
+ * They are declared with their real types rather than as an open catchall: "let
+ * yesterday's key through" must not quietly become "validate nothing".
+ *
+ * **The DOR-579 half of this override is gone** (DOR-588). It widened
+ * `SidebarItemRefSchema` and `SidebarGroupSchema` so that bare agent paths and
+ * `groups[].agentPaths` still loaded a release after the rename; that release
+ * has shipped, the migration has run for everyone who has opened DorkOS since,
+ * and a file still in that encoding takes the recovery path like any other
+ * unreadable one — with protections salvaged
+ * (`safe-defaults/protected-state.ts`).
+ *
+ * The retired names arrive as `retired` because the migration bodies in
+ * `config-manager.ts` share them, and a migration's constants stay there, where
+ * the append-only pins can see them.
+ *
+ * @param ctx - The `z.toJSONSchema` override context for one schema node.
+ * @param retired - The retired collapse keys and the legacy group members key.
+ */
+export function tolerateRetiredSidebarKeys(
+  ctx: { zodSchema: unknown; jsonSchema: Record<string, unknown> },
+  retired: { collapseKeys: readonly string[]; legacyMembersKey: string }
+): void {
+  if (ctx.zodSchema === SidebarPrefsSchema) {
+    const properties = ctx.jsonSchema.properties as
+      Record<string, Record<string, unknown>> | undefined;
+    if (!properties) return;
+    for (const key of retired.collapseKeys) {
+      properties[key] = { type: 'boolean' };
+    }
+    properties.groupsHintDismissed = { type: 'boolean' };
+    properties.ungroupedSortMode = { type: 'string', enum: ['name', 'recent'] };
+    properties.ungroupedDisplayFilter = { type: 'string', enum: ['all', 'active', 'attention'] };
+    return;
+  }
+  // **`groups[].agentPaths` has to be DECLARED, or it cannot be converted.**
+  // conf builds Ajv with `removeAdditional`, so a key this schema does not name
+  // is deleted from the object on the way in — not preserved, deleted. Leaving
+  // it undeclared meant a section's membership was gone before any code could
+  // look at it, which is exactly the silent loss `ConfigManager.canonicalSidebar`
+  // exists to prevent (DOR-588 review). This is the ONE piece of the DOR-579
+  // widening that survives: the bare-path form of `pinned`/`muted` is no longer
+  // tolerated, and a config still in THAT shape takes the recovery path.
+  // `pinned`, `muted` and `groups[].items` all held a bare agent projectPath.
+  // Declared for the same reason as the key below: conf builds Ajv with
+  // `removeAdditional`, and a shape it refuses is a file it condemns — so
+  // widening here is what keeps the person's pins and mutes reachable long
+  // enough for `ConfigManager.canonicalSidebar` to convert them.
+  if (ctx.zodSchema === SidebarItemRefSchema) {
+    ctx.jsonSchema.anyOf = [{ type: 'string', minLength: 1 }, { oneOf: ctx.jsonSchema.oneOf }];
+    delete ctx.jsonSchema.oneOf;
+    return;
+  }
+  if (ctx.zodSchema === SidebarGroupSchema) {
+    const properties = ctx.jsonSchema.properties as
+      Record<string, Record<string, unknown>> | undefined;
+    if (!properties) return;
+    properties[retired.legacyMembersKey] = { type: 'array', items: { type: 'string' } };
+    // conf builds Ajv with `useDefaults`, so a declared `default` is WRITTEN IN
+    // during validation. Left alone, an un-migrated section would gain an empty
+    // `items` before anything could read its `agentPaths`, and the conversion —
+    // which treats a non-empty `items` as authoritative — would hand back an
+    // empty section. Dropping both keeps "absent" meaning absent.
+    delete properties.items?.default;
+    const required = ctx.jsonSchema.required;
+    if (Array.isArray(required)) {
+      ctx.jsonSchema.required = required.filter((key) => key !== 'items');
+    }
+  }
 }

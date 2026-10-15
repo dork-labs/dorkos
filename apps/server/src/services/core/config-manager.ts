@@ -100,11 +100,8 @@ import {
   USER_CONFIG_DEFAULTS,
   SENSITIVE_CONFIG_KEYS,
   ONBOARDING_STEPS,
-  SidebarItemRefSchema,
-  SidebarGroupSchema,
   ComposerPrefsSchema,
   NOTIFICATION_PREFS_DEFAULTS,
-  SidebarPrefsSchema,
   claudeAccountId,
   toSidebarItemRef,
 } from '@dorkos/shared/config-schema';
@@ -125,6 +122,7 @@ import { readStoredConfigForSalvage } from './config/salvage-read.js';
 import { loadConfigStore } from './config/load-store.js';
 import {
   tolerateLegacyClaudeAccountEncoding,
+  tolerateRetiredSidebarKeys,
   tolerateRetiredRoomKeys,
   tolerateRetiredRuntimeKeys,
   tolerateRetiredUiKeys,
@@ -3680,6 +3678,27 @@ export function seedDoeDefaultModel(store: {
 }
 
 /**
+ * Seed `server.lanAccess` as off where the stored `server` section lacks it.
+ *
+ * `server` is a section every stored config already carries, and conf's
+ * pre-migration merge is shallow, so a stored `server` object wins wholesale
+ * and never gains a new member on its own. This body is the only thing that
+ * writes the leaf to disk. It never touches a value already there, so a person
+ * who turned the switch on keeps it on, and running it twice changes nothing.
+ *
+ * @param store - The conf store, narrowed to the two calls this needs.
+ */
+export function seedLanAccess(store: {
+  get: (key: string) => unknown;
+  set: (key: string, value: unknown) => void;
+}): void {
+  const server = store.get('server');
+  if (server === null || typeof server !== 'object' || Array.isArray(server)) return;
+  if ('lanAccess' in server) return;
+  store.set('server', { ...server, lanAccess: false });
+}
+
+/**
  * Raise the engaged window from the old shipped defaults to the new ones
  * (DOR-2823): 10 minutes to 60, and 5 messages to 15.
  *
@@ -4757,96 +4776,13 @@ export const CONFIG_MIGRATIONS = {
   // 261006-225605, DOR-2739): an install that chose to be asked keeps Careful,
   // every other install moves to Trusted once and is shown a notice.
   '0.115.0': applyTrustedPosture,
+  // 0.115.0 has merged (the trusted posture above), so this opens 0.116.0.
+  // Frozen from merge; anything further opens `'0.117.0'`.
+  //
+  // Writes `server.lanAccess: false` into a stored `server` section that lacks
+  // it, and touches nothing else (DOR-2930). See `seedLanAccess`.
+  '0.116.0': seedLanAccess,
 } as const;
-
-/**
- * Declare the eight `ui.sidebar` keys the P2 redesign retired, so that a file
- * still carrying them CONVERGES on the first write instead of keeping them for
- * ever.
- *
- * ## What this is not
- *
- * It is no longer about loading such a file. `tolerateUnknownKeys` below already
- * accepts any key this build does not declare — that is the version-skew rule,
- * and it is what keeps a config written by a newer DorkOS from being condemned
- * by an older one. A retired key rides in on the same tolerance.
- *
- * ## What it is
- *
- * `ConfigManager.write` carries UNKNOWN keys across from disk, deliberately: an
- * older build saving a theme must not delete a newer build's settings one
- * section at a time. A retired key is the opposite case — it belongs to
- * yesterday rather than to tomorrow, and carrying it across means it never
- * leaves the file. Naming it here puts it back inside "what this build knows
- * about", so Zod's strip on the write path is final and the first write after an
- * upgrade cleans it up. `migrateSidebarSectionPrefs` moves what the keys MEANT;
- * this is what makes the husks go away on an install the migration never
- * reached.
- *
- * They are declared with their real types rather than as an open catchall: "let
- * yesterday's key through" must not quietly become "validate nothing".
- *
- * **The DOR-579 half of this override is gone** (DOR-588). It widened
- * `SidebarItemRefSchema` and `SidebarGroupSchema` so that bare agent paths and
- * `groups[].agentPaths` still loaded a release after the rename; that release
- * has shipped, the migration has run for everyone who has opened DorkOS since,
- * and a file still in that encoding takes the recovery path like any other
- * unreadable one — with protections salvaged
- * (`safe-defaults/protected-state.ts`).
- *
- * @param ctx - The `z.toJSONSchema` override context for one schema node.
- */
-function tolerateRetiredSidebarKeys(ctx: {
-  zodSchema: unknown;
-  jsonSchema: Record<string, unknown>;
-}): void {
-  if (ctx.zodSchema === SidebarPrefsSchema) {
-    const properties = ctx.jsonSchema.properties as
-      Record<string, Record<string, unknown>> | undefined;
-    if (!properties) return;
-    for (const key of Object.keys(RETIRED_SIDEBAR_COLLAPSE_KEYS)) {
-      properties[key] = { type: 'boolean' };
-    }
-    properties.groupsHintDismissed = { type: 'boolean' };
-    properties.ungroupedSortMode = { type: 'string', enum: ['name', 'recent'] };
-    properties.ungroupedDisplayFilter = { type: 'string', enum: ['all', 'active', 'attention'] };
-    return;
-  }
-  // **`groups[].agentPaths` has to be DECLARED, or it cannot be converted.**
-  // conf builds Ajv with `removeAdditional`, so a key this schema does not name
-  // is deleted from the object on the way in — not preserved, deleted. Leaving
-  // it undeclared meant a section's membership was gone before any code could
-  // look at it, which is exactly the silent loss `ConfigManager.canonicalSidebar`
-  // exists to prevent (DOR-588 review). This is the ONE piece of the DOR-579
-  // widening that survives: the bare-path form of `pinned`/`muted` is no longer
-  // tolerated, and a config still in THAT shape takes the recovery path.
-  // `pinned`, `muted` and `groups[].items` all held a bare agent projectPath.
-  // Declared for the same reason as the key below: conf builds Ajv with
-  // `removeAdditional`, and a shape it refuses is a file it condemns — so
-  // widening here is what keeps the person's pins and mutes reachable long
-  // enough for `ConfigManager.canonicalSidebar` to convert them.
-  if (ctx.zodSchema === SidebarItemRefSchema) {
-    ctx.jsonSchema.anyOf = [{ type: 'string', minLength: 1 }, { oneOf: ctx.jsonSchema.oneOf }];
-    delete ctx.jsonSchema.oneOf;
-    return;
-  }
-  if (ctx.zodSchema === SidebarGroupSchema) {
-    const properties = ctx.jsonSchema.properties as
-      Record<string, Record<string, unknown>> | undefined;
-    if (!properties) return;
-    properties[LEGACY_MEMBERS_KEY] = { type: 'array', items: { type: 'string' } };
-    // conf builds Ajv with `useDefaults`, so a declared `default` is WRITTEN IN
-    // during validation. Left alone, an un-migrated section would gain an empty
-    // `items` before anything could read its `agentPaths`, and the conversion —
-    // which treats a non-empty `items` as authoritative — would hand back an
-    // empty section. Dropping both keeps "absent" meaning absent.
-    delete properties.items?.default;
-    const required = ctx.jsonSchema.required;
-    if (Array.isArray(required)) {
-      ctx.jsonSchema.required = required.filter((key) => key !== 'items');
-    }
-  }
-}
 
 const jsonSchemaFull = z.toJSONSchema(UserConfigSchema, {
   target: 'jsonSchema2019-09',
@@ -4854,7 +4790,10 @@ const jsonSchemaFull = z.toJSONSchema(UserConfigSchema, {
   // one added later must join this function rather than replace the argument —
   // silently dropping the other is a whole config file condemned.
   override: (ctx) => {
-    tolerateRetiredSidebarKeys(ctx);
+    tolerateRetiredSidebarKeys(ctx, {
+      collapseKeys: Object.keys(RETIRED_SIDEBAR_COLLAPSE_KEYS),
+      legacyMembersKey: LEGACY_MEMBERS_KEY,
+    });
     tolerateLegacyClaudeAccountEncoding(ctx);
   },
 }) as { properties?: Record<string, unknown> };
