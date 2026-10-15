@@ -68,17 +68,7 @@ export function OwnerSignInScreen({
       {/* Lets a password manager match the saved login to this owner. */}
       <input type="email" autoComplete="username" value={ownerEmail} readOnly hidden aria-hidden />
       <div className="space-y-1.5">
-        <div className="flex items-baseline justify-between gap-2">
-          <Label htmlFor={passwordId}>Password</Label>
-          <button
-            type="button"
-            onClick={() => setShowReset((shown) => !shown)}
-            aria-expanded={showReset}
-            className="text-muted-foreground hover:text-foreground focus-visible:ring-ring rounded-sm text-xs underline underline-offset-2 focus-visible:ring-2 focus-visible:outline-none"
-          >
-            Forgot it?
-          </button>
-        </div>
+        <Label htmlFor={passwordId}>Password</Label>
         <PasswordInput
           id={passwordId}
           autoComplete="current-password"
@@ -87,6 +77,16 @@ export function OwnerSignInScreen({
           required
           autoFocus
         />
+        {/* After the field, not beside its label: the dialog focuses its first
+            control, and that has to be the password. */}
+        <button
+          type="button"
+          onClick={() => setShowReset((shown) => !shown)}
+          aria-expanded={showReset}
+          className="text-muted-foreground hover:text-foreground focus-visible:ring-ring rounded-sm text-xs underline underline-offset-2 focus-visible:ring-2 focus-visible:outline-none"
+        >
+          Forgot it?
+        </button>
         {showReset && (
           <p className="text-muted-foreground text-xs">
             Reset it in a terminal on this computer:{' '}
