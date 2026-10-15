@@ -12,6 +12,8 @@ status: ideation
 **Date:** 2026-03-01
 **Branch:** preflight/tunnel-remote-access-overhaul
 
+> **Later note (2026-10-14):** this plan says the server should always bind to `localhost`. That is still right for the tunnel itself, because the tunnel reaches `localhost` on its own. But the reason given, keeping devices on the same Wi-Fi out, came before DorkOS had login. Login is now required before DorkOS listens beyond your own computer, and letting devices on your Wi-Fi in is a separate setting you choose to turn on (DOR-2930). Read "always bind to localhost" below as "the tunnel never needs a wider bind", not as "DorkOS never accepts other devices on your network".
+
 ---
 
 ## 1) Intent & Assumptions
@@ -217,7 +219,7 @@ This is a bug fix + enhancement. Root causes for critical bugs:
 | --- | ------------------------------ | ----------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | 1   | Cross-tab tunnel status sync   | BroadcastChannel + SSE                    | Instant same-browser sync via BroadcastChannel, cross-device sync via SSE tunnel_status events. No polling overhead.                                                                                                                     |
 | 2   | CORS handling for tunnel       | Dynamic origin callback                   | Replace static allowlist with function callback checking `tunnelManager.status.url` at request time. Secure and automatic.                                                                                                               |
-| 3   | Network binding with tunnel    | Always bind to localhost                  | ngrok SDK reaches localhost servers. Removing 0.0.0.0 prevents LAN access bypassing tunnel auth.                                                                                                                                         |
+| 3   | Network binding with tunnel    | Always bind to localhost                  | ngrok SDK reaches localhost servers, so the tunnel never needs 0.0.0.0. (Wi-Fi access is now its own login-gated setting.)                                                                                                               |
 | 4   | UX scope                       | Full redesign with onboarding             | Fix all bugs + add custom domain field + first-run onboarding + connection quality indicator + terminal QR code + session sharing URL.                                                                                                   |
 | 5   | TunnelManager event emission   | EventEmitter mixin                        | TunnelManager extends EventEmitter. Emits `status_change` events. Routes/SSE handlers subscribe. Matches existing SessionBroadcaster pattern.                                                                                            |
 | 6   | SSE tunnel status delivery     | New `GET /api/tunnel/stream` endpoint     | Dedicated SSE endpoint for tunnel events (tunnel_connected, tunnel_disconnected, tunnel_error). Works independently of session selection. ~30 lines.                                                                                     |
