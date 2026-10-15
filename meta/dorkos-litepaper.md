@@ -194,7 +194,7 @@ They become one. Every message will be a DM, a group DM, a channel post or a thr
 - **Anything made locally can be pushed** to another DorkOS: DorkOS Cloud, or one you host yourself. It works like git remotes: publish a page, sync a doc, move an agent. Only one place runs an agent at a time. **Roadmap.**
 - **You can leave the cloud at any time.**
 
-DorkOS Cloud today offers accounts, remote access and credits. **Built.** Managed remote access through DorkOS Cloud is part of the launch. **Before launch.** Cloud agent computers, web sign-up and team spaces on DorkOS Cloud are part of the launch, late January 2027: not built yet. Cloud agents run on OpenCode at first. **For the launch.**
+DorkOS Cloud today offers accounts, remote access and credits. **Built.** Managed remote access through DorkOS Cloud is part of the launch. **Before launch.** Cloud agent computers, web sign-up and team spaces on DorkOS Cloud are part of the launch, early February 2027: not built yet. Cloud agents run on OpenCode at first. **For the launch.**
 
 ### Publishing
 

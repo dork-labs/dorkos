@@ -13,7 +13,7 @@ status: ideation
 **Linear:** DOR-2874 (umbrella, parent DOR-2735)
 **Decision being carried out:** ADR [261006-235238](../../decisions/261006-235238-one-dorkos-server-in-every-size.md), moved before launch by Dorian on 2026-10-12
 
-> **Changed 2026-10-15 by [`everything-is-a-space`](../everything-is-a-space/02-specification.md) (ADR `261015-042933`).** Launch moves to late January 2027; December 8 is the Community Space soft launch. Requirement 11 changes: team spaces on DorkOS Cloud are in launch scope. Requirement 5 changes for Cloud team spaces (members sign in with a DorkOS account), and requirement 6 is met by the session relay into your own DorkOS in the cloud. The specification's banner lists what changes for the steps.
+> **Changed 2026-10-15 by [`everything-is-a-space`](../everything-is-a-space/02-specification.md) (ADR `261015-042933`).** Launch moves to late January 2027 (then, the same day, to early February 2027: ADR `261015-125850`); December 8 is the Community Space soft launch. Requirement 11 changes: team spaces on DorkOS Cloud are in launch scope. Requirement 5 changes for Cloud team spaces (members sign in with a DorkOS account), and requirement 6 is met by the session relay into your own DorkOS in the cloud. The specification's banner lists what changes for the steps.
 
 ## 1) Intent and assumptions
 

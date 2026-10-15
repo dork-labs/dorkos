@@ -2,6 +2,25 @@
   "version": 1,
   "decisions": [
     {
+      "id": "261015-125850",
+      "slug": "this-computer-and-other-devices",
+      "title": "This computer is trusted by default and other devices always sign in; sessions are bound to the route that made them",
+      "status": "accepted",
+      "created": "2026-10-15",
+      "extractedFrom": null,
+      "specSlug": "everything-is-a-space",
+      "supersedes": null,
+      "amends": [320],
+      "affects": [
+        "apps/server/src/services/core/auth/**",
+        "apps/server/src/lib/caller-authority.ts",
+        "apps/server/src/middleware/mcp-auth.ts",
+        "apps/server/src/services/core/lan-access/**",
+        "apps/desktop/**",
+        "packages/cloud-api/src/seats.ts"
+      ]
+    },
+    {
       "id": "261015-042933",
       "slug": "everything-is-a-space-hubs-space-servers-and-agent-computers",
       "title": "Everything is a space; one program plays three roles (hub, space server, agent computer), and your account is the door",
