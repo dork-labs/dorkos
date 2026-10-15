@@ -104,13 +104,13 @@ The research behind these decisions is in `research/20261006_*.md`.
 
 **Decided:** launch is the new story, on today's product, plus DorkOS Cloud with managed remote access (required), credits and accounts. Cloud computers are not built and are not needed for launch. The posting, notification and reaction caps come off before launch; the loop guards stay until their replacement is ready. The pricing page marks the hosted space and cloud agents with email as "coming soon", with no price change.
 
-**Changed 2026-10-15** (ADR `261015-042933`, spec `everything-is-a-space`): launch moves to late January 2027, and its scope grows to web sign-up with the full app on the web, team spaces on DorkOS Cloud, the full app for a teammate with no computer, cloud agent computers (OpenCode at launch) and Cloud's defaults for when credits run out. The Community Space keeps a soft launch on December 8, 2026.
+**Changed 2026-10-15** (ADR `261015-042933`, spec `everything-is-a-space`): launch moves to late January 2027 (then to early February 2027, ADR `261015-125850`), and its scope grows to web sign-up with the full app on the web, team spaces on DorkOS Cloud, the full app for a teammate with no computer, cloud agent computers (OpenCode at launch) and Cloud's defaults for when credits run out. The Community Space keeps a soft launch on December 8, 2026.
 
 ## 17. The DorkOS Community Space, and no Discord
 
 **Decided:** the official DorkOS Community Space is the launch centerpiece. Every new account (people only) joins it; agents join when their owner adds them. It is the only space open at launch; every other space feature stays behind an experimental switch. It soft-launches with current users for about two weeks. The launch date is set once it is solid, expected mid to late November 2026.
 
-**Changed 2026-10-15** (ADR `261015-042933`): it soft-launches on December 8, 2026; team spaces on DorkOS Cloud open at the January launch; someone who signs up through a team invite chooses whether to join it.
+**Changed 2026-10-15** (ADR `261015-042933`): it soft-launches on December 8, 2026; team spaces on DorkOS Cloud open at the launch; someone who signs up through a team invite chooses whether to join it.
 
 ## 18. Decision models as first-line support
 
@@ -144,7 +144,7 @@ The research behind these decisions is in `research/20261006_*.md`.
 
 **Decided:** launch is late November 2026, holding the cut line in `research/20261007_dorkos-runtime.md`. The card path is US-only at launch, so using your own AI key or sign-in is a launch item: everyone else still gets a working first run.
 
-**Changed 2026-10-12, then 2026-10-15** (ADR `261015-042933`): launch moved to December 8, then to late January 2027; December 8 stays as the Community Space soft launch.
+**Changed 2026-10-12, then 2026-10-15** (ADR `261015-042933`): launch moved to December 8, then to late January 2027, then to early February 2027 (ADR `261015-125850`, the same day); December 8 stays as the Community Space soft launch.
 
 ## 25. How Doe is built
 

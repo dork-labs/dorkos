@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import tokenFixture from '@dork-labs/cloud-api/fixtures/v1/inference/token.json' with { type: 'json' };
+import cloudTokenFixture from '@dork-labs/cloud-api/fixtures/v1/inference/token.json' with { type: 'json' };
 import { logger } from '../../../../lib/logger.js';
 
 const link = vi.hoisted(() => ({
@@ -34,6 +34,16 @@ import {
 } from '../credits-inference.js';
 
 const session = { authenticated: true, instanceId: 'service-issued-id', scopes: [] };
+
+/**
+ * The contract fixture carries a fixed `expiresAt` that the real clock eventually
+ * passes (it did on 2026-10-15), and an expired token makes credits read not-ready.
+ * These tests are about identity and ordering, not expiry, so keep the token live.
+ */
+const tokenFixture = {
+  ...cloudTokenFixture,
+  expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+};
 
 function replaceManager() {
   const listeners = new Set<(change: { paths: readonly string[] }) => void>();

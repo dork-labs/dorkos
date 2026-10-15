@@ -13,7 +13,10 @@ import { TransportProvider } from '@/layers/shared/model';
 import { TooltipProvider } from '@/layers/shared/ui';
 import { RemoteCommunitySurface } from '../ui/RemoteCommunitySurface';
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  vi.restoreAllMocks();
+});
 // A confirmed post scrolls the timeline to it; jsdom has no layout to scroll.
 beforeAll(() => {
   HTMLElement.prototype.scrollTo ??= vi.fn();
@@ -207,6 +210,11 @@ describe('a person’s standing in a space channel', () => {
   });
 
   it('counts down slow mode after a held post, with the message back in the box', async () => {
+    // A clock that creeps forward a microsecond per read: no two reads agree, as on a real
+    // machine, yet a whole second never passes, so the countdown cannot tick under the
+    // assertion on a slow runner. The space said 12s, so the box says 12s, not 13s.
+    let clock = Date.parse('2026-10-13T12:00:00Z');
+    vi.spyOn(Date, 'now').mockImplementation(() => (clock += 0.001));
     const transport = mount(standing({ slowModeSeconds: 30 }));
     expect(await screen.findByText('Slow mode: one message every 30s.')).toBeInTheDocument();
     vi.mocked(transport.postRemoteCommunityEntry).mockRejectedValueOnce(

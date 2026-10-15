@@ -121,8 +121,11 @@ export function useRemoteCommunityConduct({
         // Count down only the wait the space named; without one, sending stays open.
         const waitMs = (cause as { retryAfterMs?: unknown }).retryAfterMs;
         if (typeof waitMs === 'number' && waitMs > 0) {
-          setNow(Date.now());
-          setSlowUntil(Date.now() + waitMs);
+          // One clock read for both, so the countdown starts at the wait the space named:
+          // two reads a millisecond apart showed one second more (13s for a 12s wait).
+          const at = Date.now();
+          setNow(at);
+          setSlowUntil(at + waitMs);
         }
         return;
       }
