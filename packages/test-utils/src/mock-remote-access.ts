@@ -7,7 +7,7 @@
  */
 import { vi } from 'vitest';
 import type { Transport } from '@dorkos/shared/transport';
-import type { RemoteAccessReport } from '@dorkos/shared/types';
+import type { LanAccessStatus, RemoteAccessReport } from '@dorkos/shared/types';
 
 /**
  * A remote access report from a server where managed access is not offered:
@@ -45,6 +45,25 @@ export function createRemoteAccessReport(
   };
 }
 
+/**
+ * Wi-Fi access as a fresh install has it (DOR-2930): off, nothing listening,
+ * `DORKOS_HOST` not set. Pass what a test is about.
+ *
+ * @param overrides - Fields to replace.
+ */
+export function createLanAccessStatus(overrides: Partial<LanAccessStatus> = {}): LanAccessStatus {
+  return {
+    enabled: false,
+    listening: false,
+    envHost: null,
+    port: 4242,
+    localName: 'studio.local',
+    addresses: ['192.168.1.20'],
+    error: null,
+    ...overrides,
+  };
+}
+
 /** The remote access methods of the Transport port, the ngrok pair included. */
 type RemoteAccessMethods = Pick<
   Transport,
@@ -55,6 +74,8 @@ type RemoteAccessMethods = Pick<
   | 'setRemoteAccessMode'
   | 'closeRemoteAccess'
   | 'withdrawRemoteAccess'
+  | 'getLanAccess'
+  | 'setLanAccess'
 >;
 
 /**
@@ -74,5 +95,7 @@ export function remoteAccessTransportMocks(): RemoteAccessMethods {
     setRemoteAccessMode: vi.fn().mockResolvedValue(HIDDEN_REMOTE_ACCESS_REPORT),
     closeRemoteAccess: vi.fn().mockResolvedValue(HIDDEN_REMOTE_ACCESS_REPORT),
     withdrawRemoteAccess: vi.fn().mockResolvedValue(HIDDEN_REMOTE_ACCESS_REPORT),
+    getLanAccess: vi.fn().mockResolvedValue(createLanAccessStatus()),
+    setLanAccess: vi.fn().mockResolvedValue(createLanAccessStatus()),
   };
 }

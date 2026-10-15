@@ -241,6 +241,8 @@ export const CONFIG_WRITE_POLICY = {
   // launch (`cli.ts`), so widening it here widens what DorkOS may touch.
   'server.boundary': 'operator-only',
   'server.open': 'agent-writable',
+  // Opens DorkOS to every device on the same network (DOR-2930).
+  'server.lanAccess': 'operator-only',
 
   // Public exposure, the hostname it happens on, whose ngrok account carries it,
   // and the second factor at that edge.
@@ -976,6 +978,7 @@ export const OPERATOR_ONLY_STAKES: readonly OperatorOnlyStakeGroup[] = [
       'tunnel.domain',
       'tunnel.authtoken',
       'tunnel.auth',
+      'server.lanAccess',
       ...CLOUD_REMOTE_REACH_PATHS,
       'mcp.enabled',
       'browser.enabled',

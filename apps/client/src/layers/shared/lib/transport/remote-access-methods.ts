@@ -7,7 +7,7 @@
  *
  * @module shared/lib/transport/remote-access-methods
  */
-import type { RemoteAccessReport } from '@dorkos/shared/types';
+import type { LanAccessStatus, RemoteAccessReport } from '@dorkos/shared/types';
 import type { RemoteAccessMode } from '@dorkos/shared/config-schema';
 import { fetchJSON } from './http-client';
 
@@ -43,6 +43,18 @@ export function createRemoteAccessMethods(baseUrl: string) {
     withdrawRemoteAccess(): Promise<RemoteAccessReport> {
       return fetchJSON<RemoteAccessReport>(baseUrl, '/remote-access/withdraw', {
         method: 'POST',
+      });
+    },
+
+    getLanAccess(): Promise<LanAccessStatus> {
+      return fetchJSON<LanAccessStatus>(baseUrl, '/lan-access');
+    },
+
+    setLanAccess(enabled: boolean): Promise<LanAccessStatus> {
+      return fetchJSON<LanAccessStatus>(baseUrl, '/lan-access', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ enabled }),
       });
     },
   };

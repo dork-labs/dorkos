@@ -100,6 +100,10 @@ DorkOS supports ngrok tunnels (a service that gives your local machine a public 
   tunnel URL can access your sessions.
 </Callout>
 
+### Wi-Fi access
+
+`server.lanAccess` (default `false`) is the **Let devices on my Wi-Fi in** switch in **Settings → Remote access**. On, other devices on the same network can open DorkOS at this computer's `.local` name, with no restart. It needs a login, and it stays off while `DORKOS_HOST` is set, because that variable already decides where DorkOS listens. See [Securing your instance](/docs/self-hosting/securing-your-instance#on-your-own-wi-fi).
+
 ### Relay Configuration
 
 Relay is the messaging layer that lets agents reach you on Telegram, notify each other, and connect to external platforms. It is on by default. You can turn it on or off without a terminal: switch **Agent messaging** in Settings › Advanced › Tools, or choose **Turn on chat apps** on the Connections page, then restart DorkOS when it asks. The environment variable below wins over that switch whenever it is set. See the [Relay Messaging guide](/docs/guides/relay-messaging) for setup details.

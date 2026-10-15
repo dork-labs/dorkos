@@ -300,6 +300,19 @@ export function createPlaygroundTransport(): Transport {
       if (prop === 'getRemoteAccessReport') {
         return async () => playgroundRemoteReport;
       }
+      // Wi-Fi access is a switch the playground can flip too; `null` is not a
+      // status, and the card reads its addresses off one.
+      if (prop === 'getLanAccess' || prop === 'setLanAccess') {
+        return async (enabled?: boolean) => ({
+          enabled: enabled ?? false,
+          listening: enabled ?? false,
+          envHost: null,
+          port: 4242,
+          localName: 'studio.local',
+          addresses: ['192.168.1.20'],
+          error: null,
+        });
+      }
       // One named room, so the `AppTabStrip` showcase can demo a channel tab
       // reading "#general" the way the real header does — every other id
       // still falls through to the `null` default below, the honest answer

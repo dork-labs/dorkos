@@ -1,3 +1,6 @@
+// First: the app mints ids while it loads, and plain `http` to another device
+// has no `crypto.randomUUID` (see the module).
+import './random-uuid-polyfill';
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 

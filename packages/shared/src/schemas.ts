@@ -4319,6 +4319,36 @@ export const TunnelStatusSchema = z
 
 export type TunnelStatus = z.infer<typeof TunnelStatusSchema>;
 
+// === Wi-Fi Access (DOR-2930) ===
+
+/**
+ * Whether other devices on the same network can open DorkOS, and the addresses
+ * they use. Read by Settings → Remote access; every write answers with it.
+ */
+export const LanAccessStatusSchema = z
+  .object({
+    /** The `server.lanAccess` setting: the person asked for it. */
+    enabled: z.boolean(),
+    /** Whether the network listener is open right now. */
+    listening: z.boolean(),
+    /**
+     * `DORKOS_HOST` when it is set in the environment. It decides where DorkOS
+     * listens, so the switch does nothing while it is set.
+     */
+    envHost: z.string().nullable(),
+    /** The port other devices use, the same one this computer uses. */
+    port: z.number().int(),
+    /** This computer's Bonjour name, e.g. `studio.local`, when it has one. */
+    localName: z.string().nullable(),
+    /** This computer's current network addresses (IPv4), a backup for the name. */
+    addresses: z.array(z.string()),
+    /** Why the listener could not open, when it could not. */
+    error: z.string().nullable(),
+  })
+  .openapi('LanAccessStatus');
+
+export type LanAccessStatus = z.infer<typeof LanAccessStatusSchema>;
+
 // === Remote Access Report ===
 
 /**

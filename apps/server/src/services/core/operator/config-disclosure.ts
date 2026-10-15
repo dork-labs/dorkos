@@ -111,6 +111,7 @@ export const CONFIG_DISCLOSURE = {
   'server.cwd': 'expose',
   'server.boundary': 'expose',
   'server.open': 'expose',
+  'server.lanAccess': 'expose',
 
   'tunnel.enabled': 'expose',
   // The public hostname this instance answers on; `GET /api/config` already

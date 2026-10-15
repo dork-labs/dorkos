@@ -57,6 +57,17 @@ Want to reach DorkOS from your phone or another computer? Turn on login first. I
 - **Starting a tunnel** with login off routes you into owner-account creation first, with the copy _"Exposing DorkOS requires a login."_ After the owner exists and login is on, the tunnel starts.
 - **Binding to a non-loopback host** (setting `DORKOS_HOST` to anything other than `localhost` / `127.0.0.1` / `::1`) with login not configured **refuses to start** with an actionable error. Enable login first, then restart.
 
+### On your own Wi-Fi
+
+To open DorkOS on a phone or tablet in the same home or office, you don't need a tunnel. In **Settings → Remote access**, turn on **Let devices on my Wi-Fi in**.
+
+- With login off, DorkOS walks you into creating the owner account first, the same way the tunnel does.
+- It takes effect right away, with no restart. Settings then shows this computer's address, like `http://studio.local:4242`, a QR code to scan, and its current IP address as a backup.
+- Turning it off closes the door at once. Turning login off turns it off too.
+- The connection between the two devices is **not encrypted yet** (plain `http`), so use it on a network you trust, not on café or hotel Wi-Fi.
+- If `DORKOS_HOST` is set, it decides where DorkOS listens, and the switch stays off.
+- The first time, your computer may ask whether DorkOS may accept incoming connections. Say yes.
+
 Remote visitors reaching an exposed instance get the **sign-in screen**: static assets load so the login page renders, but every API call requires a valid sign-in.
 
 <Callout type="warn">

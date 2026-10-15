@@ -149,13 +149,16 @@ An update that's waiting also installs itself the next time you quit DorkOS. Clo
 
 If an update doesn't apply for some reason, download the latest installer from the same link you used the first time and run it again. Your chats, agents, and settings live outside the app itself, so reinstalling doesn't lose anything.
 
+## Opening DorkOS on your phone or tablet
+
+On the same home or office Wi-Fi, turn on **Let devices on my Wi-Fi in** in **Settings → Remote access**, then scan the QR code it shows. It needs a login, and the connection isn't encrypted yet; see [Securing your instance](/docs/self-hosting/securing-your-instance#on-your-own-wi-fi). From anywhere else, use remote access in the same tab.
+
 ## When to use the CLI or the web app instead
 
 The desktop app is a good fit if you want DorkOS running locally, all the time, without a terminal. A few things it doesn't do:
 
 - **Run on Linux.** There's no Linux build yet; use the [one-liner, npm, or Docker](/docs/getting-started/installation).
 - **Run on an Intel Mac.** The macOS build is Apple Silicon only.
-- **Be reached from another device.** The desktop app only ever listens on your own machine. To reach DorkOS from your phone or another computer, run it with the CLI or [Docker](/docs/self-hosting/docker) and point `DORKOS_HOST` at your network instead; see [Deployment](/docs/self-hosting/deployment).
 
 For any of those, the [web app](/docs/getting-started/installation) is the same DorkOS, just reached through a browser tab.
 
