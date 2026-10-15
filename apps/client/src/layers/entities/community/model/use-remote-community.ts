@@ -1,5 +1,6 @@
 import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
 import type { CommunityCursor } from '@dorkos/shared/community-adapter';
+import type { RemoteCommunityMembersResponse } from '@dorkos/shared/community-views';
 import { useTransport } from '@/layers/shared/model';
 import {
   communityKeys,
@@ -71,6 +72,24 @@ export function useRemoteCommunityHistory(
   });
 }
 
+/** How often a roster showing agents' availability is read again, in milliseconds. */
+export const REMOTE_MEMBERS_AVAILABILITY_REFRESH_MS = 60_000;
+
+/**
+ * Read a roster again every {@link REMOTE_MEMBERS_AVAILABILITY_REFRESH_MS} only while some row
+ * carries availability, so "Available" does not outlast a computer that went to sleep (DOR-2878).
+ * A roster from a space without availability, or with people only, is never polled.
+ *
+ * @param data - The roster as last read, if any.
+ */
+export function remoteMembersRefetchInterval(
+  data: RemoteCommunityMembersResponse | undefined
+): number | false {
+  return data?.members.some((member) => member.availability !== undefined)
+    ? REMOTE_MEMBERS_AVAILABILITY_REFRESH_MS
+    : false;
+}
+
 /** Roster rows preserve immutable member IDs and the human who owns each agent. */
 export function useRemoteCommunityMembers(
   ref: string,
@@ -89,6 +108,7 @@ export function useRemoteCommunityMembers(
         transport.listRemoteCommunityMembers(ref, roomId)
       ),
     enabled: enabled && authority !== null,
+    refetchInterval: (query) => remoteMembersRefetchInterval(query.state.data),
   });
 }
 
