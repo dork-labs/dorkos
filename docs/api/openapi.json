@@ -2282,6 +2282,33 @@
           "useCredits"
         ]
       },
+      "WriteFileRequest": {
+        "type": "object",
+        "properties": {
+          "cwd": {
+            "type": "string",
+            "minLength": 1
+          },
+          "path": {
+            "type": "string",
+            "minLength": 1
+          },
+          "content": {
+            "type": "string"
+          },
+          "expectedHash": {
+            "type": "string"
+          },
+          "expectedContent": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "cwd",
+          "path",
+          "content"
+        ]
+      },
       "HealthResponse": {
         "type": "object",
         "properties": {
@@ -24085,6 +24112,202 @@
                     "error"
                   ],
                   "additionalProperties": false
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/files/content": {
+      "put": {
+        "tags": [
+          "Files"
+        ],
+        "summary": "Save an existing file within the working directory",
+        "description": "Confined to cwd. Cooperating ordinary and checkbox writes share the installation file gate. A stale content baseline returns 409 with current content. A replaced physical identity returns 412 FILE_IDENTITY_CHANGED; reload before saving again. This does not create files or produce a document event receipt.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WriteFileRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Content saved or already identical",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean",
+                      "enum": [
+                        true
+                      ]
+                    },
+                    "hash": {
+                      "type": "string"
+                    },
+                    "effect": {
+                      "type": "string",
+                      "enum": [
+                        "no_op",
+                        "changed"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "ok",
+                    "hash",
+                    "effect"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid body, path or non-file target",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Outside the permitted directory or permission denied",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Existing file not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The content baseline no longer matches",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "CONFLICT"
+                      ]
+                    },
+                    "currentHash": {
+                      "type": "string"
+                    },
+                    "currentContent": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code",
+                    "currentHash",
+                    "currentContent"
+                  ]
+                }
+              }
+            }
+          },
+          "412": {
+            "description": "The physical identity changed before replacement; reload the file",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "FILE_IDENTITY_CHANGED"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Save unavailable; includes unresolved checkbox admission evidence",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
                 }
               }
             }

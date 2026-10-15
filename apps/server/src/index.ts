@@ -3298,7 +3298,7 @@ async function start() {
     stopDocInputHints();
     stopDocTurnHints();
     stopDocInteractionHints();
-    const draining = docDeliveryRunner!.stop();
+    const draining = Promise.all([docDeliveryRunner!.stop(), docChannelHttp.fileWrites.stop()]);
     docDispatchLifetime.abort();
     await Promise.all([draining, suspendPrivateDispatches(docDispatchLifetime.signal)]);
   };
