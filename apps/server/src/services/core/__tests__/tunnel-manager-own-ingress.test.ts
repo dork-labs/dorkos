@@ -81,6 +81,22 @@ describe('TunnelManager and the own-tunnel ingress', () => {
     expect(ingress.close).toHaveBeenCalledTimes(1);
   });
 
+  // Purpose: after a stop ngrok refused, a new start that fails must not
+  // close the ingress either: the old listener may still forward into it.
+  it('keeps the ingress open when a start fails while an old listener is unclosed', async () => {
+    await manager.start({ port: 4242 });
+    const disconnect = ngrok.disconnect as unknown as ReturnType<typeof vi.fn>;
+    mockListener.close.mockRejectedValueOnce(new Error('ngrok said no'));
+    disconnect.mockRejectedValueOnce(new Error('still no'));
+    await expect(manager.stopOwnTunnel()).rejects.toThrow('ngrok said no');
+
+    forward.mockRejectedValueOnce(new Error('domain in use'));
+    await expect(manager.start({ port: 4242 })).rejects.toThrow('domain in use');
+    mockListener.url.mockReturnValueOnce(null);
+    await expect(manager.start({ port: 4242 })).rejects.toThrow('no public URL');
+    expect(ingress.close).not.toHaveBeenCalled();
+  });
+
   // Purpose: a stop that lands while ngrok is still opening wins, and the
   // ingress the open started is closed rather than left listening.
   it('closes the ingress when a stop overtakes a pending open', async () => {

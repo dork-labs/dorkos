@@ -257,7 +257,7 @@ export class TunnelManager extends EventEmitter {
       const addr = ingress ? await ingress.open() : config.port;
       listener = await ngrok.forward(this.byoForwardOptions(config, addr));
     } catch (err) {
-      await ingress?.close();
+      await this.closeOwnTunnelIngress();
       throw err;
     }
     const url = listener.url();
@@ -268,13 +268,13 @@ export class TunnelManager extends EventEmitter {
     // unusable was already "running". Close it and say so.
     if (!url) {
       await listener.close().catch(() => {});
-      await ingress?.close();
+      await this.closeOwnTunnelIngress();
       throw new Error('ngrok returned no public URL for the tunnel');
     }
     // A stop() while ngrok was answering wins: the tunnel it stopped stays shut.
     if (epoch !== this.byoEpoch || this.managedForwarding.isOpen) {
       await listener.close().catch(() => {});
-      await ingress?.close();
+      await this.closeOwnTunnelIngress();
       throw new Error('The tunnel was closed while it was opening.');
     }
 
@@ -350,13 +350,21 @@ export class TunnelManager extends EventEmitter {
     } finally {
       this.listener = null;
       this.byoUnclosed = unclosed;
-      // Kept open while ngrok may still be forwarding: closing it would free its
-      // port for whatever binds there next, and make that public. Its requests
-      // stay marked and meet the login gate, as before.
-      if (unclosed === null) await this.ownTunnelIngress?.close();
+      await this.closeOwnTunnelIngress();
       this.updateStatus({ ...DEFAULT_STATUS });
     }
     if (failure !== null) throw failure;
+  }
+
+  /**
+   * Close the own-tunnel ingress, unless an own-account listener ngrok would
+   * not close may still be forwarding into it. Closing it then would free its
+   * port for whatever binds there next, and make that public; kept open, its
+   * requests stay marked and meet the login gate, as before. Every close site
+   * goes through here so none can disagree.
+   */
+  private async closeOwnTunnelIngress(): Promise<void> {
+    if (this.byoUnclosed === null) await this.ownTunnelIngress?.close();
   }
 
   /** Close one own-account listener, falling back to `disconnect`; the error, or `null` when it closed. */
