@@ -42,9 +42,10 @@ export function OwnerSetupHost() {
   }, [transport, queryClient, request]);
 
   const signInInstead = useCallback(
-    async (typedEmail: string) => {
+    async (knownOwnerEmail: string | null) => {
       const { data } = await refetchConfig();
-      setFoundOwnerEmail(data?.auth?.ownerEmail ?? typedEmail);
+      // Null leaves the create form up, saying an owner exists.
+      setFoundOwnerEmail(data?.auth?.ownerEmail ?? knownOwnerEmail);
     },
     [refetchConfig]
   );

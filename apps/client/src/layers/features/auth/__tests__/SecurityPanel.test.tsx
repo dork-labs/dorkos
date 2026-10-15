@@ -245,9 +245,10 @@ describe('SecurityPanel', () => {
     });
 
     it.each([
-      ['the owner’s own email', DUPLICATE_EMAIL],
+      ['the owner’s own email', 'dorian@example.com', DUPLICATE_EMAIL],
       [
         'another email',
+        'someone-else@example.com',
         {
           data: null,
           error: {
@@ -259,7 +260,7 @@ describe('SecurityPanel', () => {
       ],
     ])(
       'a sign-up with %s lands on the sign-in step, never turning login on unverified',
-      async (_label, refusal) => {
+      async (_label, typedEmail, refusal) => {
         // The exact dead end: the panel's config read had not seen the owner,
         // so the create form opened, and sign-up refused.
         const user = userEvent.setup();
@@ -272,16 +273,46 @@ describe('SecurityPanel', () => {
 
         await user.click(await screen.findByRole('switch', { name: /require login/i }));
         vi.mocked(transport.getConfig).mockResolvedValue(configWith(false, 'dorian@example.com'));
-        await user.type(screen.getByLabelText('Email'), 'dorian@example.com');
+        await user.type(screen.getByLabelText('Email'), typedEmail);
         await user.type(screen.getByLabelText('Password'), 'sup3rsecret');
         await user.type(screen.getByLabelText('Confirm password'), 'sup3rsecret');
         await user.click(screen.getByRole('button', { name: /create account & require login/i }));
 
+        // Always the owner's address from the fresh read, never just what was typed.
         const dialog = await screen.findByRole('dialog', { name: /turn on login/i });
         expect(dialog).toHaveTextContent('Sign in as dorian@example.com');
         expect(screen.queryByText(/user already exists/i)).not.toBeInTheDocument();
         expect(transport.updateConfig).not.toHaveBeenCalled();
       }
     );
+    it('a closed registration with no owner email found stays put and says why', async () => {
+      const user = userEvent.setup();
+      const signUpEmail = vi.fn().mockResolvedValue({
+        data: null,
+        error: {
+          message: 'Registration is closed.',
+          status: 403,
+          code: 'REGISTRATION_CLOSED',
+        },
+      });
+      const { transport } = setup({
+        authEnabled: false,
+        ownerEmail: null,
+        client: createFakeAuthClient({ signUpEmail }),
+      });
+
+      await user.click(await screen.findByRole('switch', { name: /require login/i }));
+      await user.type(screen.getByLabelText('Email'), 'someone-else@example.com');
+      await user.type(screen.getByLabelText('Password'), 'sup3rsecret');
+      await user.type(screen.getByLabelText('Confirm password'), 'sup3rsecret');
+      await user.click(screen.getByRole('button', { name: /create account & require login/i }));
+
+      expect(await screen.findByRole('alert')).toHaveTextContent(
+        'This computer already has an owner.'
+      );
+      expect(screen.queryByRole('dialog', { name: /turn on login/i })).not.toBeInTheDocument();
+      expect(screen.queryByText(/registration is closed/i)).not.toBeInTheDocument();
+      expect(transport.updateConfig).not.toHaveBeenCalled();
+    });
   });
 });

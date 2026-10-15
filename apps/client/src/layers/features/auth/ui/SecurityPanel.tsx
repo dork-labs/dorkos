@@ -60,9 +60,11 @@ export function SecurityPanel() {
 
   // The create form found an owner after all (a stale config read, or another
   // window made one). Never turn login on from here: ask that owner to sign in.
-  async function signInInstead(typedEmail: string) {
+  async function signInInstead(knownOwnerEmail: string | null) {
     const { data } = await refetchConfig();
-    setStep({ kind: 'sign-in', email: data?.auth?.ownerEmail ?? typedEmail });
+    const email = data?.auth?.ownerEmail ?? knownOwnerEmail;
+    // No email to sign in as: the form keeps saying an owner exists.
+    if (email) setStep({ kind: 'sign-in', email });
   }
 
   return (

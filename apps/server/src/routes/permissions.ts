@@ -42,7 +42,9 @@ import {
   resolveDecisionAuthority,
   type LoginEnabledLookup,
 } from '../services/core/approvals/index.js';
-import { readOwnerAccount } from '../services/core/auth/index.js';
+import { getUserById, readOwnerAccount } from '../services/core/auth/index.js';
+import { configManager } from '../services/core/config-manager.js';
+import { resolveAnswererName } from '../services/identity/operator-profile.js';
 import type { RequestUser } from '../services/core/auth/session-gate.js';
 import type { ActivityService } from '../services/activity/activity-service.js';
 import {
@@ -105,8 +107,29 @@ export function writerForPosture(
 ): PermissionWriter {
   if (posture === 'local-trust') return personWriter('local-trust');
   const owner = readOwnerAccount();
-  const name = owner && user && owner.id === user.userId ? owner.name : (user?.userId ?? 'you');
+  const name =
+    owner && user && owner.id === user.userId ? ownerLabel(owner.id) : (user?.userId ?? 'you');
   return personWriter('signed-in-operator', { id: user?.userId ?? 'unknown', name });
+}
+
+/**
+ * What a permission's history calls the signed-in owner: the same name ladder
+ * the roster uses, then their email. An account made since DOR-2964 has an empty
+ * name, and an older one may carry its email as the name, so the raw column
+ * would print "You (signed in as )" or a name that is only an address.
+ *
+ * @param ownerId - The owner account's id.
+ */
+function ownerLabel(ownerId: string): string {
+  const account = getUserById(ownerId);
+  return (
+    resolveAnswererName({
+      account: () => account,
+      configDisplayName: () => configManager.get('profile')?.displayName ?? null,
+    }) ??
+    account?.email ??
+    'you'
+  );
 }
 
 /** Answer a service refusal, or rethrow anything else. */

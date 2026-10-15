@@ -27,13 +27,16 @@ interface OwnerSetupScreenProps {
   /** Called after the owner account is created. */
   onCreated: () => void | Promise<void>;
   /**
-   * Called when sign-up is rejected because an owner already exists, with the
-   * email that was typed. The host must then ask the owner to sign in
+   * Called when sign-up is rejected because an owner already exists. The
+   * argument is the owner's email when the refusal proves it (the typed email
+   * is already taken), and `null` when it does not (registration is closed to
+   * any other address). The host must then ask the owner to sign in
    * (`OwnerSignInScreen`) and turn login on only after that succeeds: this
-   * proves nothing about who is at the keyboard. When omitted, a "sign in
-   * instead" message is shown.
+   * proves nothing about who is at the keyboard. Either way the form says an
+   * owner exists, so a host that cannot find the owner's email leaves the
+   * person with a true sentence rather than the auth layer's own words.
    */
-  onOwnerExists?: (email: string) => void | Promise<void>;
+  onOwnerExists?: (knownOwnerEmail: string | null) => void | Promise<void>;
   /** Optional cancel affordance. */
   onCancel?: () => void;
 }
@@ -87,17 +90,18 @@ export function OwnerSetupScreen({
       await onCreated();
       return;
     }
-    // An owner already exists: hand over to the host's sign-in step.
+    // An owner already exists: hand over to the host's sign-in step. Only a
+    // duplicate proves the typed email is the owner's; a single-owner install
+    // has no other account it could belong to.
     if (isOwnerExists(result.error.code) && onOwnerExists) {
-      await onOwnerExists(email);
+      await onOwnerExists(result.error.code === 'REGISTRATION_CLOSED' ? null : email);
     }
   }
 
-  const registrationClosed = isOwnerExists(error?.code) && !onOwnerExists;
   const localCopy: AuthErrorCopy | null = localError ? { message: localError, detail: null } : null;
   const errorCopy =
     localCopy ??
-    (registrationClosed
+    (isOwnerExists(error?.code)
       ? {
           message: 'This computer already has an owner. Sign in instead.',
           detail: null,
