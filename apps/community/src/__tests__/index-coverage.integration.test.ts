@@ -346,11 +346,13 @@ describe('per-job and per-post queries', () => {
     const [community, channel] = [seeded('a'), seeded('a:c:1')];
     const replaced = await db.query(
       `SELECT m.id,m.display_name,m.handle,m.role,NULL::uuid AS owner_member_id,
-         NULL::text AS owner_display_name,'human'::text AS kind,cm.joined_at
+         NULL::text AS owner_display_name,'human'::text AS kind,cm.joined_at,
+         NULL::text AS runs_on,NULL::timestamptz AS last_seen_at
        FROM channel_members cm JOIN members m ON m.id=cm.member_id
        WHERE cm.channel_id=$1 AND m.active
        UNION ALL SELECT a.id,a.display_name,a.handle,NULL::text AS role,a.owner_member_id,
-         owner.display_name AS owner_display_name,'agent'::text AS kind,acm.joined_at
+         owner.display_name AS owner_display_name,'agent'::text AS kind,acm.joined_at,
+         a.runs_on,a.last_seen_at
        FROM agent_channel_members acm JOIN agents a ON a.id=acm.agent_id
        JOIN members owner ON owner.id=a.owner_member_id
        WHERE acm.channel_id=$1 AND a.active AND owner.active

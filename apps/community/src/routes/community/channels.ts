@@ -5,11 +5,13 @@ import {
   CommunityWireChannelCreateRequestSchema,
   CommunityWireChannelListResponseSchema,
   CommunityWireChannelMemberRequestSchema,
+  CommunityWireChannelMembersQuerySchema,
   CommunityWireChannelResponseSchema,
   CommunityWireChannelUpdateRequestSchema,
   CommunityWireMemberListResponseSchema,
   CommunityWireMemberResponseSchema,
   CommunityWireMemberRoleUpdateRequestSchema,
+  communityAgentAvailability,
   type CommunityWireChannel,
 } from '@dorkos/shared/community-wire';
 import type { CommunityAuth } from '../../auth.js';
@@ -227,10 +229,14 @@ export function registerChannelRoutes(
 
   app.get('/channels/:id/members', async (c) => {
     const member = await requirePrincipal(c, auth, pool, 'read');
+    // Only a caller that asks gets agents' availability: an installed app parses this list
+    // strictly and would refuse the new fields (DOR-2877).
+    const { include } = CommunityWireChannelMembersQuerySchema.parse(c.req.query());
     const channel = await channelProjection(pool, c.req.param('id'), member);
     if (!channel.joined) throw new ApiError(403, 'FORBIDDEN', 'Join this channel first.');
     const rows = await channelRoster(pool, channel.id, member.community_id);
     await assertPrincipalCurrent(c, auth, pool, member, 'read');
+    const now = new Date();
     return json(c, CommunityWireMemberListResponseSchema, {
       members: rows.map((row) => ({
         memberId: row.id,
@@ -241,6 +247,13 @@ export function registerChannelRoutes(
         ownerMemberId: row.owner_member_id,
         ownerDisplayName: row.owner_display_name,
         joinedAt: row.joined_at.toISOString(),
+        ...(include.has('availability') && row.kind === 'agent'
+          ? {
+              runsOn: row.runs_on,
+              lastSeenAt: row.last_seen_at?.toISOString() ?? null,
+              availability: communityAgentAvailability(row.last_seen_at, now),
+            }
+          : {}),
       })),
     });
   });

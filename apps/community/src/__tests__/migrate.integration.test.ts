@@ -1771,3 +1771,150 @@ it('backfills the enrolling grant only where one grant could have enrolled the a
     await admin.query(`DROP DATABASE IF EXISTS ${name}`);
   }
 });
+
+// Purpose: the availability migration (DOR-2877, server-merge D10) is additive. It leaves every
+// existing agent row as it was, with no report (unknown, not offline), and the agent statements
+// the release before it ships, copied here verbatim, still run on the new schema: enrolling,
+// reactivating, listing, the channel roster, importing and removing. So an older image started
+// against an upgraded database keeps working.
+it('adds agent availability without touching rows, and the release before still runs', async () => {
+  const name = `community_availability_${randomUUID().replaceAll('-', '')}`;
+  const url = new URL(adminUrl);
+  url.pathname = `/${name}`;
+  await admin.query(`CREATE DATABASE ${name}`);
+  const db = new Pool({ connectionString: url.toString() });
+  try {
+    // Found by name, so renumbering the migration at merge time needs no change here.
+    await applyBefore(
+      db,
+      COMMUNITY_MIGRATIONS.find(([, filename]) => filename.endsWith('_agent_availability.sql'))![1]
+    );
+    const community = (
+      await db.query<{ id: string }>(
+        "INSERT INTO communities(name,lifecycle) VALUES('Before','pending_owner') RETURNING id"
+      )
+    ).rows[0].id;
+    await db.query(
+      `INSERT INTO "user"(id,name,email,"emailVerified") VALUES ('u-a','A','a@a.test',true)`
+    );
+    const owner = (
+      await db.query<{ id: string }>(
+        `INSERT INTO members(community_id,user_id,display_name,handle,role,active)
+         VALUES($1,'u-a','Owner','owner','member',true) RETURNING id`,
+        [community]
+      )
+    ).rows[0].id;
+    const grant = (
+      await db.query<{ id: string }>(
+        `INSERT INTO connection_grants(community_id,member_id,token_hash,scopes)
+         VALUES($1,$2,$3,ARRAY['read','post','enroll-agent']) RETURNING id`,
+        [community, owner, randomUUID()]
+      )
+    ).rows[0].id;
+    const channel = (
+      await db.query<{ id: string }>(
+        `INSERT INTO channels(community_id,name,visibility) VALUES($1,'general','public') RETURNING id`,
+        [community]
+      )
+    ).rows[0].id;
+    // The release before: enrollment (routes/community/agents/enrollment.ts), as it shipped.
+    const enroll = (handle: string, localAgentId: string) =>
+      db.query<{ id: string }>(
+        'INSERT INTO agents(community_id,owner_member_id,display_name,handle,local_agent_id,enrolled_by_grant_id) VALUES($1,$2,$3,$4,$5,$6) RETURNING id,display_name,handle,owner_member_id,active',
+        [community, owner, 'Agent', handle, localAgentId, grant]
+      );
+    const existing = (await enroll('before', 'before')).rows[0].id;
+    const snapshot = async (id: string) =>
+      (await db.query('SELECT * FROM agents WHERE id=$1', [id])).rows[0] as Record<string, unknown>;
+    const before = await snapshot(existing);
+
+    await migrate(url.toString());
+
+    // Existing rows: as they were, plus two NULL columns, which read as unknown.
+    expect(await snapshot(existing)).toEqual({ ...before, runs_on: null, last_seen_at: null });
+    const columns = await db.query(
+      `SELECT column_name,is_nullable,column_default FROM information_schema.columns
+       WHERE table_name='agents' AND column_name IN ('runs_on','last_seen_at') ORDER BY column_name`
+    );
+    expect(columns.rows).toEqual([
+      { column_name: 'last_seen_at', is_nullable: 'YES', column_default: null },
+      { column_name: 'runs_on', is_nullable: 'YES', column_default: null },
+    ]);
+
+    // The release before, on the new schema: enroll, place, list, read the roster, remove and
+    // re-enroll, import. None names the new columns, and each still works.
+    const added = (await enroll('after', 'after')).rows[0].id;
+    await db.query(
+      'INSERT INTO agent_channel_members(community_id,channel_id,agent_id) VALUES($1,$2,$3) ON CONFLICT DO NOTHING',
+      [community, channel, added]
+    );
+    const listed = await db.query(
+      `SELECT id,display_name,handle,owner_member_id,active FROM agents
+       WHERE community_id=$1 AND owner_member_id=$2 AND active ORDER BY created_at,id`,
+      [community, owner]
+    );
+    expect(listed.rows.map((row) => row.id)).toEqual([existing, added]);
+    const releasedRoster = `SELECT m.id,m.display_name,m.handle,m.role,NULL::uuid AS owner_member_id,
+    NULL::text AS owner_display_name,'human'::text AS kind,cm.joined_at
+  FROM channel_members cm
+  JOIN members m ON m.community_id=cm.community_id AND m.id=cm.member_id
+  WHERE cm.channel_id=$1 AND cm.community_id=$2 AND m.community_id=$2 AND m.active
+  UNION ALL
+  SELECT a.id,a.display_name,a.handle,NULL::text AS role,a.owner_member_id,
+    owner.display_name AS owner_display_name,'agent'::text AS kind,acm.joined_at
+  FROM agent_channel_members acm
+  JOIN agents a ON a.community_id=acm.community_id AND a.id=acm.agent_id
+  JOIN members owner ON owner.community_id=a.community_id AND owner.id=a.owner_member_id
+  WHERE acm.channel_id=$1 AND acm.community_id=$2 AND a.community_id=$2
+    AND owner.community_id=$2 AND a.active AND owner.active
+  ORDER BY joined_at,id`;
+    expect((await db.query(releasedRoster, [channel, community])).rows).toEqual([
+      expect.objectContaining({ id: added, kind: 'agent' }),
+    ]);
+    await db.query(
+      'UPDATE agents SET active=false,revoked_at=now() WHERE id=$1 AND community_id=$2',
+      [added, community]
+    );
+    await db.query(
+      'UPDATE agents SET active=true,revoked_at=NULL,display_name=$3 WHERE id=$1 AND community_id=$2 RETURNING id,display_name,handle,owner_member_id,active',
+      [added, community, 'Agent again']
+    );
+    await db.query(
+      `INSERT INTO agents(id,community_id,owner_member_id,display_name,handle,active,created_at,revoked_at)
+     SELECT r.id,$2,r.owner_member_id,r.display_name,r.handle,false,r.created_at,
+       COALESCE(r.revoked_at,now())
+     FROM jsonb_to_recordset($1::jsonb) AS r(id uuid,owner_member_id uuid,display_name text,
+       handle text,created_at timestamptz,revoked_at timestamptz)`,
+      [
+        JSON.stringify([
+          {
+            id: randomUUID(),
+            owner_member_id: owner,
+            display_name: 'Imported',
+            handle: 'imported',
+            created_at: new Date().toISOString(),
+            revoked_at: null,
+          },
+        ]),
+        community,
+      ]
+    );
+    expect(
+      (
+        await db.query(
+          'SELECT count(*)::int AS n FROM agents WHERE runs_on IS NOT NULL OR last_seen_at IS NOT NULL'
+        )
+      ).rows
+    ).toEqual([{ n: 0 }]);
+    // The check still allows only the two kinds of computer.
+    await db.query("UPDATE agents SET runs_on='agent-computer',last_seen_at=now() WHERE id=$1", [
+      added,
+    ]);
+    await expect(
+      db.query("UPDATE agents SET runs_on='phone' WHERE id=$1", [added])
+    ).rejects.toThrow(/agents_runs_on_check/);
+  } finally {
+    await db.end();
+    await admin.query(`DROP DATABASE IF EXISTS ${name}`);
+  }
+});

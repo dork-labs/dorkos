@@ -8,8 +8,8 @@ import {
   CommunityWireAgentChannelMembershipResponseSchema,
 } from '@dorkos/shared/community-wire';
 import { CommunityAgentEnrollmentSecretResponseSchema } from '@dorkos/shared/community-private-wire';
-import type { CommunityAuth } from '../../auth.js';
-import type { CommunityConfig } from '../../config.js';
+import type { CommunityAuth } from '../../../auth.js';
+import type { CommunityConfig } from '../../../config.js';
 import {
   assertConnectionGrantCurrent,
   lockChannel,
@@ -18,13 +18,13 @@ import {
   requireMember,
   transaction,
   type Member,
-} from '../../data.js';
-import { mintHandle } from '../../handles.js';
-import { ApiError, json, readJson } from '../../http.js';
-import { agentLimitReached, effectiveAgentLimit } from '../../host/limits.js';
-import { hashSecret, randomToken } from '../../security.js';
-import { notifyLive } from '../../live/notices.js';
-import { refuseAgentName } from '../../moderation/display-names.js';
+} from '../../../data.js';
+import { mintHandle } from '../../../handles.js';
+import { ApiError, json, readJson } from '../../../http.js';
+import { agentLimitReached, effectiveAgentLimit } from '../../../host/limits.js';
+import { hashSecret, randomToken } from '../../../security.js';
+import { notifyLive } from '../../../live/notices.js';
+import { refuseAgentName } from '../../../moderation/display-names.js';
 
 const uuid = z.uuid();
 interface AgentRow {
@@ -50,7 +50,7 @@ interface ScopedAgentRow extends AgentRow {
  * agent whose enrolling grant is still live belongs to another installation and is out of
  * scope. The caller also matches the agent's owner to the grant's member.
  */
-function grantScope(alias: string, grantParam: string): string {
+export function grantScope(alias: string, grantParam: string): string {
   return `(${alias}.enrolled_by_grant_id=${grantParam} OR ${alias}.enrolled_by_grant_id IS NULL
     OR NOT EXISTS (SELECT 1 FROM connection_grants live WHERE live.id=${alias}.enrolled_by_grant_id
       AND live.community_id=${alias}.community_id AND live.revoked_at IS NULL))`;
@@ -155,7 +155,7 @@ export function registerAgentRoutes(
       if (reusable) await adoptAgent(client, reusable, member.grant_id, member.community_id);
       const agent = reusable
         ? await client.query<AgentRow>(
-            'UPDATE agents SET active=true,revoked_at=NULL,display_name=$3 WHERE id=$1 AND community_id=$2 RETURNING id,display_name,handle,owner_member_id,active',
+            'UPDATE agents SET active=true,revoked_at=NULL,display_name=$3,runs_on=NULL,last_seen_at=NULL WHERE id=$1 AND community_id=$2 RETURNING id,display_name,handle,owner_member_id,active',
             [reusable.id, member.community_id, body.displayName]
           )
         : await (async () => {

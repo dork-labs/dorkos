@@ -22,9 +22,12 @@ import {
   COMMUNITY_MODERATION_ROUTES,
   CommunityWireSlowModeSecondsSchema,
 } from './community-moderation-wire.js';
+import { CommunityWireMemberAvailabilityFields } from './community-agent-wire.js';
 
 // Bans, mutes, slow mode, rules, display names and reports live in their own module.
 export * from './community-moderation-wire.js';
+// Agents, and where each runs and whether it is there, live in their own module.
+export * from './community-agent-wire.js';
 
 export * from './community-export-archive.js';
 
@@ -97,6 +100,8 @@ export const COMMUNITY_API_V1_ROUTES = {
   exportArchiveBytes: '/api/v1/exports/:id/archive',
   exportCancel: '/api/v1/exports/:id/cancel',
   agents: '/api/v1/agents',
+  agentAvailability: '/api/v1/agents/availability',
+  features: '/api/v1/features',
   me: '/api/v1/me',
   connectionAccess: '/api/v1/me/connection-access',
   meConnection: '/api/v1/me/connection',
@@ -376,6 +381,8 @@ export const CommunityWireMemberSchema = z.strictObject({
   /** Agent owner's display name, scoped to a roster this caller may already read. */
   ownerDisplayName: z.string().min(1).nullable().optional(),
   joinedAt: timestamp,
+  // An agent's `runsOn`, `lastSeenAt` and `availability`, only when asked for (DOR-2877).
+  ...CommunityWireMemberAvailabilityFields,
 });
 /** Public roster row. */
 export type CommunityWireMember = z.infer<typeof CommunityWireMemberSchema>;
@@ -1125,6 +1132,25 @@ export const CommunityConnectionAccessSchema = z
   });
 /** Current effective access and the most recently verified Community authority. */
 export type CommunityConnectionAccess = z.infer<typeof CommunityConnectionAccessSchema>;
+/**
+ * What this space's server understands beyond the version 1 contract, read with
+ * `GET /api/v1/features` (tenant-qualified too; no credential needed). An app asks beside its
+ * connection-access check and acts on a feature only when it is `true`; a space from before
+ * this read answers 404, which means none. A separate read rather than a field on a response an
+ * app already parses, because those are strict: an installed app would reject the whole answer.
+ *
+ * Not strict, so a later space can add a feature without breaking apps built now.
+ */
+export const CommunityWireSpaceFeaturesResponseSchema = z.object({
+  features: z.object({
+    /** It records `POST /api/v1/agents/availability` and shows agents as available or offline. */
+    agentAvailability: z.boolean().optional(),
+  }),
+});
+/** What a space's server understands beyond the version 1 contract. */
+export type CommunityWireSpaceFeaturesResponse = z.infer<
+  typeof CommunityWireSpaceFeaturesResponseSchema
+>;
 /** Bearer-bound access for the exact installation grant making the request. */
 export const CommunityWireConnectionAccessResponseSchema = z.strictObject({
   access: CommunityConnectionAccessSchema,
@@ -1163,41 +1189,6 @@ export const CommunityWireGrantListResponseSchema = z.strictObject({
 });
 /** Disconnecting every installation requires current password confirmation. */
 export const CommunityWireDisconnectAllRequestSchema = z.strictObject({ password: id });
-
-/** An enrolled agent identity and owner bond, without a credential. */
-export const CommunityWireAgentSchema = z.strictObject({
-  memberId: id,
-  displayName: z.string().min(1),
-  handle: CommunityWireHandleSchema,
-  ownerMemberId: id,
-  active: z.boolean(),
-});
-/** An enrolled agent identity. */
-export type CommunityWireAgent = z.infer<typeof CommunityWireAgentSchema>;
-/**
- * Enrollment request made under a scoped personal grant. The community records the grant as the
- * agent's enrolling installation, so two installations sharing a `localAgentId` get one agent
- * each.
- */
-export const CommunityWireAgentEnrollRequestSchema = z.strictObject({
-  // A local harness owns this identifier. It is deliberately not constrained
-  // to the community service's UUID vocabulary.
-  localAgentId: z.string().min(1).max(256),
-  displayName: z.string().min(1),
-  /** The server derives a collision-safe handle when omitted. */
-  handle: CommunityWireHandleSchema.optional(),
-});
-/** Public agent management response. */
-export const CommunityWireAgentResponseSchema = z.strictObject({ agent: CommunityWireAgentSchema });
-/**
- * The caller's active agents. A member signed in to the community sees all of theirs. A
- * personal grant (one installation) sees only the agents it enrolled, plus any enrolled before
- * the community recorded grants or whose enrolling grant was revoked, and can recover, rotate,
- * remove and place in channels only those.
- */
-export const CommunityWireAgentListResponseSchema = z.strictObject({
-  agents: z.array(CommunityWireAgentSchema),
-});
 
 /** Owner transfer requires current owner reauthentication. */
 export const CommunityWireOwnerTransferRequestSchema = z.strictObject({

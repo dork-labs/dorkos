@@ -844,6 +844,10 @@ export const agents = pgTable(
      * see migration 0029.
      */
     enrolledByGrantId: uuid('enrolled_by_grant_id'),
+    /** What kind of computer runs the agent, from its app's last report; NULL until one (0039). */
+    runsOn: text('runs_on'),
+    /** When its app last reported it; NULL reads as unknown, never offline (0039). */
+    lastSeenAt: timestamp('last_seen_at', { withTimezone: true }),
     active: boolean('active').notNull().default(true),
     createdAt: time('created_at'),
     revokedAt: timestamp('revoked_at', { withTimezone: true }),
@@ -858,6 +862,7 @@ export const agents = pgTable(
       .on(table.ownerMemberId, table.localAgentId)
       .where(sql`${table.enrolledByGrantId} IS NULL`),
     index('agents_owner_active_idx').on(table.ownerMemberId, table.active),
+    check('agents_runs_on_check', sql`${table.runsOn} IN ('computer', 'agent-computer')`),
     foreignKey({
       name: 'agents_owner_tenant_fk',
       columns: [table.communityId, table.ownerMemberId],
@@ -2054,39 +2059,5 @@ export const ownerReplacements = pgTable(
       table.requestedAt.desc(),
       table.id.desc()
     ),
-  ]
-);
-
-/**
- * Object-only links: one per send attempt of a notice, reminder, or reissue message, stored
- * only as a hash. A token can only object, only while its request is open, and is never deleted
- * when an attempt fails. `outboxId` has no foreign key: the message row is deleted 30 days after
- * it resolves, while the token lives as long as its request.
- */
-export const ownerReplacementObjectTokens = pgTable(
-  'owner_replacement_object_tokens',
-  {
-    id: uuid('id').primaryKey().defaultRandom(),
-    replacementId: uuid('replacement_id').notNull(),
-    communityId: uuid('community_id')
-      .notNull()
-      .references(() => communities.id),
-    tokenHash: text('token_hash').notNull().unique(),
-    outboxId: uuid('outbox_id'),
-    /** Set from the caller's clock; no default. */
-    createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
-    usedAt: timestamp('used_at', { withTimezone: true }),
-  },
-  (table) => [
-    check(
-      'owner_replacement_object_tokens_token_hash_check',
-      sql`${table.tokenHash} ~ '^[a-f0-9]{64}$'`
-    ),
-    foreignKey({
-      name: 'owner_replacement_object_tokens_tenant_fk',
-      columns: [table.communityId, table.replacementId],
-      foreignColumns: [ownerReplacements.communityId, ownerReplacements.id],
-    }).onDelete('cascade'),
-    index('owner_replacement_object_tokens_replacement_idx').on(table.replacementId),
   ]
 );

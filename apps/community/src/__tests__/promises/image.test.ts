@@ -154,6 +154,7 @@ const NOT_SETTINGS: Record<string, string> = {
   COMMUNITY_TAKEN_DOWN: 'error code',
   COMMUNITY_UNAVAILABLE: 'error code',
   // Constants in code, fixed at build time.
+  COMMUNITY_AGENT_AVAILABILITY_REPORT_SECONDS: 'constant (shared wire)',
   COMMUNITY_DELETION_OVERDUE_MS: 'constant (deletion-worker.ts)',
   COMMUNITY_EMAIL_LINK_PAGES: 'constant (shared wire)',
   COMMUNITY_IMPORT_MAX_PARTS: 'constant (shared wire)',
