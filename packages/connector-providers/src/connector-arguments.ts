@@ -182,3 +182,44 @@ export function checkConnectorArguments(
     ? { ok: true }
     : { ok: false, reason: 'mismatch' };
 }
+
+/**
+ * `arguments` with every top-level `null` removed where it only meant "not
+ * set": the key is an optional property the schema declares, and that
+ * property's own schema does not accept `null`.
+ *
+ * Agents often send `"attachment": null` for an optional field they are not
+ * using. The provider schema says nothing about `null` there, so a strict check
+ * would refuse the whole call. This runs BEFORE the check and before anything
+ * is bound into the authority digest, so the object that is checked, approved,
+ * audited and sent is the cleaned one, and the "exactly as sent" rule above
+ * still holds for it. A `null` the schema does accept, or one on a required
+ * field, is left alone for the check to judge.
+ *
+ * @param providerSchema - The operation's input schema, as stored.
+ * @param value - The arguments the agent sent.
+ * @returns The same object when nothing was removed, otherwise a copy without those keys.
+ */
+export function withoutOptionalNulls(
+  providerSchema: Record<string, unknown>,
+  value: Record<string, unknown>
+): Record<string, unknown> {
+  const properties = isRecord(providerSchema.properties) ? providerSchema.properties : {};
+  const required = new Set(
+    Array.isArray(providerSchema.required) ? providerSchema.required.map(String) : []
+  );
+  const removable = Object.keys(value).filter((name) => {
+    if (value[name] !== null || required.has(name) || !Object.hasOwn(properties, name)) {
+      return false;
+    }
+    const property = properties[name];
+    if (!isRecord(property)) return false;
+    const nullable = checkConnectorArguments(
+      { type: 'object', properties: { [name]: property } },
+      { [name]: null }
+    );
+    return !nullable.ok;
+  });
+  if (removable.length === 0) return value;
+  return Object.fromEntries(Object.entries(value).filter(([name]) => !removable.includes(name)));
+}
