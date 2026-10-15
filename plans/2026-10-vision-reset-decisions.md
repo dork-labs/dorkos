@@ -144,6 +144,8 @@ The research behind these decisions is in `research/20261006_*.md`.
 
 **Decided:** launch is late November 2026, holding the cut line in `research/20261007_dorkos-runtime.md`. The card path is US-only at launch, so using your own AI key or sign-in is a launch item: everyone else still gets a working first run.
 
+**Changed 2026-10-12, then 2026-10-15** (ADR `261015-042933`): launch moved to December 8, then to late January 2027; December 8 stays as the Community Space soft launch.
+
 ## 25. How Doe is built
 
 **Decided:** Doe (DOR-2782) is built in order: the engine package first (DOR-2786), then plugging it into DorkOS as a runtime (DOR-2787); together they unblock one-minute onboarding (DOR-2783) and automatic model choice (DOR-2784). A Codex agent builds it, using the repo's own workflow skills. Reuse first: audit the Pi ecosystem (licence, no telemetry, runs in process, no coding persona) before writing our own. Tools load lazily, and every DorkOS capability becomes a Doe tool. The app label is "DorkOS".
