@@ -252,13 +252,11 @@ import {
   SESSION_ATTACHMENT_SWEEP_INTERVAL_MS,
   sweepSessionAttachments,
 } from './services/session/attachments/index.js';
-import { ExtensionManager } from './services/extensions/extension-manager.js';
-import { startExtensionApprovalQueue } from './services/extensions/extension-approval-queue.js';
+import type { ExtensionManager } from './services/extensions/extension-manager.js';
+import { startExtensions } from './startup/extensions.js';
 import { ensureCoreExtensions } from './services/core-extensions/ensure-core-extensions.js';
 import { warnRedundantEnabledEntries } from './services/core-extensions/warn-redundant-enabled.js';
 import type { CoreExtensionInfo } from './services/extensions/extension-enable-resolution.js';
-import { broadcastExtensionReloaded } from './routes/extensions.js';
-import { knownProjectRootsForExtensions } from './services/projects/extension-scan-roots.js';
 import { withIntegrity } from './services/marketplace/lib/integrity/verify-install.js';
 import { scanInstallationsAcrossScopes } from './services/marketplace/installed-scanner.js';
 import { migrateSavedCopies } from './services/marketplace/lib/saved-copies/migrate-saved-copies.js';
@@ -1478,36 +1476,11 @@ async function start() {
   warnRedundantEnabledEntries(coreExtensions, configManager.get('extensions').enabled);
 
   // Initialize Extension System
-  try {
-    extensionManager = new ExtensionManager(dorkHome, coreExtensions);
-    // Scan every known project's extensions, not only this folder's, and
-    // re-scan when a project is added, so which copy runs no longer depends on
-    // where the server started (spec `flow-multiproject` §9.2). Only roots core
-    // saw itself: never one only an extension reported (§6.1).
-    extensionManager.followProjects(
-      {
-        roots: (cwd) => knownProjectRootsForExtensions(projectRegistry, dorkHome, cwd),
-        onChange: (listener) => projectRegistry.onChange(listener),
-      },
-      { announce: (ids) => broadcastExtensionReloaded(ids) }
-    );
-    const initialCwd = env.DORKOS_DEFAULT_CWD ?? null;
-    await extensionManager.initialize(initialCwd);
-    // Every extension waiting for a person to let it run asks in the Activity
-    // inbox, and keeps asking as installs, updates and answers change the set
-    // (DOR-2517). Follows the manager for the life of the process.
-    startExtensionApprovalQueue(extensionManager);
-    // An extension that is no longer installed at all has nobody left to
-    // explain its open decisions: they close as "no longer needed", quietly.
-    getExtensionInbox()?.cancelUndiscovered(
-      new Set(extensionManager.listRecords().map((record) => record.id))
-    );
-    logger.info('[Extensions] Extension system initialized');
-  } catch (err) {
-    logger.error('[Extensions] Failed to initialize extension system', err);
-    // Extension failure is non-fatal: server continues without extensions
-    extensionManager = undefined;
-  }
+  extensionManager = await startExtensions(
+    dorkHome,
+    coreExtensions,
+    env.DORKOS_DEFAULT_CWD ?? null
+  );
 
   // --- Register runtime: TestModeRuntime in test mode, ClaudeCodeRuntime otherwise ---
   ({ claudeRuntime, doeRuntime, relayAgentRuntime, creditsRelay } = await registerRuntimes({
@@ -3558,6 +3531,11 @@ async function start() {
       bridgeStore: roomBridges,
       ...(traceStore && { traceStore }),
       ...(meshCore && { meshCore }),
+      // `create_extension`, `reload_extensions`, `test_extension` and the rest:
+      // without it an agent gets only `get_extension_api` in a chat, and every
+      // extension tool on `/mcp` answers that the system is not available, so
+      // no agent can build a mini app.
+      ...(extensionManager && { extensionManager }),
       // The DorkOS-DM fallback, hoisted above so the notification pipeline's
       // relay channel shares this one seam rather than building a second.
       ...(notifyDm && { notifyDm }),
