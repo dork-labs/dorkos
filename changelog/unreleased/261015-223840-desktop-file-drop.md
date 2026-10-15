@@ -1,6 +1,6 @@
 ---
 covers:
-  - 'fix(desktop): dropping files on the message box attaches them again'
+  - 'fix(desktop): dropping files on the message box attaches them again (DOR-2870)'
 ---
 
 ### Fixed
