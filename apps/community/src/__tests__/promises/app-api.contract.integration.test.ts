@@ -114,7 +114,7 @@ const pairing: Case[] = [
       pairingId: f.kept.pairingId,
       verifier: randomBytes(32).toString('base64url'),
     }),
-    expect: { status: 403, body: { code: 'FORBIDDEN', message: 'Invalid pairing verifier.' } },
+    expect: { status: 403, match: { code: 'FORBIDDEN' } },
   },
   {
     name: 'POST /pairings/cancel ends the waiting pairing, answering nothing',

@@ -49,6 +49,7 @@ describe('reserved short names', () => {
     const paths = [
       ...topLevelPaths(appSource),
       ...registrars.flatMap((path) => topLevelPaths(source(path))),
+      ...topLevelPaths(source('../main.ts')),
       ...topLevelPaths(source('../pages/register.ts')),
       ...topLevelPaths(source('../browser/BrowserRoot.tsx')),
       OWNER_CLAIM_PATH.slice(1),

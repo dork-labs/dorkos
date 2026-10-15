@@ -8,11 +8,13 @@
  *
  *   pnpm --filter @dorkos/community census:update
  */
+import { readdirSync, readFileSync } from 'node:fs';
 import { readFile, writeFile } from 'node:fs/promises';
 import { describe, expect, it } from 'vitest';
 import { COMMUNITY_API_V1_ROUTES } from '@dorkos/shared/community-wire';
 import {
   CENSUS_GROUPS,
+  FULL_ENV,
   betterAuthAllowlist,
   censusProblems,
   readBetterAuthRoutes,
@@ -21,6 +23,30 @@ import {
 } from './route-census.js';
 
 const BASELINE = new URL('./route-census.baseline.json', import.meta.url);
+const SRC = new URL('../../', import.meta.url);
+
+/**
+ * Every registrar that adds its routes only under a setting, and the setting. The census turns
+ * each on, so its routes are in the baseline; a new one fails the guard below until it is added
+ * here and to `FULL_ENV`.
+ */
+const SETTING_GATED_REGISTRARS: Record<string, string> = {
+  registerMinimumAgeRoutes: 'COMMUNITY_MINIMUM_AGE',
+  registerAllowedCountryRoutes: 'COMMUNITY_ALLOWED_COUNTRIES',
+  // Read with COMMUNITY_TEST_RUNTIME on, as the census's test-only group.
+  registerCommunityTestControlRoutes: 'COMMUNITY_TEST_RUNTIME',
+};
+
+/** Non-test server source, relative to `src/`. */
+function serverSources(): string[] {
+  return readdirSync(SRC, { recursive: true, encoding: 'utf8' }).filter(
+    (name) =>
+      /\.ts$/u.test(name) &&
+      !/(^|\/)__tests__\//u.test(name) &&
+      !name.endsWith('.test.ts') &&
+      !name.startsWith('browser/')
+  );
+}
 
 const UPDATE = process.env.UPDATE_PROMISES === '1';
 
@@ -69,6 +95,37 @@ describe('route census', () => {
     );
     for (const path of Object.values(COMMUNITY_API_V1_ROUTES))
       expect(paths, path).toContain(shape(path));
+  });
+});
+
+describe('what the census composes', () => {
+  it('turns on every setting a registrar waits for', () => {
+    // Purpose: fails when a registrar starts adding its routes only under a setting the census
+    // does not turn on, so those routes would be missing from the baseline unseen.
+    const gated = new Set<string>();
+    for (const file of serverSources()) {
+      const text = readFileSync(new URL(file, SRC), 'utf8');
+      // A registrar that returns early, before registering anything.
+      for (const [body, name] of text.matchAll(/^export function (register\w+)\([\s\S]*?^\}$/gmu))
+        if (/^ {2}(?:if \([^\n]*\) )?return\b/mu.test(body)) gated.add(name);
+      // A registrar called only under a condition.
+      for (const [, name] of text.matchAll(/\bif \([^\n]*\) *(register\w+)\(/gu)) gated.add(name);
+    }
+    expect([...gated].sort()).toEqual(Object.keys(SETTING_GATED_REGISTRARS).sort());
+    for (const setting of Object.values(SETTING_GATED_REGISTRARS))
+      if (setting !== 'COMMUNITY_TEST_RUNTIME') expect(FULL_ENV).toHaveProperty(setting);
+  });
+
+  it('main.ts adds no routes of its own', () => {
+    // Purpose: the census composes the app as main.ts does without running main.ts, so a route
+    // added there would be unseen. Fails if main.ts routes anything outside `registerPages`.
+    const main = readFileSync(new URL('main.ts', SRC), 'utf8');
+    expect(
+      main.match(
+        /\bapp\.(?:get|post|put|patch|delete|options|head|all|use|on|route|basePath|mount)\(/gu
+      )
+    ).toBeNull();
+    expect(main.match(/\bregister\w+\(app\b/gu)).toEqual(['registerPages(app']);
   });
 });
 

@@ -30,13 +30,11 @@ const SCOPES = [
   'communities:reserved_names',
 ] as const;
 
-const INVALID = { code: 'STATE_CONFLICT', message: 'The request is invalid.' };
-const KEY_CANNOT_MANAGE = { code: 'FORBIDDEN', message: 'A server API key cannot manage keys.' };
-const NO_CONTENT_FOR_KEYS = {
-  code: 'UNAUTHENTICATED',
-  message: 'Server API keys cannot reach space content.',
-};
-const KEY_INVALID = { code: 'UNAUTHENTICATED', message: 'A valid server API key is required.' };
+// Status and code only: a caller acts on those, never on the English message.
+const INVALID = { code: 'STATE_CONFLICT' };
+const KEY_CANNOT_MANAGE = { code: 'FORBIDDEN' };
+const NO_CONTENT_FOR_KEYS = { code: 'UNAUTHENTICATED' };
+const KEY_INVALID = { code: 'UNAUTHENTICATED' };
 
 const issue = (scopes: readonly string[], password = TENANCY_PASSWORD) => ({
   label: 'Contract',
@@ -70,7 +68,7 @@ contractSuite<SpaceFixture>(
       path: '/api/v1/host/api-keys',
       headers: withKey('read'),
       body: issue(['communities:read']),
-      expect: { status: 403, body: KEY_CANNOT_MANAGE },
+      expect: { status: 403, match: KEY_CANNOT_MANAGE },
     },
     {
       name: 'a scope that does not exist is refused',
@@ -78,7 +76,7 @@ contractSuite<SpaceFixture>(
       path: '/api/v1/host/api-keys',
       headers: asOperator,
       body: issue(['communities:everything']),
-      expect: { status: 400, body: INVALID },
+      expect: { status: 400, match: INVALID },
     },
     {
       name: 'a wrong password is refused',
@@ -125,7 +123,7 @@ contractSuite<SpaceFixture>(
       name: 'a key cannot list keys',
       path: '/api/v1/host/api-keys',
       headers: (f) => ({ authorization: `Bearer ${f.kept.secret}` }),
-      expect: { status: 403, body: KEY_CANNOT_MANAGE },
+      expect: { status: 403, match: KEY_CANNOT_MANAGE },
     },
     {
       name: 'a key works on a host route its scope allows',
@@ -137,13 +135,13 @@ contractSuite<SpaceFixture>(
       name: 'a host key never reaches space content, unscoped',
       path: '/api/v1/channels',
       headers: (f) => ({ authorization: `Bearer ${f.kept.secret}` }),
-      expect: { status: 401, body: NO_CONTENT_FOR_KEYS },
+      expect: { status: 401, match: NO_CONTENT_FOR_KEYS },
     },
     {
       name: 'a host key never reaches space content, under a community',
       path: (f) => `/api/v1/communities/${f.communityId}/channels`,
       headers: (f) => ({ authorization: `Bearer ${f.kept.secret}` }),
-      expect: { status: 401, body: NO_CONTENT_FOR_KEYS },
+      expect: { status: 401, match: NO_CONTENT_FOR_KEYS },
     },
     {
       name: 'a key cannot rotate keys',
@@ -151,7 +149,7 @@ contractSuite<SpaceFixture>(
       path: (f) => `/api/v1/host/api-keys/${f.kept.keyId}/rotate`,
       headers: withKey('read'),
       body: { overlapMinutes: 0, password: TENANCY_PASSWORD },
-      expect: { status: 403, body: KEY_CANNOT_MANAGE },
+      expect: { status: 403, match: KEY_CANNOT_MANAGE },
     },
     {
       name: 'an operator rotates a key: a new secret, shown once',
@@ -175,7 +173,7 @@ contractSuite<SpaceFixture>(
       name: 'the rotated-out key stops working with no overlap',
       path: '/api/v1/host/capabilities',
       headers: (f) => ({ authorization: `Bearer ${f.kept.secret}` }),
-      expect: { status: 401, body: KEY_INVALID },
+      expect: { status: 401, match: KEY_INVALID },
     },
     {
       name: 'an operator revokes a key',
@@ -190,7 +188,7 @@ contractSuite<SpaceFixture>(
       name: 'a revoked key is refused',
       path: '/api/v1/host/capabilities',
       headers: (f) => ({ authorization: `Bearer ${f.kept.rotated}` }),
-      expect: { status: 401, body: KEY_INVALID },
+      expect: { status: 401, match: KEY_INVALID },
     },
   ]
 );

@@ -3,11 +3,16 @@
   "runtime": {
     "WORKDIR": ["/app"],
     "USER": ["node"],
-    "ENV": ["COMMUNITY_PORT=6481 COMMUNITY_STORAGE_PATH=/data/blobs NODE_ENV=production"],
     "EXPOSE": ["6481"],
     "VOLUME": ["/data/blobs"],
     "CMD": ["[\"node\", \"dist-server/main.js\"]"]
   },
+  "env": {
+    "COMMUNITY_PORT": "6481",
+    "COMMUNITY_STORAGE_PATH": "/data/blobs",
+    "NODE_ENV": "production"
+  },
+  "copied": ["apps/community/dist", "apps/community/dist-server", "apps/community/migrations"],
   "commands": [
     "dist-server/backout.js",
     "dist-server/erasure/reapply.js",

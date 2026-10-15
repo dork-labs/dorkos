@@ -9,6 +9,7 @@ import { contractSuite } from './contract.js';
 import { asOperator, startSpace, withKey } from './space-fixture.js';
 
 const JSON_TYPE = /^application\/json\b/u;
+// Status and code only: a caller acts on those, never on the English message.
 
 contractSuite(
   'health and metrics',
@@ -47,7 +48,7 @@ contractSuite(
       headers: { authorization: 'Bearer not-a-key' },
       expect: {
         status: 401,
-        body: { code: 'UNAUTHENTICATED', message: 'A valid server API key is required.' },
+        match: { code: 'UNAUTHENTICATED' },
       },
     },
     {
@@ -56,7 +57,7 @@ contractSuite(
       headers: { authorization: `Bearer dkh_${'A'.repeat(43)}` },
       expect: {
         status: 401,
-        body: { code: 'UNAUTHENTICATED', message: 'A valid server API key is required.' },
+        match: { code: 'UNAUTHENTICATED' },
       },
     },
     {
@@ -65,7 +66,7 @@ contractSuite(
       headers: withKey('write'),
       expect: {
         status: 403,
-        body: { code: 'FORBIDDEN', message: 'This key does not allow that action.' },
+        match: { code: 'FORBIDDEN' },
       },
     },
     {

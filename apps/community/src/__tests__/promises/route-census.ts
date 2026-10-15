@@ -4,7 +4,12 @@
  * from Hono's own route table, never from a hand list. The pool is never connected: registering
  * routes reads no database, so the census runs in the ordinary unit suite.
  *
- * The census is in the pattern of the Hono move's (DOR-2793).
+ * The census is in the pattern of the Hono move's (DOR-2793). It is composed with every setting
+ * that registers a route switched on ({@link FULL_ENV}), so the baseline is the whole set.
+ *
+ * It pins the set of routes, not the order Hono matches them in. The one order that matters
+ * today, the refusal of `/api/auth/reset-password/*` before Better Auth's catch-all, is guarded by
+ * email-links.integration.test.ts (T8, T17).
  */
 import { readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -14,7 +19,10 @@ import { Pool } from 'pg';
 import { createCommunityApp } from '../../app.js';
 import { createCommunityAuth } from '../../auth.js';
 import { COMMUNITY_TEST_RUNTIME_ACKNOWLEDGEMENT_PHRASE, parseConfig } from '../../config.js';
+import { emailLinkComposers } from '../../email-links/composers.js';
+import { ownerReplacementComposers } from '../../owner-replacement/notices.js';
 import { registerPages } from '../../pages/register.js';
+import { signInLinkComposers } from '../../sign-in/linked.js';
 
 /** Settings for a server that is composed, never started. Its database is never reached. */
 export const CENSUS_ENV = {
@@ -38,6 +46,19 @@ const ALL_SIGN_IN_ENV = {
   COMMUNITY_OIDC_CLIENT_SECRET: 'oidc-secret',
   COMMUNITY_SMTP_URL: 'smtps://smtp.example.com',
   COMMUNITY_MAIL_FROM: 'spaces@example.com',
+} as const;
+
+/**
+ * Every setting that turns a route or a sign-in option on: the providers and mail above, plus the
+ * sign-up rules (each registers its confirmation route only when set) and an evidence store.
+ */
+export const FULL_ENV = {
+  ...ALL_SIGN_IN_ENV,
+  COMMUNITY_MINIMUM_AGE: '16',
+  COMMUNITY_ALLOWED_COUNTRIES: 'US',
+  COMMUNITY_EVIDENCE_DRIVER: 'filesystem',
+  // Outside the temporary folder, as the setting requires. Nothing here creates or writes it.
+  COMMUNITY_EVIDENCE_PATH: '/srv/community-route-census-evidence',
 } as const;
 
 /** The groups a route is filed under, so a reviewer sees which promise a change touches. */
@@ -78,10 +99,13 @@ interface CensusApp {
   pool: Pool;
 }
 
-/** Compose the app as `main.ts` does, against a database it never reaches. */
+/**
+ * Compose the app as `main.ts` does, with the mail composers `main.ts` passes, against a database
+ * it never reaches.
+ */
 function composeApp(testRuntime: boolean): CensusApp {
   const config = parseConfig({
-    ...CENSUS_ENV,
+    ...FULL_ENV,
     ...(testRuntime
       ? {
           COMMUNITY_TEST_RUNTIME: 'true',
@@ -90,7 +114,12 @@ function composeApp(testRuntime: boolean): CensusApp {
       : {}),
   });
   const pool = new Pool({ connectionString: config.databaseUrl });
-  const app = createCommunityApp({ config, pool });
+  const noticeComposers = {
+    ...ownerReplacementComposers(config),
+    ...signInLinkComposers(config),
+    ...emailLinkComposers(config),
+  };
+  const app = createCommunityApp({ config, pool, noticeComposers });
   registerPages(app, { distDir: join(tmpdir(), 'community-route-census-dist') });
   return { app, pool };
 }

@@ -24,9 +24,10 @@ import { z } from 'zod';
 import { contractSuite, type ContractCase } from './contract.js';
 import { startSpace, withKey, type SpaceFixture } from './space-fixture.js';
 
-const FORBIDDEN = { code: 'FORBIDDEN', message: 'This key does not allow that action.' };
-const INVALID = { code: 'STATE_CONFLICT', message: 'The request is invalid.' };
-const NOT_FOUND = { code: 'NOT_FOUND', message: 'Space not found.' };
+// Status and code only: a caller acts on those, never on the English message.
+const FORBIDDEN = { code: 'FORBIDDEN' };
+const INVALID = { code: 'STATE_CONFLICT' };
+const NOT_FOUND = { code: 'NOT_FOUND' };
 const NOBODY = '00000000-0000-4000-8000-000000000000';
 
 type Case = ContractCase<SpaceFixture>;
@@ -43,7 +44,7 @@ function needsScope(name: string, method: string, path: Case['path'], body?: unk
     path,
     headers: withKey('none'),
     body,
-    expect: { status: 403, body: FORBIDDEN },
+    expect: { status: 403, match: FORBIDDEN },
   };
 }
 
@@ -76,7 +77,7 @@ const communities: Case[] = [
     path: '/api/v1/host/communities',
     headers: withKey('write'),
     body: { name: 'No idempotency key' },
-    expect: { status: 400, body: INVALID },
+    expect: { status: 400, match: INVALID },
   },
   {
     name: 'POST /host/communities makes an unclaimed community and its one-time owner claim',
@@ -127,7 +128,7 @@ const communities: Case[] = [
     name: 'GET /host/communities/:id of nobody is not found',
     path: `/api/v1/host/communities/${NOBODY}`,
     headers: withKey('read'),
-    expect: { status: 404, body: NOT_FOUND },
+    expect: { status: 404, match: NOT_FOUND },
   },
 ];
 
@@ -311,7 +312,7 @@ const lifecycle: Case[] = [
     path: (f) => `${active(f)}/lifecycle`,
     headers: withKey('write'),
     body: { action: 'suspend', lifecycleVersion: 1 },
-    expect: { status: 403, body: FORBIDDEN },
+    expect: { status: 403, match: FORBIDDEN },
   },
   {
     name: 'PATCH /host/communities/:id/lifecycle with a stale version conflicts',
