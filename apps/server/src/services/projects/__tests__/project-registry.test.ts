@@ -715,7 +715,7 @@ describe('boot order and naming', () => {
   it('attaches the store before extensions start (index.ts boot order)', () => {
     const index = readFileSync(path.resolve(import.meta.dirname, '../../../index.ts'), 'utf8');
     const attach = index.indexOf('projectRegistry.attachStore(');
-    const extensions = index.indexOf('extensionManager.initialize(');
+    const extensions = index.indexOf('extensionManager = await startExtensions(');
     expect(attach).toBeGreaterThan(-1);
     expect(extensions).toBeGreaterThan(-1);
     expect(attach).toBeLessThan(extensions);

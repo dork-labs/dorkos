@@ -22,10 +22,11 @@
  * @module services/core/telemetry-first-run
  */
 
+import { siteUrl } from '@dorkos/shared/links';
 import { hasTier1SendGate, type Tier1GateConfig } from '@dorkos/shared/telemetry-consent';
 
 /** The public payload documentation URL shown in the first-run notice. */
-export const TELEMETRY_PAYLOAD_DOC_URL = 'https://dorkos.ai/telemetry';
+export const TELEMETRY_PAYLOAD_DOC_URL = siteUrl('/telemetry');
 
 /** The outcome of evaluating the Tier 1 first-run gate at server boot. */
 export interface Tier1BootDecision {

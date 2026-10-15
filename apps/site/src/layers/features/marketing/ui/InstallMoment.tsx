@@ -1,5 +1,6 @@
 'use client';
 
+import { siteConfig } from '@/config/site';
 import { useState, useEffect, useRef, useCallback } from 'react';
 import Link from 'next/link';
 import { motion, useInView, useReducedMotion } from 'motion/react';
@@ -19,7 +20,7 @@ const INSTALL_METHODS = [
   {
     id: 'curl',
     label: 'One-liner',
-    command: 'curl -fsSL https://dorkos.ai/install | bash',
+    command: siteConfig.installCommand,
     description: 'Checks Node.js, installs via npm, offers setup wizard.',
     recommended: true,
   },

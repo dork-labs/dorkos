@@ -16,6 +16,7 @@
  *
  * @module features/dashboard-sidebar/ui/bottom-slot/use-update-ready
  */
+import { links, siteUrl } from '@dorkos/shared/links';
 import { useCallback, useMemo } from 'react';
 import { useConfig, useUpdateConfig } from '@/layers/entities/config';
 import { isNewer, openExternalLink } from '@/layers/shared/lib';
@@ -31,12 +32,12 @@ import { useDesktopUpdater } from '@/layers/features/session-list';
  * answer than a Mac disk image.
  */
 const DOWNLOAD_URL_BY_PLATFORM: Partial<Record<NodeJS.Platform, string>> = {
-  darwin: 'https://dorkos.ai/download/mac',
-  win32: 'https://dorkos.ai/download/windows',
+  darwin: siteUrl('/download/mac'),
+  win32: siteUrl('/download/windows'),
 };
 
 /** The front door, for a desktop platform that has no dedicated download route. */
-const DOWNLOAD_FALLBACK_URL = 'https://dorkos.ai';
+const DOWNLOAD_FALLBACK_URL = links.site;
 
 /**
  * What is waiting, if anything.

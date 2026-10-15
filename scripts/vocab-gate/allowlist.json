@@ -13,6 +13,11 @@
       "reason": "The DorkOS installs connected to a space stay revoked after a suspension: the same approved-connection entity the space's pairing page grants, not network health."
     },
     {
+      "path": "apps/site/src/app/(public)/cloud/terms/page.tsx",
+      "terms": ["community", "communities", "connection"],
+      "reason": "The approved DorkOS Cloud terms, published word for word (DOR-2556). 'Hosted communities' and 'the hosting terms for DorkOS communities' are the approved legal wording, and 'in connection with' is a legal idiom, not a Connections noun. Rewording needs the operator's approval."
+    },
+    {
       "path": "apps/site/src/app/connectors/managed/fields/ManagedAccountFieldsForm.tsx",
       "terms": ["connection"],
       "reason": "The owner-authorized account form names the exact Connections account being created. Its closed failure messages describe that account entity, not network reachability."

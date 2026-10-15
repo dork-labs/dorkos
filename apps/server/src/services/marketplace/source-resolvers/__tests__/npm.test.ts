@@ -28,7 +28,8 @@ describe('npmResolver', () => {
       expect(npmErr.name).toBe('NpmSourceNotSupportedError');
       expect(npmErr.package).toBe('@dorkos/foo');
       expect(npmErr.version).toBe('^1.0.0');
-      expect(npmErr.docs).toBe('https://docs.dorkos.ai/marketplace/source-types#npm');
+      expect(npmErr.docs).toBe('https://dorkos.ai/docs/marketplace#marketplace-sources');
+      expect(npmErr.message).toContain('https://dorkos.ai/docs/marketplace#marketplace-sources');
       expect(npmErr.message).toContain('@dorkos/foo');
       expect(npmErr.message).toContain('marketplace-06-npm-sources');
     }
@@ -39,7 +40,9 @@ describe('npmResolver', () => {
       await npmResolver({ type: 'npm', package: 'bare-pkg' }, opts);
       throw new Error('expected throw');
     } catch (err) {
-      expect((err as NpmSourceNotSupportedError).docs).toMatch(/source-types#npm/);
+      expect((err as NpmSourceNotSupportedError).docs).toMatch(
+        /\/docs\/marketplace#marketplace-sources$/
+      );
     }
   });
 });

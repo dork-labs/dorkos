@@ -1,3 +1,4 @@
+import { links } from '@dorkos/shared/links';
 import { z } from 'zod';
 
 /** Reusable Zod type for 'true'/'false' env flags → boolean. */
@@ -369,7 +370,7 @@ export const serverEnvSchema = z.object({
   // production; override for local dev against the site (e.g.
   // http://localhost:$SITE_PORT). Trailing slashes are normalized by the
   // cloud-link client.
-  DORKOS_CLOUD_URL: z.string().default('https://dorkos.ai'),
+  DORKOS_CLOUD_URL: z.string().default(links.site),
   // Origin of the cloud's `/v1` contract (credits, balance, usage, plan,
   // checkout). Unset, it follows a non-default DORKOS_CLOUD_URL, else the
   // cloud's own origin (`resolveCloudApiBaseUrl` in services/core/cloud/cloud-api-origin.ts).
@@ -396,7 +397,7 @@ export const serverEnvSchema = z.object({
   // checked is exactly the string the prompt gets.
   DORKOS_DOCS_BASE_URL: z
     .string()
-    .default('https://dorkos.ai')
+    .default(links.site)
     .transform((value, ctx) => {
       const normalized = parseDocsBaseUrl(value);
       if (normalized === null) {

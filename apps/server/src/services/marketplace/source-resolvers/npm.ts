@@ -9,6 +9,7 @@
  *
  * @module services/marketplace/source-resolvers/npm
  */
+import { docsUrl } from '@dorkos/shared/links';
 import type { ResolvedSourceDescriptor } from '@dorkos/marketplace';
 import type { FetchedPackage, FetchPackageOptions } from '../package-fetcher.js';
 
@@ -34,6 +35,9 @@ export class NpmSourceNotSupportedError extends Error {
   }
 }
 
+/** The docs section that lists the marketplace sources DorkOS can install from. */
+const MARKETPLACE_SOURCES_DOCS_URL = docsUrl('/marketplace#marketplace-sources');
+
 /**
  * Throw a structured deferred error indicating that npm sources are not
  * yet supported in this DorkOS release. Does not touch the filesystem or
@@ -53,7 +57,7 @@ export async function npmResolver(
     message:
       `npm sources (${resolved.package}) are not yet supported in this DorkOS version. ` +
       `Full npm install pipeline is tracked in spec marketplace-06-npm-sources. ` +
-      `See https://docs.dorkos.ai/marketplace/source-types#npm for the roadmap.`,
-    docs: 'https://docs.dorkos.ai/marketplace/source-types#npm',
+      `See ${MARKETPLACE_SOURCES_DOCS_URL} for the sources DorkOS supports today.`,
+    docs: MARKETPLACE_SOURCES_DOCS_URL,
   });
 }

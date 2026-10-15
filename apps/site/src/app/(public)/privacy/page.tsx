@@ -371,10 +371,10 @@ export default function PrivacyPolicyPage() {
             <li>
               Email us to ask what we hold or to have it removed:{' '}
               <a
-                href={`mailto:${company.contactEmail}`}
+                href={`mailto:${company.emails.contact}`}
                 className="text-charcoal hover:text-brand-orange underline"
               >
-                {company.contactEmail}
+                {company.emails.contact}
               </a>
               .
             </li>
@@ -402,10 +402,10 @@ export default function PrivacyPolicyPage() {
           <p className="text-warm-gray leading-relaxed">
             Questions about your privacy? Email us at{' '}
             <a
-              href={`mailto:${company.contactEmail}`}
+              href={`mailto:${company.emails.contact}`}
               className="text-charcoal hover:text-brand-orange underline"
             >
-              {company.contactEmail}
+              {company.emails.contact}
             </a>
             .
           </p>

@@ -7,7 +7,7 @@ import { MarketingChrome } from '@/layers/features/marketing';
 import { DownloadButton, InstallCommand } from './_components/InstallPageActions';
 import { MacInstallSteps } from './_components/MacInstallSteps';
 
-const CURL_COMMAND = 'curl -fsSL https://dorkos.ai/install | bash';
+const CURL_COMMAND = siteConfig.installCommand;
 
 export const metadata: Metadata = {
   title: 'Install DorkOS',

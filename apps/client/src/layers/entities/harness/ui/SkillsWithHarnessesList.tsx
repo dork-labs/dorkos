@@ -1,3 +1,4 @@
+import { docsUrl } from '@dorkos/shared/links';
 import { appRoutes } from '@/layers/shared/lib';
 /**
  * Every skill in one project, and what each agent tool does with it.
@@ -21,7 +22,7 @@ import { useHarnessStatus } from '../model/use-harness-status';
 import { SkillHarnessRow } from './SkillHarnessRow';
 
 /** Where "how do I set this up" is answered in full. */
-const HARNESS_DOCS_URL = 'https://dorkos.ai/docs/guides/cli-usage#agent-files';
+const HARNESS_DOCS_URL = docsUrl('/guides/cli-usage#agent-files');
 
 /** What a {@link SkillsWithHarnessesList} is about. */
 export interface SkillsWithHarnessesListProps {

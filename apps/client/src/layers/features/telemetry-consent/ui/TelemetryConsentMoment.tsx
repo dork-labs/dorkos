@@ -1,3 +1,4 @@
+import { siteUrl } from '@dorkos/shared/links';
 import { useState } from 'react';
 
 import {
@@ -67,7 +68,7 @@ export function TelemetryConsentMoment() {
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
           <TelemetryPayloadToggle open={expanded} onToggle={() => setExpanded((v) => !v)} />
           <a
-            href="https://dorkos.ai/telemetry"
+            href={siteUrl('/telemetry')}
             target="_blank"
             rel="noopener noreferrer"
             className="text-muted-foreground hover:text-foreground text-xs font-medium underline underline-offset-2"

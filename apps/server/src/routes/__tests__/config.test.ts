@@ -42,6 +42,24 @@ vi.mock('../../services/runtimes/claude-code/sdk/sdk-utils.js', () => ({
   })),
 }));
 
+// This suite registers only fake runtimes to describe settings; native execution must refuse.
+vi.mock(
+  '../../services/runtimes/claude-code/claude-code-runtime.js',
+  async () => (await import('./config-native-runtime-fixture.js')).claudeNativeRuntime
+);
+vi.mock(
+  '../../services/runtimes/codex/codex-runtime.js',
+  async () => (await import('./config-native-runtime-fixture.js')).codexNativeRuntime
+);
+vi.mock(
+  '../../services/runtimes/opencode/opencode-runtime.js',
+  async () => (await import('./config-native-runtime-fixture.js')).openCodeNativeRuntime
+);
+vi.mock(
+  '../../services/runtimes/test-mode/test-mode-runtime.js',
+  async () => (await import('./config-native-runtime-fixture.js')).testModeNativeRuntime
+);
+
 vi.mock('../../lib/boundary.js', () => ({
   getBoundary: () => '/Users/test-user',
   // `lib/agents-home.js` reaches through boundary for a directory a person

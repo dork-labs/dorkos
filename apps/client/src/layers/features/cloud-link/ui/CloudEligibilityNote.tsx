@@ -1,3 +1,4 @@
+import { siteUrl } from '@dorkos/shared/links';
 import { ExternalLinkAnchor } from '@/layers/shared/ui';
 import { cn } from '@/layers/shared/lib';
 
@@ -20,7 +21,7 @@ export const CLOUD_ELIGIBILITY_TEXT_WITHOUT_SPACES =
  * Where the full answer lives: the pricing page's questions, which include
  * "Who can buy a plan?".
  */
-export const CLOUD_ELIGIBILITY_URL = 'https://dorkos.ai/pricing#faq';
+export const CLOUD_ELIGIBILITY_URL = siteUrl('/pricing#faq');
 
 /** Props for {@link CloudEligibilityNote}. */
 export interface CloudEligibilityNoteProps {

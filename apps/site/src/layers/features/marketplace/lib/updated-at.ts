@@ -23,11 +23,12 @@
  * @module features/marketplace/lib/updated-at
  */
 
+import { links } from '@dorkos/shared/links';
 import { resolvePluginSource, type PluginSource } from '@dorkos/marketplace';
 
 import { fetchMarketplaceJson } from './fetch';
 
-const MARKETPLACE_REPO = 'dork-labs/marketplace';
+const MARKETPLACE_REPO = links.marketplaceRepoSlug;
 const COMMITS_API_ROOT = `https://api.github.com/repos/${MARKETPLACE_REPO}/commits`;
 
 /**

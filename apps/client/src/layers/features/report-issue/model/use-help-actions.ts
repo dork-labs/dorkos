@@ -1,3 +1,4 @@
+import { links } from '@dorkos/shared/links';
 import { appRoutes } from '@/layers/shared/lib';
 /**
  * The help-and-feedback actions, once, for every surface that offers them.
@@ -16,7 +17,7 @@ import { openLink } from '@/layers/shared/lib';
 import { useFeedbackDialogStore } from '@/layers/shared/model';
 
 /** Where the docs live. */
-const DOCS_URL = 'https://dorkos.ai/docs';
+const DOCS_URL = links.docs;
 
 /** Where the person's own reports live. */
 
