@@ -133,8 +133,12 @@ const PROTECTED_EFFECTS: ProtectedEffect[] = [
     allowed: {
       'services/core/operator/config-patch.ts':
         'the one general-purpose merge, reached only through applyGuardedConfigWrite — the two entries above are what pin that',
-      'index.ts':
-        'the first-run telemetry notice and the profile route setter, both at boot or behind the profile route (logConfigWrite: "the first-run telemetry notice" / "the profile route")',
+      'startup/steps/telemetry-extensions-runtimes.ts':
+        'the first-run telemetry notice, at boot (logConfigWrite: "the first-run telemetry notice"). Moved out of index.ts unchanged',
+      'startup/steps/late-routes.ts':
+        'the profile route setter, behind the profile route (logConfigWrite: "the profile route"). Moved out of index.ts unchanged',
+      'startup/steps/search-relay-mesh.ts':
+        "the boot-time permission upgrade sweep's settings write (spec `agent-permissions` D13), merged onto the stored `permissions` section so a field the sweep does not know is kept. Moved out of index.ts unchanged",
       'startup/marketplace.ts':
         'the dev-link approvals writer: records what a person approved on the link card for a linked folder, behind the link flow (logConfigWrite: "linking a folder"). Moved out of index.ts unchanged (DOR-2821)',
       'routes/config.ts':
@@ -621,8 +625,8 @@ const PROTECTED_EFFECTS: ProtectedEffect[] = [
     allowed: {
       'services/core/remote/remote-boot.ts':
         'the definition itself: it opens only when the boot rule says so and `canExpose()` allows it',
-      'index.ts':
-        "the server's own start, with the boot rule's answer (`currentRemoteBootPlan`), never from a request",
+      'startup/steps/after-listen.ts':
+        "the server's own start, with the boot rule's answer (`currentRemoteBootPlan`), never from a request. Moved out of index.ts unchanged",
     },
   },
   {
@@ -814,8 +818,10 @@ const PROTECTED_EFFECTS: ProtectedEffect[] = [
     allowed: {
       'services/core/permissions/index.ts':
         'writes `permissions` and nothing else, behind the permission routes a person drives and with an audit event (spec `agent-permissions` D10)',
-      'index.ts':
-        "the boot-time permission upgrade sweep (spec `agent-permissions` D13): `writeFolded` is typed to `permissions` and `enabledToolGroups` only, folded from the agent's own legacy fields, never runtime, model or effort",
+      'startup/steps/search-relay-mesh.ts':
+        "the boot-time permission upgrade sweep (spec `agent-permissions` D13): `writeFolded` is typed to `permissions` and `enabledToolGroups` only, folded from the agent's own legacy fields, never runtime, model or effort. Moved out of index.ts unchanged",
+      'startup/steps/team-room-relay-adapters.ts':
+        "the boot-time carry of a Claude account the '0.87.0' config migration renamed (spec `claude-account-fleet` §6 R): `setAccount` writes `account` and nothing else. Moved out of index.ts unchanged, where it shared the entry above",
     },
   },
   {

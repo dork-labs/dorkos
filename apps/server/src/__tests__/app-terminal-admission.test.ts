@@ -131,9 +131,11 @@ function mountPaths() {
   // Every file that mounts routes: the composition root and the startup
   // modules split out of it (DOR-2821), and the Hono app with its groups, the
   // signed connector webhook among them.
-  const startupModules = readdirSync(new URL('../startup/', import.meta.url))
-    .filter((name) => name.endsWith('.ts'))
-    .map((name) => `../startup/${name}`);
+  const startupModules = ['../startup/', '../startup/steps/'].flatMap((dir) =>
+    readdirSync(new URL(dir, import.meta.url))
+      .filter((name) => name.endsWith('.ts'))
+      .map((name) => `${dir}${name}`)
+  );
   for (const filename of [
     '../index.ts',
     ...startupModules,
