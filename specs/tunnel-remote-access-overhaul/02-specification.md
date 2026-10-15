@@ -5,6 +5,8 @@
 **Spec #:** 80
 **Source:** `specs/tunnel-remote-access-overhaul/01-ideation.md`
 
+> **Later note (2026-10-14):** this plan says the server should always bind to `localhost`. That is still right for the tunnel itself, because the tunnel reaches `localhost` on its own. But the reason given, keeping devices on the same Wi-Fi out, came before DorkOS had login. Login is now required before DorkOS listens beyond your own computer, and letting devices on your Wi-Fi in is a separate setting you choose to turn on (DOR-2930). Read "always bind to localhost" below as "the tunnel never needs a wider bind", not as "DorkOS never accepts other devices on your network".
+
 ---
 
 ## Overview
@@ -605,13 +607,13 @@ Update `startTunnel()` and `stopTunnel()` to return `{ enabled: false, connected
 
 ## Security Considerations
 
-| Concern                                | Mitigation                                                          |
-| -------------------------------------- | ------------------------------------------------------------------- |
-| 0.0.0.0 binding exposes server on LAN  | Always bind to `localhost`                                          |
-| CORS blocks legitimate tunnel requests | Dynamic origin callback checks `tunnelManager.status.url`           |
-| Auth token in plaintext JSON           | Acknowledged; env var preferred, keychain integration deferred      |
-| Tunnel URL visible in UI               | QR code and URL are inherently shareable; matches intended use case |
-| SSE endpoint accessible without auth   | Same auth boundary as other API endpoints                           |
+| Concern                                | Mitigation                                                                           |
+| -------------------------------------- | ------------------------------------------------------------------------------------ |
+| 0.0.0.0 binding exposes server on LAN  | Tunnel binds `localhost`; Wi-Fi access is a separate, login-gated setting (DOR-2930) |
+| CORS blocks legitimate tunnel requests | Dynamic origin callback checks `tunnelManager.status.url`                            |
+| Auth token in plaintext JSON           | Acknowledged; env var preferred, keychain integration deferred                       |
+| Tunnel URL visible in UI               | QR code and URL are inherently shareable; matches intended use case                  |
+| SSE endpoint accessible without auth   | Same auth boundary as other API endpoints                                            |
 
 ## Documentation
 
