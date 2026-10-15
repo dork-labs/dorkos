@@ -1,9 +1,6 @@
 import { fileURLToPath } from 'node:url';
 import { serve } from '@hono/node-server';
-import { serveStatic } from '@hono/node-server/serve-static';
 import { Pool } from 'pg';
-import { COMMUNITY_PATH_SHORT_NAMES } from '@dorkos/shared/community-admin-wire';
-import { COMMUNITY_EMAIL_LINK_PAGES } from '@dorkos/shared/community-wire';
 import { createCommunityApp } from './app.js';
 import { createLiveHub } from './live/app-hub.js';
 import { parseConfig } from './config.js';
@@ -11,7 +8,7 @@ import { oidcCallbackUrl } from './oidc.js';
 import { migrate } from './migrate.js';
 import { createSignalHandler, createStop } from './shutdown.js';
 import { reservedBoundShortNames, shortNameHoldKey } from './host/short-names.js';
-import { registerShortNamePages } from './short-names/pages.js';
+import { registerPages } from './pages/register.js';
 import { createBlobStore } from './storage/index.js';
 import { sweepExpiredAttachments } from './routes/community/attachments.js';
 import { sweepExpiredExports } from './exports/sweep.js';
@@ -96,56 +93,7 @@ const app = createCommunityApp({
   noticeComposers,
   live,
 });
-const staticRoot = fileURLToPath(new URL('../dist/', import.meta.url));
-app.use('/assets/*', serveStatic({ root: staticRoot }));
-app.get('/', serveStatic({ path: fileURLToPath(new URL('../dist/index.html', import.meta.url)) }));
-app.get(
-  '/host',
-  serveStatic({ path: fileURLToPath(new URL('../dist/index.html', import.meta.url)) })
-);
-app.get(
-  '/join',
-  serveStatic({ path: fileURLToPath(new URL('../dist/index.html', import.meta.url)) })
-);
-app.get(
-  '/claim',
-  serveStatic({ path: fileURLToPath(new URL('../dist/index.html', import.meta.url)) })
-);
-app.get(
-  '/pairing',
-  serveStatic({ path: fileURLToPath(new URL('../dist/index.html', import.meta.url)) })
-);
-// The owner's object-only link from the email, and the new owner's claim link. Both carry their
-// token after `#`, so it never reaches this server's logs.
-app.get(
-  '/keep-ownership',
-  serveStatic({ path: fileURLToPath(new URL('../dist/index.html', import.meta.url)) })
-);
-app.get(
-  '/owner-replacement',
-  serveStatic({ path: fileURLToPath(new URL('../dist/index.html', import.meta.url)) })
-);
-// The pages a mailed reset, sign-in or confirmation link opens. Each carries its token after
-// `#`, so it never reaches this server's logs, and nothing happens on load: the page asks first.
-for (const page of Object.values(COMMUNITY_EMAIL_LINK_PAGES))
-  app.get(
-    page,
-    serveStatic({ path: fileURLToPath(new URL('../dist/index.html', import.meta.url)) })
-  );
-app.get(
-  '/c/:communityId',
-  serveStatic({ path: fileURLToPath(new URL('../dist/index.html', import.meta.url)) })
-);
-app.get(
-  '/c/:communityId/*',
-  serveStatic({ path: fileURLToPath(new URL('../dist/index.html', import.meta.url)) })
-);
-registerShortNamePages(app, {
-  indexPath: fileURLToPath(new URL('../dist/index.html', import.meta.url)),
-  // Only paths are never a short address; every other reserved name is served, and the lookup
-  // opens it only when a host operator gave it to a space.
-  reservedNames: new Set(COMMUNITY_PATH_SHORT_NAMES),
-});
+registerPages(app, { distDir: fileURLToPath(new URL('../dist/', import.meta.url)) });
 // A name a community already holds may have become reserved since, by an upgrade or the host's
 // own list; that address no longer opens the space, so say so where the server admin will see it.
 for (const bound of await reservedBoundShortNames(pool, config.reservedShortNames)) {

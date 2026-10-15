@@ -1,5 +1,4 @@
 import { randomUUID } from 'node:crypto';
-import { readFileSync } from 'node:fs';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { Pool } from 'pg';
 import { serve } from '@hono/node-server';
@@ -10,8 +9,9 @@ import { parseConfig } from '../config.js';
 import { migrate } from '../migrate.js';
 
 // specs/spaces-email §1 and T17 (DOR-2710): every HTTP route the Better Auth instance answers is
-// one somebody reviewed. A Better Auth upgrade or a new plugin that adds a route fails here until
-// the route is added to the allowlist with a reason, or switched off.
+// one somebody reviewed. The allowlist check needs no database, so it runs with the route census
+// in the unit suite (promises/route-census.test.ts, DOR-2875); this file proves a switched-off
+// path stays off over real HTTP while the server-side check behind it still works.
 const adminUrl = process.env.COMMUNITY_TEST_DATABASE_URL;
 if (!adminUrl)
   throw new Error('COMMUNITY_TEST_DATABASE_URL is required for Better Auth route tests');
@@ -40,40 +40,6 @@ const env = {
   COMMUNITY_MAIL_FROM: 'spaces@example.com',
 };
 
-const allowlist = JSON.parse(
-  readFileSync(new URL('./better-auth-routes.allowlist.json', import.meta.url), 'utf8')
-) as Record<string, string>;
-
-interface Endpoint {
-  path?: string;
-  options?: { method?: string | string[]; metadata?: { SERVER_ONLY?: boolean } };
-}
-
-/**
- * The routes an instance answers over HTTP: every endpoint with a path that is not server-only,
- * not in `disabledPaths`, and not under a prefix the app refuses before Better Auth sees it.
- */
-function httpRoutes(
-  api: Record<string, unknown>,
-  disabledPaths: readonly string[],
-  refusedPrefixes: readonly string[]
-): string[] {
-  const routes = new Set<string>();
-  for (const value of Object.values(api)) {
-    const endpoint = value as Endpoint;
-    if (typeof endpoint.path !== 'string' || endpoint.options?.metadata?.SERVER_ONLY) continue;
-    if (disabledPaths.includes(endpoint.path)) continue;
-    if (refusedPrefixes.some((prefix) => endpoint.path!.startsWith(prefix))) continue;
-    const methods = endpoint.options?.method ?? 'GET';
-    for (const method of Array.isArray(methods) ? methods : [methods])
-      routes.add(`${method} ${endpoint.path}`);
-  }
-  return [...routes].sort();
-}
-
-/** The app refuses these before Better Auth's handler (app.ts). */
-const REFUSED_PREFIXES = ['/reset-password/'];
-
 let pool: Pool;
 
 beforeAll(async () => {
@@ -99,32 +65,6 @@ afterAll(async () => {
 });
 
 describe('Better Auth routes', () => {
-  it('answers only reviewed routes over HTTP (T17)', () => {
-    // Purpose: fails when a route outside the reviewed allowlist becomes reachable, such as one a
-    // Better Auth upgrade adds, or a switched-off path coming back on.
-    const config = parseConfig(env);
-    const auth = createCommunityAuth(pool, config, { emailLinksOn: true });
-    const routes = httpRoutes(
-      auth.api as unknown as Record<string, unknown>,
-      auth.options.disabledPaths ?? [],
-      REFUSED_PREFIXES
-    );
-    expect(routes).toEqual(Object.keys(allowlist).sort());
-  });
-
-  it('notices a route nobody reviewed', () => {
-    // Purpose: fails if the census cannot see a new route, which would make the test above pass
-    // whatever Better Auth registers.
-    const config = parseConfig(env);
-    const auth = createCommunityAuth(pool, config);
-    const api = {
-      ...(auth.api as unknown as Record<string, unknown>),
-      sneaky: { path: '/magic-link/verify', options: { method: 'GET' } },
-    };
-    const routes = httpRoutes(api, auth.options.disabledPaths ?? [], REFUSED_PREFIXES);
-    expect(routes.filter((route) => !(route in allowlist))).toEqual(['GET /magic-link/verify']);
-  });
-
   it('keeps the server-side password check working with /verify-password off over HTTP (T17)', async () => {
     // Purpose: fails if switching off the HTTP path also broke the password confirmation every
     // careful action relies on (`password-confirmation.ts` calls `auth.api.verifyPassword`).
