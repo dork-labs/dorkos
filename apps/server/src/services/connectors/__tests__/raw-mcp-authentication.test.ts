@@ -115,7 +115,7 @@ describe('raw MCP durable authentication', () => {
         displayName: slug,
         connection: {
           transport: 'http',
-          url: `http://localhost:${(target.server.address() as AddressInfo).port}/mcp`,
+          url: `http://127.0.0.1:${(target.server.address() as AddressInfo).port}/mcp`,
           headers: { Authorization: 'Bearer local-fixture-only' },
         },
       })),
@@ -202,7 +202,7 @@ describe('raw MCP durable authentication', () => {
             displayName: 'Notes',
             connection: {
               transport: 'http',
-              url: `http://localhost:${(target.server.address() as AddressInfo).port}/mcp`,
+              url: `http://127.0.0.1:${(target.server.address() as AddressInfo).port}/mcp`,
               headers: { Authorization: 'Bearer local-fixture-only' },
             },
           },
@@ -249,7 +249,7 @@ describe('raw MCP durable authentication', () => {
           displayName: 'Notes',
           connection: {
             transport: 'http',
-            url: `http://localhost:${(target.server.address() as AddressInfo).port}/mcp`,
+            url: `http://127.0.0.1:${(target.server.address() as AddressInfo).port}/mcp`,
           },
         },
       ],
@@ -392,10 +392,41 @@ describe('raw MCP durable authentication', () => {
   it('reconnects an already-connected raw account with the same stable ID and original label', async () => {
     let probeClass: 'not-observed' | 'ok' | 'unauthorized' | 'timeout' | 'other-failure' =
       'not-observed';
+    let probeFailureData: {
+      reasonClass: string;
+      nodeCode: string | null;
+      httpStatus: number | null;
+    } = { reasonClass: 'not-observed', nodeCode: null, httpStatus: null };
     const context = boot({
       probe: async (connection) => {
         // Same real default probe and header normalization; retain only bounded DATA.
         const outcome = await runProbe({ ...connection, headers: connection.headers ?? {} });
+        if (outcome.kind === 'failed') {
+          const message = outcome.error;
+          const nodeCode =
+            [
+              'ECONNREFUSED',
+              'ECONNRESET',
+              'EPIPE',
+              'ENOTFOUND',
+              'EAI_AGAIN',
+              'UND_ERR_SOCKET',
+            ].find((code) => message.includes(code)) ?? null;
+          const status = /\b(?:HTTP|status(?: code)?)\s*[:=]?\s*([1-5][0-9]{2})\b/i.exec(message);
+          probeFailureData = {
+            reasonClass: nodeCode
+              ? 'node-transport-error'
+              : /fetch failed/i.test(message)
+                ? 'fetch-failed'
+                : /content.type|JSON|parse/i.test(message)
+                  ? 'response-format-error'
+                  : /MCP error|protocol/i.test(message)
+                    ? 'protocol-error'
+                    : 'other-failure',
+            nodeCode,
+            httpStatus: status ? Number(status[1]) : null,
+          };
+        }
         probeClass =
           outcome.kind === 'failed'
             ? outcome.error.startsWith('MCP server probe timed out after ')
@@ -415,6 +446,11 @@ describe('raw MCP durable authentication', () => {
           JSON.stringify({
             tag: 'raw-mcp-initial-connect-failure',
             probeClass,
+            ...probeFailureData,
+            listenerListening: target.server.listening,
+            listenerBoundIpv4:
+              (target.server.address() as AddressInfo | null)?.address === '127.0.0.1',
+            targetHostClass: '127.0.0.1',
             initializeObserved: methods.includes('initialize'),
             initializedObserved: methods.includes('notifications/initialized'),
             toolsListObserved: methods.includes('tools/list'),

@@ -24,7 +24,12 @@ import { createTestDb } from '@dorkos/test-utils/db';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 
 import { ApprovalService } from '../approvals/index.js';
-import { initCapabilityTierGate, resetCapabilityTierGate } from '../capabilities/index.js';
+import {
+  initCapabilityTierGate,
+  resetCapabilityTierGate,
+  resetPermissionGate,
+} from '../capabilities/index.js';
+import { askFor } from '../capabilities/__tests__/permission-gate-fixtures.js';
 import { gateHandRegisteredMcpTools, type SdkMcpTool } from '../mcp-tool-gate.js';
 
 const TARGET = '01KXQ3P7ADJY9DSXMZW1XGWCV4';
@@ -64,10 +69,13 @@ describe('a hand-registered destructive tool waits for the operator', () => {
     queue = [];
     approvals = new ApprovalService(createTestDb());
     initCapabilityTierGate({ approvals });
+    // A person set it to Ask: under Trusted a delete runs, recorded, with no card.
+    askFor('mesh_unregister');
   });
 
   afterEach(() => {
     resetCapabilityTierGate();
+    resetPermissionGate();
   });
 
   /** Call the gated tool, with or without a hold. */

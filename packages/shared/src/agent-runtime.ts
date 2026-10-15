@@ -125,7 +125,10 @@ export interface TurnPermissionLevel {
    * True when the turn this level was recorded from read words from outside
    * the owner's circle: a stranger's message, one DorkOS cannot vouch for, or
    * another agent's that carried such words on (spec `trusted-by-default-flip`
-   * §4.7). Not a power axis: no mode is admitted or refused by it. It rides the
+   * §4.7). Not a power axis: no mode is admitted or refused by it, though the
+   * permission gate reads it so a destructive action or a permission change in
+   * such a turn still asks (DOR-2739). That errs toward asking: a room turn
+   * with a stranger's message merely in view asks too. It rides the
    * level so every hop that already carries a level carries it too, and a note
    * the turn saves to memory says so.
    */

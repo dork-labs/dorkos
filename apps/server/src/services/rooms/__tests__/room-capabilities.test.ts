@@ -1235,10 +1235,10 @@ describe('the rooms MANAGEMENT verbs', () => {
     grantHeld = true;
     resetPermissionGate();
     // The real gate, over sources this file can move — the same seam boot wires
-    // to the config and the agent's manifest. No preset chosen (Unchanged), so
-    // Rooms is Blocked unless the agent's own setting allows it.
+    // to the config and the agent's manifest. A person set Rooms to Blocked, so
+    // it is Blocked unless the agent's own setting allows it.
     initPermissionGate({
-      readConfig: () => ({ preset: null, defaults: { areas: {}, actions: {} } }),
+      readConfig: () => ({ preset: null, defaults: { areas: { rooms: 'blocked' }, actions: {} } }),
       readAgentPermissions: async () => (grantHeld ? { areas: { rooms: 'allowed' } } : undefined),
     });
     harness = createRoomHarness({ agents, runner: scriptedRunner(() => null) });

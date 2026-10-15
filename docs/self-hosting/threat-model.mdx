@@ -90,17 +90,17 @@ Agents message each other in chats you can open, and reach you and outside syste
 
 ## What stops an agent operating DorkOS itself
 
-Agents do not only write code here. They can create agents, schedule work, change settings, and add or remove packages. Every one of those actions carries one of three labels, and the label decides what happens:
+Agents do not only write code here. They can create agents, schedule work, change settings, and add or remove packages. Every one of those actions carries one of three labels:
 
-| Label            | What happens                                                                             |
-| ---------------- | ---------------------------------------------------------------------------------------- |
-| Read only        | Runs. Nothing to undo.                                                                   |
-| Changes things   | Runs, and lands in your activity feed, named to the agent when DorkOS knows which asked. |
-| Cannot be undone | Does not run. It returns a pending approval, and waits for somebody to answer.           |
+| Label            | What happens                                                                                                                                                                                          |
+| ---------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Read only        | Runs. Nothing to undo.                                                                                                                                                                                |
+| Changes things   | Runs, and lands in your activity feed, named to the agent when DorkOS knows which asked.                                                                                                              |
+| Cannot be undone | On a **Trusted** install (the default) most of these run too, recorded the same way. Three never do: they return a pending approval and wait for somebody to answer, on Trusted and on Careful alike. |
 
-Six actions carry the last label today: removing an installed package, deleting a scheduled task, removing an agent, changing an agent's safety boundaries, changing what an agent runs on (its runtime, model or effort), and running a package from a folder. Changing what an agent runs on can be changed back, and carries the label anyway because every schedule that follows the agent runs differently from then on. Running a package from a folder lets whatever is in that folder run, edits included, without another review. Installing a package and creating one also wait, through the marketplace's own confirmation, because both bring new code onto your machine.
+Six actions carry the "Cannot be undone" label: removing an installed package, deleting a scheduled task, removing an agent, changing an agent's safety boundaries, changing what an agent runs on (its runtime, model or effort), and running a package from a folder. The last three always wait, whatever preset you are on, because each brings in code nobody has reviewed or moves an agent the way every one of its scheduled runs would also move. The first three no longer stop to ask on Trusted: they run and land in your activity feed, named to the agent that did them. Creating a new package in your personal marketplace waits too, and so does installing or updating one, because a package is code from outside your team. A package's own hooks and any global plugins it carries ask separately as well. On a **Careful** install, every action above waits for your yes, the way DorkOS always used to work.
 
-The gate is not advice. It sits at the composition root of the two tool servers that carry these actions, and inside the capability registry, below every caller, so a chat's permission mode cannot reach it: an agent in bypass-permissions mode still stops at these five. A new tool with no declared label fails the server build rather than running unlabelled.
+The gate is not advice. It sits at the composition root of the two tool servers that carry these actions, and inside the capability registry, below every caller, so a chat's permission mode cannot reach it: an agent in bypass-permissions mode still stops at the ones that always ask. A new tool with no declared label fails the server build rather than running unlabelled.
 
 There is a third, much smaller tool server, for Codex chats, and it is outside that gate. It carries exactly one tool, for changing what the app is showing you, which is in the middle group above and would not stop to ask in any case. Nothing that changes your files or your setup is reachable through it.
 

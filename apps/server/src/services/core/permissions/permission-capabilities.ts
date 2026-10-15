@@ -52,7 +52,7 @@ import {
   type PermissionAreaId,
 } from '@dorkos/shared/permissions';
 import { APPROVAL_REQUEST_REASON_MAX_LENGTH } from '@dorkos/shared/approval-schemas';
-import type { McpServerId } from '@dorkos/shared/capabilities';
+import type { ActionConsent, McpServerId } from '@dorkos/shared/capabilities';
 
 import {
   CapabilityToolError,
@@ -66,7 +66,7 @@ import {
   type CapabilityRegistry,
 } from '../capabilities/index.js';
 import { titleForMcpTool } from '../mcp-tools/mcp-tool-tiers.js';
-import { agentRequestWriter } from './permission-history.js';
+import { agentRequestWriter, agentWriter } from './permission-history.js';
 import { PermissionError, type PermissionService } from './permission-service.js';
 
 /**
@@ -238,12 +238,14 @@ async function listOwnPermissions(
   const resolve = (
     area: PermissionAreaId,
     actionId: string,
-    tier: 'act' | 'observe' | 'destructive'
+    tier: 'act' | 'observe' | 'destructive',
+    consent?: ActionConsent
   ) =>
     resolvePermission({
       area,
       actionId,
       tier,
+      ...(consent ? { consent } : {}),
       config,
       ...(agent ? { agent } : {}),
       ...(inactive ? { inactive: true } : {}),
@@ -256,7 +258,7 @@ async function listOwnPermissions(
   });
   const actions = sources.listActions().flatMap((action) => {
     if (action.area === null) return [];
-    const resolved = resolve(action.area, action.id, action.tier);
+    const resolved = resolve(action.area, action.id, action.tier, action.consent);
     return [
       {
         id: action.id,
@@ -379,13 +381,12 @@ const ChangePermissionInputSchema = z.object({
 });
 
 /**
- * Apply an approved `permissions.change` through the permission service.
+ * Apply a `permissions.change` through the permission service.
  *
- * The gate asked the person first, every time: the capability sits in the
- * Permissions area, which is never Allowed, so no stored setting can let it run
- * on its own. The handler still refuses anything that did not come through a
- * person's yes on this exact call, so a trusted caller's direct invocation
- * (which skips the gate) is pointed at the real controls instead.
+ * Runs when the gate let it through: on a person's yes on this exact call, or
+ * because the agent's Permissions area resolves Allowed (ADR `261006-225605`).
+ * The history says which. Anything else is refused, so a trusted caller's
+ * direct invocation (which skips the gate) is pointed at the real controls.
  *
  * @param deps - The boot dependency bag (for the permission service).
  * @param input - Who, what, and the new state.
@@ -397,10 +398,10 @@ async function changePermission(
   context: CapabilityHandlerContext
 ): Promise<unknown> {
   const approval = context.approval;
-  if (approval?.via !== 'approval') {
+  if (approval?.via !== 'approval' && approval?.via !== 'permission') {
     refuse(
       'NEEDS_A_PERSON',
-      'A permission changes only when the person says yes on a card. People change their own ' +
+      'This change needs the agent permission check first. People change their own ' +
         'permissions in Settings, or with `dorkos permissions`.'
     );
   }
@@ -425,12 +426,13 @@ async function changePermission(
   const patch = input.area
     ? { areas: { [input.area]: state } }
     : { actions: { [bareToolName(input.action!)]: state } };
+  const approved = approval.via === 'approval';
   const common = {
     ...patch,
     surface: 'agent-request' as const,
-    approvalId: approval.approvalId,
+    ...(approved ? { approvalId: approval.approvalId } : {}),
   };
-  const writer = agentRequestWriter(asker);
+  const writer = approved ? agentRequestWriter(asker) : agentWriter(asker);
   try {
     const changes =
       input.target === 'everyone'
@@ -441,7 +443,9 @@ async function changePermission(
       message:
         changes.length === 0
           ? 'Nothing changed: it was already set that way.'
-          : 'Done. The person said yes, and the permission is changed.',
+          : approved
+            ? 'Done. The person said yes, and the permission is changed.'
+            : 'Done. The permission is changed, and the change is recorded.',
     };
   } catch (err) {
     if (err instanceof PermissionError) refuse(err.code, err.message);
@@ -501,13 +505,14 @@ export const permissionsDomain: CapabilityDomain = {
       id: CHANGE_PERMISSION_ID,
       title: 'Change a permission',
       description:
-        'Ask the person to change what an agent may do: one area or one action, for one agent ' +
-        '(by id) or for everyone. The person decides on a card every time; this can never be ' +
-        "allowed ahead of time. 'default' removes a change so the setting falls back a layer. " +
-        'Safety limits, Permissions, and Reach & secrets can be Blocked or Ask, never Allowed. ' +
-        'Say plainly what you want changed and why before you ask.',
+        'Change what an agent may do: one area or one action, for one agent (by id) or for ' +
+        'everyone. It runs when your Permissions area is Allowed and asks the person on a card ' +
+        "otherwise; every change is recorded. 'default' removes a change so the setting falls " +
+        'back a layer. Safety limits and Reach & secrets can be Blocked or Ask, never Allowed. ' +
+        'Say plainly what you are changing and why.',
       tier: 'act',
-      // A floor area: never Allowed, so every call is a person's yes.
+      // Not a floor since ADR 261006-225605: an agent may change permissions as a
+      // person may, and the change is recorded with who made it.
       area: 'permissions',
       approvalDisplayFields: ['target', 'area', 'action', 'state'],
       approvalSubject: { field: 'target', kind: 'agent' },

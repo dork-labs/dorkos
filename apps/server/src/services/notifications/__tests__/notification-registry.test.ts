@@ -31,6 +31,13 @@ const PAYLOADS: { [K in NotificationKind]: NotificationPayloads[K] } = {
     agentId: 'agent-1',
     proposedBy: 'An agent',
   },
+  'schedule.armed_by_agent': {
+    taskId: 'task-1',
+    taskName: 'Nightly digest',
+    agentId: 'agent-1',
+    armedBy: 'Ana',
+    cadence: 'every day at 9:00 AM',
+  },
   'approval.pending': {
     approvalId: '01J000000000000000000001',
     capabilityId: 'tasks_delete',
@@ -157,6 +164,9 @@ const PAYLOADS: { [K in NotificationKind]: NotificationPayloads[K] } = {
 const EXPECTED_TIERS: Record<NotificationKind, string> = {
   'ask.pending': 'blocking',
   'schedule.parked': 'blocking',
+  // Live already and nothing waits on the person: told, with Pause, never paged
+  // (spec trusted-by-default-flip §5.4).
+  'schedule.armed_by_agent': 'notable',
   'approval.pending': 'blocking',
   'session.error': 'blocking',
   'turn.completed': 'notable',
@@ -275,6 +285,7 @@ describe('notification registry', () => {
       'mention.received',
       'report.daily',
       'run.completed',
+      'schedule.armed_by_agent',
       'schedule.parked',
       'session.error',
       'signin.required',

@@ -365,15 +365,15 @@ router.get('/', async (c) => {
       // Where each mini app's right-panel tab shows (spec `mini-app-placement`).
       // The panel and Settings both read it; `[]` covers the pre-migration read.
       panelTabs: configManager.get('ui')?.panelTabs ?? [],
-      // The power-door answer (spec `full-power-defaults`, D1). Both halves go
-      // out because the cockpit decides from them whether the door is put up at
-      // all: `fullPowerDecidedAt` is the "already asked" signal for both the
-      // onboarding stage and the one-time modal, and `fullPowerChoice` is what
-      // pre-selects `canInitiate` on a new binding. `?? null` covers the
-      // pre-migration read window only.
-      fullPowerDecidedAt: configManager.get('ui')?.fullPowerDecidedAt ?? null,
-      fullPowerChoice: configManager.get('ui')?.fullPowerChoice ?? null,
+      // Whether this person has seen the "agents now work without asking"
+      // notice (ADR 261006-225605). The app decides from it whether to show
+      // the notice at all. `?? null` covers the pre-migration read window only.
+      trustNoticeSeenAt: configManager.get('ui')?.trustNoticeSeenAt ?? null,
     },
+    // The permission preset, so the app can tell a Trusted install from a
+    // Careful one without a second request (`trustPosture`). The full picture,
+    // with every area, is `GET /api/permissions`.
+    permissions: { preset: configManager.get('permissions')?.preset ?? null },
     // The staged opt-ins, RESOLVED (DOR-1304). This is the block that exists
     // because curation is not free: `runtimes.claudeCode.persistentSession`
     // shipped behind a config flag and was unreachable from the cockpit, because

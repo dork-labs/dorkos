@@ -9,9 +9,11 @@ import { Cards, Card } from 'fumadocs-ui/components/card';
 
 # Action Approvals
 
-Your agents can run DorkOS for you: make agents, schedule work, change settings, add and remove packages. Most of that is easy to take back. Six things are different: removing an installed package, deleting a scheduled task, removing an agent, changing an agent's safety boundaries, changing what an agent runs on (its runtime, model or effort), and running a package from a folder. The first four have no undo. The fifth can be changed back, but every schedule that follows the agent would run differently in the meantime. The sixth lets whatever is in that folder run in DorkOS, edits included, without another review.
+Your agents can run DorkOS for you: make agents, schedule work, change settings, add and remove packages. On a **Trusted** install (the default), most of that runs on its own and lands in your activity feed, so you check it afterwards instead of approving it first.
 
-So DorkOS stops at those five and asks you. The card for the fifth shows each change as it is now and as it would be, for example **Model: claude-sonnet-4 → claude-opus-4**. An agent does not get to do one of them and then tell you about it afterwards.
+Six things an agent does cannot be taken back: removing an installed package, deleting a scheduled task, removing an agent, changing an agent's safety boundaries, changing what an agent runs on (its runtime, model or effort), and running a package from a folder. The last three always ask, on Trusted and on Careful alike, because they bring in code nobody has reviewed yet or they would move an agent in a way every one of its scheduled runs would also move. The first three run on Trusted like everything else, recorded in your activity feed and named to the agent that asked. If you chose **Careful** in [Permissions](/docs/guides/permissions), all six wait for your yes, the way DorkOS always used to work.
+
+The card for changing what an agent runs on shows each change as it is now and as it would be, for example **Model: claude-sonnet-4 → claude-opus-4**. An agent does not get to do one of the always-ask things and then tell you about it afterwards.
 
 <Callout type="info">
   This is not the same as [tool approval](/docs/guides/tool-approval). Tool approval covers what an
@@ -61,25 +63,22 @@ When one of an agent's rooms caused the request, the card also shows up inside t
 
 ## What needs your OK, and what doesn't
 
-Eight things an agent asks for will wait for you every time. Six of them change what you already have or what runs on it, and the first four have no undo:
+Six things an agent can do have no undo. Three of them wait for you every time, whichever preset you are on, because each carries a risk nothing else on this page does. The other three run on a **Trusted** install like everything else and land in your activity feed, named to the agent that did them; on **Careful** they wait for you too:
 
-- **Removing an installed package**, with or without its saved data
-- **Deleting a scheduled task**, which has no undo: the prompt, the schedule, and the timezone are gone
-- **Removing an agent**, which also deletes its setup file and turns off its scheduled tasks
-- **Changing an agent's safety boundaries**, the list of things you told it never to do: the new text replaces the whole list, so whatever it said before is gone
-- **Changing what an agent runs on**: its runtime, model or effort. Every scheduled task that doesn't pick its own would move with it. The card shows each change, as it is now and as it would be
-- **Running a package from a folder** on your computer: whatever is in that folder runs in DorkOS, edits included, without another review. No setting can approve this ahead of time, so the card shows the folder's full path each time, and every command it runs and when. Approving covers those commands; anything new the folder adds later asks again
+- **Changing an agent's safety boundaries** (always asks), the list of things you told it never to do: the new text replaces the whole list, so whatever it said before is gone
+- **Changing what an agent runs on** (always asks): its runtime, model or effort. Every scheduled task that doesn't pick its own would move with it. The card shows each change, as it is now and as it would be
+- **Running a package from a folder** on your computer (always asks): whatever is in that folder runs in DorkOS, edits included, without another review. No setting can approve this ahead of time, so the card shows the folder's full path each time, and every command it runs and when. Approving covers those commands; anything new the folder adds later asks again
+- **Removing an installed package**, with or without its saved data (asks on Careful)
+- **Deleting a scheduled task**, which has no undo: the prompt, the schedule, and the timezone are gone (asks on Careful)
+- **Removing an agent**, which also deletes its setup file and turns off its scheduled tasks (asks on Careful)
 
-Two more wait for you because they bring new code onto your machine:
-
-- **Installing a package**
-- **Creating a new package** in your personal marketplace
+**Creating a new package** in your personal marketplace also always asks, because it is new code landing on your machine for the first time. **Installing or updating a package** asks too, on Trusted and on Careful: a package is code from outside your team. Its own hooks and any global plugins it carries ask separately as well — see [Marketplace package trust](/docs/self-hosting/threat-model#marketplace-package-trust).
 
 Your [permissions](/docs/guides/permissions) can add more. Any area you set to **Ask**, like Rooms, puts a card in front of you before an agent makes a change there, even one you could take back. An area set to **Blocked** is off for that agent: see [When something is blocked](#when-something-is-blocked).
 
 Almost everything else an agent asks DorkOS for runs straight away. Reading your activity, listing your agents, editing an agent, changing a preference: those go through, and the ones that change something land in your activity feed so you can see them after the fact.
 
-The rule is about the action, not about which agent asked. The one way to stop being asked is **Always allow**, which is a decision you make yourself, for one agent and one action. See [Always allow](#always-allow).
+The rule is about the action, not about which agent asked. On Careful, the one way to stop being asked is **Always allow**, which is a decision you make yourself, for one agent and one action. See [Always allow](#always-allow).
 
 One set of settings is neither of those things. Agents are refused them outright, with no card and no way to say yes. See [Settings your agents cannot change](#settings-your-agents-cannot-change).
 
@@ -97,13 +96,15 @@ One set of settings is neither of those things. Agents are refused them outright
   your browser.
 </Callout>
 
-Each action DorkOS does cover carries a size label on its card, so you can tell at a glance what you are being asked:
+Every action carries a size label, and when a card shows at all, the label is on it, so you can tell at a glance what you are being asked:
 
 | Label                | What it means                                                                                                                                                                                                                                                                                                                              |
 | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | **Read only**        | Only reads. You will not be asked about these at all.                                                                                                                                                                                                                                                                                      |
 | **Changes things**   | Changes something you can change back.                                                                                                                                                                                                                                                                                                     |
 | **Cannot be undone** | There is no undo, or the change reaches work you already approved. For example: removing an installed package, deleting a scheduled task, removing an agent, changing an agent's safety boundaries, changing what an agent runs on, running a package from a folder, or making a workspace that brings its own settings or setup commands. |
+
+On a Trusted install, the three with no undo that are not on the always-asks list above (removing a package, deleting a schedule, removing an agent) carry this label in your activity feed rather than on a card: nothing stopped to ask, but the record still says what kind of change it was.
 
 ## Settings your agents cannot change
 
@@ -181,7 +182,7 @@ An agent can tell DorkOS who it is, and most do. One that doesn't is still stopp
 
 This also holds for `dorkos call`, which is how an agent reaches any DorkOS action from a shell. Running an agent outside DorkOS does not get past the question.
 
-There is one gap, and it is worth knowing about. `dorkos uninstall` is the older, person-shaped command for removing a package. An agent that runs it is asked, the same as everywhere else, because DorkOS spots the agent by the identity it carries. But a program that deliberately drops that identity first looks exactly like you clicking Uninstall in DorkOS, and with **Require login** off there is nothing left to tell the two apart. Turning **Require login** on is what closes it: removing a package then puts a card in front of you like any other risky action, and the command tells you how to try again once you have said yes.
+There is one gap, and it is worth knowing about. `dorkos uninstall` is the older, person-shaped command for removing a package. On **Careful**, an agent that runs it is asked, the same as everywhere else, because DorkOS spots the agent by the identity it carries; on **Trusted**, it runs and is recorded instead, the same as anywhere else an identified agent removes a package. Either way, a program that deliberately drops its identity first looks exactly like you clicking Uninstall in DorkOS, and with **Require login** off there is nothing left to tell the two apart. Turning **Require login** on is what closes it: an unidentified caller then gets a card in front of you like any other unattributed risky action, and the command tells you how to try again once you have said yes.
 
 Two things stay open even with login on, and both are open on purpose. Adding or removing a package source, and creating or changing a scheduled task, are still things one of your API keys can do, because those are commands you run from your own terminal and DorkOS cannot tell your key apart from a copy of it. Answering an approval is the one thing a key can never do.
 
@@ -232,7 +233,7 @@ Some things about it are worth knowing before you use it:
 - **It covers one agent doing one action.** The same agent doing something else still asks, and so does a different agent doing the same thing. There is no "trust this agent with everything" button on a card, on purpose.
 - **It lasts until you change it.** Set the action back to Ask or Blocked on the agent's Permissions page and the next request asks again. It does not undo anything that already ran.
 - **Every use is still recorded.** For an action that cannot be undone, your activity feed says each time the agent went ahead without asking.
-- **Some requests never offer it.** Changing safety limits, changing permissions, and anything that opens this computer to the internet or touches keys and sign-ins always need your yes, every time. Those cards show Allow and Deny, with a line saying so. A request DorkOS cannot tie to a named agent does not offer it either, because there would be no agent to remember it for.
+- **Some requests never offer it.** Changing safety limits, and anything that opens this computer to the internet or touches keys and sign-ins, always need your yes, every time. Those cards show Allow and Deny, with a line saying so. A request DorkOS cannot tie to a named agent does not offer it either, because there would be no agent to remember it for.
 
 <Callout type="warn">
   **With Require login off, DorkOS cannot tell who pressed it.** Always allow works either way, but

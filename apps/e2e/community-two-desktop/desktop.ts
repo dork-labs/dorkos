@@ -192,7 +192,7 @@ export async function launchDesktop(
         onboarding: { dismissedAt: now },
         profile: { rolePromptDismissedAt: now, identityPromptDismissedAt: now },
         telemetry: { userHasDecided: true },
-        ui: { fullPowerDecidedAt: now, fullPowerChoice: 'supervised' },
+        ui: { trustNoticeSeenAt: now },
       })
     );
     await page.reload();

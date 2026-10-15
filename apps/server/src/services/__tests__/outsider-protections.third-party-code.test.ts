@@ -70,8 +70,7 @@ async function permissiveConfig() {
   initConfigManager(dorkHome);
   configManager.set('ui', {
     ...configManager.get('ui'),
-    fullPowerDecidedAt: STAMP,
-    fullPowerChoice: 'full',
+    trustNoticeSeenAt: STAMP,
   });
   const runtimes = configManager.get('runtimes');
   configManager.set('runtimes', {

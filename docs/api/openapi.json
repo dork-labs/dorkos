@@ -12663,6 +12663,7 @@
           "careful",
           "balanced",
           "full",
+          "trusted",
           null
         ]
       },
@@ -12699,6 +12700,7 @@
           "signed-in",
           "local-trust",
           "agent-request-approved",
+          "agent",
           "upgrade",
           "outside"
         ]
@@ -12755,17 +12757,7 @@
             ]
           },
           "presetStop": {
-            "allOf": [
-              {
-                "$ref": "#/components/schemas/PermissionStop"
-              },
-              {
-                "type": [
-                  "string",
-                  "null"
-                ]
-              }
-            ]
+            "$ref": "#/components/schemas/PermissionStop"
           },
           "runtimes": {
             "type": "array",
@@ -13012,7 +13004,6 @@
           "default-action",
           "default-area",
           "preset",
-          "unchanged",
           "floor",
           "inactive",
           "always-asks"
@@ -17325,6 +17316,7 @@
         "enum": [
           "ask.pending",
           "schedule.parked",
+          "schedule.armed_by_agent",
           "approval.pending",
           "session.error",
           "turn.completed",
@@ -89680,7 +89672,7 @@
           "Mcp"
         ],
         "summary": "Import a discovered MCP server into DorkOS management",
-        "description": "Bring a server DorkOS discovered in a project’s .mcp.json under DorkOS management: resolve its transport, then add it as an enabled, editable managed server. Routed through the same approval gate as add, because the imported entry will run in the agent’s environment. Rejects the reserved name \"dorkos\" and any name already managed; reports a clear error when no such discovered server can be resolved.",
+        "description": "Bring a server DorkOS discovered in a project’s .mcp.json under DorkOS management: resolve its transport, then add it as an enabled, editable managed server. It asks a person first only when the agent’s permissions say so: the entry already runs in the agent’s environment from the project’s own .mcp.json. Rejects the reserved name \"dorkos\" and any name already managed; reports a clear error when no such discovered server can be resolved.",
         "requestBody": {
           "content": {
             "application/json": {

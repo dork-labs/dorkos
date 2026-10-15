@@ -48,7 +48,7 @@ Putting a room away (archiving) is not deleting: the room and everything said in
 
 Talking in a room is not part of any area. An agent in a room can always post and react there, whatever you set here, because nothing should be able to mute an agent in the middle of a conversation.
 
-Three areas are never Allowed: **Safety limits**, **Permissions**, and **Reach & secrets**. The most they can be is Ask, and their rows show a lock.
+Two areas are never Allowed: **Safety limits** and **Reach & secrets**. The most they can be is Ask, and their rows show a lock.
 
 **Own chat** holds one action: an agent asking for its own conversation to be summarized when it fills up. It is Allowed in every preset, and setting another area, like Other agents, never changes it. See [When the agent asks for it](/docs/guides/slash-commands#when-the-agent-asks-for-it).
 
@@ -78,27 +78,27 @@ An agent's own Files & commands setting beats everything else for that agent: it
 
 ## Presets
 
-A preset sets every area and Files & commands at once. You pick one when you first set up DorkOS, and you can change it any time in **Settings → Permissions** or in the Control Center (the ⚡ button in the top bar).
+A preset sets every area and Files & commands at once. You pick one when you first set up DorkOS, and you can change it any time in **Settings → Permissions** or in the Control Center (the ⚡ button in the top bar). There are two: **Trusted**, the default, and **Careful**, for anyone who would rather approve things by hand.
 
-| Area              | Careful   | Balanced | Full power    |
-| ----------------- | --------- | -------- | ------------- |
-| Rooms             | Ask       | Allowed  | Allowed       |
-| Tasks & schedules | Ask       | Ask      | Allowed       |
-| Other agents      | Ask       | Ask      | Allowed       |
-| Messages          | Allowed   | Allowed  | Allowed       |
-| Chat connections  | Ask       | Ask      | Allowed       |
-| Tools & packages  | Ask       | Ask      | Ask           |
-| Extension tools   | Ask       | Allowed  | Allowed       |
-| Own chat          | Allowed   | Allowed  | Allowed       |
-| DorkOS settings   | Ask       | Ask      | Ask           |
-| Safety limits     | Ask       | Ask      | Ask           |
-| Permissions       | Ask       | Ask      | Ask           |
-| Reach & secrets   | Blocked   | Ask      | Ask           |
-| Files & commands  | Ask first | Act      | Full autonomy |
+| Area              | Trusted       | Careful   |
+| ----------------- | ------------- | --------- |
+| Rooms             | Allowed       | Ask       |
+| Tasks & schedules | Allowed       | Ask       |
+| Other agents      | Allowed       | Ask       |
+| Messages          | Allowed       | Allowed   |
+| Chat connections  | Allowed       | Ask       |
+| Tools & packages  | Allowed       | Ask       |
+| Extension tools   | Allowed       | Ask       |
+| Own chat          | Allowed       | Allowed   |
+| DorkOS settings   | Allowed       | Ask       |
+| Safety limits     | Ask           | Ask       |
+| Permissions       | Allowed       | Ask       |
+| Reach & secrets   | Ask           | Blocked   |
+| Files & commands  | Full autonomy | Ask first |
 
-Anything you change on top of the preset counts as a change, so the picker reads, for example, **"Full power, 2 changes"**. **Reset to Full power** takes the changes away. Choosing a preset replaces those changes; agents you set differently keep their own settings unless you tick them in the question DorkOS asks.
+On **Trusted**, your agents do routine work on their own and everything they do is recorded, so you can see it afterwards. Safety limits and Reach & secrets still ask, because those two can never be Allowed for anyone. On **Careful**, agents ask before touching anything in the areas above, the same way DorkOS always used to work.
 
-If you have not picked yet, your agents keep working exactly as they did before permissions existed, and Settings → Permissions says so.
+A fresh install starts on Trusted. Anything you change on top of a preset counts as a change, so the picker reads, for example, **"Trusted, 2 changes"**. **Reset to Trusted** takes the changes away. Choosing a preset replaces those changes; agents you set differently keep their own settings unless you tick them in the question DorkOS asks.
 
 ## The request card
 
@@ -110,7 +110,7 @@ When an agent does something set to **Ask**, or asks for something that is **Blo
 
 After a yes, the agent carries on by itself. If it was waiting in the conversation, it continues in the same reply; if nobody was watching (a scheduled run, say), DorkOS tells it your answer and it picks up from there.
 
-Safety limits, permissions, and reach and secrets never offer **Always allow**. Their cards show Allow and Deny, and one line: "Always allow isn't offered here. Changing this needs your yes every time."
+Safety limits and reach and secrets never offer **Always allow**. Their cards show Allow and Deny, and one line: "Always allow isn't offered here. Changing this needs your yes every time."
 
 If you keep saying **Allow** to the same thing, the card offers to remember it. After you allow the same action for the same agent three times in a week, the next card for it shows **Always allow** a little more clearly, with one line: "You've allowed this 3 times this week." It stays highlighted until you answer **Always allow** or tap **Not now**, which turns it off for that agent and that action. **Not now** shows in the history, and its **Undo** turns the suggestion back on. Allow stays the first answer, and the card never offers this where Always allow isn't offered at all.
 
@@ -129,7 +129,7 @@ A **"2 agents differ"** link under a row lists who is set differently. Each has 
 
 ## Why is it set this way?
 
-Next to every state there is a **Why?** link. Click or tap it to see where the state comes from, for example **"Allowed, from the default (Full power)."**, and who last changed it, when, and where: **"Changed by someone on this computer on Sep 23 from a request card."** A locked area says it can never be Allowed. An action that deletes or removes something says it always asks unless you set it on its own. On a phone, the answer opens from the bottom of the screen.
+Next to every state there is a **Why?** link. Click or tap it to see where the state comes from, for example **"Allowed, from the default (Trusted)."**, and who last changed it, when, and where: **"Changed by someone on this computer on Sep 23 from a request card."** A locked area says it can never be Allowed. An action that deletes or removes something says it always asks unless you set it on its own. On a phone, the answer opens from the bottom of the screen.
 
 The Control Center's list of agents set differently has the same link on each row, and the **"2 agents differ"** list shows who set each one and when.
 
@@ -151,7 +151,7 @@ The `dorkos` command changes the same settings, through the same checks, and the
 
 ```bash
 dorkos permissions                              # the preset, every area, and who differs
-dorkos permissions set --preset balanced        # choose a preset
+dorkos permissions set --preset careful         # choose a preset: trusted or careful
 dorkos permissions set tasks ask                # one area, for everyone
 dorkos permissions set tasks_delete blocked     # one action, for everyone
 dorkos permissions reset tasks                  # back to the preset
@@ -166,7 +166,11 @@ dorkos agent permissions dorkbot reset files    # back to the setting everyone h
 
 ## Who can change them
 
-In DorkOS, only a person can. The permission pages, the `dorkos permissions` command, and your answer on a request card are the ways in. An agent can ask you to change a permission, or one of the settings only you may change, like turning on remote access. That always raises a card, and it never offers **Always allow**: the change happens only after you say yes, every time. An agent can ask you; it cannot answer for you.
+You can, from the permission pages, the `dorkos permissions` command, or your answer on a request card.
+
+On **Trusted**, your own agents can change permissions too, for themselves or for other agents, and every change lands in the history with the agent's name on it. If you want a setting no agent can undo, set the **Permissions** area itself to **Ask** or **Blocked**: then an agent can only ask you. On **Careful**, an agent always has to ask.
+
+Two kinds of caller always have to ask, on any preset: a tool or script DorkOS can't place as one of your agents, and an agent whose turn was started by someone outside your team. **Safety** and **Reach** settings, and the settings only you may change, like turning on remote access, always need your yes. Those cards never offer **Always allow**.
 
 ## What permissions can't stop
 
@@ -196,13 +200,23 @@ An answer on a request card has no Undo, because the action already happened. An
 
 With login off, DorkOS cannot tell you apart from any other program running on your computer, so it records a change as made by **"Someone on this computer"** and says why. With login on, it names your account. Changes made when DorkOS upgraded itself are labelled **"Upgrade"**, and edits to an agent's settings file are labelled **"Changed outside DorkOS"**.
 
-## After an upgrade
+## What changed
 
-If you already told DorkOS to run at full power, your agents get the Full power preset. If you chose to keep being asked, they get Careful. The history records each of these as an upgrade.
+Agents used to ask first. Now they work on their own, and a record of everything they did is what you check instead of a card in front of every step.
 
-Careful now covers more than rooms. On a Careful install, agents ask before they touch tasks and schedules, other agents, chat connections, or rooms, where before some of those ran without asking.
+**Existing installs move to Trusted once.** The first time you open the version with this change, DorkOS moves your permissions to Trusted and shows a one-time note: "Agents now work without asking." **Got it** dismisses it. **Keep asking me** puts you on Careful instead and keeps anything you set to Blocked, so your agents keep asking first. Either way, the note shows once and never comes back. A fresh install starts on Trusted directly and shows the same note once, on its second launch.
 
-Two older settings are gone, and what they said carries over:
+**Choosing Careful before the upgrade is respected.** If you had already set the preset to Careful, or answered DorkOS's old setup question with "keep asking me," nothing moves and no note appears: you already answered the question the note asks. Anything you set to Ask or Blocked yourself, on any area, stays exactly as you set it, and so does a Files & commands setting of Ask first.
+
+**Careful now covers more areas than it used to.** On a Careful install, agents ask before they touch tasks and schedules, other agents, chat connections, or rooms, where some of those used to run without asking.
+
+**Agents can message each other across projects.** DorkOS turns this on once, the first time it starts after the upgrade (or on a fresh install), on Trusted. A Careful install is left as it was. If you turn it off afterwards in Team → Access, it stays off. See [Mesh](/docs/concepts/mesh).
+
+**Schedules an agent makes for itself start running.** On Trusted, a schedule one of your agents proposes is armed right away and you get a notification with **Pause**; on Careful, it still waits for your approval the way every schedule used to. A schedule that comes from a file, a package, or a Shape still waits for you either way; that part never changed.
+
+**An extension an agent builds for you turns on by itself.** On Trusted, a mini app your agent makes with `create_extension` is approved the moment it is scaffolded, bound to that exact folder and the permissions it asks for today. A copy from anywhere else, or a later version that asks for more, still waits for you. On Careful, every extension waits, same as before.
+
+**Two older settings are gone, and what they said carries over:**
 
 - **The per-agent limit** ("observe", "act"): an agent limited to observe now has every area Blocked. It can still post and react in conversations.
 - **The Agent context switches** for tasks, messages, other agents, and chat connections in Settings: a switch you had turned off becomes that area Blocked for everyone.

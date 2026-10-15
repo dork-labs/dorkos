@@ -112,12 +112,7 @@ import type { UserConfig, SidebarItemRef } from '@dorkos/shared/config-schema';
 import type { PermissionAreaId } from '@dorkos/shared/permissions';
 import { logger, logError } from '../../lib/logger.js';
 import { SERVER_VERSION } from '../../lib/version.js';
-import { cacheStoreReads } from './config/cached-store-reads.js';
-import {
-  ConfigUnreadableError,
-  ConfigMigrationFailedError,
-  formatConfigLoadError,
-} from './config/boot-errors.js';
+import { ConfigUnreadableError, formatConfigLoadError } from './config/boot-errors.js';
 export {
   ConfigBootError,
   ConfigUnreadableError,
@@ -126,12 +121,13 @@ export {
 import { browserSettingRefusal } from './config/browser-setting.js';
 import { restoreProtectedState } from './safe-defaults/protected-state.js';
 import { backupConfigFile } from './config/backups.js';
-import { classifyConfigLoadFailure } from './config/load-failure.js';
-import { readStoredConfigForSalvage, sleepSync } from './config/salvage-read.js';
+import { readStoredConfigForSalvage } from './config/salvage-read.js';
+import { loadConfigStore } from './config/load-store.js';
 import {
   tolerateLegacyClaudeAccountEncoding,
   tolerateRetiredRoomKeys,
   tolerateRetiredRuntimeKeys,
+  tolerateRetiredUiKeys,
 } from './config/retired-key-tolerance.js';
 import { preserveUnknownKeys, schemaNodeAt, tolerateUnknownKeys } from './config/version-skew.js';
 import {
@@ -171,89 +167,6 @@ function describeLoadError(error: unknown): string {
  * reported rather than guessed at.
  */
 export const CONFIG_LOAD_RETRY_DELAYS_MS = [50, 200, 500] as const;
-
-/** The exact options object both `Conf` constructions below are built from. */
-type ConfConstructorOptions = ConstructorParameters<typeof Conf<UserConfig>>[0];
-
-/**
- * Open the `conf` store, riding out a failure that is not the file's fault.
- *
- * Three outcomes, and they are deliberately not the same shape:
- *
- * 1. It opened — the store comes back.
- * 2. The file is condemned — the error comes back so the caller can back it up,
- *    salvage what protects the person, and start a fresh one. Either the
- *    failure was `corrupt` outright, or it was `unknown` and survived the whole
- *    staircase, which makes it deterministic and therefore about the file.
- * 3. The OS refused the file (`io`) — retried on a short backoff, then thrown.
- *    **The file is never touched on this path, however long the failure
- *    lasts.** Losing the ability to read a file is not evidence that the file
- *    is bad, and the person's settings are sitting in it, intact.
- * 4. A migration body threw (`migration`) — thrown straight away, with the file
- *    untouched. Not retried, because DorkOS's own code failing is deterministic
- *    and a staircase would only delay the same answer.
- *
- * @param options - Constructor options, shared with the recovery construction.
- * @param configPath - Absolute path of the config file, for logs.
- * @param retryDelaysMs - Backoff between attempts; its length is the retry count.
- * @param backupPath - Where the old settings already went, when this call is
- *   the second leg of corrupt-recovery. Only changes what an error says.
- * @returns The opened store, or the error that condemned the file.
- * @throws {ConfigUnreadableError} When every attempt was refused by the OS.
- * @throws {ConfigMigrationFailedError} When a migration body threw.
- */
-function loadConfigStore(
-  options: ConfConstructorOptions,
-  configPath: string,
-  retryDelaysMs: readonly number[],
-  backupPath?: string
-): { store: Conf<UserConfig> } | { corruptedBy: Error } {
-  let lastError: unknown;
-  for (let attempt = 0; ; attempt++) {
-    try {
-      return { store: cacheStoreReads(new Conf<UserConfig>(options)) };
-    } catch (error) {
-      lastError = error;
-      const kind = classifyConfigLoadFailure(error);
-      const condemn = (): { corruptedBy: Error } => ({
-        corruptedBy: error instanceof Error ? error : new Error(String(error)),
-      });
-      if (kind === 'corrupt') return condemn();
-      if (kind === 'migration') {
-        logger.error(
-          `[Config] A migration failed while updating ${configPath}. ` +
-            `Leaving the file exactly as it is.`,
-          logError(error)
-        );
-        throw new ConfigMigrationFailedError(configPath, error);
-      }
-      const delay = retryDelaysMs[attempt];
-      if (delay === undefined) {
-        // The staircase is spent. An `io` failure still says nothing about the
-        // contents, so it is reported and the file survives. An `unknown` one
-        // has now failed identically across ~750ms, which is what a
-        // file-caused failure looks like and a transient one does not: condemn
-        // it, so a config `conf` can never open again gets recovered instead of
-        // blocking every boot from here on.
-        if (kind === 'unknown') {
-          logger.warn(
-            `[Config] ${configPath} failed to open the same way on every attempt: ` +
-              `${describeLoadError(error)}. Treating it as damaged.`
-          );
-          return condemn();
-        }
-        break;
-      }
-      logger.warn(
-        `[Config] Could not read ${configPath}: ${describeLoadError(error)}. ` +
-          `Leaving the file alone and retrying in ${delay}ms.`
-      );
-      sleepSync(delay);
-    }
-  }
-  logger.error(`[Config] Gave up reading ${configPath} without modifying it`, logError(lastError));
-  throw new ConfigUnreadableError(configPath, lastError, backupPath);
-}
 
 /**
  * Append-only `conf` migration chain keyed by app version. See
@@ -778,6 +691,92 @@ export function dropSchedulerTimezone(store: {
   if (store.has('scheduler.timezone')) {
     store.delete('scheduler.timezone');
   }
+}
+
+/** A stored value as a plain object, or `null` when it is anything else. */
+function plainObject(value: unknown): Record<string, unknown> | null {
+  return value !== null && typeof value === 'object' && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
+}
+
+/**
+ * Migration body: move an existing install to the Trusted posture once, unless
+ * the person already chose to be asked (DOR-2739, ADR 261006-225605, spec
+ * `trusted-by-default-flip` §5.7).
+ *
+ * | Stored                                                        | Becomes                                                     |
+ * | ------------------------------------------------------------- | ----------------------------------------------------------- |
+ * | `permissions.preset: 'careful'`                               | unchanged; `ui.trustNoticeSeenAt` stamped (no notice)       |
+ * | preset `null` or `'trusted'`, and `ui.fullPowerChoice: 'supervised'` | preset `'careful'`; `ui.trustNoticeSeenAt` stamped     |
+ * | anything else (`null`, `'balanced'`, `'full'`, unknown)       | preset `'trusted'`; notice left to show                     |
+ * | `runtimes.defaultTrustStop` `null` or `'act'`, on that last row | `'autonomy'` (`'ask'` and `'autonomy'` kept)              |
+ * | `ui.fullPowerDecidedAt`, `ui.fullPowerChoice`                 | deleted (the door is retired)                               |
+ *
+ * **Why an explicit Careful choice is respected.** A person who already said
+ * "keep asking me" answered the question the notice asks; moving them would be
+ * the silent flip the ADR forbids. Full and Balanced were both answers to "how
+ * much should agents ask", and Trusted is what that answer now means.
+ *
+ * **Why `'trusted'` counts as unanswered beside `'supervised'`.** Before this
+ * release no build offered Trusted, so a stored `'trusted'` is conf's own
+ * top-level defaults merge: an install from before `permissions` existed gets
+ * the section from `USER_CONFIG_DEFAULTS` before any key runs, and `'0.83.0'`
+ * (which maps a "keep asking me" answer to Careful) then sees a preset and steps
+ * aside. Reading that seed as an answer would move exactly the person who chose
+ * to be asked.
+ *
+ * **What it leaves alone.** `permissions.defaults` and every per-agent override
+ * (a person's own changes stay on top of the preset), the per-runtime stops
+ * (`null` already follows the global one), and a stop a person set to `'ask'`.
+ * `permissions.trustedStoresAppliedAt` is not set here: the mesh rules and the
+ * database are not in this file, so the boot steps that change them stamp it.
+ *
+ * Idempotent: a second run finds the preset it wrote, keeps a stamped notice,
+ * and has no door fields left to delete.
+ *
+ * @internal Exported for testing only.
+ * @param store - The `conf` store instance (provides `get`/`set`).
+ * @param now - The time to stamp; injectable for tests.
+ */
+export function applyTrustedPosture(
+  store: {
+    get: (key: string) => unknown;
+    set: (key: string, value: unknown) => void;
+  },
+  now: Date = new Date()
+): void {
+  const permissions = plainObject(store.get('permissions'));
+  const ui = plainObject(store.get('ui'));
+  const preset = permissions?.preset ?? null;
+  const keptAsking =
+    preset === 'careful' ||
+    ((preset === null || preset === 'trusted') && ui?.fullPowerChoice === 'supervised');
+
+  const nextPermissions = {
+    ...(permissions ?? { defaults: { areas: {}, actions: {} }, upgradeSweptVersion: null }),
+    preset: keptAsking ? 'careful' : 'trusted',
+  };
+  if (nextPermissions.preset !== preset) store.set('permissions', nextPermissions);
+
+  if (!keptAsking) {
+    const runtimes = plainObject(store.get('runtimes'));
+    const stop = runtimes?.defaultTrustStop ?? null;
+    if (runtimes && (stop === null || stop === 'act')) {
+      store.set('runtimes', { ...runtimes, defaultTrustStop: 'autonomy' });
+    }
+  }
+
+  if (!ui) return;
+  const { fullPowerDecidedAt: _decidedAt, fullPowerChoice: _choice, ...nextUi } = ui;
+  if (keptAsking && (nextUi.trustNoticeSeenAt ?? null) === null) {
+    nextUi.trustNoticeSeenAt = now.toISOString();
+  }
+  const changed =
+    'fullPowerDecidedAt' in ui ||
+    'fullPowerChoice' in ui ||
+    nextUi.trustNoticeSeenAt !== ui.trustNoticeSeenAt;
+  if (changed) store.set('ui', nextUi);
 }
 
 /**
@@ -4747,6 +4746,17 @@ export const CONFIG_MIGRATIONS = {
       });
     }
   },
+  // v0.111.0 is the newest tag and 0.114.0 has merged (computers above), so
+  // this opens 0.115.0. Frozen from merge, for the reason `'0.60.0'` above
+  // states; anything further opens `'0.116.0'`.
+  //
+  // Writes `permissions.preset`, `runtimes.defaultTrustStop` and
+  // `ui.trustNoticeSeenAt`, and deletes the two door fields `'0.67.0'` seeded
+  // and `'0.83.0'` read. Both earlier keys run first, so this one sees their
+  // output; nothing after it reads what it removes. Trusted by default (ADR
+  // 261006-225605, DOR-2739): an install that chose to be asked keeps Careful,
+  // every other install moves to Trusted once and is shown a notice.
+  '0.115.0': applyTrustedPosture,
 } as const;
 
 /**
@@ -4866,6 +4876,9 @@ tolerateRetiredRuntimeKeys(jsonSchemaFull);
 // route. Two calls rather than one call doing both: they name two sections, and
 // a miss on either is a husk that never leaves.
 tolerateRetiredRoomKeys(jsonSchemaFull);
+
+// And the retired power-door and autonomy-acknowledgement leaves under `ui`.
+tolerateRetiredUiKeys(jsonSchemaFull);
 
 /**
  * The per-top-level-key JSON Schema conf validates against, tolerances included.

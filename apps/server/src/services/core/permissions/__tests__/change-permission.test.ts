@@ -1,7 +1,8 @@
 /**
- * `permissions.change` (`change_permission`): an agent asking to change a
- * permission, which is always a person's yes (spec `agent-permissions` D9,
- * task 3.3). Driven through the real registry, the real gate, the real approval
+ * `permissions.change` (`change_permission`): an agent changing a permission
+ * (spec `agent-permissions` D9, task 3.3). It runs when the Permissions area is
+ * Allowed and asks otherwise; Permissions stopped being a floor with ADR
+ * `261006-225605`. Driven through the real registry, the real gate, the real approval
  * service and the real permission service over an in-memory world.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
@@ -18,7 +19,7 @@ import {
   type CapabilityDeps,
   type CapabilityRegistry,
 } from '../../capabilities/index.js';
-import { ApprovalService, isAlwaysOffered } from '../../approvals/index.js';
+import { ApprovalService } from '../../approvals/index.js';
 import { eventFanOut } from '../../event-fan-out.js';
 import type { AgentIdentity } from '../../agent-identity/agent-identity-service.js';
 import { permissionsDomain } from '../permission-capabilities.js';
@@ -80,33 +81,39 @@ describe('permissions.change', () => {
     }
   }
 
-  it('asks every time, and changes nothing until a person answers', async () => {
+  it('asks under a preset whose Permissions area asks, and changes nothing until a person answers', async () => {
     const { decision } = await call(OPEN_TEST_BOT_ROOMS);
     expect(decision?.outcome).toBe('approval_required');
     expect(world.agentArea('agent-test', 'rooms')).toBeUndefined();
   });
 
-  it('still asks when the agent itself holds an Allowed for it', async () => {
-    // A stored Allowed on a floor-area action is refused on write and clamped on
-    // read, so even a hand-edited file cannot make this run on its own.
-    own = { actions: { 'permissions.change': 'allowed' } };
-    const { decision } = await call(OPEN_TEST_BOT_ROOMS);
-    expect(decision?.outcome).toBe('approval_required');
+  it('runs without a card under Trusted, where Permissions is Allowed', async () => {
+    preset = 'trusted';
+    const { result, decision } = await call(OPEN_TEST_BOT_ROOMS);
+    expect(decision).toBeUndefined();
+    expect(result).toBeDefined();
+    expect(world.agentArea('agent-test', 'rooms')).toBe('allowed');
+    expect(approvals.listPending()).toEqual([]);
+    // The history names the agent and claims no yes nobody gave.
+    const [changed] = world.events.filter((e) => e.eventType === 'permission.changed');
+    expect(changed).toMatchObject({
+      actorLabel: 'DorkBot',
+      metadata: { surface: 'agent-request', attribution: 'agent' },
+    });
+    expect(changed!.metadata).not.toHaveProperty('approvalId');
   });
 
-  it('never offers Always allow on its card', async () => {
+  it('runs when the agent itself holds an Allowed for it, now that Permissions is not a floor', async () => {
+    own = { actions: { 'permissions.change': 'allowed' } };
+    const { decision } = await call(OPEN_TEST_BOT_ROOMS);
+    expect(decision).toBeUndefined();
+    expect(world.agentArea('agent-test', 'rooms')).toBe('allowed');
+  });
+
+  it('offers Always allow on its card', async () => {
     await call(OPEN_TEST_BOT_ROOMS);
     const [pending] = approvals.listPending();
-    expect(pending).toMatchObject({ area: 'permissions', alwaysOffered: false });
-    expect(
-      isAlwaysOffered({
-        requestedByPath: DORKBOT.agentPath,
-        area: 'permissions',
-        authorityBindingDigest: null,
-        capabilityId: 'permissions.change',
-        tier: 'act',
-      })
-    ).toBe(false);
+    expect(pending).toMatchObject({ area: 'permissions', alwaysOffered: true });
   });
 
   it('writes the change once approved, with one event saying who asked', async () => {

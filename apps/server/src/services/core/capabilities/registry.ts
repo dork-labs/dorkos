@@ -493,6 +493,7 @@ export function composeRegistry(
               action: capability,
               input: parsed,
               ...(supplied.identity ? { identity: supplied.identity } : {}),
+              ...(supplied.sessionId ? { sessionId: supplied.sessionId } : {}),
             });
         // Named here rather than in the gate, which is synchronous (DOR-1929):
         // an action that can raise a card and declares its subject gets a card

@@ -35,6 +35,15 @@ import {
   registerEveryFolderAsHome,
 } from '../../../../core/agent-identity/__tests__/agent-home-fixture.js';
 
+// Careful, so an agent's schedule parks and its edits re-ask: the guard and
+// the parked nudge are what this file pins. Trusted arming is covered in
+// `task-tools-trusted.test.ts`.
+vi.mock('../../../../core/config-manager.js', () => ({
+  configManager: {
+    get: (key: string) => (key === 'permissions' ? { preset: 'careful' } : undefined),
+  },
+}));
+
 // Every scratch folder counts as a registered home here, so this suite's
 // mocked mesh decides who is an agent, as it did before homes (DOR-2355).
 beforeEach(() => registerEveryFolderAsHome());

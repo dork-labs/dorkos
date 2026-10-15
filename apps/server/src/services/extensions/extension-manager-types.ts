@@ -11,6 +11,7 @@ import type {
   ExtensionToolStatus,
 } from '@dorkos/extension-api';
 import type { ExtensionHttpHandler } from './http/extension-http.js';
+import type { ApprovedPermissionSet } from '@dorkos/shared/config-schema';
 import { mayRunExtensionCode, type ExtensionApprovals } from './extension-load-policy.js';
 import type { IsolatedExtensionHost } from './isolation/isolated-host.js';
 import type { RunningExtensionTools } from './agent-tools/tool-binding.js';
@@ -86,6 +87,12 @@ export interface CreateExtensionResult {
   status: ExtensionStatus;
   bundleReady: boolean;
   files: string[];
+  /**
+   * Present when DorkOS approved this new copy to run as it was created,
+   * because the install is Trusted (ADR 261006-225605): the permission set the
+   * approval covers. Absent means it waits for a person like any other.
+   */
+  autoApproved?: ApprovedPermissionSet;
   error?: {
     code: string;
     message: string;

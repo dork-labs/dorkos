@@ -52,6 +52,15 @@ function seedUpgradeBoot(
         fullPowerChoice,
       },
       runtimes: { default: 'claude-code', defaultTrustStop: 'act' },
+      // The section as a pre-0.83.0 build's defaults would have seeded it. A
+      // file with no section at all now gets `'trusted'` from conf's top-level
+      // merge before this key runs, and the key steps aside; `'0.103.0'` is
+      // what reads that case (`config-trusted-posture-migration.test.ts`).
+      permissions: {
+        preset: null,
+        defaults: { areas: {}, actions: {} },
+        upgradeSweptVersion: null,
+      },
       ...extra,
       __internal__: { migrations: { version: STORED_VERSION } },
     })

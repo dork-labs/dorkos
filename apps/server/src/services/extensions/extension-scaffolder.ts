@@ -71,7 +71,8 @@ async function directoryExists(dir: string): Promise<boolean> {
  * @param options - Creation parameters
  * @param dorkHome - Resolved DorkOS data directory
  * @param currentCwd - Active working directory (required for local scope)
- * @returns Created extension info (status/bundleReady populated by caller after enable)
+ * @returns The new folder, the files written in it, and the manifest written
+ *   (status/bundleReady populated by caller after enable)
  */
 export async function scaffoldExtension(options: {
   name: string;
@@ -80,7 +81,7 @@ export async function scaffoldExtension(options: {
   scope: 'global' | 'local';
   dorkHome: string;
   currentCwd: string | null;
-}): Promise<{ targetDir: string; files: string[] }> {
+}): Promise<{ targetDir: string; files: string[]; manifest: object }> {
   const { name, description, template, scope, dorkHome, currentCwd } = options;
 
   // The name becomes a directory name, so it is checked before it is used as
@@ -171,7 +172,7 @@ export async function scaffoldExtension(options: {
     files.push('server.ts');
   }
 
-  return { targetDir, files };
+  return { targetDir, files, manifest };
 }
 
 /**

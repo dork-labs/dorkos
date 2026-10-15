@@ -69,10 +69,9 @@ goes back to following its agent. Omitting a field leaves it as it was.
 ### Say why, in your own words
 
 \`reason\` is required and it is not the description. The description says what the
-task does; the reason says why it should exist at all, addressed to the person who
-has to approve it. All they see is your sentence, your name, and the times the
-cron would actually fire, so a blank or padded reason is a task they will reject
-(an empty one is refused). Write the sentence you would say out loud: "You asked
+task does; the reason says why it should exist at all, addressed to the person.
+Often all they see is your sentence, your name, and the times the cron would
+fire, so a blank or padded reason gets paused or rejected (an empty one is refused). Write the sentence you would say out loud: "You asked
 me to keep an eye on the overnight builds, and this checks them at 7am so the
 summary is waiting for you."
 
@@ -90,21 +89,22 @@ an older DorkOS installed it, until the person chooses **Check files** on it.
 Where a task lives is decided once. \`tasks_update\` refuses \`target\` or
 \`agentId\` (the whole call); to move a task, delete it and create it again.
 
-### The approval gate
+### Live at once, or waiting for approval
 
-A task you create is NOT live yet, whichever way you created it. Both
-\`tasks_create\` and \`dorkos task create\` leave it at \`pending_approval\`. Tell the
-user it needs their approval; do not promise it will run before they give it.
+Read the returned \`status\`. \`active\`: DorkOS trusts its agents, so a task you
+create in a session is live and the person is told, with Pause; say what you
+scheduled and when it runs. \`pending_approval\`: it waits (the person chose
+Careful, or it came over the external MCP connection or without your agent
+token); tell them it needs their approval, and promise nothing before that.
 
-Moving a task to \`active\` IS that approval, so it is not yours to do:
+Moving a task to \`active\` IS a person's approval, so it is not yours to do:
 \`tasks_update\` refuses \`status\` and changes nothing else in the same call.
 
-**Editing an approved task sends it back for approval.** The user approved the
-\`prompt\`, the \`cron\` and the \`timezone\` together, since a new timezone moves
-when it runs. Change any of the three and DorkOS stops the task at once and asks
-them again. Your edit is saved, it just waits, and the reply says so with
-\`needsReapproval: true\`. Name the task and tell the user it is waiting on them.
-Every other field is free, \`enabled\` included: that is how you turn a task on or off.
+**Editing can send a task back for approval.** Change the \`prompt\`, \`cron\` or
+\`timezone\` of a task that came from a file or a package, or of any task on
+Careful, and DorkOS stops it at once and asks the person again. Your edit is
+saved and the reply says \`needsReapproval: true\`: tell them it is waiting on them.
+Otherwise your edit keeps it running. Every other field is free, \`enabled\` included: that is how you turn a task on or off.
 
 This is the tasks scheduler's own gate, not the capability approval flow in
 operating-dorkos: there is no \`approvalToken\`, only telling the user and waiting.

@@ -43,7 +43,7 @@ function renderDial() {
 describe('ControlCenterDial', () => {
   it('shows the preset picker', async () => {
     renderDial();
-    expect(await screen.findByRole('radio', { name: 'Full power' })).toBeInTheDocument();
+    expect(await screen.findByRole('radio', { name: 'Trusted' })).toBeInTheDocument();
   });
 
   it('opens Settings → Permissions, closing the flyout first', async () => {

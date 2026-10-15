@@ -178,17 +178,41 @@ async function configApp(configRouter: Hono<ApiEnv>) {
 
 describe('PATCH /api/config', () => {
   let tmpDir: string;
+  let firstHookObserved = false;
 
   beforeEach(async () => {
+    const observeColdHook = !firstHookObserved;
+    firstHookObserved = true;
+    const hookStarted = observeColdHook ? performance.now() : 0;
+    const phase = (name: string) => {
+      if (!observeColdHook) return;
+      try {
+        const data =
+          JSON.stringify({
+            tag: 'config-first-patch-hook-phase',
+            phase: name,
+            elapsedMs: Math.max(0, Math.round(performance.now() - hookStarted)),
+          }) + '\n';
+        if (Buffer.byteLength(data, 'utf8') <= 256) process.stderr.write(data);
+      } catch {
+        /* Observation must not replace the original hook result. */
+      }
+    };
+    phase('temp-dir');
     tmpDir = createTempDir();
     process.env.DORK_HOME = tmpDir;
 
     // Initialize config manager before importing routes
+    phase('config-manager-import');
     const { initConfigManager } = await import('../../services/core/config-manager.js');
+    phase('config-manager-init');
     initConfigManager(tmpDir);
 
+    phase('router-import');
     const configRouter = (await import('../config.js')).default;
+    phase('config-app');
     target.mount(await configApp(configRouter));
+    phase('ready');
   });
 
   afterEach(() => {
@@ -1313,7 +1337,8 @@ describe('GET /api/config', () => {
       const { executionDefaults } = res.body;
 
       expect(typeof executionDefaults.runtime).toBe('string');
-      expect(executionDefaults.trustStop).toBeNull();
+      // Trusted by default (ADR 261006-225605): a fresh install starts at Full autonomy.
+      expect(executionDefaults.trustStop).toBe('autonomy');
       expect(Array.isArray(executionDefaults.perRuntime)).toBe(true);
       for (const entry of executionDefaults.perRuntime) {
         expect(Object.keys(entry).sort()).toEqual([
@@ -2053,38 +2078,26 @@ describe('GET /api/config', () => {
     expect(res.body.ui).not.toHaveProperty('autonomyAcknowledgedAt');
   });
 
-  it('reports the power door unanswered on a fresh install', async () => {
+  it('reports the trust notice unseen, and a Trusted preset, on a fresh install', async () => {
     const res = await request(server).get('/api/config').expect(200);
 
-    expect(res.body.ui.fullPowerDecidedAt).toBeNull();
-    expect(res.body.ui.fullPowerChoice).toBeNull();
+    expect(res.body.ui.trustNoticeSeenAt).toBeNull();
+    expect(res.body.ui).not.toHaveProperty('fullPowerDecidedAt');
+    expect(res.body.ui).not.toHaveProperty('fullPowerChoice');
+    expect(res.body.permissions).toEqual({ preset: 'trusted' });
   });
 
-  it('records either answer at the power door, and reads it back on the next GET', async () => {
-    // The round trip the door relies on: it writes the answer and every later
-    // launch decides from this read whether to put the modal up again.
-    const decidedAt = '2026-08-22T11:15:00.000Z';
+  it('records the trust notice as seen, and reads it back on the next GET', async () => {
+    // The round trip the notice relies on: it writes the stamp, and every
+    // later launch decides from this read whether to show it again.
+    const seenAt = '2026-10-07T11:15:00.000Z';
     await request(server)
       .patch('/api/config')
-      .send({ ui: { fullPowerDecidedAt: decidedAt, fullPowerChoice: 'supervised' } })
+      .send({ ui: { trustNoticeSeenAt: seenAt } })
       .expect(200);
 
     const res = await request(server).get('/api/config').expect(200);
-    expect(res.body.ui.fullPowerDecidedAt).toBe(decidedAt);
-    expect(res.body.ui.fullPowerChoice).toBe('supervised');
-  });
-
-  it('recording the answer alone unlocks nothing (invariant A1)', async () => {
-    // "Supervised" is a first-class answer and changes nothing anywhere; and
-    // even `'full'` is only a record — the capabilities ride on the OTHER keys
-    // the door's accept sends in the same request, each through its own gate.
-    await request(server)
-      .patch('/api/config')
-      .send({ ui: { fullPowerDecidedAt: '2026-08-22T11:15:00.000Z', fullPowerChoice: 'full' } })
-      .expect(200);
-
-    const res = await request(server).get('/api/config').expect(200);
-    expect(res.body.executionDefaults.trustStop).toBeNull();
+    expect(res.body.ui.trustNoticeSeenAt).toBe(seenAt);
   });
 
   // The Full-autonomy acknowledgement is retired (ADR 261006-225605,

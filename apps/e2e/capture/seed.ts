@@ -166,19 +166,17 @@ async function declineTelemetry(): Promise<void> {
 }
 
 /**
- * Record a settled "supervised" power decision so the full-power consent door
- * (`FullPowerDoor`, the second modal on the moments rail) never renders over a
- * capture. It is eligible whenever onboarding is settled and
- * `ui.fullPowerDecidedAt` is still null — which is this instance's state right
- * after {@link dismissOnboarding} — and it focus-traps the frame the same way
- * the telemetry modal does. The same reasoning as {@link declineTelemetry}: seed
- * a real, settled answer rather than let a first-run prompt sit on top of the
- * product, and "supervised" is the choice that records the answer WITHOUT
- * flipping full autonomy or the open mesh on a demo instance.
+ * Mark the trust notice seen so it (the second modal on the moments rail)
+ * never renders over a capture. It is eligible whenever onboarding is settled
+ * and `ui.trustNoticeSeenAt` is still null — which is this instance's state
+ * right after {@link dismissOnboarding} — and it focus-traps the frame the same
+ * way the telemetry modal does. The same reasoning as {@link declineTelemetry}:
+ * seed a settled answer rather than let a first-run prompt sit on top of the
+ * product. Marking it seen changes no permission.
  */
-async function settleFullPowerDoor(): Promise<void> {
+async function settleTrustNotice(): Promise<void> {
   await patchJson(`${API_URL}/api/config`, {
-    ui: { fullPowerDecidedAt: '2026-07-01T00:00:00.000Z', fullPowerChoice: 'supervised' },
+    ui: { trustNoticeSeenAt: '2026-07-01T00:00:00.000Z' },
   });
 }
 
@@ -413,7 +411,7 @@ export async function seedData(): Promise<{
 }> {
   await dismissOnboarding();
   await declineTelemetry();
-  await settleFullPowerDoor();
+  await settleTrustNotice();
   await seedOperatorProfile();
   await scopeConfigToCaptureHome();
   await seedFleet();

@@ -216,6 +216,7 @@ import { TraceStore } from './services/relay/trace-store.js';
 import { MeshCore, type AdoptedAgent } from '@dorkos/mesh';
 import { setMeshInitError } from './services/mesh/mesh-state.js';
 import { ensureDorkBot } from './services/mesh/ensure-dorkbot.js';
+import { applyTrustedStoresAtBoot } from './services/mesh/seed-open-mesh.js';
 import { setAgentPathLookup } from './services/mesh/agent-path-lookup.js';
 import { resolveToolVisibilityFor } from './services/runtimes/shared/permission-tool-filter.js';
 import { composeCapabilityRegistryForDocs } from './services/core/self-description/dorkos-registry.js';
@@ -239,6 +240,7 @@ import {
   agentRequestWriter,
   personWriter,
   createAlwaysSuggestion,
+  permissionAgentRefs,
 } from './services/core/permissions/index.js';
 import { managedRemoteCoordinator } from './services/core/remote/managed-remote-coordinator.js';
 import { managedRemoteCommands } from './services/core/remote/managed-command-service.js';
@@ -2053,15 +2055,12 @@ async function start() {
         version: SERVER_VERSION,
         config: {
           get: () => configManager.get('permissions'),
-          set: (next) => configManager.set('permissions', next),
+          // Merged onto the stored section, so a field the sweep does not know
+          // (`trustedStoresAppliedAt`) is never dropped by its write.
+          set: (next) =>
+            configManager.set('permissions', { ...configManager.get('permissions'), ...next }),
         },
-        agents: () =>
-          mesh.listWithPaths().map((a) => ({
-            id: a.id,
-            name: a.name,
-            ...(a.displayName ? { displayName: a.displayName } : {}),
-            projectPath: a.projectPath,
-          })),
+        agents: () => permissionAgentRefs(mesh),
         readRawManifest: readRawManifestFile,
         writeFolded: async (agentId, fields) => {
           const write = async () => {
@@ -2088,13 +2087,7 @@ async function start() {
       const mesh = meshCore;
       await recordEndedStandingGrants({
         dorkHome,
-        agents: () =>
-          mesh.listWithPaths().map((a) => ({
-            id: a.id,
-            name: a.name,
-            ...(a.displayName ? { displayName: a.displayName } : {}),
-            projectPath: a.projectPath,
-          })),
+        agents: () => permissionAgentRefs(mesh),
         actionTitle: (id) => capabilityRegistry?.get(id)?.title ?? titleForMcpTool(id) ?? id,
         activity: activityService,
         logger,
@@ -2107,6 +2100,10 @@ async function start() {
     // is, so with spaces off nothing remote is reachable (fail closed). Loaded
     // whatever Mesh did, since the official space's routes do not need Mesh.
     await loadOfficialSpace();
+    // The Trusted defaults that live outside config.json, once per install
+    // (spec `trusted-by-default-flip` §5.3): our agents may message each other
+    // across projects. A person who turns that off later keeps it off.
+    await applyTrustedStoresAtBoot(configManager, meshCore, relayCore !== undefined, logger);
     if (meshStartupReconciled) {
       remoteCommunityRuntime?.start();
       remoteCommunitySubscriptions?.start();

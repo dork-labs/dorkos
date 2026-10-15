@@ -73,7 +73,7 @@
  *
  * @module services/core/mcp-tool-tiers
  */
-import type { CapabilityTier } from '@dorkos/shared/capabilities';
+import type { ActionConsent, CapabilityTier } from '@dorkos/shared/capabilities';
 import type { PermissionAreaId } from '@dorkos/shared/permissions';
 import type { ApprovalSubjectDeclaration } from '../approvals/index.js';
 import type { GatedAction } from '../capabilities/tier-enforcement.js';
@@ -99,6 +99,12 @@ export interface McpToolTier {
   area: PermissionAreaId | null;
   /** Why a tool with `area: null` has no switch. Required whenever `area` is `null`. */
   areaNote?: string;
+  /**
+   * What a destructive tool's consent is about, when it is more than the call
+   * itself. See `CapabilityDefinition.consent`: `'third-party-code'` keeps an
+   * area-level Allowed at Ask. No hand-registered tool declares it today.
+   */
+  consent?: ActionConsent;
   /**
    * Human-facing title, written for the person reading an approval card or a
    * refusal in their Activity feed — not for the model, which reads the tool's own
@@ -490,6 +496,7 @@ export function gatedActionForMcpTool(toolName: string): GatedAction {
     title: declared.title,
     tier: declared.tier,
     area: declared.area,
+    ...(declared.consent ? { consent: declared.consent } : {}),
     ...(declared.approvalDisplayFields
       ? { approvalDisplayFields: declared.approvalDisplayFields }
       : {}),

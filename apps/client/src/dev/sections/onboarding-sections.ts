@@ -2,7 +2,8 @@ import type { PlaygroundSection } from '../playground-registry';
 
 /**
  * Onboarding page sections — the first run, each of its screens, the #team
- * chips it lands on, and the supporting sidebar card.
+ * chips it lands on, the trust notice the next launch shows, and the supporting
+ * sidebar card.
  */
 export const ONBOARDING_SECTIONS: PlaygroundSection[] = [
   {
@@ -53,5 +54,12 @@ export const ONBOARDING_SECTIONS: PlaygroundSection[] = [
     page: 'onboarding',
     category: 'Supporting',
     keywords: ['progress', 'card', 'sidebar', 'checklist', 'getting started', 'community', 'space'],
+  },
+  {
+    id: 'trustnoticemoment',
+    title: 'TrustNoticeMoment',
+    page: 'onboarding',
+    category: 'Landing',
+    keywords: ['trust', 'notice', 'trusted', 'careful', 'permissions', 'moment', 'without asking'],
   },
 ];

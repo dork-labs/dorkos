@@ -24,6 +24,7 @@ export const PRESET_LABEL: Record<PermissionPreset, string> = {
   careful: 'Careful',
   balanced: 'Balanced',
   full: 'Full power',
+  trusted: 'Trusted',
 };
 
 /** What each preset means, in one line. */
@@ -31,13 +32,14 @@ export const PRESET_SUMMARY: Record<PermissionPreset, string> = {
   careful: 'Agents ask before they change anything, and can’t reach outside DorkOS.',
   balanced: 'Agents run their rooms and ask before anything wider.',
   full: 'Agents do everyday work alone and ask before installs or settings changes.',
+  trusted: 'Agents work on their own, and everything they do is recorded.',
 };
 
 /**
  * The short line under a default-layer row saying where its state came from.
  *
  * @param source - The resolved source.
- * @param preset - The chosen preset, or `null` for not chosen yet.
+ * @param preset - The chosen preset, or `null` for not chosen yet (read as Trusted).
  */
 export function defaultSourceText(
   source: PermissionSource,
@@ -48,9 +50,7 @@ export function defaultSourceText(
     case 'default-action':
       return 'Changed from your preset';
     case 'preset':
-      return preset ? `From ${PRESET_LABEL[preset]}` : 'From your preset';
-    case 'unchanged':
-      return 'Not chosen yet, so it works as before';
+      return `From ${PRESET_LABEL[preset ?? 'trusted']}`;
     case 'floor':
       return 'Never Allowed';
     case 'always-asks':

@@ -80,34 +80,52 @@ describe('resolvePermission precedence', () => {
   });
 });
 
-describe('destructive rule', () => {
-  // An area-level Allowed must not wave through a delete; only a person naming
-  // the exact action lets it run without asking.
-  it('turns an area-level Allowed on a destructive action into Ask', () => {
-    for (const r of [
-      resolvePermission(
-        input({ tier: 'destructive', config: { preset: 'full', defaults: EMPTY } })
-      ),
-      resolvePermission(
-        input({
-          tier: 'destructive',
-          config: { preset: null, defaults: { areas: { rooms: 'allowed' }, actions: {} } },
-        })
-      ),
-      resolvePermission(input({ tier: 'destructive', agent: { areas: { rooms: 'allowed' } } })),
-    ]) {
+describe('third-party-code rule', () => {
+  // Agents are trusted by default (ADR 261006-225605): an area-level Allowed runs
+  // a destructive action, recorded. Only an action that puts someone else's code
+  // where DorkOS will run it still asks, unless a person named that action.
+  const areaLevelAllowed = (extra: Partial<ResolvePermissionInput>) => [
+    resolvePermission(
+      input({ tier: 'destructive', config: { preset: 'trusted', defaults: EMPTY }, ...extra })
+    ),
+    resolvePermission(
+      input({
+        tier: 'destructive',
+        config: { preset: null, defaults: { areas: { rooms: 'allowed' }, actions: {} } },
+        ...extra,
+      })
+    ),
+    resolvePermission(
+      input({ tier: 'destructive', agent: { areas: { rooms: 'allowed' } }, ...extra })
+    ),
+  ];
+
+  it('runs a destructive action on an area-level Allowed', () => {
+    for (const r of areaLevelAllowed({})) {
+      expect(r.state).toBe('allowed');
+      expect(r.destructiveAsk).toBeUndefined();
+    }
+  });
+
+  it("turns an area-level Allowed into Ask when the action runs someone else's code", () => {
+    for (const r of areaLevelAllowed({ consent: 'third-party-code' })) {
       expect(r.state).toBe('ask');
       expect(r.destructiveAsk).toBe(true);
     }
   });
 
-  it('keeps an action-level Allowed (agent or default)', () => {
+  it('keeps an action-level Allowed on third-party code (agent or default)', () => {
     const agentLevel = resolvePermission(
-      input({ tier: 'destructive', agent: { actions: { 'rooms.create': 'allowed' } } })
+      input({
+        tier: 'destructive',
+        consent: 'third-party-code',
+        agent: { actions: { 'rooms.create': 'allowed' } },
+      })
     );
     const defaultLevel = resolvePermission(
       input({
         tier: 'destructive',
+        consent: 'third-party-code',
         config: {
           preset: 'careful',
           defaults: { areas: {}, actions: { 'rooms.create': 'allowed' } },
@@ -119,9 +137,11 @@ describe('destructive rule', () => {
     expect(defaultLevel).toMatchObject({ state: 'allowed', source: 'default-action' });
   });
 
-  it('leaves act and observe actions alone', () => {
+  it('leaves act and observe actions alone, consent or not', () => {
     for (const tier of ['act', 'observe'] as const) {
-      const r = resolvePermission(input({ tier, config: { preset: 'full', defaults: EMPTY } }));
+      const r = resolvePermission(
+        input({ tier, consent: 'third-party-code', config: { preset: 'full', defaults: EMPTY } })
+      );
       expect(r.state).toBe('allowed');
       expect(r.destructiveAsk).toBeUndefined();
     }
@@ -130,16 +150,16 @@ describe('destructive rule', () => {
 
 describe('floor clamp', () => {
   // A floor area is never Allowed, whichever layer tried.
-  const base = { area: 'permissions' as const, actionId: 'permissions.change' };
+  const base = { area: 'reach' as const, actionId: 'tunnel.enable' };
   it.each([
-    ['agent action', { agent: { actions: { 'permissions.change': 'allowed' as const } } }],
-    ['agent area', { agent: { areas: { permissions: 'allowed' as const } } }],
+    ['agent action', { agent: { actions: { 'tunnel.enable': 'allowed' as const } } }],
+    ['agent area', { agent: { areas: { reach: 'allowed' as const } } }],
     [
       'default action',
       {
         config: {
           preset: 'full' as const,
-          defaults: { areas: {}, actions: { 'permissions.change': 'allowed' as const } },
+          defaults: { areas: {}, actions: { 'tunnel.enable': 'allowed' as const } },
         },
       },
     ],
@@ -148,7 +168,7 @@ describe('floor clamp', () => {
       {
         config: {
           preset: 'full' as const,
-          defaults: { areas: { permissions: 'allowed' as const }, actions: {} },
+          defaults: { areas: { reach: 'allowed' as const }, actions: {} },
         },
       },
     ],
@@ -157,8 +177,31 @@ describe('floor clamp', () => {
     expect(r).toMatchObject({ state: 'ask', source: 'floor', layer: 'floor' });
   });
 
+  it('clamps Safety limits the same way', () => {
+    const r = resolvePermission(
+      input({
+        area: 'safety',
+        actionId: 'operator.update_agent_boundaries',
+        tier: 'destructive',
+        config: { preset: 'trusted', defaults: { areas: { safety: 'allowed' }, actions: {} } },
+      })
+    );
+    expect(r).toMatchObject({ state: 'ask', source: 'floor', layer: 'floor' });
+  });
+
+  it('lets the Permissions area resolve Allowed now that it is no floor', () => {
+    const r = resolvePermission(
+      input({
+        area: 'permissions',
+        actionId: 'permissions.change',
+        agent: { areas: { permissions: 'allowed' } },
+      })
+    );
+    expect(r).toMatchObject({ state: 'allowed', source: 'agent-area' });
+  });
+
   it('leaves Blocked in a floor area alone', () => {
-    const r = resolvePermission(input({ ...base, agent: { areas: { permissions: 'blocked' } } }));
+    const r = resolvePermission(input({ ...base, agent: { areas: { reach: 'blocked' } } }));
     expect(r).toMatchObject({ state: 'blocked', source: 'agent-area' });
   });
 });
@@ -191,23 +234,24 @@ describe('forward compatibility and hostile keys', () => {
   });
 });
 
-describe('Unchanged (no preset chosen)', () => {
+describe('no preset chosen resolves as Trusted', () => {
   const config = { preset: null, defaults: EMPTY };
-  it('blocks Rooms management, as the old off-by-default tool group did', () => {
-    expect(resolvePermission(input({ config }))).toMatchObject({
-      state: 'blocked',
-      source: 'unchanged',
-    });
+  it('allows every in-circle area, Permissions and Rooms included', () => {
+    for (const area of ['rooms', 'tasks', 'packages', 'settings', 'permissions'] as const) {
+      expect(resolvePermission(input({ area, actionId: 'x.y', config })), area).toMatchObject({
+        state: 'allowed',
+        source: 'preset',
+      });
+    }
   });
 
-  it('keeps rooms.merge running, since it was never behind that group', () => {
-    const r = resolvePermission(input({ actionId: 'rooms.merge', config }));
-    expect(r).toMatchObject({ state: 'allowed', source: 'unchanged' });
+  it('keeps Safety limits and Reach & secrets at Ask', () => {
+    for (const area of ['safety', 'reach'] as const) {
+      expect(resolvePermission(input({ area, actionId: 'x.y', config })).state, area).toBe('ask');
+    }
   });
 
-  it('keeps the boundaries tool asking, as its own card always did', () => {
-    // It sits in Safety limits, which Unchanged blocks; without its action entry
-    // an undecided install would lose a tool it had before choosing anything.
+  it('keeps the boundaries tool asking, in Safety limits', () => {
     const r = resolvePermission(
       input({
         area: 'safety',
@@ -216,16 +260,20 @@ describe('Unchanged (no preset chosen)', () => {
         config,
       })
     );
-    expect(r).toMatchObject({ state: 'ask', source: 'unchanged' });
+    expect(r).toMatchObject({ state: 'ask', source: 'preset' });
   });
 
-  it('allows the non-floor areas and blocks the floor ones', () => {
-    expect(resolvePermission(input({ area: 'tasks', actionId: 'x.y', config })).state).toBe(
-      'allowed'
+  it('keeps an action that always asks at Ask', () => {
+    const r = resolvePermission(
+      input({
+        area: 'agents',
+        actionId: 'operator.update_agent_execution',
+        tier: 'destructive',
+        config,
+        alwaysAsks: true,
+      })
     );
-    expect(resolvePermission(input({ area: 'reach', actionId: 'x.y', config })).state).toBe(
-      'blocked'
-    );
+    expect(r).toMatchObject({ state: 'ask', source: 'always-asks' });
   });
 });
 
@@ -239,6 +287,7 @@ describe('the Extension tools area (DOR-2685)', () => {
     ['careful', 'ask'],
     ['balanced', 'allowed'],
     ['full', 'allowed'],
+    ['trusted', 'allowed'],
   ] as const)('resolves %s to %s for an act tool', (preset, state) => {
     // Pins the operator's pick: Careful asks, Balanced and Full power allow.
     const r = resolvePermission({
@@ -250,13 +299,15 @@ describe('the Extension tools area (DOR-2685)', () => {
 
   it('still asks for a destructive extension tool when the area is Allowed', () => {
     // An extension may register destructive tools only because the area's
-    // Allowed can never carry one past a card.
-    for (const preset of ['balanced', 'full'] as const) {
+    // Allowed can never carry one past a card: the server marks every one
+    // `alwaysAsks` (`isAlwaysAskingExtensionTool`).
+    for (const preset of ['balanced', 'full', 'trusted'] as const) {
       const r = resolvePermission({
         ...extensionTool('destructive'),
         config: { preset, defaults: EMPTY },
+        alwaysAsks: true,
       });
-      expect(r, preset).toMatchObject({ state: 'ask', destructiveAsk: true });
+      expect(r, preset).toMatchObject({ state: 'ask', source: 'always-asks' });
     }
   });
 
@@ -319,5 +370,42 @@ describe('an action that always asks (DOR-2328)', () => {
       alwaysAsks: true,
     });
     expect(resolved.state).toBe('blocked');
+  });
+});
+
+describe('a caller DorkOS cannot trust: no identity, or a stranger’s turn (DOR-2739)', () => {
+  const trusted = { preset: 'trusted' as const, defaults: EMPTY };
+
+  for (const [who, extra] of [
+    ['an unidentified caller', { unidentified: true }],
+    ['a stranger’s turn', { strangerTurn: true }],
+  ] as const) {
+    it(`asks ${who} before a destructive action Trusted would run`, () => {
+      const r = resolvePermission(input({ tier: 'destructive', config: trusted, ...extra }));
+      expect(r.state).toBe('ask');
+      expect(r.destructiveAsk).toBe(true);
+    });
+
+    it(`asks ${who} before any change to permissions`, () => {
+      const r = resolvePermission(
+        input({ area: 'permissions', tier: 'act', config: trusted, agent: undefined, ...extra })
+      );
+      expect(r).toMatchObject({ state: 'ask', source: 'floor' });
+    });
+  }
+
+  it('lets our own identified agent change permissions under Trusted', () => {
+    const r = resolvePermission(input({ area: 'permissions', tier: 'act', config: trusted }));
+    expect(r.state).toBe('allowed');
+  });
+
+  it('leaves Blocked Blocked for either', () => {
+    const blocked = {
+      preset: 'trusted' as const,
+      defaults: { areas: { permissions: 'blocked' as const }, actions: {} },
+    };
+    expect(
+      resolvePermission(input({ area: 'permissions', config: blocked, unidentified: true })).state
+    ).toBe('blocked');
   });
 });

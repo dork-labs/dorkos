@@ -461,8 +461,8 @@ describe('an unverifiable agent token on the rooms capability surfaces', () => {
  * domain onto the same server, through the same adapters: the boundary is a
  * property of `registry.invoke` and its adapters, not of the rooms domain.
  *
- * The install's config is "no preset chosen" (Unchanged), where Rooms is
- * Blocked, and the agent's own setting comes from a reader this file moves.
+ * The install's config has Rooms set to Blocked by a person (Full power lifts
+ * it), and the agent's own setting comes from a reader this file moves.
  */
 describe('a capability in the Rooms permission area, on the real surfaces', () => {
   let harness: RoomHarness;
@@ -519,7 +519,13 @@ describe('a capability in the Rooms permission area, on the real surfaces', () =
       roomDeps: { rooms: harness.service },
     });
     initPermissionGate({
-      readConfig: () => ({ preset, defaults: { areas: {}, actions: {} } }),
+      readConfig: () => ({
+        preset,
+        defaults: {
+          areas: preset === 'full' ? {} : ({ rooms: 'blocked' } as Record<string, 'blocked'>),
+          actions: {},
+        },
+      }),
       readAgentPermissions: async () => {
         if (agentRooms instanceof Error) throw agentRooms;
         return agentRooms ? { areas: { rooms: agentRooms } } : undefined;
