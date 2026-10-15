@@ -12,8 +12,10 @@
  *   computer prints (F5, DOR-2968). Until F5 ships, the hook still allows it,
  *   which is today's behavior and the "one release of loud warning" that ADR
  *   rule 11 gives existing Docker installs.
- * - **`provisioned`**: a hub, whose owner comes from provisioning (A2,
- *   DOR-2934). Every sign-up request is refused.
+ * - **`provisioned`**: a hub with no account yet. Its owner comes from
+ *   provisioning (A2, DOR-2934): only code running inside
+ *   `withRegistrationCaller('provisioning', …)` may create it, and every
+ *   sign-up request is refused.
  * - **`closed`**: an account exists, or the caller is the session relay, which
  *   is never a person.
  *
@@ -36,12 +38,18 @@ import type { ServerRole } from '../../../lib/server-role.js';
 /** How an owner-less sign-up is treated for one request. */
 export type RegistrationMode = 'local-open' | 'setup-code' | 'provisioned' | 'closed';
 
-/** Who is signing up: a classified request, or code in this process. */
-export type RegistrationCaller = RequestClass | 'in-process';
+/**
+ * Who is signing up: a classified request; hub provisioning creating the owner
+ * (A2); or other code in this process.
+ */
+export type RegistrationCaller = RequestClass | 'provisioning' | 'in-process';
 
 /** What {@link decideRegistration} reads. */
 export interface RegistrationFacts {
-  /** The request's class, or `in-process` for a call no network request made. */
+  /**
+   * The request's class, `provisioning` for hub provisioning, or `in-process`
+   * for any other call no network request made.
+   */
   caller: RegistrationCaller;
   /** Whether any account exists. */
   hasUsers: boolean;
@@ -52,40 +60,47 @@ export interface RegistrationFacts {
 /**
  * The registration mode for one sign-up attempt.
  *
- * Rules, first match wins: a hub is `provisioned`; an existing account makes
- * it `closed`; this computer (or code in this process) is `local-open`; the
- * relay is `closed`; any other device is `setup-code`.
+ * Rules, first match wins: an existing account makes it `closed`; a hub is
+ * `provisioned`; provisioning anywhere but a hub is `closed`; this computer (or
+ * other code in this process) is `local-open`; the relay, or a hub-kind request
+ * on a computer, is `closed`; any other device is `setup-code`.
  *
  * @param facts - The caller, whether an account exists, and the server role.
  */
 export function decideRegistration(facts: RegistrationFacts): RegistrationMode {
-  if (facts.role === 'hub') return 'provisioned';
   if (facts.hasUsers) return 'closed';
+  if (facts.role === 'hub') return 'provisioned';
   const { caller } = facts;
+  if (caller === 'provisioning') return 'closed';
   if (caller === 'in-process' || caller.kind === 'this-computer') return 'local-open';
-  if (caller.kind === 'relayed') return 'closed';
-  return 'setup-code';
+  if (caller.kind === 'other-device') return 'setup-code';
+  return 'closed';
 }
 
 /**
- * Whether a mode lets the owner be created right now. `setup-code` still does
- * until F5 (DOR-2968) checks the code here.
+ * Whether this caller may create the owner under the decided mode.
+ * `setup-code` still allows until F5 (DOR-2968) checks the code here;
+ * `provisioned` allows hub provisioning only.
  *
  * @param mode - The decided mode.
+ * @param caller - Who is signing up.
  */
-export function registrationAllowed(mode: RegistrationMode): boolean {
+export function registrationAllowed(mode: RegistrationMode, caller: RegistrationCaller): boolean {
+  if (mode === 'provisioned') return caller === 'provisioning';
   return mode === 'local-open' || mode === 'setup-code';
 }
 
-const scope = new AsyncLocalStorage<RequestClass>();
+const scope = new AsyncLocalStorage<RequestClass | 'provisioning'>();
 
 /**
- * Run `fn` with `caller` as the request every sign-up inside it came from.
+ * Run `fn` with `caller` as who every sign-up inside it comes from: the
+ * classified request (`http/better-auth.ts`), or `provisioning` for the code
+ * that creates a hub's owner (A2).
  *
- * @param caller - The classified request.
+ * @param caller - The classified request, or `provisioning`.
  * @param fn - The work, typically Better Auth's handler.
  */
-export function withRegistrationCaller<T>(caller: RequestClass, fn: () => T): T {
+export function withRegistrationCaller<T>(caller: RequestClass | 'provisioning', fn: () => T): T {
   return scope.run(caller, fn);
 }
 

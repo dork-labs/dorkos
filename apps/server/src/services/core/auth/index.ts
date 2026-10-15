@@ -256,12 +256,13 @@ function buildAuthOptions(db: Db, dorkHome: string, port: number): AuthOptions {
             // (Single-writer local instance, so the empty-table check is
             // race-free enough; the invites spec adds multi-user provisioning.)
             const existing = db.select({ id: user.id }).from(user).limit(1).get();
+            const caller = currentRegistrationCaller();
             const mode = decideRegistration({
-              caller: currentRegistrationCaller(),
+              caller,
               hasUsers: existing !== undefined,
               role: currentServerRole(),
             });
-            if (!registrationAllowed(mode)) {
+            if (!registrationAllowed(mode, caller)) {
               throw new APIError('FORBIDDEN', {
                 code: 'REGISTRATION_CLOSED',
                 message:
