@@ -292,6 +292,8 @@ After launch (PGlite, XL). Neither experience needs it.
 - **No Show HN over the holidays.**
 - **Launch: late January 2027** (Cloud's safer window: January 19 to 26). It assumes this weekend's spike is green.
 
+> **Changed 2026-10-15** (ADR [261015-125850](../../decisions/261015-125850-this-computer-and-other-devices.md)): the login groundwork for this computer and other devices lands before launch. End to end moves to about December 22 to January 5, and launch to **early February 2027** (about February 2 to 9). The current schedule is in [02-specification.md](02-specification.md).
+
 ## 6) Dorian's decisions (2026-10-15, "lets move forward with your picks")
 
 1. **Three app chats,** starting after the weekend usage reset. Target late January 2027.
