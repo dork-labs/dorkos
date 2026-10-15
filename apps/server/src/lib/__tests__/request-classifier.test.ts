@@ -6,13 +6,8 @@ vi.mock('../logger.js', () => ({
   logger: { warn, info: vi.fn(), error: vi.fn(), debug: vi.fn() },
 }));
 
-const {
-  classifyRequest,
-  describeRequestClass,
-  noteForeignOrigin,
-  resetForeignOriginNoteForTests,
-  FORWARDING_HEADERS,
-} = await import('../request-classifier.js');
+const { classifyRequest, noteForeignOrigin, resetForeignOriginNoteForTests, FORWARDING_HEADERS } =
+  await import('../request-classifier.js');
 type ClassifierFacts = import('../request-classifier.js').ClassifierFacts;
 type RequestClass = import('../request-classifier.js').RequestClass;
 
@@ -211,15 +206,6 @@ describe('classifyRequest', () => {
   });
 });
 
-describe('describeRequestClass', () => {
-  it('names the route and reason for another device, and the kind otherwise', () => {
-    expect(describeRequestClass(otherDevice('network', 'forwarded') as RequestClass)).toBe(
-      'other-device via network (forwarded)'
-    );
-    expect(describeRequestClass(THIS_COMPUTER)).toBe('this-computer');
-  });
-});
-
 describe('noteForeignOrigin', () => {
   beforeEach(() => {
     warn.mockClear();
@@ -238,5 +224,14 @@ describe('noteForeignOrigin', () => {
     noteForeignOrigin(facts, otherDevice('network', 'foreign-origin') as RequestClass);
     expect(warn).toHaveBeenCalledTimes(1);
     expect(warn.mock.calls[0]?.[1]).toEqual({ page: 'https://dorkos.example.com' });
+  });
+
+  // Purpose: a Referer carries the path and query, where an invite link or an
+  // OAuth code can sit; the log line must keep only the origin.
+  it('logs only the origin of a Referer, never its path or query', () => {
+    const facts = local({}, { referer: 'https://dorkos.example.com/invite?token=secret-123' });
+    noteForeignOrigin(facts, otherDevice('network', 'foreign-origin') as RequestClass);
+    expect(warn.mock.calls[0]?.[1]).toEqual({ page: 'https://dorkos.example.com' });
+    expect(JSON.stringify(warn.mock.calls[0])).not.toContain('secret-123');
   });
 });

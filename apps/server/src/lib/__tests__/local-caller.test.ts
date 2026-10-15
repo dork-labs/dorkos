@@ -109,15 +109,13 @@ describe('isLocalCaller', () => {
     expect(await probe('localhost:4242')).toBe(false);
   });
 
-  it.each(['own-tunnel', 'wifi'] as const)(
-    'refuses a request the %s listener admitted, even with Host rewritten to localhost',
-    async (ingress) => {
-      // The own tunnel's ngrok agent is on loopback too; a tunnel that rewrites
-      // `Host` (`--host-header=rewrite`) would otherwise read as this machine.
-      viaIngress = ingress;
-      expect(await probe('localhost:4242')).toBe(false);
-      mockEnv.DORKOS_ALLOW_INSECURE_BIND = true;
-      expect(await probe('localhost:4242')).toBe(false);
-    }
-  );
+  it('keeps its meaning for the own-tunnel and Wi-Fi marks until F1', async () => {
+    // F0 adds these marks for the request classifier; this gate question must
+    // not change with them (spec `request-classifier`, Non-Goals). A public
+    // `Host` still refuses, and the container flag still admits.
+    viaIngress = 'own-tunnel';
+    expect(await probe('abc.ngrok.app')).toBe(false);
+    mockEnv.DORKOS_ALLOW_INSECURE_BIND = true;
+    expect(await probe('abc.ngrok.app')).toBe(true);
+  });
 });

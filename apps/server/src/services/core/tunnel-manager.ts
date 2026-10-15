@@ -167,23 +167,15 @@ export class TunnelManager extends EventEmitter {
   }
 
   /**
-   * Attach the ingress an own tunnel aimed at the main port forwards into.
-   * Until one is attached, an own tunnel forwards straight to its port.
-   *
-   * @param ingress - The own-tunnel ingress listener.
-   */
-  attachOwnTunnelIngress(ingress: OwnTunnelIngress): void {
-    this.ownTunnelIngress = ingress;
-  }
-
-  /**
-   * Attach both ngrok ingresses. Called once, by `index.ts`, after the app exists.
+   * Attach both ngrok ingresses. Called once, by `index.ts`, once the main
+   * listener is up. Until then an own tunnel forwards straight to its port, as
+   * it always did; boot starts the own tunnel well after the listener is up.
    *
    * @param ingresses - The managed and own-tunnel ingresses (`tunnelIngressesFor`).
    */
   attachIngresses(ingresses: TunnelIngresses): void {
     this.attachManagedIngress(ingresses.managed);
-    this.attachOwnTunnelIngress(ingresses.ownTunnel);
+    this.ownTunnelIngress = ingresses.ownTunnel;
   }
 
   /**
@@ -358,9 +350,10 @@ export class TunnelManager extends EventEmitter {
     } finally {
       this.listener = null;
       this.byoUnclosed = unclosed;
-      // Closed even when ngrok would not close its listener: whatever it still
-      // forwards then finds nothing to reach.
-      await this.ownTunnelIngress?.close();
+      // Kept open while ngrok may still be forwarding: closing it would free its
+      // port for whatever binds there next, and make that public. Its requests
+      // stay marked and meet the login gate, as before.
+      if (unclosed === null) await this.ownTunnelIngress?.close();
       this.updateStatus({ ...DEFAULT_STATUS });
     }
     if (failure !== null) throw failure;

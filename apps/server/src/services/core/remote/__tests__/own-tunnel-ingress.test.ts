@@ -11,7 +11,7 @@ afterEach(async () => {
 });
 
 /** An ingress whose handler and upgrade target record what they were handed. */
-function recordingIngress(frontedPort: number | null = 4242) {
+function recordingIngress(frontedPort = 4242) {
   const requests: IncomingMessage[] = [];
   const upgrades: IncomingMessage[] = [];
   const ingress = createOwnTunnelIngress({
@@ -25,7 +25,7 @@ function recordingIngress(frontedPort: number | null = 4242) {
         'HTTP/1.1 101 Switching Protocols\r\nUpgrade: test\r\nConnection: Upgrade\r\n\r\n'
       );
     },
-    frontedPort: () => frontedPort,
+    frontedPort,
   });
   opened.push(ingress);
   return { ingress, requests, upgrades };
@@ -114,9 +114,8 @@ describe('own-tunnel ingress', () => {
 
   // Purpose: the ingress only fronts the main server's own port; a tunnel aimed
   // at the Vite dev server or an operator's TUNNEL_PORT must forward directly.
-  it('fronts only the main server port, and nothing before it listens', () => {
+  it('fronts only the main server port', () => {
     expect(recordingIngress(4242).ingress.fronts(4242)).toBe(true);
     expect(recordingIngress(4242).ingress.fronts(6241)).toBe(false);
-    expect(recordingIngress(null).ingress.fronts(4242)).toBe(false);
   });
 });

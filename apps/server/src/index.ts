@@ -4865,7 +4865,7 @@ async function start() {
       // access (edge-proof and host checks first) and the person's own tunnel.
       // Each marks what it admits, then hands requests to the same front door
       // and upgrades to the router above. Nothing listens until a tunnel opens.
-      tunnelManager.attachIngresses(tunnelIngressesFor(frontDoorListener(frontDoor), server));
+      tunnelManager.attachIngresses(tunnelIngressesFor(frontDoorListener(frontDoor), server, PORT));
       // Reconnect Cloud's command stream when the boot rule allows it (DOR-2086); opens nothing.
       managedRemoteCommands.boot(db, currentRemoteBootPlan(env));
 

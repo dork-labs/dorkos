@@ -241,8 +241,7 @@ export function requireOperatorCookieUnderLogin(
  *
  * Unflagged — the default on a normal machine — both signals are still required.
  *
- * A request admitted by a marked listener (managed remote access, the own
- * tunnel, Wi-Fi; `services/core/remote/ingress-mark.ts`) is never local, under
+ * A request admitted by the managed remote-access ingress is never local, under
  * any flag: it is someone on another device by construction.
  *
  * One residual remains and is inherent: a reverse proxy on this same host
@@ -257,11 +256,12 @@ export function requireOperatorCookieUnderLogin(
 export function isLocalCaller(
   request: Pick<RequestFacts, 'peerAddress' | 'headers' | 'ingress'>
 ): boolean {
-  // Managed remote access and the own tunnel arrive from an ngrok agent on
-  // loopback, so the socket half would pass; their ingresses mark them so
-  // nothing they carry is ever taken for a person at this machine, whatever its
-  // `Host` says. Wi-Fi is marked too, though its peer already fails below.
-  if (request.ingress !== 'direct') return false;
+  // Managed remote access arrives from the ngrok agent on loopback, so the
+  // socket half would pass; the ingress marks it so nothing it carries is ever
+  // taken for a person at this machine, whatever its `Host` says. The other
+  // marks (own tunnel, Wi-Fi) change nothing here until F1 (DOR-2967) moves
+  // this question onto the request classifier.
+  if (request.ingress === 'managed') return false;
   return isLocalRequest({
     peer: request.peerAddress,
     hostHeader: request.headers.host,

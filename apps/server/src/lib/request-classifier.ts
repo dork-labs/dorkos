@@ -28,8 +28,9 @@
  * `Origin` nor `Referer` (a same-origin GET stream), still reads as this
  * computer. Writes are caught by the `Origin` rule.
  *
- * Pure: it takes resolved facts, never a framework request, so an HTTP route
- * and a WebSocket upgrade are judged by the same lines.
+ * Pure: it takes resolved facts, never a framework request, so any surface
+ * that can build them (an HTTP route today; a WebSocket upgrade once F1 moves
+ * the gate onto this) is judged by the same lines.
  *
  * @module lib/request-classifier
  */
@@ -143,16 +144,6 @@ function isLoopbackPageUrl(value: string): boolean {
   return isLoopbackHost(url.hostname.replace(/^\[|\]$/g, ''));
 }
 
-/**
- * A short label for logs: `this-computer`, or `other-device via network (forwarded)`.
- *
- * @param requestClass - A classifier answer.
- */
-export function describeRequestClass(requestClass: RequestClass): string {
-  if (requestClass.kind !== 'other-device') return requestClass.kind;
-  return `other-device via ${requestClass.route} (${requestClass.reason})`;
-}
-
 let warnedForeignOrigin = false;
 
 /**
@@ -175,10 +166,26 @@ export function noteForeignOrigin(
   warnedForeignOrigin = true;
   logger.warn(
     '[DorkOS] A request on this computer came from a page on another site. If DorkOS is ' +
-      'behind a reverse proxy, it sends no forwarding headers; such requests count as ' +
-      'another device.',
-    { page: facts.headers.origin ?? facts.headers.referer }
+      'behind a reverse proxy, that proxy sends no forwarding headers. Once sign-in is ' +
+      'decided per device, such requests will count as another device.',
+    { page: pageOrigin(facts.headers.origin ?? facts.headers.referer) }
   );
+}
+
+/**
+ * The origin of a page address, for a log line. Never the whole address: a
+ * `Referer` carries the path and query, where an invite link or an OAuth code
+ * can sit.
+ */
+function pageOrigin(value: string | undefined): string | undefined {
+  if (value === undefined) return undefined;
+  try {
+    const url = new URL(value);
+    // A non-web scheme (`chrome-extension:`) has the opaque origin `null`.
+    return url.origin === 'null' ? `${url.protocol}//${url.host}` : url.origin;
+  } catch {
+    return '(unreadable)';
+  }
 }
 
 /**

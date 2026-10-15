@@ -23,13 +23,15 @@ export interface TunnelIngresses {
  *
  * @param handler - The main server's request listener (its front door).
  * @param server - The main server, whose `upgrade` listener is the upgrade router.
+ * @param port - The main server's configured port, which the own tunnel fronts.
  */
 export function tunnelIngressesFor(
   handler: http.RequestListener,
-  server: http.Server
+  server: http.Server,
+  port: number
 ): TunnelIngresses {
   return {
     managed: managedIngressFor(handler, server),
-    ownTunnel: ownTunnelIngressFor(handler, server),
+    ownTunnel: ownTunnelIngressFor(handler, server, port),
   };
 }

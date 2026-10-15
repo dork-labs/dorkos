@@ -27,9 +27,11 @@
  * WebSocket upgrades never pass through here: Node emits `upgrade` on the
  * server, not as a request, and `attachUpgradeRouter` claims it there.
  *
- * One thing it adds: a request that names this computer on the network while
+ * Two things it adds: a request that names this computer on the network while
  * Wi-Fi access is open has its sign-in cookies adapted to plain `http`, on the
- * way in and out, upgrades included (`adaptLanCookies`, DOR-2930).
+ * way in and out, upgrades included (`adaptLanCookies`, DOR-2930); and a
+ * server built for a marked listener (Wi-Fi) marks what it takes from another
+ * machine, so the request classifier knows the route (`createFrontDoorServer`).
  *
  * @module http/front-door
  */
@@ -46,6 +48,7 @@ import type { Hono } from 'hono';
 import type { ApiEnv } from './api-chain.js';
 import { adaptLanCookies } from '../services/core/lan-access/lan-cookies.js';
 import { markIngress, type IngressKind } from '../services/core/remote/ingress-mark.js';
+import { isLoopbackPeer } from '../lib/trusted-origins.js';
 
 /**
  * The origin a request the adapter cannot read is given, so it has a URL at
@@ -129,9 +132,14 @@ function unreadableRequest(incoming: IncomingMessage): Request {
 /** Options for {@link createFrontDoorServer}. */
 export interface FrontDoorServerOptions {
   /**
-   * Mark every request and upgrade this server takes as having come through
-   * this listener (`services/core/remote/ingress-mark.ts`). The main listener
-   * marks nothing; the Wi-Fi listener marks `wifi`.
+   * Mark every request and upgrade this server takes from another machine as
+   * having come through this listener (`services/core/remote/ingress-mark.ts`).
+   * The main listener marks nothing; the Wi-Fi listener marks `wifi`.
+   *
+   * A loopback peer is never marked. The Wi-Fi listener binds every interface,
+   * while the main one binds `localhost`, which macOS resolves to `::1` alone,
+   * so a client dialing `127.0.0.1` (the desktop shell, a browser tab at
+   * `127.0.0.1`) lands on the Wi-Fi listener. It is still this computer.
    */
   ingress?: IngressKind;
 }
@@ -150,10 +158,13 @@ export function createFrontDoorServer(
 ): Server {
   const { ingress } = options;
   const listener = frontDoorListener(app);
+  const mark = (req: IncomingMessage) => {
+    if (ingress && !isLoopbackPeer(req.socket.remoteAddress)) markIngress(req, ingress);
+  };
   const server = createServer(
     ingress
       ? (req, res) => {
-          markIngress(req, ingress);
+          mark(req);
           return listener(req, res);
         }
       : listener
@@ -161,7 +172,7 @@ export function createFrontDoorServer(
   // First in line, so the upgrade router sees the mark and authorizes with the
   // cookie names the auth stack set (see `adaptLanCookies`).
   server.prependListener('upgrade', (req: IncomingMessage) => {
-    if (ingress) markIngress(req, ingress);
+    mark(req);
     adaptLanCookies(req);
   });
   return server;

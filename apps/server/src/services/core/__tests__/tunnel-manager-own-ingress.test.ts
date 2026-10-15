@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import type { ManagedIngress } from '../remote/managed-ingress.js';
 import type { OwnTunnelIngress } from '../remote/own-tunnel-ingress.js';
 
 const mockListener = {
@@ -33,7 +34,7 @@ beforeEach(() => {
   forward.mockResolvedValue(mockListener);
   ingress = fakeIngress();
   manager = new TunnelManager();
-  manager.attachOwnTunnelIngress(ingress);
+  manager.attachIngresses({ managed: {} as ManagedIngress, ownTunnel: ingress });
 });
 
 describe('TunnelManager and the own-tunnel ingress', () => {
@@ -65,16 +66,37 @@ describe('TunnelManager and the own-tunnel ingress', () => {
     expect(ingress.close).toHaveBeenCalled();
   });
 
-  // Purpose: even when ngrok will not close its listener, the ingress closes,
-  // so whatever ngrok still forwards finds nothing to reach.
-  it('closes the ingress even when ngrok refuses to close', async () => {
+  // Purpose: while ngrok may still be forwarding, the ingress must stay open.
+  // Closing it would free its port, and whatever bound there next would be
+  // public. Once a later close of ngrok succeeds, the ingress closes too.
+  it('keeps the ingress open while ngrok refuses to close, and closes it after', async () => {
     await manager.start({ port: 4242 });
+    const disconnect = ngrok.disconnect as unknown as ReturnType<typeof vi.fn>;
     mockListener.close.mockRejectedValueOnce(new Error('ngrok said no'));
-    (ngrok.disconnect as unknown as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
-      new Error('still no')
-    );
+    disconnect.mockRejectedValueOnce(new Error('still no'));
     await expect(manager.stopOwnTunnel()).rejects.toThrow('ngrok said no');
-    expect(ingress.close).toHaveBeenCalled();
+    expect(ingress.close).not.toHaveBeenCalled();
+
+    await manager.stopOwnTunnel();
+    expect(ingress.close).toHaveBeenCalledTimes(1);
+  });
+
+  // Purpose: a stop that lands while ngrok is still opening wins, and the
+  // ingress the open started is closed rather than left listening.
+  it('closes the ingress when a stop overtakes a pending open', async () => {
+    let finishForward!: (listener: typeof mockListener) => void;
+    forward.mockImplementationOnce(
+      () => new Promise<typeof mockListener>((resolve) => (finishForward = resolve))
+    );
+    const starting = manager.start({ port: 4242 });
+    await vi.waitFor(() => expect(forward).toHaveBeenCalled());
+    await manager.stopOwnTunnel();
+    finishForward(mockListener);
+
+    await expect(starting).rejects.toThrow('closed while it was opening');
+    expect(mockListener.close).toHaveBeenCalled();
+    expect(ingress.close).toHaveBeenCalledTimes(2);
+    expect(manager.isRunning).toBe(false);
   });
 
   // Purpose: a failed open must not leave the ingress listening.

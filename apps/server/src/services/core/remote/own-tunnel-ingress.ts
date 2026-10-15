@@ -35,8 +35,8 @@ export interface OwnTunnelIngressOptions {
   handler: RequestListener;
   /** Hand an upgrade to the main server's upgrade router. */
   forwardUpgrade: (req: IncomingMessage, socket: Duplex, head: Buffer) => void;
-  /** The main server's port, or `null` before it listens. */
-  frontedPort: () => number | null;
+  /** The main server's configured port (`DORKOS_PORT`). */
+  frontedPort: number;
 }
 
 /** The own-tunnel ingress listener. One per process; owned by `TunnelManager`. */
@@ -63,18 +63,17 @@ export interface OwnTunnelIngress {
  *
  * @param handler - The main server's request listener.
  * @param server - The main server, whose `upgrade` listener is the upgrade router.
+ * @param port - The main server's configured port.
  */
 export function ownTunnelIngressFor(
   handler: RequestListener,
-  server: http.Server
+  server: http.Server,
+  port: number
 ): OwnTunnelIngress {
   return createOwnTunnelIngress({
     handler,
     forwardUpgrade: (req, socket, head) => server.emit('upgrade', req, socket, head),
-    frontedPort: () => {
-      const address = server.address();
-      return address && typeof address === 'object' ? address.port : null;
-    },
+    frontedPort: port,
   });
 }
 
@@ -113,7 +112,7 @@ export function createOwnTunnelIngress(options: OwnTunnelIngressOptions): OwnTun
 
   return {
     fronts(port) {
-      return options.frontedPort() === port;
+      return options.frontedPort === port;
     },
     open() {
       if (server)

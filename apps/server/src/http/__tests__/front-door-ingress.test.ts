@@ -34,13 +34,23 @@ afterEach(async () => {
   );
 });
 
-/** A front-door server on loopback whose one route reports the request's ingress. */
+/**
+ * A front-door server on loopback whose one route reports the request's
+ * ingress. `peer` overrides the TCP peer every connection reports, so a device
+ * on the network can be played without a second interface.
+ */
 async function serve(
-  ingress?: IngressKind
+  ingress?: IngressKind,
+  peer?: string
 ): Promise<{ port: number; upgrades: IncomingMessage[] }> {
   const app = new Hono<ApiEnv>();
   app.get('/ingress', (c) => c.json({ ingress: ingressOf(c.env.incoming) }));
   const server = createFrontDoorServer(app, ingress ? { ingress } : {});
+  if (peer) {
+    server.prependListener('connection', (socket: net.Socket) => {
+      Object.defineProperty(socket, 'remoteAddress', { value: peer, configurable: true });
+    });
+  }
   const upgrades: IncomingMessage[] = [];
   server.on('upgrade', (req: IncomingMessage, socket: net.Socket) => {
     upgrades.push(req);
@@ -65,11 +75,11 @@ async function upgrade(port: number): Promise<void> {
 }
 
 describe('createFrontDoorServer ingress marking', () => {
-  // Purpose: a request through the Wi-Fi listener must read as `wifi`, or the
-  // classifier can only say "network" and session route binding has nothing
-  // to bind to.
-  it('marks requests and upgrades on the Wi-Fi listener', async () => {
-    const { port, upgrades } = await serve('wifi');
+  // Purpose: a request from another machine through the Wi-Fi listener must
+  // read as `wifi`, or the classifier can only say "network" and session route
+  // binding has nothing to bind to.
+  it('marks requests and upgrades from another machine on the Wi-Fi listener', async () => {
+    const { port, upgrades } = await serve('wifi', '192.168.1.40');
     const res = await fetch(`http://127.0.0.1:${port}/ingress`);
     expect(await res.json()).toEqual({ ingress: 'wifi' });
 
@@ -78,9 +88,22 @@ describe('createFrontDoorServer ingress marking', () => {
     expect(ingressOf(upgrades[0]!)).toBe('wifi');
   });
 
-  // Purpose: the main listener marks nothing, so local requests stay `direct`.
+  // Purpose: the Wi-Fi listener binds every interface while the main one binds
+  // `::1` on macOS, so a client dialing 127.0.0.1 (the desktop shell, a tab at
+  // 127.0.0.1) lands here. It is this computer and must stay unmarked.
+  it('leaves a loopback peer on the Wi-Fi listener unmarked', async () => {
+    for (const peer of ['127.0.0.1', '::ffff:127.0.0.1', '::1']) {
+      const { port, upgrades } = await serve('wifi', peer);
+      const res = await fetch(`http://127.0.0.1:${port}/ingress`);
+      expect(await res.json()).toEqual({ ingress: 'direct' });
+      await upgrade(port);
+      expect(ingressOf(upgrades[0]!)).toBe('direct');
+    }
+  });
+
+  // Purpose: the main listener marks nothing, whoever connects.
   it('marks nothing on the main listener', async () => {
-    const { port, upgrades } = await serve();
+    const { port, upgrades } = await serve(undefined, '192.168.1.40');
     const res = await fetch(`http://127.0.0.1:${port}/ingress`);
     expect(await res.json()).toEqual({ ingress: 'direct' });
 
